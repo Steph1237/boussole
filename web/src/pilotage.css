@@ -67,3 +67,4 @@
 @media (max-width:900px){#view-pilotage .grid2{grid-template-columns:1fr}}
 @media (max-width:760px){#view-pilotage .summary{grid-template-columns:1fr 1fr}#view-pilotage .summary>div:first-child{grid-column:1/-1}}
 @media (max-width:480px){#view-pilotage .arow{grid-template-columns:92px 1fr 78px}#view-pilotage .lists{grid-template-columns:minmax(0,1fr)}}
+#view-pilotage .import-row{margin-top:14px}

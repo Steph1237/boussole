@@ -18,10 +18,10 @@ const outArg = process.argv.find(a => a.startsWith("--out="));
 const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
 
 const MODULES = ["pilotage", "toise", "simu", "profil"];
-const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", "rules", "assistant", ...MODULES, "app"];
+const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", "rules", "assistant", "import", "onboarding", ...MODULES, "app"];
 // supabase-js v2, build UMD épinglé (window.supabase). Le paquet n'est pas publié sur cdnjs : jsdelivr sert
 // le fichier du paquet npm officiel. Chargé juste après config.js, avant les adaptateurs store-* et auth.js.
-const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js";
+const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js";
 const read = p => (existsSync(p) ? readFileSync(p, "utf8") : "");
 
 // Enveloppe un fragment (title/meta/link/style en tête, le reste dans <body>) dans un document complet.
@@ -39,7 +39,7 @@ function wrap(fragment) {
 
 // --- app.html : coque + fragments ---
 let app = read(join(SRC, "shell.html"));
-const css = [read(join(SRC, "theme.css")), ...MODULES.map(m => read(join(SRC, `${m}.css`)))].join("\n");
+const css = [read(join(SRC, "theme.css")), ...MODULES.map(m => read(join(SRC, `${m}.css`))), read(join(SRC, "import.css")), read(join(SRC, "onboarding.css"))].join("\n");
 app = app.replace("/*@css*/", () => css);
 for (const m of MODULES) {
   app = app.replace(`<!--@${m}-->`, () => read(join(SRC, `${m}.html`)) || `<p class="muted">Module ${m} en construction.</p>`);
@@ -56,7 +56,7 @@ writeFileSync(join(OUT, "app.html"), app);
 writeFileSync(join(OUT, "index.html"), wrap(read(join(WEB, "index.html")) || "<title>Boussole</title><p>Bientôt.</p>"));
 for (const s of scripts) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
 // Scripts des pages autonomes (hors app.html) : copiés sans être injectés dans l'application.
-for (const s of ["consent"]) if (existsSync(join(SRC, `${s}.js`))) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
+for (const s of ["consent", "landing", "account"]) if (existsSync(join(SRC, `${s}.js`))) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
 if (existsSync(join(WEB, "config.js"))) copyFileSync(join(WEB, "config.js"), join(OUT, "config.js"));
 
 const extra = [];

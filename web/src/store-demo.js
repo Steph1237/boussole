@@ -49,6 +49,7 @@
       status: clone(C.status),
       profil: clone(C.profil),
       profilLoaded: C.profilLoaded,
+      onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
       user: clone(C.user),
@@ -92,6 +93,13 @@
           publish();
           return { id: row.id };
         },
+        async addMany(rows) {
+          await tick();
+          if (name !== "positions") throw err("invalid_argument", "Collection inconnue : " + name);
+          (rows || []).forEach(r => C.positions.push(Object.assign({ id: "pos-" + Math.random().toString(36).slice(2, 9), status: "actif" }, clone(r))));
+          publish();
+          return { count: (rows || []).length };
+        },
       };
     },
   };
@@ -109,6 +117,7 @@
     },
     emit,
     reload() { publish(); return Promise.resolve(); },
+    markOnboarded() { return Promise.resolve(); },
   };
   window.Store = Store;
 

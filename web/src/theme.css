@@ -86,3 +86,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 .linkish{border:0;background:none;padding:0;color:var(--accent);font:600 13px var(--f-body);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 
 @media (max-width:640px){.app-tabs{grid-template-columns:repeat(4,minmax(132px,1fr))}}
+
+.app-actions{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+.app-link{font:600 13px var(--f-body);color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:1px}
+.app-link:hover{color:var(--ink)}
+.banner.demo{background:var(--accent-soft)}
+.banner a{color:var(--accent);font-weight:600}

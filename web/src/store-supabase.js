@@ -27,7 +27,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -53,6 +53,7 @@
       status: clone(C.status),
       profil: clone(C.profil),
       profilLoaded: C.profilLoaded,
+      onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
       user: clone(C.user),
@@ -124,6 +125,7 @@
     if (tx !== undefined) C.tx = (tx || []).map(txView);
     if (config !== undefined) C.config = config ? cfgView(config) : null;
     if (status !== undefined) C.status = status ? stView(status) : null;
+    if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
     if (prof !== undefined && biens !== undefined && credits !== undefined) C.profil = prof ? profView(prof, biens || [], credits || []) : null;
     C.profilLoaded = true;
     C.user = { id: session.user.id, email: session.user.email || null };
@@ -218,6 +220,19 @@
     return { id: data.id };
   }
 
+  /* Ajout groupé (import CSV, assistant, premiers pas) : une demande d'instrument par ISIN, une insertion, un rechargement. */
+  async function addPositions(rows, uid) {
+    const list = (rows || []).map(r => {
+      const row = posCols(r); NOT_NULL.forEach(k => { if (row[k] == null) delete row[k]; });
+      row.id = newId(); row.user_id = uid; if (!row.name) row.name = "Sans nom"; return row;
+    });
+    if (!list.length) return { count: 0 };
+    const seen = new Set();
+    for (const r of list) if (r.isin && !seen.has(r.isin)) { seen.add(r.isin); await q(sb.rpc("request_instrument", { p_isin: r.isin, p_name: r.name, p_symbol: null })); }
+    await q(sb.from("positions").insert(list));
+    return { count: list.length };
+  }
+
   const db = {
     doc(path) {
       const [col, id] = String(path).split("/");
@@ -238,7 +253,11 @@
       };
     },
     collection(name) {
-      return { add(doc) { return name === "transactions" ? write(uid => addTx(doc, uid)) : Promise.reject(Object.assign(new Error("Collection inconnue : " + name), { code: "invalid_argument" })); } };
+      const unknown = () => Promise.reject(Object.assign(new Error("Collection inconnue : " + name), { code: "invalid_argument" }));
+      return {
+        add(doc) { return name === "transactions" ? write(uid => addTx(doc, uid)) : unknown(); },
+        addMany(rows) { return name === "positions" ? write(uid => addPositions(rows, uid)) : unknown(); },
+      };
     },
   };
 
@@ -255,6 +274,7 @@
     },
     emit,
     reload,
+    markOnboarded() { return write(uid => q(sb.from("profiles").update({ onboarding_done: true }).eq("user_id", uid))); },
   };
   window.Store = Store;
   publish();
