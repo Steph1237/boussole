@@ -1,0 +1,43 @@
+<div class="profil" id="profilRoot">
+  <section class="panel pf-status" aria-label="État du profil">
+    <div class="pf-score">
+      <div>
+        <div class="label">Profil rempli</div>
+        <div class="pf-big num" id="pfPct">0 %</div>
+      </div>
+      <div class="pf-bar" aria-hidden="true"><i id="pfBar"></i></div>
+      <p class="small muted" id="pfMissing"></p>
+    </div>
+    <div class="pf-recap" id="pfRecap"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="pf-h-foyer">
+    <div class="panel-head"><h2 id="pf-h-foyer">Foyer</h2><span class="small muted">Sert au rang parmi les Français et au calcul de l'impôt</span></div>
+    <div class="pf-grid" id="pfFoyer"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="pf-h-pers">
+    <div class="panel-head"><h2 id="pf-h-pers">Revenus</h2><span class="small muted">Salaires en équivalent temps plein, primes comprises</span></div>
+    <div class="pf-people" id="pfPeople"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="pf-h-biens">
+    <div class="panel-head"><h2 id="pf-h-biens">Biens immobiliers</h2><span class="small muted">Valeur estimée aujourd'hui · la quote-part de la compagne est le complément à 100 %</span></div>
+    <div class="pf-rows" id="pfBiens"></div>
+    <button type="button" class="btn ghost" data-pf-add="biens">Ajouter un bien</button>
+  </section>
+
+  <section class="panel" aria-labelledby="pf-h-credits">
+    <div class="panel-head"><h2 id="pf-h-credits">Autres crédits</h2><span class="small muted">Auto, consommation, travaux… Les prêts immobiliers se saisissent sur la ligne du bien.</span></div>
+    <div class="pf-rows" id="pfCredits"></div>
+    <button type="button" class="btn ghost" data-pf-add="credits">Ajouter un crédit</button>
+  </section>
+
+  <div class="pf-save" id="pfSave">
+    <div class="pf-msgs" id="pfMsgs" aria-live="polite"></div>
+    <div class="pf-actions">
+      <button type="button" class="btn ghost" id="pfCancel">Annuler les modifications</button>
+      <button type="button" class="btn" id="pfSubmit">Enregistrer le profil</button>
+    </div>
+  </div>
+</div>

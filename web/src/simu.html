@@ -1,0 +1,395 @@
+<div class="simu">
+<header>
+  <div class="eyebrow">Simulateur · données marché oct. 2026</div>
+  <h1>Acheter ou louer : <span class="b">le prix</span> face au <span class="e">loyer</span></h1>
+</header>
+<nav class="tabs" role="tablist">
+  <button type="button" role="tab" id="simu-t-sim" aria-controls="simu-p-sim" aria-selected="true">Simulateur</button>
+  <button type="button" role="tab" id="simu-t-ex" aria-controls="simu-p-ex" aria-selected="false">Comment ça marche</button>
+  <button type="button" role="tab" id="simu-t-th" aria-controls="simu-p-th" aria-selected="false">La recherche</button>
+</nav>
+
+<div id="simu-p-sim" role="tabpanel" aria-labelledby="simu-t-sim">
+<div class="stack" id="params">
+
+  <section class="card">
+    <div class="from-profile" id="simu-fp" hidden>
+      <div class="fp-row" data-fp="l1"></div>
+      <div class="fp-row fp-ctl">
+        <label class="fp-range"><span>Part des placements mobilisables</span><input type="range" min="0" max="100" step="5" data-fp="part" aria-label="Part des placements mobilisables"><b class="num" data-fp="partV"></b></label>
+        <label class="fp-chk"><input type="checkbox" data-fp="rec">Compter l'indemnité et les sommes à recevoir</label>
+        <button type="button" class="linkish" data-goto-tab="profil">Modifier le profil</button>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="f"><label for="zone">Ville</label><div class="inp"><select id="zone"></select></div></div>
+      <div class="f"><label for="surfaceR">Surface <span class="val" id="surfaceV"></span></label><input type="range" id="surfaceR" min="15" max="150" step="1"></div>
+    </div>
+
+    <div class="duel">
+      <div class="side buy">
+        <div class="lb"><label for="prix">Acheter ce logement</label><span class="tag auto" data-for="prix">marché</span></div>
+        <div class="big"><input id="prix" type="number" inputmode="decimal" step="1000"><span class="u">€</span></div>
+        <div class="sm" id="buySm"></div>
+      </div>
+      <div class="vs">OU</div>
+      <div class="side rent">
+        <div class="lb"><label for="loyer">Le louer</label><span class="tag auto" data-for="loyer">marché</span></div>
+        <div class="big"><input id="loyer" type="number" inputmode="decimal" step="10"><span class="u">€/mois</span></div>
+        <div class="sm" id="rentSm"></div>
+      </div>
+    </div>
+
+    <div class="ratio" id="ratio"></div>
+
+    <div class="row2">
+      <div class="f"><label for="simu-apportR"><span class="lt">Apport <span class="src-slot" data-key="apport"></span></span><span class="val" id="simu-apportV"></span></label><input type="range" id="simu-apportR" min="0" max="300000" step="5000"></div>
+      <div class="f"><label for="horizonR">Tu garderais le logement <span class="val" id="horizonV"></span></label><input type="range" id="horizonR" min="1" max="30" step="1"></div>
+    </div>
+    <input id="surface" type="hidden" value="45"><input id="simu-apport" type="hidden" value="60000"><input id="horizon" type="hidden" value="10"><input id="disc" type="hidden" value="100">
+    <p class="src" id="srcLine"></p>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><h2>Et sur la durée ?</h2><button type="button" class="ghost" id="simu-reset">Réinitialiser</button></div>
+    <div class="pills" id="simu-scen" role="group" aria-label="Scénarios"></div>
+    <p class="verdict" id="verdict">Calcul en cours…</p>
+    <p class="sdesc" id="sdesc"></p>
+    <div class="tiles" id="tiles"></div>
+    <div class="legend"><span><i class="dot b"></i>Acheter et y vivre</span><span><i class="dot e"></i>Louer et placer en ETF</span><span><i class="dot i"></i>Louer et acheter un bien locatif</span></div>
+    <div class="chartwrap" id="chartwrap"><div id="simu-chart"></div><div class="tip" id="simu-tip" hidden></div></div>
+    <p class="cap" id="chartCap"></p>
+    <div class="bankline" id="bankline"></div>
+    <div class="precline" id="precline"></div>
+  </section>
+
+  <section class="card" id="precCard">
+    <div class="prec-top">
+      <div class="card-h"><h2>Précision de ta simulation</h2></div>
+      <div class="prec-score"><span class="n" id="precN"></span><span class="q" id="precQ"></span></div>
+      <div class="prec-bar"><i id="precBar"></i></div>
+      <p class="hint">Le score indique quelle part des paramètres qui pèsent le plus sur le résultat vient de tes propres chiffres plutôt que des moyennes de la ville. Chaque ligne indique ce qu'elle apporte. Tu peux remplir ici ou dans le détail : c'est le même champ.</p>
+    </div>
+    <div class="prec-list" id="precList"></div>
+  </section>
+
+  <button type="button" class="more-btn" id="moreBtn" aria-expanded="false" aria-controls="more">
+    <span><b>Voir le détail</b><small>Tous les scénarios, coûts cachés, bien locatif, crédit et banque, hypothèses</small></span><span class="ic">+</span>
+  </button>
+
+  <div class="stack" id="more" hidden>
+
+    <details class="acc" open>
+      <summary>Tous les scénarios côte à côte <span class="sub" id="mxH"></span></summary>
+      <div class="body"><div class="tw"><table class="mx" id="mx"></table></div><p class="cap">Clique une ligne pour l'afficher sur la courbe.</p></div>
+    </details>
+
+    <details class="acc">
+      <summary>Coûts cachés et budget mensuel <span class="sub" id="sumCaches"></span></summary>
+      <div class="body">
+        <div class="tw"><table class="detail" id="monthly"></table></div>
+        <p class="cap">Chaque mois, la stratégie la plus chère fixe le budget. Les autres placent la différence en ETF.</p>
+        <hr class="sep">
+        <div class="subt"><i class="dot b"></i>Si tu achètes</div>
+        <div class="fields f3">
+          <div class="f"><label for="type">Type (France)</label><div class="inp"><select id="type"><option value="ancien">Ancien</option><option value="neuf">Neuf (VEFA)</option></select></div></div>
+          <div class="f"><span class="lbl">Situation</span><label class="chk" for="primo"><input id="primo" type="checkbox" checked>Premier achat</label></div>
+          <div class="f"><label for="fraisA">Frais d'achat <span class="tag auto" data-for="fraisA">auto</span></label><div class="inp"><input id="fraisA" type="number" inputmode="decimal" step="0.1"><span class="u">% prix</span></div></div>
+          <div class="f"><label for="travaux">Travaux à l'entrée</label><div class="inp"><input id="travaux" type="number" inputmode="decimal" value="5000" step="500"><span class="u">€</span></div></div>
+          <div class="f"><label for="tf">Taxe foncière <span class="tag auto" data-for="tf">auto</span></label><div class="inp"><input id="tf" type="number" inputmode="decimal" step="50"><span class="u">€/an</span></div></div>
+          <div class="f"><label for="copro">Copro non récupérable <span class="tag auto" data-for="copro">marché</span></label><div class="inp"><input id="copro" type="number" inputmode="decimal" step="1"><span class="u">€/m²/an</span></div></div>
+          <div class="f"><label for="provCopro">Gros travaux de copro <span class="tag auto" data-for="provCopro">auto</span></label><div class="inp"><input id="provCopro" type="number" inputmode="decimal" step="1"><span class="u">€/m²/an</span></div></div>
+          <div class="f"><label for="entretien">Entretien privatif</label><div class="inp"><input id="entretien" type="number" inputmode="decimal" value="15" step="1"><span class="u">€/m²/an</span></div></div>
+          <div class="f"><label for="assuHab">Surcoût assurance</label><div class="inp"><input id="assuHab" type="number" inputmode="decimal" value="80" step="10"><span class="u">€/an</span></div></div>
+        </div>
+        <div class="subt"><i class="dot e"></i>Si tu loues</div>
+        <div class="fields f3">
+          <div class="f"><label for="agence">Frais d'agence locataire <span class="tag auto" data-for="agence">auto</span></label><div class="inp"><input id="agence" type="number" inputmode="decimal" step="0.1"><span class="u">€/m²</span></div></div>
+          <div class="f"><label for="reloc">Déménagement tous les</label><div class="inp"><input id="reloc" type="number" inputmode="numeric" value="5" min="1" step="1"><span class="u">ans</span></div></div>
+        </div>
+        <p class="hint">Charges récupérables, eau et chauffage : payés aussi par le locataire, ils s'annulent. Londres : la council tax est payée par l'occupant, propriétaire ou locataire. Berlin : la Grundsteuer est refacturée au locataire.</p>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary><i class="dot i"></i>Le bien locatif <span class="sub" id="sumRenta"></span></summary>
+      <div class="body">
+        <div class="kpis" id="kpisL"></div>
+        <div class="fields f3">
+          <div class="f"><label for="zoneL">Ville du bien</label><div class="inp"><select id="zoneL"></select></div></div>
+          <div class="f"><label for="surfaceL">Surface</label><div class="inp"><input id="surfaceL" type="number" inputmode="decimal" value="35" step="1"><span class="u">m²</span></div></div>
+          <div class="f"><label for="regime">Location et fiscalité</label><div class="inp"><select id="regime">
+            <option value="lmnp_reel" selected>Meublé · LMNP réel</option>
+            <option value="lmnp_micro">Meublé · micro-BIC</option>
+            <option value="nu_reel">Nue · réel foncier</option>
+            <option value="nu_micro">Nue · micro-foncier</option>
+          </select></div></div>
+          <div class="f"><label for="prixL">Prix <span class="tag auto" data-for="prixL">marché</span></label><div class="inp"><input id="prixL" type="number" inputmode="decimal" step="1000"><span class="u">€</span></div></div>
+          <div class="f"><label for="loyerL">Loyer perçu HC <span class="tag auto" data-for="loyerL">marché</span></label><div class="inp"><input id="loyerL" type="number" inputmode="decimal" step="10"><span class="u">€/mois</span></div></div>
+          <div class="f"><label for="apportL">Apport investi <span class="tag auto" data-for="apportL">auto</span></label><div class="inp"><input id="apportL" type="number" inputmode="decimal" step="1000"><span class="u">€</span></div></div>
+          <div class="f"><label for="fraisAL">Frais d'achat <span class="tag auto" data-for="fraisAL">auto</span></label><div class="inp"><input id="fraisAL" type="number" inputmode="decimal" step="0.1"><span class="u">% prix</span></div></div>
+          <div class="f"><label for="travauxL">Travaux à l'entrée</label><div class="inp"><input id="travauxL" type="number" inputmode="decimal" value="5000" step="500"><span class="u">€</span></div></div>
+          <div class="f"><label for="mobilier">Mobilier <span class="tag auto" data-for="mobilier">auto</span></label><div class="inp"><input id="mobilier" type="number" inputmode="decimal" step="500"><span class="u">€</span></div></div>
+          <div class="f"><label for="tfL">Taxe foncière <span class="tag auto" data-for="tfL">auto</span></label><div class="inp"><input id="tfL" type="number" inputmode="decimal" step="50"><span class="u">€/an</span></div></div>
+          <div class="f"><label for="coproL">Copro non refacturable <span class="tag auto" data-for="coproL">marché</span></label><div class="inp"><input id="coproL" type="number" inputmode="decimal" step="1"><span class="u">€/m²/an</span></div></div>
+          <div class="f"><label for="provCoproL">Gros travaux de copro <span class="tag auto" data-for="provCoproL">auto</span></label><div class="inp"><input id="provCoproL" type="number" inputmode="decimal" step="1"><span class="u">€/m²/an</span></div></div>
+          <div class="f"><label for="entretienL">Entretien <span class="tag auto" data-for="entretienL">auto</span></label><div class="inp"><input id="entretienL" type="number" inputmode="decimal" step="1"><span class="u">€/m²/an</span></div></div>
+          <div class="f"><label for="pno">Assurance PNO</label><div class="inp"><input id="pno" type="number" inputmode="decimal" value="150" step="10"><span class="u">€/an</span></div></div>
+          <div class="f"><label for="gli">Garantie impayés</label><div class="inp"><input id="gli" type="number" inputmode="decimal" value="3" step="0.5"><span class="u">% loyers</span></div></div>
+          <div class="f"><label for="gestion">Gestion locative</label><div class="inp"><input id="gestion" type="number" inputmode="decimal" value="7" step="0.5"><span class="u">% loyers</span></div></div>
+          <div class="f"><label for="honoL">Relocation <span class="tag auto" data-for="honoL">auto</span></label><div class="inp"><input id="honoL" type="number" inputmode="decimal" step="0.1"><span class="u">€/m²</span></div></div>
+          <div class="f"><label for="rotation">Nouveau locataire tous les <span class="tag auto" data-for="rotation">auto</span></label><div class="inp"><input id="rotation" type="number" inputmode="decimal" step="0.5" min="0.5"><span class="u">ans</span></div></div>
+          <div class="f"><label for="cfe">CFE (meublé)</label><div class="inp"><input id="cfe" type="number" inputmode="decimal" value="300" step="50"><span class="u">€/an</span></div></div>
+          <div class="f"><label for="compta">Comptable (LMNP réel)</label><div class="inp"><input id="compta" type="number" inputmode="decimal" value="450" step="50"><span class="u">€/an</span></div></div>
+          <div class="f"><label for="terrain">Part terrain <span class="tag auto" data-for="terrain">auto</span></label><div class="inp"><input id="terrain" type="number" inputmode="decimal" step="1"><span class="u">%</span></div></div>
+          <div class="f"><label for="tmi"><span class="lt">Ta tranche d'imposition <span class="src-slot" data-key="tmi"></span></span></label><div class="inp"><select id="tmi"><option value="0">0 %</option><option value="11">11 %</option><option value="30" selected>30 %</option><option value="41">41 %</option><option value="45">45 %</option></select></div></div>
+        </div>
+        <div class="tw"><table class="detail" id="fiscL"></table></div>
+        <p class="hint">Fiscalité française appliquée (loyers, plus-value, prélèvements sociaux). Pour un bien à l'étranger, les loyers sont d'abord imposés dans le pays du bien, avec un crédit d'impôt en France : l'ordre de grandeur reste valable, pas le détail.</p>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary>Où part l'argent <span class="sub">coûts irrécupérables cumulés</span></summary>
+      <div class="body">
+        <div class="cols3">
+          <div><h4><i class="dot b"></i>Acheter et y vivre</h4><div class="tw"><table class="detail" id="costBuy"></table></div></div>
+          <div><h4><i class="dot e"></i>Louer + ETF</h4><div class="tw"><table class="detail" id="costRent"></table></div></div>
+          <div><h4><i class="dot i"></i>Louer + locatif</h4><div class="tw"><table class="detail" id="costInv"></table></div></div>
+        </div>
+        <p class="cap">Le capital remboursé et l'épargne n'y figurent pas : ils restent à toi.</p>
+      </div>
+    </details>
+
+    <details class="acc" id="accBank">
+      <summary>Crédit, revenus et banque <span class="sub" id="sumBank"></span></summary>
+      <div class="body">
+        <div class="fields f3">
+          <div class="f"><label for="rev"><span class="lt">Revenus nets du foyer <span class="src-slot" data-key="rev"></span></span></label><div class="inp"><input id="rev" type="number" inputmode="decimal" value="4200" step="100"><span class="u">€/mois</span></div></div>
+          <div class="f"><label for="simu-credits"><span class="lt">Autres crédits <span class="src-slot" data-key="credits"></span></span></label><div class="inp"><input id="simu-credits" type="number" inputmode="decimal" value="0" step="10"><span class="u">€/mois</span></div></div>
+          <div class="f"><span class="lbl"><span class="lt">Contrat <span class="src-slot" data-key="essai"></span></span></span><label class="chk" for="essai"><input id="essai" type="checkbox">En période d'essai</label></div>
+          <div class="f"><label for="duree">Durée du prêt</label><div class="inp"><select id="duree"><option value="15">15 ans</option><option value="20">20 ans</option><option value="25" selected>25 ans</option></select></div></div>
+          <div class="f"><label for="taux">Taux du crédit <span class="tag auto" data-for="taux">marché</span></label><div class="inp"><input id="taux" type="number" inputmode="decimal" step="0.01"><span class="u">%</span></div></div>
+          <div class="f"><label for="assurance">Assurance emprunteur</label><div class="inp"><input id="assurance" type="number" inputmode="decimal" value="0.25" step="0.01"><span class="u">% / an</span></div></div>
+          <div class="f"><label for="assBase">Assurance calculée sur</label><div class="inp"><select id="assBase"><option value="ci">Capital initial</option><option value="crd">Capital restant dû</option></select></div></div>
+          <div class="f"><label for="garantie">Caution / garantie</label><div class="inp"><input id="garantie" type="number" inputmode="decimal" value="1.2" step="0.1"><span class="u">% prêt</span></div></div>
+          <div class="f"><label for="dossier">Frais de dossier</label><div class="inp"><input id="dossier" type="number" inputmode="decimal" value="1000" step="100"><span class="u">€</span></div></div>
+          <div class="f"><label for="courtage">Courtier</label><div class="inp"><input id="courtage" type="number" inputmode="decimal" value="0" step="100"><span class="u">€</span></div></div>
+          <div class="f"><label for="pret">Emprunt (achat)</label><div class="inp"><input id="pret" type="text" readonly tabindex="-1"><span class="u">€</span></div></div>
+          <div class="f"><label for="pretL">Emprunt (locatif)</label><div class="inp"><input id="pretL" type="text" readonly tabindex="-1"><span class="u">€</span></div></div>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div class="gauges" id="gauges"></div>
+        <div class="alerts" id="simu-alerts"></div>
+        <p class="hint">Taux par pays (oct. 2026) : France 3,43 à 3,61 % selon la durée, Royaume-Uni ~6 % (fixe 5 ans), Espagne et Portugal ~3 %, Italie ~3,6 %, Allemagne ~4 %, Pays-Bas ~4 %, Belgique ~4,1 %. Règle des 35 % d'endettement : norme française, appliquée partout par simplification.</p>
+      </div>
+    </details>
+
+    <details class="acc">
+      <summary>Revente, placement et hypothèses <span class="sub" id="sumSortie"></span></summary>
+      <div class="body">
+        <div class="fields f3">
+          <div class="f full"><label for="discR">Part des économies réellement placée <span class="val" id="discV"></span></label><input type="range" id="discR" min="0" max="100" step="5"></div>
+          <div class="f"><span class="lbl">À la fin</span><label class="chk" for="vente"><input id="vente" type="checkbox" checked>Je revends</label></div>
+          <div class="f"><label for="revente">Frais de revente <span class="tag auto" data-for="revente">auto</span></label><div class="inp"><input id="revente" type="number" inputmode="decimal" step="0.5"><span class="u">% valeur</span></div></div>
+          <div class="f"><label for="ira">Pénalités remb. anticipé</label><div class="inp"><select id="ira"><option value="oui">Légales (max)</option><option value="non">Négociées à 0</option></select></div></div>
+          <div class="f"><label for="restit">Garantie restituée</label><div class="inp"><input id="restit" type="number" inputmode="decimal" value="50" step="5"><span class="u">%</span></div></div>
+          <div class="f"><label for="gCharges">Hausse des charges</label><div class="inp"><input id="gCharges" type="number" inputmode="decimal" value="3" step="0.5"><span class="u">% / an</span></div></div>
+          <div class="f"><label for="env">Enveloppe ETF</label><div class="inp"><select id="env"><option value="pea">PEA puis CTO</option><option value="cto">CTO uniquement</option></select></div></div>
+          <div class="f"><label for="nbPea">Nombre de PEA</label><div class="inp"><select id="nbPea"><option value="1">1 (150 k€)</option><option value="2">2 (300 k€)</option></select></div></div>
+        </div>
+        <div class="tw"><table class="sc-table">
+          <thead><tr><th></th><th>Pessimiste</th><th>Central</th><th>Optimiste</th></tr></thead>
+          <tbody>
+            <tr><td>Prix immo / an</td><td><div class="inp"><input id="a0" type="number" step="0.1" value="-1"><span class="u">%</span></div></td><td><div class="inp"><input id="a1" type="number" step="0.1" value="1.5"><span class="u">%</span></div></td><td><div class="inp"><input id="a2" type="number" step="0.1" value="3"><span class="u">%</span></div></td></tr>
+            <tr><td>ETF World / an</td><td><div class="inp"><input id="r0" type="number" step="0.1" value="3"><span class="u">%</span></div></td><td><div class="inp"><input id="r1" type="number" step="0.1" value="6"><span class="u">%</span></div></td><td><div class="inp"><input id="r2" type="number" step="0.1" value="8.5"><span class="u">%</span></div></td></tr>
+            <tr><td>Loyers / an</td><td><div class="inp"><input id="l0" type="number" step="0.1" value="1.5"><span class="u">%</span></div></td><td><div class="inp"><input id="l1" type="number" step="0.1" value="2"><span class="u">%</span></div></td><td><div class="inp"><input id="l2" type="number" step="0.1" value="2.5"><span class="u">%</span></div></td></tr>
+            <tr><td>Vacance locative</td><td><div class="inp"><input id="v0" type="number" step="0.25" value="1.5"><span class="u">mois</span></div></td><td><div class="inp"><input id="v1" type="number" step="0.25" value="0.75"><span class="u">mois</span></div></td><td><div class="inp"><input id="v2" type="number" step="0.25" value="0.25"><span class="u">mois</span></div></td></tr>
+          </tbody></table></div>
+        <p class="hint">Hypothèses calées sur la recherche : en longue période, les prix des logements suivent à peu près les revenus (Friggit), d'où +1,5 %/an au central avec des prix déjà hauts ; les actions mondiales ont rapporté ~7 %/an nominal (Jordà et al.), ramené à 6 % net de frais vu les valorisations actuelles. Krach, correction immo et inflation partent du central. Fiscalité ETF française : 18,6 % sur les gains d'un PEA de plus de 5 ans, 31,4 % en CTO.</p>
+      </div>
+    </details>
+  </div>
+</div>
+</div>
+
+<div id="simu-p-ex" role="tabpanel" aria-labelledby="simu-t-ex" hidden>
+<div class="doc">
+  <nav class="toc" aria-label="Sommaire">
+    <span class="toc-t">Sommaire</span>
+    <button type="button" data-go="ex-q"><span>1</span>La question</button>
+    <button type="button" data-go="ex-opt"><span>2</span>Les trois options</button>
+    <button type="button" data-go="ex-bud"><span>3</span>Le budget commun</button>
+    <button type="button" data-go="ex-pat"><span>4</span>Le patrimoine net</button>
+    <button type="button" data-go="ex-cur"><span>5</span>Lire la courbe</button>
+    <button type="button" data-go="ex-sc"><span>6</span>Les six scénarios</button>
+    <button type="button" data-go="ex-no"><span>7</span>Ce qui n'est pas testé</button>
+  </nav>
+  <article class="read">
+    <div class="brief"><span class="brief-t">En bref</span><ol>
+      <li>On compare trois options avec <strong>le même budget chaque mois</strong>.</li>
+      <li>L'option la plus chère fixe ce budget ; les autres <strong>placent la différence en ETF</strong>.</li>
+      <li>On regarde <strong>ce qui te reste si tu soldes tout</strong>, dans six futurs possibles.</li></ol></div>
+
+    <section id="ex-q"><h2><span class="num">1</span>La question</h2>
+      <p class="lead">Avec le même argent chaque mois, laquelle des trois options te laisse le plus de patrimoine au bout de N années ?</p>
+      <p>Le simulateur ne compare pas une mensualité à un loyer. Il suit, mois par mois, tout ce qui sort de ta poche dans chaque cas, et ce que tu possèdes à la fin.</p>
+    </section>
+
+    <section id="ex-opt"><h2><span class="num">2</span>Les trois options</h2>
+      <div class="flows">
+        <div class="flow rp"><h3>Acheter et y vivre</h3><dl>
+          <dt>Ton apport</dt><dd>Part dans l'achat : frais, garantie, travaux, puis le reste réduit l'emprunt.</dd>
+          <dt>Chaque mois</dt><dd>Mensualité, assurance, taxe foncière, copro, entretien.</dd>
+          <dt>À la fin</dt><dd>Le logement, moins le crédit restant et les frais de revente.</dd></dl></div>
+        <div class="flow loc"><h3>Louer + ETF</h3><dl>
+          <dt>Ton apport</dt><dd>Placé en ETF World dès le premier jour.</dd>
+          <dt>Chaque mois</dt><dd>Ton loyer. La différence avec l'option la plus chère part en ETF.</dd>
+          <dt>À la fin</dt><dd>Le portefeuille ETF, après impôt sur les gains.</dd></dl></div>
+        <div class="flow inv"><h3>Louer + bien locatif</h3><dl>
+          <dt>Ton apport</dt><dd>Part dans un bien que tu loues à quelqu'un d'autre.</dd>
+          <dt>Chaque mois</dt><dd>Ton loyer, le crédit et les charges du bien, l'impôt sur les loyers, moins le loyer encaissé.</dd>
+          <dt>À la fin</dt><dd>Le bien net de dette, de frais et d'impôt, plus l'ETF éventuel.</dd></dl></div>
+      </div>
+    </section>
+
+    <section id="ex-bud"><h2><span class="num">3</span>Le budget commun</h2>
+      <div class="callout" id="exBudget"></div>
+    </section>
+
+    <section id="ex-pat"><h2><span class="num">4</span>Le patrimoine net</h2>
+      <p>C'est ce qui te resterait si tu soldais tout l'année indiquée :</p>
+      <div class="eq"><span class="plus">Valeur du bien</span><span class="op">−</span><span>frais de revente et pénalités</span><span class="op">−</span><span>crédit restant</span><span class="op">+</span><span class="plus">ETF</span><span class="op">−</span><span>impôt sur les gains</span></div>
+      <p>Les loyers versés, les intérêts, les charges et les frais ne reviennent jamais : ils ne comptent nulle part, dans aucune option. Sans revente (case « Je revends » décochée dans le détail), le bien est compté à sa valeur de marché.</p>
+    </section>
+
+    <section id="ex-cur"><h2><span class="num">5</span>Lire la courbe</h2>
+      <div class="tri">
+        <div><b>Au début</b><span>L'achat part de bas : les frais d'achat sont perdus dès le premier jour.</span></div>
+        <div><b>Ensuite</b><span>Le propriétaire rembourse du capital et profite de la hausse des prix ; le locataire fait fructifier son épargne.</span></div>
+        <div><b>Le croisement</b><span>Si la courbe verte passe au-dessus de la bleue, c'est le point mort : l'année où acheter devient gagnant.</span></div>
+      </div>
+      <p class="note" id="exCross"></p>
+    </section>
+
+    <section id="ex-sc"><h2><span class="num">6</span>Les six scénarios</h2>
+      <p>Personne ne connaît l'avenir. Chaque scénario fait tourner le même calcul avec une hypothèse différente. Si une option gagne presque partout, le résultat est solide ; si le gagnant change, ta décision dépend de ton pari sur l'avenir.</p>
+      <div class="sccards" id="exScen"></div>
+    </section>
+
+    <section id="ex-no"><h2><span class="num">7</span>Ce qui n'est pas testé</h2>
+      <div class="chips-list"><span>La valeur d'être chez soi</span><span>La liberté de déménager</span><span>Le risque d'un seul appartement</span><span>Un krach au pire moment de ta vie</span><span>Une hausse d'impôts future</span></div>
+      <p>Ces limites et les études derrière les hypothèses sont dans l'onglet <button type="button" class="linkbtn" data-tab="th">La recherche</button>.</p>
+    </section>
+  </article>
+</div>
+</div>
+
+<div id="simu-p-th" role="tabpanel" aria-labelledby="simu-t-th" hidden>
+<div class="doc">
+  <nav class="toc" aria-label="Sommaire">
+    <span class="toc-t">Sommaire</span>
+    <button type="button" data-go="th-p">Le principe</button>
+    <button type="button" data-go="th-f">La formule</button>
+    <button type="button" data-go="th-e">Les études</button>
+    <button type="button" data-go="th-l">Ce qui fait basculer</button>
+    <button type="button" data-go="th-lim">Les limites</button>
+    <button type="button" data-go="th-s">Sources des données</button>
+    <button type="button" data-go="th-g">Glossaire</button>
+  </nav>
+  <article class="read">
+    <div class="brief"><span class="brief-t">En bref</span><ol>
+      <li>Un propriétaire perd aussi de l'argent chaque mois : intérêts, charges, frais. On compare le loyer à <strong>cette perte</strong>, pas à la mensualité.</li>
+      <li>Le chiffre clé est <strong>le prix divisé par le loyer annuel</strong> : sous 20 ans, l'achat est souvent gagnant ; au-delà de 25, la location.</li>
+      <li>La recherche montre que louer et investir gagne souvent, <strong>à condition d'investir vraiment</strong> la différence.</li></ol></div>
+
+    <section id="th-p"><h2>Le principe</h2>
+      <p class="lead">« Payer un loyer, c'est jeter son argent » : seulement à moitié vrai.</p>
+      <p>Le propriétaire aussi dépense de l'argent qu'il ne reverra jamais : les intérêts du crédit, la taxe foncière, la copropriété, l'entretien, les frais d'achat et de revente. Il renonce aussi au rendement que son apport aurait produit placé. Seule la part de capital remboursée est de l'épargne.</p>
+      <p>Les économistes appellent cette perte le <strong>coût d'usage</strong> du logement. Poterba l'a formalisé en 1984 ; Himmelberg, Mayer et Sinai l'ont utilisé en 2005 pour juger si les prix sont justifiés par les loyers. C'est ce que calcule le face-à-face en haut du simulateur.</p>
+    </section>
+
+    <section id="th-f"><h2>La formule</h2>
+      <div class="eq vert">
+        <span>Prix × coût du capital <small>taux du crédit, rendement perdu sur l'apport</small></span>
+        <span><em>+</em> assurance, taxe foncière, copro, entretien</span>
+        <span><em>+</em> frais d'achat et de revente ÷ années de détention</span>
+        <span><em>−</em> prix × hausse attendue des prix</span>
+        <span class="res"><em>=</em> coût d'usage, à comparer au loyer</span>
+      </div>
+      <div class="tri">
+        <div><b>Sous 20 ans de loyer</b><span>Le prix est bas par rapport au loyer : l'achat a souvent l'avantage. Rome, Grenoble, Marseille.</span></div>
+        <div><b>20 à 25 ans</b><span>Ça se joue sur la durée, les taux et les charges. Lyon, Bordeaux, Madrid, Lisbonne.</span></div>
+        <div><b>Au-delà de 25 ans</b><span>Louer coûte moins cher chaque année. Versailles, Berlin.</span></div>
+      </div>
+      <p class="note">Repère populaire, la <a href="https://www.point2homes.com/news/tips-tricks/financial-tips/buying-vs-renting-the-5-rule.html">règle des 5 %</a> : si le loyer annuel est inférieur à 5 % du prix, louer est plus avantageux. Le seuil monte quand les taux montent.</p>
+    </section>
+
+    <section id="th-e"><h2>Ce que disent les études</h2>
+      <div class="stcards">
+        <div class="stc"><div class="kfig">≈ 7 %<small>/an réel</small></div><div class="stb"><b>Logement et actions rapportent autant sur 150 ans</b><span>Le logement est moins volatil, et son rendement vient surtout des loyers, pas de la hausse des prix.</span>
+          <details><summary>Source et limite</summary><p><a href="https://cepr.org/voxeu/columns/rate-return-everything">Jordà et al., The Rate of Return on Everything</a> · QJE 2019 · 16 pays, 1870-2015 · <a href="https://www.nber.org/system/files/working_papers/w24112/w24112.pdf">PDF</a></p><p>Limite : indices nationaux, en grande partie avant frais et entretien. Un indice est diversifié, un appartement non.</p></details></div></div>
+        <div class="stc"><div class="kfig">2,3 %<small>/an réel net</small></div><div class="stb"><b>Une fois tous les coûts déduits, l'immobilier rapporte bien moins</b><span>Entretien, gestion et vacance pèsent lourd sur la durée.</span>
+          <details><summary>Source et limite</summary><p><a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3407236">Chambers, Spaenjers et Steiner</a> · Review of Financial Studies 2021 · comptes réels des collèges d'Oxford et Cambridge, 1901-1983</p><p>Limite : propriétaires institutionnels, période ancienne, loyers parfois encadrés.</p></details></div></div>
+        <div class="stc"><div class="kfig">65-75 %<small>des périodes</small></div><div class="stb"><b>Louer et investir la différence bat l'achat le plus souvent</b><span>Surtout quand les loyers sont bas face aux prix et les taux élevés. Mais l'avantage disparaît si le locataire dépense ce qu'il économise.</span>
+          <details><summary>Source et limite</summary><p><a href="https://gwern.net/doc/economics/georgism/2012-beracha.pdf">Beracha et Johnson, Lessons from Over 30 Years of Buy versus Rent Decisions</a> · Real Estate Economics 2012 · États-Unis, 1978-2009</p><p>Limite : marché américain, intérêts déductibles, résultats calculés après coup.</p></details></div></div>
+        <div class="stc"><div class="kfig">Taux ↑<small>coût d'usage ↑</small></div><div class="stb"><b>Un prix élevé n'est pas forcément une bulle</b><span>Il se justifie quand les taux sont bas. Quand ils remontent, comme en 2026, les mêmes prix deviennent difficiles à justifier par les loyers.</span>
+          <details><summary>Source et limite</summary><p><a href="https://www.aeaweb.org/articles?id=10.1257/089533005775196769">Himmelberg, Mayer et Sinai</a> · Journal of Economic Perspectives 2005 · <a href="https://www.nber.org/papers/w11643">version NBER</a></p><p>Limite : suppose des anticipations de prix raisonnables, rarement le cas au sommet d'un cycle.</p></details></div></div>
+        <div class="stc"><div class="kfig">+55 %<small>vs tendance</small></div><div class="stb"><b>Les prix français restent très au-dessus des revenus</b><span>Pendant des décennies, les prix ont suivi les revenus. Depuis 2000, ils ont presque doublé par rapport à eux, alors que les loyers les ont suivis.</span>
+          <details><summary>Source et limite</summary><p><a href="https://www.igedd.developpement-durable.gouv.fr/prix-immobilier-evolution-a-long-terme-a1048.html?lang=fr">Jacques Friggit, IGEDD</a> · <a href="https://www.meilleurescpi.com/actualites/immobilier-le-marche-reprend-son-souffle-mais-les-prix-refusent-de-redescendre/">chiffre T1 2026</a></p><p>Limite : ne dit ni quand ni comment l'écart se résorbe ; moyenne nationale.</p></details></div></div>
+      </div>
+    </section>
+
+    <section id="th-l"><h2>Ce qui fait basculer le résultat</h2>
+      <div class="vs2">
+        <div class="col buy"><span class="col-t">Pousse vers l'achat</span>
+          <div><b>Loyers élevés par rapport aux prix</b><span>Le loyer évité est le vrai rendement de ta résidence principale.</span></div>
+          <div><b>Longue durée de détention</b><span>Un aller-retour coûte 7 à 18 % du prix selon le pays. Sous 7-8 ans, l'achat gagne rarement.</span></div>
+          <div><b>Inflation</b><span>Avec un taux fixe, la dette fond pendant que loyers et prix montent.</span></div>
+          <div><b>Peu de discipline d'épargne</b><span>Le crédit force à épargner ; sans lui, l'argent économisé se dépense.</span></div></div>
+        <div class="col rent"><span class="col-t">Pousse vers la location</span>
+          <div><b>Prix élevés par rapport aux loyers</b><span>Au-delà de 25 ans de loyer, posséder coûte plus cher que louer chaque année.</span></div>
+          <div><b>Taux de crédit élevés</b><span>À 3,6 % en France et 6 % à Londres, emprunter coûte presque autant qu'un ETF rapporte.</span></div>
+          <div><b>Mobilité</b><span>Revendre tôt fait perdre les frais d'achat et de revente.</span></div>
+          <div><b>Prix déjà hauts</b><span>Une correction vers les revenus pèserait sur le propriétaire.</span></div></div>
+      </div>
+      <p class="note">La fiscalité joue dans les deux sens : la plus-value d'une résidence principale est exonérée, les gains d'ETF et les loyers d'un bien locatif sont taxés.</p>
+    </section>
+
+    <section id="th-lim"><h2>Les limites du simulateur</h2>
+      <div class="limgrid">
+        <div><b>Chocs simplifiés</b><span>Un seul choc à la fois, à une date fixe.</span></div>
+        <div><b>Moyennes de ville</b><span>Un quartier peut s'écarter de 30 % : entre l'annonce que tu regardes.</span></div>
+        <div><b>Un seul bien</b><span>La faible volatilité mesurée vaut pour des indices, pas pour un appartement.</span></div>
+        <div><b>Étranger</b><span>Frais, taux et taxes locaux, mais fiscalité ETF et loyers française. Londres converti à 1 £ = 1,1727 €.</span></div>
+        <div><b>Fiscalité simplifiée</b><span>Tranche fixe, pas de quotient familial, de prêt à taux zéro ni de statut du bailleur privé.</span></div>
+        <div><b>Euros courants</b><span>Pas corrigé de l'inflation ; les comparaisons restent valables.</span></div>
+      </div>
+      <p class="note">Outil pédagogique : il éclaire une décision, il ne la prend pas à ta place.</p>
+    </section>
+
+    <section id="th-s"><h2>Sources des données de marché</h2>
+      <div class="srcgrid">
+        <div><b>France</b><span><a href="https://www.meilleursagents.com/prix-immobilier/">MeilleursAgents</a> (prix et loyers HC, 1er oct. 2026), recoupés avec <a href="https://www.efficity.com/prix-immobilier-m2/v_paris_75/">efficity</a>, <a href="https://www.pap.fr/vendeur/prix-m2/versailles-78000-g39053">PAP</a> et les annonces <a href="https://www.pap.fr/annonce/locations-appartement-paris-75-g439-a-partir-de-70-m2-tri-prix-asc">PAP</a> ; taxe foncière <a href="https://www.atlascommunal.fr/taxe-fonciere/">Atlas Communal</a> ; taux <a href="https://www.pretto.fr/taux-immobilier/historique-taux-immobilier/2026/analyse-taux-immobilier-septembre-2026/">Pretto</a> ; copro <a href="https://www.comete.immo/journal/charges-copropriete-paris-achat">Comète</a>.</span></div>
+        <div><b>Espagne, Portugal, Italie</b><span><a href="https://www.idealista.com/sala-de-prensa/informes-precio-vivienda/venta/madrid-comunidad/madrid-provincia/madrid/">idealista</a>, <a href="https://www.fotocasa.es/indice-precio-vivienda/barcelona-capital/todas-las-zonas">Fotocasa</a>, <a href="https://www.immobiliare.it/en/mercato-immobiliare/lombardia/milano/">Immobiliare.it</a>.</span></div>
+        <div><b>Londres, Berlin, Amsterdam, Bruxelles</b><span><a href="https://www.plumplot.co.uk/London-house-prices-per-square-metre.html">Land Registry</a>, <a href="https://www.numbeo.com/property-investment/in/London">Numbeo</a>, <a href="https://www.immowelt.de/immobilienpreise/berlin">Immowelt</a>, <a href="https://guthmann.estate/en/market-intelligence/berlin/">Guthmann</a>, <a href="https://www.huizenzoeker.nl/woningmarkt/noord-holland/amsterdam/amsterdam/">Huizenzoeker</a>, <a href="https://www.pararius.nl/nieuws/verkoop-van-huurwoningen-breidt-zich-uit-naar-hogere-segmenten">Pararius</a>.</span></div>
+        <div><b>Frais d'achat</b><span><a href="https://www.gov.uk/stamp-duty-land-tax/residential-property-rates">GOV.UK</a>, <a href="https://www.notaire.be/immobilier/acheter-et-vendre-un-bien-immobilier/les-frais-lies-lachat/droits-denregistrement-reduction-et-abattement-bruxelles">notaire.be</a>, <a href="https://www.von-poll.com/de/kaufnebenkosten/berlin">von Poll</a>, <a href="https://www.worrelljetten.nl/nieuws/overdrachtsbelasting-drie-tarieven-en-hogere-startersvrijstelling-in-2026/">Pays-Bas 2026</a>.</span></div>
+      </div>
+      <p class="note">Loyers de Londres et Bruxelles, taxes foncières hors France et charges de copro hors Paris : estimations, signalées dans le simulateur.</p>
+    </section>
+
+    <section id="th-g"><h2>Glossaire</h2>
+      <dl class="glo">
+        <dt>Coût d'usage</dt><dd>Ce que coûte chaque année le fait d'être propriétaire, hors remboursement du capital.</dd>
+        <dt>Prix / loyer</dt><dd>Nombre d'années de loyer pour payer le prix.</dd>
+        <dt>Rendement brut</dt><dd>Loyer annuel divisé par le prix.</dd>
+        <dt>TMI</dt><dd>Tranche marginale d'imposition, appliquée aux loyers.</dd>
+        <dt>LMNP</dt><dd>Loueur en meublé non professionnel ; au réel, permet d'amortir le bien.</dd>
+        <dt>HCSF</dt><dd>En France, endettement plafonné à 35 % des revenus.</dd>
+        <dt>PEA</dt><dd>Après 5 ans, 18,6 % de prélèvements sociaux sur les gains.</dd>
+      </dl>
+    </section>
+  </article>
+</div>
+</div>
+</div>

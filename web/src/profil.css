@@ -1,0 +1,45 @@
+/* Profil : état de remplissage en tête, puis un panneau par bloc, barre d'enregistrement collée en bas. */
+#view-profil .profil{display:flex;flex-direction:column;gap:18px}
+#view-profil .pf-status{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px 28px;align-items:start}
+#view-profil .pf-score{display:flex;flex-direction:column;gap:8px}
+#view-profil .pf-big{font:800 clamp(28px,5vw,38px)/1 var(--f-display);letter-spacing:-.01em}
+#view-profil .pf-bar{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
+#view-profil .pf-bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+#view-profil .pf-recap{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+#view-profil .pf-kpi{background:var(--sunk);border-radius:var(--radius-sm);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+#view-profil .pf-kpi span{font-size:12px;color:var(--muted)}
+#view-profil .pf-kpi b{font:500 17px var(--f-num);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+#view-profil .pf-kpi em{font-style:normal;font-size:11.5px;color:var(--muted)}
+#view-profil .pf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 24px}
+#view-profil .pf-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+#view-profil .pf-field>.lbl{font-size:12px;color:var(--muted);font-weight:600}
+#view-profil .pf-people{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+#view-profil .pf-person{display:flex;flex-direction:column;gap:14px;padding:14px;border:1px solid var(--line);border-radius:var(--radius);min-width:0}
+#view-profil .pf-person h3{font:700 15px var(--f-display);margin:0}
+#view-profil .pf-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+#view-profil .money{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden;min-width:0}
+#view-profil .money:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+#view-profil .money input,#view-profil .money select{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:500 15px var(--f-num);padding:8px 10px;font-variant-numeric:tabular-nums;outline:none}
+#view-profil .money select{flex:0 1 auto;font:600 12.5px var(--f-body);color:var(--accent);border-left:1px solid var(--line);cursor:pointer}
+#view-profil .money .u{display:flex;align-items:center;padding-right:10px;color:var(--muted);font:12px var(--f-num);white-space:nowrap}
+#view-profil select.plain,#view-profil input.plain{font:14px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px 10px;width:100%;min-width:0}
+#view-profil .chk{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
+#view-profil .chk input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+#view-profil .pf-rows{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+#view-profil .pf-row{display:grid;grid-template-columns:minmax(150px,1.4fr) repeat(auto-fit,minmax(118px,1fr)) auto;gap:10px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+#view-profil .pf-row .pf-field>.lbl{font-size:11.5px}
+#view-profil .pf-row .del{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:var(--radius-sm);padding:8px 10px;cursor:pointer;font:600 12px var(--f-body)}
+#view-profil .pf-row .del:hover{color:var(--crit);border-color:var(--crit)}
+#view-profil .pf-row .pf-note{grid-column:1/-1;font-size:12px;color:var(--warn)}
+#view-profil .pf-empty{font-size:13px;color:var(--muted);padding:12px;border:1px dashed var(--line2);border-radius:var(--radius)}
+#view-profil .btn{font:600 13px var(--f-body);border-radius:var(--radius-sm);padding:9px 14px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer;align-self:flex-start}
+#view-profil .btn.ghost{background:transparent;color:var(--accent)}
+#view-profil .btn:disabled{opacity:.5;cursor:default}
+#view-profil .pf-save{position:sticky;bottom:0;z-index:10;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px 16px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));margin-inline:-16px;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -6px 18px rgba(0,0,0,.06)}
+#view-profil .pf-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+#view-profil .pf-msgs{display:flex;flex-direction:column;gap:4px;font-size:13px;min-width:0;flex:1 1 260px}
+#view-profil .pf-msgs .err{color:var(--crit)}
+#view-profil .pf-msgs .warn{color:var(--warn)}
+#view-profil .pf-msgs .ok{color:var(--good)}
+@media (max-width:760px){#view-profil .pf-status{grid-template-columns:minmax(0,1fr)}#view-profil .pf-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#view-profil .pf-row .pf-wide{grid-column:1/-1}}
+@media (max-width:420px){#view-profil .pf-2{grid-template-columns:minmax(0,1fr)}#view-profil .pf-people{grid-template-columns:minmax(0,1fr)}}
