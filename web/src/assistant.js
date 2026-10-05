@@ -100,19 +100,22 @@
       personnes[k] = o;
     });
 
+    /* Un champ absent de la réponse reste absent (null) : la fusion ne l'écrase pas. Les valeurs par défaut
+       ne s'appliquent qu'à la création d'une ligne (voir merge). */
     const biens = (Array.isArray(raw.biens) ? raw.biens : []).map((b, i) => {
       const nom = String(b.nom || "Bien " + (i + 1)).slice(0, 60);
-      const o = { nom, usage: usage(b.usage), valeur: num(b.valeur) ?? 0, part_p1: num(pick(b, "part_p1", "partP1", "quote_part")) ?? 100,
-        crd: num(pick(b, "crd", "reste_du", "capital_restant")) ?? 0, mensualite: num(b.mensualite) ?? 0, loyer: num(b.loyer) ?? 0 };
-      if (o.part_p1 < 0 || o.part_p1 > 100) erreurs.push(nom + " : la quote-part doit être comprise entre 0 et 100 %.");
-      ["valeur", "crd", "mensualite", "loyer"].forEach(k => { if (o[k] < 0) erreurs.push(nom + " : montant négatif (" + k + ")."); });
-      if (o.crd > o.valeur && o.valeur > 0) avertissements.push(nom + " : le reste à rembourser dépasse la valeur du bien.");
+      const o = { nom, usage: b.usage != null ? usage(b.usage) : null, valeur: num(b.valeur), part_p1: num(pick(b, "part_p1", "partP1", "quote_part")),
+        crd: num(pick(b, "crd", "reste_du", "capital_restant")), mensualite: num(b.mensualite), loyer: num(b.loyer) };
+      if (o.part_p1 != null && (o.part_p1 < 0 || o.part_p1 > 100)) erreurs.push(nom + " : la quote-part doit être comprise entre 0 et 100 %.");
+      ["valeur", "crd", "mensualite", "loyer"].forEach(k => { if (o[k] != null && o[k] < 0) erreurs.push(nom + " : montant négatif (" + k + ")."); });
+      if (o.crd != null && o.valeur != null && o.crd > o.valeur && o.valeur > 0) avertissements.push(nom + " : le reste à rembourser dépasse la valeur du bien.");
       return o;
     });
     const credits = (Array.isArray(raw.credits) ? raw.credits : []).map((c, i) => {
       const nom = String(c.nom || "Crédit " + (i + 1)).slice(0, 60);
-      const o = { nom, owner: person(pick(c, "owner", "titulaire")), crd: num(pick(c, "crd", "reste_du")) ?? 0, mensualite: num(c.mensualite) ?? 0 };
-      if (o.crd < 0 || o.mensualite < 0) erreurs.push(nom + " : montant négatif.");
+      const ow = pick(c, "owner", "titulaire");
+      const o = { nom, owner: ow != null ? person(ow) : null, crd: num(pick(c, "crd", "reste_du")), mensualite: num(c.mensualite) };
+      if ((o.crd != null && o.crd < 0) || (o.mensualite != null && o.mensualite < 0)) erreurs.push(nom + " : montant négatif.");
       return o;
     });
     const data = { foyer, personnes };
@@ -154,6 +157,40 @@
     return parseProfil(raw);
   }
 
+
+  /* ---------- fusion d'une réponse dans un profil existant ---------- */
+  const LABELS = { adultes: "Adultes", enfants: "Enfants", enfants14: "Enfants de 14 ans ou plus", union: "Situation du couple", age: "Âge", tmi: "Tranche d'imposition",
+    nom: "prénom", salaire: "salaire", salaireUnite: "unité du salaire", statut: "statut", csp: "catégorie", essai: "période d'essai", autresRevenus: "autres revenus",
+    usage: "usage", valeur: "valeur", part_p1: "quote-part", crd: "reste à rembourser", mensualite: "mensualité", loyer: "loyer", owner: "titulaire" };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const rid = () => Math.random().toString(36).slice(2, 10);
+  function merge(current, data) {
+    const out = JSON.parse(JSON.stringify(current || {})), changes = [];
+    out.foyer = out.foyer || {}; out.personnes = out.personnes || {}; out.biens = out.biens || []; out.credits = out.credits || [];
+    const put = (obj, k, v, label) => { if (v == null || same(obj[k], v)) return; changes.push({ kind: "modif", label, avant: obj[k] ?? null, apres: v }); obj[k] = v; };
+    Object.entries((data && data.foyer) || {}).forEach(([k, v]) => put(out.foyer, k, v, LABELS[k] || k));
+    Object.entries((data && data.personnes) || {}).forEach(([pk, pv]) => {
+      const p = out.personnes[pk] = out.personnes[pk] || {};
+      const who = p.nom || pv.nom || (pk === "p1" ? "Personne 1" : "Personne 2");
+      Object.entries(pv || {}).forEach(([k, v]) => put(p, k, v, who + " : " + (LABELS[k] || k)));
+    });
+    const lines = (key, defaults) => {
+      const rows = data && data[key]; if (!Array.isArray(rows)) return;
+      rows.forEach(r => {
+        const hit = out[key].find(x => low(x.nom) === low(r.nom));
+        if (hit) Object.entries(r).forEach(([k, v]) => { if (k !== "nom") put(hit, k, v, hit.nom + " : " + (LABELS[k] || k)); });
+        else {
+          const row = Object.assign({ id: rid() }, defaults);
+          Object.entries(r).forEach(([k, v]) => { if (v != null) row[k] = v; });
+          out[key].push(row); changes.push({ kind: "ajout", label: (key === "biens" ? "Nouveau bien : " : "Nouveau crédit : ") + row.nom, avant: null, apres: row });
+        }
+      });
+    };
+    lines("biens", { usage: "rp", valeur: 0, part_p1: +out.foyer.adultes >= 2 ? 50 : 100, crd: 0, mensualite: 0, loyer: 0 });
+    lines("credits", { owner: "commun", crd: 0, mensualite: 0 });
+    return { profil: out, changes };
+  }
+
   /* ---------- prompts ---------- */
   const COMMON = "Règles : n'invente aucune valeur. Si tu ne connais pas une information, demande-la-moi d'abord ou mets null. " +
     "Les montants sont en euros, sans symbole. Réponds avec UN SEUL bloc ```json, sans commentaire à l'intérieur.";
@@ -181,5 +218,5 @@
   };
   const prompt = kind => PROMPTS[kind] || PROMPTS.profil;
 
-  return { num, extract, parse, prompt };
+  return { num, extract, parse, merge, prompt };
 });

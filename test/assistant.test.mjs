@@ -104,3 +104,38 @@ test("prompt : contient le schéma et la consigne de ne rien inventer", () => {
     assert.match(p, /n'invente/i);
   }
 });
+
+test("fusion : champs remplacés, biens appariés par nom, changements lisibles", () => {
+  const cur = {
+    foyer: { adultes: 2, enfants: 0, age: "a30", tmi: 11 },
+    personnes: { p1: { nom: "Camille", salaire: 2800, salaireUnite: "nm", statut: "cadre" }, p2: { nom: "Sam", salaire: 2300 } },
+    biens: [{ id: "b1", nom: "Appartement", usage: "rp", valeur: 240000, part_p1: 50, crd: 150000, mensualite: 820, loyer: 0 }],
+    credits: [],
+  };
+  const { data } = A.parse(JSON.stringify({
+    foyer: { tmi: 30, age: 34 },
+    personnes: { p1: { salaire: "3 000" } },
+    biens: [{ nom: "appartement", valeur: 250000 }, { nom: "Studio Lyon", usage: "locatif", valeur: 120000, part_p1: 100, loyer: 550 }],
+  }), "profil");
+  const r = A.merge(cur, data);
+  assert.equal(r.profil.foyer.tmi, 30);
+  assert.equal(r.profil.foyer.adultes, 2);
+  assert.equal(r.profil.personnes.p1.salaire, 3000);
+  assert.equal(r.profil.personnes.p1.statut, "cadre");
+  assert.equal(r.profil.personnes.p2.salaire, 2300);
+  assert.equal(r.profil.biens.length, 2);
+  assert.equal(r.profil.biens[0].id, "b1");
+  assert.equal(r.profil.biens[0].valeur, 250000);
+  assert.equal(r.profil.biens[0].crd, 150000);
+  assert.ok(r.profil.biens[1].id);
+  const labels = r.changes.map(c => c.label);
+  assert.ok(labels.includes("Tranche d'imposition"));
+  assert.ok(r.changes.some(c => c.kind === "ajout" && /Studio Lyon/.test(c.label)));
+  assert.ok(!labels.includes("Âge"), "âge inchangé (a30) : pas de changement listé");
+  assert.equal(cur.foyer.tmi, 11, "l'entrée n'est pas modifiée");
+});
+
+test("fusion : réponse vide → aucun changement", () => {
+  const r = A.merge({ foyer: { adultes: 1 }, personnes: {}, biens: [], credits: [] }, { foyer: {}, personnes: {} });
+  assert.deepEqual(r.changes, []);
+});
