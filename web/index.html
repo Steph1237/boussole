@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Boussole</title>
-<meta name="description" content="Pilotez votre patrimoine, sans tableur : patrimoine suivi chaque soir, rang parmi les Français, acheter ou placer. Données privées.">
+<meta name="description" content="Pilotez votre patrimoine, sans tableur : patrimoine suivi chaque soir, rang parmi les Français, acheter, louer ou placer. Outil gratuit, données privées.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -13,10 +13,9 @@
   --bg:#F5F6F3; --surface:#FFFFFF; --sunk:#ECEEEA; --ink:#18222C; --muted:#5B6670; --line:#D9DDD6; --line2:#C6CCC3;
   --accent:#1F6F5C; --accent-soft:#DCEBE5; --good:#2E7D4F; --warn:#A8690F; --crit:#B42318;
   --good-soft:#E3F1E8; --warn-soft:#F8EBD3; --crit-soft:#F9E0DC;
-  --s1:#1F6F5C; --s2:#3E5C99; --s3:#B0772B; --s4:#7A4E8C; --s5:#2F8C9C; --s6:#9C4A3A; --s7:#6D7F36; --s8:#8A8F96; --s9:#C2A23A;
-  --q0:#D5E8DF; --q1:#B9D8CA; --q2:#9CC7B4; --q3:#7FB59E; --q4:#62A389; --q5:#479073; --q6:#317C60; --q7:#1F664D; --q8:#124F3A;
+  --s1:#1F6F5C; --s2:#3E5C99; --s3:#B0772B; --s4:#7A4E8C;
+  --q4:#62A389;
   --me:#D9480F; --me-ink:#FFFFFF;
-  --sel-bg:#18222C; --sel-ink:#FFFFFF;
   --f-display:"Schibsted Grotesk",ui-sans-serif,system-ui,sans-serif;
   --f-body:"Public Sans",ui-sans-serif,system-ui,sans-serif;
   --f-num:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -27,19 +26,17 @@
   --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942; --line2:#3B4853;
   --accent:#5FBF9F; --accent-soft:#1E3A33; --good:#6CC08F; --warn:#E0A849; --crit:#F0806F;
   --good-soft:#1D3527; --warn-soft:#3A2E17; --crit-soft:#3D1F1B;
-  --s1:#5FBF9F; --s2:#7E9BDB; --s3:#DDA55A; --s4:#B88BCB; --s5:#5CC0CF; --s6:#DB8574; --s7:#A9BC6A; --s8:#9AA3AB; --s9:#E2C660;
-  --q0:#1C3029; --q1:#213D33; --q2:#28503F; --q3:#30654E; --q4:#3A7B5F; --q5:#4A9272; --q6:#5FAA88; --q7:#82C3A5; --q8:#B0DDC8;
+  --s1:#5FBF9F; --s2:#7E9BDB; --s3:#DDA55A; --s4:#B88BCB;
+  --q4:#3A7B5F;
   --me:#FF8A5B; --me-ink:#2A0D00;
-  --sel-bg:#E6EAE7; --sel-ink:#12181D;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942; --line2:#3B4853;
   --accent:#5FBF9F; --accent-soft:#1E3A33; --good:#6CC08F; --warn:#E0A849; --crit:#F0806F;
   --good-soft:#1D3527; --warn-soft:#3A2E17; --crit-soft:#3D1F1B;
-  --s1:#5FBF9F; --s2:#7E9BDB; --s3:#DDA55A; --s4:#B88BCB; --s5:#5CC0CF; --s6:#DB8574; --s7:#A9BC6A; --s8:#9AA3AB; --s9:#E2C660;
-  --q0:#1C3029; --q1:#213D33; --q2:#28503F; --q3:#30654E; --q4:#3A7B5F; --q5:#4A9272; --q6:#5FAA88; --q7:#82C3A5; --q8:#B0DDC8;
+  --s1:#5FBF9F; --s2:#7E9BDB; --s3:#DDA55A; --s4:#B88BCB;
+  --q4:#3A7B5F;
   --me:#FF8A5B; --me-ink:#2A0D00;
-  --sel-bg:#E6EAE7; --sel-ink:#12181D;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -52,30 +49,36 @@ body{
 }
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+[hidden]{display:none!important}
 
-.page{min-height:100svh;display:flex;flex-direction:column;max-width:1180px;margin:0 auto;padding:20px 16px 28px}
-.top{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:32px}
+.page{max-width:1180px;margin:0 auto;padding:20px 16px 28px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:40px}
 .brand{display:inline-flex;align-items:center;gap:9px;font:700 14px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .brand svg{width:20px;height:20px;flex:none}
-.tag{font:600 11px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:6px 10px;white-space:nowrap}
+.top-link{font:600 14px var(--f-body);color:var(--accent);text-decoration:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;cursor:pointer;white-space:nowrap}
+.top-link:hover{border-color:var(--accent)}
 
-.hero{flex:1;display:grid;grid-template-columns:minmax(0,1fr);gap:28px;align-items:center;padding-block:clamp(36px,8vh,88px)}
+.notice{margin:16px 0 0;padding:12px 14px;border-radius:var(--radius-sm);background:var(--good-soft);font-size:14px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.notice button{border:0;background:none;color:var(--muted);font:400 20px/1 var(--f-body);cursor:pointer;padding:0 4px}
+
+.hero{display:grid;grid-template-columns:minmax(0,1fr);gap:32px;align-items:center;padding-block:clamp(36px,8vh,88px) clamp(28px,6vh,64px)}
 @media (min-width:880px){.hero{grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:48px}}
-.eyebrow{font:600 12px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 16px}
 h1{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,6.2vw,64px);line-height:1.02;letter-spacing:-.025em;margin:0;text-wrap:balance;max-width:14ch}
-.lede{font-size:clamp(16px,1.5vw,19px);line-height:1.55;color:var(--ink);margin:22px 0 0;max-width:52ch}
-.lede b{font-weight:600}
-.soon{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:28px 0 0;font-size:14px;color:var(--muted)}
-.soon .dot{width:8px;height:8px;border-radius:50%;background:var(--warn);flex:none;box-shadow:0 0 0 4px var(--warn-soft)}
-.soon a{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
-.soon a:hover{text-decoration-thickness:2px}
+.lede{font-size:clamp(16px,1.5vw,19px);line-height:1.55;margin:22px 0 0;max-width:52ch}
+.ctas{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0 0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:600 15px/1.2 var(--f-body);border-radius:var(--radius-sm);padding:12px 18px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);text-decoration:none;cursor:pointer;min-height:46px}
+.btn:hover{filter:brightness(1.06)}
+.btn.ghost{background:var(--surface);color:var(--accent);border-color:var(--line2)}
+.btn.ghost:hover{border-color:var(--accent);filter:none}
+.btn:disabled{opacity:.55;cursor:default;filter:none}
+.fine{margin:14px 0 0;font-size:13px;color:var(--muted)}
 
 /* vignette : un registre de banquier, en silhouette */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0;box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px -24px rgba(24,34,44,.25)}
 .card .label{font:600 11px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .card .total{font:700 clamp(26px,3vw,34px)/1.1 var(--f-display);letter-spacing:-.02em;margin-top:6px}
 .card .total small{font:500 13px var(--f-num);color:var(--good);margin-left:8px;letter-spacing:0}
-.bars{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;align-items:end;height:72px}
+.bars{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;align-items:end;height:72px;margin-top:18px}
 .bars i{display:block;border-radius:3px 3px 0 0;background:var(--q4);min-height:6px}
 .bars i.me{background:var(--me);position:relative}
 .bars i.me::after{content:"vous";position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);font:600 10px/1 var(--f-body);color:var(--me);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
@@ -86,8 +89,61 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,6.2vw,64px)
 .row .n span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .v{font-family:var(--f-num);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
 
-.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 16px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+section.block{padding-block:clamp(28px,5vh,48px);border-top:1px solid var(--line)}
+h2{font:700 clamp(22px,2.6vw,28px)/1.15 var(--f-display);letter-spacing:-.015em;margin:0 0 20px;text-wrap:balance}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
+.feat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.feat .ico{width:34px;height:34px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.feat .ico svg{width:18px;height:18px}
+.feat h3{font:700 17px/1.25 var(--f-display);margin:4px 0 0}
+.feat p{margin:0;font-size:15px;color:var(--muted)}
+.assist{margin-top:12px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+@media (min-width:780px){.assist{grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:28px;align-items:start}}
+.assist h3{font:700 19px/1.25 var(--f-display);margin:0 0 8px}
+.assist p{margin:0;color:var(--muted);font-size:15px}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;font-size:15px;counter-increment:s}
+.steps li::before{content:counter(s);width:26px;height:26px;border-radius:50%;background:var(--sunk);font:600 13px/26px var(--f-num);text-align:center;color:var(--ink)}
+.steps b{font-weight:600}
+.privacy{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+@media (min-width:880px){.privacy{grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:48px}}
+.privacy p{margin:0;color:var(--muted);max-width:52ch}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.checks li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;font-size:15px}
+.checks li svg{width:20px;height:20px;color:var(--good);margin-top:2px}
+.checks a{color:var(--accent);font-weight:600;text-underline-offset:3px;overflow-wrap:anywhere}
+
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 16px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin-top:8px}
+.foot nav{display:flex;flex-wrap:wrap;gap:6px 16px}
 .foot a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+
+/* panneau de connexion */
+dialog.auth{width:min(420px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);box-shadow:0 24px 64px -24px rgba(0,0,0,.45)}
+dialog.auth::backdrop{background:rgba(18,24,29,.55)}
+.auth-box{padding:18px 16px 16px;display:flex;flex-direction:column;gap:14px}
+.auth-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.auth-head h2{margin:0;font:700 17px/1.2 var(--f-display);letter-spacing:0;display:flex;align-items:center;gap:9px}
+.auth-head h2 svg{width:20px;height:20px;flex:none}
+.x{border:0;background:transparent;color:var(--muted);font:400 24px/1 var(--f-body);width:36px;height:36px;border-radius:var(--radius-sm);cursor:pointer;flex:none}
+.x:hover{background:var(--sunk);color:var(--ink)}
+.tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--sunk);border-radius:8px;padding:3px;gap:3px}
+.tabs button{border:0;background:transparent;color:var(--muted);font:600 14px var(--f-body);padding:9px 10px;border-radius:6px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.auth form{display:flex;flex-direction:column;gap:12px;margin:0}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:13px;font-weight:600;color:var(--muted)}
+.fld input{font:16px var(--f-body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;width:100%}
+.fld input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.fld small{font-size:12px;color:var(--muted)}
+.auth .btn{width:100%}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.msg{margin:0;padding:10px 12px;border-radius:var(--radius-sm);font-size:14px}
+.msg.err{background:var(--crit-soft)}
+.msg.ok{background:var(--good-soft)}
+.msg:empty{display:none}
+.hint{margin:0;font-size:12px;color:var(--muted)}
+.g{width:18px;height:18px;flex:none}
 </style>
 </head>
 <body>
@@ -97,41 +153,141 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,6.2vw,64px)
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5 13.4 13.4 8.5 15.5l2.1-4.9z" fill="var(--me)"/><path d="M10.6 10.6 8.5 15.5l4.9-2.1" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
       Boussole
     </a>
-    <span class="tag">Bientôt</span>
+    <a class="top-link" href="#connexion" data-auth="signin" id="topLink">Se connecter</a>
   </header>
 
-  <main class="hero">
-    <section>
-      <p class="eyebrow">Boussole</p>
-      <h1>Pilotez votre patrimoine, sans tableur</h1>
-      <p class="lede">Votre patrimoine <b>suivi chaque soir</b>, votre <b>rang parmi les Français</b>, et la réponse à la question qui compte : <b>acheter ou placer</b>&nbsp;? Vos données restent <b>privées</b>, dans un espace qui n'appartient qu'à vous.</p>
-      <p class="soon"><span class="dot" aria-hidden="true"></span>Ouverture prochaine · <a href="https://github.com/Steph1237/boussole" rel="noopener">code source sur GitHub</a></p>
+  <div class="notice" id="notice" role="status" hidden><span id="noticeText"></span><button type="button" aria-label="Fermer le message" id="noticeClose">×</button></div>
+
+  <main>
+    <section class="hero" aria-labelledby="h-hero">
+      <div>
+        <h1 id="h-hero">Pilotez votre patrimoine, sans tableur</h1>
+        <p class="lede">Boussole rassemble vos placements, votre immobilier et vos revenus au même endroit. Les cours sont mis à jour chaque soir, vous voyez où vous vous situez parmi les ménages français, et vous comparez acheter, louer ou placer avec vos propres chiffres.</p>
+        <div class="ctas" id="ctasOut">
+          <a class="btn" href="app.html?demo">Essayer sans compte</a>
+          <a class="btn ghost" href="#connexion" data-auth="signup">Créer mon compte</a>
+        </div>
+        <div class="ctas" id="ctasIn" hidden>
+          <a class="btn" href="app.html">Ouvrir mon espace</a>
+          <a class="btn ghost" href="compte.html">Mon compte</a>
+        </div>
+        <p class="fine">Gratuit, sans publicité. La démo utilise un foyer d'exemple ; rien n'y est enregistré.</p>
+      </div>
+
+      <aside class="card" aria-label="Aperçu de l'application, chiffres d'exemple">
+        <div>
+          <div class="label">Patrimoine financier · foyer</div>
+          <div class="total">223 357 €<small>+1,8 % ce mois</small></div>
+        </div>
+        <div>
+          <div class="label">Rang parmi les ménages</div>
+          <div class="bars" aria-hidden="true">
+            <i style="height:18%"></i><i style="height:26%"></i><i style="height:34%"></i><i style="height:44%"></i><i style="height:55%"></i><i style="height:66%"></i><i class="me" style="height:78%"></i><i style="height:88%"></i><i style="height:100%"></i>
+          </div>
+        </div>
+        <div class="rows">
+          <div class="row"><div class="n"><i style="background:var(--s1)"></i><span>Monde</span></div><div class="v">38 %</div></div>
+          <div class="row"><div class="n"><i style="background:var(--s2)"></i><span>Épargne de précaution</span></div><div class="v">21 %</div></div>
+          <div class="row"><div class="n"><i style="background:var(--s3)"></i><span>Immobilier papier</span></div><div class="v">17 %</div></div>
+          <div class="row"><div class="n"><i style="background:var(--s4)"></i><span>Autres</span></div><div class="v">24 %</div></div>
+        </div>
+      </aside>
     </section>
 
-    <aside class="card" aria-label="Aperçu de l'application">
-      <div>
-        <div class="label">Patrimoine financier · foyer</div>
-        <div class="total">223 357 €<small>+1,8 % ce mois</small></div>
+    <section class="block" aria-labelledby="h-feat">
+      <h2 id="h-feat">Ce que fait Boussole</h2>
+      <div class="grid3">
+        <article class="feat">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M15 8h5v5"/></svg></span>
+          <h3>Suivi chaque soir</h3>
+          <p>Les cours de vos ETF et actions sont relevés chaque soir. Boussole garde une photo quotidienne de votre patrimoine et signale les règles que vous avez fixées quand elles sont franchies : une ligne trop lourde, un matelas trop bas.</p>
+        </article>
+        <article class="feat">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V12M10 20V8M15 20V11M20 20V4"/></svg></span>
+          <h3>Votre rang parmi les Français</h3>
+          <p>Votre niveau de vie et votre patrimoine placés sur les distributions publiées par l'INSEE, selon la composition de votre foyer. Les sources et les hypothèses sont affichées.</p>
+        </article>
+        <article class="feat">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span>
+          <h3>Acheter, louer ou placer</h3>
+          <p>Le simulateur compare l'achat d'un logement avec la location et le placement de l'apport, année par année, à partir de vos revenus et de votre épargne réels.</p>
+        </article>
       </div>
-      <div>
-        <div class="label" style="margin-bottom:10px">Rang parmi les ménages</div>
-        <div class="bars" aria-hidden="true">
-          <i style="height:18%"></i><i style="height:26%"></i><i style="height:34%"></i><i style="height:44%"></i><i style="height:55%"></i><i style="height:66%"></i><i class="me" style="height:78%"></i><i style="height:88%"></i><i style="height:100%"></i>
+      <div class="assist">
+        <div>
+          <h3>Remplissez avec votre assistant</h3>
+          <p>Pas besoin de tout saisir à la main. Votre assistant lit vos relevés et prépare la liste ; vous la vérifiez avant qu'elle soit enregistrée.</p>
         </div>
+        <ol class="steps">
+          <li><span><b>Copier-coller :</b> Boussole vous donne un message à coller dans Claude ou ChatGPT avec vos relevés. Vous recollez la réponse dans Boussole, qui affiche chaque ligne avant de l'ajouter.</span></li>
+          <li><span><b>Connecteur pour Claude :</b> ajoutez Boussole comme connecteur MCP. Claude peut alors lire votre situation et mettre à jour vos placements quand vous le lui demandez, avec votre autorisation.</span></li>
+        </ol>
       </div>
-      <div class="rows">
-        <div class="row"><div class="n"><i style="background:var(--s1)"></i><span>Monde</span></div><div class="v">38 %</div></div>
-        <div class="row"><div class="n"><i style="background:var(--s2)"></i><span>Épargne de précaution</span></div><div class="v">21 %</div></div>
-        <div class="row"><div class="n"><i style="background:var(--s3)"></i><span>Immobilier papier</span></div><div class="v">17 %</div></div>
-        <div class="row"><div class="n"><i style="background:var(--s4)"></i><span>Autres</span></div><div class="v">24 %</div></div>
+    </section>
+
+    <section class="block privacy" aria-labelledby="h-priv">
+      <div>
+        <h2 id="h-priv">Vos données restent privées</h2>
+        <p>Boussole est un outil gratuit et non commercial. Vos chiffres servent à faire fonctionner l'outil pour vous, et à rien d'autre.</p>
       </div>
-    </aside>
+      <ul class="checks">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Chaque compte a son espace isolé : la base de données refuse à un compte toute lecture des données d'un autre.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Export de toutes vos données et suppression du compte en un clic, depuis la page Mon compte.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Pas de publicité, pas de revente, pas de traceur publicitaire. Données hébergées dans l'Union européenne.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Code source public : <a href="https://github.com/Steph1237/boussole" rel="noopener">github.com/Steph1237/boussole</a>.</span></li>
+      </ul>
+    </section>
   </main>
 
   <footer class="foot">
-    <span>Boussole · outil gratuit, code ouvert</span>
-    <span><a href="https://github.com/Steph1237/boussole" rel="noopener">GitHub</a></span>
+    <span>Boussole · outil gratuit, code ouvert. Les calculs sont indicatifs et ne constituent pas un conseil en investissement.</span>
+    <nav aria-label="Liens légaux">
+      <a href="legal/mentions.html">Mentions légales</a>
+      <a href="legal/confidentialite.html">Confidentialité</a>
+      <a href="https://github.com/Steph1237/boussole" rel="noopener">GitHub</a>
+    </nav>
   </footer>
 </div>
+
+<dialog class="auth" id="connexion" aria-labelledby="authTitle">
+  <div class="auth-box">
+    <div class="auth-head">
+      <h2 id="authTitle">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5 13.4 13.4 8.5 15.5l2.1-4.9z" fill="var(--me)"/><path d="M10.6 10.6 8.5 15.5l4.9-2.1" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+        Votre espace Boussole
+      </h2>
+      <button type="button" class="x" id="authClose" aria-label="Fermer">×</button>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Connexion ou inscription">
+      <button type="button" role="tab" id="tab-signin" aria-controls="authForm" aria-selected="true" data-tab="signin">Se connecter</button>
+      <button type="button" role="tab" id="tab-signup" aria-controls="authForm" aria-selected="false" data-tab="signup" tabindex="-1">Créer un compte</button>
+    </div>
+    <form id="authForm" role="tabpanel" aria-labelledby="tab-signin" novalidate>
+      <div class="fld">
+        <label for="authEmail">Adresse e-mail</label>
+        <input id="authEmail" name="email" type="email" autocomplete="email" inputmode="email" required>
+      </div>
+      <div class="fld">
+        <label for="authPw">Mot de passe</label>
+        <input id="authPw" name="password" type="password" autocomplete="current-password" required>
+        <small id="pwHint" hidden>8 caractères au moins.</small>
+      </div>
+      <p class="msg" id="authMsg" role="alert"></p>
+      <button type="submit" class="btn" id="authSubmit">Se connecter</button>
+      <button type="button" class="btn ghost" id="authMagic">Recevoir un lien de connexion</button>
+      <div class="or">ou</div>
+      <button type="button" class="btn ghost" id="authGoogle">
+        <svg class="g" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.3V7.1H2.1a11 11 0 0 0 0 9.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3 .6 4.2 1.6l3.1-3.1A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>
+        Continuer avec Google
+      </button>
+      <p class="hint" id="authHint">Mot de passe oublié ? Recevez un lien de connexion, puis choisissez un nouveau mot de passe dans Mon compte.</p>
+    </form>
+  </div>
+</dialog>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
+<script src="app/auth.js"></script>
+<script src="app/landing.js"></script>
 </body>
 </html>
