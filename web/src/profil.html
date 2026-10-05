@@ -7,6 +7,7 @@
       </div>
       <div class="pf-bar" aria-hidden="true"><i id="pfBar"></i></div>
       <p class="small muted" id="pfMissing"></p>
+      <button type="button" class="btn ghost" id="pfAssistBtn">Remplir avec mon assistant</button>
     </div>
     <div class="pf-recap" id="pfRecap"></div>
   </section>
@@ -40,4 +41,27 @@
       <button type="button" class="btn" id="pfSubmit">Enregistrer le profil</button>
     </div>
   </div>
+
+  <dialog class="pf-dialog" id="pfAssist" aria-labelledby="pfAssistTitle">
+    <form method="dialog" class="pf-dlg-in">
+      <div class="pf-dlg-head"><h2 id="pfAssistTitle">Remplir avec mon assistant</h2><button class="pf-x" value="close" aria-label="Fermer">×</button></div>
+      <ol class="pf-steps">
+        <li>
+          <p><b>Copiez ce message</b> dans Claude, ChatGPT ou l'assistant de votre choix. Il vous posera les questions qui manquent, puis répondra avec un bloc de données.</p>
+          <textarea id="pfPrompt" class="plain" rows="6" readonly></textarea>
+          <button type="button" class="btn ghost" id="pfCopy">Copier le message</button>
+        </li>
+        <li>
+          <p><b>Collez sa réponse</b> ici :</p>
+          <textarea id="pfPaste" class="plain" rows="6" placeholder="Collez toute la réponse, texte compris : le bloc de données est retrouvé automatiquement."></textarea>
+          <button type="button" class="btn ghost" id="pfRead">Lire la réponse</button>
+        </li>
+      </ol>
+      <div class="pf-preview" id="pfPreview" aria-live="polite"></div>
+      <div class="pf-dlg-foot">
+        <span class="small muted">Rien n'est enregistré tant que vous n'avez pas cliqué sur « Enregistrer le profil ».</span>
+        <button type="button" class="btn" id="pfApply" disabled>Appliquer au profil</button>
+      </div>
+    </form>
+  </dialog>
 </div>

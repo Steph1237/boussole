@@ -180,6 +180,53 @@
     });
     $("pfCancel").addEventListener("click", () => { draft = normalize(base); dirty = false; remoteChanged = false; renderForm(); renderStatus(); });
     $("pfSubmit").addEventListener("click", save);
+    mountAssistant();
+  }
+
+  /* ---------- remplissage par assistant : le résultat va dans le brouillon, jamais directement en base ---------- */
+  function mountAssistant() {
+    const A = window.Assistant, dlg = $("pfAssist");
+    if (!A || !dlg || !dlg.showModal) { const b = $("pfAssistBtn"); if (b) b.hidden = true; return; }
+    let pending = null;
+    const fmtV = v => v == null ? "—" : typeof v === "number" ? nf.format(v) : typeof v === "boolean" ? (v ? "oui" : "non") : typeof v === "object" ? "" : String(v);
+    const UNIT = { nm: "net / mois", na: "net / an", bm: "brut / mois", ba: "brut / an" };
+    const show = v => UNIT[v] || fmtV(v);
+    $("pfAssistBtn").addEventListener("click", () => {
+      $("pfPrompt").value = A.prompt("profil"); $("pfPaste").value = ""; $("pfPreview").innerHTML = ""; $("pfApply").disabled = true; pending = null;
+      dlg.showModal();
+    });
+    $("pfCopy").addEventListener("click", async () => {
+      const b = $("pfCopy");
+      try { await navigator.clipboard.writeText($("pfPrompt").value); b.textContent = "Message copié"; }
+      catch (e) { $("pfPrompt").select(); b.textContent = "Sélectionné : copiez avec Ctrl+C / ⌘C"; }
+      setTimeout(() => { b.textContent = "Copier le message"; }, 2500);
+    });
+    $("pfRead").addEventListener("click", () => {
+      const r = A.parse($("pfPaste").value, "profil");
+      const out = [];
+      r.erreurs.forEach(e => out.push('<p class="err">' + esc(e) + "</p>"));
+      r.avertissements.forEach(w => out.push('<p class="warn">' + esc(w) + "</p>"));
+      pending = null;
+      if (r.data && !r.erreurs.length) {
+        const m = A.merge(forCalc(), r.data);
+        if (!m.changes.length) out.push("<p>La réponse ne change rien à votre profil.</p>");
+        else {
+          pending = m.profil;
+          out.push("<p><b>" + m.changes.length + " changement" + (m.changes.length > 1 ? "s" : "") + "</b> à appliquer :</p><table>" +
+            m.changes.map(c => c.kind === "ajout"
+              ? '<tr><td class="add" colspan="3">+ ' + esc(c.label) + "</td></tr>"
+              : "<tr><td>" + esc(c.label) + '</td><td class="n">' + esc(show(c.avant)) + '</td><td class="n">→ ' + esc(show(c.apres)) + "</td></tr>").join("") + "</table>");
+        }
+      }
+      $("pfPreview").innerHTML = out.join("");
+      $("pfApply").disabled = !pending;
+    });
+    $("pfApply").addEventListener("click", () => {
+      if (!pending) return;
+      const saved = draft.__saved; draft = pending; if (saved) draft.__saved = saved;
+      pending = null; dlg.close(); renderForm(); touch();
+      renderMsgs(["warn", "Réponse appliquée au formulaire. Vérifiez, puis cliquez sur « Enregistrer le profil »."]);
+    });
   }
 
   async function save() {

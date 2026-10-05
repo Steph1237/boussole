@@ -43,3 +43,24 @@
 #view-profil .pf-msgs .ok{color:var(--good)}
 @media (max-width:760px){#view-profil .pf-status{grid-template-columns:minmax(0,1fr)}#view-profil .pf-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#view-profil .pf-row .pf-wide{grid-column:1/-1}}
 @media (max-width:420px){#view-profil .pf-2{grid-template-columns:minmax(0,1fr)}#view-profil .pf-people{grid-template-columns:minmax(0,1fr)}}
+
+/* Remplissage par assistant */
+#view-profil #pfAssistBtn{margin-top:4px}
+#view-profil .pf-dialog{border:1px solid var(--line);border-radius:var(--radius);padding:0;max-width:min(680px,calc(100vw - 32px));width:100%;background:var(--surface);color:var(--ink)}
+#view-profil .pf-dialog::backdrop{background:rgba(10,15,20,.45)}
+#view-profil .pf-dlg-in{display:flex;flex-direction:column;gap:14px;padding:18px;max-height:calc(100vh - 64px);overflow:auto}
+#view-profil .pf-dlg-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+#view-profil .pf-dlg-head h2{font:700 17px var(--f-display);margin:0}
+#view-profil .pf-x{border:0;background:transparent;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:4px 8px}
+#view-profil .pf-steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:14px;font-size:13.5px}
+#view-profil .pf-steps li{display:flex;flex-direction:column;gap:8px}
+#view-profil .pf-steps textarea{font:12.5px/1.45 var(--f-num);resize:vertical;min-height:90px}
+#view-profil .pf-preview{display:flex;flex-direction:column;gap:6px;font-size:13px}
+#view-profil .pf-preview table{width:100%;border-collapse:collapse;font-size:12.5px}
+#view-profil .pf-preview td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+#view-profil .pf-preview td.n{font-family:var(--f-num);white-space:nowrap}
+#view-profil .pf-preview .err{color:var(--crit)}
+#view-profil .pf-preview .warn{color:var(--warn)}
+#view-profil .pf-preview .add{color:var(--good);font-weight:600}
+#view-profil .pf-dlg-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+#view-profil .pf-steps p{margin:0}
