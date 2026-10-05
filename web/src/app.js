@@ -40,7 +40,7 @@
       (last ? "Cours au " + frDate(last) : "Cours non encore mis à jour") + (S.status && S.status.lastRun ? " · agent passé le " + new Date(S.status.lastRun).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
     $("fresh").textContent = t;
     const b = $("dbBanner");
-    if (S.dbOk === false) { b.hidden = false; b.textContent = "Les données du tableau de bord ne sont pas accessibles dans cette vue. Ouvrez-le depuis votre compte Claude. Ma position et Acheter ou placer fonctionnent avec des valeurs d'exemple."; }
+    if (S.dbOk === false) { b.hidden = false; b.textContent = "Connexion à votre espace impossible pour le moment. Rechargez la page ; si le problème persiste, reconnectez-vous."; }
     else if (S.error) { b.hidden = false; b.textContent = "Lecture des données interrompue (" + S.error + "). Rechargez la page."; }
     else b.hidden = true;
     scopeSeg(S);
