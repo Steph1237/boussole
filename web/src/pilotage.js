@@ -78,7 +78,7 @@ function renderChart(snaps,liveTotal){
   const dots=pts.map((p,i)=>`<circle cx="${X(xs[i])}" cy="${Y(p.v)}" r="${i===pts.length-1?5:2.5}" fill="${i===pts.length-1?"var(--accent)":"var(--surface)"}" stroke="var(--accent)" stroke-width="1.5"><title>${frDate(p.d)} : ${eur(p.v)}${p.live?" (en direct)":""}</title></circle>`).join("");
   el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution du patrimoine">${g}${area?`<path d="${area}" fill="var(--accent-soft)" opacity=".7"/>`:""}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dash}${dots}<text x="${X(xs[pts.length-1])-8}" y="${Y(lp.v)-10}" text-anchor="end" style="fill:var(--ink);font-weight:500">${eur(lp.v)}</text></svg>`;
   const rec=snaps.some(s=>s.source==="relevés");
-  $("chartNote").textContent=(rec?"points avant le 28/09/2026 reconstitués depuis les relevés · ":"")+"pointillé : valeur en direct";
+  $("chartNote").textContent=(rec?"premiers points reconstitués depuis vos relevés · ":"")+"pointillé : valeur en direct";
 }
 function niceStep(r){const p=Math.pow(10,Math.floor(Math.log10(r||1)));const n=r/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p;}
 
