@@ -1,6 +1,6 @@
 (function(){
-/* Onglet Pilotage : port du widget « Pilotage patrimoine Stéph ». Les données viennent du Store commun. */
-let S={scope:"couple",positions:[],snapshots:[],tx:[],config:null,status:null,db:null};
+/* Onglet Pilotage : synthèse, alertes (rules.js), allocation, registre, saisie. Les données viennent du Store commun. */
+let S={scope:"foyer",people:[],positions:[],snapshots:[],tx:[],config:null,status:null,db:null};
 let root=null,dirty=true;
 const fmt=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});
 const fmt2=new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -18,17 +18,21 @@ const BLOC_COLORS={"Nasdaq 2x":"--s6","Monde":"--s1","Europe":"--s2","Conviction
 const col=b=>`var(${BLOC_COLORS[b]||"--s8"})`;
 
 function val(p){ if(p.mode==="market"&&p.qty!=null&&p.price!=null) return p.qty*p.price; return Number(p.value)||0; }
-function inScope(p){ return S.scope==="couple"||p.owner===S.scope; }
+function inScope(p){ return S.scope==="foyer"||p.owner===S.scope; }
 function counted(p){ return p.status!=="à recevoir"&&p.status!=="clôturé"; }
 function scoped(){ return S.positions.filter(p=>inScope(p)&&p.status!=="clôturé"); }
-function snapVal(s){ return S.scope==="couple"?s.couple:s[S.scope]; }
+function snapVal(s){ return s[S.scope]; }
+const DEFAULT_NOMS={p1:"Moi",p2:"Conjoint(e)"};
+function nomOf(id){ const p=(S.people||[]).find(x=>x.id===id); return (p&&p.nom)||DEFAULT_NOMS[id]||id; }
+function scopeDe(){ return S.scope==="foyer"?"du foyer":window.Calc.deNom(nomOf(S.scope),S.scope==="p2"?2:1); }
+function ruleCtx(){ return {positions:S.positions,config:S.config||{},scope:S.scope,people:S.people,today:today(),status:S.status}; }
 
 /* ---------- render ---------- */
 function render(){
   const ps=scoped(); const live=ps.filter(counted);
   const total=live.reduce((a,p)=>a+val(p),0);
   const pend=ps.filter(p=>p.status==="à recevoir");
-  $("totLabel").textContent={couple:"Patrimoine financier du couple",steph:"Patrimoine financier de Stéph",compagne:"Patrimoine financier de la compagne"}[S.scope];
+  $("totLabel").textContent="Patrimoine financier "+scopeDe();
   $("total").textContent=eur(total);
   $("pending").textContent=pend.length?("+ "+pend.map(p=>eur(val(p))+" "+p.name.toLowerCase()).join(", ")+" (non compté)"):"";
   // 30 days
@@ -39,15 +43,16 @@ function render(){
   // P/L
   let pl=0,cost=0; live.forEach(p=>{if(p.mode==="market"&&p.pru&&p.qty&&p.price){pl+=p.qty*(p.price-p.pru);cost+=p.qty*p.pru;}});
   $("pl").textContent=sgn(pl)+eur(pl); $("pl").className="mid "+(pl>=0?"pos":"neg");
-  // cushion (Stéph rule) — livrets + espèces hors enveloppes
+  // épargne de précaution (poche « Épargne ») ; la cible (config.cushion) porte sur le foyer
   const cushPs=S.positions.filter(p=>p.bloc==="Épargne"&&inScope(p));
   const cushLive=cushPs.filter(counted).reduce((a,p)=>a+val(p),0);
   const cushPend=cushPs.filter(p=>p.status==="à recevoir").reduce((a,p)=>a+val(p),0);
   $("cush").textContent=eur(cushLive);
-  const cmin=S.config?.cushion?.min??35000, cmax=S.config?.cushion?.max??40000;
-  $("cushs").textContent=S.scope==="compagne"?"non suivie":"cible "+eur(cmin)+" à "+eur(cmax)+(cushPend?" · +"+eur(cushPend)+" à recevoir":"");
+  const m=window.Calc.matelas(S.config);
+  const cible=!m||!m.min?"pas de cible définie":(S.scope==="foyer"?"cible ":"cible du foyer ")+(m.max!=null&&m.max>0?eur(m.min)+" à "+eur(m.max):eur(m.min)+(m.mode==="months"?" ("+m.months+" mois)":""));
+  $("cushs").textContent=cible+(cushPend?" · +"+eur(cushPend)+" à recevoir":"");
   const T=total||1; if(snaps.length||total) renderChart(snaps,total); else $("chart").innerHTML='<p class="muted">Chargement de l\'historique…</p>'; renderAlloc(live,T); renderEnv(live,T); renderLedger(ps,T);
-  renderAlerts(); renderLists(); renderAgentNote(); fillSelects();
+  renderAlerts(); renderRules(); renderLists(); renderAgentNote(); fillSelects();
 }
 
 function renderAgentNote(){
@@ -77,7 +82,7 @@ function renderChart(snaps,liveTotal){
 }
 function niceStep(r){const p=Math.pow(10,Math.floor(Math.log10(r||1)));const n=r/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p;}
 
-function blocTargets(){ const t=S.config?.targets||{}; return S.scope==="steph"?t.steph:S.scope==="compagne"?t.compagne:null; }
+function blocTargets(){ const t=S.config?.targets||{}; return S.scope==="foyer"?null:t[S.scope]||null; }
 function renderAlloc(live,total){
   const by={}; live.forEach(p=>{by[p.bloc]=(by[p.bloc]||0)+val(p);});
   const tg=blocTargets()||{}; const tol=S.config?.targets?.tolerancePts??3;
@@ -110,7 +115,7 @@ function renderLedger(ps,total){
       else { const age=daysBetween(p.priceDate,t); chip=`<span class="pill ${age<=4?"good":"warn"}">cours ${frDate(p.priceDate)}</span>`; }
       if(p.qtyEstimated) chip+=' <span class="pill warn">qté estimée</span>';
       if(p.hypothesis) chip+=' <span class="pill acc">hypothèse</span>';
-      h+=`<tr class="${p.status==="à recevoir"?"pending":""}"><td>${esc(p.name)}${p.owner==="compagne"&&S.scope==="couple"?' <span class="pill">compagne</span>':""}<span class="sub">${esc(p.bloc)}${p.isin?" · "+esc(p.isin):""}</span></td>
+      h+=`<tr class="${p.status==="à recevoir"?"pending":""}"><td>${esc(p.name)}${S.scope==="foyer"&&(S.people||[]).length>1?' <span class="pill">'+esc(nomOf(p.owner))+'</span>':""}<span class="sub">${esc(p.bloc)}${p.isin?" · "+esc(p.isin):""}</span></td>
         <td class="n">${p.mode==="market"&&p.qty!=null?fmtq.format(p.qty):"—"}</td>
         <td class="n">${p.mode==="market"&&p.price!=null?eur2(p.price):"—"}</td>
         <td class="n">${eur(v)}</td>
@@ -120,31 +125,34 @@ function renderLedger(ps,total){
 }
 
 function computeAlerts(){
-  const A=[]; const cfg=S.config||{}; const al=cfg.alerts||{}; const t=today();
-  const steph=S.positions.filter(p=>p.owner==="steph"&&counted(p)); const stot=steph.reduce((a,p)=>a+val(p),0);
-  const lqq=S.positions.find(p=>p.id==="pea-lqq");
-  if(lqq&&lqq.price&&al.stopNasdaq){const d=(lqq.price/al.stopNasdaq-1)*100;
-    if(lqq.price<=al.stopNasdaq) A.push(["crit","Stop Nasdaq 2x touché","Cours "+eur2(lqq.price)+" sous le seuil de "+eur2(al.stopNasdaq)+". Vérifier que l'ordre stop s'est bien déclenché."]);
-    else if(d<10) A.push(["warn","Nasdaq 2x proche du stop","Cours "+eur2(lqq.price)+", à "+pct(d)+" du stop à "+eur2(al.stopNasdaq)+"."]);}
-  if(lqq&&stot){const w=val(lqq)/stot*100; if(w>(al.maxNasdaqPct||12)) A.push(["warn","Nasdaq 2x trop lourd",pct(w)+" du patrimoine de Stéph (plafond "+pct(al.maxNasdaqPct||12,0)+"). Plan : vendre ~700 parts."]);}
-  const tg=cfg.targets?.steph; const tol=cfg.targets?.tolerancePts??3;
-  if(tg&&stot){const by={}; steph.forEach(p=>{by[p.bloc]=(by[p.bloc]||0)+val(p);});
-    Object.keys(tg).forEach(k=>{const cur=(by[k]||0)/stot*100, gap=cur-tg[k]; if(Math.abs(gap)>tol) A.push([Math.abs(gap)>tol*2?"warn":"info","Poche "+k+" "+(gap>0?"au-dessus":"en dessous")+" de la cible",pct(cur)+" contre "+pct(tg[k])+" visés ("+sgn(gap)+gap.toFixed(1).replace(".",",")+" pts)."]);});}
-  const la=S.positions.find(p=>p.id==="livret-a"); if(la&&val(la)>=(al.livretCap||22950)) A.push(["warn","Livret A au plafond","Diriger les versements suivants vers le LDDS (plafond 12 000 €)."]);
-  const cr=steph.filter(p=>p.bloc==="Crypto").reduce((a,p)=>a+val(p),0); if(stot&&cr/stot*100>(al.maxCryptoPct||5)) A.push(["warn","Crypto au-dessus de 5 %",pct(cr/stot*100)+" du patrimoine de Stéph."]);
-  const cush=S.positions.filter(p=>p.owner==="steph"&&p.bloc==="Épargne"&&counted(p)).reduce((a,p)=>a+val(p),0);
-  if(cush<(cfg.cushion?.min??35000)) A.push(["info","Matelas sous la cible",eur(cush)+" disponibles contre "+eur(cfg.cushion?.min??35000)+" visés. L'indemnité et les 1 000 €/mois vers le livret le compléteront."]);
-  const stale=S.positions.filter(p=>p.mode==="market"&&counted(p)&&(!p.priceDate||daysBetween(p.priceDate,t)>4)); if(stale.length) A.push(["info","Cours anciens",stale.length+" ligne(s) sans cours récent : "+stale.slice(0,4).map(p=>p.name).join(", ")+(stale.length>4?"…":"")]);
-  if(S.status?.lastRun&&daysBetween(S.status.lastRun.slice(0,10),t)>2) A.push(["warn","Agent inactif","Dernier passage le "+frDate(S.status.lastRun.slice(0,10))+"."]);
-  (S.status?.alerts||[]).forEach(a=>A.push([a.level||"info",a.title,a.text]));
-  const ms=cfg.milestones||[]; ms.forEach(m=>{const d=daysBetween(t,m.date); if(d>=0&&d<=(m.warnDays||60)) A.push(["info",m.title,"Le "+frDate(m.date)+" (dans "+d+" jours). "+(m.text||"")]);});
-  return A;
+  // Règles de l'utilisateur (config.rules) + contrôles intégrés (cibles, matelas, nuit, échéances) : voir rules.js.
+  if(!window.Rules) return [];
+  const ctx=ruleCtx();
+  return window.Rules.evaluate(ctx.config.rules||[],ctx).concat(window.Rules.builtins(ctx));
 }
 function renderAlerts(){
-  const A=computeAlerts(); const rank={crit:0,warn:1,info:2,good:3}; A.sort((a,b)=>rank[a[0]]-rank[b[0]]);
+  const A=computeAlerts(); const rank={crit:0,warn:1,info:2,good:3}; A.sort((a,b)=>(rank[a.level]??2)-(rank[b.level]??2));
   $("alertCount").textContent=A.length?A.length+" point"+(A.length>1?"s":""):"";
-  $("alerts").innerHTML=A.length?A.map(a=>`<div class="alert ${a[0]}"><span class="pill ${a[0]==="info"?"":a[0]}">${{crit:"urgent",warn:"à traiter",info:"info",good:"ok"}[a[0]]}</span><div><strong>${esc(a[1])}</strong><div class="small">${esc(a[2])}</div></div></div>`).join(""):'<div class="alert good"><span class="pill good">ok</span><div>Rien à signaler.</div></div>';
+  $("alerts").innerHTML=A.length?A.map(a=>`<div class="alert ${esc(a.level)}"><span class="pill ${a.level==="info"?"":esc(a.level)}">${{crit:"urgent",warn:"à traiter",info:"info",good:"ok"}[a.level]||"info"}</span><div><strong>${esc(a.title)}</strong><div class="small">${esc(a.text)}</div></div></div>`).join(""):'<div class="alert good"><span class="pill good">ok</span><div>Rien à signaler.</div></div>';
 }
+
+/* ---------- règles d'alerte et matelas (écrits dans config/main) ---------- */
+function renderRules(){
+  const rules=(S.config&&Array.isArray(S.config.rules))?S.config.rules:[]; const R=window.Rules;
+  $("ruleCount").textContent=rules.length?"("+rules.length+")":"";
+  $("ruleList").innerHTML=rules.length?rules.map((r,i)=>`<li><span class="small">${esc(R?R.describe(r,ruleCtx()):r.type)}</span><button type="button" class="btn ghost tiny" data-rule-del="${i}" aria-label="Supprimer la règle : ${esc(R?R.describe(r,ruleCtx()):r.type)}">Supprimer</button></li>`).join(""):'<li class="muted small">Aucune règle : seuls les contrôles intégrés (cibles, matelas, mise à jour, échéances) s\'appliquent.</li>';
+  // matelas : ne pas écraser une saisie en cours
+  const f=$("cushForm"); if(f&&!f.contains(document.activeElement)&&!f.dataset.dirty){
+    const c=(S.config&&S.config.cushion)||{}; const mode=c.mode==="months"?"months":"amount";
+    $("cuMode").value=mode; $("cuMin").value=c.min??""; $("cuMax").value=c.max??""; $("cuMonths").value=c.months??""; $("cuDep").value=c.depenses??"";
+    cushFields();
+  }
+}
+function ruleFields(){
+  const t=$("rfType").value, need=(window.Rules&&window.Rules.TYPES[t]?.fields)||[];
+  [["rfPctL","pct"],["rfBlocL","bloc"],["rfPosL","position_id"],["rfEnvL","envelope"],["rfPriceL","price"],["rfCapL","cap"],["rfDaysL","days"]].forEach(([id,k])=>{$(id).hidden=!need.includes(k);});
+}
+function cushFields(){ const m=$("cuMode").value==="months"; ["cuMinL","cuMaxL"].forEach(id=>$(id).hidden=m); ["cuMonthsL","cuDepL"].forEach(id=>$(id).hidden=!m); }
 
 function renderLists(){
   const cfg=S.config||{};
@@ -163,8 +171,14 @@ function fillSelects(){
   const sel=$("txPos"); const cur=sel.value;
   const ps=[...S.positions].filter(p=>p.status!=="clôturé").sort((a,b)=>(a.envelope+a.name).localeCompare(b.envelope+b.name,"fr"));
   sel.innerHTML=ps.map(p=>`<option value="${esc(p.id)}">${esc(p.envelope)} · ${esc(p.name)}</option>`).join(""); if(cur) sel.value=cur;
-  const envs=[...new Set(S.positions.map(p=>p.envelope))]; const e=$("nfEnv"); if(e.options.length!==envs.length) e.innerHTML=envs.map(x=>`<option>${esc(x)}</option>`).join("");
-  const blocs=[...new Set([...S.positions.map(p=>p.bloc),...Object.keys(S.config?.targets?.steph||{})])]; const b=$("nfBloc"); if(b.options.length!==blocs.length) b.innerHTML=blocs.map(x=>`<option>${esc(x)}</option>`).join("");
+  const opts=(el,list)=>{const sig=JSON.stringify(list); if(el.dataset.sig===sig) return; const c=el.value; el.innerHTML=list.map(([v,t])=>`<option value="${esc(v)}">${esc(t)}</option>`).join(""); el.dataset.sig=sig; if(list.some(([v])=>v===c)) el.value=c;};
+  const envs=[...new Set(S.positions.map(p=>p.envelope))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const tg=S.config?.targets||{};
+  const blocs=[...new Set([...S.positions.map(p=>p.bloc),...(S.people||[]).flatMap(p=>Object.keys(tg[p.id]||{}))])].filter(Boolean).sort((a,b)=>a.localeCompare(b,"fr"));
+  opts($("nfEnv"),envs.map(x=>[x,x])); opts($("nfBloc"),blocs.map(x=>[x,x]));
+  opts($("nfOwner"),(S.people&&S.people.length?S.people:[{id:"p1",nom:"Moi"}]).map(p=>[p.id,p.nom||DEFAULT_NOMS[p.id]]));
+  opts($("rfBloc"),blocs.map(x=>[x,x])); opts($("rfEnv"),envs.map(x=>[x,x]));
+  opts($("rfPos"),ps.filter(p=>p.mode==="market").map(p=>[p.id,p.name+(p.price!=null?" · "+eur2(p.price):"")]));
 }
 
 
@@ -209,9 +223,34 @@ function mount(r){
     catch(e){ $("nfMsg").textContent="Création impossible ("+(e?.code||"erreur")+")."; }
   });
 
+  $("rfType").addEventListener("change",ruleFields); ruleFields();
+  $("ruleForm").addEventListener("submit",async ev=>{ev.preventDefault(); const msg=m=>{$("rfMsg").textContent=m;};
+    if(!S.db) return msg("Base indisponible dans cette vue.");
+    const raw={type:$("rfType").value,pct:$("rfPct").value,bloc:$("rfBloc").value,position_id:$("rfPos").value,envelope:$("rfEnv").value,price:$("rfPrice").value,cap:$("rfCap").value,days:$("rfDays").value};
+    const n=window.Rules.normalize(raw); if(n.error) return msg(n.error);
+    const rules=[...((S.config&&S.config.rules)||[]),n.rule]; $("rfBtn").disabled=true;
+    try{ await S.db.doc("config/main").update({rules}); msg("Règle ajoutée : "+window.Rules.describe(n.rule,ruleCtx())+"."); ["rfPct","rfPrice","rfCap","rfDays"].forEach(id=>$(id).value=""); }
+    catch(e){ msg(e?.code==="invalid_argument"?"Enregistrement refusé : vous n'avez pas les droits d'écriture.":"Enregistrement impossible ("+(e?.code||"erreur")+"). Réessayez."); }
+    finally{$("rfBtn").disabled=false;}
+  });
+  $("cuMode").addEventListener("change",()=>{cushFields(); $("cushForm").dataset.dirty="1";});
+  $("cushForm").addEventListener("input",()=>{$("cushForm").dataset.dirty="1";});
+  $("cushForm").addEventListener("submit",async ev=>{ev.preventDefault(); const msg=m=>{$("cuMsg").textContent=m;}; if(!S.db) return msg("Base indisponible dans cette vue.");
+    const months=$("cuMode").value==="months"; let cushion;
+    if(months){ const mo=numv("cuMonths"), dep=numv("cuDep"); if(!(mo>0)||!(dep>0)) return msg("Indiquez un nombre de mois et des dépenses mensuelles positifs."); cushion={mode:"months",months:mo,depenses:dep}; }
+    else { const mi=numv("cuMin"), ma=numv("cuMax"); if(mi==null||mi<0) return msg("Indiquez un montant minimum."); if(ma!=null&&ma<mi) return msg("Le maximum doit être supérieur au minimum."); cushion={mode:"amount",min:mi,max:ma}; }
+    $("cuBtn").disabled=true;
+    try{ await S.db.doc("config/main").update({cushion}); delete $("cushForm").dataset.dirty; msg("Matelas enregistré."); }
+    catch(e){ msg("Enregistrement impossible ("+(e?.code||"erreur")+")."); }
+    finally{$("cuBtn").disabled=false;}
+  });
   root.addEventListener("change",async ev=>{const i=ev.target.dataset?.todo; if(i==null||!S.db||!S.config) return;
     const todo=S.config.todo.map((o,k)=>k==+i?{...o,done:ev.target.checked,doneDate:ev.target.checked?today():null}:o);
     try{await S.db.doc("config/main").update({todo});}catch(e){ev.target.checked=!ev.target.checked;}
+  });
+  root.addEventListener("click",async ev=>{const d=ev.target.closest?.("[data-rule-del]"); if(!d||!S.db||!S.config) return; d.disabled=true;
+    const k=+d.dataset.ruleDel; const rules=(S.config.rules||[]).filter((_,i)=>i!==k);
+    try{ await S.db.doc("config/main").update({rules}); $("rfMsg").textContent="Règle supprimée."; }catch(e){ d.disabled=false; $("rfMsg").textContent="Suppression impossible ("+(e?.code||"erreur")+")."; }
   });
   root.addEventListener("click",async ev=>{const h=ev.target.dataset?.hyp; if(!h||!S.db) return; ev.target.disabled=true;
     const [kind,id]=h.split(":");
@@ -222,7 +261,7 @@ function mount(r){
   });
 }
 function update(snap,visible){
-  S={scope:snap.scope,positions:snap.positions,snapshots:snap.snapshots,tx:snap.tx,config:snap.config,status:snap.status,db:window.Store.db};
+  S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions,snapshots:snap.snapshots,tx:snap.tx,config:snap.config,status:snap.status,db:window.Store.db};
   dirty=true; if(visible){render();dirty=false;}
 }
 function show(){ if(dirty){render();dirty=false;} }

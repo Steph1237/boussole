@@ -57,6 +57,12 @@
 #view-pilotage .todo label{flex-direction:row;gap:8px;color:var(--ink);font-weight:400;font-size:13px}
 #view-pilotage .done{text-decoration:line-through;color:var(--muted)}
 #view-pilotage details summary{cursor:pointer;font-weight:600;color:var(--accent)}
+#view-pilotage [hidden]{display:none!important}
+#view-pilotage .rules{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+#view-pilotage .rules form{margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+#view-pilotage .rule-list{margin-top:10px}
+#view-pilotage .rule-list li{align-items:center}
+#view-pilotage .rules-h{font:700 13px var(--f-display);margin:16px 0 0}
 @media (prefers-reduced-motion:no-preference){#view-pilotage .fill{transition:width .4s ease}}
 @media (max-width:900px){#view-pilotage .grid2{grid-template-columns:1fr}}
 @media (max-width:760px){#view-pilotage .summary{grid-template-columns:1fr 1fr}#view-pilotage .summary>div:first-child{grid-column:1/-1}}

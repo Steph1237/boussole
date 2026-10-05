@@ -7,7 +7,7 @@
    Démarrage : attend la session via window.Auth (auth.js, chargé juste après ce fichier ; d'où le boot au
    DOMContentLoaded). Sans session → dbOk = false, ready = true (app.js affiche le bandeau) et Auth.requireSession
    redirige vers index.html#connexion. Avec session : toutes les tables sont lues en parallèle, S est construit
-   à la forme canonique (foyer / p1 / p2) puis exposé aux modules avec les alias hérités.
+   à la forme canonique (foyer / p1 / p2, voir l'en-tête de store-demo.js) et exposé tel quel aux modules.
    Écritures : façade `db` (doc("positions/<id>").update/set, doc("config/main").update, doc("profil/main").set,
    collection("transactions").add) traduite en requêtes PostgREST ; après chaque écriture : reload() puis emit().
    reload() est débordé à 200 ms ; rechargement aussi au retour d'onglet (visibilitychange).
@@ -21,48 +21,21 @@
   if (isDemo) return;
   const B = window.BOUSSOLE || {};
 
-  /* ---------- Alias hérités — À RETIRER EN TASK 5 ----------
-     Les modules copiés de ~/Finance parlent encore couple / steph / compagne ; le store parle foyer / p1 / p2.
-     Tout le pont tient dans ce bloc : vue canonique → vue héritée à la lecture (publish), inverse à l'écriture (db).
-     (Même bloc que dans store-demo.js ; le test de contrat vérifie que la table SCOPE_LEGACY est identique.) */
-  const SCOPE_LEGACY = { foyer: "couple", p1: "steph", p2: "compagne" };
-  const SCOPE_CANON = { couple: "foyer", steph: "p1", compagne: "p2" };
-  const own = k => SCOPE_LEGACY[k] || k;       // p1 → steph, p2 → compagne (commun, tolerancePts… inchangés)
-  const ownBack = k => SCOPE_CANON[k] || k;    // steph → p1, compagne → p2
-  const keys = (o, f) => (o && typeof o === "object" && !Array.isArray(o)) ? Object.fromEntries(Object.entries(o).map(([k, v]) => [f(k), v])) : o;
-  const ifHas = (o, k, f) => (o && k in o ? { [k]: f(o[k]) } : {});
-  const legacy = {
-    scope: s => SCOPE_LEGACY[s] || s,
-    scopeBack: s => SCOPE_CANON[s] || s,
-    position: p => Object.assign({}, p, { owner: own(p.owner) }),
-    positionBack: p => ("owner" in p ? Object.assign({}, p, { owner: ownBack(p.owner) }) : p),
-    snapshot: s => ({ date: s.date, couple: s.total, steph: s.p1, compagne: s.p2, byBloc: s.byBloc || {}, byEnvelope: s.byEnvelope || {}, source: s.source }),
-    config: c => c && Object.assign({}, c, ifHas(c, "targets", t => keys(t, own))),
-    configBack: c => Object.assign({}, c, ifHas(c, "targets", t => keys(t, ownBack))),
-    profil: p => p && Object.assign({}, p,
-      ifHas(p, "personnes", x => keys(x, own)), ifHas(p, "autres", x => keys(x, own)),
-      ifHas(p, "biens", bs => (bs || []).map(b => { const { partP1, ...r } = b; return Object.assign(r, { partSteph: partP1 }); })),
-      ifHas(p, "credits", cs => (cs || []).map(c => Object.assign({}, c, { owner: own(c.owner) })))),
-    profilBack: p => Object.assign({}, p,
-      ifHas(p, "personnes", x => keys(x, ownBack)), ifHas(p, "autres", x => keys(x, ownBack)),
-      ifHas(p, "biens", bs => (bs || []).map(b => { const { partSteph, ...r } = b; return Object.assign(r, { partP1: partSteph }); })),
-      ifHas(p, "credits", cs => (cs || []).map(c => Object.assign({}, c, { owner: ownBack(c.owner) })))),
-  };
-  /* ---------- fin des alias hérités ---------- */
-
   const clone = o => (o == null ? o : JSON.parse(JSON.stringify(o)));
   const num = v => (v == null || v === "" ? null : +v);
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
-  // État canonique ; S (exposé) en est la projection héritée, reconstruite à chaque publish().
+  // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
   const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, scope: "foyer", error: null, user: null };
-  try { const s = legacy.scopeBack(localStorage.getItem("scope")); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
+  try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
+  // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
   const people = () => {
-    const ps = (C.profil && C.profil.personnes) || {};
-    const out = [{ id: "p1", nom: (ps.p1 && ps.p1.nom) || "Moi" }];
-    if (ps.p2) out.push({ id: "p2", nom: ps.p2.nom || "Conjoint" });
+    const pr = C.profil || {}, ps = pr.personnes || {}, f = pr.foyer || {};
+    const out = [{ id: "p1", nom: String((ps.p1 && ps.p1.nom) || "").trim() || "Moi" }];
+    const two = f.adultes != null && f.adultes !== "" ? +f.adultes >= 2 : !!ps.p2;
+    if (two) out.push({ id: "p2", nom: String((ps.p2 && ps.p2.nom) || "").trim() || "Conjoint(e)" });
     return out;
   };
 
@@ -70,17 +43,18 @@
   const emit = () => { clearTimeout(tmr); tmr = setTimeout(() => subs.forEach(fn => { try { fn(S); } catch (e) { console.error(e); } }), 60); };
   const S = {};
   function publish() {
+    const ppl = people();
     Object.assign(S, {
       ready: C.ready, dbOk: C.dbOk,
-      positions: C.positions.map(p => legacy.position(clone(p))),
-      snapshots: C.snapshots.map(legacy.snapshot),
+      positions: clone(C.positions),
+      snapshots: clone(C.snapshots),
       tx: clone(C.tx),
-      config: legacy.config(clone(C.config)),
+      config: clone(C.config),
       status: clone(C.status),
-      profil: legacy.profil(clone(C.profil)),
+      profil: clone(C.profil),
       profilLoaded: C.profilLoaded,
-      scope: legacy.scope(C.scope),
-      people: people(),
+      scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
+      people: ppl,
       user: clone(C.user),
       error: C.error,
     });
@@ -119,12 +93,12 @@
     };
   };
   const txView = r => ({ id: r.id, positionId: r.position_id, date: r.date, type: r.type, qty: num(r.qty), price: num(r.price), amount: num(r.amount), note: r.note || "", source: r.source, createdAt: r.created_at });
-  const snapView = r => ({ date: r.date, total: num(r.total), p1: num(r.p1), p2: num(r.p2), byBloc: r.by_bloc || {}, byEnvelope: r.by_envelope || {}, source: r.source });
+  const snapView = r => ({ date: r.date, foyer: num(r.total), p1: num(r.p1), p2: num(r.p2), byBloc: r.by_bloc || {}, byEnvelope: r.by_envelope || {}, source: r.source });
   const cfgView = r => ({ targets: r.targets || {}, rules: r.rules || [], cushion: r.cushion || null, recurring: r.recurring || [], todo: r.todo || [], milestones: r.milestones || [], hypotheses: r.hypotheses || [] });
   const stView = r => ({ lastRun: r.last_run, summary: r.summary || "", alerts: r.alerts || [], missingPrices: r.missing_prices || 0 });
   const profView = (p, biens, credits) => ({
     foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {},
-    biens: biens.map(b => ({ id: b.id, nom: b.nom, usage: b.usage, valeur: num(b.valeur), partP1: num(b.part_p1), crd: num(b.crd), mensualite: num(b.mensualite), loyer: num(b.loyer) })),
+    biens: biens.map(b => ({ id: b.id, nom: b.nom, usage: b.usage, valeur: num(b.valeur), part_p1: num(b.part_p1), crd: num(b.crd), mensualite: num(b.mensualite), loyer: num(b.loyer) })),
     credits: credits.map(c => ({ id: c.id, nom: c.nom, owner: c.owner, crd: num(c.crd), mensualite: num(c.mensualite) })),
     updatedAt: p.updated_at,
   });
@@ -170,14 +144,14 @@
     });
   }
 
-  /* ---------- écriture : vue héritée → colonnes ---------- */
+  /* ---------- écriture : vue canonique → colonnes ---------- */
   const alias = {}; // identifiant « slug » donné par le module (db.doc("positions/<slug>").set) → uuid réel
   const rid = id => alias[id] || id;
   const POS_COLS = { name: "name", envelope: "envelope", owner: "owner", bloc: "bloc", mode: "mode", isin: "isin", qty: "qty", pru: "pru", price: "price_override", priceDate: "value_date", value: "value", valueDate: "value_date", status: "status", hypothesis: "hypothesis", qtyEstimated: "qty_estimated", note: "note" };
   const NOT_NULL = ["name", "envelope", "owner", "bloc", "mode", "status", "qty_estimated"];
   function posCols(view) {
-    const canon = legacy.positionBack(view), row = {};
-    Object.keys(canon).forEach(k => { const col = POS_COLS[k]; if (col) row[col] = canon[k]; });
+    const row = {};
+    Object.keys(view).forEach(k => { const col = POS_COLS[k]; if (col) row[col] = view[k]; });
     if ("isin" in row) row.isin = row.isin ? String(row.isin).trim().toUpperCase() : null;
     return row;
   }
@@ -208,7 +182,7 @@
   }
   const CFG_COLS = ["targets", "rules", "cushion", "recurring", "todo", "milestones", "hypotheses"];
   async function updateConfig(patch, uid) {
-    const c = legacy.configBack(patch), row = {};
+    const c = patch || {}, row = {};
     CFG_COLS.forEach(k => { if (k in c) row[k] = c[k]; });
     const ignored = Object.keys(c).filter(k => !CFG_COLS.includes(k));
     if (ignored.length) console.warn("Boussole : clés de config sans colonne, ignorées :", ignored.join(", "));
@@ -216,14 +190,13 @@
     row.user_id = uid;
     await q(sb.from("config").upsert(row, { onConflict: "user_id" }));
   }
-  async function setProfil(view, uid) {
-    const p = legacy.profilBack(view);
+  async function setProfil(p, uid) {
     const n0 = v => (v == null || v === "" || isNaN(+v) ? 0 : Math.max(0, +v));
     await q(sb.from("profiles").upsert({ user_id: uid, foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {} }, { onConflict: "user_id" }));
     const biens = (p.biens || []).map(b => ({
       id: UUID.test(b.id) ? b.id : newId(), user_id: uid, nom: (b.nom || "").trim() || "Bien",
       usage: ["rp", "locatif", "secondaire"].includes(b.usage) ? b.usage : "rp",
-      valeur: n0(b.valeur), part_p1: b.partP1 == null ? 50 : Math.min(100, n0(b.partP1)), crd: n0(b.crd), mensualite: n0(b.mensualite), loyer: n0(b.loyer),
+      valeur: n0(b.valeur), part_p1: b.part_p1 == null ? 50 : Math.min(100, n0(b.part_p1)), crd: n0(b.crd), mensualite: n0(b.mensualite), loyer: n0(b.loyer),
     }));
     const credits = (p.credits || []).map(c => ({
       id: UUID.test(c.id) ? c.id : newId(), user_id: uid, nom: (c.nom || "").trim() || "Crédit",
@@ -253,7 +226,7 @@
         update(patch) {
           if (col === "positions") return write(() => updatePosition(id, patch));
           if (col === "config") return write(uid => updateConfig(patch, uid));
-          if (col === "profil") return write(uid => setProfil(Object.assign({}, legacy.profil(C.profil) || {}, patch), uid));
+          if (col === "profil") return write(uid => setProfil(Object.assign({}, clone(C.profil) || {}, patch), uid));
           return unknown();
         },
         set(doc) {
@@ -274,8 +247,7 @@
     db,
     get: () => S,
     on(fn) { subs.push(fn); },
-    setScope(s) {
-      const c = legacy.scopeBack(s);
+    setScope(c) {
       if (!["foyer", "p1", "p2"].includes(c)) return;
       C.scope = c;
       try { localStorage.setItem("scope", c); } catch (e) {}

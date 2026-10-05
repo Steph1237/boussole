@@ -317,7 +317,7 @@ function ownMonthly(I,price){
 
 /* Rendu */
 function rank(R,H){return ST.map(s=>[s,R.out[s][H-1]]).sort((a,b)=>b[1]-a[1])}
-/* Données réelles : profil et positions du Pilotage, pour le périmètre choisi (Couple = projet du couple). */
+/* Données réelles : profil et positions du Pilotage, pour le périmètre choisi (Foyer = projet du foyer). */
 const realOv=id=>!!(window.Reel&&Reel.isOverridden("simu",id));
 const SRC_ID=Object.fromEntries(Object.entries(REN).map(([a,b])=>[b,a]));
 function markReal(id){id=SRC_ID[id]||id;if(REAL.includes(id)&&window.Reel)Reel.override("simu",id);}
@@ -325,7 +325,7 @@ let realHas={};
 function realData(){
   const S=SNAP;if(!S||S.dbOk===false||!window.Reel)return null;
   let V;try{V=Reel.values(S);}catch(e){console.error(e);return null;}
-  const ps=(S.profil&&S.profil.personnes)||{},who=S.scope==="couple"?["steph","compagne"]:[S.scope];
+  const ps=(S.profil&&S.profil.personnes)||{},who=S.scope==="foyer"?["p1","p2"]:[S.scope];
   const tmi=V.foyer.tmi!=null&&TMI_OK.includes(String(V.foyer.tmi))?String(V.foyer.tmi):null;
   return{V,vals:{
     apport:V.has.positions?Math.round(V.apport.total):null,
