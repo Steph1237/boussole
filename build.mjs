@@ -55,6 +55,8 @@ mkdirSync(join(OUT, "app"), { recursive: true });
 writeFileSync(join(OUT, "app.html"), app);
 writeFileSync(join(OUT, "index.html"), wrap(read(join(WEB, "index.html")) || "<title>Boussole</title><p>Bientôt.</p>"));
 for (const s of scripts) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
+// Scripts des pages autonomes (hors app.html) : copiés sans être injectés dans l'application.
+for (const s of ["consent"]) if (existsSync(join(SRC, `${s}.js`))) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
 if (existsSync(join(WEB, "config.js"))) copyFileSync(join(WEB, "config.js"), join(OUT, "config.js"));
 
 const extra = [];

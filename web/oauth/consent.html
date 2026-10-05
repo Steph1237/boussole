@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Autoriser un assistant · Boussole</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --bg:#F5F6F3; --surface:#FFFFFF; --sunk:#ECEEEA; --ink:#18222C; --muted:#5B6670; --line:#D9DDD6; --line2:#C6CCC3;
+  --accent:#1F6F5C; --accent-ink:#FFFFFF; --accent-soft:#DCEBE5; --good:#2E7D4F; --warn:#A8690F; --crit:#B42318;
+  --good-soft:#E3F1E8; --warn-soft:#F8EBD3; --crit-soft:#F9E0DC; --me:#D9480F;
+  --f-display:"Schibsted Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Public Sans",ui-sans-serif,system-ui,sans-serif;
+  --radius:10px; --radius-sm:7px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942; --line2:#3B4853;
+  --accent:#5FBF9F; --accent-ink:#0D1F19; --accent-soft:#1E3A33; --good:#6CC08F; --warn:#E0A849; --crit:#F0806F;
+  --good-soft:#1D3527; --warn-soft:#3A2E17; --crit-soft:#3D1F1B; --me:#FF8A5B;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942; --line2:#3B4853;
+  --accent:#5FBF9F; --accent-ink:#0D1F19; --accent-soft:#1E3A33; --good:#6CC08F; --warn:#E0A849; --crit:#F0806F;
+  --good-soft:#1D3527; --warn-soft:#3A2E17; --crit-soft:#3D1F1B; --me:#FF8A5B;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+html{overflow-x:hidden}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+[hidden]{display:none!important}
+
+.page{min-height:100svh;display:flex;flex-direction:column;align-items:center;max-width:520px;margin:0 auto;padding:20px 16px 28px}
+.top{align-self:stretch;display:flex;justify-content:space-between;align-items:center;min-height:32px;margin-bottom:clamp(20px,6vh,56px)}
+.brand{display:inline-flex;align-items:center;gap:9px;font:700 14px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand svg{width:20px;height:20px;flex:none}
+.card{align-self:stretch;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px 20px;
+  box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px -24px rgba(24,34,44,.25)}
+@media (min-width:480px){.card{padding:28px}}
+.eyebrow{font:600 12px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 12px}
+h1{font:800 clamp(24px,6vw,30px)/1.12 var(--f-display);letter-spacing:-.02em;margin:0 0 10px;text-wrap:balance;overflow-wrap:anywhere}
+p{margin:0 0 12px}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+
+.who{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;background:var(--sunk);border-radius:var(--radius-sm);padding:10px 12px;margin:16px 0;font-size:14px}
+.who strong{overflow-wrap:anywhere}
+.linkbtn{background:none;border:0;padding:0;font:inherit;font-size:14px;color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+
+.perms{list-style:none;margin:8px 0 16px;padding:0;display:grid;gap:10px}
+.perms li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;align-items:start;font-size:15px}
+.perms svg{width:20px;height:20px;margin-top:1px}
+.perms .yes svg{color:var(--good)}
+.perms .no svg{color:var(--muted)}
+.perms .no{color:var(--muted)}
+.detail{font-size:14px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin-top:4px;display:grid;gap:4px}
+.detail b{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+
+.actions{display:flex;flex-direction:column-reverse;gap:10px;margin-top:20px}
+@media (min-width:420px){.actions{flex-direction:row;justify-content:flex-end}}
+.btn{appearance:none;border-radius:var(--radius-sm);font:600 16px/1 var(--f-body);padding:13px 18px;min-height:46px;cursor:pointer;border:1px solid var(--line2);background:var(--surface);color:var(--ink)}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn:disabled{opacity:.55;cursor:progress}
+.btn.block{width:100%}
+
+form{display:grid;gap:12px;margin-top:16px}
+label{display:grid;gap:6px;font-size:14px;font-weight:600}
+input{font:16px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--radius-sm);padding:11px 12px;min-height:46px;width:100%}
+input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;margin:4px 0}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+
+.msg{border-radius:var(--radius-sm);padding:10px 12px;font-size:14px;margin:12px 0 0}
+.msg.err{background:var(--crit-soft);color:var(--crit)}
+.msg.ok{background:var(--good-soft);color:var(--good)}
+.msg.info{background:var(--accent-soft);color:var(--ink)}
+
+.spinner{width:22px;height:22px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;margin:6px 0 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.card a{color:var(--accent);text-underline-offset:3px}
+.foot{margin-top:auto;padding-top:24px;font-size:12px;color:var(--muted);text-align:center}
+.foot a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <a class="brand" href="../" aria-label="Boussole, accueil">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5 13.4 13.4 8.5 15.5l2.1-4.9z" fill="var(--me)"/><path d="M10.6 10.6 8.5 15.5l4.9-2.1" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+      Boussole
+    </a>
+  </header>
+
+  <main class="card" aria-live="polite">
+    <!-- Chargement -->
+    <section data-state="loading">
+      <div class="spinner" role="progressbar" aria-label="Chargement"></div>
+      <p class="muted" id="loadingText">Vérification de la demande…</p>
+    </section>
+
+    <!-- Connexion -->
+    <section data-state="signin" hidden>
+      <p class="eyebrow">Connexion</p>
+      <h1>Connectez-vous pour autoriser votre assistant</h1>
+      <p class="muted small">Un assistant demande l'accès à votre espace Boussole. Identifiez-vous d'abord ; vous pourrez ensuite accepter ou refuser.</p>
+      <form id="signinForm" novalidate>
+        <label>Adresse e-mail<input id="email" type="email" autocomplete="email" inputmode="email" required></label>
+        <label>Mot de passe<input id="password" type="password" autocomplete="current-password"></label>
+        <button class="btn primary block" id="signinBtn" type="submit">Se connecter</button>
+        <div class="or">ou</div>
+        <button class="btn block" id="otpBtn" type="button">Recevoir un lien de connexion</button>
+      </form>
+      <p class="msg" id="signinMsg" hidden></p>
+      <p class="muted small" style="margin-top:16px">Pas encore de compte&nbsp;? <a href="../">Créez-le sur Boussole</a>, puis relancez la connexion depuis votre assistant.</p>
+    </section>
+
+    <!-- Consentement -->
+    <section data-state="consent" hidden>
+      <p class="eyebrow">Autorisation</p>
+      <h1><span id="clientName">Une application</span> souhaite accéder à votre Boussole</h1>
+      <div class="who"><span>Connecté en tant que <strong id="userEmail"></strong></span><button class="linkbtn" id="switchBtn" type="button">Changer de compte</button></div>
+      <p class="small" style="margin-bottom:4px"><strong>Si vous autorisez, cet assistant pourra&nbsp;:</strong></p>
+      <ul class="perms" id="perms"></ul>
+      <p class="small" style="margin-bottom:4px"><strong>Le connecteur Boussole ne lui permet pas de&nbsp;:</strong></p>
+      <ul class="perms">
+        <li class="no"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 10h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>supprimer votre compte ni changer votre e-mail ou votre mot de passe ;</span></li>
+        <li class="no"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 10h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>voir les données des autres utilisateurs.</span></li>
+      </ul>
+      <div class="detail">
+        <span>Application&nbsp;: <b id="clientInfo"></b></span>
+        <span>Retour vers&nbsp;: <b id="redirectHost"></b></span>
+      </div>
+      <p class="muted small" style="margin-top:12px">N'autorisez que les assistants que vous avez vous-même connectés. Vous pourrez retirer cet accès à tout moment depuis <a href="../compte.html">Mon compte</a>.</p>
+      <div class="actions">
+        <button class="btn" id="denyBtn" type="button">Refuser</button>
+        <button class="btn primary" id="approveBtn" type="button">Autoriser</button>
+      </div>
+      <p class="msg err" id="consentMsg" hidden></p>
+    </section>
+
+    <!-- Redirection -->
+    <section data-state="done" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <h1 id="doneTitle">Accès autorisé</h1>
+      <p class="muted" id="doneText">Retour à votre assistant…</p>
+      <p class="small"><a id="doneLink" href="#">Continuer manuellement</a></p>
+    </section>
+
+    <!-- Erreur -->
+    <section data-state="error" hidden>
+      <p class="eyebrow" style="color:var(--crit)">Impossible de continuer</p>
+      <h1 id="errTitle">Une erreur est survenue</h1>
+      <p class="muted" id="errText"></p>
+      <div class="actions"><button class="btn" id="retryBtn" type="button" hidden>Réessayer</button></div>
+    </section>
+
+    <noscript><p class="msg err">Cette page a besoin de JavaScript pour vous connecter et enregistrer votre choix.</p></noscript>
+  </main>
+
+  <footer class="foot">Boussole · <a href="../legal/confidentialite.html">Confidentialité</a></footer>
+</div>
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
+<script src="../app/consent.js"></script>
+</body>
+</html>
