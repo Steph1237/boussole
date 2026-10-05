@@ -69,7 +69,26 @@
       const g = e.target.closest("[data-goto-tab]"); if (g) { e.preventDefault(); App.go(g.dataset.gotoTab); }
     });
     ORDER.forEach(k => { const m = mods[k]; const root = $("view-" + k); if (m && m.mount && root) try { m.mount(root); } catch (e) { console.error(k, e); } });
+    const demo = Store.mode === "demo";
+    $("demoBanner").hidden = !demo;
+    $("accountLink").hidden = demo;
+    let onboardingShown = false;
+    /* Premiers pas : une fois par chargement, pour un compte réel qui ne les a ni faits ni passés. */
+    function maybeOnboard(S) {
+      if (onboardingShown || demo || !window.Onboarding || !S.ready || !S.dbOk || S.onboardingDone) return;
+      onboardingShown = true;
+      Onboarding.open({
+        profil: S.profil,
+        onSave: async (patch, rows) => {
+          await Store.db.doc("profil/main").update(patch);
+          if (rows && rows.length) await Store.db.collection("positions").addMany(rows);
+          await Store.markOnboarded();
+        },
+        onSkip: () => Store.markOnboarded().catch(e => console.warn("Boussole : premiers pas non marqués", e)),
+      });
+    }
     Store.on(S => {
+      maybeOnboard(S);
       header(S);
       ORDER.forEach(k => { const m = mods[k]; if (m && m.update) try { m.update(S, k === active); } catch (e) { console.error(k, e); } });
       refreshHeadlines();

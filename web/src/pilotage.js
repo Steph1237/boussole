@@ -186,6 +186,9 @@ function fillSelects(){
 function mount(r){
   root=r;
   $("txDate").value=today();
+  // Import groupé : fichier CSV ou réponse d'assistant, aperçu dans la fenêtre d'import, écriture en une fois.
+  const ib=$("importBtn");
+  if(ib){ if(!window.Import) ib.hidden=true; else ib.addEventListener("click",()=>Import.open({people:window.Store.get().people,onApply:rows=>window.Store.db.collection("positions").addMany(rows)})); }
   const numv=id=>{const v=$(id).value;return v===""?null:Number(v);};
 
   $("txForm").addEventListener("submit",async ev=>{ev.preventDefault(); if(!S.db){$("txMsg").textContent="Base indisponible dans cette vue.";return;}

@@ -189,6 +189,7 @@
       '<p class="im-intro">Un fichier CSV avec une ligne d\'en-tête : <code>nom, isin, enveloppe, titulaire, poche, quantite, pru, valeur, statut</code>. ' +
       'Pour un titre coté, indiquez l\'ISIN et la quantité ; pour un livret ou un fonds euros, la valeur. Séparateur « ; » ou « , ». ' +
       '<a href="#" data-im="template">Télécharger un modèle</a></p>' +
+      (typeof Assistant !== "undefined" ? '<p class="im-intro">Ou faites-les lister par votre assistant (Claude, ChatGPT…) à partir de vos relevés : <a href="#" data-im="prompt">copier le message à lui envoyer</a>, puis collez sa réponse ci-dessous.</p>' : "") +
       '<div class="im-src">' +
       '<label class="im-file"><span>Choisir un fichier .csv</span><input type="file" accept=".csv,text/csv,text/plain" id="' + id + '-f"></label>' +
       '<label class="im-lbl" for="' + id + '-p">ou collez le contenu</label>' +
@@ -235,7 +236,16 @@
         '<th scope="col">Ligne</th><th scope="col">Nom</th><th scope="col">Enveloppe</th><th scope="col">Titulaire</th><th scope="col">Poche</th><th scope="col">Quantité / valeur</th><th scope="col">Statut</th><th scope="col">État</th>' +
         "</tr></thead><tbody>" + rows + "</tbody></table></div>";
     }
-    const analyse = text => { msg.textContent = ""; if (!String(text || "").trim()) { last = null; out.innerHTML = ""; apply.disabled = true; apply.textContent = "Importer"; return; } render(parseCSV(text, { people })); };
+    /* Une réponse d'assistant (bloc JSON) passe par Assistant.parse ; tout le reste est lu comme du CSV. */
+    const looksJson = t => /```/.test(t) || /^\s*[[{]/.test(t);
+    function fromAssistant(text) {
+      const r = Assistant.parse(text, "positions");
+      const rows = r.data || [];
+      const lignes = rows.map((row, i) => ({ ligne: i + 1, ok: true, row, brut: {} }))
+        .concat(r.erreurs.map(e => ({ ligne: "—", ok: false, row: null, brut: {}, erreur: e })));
+      return { rows, erreurs: r.erreurs, avertissements: r.avertissements, lignes };
+    }
+    const analyse = text => { msg.textContent = ""; if (!String(text || "").trim()) { last = null; out.innerHTML = ""; apply.disabled = true; apply.textContent = "Importer"; return; } render(typeof Assistant !== "undefined" && looksJson(text) ? fromAssistant(text) : parseCSV(text, { people })); };
 
     file.addEventListener("change", async () => {
       const f = file.files && file.files[0]; if (!f) return;
@@ -254,6 +264,11 @@
       const act = b.dataset.im;
       if (act === "close") close();
       else if (act === "template") download("boussole-modele-placements.csv", template());
+      else if (act === "prompt") {
+        const text = Assistant.prompt("positions");
+        try { await navigator.clipboard.writeText(text); msg.textContent = "Message copié : collez-le dans votre assistant, puis sa réponse ici."; }
+        catch (err) { paste.value = text; paste.select(); msg.textContent = "Message placé dans la zone : copiez-le (Ctrl+C / ⌘C), puis remplacez-le par la réponse."; }
+      }
       else if (act === "apply") {
         if (!last || last.erreurs.length || !last.rows.length) return;
         busy = true; apply.disabled = true; msg.textContent = "Import en cours…";

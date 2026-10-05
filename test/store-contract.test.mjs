@@ -52,7 +52,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
