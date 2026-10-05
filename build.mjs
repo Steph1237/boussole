@@ -18,7 +18,10 @@ const outArg = process.argv.find(a => a.startsWith("--out="));
 const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
 
 const MODULES = ["pilotage", "toise", "simu", "profil"];
-const SCRIPTS = ["calc", "store-demo", "store-supabase", "reel", ...MODULES, "app"];
+const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", ...MODULES, "app"];
+// supabase-js v2, build UMD épinglé (window.supabase). Le paquet n'est pas publié sur cdnjs : jsdelivr sert
+// le fichier du paquet npm officiel. Chargé juste après config.js, avant les adaptateurs store-* et auth.js.
+const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js";
 const read = p => (existsSync(p) ? readFileSync(p, "utf8") : "");
 
 // Enveloppe un fragment (title/meta/link/style en tête, le reste dans <body>) dans un document complet.
@@ -42,7 +45,7 @@ for (const m of MODULES) {
   app = app.replace(`<!--@${m}-->`, () => read(join(SRC, `${m}.html`)) || `<p class="muted">Module ${m} en construction.</p>`);
 }
 const scripts = SCRIPTS.filter(s => existsSync(join(SRC, `${s}.js`)));
-const tags = ['<script src="config.js"></script>', ...scripts.map(s => `<script src="app/${s}.js"></script>`)];
+const tags = ['<script src="config.js"></script>', `<script src="${SUPABASE_CDN}"></script>`, ...scripts.map(s => `<script src="app/${s}.js"></script>`)];
 app = app.replace("<!--@scripts-->", () => tags.join("\n"));
 app = wrap(app);
 
