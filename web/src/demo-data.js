@@ -1,0 +1,106 @@
+/* DONNÉES D'EXEMPLE — mode démo (app.html?demo). Foyer fictif : « Camille » (p1) et « Sam » (p2).
+   Aucune personne réelle ; montants plausibles pour un foyer français en 2026.
+   Forme canonique du store (foyer / p1 / p2) : store-demo.js applique les alias hérités (couple/steph/compagne)
+   attendus par les modules copiés de ~/Finance, exactement comme store-supabase.js le fait pour les lignes SQL.
+   Les dates sont relatives à aujourd'hui pour que la démo reste « fraîche » (cours d'hier, photos aux fins
+   des trois mois précédents) ; les montants sont fixes.
+   Total financier compté (hors « à recevoir ») : 94 989,90 € — Camille 51 815,50 €, Sam 43 174,40 €. */
+(function (root) {
+  const DAY = 864e5, now = Date.now();
+  const iso = t => new Date(t).toISOString().slice(0, 10);
+  const ago = n => iso(now - n * DAY);
+  const at = (n, h) => ago(n) + "T" + h + ":00.000Z";
+  // Dernier jour du k-ième mois précédent (k = 1 : fin du mois dernier).
+  const monthEnd = k => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - k + 1); d.setUTCDate(0); return iso(d); };
+  const hier = ago(1);
+
+  const P = o => Object.assign({ isin: null, qty: null, pru: null, price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null }, o);
+  const positions = [
+    P({ id: "pea-etf-monde", name: "ETF MSCI World", envelope: "PEA Camille", owner: "p1", bloc: "Monde", mode: "market", isin: "IE00B4L5Y983", qty: 120, pru: 88.4, price: 104.26, priceDate: hier }),           // 12 511,20
+    P({ id: "pea-etf-europe", name: "ETF Stoxx Europe 600", envelope: "PEA Camille", owner: "p1", bloc: "Europe", mode: "market", isin: "LU0908500753", qty: 36, pru: 215.1, price: 248.3, priceDate: hier }),     //  8 938,80
+    P({ id: "pea-air-liquide", name: "Air Liquide", envelope: "PEA Camille", owner: "p1", bloc: "Convictions", mode: "market", isin: "FR0000120073", qty: 22, pru: 162, price: 181.5, priceDate: hier }),          //  3 993,00
+    P({ id: "cto-asml", name: "ASML", envelope: "CTO Sam", owner: "p2", bloc: "Convictions", mode: "market", isin: "NL0010273215", qty: 6, pru: 640, price: 712.4, priceDate: hier }),                             //  4 274,40
+    P({ id: "av-fonds-euro", name: "Fonds en euros", envelope: "Assurance vie Sam", owner: "p2", bloc: "Obligations", mode: "manual", value: 18200, valueDate: monthEnd(1) }),                                   // 18 200,00
+    P({ id: "av-scpi", name: "SCPI diversifiée", envelope: "Assurance vie Sam", owner: "p2", bloc: "SCPI", mode: "manual", value: 9800, valueDate: monthEnd(1), hypothesis: "Valorisée au prix de retrait 2025, à confirmer sur le relevé annuel." }), // 9 800,00
+    P({ id: "livret-a", name: "Livret A", envelope: "Livrets Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4) }),                                                        // 12 000,00
+    P({ id: "ldds", name: "LDDS", envelope: "Livrets Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 7500, valueDate: ago(4) }),                                                                      //  7 500,00
+    P({ id: "per-camille", name: "PER Camille", envelope: "PER", owner: "p1", bloc: "Monde", mode: "manual", value: 11800, valueDate: monthEnd(1) }),                                                            // 11 800,00
+    P({ id: "crypto-btc", name: "Bitcoin", envelope: "Crypto", owner: "p1", bloc: "Crypto", mode: "market", isin: "X-BTC", qty: 0.042, pru: 58000, price: 61250, priceDate: hier, qtyEstimated: true }),         //  2 572,50
+    P({ id: "compte-commun", name: "Compte courant commun", envelope: "Banque", owner: "p2", bloc: "Épargne", mode: "manual", value: 3400, valueDate: ago(1) }),                                                 //  3 400,00
+    P({ id: "prime-camille", name: "Prime annuelle", envelope: "À recevoir", owner: "p1", bloc: "Épargne", mode: "manual", value: 2500, valueDate: ago(0), status: "à recevoir", note: "Versée avec la paie de décembre." }), // non compté
+  ];
+
+  const snapshots = [
+    { date: monthEnd(3), total: 90120, p1: 48900, p2: 41220, source: "nightly",
+      byBloc: { Monde: 23000, Europe: 8400, Convictions: 7800, Obligations: 18000, SCPI: 9800, "Épargne": 20800, Crypto: 2320 },
+      byEnvelope: { "PEA Camille": 24100, "CTO Sam": 3900, "Assurance vie Sam": 27800, "Livrets Camille": 10800, "Livrets Sam": 7000, PER: 11200, Crypto: 2320, Banque: 3000 } },
+    { date: monthEnd(2), total: 92340, p1: 50310, p2: 42030, source: "nightly",
+      byBloc: { Monde: 23600, Europe: 8700, Convictions: 8050, Obligations: 18100, SCPI: 9800, "Épargne": 21600, Crypto: 2490 },
+      byEnvelope: { "PEA Camille": 24700, "CTO Sam": 4150, "Assurance vie Sam": 27900, "Livrets Camille": 11300, "Livrets Sam": 7200, PER: 11400, Crypto: 2490, Banque: 3200 } },
+    { date: monthEnd(1), total: 94210, p1: 51380, p2: 42830, source: "nightly",
+      byBloc: { Monde: 24100, Europe: 8900, Convictions: 8200, Obligations: 18200, SCPI: 9800, "Épargne": 22450, Crypto: 2560 },
+      byEnvelope: { "PEA Camille": 25200, "CTO Sam": 4300, "Assurance vie Sam": 28000, "Livrets Camille": 11800, "Livrets Sam": 7400, PER: 11700, Crypto: 2560, Banque: 3250 } },
+  ];
+
+  const tx = [
+    { id: "tx-demo-1", date: ago(3), type: "versement", positionId: "livret-a", qty: null, price: null, amount: 200, note: "Virement mensuel", source: "nightly", createdAt: at(3, "20:31") },
+    { id: "tx-demo-2", date: ago(12), type: "achat", positionId: "pea-etf-monde", qty: 3, price: 103.1, amount: 309.3, note: "", source: "manuel", createdAt: at(12, "12:04") },
+    { id: "tx-demo-3", date: ago(30), type: "versement", positionId: "pea-etf-monde", qty: 2.94, price: 102.05, amount: 300, note: "Versement programmé", source: "nightly", createdAt: at(30, "20:30") },
+    { id: "tx-demo-4", date: ago(41), type: "solde", positionId: "av-fonds-euro", qty: null, price: null, amount: 18200, note: "Relevé trimestriel", source: "manuel", createdAt: at(41, "09:12") },
+  ];
+
+  const config = {
+    targets: {
+      p1: { Monde: 45, Europe: 17, Convictions: 8, "Épargne": 25, Crypto: 5 },
+      p2: { Convictions: 10, Obligations: 40, SCPI: 25, "Épargne": 25 },
+      tolerancePts: 3,
+    },
+    rules: [
+      { type: "max_line_pct", pct: 15 },
+      { type: "max_bloc_pct", bloc: "Crypto", pct: 5 },
+      { type: "stale_prices", days: 4 },
+    ],
+    cushion: { mode: "amount", min: 15000, max: 20000 },
+    recurring: [
+      { id: "rec-pea", label: "Versement PEA Camille", positionId: "pea-etf-monde", amount: 300, day: 5, start: ago(245), lastApplied: ago(30).slice(0, 7), hypothesis: null },
+      { id: "rec-livret", label: "Épargne Livret A", positionId: "livret-a", amount: 200, day: 1, start: ago(150), lastApplied: ago(3).slice(0, 7), hypothesis: null },
+    ],
+    todo: [
+      { text: "Arbitrer 1 000 € du fonds en euros vers l'ETF Monde", amount: "1 000 €", done: false },
+      { text: "Ouvrir un LDDS au nom de Camille", done: false },
+    ],
+    milestones: [
+      { title: "Fin de la période d'essai de Sam", date: iso(now + 40 * DAY), warnDays: 60, text: "Revoir la répartition des versements programmés." },
+    ],
+    hypotheses: [
+      { text: "Le compte courant commun est compté comme épargne de précaution.", done: false },
+    ],
+  };
+
+  const profil = {
+    foyer: { adultes: 2, enfants: 1, enfants14: 0, union: "joint", age: "a30", tmi: 30 },
+    personnes: {
+      p1: { nom: "Camille", salaire: 2800, salaireUnite: "nm", statut: "cadre", csp: "cadre", essai: false, autresRevenus: 0 },
+      p2: { nom: "Sam", salaire: 2300, salaireUnite: "nm", statut: "nc", csp: "inter", essai: true, autresRevenus: 0 },
+    },
+    biens: [
+      { id: "bien-rp", nom: "Appartement (résidence principale)", usage: "rp", valeur: 240000, partP1: 50, crd: 150000, mensualite: 820, loyer: 0 },
+    ],
+    credits: [
+      { id: "credit-auto", nom: "Prêt auto", owner: "commun", crd: 6500, mensualite: 210 },
+    ],
+    autres: { p1: { usage: 9000, entreprise: 0 }, p2: { usage: 6000, entreprise: 0 } },
+    updatedAt: at(7, "18:40"),
+  };
+
+  const status = {
+    lastRun: at(1, "20:31"),
+    summary: "Cours mis à jour pour 5 lignes cotées, photo du jour enregistrée, aucun versement programmé ce jour.",
+    alerts: [],
+    missingPrices: 0,
+  };
+
+  const DEMO = { positions, snapshots, tx, config, profil, status };
+  root.DEMO = DEMO;
+  if (typeof module === "object" && module.exports) module.exports = DEMO;
+})(typeof window !== "undefined" ? window : globalThis);
