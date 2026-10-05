@@ -10,7 +10,7 @@
   function values(snap) {
     const C = window.Calc, sc = snap.scope, pr = snap.profil;
     const f = (pr && pr.foyer) || {}, ps = (pr && pr.personnes) || {};
-    const who = sc === "couple" ? "steph" : sc;
+    const who = sc === "foyer" ? "p1" : sc;
     const pat = C.patrimoine(snap.positions, pr, sc);
     const apport = C.apportDisponible(snap.positions, snap.config, sc, mem.prefs);
     const salNet = k => C.salaireNetMensuel(ps[k]);
@@ -20,7 +20,7 @@
       age: !!f.age,
       tmi: f.tmi != null,
       salaire: (ps[who] && +ps[who].salaire > 0) || false,
-      revenus: sc === "couple" ? (salNet("steph") + salNet("compagne")) > 0 : salNet(sc) > 0,
+      revenus: sc === "foyer" ? (salNet("p1") + salNet("p2")) > 0 : salNet(sc) > 0,
       patrimoine: !!pr && (Array.isArray(pr.biens) || Array.isArray(pr.credits)),
     };
     return {
@@ -28,11 +28,11 @@
       patrimoine: pat,
       revenusFoyer: C.revenusFoyer(pr, sc),
       revenusSansLoyers: C.revenusFoyer(pr ? Object.assign({}, pr, { biens: (pr.biens || []).map(b => Object.assign({}, b, { loyer: 0 })) }) : pr, sc),
-      loyers: (pr && pr.biens || []).reduce((a, b) => a + Math.max(0, +b.loyer || 0) * C.part(sc, b.partSteph), 0),
+      loyers: (pr && pr.biens || []).reduce((a, b) => a + Math.max(0, +b.loyer || 0) * C.part(sc, b.part_p1), 0),
       mensualites: C.mensualites(pr, sc),
       apport,
       foyer: {
-        adultes: sc === "couple" ? (f.adultes != null ? +f.adultes : null) : 1,
+        adultes: sc === "foyer" ? (f.adultes != null ? +f.adultes : null) : 1,
         enfants: f.enfants != null ? +f.enfants : null,
         enfants14: f.enfants14 != null ? +f.enfants14 : null,
         union: f.union || null, age: f.age || null, tmi: f.tmi != null ? +f.tmi : null,

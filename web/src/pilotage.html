@@ -1,7 +1,7 @@
 <div class="pilotage">
   <section class="summary" aria-label="Synthèse">
     <div>
-      <div class="label" id="totLabel">Patrimoine financier du couple</div>
+      <div class="label" id="totLabel">Patrimoine financier du foyer</div>
       <div class="big num" id="total">—</div>
       <div class="small muted" id="pending"></div>
     </div>
@@ -18,6 +18,39 @@
     <section class="panel" aria-label="Alertes">
       <div class="panel-head"><h2>Alertes</h2><span class="small muted" id="alertCount"></span></div>
       <div class="alerts" id="alerts"></div>
+      <details class="rules" id="rulesBox">
+        <summary>Mes règles d'alerte <span class="muted" id="ruleCount"></span></summary>
+        <ul class="clean rule-list" id="ruleList"></ul>
+        <form id="ruleForm" autocomplete="off" aria-label="Ajouter une règle">
+          <label>Nouvelle règle<select id="rfType">
+            <option value="max_line_pct">Plafond par ligne</option>
+            <option value="max_bloc_pct">Plafond par poche</option>
+            <option value="min_bloc_pct">Plancher par poche</option>
+            <option value="price_floor">Seuil de cours (ordre stop)</option>
+            <option value="envelope_cap">Plafond d'enveloppe</option>
+            <option value="stale_prices">Cours trop anciens</option>
+          </select></label>
+          <label id="rfBlocL">Poche<select id="rfBloc"></select></label>
+          <label id="rfPosL">Ligne cotée<select id="rfPos"></select></label>
+          <label id="rfEnvL">Enveloppe<select id="rfEnv"></select></label>
+          <label id="rfPctL">Pourcentage (%)<input id="rfPct" type="number" step="any" min="0" max="100" inputmode="decimal" placeholder="ex. 15"></label>
+          <label id="rfPriceL">Seuil de cours (€)<input id="rfPrice" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 170"></label>
+          <label id="rfCapL">Plafond (€)<input id="rfCap" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 22950"></label>
+          <label id="rfDaysL">Jours sans cours<input id="rfDays" type="number" step="1" min="1" inputmode="numeric" placeholder="ex. 4"></label>
+          <div><button class="btn" type="submit" id="rfBtn">Ajouter la règle</button></div>
+          <div class="formnote muted" id="rfMsg" aria-live="polite"></div>
+        </form>
+        <h3 class="rules-h">Épargne de précaution</h3>
+        <form id="cushForm" autocomplete="off" aria-label="Matelas de précaution">
+          <label>Cible exprimée<select id="cuMode"><option value="amount">en montant</option><option value="months">en mois de dépenses</option></select></label>
+          <label id="cuMinL">Minimum (€)<input id="cuMin" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 15000"></label>
+          <label id="cuMaxL">Maximum (€)<input id="cuMax" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 20000"></label>
+          <label id="cuMonthsL">Nombre de mois<input id="cuMonths" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 6"></label>
+          <label id="cuDepL">Dépenses mensuelles (€)<input id="cuDep" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 2500"></label>
+          <div><button class="btn" type="submit" id="cuBtn">Enregistrer le matelas</button></div>
+          <div class="formnote muted" id="cuMsg" aria-live="polite"></div>
+        </form>
+      </details>
     </section>
   </div>
 
@@ -64,7 +97,7 @@
       <form id="newForm" autocomplete="off" style="margin-top:10px">
         <label>Nom<input id="nfName" type="text" required placeholder="ex. Amundi PEA Japon TOPIX"></label>
         <label>Enveloppe<select id="nfEnv"></select></label>
-        <label>Titulaire<select id="nfOwner"><option value="steph">Stéph</option><option value="compagne">Compagne</option></select></label>
+        <label>Titulaire<select id="nfOwner"></select></label>
         <label>Poche<select id="nfBloc"></select></label>
         <label>ISIN<input id="nfIsin" type="text" placeholder="FR0013411980"></label>
         <label>Mode<select id="nfMode"><option value="market">Coté (cours auto)</option><option value="manual">Valeur manuelle</option></select></label>

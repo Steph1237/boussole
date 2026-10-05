@@ -13,17 +13,20 @@
   const EMPTY = {
     foyer: { adultes: 2, enfants: 0, enfants14: 0, union: "joint", age: null, tmi: null },
     personnes: {
-      steph: { salaire: null, salaireUnite: "nm", statut: null, csp: "", essai: false, autresRevenus: 0 },
-      compagne: { salaire: null, salaireUnite: "nm", statut: null, csp: "", essai: false, autresRevenus: 0 },
+      p1: { nom: "Moi", salaire: null, salaireUnite: "nm", statut: null, csp: "", essai: false, autresRevenus: 0 },
+      p2: { nom: "Conjoint(e)", salaire: null, salaireUnite: "nm", statut: null, csp: "", essai: false, autresRevenus: 0 },
     },
     biens: [], credits: [],
-    autres: { steph: { usage: 0, entreprise: 0 }, compagne: { usage: 0, entreprise: 0 } },
+    autres: { p1: { usage: 0, entreprise: 0 }, p2: { usage: 0, entreprise: 0 } },
   };
+  const DEFAULT_NOMS = { p1: "Moi", p2: "Conjoint(e)" };
+  const nomOf = k => String(getP(draft, "personnes." + k + ".nom") || "").trim() || DEFAULT_NOMS[k];
+  const deOf = k => window.Calc.deNom(nomOf(k), k === "p2" ? 2 : 1);
   function normalize(p) {
     const d = clone(EMPTY);
     if (!p) return d;
     Object.assign(d.foyer, p.foyer || {});
-    ["steph", "compagne"].forEach(k => { Object.assign(d.personnes[k], (p.personnes || {})[k] || {}); Object.assign(d.autres[k], (p.autres || {})[k] || {}); });
+    ["p1", "p2"].forEach(k => { Object.assign(d.personnes[k], (p.personnes || {})[k] || {}); Object.assign(d.autres[k], (p.autres || {})[k] || {}); });
     d.biens = clone(p.biens || []); d.credits = clone(p.credits || []);
     if (p.updatedAt) d.updatedAt = p.updatedAt;
     d.__saved = true;
@@ -67,10 +70,12 @@
       seg("foyer.age", [["u30", "&lt; 30"], ["a30", "30-39"], ["a40", "40-49"], ["a50", "50-59"], ["a60", "60-69"], ["a70", "70 +"]], "Âge de la personne qui gagne le plus") +
       seg("foyer.tmi", [[0, "0 %"], [11, "11 %"], [30, "30 %"], [41, "41 %"], [45, "45 %"]], "Tranche marginale d'imposition");
 
-    const people = +f.adultes >= 2 ? ["steph", "compagne"] : ["steph"];
+    const two = +f.adultes >= 2;
+    const people = two ? ["p1", "p2"] : ["p1"];
     $("pfPeople").innerHTML = people.map(k => {
       const p = "personnes." + k, a = "autres." + k, u = getP(draft, p + ".salaireUnite") || "nm";
-      return '<div class="pf-person"><h3>' + (k === "steph" ? "Stéph" : "Compagne") + "</h3>" +
+      return '<div class="pf-person"><h3 data-nom="' + k + '">' + esc(nomOf(k)) + "</h3>" +
+        text(p + ".nom", "Prénom", DEFAULT_NOMS[k]) +
         '<div class="pf-field"><label class="lbl" for="pf-' + k + '-sal">Salaire</label><div class="money"><input id="pf-' + k + '-sal" data-f="' + p + '.salaire" data-t="num" type="number" inputmode="decimal" min="0" step="any" value="' + esc(getP(draft, p + ".salaire") ?? "") + '">' +
         '<select data-f="' + p + '.salaireUnite" aria-label="Unité du salaire">' + UNITS.map(([v, t]) => '<option value="' + v + '"' + (v === u ? " selected" : "") + ">" + t + "</option>").join("") + "</select></div></div>" +
         seg(p + ".statut", [["cadre", "cadre"], ["nc", "non-cadre"]], "Statut") +
@@ -80,12 +85,13 @@
         '<div class="pf-2">' + money(a + ".usage", "Voiture, meubles…", "€") + money(a + ".entreprise", "Parts d'entreprise", "€") + "</div></div>";
     }).join("");
 
+    renderBiensNote();
     const BI = draft.biens;
     $("pfBiens").innerHTML = BI.length ? BI.map((b, i) => {
       const p = "biens." + i, warn = +b.crd > +b.valeur && +b.valeur > 0;
       return '<div class="pf-row" data-row="biens" data-i="' + i + '">' + text(p + ".nom", "Nom", "ex. Studio Lyon 7e", " pf-wide") +
         select(p + ".usage", "Usage", [["rp", "Résidence principale"], ["locatif", "Locatif"], ["secondaire", "Secondaire"]]) +
-        money(p + ".valeur", "Valeur", "€") + money(p + ".partSteph", "Part de Stéph", "%") + money(p + ".crd", "Reste à rembourser", "€") +
+        money(p + ".valeur", "Valeur", "€") + (two ? money(p + ".part_p1", 'Part <span data-de="p1">' + esc(deOf("p1")) + "</span>", "%") : "") + money(p + ".crd", "Reste à rembourser", "€") +
         money(p + ".mensualite", "Mensualité", "€/mois") + money(p + ".loyer", "Loyer perçu", "€/mois") +
         '<button type="button" class="del" data-pf-del="biens" data-i="' + i + '">Retirer</button>' +
         (warn ? '<div class="pf-note">Le reste à rembourser dépasse la valeur du bien.</div>' : "") + "</div>";
@@ -95,10 +101,14 @@
     $("pfCredits").innerHTML = CR.length ? CR.map((c, i) => {
       const p = "credits." + i;
       return '<div class="pf-row" data-row="credits" data-i="' + i + '">' + text(p + ".nom", "Nom", "ex. Prêt auto", " pf-wide") +
-        select(p + ".owner", "Titulaire", [["steph", "Stéph"], ["compagne", "Compagne"], ["commun", "Commun"]]) +
+        select(p + ".owner", "Titulaire", [["p1", esc(nomOf("p1"))]].concat(two || c.owner === "p2" ? [["p2", esc(nomOf("p2"))]] : [], [["commun", "Commun"]])) +
         money(p + ".crd", "Reste à rembourser", "€") + money(p + ".mensualite", "Mensualité", "€/mois") +
         '<button type="button" class="del" data-pf-del="credits" data-i="' + i + '">Retirer</button></div>';
     }).join("") : '<div class="pf-empty">Aucun autre crédit.</div>';
+  }
+
+  function renderBiensNote() {
+    $("pfBiensNote").textContent = "Valeur estimée aujourd'hui" + (+draft.foyer.adultes >= 2 ? " · la part " + deOf("p2") + " est le complément à 100 %" : "");
   }
 
   /* ---------- état et récapitulatif ---------- */
@@ -108,11 +118,11 @@
     $("pfPct").textContent = pct + " %";
     $("pfBar").style.width = pct + "%";
     const miss = C.manquants(pr);
-    $("pfMissing").textContent = miss.length ? "À compléter : " + miss.join(", ").toLowerCase() + "." : "Tout est renseigné. Ma position et Acheter ou placer utilisent ces chiffres.";
+    $("pfMissing").textContent = miss.length ? "À compléter : " + miss.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "." : "Tout est renseigné. Ma position et Acheter ou placer utilisent ces chiffres.";
     const pos = S ? S.positions : [];
-    const pat = C.patrimoine(pos, pr, "couple"), rev = C.revenusFoyer(pr, "couple"), mens = C.mensualites(pr, "couple");
+    const pat = C.patrimoine(pos, pr, "foyer"), rev = C.revenusFoyer(pr, "foyer"), mens = C.mensualites(pr, "foyer");
     $("pfRecap").innerHTML = [
-      ["Patrimoine net du couple", eur(pat.net), "dont " + eur(pat.financier) + " suivis dans le Pilotage"],
+      ["Patrimoine net du foyer", eur(pat.net), "dont " + eur(pat.financier) + " suivis dans le Pilotage"],
       ["Revenus du foyer", eur(rev) + "/mois", "nets avant impôt, loyers compris"],
       ["Mensualités de crédit", eur(mens) + "/mois", rev > 0 ? Math.round(mens / rev * 100) + " % des revenus" : "—"],
     ].map(([l, v, s]) => '<div class="pf-kpi"><span>' + l + "</span><b>" + v + "</b><em>" + s + "</em></div>").join("");
@@ -144,6 +154,14 @@
       let v = el.type === "checkbox" ? el.checked : el.value;
       if (el.dataset.t === "num") v = v === "" ? null : Math.max(0, +v);
       setP(draft, path, v);
+      const nm = /^personnes\.(p[12])\.nom$/.exec(path);
+      if (nm) { // le prénom se répercute sans reconstruire le formulaire (le champ garde le focus)
+        const k = nm[1];
+        root.querySelectorAll('[data-nom="' + k + '"]').forEach(x => { x.textContent = nomOf(k); });
+        root.querySelectorAll('[data-de="' + k + '"]').forEach(x => { x.textContent = deOf(k); });
+        root.querySelectorAll('select[data-f$=".owner"] option[value="' + k + '"]').forEach(x => { x.textContent = nomOf(k); });
+        if (k === "p2") renderBiensNote();
+      }
       if (/^biens\.\d+\.(crd|valeur)$/.test(path)) { const row = el.closest(".pf-row"); const b = getP(draft, path.replace(/\.(crd|valeur)$/, "")); let n = row.querySelector(".pf-note"); const warn = +b.crd > +b.valeur && +b.valeur > 0; if (warn && !n) { n = document.createElement("div"); n.className = "pf-note"; n.textContent = "Le reste à rembourser dépasse la valeur du bien."; row.appendChild(n); } else if (!warn && n) n.remove(); }
       touch();
     });
@@ -151,7 +169,7 @@
       const s = e.target.closest("[data-seg]");
       if (s) { const raw = s.dataset.v; setP(draft, s.dataset.seg, /^-?\d+(\.\d+)?$/.test(raw) ? +raw : raw); if (s.dataset.seg === "foyer.enfants" && +draft.foyer.enfants14 > +draft.foyer.enfants) draft.foyer.enfants14 = +draft.foyer.enfants; renderForm(); touch(); return; }
       const add = e.target.closest("[data-pf-add]");
-      if (add) { const k = add.dataset.pfAdd; draft[k].push(k === "biens" ? { id: uid(), nom: "", usage: "rp", valeur: null, partSteph: 50, crd: 0, mensualite: 0, loyer: 0 } : { id: uid(), nom: "", owner: "commun", crd: null, mensualite: null }); renderForm(); touch(); const rows = $(k === "biens" ? "pfBiens" : "pfCredits").querySelectorAll(".pf-row"); const last = rows[rows.length - 1]; last && last.querySelector("input").focus(); return; }
+      if (add) { const k = add.dataset.pfAdd; draft[k].push(k === "biens" ? { id: uid(), nom: "", usage: "rp", valeur: null, part_p1: +draft.foyer.adultes >= 2 ? 50 : 100, crd: 0, mensualite: 0, loyer: 0 } : { id: uid(), nom: "", owner: "commun", crd: null, mensualite: null }); renderForm(); touch(); const rows = $(k === "biens" ? "pfBiens" : "pfCredits").querySelectorAll(".pf-row"); const last = rows[rows.length - 1]; last && last.querySelector("input").focus(); return; }
       const del = e.target.closest("[data-pf-del]");
       if (del) { draft[del.dataset.pfDel].splice(+del.dataset.i, 1); renderForm(); touch(); }
     });

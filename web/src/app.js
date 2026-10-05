@@ -9,6 +9,7 @@
   if (H[location.hash]) active = H[location.hash];
 
   const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const App = {
     register(name, m) { mods[name] = m; },
     active: () => active,
@@ -42,7 +43,20 @@
     if (S.dbOk === false) { b.hidden = false; b.textContent = "Les données du tableau de bord ne sont pas accessibles dans cette vue. Ouvrez-le depuis votre compte Claude. Ma position et Acheter ou placer fonctionnent avec des valeurs d'exemple."; }
     else if (S.error) { b.hidden = false; b.textContent = "Lecture des données interrompue (" + S.error + "). Rechargez la page."; }
     else b.hidden = true;
-    document.querySelectorAll("#scopeSeg button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.scope === S.scope)));
+    scopeSeg(S);
+  }
+  /* Sélecteur de périmètre : « Foyer » + une entrée par personne ; masqué s'il n'y a qu'une personne. */
+  function scopeSeg(S) {
+    const seg = $("scopeSeg"); if (!seg) return;
+    const ppl = Array.isArray(S.people) ? S.people : [];
+    const items = [{ id: "foyer", nom: "Foyer" }].concat(ppl.map((p, i) => ({ id: p.id, nom: String(p.nom || "").trim() || (i ? "Conjoint(e)" : "Moi") })));
+    const sig = JSON.stringify(items);
+    if (seg.dataset.sig !== sig) {
+      seg.innerHTML = items.map(x => '<button type="button" data-scope="' + esc(x.id) + '">' + esc(x.nom) + "</button>").join("");
+      seg.dataset.sig = sig;
+    }
+    seg.hidden = ppl.length < 2;
+    seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.scope === S.scope)));
   }
 
   function boot() {
@@ -50,7 +64,7 @@
     tabs.innerHTML = ORDER.map(k => '<button type="button" role="tab" id="tab-' + k + '" aria-controls="view-' + k + '" data-app-tab="' + k + '"><span class="t-l">' + LABELS[k] + '</span><span class="t-v" id="tv-' + k + '">–</span></button>').join("");
     tabs.addEventListener("click", e => { const b = e.target.closest("[data-app-tab]"); if (b) App.go(b.dataset.appTab); });
     tabs.addEventListener("keydown", e => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; const i = ORDER.indexOf(active); App.go(ORDER[(i + (e.key === "ArrowRight" ? 1 : ORDER.length - 1)) % ORDER.length]); $("tab-" + active).focus(); });
-    document.querySelectorAll("#scopeSeg button").forEach(b => b.addEventListener("click", () => Store.setScope(b.dataset.scope)));
+    $("scopeSeg").addEventListener("click", e => { const b = e.target.closest("[data-scope]"); if (b) Store.setScope(b.dataset.scope); });
     document.addEventListener("click", e => {
       const g = e.target.closest("[data-goto-tab]"); if (g) { e.preventDefault(); App.go(g.dataset.gotoTab); }
     });

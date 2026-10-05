@@ -1,7 +1,7 @@
 // Contrat du store : store-demo.js (exécuté dans un contexte vm avec un faux navigateur) produit le S attendu
-// par les modules — clés exactes, types, alias hérités (couple/steph/compagne, à retirer en Task 5), total
-// financier égal à celui calculé directement depuis DEMO — et sa façade db fonctionne.
-// store-supabase.js et auth.js ne sont que parsés (pas de réseau), et doivent partager la même table d'alias.
+// par les modules — clés exactes, types, vocabulaire canonique (foyer / p1 / p2), total financier égal à celui
+// calculé directement depuis DEMO — et sa façade db fonctionne.
+// store-supabase.js et auth.js ne sont que parsés (pas de réseau) ; plus aucun alias hérité (couple/steph/compagne).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -63,34 +63,38 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   assert.equal(typeof ctx.Store.db.doc, "function"); assert.equal(typeof ctx.Store.db.collection, "function");
 });
 
-test("démo : foyer de deux personnes et alias hérités", async () => {
+test("démo : foyer de deux personnes, formes canoniques", async () => {
   const ctx = browser();
   const S = await whenReady(ctx);
   assert.deepEqual(J(S.people), [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }]);
-  assert.equal(S.scope, "couple");
+  assert.equal(S.scope, "foyer");
   assert.equal(S.positions.length, 12);
-  S.positions.forEach(p => assert.ok(["steph", "compagne"].includes(p.owner), `owner hérité pour ${p.id} : ${p.owner}`));
+  S.positions.forEach(p => assert.ok(["p1", "p2"].includes(p.owner), `owner canonique pour ${p.id} : ${p.owner}`));
   const POS_KEYS = ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "valueDate", "status", "hypothesis", "qtyEstimated", "note"];
   S.positions.forEach(p => assert.deepEqual(Object.keys(p).sort(), [...POS_KEYS].sort(), `forme de la position ${p.id}`));
   assert.ok(S.positions.some(p => p.status === "à recevoir"), "une ligne à recevoir");
   // snapshots / config / profil / status aux clés attendues par pilotage.js, reel.js, profil.js
   assert.equal(S.snapshots.length, 3);
-  S.snapshots.forEach(s => assert.deepEqual(Object.keys(s).sort(), ["byBloc", "byEnvelope", "compagne", "couple", "date", "source", "steph"]));
+  S.snapshots.forEach(s => assert.deepEqual(Object.keys(s).sort(), ["byBloc", "byEnvelope", "date", "foyer", "p1", "p2", "source"]));
+  S.snapshots.forEach(s => near(s.p1 + s.p2, s.foyer, "photo : p1 + p2 = foyer"));
   assert.deepEqual(Object.keys(S.config).sort(), ["cushion", "hypotheses", "milestones", "recurring", "rules", "targets", "todo"]);
-  assert.ok(S.config.targets.steph && S.config.targets.compagne && S.config.targets.tolerancePts === 3, "cibles par personne (alias)");
+  assert.deepEqual(Object.keys(S.config.targets).sort(), ["p1", "p2", "tolerancePts"], "cibles par personne");
+  assert.equal(S.config.targets.tolerancePts, 3);
   assert.deepEqual(J(S.config.cushion), { mode: "amount", min: 15000, max: 20000 });
-  assert.equal(S.config.rules.length, 3); assert.equal(S.config.recurring.length, 2); assert.equal(S.config.todo.length, 2); assert.equal(S.config.milestones.length, 1);
+  assert.deepEqual(J(S.config.rules.map(r => r.type).sort()), ["envelope_cap", "max_bloc_pct", "max_line_pct", "min_bloc_pct", "price_floor", "stale_prices"], "une règle de chaque type");
+  assert.equal(S.config.recurring.length, 2); assert.equal(S.config.todo.length, 2); assert.equal(S.config.milestones.length, 1);
   assert.deepEqual(Object.keys(S.profil).sort(), ["autres", "biens", "credits", "foyer", "personnes", "updatedAt"]);
-  assert.equal(S.profil.personnes.steph.salaire, 2800); assert.equal(S.profil.personnes.compagne.salaire, 2300);
-  assert.equal(S.profil.biens[0].partSteph, 50); assert.equal("partP1" in S.profil.biens[0], false);
-  assert.equal(S.profil.credits[0].owner, "commun");
-  assert.ok(S.profil.autres.steph && S.profil.autres.compagne);
+  assert.deepEqual(Object.keys(S.profil.personnes).sort(), ["p1", "p2"]);
+  assert.equal(S.profil.personnes.p1.salaire, 2800); assert.equal(S.profil.personnes.p2.salaire, 2300);
+  assert.equal(S.profil.biens[0].part_p1, 50); assert.equal("partSteph" in S.profil.biens[0], false);
+  assert.ok(["p1", "p2", "commun"].includes(S.profil.credits[0].owner));
+  assert.deepEqual(Object.keys(S.profil.autres).sort(), ["p1", "p2"]);
   assert.deepEqual(Object.keys(S.status).sort(), ["alerts", "lastRun", "missingPrices", "summary"]);
   // la fonction nocturne « est passée » hier : pas d'alerte « agent inactif » dans Pilotage
   assert.ok(Date.now() - new Date(S.status.lastRun) < 2 * 864e5);
 });
 
-test("démo : Calc.financier(S.positions, 'couple') = somme calculée depuis DEMO", async () => {
+test("démo : Calc.financier(S.positions, 'foyer') = somme calculée depuis DEMO", async () => {
   const ctx = browser();
   const S = await whenReady(ctx);
   const D = ctx.DEMO.positions;
@@ -98,24 +102,28 @@ test("démo : Calc.financier(S.positions, 'couple') = somme calculée depuis DEM
   const p1 = D.filter(p => counted(p) && p.owner === "p1").reduce((a, p) => a + val(p), 0);
   const p2 = D.filter(p => counted(p) && p.owner === "p2").reduce((a, p) => a + val(p), 0);
   assert.ok(total > 90000 && total < 100000, `total démo ≈ 95 k€ (${total})`);
-  near(Calc.financier(S.positions, "couple"), total, "total foyer");
-  near(Calc.financier(S.positions, "steph"), p1, "total p1");
-  near(Calc.financier(S.positions, "compagne"), p2, "total p2");
-  near(Calc.aRecevoir(S.positions, "couple"), D.filter(p => p.status === "à recevoir").reduce((a, p) => a + val(p), 0), "à recevoir");
+  near(total, 94989.9, "total démo inchangé");
+  near(Calc.financier(S.positions, "foyer"), total, "total foyer");
+  near(Calc.financier(S.positions, "p1"), p1, "total p1");
+  near(Calc.financier(S.positions, "p2"), p2, "total p2");
+  near(Calc.aRecevoir(S.positions, "foyer"), D.filter(p => p.status === "à recevoir").reduce((a, p) => a + val(p), 0), "à recevoir");
   assert.ok(Calc.completude(S.profil) > 80, "profil démo quasi complet");
 });
 
-test("démo : setScope accepte les deux vocabulaires, mémorise la forme canonique", async () => {
+test("démo : setScope n'accepte que foyer / p1 / p2 et le mémorise", async () => {
   const ctx = browser();
   await whenReady(ctx);
-  ctx.Store.setScope("steph"); assert.equal(ctx.Store.get().scope, "steph"); assert.equal(ctx.__mem.get("scope"), "p1");
-  ctx.Store.setScope("p2"); assert.equal(ctx.Store.get().scope, "compagne"); assert.equal(ctx.__mem.get("scope"), "p2");
-  ctx.Store.setScope("foyer"); assert.equal(ctx.Store.get().scope, "couple");
-  ctx.Store.setScope("n'importe quoi"); assert.equal(ctx.Store.get().scope, "couple");
-  // un ancien navigateur avec « steph » en mémoire démarre sur p1
-  const ctx2 = browser(); ctx2.__mem.set("scope", "compagne");
-  const ctx3 = browser(); ctx3.__mem.set("scope", "p1");
-  void ctx2; void ctx3;
+  ctx.Store.setScope("p1"); assert.equal(ctx.Store.get().scope, "p1"); assert.equal(ctx.__mem.get("scope"), "p1");
+  ctx.Store.setScope("p2"); assert.equal(ctx.Store.get().scope, "p2"); assert.equal(ctx.__mem.get("scope"), "p2");
+  ctx.Store.setScope("foyer"); assert.equal(ctx.Store.get().scope, "foyer");
+  ctx.Store.setScope("steph"); assert.equal(ctx.Store.get().scope, "foyer", "l'ancien vocabulaire est refusé");
+  ctx.Store.setScope("n'importe quoi"); assert.equal(ctx.Store.get().scope, "foyer");
+  // un foyer d'une seule personne : pas de p2, le périmètre retombe sur le foyer
+  ctx.Store.setScope("p2");
+  const profil = JSON.parse(JSON.stringify(ctx.Store.get().profil)); profil.foyer.adultes = 1;
+  await ctx.Store.db.doc("profil/main").set(profil);
+  assert.deepEqual(J(ctx.Store.get().people), [{ id: "p1", nom: "Camille" }]);
+  assert.equal(ctx.Store.get().scope, "foyer");
 });
 
 test("démo : la façade db écrit en mémoire (positions, transactions, config, profil) et réémet", async () => {
@@ -126,9 +134,9 @@ test("démo : la façade db écrit en mémoire (positions, transactions, config,
   await ctx.Store.db.doc("positions/livret-a").update({ value: 13000, valueDate: "2026-10-05" });
   assert.equal(ctx.Store.get().positions.find(p => p.id === "livret-a").value, 13000);
 
-  await ctx.Store.db.doc("positions/cto-nouvelle").set({ id: "cto-nouvelle", name: "Nouvelle ligne", envelope: "CTO Sam", owner: "compagne", bloc: "Monde", isin: null, mode: "market", qty: 2, pru: 10, price: 10, priceDate: "2026-10-05", value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false });
+  await ctx.Store.db.doc("positions/cto-nouvelle").set({ id: "cto-nouvelle", name: "Nouvelle ligne", envelope: "CTO Sam", owner: "p2", bloc: "Monde", isin: null, mode: "market", qty: 2, pru: 10, price: 10, priceDate: "2026-10-05", value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false });
   const nl = ctx.Store.get().positions.find(p => p.id === "cto-nouvelle");
-  assert.equal(nl.owner, "compagne", "owner exposé en alias");
+  assert.equal(nl.owner, "p2", "owner canonique");
   assert.equal(ctx.DEMO.positions.length, 12, "window.DEMO n'est pas modifié (copie)");
 
   const before = ctx.Store.get().tx.length;
@@ -140,17 +148,22 @@ test("démo : la façade db écrit en mémoire (positions, transactions, config,
   const todo = S.config.todo.map((o, i) => (i === 0 ? { ...o, done: true } : o));
   await ctx.Store.db.doc("config/main").update({ todo });
   assert.equal(ctx.Store.get().config.todo[0].done, true);
-  assert.ok(ctx.Store.get().config.targets.steph, "les autres clés de config sont conservées");
+  assert.ok(ctx.Store.get().config.targets.p1, "les autres clés de config sont conservées");
+  const n0 = ctx.Store.get().config.rules.length;
+  await ctx.Store.db.doc("config/main").update({ rules: [...ctx.Store.get().config.rules, { type: "stale_prices", days: 10 }] });
+  assert.equal(ctx.Store.get().config.rules.length, n0 + 1);
+  await ctx.Store.db.doc("config/main").update({ cushion: { mode: "months", months: 6, depenses: 3000 } });
+  assert.deepEqual(J(ctx.Store.get().config.cushion), { mode: "months", months: 6, depenses: 3000 });
 
   const profil = JSON.parse(JSON.stringify(S.profil));
-  profil.personnes.steph.salaire = 3000; profil.biens[0].partSteph = 40; profil.credits[0].owner = "steph"; profil.updatedAt = "2026-10-05T10:00:00.000Z";
+  profil.personnes.p1.salaire = 3000; profil.personnes.p1.nom = "Camille-Anne"; profil.biens[0].part_p1 = 40; profil.credits[0].owner = "p1"; profil.updatedAt = "2026-10-05T10:00:00.000Z";
   await ctx.Store.db.doc("profil/main").set(profil);
   const P = ctx.Store.get().profil;
-  assert.equal(P.personnes.steph.salaire, 3000);
-  assert.equal(P.biens[0].partSteph, 40); assert.equal("partP1" in P.biens[0], false);
-  assert.equal(P.credits[0].owner, "steph");
+  assert.equal(P.personnes.p1.salaire, 3000);
+  assert.equal(P.biens[0].part_p1, 40);
+  assert.equal(P.credits[0].owner, "p1");
   assert.equal(P.updatedAt, "2026-10-05T10:00:00.000Z");
-  assert.deepEqual(J(ctx.Store.get().people).map(p => p.nom), ["Camille", "Sam"]);
+  assert.deepEqual(J(ctx.Store.get().people).map(p => p.nom), ["Camille-Anne", "Sam"], "le renommage se répercute sur people");
 
   await assert.rejects(ctx.Store.db.doc("positions/inexistante").update({ value: 1 }), e => e.code === "not_found");
   await assert.rejects(ctx.Store.db.doc("inconnue/x").set({}), e => e.code === "invalid_argument");
@@ -167,14 +180,15 @@ test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = d
   assert.equal(browser({ search: "", mode: "demo" }).Store?.mode, "demo");
 });
 
-test("store-supabase.js et auth.js : parsent, et partagent la table d'alias SCOPE_LEGACY de store-demo.js", () => {
+test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulaire canonique", () => {
   const sup = src("store-supabase.js"), demo = src("store-demo.js"), auth = src("auth.js");
   assert.doesNotThrow(() => new Function(sup), "store-supabase.js ne parse pas");
   assert.doesNotThrow(() => new Function(auth), "auth.js ne parse pas");
-  const table = s => { const m = s.match(/const SCOPE_LEGACY = (\{[^}]*\});/); assert.ok(m, "SCOPE_LEGACY introuvable"); return m[1].replace(/\s+/g, ""); };
-  assert.equal(table(sup), table(demo));
-  assert.equal(table(demo), '{foyer:"couple",p1:"steph",p2:"compagne"}');
-  for (const s of [sup, demo]) assert.match(s, /RETIRER EN TASK 5/, "le bloc d'alias doit être marqué à retirer");
+  for (const s of [sup, demo]) {
+    assert.doesNotMatch(s, /SCOPE_LEGACY|legacy\.|RETIRER EN TASK 5/, "plus de bloc d'alias");
+    assert.doesNotMatch(s, /"couple"|"steph"|"compagne"|partSteph|partP1/, "plus d'ancien vocabulaire");
+  }
+  for (const k of ["foyer: num(r.total)", "part_p1: num(b.part_p1)", 'setScope(c)']) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   // le store Supabase expose le même contrat
   for (const k of ['mode: "supabase"', "get: () => S", "on(fn)", "setScope(s)", "emit,", "reload,", "db,", "window.Store = Store"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["price_override", "value_date", "qty_estimated", "request_instrument", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")']) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);

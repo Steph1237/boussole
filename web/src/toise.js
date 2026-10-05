@@ -701,7 +701,7 @@ function typing(k){
 /* Recopie les valeurs réelles dans l'état (idempotent). Sans donnée réelle ni scénario : valeur d'exemple. */
 function applyReal(){
   const snap=snapS,Reel=window.Reel;if(!snap||!snap.ready||!Reel)return;
-  let V,P;try{V=Reel.values(Object.assign({},snap,{scope:'couple'}));P=Reel.values(snap)}catch(e){console.error(e);return}
+  let V,P;try{V=Reel.values(Object.assign({},snap,{scope:'foyer'}));P=Reel.values(snap)}catch(e){console.error(e);return}
   const set=(k,ok,v)=>{hasReal[k]=!!ok;if(Reel.isOverridden(MOD,k)||typing(k))return;state[k]=ok?v:DEFAULTS[k]};
   const f=V.foyer,num=v=>Math.max(0,Math.round(+v||0)),pat=V.patrimoine;
   set('inc',V.has.revenus,num(V.revenusSansLoyers));set('incUnit',V.has.revenus,'nm');

@@ -13,7 +13,7 @@
     return n(p.value);
   }
   const counted = p => p.status !== "à recevoir" && p.status !== "clôturé";
-  const inScope = (p, scope) => scope === "couple" || p.owner === scope;
+  const inScope = (p, scope) => scope === "foyer" || p.owner === scope;
   const sum = (list, f) => list.reduce((a, x) => a + f(x), 0);
 
   function financier(positions, scope) {
@@ -27,28 +27,29 @@
   }
 
   /* ---------- profil ---------- */
-  function part(scope, partSteph) {
-    const s = Math.min(100, Math.max(0, partSteph == null ? 50 : n(partSteph))) / 100;
-    return scope === "couple" ? 1 : scope === "steph" ? s : 1 - s;
+  /* Quote-part d'un bien : part_p1 (0-100) appartient à la personne 1, le complément à la personne 2. */
+  function part(scope, partP1) {
+    const s = Math.min(100, Math.max(0, partP1 == null ? 50 : n(partP1))) / 100;
+    return scope === "foyer" ? 1 : scope === "p1" ? s : 1 - s;
   }
   function partCredit(scope, owner) {
-    if (scope === "couple") return 1;
+    if (scope === "foyer") return 1;
     if (owner === "commun") return 0.5;
     return owner === scope ? 1 : 0;
   }
   const biens = pr => (pr && Array.isArray(pr.biens) ? pr.biens : []);
   const credits = pr => (pr && Array.isArray(pr.credits) ? pr.credits : []);
-  const scopePeople = scope => (scope === "couple" ? ["steph", "compagne"] : [scope]);
+  const scopePeople = scope => (scope === "foyer" ? ["p1", "p2"] : [scope]);
 
   function immobilier(profil, scope) {
-    return sum(biens(profil), b => pos(b.valeur) * part(scope, b.partSteph));
+    return sum(biens(profil), b => pos(b.valeur) * part(scope, b.part_p1));
   }
   function dettes(profil, scope) {
-    return sum(biens(profil), b => pos(b.crd) * part(scope, b.partSteph)) +
+    return sum(biens(profil), b => pos(b.crd) * part(scope, b.part_p1)) +
       sum(credits(profil), c => pos(c.crd) * partCredit(scope, c.owner));
   }
   function mensualites(profil, scope) {
-    return sum(biens(profil), b => pos(b.mensualite) * part(scope, b.partSteph)) +
+    return sum(biens(profil), b => pos(b.mensualite) * part(scope, b.part_p1)) +
       sum(credits(profil), c => pos(c.mensualite) * partCredit(scope, c.owner));
   }
   function autresActifs(profil, scope) {
@@ -80,36 +81,54 @@
   function revenusFoyer(profil, scope) {
     const ps = (profil && profil.personnes) || {};
     const sal = sum(scopePeople(scope), k => salaireNetMensuel(ps[k]) + pos(ps[k] && ps[k].autresRevenus));
-    return sal + sum(biens(profil), b => pos(b.loyer) * part(scope, b.partSteph));
+    return sal + sum(biens(profil), b => pos(b.loyer) * part(scope, b.part_p1));
   }
 
-  /* Apport : épargne au-delà du matelas (règle de Stéph), + part des placements, + « à recevoir » en option. */
+  /* Matelas de précaution (config.cushion) : { mode: "amount", min, max } ou { mode: "months", months, depenses }
+     (cible = months × depenses, sans plafond). Ancienne forme sans mode = montant. null si non défini. */
+  function matelas(config) {
+    const c = config && config.cushion;
+    if (!c || typeof c !== "object") return null;
+    if (c.mode === "months") return { mode: "months", min: pos(c.months) * pos(c.depenses), max: null, months: pos(c.months), depenses: pos(c.depenses) };
+    return { mode: "amount", min: pos(c.min), max: c.max == null || c.max === "" ? null : pos(c.max) };
+  }
+
+  /* Apport : épargne au-delà du matelas (porté par la personne 1 et le foyer), + part des placements, + « à recevoir » en option. */
   function apportDisponible(positions, config, scope, opts) {
     const o = opts || {};
     const epargne = poche(positions, scope, "Épargne");
-    const matelas = scope === "compagne" ? 0 : n(config && config.cushion && config.cushion.min);
-    const libre = Math.max(0, epargne - matelas);
+    const m = matelas(config);
+    const matelas_ = scope === "p2" || !m ? 0 : m.min;
+    const libre = Math.max(0, epargne - matelas_);
     const autres = financier(positions, scope) - epargne;
     const placements = Math.max(0, autres) * Math.min(100, Math.max(0, n(o.partPlacements))) / 100;
     const rec = o.inclureARecevoir ? aRecevoir(positions, scope) : 0;
-    return { epargne, matelas, libre, placements, aRecevoir: rec, total: libre + placements + rec };
+    return { epargne, matelas: matelas_, libre, placements, aRecevoir: rec, total: libre + placements + rec };
   }
 
   /* ---------- complétude et validation ---------- */
+  /* « de Camille », « d'Alex » ; sans prénom (ou prénom par défaut) : « de la personne 1 ». */
+  const NOMS_PAR_DEFAUT = ["", "moi", "conjoint", "conjoint(e)", "conjointe"];
+  function deNom(nom, rang) {
+    const s = String(nom == null ? "" : nom).trim();
+    if (NOMS_PAR_DEFAUT.includes(s.toLowerCase())) return "de la personne " + (rang || 1);
+    return (/^[aeiouyhàâäéèêëîïôöûüÿæœ]/i.test(s) ? "d'" : "de ") + s;
+  }
   function checks(profil) {
     const f = (profil && profil.foyer) || {}, ps = (profil && profil.personnes) || {};
     const has = v => v !== undefined && v !== null && v !== "";
+    const de = k => deNom(ps[k] && ps[k].nom, k === "p2" ? 2 : 1);
     const list = [
       ["Taille du foyer", has(f.adultes)],
       ["Âge", has(f.age)],
       ["Tranche d'imposition", has(f.tmi)],
-      ["Salaire de Stéph", pos(ps.steph && ps.steph.salaire) > 0],
-      ["Statut de Stéph", has(ps.steph && ps.steph.statut)],
+      ["Salaire " + de("p1"), pos(ps.p1 && ps.p1.salaire) > 0],
+      ["Statut " + de("p1"), has(ps.p1 && ps.p1.statut)],
       ["Patrimoine hors Pilotage", !!profil && (Array.isArray(profil.biens) || Array.isArray(profil.credits))],
     ];
     if (n(f.adultes) >= 2) list.push(
-      ["Salaire de la compagne", pos(ps.compagne && ps.compagne.salaire) > 0],
-      ["Statut de la compagne", has(ps.compagne && ps.compagne.statut)]);
+      ["Salaire " + de("p2"), pos(ps.p2 && ps.p2.salaire) > 0],
+      ["Statut " + de("p2"), has(ps.p2 && ps.p2.statut)]);
     return list;
   }
   function completude(profil) {
@@ -123,7 +142,7 @@
     const erreurs = [], avertissements = [];
     biens(profil).forEach(b => {
       const nom = b.nom || "Bien sans nom";
-      if (n(b.partSteph) < 0 || n(b.partSteph) > 100) erreurs.push(nom + " : la quote-part doit être comprise entre 0 et 100 %.");
+      if (n(b.part_p1) < 0 || n(b.part_p1) > 100) erreurs.push(nom + " : la quote-part doit être comprise entre 0 et 100 %.");
       ["valeur", "crd", "mensualite", "loyer"].forEach(k => { if (n(b[k]) < 0) erreurs.push(nom + " : les montants ne peuvent pas être négatifs."); });
       if (pos(b.crd) > pos(b.valeur) && pos(b.valeur) > 0) avertissements.push(nom + " : le capital restant dû dépasse la valeur du bien.");
     });
@@ -134,5 +153,5 @@
   }
 
   return { val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites,
-    autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, apportDisponible, completude, manquants, valider };
+    autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, completude, manquants, valider };
 });

@@ -1,7 +1,8 @@
 /* DONNÉES D'EXEMPLE — mode démo (app.html?demo). Foyer fictif : « Camille » (p1) et « Sam » (p2).
    Aucune personne réelle ; montants plausibles pour un foyer français en 2026.
-   Forme canonique du store (foyer / p1 / p2) : store-demo.js applique les alias hérités (couple/steph/compagne)
-   attendus par les modules copiés de ~/Finance, exactement comme store-supabase.js le fait pour les lignes SQL.
+   Forme canonique du store (foyer / p1 / p2), exposée telle quelle par store-demo.js ; store-supabase.js produit
+   la même forme depuis les lignes SQL. config.rules contient une règle de chaque type, chacune déclenchant au
+   moins une alerte dans Pilotage (périmètre Foyer).
    Les dates sont relatives à aujourd'hui pour que la démo reste « fraîche » (cours d'hier, photos aux fins
    des trois mois précédents) ; les montants sont fixes.
    Total financier compté (hors « à recevoir ») : 94 989,90 € — Camille 51 815,50 €, Sam 43 174,40 €. */
@@ -21,25 +22,25 @@
     P({ id: "pea-air-liquide", name: "Air Liquide", envelope: "PEA Camille", owner: "p1", bloc: "Convictions", mode: "market", isin: "FR0000120073", qty: 22, pru: 162, price: 181.5, priceDate: hier }),          //  3 993,00
     P({ id: "cto-asml", name: "ASML", envelope: "CTO Sam", owner: "p2", bloc: "Convictions", mode: "market", isin: "NL0010273215", qty: 6, pru: 640, price: 712.4, priceDate: hier }),                             //  4 274,40
     P({ id: "av-fonds-euro", name: "Fonds en euros", envelope: "Assurance vie Sam", owner: "p2", bloc: "Obligations", mode: "manual", value: 18200, valueDate: monthEnd(1) }),                                   // 18 200,00
-    P({ id: "av-scpi", name: "SCPI diversifiée", envelope: "Assurance vie Sam", owner: "p2", bloc: "SCPI", mode: "manual", value: 9800, valueDate: monthEnd(1), hypothesis: "Valorisée au prix de retrait 2025, à confirmer sur le relevé annuel." }), // 9 800,00
+    P({ id: "av-scpi", name: "SCPI diversifiée", envelope: "Assurance vie Sam", owner: "p2", bloc: "SCPI", mode: "manual", value: 5300, valueDate: monthEnd(1), hypothesis: "Valorisée au prix de retrait 2025, à confirmer sur le relevé annuel." }), // 5 300,00
     P({ id: "livret-a", name: "Livret A", envelope: "Livrets Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4) }),                                                        // 12 000,00
-    P({ id: "ldds", name: "LDDS", envelope: "Livrets Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 7500, valueDate: ago(4) }),                                                                      //  7 500,00
+    P({ id: "ldds", name: "LDDS", envelope: "Livrets Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4) }),                                                                     // 12 000,00 (plafond)
     P({ id: "per-camille", name: "PER Camille", envelope: "PER", owner: "p1", bloc: "Monde", mode: "manual", value: 11800, valueDate: monthEnd(1) }),                                                            // 11 800,00
-    P({ id: "crypto-btc", name: "Bitcoin", envelope: "Crypto", owner: "p1", bloc: "Crypto", mode: "market", isin: "X-BTC", qty: 0.042, pru: 58000, price: 61250, priceDate: hier, qtyEstimated: true }),         //  2 572,50
+    P({ id: "crypto-btc", name: "Bitcoin", envelope: "Crypto", owner: "p1", bloc: "Crypto", mode: "market", isin: "X-BTC", qty: 0.042, pru: 58000, price: 61250, priceDate: ago(6), qtyEstimated: true }),      //  2 572,50 (cours ancien)
     P({ id: "compte-commun", name: "Compte courant commun", envelope: "Banque", owner: "p2", bloc: "Épargne", mode: "manual", value: 3400, valueDate: ago(1) }),                                                 //  3 400,00
     P({ id: "prime-camille", name: "Prime annuelle", envelope: "À recevoir", owner: "p1", bloc: "Épargne", mode: "manual", value: 2500, valueDate: ago(0), status: "à recevoir", note: "Versée avec la paie de décembre." }), // non compté
   ];
 
   const snapshots = [
-    { date: monthEnd(3), total: 90120, p1: 48900, p2: 41220, source: "nightly",
-      byBloc: { Monde: 23000, Europe: 8400, Convictions: 7800, Obligations: 18000, SCPI: 9800, "Épargne": 20800, Crypto: 2320 },
-      byEnvelope: { "PEA Camille": 24100, "CTO Sam": 3900, "Assurance vie Sam": 27800, "Livrets Camille": 10800, "Livrets Sam": 7000, PER: 11200, Crypto: 2320, Banque: 3000 } },
-    { date: monthEnd(2), total: 92340, p1: 50310, p2: 42030, source: "nightly",
-      byBloc: { Monde: 23600, Europe: 8700, Convictions: 8050, Obligations: 18100, SCPI: 9800, "Épargne": 21600, Crypto: 2490 },
-      byEnvelope: { "PEA Camille": 24700, "CTO Sam": 4150, "Assurance vie Sam": 27900, "Livrets Camille": 11300, "Livrets Sam": 7200, PER: 11400, Crypto: 2490, Banque: 3200 } },
-    { date: monthEnd(1), total: 94210, p1: 51380, p2: 42830, source: "nightly",
-      byBloc: { Monde: 24100, Europe: 8900, Convictions: 8200, Obligations: 18200, SCPI: 9800, "Épargne": 22450, Crypto: 2560 },
-      byEnvelope: { "PEA Camille": 25200, "CTO Sam": 4300, "Assurance vie Sam": 28000, "Livrets Camille": 11800, "Livrets Sam": 7400, PER: 11700, Crypto: 2560, Banque: 3250 } },
+    { date: monthEnd(3), foyer: 90120, p1: 48900, p2: 41220, source: "nightly",
+      byBloc: { Monde: 23000, Europe: 8400, Convictions: 7800, Obligations: 18000, SCPI: 5300, "Épargne": 25300, Crypto: 2320 },
+      byEnvelope: { "PEA Camille": 24100, "CTO Sam": 3900, "Assurance vie Sam": 23300, "Livrets Camille": 10800, "Livrets Sam": 11500, PER: 11200, Crypto: 2320, Banque: 3000 } },
+    { date: monthEnd(2), foyer: 92340, p1: 50310, p2: 42030, source: "nightly",
+      byBloc: { Monde: 23600, Europe: 8700, Convictions: 8050, Obligations: 18100, SCPI: 5300, "Épargne": 26100, Crypto: 2490 },
+      byEnvelope: { "PEA Camille": 24700, "CTO Sam": 4150, "Assurance vie Sam": 23400, "Livrets Camille": 11300, "Livrets Sam": 11700, PER: 11400, Crypto: 2490, Banque: 3200 } },
+    { date: monthEnd(1), foyer: 94210, p1: 51380, p2: 42830, source: "nightly",
+      byBloc: { Monde: 24100, Europe: 8900, Convictions: 8200, Obligations: 18200, SCPI: 5300, "Épargne": 26950, Crypto: 2560 },
+      byEnvelope: { "PEA Camille": 25200, "CTO Sam": 4300, "Assurance vie Sam": 23500, "Livrets Camille": 11800, "Livrets Sam": 11900, PER: 11700, Crypto: 2560, Banque: 3250 } },
   ];
 
   const tx = [
@@ -55,9 +56,14 @@
       p2: { Convictions: 10, Obligations: 40, SCPI: 25, "Épargne": 25 },
       tolerancePts: 3,
     },
+    // Chaque règle déclenche une alerte sur le foyer : fonds en euros 19 % > 15 %, crypto 2,7 % > 2,5 %,
+    // Europe 9,4 % < 12 %, Air Liquide à 6,8 % de son seuil, LDDS à son plafond, cours du bitcoin vieux de 6 jours.
     rules: [
       { type: "max_line_pct", pct: 15 },
-      { type: "max_bloc_pct", bloc: "Crypto", pct: 5 },
+      { type: "max_bloc_pct", bloc: "Crypto", pct: 2.5 },
+      { type: "min_bloc_pct", bloc: "Europe", pct: 12 },
+      { type: "price_floor", position_id: "pea-air-liquide", price: 170 },
+      { type: "envelope_cap", envelope: "Livrets Sam", cap: 12000 },
       { type: "stale_prices", days: 4 },
     ],
     cushion: { mode: "amount", min: 15000, max: 20000 },
@@ -84,7 +90,7 @@
       p2: { nom: "Sam", salaire: 2300, salaireUnite: "nm", statut: "nc", csp: "inter", essai: true, autresRevenus: 0 },
     },
     biens: [
-      { id: "bien-rp", nom: "Appartement (résidence principale)", usage: "rp", valeur: 240000, partP1: 50, crd: 150000, mensualite: 820, loyer: 0 },
+      { id: "bien-rp", nom: "Appartement (résidence principale)", usage: "rp", valeur: 240000, part_p1: 50, crd: 150000, mensualite: 820, loyer: 0 },
     ],
     credits: [
       { id: "credit-auto", nom: "Prêt auto", owner: "commun", crd: 6500, mensualite: 210 },
