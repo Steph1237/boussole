@@ -5,5 +5,8 @@
     "test": "node --test test/*.test.mjs",
     "build": "node build.mjs",
     "dev": "node build.mjs --dev"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.117.2"
   }
 }
