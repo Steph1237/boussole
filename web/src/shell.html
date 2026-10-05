@@ -1,0 +1,39 @@
+<title>Pilotage patrimoine Stéph</title>
+<meta name="description" content="Patrimoine du couple, rang parmi les Français et simulateur acheter, louer ou placer, branchés sur les mêmes données.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/*@css*/
+</style>
+
+<div class="app">
+  <header class="app-head">
+    <div>
+      <h1>PILOTAGE PATRIMOINE</h1>
+      <div class="fresh" id="fresh">Chargement des données…</div>
+    </div>
+    <div class="seg" id="scopeSeg" role="group" aria-label="Périmètre">
+      <button type="button" data-scope="couple" aria-pressed="true">Couple</button>
+      <button type="button" data-scope="steph" aria-pressed="false">Stéph</button>
+      <button type="button" data-scope="compagne" aria-pressed="false">Compagne</button>
+    </div>
+  </header>
+  <div id="dbBanner" class="banner" hidden></div>
+  <nav class="app-tabs" role="tablist" aria-label="Sections"></nav>
+
+  <section class="view" id="view-pilotage" role="tabpanel" aria-labelledby="tab-pilotage">
+<!--@pilotage-->
+  </section>
+  <section class="view" id="view-toise" role="tabpanel" aria-labelledby="tab-toise" hidden>
+<!--@toise-->
+  </section>
+  <section class="view" id="view-simu" role="tabpanel" aria-labelledby="tab-simu" hidden>
+<!--@simu-->
+  </section>
+  <section class="view" id="view-profil" role="tabpanel" aria-labelledby="tab-profil" hidden>
+<!--@profil-->
+  </section>
+</div>
+
+<!--@scripts-->

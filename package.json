@@ -1,0 +1,9 @@
+{
+  "name": "boussole",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "node build.mjs",
+    "dev": "node build.mjs --dev"
+  }
+}

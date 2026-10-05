@@ -1,0 +1,320 @@
+<div class="toise">
+<div class="from-profile" id="toise-fp" hidden><span>Votre profil n'est pas encore rempli : revenus, foyer et salaire utilisent des valeurs d'exemple.</span><button type="button" class="linkish" data-goto-tab="profil">Compléter le profil</button></div>
+<div class="toise-top"><span class="toise-stamp">Données INSEE 2024 · barème DGFiP 2025 · taux Crédit Logement/CSA, août 2026</span><button type="button" class="reset" id="toise-reset">Réinitialiser mes saisies</button></div>
+
+<nav class="tabs" role="tablist" aria-label="Vos trois classements">
+  <button type="button" role="tab" id="toise-tab-rev" aria-controls="toise-p-rev" data-tab="rev"><span class="t-l">Mon foyer</span><span class="t-v" id="tv-rev">–</span></button>
+  <button type="button" role="tab" id="toise-tab-sal" aria-controls="toise-p-sal" data-tab="sal"><span class="t-l">Mon salaire</span><span class="t-v" id="tv-sal">–</span></button>
+  <button type="button" role="tab" id="toise-tab-pat" aria-controls="toise-p-pat" data-tab="pat"><span class="t-l">Mon patrimoine</span><span class="t-v" id="tv-pat">–</span></button>
+  <button type="button" role="tab" id="toise-tab-loan" aria-controls="toise-p-loan" data-tab="loan"><span class="t-l">Mon emprunt</span><span class="t-v" id="tv-loan">–</span></button>
+</nav>
+
+<!-- ================= FOYER ================= -->
+<section class="part" id="toise-p-rev" role="tabpanel" aria-labelledby="toise-tab-rev">
+  <div class="layout">
+    <aside class="controls" aria-label="Votre foyer">
+      <div class="q">
+        <div class="lh"><span class="q-l">Adultes dans le foyer</span><span class="src-slot" data-key="ad"></span></div>
+        <div class="seg big-seg" data-seg="ad" role="group" aria-label="Adultes"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3 +</button></div>
+      </div>
+      <div class="q">
+        <div class="lh"><span class="q-l">Enfants</span><span class="src-slot" data-key="kids"></span></div>
+        <div class="seg big-seg" data-seg="kids" role="group" aria-label="Enfants"><button type="button" data-v="0">0</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4 +</button></div>
+      </div>
+      <div class="q">
+        <div class="lh"><label class="q-l" for="inc">Revenus du foyer</label><span class="src-slot" data-key="inc"></span></div>
+        <div class="money"><input id="inc" data-num="inc" type="text" inputmode="numeric" autocomplete="off" value="5000"><select class="unit-sel" id="inc-unit" aria-label="Type de montant"><option value="nm">net / mois</option><option value="na">net / an</option><option value="ba">brut / an</option><option value="am">après impôt / mois</option></select></div>
+        <div class="seg sm" data-seg="statut" id="statut-f" role="group" aria-label="Statut" hidden><button type="button" data-v="nc">non-cadres</button><button type="button" data-v="cadre">cadres</button></div>
+        <p class="q-h" id="inc-help"></p>
+      </div>
+      <details class="opt" id="opt-rev">
+        <summary>Affiner <span class="opt-n" id="opt-rev-n"></span></summary>
+        <div class="opt-body">
+          <div class="field" id="teen-field"><div class="lh"><span class="lbl">Dont enfants de 14 ans ou plus</span><span class="src-slot" data-key="teens"></span></div><div class="seg sm" id="teens" role="group" aria-label="Enfants de 14 ans ou plus"></div></div>
+          <div class="field" id="union-field"><div class="lh"><span class="lbl">Le couple est</span><span class="src-slot" data-key="union"></span></div><div class="seg sm" data-seg="union" role="group" aria-label="Situation du couple"><button type="button" data-v="joint">marié ou pacsé</button><button type="button" data-v="sep">en union libre</button></div></div>
+          <div class="field"><label class="lbl" for="aid">Aides non imposables (CAF, APL, prime d'activité…)</label><div class="money sm"><input id="aid" data-num="aid" type="text" inputmode="numeric" autocomplete="off" value="0"><span>€ / mois</span></div></div>
+          <div class="field"><label class="lbl" for="taxm">Impôt sur le revenu réellement payé</label><div class="money sm"><input id="taxm" data-num="taxm" type="text" inputmode="numeric" autocomplete="off" value="0"><span>€ / mois</span></div><p class="q-h">Laissez 0 : il est estimé avec le barème officiel.</p></div>
+          <div class="field"><span class="lbl">Enfants qui gagnent leur vie et vivent encore chez vous</span><div class="seg sm" data-seg="k3" role="group" aria-label="Enfants autonomes"><button type="button" data-v="0">0</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button></div></div>
+          <div class="field" id="kinc-field" hidden><label class="lbl" for="kinc">Leurs revenus nets avant impôt (total)</label><div class="money sm"><input id="kinc" data-num="kinc" type="text" inputmode="numeric" autocomplete="off" value="0"><span>€ / mois</span></div></div>
+          <div class="field"><div class="lh"><span class="lbl">Âge de la personne qui gagne le plus</span><span class="src-slot" data-key="age"></span></div><div class="seg sm" data-seg="age" role="group" aria-label="Âge"><button type="button" data-v="u30">&lt; 30</button><button type="button" data-v="a30">30-39</button><button type="button" data-v="a40">40-49</button><button type="button" data-v="a50">50-59</button><button type="button" data-v="a60">60-69</button><button type="button" data-v="a70">70 +</button></div></div>
+          <div class="field"><span class="lbl">Vos montants datent de</span><div class="seg sm" data-seg="year" role="group" aria-label="Année"><button type="button" data-v="2024">2024</button><button type="button" data-v="2025">2025</button><button type="button" data-v="2026">2026</button></div></div>
+        </div>
+      </details>
+      <details class="calc-d"><summary><span>Détail du calcul</span><b id="calc-sum"></b></summary><div class="eq" id="eq"></div></details>
+    </aside>
+
+    <div class="results">
+      <div class="verdict" id="v-rev"><div class="v-txt"><div class="eyebrow" data-r="eye"></div><div class="big" data-r="big">–</div><p class="v-sent" data-r="sent"></p><div class="v-meta"><span class="chip" data-r="chip"></span><span class="range" data-r="range"></span></div><p class="v-next" data-r="next"></p></div><figure class="v-grid"><svg data-r="grid" viewBox="0 0 230 230" role="img" aria-label="Votre place parmi 100 personnes"></svg><figcaption data-r="cap"></figcaption></figure></div>
+
+      <section class="figure" aria-labelledby="h-cmp-rev">
+        <div class="fig-head"><div><h2 id="h-cmp-rev">Comparé à…</h2><p>Niveau de vie par mois, après impôt, en euros 2024. Barre grise : 80 % du groupe ; trait : médiane.</p></div></div>
+        <div class="chart-wrap"><svg id="cmp-rev" viewBox="0 0 720 150" role="img" aria-label="Votre niveau de vie comparé à d'autres groupes"></svg></div>
+        <div class="scen-grid" id="toise-scen"></div>
+      </section>
+
+      <section class="figure" aria-labelledby="h-toise">
+        <div class="fig-head"><div><h2 id="h-toise">Les classes sociales</h2><p id="toise-desc">–</p></div></div>
+        <div class="toolbar">
+          <div class="set"><span class="lbl">Définition</span><div class="seg sm" data-seg="grid" role="group" aria-label="Définition des classes"><button type="button" data-v="fine">Détaillée</button><button type="button" data-v="obs">Observatoire</button><button type="button" data-v="credoc">Crédoc</button><button type="button" data-v="ocde">OCDE</button></div></div>
+          <div class="set"><span class="lbl">Échelle</span><div class="seg sm" data-seg="scale" role="group" aria-label="Échelle"><button type="button" data-v="dil">loupe sur le haut</button><button type="button" data-v="prop">réelle</button></div></div>
+        </div>
+        <svg id="toise-f" viewBox="0 0 470 660" class="toise-one" role="img" aria-label="Échelle des classes sociales avec votre position"></svg>
+      </section>
+
+      <details class="figure more"><summary><span class="sum-t">Tableau des seuils</span><span class="sum-s" id="sum-table"></span></summary><div class="inner">
+        <p class="fig-p" id="table-desc">–</p>
+        <div class="table-wrap"><table><thead><tr><th>Classe</th><th>Définition</th><th class="num">Revenus avant impôt / mois</th><th class="num">Part des Français</th><th class="num">Précision</th></tr></thead><tbody id="tbody-rev"></tbody></table></div>
+      </div></details>
+      <details class="figure more"><summary><span class="sum-t">Courbe complète</span><span class="sum-s">Rang selon le revenu du foyer</span></summary><div class="inner">
+        <p class="fig-p">Pour chaque revenu mensuel net avant impôt d'un foyer comme le vôtre, la part des Français qui vivent avec moins. Zone ombrée : marge d'erreur. Survolez pour lire une valeur.</p>
+        <div class="chart-wrap" id="curve-wrap"><svg id="curve" viewBox="0 0 720 330" role="img" aria-label="Courbe de répartition"></svg><div class="tip" id="toise-tip" hidden></div></div>
+      </div></details>
+      <details class="figure more"><summary><span class="sum-t">Marge d'erreur</span><span class="sum-s" id="sum-eb-rev"></span></summary><div class="inner">
+        <p class="fig-p">De combien votre rang peut varier, source par source (intervalle à 95 %).</p>
+        <div class="eb" id="eb-rev"></div>
+      </div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SALAIRE ================= -->
+<section class="part" id="toise-p-sal" role="tabpanel" aria-labelledby="toise-tab-sal" hidden>
+  <div class="layout">
+    <aside class="controls" aria-label="Votre salaire">
+      <div class="q">
+        <div class="lh"><label class="q-l" for="sal">Votre salaire</label><span class="src-slot" data-key="sal"></span></div>
+        <div class="money"><input id="sal" data-num="sal" type="text" inputmode="numeric" autocomplete="off" value="3000"><select class="unit-sel" id="sal-unit" aria-label="Type de montant"><option value="nm">net / mois</option><option value="na">net / an</option><option value="bm">brut / mois</option><option value="ba">brut / an</option></select></div>
+        <p class="q-h" id="sal-help">Net avant impôt, en équivalent temps plein.</p>
+      </div>
+      <div class="q" id="statut-q" hidden>
+        <div class="lh"><span class="q-l">Statut</span><span class="src-slot" data-key="statut"></span></div>
+        <div class="seg big-seg" data-seg="statut" role="group" aria-label="Statut"><button type="button" data-v="nc">non-cadre</button><button type="button" data-v="cadre">cadre</button></div>
+      </div>
+      <div class="hint" id="sal-hint" hidden><span id="sal-hint-t"></span><button type="button" id="sal-hint-b">Reporter ce salaire dans « Mon foyer »</button></div>
+      <details class="opt">
+        <summary>Affiner <span class="opt-n" id="opt-sal-n"></span></summary>
+        <div class="opt-body">
+          <div class="field"><div class="lh"><label class="lbl" for="csp">Catégorie professionnelle</label><span class="src-slot" data-key="csp"></span></div><select id="csp" data-csp><option value="">Non précisée</option><option value="cadre">Cadre</option><option value="inter">Profession intermédiaire</option><option value="empl">Employé</option><option value="ouv">Ouvrier</option></select></div>
+          <div class="field"><span class="lbl">Vos montants datent de</span><div class="seg sm" data-seg="year" role="group" aria-label="Année"><button type="button" data-v="2024">2024</button><button type="button" data-v="2025">2025</button><button type="button" data-v="2026">2026</button></div></div>
+        </div>
+      </details>
+    </aside>
+
+    <div class="results">
+      <div class="verdict" id="v-sal"><div class="v-txt"><div class="eyebrow" data-r="eye"></div><div class="big" data-r="big">–</div><p class="v-sent" data-r="sent"></p><div class="v-meta"><span class="chip" data-r="chip"></span><span class="range" data-r="range"></span></div><p class="v-next" data-r="next"></p></div><figure class="v-grid"><svg data-r="grid" viewBox="0 0 230 230" role="img" aria-label="Votre place parmi 100 salariés"></svg><figcaption data-r="cap"></figcaption></figure></div>
+
+      <section class="figure" aria-labelledby="h-cmp-sal">
+        <div class="fig-head"><div><h2 id="h-cmp-sal">Comparé à…</h2><p>Salaires nets avant impôt du secteur privé, en équivalent temps plein, euros 2024. Barre grise : 80 % du groupe ; trait : médiane.</p></div></div>
+        <div class="chart-wrap"><svg id="cmp-sal" viewBox="0 0 720 220" role="img" aria-label="Votre salaire comparé à plusieurs groupes"></svg></div>
+      </section>
+
+      <section class="figure" aria-labelledby="h-toise-s">
+        <div class="fig-head"><div><h2 id="h-toise-s">L'échelle des salaires</h2><p>Les salariés du privé, du moins payé (en bas) au mieux payé (en haut).</p></div></div>
+        <div class="toolbar"><div class="set"><span class="lbl">Échelle</span><div class="seg sm" data-seg="scale" role="group" aria-label="Échelle"><button type="button" data-v="dil">loupe sur le haut</button><button type="button" data-v="prop">réelle</button></div></div></div>
+        <svg id="toise-s" viewBox="0 0 470 660" class="toise-one" role="img" aria-label="Échelle des salaires avec votre position"></svg>
+      </section>
+
+      <details class="figure more"><summary><span class="sum-t">Marge d'erreur</span><span class="sum-s" id="sum-eb-sal"></span></summary><div class="inner">
+        <p class="fig-p">Les salaires proviennent des déclarations de tous les employeurs : pas d'erreur d'échantillon, seulement celle de la lecture entre deux seuils publiés.</p>
+        <div class="eb" id="eb-sal"></div>
+      </div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PATRIMOINE ================= -->
+<section class="part" id="toise-p-pat" role="tabpanel" aria-labelledby="toise-tab-pat" hidden>
+  <div class="layout">
+    <aside class="controls" aria-label="Votre patrimoine">
+      <div class="q">
+        <div class="lh"><label class="q-l" for="own">Ce que vous possédez</label><span class="src-slot" data-key="patDetail"></span></div>
+        <div class="money"><input id="own" data-num="own" type="text" inputmode="numeric" autocomplete="off" value="425000"><span>€</span></div>
+        <p class="q-h">Logement, épargne, placements, voiture… à leur valeur d'aujourd'hui. <button type="button" class="linkish" id="detail-btn">Détailler</button></p>
+        <div class="pat-grid" id="pat-detail" hidden>
+          <div class="field"><div class="lh"><label class="lbl" for="immo">Logements</label><span class="src-slot" data-key="immo"></span></div><div class="money sm"><input id="immo" data-num="immo" type="text" inputmode="numeric" autocomplete="off" value="350000"><span>€</span></div></div>
+          <div class="field"><div class="lh"><label class="lbl" for="fin">Épargne, placements</label><span class="src-slot" data-key="fin"></span></div><div class="money sm"><input id="fin" data-num="fin" type="text" inputmode="numeric" autocomplete="off" value="60000"><span>€</span></div></div>
+          <div class="field"><div class="lh"><label class="lbl" for="pro">Entreprise</label><span class="src-slot" data-key="pro"></span></div><div class="money sm"><input id="pro" data-num="pro" type="text" inputmode="numeric" autocomplete="off" value="0"><span>€</span></div></div>
+          <div class="field"><div class="lh"><label class="lbl" for="res">Voiture, meubles…</label><span class="src-slot" data-key="res"></span></div><div class="money sm"><input id="res" data-num="res" type="text" inputmode="numeric" autocomplete="off" value="15000"><span>€</span></div></div>
+        </div>
+      </div>
+      <div class="q">
+        <div class="lh"><label class="q-l" for="debt">Ce que vous devez encore</label><span class="src-slot" data-key="debt"></span></div>
+        <div class="money"><input id="debt" data-num="debt" type="text" inputmode="numeric" autocomplete="off" value="180000"><span>€</span></div>
+        <p class="q-h">Capital restant dû sur vos crédits. Un achat à crédit n'enrichit pas le jour J : c'est chaque remboursement qui augmente votre patrimoine net.</p>
+      </div>
+      <div class="q">
+        <div class="lh"><span class="q-l">Âge de la personne qui gagne le plus</span><span class="src-slot" data-key="age"></span></div>
+        <div class="seg big-seg wrap6" data-seg="age" role="group" aria-label="Âge"><button type="button" data-v="u30">&lt; 30</button><button type="button" data-v="a30">30-39</button><button type="button" data-v="a40">40-49</button><button type="button" data-v="a50">50-59</button><button type="button" data-v="a60">60-69</button><button type="button" data-v="a70">70 +</button></div>
+      </div>
+      <details class="opt">
+        <summary>Affiner <span class="opt-n" id="opt-pat-n"></span></summary>
+        <div class="opt-body">
+          <div class="field"><div class="lh"><label class="lbl" for="csp2">Catégorie professionnelle</label><span class="src-slot" data-key="csp"></span></div><select id="csp2" data-csp><option value="">Non précisée</option><option value="cadre">Cadre</option><option value="inter">Profession intermédiaire</option><option value="empl">Employé</option><option value="ouv">Ouvrier</option><option value="indep">Artisan, commerçant, chef d'entreprise</option><option value="liber">Profession libérale</option><option value="agri">Agriculteur</option><option value="r_cadre">Retraité, ancien cadre</option><option value="r_inter">Retraité, ancienne profession intermédiaire</option><option value="r_empl">Retraité, ancien employé ou ouvrier</option><option value="r_indep">Retraité, ancien indépendant</option><option value="inact">Autre inactif</option></select></div>
+          <div class="field"><span class="lbl">Vos montants datent de</span><div class="seg sm" data-seg="year" role="group" aria-label="Année"><button type="button" data-v="2024">2024</button><button type="button" data-v="2025">2025</button><button type="button" data-v="2026">2026</button></div></div>
+        </div>
+      </details>
+    </aside>
+
+    <div class="results">
+      <div class="verdict" id="v-pat"><div class="v-txt"><div class="eyebrow" data-r="eye"></div><div class="big" data-r="big">–</div><p class="v-sent" data-r="sent"></p><div class="v-meta"><span class="chip" data-r="chip"></span><span class="range" data-r="range"></span></div><p class="v-next" data-r="next"></p></div><figure class="v-grid"><svg data-r="grid" viewBox="0 0 230 230" role="img" aria-label="Votre place parmi 100 ménages"></svg><figcaption data-r="cap"></figcaption></figure></div>
+
+      <section class="figure" aria-labelledby="h-cmp-pat">
+        <div class="fig-head"><div><h2 id="h-cmp-pat">Comparé à…</h2><p>Patrimoine net des ménages, début 2024. Barre grise : 80 % du groupe ; trait : médiane. Chaque graduation vaut dix fois la précédente.</p></div></div>
+        <div class="chart-wrap"><svg id="cmp-pat" viewBox="0 0 720 300" role="img" aria-label="Votre patrimoine comparé à plusieurs groupes"></svg></div>
+      </section>
+
+      <section class="figure" aria-labelledby="h-toise-p">
+        <div class="fig-head"><div><h2 id="h-toise-p">Les niveaux de patrimoine</h2><p>Tous les ménages classés selon leur patrimoine net, du moins doté (en bas) au plus doté (en haut).</p></div></div>
+        <div class="toolbar"><div class="set"><span class="lbl">Échelle</span><div class="seg sm" data-seg="scale" role="group" aria-label="Échelle"><button type="button" data-v="dil">loupe sur le haut</button><button type="button" data-v="prop">réelle</button></div></div></div>
+        <svg id="toise-p" viewBox="0 0 470 660" class="toise-one" role="img" aria-label="Échelle des patrimoines avec votre position"></svg>
+      </section>
+
+      <details class="figure more"><summary><span class="sum-t">Tableau des seuils</span><span class="sum-s">8 niveaux, du patrimoine quasi nul au top 1 %</span></summary><div class="inner">
+        <p class="fig-p">Patrimoine net par ménage, début 2024. Les noms des niveaux sont indicatifs ; les bornes sont celles de l'INSEE. L'Observatoire des inégalités parle de ménages « fortunés » au-delà de 820 400 € de patrimoine brut.</p>
+        <div class="table-wrap"><table><thead><tr><th>Niveau</th><th>Définition</th><th class="num">Patrimoine net</th><th class="num">Part des ménages</th><th class="num">Précision</th></tr></thead><tbody id="tbody-pat"></tbody></table></div>
+      </div></details>
+      <details class="figure more"><summary><span class="sum-t">Marge d'erreur</span><span class="sum-s" id="sum-eb-pat"></span></summary><div class="inner">
+        <p class="fig-p">L'enquête Patrimoine interroge environ 12 000 ménages et ses seuils sont espacés : les marges sont plus larges que pour les revenus.</p>
+        <div class="eb" id="eb-pat"></div>
+      </div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= EMPRUNT ================= -->
+<section class="part" id="toise-p-loan" role="tabpanel" aria-labelledby="toise-tab-loan" hidden>
+  <div class="layout">
+    <aside class="controls" aria-label="Votre projet d'achat">
+      <div class="q">
+        <span class="q-l">Votre question</span>
+        <div class="seg big-seg" data-seg="lmode" role="group" aria-label="Mode de simulation"><button type="button" data-v="cap">Mon budget max</button><button type="button" data-v="price">Un bien précis</button></div>
+      </div>
+      <div class="q" id="price-q" hidden>
+        <label class="q-l" for="price">Prix du logement</label>
+        <div class="money"><input id="price" data-num="price" type="text" inputmode="numeric" autocomplete="off" value="320000"><span>€</span></div>
+        <p class="q-h">Prix net vendeur, hors frais de notaire.</p>
+      </div>
+      <div class="q">
+        <div class="lh"><span class="q-l">Revenus du foyer</span><span class="src-slot" data-key="inc"></span></div>
+        <div class="from-foyer"><b id="loan-inc">–</b><span id="loan-hh">–</span><button type="button" class="linkish" data-goto="rev">Modifier dans « Mon foyer »</button></div>
+      </div>
+      <div class="q">
+        <div class="lh"><label class="q-l" for="toise-apport">Apport personnel</label><span class="src-slot" data-key="apport"></span></div>
+        <div class="money"><input id="toise-apport" data-num="apport" type="text" inputmode="numeric" autocomplete="off" value="30000"><span>€</span></div>
+      </div>
+      <div class="q">
+        <div class="lh"><label class="q-l" for="toise-credits">Crédits en cours</label><span class="src-slot" data-key="credits"></span></div>
+        <div class="money"><input id="toise-credits" data-num="credits" type="text" inputmode="numeric" autocomplete="off" value="0"><span>€ / mois</span></div>
+        <p class="q-h">Mensualités qui continueront après l'achat : voiture, consommation, autre bien…</p>
+      </div>
+      <div class="q">
+        <span class="q-l">Durée du prêt</span>
+        <div class="seg big-seg" data-seg="duree" role="group" aria-label="Durée"><button type="button" data-v="15">15 ans</button><button type="button" data-v="20">20 ans</button><button type="button" data-v="25">25 ans</button></div>
+      </div>
+      <div class="q">
+        <span class="q-l">Logement</span>
+        <div class="seg big-seg" data-seg="bien" role="group" aria-label="Type de logement"><button type="button" data-v="ancien">ancien</button><button type="button" data-v="neuf">neuf</button></div>
+      </div>
+      <details class="opt">
+        <summary>Affiner <span class="opt-n" id="opt-loan-n"></span></summary>
+        <div class="opt-body">
+          <div class="field"><span class="lbl">Premier achat de votre résidence principale</span><div class="seg sm" data-seg="primo" role="group" aria-label="Primo-accédant"><button type="button" data-v="oui">oui</button><button type="button" data-v="non">non</button></div></div>
+          <div class="field"><span class="lbl">Zone de la commune (pour le PTZ)</span><div class="seg sm" data-seg="zone" role="group" aria-label="Zone"><button type="button" data-v="A">A ou A bis</button><button type="button" data-v="B1">B1</button><button type="button" data-v="B2">B2</button><button type="button" data-v="C">C</button></div><p class="q-h"><a href="https://www.service-public.gouv.fr/simulateur/calcul/zonage-abc" target="_blank" rel="noopener">Trouver la zone de votre commune</a></p></div>
+          <div class="field" id="type-field"><span class="lbl">Type de logement neuf</span><div class="seg sm" data-seg="htype" role="group" aria-label="Type"><button type="button" data-v="coll">appartement</button><button type="button" data-v="indiv">maison</button></div></div>
+          <div class="field" id="trav-field"><span class="lbl">Travaux d'au moins 25 % du coût total</span><div class="seg sm" data-seg="travaux" role="group" aria-label="Travaux"><button type="button" data-v="oui">oui</button><button type="button" data-v="non">non</button></div></div>
+          <div class="field"><label class="lbl" for="rfr">Revenu fiscal de référence du foyer (avis d'impôt 2025)</label><div class="money sm"><input id="rfr" data-num="rfr" type="text" inputmode="numeric" autocomplete="off" value="0"><span>€ / an</span></div><p class="q-h" id="rfr-help"></p></div>
+          <div class="field"><label class="lbl" for="rateC">Taux du prêt, hors assurance</label><div class="money sm"><input id="rateC" data-dec="rateC" type="text" inputmode="decimal" autocomplete="off"><span>%</span></div><p class="q-h" id="rate-help"></p></div>
+          <div class="field"><label class="lbl" for="insC">Assurance emprunteur, par an</label><div class="money sm"><input id="insC" data-dec="insC" type="text" inputmode="decimal" autocomplete="off"><span>% du prêt</span></div><p class="q-h" id="ins-help"></p></div>
+          <div class="field"><div class="lh"><span class="lbl">Âge de l'emprunteur le plus âgé</span><span class="src-slot" data-key="age"></span></div><div class="seg sm" data-seg="age" role="group" aria-label="Âge"><button type="button" data-v="u30">&lt; 30</button><button type="button" data-v="a30">30-39</button><button type="button" data-v="a40">40-49</button><button type="button" data-v="a50">50-59</button><button type="button" data-v="a60">60-69</button><button type="button" data-v="a70">70 +</button></div></div>
+          <div class="field"><div class="lh"><label class="lbl" for="loyers">Loyers perçus</label><span class="src-slot" data-key="loyers"></span></div><div class="money sm"><input id="loyers" data-num="loyers" type="text" inputmode="numeric" autocomplete="off" value="0"><span>€ / mois</span></div><p class="q-h">Retenus à 70 %, comme le font la plupart des banques.</p></div>
+        </div>
+      </details>
+    </aside>
+
+    <div class="results">
+      <div class="verdict" id="v-loan"><div class="v-txt"><div class="eyebrow" id="l-eye"></div><div class="l-status" id="l-status" hidden></div><div class="big" id="l-big">–</div><p class="v-sent" id="l-sent"></p><div class="kpis" id="l-kpis"></div><div class="v-meta"><span class="range" id="l-range"></span></div><p class="v-next" id="l-next" hidden></p></div><figure class="v-grid"><svg id="l-bar" viewBox="0 0 230 230" role="img" aria-label="Répartition de vos revenus mensuels"></svg><figcaption id="l-cap"></figcaption></figure></div>
+
+      <section class="figure" aria-labelledby="h-check">
+        <div class="fig-head"><div><h2 id="h-check">Votre dossier vu par la banque</h2><p>Les points que regarde un conseiller avant d'accepter un prêt.</p></div></div>
+        <ul class="checks" id="loan-checks"></ul>
+      </section>
+
+      <section class="figure" aria-labelledby="h-plan">
+        <div class="fig-head"><div><h2 id="h-plan">Le plan de financement</h2><p id="plan-desc">Qui paie quoi dans le coût total de l'achat.</p></div></div>
+        <div class="chart-wrap"><svg id="plan-bar" viewBox="0 0 720 66" role="img" aria-label="Plan de financement"></svg></div>
+        <div class="budget">
+          <div class="eq big-eq" id="loan-eq"></div>
+          <div class="eq big-eq" id="loan-cost"></div>
+        </div>
+      </section>
+
+      <section class="figure" aria-labelledby="h-amort">
+        <div class="fig-head"><div><h2 id="h-amort">Au fil des années</h2><p>Ce qu'il vous reste à rembourser, et la part du logement qui vous appartient déjà (à prix constant). Survolez pour lire une année.</p></div>
+          <div class="legend"><span><i style="background:var(--r3)"></i>Prêt principal restant</span><span id="leg-ptz"><i style="background:var(--v1)"></i>PTZ restant</span><span><svg viewBox="0 0 26 12" aria-hidden="true"><line x1="1" x2="25" y1="6" y2="6" class="own-line"/></svg>Part qui vous appartient</span></div>
+        </div>
+        <div class="chart-wrap" id="amort-wrap"><svg id="amort" viewBox="0 0 720 280" role="img" aria-label="Capital restant dû au fil des années"></svg><div class="tip" id="tip2" hidden></div></div>
+      </section>
+
+      <section class="figure" aria-labelledby="h-heat">
+        <div class="fig-head"><div><h2 id="h-heat">Selon la durée et le taux obtenu</h2><p id="heat-desc">–</p></div></div>
+        <div class="table-wrap"><table class="heat" id="loan-heat"></table></div>
+      </section>
+
+      <details class="figure more"><summary><span class="sum-t">Règles et hypothèses</span><span class="sum-s">HCSF, PTZ, taux d'usure, frais</span></summary><div class="inner">
+        <ul class="rules">
+          <li><b>Endettement :</b> au plus 35 % des revenus nets avant impôt, assurance comprise, toutes mensualités confondues (norme du HCSF, confirmée en mars 2026). Les banques peuvent déroger pour 20 % de leurs dossiers.</li>
+          <li><b>Durée :</b> 25 ans au plus (27 ans possibles dans le neuf ou avec au moins 10 % de travaux, grâce à un différé).</li>
+          <li><b>Taux :</b> moyennes d'août 2026 de l'Observatoire Crédit Logement/CSA, hors assurance : 3,14 % sur 15 ans, 3,27 % sur 20 ans, 3,35 % sur 25 ans.</li>
+          <li><b>Taux d'usure</b> (maximum légal, TAEG assurance et frais compris), du 1er juillet au 30 septembre 2026 : 4,57 % de 10 à 20 ans, 5,29 % à partir de 20 ans (Banque de France).</li>
+          <li><b>PTZ</b> (offres depuis avril 2025, inchangé en 2026) : réservé aux primo-accédants ; logement neuf partout, ancien avec au moins 25 % de travaux en zone B2 ou C. Il finance 10 à 50 % d'un coût plafonné selon la zone, la taille du foyer et la tranche de revenus, avec un différé de 0 à 10 ans. Les revenus retenus sont le plus élevé entre le revenu fiscal de référence et le coût de l'opération divisé par 9. Le simulateur additionne sans lissage la mensualité du PTZ à celle du prêt principal : c'est une estimation prudente.</li>
+          <li><b>Assurance emprunteur :</b> taux indicatifs par âge, pour une couverture totale de 100 % du prêt.</li>
+          <li><b>Frais de notaire :</b> environ 2,5 % dans le neuf ; 7,5 % pour un premier achat dans l'ancien, 8 % sinon. Garantie et dossier : hypothèse de 1 % du prêt plus 1 000 €.</li>
+          <li><b>Non pris en compte :</b> prêts d'Action Logement et prêts aidés, lissage des prêts, stabilité de l'emploi, épargne restante et tenue des comptes.</li>
+        </ul>
+      </div></details>
+    </div>
+  </div>
+</section>
+
+<details class="method-d" id="methode"><summary><span>Méthode, hypothèses et sources</span><em>INSEE, DGFiP, Banque de France, ANIL…</em></summary><footer class="method">
+  <section>
+    <h3>Comment c'est calculé</h3>
+    <ul>
+      <li><b>Foyer :</b> l'INSEE classe les Français selon leur niveau de vie, c'est-à-dire le revenu après impôt et aides, divisé par les unités de consommation du foyer (1 pour le premier adulte, 0,5 par personne de 14 ans ou plus, 0,3 par enfant plus jeune). L'impôt est estimé avec le barème des revenus 2024 (abattement de 10 %, quotient familial plafonné, décote), sans réductions ni crédits d'impôt.</li>
+      <li><b>Salaire :</b> comparé aux salariés du secteur privé, en équivalent temps plein. Brut → net : environ 22 % de cotisations (non-cadre) ou 25 % (cadre).</li>
+      <li><b>Patrimoine :</b> ce que le ménage possède moins ce qu'il doit encore.</li>
+      <li><b>Rang :</b> entre deux seuils publiés par l'INSEE, la valeur est interpolée ; au-delà du 9e décile, selon une loi de Pareto. Les seuils du top 1 % de niveau de vie et au-delà sont estimés à partir des écarts observés en 2021.</li>
+    </ul>
+  </section>
+  <section>
+    <h3>Les définitions des classes</h3>
+    <ul>
+      <li><b>Observatoire des inégalités :</b> 30 % de catégories populaires, 50 % de classes moyennes, 20 % de catégories aisées. Riche au-delà de 2 × le niveau de vie médian.</li>
+      <li><b>Crédoc</b> (2008) : six groupes découpés par déciles, dont des classes moyennes inférieures et supérieures.</li>
+      <li><b>OCDE</b> (2019) : classes moyennes entre 75 % et 200 % du revenu médian.</li>
+      <li><b>Détaillée :</b> synthèse de ces définitions, avec les seuils de pauvreté INSEE et le haut de l'échelle.</li>
+    </ul>
+  </section>
+  <section>
+    <h3>La marge d'erreur</h3>
+    <ul>
+      <li>Intervalle à 95 % combinant l'échantillon de l'enquête (±0,35 point annoncé par l'INSEE sur le taux de pauvreté ; environ 12 000 ménages pour le patrimoine), la lecture entre deux seuils, les estimations du haut de l'échelle et l'écart de date entre vos montants et les données.</li>
+      <li>Non comptés : l'écart entre impôt estimé et impôt réel, les erreurs de saisie et les différences de champ (DOM, étudiants, fonction publique).</li>
+    </ul>
+  </section>
+  <section>
+    <h3>Sources</h3>
+    <ul>
+      <li><a href="https://www.insee.fr/fr/statistiques/2416808">INSEE : distribution des niveaux de vie 2024</a> · <a href="https://www.insee.fr/fr/statistiques/2416863">par type de ménage</a></li>
+      <li><a href="https://www.insee.fr/fr/statistiques/9019316">INSEE Première n° 2117 : niveau de vie et pauvreté en 2024</a></li>
+      <li><a href="https://www.insee.fr/fr/statistiques/2408282">INSEE : taux de pauvreté selon le seuil</a> · <a href="https://www.insee.fr/fr/statistiques/6542073">précision de l'ERFS</a> · <a href="https://www.insee.fr/fr/statistiques/7941389?sommaire=7941491">très hauts revenus</a></li>
+      <li><a href="https://www.insee.fr/fr/statistiques/8657156">INSEE Première n° 2079 : salaires du privé en 2024</a></li>
+      <li><a href="https://www.insee.fr/fr/statistiques/8672665">INSEE Focus n° 371 : patrimoine en 2024</a> · <a href="https://www.insee.fr/fr/statistiques/8736842?sommaire=8736846">tableaux détaillés</a></li>
+      <li><a href="https://www.impots.gouv.fr/www2/fichiers/documentation/brochure/ir_2025/pdf_som/21-calcul_impot_359a372.pdf">DGFiP : calcul de l'impôt 2025</a></li>
+      <li><a href="https://www.inegalites.fr/echelle-des-revenus">Observatoire des inégalités</a> · <a href="https://www.credoc.fr/download/pdf/Rech/C249.pdf">Crédoc</a> · <a href="https://www.oecd.org/en/publications/under-pressure-the-squeezed-middle-class_689afed1-en.html">OCDE</a></li>
+      <li><a href="https://lobservatoire.creditlogement.fr/publications/analyse-marche-immobilier-aout-2026/">Observatoire Crédit Logement/CSA : taux d'août 2026</a></li>
+      <li><a href="https://www.notaires.fr/fr/actualites/vente-immobiliere-et-augmentation-des-droits-de-mutation-titre-onereux">Notaires de France : hausse des droits de mutation</a></li>
+    </ul>
+  </section>
+</footer></details>
+</div>
