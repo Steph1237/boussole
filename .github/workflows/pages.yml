@@ -22,7 +22,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npm test
+        env:
+          # Facultatif : sans ce secret, les tests d'isolation et de la fonction nocturne sont marqués « non exécutés ».
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - run: node build.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
