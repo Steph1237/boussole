@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Confidentialité · Boussole</title>
+<meta name="description" content="Données collectées par Boussole, finalité, sous-traitants, conservation et droits RGPD.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --bg:#F5F6F3; --surface:#FFFFFF; --sunk:#ECEEEA; --ink:#18222C; --muted:#5B6670; --line:#D9DDD6;
+  --accent:#1F6F5C; --accent-soft:#DCEBE5; --warn-soft:#F8EBD3; --me:#D9480F;
+  --f-display:"Schibsted Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Public Sans",ui-sans-serif,system-ui,sans-serif;
+  --radius:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942;
+  --accent:#5FBF9F; --accent-soft:#1E3A33; --warn-soft:#3A2E17; --me:#FF8A5B;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942;
+  --accent:#5FBF9F; --accent-soft:#1E3A33; --warn-soft:#3A2E17; --me:#FF8A5B;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+html{overflow-x:hidden}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--f-body);-webkit-font-smoothing:antialiased;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{max-width:1180px;margin:0 auto;padding:20px 16px 40px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:40px}
+.brand{display:inline-flex;align-items:center;gap:9px;font:700 14px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand svg{width:20px;height:20px;flex:none}
+.top a.back{font:600 14px var(--f-body);color:var(--accent);text-decoration:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;white-space:nowrap}
+article{max-width:65ch;margin:40px auto 0}
+h1{font:800 clamp(30px,5vw,44px)/1.1 var(--f-display);letter-spacing:-.02em;margin:0 0 8px}
+.upd{color:var(--muted);font-size:14px;margin:0 0 28px}
+h2{font:700 20px/1.3 var(--f-display);margin:32px 0 8px}
+p,li{margin:0 0 12px}
+ul{padding-left:22px;margin:0 0 12px}
+a{color:var(--accent);text-underline-offset:3px;overflow-wrap:anywhere}
+address{font-style:normal;margin:0 0 12px}
+.box{background:var(--warn-soft);border-radius:var(--radius);padding:14px 16px;margin:0 0 12px}
+.box p:last-child{margin:0}
+.foot{max-width:65ch;margin:40px auto 0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+.foot a{color:inherit}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <a class="brand" href="../index.html" aria-label="Boussole, accueil">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5 13.4 13.4 8.5 15.5l2.1-4.9z" fill="var(--me)"/><path d="M10.6 10.6 8.5 15.5l4.9-2.1" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+      Boussole
+    </a>
+    <a class="back" href="../index.html">Accueil</a>
+  </header>
+
+  <article>
+    <h1>Confidentialité</h1>
+    <p class="upd">Dernière mise à jour : 5 octobre 2026</p>
+
+    <p>Boussole est un outil gratuit et non commercial. Cette page explique quelles données il conserve, pourquoi, chez qui, et comment les récupérer ou les effacer.</p>
+
+    <h2>Responsable du traitement</h2>
+    <p>Stéphane, particulier, éditeur de Boussole. Contact : <a href="mailto:stephane@ceres.agency">stephane@ceres.agency</a>.</p>
+
+    <h2>Données collectées</h2>
+    <ul>
+      <li><b>Votre adresse e-mail</b>, pour créer le compte et vous connecter. Si vous utilisez la connexion Google, Google nous transmet votre adresse e-mail et votre nom.</li>
+      <li><b>Les données que vous saisissez</b> : composition du foyer, prénoms, revenus, biens immobiliers, crédits, placements, mouvements, règles d'alerte et réglages.</li>
+      <li><b>Les données calculées</b> à partir de ces saisies : photos quotidiennes du patrimoine, alertes.</li>
+      <li><b>Des journaux techniques</b> (adresse IP, date et heure des connexions) tenus par l'hébergeur pour la sécurité du service.</li>
+    </ul>
+    <p>Boussole ne vous demande ni numéro de compte bancaire, ni identifiants de banque, ni pièce d'identité.</p>
+
+    <h2>Finalité</h2>
+    <p>Ces données servent uniquement à faire fonctionner le service pour vous : afficher votre patrimoine, faire les calculs, mettre à jour les cours chaque soir et vous signaler les alertes que vous avez définies. Base légale : l'exécution du service que vous demandez en créant un compte.</p>
+    <p>Pas de revente, pas de publicité, pas de traceur publicitaire, pas de mesure d'audience. Personne d'autre que vous n'a accès à vos données dans l'application : la base de données isole chaque compte.</p>
+
+    <h2>Sous-traitants</h2>
+    <ul>
+      <li><b>Supabase</b> : base de données, authentification et traitements nocturnes. Données hébergées dans l'Union européenne, région Paris (eu-west-3).</li>
+      <li><b>GitHub Pages</b> (GitHub Inc.) : hébergement des pages du site. Aucune donnée de compte n'y est stockée.</li>
+      <li><b>Yahoo Finance</b> : source des cours de bourse. Boussole lui demande le cours d'un instrument (son code) ; aucune donnée personnelle n'est transmise.</li>
+      <li><b>Google Fonts et jsDelivr</b> : polices de caractères et bibliothèque de connexion chargées par votre navigateur. Ces services reçoivent l'adresse IP de votre navigateur au chargement de la page, sans cookie.</li>
+      <li><b>Google</b>, uniquement si vous choisissez « Continuer avec Google ».</li>
+    </ul>
+
+    <h2>Assistants (Claude, ChatGPT…)</h2>
+    <p>Si vous copiez vos relevés dans un assistant, ou si vous branchez le connecteur Boussole dans Claude, les informations que l'assistant lit sont traitées par son éditeur selon ses propres conditions. Le connecteur n'accède qu'à votre compte, après votre autorisation, et vous pouvez retirer cette autorisation à tout moment.</p>
+
+    <h2>Durée de conservation</h2>
+    <p>Vos données sont conservées tant que votre compte existe. La suppression du compte, depuis la page Mon compte, efface immédiatement et définitivement le compte et toutes les données associées. Les éventuelles copies de sauvegarde de l'hébergeur disparaissent à la fin de leur cycle de rotation.</p>
+
+    <h2>Vos droits</h2>
+    <p>Conformément au RGPD, vous disposez d'un droit d'accès, de rectification, d'effacement, de portabilité, de limitation et d'opposition.</p>
+    <ul>
+      <li><b>Accès et portabilité</b> : « Télécharger mes données » sur la page Mon compte fournit un fichier JSON complet ; vos placements existent aussi en CSV.</li>
+      <li><b>Rectification</b> : directement dans l'application.</li>
+      <li><b>Effacement</b> : « Supprimer mon compte » sur la page Mon compte.</li>
+      <li><b>Toute autre demande</b> : <a href="mailto:stephane@ceres.agency">stephane@ceres.agency</a>.</li>
+    </ul>
+    <p>Si vous estimez que vos droits ne sont pas respectés, vous pouvez adresser une réclamation à la CNIL : <a href="https://www.cnil.fr/fr/plaintes" rel="noopener">cnil.fr</a>.</p>
+
+    <h2>Cookies et stockage local</h2>
+    <p>Boussole ne dépose aucun cookie. Votre session de connexion est conservée dans le stockage local de votre navigateur, ainsi que deux préférences d'affichage (dernier onglet ouvert, personne affichée). Ces éléments sont nécessaires au fonctionnement du service et ne servent à aucun suivi. Ils disparaissent à la déconnexion (session) ou quand vous effacez les données du site dans votre navigateur.</p>
+  </article>
+
+  <footer class="foot">
+    <a href="../index.html">Accueil</a>
+    <a href="mentions.html">Mentions légales</a>
+    <a href="https://github.com/Steph1237/boussole" rel="noopener">GitHub</a>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,57 @@
+/* Premiers pas (onboarding.js). Jetons de theme.css ; tout est préfixé .ob- pour ne rien toucher ailleurs. */
+dialog.ob-dialog{width:min(640px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);box-shadow:0 24px 64px -24px rgba(0,0,0,.45);font:14px/1.45 var(--f-body)}
+dialog.ob-dialog::backdrop{background:rgba(18,24,29,.6)}
+.ob-box{display:flex;flex-direction:column;max-height:calc(100dvh - 34px);margin:0}
+.ob-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.ob-kicker{margin:0;font:600 11px/1.2 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.ob-progress{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.ob-bar{display:flex;gap:4px;flex:0 0 96px}
+.ob-bar i{flex:1;height:4px;border-radius:2px;background:var(--sunk)}
+.ob-bar i.on{background:var(--accent)}
+.ob-body{padding:16px;overflow:auto;display:flex;flex-direction:column;gap:14px;min-height:0}
+.ob-body h2{font:700 22px/1.2 var(--f-display);letter-spacing:-.01em;margin:0}
+.ob-body h2:focus{outline:none}
+.ob-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ob-lbl{font-size:12px;font-weight:600;color:var(--muted)}
+.ob-seg{display:inline-flex;flex-wrap:wrap;gap:4px;background:var(--sunk);border-radius:8px;padding:3px;align-self:flex-start;max-width:100%}
+.ob-seg button{border:0;background:transparent;color:var(--muted);font:600 13px var(--f-body);padding:7px 12px;border-radius:6px;cursor:pointer;min-height:34px}
+.ob-seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.ob-names{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.ob-input{font:15px var(--f-body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 10px;min-width:0;width:100%}
+.ob-input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.ob-money{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,150px);gap:8px}
+.ob-money input{font-family:var(--f-num)}
+.ob-person{border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;margin:0;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ob-person legend{font:700 15px var(--f-display);padding:0 6px}
+.ob-hint{margin:0;font-size:12px;color:var(--muted)}
+.ob-err{margin:0;font-size:12px;color:var(--crit)}
+.ob-lead{margin:0;color:var(--muted)}
+.ob-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.ob-choice{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:var(--radius-sm);padding:12px;cursor:pointer;font:inherit}
+.ob-choice:hover{border-color:var(--line2)}
+.ob-choice b{font:700 14px var(--f-display)}
+.ob-choice span{font-size:12px;color:var(--muted)}
+.ob-choice[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.ob-assist{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.ob-step-txt{margin:0;font-size:13px}
+.ob-prompt,.ob-reply{font:12px/1.45 var(--f-num);resize:vertical;min-height:90px}
+.ob-prompt{color:var(--muted)}
+.ob-copied{font-size:12px;color:var(--good)}
+.ob-errs,.ob-warns{margin:0;padding:8px 12px 8px 26px;border-radius:var(--radius-sm);font-size:13px}
+.ob-errs{background:var(--crit-soft)}
+.ob-warns{background:var(--warn-soft)}
+.ob-good{margin:0;color:var(--good);font-weight:600;font-size:13px}
+.ob-summary{margin:0;font-size:13px}
+.ob-summary:empty{display:none}
+.ob-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 16px;border-top:1px solid var(--line)}
+.ob-msg{order:5;flex:1 0 100%;font-size:13px;color:var(--muted)}
+.ob-msg:empty{display:none}
+.ob-link{margin-right:auto;border:0;background:none;padding:6px 0;color:var(--muted);font:600 13px var(--f-body);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.ob-link:hover{color:var(--ink)}
+.ob-btn{font:600 13px var(--f-body);border-radius:var(--radius-sm);padding:10px 16px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer}
+.ob-btn.ghost{background:transparent;color:var(--accent)}
+.ob-btn:disabled{opacity:.5;cursor:default}
+@media (max-width:520px){
+  .ob-money{grid-template-columns:1fr}
+  .ob-bar{flex-basis:64px}
+}
