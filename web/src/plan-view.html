@@ -1,0 +1,98 @@
+<div class="plan" id="planRoot">
+  <section class="pv-summary" aria-label="Synthèse du budget">
+    <div><div class="label" id="pvSynRev">Revenus du foyer</div><div class="mid num" id="pvRev">—</div><div class="small muted" id="pvRevS"></div></div>
+    <div><div class="label">Dépenses / mois</div><div class="mid num" id="pvDep">—</div><div class="small muted" id="pvDepS"></div></div>
+    <div><div class="label">Épargne / mois</div><div class="mid num" id="pvEp">—</div><div class="small muted">versements prévus au budget</div></div>
+    <div><div class="label">Taux d'épargne</div><div class="mid num" id="pvTaux">—</div><div class="small muted" id="pvTauxS"></div></div>
+    <div><div class="label">Reste à vivre</div><div class="mid num" id="pvReste">—</div><div class="small muted" id="pvResteS"></div></div>
+  </section>
+
+  <section class="panel" aria-labelledby="pv-h-budget">
+    <div class="panel-head">
+      <h2 id="pv-h-budget">Budget mensuel</h2>
+      <div class="pv-head-act">
+        <span class="small muted" id="pvBudgetNote"></span>
+        <button type="button" class="btn ghost" id="pvAssistBtn">Remplir avec mon assistant</button>
+      </div>
+    </div>
+    <div id="pvBudget"></div>
+    <div class="pv-save" id="pvSave" hidden>
+      <div class="pv-msgs" id="pvMsgs" aria-live="polite"></div>
+      <div class="pv-actions">
+        <button type="button" class="btn ghost" id="pvCancel">Annuler</button>
+        <button type="button" class="btn" id="pvSubmit">Enregistrer le budget</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="pv-h-obj">
+    <div class="panel-head"><h2 id="pv-h-obj">Objectifs</h2><span class="small muted" id="pvObjNote"></span></div>
+    <div class="pv-objs" id="pvObjs"></div>
+    <div class="pv-add" id="pvAdd">
+      <span class="lbl">Ajouter un objectif</span>
+      <div class="pv-tpl">
+        <button type="button" class="btn ghost" data-pv-tpl="matelas">Matelas : 6 mois de dépenses</button>
+        <button type="button" class="btn ghost" data-pv-tpl="apport">Apport immobilier</button>
+        <button type="button" class="btn ghost" data-pv-tpl="retraite">Retraite</button>
+        <button type="button" class="btn ghost" data-pv-tpl="projet">Projet</button>
+      </div>
+    </div>
+    <div class="pv-objmsg" id="pvObjMsg" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="pv-h-proj">
+    <div class="panel-head"><h2 id="pv-h-proj">Projection du patrimoine financier</h2><span class="small muted" id="pvProjNote"></span></div>
+    <div class="pv-proj-ctl">
+      <div class="pv-field"><span class="lbl" id="pvHorLbl">Horizon</span>
+        <div class="seg" role="group" aria-labelledby="pvHorLbl" id="pvHorizon">
+          <button type="button" data-h="5" aria-pressed="false">5 ans</button>
+          <button type="button" data-h="10" aria-pressed="true">10 ans</button>
+          <button type="button" data-h="20" aria-pressed="false">20 ans</button>
+          <button type="button" data-h="30" aria-pressed="false">30 ans</button>
+        </div>
+      </div>
+      <div class="pv-field"><label class="lbl" for="pvVers">Versement mensuel <span id="pvVersTag"></span></label>
+        <div class="money"><input id="pvVers" type="number" inputmode="decimal" min="0" step="any"><span class="u">€ / mois</span></div>
+        <span class="small muted" id="pvVersSrc"></span>
+      </div>
+    </div>
+    <div class="pv-chart" id="pvChart"></div>
+    <div class="pv-legend small muted" id="pvLegend"></div>
+    <div class="pv-scroll"><table class="pv-table" id="pvProjTable"></table></div>
+    <details class="pv-hyp">
+      <summary>Hypothèses de rendement</summary>
+      <div class="pv-scroll"><table class="pv-table" id="pvHyp"></table></div>
+      <p class="small muted">Rendements annuels moyens indicatifs par poche ; les versements sont répartis comme votre portefeuille actuel.</p>
+    </details>
+    <p class="small muted pv-caption">Projection indicative, hors inflation et fiscalité ; les marchés ne suivent pas une moyenne.</p>
+  </section>
+
+  <datalist id="pvCats">
+    <option value="Logement"></option><option value="Alimentation"></option><option value="Transport"></option><option value="Enfants"></option>
+    <option value="Santé"></option><option value="Loisirs"></option><option value="Abonnements"></option><option value="Impôts"></option>
+    <option value="Divers"></option><option value="Épargne"></option><option value="Revenus"></option>
+  </datalist>
+
+  <dialog class="pv-dialog" id="pvAssist" aria-labelledby="pvAssistTitle">
+    <form method="dialog" class="pv-dlg-in">
+      <div class="pv-dlg-head"><h2 id="pvAssistTitle">Remplir le budget avec mon assistant</h2><button class="pv-x" value="close" aria-label="Fermer">×</button></div>
+      <ol class="pv-steps">
+        <li>
+          <p><b>Copiez ce message</b> dans Claude, ChatGPT ou l'assistant de votre choix. Vous pouvez y joindre vos relevés bancaires : il regroupera les dépenses par catégorie, puis répondra avec un bloc de données.</p>
+          <textarea id="pvPrompt" class="plain" rows="6" readonly aria-label="Message à copier"></textarea>
+          <button type="button" class="btn ghost" id="pvCopy">Copier le message</button>
+        </li>
+        <li>
+          <p><b>Collez sa réponse</b> ici :</p>
+          <textarea id="pvPaste" class="plain" rows="6" aria-label="Réponse de l'assistant" placeholder="Collez toute la réponse, texte compris : le bloc de données est retrouvé automatiquement."></textarea>
+          <button type="button" class="btn ghost" id="pvRead">Lire la réponse</button>
+        </li>
+      </ol>
+      <div class="pv-preview" id="pvPreview" aria-live="polite"></div>
+      <div class="pv-dlg-foot">
+        <span class="small muted">Rien n'est enregistré tant que vous n'avez pas cliqué sur « Enregistrer le budget ».</span>
+        <button type="button" class="btn" id="pvApply" disabled>Appliquer au budget</button>
+      </div>
+    </form>
+  </dialog>
+</div>

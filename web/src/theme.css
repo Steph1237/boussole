@@ -50,7 +50,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 .app-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .app-head h1{font-family:var(--f-display);font-size:15px;font-weight:700;letter-spacing:.02em;margin:0}
 .app-head .fresh{font-size:12px;color:var(--muted)}
-.app-tabs{position:sticky;top:var(--top);z-index:20;background:var(--bg);display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:8px;padding-block:8px;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px}
+.app-tabs{position:sticky;top:var(--top);z-index:20;background:var(--bg);display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:8px;padding-block:8px;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px}
 .app-tabs::-webkit-scrollbar{display:none}
 .app-tabs button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:var(--radius);padding:9px 14px;cursor:pointer;text-align:left;font:inherit}
 .app-tabs button:hover{border-color:var(--line2)}
@@ -59,6 +59,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 .app-tabs button[aria-selected="true"]{background:var(--sel-bg);border-color:var(--sel-bg);color:var(--sel-ink)}
 .app-tabs button[aria-selected="true"] .t-l{color:var(--sel-ink);opacity:.75}
 .view{display:flex;flex-direction:column;gap:18px;min-width:0}
+.view[hidden]{display:none}
 .banner{padding:10px 14px;border-radius:8px;background:var(--warn-soft);color:var(--ink);font-size:13px}
 
 /* ---------- composants communs ---------- */
@@ -85,7 +86,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 .from-profile .fp-row span b{font-family:var(--f-num);font-weight:500}
 .linkish{border:0;background:none;padding:0;color:var(--accent);font:600 13px var(--f-body);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 
-@media (max-width:640px){.app-tabs{grid-template-columns:repeat(4,minmax(132px,1fr))}}
+@media (max-width:640px){.app-tabs{grid-template-columns:repeat(5,minmax(132px,1fr))}}
 
 .app-actions{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
 .app-link{font:600 13px var(--f-body);color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:1px}
