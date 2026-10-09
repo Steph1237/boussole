@@ -1,1 +1,28 @@
-/* actions : styles à venir, tous scopés sous #view-actions. */
+/* Recommandations › Actions : bandeau de veille, filtres, liste priorisée (gravité crit > warn > info > piste). */
+#view-actions .actions{display:flex;flex-direction:column;gap:14px;max-width:880px}
+#view-actions .ac-veille{margin:0;padding:10px 14px;border-radius:8px;border:1px dashed var(--line2);background:var(--sunk);color:var(--muted);font-size:13px}
+#view-actions .ac-seg{margin-bottom:12px}
+#view-actions .ac-seg button{display:inline-flex;align-items:center;gap:5px}
+#view-actions .ac-n{font-size:11px;color:var(--muted)}
+#view-actions .ac-n:empty{display:none}
+#view-actions .ac-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+#view-actions .ac-row{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border-radius:8px;border-left:3px solid var(--line2);background:var(--sunk)}
+#view-actions .ac-row.crit{border-left-color:var(--crit);background:var(--crit-soft)}
+#view-actions .ac-row.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+#view-actions .ac-row.piste{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent)}
+#view-actions .ac-body{min-width:0}
+#view-actions .ac-t{display:block;font-weight:600;overflow-wrap:anywhere}
+#view-actions .ac-x{margin:3px 0 0;line-height:1.45;overflow-wrap:anywhere}
+#view-actions .ac-links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px}
+#view-actions .ac-links:empty{display:none}
+#view-actions .ac-go,#view-actions .ac-go2{font:600 12px var(--f-body);color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+#view-actions .ac-go2{color:var(--muted)}
+#view-actions .ac-go:hover,#view-actions .ac-go2:hover{color:var(--ink)}
+#view-actions .ac-empty{padding:14px 12px;border-radius:8px;background:var(--sunk);font-size:13px}
+#view-actions .ac-note{margin:12px 0 0}
+#view-actions .ac-note a{color:var(--accent)}
+#view-actions .pill{display:inline-block;justify-self:start;font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--surface);color:var(--muted);white-space:nowrap}
+#view-actions .pill.crit{color:var(--crit)}
+#view-actions .pill.warn{color:var(--warn)}
+#view-actions .pill.piste{background:var(--accent-soft);color:var(--accent)}
+@media (max-width:480px){#view-actions .ac-row{grid-template-columns:minmax(0,1fr);gap:6px}#view-actions .ac-seg{display:flex;width:100%}#view-actions .ac-seg button{flex:1 1 auto;justify-content:center;padding:6px 8px}}

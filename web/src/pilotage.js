@@ -1,6 +1,9 @@
 (function(){
-/* Onglet Pilotage : synthèse, alertes (rules.js), allocation, registre, saisie. Les données viennent du Store commun. */
-let S={scope:"foyer",people:[],positions:[],snapshots:[],tx:[],config:null,status:null,profil:null,budget:null,db:null};
+/* Bilan › Placements (module « pilotage ») : synthèse du financier, courbe, enveloppes, allocation, registre des positions,
+   saisie des mouvements, ordres, versements programmés, hypothèses et journal. Les données viennent du Store commun.
+   Le score de santé est dans Diagnostic › Santé (sante.js), les alertes dans Recommandations › Actions (actions.js),
+   les règles d'alerte et la cible du matelas dans Profil et données › Règles (regles.js). */
+let S={scope:"foyer",people:[],positions:[],snapshots:[],tx:[],config:null,status:null,db:null};
 let root=null,dirty=true;
 const fmt=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});
 const fmt2=new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -25,11 +28,9 @@ function snapVal(s){ return s[S.scope]; }
 const DEFAULT_NOMS={p1:"Moi",p2:"Conjoint(e)"};
 function nomOf(id){ const p=(S.people||[]).find(x=>x.id===id); return (p&&p.nom)||DEFAULT_NOMS[id]||id; }
 function scopeDe(){ return S.scope==="foyer"?"du foyer":window.Calc.deNom(nomOf(S.scope),S.scope==="p2"?2:1); }
-function ruleCtx(){ return {positions:S.positions,config:S.config||{},scope:S.scope,people:S.people,today:today(),status:S.status}; }
 
 /* ---------- render ---------- */
 function render(){
-  renderSante();
   const ps=scoped(); const live=ps.filter(counted);
   const total=live.reduce((a,p)=>a+val(p),0);
   const pend=ps.filter(p=>p.status==="à recevoir");
@@ -53,40 +54,7 @@ function render(){
   const cible=!m||!m.min?"pas de cible définie":(S.scope==="foyer"?"cible ":"cible du foyer ")+(m.max!=null&&m.max>0?eur(m.min)+" à "+eur(m.max):eur(m.min)+(m.mode==="months"?" ("+m.months+" mois)":""));
   $("cushs").textContent=cible+(cushPend?" · +"+eur(cushPend)+" à recevoir":"");
   const T=total||1; if(snaps.length||total) renderChart(snaps,total); else $("chart").innerHTML='<p class="muted">Chargement de l\'historique…</p>'; renderAlloc(live,T); renderEnv(live,T); renderLedger(ps,T);
-  renderAlerts(); renderRules(); renderLists(); renderAgentNote(); fillSelects();
-}
-
-/* ---------- santé financière (Plan.score, plan.js) ---------- */
-const NOMBRES=["aucun","un","deux","trois","quatre","cinq"];
-/* Onglet où compléter la donnée manquante : budget (Plan) pour le matelas et l'épargne, Profil pour l'âge et les revenus. */
-const SANTE_TAB={matelas:"plan",epargne:"plan",endettement:"profil",patrimoine:"profil"};
-const TAB_LABEL={plan:"Compléter le budget",profil:"Compléter le profil"};
-function santeNiveau(i){ return i.aCompleter?"na":i.points>=16?"good":i.points>=10?"warn":"crit"; }
-function renderSante(){
-  const box=$("sante"); if(!box) return;
-  if(!window.Plan||typeof window.Plan.score!=="function"){ box.hidden=true; return; }
-  let sc;
-  try{ sc=window.Plan.score({positions:S.positions,profil:S.profil,config:S.config,budget:S.budget,scope:S.scope,today:new Date()}); }
-  catch(e){ console.error("score",e); box.hidden=true; return; }
-  box.hidden=false;
-  const complets=sc.items.filter(i=>!i.aCompleter), aTravailler=complets.filter(i=>i.points<16).length;
-  $("santeTitle").textContent="Santé financière "+scopeDe();
-  $("santeTotal").textContent=complets.length?String(sc.total):"—";
-  $("santeVerdict").textContent=!complets.length?"Complétez le budget et le profil pour calculer le score."
-    :sc.total>=80?"Solide":sc.total>=60?"Correct, "+(NOMBRES[aTravailler]||aTravailler)+" point"+(aTravailler>1?"s":"")+" à travailler":"À consolider";
-  $("santeVerdict").className="sante-verdict "+(!complets.length?"":sc.total>=80?"good":sc.total>=60?"warn":"crit");
-  $("santePartiel").textContent=!sc.complet&&complets.length?"Score calculé sur "+complets.length+" critère"+(complets.length>1?"s":"")+" sur 5":"";
-  const ouvert=new Set([...box.querySelectorAll("details[open]")].map(d=>d.dataset.cle));
-  $("santeItems").innerHTML=sc.items.map(i=>{
-    const niv=santeNiveau(i), tab=i.aCompleter&&SANTE_TAB[i.cle], lien=tab&&document.getElementById("view-"+tab)?tab:null;
-    const jauge=i.aCompleter?0:Math.max(0,Math.min(100,i.points/i.sur*100));
-    return `<details class="srow" data-cle="${esc(i.cle)}"${ouvert.has(i.cle)?" open":""}><summary>
-      <span class="st">${esc(i.titre)}</span>
-      <span class="sg" role="img" aria-label="${i.aCompleter?"à compléter":i.points+" sur "+i.sur}"><span class="sgf ${niv}" style="width:${jauge}%"></span></span>
-      <span class="sp num">${i.aCompleter?"—":i.points}<span class="muted">/${i.sur}</span></span>
-      <span class="stx small">${i.aCompleter?'<span class="pill">à compléter</span> ':""}${esc(i.texte)}${lien?` <button type="button" class="linkish" data-goto-tab="${lien}">${TAB_LABEL[lien]}</button>`:""}</span></summary>
-      <div class="spiste small"><span class="muted">Repère : ${esc(i.cible)}.</span> ${esc(i.piste)}</div></details>`;
-  }).join("");
+  renderLists(); renderAgentNote(); fillSelects();
 }
 
 function renderAgentNote(){
@@ -94,25 +62,62 @@ function renderAgentNote(){
   $("agentNote").textContent=st?.summary?("Dernier compte rendu de l'agent : "+st.summary):"";
 }
 
+/* ---------- évolution : période et pas (periodes.js), résumé, courbe ----------
+   Choix mémorisés dans localStorage « pilotage-evo ». La valeur en direct est le dernier point de la période courante. */
+const EVO_KEY="pilotage-evo";
+let evo={periode:"tout",du:"",au:"",gran:"auto"}, lastChart=null;
+try{ const o=JSON.parse(localStorage.getItem(EVO_KEY)||"null"); if(o&&typeof o==="object") evo=Object.assign(evo,o); }catch(e){}
+function saveEvo(){ try{ localStorage.setItem(EVO_KEY,JSON.stringify(evo)); }catch(e){} }
+const ids=list=>(list||[]).map(x=>x.id);
+function evoBornes(P,t,first){
+  if(!ids(P.PERIODES).includes(evo.periode)) evo.periode="tout";
+  if(evo.periode==="perso") return evo.du&&evo.au?P.bornes({du:evo.du,au:evo.au},t,first):P.bornes("tout",t,first);
+  return P.bornes(evo.periode,t,first);
+}
+function syncEvoCtl(P,b,g){
+  const box=$("evoCtl"); if(!box) return; box.hidden=false;
+  box.querySelectorAll("[data-evo-per]").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.evoPer===evo.periode)));
+  $("evoPerso").hidden=evo.periode!=="perso";
+  if(document.activeElement!==$("evoDu")) $("evoDu").value=b.du; if(document.activeElement!==$("evoAu")) $("evoAu").value=b.au;
+  const sel=$("evoGran"); if(!ids(P.GRANULARITES).includes(evo.gran)) evo.gran="auto"; sel.value=evo.gran;
+  const lab=(P.GRANULARITES.find(x=>x.id===g)||{}).label||g, oa=sel.querySelector('option[value="auto"]'); if(oa) oa.textContent="Auto ("+String(lab).toLowerCase()+")";
+}
 function renderChart(snaps,liveTotal){
-  const el=$("chart"); const pts=snaps.map(s=>({d:s.date,v:snapVal(s),src:s.source}));
-  const t=today(); if(!pts.length||pts[pts.length-1].d<t) pts.push({d:t,v:liveTotal,live:true});
-  if(pts.length<2){el.innerHTML='<p class="muted">La courbe apparaîtra après le deuxième passage de l\'agent.</p>';return;}
-  const W=640,H=260,L=64,R=16,T=14,B=30;
-  const xs=pts.map(p=>new Date(p.d+"T12:00:00").getTime()); const x0=Math.min(...xs),x1=Math.max(...xs);
-  let lo=Math.min(...pts.map(p=>p.v)),hi=Math.max(...pts.map(p=>p.v)); const pad=(hi-lo)*.15||hi*.05; lo=Math.max(0,lo-pad);hi=hi+pad;
+  lastChart={snaps,liveTotal};
+  const el=$("chart"), t=today(), P=window.Periodes;
+  const pts=snaps.map(s=>({date:s.date,v:snapVal(s),src:s.source}));
+  const withLive=!pts.length||pts[pts.length-1].date<t; if(withLive) pts.push({date:t,v:liveTotal,live:true});
+  let serie, res=null;
+  if(P&&typeof P.agreger==="function"){
+    const b=evoBornes(P,t,pts.length?pts[0].date:t), g=!evo.gran||evo.gran==="auto"?P.auto(b):evo.gran;
+    const ag=P.agreger(pts,b,g,p=>p.v);
+    serie=ag.map(a=>({d:a.date,v:a.valeur,label:a.label}));
+    if(withLive&&serie.length&&serie[serie.length-1].d===t) serie[serie.length-1].live=true;
+    res=ag.length?P.resume(ag,pts,b,p=>p.v):null;
+    syncEvoCtl(P,b,g);
+  } else serie=pts.map(p=>({d:p.date,v:p.v,live:p.live,label:null}));
+  const rs=$("evoRes");
+  if(rs){ const ok=res&&res.variation!=null&&isFinite(res.variation);
+    rs.innerHTML=ok?`<span class="delta ${res.variation>=0?"up":"down"}">${sgn(res.variation)}${eur(res.variation)}${res.variationPct!=null&&isFinite(res.variationPct)?" ("+sgn(res.variationPct)+pct(res.variationPct)+")":""}</span> sur la période`:""; }
+  if(serie.length<2){el.innerHTML=P?'<p class="muted">Pas assez de points sur cette période pour tracer une courbe : élargissez la période.</p>':'<p class="muted">La courbe apparaîtra après le deuxième passage de l\'agent.</p>';return;}
+  const W=640,H=260,L=64,R=16,T=14,B=30, n=serie.length;
+  const xs=serie.map(p=>new Date(p.d+"T12:00:00").getTime()); const x0=Math.min(...xs),x1=Math.max(...xs);
+  let lo=Math.min(...serie.map(p=>p.v)),hi=Math.max(...serie.map(p=>p.v)); const pad=(hi-lo)*.15||hi*.05||1; lo=Math.max(0,lo-pad);hi=hi+pad;
   const step=niceStep((hi-lo)/4); lo=Math.floor(lo/step)*step; hi=Math.ceil(hi/step)*step;
   const X=t=>L+(x1===x0?0:(t-x0)/(x1-x0))*(W-L-R), Y=v=>T+(1-(v-lo)/(hi-lo))*(H-T-B);
   let g=""; for(let v=lo;v<=hi+1;v+=step){g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L-8}" y="${Y(v)+4}" text-anchor="end">${fmt.format(v/1000)} k€</text>`;}
-  const nt=Math.min(5,pts.length); for(let i=0;i<nt;i++){const tt=x0+(x1-x0)*i/(nt-1||1);const d=new Date(tt);g+=`<text x="${X(tt)}" y="${H-8}" text-anchor="${i===0?"start":i===nt-1?"end":"middle"}">${d.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"})}</text>`;}
-  const real=pts.filter(p=>!p.live); const line=real.map((p,i)=>(i?"L":"M")+X(xs[pts.indexOf(p)]).toFixed(1)+","+Y(p.v).toFixed(1)).join("");
+  // Libellés d'axe : jusqu'à 5, le dernier toujours, sans chevauchement (écart minimal de 70 unités).
+  const nt=Math.min(5,n), ks=[]; for(let i=nt-1;i>=0;i--){const k=Math.round(i*(n-1)/(nt-1||1)); if(!ks.length||X(xs[ks[ks.length-1]])-X(xs[k])>=70) ks.push(k);}
+  ks.forEach(k=>{const lab=serie[k].label||new Date(xs[k]).toLocaleDateString("fr-FR",{month:"short",year:"2-digit"});
+    g+=`<text x="${X(xs[k])}" y="${H-8}" text-anchor="${k===n-1?"end":X(xs[k])-L<40?"start":"middle"}">${esc(lab)}</text>`;});
+  const real=serie.filter(p=>!p.live); const line=real.map((p,i)=>(i?"L":"M")+X(xs[i]).toFixed(1)+","+Y(p.v).toFixed(1)).join("");
   const area=real.length>1?line+`L${X(xs[real.length-1])},${Y(lo)}L${X(xs[0])},${Y(lo)}Z`:"";
-  const lastR=real[real.length-1], lp=pts[pts.length-1];
-  let dash=""; if(lp.live&&lastR) dash=`<line x1="${X(xs[pts.indexOf(lastR)])}" y1="${Y(lastR.v)}" x2="${X(xs[pts.length-1])}" y2="${Y(lp.v)}" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 4"/>`;
-  const dots=pts.map((p,i)=>`<circle cx="${X(xs[i])}" cy="${Y(p.v)}" r="${i===pts.length-1?5:2.5}" fill="${i===pts.length-1?"var(--accent)":"var(--surface)"}" stroke="var(--accent)" stroke-width="1.5"><title>${frDate(p.d)} : ${eur(p.v)}${p.live?" (en direct)":""}</title></circle>`).join("");
-  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution du patrimoine">${g}${area?`<path d="${area}" fill="var(--accent-soft)" opacity=".7"/>`:""}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dash}${dots}<text x="${X(xs[pts.length-1])-8}" y="${Y(lp.v)-10}" text-anchor="end" style="fill:var(--ink);font-weight:500">${eur(lp.v)}</text></svg>`;
+  const lastR=real[real.length-1], lp=serie[n-1];
+  let dash=""; if(lp.live&&lastR) dash=`<line x1="${X(xs[real.length-1])}" y1="${Y(lastR.v)}" x2="${X(xs[n-1])}" y2="${Y(lp.v)}" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 4"/>`;
+  const dots=serie.map((p,i)=>i===n-1||n<=120?`<circle cx="${X(xs[i])}" cy="${Y(p.v)}" r="${i===n-1?5:2.5}" fill="${i===n-1?"var(--accent)":"var(--surface)"}" stroke="var(--accent)" stroke-width="1.5"><title>${esc(p.label||frDate(p.d))} : ${eur(p.v)}${p.live?" (en direct)":""}</title></circle>`:"").join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution du patrimoine">${g}${area?`<path d="${area}" fill="var(--accent-soft)" opacity=".7"/>`:""}${line?`<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>`:""}${dash}${dots}<text x="${X(xs[n-1])-8}" y="${Y(lp.v)-10}" text-anchor="end" style="fill:var(--ink);font-weight:500">${eur(lp.v)}</text></svg>`;
   const rec=snaps.some(s=>s.source==="relevés");
-  $("chartNote").textContent=(rec?"premiers points reconstitués depuis vos relevés · ":"")+"pointillé : valeur en direct";
+  $("chartNote").textContent=(rec?"premiers points reconstitués depuis vos relevés · ":"")+(lp.live?"pointillé : valeur en direct":"");
 }
 function niceStep(r){const p=Math.pow(10,Math.floor(Math.log10(r||1)));const n=r/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p;}
 
@@ -158,36 +163,6 @@ function renderLedger(ps,total){
   $("ledger").querySelector("tbody").innerHTML=h||'<tr><td colspan="7" class="muted">Aucune position enregistrée pour ce périmètre.</td></tr>';
 }
 
-function computeAlerts(){
-  // Règles de l'utilisateur (config.rules) + contrôles intégrés (cibles, matelas, nuit, échéances) : voir rules.js.
-  if(!window.Rules) return [];
-  const ctx=ruleCtx();
-  return window.Rules.evaluate(ctx.config.rules||[],ctx).concat(window.Rules.builtins(ctx));
-}
-function renderAlerts(){
-  const A=computeAlerts(); const rank={crit:0,warn:1,info:2,good:3}; A.sort((a,b)=>(rank[a.level]??2)-(rank[b.level]??2));
-  $("alertCount").textContent=A.length?A.length+" point"+(A.length>1?"s":""):"";
-  $("alerts").innerHTML=A.length?A.map(a=>`<div class="alert ${esc(a.level)}"><span class="pill ${a.level==="info"?"":esc(a.level)}">${{crit:"urgent",warn:"à traiter",info:"info",good:"ok"}[a.level]||"info"}</span><div><strong>${esc(a.title)}</strong><div class="small">${esc(a.text)}</div></div></div>`).join(""):'<div class="alert good"><span class="pill good">ok</span><div>Rien à signaler.</div></div>';
-}
-
-/* ---------- règles d'alerte et matelas (écrits dans config/main) ---------- */
-function renderRules(){
-  const rules=(S.config&&Array.isArray(S.config.rules))?S.config.rules:[]; const R=window.Rules;
-  $("ruleCount").textContent=rules.length?"("+rules.length+")":"";
-  $("ruleList").innerHTML=rules.length?rules.map((r,i)=>`<li><span class="small">${esc(R?R.describe(r,ruleCtx()):r.type)}</span><button type="button" class="btn ghost tiny" data-rule-del="${i}" aria-label="Supprimer la règle : ${esc(R?R.describe(r,ruleCtx()):r.type)}">Supprimer</button></li>`).join(""):'<li class="muted small">Aucune règle : seuls les contrôles intégrés (cibles, matelas, mise à jour, échéances) s\'appliquent.</li>';
-  // matelas : ne pas écraser une saisie en cours
-  const f=$("cushForm"); if(f&&!f.contains(document.activeElement)&&!f.dataset.dirty){
-    const c=(S.config&&S.config.cushion)||{}; const mode=c.mode==="months"?"months":"amount";
-    $("cuMode").value=mode; $("cuMin").value=c.min??""; $("cuMax").value=c.max??""; $("cuMonths").value=c.months??""; $("cuDep").value=c.depenses??"";
-    cushFields();
-  }
-}
-function ruleFields(){
-  const t=$("rfType").value, need=(window.Rules&&window.Rules.TYPES[t]?.fields)||[];
-  [["rfPctL","pct"],["rfBlocL","bloc"],["rfPosL","position_id"],["rfEnvL","envelope"],["rfPriceL","price"],["rfCapL","cap"],["rfDaysL","days"]].forEach(([id,k])=>{$(id).hidden=!need.includes(k);});
-}
-function cushFields(){ const m=$("cuMode").value==="months"; ["cuMinL","cuMaxL"].forEach(id=>$(id).hidden=m); ["cuMonthsL","cuDepL"].forEach(id=>$(id).hidden=!m); }
-
 function renderLists(){
   const cfg=S.config||{};
   $("todo").innerHTML=(cfg.todo||[]).map((o,i)=>`<li><label><input type="checkbox" data-todo="${i}" ${o.done?"checked":""}><span class="${o.done?"done":""}">${esc(o.text)}${o.amount?` <span class="muted">· ${esc(o.amount)}</span>`:""}</span></label></li>`).join("")||'<li class="muted">Aucun ordre en attente.</li>';
@@ -211,8 +186,6 @@ function fillSelects(){
   const blocs=[...new Set([...S.positions.map(p=>p.bloc),...(S.people||[]).flatMap(p=>Object.keys(tg[p.id]||{}))])].filter(Boolean).sort((a,b)=>a.localeCompare(b,"fr"));
   opts($("nfEnv"),envs.map(x=>[x,x])); opts($("nfBloc"),blocs.map(x=>[x,x]));
   opts($("nfOwner"),(S.people&&S.people.length?S.people:[{id:"p1",nom:"Moi"}]).map(p=>[p.id,p.nom||DEFAULT_NOMS[p.id]]));
-  opts($("rfBloc"),blocs.map(x=>[x,x])); opts($("rfEnv"),envs.map(x=>[x,x]));
-  opts($("rfPos"),ps.filter(p=>p.mode==="market").map(p=>[p.id,p.name+(p.price!=null?" · "+eur2(p.price):"")]));
 }
 
 
@@ -220,6 +193,19 @@ function fillSelects(){
 function mount(r){
   root=r;
   $("txDate").value=today();
+  // Évolution : périodes et pas proposés par periodes.js (contrôles masqués sans lui).
+  const P=window.Periodes;
+  if(P&&Array.isArray(P.PERIODES)&&Array.isArray(P.GRANULARITES)){
+    $("evoPer").innerHTML=P.PERIODES.map(x=>`<button type="button" data-evo-per="${esc(x.id)}" aria-pressed="false">${esc(x.label)}</button>`).join("");
+    $("evoGran").innerHTML=P.GRANULARITES.map(x=>`<option value="${esc(x.id)}">${esc(x.label)}</option>`).join("");
+    const redraw=()=>{ saveEvo(); if(lastChart) renderChart(lastChart.snaps,lastChart.liveTotal); };
+    $("evoPer").addEventListener("click",ev=>{const b=ev.target.closest("[data-evo-per]"); if(!b) return;
+      if(b.dataset.evoPer==="perso"&&!(evo.du&&evo.au)){ evo.du=$("evoDu").value; evo.au=$("evoAu").value; }
+      evo.periode=b.dataset.evoPer; redraw();});
+    const dates=()=>{ if($("evoDu").value&&$("evoAu").value){ evo.du=$("evoDu").value; evo.au=$("evoAu").value; evo.periode="perso"; redraw(); } };
+    $("evoDu").addEventListener("change",dates); $("evoAu").addEventListener("change",dates);
+    $("evoGran").addEventListener("change",()=>{evo.gran=$("evoGran").value; redraw();});
+  }
   // Import groupé : fichier CSV ou réponse d'assistant, aperçu dans la fenêtre d'import, écriture en une fois.
   const ib=$("importBtn");
   if(ib){ if(!window.Import) ib.hidden=true; else ib.addEventListener("click",()=>Import.open({people:window.Store.get().people,onApply:rows=>window.Store.db.collection("positions").addMany(rows)})); }
@@ -260,34 +246,9 @@ function mount(r){
     catch(e){ $("nfMsg").textContent="Création impossible ("+(e?.code||"erreur")+")."; }
   });
 
-  $("rfType").addEventListener("change",ruleFields); ruleFields();
-  $("ruleForm").addEventListener("submit",async ev=>{ev.preventDefault(); const msg=m=>{$("rfMsg").textContent=m;};
-    if(!S.db) return msg("Base indisponible dans cette vue.");
-    const raw={type:$("rfType").value,pct:$("rfPct").value,bloc:$("rfBloc").value,position_id:$("rfPos").value,envelope:$("rfEnv").value,price:$("rfPrice").value,cap:$("rfCap").value,days:$("rfDays").value};
-    const n=window.Rules.normalize(raw); if(n.error) return msg(n.error);
-    const rules=[...((S.config&&S.config.rules)||[]),n.rule]; $("rfBtn").disabled=true;
-    try{ await S.db.doc("config/main").update({rules}); msg("Règle ajoutée : "+window.Rules.describe(n.rule,ruleCtx())+"."); ["rfPct","rfPrice","rfCap","rfDays"].forEach(id=>$(id).value=""); }
-    catch(e){ msg(e?.code==="invalid_argument"?"Enregistrement refusé : vous n'avez pas les droits d'écriture.":"Enregistrement impossible ("+(e?.code||"erreur")+"). Réessayez."); }
-    finally{$("rfBtn").disabled=false;}
-  });
-  $("cuMode").addEventListener("change",()=>{cushFields(); $("cushForm").dataset.dirty="1";});
-  $("cushForm").addEventListener("input",()=>{$("cushForm").dataset.dirty="1";});
-  $("cushForm").addEventListener("submit",async ev=>{ev.preventDefault(); const msg=m=>{$("cuMsg").textContent=m;}; if(!S.db) return msg("Base indisponible dans cette vue.");
-    const months=$("cuMode").value==="months"; let cushion;
-    if(months){ const mo=numv("cuMonths"), dep=numv("cuDep"); if(!(mo>0)||!(dep>0)) return msg("Indiquez un nombre de mois et des dépenses mensuelles positifs."); cushion={mode:"months",months:mo,depenses:dep}; }
-    else { const mi=numv("cuMin"), ma=numv("cuMax"); if(mi==null||mi<0) return msg("Indiquez un montant minimum."); if(ma!=null&&ma<mi) return msg("Le maximum doit être supérieur au minimum."); cushion={mode:"amount",min:mi,max:ma}; }
-    $("cuBtn").disabled=true;
-    try{ await S.db.doc("config/main").update({cushion}); delete $("cushForm").dataset.dirty; msg("Matelas enregistré."); }
-    catch(e){ msg("Enregistrement impossible ("+(e?.code||"erreur")+")."); }
-    finally{$("cuBtn").disabled=false;}
-  });
   root.addEventListener("change",async ev=>{const i=ev.target.dataset?.todo; if(i==null||!S.db||!S.config) return;
     const todo=S.config.todo.map((o,k)=>k==+i?{...o,done:ev.target.checked,doneDate:ev.target.checked?today():null}:o);
     try{await S.db.doc("config/main").update({todo});}catch(e){ev.target.checked=!ev.target.checked;}
-  });
-  root.addEventListener("click",async ev=>{const d=ev.target.closest?.("[data-rule-del]"); if(!d||!S.db||!S.config) return; d.disabled=true;
-    const k=+d.dataset.ruleDel; const rules=(S.config.rules||[]).filter((_,i)=>i!==k);
-    try{ await S.db.doc("config/main").update({rules}); $("rfMsg").textContent="Règle supprimée."; }catch(e){ d.disabled=false; $("rfMsg").textContent="Suppression impossible ("+(e?.code||"erreur")+")."; }
   });
   root.addEventListener("click",async ev=>{const h=ev.target.dataset?.hyp; if(!h||!S.db) return; ev.target.disabled=true;
     const [kind,id]=h.split(":");
@@ -298,7 +259,7 @@ function mount(r){
   });
 }
 function update(snap,visible){
-  S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions,snapshots:snap.snapshots,tx:snap.tx,config:snap.config,status:snap.status,profil:snap.profil||null,budget:snap.budget||null,db:window.Store.db};
+  S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions,snapshots:snap.snapshots,tx:snap.tx,config:snap.config,status:snap.status,db:window.Store.db};
   dirty=true; if(visible){render();dirty=false;}
 }
 function show(){ if(dirty){render();dirty=false;} }

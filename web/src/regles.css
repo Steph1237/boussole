@@ -1,1 +1,17 @@
-/* regles : styles à venir, tous scopés sous #view-regles. */
+/* Profil et données › Règles : liste des règles d'alerte, formulaire d'ajout, cible du matelas. */
+#view-regles .regles{display:flex;flex-direction:column;gap:16px;max-width:880px}
+#view-regles .rg-intro{margin:0;font-size:13px;color:var(--muted)}
+#view-regles .rg-intro a{color:var(--accent);font-weight:600}
+#view-regles ul.clean{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:8px}
+#view-regles ul.clean li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+#view-regles ul.clean li:last-child{border-bottom:0}
+#view-regles form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+#view-regles label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:600;min-width:0}
+#view-regles input,#view-regles select{font:14px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px 10px;min-width:0;width:100%}
+#view-regles .btn{font:600 13px var(--f-body);border-radius:var(--radius-sm);padding:9px 14px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer}
+#view-regles .btn.ghost{background:transparent;color:var(--accent)}
+#view-regles .btn.tiny{padding:3px 8px;font-size:12px;flex:none}
+#view-regles .btn:disabled{opacity:.5;cursor:default}
+#view-regles .formnote{grid-column:1/-1;font-size:12px}
+#view-regles .rg-builtin{margin:14px 0 0}
+#view-regles [hidden]{display:none!important}

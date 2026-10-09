@@ -1,1 +1,17 @@
-<div class="actions"><p class="muted">Chargement…</p></div>
+<div class="actions">
+  <p class="ac-veille" id="acVeille">Veille : jamais lancée — votre Claude pourra déposer ici des signaux et opportunités (bientôt).</p>
+  <section class="panel" aria-labelledby="acTitle">
+    <div class="panel-head">
+      <h2 id="acTitle">À faire maintenant</h2>
+      <span class="small muted" id="acResume" aria-live="polite"></span>
+    </div>
+    <div class="seg ac-seg" role="group" aria-label="Filtrer les actions">
+      <button type="button" data-ac-filtre="tout" aria-pressed="true">Tout <span class="ac-n num"></span></button>
+      <button type="button" data-ac-filtre="urgent" aria-pressed="false">Urgent <span class="ac-n num"></span></button>
+      <button type="button" data-ac-filtre="surveiller" aria-pressed="false">À surveiller <span class="ac-n num"></span></button>
+      <button type="button" data-ac-filtre="pistes" aria-pressed="false">Pistes <span class="ac-n num"></span></button>
+    </div>
+    <ul class="ac-list" id="acList"><li class="ac-empty muted">Chargement…</li></ul>
+    <p class="small muted ac-note">Alertes issues de vos <a href="#profil/regles" data-goto="profil/regles">règles</a> et des contrôles intégrés, puis pistes du <a href="#diagnostic/sante" data-goto="diagnostic/sante">score de santé</a>. Indications pédagogiques, pas un conseil en investissement.</p>
+  </section>
+</div>

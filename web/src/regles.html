@@ -1,1 +1,41 @@
-<div class="regles"><p class="muted">Chargement…</p></div>
+<div class="regles">
+  <p class="rg-intro">Ces règles alimentent vos alertes dans <a href="#recos/actions" data-goto="recos/actions">Recommandations</a>.</p>
+
+  <section class="panel" aria-labelledby="rgRulesTitle">
+    <div class="panel-head"><h2 id="rgRulesTitle">Règles d'alerte</h2><span class="small muted" id="ruleCount"></span></div>
+    <ul class="clean rule-list" id="ruleList"></ul>
+    <form id="ruleForm" autocomplete="off" aria-label="Ajouter une règle">
+      <label>Nouvelle règle<select id="rfType">
+        <option value="max_line_pct">Plafond par ligne</option>
+        <option value="max_bloc_pct">Plafond par poche</option>
+        <option value="min_bloc_pct">Plancher par poche</option>
+        <option value="price_floor">Seuil de cours (ordre stop)</option>
+        <option value="envelope_cap">Plafond d'enveloppe</option>
+        <option value="stale_prices">Cours trop anciens</option>
+      </select></label>
+      <label id="rfBlocL">Poche<select id="rfBloc"></select></label>
+      <label id="rfPosL">Ligne cotée<select id="rfPos"></select></label>
+      <label id="rfEnvL">Enveloppe<select id="rfEnv"></select></label>
+      <label id="rfPctL">Pourcentage (%)<input id="rfPct" type="number" step="any" min="0" max="100" inputmode="decimal" placeholder="ex. 15"></label>
+      <label id="rfPriceL">Seuil de cours (€)<input id="rfPrice" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 170"></label>
+      <label id="rfCapL">Plafond (€)<input id="rfCap" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 22950"></label>
+      <label id="rfDaysL">Jours sans cours<input id="rfDays" type="number" step="1" min="1" inputmode="numeric" placeholder="ex. 4"></label>
+      <div><button class="btn" type="submit" id="rfBtn">Ajouter la règle</button></div>
+      <div class="formnote muted" id="rfMsg" aria-live="polite"></div>
+    </form>
+    <p class="small muted rg-builtin">Toujours actifs, sans réglage : écart aux cibles d'allocation, matelas de précaution, mise à jour nocturne en retard, échéances proches.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="rgCushTitle">
+    <div class="panel-head"><h2 id="rgCushTitle">Épargne de précaution</h2><span class="small muted">cible du matelas, appréciée sur le foyer</span></div>
+    <form id="cushForm" autocomplete="off" aria-label="Matelas de précaution">
+      <label>Cible exprimée<select id="cuMode"><option value="amount">en montant</option><option value="months">en mois de dépenses</option></select></label>
+      <label id="cuMinL">Minimum (€)<input id="cuMin" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 15000"></label>
+      <label id="cuMaxL">Maximum (€)<input id="cuMax" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 20000"></label>
+      <label id="cuMonthsL">Nombre de mois<input id="cuMonths" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 6"></label>
+      <label id="cuDepL">Dépenses mensuelles (€)<input id="cuDep" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 2500"></label>
+      <div><button class="btn" type="submit" id="cuBtn">Enregistrer le matelas</button></div>
+      <div class="formnote muted" id="cuMsg" aria-live="polite"></div>
+    </form>
+  </section>
+</div>
