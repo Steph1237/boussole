@@ -1,5 +1,5 @@
 <title>Boussole</title>
-<meta name="description" content="Patrimoine du foyer, rang parmi les Français et simulateur acheter, louer ou placer, branchés sur les mêmes données.">
+<meta name="description" content="Bilan du patrimoine du foyer, diagnostic, simulations, budget et objectifs, branchés sur les mêmes données.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -8,35 +8,121 @@
 </style>
 
 <div class="app">
-  <header class="app-head">
-    <div>
-      <h1>BOUSSOLE</h1>
-      <div class="fresh" id="fresh">Chargement des données…</div>
-    </div>
-    <div class="app-actions">
-      <div class="seg" id="scopeSeg" role="group" aria-label="Périmètre" hidden></div>
+  <!-- Ordinateur (≥ 900 px) : barre latérale. Les entrées de navigation sont générées par app.js depuis SPACES. -->
+  <aside class="side" aria-label="Navigation principale">
+    <a class="brand" href="#bilan/vue" data-goto="bilan/vue"><span data-brand-icon></span>Boussole</a>
+    <nav class="side-nav" id="sideNav" aria-label="Espaces"></nav>
+    <div class="side-foot">
+      <div class="seg scope-seg" id="scopeSeg" role="group" aria-label="Périmètre" hidden></div>
+      <a class="veille" id="veilleLine" href="#recos/actions" data-goto="recos/actions">Veille : jamais lancée</a>
       <a class="app-link" id="accountLink" href="compte.html">Mon compte</a>
+      <div class="side-demo" id="sideDemo" hidden>Démo : foyer fictif, rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a></div>
+    </div>
+  </aside>
+
+  <!-- Mobile (< 900 px) : en-tête compact. -->
+  <header class="mhead">
+    <a class="brand" href="#bilan/vue" data-goto="bilan/vue"><span data-brand-icon></span>Boussole</a>
+    <div class="seg scope-seg" id="scopeSegM" role="group" aria-label="Périmètre" hidden></div>
+    <div class="mhead-actions">
+      <button type="button" class="icon-btn" id="profileBtn" data-goto="profil/donnees" aria-label="Profil et données" title="Profil et données"></button>
+      <a class="icon-btn" id="accountLinkM" href="compte.html" aria-label="Mon compte" title="Mon compte"></a>
     </div>
   </header>
-  <div id="demoBanner" class="banner demo" hidden>Démo avec un foyer fictif : rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a> pour suivre votre propre patrimoine.</div>
-  <div id="dbBanner" class="banner" hidden></div>
-  <nav class="app-tabs" role="tablist" aria-label="Sections"></nav>
 
-  <section class="view" id="view-pilotage" role="tabpanel" aria-labelledby="tab-pilotage">
+  <main class="main" id="main">
+    <div id="demoBanner" class="banner demo" hidden>Démo avec un foyer fictif : rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a> pour suivre votre propre patrimoine.</div>
+    <header class="page-head">
+      <h1 id="spaceTitle">Bilan</h1>
+      <p id="spaceDesc">Où j'en suis aujourd'hui</p>
+    </header>
+    <div class="subtabs" id="subTabs" role="tablist" aria-label="Sous-vues"></div>
+    <div class="fresh" id="fresh">Chargement des données…</div>
+    <div id="dbBanner" class="banner" hidden></div>
+
+    <!-- Bilan -->
+    <section class="view placeholder" id="sub-bilan-vue" data-space="bilan" data-sub="vue" role="tabpanel" aria-labelledby="subtab-bilan-vue" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Vue d'ensemble</h2>
+        <p>Patrimoine net, ce que vous possédez et ce que vous devez, flux du mois, allocation et évolution, sur une seule page.</p>
+        <p>En attendant, vos positions et leur suivi sont dans <button type="button" class="linkish" data-goto="bilan/placements">Placements</button>.</p>
+      </div>
+    </section>
+    <section class="view" id="view-pilotage" data-space="bilan" data-sub="placements" role="tabpanel" aria-labelledby="subtab-bilan-placements" hidden>
 <!--@pilotage-->
-  </section>
-  <section class="view" id="view-toise" role="tabpanel" aria-labelledby="tab-toise" hidden>
+    </section>
+
+    <!-- Diagnostic -->
+    <section class="view placeholder" id="sub-diagnostic-sante" data-space="diagnostic" data-sub="sante" role="tabpanel" aria-labelledby="subtab-diagnostic-sante" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Santé financière</h2>
+        <p>Le score de santé détaillé, critère par critère, avec ce qui le fait monter ou baisser.</p>
+        <p>Pour l'instant, la carte santé est en tête de <button type="button" class="linkish" data-goto="bilan/placements">Placements</button>.</p>
+      </div>
+    </section>
+    <section class="view placeholder" id="sub-diagnostic-risque" data-space="diagnostic" data-sub="risque" role="tabpanel" aria-labelledby="subtab-diagnostic-risque" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Profil de risque</h2>
+        <p>Un court questionnaire pour situer votre tolérance au risque, puis l'écart entre ce profil et votre allocation réelle.</p>
+      </div>
+    </section>
+    <section class="view" id="view-toise" data-space="diagnostic" data-sub="rang" role="tabpanel" aria-labelledby="subtab-diagnostic-rang" hidden>
 <!--@toise-->
-  </section>
-  <section class="view" id="view-simu" role="tabpanel" aria-labelledby="tab-simu" hidden>
+    </section>
+
+    <!-- Décisions -->
+    <section class="view" id="view-simu" data-space="decisions" data-sub="acheter" role="tabpanel" aria-labelledby="subtab-decisions-acheter" hidden>
 <!--@simu-->
-  </section>
-  <section class="view" id="view-plan" role="tabpanel" aria-labelledby="tab-plan" hidden>
+    </section>
+    <section class="view placeholder" id="sub-decisions-autres" data-space="decisions" data-sub="autres" role="tabpanel" aria-labelledby="subtab-decisions-autres" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Autres simulations</h2>
+        <p>Rembourser ou placer, PER ou assurance-vie, investir d'un coup ou progressivement, changer d'allocation… au même format que « Acheter ou louer ».</p>
+      </div>
+    </section>
+
+    <!-- Avenir -->
+    <section class="view" id="view-plan" data-space="avenir" data-sub="plan" role="tabpanel" aria-labelledby="subtab-avenir-plan" hidden>
 <!--@plan-view-->
-  </section>
-  <section class="view" id="view-profil" role="tabpanel" aria-labelledby="tab-profil" hidden>
+    </section>
+    <section class="view placeholder" id="sub-avenir-projections" data-space="avenir" data-sub="projections" role="tabpanel" aria-labelledby="subtab-avenir-projections" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Projections</h2>
+        <p>Simulation sur l'historique des marchés et tests de crise sur votre allocation réelle, avec la probabilité d'atteindre chacun de vos objectifs.</p>
+      </div>
+    </section>
+
+    <!-- Recommandations -->
+    <section class="view placeholder" id="sub-recos-actions" data-space="recos" data-sub="actions" role="tabpanel" aria-labelledby="subtab-recos-actions" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Vos actions prioritaires arrivent ici</h2>
+        <p>Les alertes de vos règles et les pistes du score de santé, triées par gravité, chacune avec ses chiffres et un lien vers la vue concernée.</p>
+        <p>En attendant, alertes et pistes sont dans <button type="button" class="linkish" data-goto="bilan/placements">Placements</button>.</p>
+      </div>
+    </section>
+
+    <!-- Profil et données -->
+    <section class="view" id="view-profil" data-space="profil" data-sub="donnees" role="tabpanel" aria-labelledby="subtab-profil-donnees" hidden>
 <!--@profil-->
-  </section>
+    </section>
+    <section class="view placeholder" id="sub-profil-regles" data-space="profil" data-sub="regles" role="tabpanel" aria-labelledby="subtab-profil-regles" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Règles d'alerte et matelas</h2>
+        <p>Vos seuils d'alerte et la taille de votre matelas de sécurité auront leur page ici.</p>
+        <p>Pour l'instant, ils se règlent dans <button type="button" class="linkish" data-goto="bilan/placements">Placements</button>.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile : barre d'onglets en bas (5 espaces), générée par app.js. -->
+  <nav class="bbar" id="bottomBar" aria-label="Espaces"></nav>
 </div>
 
 <!--@scripts-->
