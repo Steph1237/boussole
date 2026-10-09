@@ -128,6 +128,9 @@
       (poches.includes(p.bloc) || env.includes(p.envelope))), Calc.val);
   }
 
+  /** Capacité d'épargne mensuelle : épargne prévue + reste positif (même base que le taux d'épargne). */
+  const capaciteEpargne = t => t ? pos(t.epargne) + Math.max(0, +t.reste || 0) : 0;
+
   /** Répartit l'argent des poches entre objectifs, en cascade par priorité : une même ligne ne finance jamais
       deux objectifs à la fois. Renvoie { [id]: montant déjà affecté }. Les objectifs « saisis » gardent leur montant. */
   function affecterDeja(objectifs, positions, scope) {
@@ -347,6 +350,6 @@
     return { total, complet: complets.length === items.length, items };
   }
 
-  return { RENDEMENTS, REPERES_AGE, mensuel, budgetTotaux, affecterDeja, effortMensuel, valeurFuture, moisEntre, dateAtteinte,
+  return { RENDEMENTS, REPERES_AGE, mensuel, budgetTotaux, capaciteEpargne, affecterDeja, effortMensuel, valeurFuture, moisEntre, dateAtteinte,
     dejaObjectif, statutObjectif, repartirEpargne, projection, score };
 });

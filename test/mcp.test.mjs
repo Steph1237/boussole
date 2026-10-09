@@ -17,6 +17,7 @@ const PRM_URL = `${BASE}/.well-known/oauth-protected-resource`;
 const TOOLS = [
   "get_overview", "get_profile", "update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit",
   "list_positions", "upsert_positions", "record_transaction", "get_config", "update_config",
+  "get_budget", "update_budget", "list_objectifs", "upsert_objectifs", "delete_objectif",
 ];
 
 test("mcp : route des métadonnées de ressource protégée (et variante suffixée)", () => {
@@ -45,6 +46,20 @@ test("mcp : jeton vérifié par le serveur avec un client porteur du JWT (RLS)",
 test("mcp : tous les outils de la spec sont enregistrés, sans suppression de compte ni export", () => {
   for (const t of TOOLS) assert.match(code, new RegExp(`["']${t}["']`), `outil ${t} absent`);
   assert.doesNotMatch(code, /delete_me|export_all|delete_account|auth\.admin/);
+});
+
+test("mcp : budget et objectifs écrivent dans leurs tables, get_overview expose le score de santé", () => {
+  assert.match(code, /from\("budgets"\)\.upsert\(\{\s*user_id:\s*user\.id,\s*lignes/, "update_budget : upsert de budgets sur l'utilisateur du jeton");
+  assert.match(code, /onConflict:\s*"user_id"/);
+  for (const t of ["objectifs"]) assert.match(code, new RegExp(`from\\("${t}"\\)\\.(insert|update|delete)`));
+  assert.match(code, /z\.enum\(\["remplacer",\s*"fusionner"\]/, "update_budget : modes remplacer / fusionner");
+  assert.match(code, /z\.enum\(\["revenu",\s*"depense",\s*"epargne"\]/);
+  assert.match(code, /z\.enum\(\["apport",\s*"matelas",\s*"retraite",\s*"projet"\]/);
+  assert.match(code, /min\(-50[^)]*\)\.max\(50/, "rendement borné à -50..50");
+  assert.match(code, /sante:\s*scoreSante\(donnees,\s*"foyer"\)/, "get_overview : score de santé");
+  assert.match(code, /function affecterDeja\(/);
+  assert.match(code, /function effortMensuel\(/);
+  assert.match(src, /pas un conseil en investissement/);
 });
 
 test("mcp : aucune clé de service", () => {

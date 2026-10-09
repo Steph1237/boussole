@@ -315,7 +315,7 @@
     const objs = sortedObjs(), t = totaux(), today = isoToday();
     const deja = P().affecterDeja(objs, S.positions, scope());
     /* La répartition de l'épargne suit les mêmes montants « déjà » que la cascade des poches. */
-    const alloue = P().repartirEpargne(objs.map(o => Object.assign({}, o, { source: "saisi", deja: deja[o.id] || 0 })), t.epargne, { today });
+    const alloue = P().repartirEpargne(objs.map(o => Object.assign({}, o, { source: "saisi", deja: deja[o.id] || 0 })), P().capaciteEpargne(t), { today });
     return objs.map(o => {
       const st = P().statutObjectif(o, { deja: deja[o.id] || 0, versementAlloue: alloue[o.id] || 0, today });
       const brut = o.source === "poches" ? P().dejaObjectif(o, S.positions, scope()) : st.deja;
