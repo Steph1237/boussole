@@ -149,10 +149,38 @@
     return { data, erreurs, avertissements };
   }
 
+  /* ---------- budget ---------- */
+  const TYPES_BUDGET = { revenu: "revenu", revenus: "revenu", depense: "depense", depenses: "depense", charge: "depense", charges: "depense", epargne: "epargne", placement: "epargne" };
+  function parseBudget(raw) {
+    const rows = Array.isArray(raw) ? raw : Array.isArray(raw.lignes) ? raw.lignes : [];
+    const erreurs = [], avertissements = [], data = [];
+    if (!rows.length) erreurs.push("Aucune ligne trouvée : la réponse doit contenir une liste « lignes ».");
+    rows.forEach((r, i) => {
+      const L = "Ligne " + (i + 1) + " : ";
+      const type = TYPES_BUDGET[low(r.type).replace(/s$/, "")] || TYPES_BUDGET[low(r.type)];
+      const libelle = String(pick(r, "libelle", "nom", "label") || "").trim();
+      const montant = num(pick(r, "montant", "amount"));
+      const errs = [];
+      if (!type) errs.push("type « " + (r.type ?? "") + " » inconnu (revenu, depense ou epargne)");
+      if (!libelle) errs.push("libellé manquant");
+      if (montant == null) errs.push("montant manquant");
+      else if (montant < 0) errs.push("montant négatif");
+      if (errs.length) { erreurs.push(L + errs.join(", ") + "."); return; }
+      const f = low(pick(r, "frequence", "periodicite"));
+      const o = { type, categorie: String(r.categorie || (type === "epargne" ? "Épargne" : type === "revenu" ? "Revenus" : "Divers")).trim(), libelle, montant,
+        frequence: /an|annuel|year/.test(f) ? "an" : "mois" };
+      const ow = pick(r, "titulaire", "owner");
+      if (ow != null) o.owner = person(ow);
+      data.push(o);
+    });
+    return { data, erreurs, avertissements };
+  }
+
   function parse(text, kind) {
     let raw;
     try { raw = extract(text); } catch (e) { return { data: null, erreurs: [e.message], avertissements: [] }; }
     if (kind === "positions") return parsePositions(raw);
+    if (kind === "budget") return parseBudget(raw);
     if (Array.isArray(raw)) return { data: null, erreurs: ["La réponse est une liste : attendu un objet profil avec « foyer », « personnes », « biens », « credits »."], avertissements: [] };
     return parseProfil(raw);
   }
@@ -216,6 +244,16 @@
         ],
       }, null, 2) + "\n```",
   };
+  PROMPTS.budget = "Aide-moi à établir mon budget mensuel pour Boussole, mon outil de suivi de patrimoine. " +
+    "Je peux te coller mes relevés bancaires des derniers mois : regroupe les dépenses par catégorie et fais la moyenne mensuelle. " +
+    "Ne mets pas mon salaire ni mes mensualités de crédit immobilier : l'outil les connaît déjà.\n\n" + COMMON + "\n\n" +
+    "Format attendu :\n```json\n" + JSON.stringify({
+      lignes: [
+        { type: "depense | revenu | epargne", categorie: "Logement", libelle: "Charges de copropriété", montant: 180, frequence: "mois | an", titulaire: "p1 | p2 | commun" },
+        { type: "depense", categorie: "Impôts", libelle: "Taxe foncière", montant: 1100, frequence: "an" },
+        { type: "epargne", categorie: "Épargne", libelle: "Virement Livret A", montant: 300, frequence: "mois" },
+      ],
+    }, null, 2) + "\n```\nCatégories conseillées : Logement, Alimentation, Transport, Enfants, Santé, Loisirs, Abonnements, Impôts, Divers.";
   const prompt = kind => PROMPTS[kind] || PROMPTS.profil;
 
   return { num, extract, parse, merge, prompt };

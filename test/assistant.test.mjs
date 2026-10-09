@@ -139,3 +139,32 @@ test("fusion : réponse vide → aucun changement", () => {
   const r = A.merge({ foyer: { adultes: 1 }, personnes: {}, biens: [], credits: [] }, { foyer: {}, personnes: {} });
   assert.deepEqual(r.changes, []);
 });
+
+test("budget : lignes normalisées, fréquences, catégories et erreurs", () => {
+  const r = A.parse(`Voici votre budget :
+\`\`\`json
+{"lignes":[
+  {"type":"dépense","categorie":"Logement","libelle":"Charges de copropriété","montant":"180 €","frequence":"mois"},
+  {"type":"depense","categorie":"Impôts","libelle":"Taxe foncière","montant":"1 100","frequence":"annuel"},
+  {"type":"épargne","categorie":"Épargne","libelle":"Livret A","montant":300},
+  {"type":"revenu","categorie":"Revenus","libelle":"Prime annuelle","montant":"3 000","frequence":"an","titulaire":"p2"},
+  {"type":"depense","libelle":"Sans montant"},
+  {"type":"cadeau","libelle":"X","montant":10}
+]}
+\`\`\``, "budget");
+  assert.equal(r.data.length, 4);
+  const [a, b, c, d] = r.data;
+  assert.deepEqual([a.type, a.montant, a.frequence, a.categorie], ["depense", 180, "mois", "Logement"]);
+  assert.equal(b.frequence, "an");
+  assert.equal(c.type, "epargne");
+  assert.equal(d.owner, "p2");
+  assert.equal(r.erreurs.length, 2);
+  assert.match(r.erreurs[0], /Ligne 5/);
+  assert.match(r.erreurs[1], /type/i);
+});
+
+test("budget : prompt dédié", () => {
+  const p = A.prompt("budget");
+  assert.match(p, /budget/i);
+  assert.match(p, /"lignes"/);
+});
