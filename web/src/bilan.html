@@ -1,1 +1,93 @@
-<div class="bilan"><p class="muted">Chargement…</p></div>
+<div class="bilan">
+  <p class="bl-loading muted" id="blLoading">Chargement des données…</p>
+  <div class="bl-grid" id="blBody" hidden>
+
+    <section class="bl-summary" aria-label="Chiffres clés">
+      <div class="bl-kpi bl-kpi-net">
+        <div class="label" id="blNetLabel">Patrimoine net</div>
+        <div class="bl-big num" id="blNet">—</div>
+        <div class="small muted" id="blNetSub"></div>
+      </div>
+      <div class="bl-kpi">
+        <div class="label">Placements financiers</div>
+        <div class="bl-mid num" id="blFin">—</div>
+        <div class="small" id="blFinSub"></div>
+      </div>
+      <div class="bl-kpi">
+        <div class="label">Épargne du mois</div>
+        <div class="bl-mid num" id="blEpargne">—</div>
+        <div class="small muted" id="blEpargneSub"></div>
+      </div>
+      <div class="bl-kpi">
+        <div class="label">Matelas</div>
+        <div class="bl-mid num" id="blMatelas">—</div>
+        <div class="small muted" id="blMatelasSub"></div>
+      </div>
+      <div class="bl-kpi">
+        <div class="label">Santé</div>
+        <div class="bl-mid num" id="blSante">—</div>
+        <div class="small" id="blSanteSub"></div>
+      </div>
+      <div class="bl-kpi">
+        <div class="label">Profil de risque</div>
+        <div class="bl-mid"><a class="bl-link" href="#diagnostic/risque" data-goto="diagnostic/risque">À définir</a></div>
+        <div class="small muted">un court questionnaire, bientôt</div>
+      </div>
+    </section>
+
+    <section class="panel bl-comp" aria-labelledby="blCompTitle">
+      <div class="panel-head"><h2 id="blCompTitle">Ce que je possède, ce que je dois</h2><span class="small muted" id="blCompScope"></span></div>
+      <div class="bl-bars" id="blCompBars"></div>
+      <div class="bl-legend" id="blCompLegend"></div>
+      <div class="bl-ctable" id="blCompTable"></div>
+      <p class="small muted bl-hint" id="blCompHint" hidden>Ajoutez vos biens et crédits dans <a class="bl-link" href="#profil/donnees" data-goto="profil/donnees">Profil et données</a> pour un bilan complet.</p>
+    </section>
+
+    <section class="panel bl-flux" aria-labelledby="blFluxTitle">
+      <div class="panel-head"><h2 id="blFluxTitle">Flux du mois</h2><span class="small muted" id="blFluxHead"></span></div>
+      <div id="blFlux"></div>
+    </section>
+
+    <section class="panel bl-alloc" aria-labelledby="blAllocTitle">
+      <div class="panel-head"><h2 id="blAllocTitle">Allocation</h2><span class="small muted" id="blAllocTotal"></span></div>
+      <div class="bl-alloc-ctl">
+        <div class="seg" id="blAllocSeg" role="group" aria-label="Regrouper par">
+          <button type="button" data-mode="classe" aria-pressed="true">Classe d'actifs</button>
+          <button type="button" data-mode="enveloppe" aria-pressed="false">Enveloppes</button>
+          <button type="button" data-mode="liquidite" aria-pressed="false">Liquidité</button>
+        </div>
+        <label class="bl-chk"><input type="checkbox" id="blAllocImmo" checked> Inclure l'immobilier physique</label>
+      </div>
+      <div class="bl-rows" id="blAlloc"></div>
+      <p class="small muted bl-note" id="blAllocNote"></p>
+    </section>
+
+    <section class="panel bl-evol" aria-labelledby="blEvolTitle">
+      <div class="panel-head"><h2 id="blEvolTitle">Évolution</h2><span class="small muted" id="blEvolNote"></span></div>
+      <div class="bl-evo-ctl" id="blEvoCtl" hidden>
+        <div class="seg bl-evo-per" id="blEvoPer" role="group" aria-label="Période"></div>
+        <div class="bl-evo-dates" id="blEvoDates" hidden>
+          <label>Du <input type="date" id="blEvoDu"></label>
+          <label>au <input type="date" id="blEvoAu"></label>
+        </div>
+        <div class="bl-evo-row">
+          <label class="bl-evo-gran">Pas <select id="blEvoGran"></select></label>
+          <div class="seg" id="blEvoVue" role="group" aria-label="Affichage" hidden>
+            <button type="button" data-vue="courbe" aria-pressed="true">Courbe</button>
+            <button type="button" data-vue="variations" aria-pressed="false">Variations</button>
+          </div>
+        </div>
+      </div>
+      <p class="small bl-evo-resume" id="blEvoResume"></p>
+      <div class="bl-chart" id="blChart"></div>
+      <div class="bl-legend" id="blEvolLegend"></div>
+    </section>
+
+    <section class="panel bl-todo" aria-labelledby="blTodoTitle">
+      <div class="panel-head"><h2 id="blTodoTitle">À traiter</h2><span class="small muted" id="blTodoCount"></span></div>
+      <div class="bl-todo-list" id="blTodo"></div>
+      <p class="bl-todo-foot"><a class="bl-link" href="#recos/actions" data-goto="recos/actions">Toutes les actions</a></p>
+    </section>
+
+  </div>
+</div>
