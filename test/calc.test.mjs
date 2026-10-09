@@ -130,3 +130,41 @@ test("matelas : montant (min/max) ou mois (mois × dépenses)", () => {
   const a = Calc.apportDisponible(P, { cushion: { mode: "months", months: 4, depenses: 10000 } }, "p1");
   assert.equal(a.matelas, 40000); assert.equal(a.libre, 5000);
 });
+
+test("classe d'actifs : poches connues, accents et casse ignorés, inconnu → autres", () => {
+  assert.equal(Calc.classe("Monde"), "actions");
+  assert.equal(Calc.classe("Nasdaq 2x"), "actions");
+  assert.equal(Calc.classe("convictions tech"), "actions");
+  assert.equal(Calc.classe("SCPI"), "immobilier");
+  assert.equal(Calc.classe("Obligations"), "obligations");
+  assert.equal(Calc.classe("Épargne"), "monetaire");
+  assert.equal(Calc.classe("epargne"), "monetaire");
+  assert.equal(Calc.classe("Protection"), "fonds_euros");
+  assert.equal(Calc.classe("Or"), "or");
+  assert.equal(Calc.classe("Crypto"), "crypto");
+  assert.equal(Calc.classe("Vins"), "autres");
+  assert.equal(Calc.classe("Monde", { Monde: "obligations" }), "obligations", "surcharge utilisateur prioritaire");
+});
+
+test("liquidité par enveloppe", () => {
+  assert.equal(Calc.liquidite("Livrets"), "immediate");
+  assert.equal(Calc.liquidite("Compte courant"), "immediate");
+  assert.equal(Calc.liquidite("PEA"), "jours");
+  assert.equal(Calc.liquidite("Crypto (Binance)"), "jours");
+  assert.equal(Calc.liquidite("AV Linxea Spirit 2"), "semaines");
+  assert.equal(Calc.liquidite("Assurance-vie"), "semaines");
+  assert.equal(Calc.liquidite("PER"), "bloque");
+  assert.equal(Calc.liquidite("Truc"), "jours");
+});
+
+test("répartition par classe et par liquidité, périmètre respecté", () => {
+  const P = [
+    { owner: "p1", bloc: "Monde", envelope: "PEA", mode: "manual", value: 6000, status: "actif" },
+    { owner: "p1", bloc: "Épargne", envelope: "Livrets", mode: "manual", value: 3000, status: "actif" },
+    { owner: "p2", bloc: "SCPI", envelope: "AV", mode: "manual", value: 1000, status: "actif" },
+    { owner: "p1", bloc: "Monde", envelope: "PER", mode: "manual", value: 500, status: "à recevoir" },
+  ];
+  assert.deepEqual(Calc.parClasse(P, "foyer"), { actions: 6000, monetaire: 3000, immobilier: 1000 });
+  assert.deepEqual(Calc.parClasse(P, "p1"), { actions: 6000, monetaire: 3000 });
+  assert.deepEqual(Calc.parLiquidite(P, "foyer"), { jours: 6000, immediate: 3000, semaines: 1000 });
+});

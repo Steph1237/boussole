@@ -26,6 +26,40 @@
     return sum((positions || []).filter(p => inScope(p, scope) && p.status === "à recevoir"), val);
   }
 
+  /* ---------- classes d'actifs et liquidité ---------- */
+  const sansAccent = s => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  /* Poche (libellé libre) → classe d'actifs. Table par défaut, surchargeable par l'utilisateur. */
+  const CLASSES = {
+    monde: "actions", europe: "actions", asie: "actions", "nasdaq 2x": "actions", nasdaq: "actions", "convictions tech": "actions", convictions: "actions",
+    actions: "actions", "etats-unis": "actions", usa: "actions", emergents: "actions", "small caps": "actions",
+    obligations: "obligations", oblig: "obligations",
+    scpi: "immobilier", immobilier: "immobilier", sci: "immobilier", opci: "immobilier",
+    epargne: "monetaire", livrets: "monetaire", monetaire: "monetaire", cash: "monetaire", liquidites: "monetaire",
+    protection: "fonds_euros", "fonds euros": "fonds_euros", "fonds euro": "fonds_euros",
+    or: "or", "metaux precieux": "or", crypto: "crypto", cryptos: "crypto",
+  };
+  const CLASSES_LABELS = { actions: "Actions", obligations: "Obligations", immobilier: "Immobilier", monetaire: "Monétaire et livrets", fonds_euros: "Fonds euros", or: "Or", crypto: "Crypto", autres: "Autres" };
+  function classe(bloc, surcharge) {
+    if (surcharge && bloc in surcharge) return surcharge[bloc];
+    return CLASSES[sansAccent(bloc)] || "autres";
+  }
+  /* Enveloppe → délai pour récupérer l'argent : immediate, jours (titres cotés), semaines (assurance-vie), bloque (PER, immobilier). */
+  const LIQUIDITE_LABELS = { immediate: "Disponible tout de suite", jours: "Sous quelques jours", semaines: "Sous quelques semaines", bloque: "Bloqué ou peu liquide" };
+  function liquidite(envelope) {
+    const e = sansAccent(envelope);
+    if (/\bper\b|perco|pee|retraite|scpi|immobilier/.test(e)) return "bloque";
+    if (/livret|ldds|lep|compte|cash|especes|courant/.test(e)) return "immediate";
+    if (/\bav\b|assurance|vie|capitalisation/.test(e)) return "semaines";
+    return "jours";
+  }
+  function grouper(positions, scope, cle) {
+    const out = {};
+    (positions || []).filter(p => inScope(p, scope) && counted(p)).forEach(p => { const k = cle(p); out[k] = (out[k] || 0) + val(p); });
+    return out;
+  }
+  const parClasse = (positions, scope, surcharge) => grouper(positions, scope, p => classe(p.bloc, surcharge));
+  const parLiquidite = (positions, scope) => grouper(positions, scope, p => liquidite(p.envelope));
+
   /* ---------- profil ---------- */
   /* Quote-part d'un bien : part_p1 (0-100) appartient à la personne 1, le complément à la personne 2. */
   function part(scope, partP1) {
@@ -152,6 +186,7 @@
     return { erreurs: [...new Set(erreurs)], avertissements };
   }
 
-  return { val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites,
+  return { CLASSES_LABELS, LIQUIDITE_LABELS, classe, liquidite, parClasse, parLiquidite,
+    val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites,
     autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, completude, manquants, valider };
 });
