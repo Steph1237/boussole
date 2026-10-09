@@ -118,11 +118,11 @@
     $("pfPct").textContent = pct + " %";
     $("pfBar").style.width = pct + "%";
     const miss = C.manquants(pr);
-    $("pfMissing").textContent = miss.length ? "À compléter : " + miss.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "." : "Tout est renseigné. Ma position et Acheter ou placer utilisent ces chiffres.";
+    $("pfMissing").textContent = miss.length ? "À compléter : " + miss.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "." : "Tout est renseigné. Le Bilan, le Diagnostic et les simulations utilisent ces chiffres.";
     const pos = S ? S.positions : [];
     const pat = C.patrimoine(pos, pr, "foyer"), rev = C.revenusFoyer(pr, "foyer"), mens = C.mensualites(pr, "foyer");
     $("pfRecap").innerHTML = [
-      ["Patrimoine net du foyer", eur(pat.net), "dont " + eur(pat.financier) + " suivis dans le Pilotage"],
+      ["Patrimoine net du foyer", eur(pat.net), "dont " + eur(pat.financier) + " suivis dans vos placements"],
       ["Revenus du foyer", eur(rev) + "/mois", "nets avant impôt, loyers compris"],
       ["Mensualités de crédit", eur(mens) + "/mois", rev > 0 ? Math.round(mens / rev * 100) + " % des revenus" : "—"],
     ].map(([l, v, s]) => '<div class="pf-kpi"><span>' + l + "</span><b>" + v + "</b><em>" + s + "</em></div>").join("");
@@ -239,7 +239,7 @@
     try {
       await db.doc("profil/main").set(data);
       dirty = false; remoteChanged = false; draft = normalize(data); base = clone(data);
-      saving = false; renderForm(); renderStatus(); renderMsgs(["ok", "Profil enregistré. Ma position et Acheter ou placer sont à jour."]);
+      saving = false; renderForm(); renderStatus(); renderMsgs(["ok", "Profil enregistré. Le Bilan, le Diagnostic et les simulations sont à jour."]);
     } catch (e) {
       saving = false;
       renderMsgs(["err", e && e.code === "invalid_argument" ? "Enregistrement refusé : vous n'avez pas les droits d'écriture sur ce tableau de bord." : "Enregistrement impossible pour le moment (" + (e && e.code || "erreur") + "). Votre saisie est conservée : réessayez dans un instant."]);

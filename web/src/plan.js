@@ -305,7 +305,7 @@
     const L = (positions || []).filter(p => Calc.inScope(p, scope) && Calc.counted(p) && Calc.val(p) > 0);
     const F = sum(L, Calc.val);
     if (F <= 0) return { ...base, valeur: null, aCompleter: true,
-      texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans le Pilotage pour mesurer leur diversification." };
+      texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans Bilan › Placements pour mesurer leur diversification." };
     const max = Math.max(...L.map(Calc.val)) / F;
     const nb = new Set(L.map(p => p.bloc || "_autre")).size;
     const points = Math.max(0, interp(max * 100, [[10, 20], [20, 14], [40, 0]]) - (nb < 3 ? 5 : 0));
