@@ -73,9 +73,25 @@ const TABLES = [
     field: "summary", patch: { summary: "piraté" },
     foreign: (b) => ({ user_id: b.id, summary: "intrus" }),
   },
+  {
+    name: "budgets", mode: "upsert",
+    seed: (u) => ({ user_id: u.id, lignes: [{ id: `l-${u.id}`, type: "depense", categorie: "Logement", libelle: "Charges", montant: 150, frequence: "mois" }] }),
+    match: (u) => ({ user_id: u.id }),
+    field: "lignes", patch: { lignes: [] },
+    foreign: (b) => ({ user_id: b.id }),
+  },
+  {
+    name: "objectifs", mode: "insert",
+    seed: () => ({ nom: "Apport", type: "apport", cible: 50000, date_cible: "2030-01-01", deja: 1000, source: "poches", poches: ["Épargne"], rendement: 2.4, priorite: 1 }),
+    match: (u, row) => ({ id: row.id }),
+    field: "nom", patch: { nom: "piraté" },
+    foreign: (b) => ({ user_id: b.id, nom: "intrus" }),
+  },
 ];
 
 const PRIVATE_TABLES = TABLES.map((t) => t.name);
+// Clés de export_all() qui portent une seule ligne (objet ou null) plutôt qu'un tableau.
+const EXPORT_SINGLE = { profiles: "profile", budgets: "budget" };
 const withMatch = (query, match) => Object.entries(match).reduce((q, [k, v]) => q.eq(k, v), query);
 const isRlsError = (e) => /row-level security|violates|permission/i.test(e?.message || "");
 
@@ -221,7 +237,7 @@ describe("isolation RLS entre deux comptes", () => {
       const { data, error } = await A.client.rpc("export_all");
       assert.equal(error, null, `export_all : l'appel par A doit réussir (${error?.message})`);
       assert.ok(data && typeof data === "object", "export_all : doit renvoyer un objet");
-      for (const k of ["profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status"]) {
+      for (const k of ["profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status", "budget", "objectifs"]) {
         assert.ok(k in data, `export_all : la clé ${k} doit être présente`);
       }
       assert.equal(data.profile?.user_id, A.id, "export_all : le profil exporté doit être celui de A");
@@ -230,7 +246,12 @@ describe("isolation RLS entre deux comptes", () => {
       const json = JSON.stringify(data);
       assert.ok(!json.includes(B.id), "export_all : l'export de A ne doit contenir aucune référence à l'identifiant de B");
       assert.ok(!json.includes(B.positionId), "export_all : l'export de A ne doit pas contenir la position de B");
-      for (const key of PRIVATE_TABLES.filter((n) => n !== "profiles")) {
+      assert.equal(data.budget?.user_id, A.id, "export_all : le budget exporté doit être celui de A");
+      assert.deepEqual(data.budget.lignes, A.rows.budgets.lignes, "export_all : les lignes du budget de A");
+      assert.equal(data.objectifs.length, 1, "export_all : A doit avoir exactement un objectif");
+      assert.equal(data.objectifs[0].id, A.rows.objectifs.id, "export_all : l'objectif exporté doit être celui de A");
+      assert.ok(!json.includes(B.rows.objectifs.id), "export_all : l'export de A ne doit pas contenir l'objectif de B");
+      for (const key of PRIVATE_TABLES.filter((n) => !(n in EXPORT_SINGLE))) {
         assert.ok(Array.isArray(data[key]), `export_all : ${key} doit être un tableau`);
         assert.ok(data[key].every((r) => r.user_id === A.id), `export_all : ${key} ne doit contenir que des lignes de A`);
       }

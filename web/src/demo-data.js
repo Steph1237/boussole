@@ -5,7 +5,11 @@
    moins une alerte dans Pilotage (périmètre Foyer).
    Les dates sont relatives à aujourd'hui pour que la démo reste « fraîche » (cours d'hier, photos aux fins
    des trois mois précédents) ; les montants sont fixes.
-   Total financier compté (hors « à recevoir ») : 94 989,90 € — Camille 51 815,50 €, Sam 43 174,40 €. */
+   Total financier compté (hors « à recevoir ») : 94 989,90 € — Camille 51 815,50 €, Sam 43 174,40 €.
+   Budget (couple lyonnais, un enfant) : les salaires (2 800 + 2 300 € nets) et les mensualités (820 + 210 €) viennent
+   du profil, d'où aucune ligne de revenu. Dépenses saisies : 2 400 €/mois + taxe foncière 1 100 €/an (91,67 €/mois),
+   soit 3 521,67 €/mois avec les mensualités ; épargne explicite 650 €/mois ; reste ≈ 928 €/mois.
+   Objectif « Matelas » = 6 mois de dépenses : 6 × 3 521,67 = 21 130 → 21 100 €. */
 (function (root) {
   const DAY = 864e5, now = Date.now();
   const iso = t => new Date(t).toISOString().slice(0, 10);
@@ -106,7 +110,36 @@
     missingPrices: 0,
   };
 
-  const DEMO = { positions, snapshots, tx, config, profil, status };
+  const L = (id, type, categorie, libelle, montant, frequence = "mois") => ({ id, type, categorie, libelle, montant, frequence });
+  const budget = {
+    lignes: [
+      L("bl-copro", "depense", "Logement", "Charges de copropriété", 180),
+      L("bl-energie", "depense", "Logement", "Électricité et gaz", 140),
+      L("bl-mrh", "depense", "Logement", "Assurance habitation", 30),
+      L("bl-taxe-fonciere", "depense", "Logement", "Taxe foncière", 1100, "an"),
+      L("bl-courses", "depense", "Alimentation", "Courses et marché", 750),
+      L("bl-voiture", "depense", "Transport", "Carburant, entretien, assurance auto", 180),
+      L("bl-tcl", "depense", "Transport", "Abonnement TCL (part salarié)", 35),
+      L("bl-creche", "depense", "Enfants", "Crèche et activités", 300),
+      L("bl-sante", "depense", "Santé", "Mutuelle et restes à charge", 60),
+      L("bl-loisirs", "depense", "Loisirs", "Sorties, sport et vacances", 250),
+      L("bl-abos", "depense", "Abonnements", "Téléphones, box internet, streaming", 75),
+      L("bl-ir", "depense", "Impôts", "Impôt sur le revenu (prélèvement mensualisé)", 280),
+      L("bl-divers", "depense", "Divers", "Cadeaux et imprévus", 120),
+      L("bl-livret-a", "epargne", "Épargne", "Livret A", 200),
+      L("bl-pea", "epargne", "Épargne", "PEA Camille", 300),
+      L("bl-av", "epargne", "Épargne", "Assurance vie Sam", 150),
+    ],
+  };
+
+  const O = o => Object.assign({ deja: 0, source: "poches", poches: [], enveloppes: [], rendement: 2 }, o);
+  const objectifs = [
+    O({ id: "obj-matelas", nom: "Matelas de précaution", type: "matelas", cible: 21100, dateCible: "2027-06-30", poches: ["Épargne"], rendement: 2.4, priorite: 1 }),
+    O({ id: "obj-apport", nom: "Apport maison", type: "apport", cible: 60000, dateCible: "2029-06-30", poches: ["Épargne"], rendement: 2.4, priorite: 2 }),
+    O({ id: "obj-retraite", nom: "Retraite", type: "retraite", cible: 400000, dateCible: "2058-01-01", poches: ["Monde", "Europe", "Asie"], rendement: 5, priorite: 3 }),
+  ];
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);
