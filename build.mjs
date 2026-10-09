@@ -18,7 +18,7 @@ const outArg = process.argv.find(a => a.startsWith("--out="));
 const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
 
 const MODULES = ["bilan", "pilotage", "sante", "toise", "simu", "plan-view", "actions", "profil", "regles"];
-const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", "rules", "plan", "bilan-calc", "assistant", "import", "onboarding", ...MODULES, "app"];
+const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", "rules", "plan", "bilan-calc", "periodes", "assistant", "import", "onboarding", ...MODULES, "app"];
 // supabase-js v2, build UMD épinglé (window.supabase). Le paquet n'est pas publié sur cdnjs : jsdelivr sert
 // le fichier du paquet npm officiel. Chargé juste après config.js, avant les adaptateurs store-* et auth.js.
 const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js";
