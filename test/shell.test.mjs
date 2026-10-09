@@ -99,12 +99,12 @@ test("coque : chaque sous-vue a exactement une section, masquée au départ ; au
     if (!s.module) assert.match(found[0].cls, /\bplaceholder\b/, r + " : carte « Bientôt »");
   }
   for (const v of views) assert.ok(routes.includes(v.space + "/" + v.sub), "section hors registre : " + v.id);
-  assert.match(shell, /id="sub-bilan-vue"/);
+  assert.match(shell, /id="view-bilan"/, "la vue d'ensemble du Bilan est un module");
 });
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["pilotage", "plan-view", "profil", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["actions", "bilan", "pilotage", "plan-view", "profil", "regles", "sante", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   for (const m of markers) {
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);

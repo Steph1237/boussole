@@ -7,11 +7,11 @@
   /* ---------- registre (données pures, testées par test/shell.test.mjs) ---------- */
   const SPACES = [
     { space: "bilan", label: "Bilan", short: "Bilan", icon: "bilan", primary: true, desc: "Où j'en suis aujourd'hui", subs: [
-      { id: "vue", label: "Vue d'ensemble", module: null },
+      { id: "vue", label: "Vue d'ensemble", module: "bilan" },
       { id: "placements", label: "Placements", module: "pilotage" },
     ] },
     { space: "diagnostic", label: "Diagnostic", short: "Diagnostic", icon: "diagnostic", primary: true, desc: "Est-ce que ma situation est saine ?", subs: [
-      { id: "sante", label: "Santé", module: null },
+      { id: "sante", label: "Santé", module: "sante" },
       { id: "risque", label: "Profil de risque", module: null },
       { id: "rang", label: "Rang parmi les Français", module: "toise" },
     ] },
@@ -24,11 +24,11 @@
       { id: "projections", label: "Projections", module: null },
     ] },
     { space: "recos", label: "Recommandations", short: "Actions", icon: "recos", primary: true, desc: "Que faire maintenant ?", subs: [
-      { id: "actions", label: "Actions", module: null },
+      { id: "actions", label: "Actions", module: "actions" },
     ] },
     { space: "profil", label: "Profil et données", short: "Profil", icon: "profil", primary: false, desc: "Foyer, revenus, biens, crédits et règles", subs: [
       { id: "donnees", label: "Données", module: "profil" },
-      { id: "regles", label: "Règles", module: null },
+      { id: "regles", label: "Règles", module: "regles" },
     ] },
   ];
   /* Anciens identifiants d'onglet (App.go("plan"), data-goto-tab="profil"…) et anciens hash. */
