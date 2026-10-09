@@ -403,3 +403,9 @@ test("affecterDeja : une poche partagée sert les objectifs en cascade, par prio
   assert.equal(d.retraite, 10000);
   assert.equal(d.voyage, 1200);
 });
+
+test("capacité d'épargne : épargne prévue + reste positif (même règle que le taux d'épargne et le connecteur)", () => {
+  assert.equal(Plan.capaciteEpargne({ epargne: 650, reste: 928 }), 1578);
+  assert.equal(Plan.capaciteEpargne({ epargne: 650, reste: -200 }), 650);
+  assert.equal(Plan.capaciteEpargne(null), 0);
+});

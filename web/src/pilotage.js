@@ -1,6 +1,6 @@
 (function(){
 /* Onglet Pilotage : synthèse, alertes (rules.js), allocation, registre, saisie. Les données viennent du Store commun. */
-let S={scope:"foyer",people:[],positions:[],snapshots:[],tx:[],config:null,status:null,db:null};
+let S={scope:"foyer",people:[],positions:[],snapshots:[],tx:[],config:null,status:null,profil:null,budget:null,db:null};
 let root=null,dirty=true;
 const fmt=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});
 const fmt2=new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -29,6 +29,7 @@ function ruleCtx(){ return {positions:S.positions,config:S.config||{},scope:S.sc
 
 /* ---------- render ---------- */
 function render(){
+  renderSante();
   const ps=scoped(); const live=ps.filter(counted);
   const total=live.reduce((a,p)=>a+val(p),0);
   const pend=ps.filter(p=>p.status==="à recevoir");
@@ -53,6 +54,39 @@ function render(){
   $("cushs").textContent=cible+(cushPend?" · +"+eur(cushPend)+" à recevoir":"");
   const T=total||1; if(snaps.length||total) renderChart(snaps,total); else $("chart").innerHTML='<p class="muted">Chargement de l\'historique…</p>'; renderAlloc(live,T); renderEnv(live,T); renderLedger(ps,T);
   renderAlerts(); renderRules(); renderLists(); renderAgentNote(); fillSelects();
+}
+
+/* ---------- santé financière (Plan.score, plan.js) ---------- */
+const NOMBRES=["aucun","un","deux","trois","quatre","cinq"];
+/* Onglet où compléter la donnée manquante : budget (Plan) pour le matelas et l'épargne, Profil pour l'âge et les revenus. */
+const SANTE_TAB={matelas:"plan",epargne:"plan",endettement:"profil",patrimoine:"profil"};
+const TAB_LABEL={plan:"Compléter le budget",profil:"Compléter le profil"};
+function santeNiveau(i){ return i.aCompleter?"na":i.points>=16?"good":i.points>=10?"warn":"crit"; }
+function renderSante(){
+  const box=$("sante"); if(!box) return;
+  if(!window.Plan||typeof window.Plan.score!=="function"){ box.hidden=true; return; }
+  let sc;
+  try{ sc=window.Plan.score({positions:S.positions,profil:S.profil,config:S.config,budget:S.budget,scope:S.scope,today:new Date()}); }
+  catch(e){ console.error("score",e); box.hidden=true; return; }
+  box.hidden=false;
+  const complets=sc.items.filter(i=>!i.aCompleter), aTravailler=complets.filter(i=>i.points<16).length;
+  $("santeTitle").textContent="Santé financière "+scopeDe();
+  $("santeTotal").textContent=complets.length?String(sc.total):"—";
+  $("santeVerdict").textContent=!complets.length?"Complétez le budget et le profil pour calculer le score."
+    :sc.total>=80?"Solide":sc.total>=60?"Correct, "+(NOMBRES[aTravailler]||aTravailler)+" point"+(aTravailler>1?"s":"")+" à travailler":"À consolider";
+  $("santeVerdict").className="sante-verdict "+(!complets.length?"":sc.total>=80?"good":sc.total>=60?"warn":"crit");
+  $("santePartiel").textContent=!sc.complet&&complets.length?"Score calculé sur "+complets.length+" critère"+(complets.length>1?"s":"")+" sur 5":"";
+  const ouvert=new Set([...box.querySelectorAll("details[open]")].map(d=>d.dataset.cle));
+  $("santeItems").innerHTML=sc.items.map(i=>{
+    const niv=santeNiveau(i), tab=i.aCompleter&&SANTE_TAB[i.cle], lien=tab&&document.getElementById("view-"+tab)?tab:null;
+    const jauge=i.aCompleter?0:Math.max(0,Math.min(100,i.points/i.sur*100));
+    return `<details class="srow" data-cle="${esc(i.cle)}"${ouvert.has(i.cle)?" open":""}><summary>
+      <span class="st">${esc(i.titre)}</span>
+      <span class="sg" role="img" aria-label="${i.aCompleter?"à compléter":i.points+" sur "+i.sur}"><span class="sgf ${niv}" style="width:${jauge}%"></span></span>
+      <span class="sp num">${i.aCompleter?"—":i.points}<span class="muted">/${i.sur}</span></span>
+      <span class="stx small">${i.aCompleter?'<span class="pill">à compléter</span> ':""}${esc(i.texte)}${lien?` <button type="button" class="linkish" data-goto-tab="${lien}">${TAB_LABEL[lien]}</button>`:""}</span></summary>
+      <div class="spiste small"><span class="muted">Repère : ${esc(i.cible)}.</span> ${esc(i.piste)}</div></details>`;
+  }).join("");
 }
 
 function renderAgentNote(){
@@ -264,7 +298,7 @@ function mount(r){
   });
 }
 function update(snap,visible){
-  S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions,snapshots:snap.snapshots,tx:snap.tx,config:snap.config,status:snap.status,db:window.Store.db};
+  S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions,snapshots:snap.snapshots,tx:snap.tx,config:snap.config,status:snap.status,profil:snap.profil||null,budget:snap.budget||null,db:window.Store.db};
   dirty=true; if(visible){render();dirty=false;}
 }
 function show(){ if(dirty){render();dirty=false;} }

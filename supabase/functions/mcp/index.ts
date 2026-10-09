@@ -43,6 +43,9 @@ const INSTRUCTIONS = [
   "Avant d'écraser une valeur existante (salaire, valeur d'un bien, quantité d'une ligne, réglage…), montre l'ancienne et la nouvelle valeur et demande confirmation à l'utilisateur.",
   "N'invente jamais un chiffre : si une information manque, demande-la. Pour un titre coté, l'ISIN et la quantité suffisent : le cours est mis à jour chaque nuit.",
   "Chaque écriture renvoie ce qui a changé ; rends-en compte à l'utilisateur.",
+  "Budget mensuel (get_budget, update_budget) : lignes de revenus, dépenses par catégorie et épargne, par mois ou par an. Le salaire et les mensualités de crédit viennent du profil : ne les ajoute pas au budget. update_budget fusionne par défaut (rapprochement par id ou par libellé).",
+  "Objectifs datés (list_objectifs, upsert_objectifs, delete_objectif) : apport, matelas, retraite ou projet, avec cible, échéance, montant déjà réuni (saisi ou poches rattachées), rendement attendu et priorité ; list_objectifs calcule l'effort mensuel requis et le statut.",
+  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge) : c'est un indicateur pédagogique, pas un conseil en investissement ; présente-le comme tel.",
 ].join("\n");
 
 /* ------------------------------------------------------------------ */
@@ -158,6 +161,285 @@ function viewPosition(p: any) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Plan : budget, objectifs, score de santé (port de web/src/plan.js)  */
+/* Mêmes formules et mêmes seuils que plan.js ; test/sante.test.mjs     */
+/* vérifie que les barèmes du score sont identiques des deux côtés.     */
+/* ------------------------------------------------------------------ */
+
+type Donnees = { profil: any; biens: any[]; credits: any[]; positions: any[]; config: any; lignes: any[] };
+
+const EPS = 1e-9;
+const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
+const scopeKeys = (scope: string) => (scope === "foyer" ? ["p1", "p2"] : [scope]);
+/** Repère de patrimoine net, en années de revenus, par tranche d'âge (identique à plan.js). */
+const REPERES_AGE: Record<string, number> = { u30: 0.5, a30: 1, a40: 3, a50: 6, a60: 8, a70: 10 };
+
+/** Bilan d'un périmètre (mêmes règles que Calc.patrimoine, Calc.revenusFoyer et Calc.mensualites). */
+function bilan(d: Donnees, scope: string) {
+  const P = d.profil?.personnes ?? {}, A = d.profil?.autres ?? {};
+  const mine = d.positions.filter((p) => inScope(p.owner, scope));
+  const financier = sum(mine.filter(counted), val);
+  const aRecevoir = sum(mine.filter((p) => p.status === "à recevoir"), val);
+  const immobilier = sum(d.biens, (b) => pos(b.valeur) * partBien(scope, b.part_p1));
+  const keys = scopeKeys(scope);
+  const usage = sum(keys, (k) => pos(A[k]?.usage)), entreprise = sum(keys, (k) => pos(A[k]?.entreprise));
+  const dettes = sum(d.biens, (b) => pos(b.crd) * partBien(scope, b.part_p1)) + sum(d.credits, (c) => pos(c.crd) * partCredit(scope, c.owner));
+  const mensualites = sum(d.biens, (b) => pos(b.mensualite) * partBien(scope, b.part_p1)) + sum(d.credits, (c) => pos(c.mensualite) * partCredit(scope, c.owner));
+  const salaires = sum(keys, (k) => salaireNetMensuel(P[k]));
+  const autresRevenus = sum(keys, (k) => pos(P[k]?.autresRevenus));
+  const loyers = sum(d.biens, (b) => pos(b.loyer) * partBien(scope, b.part_p1));
+  const brut = financier + immobilier + usage + entreprise;
+  return { financier, aRecevoir, immobilier, usage, entreprise, dettes, mensualites, salaires, autresRevenus, loyers,
+    revenus: salaires + autresRevenus + loyers, brut, net: brut - dettes };
+}
+
+/** Montant mensuel d'une ligne de budget (fréquence « an » ramenée au mois). */
+function mensuel(l: any): number {
+  const m = pos(l?.montant);
+  return l?.frequence === "an" ? m / 12 : m;
+}
+/* Part d'une ligne de budget dans le périmètre : sans titulaire = commun (moitié pour p1 / p2). */
+const partLigne = (l: any, scope: string) => partCredit(scope, l?.owner === "p1" || l?.owner === "p2" ? l.owner : "commun");
+
+/** Totaux mensuels du budget (port de Plan.budgetTotaux) : revenus (profil + lignes), dépenses (lignes + mensualités), épargne, reste. */
+function budgetTotaux(d: Donnees, scope: string) {
+  const L = (Array.isArray(d.lignes) ? d.lignes : []).filter(Boolean);
+  const de = (type: string) => L.filter((l) => l.type === type);
+  const m = (l: any) => mensuel(l) * partLigne(l, scope);
+  const b = bilan(d, scope);
+  const revenusProfil = b.revenus;
+  const revenusLignes = sum(de("revenu"), m);
+  const depensesLignes = sum(de("depense"), m);
+  const mensualites = b.mensualites;
+  const epargne = sum(de("epargne"), m);
+  const revenus = revenusProfil + revenusLignes;
+  const depenses = depensesLignes + mensualites;
+  const reste = revenus - depenses - epargne;
+  const parCategorie: Record<string, number> = {};
+  de("depense").forEach((l) => {
+    const c = l.categorie || "Autres";
+    parCategorie[c] = (parCategorie[c] || 0) + m(l);
+  });
+  if (mensualites > 0) parCategorie["Crédits"] = (parCategorie["Crédits"] || 0) + mensualites;
+  return {
+    revenusProfil, revenusLignes, revenus, depensesLignes, mensualites, depenses, epargne, reste,
+    tauxEpargne: revenus > 0 ? (epargne + Math.max(0, reste)) / revenus : null,
+    parCategorie,
+  };
+}
+type Totaux = ReturnType<typeof budgetTotaux>;
+const viewTotaux = (t: Totaux) => ({
+  revenus_profil: r2(t.revenusProfil), revenus_lignes: r2(t.revenusLignes), revenus: r2(t.revenus),
+  depenses_lignes: r2(t.depensesLignes), mensualites_credits: r2(t.mensualites), depenses: r2(t.depenses),
+  epargne: r2(t.epargne), reste: r2(t.reste),
+  taux_epargne: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000,
+  par_categorie: Object.fromEntries(Object.entries(t.parCategorie).map(([k, v]) => [k, r2(v)])),
+});
+
+/* ---------- dates (AAAA-MM-JJ, sans fuseau) ---------- */
+function ymd(s: string) {
+  const p = String(s).slice(0, 10).split("-").map(Number);
+  return { y: p[0], m: (p[1] || 1) - 1, d: p[2] || 1 };
+}
+const dernierJour = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+const isoUTC = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);
+const tauxMensuel = (tauxAnnuel: unknown) => Math.pow(1 + num(tauxAnnuel) / 100, 1 / 12) - 1;
+
+/** Versement constant de fin de mois pour passer de « deja » à « cible » en « mois » mois (formule d'annuité). */
+function effortMensuel(cible: number, deja: number, mois: number, tauxAnnuel: unknown): number {
+  const c = num(cible), d = num(deja), k = Math.floor(num(mois));
+  if (k <= 0) return c > d ? Infinity : 0;
+  const r = tauxMensuel(tauxAnnuel);
+  if (Math.abs(r) < EPS) return Math.max(0, (c - d) / k);
+  const f = Math.pow(1 + r, k);
+  return Math.max(0, (c - d * f) * r / (f - 1));
+}
+/** Nombre de mois entiers entre deux dates (jamais négatif ; fin de mois = mois complet). */
+function moisEntre(a0: string, b0: string): number {
+  const a = ymd(a0), b = ymd(b0);
+  let k = (b.y - a.y) * 12 + (b.m - a.m);
+  if (b.d < a.d && b.d < dernierJour(b.y, b.m)) k -= 1;
+  return Math.max(0, k);
+}
+/** Fin du mois où la cible est atteinte au rythme donné ; date de départ si déjà atteinte ; null au-delà de 60 ans. */
+function dateAtteinte(cible: number, deja: number, versement: number, tauxAnnuel: unknown, depuis: string): string | null {
+  const c = num(cible), v = num(versement), r = tauxMensuel(tauxAnnuel), t = ymd(depuis);
+  let x = num(deja);
+  if (x >= c - EPS) return isoUTC(t.y, t.m, t.d);
+  for (let k = 1; k <= 720; k++) {
+    x = x * (1 + r) + v;
+    if (x >= c - 1e-6) return isoUTC(t.y, t.m + k, dernierJour(t.y, t.m + k));
+  }
+  return null;
+}
+const dateCible = (o: any): string | null => o.date_cible || o.dateCible || null;
+const prioriteDe = (o: any) => (o.priorite ?? Infinity) as number;
+
+/** Répartit l'argent des poches entre objectifs, en cascade par priorité (port de Plan.affecterDeja). */
+function affecterDeja(objectifs: any[], positions: any[], scope = "foyer"): Record<string, number> {
+  const reste = positions.filter((p) => inScope(p.owner, scope) && counted(p)).map((p) => ({ p, v: val(p) }));
+  const ordre = objectifs.slice().sort((a, b) =>
+    (prioriteDe(a) - prioriteDe(b)) || String(dateCible(a) || "9999").localeCompare(String(dateCible(b) || "9999")));
+  const out: Record<string, number> = {};
+  ordre.forEach((o) => {
+    if (o.source !== "poches") { out[o.id] = pos(o.deja); return; }
+    const poches = Array.isArray(o.poches) ? o.poches : [], env = Array.isArray(o.enveloppes) ? o.enveloppes : [];
+    let besoin = pos(o.cible), pris = 0;
+    reste.forEach((r) => {
+      if (besoin <= 0 || r.v <= 0 || !(poches.includes(r.p.bloc) || env.includes(r.p.envelope))) return;
+      const t = Math.min(r.v, besoin); r.v -= t; besoin -= t; pris += t;
+    });
+    out[o.id] = Math.round(pris * 100) / 100;
+  });
+  return out;
+}
+
+/** Répartit l'épargne mensuelle entre objectifs : priorité, puis échéance ; surplus au dernier objectif en cours (port de Plan.repartirEpargne). */
+function repartirEpargne(objectifs: any[], deja: Record<string, number>, epargneMensuelle: number, ref: string): Record<string, number> {
+  const cle = (o: any) => (dateCible(o) ? String(dateCible(o)).slice(0, 10) : "9999-12-31");
+  const liste = objectifs.map((o, i) => {
+    const dj = deja[o.id] ?? 0;
+    const effort = dj >= pos(o.cible) || !dateCible(o) ? 0 : effortMensuel(pos(o.cible), dj, moisEntre(ref, dateCible(o)!), o.rendement);
+    return { o, i, effort };
+  }).sort((a, b) => (num(prioriteDe(a.o)) - num(prioriteDe(b.o))) || (cle(a.o) < cle(b.o) ? -1 : cle(a.o) > cle(b.o) ? 1 : 0) || a.i - b.i);
+  const out: Record<string, number> = {};
+  let reste = pos(epargneMensuelle);
+  liste.forEach((x) => { const m = Math.min(x.effort, reste); out[x.o.id] = m; reste -= m; });
+  if (reste > 0 && liste.length) {
+    const enCours = liste.filter((x) => x.effort > 0);
+    const l = enCours.length ? enCours : liste;
+    out[l[l.length - 1].o.id] += reste;
+  }
+  return out;
+}
+
+/** Situation d'un objectif (port de Plan.statutObjectif) : progression, effort requis, date d'atteinte, statut. */
+function statutObjectif(o: any, deja: number, versementAlloue: number, ref: string) {
+  const cible = pos(o.cible), date = dateCible(o);
+  const mois = date ? moisEntre(ref, date) : null;
+  const effort = date ? effortMensuel(cible, deja, mois!, o.rendement) : 0;
+  const atteinte = dateAtteinte(cible, deja, versementAlloue, o.rendement, ref);
+  let statut: string;
+  if (deja >= cible) statut = "atteint";
+  else if (date && (date < ref || !isFinite(effort))) statut = "hors_portee";
+  else if (!date) statut = atteinte ? "dans_les_temps" : "hors_portee";
+  else if (effort <= 0 || versementAlloue >= 1.1 * effort - EPS) statut = "avance";
+  else if (versementAlloue >= 0.95 * effort - EPS) statut = "dans_les_temps";
+  else statut = "retard";
+  return { progression: cible > 0 ? Math.min(1, deja / cible) : 1, mois, effort, atteinte, statut };
+}
+const STATUTS: Record<string, string> = { atteint: "atteint", avance: "en avance", dans_les_temps: "dans les temps", retard: "en retard", hors_portee: "hors de portée" };
+
+/* ---------- score de santé (port de Plan.score : mêmes barèmes, mêmes textes) ---------- */
+function interp(x: number, pts: number[][]): number {
+  if (x <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    if (x <= x1) return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+  }
+  return pts[pts.length - 1][1];
+}
+function fr(x: number, dec = 1): string {
+  const s = Math.abs(x).toFixed(dec).replace(/\.0+$/, "").replace(".", ",");
+  return (x < 0 ? "\u2212" : "") + s.replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+}
+const pctFr = (x: number) => fr(x * 100, 0) + " %";
+
+type Item = { cle: string; titre: string; cible: string; valeur: number | null; points?: number; aCompleter: boolean; texte: string; piste: string };
+
+function itemMatelas(d: Donnees, scope: string, totaux: Totaux): Item {
+  const epargne = sum(d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && p.bloc === "Épargne"), val);
+  const c = d.config?.cushion;
+  const m = c && typeof c === "object" && c.mode === "months" ? { mode: "months", depenses: pos(c.depenses) } : null;
+  const depenses = totaux.depensesLignes > 0 ? totaux.depenses : m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
+  const base = { cle: "matelas", titre: "Matelas de précaution", cible: "3 à 6 mois de dépenses" };
+  if (depenses <= 0) return { ...base, valeur: null, aCompleter: true,
+    texte: "Dépenses mensuelles inconnues.", piste: "Renseignez vos dépenses dans le budget pour mesurer votre réserve." };
+  const mois = epargne / depenses;
+  const points = mois < 1 ? 0 : mois < 3 ? interp(mois, [[1, 5], [3, 15]]) : mois <= 6 ? 20 : interp(mois, [[6, 20], [12, 15]]);
+  const piste = mois < 3 ? "Visez 3 à 6 mois de dépenses sur une épargne disponible à tout moment, pour absorber un imprévu sans vendre ni emprunter."
+    : mois <= 6 ? "Votre réserve couvre les imprévus courants : rien à changer de ce côté."
+    : mois <= 12 ? "Au-delà de 6 mois, une partie de cette réserve pourrait être affectée à l'un de vos objectifs."
+    : "Plus d'un an de dépenses dort sur des supports peu rémunérés : regardez si une partie peut servir vos objectifs.";
+  return { ...base, valeur: mois, points, aCompleter: false, texte: fr(mois) + " mois de dépenses de côté.", piste };
+}
+
+function itemEpargne(totaux: Totaux): Item {
+  const base = { cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus" };
+  if (!(totaux.revenus > 0) || (totaux.depensesLignes <= 0 && totaux.epargne <= 0)) return { ...base, valeur: null, aCompleter: true,
+    texte: "Budget incomplet.", piste: "Renseignez vos revenus et vos dépenses dans le budget pour calculer votre taux d'épargne." };
+  const t = totaux.tauxEpargne as number;
+  const points = interp(t * 100, [[0, 0], [5, 6], [10, 12], [15, 16], [20, 20]]);
+  const piste = t >= 0.15 ? "Vous êtes au-dessus du repère de 15 % : de quoi alimenter vos objectifs régulièrement."
+    : "Le repère courant est de 15 % des revenus. Les postes les plus lourds du budget sont le premier endroit où regarder.";
+  return { ...base, valeur: t, points, aCompleter: false, texte: "Vous mettez de côté " + pctFr(t) + " de vos revenus.", piste };
+}
+
+function itemEndettement(totaux: Totaux): Item {
+  const base = { cle: "endettement", titre: "Taux d'endettement", cible: "35 % des revenus au plus" };
+  if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
+    texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans le Profil ou le budget pour calculer votre taux d'endettement." };
+  const t = totaux.mensualites / totaux.revenus;
+  const points = interp(t * 100, [[25, 20], [35, 12], [45, 0]]);
+  const texte = totaux.mensualites > 0 ? "Vos crédits représentent " + pctFr(t) + " de vos revenus." : "Aucune mensualité de crédit en cours.";
+  const piste = t <= 0.35 ? "Vous restez sous le plafond de 35 % appliqué par les banques (norme HCSF)."
+    : "Au-delà de 35 %, les banques prêtent difficilement (norme HCSF). Un remboursement anticipé ou une renégociation peuvent alléger la charge.";
+  return { ...base, valeur: t, points, aCompleter: false, texte, piste };
+}
+
+function itemConcentration(d: Donnees, scope: string): Item {
+  const base = { cle: "concentration", titre: "Diversification", cible: "aucune ligne au-delà de 20 %, au moins 3 poches" };
+  const L = d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && val(p) > 0);
+  const F = sum(L, val);
+  if (F <= 0) return { ...base, valeur: null, aCompleter: true,
+    texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans le Pilotage pour mesurer leur diversification." };
+  const max = Math.max(...L.map(val)) / F;
+  const nb = new Set(L.map((p) => p.bloc || "_autre")).size;
+  const points = Math.max(0, interp(max * 100, [[10, 20], [20, 14], [40, 0]]) - (nb < 3 ? 5 : 0));
+  const texte = "La plus grosse ligne pèse " + pctFr(max) + " du financier, réparti sur " + nb + (nb > 1 ? " poches." : " poche.");
+  const piste = max <= 0.2 && nb >= 3 ? "Votre financier est bien réparti : aucune ligne ne domine."
+    : "Repère : aucune ligne au-delà de 20 % du financier et au moins 3 poches, pour qu'un seul support ne pèse pas sur l'ensemble.";
+  return { ...base, valeur: max, points, aCompleter: false, texte, piste };
+}
+
+function itemPatrimoine(d: Donnees, scope: string, totaux: Totaux): Item {
+  const age = d.profil?.foyer?.age;
+  const repere = REPERES_AGE[age];
+  const base = { cle: "patrimoine", titre: "Patrimoine net", cible: repere ? fr(repere) + " année" + (repere > 1 ? "s" : "") + " de revenus" : "selon l'âge" };
+  if (!repere) return { ...base, valeur: null, aCompleter: true,
+    texte: "Âge non renseigné.", piste: "Indiquez votre tranche d'âge dans le Profil pour comparer votre patrimoine au repère." };
+  if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
+    texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans le Profil pour situer votre patrimoine." };
+  const net = bilan(d, scope).net;
+  const annees = net / (totaux.revenus * 12);
+  const points = clamp(annees / repere, 0, 1) * 20;
+  const texte = "Patrimoine net : " + fr(Math.max(annees, 0)) + " année" + (annees >= 2 ? "s" : "") + " de revenus (repère à votre âge : " + fr(repere) + ").";
+  const piste = annees >= repere ? "Vous êtes au niveau du repère de votre tranche d'âge."
+    : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs du Plan en donnent le rythme.";
+  return { ...base, valeur: annees, points, aCompleter: false, texte, piste };
+}
+
+/** Score de santé sur 100 : cinq critères sur 20 ; les critères à compléter sont exclus et le total ramené sur 100. */
+function scoreSante(d: Donnees, scope: string) {
+  const totaux = budgetTotaux(d, scope);
+  const items = [
+    itemMatelas(d, scope, totaux),
+    itemEpargne(totaux),
+    itemEndettement(totaux),
+    itemConcentration(d, scope),
+    itemPatrimoine(d, scope, totaux),
+  ].map((i) => ({ ...i, points: i.aCompleter ? 0 : Math.round(i.points ?? 0), sur: 20 }));
+  const complets = items.filter((i) => !i.aCompleter);
+  const total = complets.length ? Math.round(sum(complets, (i) => i.points) / (20 * complets.length) * 100) : 0;
+  return {
+    total, complet: complets.length === items.length, criteres_calcules: complets.length,
+    items: items.map((i) => ({ cle: i.cle, titre: i.titre, points: i.points, sur: i.sur, a_completer: i.aCompleter,
+      valeur: i.valeur == null ? null : Math.round(i.valeur * 1000) / 1000, cible: i.cible, texte: i.texte, piste: i.piste })),
+    mention: "Indicateur pédagogique, pas un conseil en investissement.",
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Schémas d'entrée                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -252,6 +534,32 @@ const TodoItem = z.looseObject({ text: z.string().min(1).max(200), amount: z.uni
 const MilestoneItem = z.looseObject({ title: z.string().min(1).max(80), date: isoDate, text: z.string().max(300).optional(), warnDays: z.number().int().min(0).optional() });
 const HypothesisItem = z.looseObject({ text: z.string().min(1).max(300), done: z.boolean().optional() });
 
+const BudgetLigne = z.strictObject({
+  id: z.string().trim().min(1).max(64).optional().describe("Identifiant de la ligne (get_budget). Absent : la ligne est retrouvée par son libellé, sinon créée."),
+  type: z.enum(["revenu", "depense", "epargne"], { error: "Type de ligne invalide : revenu, depense ou epargne." }).optional(),
+  categorie: z.string().trim().max(60).optional().describe("Catégorie de dépense (Logement, Alimentation, Transport…)."),
+  libelle: z.string().trim().min(1).max(80).optional(),
+  montant: money.optional().describe("Montant en euros, ≥ 0, par mois ou par an selon frequence."),
+  frequence: z.enum(["mois", "an"], { error: "Fréquence invalide : mois ou an." }).optional().describe("mois (défaut) ou an."),
+  owner: z.enum(["p1", "p2", "commun"], { error: "Titulaire invalide : p1, p2 ou commun." }).nullable().optional()
+    .describe("p1, p2 ou commun (défaut : commun, partagé à parts égales)."),
+});
+const ObjectifRow = z.strictObject({
+  id: uuid.optional().describe("Absent : création. Présent : modification de cet objectif (seuls les champs fournis changent)."),
+  nom: z.string().trim().min(1).max(80).optional(),
+  type: z.enum(["apport", "matelas", "retraite", "projet"], { error: "Type d'objectif invalide : apport, matelas, retraite ou projet." }).optional(),
+  cible: money.optional().describe("Montant visé en euros."),
+  dateCible: isoDate.nullable().optional().describe("Échéance AAAA-MM-JJ (null : sans échéance)."),
+  deja: money.optional().describe("Montant déjà mis de côté (source saisi)."),
+  source: z.enum(["saisi", "poches"], { error: "Source invalide : saisi ou poches." }).optional()
+    .describe("saisi = montant deja saisi ; poches = somme des poches / enveloppes rattachées, réparties en cascade par priorité."),
+  poches: z.array(z.string().trim().min(1).max(60)).max(30).optional().describe("Poches du Pilotage rattachées (ex. Épargne, Monde)."),
+  enveloppes: z.array(z.string().trim().min(1).max(60)).max(30).optional().describe("Enveloppes rattachées (ex. PEA, Livrets)."),
+  rendement: z.number().min(-50, { error: "Rendement entre -50 et 50 % par an." }).max(50, { error: "Rendement entre -50 et 50 % par an." }).optional()
+    .describe("Rendement annuel attendu en %."),
+  priorite: z.number().int({ error: "Priorité : nombre entier attendu." }).min(-1000).max(1000).optional().describe("1 = servi en premier."),
+});
+
 /* ------------------------------------------------------------------ */
 /* Serveur MCP (un par requête, lié au client de l'utilisateur)        */
 /* ------------------------------------------------------------------ */
@@ -295,17 +603,19 @@ export function buildServer({ db, user }: Ctx): McpServer {
   /* ---------- get_overview ---------- */
   server.registerTool("get_overview", {
     title: "Vue d'ensemble",
-    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes.",
+    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes ; totaux mensuels du budget et score de santé financière sur 100 (cinq critères sur 20, détail pour le foyer, total par personne).",
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => {
-    const [pr, bi, cr, po, sn, st] = await Promise.all([
+    const [pr, bi, cr, po, sn, st, cf, bu] = await Promise.all([
       db.from("profiles").select("*").maybeSingle(),
       db.from("biens").select("*"),
       db.from("credits").select("*"),
       db.from("positions").select(POS_SELECT),
       db.from("snapshots").select("date, total, p1, p2").order("date", { ascending: false }).limit(1),
       db.from("status").select("*").maybeSingle(),
+      db.from("config").select("cushion").maybeSingle(),
+      db.from("budgets").select("lignes").maybeSingle(),
     ]);
     const profil = must("profiles", pr) as any ?? {};
     const biens = (must("biens", bi) as any[]) ?? [];
@@ -313,29 +623,22 @@ export function buildServer({ db, user }: Ctx): McpServer {
     const positions = (must("positions", po) as any[]) ?? [];
     const snap = ((must("snapshots", sn) as any[]) ?? [])[0] ?? null;
     const status = must("status", st) as any;
-    const P = profil.personnes ?? {}, A = profil.autres ?? {};
+    const config = must("config", cf) as any;
+    const budget = must("budgets", bu) as any;
+    const P = profil.personnes ?? {};
     const people = ["p1", ...(P.p2 ? ["p2"] : [])];
     const ref = today();
+    const donnees: Donnees = { profil, biens, credits, positions, config, lignes: Array.isArray(budget?.lignes) ? budget.lignes : [] };
 
     const scopeView = (scope: string) => {
-      const mine = positions.filter((p) => inScope(p.owner, scope));
-      const financier = sum(mine.filter(counted), val);
-      const aRecevoir = sum(mine.filter((p) => p.status === "à recevoir"), val);
-      const immobilier = sum(biens, (b) => pos(b.valeur) * partBien(scope, b.part_p1));
-      const keys = scope === "foyer" ? people : [scope];
-      const usage = sum(keys, (k) => pos(A[k]?.usage)), entreprise = sum(keys, (k) => pos(A[k]?.entreprise));
-      const dettes = sum(biens, (b) => pos(b.crd) * partBien(scope, b.part_p1)) + sum(credits, (c) => pos(c.crd) * partCredit(scope, c.owner));
-      const mensualites = sum(biens, (b) => pos(b.mensualite) * partBien(scope, b.part_p1)) + sum(credits, (c) => pos(c.mensualite) * partCredit(scope, c.owner));
-      const salaires = sum(keys, (k) => salaireNetMensuel(P[k]));
-      const autresRevenus = sum(keys, (k) => pos(P[k]?.autresRevenus));
-      const loyers = sum(biens, (b) => pos(b.loyer) * partBien(scope, b.part_p1));
-      const brut = financier + immobilier + usage + entreprise;
+      const b = bilan(donnees, scope);
       return {
-        patrimoine_financier: r2(financier), a_recevoir: r2(aRecevoir), immobilier: r2(immobilier),
-        biens_usage: r2(usage), entreprise: r2(entreprise), dettes: r2(dettes),
-        patrimoine_brut: r2(brut), patrimoine_net: r2(brut - dettes),
-        revenus_mensuels_nets: { salaires: r2(salaires), autres_revenus: r2(autresRevenus), loyers: r2(loyers), total: r2(salaires + autresRevenus + loyers) },
-        mensualites: r2(mensualites),
+        patrimoine_financier: r2(b.financier), a_recevoir: r2(b.aRecevoir), immobilier: r2(b.immobilier),
+        biens_usage: r2(b.usage), entreprise: r2(b.entreprise), dettes: r2(b.dettes),
+        patrimoine_brut: r2(b.brut), patrimoine_net: r2(b.net),
+        revenus_mensuels_nets: { salaires: r2(b.salaires), autres_revenus: r2(b.autresRevenus), loyers: r2(b.loyers), total: r2(b.revenus) },
+        mensualites: r2(b.mensualites),
+        score_sante: scoreSante(donnees, scope).total,
       };
     };
     const parPoche: Record<string, number> = {};
@@ -355,6 +658,8 @@ export function buildServer({ db, user }: Ctx): McpServer {
       derniere_mise_a_jour_nocturne: status?.last_run ?? null,
       resume_nocturne: status?.summary ?? null,
       alertes: status?.alerts ?? [],
+      budget: donnees.lignes.length ? { nombre_lignes: donnees.lignes.length, totaux_mensuels_foyer: viewTotaux(budgetTotaux(donnees, "foyer")) } : null,
+      sante: scoreSante(donnees, "foyer"),
     });
     return result;
   }));
@@ -677,6 +982,182 @@ export function buildServer({ db, user }: Ctx): McpServer {
     if (cur) must("config", await db.from("config").update(patch).eq("user_id", user.id).select("user_id").single());
     else must("config", await db.from("config").insert(patch).select("user_id").single());
     return { modifications: changes.map((k) => ({ champ: k, avant: before[k], apres: patch[k] })) };
+  }));
+
+  /* ---------- budget (table budgets, une ligne par utilisateur) ---------- */
+  async function loadPlan(withObjectifs: boolean) {
+    const [pr, bi, cr, po, cf, bu, ob] = await Promise.all([
+      db.from("profiles").select("foyer, personnes, autres").maybeSingle(),
+      db.from("biens").select("*"),
+      db.from("credits").select("*"),
+      db.from("positions").select(POS_SELECT),
+      db.from("config").select("cushion").maybeSingle(),
+      db.from("budgets").select("lignes, updated_at").maybeSingle(),
+      withObjectifs ? db.from("objectifs").select("*").order("priorite").order("created_at") : Promise.resolve({ data: [], error: null }),
+    ]);
+    const budget = must("budgets", bu) as any;
+    const d: Donnees = {
+      profil: (must("profiles", pr) as any) ?? {}, biens: (must("biens", bi) as any[]) ?? [], credits: (must("credits", cr) as any[]) ?? [],
+      positions: (must("positions", po) as any[]) ?? [], config: must("config", cf) as any,
+      lignes: Array.isArray(budget?.lignes) ? budget.lignes : [],
+    };
+    return { d, budget, objectifs: (must("objectifs", ob) as any[]) ?? [] };
+  }
+  const peopleOf = (d: Donnees) => ["p1", ...(d.profil?.personnes?.p2 ? ["p2"] : [])];
+  const totauxParScope = (d: Donnees) => Object.fromEntries(["foyer", ...peopleOf(d)].map((k) => [k, viewTotaux(budgetTotaux(d, k))]));
+
+  server.registerTool("get_budget", {
+    title: "Budget mensuel",
+    description: "Lignes du budget (revenus, dépenses par catégorie, épargne ; montant par mois ou par an ; titulaire p1, p2 ou commun) et totaux mensuels par périmètre (foyer, p1, p2). Les revenus incluent les salaires, autres revenus et loyers du profil ; les dépenses incluent les mensualités de crédit du profil. taux_epargne = (épargne + reste positif) / revenus.",
+    inputSchema: z.strictObject({}),
+    annotations: RO,
+  }, wrap(async () => {
+    const { d, budget } = await loadPlan(false);
+    return { personnes: await loadPeople(db), lignes: d.lignes, mis_a_jour: budget?.updated_at ?? null, totaux: totauxParScope(d) };
+  }));
+
+  server.registerTool("update_budget", {
+    title: "Modifier le budget",
+    description: "Modifie le budget mensuel. mode fusionner (défaut) : chaque ligne fournie est rapprochée d'une ligne existante par id, sinon par libellé (sans tenir compte de la casse) ; seuls les champs fournis changent ; les lignes non rapprochées sont ajoutées (type, libelle et montant requis) ; les autres lignes restent. mode remplacer : la liste fournie devient le budget complet (relire get_budget avant). Ne pas y mettre le salaire ni les mensualités de crédit : ils viennent déjà du profil. Demander confirmation à l'utilisateur avant d'écraser un montant.",
+    inputSchema: z.strictObject({
+      lignes: z.array(BudgetLigne).max(200),
+      mode: z.enum(["remplacer", "fusionner"], { error: "Mode invalide : remplacer ou fusionner." }).optional().describe("fusionner (défaut) ou remplacer."),
+    }),
+    annotations: RW,
+  }, wrap(async ({ lignes, mode = "fusionner" }: any) => {
+    if (mode === "fusionner" && !lignes.length) throw new UserError("Rien à modifier : fournissez au moins une ligne.");
+    const { d } = await loadPlan(false);
+    const before: any[] = d.lignes.map((l) => ({ ...l }));
+    const errors: string[] = [];
+    const complete = (l: any, L: string) => {
+      const miss = ["type", "libelle", "montant"].filter((k) => l[k] == null || l[k] === "");
+      if (miss.length) errors.push(`${L} : ${miss.join(", ")} requis pour une nouvelle ligne.`);
+      const o: any = { id: l.id ?? crypto.randomUUID(), type: l.type, categorie: l.categorie ?? "", libelle: l.libelle ?? "", montant: l.montant, frequence: l.frequence ?? "mois" };
+      if (l.owner) o.owner = l.owner;
+      return o;
+    };
+    let after: any[];
+    if (mode === "remplacer") {
+      after = lignes.map((l: any, i: number) => complete(l, `Ligne ${i + 1}${l.libelle ? " (" + l.libelle + ")" : ""}`));
+    } else {
+      after = before.map((l) => ({ ...l }));
+      const key = (x: unknown) => String(x ?? "").trim().toLowerCase();
+      lignes.forEach((l: any, i: number) => {
+        const L = `Ligne ${i + 1}${l.libelle ? " (" + l.libelle + ")" : ""}`;
+        let k = l.id ? after.findIndex((x) => String(x.id) === l.id) : -1;
+        const parId = k >= 0;
+        if (k < 0 && l.libelle) k = after.findIndex((x) => key(x.libelle) === key(l.libelle));
+        if (k < 0) { after.push(complete(l, L)); return; }
+        const { id: _id, owner, ...patch } = l;
+        if (!parId) delete patch.libelle; // rapprochée par libellé : on garde l'écriture existante
+        const cur = { ...after[k], ...clean(patch) };
+        if (owner === null) delete cur.owner;
+        else if (owner !== undefined) cur.owner = owner;
+        after[k] = cur;
+      });
+    }
+    const ids = after.map((l) => String(l.id));
+    if (new Set(ids).size !== ids.length) errors.push("Deux lignes portent le même identifiant.");
+    if (errors.length) throw new UserError("Aucune écriture effectuée.\n" + errors.join("\n"));
+
+    const byId = (list: any[]) => new Map(list.map((l) => [String(l.id), l]));
+    const B = byId(before), A2 = byId(after);
+    const ajoutees = after.filter((l) => !B.has(String(l.id)));
+    const supprimees = before.filter((l) => !A2.has(String(l.id)));
+    const modifiees = after.filter((l) => B.has(String(l.id)))
+      .map((l) => ({ id: l.id, libelle: l.libelle, modifications: diff(B.get(String(l.id)), l, "", 1) }))
+      .filter((x) => x.modifications.length);
+    const resume = (list: any[]) => {
+      const t = budgetTotaux({ ...d, lignes: list }, "foyer");
+      return { nombre_lignes: list.length, revenus: r2(t.revenus), depenses: r2(t.depenses), epargne: r2(t.epargne), reste: r2(t.reste),
+        taux_epargne: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000 };
+    };
+    if (!ajoutees.length && !supprimees.length && !modifiees.length) return { mode, modifications: [], message: "Aucun changement : le budget est déjà à jour.", avant: resume(before) };
+    must("budgets", await db.from("budgets").upsert({ user_id: user.id, lignes: after }, { onConflict: "user_id" }).select("user_id").single());
+    return { mode, avant: resume(before), apres: resume(after), ajoutees, modifiees, supprimees };
+  }));
+
+  /* ---------- objectifs ---------- */
+  const viewObjectif = (o: any) => {
+    const { user_id: _u, created_at: _c, ...rest } = o;
+    return { ...rest, cible: num(o.cible), deja: num(o.deja), rendement: num(o.rendement) };
+  };
+
+  server.registerTool("list_objectifs", {
+    title: "Lister les objectifs",
+    description: "Objectifs datés (apport, matelas, retraite, projet) avec, pour chacun : montant déjà réuni (saisi, ou poches / enveloppes rattachées réparties en cascade par priorité : une même ligne ne finance jamais deux objectifs), effort mensuel requis d'ici l'échéance (versement constant, rendement attendu), mois restants, versement alloué (épargne mensuelle du budget répartie par priorité puis échéance), date d'atteinte à ce rythme et statut (atteint, avance, dans_les_temps, retard, hors_portee).",
+    inputSchema: z.strictObject({}),
+    annotations: RO,
+  }, wrap(async () => {
+    const { d, objectifs } = await loadPlan(true);
+    const ref = today();
+    const deja = affecterDeja(objectifs, d.positions, "foyer");
+    const t = budgetTotaux(d, "foyer");
+    const epargneMensuelle = Math.max(0, t.epargne + Math.max(0, t.reste));
+    const alloue = repartirEpargne(objectifs, deja, epargneMensuelle, ref);
+    return {
+      date: ref,
+      epargne_mensuelle_repartie: r2(epargneMensuelle),
+      note: "Épargne répartie = lignes d'épargne du budget + reste positif (foyer). Montants « poches » répartis en cascade par priorité.",
+      objectifs: objectifs.map((o) => {
+        const dj = deja[o.id] ?? 0, v = alloue[o.id] ?? 0, st = statutObjectif(o, dj, v, ref);
+        return {
+          ...viewObjectif(o), deja_saisi: num(o.deja), deja: r2(dj), progression: Math.round(st.progression * 1000) / 1000,
+          mois_restants: st.mois, effort_mensuel: isFinite(st.effort) ? r2(st.effort) : null,
+          versement_alloue: r2(v), date_atteinte: st.atteinte, statut: st.statut, statut_libelle: STATUTS[st.statut],
+        };
+      }),
+    };
+  }));
+
+  const OBJ_COLS: Record<string, string> = { nom: "nom", type: "type", cible: "cible", dateCible: "date_cible", deja: "deja", source: "source", poches: "poches", enveloppes: "enveloppes", rendement: "rendement", priorite: "priorite" };
+  server.registerTool("upsert_objectifs", {
+    title: "Ajouter ou modifier des objectifs",
+    description: "Crée (sans id : nom et cible requis) ou modifie (avec id : seuls les champs fournis changent) des objectifs datés. Toutes les lignes sont validées avant toute écriture. type : apport, matelas, retraite ou projet ; source : saisi (montant deja) ou poches (poches / enveloppes du Pilotage rattachées) ; rendement en % par an (-50 à 50) ; priorite entière (1 = servi en premier).",
+    inputSchema: z.strictObject({ rows: z.array(ObjectifRow).min(1).max(30) }),
+    annotations: RW,
+  }, wrap(async ({ rows }: any) => {
+    const ids = rows.filter((r: any) => r.id).map((r: any) => r.id);
+    const existing = ids.length ? (must("objectifs", await db.from("objectifs").select("*").in("id", ids)) as any[]) : [];
+    const byId = new Map(existing.map((r) => [r.id, r]));
+    const errors: string[] = [], warnings: string[] = [];
+    rows.forEach((r: any, i: number) => {
+      const L = `Ligne ${i + 1}${r.nom ? " (" + r.nom + ")" : ""}`;
+      if (r.id && !byId.has(r.id)) errors.push(`${L} : objectif ${r.id} introuvable.`);
+      if (!r.id && (!r.nom || r.cible == null)) errors.push(`${L} : nom et cible requis pour créer un objectif.`);
+      if (r.dateCible && isNaN(Date.parse(r.dateCible + "T00:00:00Z"))) errors.push(`${L} : date cible « ${r.dateCible} » invalide.`);
+      const m = { ...(byId.get(r.id) ?? {}), ...r };
+      if (m.source === "poches" && !(m.poches?.length || m.enveloppes?.length)) warnings.push(`${L} : source poches sans poche ni enveloppe rattachée (montant déjà réuni = 0).`);
+      if (m.dateCible && m.dateCible < today()) warnings.push(`${L} : échéance déjà passée.`);
+    });
+    if (errors.length) throw new UserError("Aucune écriture effectuée.\n" + errors.join("\n"));
+    const toRow = (r: any) => Object.fromEntries(Object.entries(r).filter(([k]) => k in OBJ_COLS).map(([k, v]) => [OBJ_COLS[k], v]));
+    const crees: any[] = [], modifies: any[] = [];
+    for (const r of rows.filter((x: any) => x.id)) {
+      const old = byId.get(r.id), patch = toRow(r);
+      const changes = diff(Object.fromEntries(Object.keys(patch).map((k) => [k, old[k] ?? null])), patch, "", 1)
+        .filter((c) => !(typeof c.avant === "string" && typeof c.apres === "number" && Number(c.avant) === c.apres));
+      if (!changes.length) { modifies.push({ id: r.id, nom: old.nom, modifications: [] }); continue; }
+      must("objectifs", await db.from("objectifs").update(patch).eq("id", r.id).select("id").single());
+      modifies.push({ id: r.id, nom: r.nom ?? old.nom, modifications: changes });
+    }
+    const inserts = rows.filter((x: any) => !x.id).map(toRow);
+    if (inserts.length) {
+      const data = (must("objectifs", await db.from("objectifs").insert(inserts).select("*")) as any[]) ?? [];
+      crees.push(...data.map(viewObjectif));
+    }
+    return { crees, modifies, avertissements: warnings };
+  }));
+
+  server.registerTool("delete_objectif", {
+    title: "Supprimer un objectif",
+    description: "Supprime définitivement un objectif par son id. Demander confirmation à l'utilisateur avant.",
+    inputSchema: z.strictObject({ id: uuid }),
+    annotations: DEL,
+  }, wrap(async ({ id }: any) => {
+    const data = must("objectifs", await db.from("objectifs").delete().eq("id", id).select("*")) as any[];
+    if (!data?.length) throw new UserError(`Objectif ${id} introuvable.`);
+    return { supprime: viewObjectif(data[0]) };
   }));
 
   return server;
