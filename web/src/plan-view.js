@@ -140,7 +140,7 @@
           "<p>En quelques lignes (logement, courses, transport, épargne…), le budget donne trois repères que le reste de Boussole ne peut pas deviner :</p>" +
           "<ul><li><b>votre taux d'épargne</b>, la part des revenus mise de côté chaque mois ;</li>" +
           "<li><b>votre matelas en mois de dépenses</b>, pour savoir combien de temps vous tiendriez sans revenu ;</li>" +
-          "<li><b>votre score de santé</b> financière, affiché dans le Pilotage.</li></ul>" +
+          "<li><b>votre score de santé</b> financière, affiché dans Diagnostic › Santé.</li></ul>" +
           '<div class="pv-empty-act">' + addBtn("depense", "Ajouter une ligne") + '<button type="button" class="btn" data-pv-assist>Remplir avec mon assistant</button></div>' +
           (known ? '<div class="pv-known"><span class="lbl">Déjà connu grâce au Profil</span>' + pr.rev.concat(pr.dep).map(roRow).join("") + profilLink + "</div>" : "") +
           "</div>";
@@ -373,7 +373,7 @@
       '<div class="pv-field"><label class="lbl" for="' + f + 'date">Date visée</label><input class="plain" id="' + f + 'date" data-o="dateCible" type="date" value="' + esc(d.dateCible || "") + '"></div>' +
       '<div class="pv-field f-wide"><span class="lbl" id="' + f + 'srcl">Déjà mis de côté</span><div class="seg" role="group" aria-labelledby="' + f + 'srcl">' +
       '<button type="button" id="' + f + 'src-saisi" data-o-src="saisi" aria-pressed="' + (d.source !== "poches") + '">Montant saisi</button>' +
-      '<button type="button" id="' + f + 'src-poches" data-o-src="poches" aria-pressed="' + (d.source === "poches") + '">Poches du Pilotage</button></div></div>' +
+      '<button type="button" id="' + f + 'src-poches" data-o-src="poches" aria-pressed="' + (d.source === "poches") + '">Poches de vos placements</button></div></div>' +
       (d.source === "poches"
         ? '<fieldset class="pv-checks f-wide"><legend class="lbl">Poches</legend>' + checks("poches", blocs, d.poches || []) + "</fieldset>" +
           '<fieldset class="pv-checks f-wide"><legend class="lbl">Enveloppes</legend>' + checks("enveloppes", envs, d.enveloppes || []) + "</fieldset>" +

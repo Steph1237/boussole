@@ -392,7 +392,7 @@ function itemConcentration(d: Donnees, scope: string): Item {
   const L = d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && val(p) > 0);
   const F = sum(L, val);
   if (F <= 0) return { ...base, valeur: null, aCompleter: true,
-    texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans le Pilotage pour mesurer leur diversification." };
+    texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans Bilan › Placements pour mesurer leur diversification." };
   const max = Math.max(...L.map(val)) / F;
   const nb = new Set(L.map((p) => p.bloc || "_autre")).size;
   const points = Math.max(0, interp(max * 100, [[10, 20], [20, 14], [40, 0]]) - (nb < 3 ? 5 : 0));
@@ -553,7 +553,7 @@ const ObjectifRow = z.strictObject({
   deja: money.optional().describe("Montant déjà mis de côté (source saisi)."),
   source: z.enum(["saisi", "poches"], { error: "Source invalide : saisi ou poches." }).optional()
     .describe("saisi = montant deja saisi ; poches = somme des poches / enveloppes rattachées, réparties en cascade par priorité."),
-  poches: z.array(z.string().trim().min(1).max(60)).max(30).optional().describe("Poches du Pilotage rattachées (ex. Épargne, Monde)."),
+  poches: z.array(z.string().trim().min(1).max(60)).max(30).optional().describe("Poches de placements rattachées (ex. Épargne, Monde)."),
   enveloppes: z.array(z.string().trim().min(1).max(60)).max(30).optional().describe("Enveloppes rattachées (ex. PEA, Livrets)."),
   rendement: z.number().min(-50, { error: "Rendement entre -50 et 50 % par an." }).max(50, { error: "Rendement entre -50 et 50 % par an." }).optional()
     .describe("Rendement annuel attendu en %."),
