@@ -1,11 +1,11 @@
 /* Routage des onglets, en-tête commun et chiffres clés. Les modules s'enregistrent via App.register. */
 (function () {
-  const ORDER = ["pilotage", "toise", "simu", "profil"];
-  const LABELS = { pilotage: "Pilotage", toise: "Ma position", simu: "Acheter ou placer", profil: "Profil" };
+  const ORDER = ["pilotage", "toise", "simu", "plan", "profil"];
+  const LABELS = { pilotage: "Pilotage", toise: "Ma position", simu: "Acheter ou placer", plan: "Plan", profil: "Profil" };
   const mods = {};
   let active = "pilotage";
   try { const t = localStorage.getItem("app-tab"); if (ORDER.includes(t)) active = t; } catch (e) {}
-  const H = { "#pilotage": "pilotage", "#position": "toise", "#foyer": "toise", "#salaire": "toise", "#patrimoine": "toise", "#emprunt": "toise", "#acheter": "simu", "#simulateur": "simu", "#profil": "profil" };
+  const H = { "#pilotage": "pilotage", "#position": "toise", "#foyer": "toise", "#salaire": "toise", "#patrimoine": "toise", "#emprunt": "toise", "#acheter": "simu", "#simulateur": "simu", "#plan": "plan", "#budget": "plan", "#objectifs": "plan", "#profil": "profil" };
   if (H[location.hash]) active = H[location.hash];
 
   const $ = id => document.getElementById(id);

@@ -17,7 +17,7 @@ const DEV = process.argv.includes("--dev");
 const outArg = process.argv.find(a => a.startsWith("--out="));
 const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
 
-const MODULES = ["pilotage", "toise", "simu", "profil"];
+const MODULES = ["pilotage", "toise", "simu", "plan-view", "profil"];
 const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", "rules", "plan", "assistant", "import", "onboarding", ...MODULES, "app"];
 // supabase-js v2, build UMD épinglé (window.supabase). Le paquet n'est pas publié sur cdnjs : jsdelivr sert
 // le fichier du paquet npm officiel. Chargé juste après config.js, avant les adaptateurs store-* et auth.js.
