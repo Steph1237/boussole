@@ -1,15 +1,4 @@
 <div class="pilotage">
-  <section class="panel sante" id="sante" aria-labelledby="santeTitle" hidden>
-    <div class="sante-score">
-      <h2 class="label" id="santeTitle">Santé financière</h2>
-      <div class="big num"><span id="santeTotal">—</span><span class="sante-sur">/100</span></div>
-      <div class="sante-verdict" id="santeVerdict"></div>
-      <div class="small muted" id="santePartiel"></div>
-    </div>
-    <div class="sante-items" id="santeItems"></div>
-    <p class="small muted sante-caption">Indicateur pédagogique, pas un conseil en investissement.</p>
-  </section>
-
   <section class="summary" aria-label="Synthèse">
     <div>
       <div class="label" id="totLabel">Patrimoine financier du foyer</div>
@@ -18,57 +7,22 @@
     </div>
     <div><div class="label">Depuis 30 jours</div><div class="mid delta" id="d30">—</div><div class="small muted" id="d30s"></div></div>
     <div><div class="label">Plus-values latentes</div><div class="mid" id="pl">—</div><div class="small muted">lignes cotées avec prix de revient</div></div>
-    <div><div class="label">Épargne de précaution</div><div class="mid" id="cush">—</div><div class="small muted" id="cushs"></div></div>
+    <div><div class="label">Épargne de précaution</div><div class="mid" id="cush">—</div><div class="small muted" id="cushs"></div><a class="small cush-link" href="#profil/regles" data-goto="profil/regles">Régler la cible</a></div>
   </section>
 
   <div class="grid2">
     <section class="panel chart" aria-label="Évolution">
       <div class="panel-head"><h2>Évolution</h2><span class="small muted" id="chartNote"></span></div>
+      <div class="evo-ctl" id="evoCtl" hidden>
+        <div class="seg evo-per" id="evoPer" role="group" aria-label="Période"></div>
+        <div class="evo-perso" id="evoPerso" hidden>
+          <label>Du<input type="date" id="evoDu"></label>
+          <label>Au<input type="date" id="evoAu"></label>
+        </div>
+        <label class="evo-gran">Pas<select id="evoGran" aria-label="Pas du graphique"></select></label>
+      </div>
+      <div class="small evo-res" id="evoRes" aria-live="polite"></div>
       <div id="chart"></div>
-    </section>
-    <section class="panel" aria-label="Alertes">
-      <div class="panel-head"><h2>Alertes</h2><span class="small muted" id="alertCount"></span></div>
-      <div class="alerts" id="alerts"></div>
-      <details class="rules" id="rulesBox">
-        <summary>Mes règles d'alerte <span class="muted" id="ruleCount"></span></summary>
-        <ul class="clean rule-list" id="ruleList"></ul>
-        <form id="ruleForm" autocomplete="off" aria-label="Ajouter une règle">
-          <label>Nouvelle règle<select id="rfType">
-            <option value="max_line_pct">Plafond par ligne</option>
-            <option value="max_bloc_pct">Plafond par poche</option>
-            <option value="min_bloc_pct">Plancher par poche</option>
-            <option value="price_floor">Seuil de cours (ordre stop)</option>
-            <option value="envelope_cap">Plafond d'enveloppe</option>
-            <option value="stale_prices">Cours trop anciens</option>
-          </select></label>
-          <label id="rfBlocL">Poche<select id="rfBloc"></select></label>
-          <label id="rfPosL">Ligne cotée<select id="rfPos"></select></label>
-          <label id="rfEnvL">Enveloppe<select id="rfEnv"></select></label>
-          <label id="rfPctL">Pourcentage (%)<input id="rfPct" type="number" step="any" min="0" max="100" inputmode="decimal" placeholder="ex. 15"></label>
-          <label id="rfPriceL">Seuil de cours (€)<input id="rfPrice" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 170"></label>
-          <label id="rfCapL">Plafond (€)<input id="rfCap" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 22950"></label>
-          <label id="rfDaysL">Jours sans cours<input id="rfDays" type="number" step="1" min="1" inputmode="numeric" placeholder="ex. 4"></label>
-          <div><button class="btn" type="submit" id="rfBtn">Ajouter la règle</button></div>
-          <div class="formnote muted" id="rfMsg" aria-live="polite"></div>
-        </form>
-        <h3 class="rules-h">Épargne de précaution</h3>
-        <form id="cushForm" autocomplete="off" aria-label="Matelas de précaution">
-          <label>Cible exprimée<select id="cuMode"><option value="amount">en montant</option><option value="months">en mois de dépenses</option></select></label>
-          <label id="cuMinL">Minimum (€)<input id="cuMin" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 15000"></label>
-          <label id="cuMaxL">Maximum (€)<input id="cuMax" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 20000"></label>
-          <label id="cuMonthsL">Nombre de mois<input id="cuMonths" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 6"></label>
-          <label id="cuDepL">Dépenses mensuelles (€)<input id="cuDep" type="number" step="any" min="0" inputmode="decimal" placeholder="ex. 2500"></label>
-          <div><button class="btn" type="submit" id="cuBtn">Enregistrer le matelas</button></div>
-          <div class="formnote muted" id="cuMsg" aria-live="polite"></div>
-        </form>
-      </details>
-    </section>
-  </div>
-
-  <div class="grid2">
-    <section class="panel" aria-label="Allocation">
-      <div class="panel-head"><h2>Allocation par poche</h2><span class="small muted" id="allocNote"></span></div>
-      <div class="alloc" id="alloc"></div>
     </section>
     <section class="panel" aria-label="Enveloppes">
       <div class="panel-head"><h2>Par enveloppe</h2></div>
@@ -76,6 +30,11 @@
       <ul class="clean" id="envlist"></ul>
     </section>
   </div>
+
+  <section class="panel" aria-label="Allocation">
+    <div class="panel-head"><h2>Allocation par poche</h2><span class="small muted" id="allocNote"></span></div>
+    <div class="alloc" id="alloc"></div>
+  </section>
 
   <section class="panel" aria-label="Positions">
     <div class="panel-head"><h2>Positions</h2><span class="small muted">Cours mis à jour chaque soir par l'agent · valeurs manuelles pour fonds euros, SCPI, livrets</span></div>
