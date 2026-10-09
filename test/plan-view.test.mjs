@@ -3,12 +3,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const js = readFileSync("web/src/plan-view.js", "utf8");
 const css = readFileSync("web/src/plan-view.css", "utf8");
 const html = readFileSync("web/src/plan-view.html", "utf8");
 const shell = readFileSync("web/src/shell.html", "utf8");
-const app = readFileSync("web/src/app.js", "utf8");
 const build = readFileSync("build.mjs", "utf8");
 
 test("plan-view.js : le fichier se compile", () => {
@@ -60,19 +62,16 @@ test("plan-view.html : les identifiants utilisés par le script existent", () =>
   assert.deepEqual(missing, []);
 });
 
-test("coque : la vue Plan est entre Acheter ou placer et Profil, avec son fragment", () => {
-  assert.match(shell, /<section class="view" id="view-plan" role="tabpanel" aria-labelledby="tab-plan" hidden>\s*<!--@plan-view-->/);
-  const i = k => shell.indexOf('id="view-' + k + '"');
-  assert.ok(i("simu") < i("plan") && i("plan") < i("profil"));
+test("coque : la vue Plan est dans Avenir › Budget et objectifs, avec son fragment", () => {
+  assert.match(shell, /<section class="view" id="view-plan" data-space="avenir" data-sub="plan"[^>]*hidden>\s*<!--@plan-view-->/);
 });
 
-test("app.js : « plan » dans ORDER avant « profil », libellé et ancres", () => {
-  const order = JSON.parse(app.match(/const ORDER = (\[[^\]]*\])/)[1]);
-  assert.ok(order.includes("plan"));
-  assert.equal(order.indexOf("plan"), order.indexOf("simu") + 1);
-  assert.ok(order.indexOf("plan") < order.indexOf("profil"));
-  assert.match(app, /plan: "Plan"/);
-  for (const h of ["#plan", "#budget", "#objectifs"]) assert.match(app, new RegExp(`"${h}": "plan"`));
+test("app.js : « plan » branché sur avenir/plan, anciens onglet et ancres redirigés", () => {
+  const { SPACES, LEGACY_TABS, LEGACY_HASHES } = require("../web/src/app.js");
+  const avenir = SPACES.find(s => s.space === "avenir");
+  assert.equal(avenir.subs.find(x => x.id === "plan").module, "plan");
+  assert.equal(LEGACY_TABS.plan, "avenir/plan");
+  for (const h of ["#plan", "#budget", "#objectifs"]) assert.equal(LEGACY_HASHES[h], "avenir/plan");
 });
 
 test("build.mjs : module plan-view assemblé, moteur plan chargé avant", () => {
