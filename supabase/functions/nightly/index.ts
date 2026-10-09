@@ -5,8 +5,9 @@
 // Déployée avec verify_jwt = false : l'authentification est faite ici, par
 // public.check_nightly_token() (exécutable par le rôle service uniquement).
 //
-// Étapes : cours Yahoo → instruments (en EUR) ; take_snapshots() ; apply_recurring() ;
-// take_snapshots() (la photo du jour inclut les versements) ; finish_nightly() (status + job_runs).
+// Étapes : cours Yahoo, repli Euronext → instruments (en EUR, source yahoo | euronext) ;
+// take_snapshots() ; apply_recurring() ; take_snapshots() (la photo du jour inclut les versements) ;
+// finish_nightly() (status + job_runs).
 // Seules variables d'environnement utilisées : SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY,
 // fournies automatiquement par la plateforme.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -113,6 +114,93 @@ async function toEur(q: Quote): Promise<number> {
   }
 }
 
+// Repli Euronext, quand Yahoo échoue (429, symbole invalide…) ou quand l'instrument n'a pas de
+// symbole Yahoo. Deux appels publics, sans clé ni cookie (sondés le 2026-10-09) :
+//
+// 1. Recherche du marché (MIC), mise en cache pendant le passage :
+//    GET https://live.euronext.com/en/instrumentSearch/searchJSON?q={ISIN}
+//    → [{"value":"FR0010342592","isin":"FR0010342592","mic":"XPAR","label":"<span…>","link":"/en/product/etfs/FR0010342592-XPAR","name":"Amundi NSDQ LEV"},
+//       {"isin":"FR0010342592","mic":"ETFP",…}, {"value":"","isin":"","mic":"",…"See all results"}]
+//    On garde la première MIC de MIC_PREF présente (marchés au comptant, cotations en EUR).
+//
+// 2. Historique des cours en CSV, sur les 14 derniers jours :
+//    GET https://live.euronext.com/en/ajax/AwlHistoricalPrice/getFullDownloadAjax/{ISIN}-{MIC}
+//        ?format=csv&decimal_separator=.&date_form=d/m/Y&startdate=YYYY-MM-DD&enddate=YYYY-MM-DD
+//    → (BOM)"Historical Data"
+//      "From 2026-09-25 to 2026-10-09"
+//      FR0010342592
+//      Date;Open;High;Low;Last;Close;"Number of Shares";"Number of Trades";Turnover[;vwap]
+//      09/10/2026;10.766;10.812;10.65;10.682;10.682;469092;711;5030484;10.7239
+//      … (du plus récent au plus ancien)
+//    On prend la ligne la plus récente : colonne Close (à défaut Last), date JJ/MM/AAAA.
+//
+// Écartés : getDetailedQuote et intraday_chart/getChartData renvoient un JSON chiffré
+// ({ct, iv, s}) ; la même URL CSV en POST répond « No format specified ».
+// Le CSV ne donne pas la devise : le repli n'est tenté que pour les instruments en EUR.
+const EURONEXT = "https://live.euronext.com/en";
+const MIC_PREF = ["XPAR", "XAMS", "XBRU", "XLIS", "XMIL", "ETFP"];
+const EURONEXT_TIMEOUT_MS = 15_000;
+const REAL_ISIN = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
+
+type FallbackQuote = { price: number; date: string; mic: string };
+
+const micCache = new Map<string, Promise<string>>();
+function euronextMic(isin: string): Promise<string> {
+  if (!micCache.has(isin)) {
+    const p = (async () => {
+      const res = await fetch(`${EURONEXT}/instrumentSearch/searchJSON?q=${encodeURIComponent(isin)}`, {
+        headers: { "User-Agent": UA, Accept: "application/json" },
+        signal: AbortSignal.timeout(EURONEXT_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        await res.body?.cancel();
+        throw new Error(`recherche HTTP ${res.status}`);
+      }
+      const list = await res.json();
+      const mics = new Set((Array.isArray(list) ? list : []).filter((x) => x?.isin === isin).map((x) => String(x.mic)));
+      const mic = MIC_PREF.find((m) => mics.has(m));
+      if (!mic) throw new Error("non coté sur Euronext");
+      return mic;
+    })();
+    p.catch(() => micCache.delete(isin));
+    micCache.set(isin, p);
+  }
+  return micCache.get(isin)!;
+}
+
+async function fetchEuronext(isin: string): Promise<FallbackQuote> {
+  const mic = await euronextMic(isin);
+  const end = parisDate(null);
+  const start = parisDate(Math.floor((Date.now() - 14 * 86_400_000) / 1000));
+  const qs = `format=csv&decimal_separator=.&date_form=d/m/Y&startdate=${start}&enddate=${end}`;
+  const res = await fetch(`${EURONEXT}/ajax/AwlHistoricalPrice/getFullDownloadAjax/${isin}-${mic}?${qs}`, {
+    headers: { "User-Agent": UA, Accept: "text/csv,*/*" },
+    signal: AbortSignal.timeout(EURONEXT_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    await res.body?.cancel();
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const lines = (await res.text()).split(/\r?\n/);
+  const header = lines.find((l) => l.startsWith("Date;"))?.split(";") ?? [];
+  const iClose = header.indexOf("Close");
+  const iLast = header.indexOf("Last");
+  if (iClose < 0 && iLast < 0) throw new Error("CSV inattendu");
+  let best: FallbackQuote | null = null;
+  for (const line of lines) {
+    const m = line.match(/^(\d{2})\/(\d{2})\/(\d{4});/);
+    if (!m) continue;
+    const cols = line.split(";");
+    const close = parseFloat(cols[iClose]);
+    const price = isFinite(close) && close > 0 ? close : parseFloat(cols[iLast]);
+    if (!isFinite(price) || price <= 0) continue;
+    const date = `${m[3]}-${m[2]}-${m[1]}`;
+    if (!best || date > best.date) best = { price, date, mic };
+  }
+  if (!best) throw new Error("cours absent");
+  return best;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: "méthode non autorisée" }, 405);
 
@@ -137,33 +225,53 @@ Deno.serve(async (req) => {
   const errors: RunError[] = [];
   let updated = 0;
 
-  // 2. Cours.
+  // 2. Cours : Yahoo d'abord ; en cas d'échec (ou sans symbole Yahoo), repli Euronext pour les
+  // instruments en EUR identifiés par un vrai ISIN (les ISIN de test `X-…` sont ignorés).
   const { data: instruments, error: instErr } = await admin
     .from("instruments")
-    .select("isin, symbol")
-    .not("symbol", "is", null)
+    .select("isin, symbol, currency")
     .order("isin");
   if (instErr) {
     errors.push({ error: `lecture des instruments : ${instErr.message}` });
   } else {
     for (const ins of instruments || []) {
+      const isin = String(ins.isin);
       const symbol = String(ins.symbol || "").trim();
-      if (!symbol) continue;
+      const canFallback = REAL_ISIN.test(isin) && String(ins.currency || "EUR").toUpperCase() === "EUR";
+      if (!symbol && !canFallback) continue;
       if (Date.now() - t0 > BUDGET_MS) {
-        errors.push({ isin: ins.isin, symbol, error: "temps dépassé, cours non récupéré" });
+        errors.push({ isin, symbol: symbol || undefined, error: "temps dépassé, cours non récupéré" });
         continue;
       }
-      try {
-        const q = await fetchQuote(symbol);
-        const price = await toEur(q);
+      let row: { price: number; price_date: string; source: string } | null = null;
+      let yahooErr = "sans symbole";
+      if (symbol) {
+        try {
+          const q = await fetchQuote(symbol);
+          row = { price: await toEur(q), price_date: parisDate(q.time), source: "yahoo" };
+        } catch (e) {
+          yahooErr = (e as Error).message;
+        }
+      }
+      if (!row && canFallback && Date.now() - t0 <= BUDGET_MS) {
+        if (symbol) await sleep(DELAY_MS);
+        try {
+          const f = await fetchEuronext(isin);
+          row = { price: f.price, price_date: f.date, source: "euronext" };
+          console.log(`nightly: ${isin} via Euronext ${f.mic} (yahoo : ${yahooErr})`);
+        } catch (e) {
+          errors.push({ isin, symbol: symbol || undefined, error: `yahoo: ${yahooErr} ; euronext: ${(e as Error).message}` });
+        }
+      } else if (!row) {
+        errors.push({ isin, symbol: symbol || undefined, error: canFallback ? `yahoo: ${yahooErr} ; euronext: temps dépassé` : yahooErr });
+      }
+      if (row) {
         const { error } = await admin
           .from("instruments")
-          .update({ price: Math.round(price * 1e6) / 1e6, price_date: parisDate(q.time), source: "yahoo" })
-          .eq("isin", ins.isin);
-        if (error) throw new Error(error.message);
-        updated++;
-      } catch (e) {
-        errors.push({ isin: ins.isin, symbol, error: (e as Error).message });
+          .update({ ...row, price: Math.round(row.price * 1e6) / 1e6 })
+          .eq("isin", isin);
+        if (error) errors.push({ isin, symbol: symbol || undefined, error: `mise à jour : ${error.message}` });
+        else updated++;
       }
       await sleep(DELAY_MS);
     }
