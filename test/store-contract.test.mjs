@@ -52,7 +52,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -172,6 +172,92 @@ test("démo : la façade db écrit en mémoire (positions, transactions, config,
   assert.ok(n >= 1, "les abonnés ont été notifiés");
 });
 
+const OBJ_KEYS = ["cible", "dateCible", "deja", "enveloppes", "id", "nom", "poches", "priorite", "rendement", "source", "type"];
+
+test("démo : budget et objectifs d'exemple, au contrat et cohérents avec le foyer", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  assert.deepEqual(Object.keys(S.budget), ["lignes"]);
+  assert.ok(S.budget.lignes.length >= 12, "une douzaine de lignes");
+  S.budget.lignes.forEach(l => {
+    assert.ok(["revenu", "depense", "epargne"].includes(l.type), `type de ligne ${l.id}`);
+    assert.ok(["mois", "an"].includes(l.frequence), `fréquence de ${l.id}`);
+    assert.equal(typeof l.montant, "number"); assert.ok(l.montant >= 0);
+    assert.ok(l.id && l.libelle && l.categorie, `ligne ${l.id} complète`);
+  });
+  assert.equal(S.budget.lignes.filter(l => l.type === "revenu").length, 0, "les salaires viennent du profil");
+  assert.equal(S.budget.lignes.filter(l => l.frequence === "an").length, 1, "une ligne annuelle (taxe foncière)");
+  const mensuel = l => (l.frequence === "an" ? l.montant / 12 : l.montant);
+  const depenses = S.budget.lignes.filter(l => l.type === "depense").reduce((a, l) => a + mensuel(l), 0)
+    + S.profil.biens.reduce((a, b) => a + b.mensualite, 0) + S.profil.credits.reduce((a, c) => a + c.mensualite, 0);
+  assert.equal(S.budget.lignes.filter(l => l.type === "epargne").reduce((a, l) => a + l.montant, 0), 650);
+
+  assert.equal(S.objectifs.length, 3);
+  S.objectifs.forEach(o => {
+    assert.deepEqual(Object.keys(o).sort(), OBJ_KEYS, `forme de l'objectif ${o.id}`);
+    for (const k of ["cible", "deja", "rendement", "priorite"]) assert.equal(typeof o[k], "number", `${o.id}.${k} est un nombre`);
+    assert.match(o.dateCible, /^\d{4}-\d{2}-\d{2}$/);
+  });
+  assert.deepEqual(J(S.objectifs.map(o => o.type)), ["matelas", "apport", "retraite"], "triés par priorité");
+  const matelas = S.objectifs.find(o => o.type === "matelas");
+  assert.equal(matelas.cible, Math.round((6 * depenses) / 100) * 100, "matelas = 6 mois de dépenses");
+  assert.deepEqual(J(S.objectifs.find(o => o.type === "retraite").poches), ["Monde", "Europe", "Asie"]);
+});
+
+test("démo : façade budget et objectifs (set, upsert création / mise à jour, delete, refus)", async () => {
+  const ctx = browser();
+  await whenReady(ctx);
+  const db = ctx.Store.db;
+
+  await db.doc("budget/main").set({ lignes: [{ type: "depense", categorie: "Logement", libelle: "Loyer garage", montant: "90" }, { id: "x", type: "epargne", categorie: "Épargne", libelle: "PEL", montant: 45, frequence: "an", owner: "p2" }] });
+  const B = ctx.Store.get().budget;
+  assert.equal(B.lignes.length, 2);
+  assert.equal(B.lignes[0].montant, 90, "montant converti en nombre");
+  assert.equal(B.lignes[0].frequence, "mois", "fréquence par défaut");
+  assert.ok(B.lignes[0].id, "identifiant attribué");
+  assert.equal(B.lignes[1].owner, "p2");
+  await assert.rejects(db.doc("budget/main").set({ lignes: [{ type: "salaire", montant: 1 }] }), e => e.code === "invalid_argument" && /type/.test(e.message));
+  await assert.rejects(db.doc("budget/main").set({ lignes: [{ type: "depense", montant: -5 }] }), e => e.code === "invalid_argument");
+  await assert.rejects(db.doc("budget/main").set({ lignes: "non" }), e => e.code === "invalid_argument");
+  assert.equal(ctx.Store.get().budget.lignes.length, 2, "un refus ne modifie rien");
+
+  const r = await db.collection("objectifs").upsert({ nom: "Voyage au Japon", type: "projet", cible: "8000", dateCible: "2028-04-01", deja: 500, source: "saisi", rendement: 2, priorite: 4 });
+  assert.ok(r && r.id, "création : identifiant renvoyé");
+  let O = ctx.Store.get().objectifs;
+  assert.equal(O.length, 4);
+  const nv = O.find(o => o.id === r.id);
+  assert.deepEqual(Object.keys(nv).sort(), OBJ_KEYS);
+  assert.equal(nv.cible, 8000); assert.equal(nv.dateCible, "2028-04-01"); assert.deepEqual(J(nv.poches), []);
+
+  const r2 = await db.collection("objectifs").upsert({ id: "obj-apport", cible: 65000, deja: 1000, source: "saisi" });
+  assert.equal(r2.id, "obj-apport", "mise à jour : même identifiant");
+  O = ctx.Store.get().objectifs;
+  assert.equal(O.length, 4, "pas de doublon");
+  const ap = O.find(o => o.id === "obj-apport");
+  assert.equal(ap.cible, 65000); assert.equal(ap.deja, 1000); assert.equal(ap.nom, "Apport maison", "les autres champs sont conservés");
+
+  const r3 = await db.collection("objectifs").upsert({ id: "inconnu", nom: "Id inconnu", type: "projet" });
+  assert.notEqual(r3.id, "inconnu", "un id inconnu crée un nouvel objectif");
+  assert.equal(ctx.Store.get().objectifs.length, 5);
+
+  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", type: "vacances" }), e => e.code === "invalid_argument" && /type/.test(e.message));
+  await assert.rejects(db.collection("objectifs").upsert({ id: "obj-apport", type: "nimporte" }), e => e.code === "invalid_argument");
+  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", cible: -1 }), e => e.code === "invalid_argument");
+  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", rendement: 80 }), e => e.code === "invalid_argument");
+  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", dateCible: "31/12/2030" }), e => e.code === "invalid_argument");
+  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", source: "banque" }), e => e.code === "invalid_argument");
+  assert.equal(ctx.Store.get().objectifs.find(o => o.id === "obj-apport").type, "apport", "un refus ne modifie rien");
+  assert.equal(ctx.Store.get().objectifs.length, 5);
+
+  await db.doc("objectifs/" + r.id).delete();
+  assert.ok(!ctx.Store.get().objectifs.some(o => o.id === r.id));
+  assert.equal(ctx.Store.get().objectifs.length, 4);
+  await assert.rejects(db.doc("objectifs/" + r.id).delete(), e => e.code === "not_found");
+  await assert.rejects(db.doc("positions/livret-a").delete(), e => e.code === "invalid_argument");
+  await assert.rejects(db.collection("positions").upsert({}), e => e.code === "invalid_argument");
+  assert.equal(ctx.DEMO.objectifs.length, 3, "window.DEMO n'est pas modifié (copie)");
+});
+
 test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = demo", () => {
   assert.equal(browser({ search: "" }).Store, undefined);
   assert.equal(browser({ search: "?x=1&demo" }).Store?.mode, "demo");
@@ -191,6 +277,6 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
   for (const k of ["foyer: num(r.total)", "part_p1: num(b.part_p1)", 'setScope(c)']) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   // le store Supabase expose le même contrat
   for (const k of ['mode: "supabase"', "get: () => S", "on(fn)", "setScope(s)", "emit,", "reload,", "db,", "window.Store = Store"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
-  for (const k of ["price_override", "value_date", "qty_estimated", "request_instrument", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")']) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  for (const k of ["price_override", "value_date", "qty_estimated", "request_instrument", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")', 'from("budgets")', 'from("objectifs")', "date_cible", "upsert(row)", "delete()"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["signInWithPassword", "signUp", "signInWithOtp", 'provider: "google"', "onAuthStateChange", "requireSession", "index.html"]) assert.ok(auth.includes(k), `auth.js : ${k}`);
 });

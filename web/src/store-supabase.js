@@ -9,13 +9,17 @@
    redirige vers index.html#connexion. Avec session : toutes les tables sont lues en parallèle, S est construit
    à la forme canonique (foyer / p1 / p2, voir l'en-tête de store-demo.js) et exposé tel quel aux modules.
    Écritures : façade `db` (doc("positions/<id>").update/set, doc("config/main").update, doc("profil/main").set,
-   collection("transactions").add) traduite en requêtes PostgREST ; après chaque écriture : reload() puis emit().
+   doc("budget/main").set({lignes}), doc("objectifs/<id>").delete(), collection("transactions").add,
+   collection("objectifs").upsert(row)) traduite en requêtes PostgREST ; après chaque écriture : reload() puis emit().
    reload() est débordé à 200 ms ; rechargement aussi au retour d'onglet (visibilitychange).
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
    Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload() }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, scope, people, user, error } */
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, scope, people, user, error }
+   budget = { lignes: [{ id, type: revenu|depense|epargne, categorie, libelle, montant, frequence: mois|an, owner? }] } | null
+   objectifs = [{ id, nom, type: apport|matelas|retraite|projet, cible, dateCible, deja, source: saisi|poches, poches, enveloppes,
+   rendement, priorite }] (colonne date_cible ↔ dateCible ; tri par priorité puis création). */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -27,7 +31,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -53,6 +57,8 @@
       status: clone(C.status),
       profil: clone(C.profil),
       profilLoaded: C.profilLoaded,
+      budget: clone(C.budget),
+      objectifs: clone(C.objectifs),
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -103,6 +109,11 @@
     credits: credits.map(c => ({ id: c.id, nom: c.nom, owner: c.owner, crd: num(c.crd), mensualite: num(c.mensualite) })),
     updatedAt: p.updated_at,
   });
+  const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
+  const objView = r => ({
+    id: r.id, nom: r.nom || "", type: r.type, cible: num(r.cible), dateCible: r.date_cible || null, deja: num(r.deja),
+    source: r.source, poches: r.poches || [], enveloppes: r.enveloppes || [], rendement: num(r.rendement), priorite: r.priorite == null ? 0 : +r.priorite,
+  });
 
   async function loadAll() {
     if (!sb || !session) return;
@@ -115,8 +126,10 @@
       q(sb.from("snapshots").select("*").order("date")),
       q(sb.from("config").select("*").maybeSingle()),
       q(sb.from("status").select("*").maybeSingle()),
+      q(sb.from("budgets").select("*").maybeSingle()),
+      q(sb.from("objectifs").select("*").order("priorite").order("created_at")),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -125,6 +138,8 @@
     if (tx !== undefined) C.tx = (tx || []).map(txView);
     if (config !== undefined) C.config = config ? cfgView(config) : null;
     if (status !== undefined) C.status = status ? stView(status) : null;
+    if (budget !== undefined) C.budget = budget ? budgetView(budget) : null;
+    if (objectifs !== undefined) C.objectifs = (objectifs || []).map(objView);
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
     if (prof !== undefined && biens !== undefined && credits !== undefined) C.profil = prof ? profView(prof, biens || [], credits || []) : null;
     C.profilLoaded = true;
@@ -220,6 +235,74 @@
     return { id: data.id };
   }
 
+  /* ---------- budget et objectifs ---------- */
+  // Validation commune aux deux stores (même texte dans store-demo.js) : une valeur invalide est refusée
+  // (code invalid_argument, message en français), jamais corrigée en silence.
+  const bad = m => Object.assign(new Error(m), { code: "invalid_argument" });
+  const TYPES_LIGNE = ["revenu", "depense", "epargne"], FREQS = ["mois", "an"], OWNERS = ["p1", "p2", "commun"];
+  function normLignes(lignes) {
+    if (!Array.isArray(lignes)) throw bad("Budget invalide : « lignes » doit être une liste.");
+    return lignes.map((l, i) => {
+      const L = "Budget, ligne " + (i + 1) + " : ";
+      if (!l || typeof l !== "object") throw bad(L + "ligne invalide.");
+      if (!TYPES_LIGNE.includes(l.type)) throw bad(L + "type « " + (l.type ?? "") + " » inconnu (revenu, depense ou epargne).");
+      const montant = l.montant === "" || l.montant == null ? NaN : +l.montant;
+      if (!isFinite(montant) || montant < 0) throw bad(L + "montant invalide (nombre positif attendu).");
+      const frequence = l.frequence == null || l.frequence === "" ? "mois" : l.frequence;
+      if (!FREQS.includes(frequence)) throw bad(L + "fréquence « " + frequence + " » inconnue (mois ou an).");
+      const o = { id: l.id ? String(l.id) : newId(), type: l.type, categorie: String(l.categorie || "").trim(), libelle: String(l.libelle || "").trim(), montant, frequence };
+      if (l.owner != null && l.owner !== "") { if (!OWNERS.includes(l.owner)) throw bad(L + "titulaire « " + l.owner + " » inconnu (p1, p2 ou commun)."); o.owner = l.owner; }
+      return o;
+    });
+  }
+  const OBJ_TYPES = ["apport", "matelas", "retraite", "projet"], OBJ_SOURCES = ["saisi", "poches"];
+  // Objectif partiel (vue camelCase) → objectif partiel validé ; seules les clés présentes sont reprises.
+  function normObjectif(o) {
+    if (!o || typeof o !== "object") throw bad("Objectif invalide.");
+    const out = {}, has = k => Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined;
+    const montant = (k, label) => { const v = o[k] === "" || o[k] == null ? NaN : +o[k]; if (!isFinite(v) || v < 0) throw bad("Objectif : " + label + " invalide (nombre positif attendu)."); out[k] = v; };
+    const liste = k => { if (!Array.isArray(o[k]) || o[k].some(x => typeof x !== "string")) throw bad("Objectif : « " + k + " » doit être une liste de noms."); out[k] = o[k].map(x => x.trim()).filter(Boolean); };
+    if (has("nom")) out.nom = String(o.nom == null ? "" : o.nom).trim();
+    if (has("type")) { if (!OBJ_TYPES.includes(o.type)) throw bad("Objectif : type « " + o.type + " » inconnu (apport, matelas, retraite ou projet)."); out.type = o.type; }
+    if (has("cible")) montant("cible", "montant cible");
+    if (has("deja")) montant("deja", "montant déjà mis de côté");
+    if (has("dateCible")) {
+      if (o.dateCible == null || o.dateCible === "") out.dateCible = null;
+      else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(o.dateCible)) || isNaN(Date.parse(o.dateCible))) throw bad("Objectif : date cible « " + o.dateCible + " » invalide (format AAAA-MM-JJ).");
+      else out.dateCible = String(o.dateCible);
+    }
+    if (has("source")) { if (!OBJ_SOURCES.includes(o.source)) throw bad("Objectif : source « " + o.source + " » inconnue (saisi ou poches)."); out.source = o.source; }
+    if (has("poches")) liste("poches");
+    if (has("enveloppes")) liste("enveloppes");
+    if (has("rendement")) { const v = o.rendement === "" || o.rendement == null ? NaN : +o.rendement; if (!isFinite(v) || v < -50 || v > 50) throw bad("Objectif : rendement invalide (entre -50 et 50 % par an)."); out.rendement = v; }
+    if (has("priorite")) { const v = +o.priorite; if (!Number.isInteger(v)) throw bad("Objectif : priorité invalide (nombre entier attendu)."); out.priorite = v; }
+    return out;
+  }
+  const OBJ_COLS = { nom: "nom", type: "type", cible: "cible", dateCible: "date_cible", deja: "deja", source: "source", poches: "poches", enveloppes: "enveloppes", rendement: "rendement", priorite: "priorite" };
+  async function setBudget(doc, uid) {
+    const lignes = normLignes(doc && doc.lignes);
+    await q(sb.from("budgets").upsert({ user_id: uid, lignes }, { onConflict: "user_id" }));
+  }
+  async function upsertObjectif(view, uid) {
+    const v = normObjectif(view), row = {};
+    Object.keys(v).forEach(k => { row[OBJ_COLS[k]] = v[k]; });
+    const id = view && view.id != null ? String(view.id) : "";
+    if (UUID.test(id) && C.objectifs.some(o => o.id === id)) {
+      if (Object.keys(row).length) {
+        const data = await q(sb.from("objectifs").update(row).eq("id", id).select("id"));
+        if (!data || !data.length) throw Object.assign(new Error("Objectif introuvable : " + id), { code: "not_found" });
+      }
+      return { id };
+    }
+    row.id = newId(); row.user_id = uid;
+    await q(sb.from("objectifs").insert(row));
+    return { id: row.id };
+  }
+  async function deleteObjectif(id) {
+    const data = await q(sb.from("objectifs").delete().eq("id", id).select("id"));
+    if (!data || !data.length) throw Object.assign(new Error("Objectif introuvable : " + id), { code: "not_found" });
+  }
+
   /* Ajout groupé (import CSV, assistant, premiers pas) : une demande d'instrument par ISIN, une insertion, un rechargement. */
   async function addPositions(rows, uid) {
     const list = (rows || []).map(r => {
@@ -242,12 +325,18 @@
           if (col === "positions") return write(() => updatePosition(id, patch));
           if (col === "config") return write(uid => updateConfig(patch, uid));
           if (col === "profil") return write(uid => setProfil(Object.assign({}, clone(C.profil) || {}, patch), uid));
+          if (col === "budget") return write(uid => setBudget(Object.assign({}, clone(C.budget) || {}, patch), uid));
           return unknown();
         },
         set(doc) {
           if (col === "positions") return write(uid => setPosition(id, doc, uid));
           if (col === "config") return write(uid => updateConfig(doc, uid));
           if (col === "profil") return write(uid => setProfil(doc, uid));
+          if (col === "budget") return write(uid => setBudget(doc, uid));
+          return unknown();
+        },
+        delete() {
+          if (col === "objectifs") return write(() => deleteObjectif(id));
           return unknown();
         },
       };
@@ -257,6 +346,7 @@
       return {
         add(doc) { return name === "transactions" ? write(uid => addTx(doc, uid)) : unknown(); },
         addMany(rows) { return name === "positions" ? write(uid => addPositions(rows, uid)) : unknown(); },
+        upsert(row) { return name === "objectifs" ? write(uid => upsertObjectif(row, uid)) : unknown(); },
       };
     },
   };
