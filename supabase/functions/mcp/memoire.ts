@@ -5,15 +5,23 @@
 // Ce module ne dépend pas d'index.ts : les utilitaires du serveur (wrap, must, UserError…) sont passés en paramètre.
 import { z } from "zod";
 
-/* Mêmes motifs que public.contenu_sensible (supabase/migrations/0009_savoir_memoire.sql) : IBAN, numéro de carte,
-   mots interdits (insensible à la casse). Un ISIN (12 caractères) n'est pas pris pour un IBAN. */
+/* Mêmes motifs que public.contenu_sensible (supabase/migrations/0009_savoir_memoire.sql) et web/src/sensible.js :
+   IBAN (refusé seulement si la correspondance contient au moins IBAN_CHIFFRES_MIN chiffres : un ISIN « IE00B4L5Y983 » suivi
+   d'un libellé n'en a que 7), numéro de carte (groupes de 4 chiffres séparés d'espaces, bornés par des non-chiffres),
+   mots interdits (insensible à la casse). */
 export const SENSIBLE = [
-  "[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}",
-  "([0-9][ -]?){12,18}[0-9]",
+  "[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]){11,30}",
+  "(?<![0-9])[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{1,7}(?![0-9])",
   "mot de passe|password|code secret|code pin|identifiant de connexion",
 ];
-const RE = SENSIBLE.map((m, i) => new RegExp(m, i === 2 ? "i" : ""));
-export const estSensible = (t: string) => RE.some((r) => r.test(t));
+export const IBAN_CHIFFRES_MIN = 12;
+const RE_IBAN = new RegExp(SENSIBLE[0], "g"), RE_CARTE = new RegExp(SENSIBLE[1]), RE_MOTS = new RegExp(SENSIBLE[2], "i");
+const chiffres = (s: string) => s.replace(/[^0-9]/g, "").length;
+export function estSensible(t: string) {
+  const s = String(t ?? "");
+  for (const m of s.matchAll(RE_IBAN)) if (chiffres(m[0]) >= IBAN_CHIFFRES_MIN) return true;
+  return RE_CARTE.test(s) || RE_MOTS.test(s);
+}
 
 export const CATEGORIES = ["contexte", "preference", "projet", "decision", "explique", "a_suivre"] as const;
 const COLS = "id, categorie, contenu, echeance, epingle, source, cree_le, maj_le";

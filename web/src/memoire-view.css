@@ -6,6 +6,7 @@
 #view-memoire-view .mv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:13px;border-left:3px solid var(--line2);background:var(--sunk);overflow-wrap:anywhere}
 #view-memoire-view .mv-msg.ok{border-left-color:var(--good);background:var(--good-soft)}
 #view-memoire-view .mv-msg.err{border-left-color:var(--crit);background:var(--crit-soft)}
+#view-memoire-view .mv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:13.5px;border-left:3px solid var(--crit);background:var(--crit-soft);max-width:680px}
 #view-memoire-view .mv-bar{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
 #view-memoire-view .mv-count{margin:0;font-size:13.5px;color:var(--muted);min-width:0;border-radius:4px}
 #view-memoire-view .mv-count b{color:var(--ink);font-weight:700}

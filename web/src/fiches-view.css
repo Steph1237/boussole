@@ -69,9 +69,10 @@
 #view-fiches-view .fv-md h4{font:700 14.5px/1.3 var(--f-display);margin:16px 0 4px}
 #view-fiches-view .fv-md>:first-child{margin-top:4px}
 #view-fiches-view .fv-md p{margin:0 0 10px}
-#view-fiches-view .fv-md ul{margin:0 0 10px;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+#view-fiches-view .fv-md ul,#view-fiches-view .fv-md ol{margin:0 0 10px;padding-left:20px;display:flex;flex-direction:column;gap:4px}
 #view-fiches-view .fv-md strong{font-weight:700}
 #view-fiches-view .fv-charge{color:var(--muted)}
+#view-fiches-view .fv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:13.5px;border-left:3px solid var(--crit);background:var(--crit-soft);max-width:680px}
 #view-fiches-view .fv-erreur{padding:9px 12px;border-radius:8px;border-left:3px solid var(--crit);background:var(--crit-soft)}
 #view-fiches-view .fv-sources{align-self:stretch;border-top:1px solid var(--line);padding-top:12px}
 #view-fiches-view .fv-sources h4{font:700 12px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px}

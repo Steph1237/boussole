@@ -52,28 +52,38 @@
     }
     return out + gras(t.slice(last));
   }
-  /** Markdown limité → HTML : « ## » → h3, « ### » → h4, « - » → liste, **gras**, [texte](https://…), paragraphes séparés
-      par une ligne vide. Tout le HTML d'origine est échappé d'abord ; aucun autre balisage n'est produit. */
+  /** Markdown limité → HTML : « ## » → h3, « ### » → h4, « - » → liste à puces, « 1. » → liste numérotée, **gras**,
+      [texte](https://…), paragraphes séparés par une ligne vide. Tout le HTML d'origine est échappé d'abord ; aucun autre
+      balisage n'est produit. */
   function rendreMarkdown(md) {
     if (md == null) return "";
     const lignes = esc(String(md)).replace(/\r\n?/g, "\n").split("\n");
-    let out = "", para = [], liste = [];
+    let out = "", para = [], liste = [], typeListe = "ul";
     const finPara = () => { if (para.length) out += "<p>" + enLigne(para.join(" ")) + "</p>"; para = []; };
-    const finListe = () => { if (liste.length) out += "<ul>" + liste.map(x => "<li>" + enLigne(x) + "</li>").join("") + "</ul>"; liste = []; };
+    const finListe = () => { if (liste.length) out += "<" + typeListe + ">" + liste.map(x => "<li>" + enLigne(x) + "</li>").join("") + "</" + typeListe + ">"; liste = []; };
+    const item = (type, texte) => { finPara(); if (typeListe !== type) { finListe(); typeListe = type; } liste.push(texte); };
     for (const brute of lignes) {
       const l = brute.trim();
       let m;
       if (!l) { finPara(); finListe(); continue; }
       if ((m = /^###\s+(.+)$/.exec(l))) { finPara(); finListe(); out += "<h4>" + enLigne(m[1]) + "</h4>"; continue; }
       if ((m = /^##\s+(.+)$/.exec(l))) { finPara(); finListe(); out += "<h3>" + enLigne(m[1]) + "</h3>"; continue; }
-      if ((m = /^-\s+(.+)$/.exec(l))) { finPara(); liste.push(m[1]); continue; }
+      if ((m = /^-\s+(.+)$/.exec(l))) { item("ul", m[1]); continue; }
+      if ((m = /^\d+\.\s+(.+)$/.exec(l))) { item("ol", m[1]); continue; }
       finListe(); para.push(l);
     }
     finPara(); finListe();
     return out;
   }
 
-  const H = { rendreMarkdown, filtrer, normaliser, lienSur, themesPresents, THEMES };
+  /** État à afficher quand la liste est vide : "chargement" (store pas prêt), "erreur" (lecture impossible) ou "vide" ; null si la liste n'est pas vide. */
+  function etatVide(S, n) {
+    if (n > 0) return null;
+    if (!S || S.ready === false) return "chargement";
+    return S.error ? "erreur" : "vide";
+  }
+
+  const H = { rendreMarkdown, filtrer, normaliser, lienSur, themesPresents, etatVide, THEMES };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -95,11 +105,13 @@
     const u = lienSur(url);
     return u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(texte || u) + '<span class="fv-sr"> (nouvel onglet)</span></a>' : esc(texte || "");
   };
-  const today = () => new Date().toISOString().slice(0, 10);
+  // Jour local (AAAA-MM-JJ), pas UTC : l'utilisateur français change de jour à minuit à Paris, comme le connecteur.
+  const pad = n => String(n).padStart(2, "0");
+  const today = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 
   function render(force) {
     if (!root) return;
-    const s = JSON.stringify([S && S.ready, fiches(), reperes()]);
+    const s = JSON.stringify([S && S.ready, S && S.error, fiches(), reperes()]);
     if (!force && s === sig) return;
     sig = s;
     renderReperes();
@@ -123,15 +135,17 @@
   }
 
   function renderListe(focusTheme) {
-    const fs = fiches(), charge = !S || S.ready === false;
+    const fs = fiches(), ev = etatVide(S, fs.length);
     if (!fs.length) {
       $("fvOutils").hidden = true;
       $("fvCartes").innerHTML = "";
       $("fvCompte").textContent = "";
-      $("fvVide").hidden = charge; // pas d'état vide pendant le chargement
+      $("fvVide").hidden = ev !== "vide"; // pas d'état vide pendant le chargement ni quand la lecture a échoué
+      $("fvErr").hidden = ev !== "erreur";
       return;
     }
     $("fvVide").hidden = true;
+    $("fvErr").hidden = true;
     $("fvOutils").hidden = false;
     const ths = themesPresents(fs);
     if (theme && !ths.includes(theme)) theme = "";
@@ -186,17 +200,22 @@
     } catch (e) { d = null; }
     if (j !== jeton || ouverte !== slug) return; // l'utilisateur est revenu à la liste ou a ouvert une autre fiche
     $("fvDContenu").removeAttribute("aria-busy");
+    const titre = resume.titre || (d && d.titre) || "Fiche";
     if (!d || !d.contenu) {
       remplir(Object.assign({}, resume, { contenu: "" }));
       $("fvDContenu").innerHTML = '<p class="fv-erreur">Le contenu de cette fiche n\'est pas disponible pour le moment. Réessayez dans quelques instants.</p>' +
         (resume.resume ? "<p>" + esc(resume.resume) + "</p>" : "");
+      $("fvDStatut").textContent = "Fiche indisponible : " + titre;
       return;
     }
     remplir(Object.assign({}, resume, d));
+    // Annonce courte aux lecteurs d'écran (zone de statut), plutôt que tout le contenu de la fiche.
+    $("fvDStatut").textContent = "Fiche ouverte : " + titre;
   }
 
   function retour() {
     ouverte = null; jeton++;
+    $("fvDStatut").textContent = "";
     $("fvDetail").hidden = true;
     $("fvListe").hidden = false;
     if (dirty) { render(); dirty = false; }

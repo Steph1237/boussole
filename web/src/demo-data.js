@@ -227,7 +227,7 @@
         "L'AMF rappelle qu'aucun rendement élevé n'existe sans risque élevé.",
       ].join("\n\n") },
     { slug: "taux-effort-hcsf", theme: "credit", titre: "Le taux d'effort et la norme du HCSF", version: 1, misAJourLe: ago(60),
-      resume: "Les banques limitent les mensualités de crédit à 35 % des revenus, assurance comprise, et la durée à 25 ans.",
+      resume: "Les banques limitent les mensualités de crédit à 35 % des revenus, assurance comprise, et la durée à 25 ans.",
       motsCles: ["taux d'effort", "taux d'endettement", "hcsf", "crédit immobilier", "35 %"],
       sources: [src("Haut Conseil de stabilité financière — economie.gouv.fr", "https://www.economie.gouv.fr/hcsf")],
       contenu: [
@@ -243,10 +243,11 @@
   const rep = (cle, libelle, valeur, unite, dateEffet, site, sourceUrl) => ({ cle, libelle, valeur, unite, dateEffet,
     sourceTitre: "Valeur d'exemple (démo) — " + site, sourceUrl, verifieLe: ago(20), mode: "manuel" });
   const reperes = [
-    rep("livret_a_taux", "Taux du Livret A", 1.7, "%", "2025-08-01", "service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2365"),
+    // Valeurs et dates d'effet alignées sur la migration 0010_savoir_reperes.sql (vérifiées le 2026-10-10).
+    rep("livret_a_taux", "Taux du Livret A", 1.7, "%", "2026-08-01", "service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2365"),
     rep("pea_plafond", "Plafond de versements du PEA", 150000, "€", "2014-01-01", "service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2385"),
     rep("hcsf_taux_effort", "Taux d'effort maximal (norme HCSF)", 35, "%", "2022-01-01", "economie.gouv.fr", "https://www.economie.gouv.fr/hcsf"),
-    rep("pfu_taux", "Prélèvement forfaitaire unique", 30, "%", "2018-01-01", "impots.gouv.fr", "https://www.impots.gouv.fr/particulier"),
+    rep("pfu_taux", "Prélèvement forfaitaire unique (prélèvements sociaux inclus)", 31.4, "%", "2026-01-01", "impots.gouv.fr", "https://www.impots.gouv.fr/particulier"),
   ];
   const savoir = { fiches, reperes };
 
