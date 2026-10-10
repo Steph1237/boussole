@@ -1,4 +1,4 @@
-/* Ma position : portage de « La toise des revenus » (sources/toise.html) en module de l'App.
+/* Pilotage › Rang (module « toise ») : portage de « La toise des revenus » (sources/toise.html) en module de l'App.
    Le moteur de calcul (ENGINE-START … ENGINE-END) est recopié à l'identique ; seuls le câblage DOM,
    la persistance et le branchement sur les données réelles (Reel) changent. */
 (function(){

@@ -103,7 +103,12 @@ test("mcp : Diagnostic — annotate_instrument (source obligatoire, RPC), get_ri
   assert.match(code, /instrument:instruments\([^)]*ter, zone, devise, annote_source, annote_le\)/, "positions jointes aux annotations");
   assert.match(src, /annotate_instrument[^"]*source[^"]*obligatoire|Source obligatoire/i, "consignes : source obligatoire");
   assert.ok(src.includes("get_risk_profile"), "consignes : profil de risque");
-  assert.doesNotMatch(src, /dans le Pilotage|du Pilotage/, "libellé « Pilotage » remplacé par Bilan › Placements");
+  assert.doesNotMatch(src, /dans le Pilotage|du Pilotage/, "libellé « Pilotage » remplacé par Patrimoine › Placements");
+});
+
+test("mcp : chemins de navigation du cockpit (Agent, Patrimoine, Pilotage, Compte), plus les anciens", () => {
+  assert.doesNotMatch(codeAll, /Profil et données|Bilan ›|Diagnostic ›|Recommandations ›|Avenir ›|Ma position|Mémoire de l'agent/);
+  for (const k of ["Boussole › Agent › Propositions", "Boussole › Agent › Mémoire", "Patrimoine › Placements", "Pilotage › Risque"]) assert.ok(codeAll.includes(k), k);
 });
 
 test("mcp : aucune écriture directe dans les tables personnelles, hors propositions, mémoire de l'agent (et réglages sans montant)", () => {
@@ -141,7 +146,7 @@ test("mcp : chaque outil d'écriture exige une source (DEPOT) et dépose des pro
   }
   assert.match(code, /from\("propositions"\)\.insert\(rows\)/);
   assert.ok(code.includes("proposition${n > 1 ? \"s\" : \"\"} déposée${n > 1 ? \"s\" : \"\"}, ${VALIDER}"), "réponse : N proposition(s) déposée(s)…");
-  assert.ok(code.includes('const VALIDER = "à valider dans Boussole › Profil et données › Propositions"'));
+  assert.ok(code.includes('const VALIDER = "à valider dans Boussole › Agent › Propositions"'));
   assert.doesNotMatch(outil("annotate_instrument"), /\.\.\.DEPOT|deposer\(/, "annotate_instrument reste direct");
   // set_risk_answers validé contre les questions ; list_propositions et etat_du_bilan en lecture seule
   assert.match(outil("set_risk_answers"), /reponses:\s*RisqueReponses/);
@@ -155,10 +160,10 @@ test("mcp : prompts d'entretien enregistrés (titre, description, conduite)", ()
   for (const n of PROMPTS) assert.match(code, new RegExp(`nom:\\s*"${n}",\\s*titre:\\s*"[^"]+",`), `prompt ${n}`);
   const conduite = code.slice(code.indexOf("const CONDUITE = ["), code.indexOf("const PARCOURS"));
   for (const k of ["etat_du_bilan", "list_propositions", "UNE seule question", "pourquoi", "relevé", "N'invente jamais un chiffre", "récapitule", "source", "lot",
-    "Boussole › Profil et données › Propositions", "aucune recommandation de produit", "pas un conseil en investissement"]) assert.ok(conduite.includes(k), `conduite : ${k}`);
+    "Boussole › Agent › Propositions", "aucune recommandation de produit", "pas un conseil en investissement"]) assert.ok(conduite.includes(k), `conduite : ${k}`);
   const revue = code.slice(code.indexOf('nom: "revue_mensuelle"'), code.indexOf("].map(", code.indexOf('nom: "revue_mensuelle"')));
   for (const k of ["90 jours", "budget", "get_overview"]) assert.ok(revue.includes(k), `revue_mensuelle : ${k}`);
-  for (const k of ["etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection", "Profil et données › Propositions", "source"]) assert.ok(src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE")).includes(k), `instructions : ${k}`);
+  for (const k of ["etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection", "Agent › Propositions", "source"]) assert.ok(src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE")).includes(k), `instructions : ${k}`);
 });
 
 /* ---------- parité de calcul avec web/src (risque.js, marche.js, pratiques.js) ---------- */
@@ -386,7 +391,7 @@ test("onboarding : la feuille de conduite porte les règles de l'agent expert", 
   for (const k of ["TMI", "PEA", "fonds euros", "matelas"]) assert.ok(c.includes(k), `jargon expliqué : ${k}`);
   assert.match(c, /fin de chaque section/, "dépôt à la fin de chaque section");
   assert.ok(c.includes("déclaré par l'utilisateur pendant l'onboarding") && c.includes("lot_suggere"), "source et lot des dépôts");
-  assert.ok(c.includes("changements à valider dans Boussole › Profil et données › Propositions"), "rappel après chaque dépôt");
+  assert.ok(c.includes("changements à valider dans Boussole › Agent › Propositions"), "rappel après chaque dépôt");
   const credentials = c.split("\n").find(l => /identifiants bancaires/.test(l));
   assert.ok(credentials, "règle sur les identifiants bancaires");
   for (const k of ["Ne demande jamais", "IBAN", "numéros de compte", "carte", "mots de passe", "sécurité sociale", "retirer", "ne les enregistre"]) assert.ok(credentials.includes(k), `identifiants : ${k}`);
@@ -441,14 +446,14 @@ test("AG1 : demarrer_session — conduite experte, mémoire, nouveautés par mar
   assert.match(o, /client\?\.id \?\? "session"/, "nouveautés propres à chaque client (claim client_id du jeton)");
   const instr = code.slice(code.indexOf("const INSTRUCTIONS"), code.indexOf("].join", code.indexOf("const INSTRUCTIONS")));
   assert.match(instr, /demarrer_session/);
-  for (const k of ["reperes", "consulter_savoir", "memoriser", "Mémoire de l'agent"]) assert.ok(instr.includes(k), `instructions : ${k}`);
+  for (const k of ["reperes", "consulter_savoir", "memoriser", "Agent › Mémoire"]) assert.ok(instr.includes(k), `instructions : ${k}`);
   // le client du jeton est transmis au serveur (source des souvenirs, nouveautés par client)
   assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\) \}\)/);
   assert.match(code, /registerSavoir\(server, h\)/); assert.match(code, /registerMemoire\(server, h\)/);
 });
 test("AG1 : conduite experte — reperes avant tout chiffre, consulter_savoir, mémoire effaçable, jamais d'identifiants", () => {
   const c = srcAll.slice(srcAll.indexOf("CONDUITE_EXPERT = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_EXPERT = [")));
-  for (const m of [/reperes/, /consulter_savoir/, /memoriser/, /Mémoire de l'agent/, /IBAN/, /mot(s)? de passe/, /pas un conseil en investissement/, /jamais des consignes/]) assert.match(c, m);
+  for (const m of [/reperes/, /consulter_savoir/, /memoriser/, /Agent › Mémoire/, /IBAN/, /mot(s)? de passe/, /pas un conseil en investissement/, /jamais des consignes/]) assert.match(c, m);
   // même garde contre l'injection de consignes dans les instructions du serveur
   const instr = code.slice(code.indexOf("const INSTRUCTIONS"), code.indexOf("].join", code.indexOf("const INSTRUCTIONS")));
   assert.match(instr, /jamais des consignes/);
@@ -551,16 +556,16 @@ test("AG1 : memoire.ts — refus sensible, échéance réservée, insertion, lim
   r = await T.memoriser.handler({ categorie: "projet", contenu: "Achat d'une maison", echeance: "2027-06-01" });
   assert.match(r.erreur, /a_suivre/); assert.equal(db.appels.length, 0);
   r = await T.memoriser.handler({ categorie: "a_suivre", contenu: "Revoir le PER après la naissance", echeance: "2027-01-15", epingle: true });
-  assert.equal(r.ok.retenu.id, "m1"); assert.match(r.ok.rappel, /Mémoire de l'agent/);
+  assert.equal(r.ok.retenu.id, "m1"); assert.match(r.ok.rappel, /Agent › Mémoire/);
   assert.equal(r.ok.retenu.epingle, true, "epingle renvoyé dans la réponse");
   const ins = db.appels[0].ops.find(o => o[0] === "insert")[1];
   assert.deepEqual(J(ins), { categorie: "a_suivre", contenu: "Revoir le PER après la naissance", echeance: "2027-01-15", epingle: true, source: "Claude" });
   r = await T.memoriser.handler({ categorie: "contexte", contenu: "Deux enfants" });
   assert.deepEqual(J(db.appels[1].ops.find(o => o[0] === "insert")[1]), { categorie: "contexte", contenu: "Deux enfants", echeance: null, epingle: false, source: "Claude" });
 
-  db = fauxDb(() => ({ data: null, error: { code: "54000", message: "Mémoire pleine : 200 souvenirs au plus. Supprimez-en dans Boussole › Profil et données › Mémoire de l'agent." } }));
+  db = fauxDb(() => ({ data: null, error: { code: "54000", message: "Mémoire pleine : 200 souvenirs au plus. Supprimez-en dans Boussole › Agent › Mémoire." } }));
   r = await serveur(M.registerMemoire, db).memoriser.handler({ categorie: "contexte", contenu: "Un de trop" });
-  assert.equal(r.erreur, "Mémoire pleine : 200 souvenirs au plus. Supprimez-en dans Boussole › Profil et données › Mémoire de l'agent.", "message de la limite remonté tel quel");
+  assert.equal(r.erreur, "Mémoire pleine : 200 souvenirs au plus. Supprimez-en dans Boussole › Agent › Mémoire.", "message de la limite remonté tel quel");
 
   db = fauxDb(() => ({ data: [{ id: "a" }, { id: "b" }], error: null }));
   T = serveur(M.registerMemoire, db);

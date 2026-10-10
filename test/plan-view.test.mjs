@@ -1,4 +1,4 @@
-// Onglet Plan (web/src/plan-view.*) : vérifications statiques du branchement dans la coque, le build et l'App.
+// Patrimoine › Budget et objectifs (module plan) (web/src/plan-view.*) : vérifications statiques du branchement dans la coque, le build et l'App.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

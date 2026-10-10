@@ -1,8 +1,8 @@
 (function(){
-/* Bilan › Placements (module « pilotage ») : synthèse du financier, courbe, enveloppes, allocation, registre des positions,
+/* Patrimoine › Placements (module « pilotage ») : synthèse du financier, courbe, enveloppes, allocation, registre des positions,
    saisie des mouvements, ordres, versements programmés, hypothèses et journal. Les données viennent du Store commun.
-   Le score de santé est dans Diagnostic › Santé (sante.js), les alertes dans Recommandations › Actions (actions.js),
-   les règles d'alerte et la cible du matelas dans Profil et données › Règles (regles.js). */
+   Le score de santé est dans Pilotage › Santé (sante.js), les alertes dans Aujourd'hui (actions.js),
+   les règles d'alerte et la cible du matelas dans Compte › Règles (regles.js). */
 let S={scope:"foyer",people:[],positions:[],snapshots:[],tx:[],config:null,status:null,db:null};
 let root=null,dirty=true;
 const fmt=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});

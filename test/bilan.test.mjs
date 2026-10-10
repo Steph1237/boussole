@@ -1,4 +1,4 @@
-// Bilan › Vue d'ensemble (web/src/bilan.*) : vérifications statiques du module, puis les calculs de la vue sur la démo.
+// Patrimoine › Immobilier et crédits (module bilan) (web/src/bilan.*) : vérifications statiques du module, puis les calculs de la vue sur la démo.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -49,7 +49,7 @@ test("bilan.js : graphique Évolution filtré par Periodes (bornes, agrégation,
 
 test("bilan.js : liens vers les sous-vues concernées", () => {
   const routes = new Set([...(js + html).matchAll(/(?:data-goto="|link\(")([a-z]+\/[a-z]+)"/g)].map(m => m[1]));
-  for (const r of ["avenir/plan", "diagnostic/sante", "diagnostic/risque", "profil/donnees", "recos/actions"]) assert.ok(routes.has(r), r);
+  for (const r of ["patrimoine/budget", "pilotage/sante", "pilotage/risque", "compte/donnees", "aujourdhui/vue"]) assert.ok(routes.has(r), r);
   const { resolve, SPACES } = require("../web/src/app.js");
   const known = new Set(SPACES.flatMap(sp => sp.subs.map(s => sp.space + "/" + s.id)));
   // Routes canoniques ou anciennes routes de la table de correspondance (LEGACY) : toutes mènent à une sous-vue existante.

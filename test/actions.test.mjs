@@ -1,4 +1,4 @@
-// Recommandations › Actions (web/src/actions.*) : liste priorisée des alertes (règles + contrôles intégrés)
+// Actions (boîte de réception d'Aujourd'hui) (web/src/actions.*) : liste priorisée des alertes (règles + contrôles intégrés)
 // et des pistes du score de santé. Contrôles statiques + fonctions pures (module.exports).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -58,16 +58,16 @@ test("ordonner : crit > warn > info > piste, stable, pistes les plus faibles d'a
 });
 
 test("liens : règle → placements (+ réglages), matelas → budget, pistes selon le critère", () => {
-  assert.deepEqual(A.lienAlerte({ rule: { type: "max_line_pct" }, title: "Ligne trop lourde : X" }).lien.route, "bilan/placements");
-  assert.equal(A.lienAlerte({ rule: { type: "price_floor" }, title: "x" }).lien2.route, "profil/regles");
-  assert.equal(A.lienAlerte({ rule: null, title: "Matelas sous la cible" }).lien.route, "avenir/plan");
-  assert.equal(A.lienAlerte({ rule: null, title: "Poche Monde au-dessus de la cible" }).lien.route, "bilan/placements");
-  assert.equal(A.lienAlerte({ rule: null, title: "Fin de période d'essai", text: "Le 25 oct. 2026 (dans 15 jours). " }).lien.route, "avenir/plan");
-  assert.equal(A.lienPiste("matelas").route, "avenir/plan");
-  assert.equal(A.lienPiste("epargne").route, "avenir/plan");
-  assert.equal(A.lienPiste("endettement").route, "profil/donnees");
-  assert.equal(A.lienPiste("patrimoine").route, "profil/donnees");
-  assert.equal(A.lienPiste("concentration").route, "bilan/placements");
+  assert.deepEqual(A.lienAlerte({ rule: { type: "max_line_pct" }, title: "Ligne trop lourde : X" }).lien.route, "patrimoine/placements");
+  assert.equal(A.lienAlerte({ rule: { type: "price_floor" }, title: "x" }).lien2.route, "compte/regles");
+  assert.equal(A.lienAlerte({ rule: null, title: "Matelas sous la cible" }).lien.route, "patrimoine/budget");
+  assert.equal(A.lienAlerte({ rule: null, title: "Poche Monde au-dessus de la cible" }).lien.route, "patrimoine/placements");
+  assert.equal(A.lienAlerte({ rule: null, title: "Fin de période d'essai", text: "Le 25 oct. 2026 (dans 15 jours). " }).lien.route, "patrimoine/budget");
+  assert.equal(A.lienPiste("matelas").route, "patrimoine/budget");
+  assert.equal(A.lienPiste("epargne").route, "patrimoine/budget");
+  assert.equal(A.lienPiste("endettement").route, "compte/donnees");
+  assert.equal(A.lienPiste("patrimoine").route, "compte/donnees");
+  assert.equal(A.lienPiste("concentration").route, "patrimoine/placements");
 });
 
 test("pistes : seulement les critères calculés et sous le maximum", () => {
@@ -77,7 +77,7 @@ test("pistes : seulement les critères calculés et sous le maximum", () => {
     { cle: "patrimoine", titre: "Patrimoine", points: 0, sur: 20, aCompleter: true, texte: "?", piste: "?" },
   ] });
   assert.equal(P.length, 1);
-  assert.deepEqual([P[0].level, P[0].title, P[0].text, P[0].ordre, P[0].lien.route], ["piste", "Taux d'épargne : 12/20", "10 %. Visez 15 %.", 12, "avenir/plan"]);
+  assert.deepEqual([P[0].level, P[0].title, P[0].text, P[0].ordre, P[0].lien.route], ["piste", "Taux d'épargne : 12/20", "10 %. Visez 15 %.", 12, "patrimoine/budget"]);
 });
 
 test("construire sur la démo : alertes des règles et pistes, triées, scope respecté", () => {
@@ -100,18 +100,18 @@ test("construire sur la démo : alertes des règles et pistes, triées, scope re
 
 test("pistesPratiques : critères notés sous 20, liés à leur critère, sans « à compléter » ni informatif", () => {
   const P = A.pistesPratiques({ criteres: [
-    { cle: "matelas", famille: "securite", titre: "Matelas de précaution", points: 20, sur: 20, texte: "t", piste: "p", lien: "avenir/plan" },
-    { cle: "adequation", famille: "allocation", titre: "Adéquation au profil de risque", points: 9, sur: 20, texte: "8 points hors.", piste: "Rapprochez.", lien: "diagnostic/risque" },
-    { cle: "frais", famille: "efficacite", titre: "Frais des fonds", points: 0, sur: 20, aCompleter: true, texte: "?", piste: "?", lien: "recos/actions" },
-    { cle: "devises", famille: "allocation", titre: "Exposition hors euro", points: null, sur: 0, informatif: true, texte: "i", piste: "i", lien: "bilan/placements" },
-    { cle: "geographie", famille: "allocation", titre: "Diversification géographique", points: 14, sur: 20, texte: "30 %.", piste: "Un socle monde.", lien: "bilan/placements" },
+    { cle: "matelas", famille: "securite", titre: "Matelas de précaution", points: 20, sur: 20, texte: "t", piste: "p", lien: "patrimoine/budget" },
+    { cle: "adequation", famille: "allocation", titre: "Adéquation au profil de risque", points: 9, sur: 20, texte: "8 points hors.", piste: "Rapprochez.", lien: "pilotage/risque" },
+    { cle: "frais", famille: "efficacite", titre: "Frais des fonds", points: 0, sur: 20, aCompleter: true, texte: "?", piste: "?", lien: "agent/connexion" },
+    { cle: "devises", famille: "allocation", titre: "Exposition hors euro", points: null, sur: 0, informatif: true, texte: "i", piste: "i", lien: "patrimoine/placements" },
+    { cle: "geographie", famille: "allocation", titre: "Diversification géographique", points: 14, sur: 20, texte: "30 %.", piste: "Un socle monde.", lien: "patrimoine/placements" },
   ] });
   assert.deepEqual(P.map(p => p.cle), ["adequation", "geographie"]);
   assert.deepEqual([P[0].level, P[0].title, P[0].text, P[0].ordre, P[0].lien.route, P[0].lien.label],
-    ["piste", "Adéquation au profil de risque : 9/20", "8 points hors. Rapprochez.", 9, "diagnostic/risque", "Voir le profil de risque"]);
-  assert.equal(P[1].lien.route, "bilan/placements");
-  assert.equal(A.lienRoute(null).route, "diagnostic/sante", "sans lien : vers les bonnes pratiques");
-  assert.equal(A.lienRoute("avenir/plan").label, "Ouvrir le budget");
+    ["piste", "Adéquation au profil de risque : 9/20", "8 points hors. Rapprochez.", 9, "pilotage/risque", "Voir le profil de risque"]);
+  assert.equal(P[1].lien.route, "patrimoine/placements");
+  assert.equal(A.lienRoute(null).route, "pilotage/sante", "sans lien : vers les bonnes pratiques");
+  assert.equal(A.lienRoute("patrimoine/budget").label, "Ouvrir le budget");
 });
 
 test("construire avec Pratiques : pistes des bonnes pratiques (pas de Plan.score), triées, liens des critères", () => {
@@ -128,7 +128,7 @@ test("construire avec Pratiques : pistes des bonnes pratiques (pas de Plan.score
     const pistes = L.filter(i => i.level === "piste");
     assert.deepEqual(pistes.map(p => p.cle).sort(), attendues.map(c => c.cle).sort(), scope + " : une piste par critère sous 20");
     assert.deepEqual(pistes.map(p => p.ordre), [...pistes.map(p => p.ordre)].sort((a, b) => a - b), scope + " : les plus faibles d'abord");
-    for (const p of pistes) assert.equal(p.lien.route, attendues.find(c => c.cle === p.cle).lien || "diagnostic/sante");
+    for (const p of pistes) assert.equal(p.lien.route, attendues.find(c => c.cle === p.cle).lien || "pilotage/sante");
     assert.ok(!pistes.some(p => p.cle === "patrimoine"), "le critère patrimoine du score historique n'est plus une piste");
   }
   // Pratiques en erreur : repli sur Plan.score.

@@ -1,6 +1,6 @@
 // Mémoire de l'agent (AG1, docs/superpowers/specs/2026-10-10-ag1-memoire-savoir.md) : ce que l'agent retient de
 // l'utilisateur d'une conversation à l'autre. Privée (table memoire_agent, RLS user_id = auth.uid()), visible et effaçable
-// dans Boussole › Profil et données › Mémoire de l'agent. Écriture directe, sans proposition : elle ne touche pas au bilan.
+// dans Boussole › Agent › Mémoire. Écriture directe, sans proposition : elle ne touche pas au bilan.
 // La base refuse aussi le contenu sensible (contrainte public.contenu_sensible) et plafonne à 200 souvenirs (déclencheur).
 // Ce module ne dépend pas d'index.ts : les utilitaires du serveur (wrap, must, UserError…) sont passés en paramètre.
 import { z } from "zod";
@@ -25,7 +25,7 @@ export function estSensible(t: string) {
 
 export const CATEGORIES = ["contexte", "preference", "projet", "decision", "explique", "a_suivre"] as const;
 const COLS = "id, categorie, contenu, echeance, epingle, source, cree_le, maj_le";
-const MEMOIRE = "Boussole › Profil et données › Mémoire de l'agent";
+const MEMOIRE = "Boussole › Agent › Mémoire";
 /** Nombre de souvenirs non épinglés renvoyés en début de session. */
 export const SESSION_RECENTS = 30;
 

@@ -80,47 +80,47 @@
   /* Critères repris de Plan.score : titre, cible, texte et piste viennent de Plan ; on ajoute famille, règle, source et lien. */
   const DE_PLAN = {
     matelas: { famille: "securite", regle: "Matelas = épargne disponible ÷ dépenses mensuelles ; repère 3 à 6 mois",
-      source: "Repère usuel des conseillers en gestion de patrimoine", lien: "avenir/plan" },
+      source: "Repère usuel des conseillers en gestion de patrimoine", lien: "patrimoine/budget" },
     epargne: { famille: "effort", regle: "Taux d'épargne = (épargne prévue + reste du mois) ÷ revenus ; repère 15 % ou plus",
-      source: "Repère usuel des conseillers en gestion de patrimoine", lien: "avenir/plan" },
+      source: "Repère usuel des conseillers en gestion de patrimoine", lien: "patrimoine/budget" },
     endettement: { famille: "effort", regle: "Endettement = mensualités de crédit ÷ revenus ; plafond 35 %",
-      source: "HCSF, décision D-HCSF-2021-7", lien: "profil/donnees" },
+      source: "HCSF, décision D-HCSF-2021-7", lien: "compte/donnees" },
     concentration: { famille: "allocation", regle: "Poids de la plus grosse ligne dans le financier ; repère 20 % au plus et au moins 3 poches",
-      source: "Principe de diversification ; repère usuel des conseillers en gestion de patrimoine", lien: "bilan/placements" },
+      source: "Principe de diversification ; repère usuel des conseillers en gestion de patrimoine", lien: "patrimoine/placements" },
   };
   const depuisPlan = item => Object.assign({}, item, DE_PLAN[item.cle]);
 
   const B = {
     protection: { titre: "Protection de la famille", cible: "prévoyance et assurance emprunteur en place",
       regle: "Avec un crédit ou des enfants à charge : prévoyance (décès, invalidité) et assurance emprunteur souscrites",
-      source: "Repère usuel des conseillers en gestion de patrimoine ; assurance emprunteur demandée par les banques pour un crédit immobilier", lien: "profil/donnees" },
+      source: "Repère usuel des conseillers en gestion de patrimoine ; assurance emprunteur demandée par les banques pour un crédit immobilier", lien: "compte/donnees" },
     liquidite_objectifs: { titre: "Argent disponible pour les projets proches", cible: "100 % du besoin des objectifs à moins de 2 ans",
       regle: "Argent disponible sous quelques jours ÷ montant restant à réunir pour les objectifs à moins de 2 ans ; repère 100 %",
-      source: "Repère usuel des conseillers : l'argent nécessaire à moins de 2 ans reste disponible et peu risqué", lien: "avenir/plan" },
+      source: "Repère usuel des conseillers : l'argent nécessaire à moins de 2 ans reste disponible et peu risqué", lien: "patrimoine/budget" },
     apport: { titre: "Apport pour le projet immobilier", cible: "l'apport visé (10 % du prix + frais de notaire)",
       regle: "Apport réuni ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
-      source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)", lien: "avenir/plan" },
+      source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)", lien: "patrimoine/budget" },
     adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de votre profil",
       regle: "Somme des écarts hors fourchette, par classe d'actifs, entre votre allocation et celle de votre profil ; repère 0 point",
-      source: "Questionnaire de profil inspiré de l'adéquation MiFID II ; allocations indicatives de Boussole", lien: "diagnostic/risque" },
+      source: "Questionnaire de profil inspiré de l'adéquation MiFID II ; allocations indicatives de Boussole", lien: "pilotage/risque" },
     geographie: { titre: "Diversification géographique", cible: "au moins la moitié des actions sur le monde entier",
       regle: "Part des actions investies sur le monde entier (indices Monde, ACWI) ; repère 50 % ou plus",
-      source: "Principe de diversification ; biais domestique (French et Poterba, 1991)", lien: "bilan/placements" },
+      source: "Principe de diversification ; biais domestique (French et Poterba, 1991)", lien: "patrimoine/placements" },
     speculatif: { titre: "Part spéculative", cible: "sous le plafond de votre profil",
       regle: "(Crypto + produits à levier) ÷ financier ; repère : sous le plafond de votre profil (5 % par défaut)",
-      source: "Plafonds indicatifs par profil de Boussole ; mises en garde de l'AMF sur les crypto-actifs et les produits à effet de levier", lien: "diagnostic/risque" },
+      source: "Plafonds indicatifs par profil de Boussole ; mises en garde de l'AMF sur les crypto-actifs et les produits à effet de levier", lien: "pilotage/risque" },
     devises: { titre: "Exposition hors euro", cible: "information, sans note",
       regle: "Part du financier exposée à une autre devise que l'euro (une zone hors Europe compte hors euro) ; information",
-      source: "Risque de change : information, pas un défaut", lien: "bilan/placements" },
+      source: "Risque de change : information, pas un défaut", lien: "patrimoine/placements" },
     frais: { titre: "Frais des fonds", cible: "0,3 % par an ou moins",
       regle: "Frais courants (TER) moyens, pondérés par les montants, des lignes cotées ; repère 0,3 % ou moins",
-      source: "Documents d'informations clés des fonds ; ETF indiciels ≈ 0,1 à 0,3 %, fonds gérés ≈ 1,5 à 2 %", lien: "bilan/placements" },
+      source: "Documents d'informations clés des fonds ; ETF indiciels ≈ 0,1 à 0,3 %, fonds gérés ≈ 1,5 à 2 %", lien: "patrimoine/placements" },
     enveloppes: { titre: "Choix des enveloppes", cible: "aucun point d'attention",
       regle: "PEA avant compte-titres pour les actions européennes · assurance-vie de plus de 8 ans pour l'abattement · PER surtout à partir de 30 % d'imposition",
-      source: "Code général des impôts : art. 163 quinquies D (PEA), art. 125-0 A et 990 I (assurance-vie), art. 163 quatervicies (PER)", lien: "bilan/placements" },
+      source: "Code général des impôts : art. 163 quinquies D (PEA), art. 125-0 A et 990 I (assurance-vie), art. 163 quatervicies (PER)", lien: "patrimoine/placements" },
     dormant: { titre: "Argent dormant", cible: "12 mois de dépenses au plus sur livrets",
       regle: "Livrets et monétaire au-delà de 12 mois de dépenses, hors objectifs à moins de 2 ans ; repère 12 mois au plus",
-      source: "Repère usuel des conseillers en gestion de patrimoine", lien: "avenir/plan" },
+      source: "Repère usuel des conseillers en gestion de patrimoine", lien: "patrimoine/budget" },
   };
 
   /* ---------- Sécurité ---------- */
@@ -134,7 +134,7 @@
     const motif = credit && enfants ? "un crédit et des enfants" : credit ? "un crédit en cours" : "des enfants à charge";
     if (!decl || attendus.some(k => typeof decl[k] !== "boolean"))
       return aCompleter("securite", "protection", B.protection, "Protection non renseignée, alors que vous avez " + motif + ".",
-        "Indiquez dans le Profil si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
+        "Indiquez dans Compte › Données si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
     const ok = attendus.filter(k => decl[k]).length;
     const libelle = { prevoyance: "prévoyance", emprunteur: "assurance emprunteur" };
     const manque = attendus.filter(k => !decl[k]).map(k => libelle[k]);
@@ -165,12 +165,12 @@
     if (!L.length) return null;
     const cible = sum(L, o => (pos(o.cible) > 0 ? pos(o.cible) : 0.18 * pos(o.prix)));
     const reuni = sum(L, o => pos(deja[o.id]));
-    if (cible <= 0) return aCompleter("effort", "apport", B.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport du Plan.");
+    if (cible <= 0) return aCompleter("effort", "apport", B.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport (Patrimoine › Budget et objectifs).");
     const ratio = reuni / cible;
     return critere("effort", "apport", B.apport, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
       texte: eur(reuni) + " réunis sur " + eur(cible) + " d'apport visé (" + pct(ratio) + ").",
       piste: ratio >= 1 ? "Votre apport est réuni : les banques regarderont aussi votre endettement après l'achat."
-        : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; le Plan indique l'effort mensuel pour y arriver." });
+        : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Budget et objectifs indique l'effort mensuel pour y arriver." });
   }
 
   /* ---------- Allocation ---------- */
@@ -211,10 +211,10 @@
     if (!id) return aCompleter("allocation", "adequation", B.adequation, "Profil de risque non renseigné.",
       "Répondez au questionnaire (une dizaine de questions) pour comparer votre allocation à celle de votre profil.");
     const indispo = () => aCompleter("allocation", "adequation", B.adequation, "Calcul de l'écart au profil indisponible pour le moment.",
-      "Rouvrez le Diagnostic : l'écart à votre profil s'affichera dès que le calcul sera chargé.");
+      "Rouvrez Pilotage › Santé : l'écart à votre profil s'affichera dès que le calcul sera chargé.");
     if (!R || typeof R.allocationReelle !== "function" || typeof R.ecarts !== "function") return indispo();
     if (Calc.financier(positions, scope) <= 0) return aCompleter("allocation", "adequation", B.adequation, "Aucun placement enregistré.",
-      "Ajoutez vos placements dans Bilan › Placements pour les comparer à votre profil.", "bilan/placements");
+      "Ajoutez vos placements dans Patrimoine › Placements pour les comparer à votre profil.", "patrimoine/placements");
     let hors;
     const fiche = ficheProfil(R, id);
     try { hors = pointsHors(R.ecarts(fiche && fiche.id || id, R.allocationReelle(positions, scope, { surcharge: ctx.classes }))); } catch (e) { return indispo(); }
@@ -222,7 +222,7 @@
     return critere("allocation", "adequation", B.adequation, { points: Math.round(interp(hors, [[0, 20], [40, 0]])), valeur: Math.round(hors * 10) / 10,
       texte: hors <= 0 ? "Votre allocation est dans les fourchettes du profil " + nom + "." : fr(hors) + " points hors des fourchettes du profil " + nom + ".",
       piste: hors <= 0 ? "Votre répartition correspond au risque que vous avez dit accepter."
-        : "Le détail par classe est dans Diagnostic › Profil de risque : rapprochez chaque classe de sa fourchette, de préférence avec vos versements à venir." });
+        : "Le détail par classe est dans Pilotage › Risque : rapprochez chaque classe de sa fourchette, de préférence avec vos versements à venir." });
   }
 
   const RE_MONDE = /monde|world|acwi|all.?country|global|international/;
@@ -248,7 +248,7 @@
   function speculatif(ctx, positions, scope, R, M) {
     const F = Calc.financier(positions, scope);
     if (F <= 0) return aCompleter("allocation", "speculatif", B.speculatif, "Aucun placement enregistré.",
-      "Ajoutez vos placements dans Bilan › Placements pour mesurer leur part spéculative.", "bilan/placements");
+      "Ajoutez vos placements dans Patrimoine › Placements pour mesurer leur part spéculative.", "patrimoine/placements");
     const part = sum(positions.filter(p => estSpeculatif(p, ctx.classes, M)), montant) / F;
     const id = idProfil(ctx.risque);
     const prof = ficheProfil(R, id);
@@ -259,7 +259,7 @@
       : "plafond du profil " + nomProfil(R, id) + " : " + pct(plafond);
     const points = Math.round(plafond > 0 ? interp(part, [[plafond, 20], [2 * plafond, 0]]) : interp(part, [[0, 20], [0.01, 0]]));
     return critere("allocation", "speculatif", B.speculatif, { points, valeur: part, cible: pct(plafond) + " au plus",
-      lien: borne == null ? "diagnostic/risque" : "bilan/placements",
+      lien: borne == null ? "pilotage/risque" : "patrimoine/placements",
       texte: "Crypto et produits à levier : " + pct(part, 1) + " du financier (" + de + ").",
       piste: part <= plafond ? "Cette part reste dans ce que votre profil peut encaisser : elle pourrait perdre l'essentiel de sa valeur sans compromettre vos projets."
         : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de votre patrimoine." });
@@ -292,7 +292,7 @@
     const avec = cotees.filter(p => connu(p.ter));
     const couvert = sum(avec, montant);
     if (couvert / total < 0.5) return aCompleter("efficacite", "frais", B.frais, "Frais inconnus : votre assistant peut les renseigner.",
-      "Demandez à votre assistant de compléter les frais courants (TER) de vos fonds via le connecteur.", "recos/actions");
+      "Demandez à votre assistant de compléter les frais courants (TER) de vos fonds via le connecteur.", "agent/connexion");
     const ter = sum(avec, p => montant(p) * +p.ter) / couvert;
     return critere("efficacite", "frais", B.frais, { points: Math.round(interp(ter, [[0.3, 20], [1, 10], [2, 0]])), valeur: ter,
       texte: "Frais moyens de " + fr(ter, 2) + " % par an" + (couvert < total ? " (sur " + pct(couvert / total) + " des lignes cotées)." : "."),

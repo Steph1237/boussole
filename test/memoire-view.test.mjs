@@ -1,4 +1,4 @@
-// Profil et données › Mémoire de l'agent (web/src/memoire-view.*) : ce que l'assistant retient de l'utilisateur,
+// Agent › Mémoire (web/src/memoire-view.*) : ce que l'assistant retient de l'utilisateur,
 // groupé par catégorie, avec épingler, modifier, supprimer et tout effacer.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -36,7 +36,7 @@ test("memoire-view.html : identifiants utilisés par le script, en-tête rassura
   assert.ok(html.includes("stockés dans votre compte Boussole"));
   assert.ok(html.includes("L'agent n'a encore rien retenu"));
   assert.ok(html.includes("Commencez par votre bilan avec Claude."));
-  assert.match(html, /data-goto="profil\/claude"/);
+  assert.match(html, /data-goto="agent\/connexion"/);
   assert.match(html, /id="mvMsg"[^>]*role="status"/);
 });
 

@@ -1,4 +1,4 @@
-/* Acheter ou placer : simulateur acheter / louer + ETF / louer + locatif, porté depuis sources/simu.html.
+/* Pilotage › Scénarios (module « simu ») : simulateur acheter / louer + ETF / louer + locatif, porté depuis sources/simu.html.
    Le moteur (données de ville, règles par pays, simulation) est recopié à l'identique ; seuls changent
    la portée DOM (racine du module), la mémoire locale et le branchement sur les données réelles (Reel). */
 (function(){

@@ -1,4 +1,4 @@
-// Profil et données › Règles (web/src/regles.*) : règles d'alerte et cible du matelas, extraites du Pilotage.
+// Compte › Règles (web/src/regles.*) : règles d'alerte et cible du matelas, extraites du Pilotage.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -32,7 +32,7 @@ test("règles : formulaires présents ici, et plus dans le Bilan › Placements"
     assert.doesNotMatch(pilotageHtml, new RegExp(`id="${id}"`), id + " encore dans pilotage.html");
   }
   assert.ok(html.includes("Ces règles alimentent vos alertes dans "), "phrase d'introduction");
-  assert.match(html, /data-goto="recos\/actions"/);
+  assert.match(html, /data-goto="aujourdhui\/vue"/);
   assert.doesNotMatch(pilotageJs, /config\/main"\)\.update\(\{(rules|cushion)\}\)/);
 });
 

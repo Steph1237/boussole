@@ -1,4 +1,4 @@
-// Diagnostic › Profil de risque (web/src/risque-view.*) : questionnaire en cartes, résultat, allocation cible vs réelle,
+// Pilotage › Risque (web/src/risque-view.*) : questionnaire en cartes, résultat, allocation cible vs réelle,
 // risque réel et rattachement des poches. Contrôles statiques + fonctions pures (module.exports).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -36,7 +36,7 @@ test("risque-view.js : calcule avec Risque.evaluer et Risque.synthese, écrit ri
 
 test("risque-view : textes clés (intro, Claude, clavier, garde-fous, mauvaise année, rattachement)", () => {
   for (const t of ["questions, 3 minutes. Ce profil sert à comparer votre portefeuille à ce que vous pouvez supporter.", "Commencer", "Le faire avec Claude",
-    'data-goto="profil/claude"', "Pourquoi cette question", "Pré-rempli d'après votre", "Voir mon profil", "Retour", "Plafonné à ",
+    'data-goto="agent/connexion"', "Pourquoi cette question", "Pré-rempli d'après votre", "Voir mon profil", "Retour", "Plafonné à ",
     "Dans une mauvaise année (1 sur 100), votre portefeuille pourrait perdre environ", "Compter mon immobilier", "Refaire le questionnaire",
     "Le revoir avec Claude", "Protection", "fonds euros et or", "Échap"])
     assert.ok(js.includes(t) || html.includes(t), `« ${t} » absent`);

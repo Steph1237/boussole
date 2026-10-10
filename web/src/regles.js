@@ -1,6 +1,6 @@
 (function(){
-/* Profil et données › Règles : règles d'alerte (config.rules) et cible du matelas de précaution (config.cushion),
-   écrites dans config/main. Les alertes qui en découlent s'affichent dans Recommandations › Actions. */
+/* Compte › Règles : règles d'alerte (config.rules) et cible du matelas de précaution (config.cushion),
+   écrites dans config/main. Les alertes qui en découlent s'affichent dans Aujourd'hui. */
 let S={scope:"foyer",people:[],positions:[],config:null,status:null,db:null};
 let root=null,dirty=true;
 const fmt2=new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});

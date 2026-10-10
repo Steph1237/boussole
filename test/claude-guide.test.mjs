@@ -1,4 +1,4 @@
-// Profil et données › Avec Claude (web/src/claude-guide.*) et carte « Faire mon bilan avec Claude » du Bilan.
+// Agent › Connexion (web/src/claude-guide.*) et carte « Faire mon bilan avec Claude » du Bilan.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -52,7 +52,7 @@ test("claude-guide : connecteur (adresse, Claude Code), compte anonyme, démo, a
   assert.match(js, /Store\.mode === "demo"/);
   assert.match(html, /href="compte\.html#securiser"/);
   assert.match(html, /id="cgConnexion"/);
-  for (const r of ["profil/donnees", "avenir/plan", "diagnostic/risque", "profil/propositions"]) assert.match(html, new RegExp('data-goto="' + r + '"'));
+  for (const r of ["compte/donnees", "patrimoine/budget", "pilotage/risque", "agent/propositions"]) assert.match(html, new RegExp('data-goto="' + r + '"'));
   const ids = [...js.matchAll(/\$\("(cg[A-Za-z0-9]+)"\)/g)].map(m => m[1]);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
 });
@@ -66,7 +66,7 @@ test("claude-guide.css : entièrement scopé sous #view-claude-guide", () => {
 });
 
 test("Bilan : carte « Faire mon bilan avec Claude » tant que l'état est sous 100 %, masquable pour la session", () => {
-  assert.match(bilanHtml, /id="blClaude"[\s\S]*Faire mon bilan avec Claude[\s\S]*data-goto="profil\/claude"[^>]*>Commencer</);
+  assert.match(bilanHtml, /id="blClaude"[\s\S]*Faire mon bilan avec Claude[\s\S]*data-goto="agent\/connexion"[^>]*>Commencer</);
   assert.match(bilanJs, /window\.BilanEtat\.etat\(S\)/);
   assert.match(bilanJs, /E\.pourcentage >= 100/);
   assert.match(bilanJs, /sessionStorage\.setItem\(CLAUDE_KEY, "1"\)/);

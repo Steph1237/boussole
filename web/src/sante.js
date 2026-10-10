@@ -1,5 +1,5 @@
 (function(){
-/* Diagnostic › Santé : bonnes pratiques notées (Pratiques.evaluer, pratiques.js) en pleine page.
+/* Pilotage › Santé : bonnes pratiques notées (Pratiques.evaluer, pratiques.js) en pleine page.
    Note globale sur 100 et verdict, puis les 4 familles (Sécurité, Effort, Allocation, Efficacité) en cartes : note de la famille,
    poids, et chaque critère (points sur 20, situation, repère, piste, règle et source dépliables, lien pour compléter une donnée).
    Les critères « informatifs » (exposition hors euro) sont affichés sans note. Respecte le périmètre (Foyer / personne). */
@@ -13,8 +13,8 @@ function scopeDe(){ return S.scope==="foyer"?"du foyer":window.Calc.deNom(nomOf(
 
 const NOMBRES=["aucun","un","deux","trois","quatre","cinq","six","sept","huit","neuf","dix"];
 /* Libellé du bouton selon la vue où compléter ou agir (le lien vient du critère). */
-const LIEN_LABEL={"avenir/plan":"Compléter le budget","profil/donnees":"Compléter le profil","bilan/placements":"Voir les placements",
-  "diagnostic/risque":"Ouvrir le profil de risque","recos/actions":"Voir les actions","profil/claude":"Compléter avec Claude"};
+const LIEN_LABEL={"patrimoine/budget":"Compléter le budget","compte/donnees":"Compléter le profil","patrimoine/placements":"Voir les placements",
+  "pilotage/risque":"Ouvrir le profil de risque","aujourdhui/vue":"Voir Aujourd'hui","agent/connexion":"Compléter avec Claude"};
 const lienLabel=r=>LIEN_LABEL[r]||"Compléter";
 function niveau(c){ return c.informatif?"info":c.aCompleter?"na":c.points>=16?"good":c.points>=10?"warn":"crit"; }
 const classeTotal=t=>t>=80?"good":t>=60?"warn":"crit";

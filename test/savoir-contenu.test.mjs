@@ -83,3 +83,21 @@ test("démo : repères alignés sur 0010 (valeur, unité, date d'effet), marqué
   assert.ok(demo.includes('sourceTitre: "Valeur d\'exemple (démo) — " + site'), "mention « exemple » conservée");
   assert.ok(demo.includes("à 35 % des revenus"), "résumé HCSF de démo : espace insécable avant %");
 });
+
+test("0012 : libellés de navigation des fiches, uniquement des update public.savoir_fiches (replace, version + 1)", () => {
+  const m12 = lire("supabase/migrations/0012_savoir_libelles.sql");
+  assert.ok(m12, "migration 0012_savoir_libelles.sql absente");
+  const instr = m12.replace(/--[^\n]*/g, "").split(";").map(s => s.trim()).filter(Boolean);
+  assert.ok(instr.length >= 1);
+  const slugs = [];
+  for (const s of instr) {
+    assert.match(s, /^update public\.savoir_fiches\s+set contenu = replace\(/, "instruction autre qu'une mise à jour de fiche : " + s.slice(0, 60));
+    assert.match(s, /version = version \+ 1, mis_a_jour_le = '2026-10-10'/);
+    const slug = (s.match(/where slug = '([a-z0-9-]+)'/) || [])[1];
+    assert.ok(FICHES.includes(slug), "fiche inconnue : " + slug);
+    slugs.push(slug);
+  }
+  assert.equal(new Set(slugs).size, slugs.length, "une instruction par fiche");
+  // les nouveaux libellés sont ceux du cockpit
+  for (const k of ["Pilotage › Rang", "Compte › Données", "Aujourd''hui", "Patrimoine › Budget et objectifs"]) assert.ok(m12.includes(k), k);
+});

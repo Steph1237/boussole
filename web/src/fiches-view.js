@@ -1,4 +1,4 @@
-/* Recommandations › Fiches : le savoir sur lequel s'appuie l'agent (fiches pédagogiques sourcées et repères chiffrés).
+/* Agent › Fiches : le savoir sur lequel s'appuie l'agent (fiches pédagogiques sourcées et repères chiffrés).
    S.savoir = { fiches: [{ slug, theme, titre, resume, motsCles, sources: [{ titre, url, consulte_le }], version, misAJourLe }],
    reperes: [{ cle, libelle, valeur, unite, dateEffet, sourceTitre, sourceUrl, verifieLe, mode }] } : les fiches arrivent sans
    leur contenu ; Store.savoir.fiche(slug) → la fiche avec `contenu` (markdown) ou null, appelé à l'ouverture.

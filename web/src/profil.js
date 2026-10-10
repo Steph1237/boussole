@@ -1,4 +1,4 @@
-/* Onglet Profil : la seule partie de l'outil qui écrit les infos hors Pilotage (revenus, foyer, immobilier, crédits).
+/* Compte › Données (module « profil ») : la seule partie de l'outil qui écrit les infos hors Pilotage (revenus, foyer, immobilier, crédits).
    On édite un brouillon ; « Enregistrer » l'écrit dans profil/main. */
 (function () {
   "use strict";
@@ -118,7 +118,7 @@
     $("pfPct").textContent = pct + " %";
     $("pfBar").style.width = pct + "%";
     const miss = C.manquants(pr);
-    $("pfMissing").textContent = miss.length ? "À compléter : " + miss.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "." : "Tout est renseigné. Le Bilan, le Diagnostic et les simulations utilisent ces chiffres.";
+    $("pfMissing").textContent = miss.length ? "À compléter : " + miss.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "." : "Tout est renseigné. Aujourd'hui, Patrimoine, Pilotage et les simulations utilisent ces chiffres.";
     const pos = S ? S.positions : [];
     const pat = C.patrimoine(pos, pr, "foyer"), rev = C.revenusFoyer(pr, "foyer"), mens = C.mensualites(pr, "foyer");
     $("pfRecap").innerHTML = [
@@ -239,7 +239,7 @@
     try {
       await db.doc("profil/main").set(data);
       dirty = false; remoteChanged = false; draft = normalize(data); base = clone(data);
-      saving = false; renderForm(); renderStatus(); renderMsgs(["ok", "Profil enregistré. Le Bilan, le Diagnostic et les simulations sont à jour."]);
+      saving = false; renderForm(); renderStatus(); renderMsgs(["ok", "Données enregistrées. Aujourd'hui, Patrimoine, Pilotage et les simulations sont à jour."]);
     } catch (e) {
       saving = false;
       renderMsgs(["err", e && e.code === "invalid_argument" ? "Enregistrement refusé : vous n'avez pas les droits d'écriture sur ce tableau de bord." : "Enregistrement impossible pour le moment (" + (e && e.code || "erreur") + "). Votre saisie est conservée : réessayez dans un instant."]);

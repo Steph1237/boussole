@@ -89,7 +89,7 @@
       ] },
     { id: "matelas", theme: "Épargne de précaution", poids: 0, type: "choix", prerempli: "matelas",
       texte: "Avez-vous de côté au moins 3 mois de dépenses, disponibles tout de suite et en dehors de vos placements ?",
-      aide: "C'est le matelas de sécurité (livrets, compte courant). Sans lui, un imprévu peut obliger à vendre au mauvais moment. Prérempli depuis le Bilan.",
+      aide: "C'est le matelas de sécurité (livrets, compte courant). Sans lui, un imprévu peut obliger à vendre au mauvais moment. Prérempli depuis votre patrimoine.",
       options: [
         { v: "oui", label: "Oui", points: 1 },
         { v: "non", label: "Non", points: 0 },
@@ -106,7 +106,7 @@
       ] },
     { id: "age", theme: "Âge", poids: 1, type: "choix", prerempli: "age",
       texte: "Quel est votre âge ?",
-      aide: "Prérempli depuis le Profil.",
+      aide: "Prérempli depuis Compte › Données.",
       options: [
         { v: "u30", label: "Moins de 30 ans", points: 4 },
         { v: "a30", label: "30 à 39 ans", points: 4 },

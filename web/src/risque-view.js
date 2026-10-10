@@ -1,5 +1,5 @@
 (function(){
-/* Diagnostic › Profil de risque : questionnaire en cartes (une question par écran), résultat (profil, score, garde-fous),
+/* Pilotage › Risque : questionnaire en cartes (une question par écran), résultat (profil, score, garde-fous),
    allocation cible vs réelle (barres doubles), risque réel du portefeuille et rattachement des poches à une classe.
    Calculs : Risque (risque.js : evaluer, synthese), Marche (marche.js : classeRisque, CLASSES), Calc, Plan (budget).
    Écritures : Store.db.doc("profil/main").update({risque}) à la fin du questionnaire, update({classes}) pour les poches.
@@ -9,7 +9,7 @@
 /* ---------- logique pure ---------- */
 const nb=v=>v!==null&&v!==undefined&&v!==""&&isFinite(+v);
 /** Valeurs préremplies depuis l'état : matelas (mois de dépenses, comme le Bilan : poche « Épargne » ÷ dépenses du budget,
-    sinon dépenses de la cible de matelas en mois) et tranche d'âge du Profil. deps = { Calc, Plan }. */
+    sinon dépenses de la cible de matelas en mois) et tranche d'âge de Compte › Données. deps = { Calc, Plan }. */
 function prerempli(S,deps){
   const s=S||{},d=deps||{},C=d.Calc,P=d.Plan,scope=s.scope||"foyer",out={matelasMois:null,age:null};
   const age=s.profil&&s.profil.foyer&&s.profil.foyer.age; if(age) out.age=String(age);
@@ -145,7 +145,7 @@ function renderIntro(){
     <p class="small muted">Horizon, réaction à une baisse, perte acceptable, connaissances, revenus : inspiré du questionnaire d'adéquation des conseillers (MiFID II). Vos réponses restent modifiables.</p>
     <div class="rv-actions">
       <button type="button" class="rv-btn" data-rv="start">${enCours?"Reprendre ("+n+" / "+total+")":"Commencer"}</button>
-      <a class="rv-btn ghost" href="#profil/claude" data-goto="profil/claude">Le faire avec Claude</a>
+      <a class="rv-btn ghost" href="#agent/connexion" data-goto="agent/connexion">Le faire avec Claude</a>
     </div>
     ${enCours?'<button type="button" class="rv-lnk small" data-rv="reset">Effacer mes réponses et recommencer</button>':""}
   </section>`;
@@ -195,7 +195,7 @@ function sectionAllocation(sa,risque){
   const alloc=sa.allocation, immo=immoPhysique();
   const toggle=immo>0?`<label class="rv-chk"><input type="checkbox" data-rv-immo="alloc" ${immoAlloc?"checked":""}> Compter mon immobilier</label>`:"";
   if(!(alloc.total>0)) return `<section class="panel rv-alloc"><div class="panel-head"><h2>Allocation cible et réelle</h2>${toggle}</div>
-    <p class="muted">Aucun placement à comparer pour ce périmètre. <a class="rv-a" href="#bilan/placements" data-goto="bilan/placements">Ajouter des placements</a></p></section>`;
+    <p class="muted">Aucun placement à comparer pour ce périmètre. <a class="rv-a" href="#patrimoine/placements" data-goto="patrimoine/placements">Ajouter des placements</a></p></section>`;
   const EC=sa.ecarts, ST={dans:"dans la fourchette",sous:"en dessous","au-dessus":"au-dessus"};
   const rows=EC.map(e=>{
     const g=geometrie(e.min,e.max,e.reel);
@@ -283,7 +283,7 @@ function renderResult(){
     ${gfHtml}
     <div class="rv-actions">
       <button type="button" class="rv-btn ghost" data-rv="refaire">Refaire le questionnaire</button>
-      <a class="rv-btn ghost" href="#profil/claude" data-goto="profil/claude">Le revoir avec Claude</a>
+      <a class="rv-btn ghost" href="#agent/connexion" data-goto="agent/connexion">Le revoir avec Claude</a>
     </div>
   </section>
   ${decl?sectionAllocation(sa,decl):""}

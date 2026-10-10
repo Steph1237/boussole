@@ -1,4 +1,4 @@
-/* Profil et données › Mémoire de l'agent : ce que l'assistant (connecteur MCP) retient de l'utilisateur d'une conversation à l'autre.
+/* Agent › Mémoire : ce que l'assistant (connecteur MCP) retient de l'utilisateur d'une conversation à l'autre.
    S.memoire = [{ id, categorie: contexte|preference|projet|decision|explique|a_suivre, contenu, echeance, epingle, source, creeLe, majLe }].
    Actions : Store.memoire.modifier(id, { contenu?, epingle?, echeance? }), .supprimer(ids), .toutEffacer() → { ok: true } ou { erreur }.
    Les fonctions de présentation (grouper, echu, meta) sont pures et exportées pour les tests. */

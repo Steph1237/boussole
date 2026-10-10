@@ -1,5 +1,5 @@
 /* Accueil : assistant de bienvenue en 5 étapes, ouvert par l'app à la première connexion (tant que l'onboarding
-   n'est pas terminé) et à tout moment depuis Profil et données › Avec Claude (« Revoir l'accueil »).
+   n'est pas terminé) et à tout moment depuis Agent › Connexion (« Revoir l'accueil »).
    1. Bienvenue  2. Votre assistant  3. Connecter Claude (voyant en direct)  4. Lancer l'entretien  5. Suivre et valider
 
    window.Accueil = { open({ onDone, formulaires, etape }), connexion(el), reporte(), estConnecte(…), lienClaude, ETAPES }
@@ -7,7 +7,7 @@
    - onDone() après « Terminer » (étape 5, qui marque l'onboarding fait par Store.markOnboarded()).
    - etape : étape de départ (1 à 5) ; par défaut, celle mémorisée dans localStorage « accueil-etape ».
    - connexion(el) : bloc « Connecter Claude » (onglets claude.ai / Claude Code, valeurs à copier, pièges), sans le voyant,
-     réutilisé par la page Avec Claude.
+     réutilisé par la page Agent › Connexion.
    Voyant : Store.surveillerConnexions(true) tant que l'étape 3 est affichée, false en la quittant ; « Claude est connecté »
    dès que S.connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] contient un client. Sans ce contrat
    (store plus ancien), un bouton « J'ai terminé » le remplace. Échap ou « Reprendre plus tard » ferme sans rien marquer. */
@@ -84,7 +84,7 @@
     '<button type="button" class="ac-btn ghost sm" data-copie="' + id + '" aria-describedby="' + id + '-l">' + svg("copie") + "Copier</button></div>" +
     (note ? '<span class="ac-champ-n">' + note + "</span>" : "") + "</div>";
 
-  /* ---------- bloc « Connecter Claude » (partagé avec la page Avec Claude) ---------- */
+  /* ---------- bloc « Connecter Claude » (partagé avec la page Agent › Connexion) ---------- */
   function connexionHtml(id) {
     const c = config();
     const tab = (k, t, on) => '<button type="button" role="tab" id="' + id + "-t-" + k + '" aria-controls="' + id + "-p-" + k + '" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-onglet="' + k + '">' + t + "</button>";
@@ -266,7 +266,7 @@
           '<p class="ac-pending" id="' + id + '-pending" aria-live="polite"></p>' +
           '<button type="button" class="ac-btn ghost" data-act="examiner">Examiner les propositions</button></div>' +
         "</div>" +
-        '<p class="ac-fine">Vous pourrez relancer Claude à tout moment depuis Profil et données › Avec Claude.</p>';
+        '<p class="ac-fine">Vous pourrez relancer Claude à tout moment depuis Agent › Connexion.</p>';
     }
     function suivi() {
       const j = $("#" + id + "-jauge"); if (!j) return;
@@ -374,7 +374,7 @@
       else if (act === "manuel") { manuel = true; voyant(); const s = $('[data-act="suivant"]'); if (s) s.focus(); }
       else if (act === "examiner") {
         fermer("plus-tard");
-        if (root.App && typeof root.App.go === "function") root.App.go("profil/propositions");
+        if (root.App && typeof root.App.go === "function") root.App.go("agent/propositions");
       }
     });
     /* Échap = « Reprendre plus tard » (l'étape reste mémorisée). */

@@ -1,6 +1,6 @@
-// Score de santé financière : vue Diagnostic › Santé (web/src/sante.*) et port TypeScript du score
+// Score de santé financière : vue Pilotage › Santé (web/src/sante.*) et port TypeScript du score
 // dans le connecteur MCP (supabase/functions/mcp/index.ts). Contrôles statiques + calcul sur la démo.
-// Le Bilan › Placements (pilotage) ne porte plus ni la carte santé ni les alertes.
+// Patrimoine › Placements (pilotage) ne porte plus ni la carte santé ni les alertes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

@@ -1,4 +1,4 @@
-/* Bilan › Vue d'ensemble : chiffres clés, composition du patrimoine, flux du mois, allocation, évolution, à traiter.
+/* Patrimoine › Immobilier et crédits (module « bilan », ancienne vue d'ensemble) : chiffres clés, composition du patrimoine, flux du mois, allocation, évolution, à traiter.
    Calculs : BilanCalc (bilan-calc.js), Plan (budget, score), Rules (alertes), Calc. Lecture seule : aucune écriture. */
 (function () {
   let S = null, root = null, dirty = true, lastEvol = null, resizeTmr = null;
@@ -56,7 +56,7 @@
       $("blEpargne").textContent = eur(window.Plan.capaciteEpargne(t));
       $("blEpargneSub").textContent = "par mois · taux " + pct((t.tauxEpargne || 0) * 100);
     } else {
-      $("blEpargne").innerHTML = link("avenir/plan", "À renseigner");
+      $("blEpargne").innerHTML = link("patrimoine/budget", "À renseigner");
       $("blEpargneSub").textContent = "à partir de votre budget";
     }
 
@@ -74,7 +74,7 @@
     // santé
     const el = $("blSante"), sub = $("blSanteSub");
     let sc = null;
-    // Même indicateur que Diagnostic › Santé (Bonnes pratiques), repli sur l'ancien score.
+    // Même indicateur que Pilotage › Santé (Bonnes pratiques), repli sur l'ancien score.
     try {
       sc = window.Pratiques
         ? window.Pratiques.evaluer({ positions: S.positions, profil: S.profil, config: S.config, budget: S.budget, objectifs: S.objectifs, scope: scope(), risque: S.risque, classes: S.classes, today: new Date() })
@@ -83,16 +83,16 @@
     if (sc && sc.total != null) {
       const cls = sc.total >= 80 ? "good" : sc.total >= 60 ? "warn" : "crit";
       el.innerHTML = '<span class="bl-score ' + cls + '">' + sc.total + '</span><span class="bl-sur">/100</span>';
-      sub.innerHTML = (sc.provisoire ? '<span class="bl-verdict">Provisoire</span>' : '<span class="bl-verdict ' + cls + '">' + (cls === "good" ? "Solide" : cls === "warn" ? "Correct" : "À consolider") + "</span>") + " · " + link("diagnostic/sante", "Détail");
+      sub.innerHTML = (sc.provisoire ? '<span class="bl-verdict">Provisoire</span>' : '<span class="bl-verdict ' + cls + '">' + (cls === "good" ? "Solide" : cls === "warn" ? "Correct" : "À consolider") + "</span>") + " · " + link("pilotage/sante", "Détail");
     } else {
       el.textContent = "—";
-      sub.innerHTML = link("diagnostic/sante", "Compléter pour calculer");
+      sub.innerHTML = link("pilotage/sante", "Compléter pour calculer");
     }
     return sc;
   }
 
   /* ---------- profil de risque (cellule des chiffres clés) ----------
-     Profil enregistré (S.risque.profil, Diagnostic › Profil de risque) ; si le portefeuille réel se comporte comme un autre
+     Profil enregistré (S.risque.profil, Pilotage › Risque) ; si le portefeuille réel se comporte comme un autre
      profil (Risque.synthese, immobilier physique non compté), « portefeuille : Offensif ». Sinon « À définir ». */
   function renderRisque() {
     const cell = Array.from(root.querySelectorAll(".bl-summary .bl-kpi")).find(k => { const l = k.querySelector(".label"); return l && l.textContent.trim() === "Profil de risque"; });
@@ -101,8 +101,8 @@
     const R = window.Risque, rq = S.risque && typeof S.risque === "object" ? S.risque : null;
     const fiche = R && rq && rq.profil ? R.PROFILS.find(p => p.id === rq.profil) : null;
     sub.removeAttribute("title");
-    if (!fiche) { mid.innerHTML = link("diagnostic/risque", "À définir"); sub.className = "small muted"; sub.textContent = "10 questions, 3 minutes"; return; }
-    mid.innerHTML = link("diagnostic/risque", fiche.label);
+    if (!fiche) { mid.innerHTML = link("pilotage/risque", "À définir"); sub.className = "small muted"; sub.textContent = "10 questions, 3 minutes"; return; }
+    mid.innerHTML = link("pilotage/risque", fiche.label);
     let syn = null;
     try { syn = R.synthese(rq.reponses || {}, { positions: S.positions, scope: scope(), surcharge: S.classes || {} }); } catch (e) { console.error("bilan risque", e); }
     const eq = syn && syn.risque.profilEquivalent ? R.PROFILS.find(p => p.id === syn.risque.profilEquivalent) : null;
@@ -153,7 +153,7 @@
       el.innerHTML = '<div class="bl-empty"><h3>Votre budget est à remplir</h3>' +
         "<p>Quelques lignes (logement, courses, transport, épargne…) suffisent pour voir où part chaque euro de vos revenus, " + esc(duScope()) + ".</p>" +
         (connu.length ? '<p class="small muted">Déjà connu grâce au profil : ' + esc(connu.join(", ")) + ".</p>" : "") +
-        '<a class="bl-btn" href="#avenir/plan" data-goto="avenir/plan">Remplir mon budget</a></div>';
+        '<a class="bl-btn" href="#patrimoine/budget" data-goto="patrimoine/budget">Remplir mon budget</a></div>';
       return;
     }
     $("blFluxHead").innerHTML = 'Revenus <b class="num">' + esc(eur(f.revenus)) + "</b>/mois";
@@ -164,7 +164,7 @@
         '<div class="bl-row bl-row-' + s.type + '"><span class="bl-rl" title="' + esc(s.label) + '">' + esc(s.label) + '</span>' +
         '<span class="bl-track" aria-hidden="true"><span class="bl-fill" style="width:' + Math.min(100, s.montant / base * 100).toFixed(2) + "%;background:" + col(s) + '"></span></span>' +
         '<span class="num bl-rv">' + eur(s.montant) + '</span><span class="num bl-rp">' + (f.revenus ? s.pct + " %" : "—") + "</span></div>").join("") + "</div>" +
-      '<p class="small muted bl-note">En pourcentage des revenus. ' + link("avenir/plan", "Modifier le budget") + "</p>";
+      '<p class="small muted bl-note">En pourcentage des revenus. ' + link("patrimoine/budget", "Modifier le budget") + "</p>";
   }
 
   /* ---------- allocation ---------- */
@@ -335,7 +335,7 @@
   }
 
   /* ---------- à traiter ----------
-     Même liste que Recommandations › Actions : construite par Actions.construire (actions.js) sur l'état courant.
+     Même liste que la boîte de réception d'Aujourd'hui : construite par Actions.construire (actions.js) sur l'état courant.
      (Actions.items() renvoie la liste calculée lors du dernier update du module Actions, qui passe après le Bilan :
      on reconstruit donc avec le même contexte pour ne jamais afficher la liste du périmètre précédent.)
      Repli sans actions.js : alertes des règles puis pistes du score, triées crit > warn > info > piste. */
@@ -366,7 +366,7 @@
     $("blTodo").innerHTML = top.length ? top.map(a =>
       '<div class="bl-act ' + esc(a.level) + '"><span class="bl-pill ' + esc(a.level) + '">' + (LEVEL_TXT[a.level] || "info") + "</span>" +
       '<div class="bl-act-b"><strong>' + esc(a.title) + '</strong><div class="small">' + esc(a.text) + "</div></div>" +
-      link("recos/actions", "Voir") + "</div>").join("")
+      link("aujourdhui/vue", "Voir") + "</div>").join("")
       : '<div class="bl-act good"><span class="bl-pill good">ok</span><div class="bl-act-b">Rien d\'urgent.</div></div>';
   }
 

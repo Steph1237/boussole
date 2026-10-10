@@ -141,7 +141,7 @@
           '<p class="ob-err" data-err="personnes.' + k + '.salaire" hidden>Montant illisible : écrivez par exemple 2 800 ou 2800,50.</p></div>' +
           seg("personnes." + k + ".statut", [["cadre", "cadre"], ["nc", "non-cadre"], ["", "autre ou sans emploi"]], "Statut", p.statut) +
           "</fieldset>";
-      }).join("") + '<p class="ob-hint">Laissez vide si vous préférez : vous pourrez compléter plus tard dans l\'onglet Profil.</p>';
+      }).join("") + '<p class="ob-hint">Laissez vide si vous préférez : vous pourrez compléter plus tard dans Compte › Données.</p>';
     }
 
     function summary() {

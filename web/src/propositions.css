@@ -1,5 +1,5 @@
-/* Profil et données › Propositions : lots de changements proposés par Claude, groupés par cible, à valider ou refuser.
-   Le bandeau global #propBanner (coque) et la pastille [data-prop-count] de la navigation sont stylés ici aussi. */
+/* Agent › Propositions : lots de changements proposés par Claude, groupés par cible, à valider ou refuser.
+   La pastille [data-prop-count] de la navigation est stylée ici aussi. */
 #view-propositions [hidden]{display:none!important}
 #view-propositions .propositions{display:flex;flex-direction:column;gap:16px;max-width:880px;min-width:0}
 #view-propositions .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -60,9 +60,7 @@
 #view-propositions .pp-pill.ok{background:var(--good-soft);color:var(--good)}
 #view-propositions .pp-pill.no{background:var(--crit-soft);color:var(--crit)}
 
-/* bandeau global (coque) et pastille de navigation */
-#propBanner:not([hidden]){display:flex;align-items:center;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;background:var(--accent-soft)}
-#propBanner a{white-space:nowrap}
+/* pastille de navigation */
 #sideNav [data-prop-count]{background:var(--accent-soft);color:var(--accent)}
 #sideNav .nav-item[aria-current="page"] [data-prop-count]{background:var(--surface)}
 

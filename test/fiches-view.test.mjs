@@ -1,4 +1,4 @@
-// Recommandations › Fiches (web/src/fiches-view.*) : savoir de l'agent consultable (fiches sourcées, repères chiffrés),
+// Agent › Fiches (web/src/fiches-view.*) : savoir de l'agent consultable (fiches sourcées, repères chiffrés),
 // recherche locale, filtres par thème, rendu markdown limité et sûr.
 import { test } from "node:test";
 import assert from "node:assert/strict";

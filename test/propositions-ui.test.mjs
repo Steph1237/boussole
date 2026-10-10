@@ -1,5 +1,5 @@
-// Profil et données › Propositions (web/src/propositions.*) : revue des changements proposés par Claude,
-// bandeau global et pastille de navigation (app.js, shell.html), description en français de chaque proposition.
+// Agent › Propositions (web/src/propositions.*) : revue des changements proposés par Claude,
+// pastille de navigation (app.js, shell.html), description en français de chaque proposition.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -40,15 +40,16 @@ test("propositions.html : identifiants utilisés par le script, phrase d'en-têt
   assert.ok(ids.length > 5);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
   assert.ok(html.includes("Claude a proposé ces changements. Rien n'est enregistré tant que vous ne les validez pas."));
-  assert.match(html, /data-goto="profil\/claude"/);
+  assert.match(html, /data-goto="agent\/connexion"/);
 });
 
-test("propositions.css : entièrement scopé (vue, bandeau #propBanner, pastille de la barre latérale)", () => {
+test("propositions.css : entièrement scopé (vue, pastille de la barre latérale), plus de règles #propBanner", () => {
   const c = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "}");
   const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(Boolean);
   assert.ok(sels.length > 20);
-  const bad = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !/^(#view-propositions|#propBanner|#sideNav \[data-prop-count\]|#sideNav \.nav-item)/.test(x));
+  const bad = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !/^(#view-propositions|#sideNav \[data-prop-count\]|#sideNav \.nav-item)/.test(x));
   assert.deepEqual(bad, []);
+  assert.doesNotMatch(css, /propBanner/, "le bandeau global n'existe plus");
 });
 
 test("coque : plus de bandeau global #propBanner ; pastille Agent pilotée par headline() du module propositions", () => {

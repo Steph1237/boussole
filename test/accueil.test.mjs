@@ -31,7 +31,7 @@ test("accueil : 5 étapes, dans l'ordre, et leurs contenus clés", () => {
     "Se connecter maintenant", "Utiliser votre propre client OAuth", "Laissez le secret vide.", "Pièges fréquents",
     "Ne mettez pas votre e-mail comme identifiant", "Se reconnecter", "<kbd>/mcp</kbd>",
     "En attente de la connexion de Claude…", "Claude est connecté", "J'ai terminé", "Sécurisez d\\'abord votre compte", "compte.html#securiser",
-    "Je préfère commencer plus tard", "Examiner les propositions", "Vous pourrez relancer Claude à tout moment depuis Profil et données › Avec Claude.",
+    "Je préfère commencer plus tard", "Examiner les propositions", "Vous pourrez relancer Claude à tout moment depuis Agent › Connexion.",
     "Reprendre plus tard"]) {
     assert.ok(js.includes(t), "texte manquant : " + t);
   }
@@ -79,7 +79,7 @@ test("accueil : ChatGPT désactivé, « Je n'utilise pas d'assistant » ouvre le
 test("accueil : fin (markOnboarded, onDone), revue des propositions, étape mémorisée, Échap", () => {
   assert.match(js, /St\.markOnboarded\(\)/);
   assert.match(js, /o\.onDone\(\)/);
-  assert.match(js, /App\.go\("profil\/propositions"\)/);
+  assert.match(js, /App\.go\("agent\/propositions"\)/);
   assert.match(js, /BilanEtat\.etat\(S\)/);
   assert.match(js, /"accueil-etape"/);
   assert.match(js, /addEventListener\("cancel"/);

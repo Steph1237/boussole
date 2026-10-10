@@ -293,7 +293,7 @@
   function itemEndettement(totaux) {
     const base = { cle: "endettement", titre: "Taux d'endettement", cible: "35 % des revenus au plus" };
     if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
-      texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans le Profil ou le budget pour calculer votre taux d'endettement." };
+      texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans Compte › Données ou dans le budget pour calculer votre taux d'endettement." };
     const t = totaux.mensualites / totaux.revenus;
     const points = interp(t * 100, [[25, 20], [35, 12], [45, 0]]);
     const texte = totaux.mensualites > 0 ? "Vos crédits représentent " + pct(t) + " de vos revenus." : "Aucune mensualité de crédit en cours.";
@@ -307,7 +307,7 @@
     const L = (positions || []).filter(p => Calc.inScope(p, scope) && Calc.counted(p) && Calc.val(p) > 0);
     const F = sum(L, Calc.val);
     if (F <= 0) return { ...base, valeur: null, aCompleter: true,
-      texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans Bilan › Placements pour mesurer leur diversification." };
+      texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans Patrimoine › Placements pour mesurer leur diversification." };
     const max = Math.max(...L.map(Calc.val)) / F;
     const nb = new Set(L.map(p => p.bloc || "_autre")).size;
     const points = Math.max(0, interp(max * 100, [[10, 20], [20, 14], [40, 0]]) - (nb < 3 ? 5 : 0));
@@ -322,15 +322,15 @@
     const repere = REPERES_AGE[age];
     const base = { cle: "patrimoine", titre: "Patrimoine net", cible: repere ? fr(repere) + " année" + (repere > 1 ? "s" : "") + " de revenus" : "selon l'âge" };
     if (!repere) return { ...base, valeur: null, aCompleter: true,
-      texte: "Âge non renseigné.", piste: "Indiquez votre tranche d'âge dans le Profil pour comparer votre patrimoine au repère." };
+      texte: "Âge non renseigné.", piste: "Indiquez votre tranche d'âge dans Compte › Données pour comparer votre patrimoine au repère." };
     if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
-      texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans le Profil pour situer votre patrimoine." };
+      texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans Compte › Données pour situer votre patrimoine." };
     const net = Calc.patrimoine(positions, profil, scope).net;
     const annees = net / (totaux.revenus * 12);
     const points = clamp(annees / repere, 0, 1) * 20;
     const texte = "Patrimoine net : " + fr(Math.max(annees, 0)) + " année" + (annees >= 2 ? "s" : "") + " de revenus (repère à votre âge : " + fr(repere) + ").";
     const piste = annees >= repere ? "Vous êtes au niveau du repère de votre tranche d'âge."
-      : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs du Plan en donnent le rythme.";
+      : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs (Patrimoine › Budget et objectifs) en donnent le rythme.";
     return { ...base, valeur: annees, points, aCompleter: false, texte, piste };
   }
 

@@ -1,4 +1,4 @@
-/* Onglet Plan : budget mensuel (brouillon + « Enregistrer le budget »), objectifs datés, projection du patrimoine financier.
+/* Patrimoine › Budget et objectifs (module « plan ») : budget mensuel (brouillon + « Enregistrer le budget »), objectifs datés, projection du patrimoine financier.
    Calculs dans plan.js (Plan) et calc.js (Calc) ; écritures par la façade Store.db (budget/main, objectifs). */
 (function () {
   "use strict";
@@ -52,7 +52,7 @@
   const SIG_KEYS = ["id", "type", "categorie", "libelle", "montant", "frequence", "owner"];
   const sig = lignes => JSON.stringify((lignes || []).map(l => SIG_KEYS.map(k => (l[k] == null ? null : l[k]))));
 
-  /* Lignes issues du Profil (lecture seule) pour le périmètre courant. */
+  /* Lignes issues de Compte › Données (lecture seule) pour le périmètre courant. */
   function profileRows() {
     const pr = (S && S.profil) || {}, ps = pr.personnes || {}, sc = scope(), Ca = C();
     const who = sc === "foyer" ? ["p1"].concat(two() ? ["p2"] : []) : [sc];
@@ -90,7 +90,7 @@
     const t = totaux(), has = draft.length > 0;
     $("pvSynRev").textContent = "Revenus " + duScope() + " / mois";
     $("pvRev").textContent = eur(t.revenus);
-    $("pvRevS").textContent = t.revenusProfil > 0 ? "dont " + eur(t.revenusProfil) + " repris du Profil" : "renseignez vos salaires dans le Profil";
+    $("pvRevS").textContent = t.revenusProfil > 0 ? "dont " + eur(t.revenusProfil) + " repris de Compte › Données" : "renseignez vos salaires dans Compte › Données";
     $("pvDep").textContent = eur(t.depenses);
     $("pvDepS").textContent = t.mensualites > 0 ? "dont " + eur(t.mensualites) + " de crédits" : "crédits compris";
     $("pvEp").textContent = eur(t.epargne);
@@ -124,8 +124,8 @@
       '<button type="button" class="del" id="' + id + '-del" data-pv-del="' + esc(l.id) + '" aria-label="Supprimer la ligne ' + esc(nom) + '">Supprimer</button>' +
       '<span class="pv-eq small muted" data-eq="' + esc(l.id) + '"></span></div>';
   }
-  const roRow = ([lib, v]) => '<div class="pv-ro"><span>' + esc(lib) + ' <span class="src-tag reel" title="Repris de votre Profil">réel</span></span><span class="num">' + esc(eurM(v)) + "</span></div>";
-  const profilLink = '<a class="pv-link" href="#profil" data-goto-tab="profil">Modifier dans le Profil</a>';
+  const roRow = ([lib, v]) => '<div class="pv-ro"><span>' + esc(lib) + ' <span class="src-tag reel" title="Repris de Compte › Données">réel</span></span><span class="num">' + esc(eurM(v)) + "</span></div>";
+  const profilLink = '<a class="pv-link" href="#compte/donnees" data-goto="compte/donnees">Modifier dans Compte › Données</a>';
   const addBtn = (type, txt) => '<button type="button" class="btn ghost small-btn" data-pv-addl="' + type + '">' + txt + "</button>";
   const head = () => '<div class="pv-lhead" aria-hidden="true"><span>Type</span><span>Catégorie</span><span>Libellé</span><span>Montant</span><span>Fréquence</span>' + (two() ? "<span>Titulaire</span>" : "") + "<span></span></div>";
 
@@ -140,9 +140,9 @@
           "<p>En quelques lignes (logement, courses, transport, épargne…), le budget donne trois repères que le reste de Boussole ne peut pas deviner :</p>" +
           "<ul><li><b>votre taux d'épargne</b>, la part des revenus mise de côté chaque mois ;</li>" +
           "<li><b>votre matelas en mois de dépenses</b>, pour savoir combien de temps vous tiendriez sans revenu ;</li>" +
-          "<li><b>votre score de santé</b> financière, affiché dans Diagnostic › Santé.</li></ul>" +
+          "<li><b>votre score de santé</b> financière, affiché dans Pilotage › Santé.</li></ul>" +
           '<div class="pv-empty-act">' + addBtn("depense", "Ajouter une ligne") + '<button type="button" class="btn" data-pv-assist>Remplir avec mon assistant</button></div>' +
-          (known ? '<div class="pv-known"><span class="lbl">Déjà connu grâce au Profil</span>' + pr.rev.concat(pr.dep).map(roRow).join("") + profilLink + "</div>" : "") +
+          (known ? '<div class="pv-known"><span class="lbl">Déjà connu grâce à Compte › Données</span>' + pr.rev.concat(pr.dep).map(roRow).join("") + profilLink + "</div>" : "") +
           "</div>";
         return;
       }

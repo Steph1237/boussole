@@ -1,5 +1,5 @@
 (function(){
-/* Recommandations › Actions (provisoire, en attendant le moteur de recommandations) : une seule liste priorisée qui réunit
+/* Actions (ancien Recommandations › Actions, reprises par Aujourd'hui ; provisoire, en attendant le moteur de recommandations) : une seule liste priorisée qui réunit
    les alertes des règles de l'utilisateur (Rules.evaluate sur config.rules), les contrôles intégrés (Rules.builtins)
    et les pistes des bonnes pratiques (Pratiques.evaluer, pratiques.js) pour les critères notés sous 20 points ;
    repli sur le score de santé (Plan.score) si pratiques.js n'est pas chargé.
@@ -16,25 +16,25 @@ function ordonner(items){
     .sort((a,b)=>(rangDe(a.x.level)-rangDe(b.x.level))||((a.x.ordre??0)-(b.x.ordre??0))||(a.i-b.i))
     .map(o=>o.x);
 }
-const L_PLACEMENTS={route:"bilan/placements",label:"Voir les placements"};
-const L_BUDGET={route:"avenir/plan",label:"Ouvrir le budget"};
-const L_PROFIL={route:"profil/donnees",label:"Compléter le profil"};
-const L_REGLES={route:"profil/regles",label:"Modifier la règle"};
+const L_PLACEMENTS={route:"patrimoine/placements",label:"Voir les placements"};
+const L_BUDGET={route:"patrimoine/budget",label:"Ouvrir le budget"};
+const L_PROFIL={route:"compte/donnees",label:"Compléter le profil"};
+const L_REGLES={route:"compte/regles",label:"Modifier la règle"};
 /* Où agir pour une alerte : une règle porte sur les placements (lien secondaire vers ses réglages) ; parmi les contrôles
    intégrés, le matelas renvoie au budget, les cibles, la mise à jour nocturne et les signaux de l'agent aux placements. */
 function lienAlerte(a){
   if(a&&a.rule) return {lien:L_PLACEMENTS,lien2:L_REGLES};
   const t=String(a&&a.title||"");
-  if(/^Matelas/i.test(t)) return {lien:L_BUDGET,lien2:{route:"profil/regles",label:"Régler la cible"}};
-  if(/^Le .*\(dans \d+ jours?\)/.test(String(a&&a.text||""))) return {lien:{route:"avenir/plan",label:"Voir le plan"},lien2:null}; // échéance (config.milestones)
+  if(/^Matelas/i.test(t)) return {lien:L_BUDGET,lien2:{route:"compte/regles",label:"Régler la cible"}};
+  if(/^Le .*\(dans \d+ jours?\)/.test(String(a&&a.text||""))) return {lien:{route:"patrimoine/budget",label:"Voir les objectifs"},lien2:null}; // échéance (config.milestones)
   return {lien:L_PLACEMENTS,lien2:null}; // écart aux cibles, mise à jour nocturne, signaux de l'agent
 }
 const PISTE_LIEN={matelas:L_BUDGET,epargne:L_BUDGET,endettement:L_PROFIL,patrimoine:L_PROFIL,concentration:L_PLACEMENTS};
 const lienPiste=cle=>PISTE_LIEN[cle]||L_PROFIL;
 /* Lien d'un critère des bonnes pratiques (route) → { route, label }. */
-const ROUTE_LABEL={"avenir/plan":"Ouvrir le budget","profil/donnees":"Compléter le profil","bilan/placements":"Voir les placements",
-  "diagnostic/risque":"Voir le profil de risque","diagnostic/sante":"Voir les bonnes pratiques","recos/actions":"Voir les actions","profil/claude":"Compléter avec Claude"};
-const lienRoute=route=>route&&String(route).includes("/")?{route:String(route),label:ROUTE_LABEL[route]||"Voir le détail"}:{route:"diagnostic/sante",label:ROUTE_LABEL["diagnostic/sante"]};
+const ROUTE_LABEL={"patrimoine/budget":"Ouvrir le budget","compte/donnees":"Compléter le profil","patrimoine/placements":"Voir les placements",
+  "pilotage/risque":"Voir le profil de risque","pilotage/sante":"Voir les bonnes pratiques","aujourdhui/vue":"Voir Aujourd'hui","agent/connexion":"Compléter avec Claude"};
+const lienRoute=route=>route&&String(route).includes("/")?{route:String(route),label:ROUTE_LABEL[route]||"Voir le détail"}:{route:"pilotage/sante",label:ROUTE_LABEL["pilotage/sante"]};
 /* Pistes des bonnes pratiques : critères notés (ni « à compléter » ni informatifs) sous 20 points, liés à leur critère. */
 function pistesPratiques(res){
   return ((res&&res.criteres)||[]).filter(c=>c&&!c.aCompleter&&!c.informatif&&c.points!=null&&c.points<(c.sur||20)).map(c=>({

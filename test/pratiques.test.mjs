@@ -68,7 +68,7 @@ describe("Sécurité", () => {
     const c = crit(ev({ profil: { credits: [{ owner: "commun", crd: 5000, mensualite: 200 }] } }), "protection");
     assert.equal(c.aCompleter, true);
     assert.equal(c.points, 0);
-    assert.equal(c.lien, "profil/donnees");
+    assert.equal(c.lien, "compte/donnees");
   });
   test("protection avec crédit : 20 si couvert, 8 si partiel, 0 sinon", () => {
     const pts = protection => crit(ev({ profil: { credits: [{ owner: "commun", crd: 5000, mensualite: 200 }], protection } }), "protection").points;
@@ -141,12 +141,12 @@ describe("Allocation", () => {
   test("adéquation à compléter sans profil de risque", () => {
     const c = crit(ev({ positions: fin }, AVEC_RISQUE), "adequation");
     assert.equal(c.aCompleter, true);
-    assert.equal(c.lien, "diagnostic/risque");
+    assert.equal(c.lien, "pilotage/risque");
   });
   test("adéquation à compléter si le module de risque est absent", () => {
     const c = crit(ev({ positions: fin, risque: { profil: "equilibre" } }, SANS), "adequation");
     assert.equal(c.aCompleter, true);
-    assert.equal(c.lien, "diagnostic/risque");
+    assert.equal(c.lien, "pilotage/risque");
     assert.match(c.texte, /indisponible/);
   });
   test("adéquation : 0 point hors fourchette → 20, 20 → 10, 40 et plus → 0", () => {
@@ -222,7 +222,7 @@ describe("Efficacité", () => {
     const c = crit(ev({ positions: [M("Monde", 1000, { ter: 0.2 }), M("Europe", 1500)] }), "frais");
     assert.equal(c.aCompleter, true);
     assert.match(c.texte, /Frais inconnus : votre assistant peut les renseigner/);
-    assert.equal(c.lien, "recos/actions");
+    assert.equal(c.lien, "agent/connexion");
   });
   test("frais : TER pondéré, 0,3 % → 20, 1 % → 10, 2 % → 0", () => {
     const f = (...ters) => crit(ev({ positions: ters.map(t => M("Monde", 1000, { ter: t })) }), "frais");
@@ -295,7 +295,7 @@ describe("Efficacité", () => {
   test("argent dormant à compléter sans dépenses connues", () => {
     const c = crit(ev({ positions: [P("Épargne", 48000)] }), "dormant");
     assert.equal(c.aCompleter, true);
-    assert.equal(c.lien, "avenir/plan");
+    assert.equal(c.lien, "patrimoine/budget");
   });
 });
 
