@@ -372,6 +372,7 @@
 
   function dire(el, m, ok) { el.textContent = m || ""; el.className = "jv-msg " + (ok ? "ok" : "err"); el.hidden = !m; }
 
+  let reglagesTouches = false;
   function renderConsent() {
     const u = U(), mode = modeConsent();
     if (!u) return;
@@ -380,14 +381,16 @@
         actif: mode, surChange: changerConsent });
       consentAffiche = mode;
     } else if (mode !== consentAffiche && !busy) { ctlConsent.choisir(mode); consentAffiche = mode; }
-    const t = (CONSENTEMENTS.find(c => c.id === consentAffiche) || CONSENTEMENTS[0]).texte;
-    if ($("jvConsentX").textContent !== t) $("jvConsentX").textContent = t;
+    const c = CONSENTEMENTS.find(x => x.id === consentAffiche) || CONSENTEMENTS[0];
+    if ($("jvConsentX").textContent !== c.texte) $("jvConsentX").textContent = c.texte;
+    if ($("jvConsentResume").textContent !== c.label) $("jvConsentResume").textContent = c.label;
   }
   async function changerConsent(mode) {
     const api = API(), avant = consentAffiche;
     dire($("jvConsentErr"), "");
     consentAffiche = mode;
     $("jvConsentX").textContent = (CONSENTEMENTS.find(c => c.id === mode) || CONSENTEMENTS[0]).texte;
+    $("jvConsentResume").textContent = (CONSENTEMENTS.find(c => c.id === mode) || CONSENTEMENTS[0]).label;
     let erreur = null;
     if (!api || typeof api.consentement !== "function") erreur = "Le réglage du journal n'est pas disponible dans cette vue.";
     else {
@@ -398,6 +401,7 @@
       consentAffiche = avant;
       if (ctlConsent) ctlConsent.choisir(avant);
       $("jvConsentX").textContent = (CONSENTEMENTS.find(c => c.id === avant) || CONSENTEMENTS[0]).texte;
+      $("jvConsentResume").textContent = (CONSENTEMENTS.find(c => c.id === avant) || CONSENTEMENTS[0]).label;
       dire($("jvConsentErr"), erreur + " Le réglage précédent est conservé.");
     }
     if (window.Store && Store.get) S = Store.get();
@@ -428,6 +432,8 @@
     renderConsent();
     const liste = journal(), n = liste.length, ev = etatVide(S, n);
     $("jvVide").hidden = ev !== "vide";
+    // Explication et réglage dépliés tant que le journal est vide, repliés ensuite (rien d'affiché d'un coup).
+    if (!reglagesTouches) $("jvReglages").open = !journal().length;
     $("jvErr").hidden = ev !== "erreur";
     $("jvCorps").hidden = !n;
     if (n) {
@@ -554,6 +560,8 @@
     root = r;
     $("jvTitre").setAttribute("tabindex", "-1");
     $("jvVideTitre").setAttribute("tabindex", "-1");
+    // Dès que l'utilisateur ouvre ou ferme les réglages, on respecte son choix.
+    $("jvReglages").querySelector("summary").addEventListener("click", () => { reglagesTouches = true; });
     const u = U();
     if (u) {
       $("jvVideClaude").innerHTML = u.demanderAClaude("Faisons le point sur ma situation et enregistre nos décisions dans mon journal Boussole", "Faire le point avec Claude");

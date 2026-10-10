@@ -1,13 +1,16 @@
 <div class="jv">
   <section class="panel jv-tete" aria-labelledby="jvTitre">
     <h2 id="jvTitre">Journal des décisions</h2>
-    <p class="jv-intro">L'historique de ce que vous avez décidé avec votre assistant : avis, décisions, scénarios comparés, hypothèses, revues. Chaque entrée garde l'état de votre patrimoine au moment où elle a été écrite, pour le comparer à aujourd'hui. Rien ne se réécrit en silence : une fois confirmée, toute correction est tracée.</p>
-    <div class="jv-consent">
-      <p class="jv-consent-t">Ce que l'agent peut enregistrer</p>
-      <div class="jv-consent-b" id="jvConsent"></div>
-      <p class="jv-consent-x" id="jvConsentX" aria-live="polite"></p>
-      <p class="jv-msg err" id="jvConsentErr" role="alert" hidden></p>
-    </div>
+    <details class="jv-reglages" id="jvReglages">
+      <summary>Comment ça marche <span class="jv-resume">· Enregistrement : <span id="jvConsentResume">Me demander</span></span></summary>
+      <p class="jv-intro">L'historique de ce que vous avez décidé avec votre assistant : avis, décisions, scénarios comparés, hypothèses, revues. Chaque entrée garde l'état de votre patrimoine au moment où elle a été écrite, pour le comparer à aujourd'hui. Rien ne se réécrit en silence : une fois confirmée, toute correction est tracée.</p>
+      <div class="jv-consent">
+        <p class="jv-consent-t">Ce que l'agent peut enregistrer</p>
+        <div class="jv-consent-b" id="jvConsent"></div>
+        <p class="jv-consent-x" id="jvConsentX" aria-live="polite"></p>
+        <p class="jv-msg err" id="jvConsentErr" role="alert" hidden></p>
+      </div>
+    </details>
   </section>
 
   <p class="jv-msg" id="jvMsg" role="status" aria-live="polite" hidden></p>
