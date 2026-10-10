@@ -12,7 +12,7 @@
     ] },
     { space: "diagnostic", label: "Diagnostic", short: "Diagnostic", icon: "diagnostic", primary: true, desc: "Est-ce que ma situation est saine ?", subs: [
       { id: "sante", label: "Santé", module: "sante" },
-      { id: "risque", label: "Profil de risque", module: null },
+      { id: "risque", label: "Profil de risque", module: "risque-view" },
       { id: "rang", label: "Rang parmi les Français", module: "toise" },
     ] },
     { space: "decisions", label: "Décisions", short: "Décisions", icon: "decisions", primary: true, desc: "Que se passe-t-il si… ?", subs: [
@@ -29,6 +29,8 @@
     { space: "profil", label: "Profil et données", short: "Profil", icon: "profil", primary: false, desc: "Foyer, revenus, biens, crédits et règles", subs: [
       { id: "donnees", label: "Données", module: "profil" },
       { id: "regles", label: "Règles", module: "regles" },
+      { id: "claude", label: "Avec Claude", module: "claude-guide" },
+      { id: "propositions", label: "Propositions", module: "propositions" },
     ] },
   ];
   /* Anciens identifiants d'onglet (App.go("plan"), data-goto-tab="profil"…) et anciens hash. */

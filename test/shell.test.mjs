@@ -104,7 +104,7 @@ test("coque : chaque sous-vue a exactement une section, masquée au départ ; au
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["actions", "bilan", "pilotage", "plan-view", "profil", "regles", "sante", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["actions", "bilan", "claude-guide", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   for (const m of markers) {
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
