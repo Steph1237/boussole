@@ -221,6 +221,26 @@
       if (key(r) !== key(route)) navigate({ space: r.space, sub: r.sub }, {});
     }
 
+    const ANON_KEY = "boussole.anonBanner.masque";
+    function anonAccount(session) {
+      const anon = !!(session && session.user && session.user.is_anonymous);
+      let masked = false;
+      try { masked = sessionStorage.getItem(ANON_KEY) === "1"; } catch (e) { /* stockage indisponible : bandeau affiché */ }
+      const b = $("anonBanner");
+      if (b) {
+        b.hidden = !anon || masked;
+        const x = $("anonBannerClose");
+        if (x && !x.dataset.bound) {
+          x.dataset.bound = "1";
+          x.addEventListener("click", () => { b.hidden = true; try { sessionStorage.setItem(ANON_KEY, "1"); } catch (e) { /* rien */ } });
+        }
+      }
+      const link = $("accountLink"), linkM = $("accountLinkM");
+      const label = anon ? "Sécuriser mon compte" : "Mon compte", href = anon ? "compte.html#securiser" : "compte.html";
+      if (link) { link.textContent = label; link.href = href; }
+      if (linkM) { linkM.href = href; linkM.setAttribute("aria-label", label); linkM.title = label; }
+    }
+
     function boot() {
       document.querySelectorAll("[data-brand-icon]").forEach(el => { el.innerHTML = svg("compass", "brand-ico"); });
       $("profileBtn").innerHTML = svg("profil");
@@ -255,6 +275,12 @@
       $("sideDemo").hidden = !demo;
       $("accountLink").hidden = demo;
       $("accountLinkM").hidden = demo;
+      /* Compte anonyme (« Commencer sans e-mail ») : bandeau #anonBanner (masquable pour la session de l'onglet)
+         et « Sécuriser mon compte » à la place de « Mon compte ». Seulement en mode Supabase ; la démo ne change pas. */
+      if (!demo && window.Auth && typeof Auth.session === "function") {
+        Auth.session().then(anonAccount, () => {});
+        if (typeof Auth.onChange === "function") Auth.onChange((ev, s) => { if (s) anonAccount(s); });
+      }
       let onboardingShown = false;
       /* Premiers pas : une fois par chargement, pour un compte réel qui ne les a ni faits ni passés. */
       function maybeOnboard(S) {
@@ -285,6 +311,7 @@
       Store.emit();
     }
     App.refreshHeadlines = refreshHeadlines;
+    App.anonAccount = anonAccount; // bandeau compte anonyme (appelé au démarrage ; exposé pour les vérifications en console)
     document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", boot) : boot();
   }
 
