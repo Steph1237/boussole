@@ -51,17 +51,14 @@ test("propositions.css : entièrement scopé (vue, bandeau #propBanner, pastille
   assert.deepEqual(bad, []);
 });
 
-test("coque : bandeau #propBanner à côté de #demoBanner, lien vers profil/propositions", () => {
-  assert.match(shell, /id="demoBanner"[\s\S]{0,600}id="propBanner"[^>]*hidden/);
-  assert.match(shell, /id="propBanner"[\s\S]*?data-goto="profil\/propositions"/);
-});
-
-test("app.js : pastille Profil et données et bandeau pilotés par headline() du module propositions", () => {
-  assert.match(app, /sp\.space === "profil" \? '<span class="pill-count" data-prop-count hidden><\/span>'/);
-  assert.match(app, /countOf\("profil", "propositions"\)/);
-  assert.match(app, /\$\("propBanner"\)/);
-  assert.match(app, /b\.hidden = !anyProp \|\| \(route\.space === "profil" && route\.sub === "propositions"\)/);
-  assert.match(app, /countOf\("recos", "actions"\)/, "pastille Recommandations conservée");
+test("coque : plus de bandeau global #propBanner ; pastille Agent pilotée par headline() du module propositions", () => {
+  assert.doesNotMatch(shell, /id="propBanner"/);
+  assert.doesNotMatch(app, /propBanner/);
+  assert.match(app, /sp\.space === "agent" \? '<span class="pill-count" data-prop-count hidden><\/span>'/);
+  assert.match(app, /countOf\("agent", "propositions"\)/);
+  assert.match(app, /countOf\("aujourdhui", "vue"\)/, "pastille Aujourd'hui (boîte de réception)");
+  const { routeOfModule } = require("../web/src/app.js");
+  assert.deepEqual(routeOfModule("propositions"), { space: "agent", sub: "propositions" });
 });
 
 /* ---------- description en français ---------- */

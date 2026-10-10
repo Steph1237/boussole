@@ -73,13 +73,15 @@ test("bonnes pratiques sur la démo : 4 familles, critères au contrat, liens ve
   require("../web/src/demo-data.js");
   const P = require("../web/src/pratiques.js"), App = require("../web/src/app.js");
   const D = global.window.DEMO;
+  const known = new Set(App.SPACES.flatMap(sp => sp.subs.map(s => sp.space + "/" + s.id)));
   for (const scope of ["foyer", "p1", "p2"]) {
     const r = P.evaluer({ positions: D.positions, profil: D.profil, config: D.config, budget: D.budget, objectifs: D.objectifs, scope, risque: D.risque, classes: D.classes, today: new Date("2026-10-09T12:00:00") });
     assert.equal(r.familles.length, 4);
     assert.ok(r.total >= 0 && r.total <= 100);
     for (const c of r.criteres) {
       assert.ok(c.titre && c.regle && c.source && c.cible, scope + " " + c.cle);
-      if (c.lien) assert.ok(App.resolve(c.lien) && App.resolve(c.lien).space + "/" + App.resolve(c.lien).sub === c.lien, "route inconnue : " + c.lien);
+      // Route canonique ou ancienne route de la table de correspondance : doit mener à une sous-vue existante.
+      if (c.lien) { const x = App.resolve(c.lien); assert.ok(x && known.has(x.space + "/" + x.sub), "route inconnue : " + c.lien); }
     }
   }
 });

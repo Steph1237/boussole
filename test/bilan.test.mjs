@@ -50,8 +50,10 @@ test("bilan.js : graphique Évolution filtré par Periodes (bornes, agrégation,
 test("bilan.js : liens vers les sous-vues concernées", () => {
   const routes = new Set([...(js + html).matchAll(/(?:data-goto="|link\(")([a-z]+\/[a-z]+)"/g)].map(m => m[1]));
   for (const r of ["avenir/plan", "diagnostic/sante", "diagnostic/risque", "profil/donnees", "recos/actions"]) assert.ok(routes.has(r), r);
-  const { resolve } = require("../web/src/app.js");
-  for (const r of routes) assert.deepEqual(resolve(r), { space: r.split("/")[0], sub: r.split("/")[1] }, r + " est une route connue");
+  const { resolve, SPACES } = require("../web/src/app.js");
+  const known = new Set(SPACES.flatMap(sp => sp.subs.map(s => sp.space + "/" + s.id)));
+  // Routes canoniques ou anciennes routes de la table de correspondance (LEGACY) : toutes mènent à une sous-vue existante.
+  for (const r of routes) { const x = resolve(r); assert.ok(x && known.has(x.space + "/" + x.sub), r + " est une route connue"); }
 });
 
 test("bilan.js : aucune requête DOM globale hors racine du module", () => {

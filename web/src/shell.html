@@ -1,5 +1,5 @@
 <title>Boussole</title>
-<meta name="description" content="Bilan du patrimoine du foyer, diagnostic, simulations, budget et objectifs, branchés sur les mêmes données.">
+<meta name="description" content="Le cockpit du patrimoine du foyer : ce qui demande votre attention, patrimoine, pilotage et suivi de l'agent, branchés sur les mêmes données.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -8,113 +8,116 @@
 </style>
 
 <div class="app">
-  <!-- Ordinateur (≥ 900 px) : barre latérale. Les entrées de navigation sont générées par app.js depuis SPACES. -->
+  <!-- Ordinateur (≥ 900 px) : barre latérale (rail). Les entrées sont générées par app.js depuis SPACES :
+       les 4 destinations dans #sideNav, Compte (menu de l'avatar) dans #sideCompte en pied de rail. -->
   <aside class="side" aria-label="Navigation principale">
-    <a class="brand" href="#bilan/vue" data-goto="bilan/vue"><span data-brand-icon></span>Boussole</a>
-    <nav class="side-nav" id="sideNav" aria-label="Espaces"></nav>
+    <a class="brand" href="#aujourdhui/vue" data-goto="aujourdhui/vue"><span data-brand-icon></span>Boussole</a>
+    <nav class="side-nav" id="sideNav" aria-label="Destinations"></nav>
     <div class="side-foot">
-      <div class="seg scope-seg" id="scopeSeg" role="group" aria-label="Périmètre" hidden></div>
-      <a class="veille" id="veilleLine" href="#recos/actions" data-goto="recos/actions">Veille : jamais lancée</a>
+      <a class="veille" id="veilleLine" href="#aujourdhui/vue" data-goto="aujourdhui/vue">Veille : jamais lancée</a>
+      <nav class="side-compte" id="sideCompte" aria-label="Compte"></nav>
       <a class="app-link" id="accountLink" href="compte.html">Mon compte</a>
       <div class="side-demo" id="sideDemo" hidden>Démo : foyer fictif, rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a></div>
     </div>
   </aside>
 
-  <!-- Mobile (< 900 px) : en-tête compact. -->
+  <!-- Mobile (< 900 px) : en-tête compact ; l'avatar ouvre Compte. -->
   <header class="mhead">
-    <a class="brand" href="#bilan/vue" data-goto="bilan/vue"><span data-brand-icon></span>Boussole</a>
-    <div class="seg scope-seg" id="scopeSegM" role="group" aria-label="Périmètre" hidden></div>
+    <a class="brand" href="#aujourdhui/vue" data-goto="aujourdhui/vue"><span data-brand-icon></span>Boussole</a>
     <div class="mhead-actions">
-      <button type="button" class="icon-btn" id="profileBtn" data-goto="profil/donnees" aria-label="Profil et données" title="Profil et données"></button>
+      <button type="button" class="icon-btn" id="profileBtn" data-goto="compte/donnees" aria-label="Compte" title="Compte"></button>
       <a class="icon-btn" id="accountLinkM" href="compte.html" aria-label="Mon compte" title="Mon compte"></a>
     </div>
   </header>
 
   <main class="main" id="main">
     <div id="demoBanner" class="banner demo" hidden>Démo avec un foyer fictif : rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a> pour suivre votre propre patrimoine.</div>
-    <!-- Propositions de Claude en attente : affiché par app.js (refreshHeadlines) sur toutes les vues sauf Profil et données › Propositions. -->
-    <div id="propBanner" class="banner prop" role="status" hidden><span id="propBannerTxt"></span><a href="#profil/propositions" data-goto="profil/propositions">Examiner</a></div>
     <!-- Compte anonyme (« Commencer sans e-mail ») : affiché par app.js, masquable pour la session de l'onglet. -->
     <div id="anonBanner" class="banner anon" role="status" hidden><span>Compte sans e-mail : vos données sont liées à ce navigateur. Sécurisez votre compte pour les retrouver ailleurs et éviter leur suppression après 90 jours d'inactivité. <a href="compte.html#securiser">Sécuriser mon compte</a></span><button type="button" class="banner-x" id="anonBannerClose" aria-label="Masquer ce message">×</button></div>
     <header class="page-head">
-      <h1 id="spaceTitle">Bilan</h1>
-      <p id="spaceDesc">Où j'en suis aujourd'hui</p>
+      <div class="page-title">
+        <h1 id="spaceTitle">Aujourd'hui</h1>
+        <p id="spaceDesc">Ce qui demande mon attention</p>
+        <a class="app-link page-link" id="accountLinkC" href="compte.html" hidden>Mon compte : e-mail, sécurité, export</a>
+      </div>
+      <!-- Périmètre (Foyer · prénoms) : visible sur Aujourd'hui, Patrimoine et Pilotage s'il y a au moins deux personnes. -->
+      <div class="seg scope-seg" id="scopeSeg" role="group" aria-label="Périmètre" hidden></div>
     </header>
     <div class="subtabs" id="subTabs" role="tablist" aria-label="Sous-vues"></div>
     <div class="fresh" id="fresh">Chargement des données…</div>
     <div id="dbBanner" class="banner" hidden></div>
 
-    <!-- Bilan -->
-    <section class="view" id="view-bilan" data-space="bilan" data-sub="vue" role="tabpanel" aria-labelledby="subtab-bilan-vue" hidden>
-<!--@bilan-->
+    <!-- Aujourd'hui -->
+    <section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" role="tabpanel" aria-labelledby="subtab-aujourdhui-vue" hidden>
+<!--@aujourdhui-->
     </section>
-    <section class="view" id="view-pilotage" data-space="bilan" data-sub="placements" role="tabpanel" aria-labelledby="subtab-bilan-placements" hidden>
+
+    <!-- Patrimoine -->
+    <section class="view" id="view-pilotage" data-space="patrimoine" data-sub="placements" role="tabpanel" aria-labelledby="subtab-patrimoine-placements" hidden>
 <!--@pilotage-->
     </section>
-
-    <!-- Diagnostic -->
-    <section class="view" id="view-sante" data-space="diagnostic" data-sub="sante" role="tabpanel" aria-labelledby="subtab-diagnostic-sante" hidden>
-<!--@sante-->
+    <section class="view" id="view-bilan" data-space="patrimoine" data-sub="immobilier" role="tabpanel" aria-labelledby="subtab-patrimoine-immobilier" hidden>
+<!--@bilan-->
     </section>
-    <section class="view" id="view-risque-view" data-space="diagnostic" data-sub="risque" role="tabpanel" aria-labelledby="subtab-diagnostic-risque" hidden>
-<!--@risque-view-->
-    </section>
-    <section class="view" id="view-toise" data-space="diagnostic" data-sub="rang" role="tabpanel" aria-labelledby="subtab-diagnostic-rang" hidden>
-<!--@toise-->
-    </section>
-
-    <!-- Décisions -->
-    <section class="view" id="view-simu" data-space="decisions" data-sub="acheter" role="tabpanel" aria-labelledby="subtab-decisions-acheter" hidden>
-<!--@simu-->
-    </section>
-    <section class="view placeholder" id="sub-decisions-autres" data-space="decisions" data-sub="autres" role="tabpanel" aria-labelledby="subtab-decisions-autres" hidden>
-      <div class="panel soon">
-        <span class="soon-tag">Bientôt</span>
-        <h2>Autres simulations</h2>
-        <p>Rembourser ou placer, PER ou assurance-vie, investir d'un coup ou progressivement, changer d'allocation… au même format que « Acheter ou louer ».</p>
-      </div>
-    </section>
-
-    <!-- Avenir -->
-    <section class="view" id="view-plan" data-space="avenir" data-sub="plan" role="tabpanel" aria-labelledby="subtab-avenir-plan" hidden>
+    <section class="view" id="view-plan" data-space="patrimoine" data-sub="budget" role="tabpanel" aria-labelledby="subtab-patrimoine-budget" hidden>
 <!--@plan-view-->
     </section>
-    <section class="view placeholder" id="sub-avenir-projections" data-space="avenir" data-sub="projections" role="tabpanel" aria-labelledby="subtab-avenir-projections" hidden>
+
+    <!-- Pilotage -->
+    <section class="view" id="view-sante" data-space="pilotage" data-sub="sante" role="tabpanel" aria-labelledby="subtab-pilotage-sante" hidden>
+<!--@sante-->
+    </section>
+    <section class="view" id="view-risque-view" data-space="pilotage" data-sub="risque" role="tabpanel" aria-labelledby="subtab-pilotage-risque" hidden>
+<!--@risque-view-->
+    </section>
+    <section class="view" id="view-toise" data-space="pilotage" data-sub="rang" role="tabpanel" aria-labelledby="subtab-pilotage-rang" hidden>
+<!--@toise-->
+    </section>
+    <section class="view placeholder" id="sub-pilotage-projections" data-space="pilotage" data-sub="projections" role="tabpanel" aria-labelledby="subtab-pilotage-projections" hidden>
       <div class="panel soon">
         <span class="soon-tag">Bientôt</span>
         <h2>Projections</h2>
-        <p>Simulation sur l'historique des marchés et tests de crise sur votre allocation réelle, avec la probabilité d'atteindre chacun de vos objectifs.</p>
+        <p>Bientôt ici : simulation sur l'historique des marchés et tests de crise sur votre allocation réelle, avec la probabilité d'atteindre chacun de vos objectifs. Demandez-le à Claude en attendant.</p>
+        <a class="soon-ask" href="https://claude.ai/new?q=Avec%20Boussole%2C%20projette%20mon%20patrimoine%20sur%2010%20ans%20et%20teste%20une%20crise%20de%20march%C3%A9%20sur%20mon%20allocation%20actuelle." target="_blank" rel="noopener noreferrer">Demander à Claude</a>
       </div>
     </section>
-
-    <!-- Recommandations -->
-    <section class="view" id="view-actions" data-space="recos" data-sub="actions" role="tabpanel" aria-labelledby="subtab-recos-actions" hidden>
-<!--@actions-->
-    </section>
-    <section class="view" id="view-fiches-view" data-space="recos" data-sub="fiches" role="tabpanel" aria-labelledby="subtab-recos-fiches" hidden>
-<!--@fiches-view-->
+    <section class="view" id="view-simu" data-space="pilotage" data-sub="scenarios" role="tabpanel" aria-labelledby="subtab-pilotage-scenarios" hidden>
+<!--@simu-->
     </section>
 
-    <!-- Profil et données -->
-    <section class="view" id="view-profil" data-space="profil" data-sub="donnees" role="tabpanel" aria-labelledby="subtab-profil-donnees" hidden>
-<!--@profil-->
+    <!-- Agent -->
+    <section class="view placeholder" id="sub-agent-journal" data-space="agent" data-sub="journal" role="tabpanel" aria-labelledby="subtab-agent-journal" hidden>
+      <div class="panel soon">
+        <span class="soon-tag">Bientôt</span>
+        <h2>Journal</h2>
+        <p>Bientôt ici : l'historique de ce que Claude a fait et des décisions prises ensemble, avec ce qu'il reste à relire. Demandez-le à Claude en attendant.</p>
+        <a class="soon-ask" href="https://claude.ai/new?q=Avec%20Boussole%2C%20r%C3%A9sume%20ce%20que%20nous%20avons%20d%C3%A9cid%C3%A9%20ensemble%20et%20ce%20qu%27il%20reste%20%C3%A0%20faire." target="_blank" rel="noopener noreferrer">Demander à Claude</a>
+      </div>
     </section>
-    <section class="view" id="view-regles" data-space="profil" data-sub="regles" role="tabpanel" aria-labelledby="subtab-profil-regles" hidden>
-<!--@regles-->
+    <section class="view" id="view-propositions" data-space="agent" data-sub="propositions" role="tabpanel" aria-labelledby="subtab-agent-propositions" hidden>
+<!--@propositions-->
     </section>
-    <section class="view" id="view-claude-guide" data-space="profil" data-sub="claude" role="tabpanel" aria-labelledby="subtab-profil-claude" hidden>
-<!--@claude-guide-->
-    </section>
-    <section class="view" id="view-memoire-view" data-space="profil" data-sub="memoire" role="tabpanel" aria-labelledby="subtab-profil-memoire" hidden>
+    <section class="view" id="view-memoire-view" data-space="agent" data-sub="memoire" role="tabpanel" aria-labelledby="subtab-agent-memoire" hidden>
 <!--@memoire-view-->
     </section>
-    <section class="view" id="view-propositions" data-space="profil" data-sub="propositions" role="tabpanel" aria-labelledby="subtab-profil-propositions" hidden>
-<!--@propositions-->
+    <section class="view" id="view-fiches-view" data-space="agent" data-sub="fiches" role="tabpanel" aria-labelledby="subtab-agent-fiches" hidden>
+<!--@fiches-view-->
+    </section>
+    <section class="view" id="view-claude-guide" data-space="agent" data-sub="connexion" role="tabpanel" aria-labelledby="subtab-agent-connexion" hidden>
+<!--@claude-guide-->
+    </section>
+
+    <!-- Compte (avatar) -->
+    <section class="view" id="view-profil" data-space="compte" data-sub="donnees" role="tabpanel" aria-labelledby="subtab-compte-donnees" hidden>
+<!--@profil-->
+    </section>
+    <section class="view" id="view-regles" data-space="compte" data-sub="regles" role="tabpanel" aria-labelledby="subtab-compte-regles" hidden>
+<!--@regles-->
     </section>
   </main>
 
-  <!-- Mobile : barre d'onglets en bas (5 espaces), générée par app.js. -->
-  <nav class="bbar" id="bottomBar" aria-label="Espaces"></nav>
+  <!-- Mobile : barre basse (4 destinations), générée par app.js. -->
+  <nav class="bbar" id="bottomBar" aria-label="Destinations"></nav>
 </div>
 
 <!--@scripts-->

@@ -62,16 +62,18 @@ test("plan-view.html : les identifiants utilisés par le script existent", () =>
   assert.deepEqual(missing, []);
 });
 
-test("coque : la vue Plan est dans Avenir › Budget et objectifs, avec son fragment", () => {
-  assert.match(shell, /<section class="view" id="view-plan" data-space="avenir" data-sub="plan"[^>]*hidden>\s*<!--@plan-view-->/);
+test("coque : la vue Plan est dans Patrimoine › Budget et objectifs, avec son fragment", () => {
+  assert.match(shell, /<section class="view" id="view-plan" data-space="patrimoine" data-sub="budget"[^>]*hidden>\s*<!--@plan-view-->/);
 });
 
-test("app.js : « plan » branché sur avenir/plan, anciens onglet et ancres redirigés", () => {
-  const { SPACES, LEGACY_TABS, LEGACY_HASHES } = require("../web/src/app.js");
-  const avenir = SPACES.find(s => s.space === "avenir");
-  assert.equal(avenir.subs.find(x => x.id === "plan").module, "plan");
-  assert.equal(LEGACY_TABS.plan, "avenir/plan");
-  for (const h of ["#plan", "#budget", "#objectifs"]) assert.equal(LEGACY_HASHES[h], "avenir/plan");
+test("app.js : « plan » branché sur patrimoine/budget, ancienne route, ancien onglet et ancres redirigés", () => {
+  const { SPACES, LEGACY, resolve, resolveHash } = require("../web/src/app.js");
+  const patrimoine = SPACES.find(s => s.space === "patrimoine");
+  assert.equal(patrimoine.subs.find(x => x.id === "budget").module, "plan");
+  assert.equal(LEGACY.plan, "patrimoine/budget");
+  assert.equal(LEGACY["avenir/plan"], "patrimoine/budget");
+  assert.deepEqual(resolve("plan"), { space: "patrimoine", sub: "budget" });
+  for (const h of ["#plan", "#budget", "#objectifs", "#avenir/plan"]) assert.deepEqual(resolveHash(h), { space: "patrimoine", sub: "budget", legacy: true }, h);
 });
 
 test("build.mjs : module plan-view assemblé, moteur plan chargé avant", () => {

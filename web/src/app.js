@@ -1,4 +1,5 @@
-/* Coque : espaces, sous-vues, routage par hash (#espace/sous-vue), barre latérale (ordinateur) et barre basse (mobile).
+/* Coque : 4 destinations (Aujourd'hui · Patrimoine · Pilotage · Agent) + Compte (menu de l'avatar), sous-vues en onglets,
+   routage par hash (#destination/sous-vue), barre latérale (ordinateur) et barre basse (mobile).
    Les modules s'enregistrent via App.register(name, { mount, update(S, visible), show, headline }).
    Pour brancher un module sur une sous-vue : renseigner `module` dans SPACES et poser dans shell.html
    <section class="view" id="view-<module>" data-space="…" data-sub="…" hidden><!--@<fragment>--></section>
@@ -6,53 +7,72 @@
 (function () {
   /* ---------- registre (données pures, testées par test/shell.test.mjs) ---------- */
   const SPACES = [
-    { space: "bilan", label: "Bilan", short: "Bilan", icon: "bilan", primary: true, desc: "Où j'en suis aujourd'hui", subs: [
-      { id: "vue", label: "Vue d'ensemble", module: "bilan" },
+    { space: "aujourdhui", label: "Aujourd'hui", short: "Aujourd'hui", icon: "aujourdhui", primary: true, desc: "Ce qui demande mon attention", subs: [
+      { id: "vue", label: "Aujourd'hui", module: "aujourdhui" },
+    ] },
+    { space: "patrimoine", label: "Patrimoine", short: "Patrimoine", icon: "patrimoine", primary: true, desc: "Ce que je possède, ce que je dois, mon budget", subs: [
       { id: "placements", label: "Placements", module: "pilotage" },
+      { id: "immobilier", label: "Immobilier et crédits", module: "bilan" },
+      { id: "budget", label: "Budget et objectifs", module: "plan" },
     ] },
-    { space: "diagnostic", label: "Diagnostic", short: "Diagnostic", icon: "diagnostic", primary: true, desc: "Est-ce que ma situation est saine ?", subs: [
+    { space: "pilotage", label: "Pilotage", short: "Pilotage", icon: "pilotage", primary: true, desc: "Ma situation est-elle saine ? Et si… ?", subs: [
       { id: "sante", label: "Santé", module: "sante" },
-      { id: "risque", label: "Profil de risque", module: "risque-view" },
-      { id: "rang", label: "Rang parmi les Français", module: "toise" },
-    ] },
-    { space: "decisions", label: "Décisions", short: "Décisions", icon: "decisions", primary: true, desc: "Que se passe-t-il si… ?", subs: [
-      { id: "acheter", label: "Acheter ou louer", module: "simu" },
-      { id: "autres", label: "Autres simulations", module: null },
-    ] },
-    { space: "avenir", label: "Avenir", short: "Avenir", icon: "avenir", primary: true, desc: "Où je vais : budget, objectifs et projections", subs: [
-      { id: "plan", label: "Budget et objectifs", module: "plan" },
+      { id: "risque", label: "Risque", module: "risque-view" },
+      { id: "rang", label: "Rang", module: "toise" },
       { id: "projections", label: "Projections", module: null },
+      { id: "scenarios", label: "Scénarios", module: "simu" },
     ] },
-    { space: "recos", label: "Recommandations", short: "Actions", icon: "recos", primary: true, desc: "Que faire maintenant ?", subs: [
-      { id: "actions", label: "Actions", module: "actions" },
+    { space: "agent", label: "Agent", short: "Agent", icon: "agent", primary: true, desc: "Ce que Claude a fait, sait et propose", subs: [
+      { id: "journal", label: "Journal", module: null },
+      { id: "propositions", label: "Propositions", module: "propositions" },
+      { id: "memoire", label: "Mémoire", module: "memoire-view" },
       { id: "fiches", label: "Fiches", module: "fiches-view" },
+      { id: "connexion", label: "Connexion", module: "claude-guide" },
     ] },
-    { space: "profil", label: "Profil et données", short: "Profil", icon: "profil", primary: false, desc: "Foyer, revenus, biens, crédits et règles", subs: [
+    { space: "compte", label: "Compte", short: "Compte", icon: "compte", primary: false, desc: "Mes données, mes règles et mon compte", subs: [
       { id: "donnees", label: "Données", module: "profil" },
       { id: "regles", label: "Règles", module: "regles" },
-      { id: "claude", label: "Avec Claude", module: "claude-guide" },
-      { id: "memoire", label: "Mémoire de l'agent", module: "memoire-view" },
-      { id: "propositions", label: "Propositions", module: "propositions" },
     ] },
   ];
-  /* Anciens identifiants d'onglet (App.go("plan"), data-goto-tab="profil"…) et anciens hash. */
-  const LEGACY_TABS = { pilotage: "bilan/placements", toise: "diagnostic/rang", simu: "decisions/acheter", plan: "avenir/plan", profil: "profil/donnees" };
-  const LEGACY_HASHES = {
-    "#pilotage": "bilan/placements",
-    "#position": "diagnostic/rang", "#foyer": "diagnostic/rang", "#salaire": "diagnostic/rang", "#patrimoine": "diagnostic/rang", "#emprunt": "diagnostic/rang",
-    "#acheter": "decisions/acheter", "#simulateur": "decisions/acheter", "#theorie": "decisions/acheter", "#explication": "decisions/acheter",
-    "#plan": "avenir/plan", "#budget": "avenir/plan", "#objectifs": "avenir/plan",
-    "#profil": "profil/donnees",
+  /* Correspondance des anciennes routes (spec cockpit § Navigation cible) : anciennes sous-vues, anciens espaces seuls
+     et anciens onglets (App.go("plan"), data-goto-tab="profil"). Appliquée par resolve() et donc par resolveHash() :
+     marque-pages, liens internes data-goto et liens des textes du connecteur continuent de marcher. */
+  const LEGACY = {
+    "bilan": "aujourdhui/vue", "bilan/vue": "aujourdhui/vue", "bilan/placements": "patrimoine/placements",
+    "recos": "aujourdhui/vue", "recos/actions": "aujourdhui/vue", "recos/fiches": "agent/fiches",
+    "diagnostic": "pilotage/sante", "diagnostic/sante": "pilotage/sante", "diagnostic/risque": "pilotage/risque", "diagnostic/rang": "pilotage/rang",
+    "decisions": "pilotage/scenarios", "decisions/acheter": "pilotage/scenarios", "decisions/autres": "pilotage/scenarios",
+    "avenir": "patrimoine/budget", "avenir/plan": "patrimoine/budget", "avenir/projections": "pilotage/projections",
+    "profil": "compte/donnees", "profil/donnees": "compte/donnees", "profil/regles": "compte/regles",
+    "profil/claude": "agent/connexion", "profil/memoire": "agent/memoire", "profil/propositions": "agent/propositions",
+    "toise": "pilotage/rang", "simu": "pilotage/scenarios", "plan": "patrimoine/budget",
   };
-  const DEFAULT_ROUTE = "bilan/vue";
+  /* Ancres de la toute première version (onglets et sous-onglets de la Toise et du Simulateur), en hash seulement :
+     « #pilotage » et « #patrimoine » nus gardent leur ancien sens dans un marque-page, alors que App.go("pilotage")
+     ou App.go("patrimoine") désignent les nouvelles destinations. La Toise et le Simulateur lisent encore ces ancres
+     au montage pour ouvrir leur sous-onglet. */
+  const LEGACY_HASHES = {
+    "#pilotage": "patrimoine/placements",
+    "#position": "pilotage/rang", "#foyer": "pilotage/rang", "#salaire": "pilotage/rang", "#patrimoine": "pilotage/rang", "#emprunt": "pilotage/rang",
+    "#acheter": "pilotage/scenarios", "#simulateur": "pilotage/scenarios", "#theorie": "pilotage/scenarios", "#explication": "pilotage/scenarios",
+    "#budget": "patrimoine/budget", "#objectifs": "patrimoine/budget",
+  };
+  const DEFAULT_ROUTE = "aujourdhui/vue";
+  /* Destinations où le sélecteur de périmètre (Foyer · prénoms) a un sens. */
+  const SCOPED = ["aujourdhui", "patrimoine", "pilotage"];
 
   const spaceOf = id => SPACES.find(s => s.space === id) || null;
   const subOf = (space, sub) => { const sp = spaceOf(space); return sp ? sp.subs.find(x => x.id === sub) || null : null; };
-  /* « espace », « espace/sous-vue » ou ancien onglet → { space, sub } ; sous-vue par défaut : dernière visitée, sinon la première. */
+  /* « destination », « destination/sous-vue » ou ancienne route → { space, sub } ; sous-vue par défaut : dernière visitée,
+     sinon la première. Inconnu → null (les sous-onglets internes de la Toise utilisent aussi data-goto). */
   function resolve(target, sub, lastSubs) {
     if (target == null) return null;
     let t = String(target).replace(/^#/, "");
-    if (!sub && LEGACY_TABS[t]) t = LEGACY_TABS[t];
+    if (!sub) {
+      const old = t.split("/")[0];
+      if (LEGACY[t]) t = LEGACY[t];
+      else if (!spaceOf(old) && LEGACY[old]) t = LEGACY[old]; // sous-vue inconnue d'un ancien espace
+    }
     let [space, s] = t.split("/");
     if (sub) s = sub;
     const sp = spaceOf(space);
@@ -60,12 +80,13 @@
     if (!subOf(space, s)) s = lastSubs && subOf(space, lastSubs[space]) ? lastSubs[space] : sp.subs[0].id;
     return { space, sub: s };
   }
-  /* Hash d'URL → { space, sub, legacy } (legacy : le hash n'est pas sous forme canonique). */
+  /* Hash d'URL → { space, sub, legacy } (legacy : le hash n'est pas sous forme canonique et sera réécrit).
+     Hash inconnu → Aujourd'hui. */
   function resolveHash(hash, lastSubs) {
     if (!hash || hash === "#") return null;
     if (LEGACY_HASHES[hash]) return Object.assign(resolve(LEGACY_HASHES[hash]), { legacy: true });
-    const r = resolve(hash, null, lastSubs);
-    return r ? Object.assign(r, { legacy: hash !== "#" + r.space + "/" + r.sub }) : null;
+    const r = resolve(hash, null, lastSubs) || resolve(DEFAULT_ROUTE);
+    return Object.assign(r, { legacy: hash !== "#" + r.space + "/" + r.sub });
   }
   const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name) return { space: sp.space, sub: s.id }; return null; };
 
@@ -73,13 +94,12 @@
   function browser() {
     const ICONS = {
       compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
-      bilan: '<path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/>',
-      diagnostic: '<path d="M3 12h4l2.5-6 5 12 2.5-6h4"/>',
-      decisions: '<path d="M12 4v16M8 20h8M5 8h14M5 8l-2.5 6a2.5 2.5 0 0 0 5 0zM19 8l-2.5 6a2.5 2.5 0 0 0 5 0z"/>',
-      avenir: '<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>',
-      recos: '<path d="M10 6h10M10 12h10M10 18h10M4 6l1.2 1.2L7.5 5M4 12l1.2 1.2L7.5 11M4 18l1.2 1.2L7.5 17"/>',
-      profil: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.8-3.6 3.8-5.5 7.5-5.5s6.7 1.9 7.5 5.5"/>',
-      compte: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
+      aujourdhui: '<path d="M3.5 11L12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>',
+      patrimoine: '<path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/>',
+      pilotage: '<path d="M3 12h4l2.5-6 5 12 2.5-6h4"/>',
+      agent: '<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
+      compte: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.8-3.6 3.8-5.5 7.5-5.5s6.7 1.9 7.5 5.5"/>',
+      reglages: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
     };
     const svg = (k, cls) => '<svg class="' + (cls || "ico") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICONS[k] + "</svg>";
     const $ = id => document.getElementById(id);
@@ -92,7 +112,7 @@
     const panelOf = r => document.querySelector('section.view[data-space="' + r.space + '"][data-sub="' + r.sub + '"]');
     const isActive = name => { const r = routeOfModule(name); return !!(r && r.space === route.space && r.sub === route.sub); };
 
-    /* Route de départ : hash (nouveau ou ancien) > dernière route mémorisée > Bilan. */
+    /* Route de départ : hash (nouveau ou ancien) > dernière route mémorisée > Aujourd'hui. */
     try { const saved = resolve(localStorage.getItem("app-route")); if (saved) { route = saved; lastSubs[saved.space] = saved.sub; } } catch (e) {}
     const fromHash = resolveHash(location.hash, lastSubs);
     if (fromHash) route = { space: fromHash.space, sub: fromHash.sub };
@@ -105,7 +125,8 @@
       active: () => { const s = subOf(route.space, route.sub); return s && s.module; },
       route: () => ({ space: route.space, sub: route.sub }),
       spaces: () => SPACES,
-      /* App.go("bilan"), App.go("bilan", "placements"), App.go("bilan/placements") ou ancien onglet App.go("plan"). */
+      /* App.go("patrimoine"), App.go("patrimoine", "budget"), App.go("patrimoine/budget"), ancienne route App.go("avenir/plan")
+         ou ancien onglet App.go("plan"). */
       go(target, sub) { const r = resolve(target, sub, lastSubs); if (r) navigate(r, { push: true, scroll: true }); },
     };
     window.App = App;
@@ -133,12 +154,15 @@
       return '<a class="' + (bar ? "bb-item" : "nav-item") + '" href="' + hrefOf(sp.space) + '" data-nav="' + sp.space + '">' +
         (bar ? '<span class="bb-ico">' + svg(sp.icon) + "</span>" : svg(sp.icon)) +
         '<span class="nl">' + esc(bar ? sp.short : sp.label) + "</span>" +
-        (sp.space === "recos" ? '<span class="pill-count" data-recos-count hidden></span>' : "") +
-        (sp.space === "profil" ? '<span class="pill-count" data-prop-count hidden></span>' : "") + "</a>";
+        (sp.space === "aujourdhui" ? '<span class="pill-count" data-today-count hidden></span>' : "") +
+        (sp.space === "agent" ? '<span class="pill-count" data-prop-count hidden></span>' : "") + "</a>";
     }
+    /* Rail (ordinateur) et barre basse (mobile) : les 4 destinations primaires. Compte (non primaire) : pied du rail,
+       et bouton avatar #profileBtn de l'en-tête mobile. */
     function renderNav() {
       const prim = SPACES.filter(s => s.primary), rest = SPACES.filter(s => !s.primary);
-      $("sideNav").innerHTML = prim.map(s => navItem(s)).join("") + '<div class="side-sep" role="separator"></div>' + rest.map(s => navItem(s)).join("");
+      $("sideNav").innerHTML = prim.map(s => navItem(s)).join("");
+      $("sideCompte").innerHTML = rest.map(s => navItem(s)).join("");
       $("bottomBar").innerHTML = prim.map(s => navItem(s, true)).join("");
     }
     function renderChrome() {
@@ -147,9 +171,11 @@
         if (a.dataset.nav === route.space) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
         a.setAttribute("href", hrefOf(a.dataset.nav));
       });
-      const pb = $("profileBtn"); if (route.space === "profil") pb.setAttribute("aria-current", "page"); else pb.removeAttribute("aria-current");
+      const pb = $("profileBtn"); if (route.space === "compte") pb.setAttribute("aria-current", "page"); else pb.removeAttribute("aria-current");
       $("spaceTitle").textContent = sp.label;
       $("spaceDesc").textContent = sp.desc;
+      $("accountLinkC").hidden = route.space !== "compte" || Store.mode === "demo";
+      scopeVisibility();
       const tabs = $("subTabs");
       tabs.setAttribute("aria-label", "Sous-vues : " + sp.label);
       tabs.hidden = sp.subs.length < 2;
@@ -173,8 +199,8 @@
       if (m && m.headline) try { v = m.headline(); } catch (e) { v = null; }
       return v == null || !/^\s*\d+\s*$/.test(String(v)) ? NaN : parseInt(v, 10);
     }
-    /* Pastilles : Recommandations (actions à traiter) et Profil et données (propositions de Claude en attente) ;
-       bandeau global #propBanner « Claude propose N changements », partout sauf sur la vue Propositions. */
+    /* Pastilles (seuls compteurs de l'interface) : Aujourd'hui (éléments de la boîte de réception, headline() du module
+       aujourdhui) et Agent (propositions de Claude en attente, headline() du module propositions). */
     function refreshHeadlines() {
       const pill = (sel, n, label) => {
         const show = Number.isFinite(n) && n > 0;
@@ -182,17 +208,9 @@
           el.hidden = !show; el.textContent = show ? String(n) : "";
           if (show) el.setAttribute("aria-label", label(n)); else el.removeAttribute("aria-label");
         });
-        return show;
       };
-      pill("[data-recos-count]", countOf("recos", "actions"), n => n + " action" + (n > 1 ? "s" : "") + " à traiter");
-      const np = countOf("profil", "propositions");
-      const anyProp = pill("[data-prop-count]", np, n => n + " proposition" + (n > 1 ? "s" : "") + " de Claude à examiner");
-      const b = $("propBanner");
-      if (b) {
-        b.hidden = !anyProp || (route.space === "profil" && route.sub === "propositions");
-        const t = anyProp ? "Claude propose " + np + " changement" + (np > 1 ? "s" : "") + " à valider" : "";
-        const el = $("propBannerTxt"); if (el && el.textContent !== t) el.textContent = t;
-      }
+      pill("[data-today-count]", countOf("aujourdhui", "vue"), n => n + " élément" + (n > 1 ? "s" : "") + " à traiter");
+      pill("[data-prop-count]", countOf("agent", "propositions"), n => n + " proposition" + (n > 1 ? "s" : "") + " de Claude à examiner");
     }
 
     const frDate = d => new Date(d + (d.length === 10 ? "T12:00:00" : "")).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
@@ -209,7 +227,13 @@
       scopeSeg(S);
       veille(S);
     }
-    /* Sélecteur de périmètre (barre latérale et en-tête mobile) : « Foyer » + une entrée par personne ; masqué s'il n'y a qu'une personne. */
+    /* Sélecteur de périmètre (en-tête de page) : « Foyer » + une entrée par personne ; masqué s'il n'y a qu'une personne
+       et hors des destinations SCOPED (Agent, Compte). */
+    let scopeMany = false;
+    function scopeVisibility() {
+      const on = scopeMany && SCOPED.includes(route.space);
+      document.querySelectorAll(".scope-seg").forEach(seg => { seg.hidden = !on; });
+    }
     function scopeSeg(S) {
       const ppl = Array.isArray(S.people) ? S.people : [];
       const items = [{ id: "foyer", nom: "Foyer" }].concat(ppl.map((p, i) => ({ id: p.id, nom: String(p.nom || "").trim() || (i ? "Conjoint(e)" : "Moi") })));
@@ -219,9 +243,10 @@
           seg.innerHTML = items.map(x => '<button type="button" data-scope="' + esc(x.id) + '">' + esc(x.nom) + "</button>").join("");
           seg.dataset.sig = sig;
         }
-        seg.hidden = ppl.length < 2;
         seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.scope === S.scope)));
       });
+      scopeMany = ppl.length >= 2;
+      scopeVisibility();
     }
     /* État de la veille : S.status.veille.lastReport (date ISO ou horodatage) ; alerte au-delà de 8 jours. */
     function veille(S) {
@@ -256,16 +281,17 @@
           x.addEventListener("click", () => { b.hidden = true; try { sessionStorage.setItem(ANON_KEY, "1"); } catch (e) { /* rien */ } });
         }
       }
-      const link = $("accountLink"), linkM = $("accountLinkM");
+      const link = $("accountLink"), linkM = $("accountLinkM"), linkC = $("accountLinkC");
       const label = anon ? "Sécuriser mon compte" : "Mon compte", href = anon ? "compte.html#securiser" : "compte.html";
       if (link) { link.textContent = label; link.href = href; }
+      if (linkC) { linkC.textContent = anon ? "Sécuriser mon compte (e-mail, mot de passe)" : "Mon compte : e-mail, sécurité, export"; linkC.href = href; }
       if (linkM) { linkM.href = href; linkM.setAttribute("aria-label", label); linkM.title = label; }
     }
 
     function boot() {
       document.querySelectorAll("[data-brand-icon]").forEach(el => { el.innerHTML = svg("compass", "brand-ico"); });
-      $("profileBtn").innerHTML = svg("profil");
-      $("accountLinkM").innerHTML = svg("compte");
+      $("profileBtn").innerHTML = svg("compte");
+      $("accountLinkM").innerHTML = svg("reglages");
       renderNav();
       const tabs = $("subTabs");
       tabs.addEventListener("click", e => { const b = e.target.closest("[data-sub]"); if (b) App.go(route.space, b.dataset.sub); });
@@ -313,7 +339,7 @@
         onSkip: () => Store.markOnboarded().catch(e => console.warn("Boussole : premiers pas non marqués", e)),
       });
       /* Accueil (accueil.js) : bienvenue, choix de l'assistant, connexion de Claude, entretien, suivi.
-         Aussi rouvert depuis Avec Claude (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
+         Aussi rouvert depuis Agent › Connexion (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
       App.accueil = o => {
         if (!window.Accueil) return false;
         Accueil.open(Object.assign({ formulaires: formulaires() }, o || {}));
@@ -351,5 +377,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY_TABS, LEGACY_HASHES, DEFAULT_ROUTE, resolve, resolveHash, routeOfModule };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, routeOfModule };
 })();
