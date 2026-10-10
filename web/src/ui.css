@@ -1,0 +1,125 @@
+/* Bibliothèque de composants (web/src/ui.js) : classes toutes préfixées .ui-, couleurs, rayons et polices de theme.css
+   (le mode sombre suit donc les variables). Mobile d'abord ; le panneau devient volet latéral à partir de 900 px. */
+
+.ui-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+.ui-ico{width:16px;height:16px;flex:none;display:block}
+
+/* ---------- cartes repliées ---------- */
+.ui-cartes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.ui-carte{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:6px;width:100%;min-width:0;margin:0;padding:14px 36px 14px 16px;
+  text-align:left;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);cursor:pointer;
+  transition:border-color .15s,box-shadow .15s,background-color .15s}
+.ui-carte:hover{border-color:var(--line2);box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.ui-carte:active{background:var(--sunk)}
+.ui-carte-tete{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;min-width:0}
+.ui-carte-titre{font:600 12px/1.3 var(--f-body);color:var(--muted)}
+.ui-carte-valeur{font:600 22px/1.15 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:anywhere}
+.ui-carte-pied{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;font-size:12px;color:var(--muted);min-width:0}
+.ui-carte-sous{min-width:0}
+.ui-carte-ouvrir{position:absolute;top:13px;right:12px;color:var(--muted);transition:transform .15s,color .15s}
+.ui-carte:hover .ui-carte-ouvrir{color:var(--ink);transform:translateX(2px)}
+
+.ui-tendance{display:inline-flex;align-items:baseline;gap:3px;font:600 12px var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ui-tendance-fleche{font-size:10px}
+.ui-tendance.pos{color:var(--good)}
+.ui-tendance.neg{color:var(--crit)}
+.ui-tendance.neutre{color:var(--muted)}
+
+.ui-badge{display:inline-block;font:700 10px/1.7 var(--f-body);letter-spacing:.05em;text-transform:uppercase;border-radius:4px;padding:0 6px;white-space:nowrap;background:var(--sunk);color:var(--muted)}
+.ui-badge.info{background:var(--accent-soft);color:var(--accent)}
+.ui-badge.bon{background:var(--good-soft);color:var(--good)}
+.ui-badge.attention{background:var(--warn-soft);color:var(--warn)}
+.ui-badge.critique{background:var(--crit-soft);color:var(--crit)}
+
+/* ---------- onglets (soulignés, pour ne pas les confondre avec les bascules) ---------- */
+.ui-onglets{display:flex;gap:2px;max-width:100%;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line)}
+.ui-onglets::-webkit-scrollbar{display:none}
+.ui-onglet{flex:none;margin:0 0 -1px;padding:9px 12px;border:0;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;background:none;
+  color:var(--muted);font:600 13px var(--f-body);white-space:nowrap;cursor:pointer}
+.ui-onglet:hover{color:var(--ink)}
+.ui-onglet[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.ui-onglet:focus-visible{outline-offset:-2px}
+
+/* ---------- bascule (boutons segmentés) ---------- */
+.ui-bascule{display:inline-flex;flex-wrap:wrap;gap:2px;max-width:100%;padding:3px;background:var(--sunk);border-radius:8px}
+.ui-bascule-option{min-height:30px;padding:5px 12px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:600 13px var(--f-body);white-space:nowrap;cursor:pointer}
+.ui-bascule-option:hover{color:var(--ink)}
+.ui-bascule-option[aria-checked="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.ui-bascule-option:focus-visible{outline-offset:0}
+
+/* ---------- accordéon ---------- */
+.ui-acc{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.ui-acc + .ui-acc{margin-top:8px}
+.ui-acc-titre{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--radius);font:600 14px var(--f-body);color:var(--ink);list-style:none;cursor:pointer}
+.ui-acc-titre::-webkit-details-marker{display:none}
+.ui-acc-titre:hover{background:var(--sunk)}
+.ui-acc-chevron{margin-left:auto;color:var(--muted);transition:transform .15s}
+.ui-acc[open] > .ui-acc-titre{border-radius:var(--radius) var(--radius) 0 0}
+.ui-acc[open] > .ui-acc-titre .ui-acc-chevron{transform:rotate(180deg)}
+.ui-acc-corps{padding:4px 14px 14px;font-size:13px;color:var(--ink)}
+.ui-acc-corps > :first-child{margin-top:0}
+.ui-acc-corps > :last-child{margin-bottom:0}
+
+/* ---------- voir plus ---------- */
+.ui-voirplus{display:flex;flex-direction:column;gap:8px}
+.ui-voirplus-liste{display:flex;flex-direction:column;gap:8px}
+.ui-voirplus-reste[hidden]{display:none}
+.ui-voirplus-btn{align-self:flex-start;padding:6px 2px;border:0;background:none;color:var(--accent);font:600 13px var(--f-body);cursor:pointer;
+  text-decoration:underline;text-underline-offset:3px}
+.ui-voirplus-btn:hover{color:var(--ink)}
+
+/* ---------- sélecteur de période ---------- */
+.ui-periode{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.ui-periode-g .ui-bascule{background:transparent;border:1px solid var(--line)}
+.ui-periode-g .ui-bascule-option{font-size:12px;padding:4px 9px;min-height:28px}
+.ui-periode-dates{display:flex;flex-wrap:wrap;gap:8px 14px;width:100%}
+.ui-periode-dates[hidden]{display:none}
+.ui-champ{display:inline-flex;align-items:center;gap:6px;font:600 12px var(--f-body);color:var(--muted)}
+.ui-date{min-height:32px;padding:4px 8px;border:1px solid var(--line2);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:500 13px var(--f-body)}
+
+/* ---------- Demander à Claude ---------- */
+.ui-claude{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border:1px solid var(--line2);border-radius:999px;background:var(--surface);
+  color:var(--ink);font:600 13px var(--f-body);text-decoration:none;white-space:nowrap;transition:border-color .15s,background-color .15s}
+.ui-claude .ui-ico{color:var(--accent)}
+.ui-claude:hover{border-color:var(--accent);background:var(--accent-soft)}
+
+/* ---------- panneau de détail ---------- */
+.ui-bloque{overflow:hidden}
+.ui-voile{position:fixed;inset:0;z-index:90;background:rgba(10,16,22,.42);animation:ui-fondu .18s ease-out}
+.ui-panneau{position:fixed;z-index:91;display:flex;flex-direction:column;min-height:0;background:var(--surface);color:var(--ink);box-shadow:0 10px 40px rgba(0,0,0,.22)}
+.ui-panneau-poignee{flex:none;width:40px;height:4px;margin:8px auto 0;border-radius:2px;background:var(--line2)}
+.ui-panneau-tete{flex:none;display:flex;align-items:flex-start;gap:12px;padding:12px 14px 12px 20px;border-bottom:1px solid var(--line)}
+.ui-panneau-titre{flex:1;min-width:0;margin:6px 0 0;font:700 17px/1.3 var(--f-display);letter-spacing:-.005em}
+.ui-panneau-titre:focus{outline:none}
+.ui-panneau-fermer{flex:none;display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+.ui-panneau-fermer .ui-ico{width:20px;height:20px}
+.ui-panneau-fermer:hover{background:var(--sunk);color:var(--ink)}
+.ui-panneau-corps{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:12px;padding:16px 20px 20px;font-size:14px}
+.ui-panneau-corps > *{margin-top:0;margin-bottom:0}
+.ui-panneau-corps a:not([class]){color:var(--accent);font-weight:600;text-underline-offset:2px}
+.ui-panneau-pied{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px 20px;border-top:1px solid var(--line)}
+.ui-panneau-pied[hidden]{display:none}
+.ui-panneau-lien{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font:600 13px var(--f-body);text-decoration:none;border-radius:4px}
+.ui-panneau-lien:hover{text-decoration:underline;text-underline-offset:3px}
+
+@media (max-width:899.98px){
+  .ui-cartes{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .ui-carte{padding:12px 30px 12px 12px}
+  .ui-carte-ouvrir{top:11px;right:8px}
+  .ui-carte-valeur{font-size:18px}
+  .ui-bascule-option{min-height:36px}
+  .ui-periode-g .ui-bascule-option{min-height:32px}
+  .ui-panneau{left:0;right:0;bottom:0;max-height:85vh;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px);animation:ui-monte .22s ease-out}
+  .ui-panneau-tete{padding-top:6px}
+}
+@media (min-width:900px){
+  .ui-panneau{top:0;right:0;bottom:0;width:min(420px,100vw);border-left:1px solid var(--line);animation:ui-glisse .2s ease-out}
+  .ui-panneau-poignee{display:none}
+  .ui-panneau-tete{padding-top:16px}
+}
+@media (min-width:900px) and (max-width:1099.98px){
+  .ui-cartes{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@keyframes ui-fondu{from{opacity:0}to{opacity:1}}
+@keyframes ui-monte{from{transform:translateY(32px);opacity:.3}to{transform:none;opacity:1}}
+@keyframes ui-glisse{from{transform:translateX(24px);opacity:.3}to{transform:none;opacity:1}}
