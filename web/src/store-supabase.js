@@ -15,8 +15,8 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, surveillerConnexions(on) }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, scope, people, user, error }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on) }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalConsentement, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
@@ -49,7 +49,17 @@
    savoir = { fiches: [{ slug, theme, titre, resume, motsCles, sources: [{ titre, url, consulte_le }], version, misAJourLe }],
    reperes: [{ cle, libelle, valeur, unite, dateEffet, sourceTitre, sourceUrl, verifieLe, mode }] } : savoir commun (tables publiques
    savoir_fiches, reperes). Les fiches sont chargées sans leur contenu ; Store.savoir.fiche(slug) → la fiche avec `contenu` (markdown)
-   ou null. Ces trois lectures rejoignent loadAll : une table absente (migration non appliquée) laisse la valeur précédente. */
+   ou null. Ces trois lectures rejoignent loadAll : une table absente (migration non appliquée) laisse la valeur précédente.
+   journal = [{ id, type: avis|decision|scenario|revue|hypothese|evenement, titre, synthese, raisonnement (markdown | null),
+   options: [{ titre, retenue, pourquoi }], statut: a_relire|actif|realise|abandonne|archive, dateDecision, revueLe (AAAA-MM-JJ | null),
+   liens: { objectifs?, positions?, biens?, credits? } (identifiants), etat (état figé par le connecteur), source, historique:
+   [{ le, champ, avant, apres } | { le, champ: "raisonnement", ajout }] (tenu par le déclencheur journal_historique), creeLe, majLe }] :
+   journal des décisions (table privée journal, 0013), les 500 plus récentes d'abord ; table absente → valeur précédente.
+   journalConsentement = profiles.journal_consentement : "demander" (défaut) | "prevenir" | "jamais".
+   Store.journal.confirmer(ids) (a_relire → actif) / modifier(id, { titre?, synthese?, statut? (actif|realise|abandonne|archive),
+   revueLe? | revue_le?, dateDecision? | date_decision? }) (autres clés ignorées) / supprimer(ids) / consentement(mode) → { ok: true }
+   ou { erreur } (message en français ; refus de la contrainte journal_contenu_sensible → « information sensible ») ; rechargement
+   puis émission. */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -61,7 +71,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalConsentement: "demander", onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -95,6 +105,8 @@
       connexions: clone(C.connexions),
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
+      journal: clone(C.journal),
+      journalConsentement: C.journalConsentement,
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -160,6 +172,13 @@
   // Repères : module pur reperes.js s'il est chargé, sinon la même correspondance.
   const repView = rows => (window.Reperes && window.Reperes.depuisLignes ? window.Reperes.depuisLignes(rows) : (rows || []).map(x => ({
     cle: x.cle, libelle: x.libelle, valeur: +x.valeur, unite: x.unite, dateEffet: x.date_effet, sourceTitre: x.source_titre, sourceUrl: x.source_url, verifieLe: x.verifie_le, mode: x.mode })));
+  const objOu = (v, d) => (v != null && typeof v === "object" && !Array.isArray(v) ? v : d);
+  const journalView = r => ({
+    id: r.id, type: r.type, titre: r.titre, synthese: r.synthese, raisonnement: r.raisonnement ?? null, options: Array.isArray(r.options) ? r.options : [],
+    statut: r.statut, dateDecision: r.date_decision ?? null, revueLe: r.revue_le ?? null, liens: objOu(r.liens, {}), etat: objOu(r.etat, {}),
+    source: r.source ?? null, historique: Array.isArray(r.historique) ? r.historique : [], creeLe: r.cree_le, majLe: r.maj_le,
+  });
+  const CONSENTEMENTS = ["demander", "prevenir", "jamais"];
   const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
   const objView = r => ({
     id: r.id, nom: r.nom || "", type: r.type, cible: num(r.cible), dateCible: r.date_cible || null, deja: num(r.deja),
@@ -184,8 +203,9 @@
       q(sb.from("memoire_agent").select("id, categorie, contenu, echeance, epingle, source, cree_le, maj_le").order("cree_le", { ascending: false })),
       q(sb.from("savoir_fiches").select("slug, theme, titre, resume, mots_cles, sources, version, mis_a_jour_le").order("mis_a_jour_le", { ascending: false }).order("titre")),
       q(sb.from("reperes").select("cle, libelle, valeur, unite, date_effet, source_titre, source_url, verifie_le, mode").order("cle")),
+      q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, journal] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -201,6 +221,9 @@
     if (memoire !== undefined) C.memoire = (memoire || []).map(memView);
     if (fiches !== undefined) C.savoir = Object.assign({}, C.savoir, { fiches: (fiches || []).map(ficheView) });
     if (reperes !== undefined) C.savoir = Object.assign({}, C.savoir, { reperes: repView(reperes || []) });
+    if (journal !== undefined) C.journal = (journal || []).map(journalView);
+    // Colonne absente (migration 0013 non appliquée) ou valeur inconnue : « demander », comme le connecteur.
+    if (prof !== undefined) C.journalConsentement = prof && CONSENTEMENTS.includes(prof.journal_consentement) ? prof.journal_consentement : "demander";
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
     if (prof !== undefined) { C.risque = (prof && prof.risque) || null; C.classes = (prof && prof.classes) || {}; }
     if (prof !== undefined && biens !== undefined && credits !== undefined) C.profil = prof ? profView(prof, biens || [], credits || []) : null;
@@ -511,6 +534,64 @@
       catch (e) { return echec(e); }
     },
   };
+  /* ---------- journal des décisions (table privée journal, RLS ; historique tenu par le déclencheur journal_historique) ---------- */
+  // Même validation que store-demo.js et que la base : titre 3-120, synthèse 1-600, statut hors a_relire, dates AAAA-MM-JJ, pas de contenu sensible.
+  const J_STATUTS = ["actif", "realise", "abandonne", "archive"];
+  const MSG_SENSIBLE_J = "Cette entrée contient une information sensible (numéro de compte ou de carte, identifiant, mot de passe) : elle n'est pas enregistrée.";
+  function normEntree(patch) {
+    const p = patch || {}, out = {}, has = k => Object.prototype.hasOwnProperty.call(p, k) && p[k] !== undefined;
+    const texte = (k, min, max, quoi) => {
+      const t = String(p[k] == null ? "" : p[k]).trim();
+      if (t.length < min || t.length > max) throw bad(quoi + " compte de " + min + " à " + max + " caractères.");
+      if (estSensible(t)) throw bad(MSG_SENSIBLE_J);
+      out[k] = t;
+    };
+    const date = (k, col, quoi) => {
+      const cle = has(k) ? k : has(col) ? col : null; if (!cle) return;
+      const v = p[cle] == null || p[cle] === "" ? null : String(p[cle]);
+      if (v && (!/^\d{4}-\d{2}-\d{2}$/.test(v) || isNaN(Date.parse(v)) || new Date(v + "T00:00:00Z").toISOString().slice(0, 10) !== v)) throw bad(quoi + " « " + v + " » invalide (format AAAA-MM-JJ).");
+      out[col] = v;
+    };
+    if (has("titre")) texte("titre", 3, 120, "Un titre");
+    if (has("synthese")) texte("synthese", 1, 600, "Une synthèse");
+    if (has("statut")) { if (!J_STATUTS.includes(p.statut)) throw bad("Statut « " + p.statut + " » inconnu (actif, realise, abandonne ou archive)."); out.statut = p.statut; }
+    date("revueLe", "revue_le", "Date de revue");
+    date("dateDecision", "date_decision", "Date de décision");
+    return out;
+  }
+  // Seule la contrainte journal_contenu_sensible (23514, nommée dans le message) devient « information sensible » ; le reste garde son message.
+  const echecJ = e => { const x = asErr(e); return { erreur: x.code === "23514" && /journal_contenu_sensible/.test(String(x.message || "")) ? MSG_SENSIBLE_J : x.message || String(e) }; };
+  const journal = {
+    async confirmer(ids) {
+      const liste = idsValides(ids);
+      if (!liste.length) return { ok: true };
+      try { await write(async () => q(sb.from("journal").update({ statut: "actif" }).in("id", liste).eq("statut", "a_relire"))); return { ok: true }; }
+      catch (e) { return echecJ(e); }
+    },
+    async modifier(id, patch) {
+      try {
+        if (!C.journal.some(x => x.id === id)) throw bad("Entrée du journal introuvable.");
+        const row = normEntree(patch);
+        if (!Object.keys(row).length) return { ok: true };
+        const rows = await write(async () => q(sb.from("journal").update(row).eq("id", id).select("id")));
+        if (!Array.isArray(rows) || !rows.length) return { erreur: "Entrée du journal introuvable." }; // supprimée entre-temps
+        return { ok: true };
+      } catch (e) { return echecJ(e); }
+    },
+    async supprimer(ids) {
+      const liste = idsValides(ids);
+      if (!liste.length) return { ok: true };
+      try { await write(async () => q(sb.from("journal").delete().in("id", liste))); return { ok: true }; }
+      catch (e) { return echecJ(e); }
+    },
+    /* Ce que l'agent peut enregistrer : même écriture que les colonnes du Diagnostic (upsert sur user_id, RLS de profiles). */
+    async consentement(mode) {
+      if (!CONSENTEMENTS.includes(mode)) return { erreur: "Choix « " + mode + " » inconnu (demander, prevenir ou jamais)." };
+      try { await write(async uid => q(sb.from("profiles").upsert({ user_id: uid, journal_consentement: mode }, { onConflict: "user_id" }))); return { ok: true }; }
+      catch (e) { return echecJ(e); }
+    },
+  };
+
   const savoir = {
     /* Fiche complète (avec son contenu markdown), lue à l'ouverture ; null si elle n'existe pas ou si la lecture échoue. */
     async fiche(slug) {
@@ -553,6 +634,7 @@
     propositions,
     memoire,
     savoir,
+    journal,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

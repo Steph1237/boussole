@@ -238,6 +238,7 @@ test("boite : sur la démo, un lot de 5 propositions, le point SCPI à reprendre
   const t = b.map(x => x.titre);
   assert.equal(b[0].titre, "Claude propose 5 changements");
   assert.equal(b.filter(x => x.type === "proposition").length, 1);
+  assert.equal(b[1].titre, "1 entrée du journal à relire", "l'avis de la démo, juste après les propositions");
   assert.ok(b.some(x => x.type === "a_suivre" && /SCPI/.test(x.titre)), t.join(" | "));
   assert.ok(b.some(x => x.type === "alerte" && /Seuil de cours touché|proche de son seuil/.test(x.titre)), t.join(" | "));
   assert.ok(!b.some(x => x.type === "echeance"), "l'échéance de la démo est à 40 jours");
@@ -245,6 +246,89 @@ test("boite : sur la démo, un lot de 5 propositions, le point SCPI à reprendre
   const n = Rules.evaluate(S.config.rules, { positions: S.positions, config: S.config, scope: "foyer", people: S.people, today: jourLocal(), status: S.status }).length;
   assert.ok(b.filter(x => x.type === "alerte").length >= n);
 });
+
+/* ------------------------------------------------------------------ journal (CK2) ------------------------------------------------------------------ */
+
+const E = (id, type, statut, o) => Object.assign({ id, type, titre: "Entrée " + id, synthese: "Synthèse " + id, raisonnement: null, options: [], statut, dateDecision: null, revueLe: null,
+  liens: {}, etat: { date: "2026-09-01", patrimoine_net: 1 }, source: "Claude", historique: [], creeLe: "2026-10-08T10:00:00.000Z", majLe: "2026-10-08T10:00:00.000Z" }, o);
+
+test("boite : entrées du journal à relire → un élément « N entrées du journal à relire », urgence 1, vers Agent › Journal", () => {
+  const S = vide({ journal: [
+    E("a", "avis", "a_relire", { titre: "Avis <b>LDDS</b>", creeLe: "2026-10-09T08:00:00.000Z" }),
+    E("b", "decision", "a_relire", { titre: "Décision PEA", creeLe: "2026-10-07T08:00:00.000Z" }),
+    E("c", "decision", "actif"), E("d", "hypothese", "archive"),
+  ] });
+  const b = A.boite(S, TODAY, { Rules: fauxRules([], []) });
+  assert.equal(b.length, 1);
+  const x = b[0];
+  assert.equal(x.type, "journal"); assert.equal(x.urgence, 1);
+  assert.equal(x.titre, "2 entrées du journal à relire");
+  assert.deepEqual(J(x.action), { label: "Relire", route: "agent/journal" });
+  assert.match(x.contexte, /Avis <b>LDDS<\/b>/, "texte brut : l'échappement se fait au rendu");
+  assert.match(x.contexte, /Décision PEA/);
+  assert.equal(x.date, "2026-10-09");
+  const un = A.boite(vide({ journal: [E("a", "avis", "a_relire")] }), TODAY, { Rules: fauxRules([], []) });
+  assert.equal(un[0].titre, "1 entrée du journal à relire");
+  assert.deepEqual(A.boite(vide({ journal: [E("c", "decision", "actif")] }), TODAY, { Rules: fauxRules([], []) }), [], "rien à relire");
+  assert.deepEqual(A.boite(vide({ journal: undefined }), TODAY, { Rules: fauxRules([], []) }), [], "journal absent (store ancien) : rien ne casse");
+  // à urgence et date égales, les propositions passent avant le journal
+  const m = A.boite(vide({ propositions: [P("p", "l1", "budget", { creeLe: "2026-10-09T09:00:00.000Z" })], journal: [E("a", "avis", "a_relire", { creeLe: "2026-10-09T08:00:00.000Z" })] }), TODAY, { Rules: fauxRules([], []) });
+  assert.deepEqual(m.map(y => y.type), ["proposition", "journal"]);
+  const h = A.boiteHtml(b, UI || { voirPlus: (l, n, r) => l.map(r).join("") });
+  assert.match(h, /data-type="journal"/);
+  assert.match(h, /href="#agent\/journal" data-goto="agent\/journal"/);
+  assert.doesNotMatch(h, /<b>LDDS/);
+});
+
+test("reperesJournal : décisions non abandonnées et datées, triées par date", () => {
+  const j = [
+    E("a", "decision", "actif", { dateDecision: "2026-08-10" }),
+    E("b", "decision", "abandonne", { dateDecision: "2026-08-20" }),
+    E("c", "decision", "realise", { dateDecision: "2026-07-01" }),
+    E("d", "avis", "actif", { dateDecision: "2026-08-15" }),
+    E("e", "decision", "actif", { dateDecision: null }),
+    E("f", "decision", "a_relire", { dateDecision: "2026-09-01" }),
+    E("g", "decision", "archive", { dateDecision: "pas une date" }),
+  ];
+  assert.deepEqual(J(A.reperesJournal(j)).map(r => [r.id, r.date]), [["c", "2026-07-01"], ["a", "2026-08-10"], ["f", "2026-09-01"]]);
+  const r = A.reperesJournal(j)[0];
+  for (const k of ["id", "date", "titre", "synthese", "statut"]) assert.ok(k in r, k);
+  assert.deepEqual(A.reperesJournal(null), []);
+});
+
+test("frise : repères verticaux des décisions dans la période, titre au survol, focalisables ; hors période ignorés", () => {
+  const S = Object.assign(demoS(), { journal: [] }), t = jourLocal();
+  const f = A.frise(S, t, { id: "1a", granularite: "mois" }, DEPS);
+  assert.deepEqual(J(f.reperes), [], "aucune décision : aucun repère");
+  const x0 = f.points[0].date, x1 = f.points[f.points.length - 1].date;
+  const milieu = new Date((Date.parse(x0) + Date.parse(x1)) / 2).toISOString().slice(0, 10);
+  const avec = Object.assign({}, f, { reperes: [
+    { id: "dec-1", date: milieu, titre: "PEA <script>", synthese: "s", statut: "actif" },
+    { id: "dec-2", date: "1990-01-01", titre: "Trop ancienne", synthese: "s", statut: "actif" },
+  ] });
+  const svg = A.friseSvg(avec, { scopeLabel: "du foyer" });
+  assert.equal((svg.match(/data-journal="/g) || []).length, 1, "seul le repère dans la période est dessiné");
+  assert.match(svg, /data-journal="dec-1"[^>]*tabindex="0"[^>]*role="button"[^>]*aria-label="[^"]*PEA &lt;script&gt;/);
+  assert.match(svg, /<title>[^<]*PEA &lt;script&gt;[^<]*<\/title>/);
+  assert.doesNotMatch(svg, /<script>/);
+  assert.match(svg, /^<svg[^>]*role="group"/, "graphique avec éléments interactifs : role group");
+  assert.match(A.friseSvg(f, {}), /^<svg[^>]*role="img"/, "sans repère : image");
+  // la démo a une décision en cours dans l'année écoulée
+  const fd = A.frise(demoS(), t, { id: "1a", granularite: "mois" }, DEPS);
+  assert.equal(fd.reperes.length, 1);
+  assert.match(A.friseSvg(fd, {}), /data-journal="/);
+});
+
+test("repereDetail : panneau d'une décision (synthèse, date, statut) et lien vers Agent › Journal, texte échappé", () => {
+  const d = A.repereDetail({ id: "x", date: "2026-08-10", titre: "Titre", synthese: PIEGE_J, statut: "actif" });
+  assert.equal(d.titre, "Titre");
+  assert.deepEqual(J(d.lien), { label: "Ouvrir le journal", href: "#agent/journal" });
+  assert.doesNotMatch(d.contenu, /<img/);
+  assert.match(d.contenu, /&lt;img/);
+  assert.match(sp(d.contenu), /10 août 2026/);
+  assert.match(d.contenu, /En cours/);
+});
+const PIEGE_J = '<img src=x onerror="alert(1)">';
 
 /* ------------------------------------------------------------------ indicateurs ------------------------------------------------------------------ */
 
@@ -298,7 +382,7 @@ test("frise : courbe du patrimoine net agrégée par Periodes (1 an au mois sur 
   assert.equal(f.points.length, 4, "trois photos de fin de mois + le point du jour");
   assert.ok(f.points.every(p => p.cle && isFinite(p.valeur)));
   const svg = A.friseSvg(f, { scopeLabel: "du foyer" });
-  assert.match(svg, /^<svg[^>]*role="img"[^>]*aria-label="[^"]+"/);
+  assert.match(svg, /^<svg[^>]*role="(img|group)"[^>]*aria-label="[^"]+"/, "group quand des repères du journal sont dessinés");
   assert.match(svg, /<path /);
   const perso = A.frise(S, t, { id: "perso", du: "2000-01-01", au: t, granularite: "annee" }, DEPS);
   assert.equal(perso.granularite, "annee");
@@ -400,6 +484,8 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   assert.equal((els.get("ajCartes").innerHTML.match(/data-ui-carte="/g) || []).length, 4);
   assert.match(els.get("ajBoite").innerHTML, /Claude propose 5 changements/);
   assert.match(els.get("ajFrise").innerHTML, /<svg/);
+  assert.match(els.get("ajFrise").innerHTML, /data-journal="/, "repère de la décision de la démo sur la frise");
+  assert.match(els.get("ajBoite").innerHTML, /entrée du journal à relire/);
   api.update(vide(), false);
   api.show();
   assert.equal(api.headline(), "");
@@ -504,4 +590,14 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
   api.update(Object.assign(J(S), { propositions: [] }), true);
   assert.equal(ecritures.ajBoite, 1, "la boîte change : réécrite");
   assert.match(js, /function headline\(\) \{ return items\.length \? String\(items\.length\) : ""; \}/);
+  // journal : l'avis confirmé sort de la boîte ; une décision renommée redessine la frise (signatures)
+  const S2 = Object.assign(J(S), { propositions: [] });
+  S2.journal.forEach(e => { if (e.statut === "a_relire") e.statut = "actif"; });
+  api.update(S2, true);
+  assert.equal(ecritures.ajBoite, 2, "journal relu : boîte réécrite");
+  assert.equal(ecritures.ajFrise, 0, "frise inchangée");
+  const S3 = J(S2); S3.journal.find(e => e.type === "decision").titre = "Décision renommée";
+  api.update(S3, true);
+  assert.equal(ecritures.ajFrise, 1, "repère renommé : frise redessinée");
+  assert.equal(ecritures.ajBoite, 2);
 });

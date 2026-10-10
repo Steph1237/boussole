@@ -23,7 +23,7 @@
       { id: "scenarios", label: "Scénarios", module: "simu" },
     ] },
     { space: "agent", label: "Agent", short: "Agent", icon: "agent", primary: true, desc: "Ce que Claude a fait, sait et propose", subs: [
-      { id: "journal", label: "Journal", module: null },
+      { id: "journal", label: "Journal", module: "journal-view" },
       { id: "propositions", label: "Propositions", module: "propositions" },
       { id: "memoire", label: "Mémoire", module: "memoire-view" },
       { id: "fiches", label: "Fiches", module: "fiches-view" },
@@ -62,7 +62,8 @@
   const SCOPED = ["aujourdhui", "patrimoine", "pilotage"];
 
   const spaceOf = id => SPACES.find(s => s.space === id) || null;
-  /* Sous-vue par défaut d'une destination : la première qui a un module (Agent → Propositions, pas la carte « Bientôt » du Journal). */
+  /* Sous-vue par défaut d'une destination : la première qui a un module (Agent → Journal depuis CK2 ; une carte « Bientôt » n'est
+     jamais la sous-vue par défaut). */
   const defSub = sp => (sp.subs.find(x => x.module) || sp.subs[0]).id;
   const subOf = (space, sub) => { const sp = spaceOf(space); return sp ? sp.subs.find(x => x.id === sub) || null : null; };
   /* « destination », « destination/sous-vue » ou ancienne route → { space, sub } ; sous-vue par défaut : dernière visitée,
@@ -93,6 +94,14 @@
   /* Focus après navigation (navigate) : sur le titre de page quand la destination change (pas pour un simple changement de
      sous-onglet, le focus reste sur l'onglet) ou quand l'élément actif a disparu (dans une vue ou un panneau masqués, ou BODY). */
   const focusApres = (avant, apres, perdu) => !!perdu || !!(avant && apres && avant.space !== apres.space);
+  /* Légende de la pastille Agent pour les lecteurs d'écran (ajoutée après le nombre visible) : propositions de Claude en attente
+     (p) et entrées du journal à relire (j) ; NaN compte pour 0. */
+  function legendeAgent(p, j) {
+    const n = v => (Number.isFinite(v) && v > 0 ? v : 0), P = n(p), Jr = n(j);
+    const prop = k => k + " proposition" + (k > 1 ? "s" : "") + " de Claude à examiner", jour = k => k + " entrée" + (k > 1 ? "s" : "") + " du journal à relire";
+    if (P && Jr) return " éléments à traiter : " + prop(P) + ", " + jour(Jr);
+    return " " + (Jr ? jour(Jr) : prop(P)).replace(/^\d+ /, "");
+  }
   const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name) return { space: sp.space, sub: s.id }; return null; };
 
   /* ---------- navigateur ---------- */
@@ -210,7 +219,8 @@
       return v == null || !/^\s*\d+\s*$/.test(String(v)) ? NaN : parseInt(v, 10);
     }
     /* Pastilles (seuls compteurs de l'interface) : Aujourd'hui (éléments de la boîte de réception, headline() du module
-       aujourdhui) et Agent (propositions de Claude en attente, headline() du module propositions). */
+       aujourdhui) et Agent (propositions de Claude en attente, headline() du module propositions, + entrées du journal à relire,
+       headline() du module journal-view ; à défaut, compte lu dans le store). */
     function refreshHeadlines() {
       /* Le nombre visible, suivi de sa légende pour les lecteurs d'écran (texte .ui-sr : un aria-label sur <span> n'est pas lu). */
       const pill = (sel, n, suffix) => {
@@ -221,7 +231,10 @@
         });
       };
       pill("[data-today-count]", countOf("aujourdhui", "vue"), n => " élément" + (n > 1 ? "s" : "") + " à traiter");
-      pill("[data-prop-count]", countOf("agent", "propositions"), n => " proposition" + (n > 1 ? "s" : "") + " de Claude à examiner");
+      const p = countOf("agent", "propositions");
+      let j = countOf("agent", "journal");
+      if (!Number.isFinite(j)) { const S = window.Store && Store.get(); j = S && Array.isArray(S.journal) ? S.journal.filter(e => e && e.statut === "a_relire").length : NaN; }
+      pill("[data-prop-count]", Number.isFinite(p) || Number.isFinite(j) ? (Number.isFinite(p) ? p : 0) + (Number.isFinite(j) ? j : 0) : NaN, () => legendeAgent(p, j));
     }
 
     const frDate = d => new Date(d + (d.length === 10 ? "T12:00:00" : "")).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
@@ -396,5 +409,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, routeOfModule, defSub, focusApres };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, routeOfModule, defSub, focusApres, legendeAgent };
 })();

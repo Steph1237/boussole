@@ -7,8 +7,8 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, surveillerConnexions(on) }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, scope, people, user, error }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on) }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalConsentement, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
@@ -22,6 +22,9 @@
    memoire = [{ id, categorie, contenu, echeance, epingle, source, creeLe, majLe }] (DEMO.memoire) ; Store.memoire.modifier(id, patch) /
    supprimer(ids) / toutEffacer() → { ok: true } ou { erreur }, en mémoire. savoir = { fiches (sans contenu), reperes } (DEMO.savoir,
    repères d'exemple) ; Store.savoir.fiche(slug) → la fiche d'exemple avec son contenu, ou null.
+   journal = [{ id, type, titre, synthese, raisonnement, options, statut, dateDecision, revueLe, liens, etat, source, historique, creeLe, majLe }]
+   (D.journal, plus récentes d'abord) et journalConsentement = "demander" ; Store.journal.confirmer(ids) / modifier(id, patch) / supprimer(ids) /
+   consentement(mode) → { ok: true } ou { erreur }, en mémoire, avec le même historique que le déclencheur SQL journal_historique.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
    byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
@@ -38,12 +41,13 @@
     config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
-    memoire: [], savoir: { fiches: [], reperes: [] },
+    memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalConsentement: "demander",
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
   // Fiches : S n'expose que les résumés (comme store-supabase.js) ; le contenu reste ici pour Store.savoir.fiche(slug).
   const FICHES = (D.savoir && D.savoir.fiches) || [];
   C.memoire = D.memoire || [];
+  C.journal = (D.journal || []).slice().sort((a, b) => String(b.creeLe).localeCompare(String(a.creeLe))).slice(0, 500);
   C.savoir = { fiches: FICHES.map(f => { const o = Object.assign({}, f); delete o.contenu; return o; }), reperes: (D.savoir && D.savoir.reperes) || [] };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
@@ -81,6 +85,8 @@
       connexions: clone(C.connexions),
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
+      journal: clone(C.journal),
+      journalConsentement: C.journalConsentement,
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -418,6 +424,77 @@
       return { ok: true };
     },
   };
+  /* ---------- journal des décisions (en mémoire ; même validation que store-supabase.js, même historique que la base) ---------- */
+  const J_STATUTS = ["actif", "realise", "abandonne", "archive"], J_CONSENTEMENTS = ["demander", "prevenir", "jamais"];
+  const MSG_SENSIBLE_J = "Cette entrée contient une information sensible (numéro de compte ou de carte, identifiant, mot de passe) : elle n'est pas enregistrée.";
+  const J_COLS = { titre: "titre", synthese: "synthese", statut: "statut", revueLe: "revue_le", dateDecision: "date_decision" };
+  function normEntree(patch) {
+    const p = patch || {}, out = {}, has = k => Object.prototype.hasOwnProperty.call(p, k) && p[k] !== undefined;
+    const texte = (k, min, max, quoi) => {
+      const t = String(p[k] == null ? "" : p[k]).trim();
+      if (t.length < min || t.length > max) throw bad(quoi + " compte de " + min + " à " + max + " caractères.");
+      if (estSensible(t)) throw bad(MSG_SENSIBLE_J);
+      out[k] = t;
+    };
+    const date = (k, alias, quoi) => {
+      const cle = has(k) ? k : has(alias) ? alias : null; if (!cle) return;
+      const v = p[cle] == null || p[cle] === "" ? null : String(p[cle]);
+      if (v && (!/^\d{4}-\d{2}-\d{2}$/.test(v) || isNaN(Date.parse(v)) || new Date(v + "T00:00:00Z").toISOString().slice(0, 10) !== v)) throw bad(quoi + " « " + v + " » invalide (format AAAA-MM-JJ).");
+      out[k] = v;
+    };
+    if (has("titre")) texte("titre", 3, 120, "Un titre");
+    if (has("synthese")) texte("synthese", 1, 600, "Une synthèse");
+    if (has("statut")) { if (!J_STATUTS.includes(p.statut)) throw bad("Statut « " + p.statut + " » inconnu (actif, realise, abandonne ou archive)."); out.statut = p.statut; }
+    date("revueLe", "revue_le", "Date de revue");
+    date("dateDecision", "date_decision", "Date de décision");
+    return out;
+  }
+  const journal = {
+    async confirmer(ids) {
+      await tick();
+      const liste = (Array.isArray(ids) ? ids : []).map(String), now = new Date().toISOString();
+      let n = 0;
+      // Première confirmation (a_relire → actif) : non historisée, comme le déclencheur journal_historique.
+      C.journal.forEach(e => { if (liste.includes(String(e.id)) && e.statut === "a_relire") { e.statut = "actif"; e.majLe = now; n++; } });
+      if (n) publish();
+      return { ok: true };
+    },
+    async modifier(id, patch) {
+      await tick();
+      try {
+        const e = C.journal.find(x => x.id === id);
+        if (!e) throw bad("Entrée du journal introuvable.");
+        const v = normEntree(clone(patch));
+        const champs = Object.keys(v).filter(k => v[k] !== e[k]);
+        if (!champs.length) return { ok: true };
+        const now = new Date().toISOString();
+        // Historique dès que l'entrée a été confirmée (statut ≠ a_relire ou historique déjà commencé), 200 dernières entrées.
+        if (e.statut !== "a_relire" || e.historique.length) {
+          champs.forEach(k => e.historique.push({ le: now, champ: J_COLS[k], avant: e[k] ?? null, apres: v[k] ?? null }));
+          if (e.historique.length > 200) e.historique = e.historique.slice(-200);
+        }
+        champs.forEach(k => { e[k] = v[k]; });
+        e.majLe = now;
+        publish();
+        return { ok: true };
+      } catch (err) { return { erreur: err.message || String(err) }; }
+    },
+    async supprimer(ids) {
+      await tick();
+      const liste = (Array.isArray(ids) ? ids : []).map(String);
+      C.journal = C.journal.filter(e => !liste.includes(String(e.id)));
+      publish();
+      return { ok: true };
+    },
+    async consentement(mode) {
+      await tick();
+      if (!J_CONSENTEMENTS.includes(mode)) return { erreur: "Choix « " + mode + " » inconnu (demander, prevenir ou jamais)." };
+      C.journalConsentement = mode;
+      publish();
+      return { ok: true };
+    },
+  };
+
   const savoir = {
     async fiche(slug) {
       await tick();
@@ -447,6 +524,7 @@
     propositions,
     memoire,
     savoir,
+    journal,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

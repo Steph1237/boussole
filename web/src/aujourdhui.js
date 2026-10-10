@@ -1,11 +1,14 @@
 /* Aujourd'hui : page d'accueil du cockpit (« le board lit, l'agent écrit »).
    - Bandeau de 4 indicateurs en cartes (UI.carte) : patrimoine net et variation sur la période de la frise, bonnes pratiques,
      écart d'allocation au profil de risque, prochaine échéance ; chaque carte ouvre UI.panneau (2-4 lignes + lien vers la page).
-   - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), alertes des règles
-     (rules.js), points « à suivre » échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard.
-   - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an, au mois).
-   Fonctions pures exportées pour les tests (module.exports) : boite, echeances, indicateurs, frise, urlClaude, delai, et les rendus HTML
-   cartes, detail, boiteHtml, friseSvg (qui reçoivent UI en paramètre quand ils en ont besoin ; aucune ne touche au DOM).
+   - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), entrées du journal à relire
+     (CK2), alertes des règles (rules.js), points « à suivre » échus de la mémoire de l'agent, échéances à 30 jours, cours manquants /
+     photo nocturne en retard.
+   - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an, au mois) ;
+     repères verticaux aux dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
+   Fonctions pures exportées pour les tests (module.exports) : boite, echeances, indicateurs, frise, reperesJournal, urlClaude, delai, et les
+   rendus HTML cartes, detail, repereDetail, boiteHtml, friseSvg (qui reçoivent UI en paramètre quand ils en ont besoin ; aucune ne touche
+   au DOM).
    Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes } ; window.* par défaut. */
 (function () {
   "use strict";
@@ -53,7 +56,7 @@
   const counted = p => !!p && p.status !== "à recevoir" && p.status !== "clôturé";
 
   /* ---------- liens ---------- */
-  const R = { propositions: "agent/propositions", placements: "patrimoine/placements", budget: "patrimoine/budget", sante: "pilotage/sante", risque: "pilotage/risque" };
+  const R = { propositions: "agent/propositions", journal: "agent/journal", placements: "patrimoine/placements", budget: "patrimoine/budget", sante: "pilotage/sante", risque: "pilotage/risque" };
   /** Lien vers une nouvelle conversation Claude, question préremplie (même forme que UI.demanderAClaude). */
   function urlClaude(question) { return "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? "")); }
   const httpsOk = u => /^https:\/\//.test(String(u || ""));
@@ -92,7 +95,7 @@
   }
 
   /** Tout ce qui demande une action, trié par urgence (1 haute … 3) puis date (la plus ancienne d'abord).
-      → [{ type: proposition|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
+      → [{ type: proposition|journal|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
       Textes bruts : l'échappement se fait au rendu. deps = { Rules } (window.Rules par défaut). */
   function boite(S, today, deps) {
     if (!S || S.ready === false) return [];
@@ -113,6 +116,16 @@
         contexte: maj(liste(cibles)) + " : rien n'est enregistré sans votre accord.",
         action: { label: "Examiner", route: R.propositions } });
     });
+
+    // 1 bis. Entrées du journal à relire (écrites par l'agent, à confirmer ou corriger), un seul élément.
+    const aRelire = (Array.isArray(S.journal) ? S.journal : []).filter(e => e && e.statut === "a_relire");
+    if (aRelire.length) {
+      const titres = aRelire.slice(0, 2).map(e => "« " + extrait(e.titre, 60) + " »").join(", ") + (aRelire.length > 2 ? "…" : "");
+      out.push({ type: "journal", urgence: 1, date: aRelire.map(e => jj(e.creeLe)).filter(isoOk).sort().pop() || t,
+        titre: pluriel(aRelire.length, "entrée") + " du journal à relire",
+        contexte: titres + " : confirmez ou corrigez ce que l'agent a noté.",
+        action: { label: "Relire", route: R.journal } });
+    }
 
     // 2. Alertes des règles de l'utilisateur et des contrôles intégrés (même contexte que Recommandations › Actions).
     if (Rules) {
@@ -159,11 +172,20 @@
   const estPerso = p => !!p && /^perso/.test(String(p.id)) && isoOk(p.du) && isoOk(p.au);
   const periodeTxt = p => (estPerso(p) ? "du " + dateFr(p.du) + " au " + dateFr(p.au) : PERIODE_TXT[p && p.id] || PERIODE_TXT["1a"]);
 
-  /** Série de la frise : patrimoine net estimé (photos + point du jour) agrégé sur la période.
-      periode = { id: 1m|3m|1a|tout|perso…, du?, au?, granularite? } → { points (Periodes.agreger), resume, bornes, granularite, historique } */
+  /** Repères de la frise : décisions du journal non abandonnées et datées, triées par date → [{ id, date, titre, synthese, statut }]. */
+  function reperesJournal(journal) {
+    return (Array.isArray(journal) ? journal : [])
+      .filter(e => e && e.type === "decision" && e.statut !== "abandonne" && isoOk(jj(e.dateDecision)))
+      .map(e => ({ id: String(e.id), date: jj(e.dateDecision), titre: plat(e.titre), synthese: plat(e.synthese), statut: e.statut }))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+
+  /** Série de la frise : patrimoine net estimé (photos + point du jour) agrégé sur la période, et repères des décisions du journal.
+      periode = { id: 1m|3m|1a|tout|perso…, du?, au?, granularite? } → { points (Periodes.agreger), resume, bornes, granularite, historique, reperes } */
   function frise(S, today, periode, deps) {
     const BC = dep(deps, "BilanCalc"), Pe = dep(deps, "Periodes"), t = jour(today), s = S || {}, p = periode || {};
-    const vide = { points: [], resume: { debut: null, fin: null, variation: null, variationPct: null }, bornes: null, granularite: p.granularite || "mois", historique: false };
+    const vide = { points: [], resume: { debut: null, fin: null, variation: null, variationPct: null }, bornes: null, granularite: p.granularite || "mois", historique: false,
+      reperes: reperesJournal(s.journal) };
     if (!BC || !Pe) return vide;
     let pts = [];
     try { pts = BC.evolution(s.snapshots || [], s.positions || [], s.profil || null, s.scope || "foyer", t); } catch (e) { return vide; }
@@ -172,7 +194,7 @@
     const b = Pe.bornes(id, t, pts[0].date);
     const g = !p.granularite || p.granularite === "auto" || !Pe.GRANULARITES.some(x => x.id === p.granularite) ? Pe.auto(b) : p.granularite;
     const ag = Pe.agreger(pts, b, g, x => x.net);
-    return { points: ag, resume: Pe.resume(ag, pts, b, x => x.net), bornes: b, granularite: g, historique: pts.some(x => !x.live) };
+    return { points: ag, resume: Pe.resume(ag, pts, b, x => x.net), bornes: b, granularite: g, historique: pts.some(x => !x.live), reperes: vide.reperes };
   }
 
   /** Les 4 indicateurs du bandeau (périmètre S.scope), en valeurs brutes ; le texte est composé par cartes() et detail(). */
@@ -285,14 +307,25 @@
       '<p class="aj-det-note">' + esc(note) + "</p>", lien: { label, href: "#" + route }, question };
   }
 
+  const STATUT_TXT = { a_relire: "À relire", actif: "En cours", realise: "Réalisée", abandonne: "Abandonnée", archive: "Archivée" };
+  /** Panneau d'un repère de la frise (r = élément de reperesJournal) : { titre, contenu (HTML échappé), lien vers Agent › Journal }. */
+  function repereDetail(r) {
+    const x = r || {};
+    return { titre: plat(x.titre) || "Décision",
+      contenu: '<ul class="aj-det">' + ligne("Décision du", dateFr(x.date) || "—") + ligne("Statut", STATUT_TXT[x.statut] || plat(x.statut) || "—") + "</ul>" +
+        '<p class="aj-det-note">' + esc(x.synthese) + "</p>",
+      lien: { label: "Ouvrir le journal", href: "#" + R.journal } };
+  }
+
   const ICO = {
+    journal: '<path d="M6 3.5h11a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H6z"/><path d="M6 3.5v17M9.5 8h5.5M9.5 11.5h5.5"/>',
     proposition: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
     alerte: '<path d="M12 3.5l9 16H3z"/><path d="M12 10v4.5M12 17.2v.3"/>',
     a_suivre: '<path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/><path d="M12 8v4.5l3 1.8"/>',
     echeance: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     cours: '<path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/>',
   };
-  const TYPE_TXT = { proposition: "Proposition de Claude", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
+  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 
@@ -348,6 +381,16 @@
       g += '<text class="aj-ax" x="' + x.toFixed(1) + '" y="' + (H - 7) + '" text-anchor="' + (i === 0 ? "start" : last ? "end" : "middle") + '">' + esc(p.label) + "</text>";
     });
     const d = rows.map((p, i) => (i ? "L" : "M") + X(ts[i]).toFixed(1) + "," + Y(p.valeur).toFixed(1)).join("");
+    // Repères des décisions du journal dans la période dessinée : trait vertical, titre au survol, focalisables (clic / Entrée → panneau).
+    const reps = (Array.isArray(f.reperes) ? f.reperes : []).filter(r => r && isoOk(r.date) && utc(r.date) >= x0 && utc(r.date) <= x1);
+    const repSvg = reps.map(r => {
+      const x = X(utc(r.date)).toFixed(1), nom = "Décision du " + dateFr(r.date) + " : " + plat(r.titre);
+      return '<g class="aj-rep" data-journal="' + esc(r.id) + '" tabindex="0" role="button" aria-label="' + esc(nom) + '" style="cursor:pointer">' +
+        "<title>" + esc(nom) + "</title>" +
+        '<line x1="' + x + '" x2="' + x + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:transparent;stroke-width:14"/>' +
+        '<line x1="' + x + '" x2="' + x + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:var(--muted);stroke-width:1.3;stroke-dasharray:3 3"/>' +
+        '<path d="M' + x + "," + (T - 6) + "l5,6l-5,6l-5,-6z" + '" style="fill:var(--accent);stroke:var(--surface);stroke-width:1.5"/></g>';
+    }).join("");
     const aire = d + "L" + xFin.toFixed(1) + "," + (H - B) + "L" + X(x0).toFixed(1) + "," + (H - B) + "Z";
     const pts = rows.map((p, i) => { const last = i === rows.length - 1;
       return '<circle class="aj-pt' + (last ? " fin" : "") + '" cx="' + X(ts[i]).toFixed(1) + '" cy="' + Y(p.valeur).toFixed(1) + '" r="' + (last ? 4.5 : 3) + '">' +
@@ -355,11 +398,13 @@
     const fin = rows[rows.length - 1], r = f.resume || {};
     const lbl = "Patrimoine net estimé " + (opt.scopeLabel || "") + " : " + eur(fin.valeur) + (r.variation != null ? ", " + eurS(r.variation) + " sur la période" : "") + ". " +
       rows.map(p => p.label + " " + eur(p.valeur)).join(", ");
-    return '<svg class="aj-svg" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(plat(lbl)) + '">' + g +
-      '<path class="aj-aire" d="' + aire + '"/><path class="aj-ligne" d="' + d + '"/>' + pts + "</svg>";
+    const lblRep = reps.length ? ". " + pluriel(reps.length, "décision") + " du journal sur la période (repères verticaux)." : "";
+    // Avec des repères interactifs, le graphique est un groupe (role="img" rendrait ses enfants inaccessibles).
+    return '<svg class="aj-svg" viewBox="0 0 ' + W + " " + H + '" role="' + (reps.length ? "group" : "img") + '" aria-label="' + esc(plat(lbl + lblRep)) + '">' + g +
+      '<path class="aj-aire" d="' + aire + '"/><path class="aj-ligne" d="' + d + '"/>' + repSvg + pts + "</svg>";
   }
 
-  const H = { boite, echeances, indicateurs, frise, urlClaude, cartes, detail, boiteHtml, friseSvg, jour, delai, premiereDate };
+  const H = { boite, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, friseSvg, jour, delai, premiereDate };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -425,9 +470,27 @@
       surFermeture: () => { if (el && !el.isConnected) { const c = root.querySelector('[data-ui-carte="' + id + '"]'); if (c) c.focus(); } } });
   }
 
+  /* Repère de décision de la frise → panneau (synthèse, date, statut, lien vers Agent › Journal) ; focus rendu au repère, ou au repère
+     du même id si la frise a été redessinée entre-temps. */
+  function ouvrirRepere(el) {
+    const u = U(); if (!u || !u.panneau || !ind) return;
+    const id = el.getAttribute("data-journal"), r = (ind.frise.reperes || []).find(x => x.id === id);
+    if (!r) return;
+    const d = repereDetail(r);
+    u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, lien: d.lien, retour: el,
+      surFermeture: () => { if (!el.isConnected) { const c = Array.from(root.querySelectorAll("[data-journal]")).find(x => x.getAttribute("data-journal") === id); if (c) c.focus(); } } });
+  }
+
   function mount(r) {
     root = r;
     const u = U();
+    const fr = $("ajFrise");
+    fr.addEventListener("click", e => { const el = e.target && e.target.closest ? e.target.closest("[data-journal]") : null; if (el) ouvrirRepere(el); });
+    fr.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const el = e.target && e.target.closest ? e.target.closest("[data-journal]") : null;
+      if (el) { e.preventDefault(); ouvrirRepere(el); }
+    });
     if (u && u.periode) ctlPeriode = u.periode($("ajPeriode"), { periode: periode.id, granularite: periode.granularite, du: periode.du, au: periode.au,
       premiere: S ? premiereDate(S.snapshots) : undefined, surChange: surPeriode });
     $("ajClaude").innerHTML = u && u.demanderAClaude

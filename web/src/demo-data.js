@@ -251,7 +251,55 @@
   ];
   const savoir = { fiches, reperes };
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir };
+  /* Journal des décisions (table journal, écrit par l'agent avec l'accord du foyer ; CK2). Cinq entrées, plus récentes d'abord :
+     - un avis à relire, écrit pendant l'entretien en cours (même conversation que les propositions) : LDDS de Sam au plafond ;
+     - une hypothèse en cours : la SCPI comptée au prix de retrait 2025 (hypothèse de la ligne av-scpi, point « à suivre » de la mémoire) ;
+     - un scénario « acheter ou louer » pour la maison de 2029 (deux options, l'achat retenu ; objectif « Apport maison ») ;
+     - un événement écrit par Boussole : baisse du taux du Livret A au 1er août 2026 (repère livret_a_taux) ;
+     - une décision en cours avec revue due : matelas sur les livrets, épargne nouvelle vers le PEA de Camille ; historique non vide
+       (revue repoussée, note ajoutée au raisonnement le jour où la période d'essai de Sam a été notée en mémoire).
+     `etat` reprend la forme calculée par le connecteur (supabase/functions/mcp/journal.ts, etatFige) avec des montants plausibles
+     pour chaque date (le patrimoine net de la démo est d'environ 193 500 € aujourd'hui). */
+  const REPS = { livret_a_taux: { valeur: 1.7, date_effet: "2026-08-01" }, pfu_taux: { valeur: 31.4, date_effet: "2026-01-01" } }; // repères de la démo (savoir.reperes)
+  const Etat = (jours, net, financier, dettes, bp, alloc) => ({ date: ago(jours), patrimoine_net: net, financier, dettes, bonnes_pratiques: { total: bp, provisoire: false },
+    profil_declare: null, profil_equivalent: { id: "equilibre", libelle: "Équilibré" }, allocation_pct: alloc, reperes: REPS });
+  const ALLOC_62 = { actions: 42.9, obligations: 19.6, securise: 29.2, immobilier: 5.7, speculatif: 2.6, diversifiants: 0 };
+  const ALLOC_0 = { actions: 43.7, obligations: 19.2, securise: 28.8, immobilier: 5.6, speculatif: 2.7, diversifiants: 0 };
+  const Jn = (id, type, statut, titre, synthese, o) => Object.assign({ id, type, titre, synthese, raisonnement: null, options: [], statut, dateDecision: null, revueLe: null,
+    liens: {}, etat: {}, source: "Claude", historique: [] }, o, { majLe: o.majLe || o.creeLe });
+  const noteDecision = "— Note du " + ago(21) + " (Claude) : Sam est en période d'essai ; le foyer ne prend aucun engagement long avant sa confirmation. Le versement programmé reste à 300 € par mois, sans versement exceptionnel.";
+  const journal = [
+    Jn("jr-demo-ldds", "avis", "a_relire", "LDDS de Sam au plafond : où placer la prochaine épargne de précaution",
+      "Le LDDS de Sam a atteint son plafond de 12 000 €. Les prochains versements de précaution peuvent aller sur le Livret A de Camille (12 000 € sur 22 950 € possibles) ou sur un LDDS à ouvrir à son nom, comme noté dans vos actions.",
+      { raisonnement: "## Constat\n\n- LDDS de Sam : 12 000 €, soit le plafond de versement.\n- Livret A de Camille : 12 000 €, plafond à 22 950 €.\n- Le matelas (livrets et compte commun) couvre déjà l'objectif de 21 100 €.\n\n## Pistes\n\n1. Continuer à verser sur le Livret A de Camille jusqu'à son plafond.\n2. Ouvrir un LDDS au nom de Camille (déjà dans vos actions) pour garder deux livrets disponibles.\n\nLes deux livrets ont le même taux et la même fiscalité ; seul le plafond change.",
+        liens: { positions: ["ldds", "livret-a"], objectifs: ["obj-matelas"] }, etat: Etat(0, 193490, 94990, 156500, 90, ALLOC_0), creeLe: new Date(now - 9 * 6e4).toISOString() }),
+    Jn("jr-demo-scpi", "hypothese", "actif", "SCPI comptée au prix de retrait 2025",
+      "La SCPI de l'assurance vie de Sam est comptée 5 300 €, au prix de retrait 2025, en attendant le relevé annuel qui donnera la valeur à jour.",
+      { liens: { positions: ["av-scpi"] }, etat: Etat(21, 192100, 93600, 156900, 90, ALLOC_0), creeLe: at(21, "20:16") }),
+    Jn("jr-demo-maison", "scenario", "actif", "Maison dans l'Est lyonnais en 2029 : acheter ou louer plus grand",
+      "Deux voies comparées pour gagner une chambre vers 2029 : vendre l'appartement et acheter une maison avec 60 000 € d'apport, ou louer une maison en gardant l'appartement en location. Le foyer retient l'achat, sous réserve de la confirmation de Sam.",
+      { raisonnement: "## Hypothèses\n\n- Appartement estimé 240 000 €, capital restant dû d'environ 150 000 € aujourd'hui.\n- Maison visée autour de 380 000 € dans l'Est lyonnais.\n- Apport de 60 000 € constitué d'ici mi-2029 (objectif « Apport maison »).\n\n## Lecture\n\nL'achat garde un seul crédit et une seule adresse ; la location garde l'appartement comme placement mais ajoute un loyer à payer et des revenus fonciers à déclarer, avec un taux d'effort à vérifier.",
+        options: [
+          { titre: "Acheter : vendre l'appartement, apport de 60 000 €", retenue: true, pourquoi: "Un seul crédit, des mensualités dans la norme de 35 % avec les deux salaires, et le projet de famille du foyer." },
+          { titre: "Louer une maison et mettre l'appartement en location", retenue: false, pourquoi: "Garde l'appartement, mais deux logements à gérer et un loyer qui pèse sur le reste à vivre." },
+        ],
+        dateDecision: ago(34), liens: { objectifs: ["obj-apport"], biens: ["bien-rp"] }, etat: Etat(34, 191300, 93900, 157400, 88, ALLOC_62), creeLe: at(34, "20:40") }),
+    Jn("jr-demo-livret", "evenement", "realise", "Taux du Livret A ramené à 1,7 %",
+      "Au 1er août 2026, le taux du Livret A et du LDDS est passé à 1,7 %. Les 24 000 € de livrets du foyer rapportent environ 408 € par an.",
+      { dateDecision: "2026-08-01", liens: { positions: ["livret-a", "ldds"] }, etat: Etat(55, 189800, 93400, 158100, 88, ALLOC_62), source: "Boussole", creeLe: at(55, "06:00") }),
+    Jn("jr-demo-pea", "decision", "actif", "Matelas sur les livrets, épargne nouvelle sur le PEA de Camille",
+      "Le Livret A et le LDDS restent le matelas de précaution. L'épargne nouvelle va au PEA de Camille, sur l'ETF Monde, par un versement programmé de 300 € par mois. À revoir au bout de deux mois.",
+      { raisonnement: "## Pourquoi\n\n- Le matelas couvre déjà six mois de dépenses : inutile d'y ajouter.\n- Après cinq ans, les gains du PEA échappent à l'impôt sur le revenu (seuls les prélèvements sociaux restent dus).\n- Un fonds indiciel mondial diversifie en une seule ligne.\n\n## Ce qui ferait changer d'avis\n\nUne baisse de revenus du foyer, ou un besoin d'apport plus tôt que 2029.\n\n" + noteDecision,
+        dateDecision: ago(62), revueLe: ago(2), liens: { positions: ["pea-etf-monde", "livret-a", "ldds"], objectifs: ["obj-matelas", "obj-retraite"] },
+        etat: Etat(62, 188200, 92900, 158600, 86, ALLOC_62),
+        historique: [
+          { le: at(30, "18:20"), champ: "revue_le", avant: ago(12), apres: ago(2) }, // revue repoussée de dix jours
+          { le: at(21, "20:15"), champ: "raisonnement", ajout: "\n\n" + noteDecision },
+        ],
+        creeLe: at(62, "21:05"), majLe: at(21, "20:15") }),
+  ];
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);

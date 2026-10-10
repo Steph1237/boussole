@@ -54,7 +54,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], journal: ["array"], journalConsentement: ["string"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -551,6 +551,145 @@ test("store-supabase.js : mémoire de l'agent et savoir commun (lecture au déma
   // la liste chargée au démarrage ne contient pas le contenu des fiches
   assert.doesNotMatch(load, /savoir_fiches"\)\.select\("[^"]*contenu/);
   assert.match(demo, /D\.memoire/); assert.match(demo, /D\.savoir/);
+});
+
+/* ------------------------------------------------ journal des décisions (CK2) ------------------------------------------------ */
+
+const JOURNAL_KEYS = ["creeLe", "dateDecision", "etat", "historique", "id", "liens", "majLe", "options", "raisonnement", "revueLe", "source", "statut", "synthese", "titre", "type"];
+const J_TYPES = ["avis", "decision", "scenario", "revue", "hypothese", "evenement"];
+const J_STATUTS = ["a_relire", "actif", "realise", "abandonne", "archive"];
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+test("démo : journal au contrat (5 entrées cohérentes avec le foyer, plus récentes d'abord) et consentement « demander »", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  const today = new Date().toISOString().slice(0, 10);
+  const Sensible = ctx.Sensible;
+  assert.equal(S.journalConsentement, "demander");
+  assert.equal(S.journal.length, 5);
+  S.journal.forEach(e => {
+    assert.deepEqual(Object.keys(e).sort(), JOURNAL_KEYS, `forme de l'entrée ${e.id}`);
+    assert.ok(J_TYPES.includes(e.type), e.type);
+    assert.ok(J_STATUTS.includes(e.statut), e.statut);
+    assert.ok(e.titre.trim().length >= 3 && e.titre.trim().length <= 120, `titre de ${e.id}`);
+    assert.ok(e.synthese.trim().length >= 1 && e.synthese.trim().length <= 600, `synthèse de ${e.id}`);
+    assert.ok(e.raisonnement === null || (typeof e.raisonnement === "string" && e.raisonnement.length <= 8000));
+    for (const t of [e.titre, e.synthese, e.raisonnement]) assert.equal(Sensible.estSensible(t), false, `contenu sensible dans ${e.id}`);
+    assert.ok(Array.isArray(e.options) && e.options.length <= 6);
+    e.options.forEach(o => { assert.equal(typeof o.titre, "string"); assert.equal(typeof o.retenue, "boolean"); });
+    assert.ok(e.liens && typeof e.liens === "object" && !Array.isArray(e.liens));
+    assert.ok(e.etat && ISO.test(e.etat.date) && typeof e.etat.patrimoine_net === "number", `état figé de ${e.id}`);
+    assert.ok(Array.isArray(e.historique));
+    assert.ok(e.dateDecision === null || ISO.test(e.dateDecision));
+    assert.ok(e.revueLe === null || ISO.test(e.revueLe));
+    assert.ok(e.source && e.source.length <= 100);
+    assert.ok(!isNaN(Date.parse(e.creeLe)) && !isNaN(Date.parse(e.majLe)));
+  });
+  const ordre = J(S.journal.map(e => e.creeLe));
+  assert.deepEqual(ordre, [...ordre].sort().reverse(), "plus récentes d'abord");
+  assert.deepEqual(J(S.journal.map(e => e.type)).sort(), ["avis", "decision", "evenement", "hypothese", "scenario"]);
+  const dec = S.journal.find(e => e.type === "decision");
+  assert.equal(dec.statut, "actif");
+  assert.ok(dec.revueLe && dec.revueLe <= today, "revue due");
+  assert.ok(dec.dateDecision && dec.dateDecision < today);
+  assert.ok(dec.historique.length >= 1, "historique non vide");
+  dec.historique.forEach(h => { assert.ok(!isNaN(Date.parse(h.le)) && h.champ); assert.ok(("avant" in h && "apres" in h) || (h.champ === "raisonnement" && typeof h.ajout === "string")); });
+  const ajout = dec.historique.find(h => h.ajout);
+  if (ajout) assert.ok(dec.raisonnement.endsWith(ajout.ajout), "la note ajoutée termine le raisonnement");
+  const avis = S.journal.find(e => e.type === "avis");
+  assert.equal(avis.statut, "a_relire");
+  assert.deepEqual(J(avis.historique), [], "rien d'historisé tant que l'entrée est à relire");
+  const sc = S.journal.find(e => e.type === "scenario");
+  assert.equal(sc.options.length, 2);
+  assert.equal(sc.options.filter(o => o.retenue).length, 1, "une option retenue");
+  assert.match(sc.titre, /acheter|louer/i);
+  assert.equal(S.journal.filter(e => e.statut === "a_relire").length, 1, "un seul avis à relire");
+  // liens vers des objets qui existent dans la démo
+  const ids = { objectifs: S.objectifs.map(o => o.id), positions: S.positions.map(p => p.id), biens: S.profil.biens.map(b => b.id), credits: S.profil.credits.map(c => c.id) };
+  S.journal.forEach(e => Object.entries(e.liens).forEach(([k, v]) => v.forEach(id => assert.ok(ids[k] && ids[k].includes(id), `${e.id} : lien ${k}/${id}`))));
+  for (const k of ["confirmer", "modifier", "supprimer", "consentement"]) assert.equal(typeof ctx.Store.journal[k], "function", "Store.journal." + k);
+});
+
+test("démo : Store.journal (confirmer, modifier avec validation et historique, supprimer, consentement) en mémoire", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  const Jn = ctx.Store.journal;
+  const avis = S.journal.find(e => e.statut === "a_relire"), dec = S.journal.find(e => e.type === "decision");
+  const get = id => ctx.Store.get().journal.find(e => e.id === id);
+
+  // modifier une entrée encore à relire : pas d'historique
+  assert.deepEqual(J(await Jn.modifier(avis.id, { titre: "  Titre corrigé  " })), { ok: true });
+  assert.equal(get(avis.id).titre, "Titre corrigé");
+  assert.deepEqual(J(get(avis.id).historique), []);
+  // confirmer : a_relire → actif, sans historique ; une entrée déjà confirmée ne change pas
+  assert.deepEqual(J(await Jn.confirmer([avis.id, dec.id, "inconnue"])), { ok: true });
+  assert.equal(get(avis.id).statut, "actif");
+  assert.deepEqual(J(get(avis.id).historique), [], "première confirmation non historisée");
+  assert.equal(get(dec.id).statut, "actif");
+
+  // modifier une entrée confirmée : historisé { le, champ, avant, apres }
+  const n0 = get(dec.id).historique.length;
+  assert.deepEqual(J(await Jn.modifier(dec.id, { synthese: "Synthèse corrigée.", statut: "realise", revueLe: "2027-01-15", raisonnement: "ignoré", type: "avis" })), { ok: true });
+  const d = get(dec.id);
+  assert.equal(d.synthese, "Synthèse corrigée."); assert.equal(d.statut, "realise"); assert.equal(d.revueLe, "2027-01-15");
+  assert.equal(d.type, "decision", "le type n'est pas modifiable"); assert.equal(d.raisonnement, dec.raisonnement, "le raisonnement n'est pas modifiable ici");
+  const nv = d.historique.slice(n0);
+  assert.deepEqual(J(nv.map(h => h.champ)).sort(), ["revue_le", "statut", "synthese"]);
+  const hs = nv.find(h => h.champ === "statut");
+  assert.equal(hs.avant, "actif"); assert.equal(hs.apres, "realise");
+  assert.equal(nv.find(h => h.champ === "revue_le").avant, dec.revueLe);
+  assert.ok(nv.every(h => !isNaN(Date.parse(h.le))));
+  assert.notEqual(d.majLe, dec.majLe, "maj_le tenu à jour");
+  assert.deepEqual(J(d.etat), J(dec.etat), "l'état figé ne change pas");
+  // noms de colonnes acceptés aussi (revue_le, date_decision) ; null efface une date
+  assert.deepEqual(J(await Jn.modifier(dec.id, { revue_le: null, date_decision: "2026-07-01" })), { ok: true });
+  assert.equal(get(dec.id).revueLe, null); assert.equal(get(dec.id).dateDecision, "2026-07-01");
+
+  // refus en français, rien n'est modifié
+  const refus = async (patch, re) => { const r = await Jn.modifier(dec.id, patch); assert.ok(r.erreur && re.test(r.erreur), JSON.stringify(patch) + " → " + JSON.stringify(r)); };
+  await refus({ titre: "ab" }, /3 à 120/);
+  await refus({ titre: "x".repeat(121) }, /3 à 120/);
+  await refus({ synthese: "  " }, /1 à 600/);
+  await refus({ synthese: "x".repeat(601) }, /1 à 600/);
+  await refus({ statut: "a_relire" }, /statut/i);
+  await refus({ statut: "termine" }, /statut/i);
+  await refus({ revueLe: "15/01/2027" }, /AAAA-MM-JJ/);
+  await refus({ dateDecision: "2026-13-45" }, /AAAA-MM-JJ/);
+  await refus({ synthese: "IBAN FR76 3000 6000 0112 3456 7890 189" }, /sensible/);
+  await refus({ titre: "Mon mot de passe" }, /sensible/);
+  assert.equal(get(dec.id).synthese, "Synthèse corrigée.", "un refus ne modifie rien");
+  assert.ok((await Jn.modifier("inconnue", { titre: "Titre valable" })).erreur, "entrée inconnue");
+  assert.deepEqual(J(await Jn.modifier(dec.id, {})), { ok: true }, "patch vide");
+
+  // supprimer
+  assert.deepEqual(J(await Jn.supprimer([avis.id])), { ok: true });
+  assert.equal(ctx.Store.get().journal.length, 4);
+  assert.ok(!get(avis.id));
+  // consentement
+  assert.deepEqual(J(await Jn.consentement("jamais")), { ok: true });
+  assert.equal(ctx.Store.get().journalConsentement, "jamais");
+  assert.ok((await Jn.consentement("toujours")).erreur, "mode inconnu refusé");
+  assert.equal(ctx.Store.get().journalConsentement, "jamais");
+  assert.equal(ctx.DEMO.journal.length, 5, "window.DEMO n'est pas modifié (copie)");
+  assert.equal(ctx.DEMO.journal.find(e => e.id === avis.id).statut, "a_relire");
+});
+
+test("store-supabase.js : journal (lecture des 500 plus récentes, table absente sans casse, écritures et consentement)", () => {
+  const sup = src("store-supabase.js"), demo = src("store-demo.js");
+  for (const s of [sup, demo]) {
+    assert.match(s, /S = \{[^\n]*journal, journalConsentement,/, "en-tête : S documente journal et journalConsentement");
+    for (const k of ["journal: clone(C.journal)", "journalConsentement: C.journalConsentement", "journal,", "Store.journal"]) assert.ok(s.includes(k), k);
+  }
+  const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
+  assert.ok(load.includes('from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)'), "lecture du journal");
+  assert.ok(load.includes("if (journal !== undefined) C.journal = (journal || []).map(journalView)"), "table absente : valeur précédente");
+  assert.match(load, /prof\.journal_consentement/);
+  for (const k of ['from("journal").update({ statut: "actif" }).in("id", liste).eq("statut", "a_relire")', 'from("journal").update(row).eq("id", id).select("id")',
+    'from("journal").delete().in("id", liste)', "journal_consentement: mode", "journal_contenu_sensible", 'if (!Array.isArray(rows) || !rows.length) return { erreur: "Entrée du journal introuvable." };'])
+    assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  // consentement : même écriture que les colonnes du Diagnostic (upsert sur user_id)
+  assert.match(sup, /from\("profiles"\)\.upsert\(\{ user_id: uid, journal_consentement: mode \}, \{ onConflict: "user_id" \}\)/);
+  assert.match(demo, /D\.journal/);
 });
 
 test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = demo", () => {

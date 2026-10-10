@@ -41,7 +41,7 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
   assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["immobilier", "bilan"], ["budget", "plan"]]);
   assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["projections", null], ["scenarios", "simu"]]);
-  assert.deepEqual(subs("agent"), [["journal", null], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["connexion", "claude-guide"]]);
+  assert.deepEqual(subs("agent"), [["journal", "journal-view"], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["connexion", "claude-guide"]]);
   assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"]]);
   const lab = (space, id) => SPACES.find(s => s.space === space).subs.find(s => s.id === id).label;
   assert.equal(lab("patrimoine", "immobilier"), "Immobilier et crédits");
@@ -152,8 +152,9 @@ test("coque : chaque sous-vue a exactement une section, masquée au départ ; au
   assert.doesNotMatch(shell, /id="view-actions"/, "plus de sous-vue Actions");
 });
 
-test("coque : états « bientôt » orientés vers l'agent (Projections, Journal)", () => {
-  for (const [space, sub] of [["pilotage", "projections"], ["agent", "journal"]]) {
+test("coque : états « bientôt » orientés vers l'agent (Projections) ; le Journal a sa vue", () => {
+  assert.doesNotMatch(shell, /id="sub-agent-journal"/, "plus de carte « bientôt » pour le Journal");
+  for (const [space, sub] of [["pilotage", "projections"]]) {
     const m = shell.match(new RegExp(`<section class="view placeholder" id="sub-${space}-${sub}"[^>]*>([\\s\\S]*?)</section>`));
     assert.ok(m, space + "/" + sub);
     assert.match(m[1], /Bientôt ici : /);
@@ -164,7 +165,7 @@ test("coque : états « bientôt » orientés vers l'agent (Projections, Journal
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "fiches-view", "memoire-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "fiches-view", "journal-view", "memoire-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   assert.equal(mods[0], "aujourdhui", "aujourdhui en tête de MODULES");
   assert.ok(mods.includes("actions"), "le module Actions reste chargé (window.Actions)");
@@ -172,7 +173,7 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
     assert.ok(mods.includes(m), `${m} absent de MODULES (build.mjs)`);
   }
-  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["memoire-view", "agent", "memoire"]])
+  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"]])
     assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
   assert.match(shell, /<section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" hidden>\s*<!--@aujourdhui-->\s*<\/section>/);
   const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
@@ -198,7 +199,8 @@ test("coque : éléments communs présents (navigation, Compte, périmètre, vei
   assert.equal((shell.match(/scope-seg/g) || []).length, 1, "un seul sélecteur de périmètre");
 });
 
-test("coque : plus de bandeau global #propBanner ; pastilles Aujourd'hui et Agent", () => {
+test("coque : plus de bandeau global #propBanner ; pastilles Aujourd'hui et Agent (propositions + journal à relire)", () => {
+  assert.match(app, /countOf\("agent", "journal"\)/);
   assert.doesNotMatch(shell, /propBanner/);
   assert.doesNotMatch(app, /propBanner/);
   assert.match(app, /countOf\("aujourdhui", "vue"\)/);
@@ -229,13 +231,14 @@ test("theme.css : point de rupture à 900 px et barre basse à 4 entrées avec z
 
 /* ------------------------------------------------ revue finale CK1 ------------------------------------------------ */
 
-test("routage : sous-vue par défaut = première sous-vue branchée sur un module (Agent → Propositions, pas le Journal « bientôt »)", () => {
+test("routage : sous-vue par défaut = première sous-vue branchée sur un module (Agent → Journal depuis CK2)", () => {
   const { defSub } = require("../web/src/app.js");
   for (const sp of SPACES) assert.equal(defSub(sp), sp.subs.find(s => s.module).id, sp.space);
-  assert.deepEqual(resolve("agent"), { space: "agent", sub: "propositions" });
-  assert.deepEqual(resolve("agent/inconnu"), { space: "agent", sub: "propositions" });
-  assert.deepEqual(resolveHash("#agent"), { space: "agent", sub: "propositions", legacy: true });
-  assert.deepEqual(resolve("agent", null, { agent: "journal" }), { space: "agent", sub: "journal" }, "dernière sous-vue visitée prioritaire");
+  assert.deepEqual(resolve("agent"), { space: "agent", sub: "journal" });
+  assert.deepEqual(resolve("agent/inconnu"), { space: "agent", sub: "journal" });
+  assert.deepEqual(resolveHash("#agent"), { space: "agent", sub: "journal", legacy: true });
+  assert.deepEqual(resolve("agent", null, { agent: "propositions" }), { space: "agent", sub: "propositions" }, "dernière sous-vue visitée prioritaire");
+  assert.deepEqual(resolve("profil/propositions"), { space: "agent", sub: "propositions" }, "les liens vers les propositions y mènent toujours");
   assert.deepEqual(resolveHash("#agent/journal"), { space: "agent", sub: "journal", legacy: false }, "le Journal reste accessible");
   assert.match(app, /const hrefOf = space => "#" \+ space \+ "\/" \+ \(lastSubs\[space\] \|\| defSub\(spaceOf\(space\)\)\)/, "liens de navigation : même défaut");
   assert.doesNotMatch(app, /subs\[0\]\.id/, "plus de subs[0] comme défaut");
@@ -274,4 +277,17 @@ test("coque : « Veille » mène à Agent › Connexion ; libellés distincts de
   const guide = readFileSync("web/src/claude-guide.html", "utf8");
   assert.doesNotMatch(guide, /Compte › Données<\/a> <span class="muted">[^<]*placements/, "les placements ne sont plus dans Compte › Données");
   assert.match(guide, /href="#patrimoine\/placements" data-goto="patrimoine\/placements">Patrimoine › Placements<\/a>/);
+});
+
+test("pastille Agent : propositions en attente + entrées du journal à relire, légende lue par les lecteurs d'écran", () => {
+  const { legendeAgent } = require("../web/src/app.js");
+  assert.equal(legendeAgent(2, 0), " propositions de Claude à examiner");
+  assert.equal(legendeAgent(1, NaN), " proposition de Claude à examiner");
+  assert.equal(legendeAgent(0, 1), " entrée du journal à relire");
+  assert.equal(legendeAgent(NaN, 3), " entrées du journal à relire");
+  assert.equal(legendeAgent(2, 1), " éléments à traiter : 2 propositions de Claude à examiner, 1 entrée du journal à relire");
+  assert.equal(legendeAgent(1, 1), " éléments à traiter : 1 proposition de Claude à examiner, 1 entrée du journal à relire");
+  const refresh = app.slice(app.indexOf("function refreshHeadlines()"), app.indexOf("const frDate"));
+  assert.match(refresh, /legendeAgent\(/);
+  assert.match(refresh, /statut === "a_relire"/, "repli : compte lu dans le store si le module Journal n'a pas de headline");
 });
