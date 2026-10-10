@@ -128,6 +128,8 @@
       (poches.includes(p.bloc) || env.includes(p.envelope))), Calc.val);
   }
 
+  const SCORE_MIN_CRITERES = 3;
+
   /** Capacité d'épargne mensuelle : épargne prévue + reste positif (même base que le taux d'épargne). */
   const capaciteEpargne = t => t ? pos(t.epargne) + Math.max(0, +t.reste || 0) : 0;
 
@@ -346,10 +348,11 @@
       itemPatrimoine(positions, c.profil, scope, totaux),
     ].map(i => ({ ...i, points: i.aCompleter ? 0 : Math.round(i.points), sur: 20 }));
     const complets = items.filter(i => !i.aCompleter);
-    const total = complets.length ? Math.round(sum(complets, i => i.points) / (20 * complets.length) * 100) : 0;
-    return { total, complet: complets.length === items.length, items };
+    // Pas de note globale sur moins de 3 critères : un 100/100 calculé sur un seul critère serait trompeur.
+    const total = complets.length >= SCORE_MIN_CRITERES ? Math.round(sum(complets, i => i.points) / (20 * complets.length) * 100) : null;
+    return { total, complet: complets.length === items.length, calcules: complets.length, items };
   }
 
-  return { RENDEMENTS, REPERES_AGE, mensuel, budgetTotaux, capaciteEpargne, affecterDeja, effortMensuel, valeurFuture, moisEntre, dateAtteinte,
+  return { SCORE_MIN_CRITERES, RENDEMENTS, REPERES_AGE, mensuel, budgetTotaux, capaciteEpargne, affecterDeja, effortMensuel, valeurFuture, moisEntre, dateAtteinte,
     dejaObjectif, statutObjectif, repartirEpargne, projection, score };
 });

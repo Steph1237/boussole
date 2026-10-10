@@ -51,9 +51,11 @@ function render(){
   const N=notes(r), aTravailler=N.filter(c=>c.points<16).length, aCompl=r.criteres.filter(c=>c.aCompleter).length;
   const note=r.familles.some(f=>f.total!=null);
   $("santeTotal").textContent=note?String(r.total):"—";
+  const notees=r.familles.filter(f=>f.total!=null).length;
   $("santeVerdict").textContent=!note?"Complétez le budget, le profil et vos placements pour calculer la note."
+    :r.provisoire?"Note provisoire : "+notees+" famille"+(notees>1?"s":"")+" sur "+r.familles.length+" notée"+(notees>1?"s":"")+". Complétez votre bilan pour une note fiable."
     :r.total>=80?"Solide":r.total>=60?"Correct, "+(NOMBRES[aTravailler]||aTravailler)+" point"+(aTravailler>1?"s":"")+" à travailler":"À consolider";
-  $("santeVerdict").className="sante-verdict "+(note?classeTotal(r.total):"");
+  $("santeVerdict").className="sante-verdict "+(note&&!r.provisoire?classeTotal(r.total):"");
   $("santePartiel").textContent=note&&aCompl?"Note calculée sur "+N.length+" critère"+(N.length>1?"s":"")+" : "+aCompl+" à compléter ne compte"+(aCompl>1?"nt":"")+" pas encore.":"";
   $("santeJauge").innerHTML=`<span class="sj-f ${note?classeTotal(r.total):"na"}" style="width:${note?Math.max(0,Math.min(100,r.total)):0}%"></span>`;
   $("santeFamilles").innerHTML=r.familles.map(f=>{

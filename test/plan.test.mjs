@@ -377,7 +377,7 @@ describe("score", () => {
     assert.equal(partiel.complet, false);
     assert.deepEqual(partiel.items.filter(i => i.aCompleter).map(i => i.cle), ["concentration", "patrimoine"]);
     assert.equal(partiel.total, Math.round(40 / 60 * 100));
-    assert.equal(run({ positions: [], profil: null, budget: [] }).total, 0);
+    assert.equal(run({ positions: [], profil: null, budget: [] }).total, null, "rien de calculable : pas de note");
   });
 
   test("budget accepté sous forme { lignes } ; périmètre p1", () => {
@@ -408,4 +408,11 @@ test("capacité d'épargne : épargne prévue + reste positif (même règle que 
   assert.equal(Plan.capaciteEpargne({ epargne: 650, reste: 928 }), 1578);
   assert.equal(Plan.capaciteEpargne({ epargne: 650, reste: -200 }), 650);
   assert.equal(Plan.capaciteEpargne(null), 0);
+});
+
+test("score : pas de note globale sur moins de 3 critères calculés", () => {
+  const s = Plan.score({ positions: [{ owner: "p1", bloc: "Monde", envelope: "PEA", mode: "manual", value: 1000, status: "actif" }], profil: null, config: null, budget: null, scope: "foyer", today: new Date("2026-10-10") });
+  assert.equal(s.calcules, 1);
+  assert.equal(s.total, null);
+  assert.equal(s.complet, false);
 });

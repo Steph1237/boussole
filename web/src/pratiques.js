@@ -387,7 +387,9 @@
     const notees = familles.filter(f => f.total != null);
     const poids = sum(notees, f => f.poids);
     const comptes = L.filter(c => !c.informatif);
-    return { total: poids > 0 ? Math.round(sum(notees, f => f.total * f.poids) / poids) : 0, familles,
+    // Couverture = part du poids des familles réellement notées ; sous 50 %, la note est provisoire.
+    const couverture = poids / sum(familles, f => f.poids);
+    return { total: poids > 0 ? Math.round(sum(notees, f => f.total * f.poids) / poids) : null, couverture, provisoire: couverture < 0.5, familles,
       complet: comptes.length > 0 && comptes.every(c => !c.aCompleter) };
   }
 
