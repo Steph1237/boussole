@@ -1,6 +1,6 @@
-# Sous-projet 2 : Diagnostic (brouillon à valider)
+# Sous-projet 2 : Diagnostic 
 
-Date : 2026-10-10 · Statut : brouillon, à valider par Stéph avant implémentation.
+Date : 2026-10-10 · Statut : validé (« continue sur le produit », 2026-10-10).
 
 ## 1. Profil de risque
 
