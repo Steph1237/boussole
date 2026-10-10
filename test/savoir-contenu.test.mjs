@@ -15,7 +15,7 @@ const FICHES = ["epargne-de-precaution", "livrets-reglementes", "ordre-de-priori
   "investissement-programme", "crises-et-recuperation", "crypto-actifs", "taux-endettement", "assurance-emprunteur",
   "acheter-ou-louer", "prevoyance", "biais-comportementaux"];
 const THEMES = ["epargne", "enveloppes", "fiscalite", "immobilier", "retraite", "protection", "marches", "comportement", "credit"];
-const OFFICIELS = /^https:\/\/([a-z0-9-]+\.)*(service-public\.fr|impots\.gouv\.fr|economie\.gouv\.fr|banque-france\.fr|amf-france\.org|legifrance\.gouv\.fr|urssaf\.fr|info-retraite\.fr|insee\.fr|securite-sociale\.fr|lassuranceretraite\.fr|ecb\.europa\.eu|esma\.europa\.eu)\//;
+const OFFICIELS = /^https:\/\/([a-z0-9-]+\.)*(service-public\.fr|service-public\.gouv\.fr|impots\.gouv\.fr|economie\.gouv\.fr|banque-france\.fr|amf-france\.org|legifrance\.gouv\.fr|urssaf\.fr|info-retraite\.fr|insee\.fr|securite-sociale\.fr|lassuranceretraite\.fr|ecb\.europa\.eu|esma\.europa\.eu)\//;
 
 /** Bloc SQL d'une fiche : du slug jusqu'à la fin de son tableau de sources. */
 function bloc(slug) {
