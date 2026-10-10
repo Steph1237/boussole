@@ -1,5 +1,6 @@
 /* Profil et données › Avec Claude : faire son bilan en discutant avec Claude (connecteur MCP Boussole).
-   Avancement par section (BilanEtat.etat), prochaines questions, ajout du connecteur (adresse + étapes par client),
+   Avancement par section (BilanEtat.etat), prochaines questions, ajout du connecteur (bloc partagé avec l'étape 3 de
+   l'accueil : Accueil.connexion), « Revoir l'accueil » (App.accueil),
    parcours lançables (claude.ai/new?q=… ou copie de la demande), retour vers Propositions pour valider.
    Compte anonyme (mode Supabase) : « Sécurisez d'abord votre compte » à la place de l'étape du connecteur. */
 (function () {
@@ -33,7 +34,7 @@
   const STATUT_TXT = { complet: "complet", partiel: "en partie renseigné", vide: "à renseigner" };
 
   const B = window.BOUSSOLE || {};
-  const MCP_URL = String(B.supabaseUrl || "https://oapcewpqsbbjdlcdeizi.supabase.co").replace(/\/+$/, "") + "/functions/v1/mcp";
+  const MCP_URL = B.mcpUrl || String(B.supabaseUrl || "").replace(/\/+$/, "") + "/functions/v1/mcp";
   let S = null, root = null, dirty = true, anon = false, sigSec = "";
   const ouverts = new Set(); // sections dépliées (conservées d'un rendu à l'autre)
   const $ = id => root.querySelector("#" + id);
@@ -107,8 +108,9 @@
 
   function mount(r) {
     root = r;
-    $("cgUrl").value = MCP_URL;
-    $("cgCmd").textContent = "claude mcp add boussole -t http " + MCP_URL;
+    /* Étapes de connexion : le même bloc que l'étape 3 de l'accueil (accueil.js), valeurs à copier comprises. */
+    if (window.Accueil && typeof Accueil.connexion === "function") Accueil.connexion($("cgConnexion"));
+    else $("cgConnexion").textContent = "Adresse du connecteur : " + MCP_URL;
     $("cgParcours").innerHTML = PARCOURS.map(p =>
       '<div class="cg-pc"><div class="cg-pc-t"><b>' + esc(p.titre) + '</b><span class="small muted">' + esc(p.desc) + "</span></div>" +
       '<div class="cg-pc-a"><a class="cg-btn" href="' + esc(lienClaude(p.prompt)) + '" target="_blank" rel="noopener" data-parcours="' + p.id + '">' + svg("ext") + "Ouvrir dans Claude<span class=\"cg-sr\"> (nouvel onglet) : " + esc(p.titre) + "</span></a>" +
@@ -116,10 +118,8 @@
       '<textarea class="cg-prompt" id="cgPrompt-' + p.id + '" readonly rows="3" hidden aria-label="Demande à copier : ' + esc(p.titre) + '">' + esc(p.prompt) + "</textarea></div>").join("");
     root.addEventListener("click", async e => {
       const b = e.target.closest("button"); if (!b) return;
-      if (b.dataset.copyEl) {
-        const el = $(b.dataset.copyEl);
-        const ok = await copier(el.value != null && el.tagName === "INPUT" ? el.value : el.textContent, el);
-        dire(ok ? "Copié dans le presse-papiers." : "Copie impossible : le texte est sélectionné, copiez-le avec Ctrl+C ou ⌘C.", ok); flash(b, ok);
+      if (b.hasAttribute("data-accueil")) {
+        if (window.App && typeof App.accueil === "function") App.accueil({ etape: 1 });
       } else if (b.dataset.copyPrompt) {
         const p = PARCOURS.find(x => x.id === b.dataset.copyPrompt), ta = $("cgPrompt-" + p.id);
         const ok = await copier(p.prompt, ta);
