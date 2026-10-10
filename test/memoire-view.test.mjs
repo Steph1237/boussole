@@ -40,6 +40,18 @@ test("memoire-view.html : identifiants utilisés par le script, en-tête rassura
   assert.match(html, /id="mvMsg"[^>]*role="status"/);
 });
 
+test("etatVide : chargement, erreur (lecture impossible) ou vide ; l'état vide n'est pas montré quand la lecture a échoué", () => {
+  assert.equal(H.etatVide(null, 0), "chargement");
+  assert.equal(H.etatVide({ ready: false, error: null }, 0), "chargement");
+  assert.equal(H.etatVide({ ready: true, error: null }, 0), "vide");
+  assert.equal(H.etatVide({ ready: true, error: "erreur" }, 0), "erreur");
+  assert.equal(H.etatVide({ ready: true, error: "erreur" }, 2), null);
+  assert.match(js, /\$\("mvEmpty"\)\.hidden = ev !== "vide"/);
+  assert.match(js, /\$\("mvErr"\)\.hidden = ev !== "erreur"/);
+  assert.match(html, /<p class="mv-err" id="mvErr" hidden>Lecture impossible pour le moment\./);
+  assert.match(css, /#view-memoire-view \.mv-err\{/);
+});
+
 test("memoire-view.css : entièrement scopé sous #view-memoire-view", () => {
   const c = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "}");
   const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(Boolean);

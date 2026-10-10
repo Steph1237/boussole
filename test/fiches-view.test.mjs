@@ -62,7 +62,7 @@ test("fiches-view.js : contenu chargé à l'ouverture par Store.savoir.fiche, re
   assert.match(js, /Reperes\.format\(/);
   assert.ok(js.includes("à vérifier"));
   assert.ok(html.includes("Le savoir de l'agent arrive bientôt."), "état vide");
-  assert.match(js, /\$\("fvVide"\)\.hidden = charge/, "pas d'état vide pendant le chargement");
+  assert.match(js, /\$\("fvVide"\)\.hidden = ev !== "vide"/, "pas d'état vide pendant le chargement ni en cas d'erreur");
 });
 
 /* ---------- rendreMarkdown : sûr ---------- */
@@ -89,13 +89,42 @@ test("rendreMarkdown : titres, listes, gras, paragraphes ; aucun autre balisage"
   assert.equal(F.rendreMarkdown("## T"), "<h3>T</h3>");
   assert.equal(F.rendreMarkdown("### Sous-titre"), "<h4>Sous-titre</h4>");
   assert.equal(F.rendreMarkdown("- un\n- deux"), "<ul><li>un</li><li>deux</li></ul>");
+  assert.equal(F.rendreMarkdown("1. Un\n2. Deux"), "<ol><li>Un</li><li>Deux</li></ol>");
+  assert.equal(F.rendreMarkdown("1. **Un** [a](https://a.fr)\n2. Deux"), '<ol><li><strong>Un</strong> <a href="https://a.fr" target="_blank" rel="noopener noreferrer">a<span class="fv-sr"> (nouvel onglet)</span></a></li><li>Deux</li></ol>', "même rendu en ligne que les puces");
+  assert.equal(F.rendreMarkdown("- a\n1. b\n- c"), "<ul><li>a</li></ul><ol><li>b</li></ol><ul><li>c</li></ul>", "changement de type de liste");
+  assert.equal(F.rendreMarkdown("Texte\n1. b"), "<p>Texte</p><ol><li>b</li></ol>");
+  assert.equal(F.rendreMarkdown("En 2028. Oui"), "<p>En 2028. Oui</p>", "un nombre en début de ligne sans point n'est pas une liste");
   assert.equal(F.rendreMarkdown("Le **Livret A** est sûr."), "<p>Le <strong>Livret A</strong> est sûr.</p>");
   assert.equal(F.rendreMarkdown("Premier.\n\nSecond\nsuite."), "<p>Premier.</p><p>Second suite.</p>");
   assert.equal(F.rendreMarkdown("## Titre\nTexte"), "<h3>Titre</h3><p>Texte</p>");
   assert.equal(F.rendreMarkdown(""), "");
   assert.equal(F.rendreMarkdown(null), "");
-  const tags = new Set([...F.rendreMarkdown("# a\n\n## b\n\n- **c** [d](https://e.fr)\n\n`f` _g_ > h").matchAll(/<([a-z0-9]+)/g)].map(m => m[1]));
-  assert.deepEqual([...tags].filter(t => !["h3", "h4", "p", "ul", "li", "strong", "a", "span"].includes(t)), []);
+  const tags = new Set([...F.rendreMarkdown("# a\n\n## b\n\n- **c** [d](https://e.fr)\n\n1. e\n\n`f` _g_ > h").matchAll(/<([a-z0-9]+)/g)].map(m => m[1]));
+  assert.deepEqual([...tags].filter(t => !["h3", "h4", "p", "ul", "ol", "li", "strong", "a", "span"].includes(t)), []);
+  assert.match(css, /#view-fiches-view \.fv-md ul,#view-fiches-view \.fv-md ol\{/, "listes numérotées stylées comme les puces");
+});
+
+test("etatVide : chargement, erreur (lecture impossible) ou vide ; rien si la liste est remplie", () => {
+  assert.equal(F.etatVide(null, 0), "chargement");
+  assert.equal(F.etatVide({ ready: false, error: null }, 0), "chargement");
+  assert.equal(F.etatVide({ ready: true, error: null }, 0), "vide");
+  assert.equal(F.etatVide({ ready: true, error: "erreur" }, 0), "erreur");
+  assert.equal(F.etatVide({ ready: true, error: "erreur" }, 3), null);
+  assert.match(js, /\$\("fvVide"\)\.hidden = ev !== "vide"/);
+  assert.match(js, /\$\("fvErr"\)\.hidden = ev !== "erreur"/);
+  assert.match(html, /<p class="fv-err" id="fvErr" hidden>Lecture impossible pour le moment\./);
+  assert.match(css, /#view-fiches-view \.fv-err\{/);
+});
+
+test("fiches-view : annonce « Fiche ouverte » sur une zone de statut, pas sur tout le contenu ; jour local", () => {
+  assert.doesNotMatch(html, /id="fvDContenu"[^>]*aria-live/, "le contenu n'est pas une zone live");
+  assert.match(html, /<p class="fv-sr" id="fvDStatut" role="status" aria-live="polite"><\/p>/);
+  assert.match(js, /\$\("fvDStatut"\)\.textContent = "Fiche ouverte : " \+ titre/);
+  assert.match(js, /\$\("fvDStatut"\)\.textContent = "Fiche indisponible : " \+ titre/);
+  assert.match(js, /\$\("fvDStatut"\)\.textContent = ""/, "effacé au retour à la liste");
+  // today() en heure locale (comme le connecteur pour l'utilisateur français), pas toISOString (UTC)
+  assert.match(js, /const today = \(\) => \{ const d = new Date\(\); return d\.getFullYear\(\) \+ "-" \+ pad\(d\.getMonth\(\) \+ 1\) \+ "-" \+ pad\(d\.getDate\(\)\); \}/);
+  assert.doesNotMatch(js, /toISOString\(\)\.slice\(0, 10\)/);
 });
 
 test("rendreMarkdown : contenu d'exemple de la démo rendu sans balise brute", () => {

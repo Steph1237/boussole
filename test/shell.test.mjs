@@ -120,6 +120,7 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
     assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
   const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
   assert.ok(scripts.indexOf('"reperes"') >= 0 && scripts.indexOf('"reperes"') < scripts.indexOf('"plan"'), "reperes chargé avant plan");
+  assert.ok(scripts.indexOf('"sensible"') >= 0 && scripts.indexOf('"sensible"') < scripts.indexOf('"store-demo"'), "sensible (filtre partagé) chargé avant les stores");
   assert.match(shell, /<!--@scripts-->/);
   assert.match(shell, /\/\*@css\*\//);
 });

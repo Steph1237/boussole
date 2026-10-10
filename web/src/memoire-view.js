@@ -66,7 +66,14 @@
     return { texte, echeance, echu: e && est };
   }
 
-  const H = { CATEGORIES, grouper, echu, meta, jour, dateFr };
+  /** État à afficher quand la liste est vide : "chargement" (store pas prêt), "erreur" (lecture impossible) ou "vide" ; null si la liste n'est pas vide. */
+  function etatVide(S, n) {
+    if (n > 0) return null;
+    if (!S || S.ready === false) return "chargement";
+    return S.error ? "erreur" : "vide";
+  }
+
+  const H = { CATEGORIES, grouper, echu, meta, jour, dateFr, etatVide };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -115,12 +122,13 @@
   function render(force) {
     if (!root) return;
     const today = jour(), liste = toutes();
-    const s = JSON.stringify([S && S.ready, today, liste, [...edition.keys()]]);
+    const s = JSON.stringify([S && S.ready, S && S.error, today, liste, [...edition.keys()]]);
     if (force || s !== sig) {
       sig = s;
-      const pret = !!S && S.ready !== false;
       const n = liste.length, nEchus = liste.filter(m => m.categorie === "a_suivre" && echu(m, today)).length;
-      $("mvEmpty").hidden = !pret || n > 0;
+      const ev = etatVide(S, n);
+      $("mvEmpty").hidden = ev !== "vide"; // ni pendant le chargement, ni quand la lecture a échoué
+      $("mvErr").hidden = ev !== "erreur";
       $("mvBar").hidden = !n;
       $("mvCount").innerHTML = '<b>' + pluriel(n, "souvenir") + "</b> sur " + MAX +
         (nEchus ? ' <span class="mv-late">· ' + pluriel(nEchus, "point", "points") + " à reprendre</span>" : "");

@@ -5,7 +5,10 @@
 --   memoire_agent : ce que l'agent retient de chaque utilisateur ; privée (RLS), 200 souvenirs au plus, contenu sensible refusé.
 
 -- ---------------------------------------------------------------------------
--- Filtre de contenu sensible (même règle que supabase/functions/mcp/memoire.ts, SENSIBLE)
+-- Filtre de contenu sensible (même règle que supabase/functions/mcp/memoire.ts SENSIBLE et web/src/sensible.js) :
+--   IBAN : motif pays + clé + 11 à 30 caractères, ET au moins 12 chiffres dans la correspondance (un ISIN « IE00B4L5Y983 »
+--          suivi d'un libellé n'en a que 7) ; carte : 3 groupes de 4 chiffres puis 1 à 7 chiffres, espaces seulement, bornés
+--          par des non-chiffres (« 2025-2026-2027-2028 » et « 100 000 200 000 » passent) ; mots interdits, insensible à la casse.
 -- ---------------------------------------------------------------------------
 create or replace function public.contenu_sensible(p text)
 returns boolean
@@ -14,8 +17,9 @@ immutable
 set search_path = ''
 as $$
   select coalesce(
-       p ~ '[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}'
-    or p ~ '([0-9][ -]?){12,18}[0-9]'
+       exists (select 1 from regexp_matches(p, '[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]){11,30}', 'g') m
+                where length(regexp_replace(m[1], '[^0-9]', '', 'g')) >= 12)
+    or p ~ '(?<![0-9])[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{1,7}(?![0-9])'
     or p ~* '(mot de passe|password|code secret|code pin|identifiant de connexion)', false);
 $$;
 
@@ -106,7 +110,10 @@ create table public.memoire_agent (
   id        uuid primary key default gen_random_uuid(),
   user_id   uuid not null default auth.uid() references auth.users(id) on delete cascade,
   categorie text not null check (categorie in ('contexte','preference','projet','decision','explique','a_suivre')),
-  contenu   text not null check (char_length(btrim(contenu)) between 1 and 500) check (not public.contenu_sensible(contenu)),
+  -- Contrainte nommée : le message d'erreur (« violates check constraint "memoire_agent_contenu_sensible" ») permet au front
+  -- (store-supabase.js, echec) de traduire ce seul refus en « information sensible ».
+  contenu   text not null check (char_length(btrim(contenu)) between 1 and 500)
+            constraint memoire_agent_contenu_sensible check (not public.contenu_sensible(contenu)),
   echeance  date check (echeance is null or categorie = 'a_suivre'),
   epingle   boolean not null default false,
   source    text check (source is null or char_length(source) <= 100),
@@ -120,7 +127,7 @@ create policy "memoire_agent: select" on public.memoire_agent for select to auth
 create policy "memoire_agent: insert" on public.memoire_agent for insert to authenticated with check ((select auth.uid()) = user_id);
 create policy "memoire_agent: update" on public.memoire_agent for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "memoire_agent: delete" on public.memoire_agent for delete to authenticated using ((select auth.uid()) = user_id);
-revoke all on table public.memoire_agent from anon;
+revoke all on table public.memoire_agent from anon, authenticated;
 grant select, insert, update, delete on table public.memoire_agent to authenticated;
 
 -- 200 souvenirs au plus par utilisateur ; maj_le tenu à jour.
@@ -131,6 +138,8 @@ set search_path = ''
 as $$
 begin
   if tg_op = 'INSERT' then
+    -- Verrou par utilisateur le temps de la transaction : deux insertions simultanées ne peuvent pas dépasser la limite.
+    perform pg_advisory_xact_lock(hashtext(new.user_id::text));
     if (select count(*) from public.memoire_agent m where m.user_id = new.user_id) >= 200 then
       raise exception 'Mémoire pleine : 200 souvenirs au plus. Supprimez-en dans Boussole › Profil et données › Mémoire de l''agent.' using errcode = '54000';
     end if;

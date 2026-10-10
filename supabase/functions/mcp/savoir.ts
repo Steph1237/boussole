@@ -24,7 +24,9 @@ export async function lireReperes(db: any, must: any, cles?: string[], auj: stri
 }
 
 /** Fiches mises à jour après le jour de `depuis` (horodatage ISO de la session précédente), 10 au plus ;
-    rien si `depuis` est null (première session de ce client : tout serait « nouveau »). */
+    rien si `depuis` est null (première session de ce client : tout serait « nouveau »).
+    Granularité jour (mis_a_jour_le est une date) : une fiche publiée le jour même de la session précédente n'est pas
+    signalée ; passera à un horodatage maj_le avec l'éditeur (AG2). */
 export async function nouveautes(db: any, must: any, depuis: string | null) {
   if (!depuis) return [];
   const rows = must("savoir_fiches", await db.from("savoir_fiches").select("slug, theme, titre, resume, mis_a_jour_le")

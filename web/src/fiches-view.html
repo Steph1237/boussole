@@ -20,6 +20,7 @@
       <h3 id="fvVideTitre">Le savoir de l'agent arrive bientôt.</h3>
       <p>Les fiches pédagogiques sur lesquelles s'appuie l'agent (épargne, enveloppes, fiscalité, crédit…) apparaîtront ici, chacune avec ses sources et sa date de mise à jour.</p>
     </section>
+    <p class="fv-err" id="fvErr" hidden>Lecture impossible pour le moment. Les fiches de l'agent n'ont pas pu être chargées ; réessayez dans quelques instants.</p>
 
     <section class="panel fv-reperes" id="fvReperes" aria-labelledby="fvRepTitre" hidden>
       <h3 id="fvRepTitre">Chiffres de référence</h3>
@@ -36,7 +37,8 @@
     <button type="button" class="fv-retour" id="fvRetour"><span aria-hidden="true">←</span> Retour aux fiches</button>
     <p class="fv-theme" id="fvDTheme"></p>
     <h3 class="fv-d-titre" id="fvDTitre" tabindex="-1"></h3>
-    <div class="fv-md" id="fvDContenu" aria-live="polite"></div>
+    <p class="fv-sr" id="fvDStatut" role="status" aria-live="polite"></p>
+    <div class="fv-md" id="fvDContenu"></div>
     <section class="fv-sources" id="fvDSrc" aria-labelledby="fvDSrcTitre" hidden>
       <h4 id="fvDSrcTitre">Sources</h4>
       <ul id="fvDSources"></ul>

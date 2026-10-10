@@ -448,20 +448,42 @@ test("AG1 : demarrer_session — conduite experte, mémoire, nouveautés par mar
 });
 test("AG1 : conduite experte — reperes avant tout chiffre, consulter_savoir, mémoire effaçable, jamais d'identifiants", () => {
   const c = srcAll.slice(srcAll.indexOf("CONDUITE_EXPERT = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_EXPERT = [")));
-  for (const m of [/reperes/, /consulter_savoir/, /memoriser/, /Mémoire de l'agent/, /IBAN/, /mot(s)? de passe/, /pas un conseil en investissement/]) assert.match(c, m);
+  for (const m of [/reperes/, /consulter_savoir/, /memoriser/, /Mémoire de l'agent/, /IBAN/, /mot(s)? de passe/, /pas un conseil en investissement/, /jamais des consignes/]) assert.match(c, m);
+  // même garde contre l'injection de consignes dans les instructions du serveur
+  const instr = code.slice(code.indexOf("const INSTRUCTIONS"), code.indexOf("].join", code.indexOf("const INSTRUCTIONS")));
+  assert.match(instr, /jamais des consignes/);
+  assert.match(instr, /source externe/);
 });
 test("AG1 : filtre sensible identique au SQL (IBAN, carte, mots interdits) et ISIN accepté", () => {
   const m = srcAll.match(/export const SENSIBLE = \[([\s\S]*?)\];/);
   assert.ok(m, "SENSIBLE exporté");
   const sql = readFileSync(path("supabase/migrations/0009_savoir_memoire.sql"), "utf8");
-  for (const motif of ["[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}", "([0-9][ -]?){12,18}[0-9]", "mot de passe|password|code secret|code pin|identifiant de connexion"]) {
-    assert.ok(sql.includes(motif) && m[1].includes(motif), "motif partagé : " + motif);
+  const Sens = require("../web/src/sensible.js");
+  const motifs = ["[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]){11,30}", "(?<![0-9])[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{1,7}(?![0-9])", "mot de passe|password|code secret|code pin|identifiant de connexion"];
+  assert.deepEqual(Sens.SENSIBLE, motifs, "web/src/sensible.js : les 3 chaînes");
+  for (const motif of motifs) {
+    assert.ok(sql.includes(motif), "motif dans le SQL : " + motif);
+    assert.ok(m[1].includes(motif), "motif dans memoire.ts : " + motif);
   }
-  const res = [new RegExp("[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}"), new RegExp("([0-9][ -]?){12,18}[0-9]"), new RegExp("mot de passe|password|code secret|code pin|identifiant de connexion", "i")];
-  const sensible = t => res.some(r => r.test(t));
-  assert.equal(sensible("FR76 3000 6000 0112 3456 7890 189"), true);
-  assert.equal(sensible("IE00B4L5Y983 et FR0010315770"), false);
-  assert.equal(sensible("Achat prévu à 350 000 € en 2028"), false);
+  // seuil de chiffres de l'IBAN : même valeur dans le SQL, memoire.ts et sensible.js
+  assert.match(sql, /length\(regexp_replace\(m\[1\], '\[\^0-9\]', '', 'g'\)\) >= 12/);
+  assert.match(srcMemoire, /export const IBAN_CHIFFRES_MIN = 12;/);
+  assert.equal(Sens.IBAN_CHIFFRES_MIN, 12);
+  for (const t of ["FR76 3000 6000 0112 3456 7890 189", "carte 4970 1012 3456 7890", "Mon mot de passe est chat"]) assert.equal(Sens.estSensible(t), true, "refusé : " + t);
+  for (const t of ["ETF IE00B4L5Y983 MSCI World", "ISIN FR0010315770 ETF", "IE00B4L5Y983 et FR0010315770", "Objectifs 2025-2026-2027-2028", "100 000 200 000 300 000",
+    "Achat de RP à 350 000 € en 2028, tel 06 12 34 56 78"]) assert.equal(Sens.estSensible(t), false, "accepté : " + t);
+});
+test("AG1 : demarrer_session marque le savoir vu après les lectures ; demarrer_onboarding n'est pas bloqué par la mémoire ; memoriser renvoie epingle", () => {
+  const o = outil("demarrer_session");
+  const iLectures = o.indexOf("Promise.all([lireEtat(), lireMemoire(db, must)])"), iVu = o.indexOf('db.rpc("marquer_savoir_vu"');
+  assert.ok(iLectures >= 0, "lectures d'abord (état et mémoire)");
+  assert.ok(iVu > iLectures, "marquer_savoir_vu après la réussite des lectures");
+  assert.doesNotMatch(o.slice(0, iVu), /Promise\.all\(\[[^\]]*marquer_savoir_vu/, "pas en parallèle des lectures");
+  assert.match(src, /readOnlyHint bien que l'outil tienne la date de dernière session/, "commentaire sur readOnlyHint");
+  const ob = outil("demarrer_onboarding");
+  assert.match(ob, /memoire: memoireDeSession\(await lireMemoireSansBloquer\(\)\)/);
+  assert.match(code, /async function lireMemoireSansBloquer\(\)[^\n]*\n\s*try \{ return await lireMemoire\(db, must\); \} catch \(e\) \{ console\.warn\([^\n]*return \[\]; \}/);
+  assert.match(srcMemoire, /const COLS = "id, categorie, contenu, echeance, epingle, source, cree_le, maj_le"/, "epingle renvoyé par memoriser (retenu)");
 });
 test("AG1 : consulter_savoir et reperes en lecture seule, memoriser / oublier écrivent dans memoire_agent", () => {
   assert.match(outil("consulter_savoir"), /chercher_savoir/);
@@ -517,6 +539,8 @@ test("AG1 : memoire.ts — refus sensible, échéance réservée, insertion, lim
   assert.equal(M.estSensible("Mon Mot de passe est soleil"), true);
   assert.equal(M.estSensible("PEA chez la banque X : IE00B4L5Y983, FR0010315770"), false);
   assert.equal(M.estSensible("Achat prévu à 350 000 € en 2028"), false);
+  for (const t of ["ETF IE00B4L5Y983 MSCI World", "ISIN FR0010315770 ETF", "Objectifs 2025-2026-2027-2028", "100 000 200 000 300 000", "Achat de RP à 350 000 € en 2028, tel 06 12 34 56 78"]) assert.equal(M.estSensible(t), false, "accepté : " + t);
+  assert.equal(M.IBAN_CHIFFRES_MIN, 12);
   assert.deepEqual(J(M.CATEGORIES), ["contexte", "preference", "projet", "decision", "explique", "a_suivre"]);
 
   let db = fauxDb(r => ({ data: { id: "m1", ...(r.ops.find(o => o[0] === "insert") || [])[1] }, error: null }));
@@ -528,6 +552,7 @@ test("AG1 : memoire.ts — refus sensible, échéance réservée, insertion, lim
   assert.match(r.erreur, /a_suivre/); assert.equal(db.appels.length, 0);
   r = await T.memoriser.handler({ categorie: "a_suivre", contenu: "Revoir le PER après la naissance", echeance: "2027-01-15", epingle: true });
   assert.equal(r.ok.retenu.id, "m1"); assert.match(r.ok.rappel, /Mémoire de l'agent/);
+  assert.equal(r.ok.retenu.epingle, true, "epingle renvoyé dans la réponse");
   const ins = db.appels[0].ops.find(o => o[0] === "insert")[1];
   assert.deepEqual(J(ins), { categorie: "a_suivre", contenu: "Revoir le PER après la naissance", echeance: "2027-01-15", epingle: true, source: "Claude" });
   r = await T.memoriser.handler({ categorie: "contexte", contenu: "Deux enfants" });

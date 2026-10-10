@@ -466,14 +466,15 @@
 
   /* ---------- mémoire de l'agent (table privée, RLS) et savoir commun ---------- */
   // Même validation que store-demo.js (et que la base : 1 à 500 caractères, pas de contenu sensible, échéance pour « à suivre »).
-  const SENSIBLE = [/[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}/, /([0-9][ -]?){12,18}[0-9]/, /(mot de passe|password|code secret|code pin|identifiant de connexion)/i];
+  // Le filtre sensible est le module partagé web/src/sensible.js (mêmes motifs que la contrainte SQL contenu_sensible).
+  const estSensible = t => !!(window.Sensible && window.Sensible.estSensible(t));
   const MSG_SENSIBLE = "Ce souvenir contient une information sensible (numéro de compte ou de carte, identifiant, mot de passe) : il n'est pas enregistré.";
   function normSouvenir(patch, m) {
     const p = patch || {}, out = {};
     if ("contenu" in p) {
       const t = String(p.contenu == null ? "" : p.contenu).trim();
       if (!t || t.length > 500) throw bad("Un souvenir compte de 1 à 500 caractères.");
-      if (SENSIBLE.some(re => re.test(t))) throw bad(MSG_SENSIBLE);
+      if (estSensible(t)) throw bad(MSG_SENSIBLE);
       out.contenu = t;
     }
     if ("epingle" in p) out.epingle = !!p.epingle;
@@ -485,7 +486,8 @@
     }
     return out;
   }
-  const echec = e => { const x = asErr(e); return { erreur: x.code === "23514" ? MSG_SENSIBLE : x.message || String(e) }; };
+  // Seule la contrainte contenu_sensible (code 23514, nommée dans le message) est traduite ; toute autre erreur garde son message.
+  const echec = e => { const x = asErr(e); return { erreur: x.code === "23514" && /contenu_sensible/.test(String(x.message || "")) ? MSG_SENSIBLE : x.message || String(e) }; };
   const memoire = {
     async modifier(id, patch) {
       try {
@@ -493,7 +495,8 @@
         if (!m) throw bad("Souvenir introuvable.");
         const row = normSouvenir(patch, m);
         if (!Object.keys(row).length) return { ok: true };
-        await write(async () => q(sb.from("memoire_agent").update(row).eq("id", id)));
+        const rows = await write(async () => q(sb.from("memoire_agent").update(row).eq("id", id).select("id")));
+        if (!Array.isArray(rows) || !rows.length) return { erreur: "Souvenir introuvable." }; // effacé entre-temps (aucune ligne visible)
         return { ok: true };
       } catch (e) { return echec(e); }
     },

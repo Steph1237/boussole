@@ -30,11 +30,27 @@ test("0009 : mémoire — propriétaire seul, limite 200, filtre sensible, expor
   for (const op of ["select", "insert", "update", "delete"]) assert.match(sql, new RegExp(`"memoire_agent: ${op}" on public\\.memoire_agent for ${op} to authenticated`));
   assert.match(sql, /memoire_limite/);
   assert.match(sql, />= 200/);
-  assert.match(sql, /check \(not public\.contenu_sensible\(contenu\)\)/);
+  assert.match(sql, /constraint memoire_agent_contenu_sensible check \(not public\.contenu_sensible\(contenu\)\)/, "contrainte nommée (le front reconnaît « contenu_sensible » dans le message)");
   assert.match(sql, /'memoire_agent',/);
   assert.match(sql, /function public\.marquer_savoir_vu\(p_client_id text\)/);
   assert.match(sql, /function public\.chercher_savoir\(p_question text default null, p_theme text default null, p_limite int default 5\)/);
   for (const f of ["contenu_sensible", "chercher_savoir", "marquer_savoir_vu", "memoire_limite"]) assert.match(sql, new RegExp(`${f}[\\s\\S]*?set search_path = ''`));
+  // droits : tout retiré à anon ET authenticated avant le grant explicite
+  assert.match(sql, /revoke all on table public\.memoire_agent from anon, authenticated;\s*\ngrant select, insert, update, delete on table public\.memoire_agent to authenticated;/);
+  // limite : verrou consultatif par utilisateur avant le comptage (deux insertions simultanées ne dépassent pas 200)
+  const lim = sql.slice(sql.indexOf("function public.memoire_limite()"), sql.indexOf("create trigger memoire_limite"));
+  const iLock = lim.indexOf("perform pg_advisory_xact_lock(hashtext(new.user_id::text));"), iCount = lim.indexOf("select count(*) from public.memoire_agent");
+  assert.ok(iLock >= 0 && iCount > iLock, "pg_advisory_xact_lock avant le comptage");
+});
+
+test("0009 : contenu_sensible — IBAN avec ≥ 12 chiffres, carte en groupes de 4, mots interdits ; immuable", () => {
+  const f = sql.slice(sql.indexOf("function public.contenu_sensible(p text)"), sql.indexOf("$$;", sql.indexOf("function public.contenu_sensible(p text)")));
+  assert.match(f, /immutable[\s\S]*set search_path = ''/);
+  assert.ok(f.includes("regexp_matches(p, '[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]){11,30}', 'g') m"), "motif IBAN, toutes les correspondances");
+  assert.ok(f.includes("where length(regexp_replace(m[1], '[^0-9]', '', 'g')) >= 12"), "au moins 12 chiffres dans la correspondance");
+  assert.ok(f.includes("p ~ '(?<![0-9])[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{1,7}(?![0-9])'"), "motif carte (groupes de 4, espaces seulement)");
+  assert.ok(f.includes("p ~* '(mot de passe|password|code secret|code pin|identifiant de connexion)'"), "mots interdits");
+  assert.doesNotMatch(f, /\(\[0-9\]\[ -\]\?\)\{12,18\}/, "ancien motif carte (suite de chiffres) retiré");
 });
 
 const integ = { skip: !hasServiceKey && SKIP_REASON };
@@ -64,6 +80,11 @@ test("intégration : mémoire privée, filtre sensible, limite, marquer_savoir_v
       const { error } = await a.client.from("memoire_agent").insert({ categorie: "contexte", contenu: bad });
       assert.ok(error, "refusé : " + bad);
     }
+    // ISIN, années et montants en milliers acceptés (puis effacés pour garder le compte à 1)
+    const okTextes = ["ETF IE00B4L5Y983 MSCI World", "ISIN FR0010315770 ETF", "Objectifs 2025-2026-2027-2028", "100 000 200 000 300 000"];
+    const oks = await a.client.from("memoire_agent").insert(okTextes.map(contenu => ({ categorie: "explique", contenu }))).select("id");
+    assert.equal(oks.error, null, "ISIN et chiffres courants acceptés");
+    assert.equal((await a.client.from("memoire_agent").delete().in("id", oks.data.map(r => r.id))).error, null);
     const rows = Array.from({ length: 199 }, (_, i) => ({ categorie: "explique", contenu: "Notion " + i }));
     assert.equal((await a.client.from("memoire_agent").insert(rows)).error, null);
     const trop = await a.client.from("memoire_agent").insert({ categorie: "explique", contenu: "201e" });

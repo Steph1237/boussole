@@ -26,6 +26,7 @@ function browser({ search = "?demo", mode, prep } = {}) {
   vm.createContext(ctx);
   vm.runInContext(src("demo-data.js"), ctx, { filename: "demo-data.js" });
   if (prep) prep(ctx.DEMO);
+  vm.runInContext(src("sensible.js"), ctx, { filename: "sensible.js" }); // filtre partagé (window.Sensible), chargé avant les stores comme dans build.mjs
   vm.runInContext(src("store-demo.js"), ctx, { filename: "store-demo.js" });
   return ctx;
 }
@@ -499,6 +500,9 @@ test("démo : Store.memoire (modifier, supprimer, toutEffacer) et Store.savoir.f
   assert.ok(refus.erreur && /500/.test(refus.erreur), "contenu trop long refusé");
   assert.ok((await M.modifier(a.id, { contenu: "   " })).erreur, "contenu vide refusé");
   assert.ok(/sensible/.test((await M.modifier(a.id, { contenu: "Mon mot de passe est chat" })).erreur || ""), "contenu sensible refusé");
+  assert.ok(/sensible/.test((await M.modifier(a.id, { contenu: "IBAN FR76 3000 6000 0112 3456 7890 189" })).erreur || ""), "IBAN refusé");
+  assert.deepEqual(J(await M.modifier(a.id, { contenu: "ETF IE00B4L5Y983 MSCI World" })), { ok: true }, "ISIN accepté");
+  assert.deepEqual(J(await M.modifier(a.id, { contenu: "Texte corrigé" })), { ok: true });
   assert.ok((await M.modifier("inconnu", { epingle: true })).erreur, "souvenir inconnu");
   assert.equal(ctx.Store.get().memoire.find(x => x.id === a.id).contenu, "Texte corrigé", "un refus ne modifie rien");
 
@@ -529,6 +533,17 @@ test("store-supabase.js : mémoire de l'agent et savoir commun (lecture au déma
     'from("reperes").select(', "Reperes.depuisLignes", "memView", "ficheView",
     'from("memoire_agent").update(', 'from("memoire_agent").delete().in("id", ', 'from("memoire_agent").delete().eq("user_id", uid)',
     'select("slug, theme, titre, resume, contenu, mots_cles, sources, version, mis_a_jour_le").eq("slug", slug).maybeSingle()']) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  // filtre sensible : module partagé web/src/sensible.js, plus de copie locale des motifs dans les stores
+  for (const [nom, s] of [["store-supabase.js", sup], ["store-demo.js", demo]]) {
+    assert.ok(s.includes("window.Sensible.estSensible(t)"), `${nom} : window.Sensible.estSensible`);
+    assert.doesNotMatch(s, /const SENSIBLE = \[/, `${nom} : plus de copie locale des motifs`);
+    assert.doesNotMatch(s, /\[A-Z\]\{2\}\[0-9\]\{2\}/, `${nom} : motif IBAN retiré`);
+  }
+  // modifier : la ligne mise à jour est renvoyée (.select("id")) ; aucune ligne → « Souvenir introuvable. »
+  assert.ok(sup.includes('from("memoire_agent").update(row).eq("id", id).select("id")'), "update … select(id)");
+  assert.match(sup, /if \(!Array\.isArray\(rows\) \|\| !rows\.length\) return \{ erreur: "Souvenir introuvable\." \};/);
+  // echec : seule la contrainte contenu_sensible (23514 + nom de la contrainte) devient le message « information sensible »
+  assert.match(sup, /x\.code === "23514" && \/contenu_sensible\/\.test\(String\(x\.message \|\| ""\)\) \? MSG_SENSIBLE : x\.message \|\| String\(e\)/);
   // les trois lectures rejoignent le Promise.allSettled de loadAll (une table absente ne casse rien)
   const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
   for (const t of ["memoire_agent", "savoir_fiches", "reperes"]) assert.ok(load.includes(`from("${t}")`), `loadAll lit ${t}`);
