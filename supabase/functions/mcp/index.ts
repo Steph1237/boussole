@@ -45,7 +45,9 @@ const INSTRUCTIONS = [
   "Chaque écriture renvoie ce qui a changé ; rends-en compte à l'utilisateur.",
   "Budget mensuel (get_budget, update_budget) : lignes de revenus, dépenses par catégorie et épargne, par mois ou par an. Le salaire et les mensualités de crédit viennent du profil : ne les ajoute pas au budget. update_budget fusionne par défaut (rapprochement par id ou par libellé).",
   "Objectifs datés (list_objectifs, upsert_objectifs, delete_objectif) : apport, matelas, retraite ou projet, avec cible, échéance, montant déjà réuni (saisi ou poches rattachées), rendement attendu et priorité ; list_objectifs calcule l'effort mensuel requis et le statut.",
-  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge) : c'est un indicateur pédagogique, pas un conseil en investissement ; présente-le comme tel.",
+  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels.",
+  "Profil de risque (get_risk_profile) : profil déclaré par l'utilisateur via le questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, et profil équivalent du portefeuille réel (volatilité, baisse plausible sur un an). Tu ne remplis pas le questionnaire à la place de l'utilisateur : s'il n'est pas rempli, invite-le à le faire dans Diagnostic › Profil de risque. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
+  "Frais, zone et devise des fonds (annotate_instrument) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
 ].join("\n");
 
 /* ------------------------------------------------------------------ */
@@ -105,7 +107,7 @@ function diff(before: any, after: any, prefix = "", depth = 2): { champ: string;
 /* Valorisation (mêmes règles que web/src/calc.js : val, counted, part) */
 /* ------------------------------------------------------------------ */
 
-const POS_SELECT = "*, instrument:instruments(name, symbol, currency, price, price_date)";
+const POS_SELECT = "*, instrument:instruments(name, symbol, currency, price, price_date, ter, zone, devise, annote_source, annote_le)";
 
 function effectivePrice(p: any): number | null {
   if (p.price_override != null) return Number(p.price_override);
@@ -157,6 +159,11 @@ function viewPosition(p: any) {
     valeur_date: p.mode === "manual" ? p.value_date : undefined,
     quantite_estimee: p.qty_estimated || undefined,
     note: p.note || undefined,
+    frais_courants_pct: p.instrument?.ter != null ? Number(p.instrument.ter) : undefined,
+    zone: p.instrument?.zone ?? undefined,
+    devise_exposition: p.instrument?.devise ?? undefined,
+    annotation_source: p.instrument?.annote_source ?? undefined,
+    annotation_date: p.instrument?.annote_le ?? undefined,
   });
 }
 
@@ -440,6 +447,559 @@ function scoreSante(d: Donnees, scope: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Diagnostic : profil de risque et risque réel du portefeuille        */
+/* Port de web/src/risque.js (PROFILS, allocationReelle, ecarts,       */
+/* risquePortefeuille, texte de synthese), web/src/marche.js (CLASSES : */
+/* volatilité et pire baisse, corrélations, classeRisque) et           */
+/* web/src/calc.js (classe d'une poche, liquidité d'une enveloppe).     */
+/* Mêmes constantes et mêmes formules ; test/mcp.test.mjs vérifie la    */
+/* parité des tables.                                                   */
+/* ------------------------------------------------------------------ */
+
+const sansAccent = (s: unknown) => String(s ?? "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+/** Poche (libellé libre) → classe d'actifs (table de calc.js), surchargeable par profiles.classes. */
+const CLASSES_POCHE: Record<string, string> = {
+  monde: "actions", europe: "actions", asie: "actions", "nasdaq 2x": "actions", nasdaq: "actions", "convictions tech": "actions", convictions: "actions",
+  actions: "actions", "etats-unis": "actions", usa: "actions", emergents: "actions", "small caps": "actions",
+  obligations: "obligations", oblig: "obligations",
+  scpi: "immobilier", immobilier: "immobilier", sci: "immobilier", opci: "immobilier",
+  epargne: "monetaire", livrets: "monetaire", monetaire: "monetaire", cash: "monetaire", liquidites: "monetaire",
+  protection: "fonds_euros", "fonds euros": "fonds_euros", "fonds euro": "fonds_euros",
+  or: "or", "metaux precieux": "or", crypto: "crypto", cryptos: "crypto",
+};
+type Surcharge = Record<string, string> | null | undefined;
+const surchargee = (bloc: unknown, s: Surcharge) => !!s && typeof s === "object" && Object.prototype.hasOwnProperty.call(s, String(bloc));
+function classePoche(bloc: unknown, s: Surcharge): string {
+  if (surchargee(bloc, s)) return (s as Record<string, string>)[String(bloc)];
+  return CLASSES_POCHE[sansAccent(bloc)] || "autres";
+}
+/** Enveloppe → délai de disponibilité (calc.js : immediate, jours, semaines, bloque). */
+function liquidite(envelope: unknown): string {
+  const e = sansAccent(envelope);
+  if (/\bper\b|perco|pee|retraite|scpi|immobilier/.test(e)) return "bloque";
+  if (/livret|ldds|lep|compte|cash|especes|courant/.test(e)) return "immediate";
+  if (/\bav\b|assurance|vie|capitalisation/.test(e)) return "semaines";
+  return "jours";
+}
+
+/** Statistiques par classe (marche.js) : volatilité annuelle et pire baisse historique, en %. */
+const CLASSES_RISQUE: Record<string, { label: string; volatilite: number; pireBaisse: number }> = {
+  actions: { label: "Actions (monde développé)", volatilite: 15, pireBaisse: -55 },
+  small_caps: { label: "Actions de petites entreprises (small caps)", volatilite: 20, pireBaisse: -60 },
+  emergents: { label: "Actions des pays émergents", volatilite: 20, pireBaisse: -60 },
+  levier: { label: "Produits à effet de levier (ETF ×2 quotidien)", volatilite: 45, pireBaisse: -85 },
+  obligations: { label: "Obligations (zone euro)", volatilite: 5, pireBaisse: -17 },
+  immobilier: { label: "Immobilier (SCPI, pierre)", volatilite: 6, pireBaisse: -20 },
+  monetaire: { label: "Monétaire et livrets", volatilite: 0.5, pireBaisse: 0 },
+  fonds_euros: { label: "Fonds euros", volatilite: 0.5, pireBaisse: 0 },
+  or: { label: "Or", volatilite: 15, pireBaisse: -45 },
+  crypto: { label: "Cryptoactifs", volatilite: 70, pireBaisse: -80 },
+  autres: { label: "Autres (non classé)", volatilite: 12, pireBaisse: -35 },
+};
+/** Corrélations simplifiées (marche.js), symétriques ; monétaire et fonds euros : 0 avec tout. */
+const PAIRES: Record<string, number> = {
+  "actions|small_caps": 0.9, "actions|emergents": 0.85, "actions|levier": 0.9,
+  "small_caps|emergents": 0.8, "small_caps|levier": 0.85, "emergents|levier": 0.8,
+  "actions|obligations": 0.1, "small_caps|obligations": 0.1, "emergents|obligations": 0.1, "levier|obligations": 0.1,
+  "actions|or": 0.1, "small_caps|or": 0.1, "emergents|or": 0.1, "levier|or": 0.1,
+  "actions|crypto": 0.4, "small_caps|crypto": 0.4, "emergents|crypto": 0.4, "levier|crypto": 0.4,
+  "actions|immobilier": 0.5, "small_caps|immobilier": 0.5, "emergents|immobilier": 0.5, "levier|immobilier": 0.5,
+  "actions|autres": 0.5, "small_caps|autres": 0.5, "emergents|autres": 0.5, "levier|autres": 0.5,
+  "obligations|immobilier": 0.3, "obligations|or": 0.2, "obligations|crypto": 0, "obligations|autres": 0.3,
+  "immobilier|or": 0.1, "immobilier|crypto": 0.2, "immobilier|autres": 0.3,
+  "or|crypto": 0.1, "or|autres": 0.1, "crypto|autres": 0.2,
+};
+function correlation(a: string, b: string): number {
+  if (a === b) return 1;
+  const v = PAIRES[a + "|" + b];
+  if (v != null) return v;
+  const w = PAIRES[b + "|" + a];
+  return w != null ? w : 0;
+}
+const LEVIER = /(^|[^a-z0-9])([23] ?[x×]|[x×] ?[23])([^a-z0-9]|$)|levier|leverag/;
+const SMALL = /small ?caps?|petites? cap|russell 2000/;
+const EMERG = /emergent|emerging|\bem\b|msci em\b/;
+/** Classe de risque d'une ligne (Marche.classeRisque) : levier d'après le nom (prioritaire) ou la poche non surchargée,
+    sinon la classe de la poche, affinée en small caps / émergents pour les actions. */
+function classeRisque(p: any, s: Surcharge): string {
+  const bloc = p.bloc, nom = sansAccent(p.name), poche = sansAccent(bloc);
+  if (LEVIER.test(nom)) return "levier";
+  const sur = surchargee(bloc, s);
+  if (!sur && LEVIER.test(poche)) return "levier";
+  const base = classePoche(bloc, s);
+  if (sur && CLASSES_RISQUE[base] && base !== "actions") return base;
+  if (base === "actions") {
+    const txt = poche + " " + nom;
+    if (SMALL.test(txt)) return "small_caps";
+    if (EMERG.test(txt)) return "emergents";
+  }
+  return CLASSES_RISQUE[base] ? base : "autres";
+}
+
+/** Profils (risque.js) : allocation cible indicative en % (bornes incluses) et perte maximale tolérée sur un an. */
+const PROFILS = [
+  { id: "prudent", label: "Prudent", perteMax: 5,
+    description: "Vous privilégiez la sécurité : l'essentiel reste sur des supports sans risque de perte, une petite part cherche un peu de rendement.",
+    cibles: { actions: [10, 20], obligations: [20, 30], securise: [50, 70], immobilier: [0, 10], speculatif: [0, 0] } },
+  { id: "modere", label: "Modéré", perteMax: 12,
+    description: "Vous acceptez de petites variations pour un rendement un peu meilleur, avec une base sécurisée importante.",
+    cibles: { actions: [25, 40], obligations: [20, 30], securise: [30, 45], immobilier: [5, 15], speculatif: [0, 2] } },
+  { id: "equilibre", label: "Équilibré", perteMax: 20,
+    description: "Vous cherchez un compromis : environ la moitié en actions pour la croissance, le reste pour amortir les baisses.",
+    cibles: { actions: [45, 60], obligations: [15, 25], securise: [15, 30], immobilier: [5, 15], speculatif: [0, 5] } },
+  { id: "dynamique", label: "Dynamique", perteMax: 30,
+    description: "Vous visez la croissance à long terme et acceptez des baisses marquées, le temps qu'elles soient rattrapées.",
+    cibles: { actions: [60, 80], obligations: [5, 15], securise: [5, 15], immobilier: [5, 15], speculatif: [0, 7] } },
+  { id: "offensif", label: "Offensif", perteMax: 40,
+    description: "Vous recherchez le rendement maximal sur un horizon long et supportez de fortes baisses sans vendre.",
+    cibles: { actions: [75, 95], obligations: [0, 10], securise: [0, 10], immobilier: [0, 10], speculatif: [0, 10] } },
+] as { id: string; label: string; perteMax: number; description: string; cibles: Record<string, number[]> }[];
+const rangProfil = (id: string) => PROFILS.findIndex((p) => p.id === id);
+/** Profil déclaré : identifiant, libellé ou objet { id } (même tolérance que Pratiques.idProfil / ficheProfil). */
+function ficheProfil(risque: any) {
+  const v = risque && (risque.profil && typeof risque.profil === "object" ? risque.profil.id || risque.profil.cle : risque.profil);
+  if (!v) return null;
+  return PROFILS.find((p) => p.id === String(v)) || PROFILS.find((p) => sansAccent(p.id) === sansAccent(v) || sansAccent(p.label) === sansAccent(v)) || null;
+}
+const GROUPES = ["actions", "obligations", "securise", "immobilier", "speculatif"];
+const GROUPES_LABELS: Record<string, string> = { actions: "Actions", obligations: "Obligations", securise: "Fonds euros et monétaire", immobilier: "Immobilier",
+  speculatif: "Spéculatif (crypto, levier)", diversifiants: "Or et autres" };
+const GROUPE_DE: Record<string, string> = { actions: "actions", small_caps: "actions", emergents: "actions", obligations: "obligations", monetaire: "securise",
+  fonds_euros: "securise", immobilier: "immobilier", crypto: "speculatif", levier: "speculatif", or: "diversifiants", autres: "diversifiants" };
+
+/** Montants par classe de risque, lignes comptées du périmètre (financier seul : sans résidence ni biens physiques). */
+function montantsParClasse(positions: any[], scope: string, s: Surcharge): Record<string, number> {
+  const out: Record<string, number> = {};
+  positions.filter((p) => inScope(p.owner, scope) && counted(p)).forEach((p) => {
+    const k = classeRisque(p, s);
+    out[k] = (out[k] || 0) + val(p);
+  });
+  return out;
+}
+function allocationReelle(positions: any[], scope: string, s: Surcharge) {
+  const parClasse = montantsParClasse(positions, scope, s);
+  const montants: Record<string, number> = { actions: 0, obligations: 0, securise: 0, immobilier: 0, speculatif: 0, diversifiants: 0 };
+  Object.keys(parClasse).forEach((k) => { montants[GROUPE_DE[k] || "diversifiants"] += parClasse[k]; });
+  const total = sum(Object.keys(montants), (k) => montants[k]);
+  const pct: Record<string, number> = {};
+  Object.keys(montants).forEach((k) => { pct[k] = total > 0 ? montants[k] * 100 / total : 0; });
+  return { total, montants, pct, parClasse };
+}
+/** σ = √(wᵀΣw), Σᵢⱼ = ρᵢⱼ σᵢ σⱼ ; baisse plausible = max(−100, min(−2,33 σ, ½ Σ wᵢ pire baisseᵢ)) ;
+    profil équivalent = le moins risqué dont la perte tolérée couvre cette baisse, sinon Offensif. */
+function risquePortefeuille(positions: any[], scope: string, s: Surcharge) {
+  const parClasse = montantsParClasse(positions, scope, s);
+  const cles = Object.keys(parClasse).filter((k) => parClasse[k] > 0);
+  const total = sum(cles, (k) => parClasse[k]);
+  if (!(total > 0)) return { volatilite: 0, baissePlausible: 0, pireBaisseHistorique: 0, profilEquivalent: null as string | null, contributions: [] as any[] };
+  const w = cles.map((k) => parClasse[k] / total);
+  const stat = (k: string) => CLASSES_RISQUE[k] || CLASSES_RISQUE.autres;
+  const cov = (a: string, b: string) => correlation(a, b) * stat(a).volatilite * stat(b).volatilite;
+  const sw = cles.map((a) => cles.reduce((acc, b, j) => acc + w[j] * cov(a, b), 0));
+  const variance = cles.reduce((acc, _a, i) => acc + w[i] * sw[i], 0);
+  const volatilite = Math.sqrt(Math.max(0, variance));
+  const pireBaisseHistorique = cles.reduce((acc, k, i) => acc + w[i] * stat(k).pireBaisse, 0);
+  const baissePlausible = Math.max(-100, Math.min(-2.33 * volatilite, 0.5 * pireBaisseHistorique));
+  const perte = -baissePlausible;
+  const eq = PROFILS.find((p) => p.perteMax + EPS >= perte);
+  const contributions = cles.map((k, i) => ({ classe: k, poids: parClasse[k] * 100 / total, contributionPct: variance > 0 ? w[i] * sw[i] / variance * 100 : 0 }))
+    .sort((a, b) => b.contributionPct - a.contributionPct || b.poids - a.poids);
+  return { volatilite, baissePlausible, pireBaisseHistorique, profilEquivalent: eq ? eq.id : "offensif", contributions };
+}
+/** Écart par groupe : 0 dans la fourchette, réel − min en dessous, réel − max au-dessus (points de %). */
+function ecarts(profilId: string, pct: Record<string, number>) {
+  const p = PROFILS.find((x) => x.id === profilId);
+  if (!p) return [];
+  return GROUPES.map((g) => {
+    const reel = num(pct[g]), [min, max] = p.cibles[g];
+    const statut = reel < min - EPS ? "sous" : reel > max + EPS ? "au-dessus" : "dans";
+    return { groupe: g, label: GROUPES_LABELS[g], reel, min, max, statut, ecartPts: statut === "sous" ? reel - min : statut === "au-dessus" ? reel - max : 0 };
+  });
+}
+const r1 = (v: number) => Math.round(v * 10) / 10;
+
+/** Synthèse du profil de risque (Risque.synthese, sans le recalcul du questionnaire : le profil enregistré fait foi). */
+function syntheseRisque(risque: any, positions: any[], scope: string, s: Surcharge) {
+  const declare = ficheProfil(risque);
+  const allocation = allocationReelle(positions, scope, s);
+  const rp = risquePortefeuille(positions, scope, s);
+  const equivalent = PROFILS.find((p) => p.id === rp.profilEquivalent) || null;
+  const ecartNiveaux = declare && equivalent ? rangProfil(equivalent.id) - rangProfil(declare.id) : null;
+  let texte: string;
+  if (!equivalent) texte = "Aucun placement à analyser pour le moment.";
+  else if (!declare) texte = "Votre portefeuille se comporte comme un profil " + equivalent.label + ". Répondez au questionnaire pour le comparer à votre profil.";
+  else if (ecartNiveaux === 0) texte = "Votre portefeuille se comporte comme un profil " + equivalent.label + ", conforme à votre profil.";
+  else texte = "Votre portefeuille se comporte comme un profil " + equivalent.label + ", alors que votre profil est " + declare.label + " : il prend " +
+    ((ecartNiveaux as number) > 0 ? "plus de risque que vous ne le souhaitez." : "moins de risque que votre profil ne le permet.");
+  return { declare, allocation, risque: rp, equivalent, ecartNiveaux, texte, ecarts: declare ? ecarts(declare.id, allocation.pct) : [] };
+}
+
+/* ------------------------------------------------------------------ */
+/* Bonnes pratiques notées (port de web/src/pratiques.js)              */
+/* Quatre familles (Sécurité 30, Effort 25, Allocation 30, Efficacité   */
+/* 15), quatorze critères sur 20 ; mêmes règles, barèmes et textes.     */
+/* Omis par rapport à l'interface : le champ « lien » (navigation de    */
+/* l'application). Le risque est calculé sur le financier seul, comme   */
+/* dans pratiques.js.                                                   */
+/* ------------------------------------------------------------------ */
+
+const FAMILLES = [
+  { cle: "securite", titre: "Sécurité", poids: 30 },
+  { cle: "effort", titre: "Effort", poids: 25 },
+  { cle: "allocation", titre: "Allocation", poids: 30 },
+  { cle: "efficacite", titre: "Efficacité", poids: 15 },
+];
+const PLAFOND_SPECULATIF_DEFAUT = 0.05;
+const PLAFOND_PEA_DEFAUT = 150000;
+const HORIZON_COURT = 24; // mois
+/* Barèmes (points sur 20) : nommés pour ne pas être confondus avec ceux du score de santé (test de parité plan.js / MCP). */
+const BAREME_ADEQUATION = [[0, 20], [40, 0]];
+const BAREME_GEOGRAPHIE = [[0, 8], [0.5, 20]];
+const BAREME_SPECULATIF_NUL = [[0, 20], [0.01, 0]];
+const BAREME_FRAIS = [[0.3, 20], [1, 10], [2, 0]];
+const BAREME_DORMANT = [[12, 20], [24, 10], [36, 5]];
+
+/* Formats de pratiques.js (zéros finaux retirés, milliers séparés par une espace). */
+function frP(x: number, dec = 1): string {
+  const s = Math.abs(x).toFixed(dec).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1").replace(".", ",");
+  return (x < 0 ? "\u2212" : "") + s.replace(/^(\d+)/, (m) => m.replace(/\B(?=(\d{3})+(?!\d))/g, " "));
+}
+const pctP = (x: number, dec = 0) => frP(x * 100, dec) + " %";
+const eurP = (x: number) => frP(Math.round(x), 0) + " €";
+const isoJour = (d: string) => String(d).slice(0, 10);
+const plusAns = (date: string, ans: number) => { const s = isoJour(date).split("-").map(Number); return String(s[0] + ans).padStart(4, "0") + "-" + String(s[1] || 1).padStart(2, "0") + "-" + String(s[2] || 1).padStart(2, "0"); };
+const frDate = (d: string) => isoJour(d).split("-").reverse().join("/");
+const connu = (v: unknown) => v !== null && v !== undefined && v !== "" && isFinite(Number(v));
+
+type Critere = { cle: string; famille: string; titre: string; points: number | null; sur: number; valeur: number | null; cible: string; texte: string; piste: string;
+  regle: string; source: string; aCompleter: boolean; informatif?: boolean; details?: any[] };
+type Base = { titre: string; cible: string; regle: string; source: string };
+const critere = (famille: string, cle: string, b: Base, champs: Partial<Critere>): Critere =>
+  ({ cle, famille, titre: b.titre, points: 0, sur: 20, valeur: null, cible: b.cible, texte: "", piste: "", regle: b.regle, source: b.source, aCompleter: false, ...champs });
+const aCompleter = (famille: string, cle: string, b: Base, texte: string, piste: string) => critere(famille, cle, b, { aCompleter: true, texte, piste });
+
+const DE_PLAN: Record<string, { famille: string; regle: string; source: string }> = {
+  matelas: { famille: "securite", regle: "Matelas = épargne disponible ÷ dépenses mensuelles ; repère 3 à 6 mois", source: "Repère usuel des conseillers en gestion de patrimoine" },
+  epargne: { famille: "effort", regle: "Taux d'épargne = (épargne prévue + reste du mois) ÷ revenus ; repère 15 % ou plus", source: "Repère usuel des conseillers en gestion de patrimoine" },
+  endettement: { famille: "effort", regle: "Endettement = mensualités de crédit ÷ revenus ; plafond 35 %", source: "HCSF, décision D-HCSF-2021-7" },
+  concentration: { famille: "allocation", regle: "Poids de la plus grosse ligne dans le financier ; repère 20 % au plus et au moins 3 poches",
+    source: "Principe de diversification ; repère usuel des conseillers en gestion de patrimoine" },
+};
+const BP: Record<string, Base> = {
+  protection: { titre: "Protection de la famille", cible: "prévoyance et assurance emprunteur en place",
+    regle: "Avec un crédit ou des enfants à charge : prévoyance (décès, invalidité) et assurance emprunteur souscrites",
+    source: "Repère usuel des conseillers en gestion de patrimoine ; assurance emprunteur demandée par les banques pour un crédit immobilier" },
+  liquidite_objectifs: { titre: "Argent disponible pour les projets proches", cible: "100 % du besoin des objectifs à moins de 2 ans",
+    regle: "Argent disponible sous quelques jours ÷ montant restant à réunir pour les objectifs à moins de 2 ans ; repère 100 %",
+    source: "Repère usuel des conseillers : l'argent nécessaire à moins de 2 ans reste disponible et peu risqué" },
+  apport: { titre: "Apport pour le projet immobilier", cible: "l'apport visé (10 % du prix + frais de notaire)",
+    regle: "Apport réuni ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
+    source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)" },
+  adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de votre profil",
+    regle: "Somme des écarts hors fourchette, par classe d'actifs, entre votre allocation et celle de votre profil ; repère 0 point",
+    source: "Questionnaire de profil inspiré de l'adéquation MiFID II ; allocations indicatives de Boussole" },
+  geographie: { titre: "Diversification géographique", cible: "au moins la moitié des actions sur le monde entier",
+    regle: "Part des actions investies sur le monde entier (indices Monde, ACWI) ; repère 50 % ou plus",
+    source: "Principe de diversification ; biais domestique (French et Poterba, 1991)" },
+  speculatif: { titre: "Part spéculative", cible: "sous le plafond de votre profil",
+    regle: "(Crypto + produits à levier) ÷ financier ; repère : sous le plafond de votre profil (5 % par défaut)",
+    source: "Plafonds indicatifs par profil de Boussole ; mises en garde de l'AMF sur les crypto-actifs et les produits à effet de levier" },
+  devises: { titre: "Exposition hors euro", cible: "information, sans note",
+    regle: "Part du financier exposée à une autre devise que l'euro (une zone hors Europe compte hors euro) ; information",
+    source: "Risque de change : information, pas un défaut" },
+  frais: { titre: "Frais des fonds", cible: "0,3 % par an ou moins",
+    regle: "Frais courants (TER) moyens, pondérés par les montants, des lignes cotées ; repère 0,3 % ou moins",
+    source: "Documents d'informations clés des fonds ; ETF indiciels ≈ 0,1 à 0,3 %, fonds gérés ≈ 1,5 à 2 %" },
+  enveloppes: { titre: "Choix des enveloppes", cible: "aucun point d'attention",
+    regle: "PEA avant compte-titres pour les actions européennes · assurance-vie de plus de 8 ans pour l'abattement · PER surtout à partir de 30 % d'imposition",
+    source: "Code général des impôts : art. 163 quinquies D (PEA), art. 125-0 A et 990 I (assurance-vie), art. 163 quatervicies (PER)" },
+  dormant: { titre: "Argent dormant", cible: "12 mois de dépenses au plus sur livrets",
+    regle: "Livrets et monétaire au-delà de 12 mois de dépenses, hors objectifs à moins de 2 ans ; repère 12 mois au plus",
+    source: "Repère usuel des conseillers en gestion de patrimoine" },
+};
+const terDe = (p: any) => p.instrument?.ter ?? null;
+const zoneDe = (p: any) => p.instrument?.zone ?? null;
+const deviseDe = (p: any) => p.instrument?.devise ?? null;
+
+type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string };
+
+function objectifsCourts(objectifs: any[], deja: Record<string, number>, ref: string) {
+  return objectifs.filter((o) => o && dateCible(o) && moisEntre(ref, dateCible(o)!) <= HORIZON_COURT)
+    .map((o) => ({ o, cible: pos(o.cible), deja: pos(deja[o.id]) }));
+}
+
+function bpProtection(c: ContexteBP): Critere | null {
+  const pr = c.d.profil || {}, f = pr.foyer || {}, b = bilan(c.d, c.scope);
+  const credit = b.dettes > 0 || b.mensualites > 0;
+  const enfants = num(f.enfants) > 0 || num(f.enfants14) > 0;
+  if (!credit && !enfants) return null;
+  const attendus = credit ? ["prevoyance", "emprunteur"] : ["prevoyance"];
+  const decl = pr.protection && pr.protection[c.scope] && typeof pr.protection[c.scope] === "object" ? pr.protection[c.scope] : pr.protection;
+  const motif = credit && enfants ? "un crédit et des enfants" : credit ? "un crédit en cours" : "des enfants à charge";
+  if (!decl || attendus.some((k) => typeof decl[k] !== "boolean"))
+    return aCompleter("securite", "protection", BP.protection, "Protection non renseignée, alors que vous avez " + motif + ".",
+      "Indiquez dans le Profil si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
+  const okN = attendus.filter((k) => decl[k]).length;
+  const libelle: Record<string, string> = { prevoyance: "prévoyance", emprunteur: "assurance emprunteur" };
+  const manque = attendus.filter((k) => !decl[k]).map((k) => libelle[k]);
+  return critere("securite", "protection", BP.protection, { points: okN === attendus.length ? 20 : okN > 0 ? 8 : 0, valeur: okN / attendus.length,
+    texte: manque.length ? "Manque : " + manque.join(" et ") + " (vous avez " + motif + ")." : "Protection en place pour " + motif + ".",
+    piste: manque.length ? "Un décès ou une invalidité ne doit pas mettre le foyer en difficulté : vérifiez d'abord les garanties de votre employeur, puis comparez les contrats."
+      : "Relisez les garanties à chaque changement de situation (naissance, nouveau crédit)." });
+}
+
+function bpLiquidite(c: ContexteBP, deja: Record<string, number>): Critere | null {
+  const courts = objectifsCourts(c.objectifs, deja, c.ref);
+  if (!courts.length) return null;
+  const besoin = sum(courts, (x) => Math.max(0, x.cible - x.deja));
+  const dispo = sum(c.d.positions.filter((p) => inScope(p.owner, c.scope) && counted(p) && ["immediate", "jours"].includes(liquidite(p.envelope))), val);
+  if (besoin <= 0) return critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: 20,
+    texte: "Vos objectifs à moins de 2 ans sont déjà financés.", piste: "Gardez cet argent sur des supports disponibles jusqu'à l'échéance." });
+  const ratio = dispo / besoin;
+  return critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
+    texte: eurP(dispo) + " disponibles sous quelques jours pour " + eurP(besoin) + " encore à réunir d'ici 2 ans.",
+    piste: ratio >= 1 ? "L'argent de vos projets proches est accessible sans attendre ni vendre au mauvais moment."
+      : "L'argent nécessaire à moins de 2 ans gagne à être disponible et peu risqué (livrets, compte courant) : une baisse des marchés juste avant l'échéance n'aurait pas le temps de se rattraper." });
+}
+
+function bpApport(c: ContexteBP, deja: Record<string, number>): Critere | null {
+  const L = c.objectifs.filter((o) => o && o.type === "apport");
+  if (!L.length) return null;
+  const cible = sum(L, (o) => (pos(o.cible) > 0 ? pos(o.cible) : 0.18 * pos(o.prix)));
+  const reuni = sum(L, (o) => pos(deja[o.id]));
+  if (cible <= 0) return aCompleter("effort", "apport", BP.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport du Plan.");
+  const ratio = reuni / cible;
+  return critere("effort", "apport", BP.apport, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
+    texte: eurP(reuni) + " réunis sur " + eurP(cible) + " d'apport visé (" + pctP(ratio) + ").",
+    piste: ratio >= 1 ? "Votre apport est réuni : les banques regarderont aussi votre endettement après l'achat."
+      : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; le Plan indique l'effort mensuel pour y arriver." });
+}
+
+function bpAdequation(c: ContexteBP, financier: number): Critere {
+  const fiche = ficheProfil(c.risque);
+  if (!fiche) return aCompleter("allocation", "adequation", BP.adequation, "Profil de risque non renseigné.",
+    "Répondez au questionnaire (une dizaine de questions) pour comparer votre allocation à celle de votre profil.");
+  if (financier <= 0) return aCompleter("allocation", "adequation", BP.adequation, "Aucun placement enregistré.",
+    "Ajoutez vos placements dans Bilan › Placements pour les comparer à votre profil.");
+  const hors = sum(ecarts(fiche.id, allocationReelle(c.d.positions, c.scope, c.classes).pct), (e) => Math.abs(e.ecartPts));
+  return critere("allocation", "adequation", BP.adequation, { points: Math.round(interp(hors, BAREME_ADEQUATION)), valeur: Math.round(hors * 10) / 10,
+    texte: hors <= 0 ? "Votre allocation est dans les fourchettes du profil " + fiche.label + "." : frP(hors) + " points hors des fourchettes du profil " + fiche.label + ".",
+    piste: hors <= 0 ? "Votre répartition correspond au risque que vous avez dit accepter."
+      : "Le détail par classe est dans Diagnostic › Profil de risque : rapprochez chaque classe de sa fourchette, de préférence avec vos versements à venir." });
+}
+
+const RE_MONDE = /monde|world|acwi|all.?country|global|international/;
+const libelleGeo = (p: any) => sansAccent(zoneDe(p) || (p.bloc || "") + " " + (p.name || ""));
+function bpGeographie(vivantes: any[], classes: Surcharge): Critere | null {
+  const actions = vivantes.filter((p) => classePoche(p.bloc, classes) === "actions" && val(p) > 0);
+  const total = sum(actions, val);
+  if (total <= 0) return null;
+  const part = sum(actions.filter((p) => RE_MONDE.test(libelleGeo(p))), val) / total;
+  return critere("allocation", "geographie", BP.geographie, { points: Math.round(part >= 0.5 ? 20 : interp(part, BAREME_GEOGRAPHIE)), valeur: part,
+    texte: pctP(part) + " de vos actions couvrent le monde entier ; le reste vise une région, un pays ou des titres en direct.",
+    piste: part >= 0.5 ? "Un socle « monde » répartit le risque sur des milliers d'entreprises et plusieurs économies ; vos paris régionaux s'y ajoutent."
+      : "Miser sur une région n'est pas une erreur, mais le risque est plus concentré. Le biais domestique (surpondérer son pays ou sa région) est fréquent : un socle « monde » diversifie davantage." });
+}
+
+function bpSpeculatif(c: ContexteBP, vivantes: any[], financier: number): Critere {
+  if (financier <= 0) return aCompleter("allocation", "speculatif", BP.speculatif, "Aucun placement enregistré.",
+    "Ajoutez vos placements dans Bilan › Placements pour mesurer leur part spéculative.");
+  const part = sum(vivantes.filter((p) => ["crypto", "levier"].includes(classeRisque(p, c.classes))), val) / financier;
+  const fiche = ficheProfil(c.risque);
+  const s = fiche?.cibles.speculatif;
+  const borne = Array.isArray(s) && connu(s[1]) ? (s[1] >= 1 ? s[1] / 100 : s[1]) : null;
+  const plafond = borne == null ? PLAFOND_SPECULATIF_DEFAUT : borne;
+  const de = borne == null ? "plafond par défaut de " + pctP(plafond) + (fiche ? "" : ", profil de risque non renseigné")
+    : "plafond du profil " + fiche!.label + " : " + pctP(plafond);
+  const baremeSpeculatif = plafond > 0 ? [[plafond, 20], [2 * plafond, 0]] : BAREME_SPECULATIF_NUL;
+  return critere("allocation", "speculatif", BP.speculatif, { points: Math.round(interp(part, baremeSpeculatif)), valeur: part, cible: pctP(plafond) + " au plus",
+    texte: "Crypto et produits à levier : " + pctP(part, 1) + " du financier (" + de + ").",
+    piste: part <= plafond ? "Cette part reste dans ce que votre profil peut encaisser : elle pourrait perdre l'essentiel de sa valeur sans compromettre vos projets."
+      : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de votre patrimoine." });
+}
+
+const RE_EURO = /france|zone euro|eurozone|^eur$|^euro$/;
+function bpDevises(vivantes: any[]): Critere | null {
+  const exposition = (p: any) => {
+    const dv = deviseDe(p);
+    if (dv) return String(dv).toUpperCase() === "EUR" ? 0 : 1;
+    const zone = zoneDe(p);
+    if (!zone) return null;
+    const z = sansAccent(zone);
+    return RE_EURO.test(z) ? 0 : /europe/.test(z) ? null : 1;
+  };
+  const connues = vivantes.map((p) => ({ e: exposition(p), v: val(p) })).filter((x) => x.e != null && x.v > 0);
+  const total = sum(connues, (x) => x.v);
+  if (total <= 0) return null;
+  const part = sum(connues, (x) => x.v * (x.e as number)) / total;
+  const couverture = total / Math.max(total, sum(vivantes, val));
+  return critere("allocation", "devises", BP.devises, { informatif: true, points: null, sur: 0, valeur: part,
+    texte: pctP(part) + " exposés à une autre devise que l'euro" + (couverture < 0.999 ? " (sur les " + pctP(couverture) + " du financier dont la devise est connue)." : "."),
+    piste: "Ce n'est pas un défaut : une exposition hors euro diversifie, mais les variations de change s'ajoutent à celles des marchés." });
+}
+
+function bpFrais(vivantes: any[]): Critere | null {
+  const cotees = vivantes.filter((p) => p.mode === "market" && val(p) > 0);
+  const total = sum(cotees, val);
+  if (total <= 0) return null;
+  const avec = cotees.filter((p) => connu(terDe(p)));
+  const couvert = sum(avec, val);
+  if (couvert / total < 0.5) return aCompleter("efficacite", "frais", BP.frais, "Frais inconnus : votre assistant peut les renseigner.",
+    "Demandez à votre assistant de compléter les frais courants (TER) de vos fonds via le connecteur.");
+  const ter = sum(avec, (p) => val(p) * Number(terDe(p))) / couvert;
+  return critere("efficacite", "frais", BP.frais, { points: Math.round(interp(ter, BAREME_FRAIS)), valeur: ter,
+    texte: "Frais moyens de " + frP(ter, 2) + " % par an" + (couvert < total ? " (sur " + pctP(couvert / total) + " des lignes cotées)." : "."),
+    piste: ter <= 0.3 ? "Vos frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
+      : "1 % de frais par an coûte environ 18 % du capital sur 20 ans : regardez quelles lignes pèsent le plus ; des fonds indiciels équivalents existent souvent." });
+}
+
+const RE_CTO = /\bcto\b|compte[- ]?titres?/, RE_PEA = /\bpea\b/, RE_PER = /\bper\b|\bperin\b|\bperco\b/, RE_AV = /assurance.?vie|\bav\b|capitalisation/;
+const RE_EUROPE = /europe|france|\bcac\b|stoxx|zone euro/;
+const ISIN_EEE = ["FR", "NL", "DE", "BE", "IT", "ES", "PT", "AT", "FI", "DK", "SE", "NO", "GR"];
+const estEuropeenne = (p: any, classes: Surcharge) => classePoche(p.bloc, classes) === "actions" &&
+  (RE_EUROPE.test(libelleGeo(p)) || ISIN_EEE.includes(String(p.isin || "").slice(0, 2).toUpperCase()));
+function datesAV(env: string, profil: any, config: any): { ouverture?: string; huitAns?: string } | null {
+  const o = profil && profil.av_ouverture;
+  if (o && typeof o === "object" && o[env]) return { ouverture: o[env] };
+  if (typeof o === "string" && o) return { ouverture: o };
+  const titre = (m: any) => sansAccent(m.title || m.titre);
+  const ms = (config && Array.isArray(config.milestones) ? config.milestones : []).find((m: any) => m && m.date && RE_AV.test(titre(m)) && /8 ans/.test(titre(m)));
+  return ms ? { huitAns: ms.date } : null;
+}
+function bpEnveloppes(c: ContexteBP, vivantes: any[], deja: Record<string, number>): Critere | null {
+  const classes = c.classes, details: { cle: string; statut: string; texte: string }[] = [], env = (p: any) => sansAccent(p.envelope);
+  const alerts = c.d.config && c.d.config.alerts;
+  const cap = alerts && connu(alerts.peaVersementsCap) ? Number(alerts.peaVersementsCap) : PLAFOND_PEA_DEFAUT;
+  const parTitulaire: Record<string, any[]> = {};
+  vivantes.filter((p) => RE_CTO.test(env(p)) && estEuropeenne(p, classes)).forEach((p) => { (parTitulaire[p.owner] = parTitulaire[p.owner] || []).push(p); });
+  Object.keys(parTitulaire).forEach((owner) => {
+    const cto = parTitulaire[owner], peas: Record<string, number> = {};
+    vivantes.filter((p) => p.owner === owner && RE_PEA.test(env(p))).forEach((p) => { peas[p.envelope] = (peas[p.envelope] || 0) + val(p); });
+    const libre = Object.keys(peas).find((k) => peas[k] < cap);
+    if (libre) details.push({ cle: "pea", statut: "probleme",
+      texte: eurP(sum(cto, val)) + " d'actions européennes (" + cto.map((p) => p.name).join(", ") + ") sont en compte-titres alors que le " + libre +
+        " a encore de la place : dans un PEA de plus de 5 ans, les gains ne supportent que les prélèvements sociaux." });
+    else details.push({ cle: "pea", statut: "ok", texte: Object.keys(peas).length
+      ? "Actions européennes en compte-titres, mais le PEA du même titulaire a atteint son plafond : rien à changer."
+      : "Actions européennes en compte-titres, sans PEA au nom du même titulaire." });
+  });
+  [...new Set(vivantes.filter((p) => RE_AV.test(env(p))).map((p) => p.envelope))].forEach((nom: string) => {
+    const dt = datesAV(nom, c.d.profil, c.d.config);
+    if (!dt) { details.push({ cle: "av", statut: "neutre", texte: nom + " : date d'ouverture inconnue (l'abattement sur les gains s'applique après 8 ans)." }); return; }
+    const huit = dt.huitAns || plusAns(dt.ouverture!, 8);
+    if (isoJour(huit) <= isoJour(c.ref)) { details.push({ cle: "av", statut: "ok", texte: nom + " a plus de 8 ans : abattement annuel sur les gains retirés." }); return; }
+    const blocs = new Set(vivantes.filter((p) => p.envelope === nom).map((p) => p.bloc));
+    const avant = c.objectifs.find((o) => o && o.source === "poches" && dateCible(o) && isoJour(dateCible(o)!) < isoJour(huit) && pos(deja[o.id]) > 0 &&
+      ((o.enveloppes || []).includes(nom) || (o.poches || []).some((b: string) => blocs.has(b))));
+    if (avant) details.push({ cle: "av", statut: "probleme",
+      texte: nom + " aura 8 ans le " + frDate(huit) + ", après l'échéance de « " + (avant.nom || "votre objectif") + " » qu'elle finance : un retrait avant 8 ans ne profite pas de l'abattement." });
+    else details.push({ cle: "av", statut: "note", texte: nom + " aura 8 ans le " + frDate(huit) + " : d'ici là, les gains retirés ne profitent pas de l'abattement annuel." });
+  });
+  if (vivantes.some((p) => RE_PER.test(env(p)))) {
+    const tmi = c.d.profil?.foyer?.tmi;
+    if (!connu(tmi)) details.push({ cle: "per", statut: "neutre", texte: "Tranche d'imposition inconnue : le PER est surtout intéressant à partir de 30 %." });
+    else if (Number(tmi) < 30) details.push({ cle: "per", statut: "probleme",
+      texte: "Tranche à " + frP(Number(tmi), 0) + " % : le PER est surtout intéressant à partir de 30 %, car la déduction à l'entrée vaut peu face à l'impôt à la sortie." });
+    else details.push({ cle: "per", statut: "ok", texte: "Tranche à " + frP(Number(tmi), 0) + " % : les versements sur le PER réduisent nettement l'impôt." });
+  }
+  if (!details.length) return null;
+  const pb = details.filter((x) => x.statut === "probleme");
+  return critere("efficacite", "enveloppes", BP.enveloppes, { points: Math.max(0, 20 - 6 * pb.length), valeur: pb.length, details,
+    texte: pb.length ? pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention sur le choix des enveloppes." : "Vos enveloppes sont utilisées dans le bon ordre.",
+    piste: pb.length ? pb.map((x) => x.texte).join(" ") : "Rien à changer : chaque enveloppe joue son rôle fiscal." });
+}
+
+function bpDormant(c: ContexteBP, vivantes: any[], depenses: number, deja: Record<string, number>): Critere {
+  if (!(depenses > 0)) return aCompleter("efficacite", "dormant", BP.dormant, "Dépenses mensuelles inconnues.",
+    "Renseignez vos dépenses dans le budget pour mesurer l'argent qui dort.");
+  const livrets = sum(vivantes.filter((p) => classePoche(p.bloc, c.classes) === "monetaire"), val);
+  const reserve = sum(objectifsCourts(c.objectifs, deja, c.ref).filter((x) => x.o.type !== "matelas"), (x) => x.cible);
+  const mois = Math.max(0, livrets - reserve) / depenses;
+  return critere("efficacite", "dormant", BP.dormant, { points: Math.round(mois <= 12 ? 20 : interp(mois, BAREME_DORMANT)), valeur: mois,
+    texte: frP(mois) + " mois de dépenses sur livrets et monétaire" + (reserve > 0 ? ", hors " + eurP(reserve) + " réservés aux projets à moins de 2 ans." : "."),
+    piste: mois <= 12 ? "Votre argent disponible correspond à vos besoins : rien ne dort inutilement."
+      : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à votre profil." });
+}
+
+const sansIndefini = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+/** Bonnes pratiques (Pratiques.evaluer) : critères, totaux par famille (somme ÷ (20 × critères notés) × 100) et total pondéré. */
+function bonnesPratiques(c: ContexteBP) {
+  const { d, scope } = c;
+  const totaux = budgetTotaux(d, scope);
+  const cu = d.config?.cushion;
+  const depenses = totaux.depensesLignes > 0 ? totaux.depenses : cu && typeof cu === "object" && cu.mode === "months" && pos(cu.depenses) > 0 ? pos(cu.depenses) : 0;
+  const deja = affecterDeja(c.objectifs, d.positions, scope);
+  const vivantes = d.positions.filter((p) => inScope(p.owner, scope) && counted(p));
+  const financier = sum(vivantes, val);
+  const plan = (i: Item): Critere => ({ cle: i.cle, titre: i.titre, cible: i.cible, valeur: i.valeur, texte: i.texte, piste: i.piste, aCompleter: i.aCompleter,
+    points: i.aCompleter ? 0 : Math.round(i.points ?? 0), sur: 20, ...DE_PLAN[i.cle] });
+  const criteres = [
+    plan(itemMatelas(d, scope, totaux)), bpProtection(c), bpLiquidite(c, deja),
+    plan(itemEpargne(totaux)), plan(itemEndettement(totaux)), bpApport(c, deja),
+    bpAdequation(c, financier), plan(itemConcentration(d, scope)), bpGeographie(vivantes, c.classes), bpSpeculatif(c, vivantes, financier), bpDevises(vivantes),
+    bpFrais(vivantes), bpEnveloppes(c, vivantes, deja), bpDormant(c, vivantes, depenses, deja),
+  ].filter(Boolean) as Critere[];
+  const familles = FAMILLES.map((f) => {
+    const cs = criteres.filter((x) => x.famille === f.cle);
+    const notes = cs.filter((x) => !x.aCompleter && !x.informatif);
+    return { cle: f.cle, titre: f.titre, poids: f.poids, criteres: cs.map((x) => x.cle),
+      total: notes.length ? Math.round(sum(notes, (x) => num(x.points)) / (20 * notes.length) * 100) : null };
+  });
+  const notees = familles.filter((f) => f.total != null);
+  const poids = sum(notees, (f) => f.poids);
+  const comptes = criteres.filter((x) => !x.informatif);
+  return {
+    total: poids > 0 ? Math.round(sum(notees, (f) => (f.total as number) * f.poids) / poids) : 0,
+    complet: comptes.length > 0 && comptes.every((x) => !x.aCompleter),
+    familles,
+    criteres: criteres.map((x) => sansIndefini({ cle: x.cle, famille: x.famille, titre: x.titre, points: x.points, sur: x.sur, a_completer: x.aCompleter, informatif: x.informatif || undefined,
+      valeur: x.valeur == null ? null : Math.round(x.valeur * 1000) / 1000, cible: x.cible, texte: x.texte, piste: x.piste, regle: x.regle, source: x.source, details: x.details })),
+    calcul: "Critère sur 20 ; famille = somme des points ÷ (20 × critères notés) × 100 ; total = moyenne des familles notées pondérée 30 / 25 / 30 / 15 (Sécurité, Effort, Allocation, Efficacité). Critères à compléter et informatifs exclus des totaux ; critères sans objet omis.",
+    mention: "Indicateur pédagogique, pas un conseil en investissement.",
+  };
+}
+
+/** Vue d'un profil de risque pour le connecteur (montants arrondis, % à une décimale). */
+function vueRisque(risque: any, d: Donnees, scope: string, classes: Surcharge, detail: boolean) {
+  const sy = syntheseRisque(risque, d.positions, scope, classes);
+  const decl = sy.declare;
+  const base: any = {
+    questionnaire_rempli: !!decl,
+    profil: decl ? { id: decl.id, libelle: decl.label, perte_max_toleree_pct: decl.perteMax, description: decl.description } : null,
+    score: risque && connu(risque.score) ? Number(risque.score) : null,
+    date: risque?.date ?? null,
+    profil_equivalent_portefeuille: sy.equivalent ? { id: sy.equivalent.id, libelle: sy.equivalent.label } : null,
+    ecart_niveaux: sy.ecartNiveaux,
+    comparaison: sy.texte,
+  };
+  if (!decl) base.message = "Profil de risque non renseigné : l'utilisateur peut répondre au questionnaire dans Diagnostic › Profil de risque.";
+  if (!detail) return base;
+  const a = sy.allocation, rp = sy.risque;
+  return {
+    ...base,
+    reponses: risque?.reponses ?? null,
+    perimetre: scope,
+    allocation_reelle: {
+      base: "Placements financiers comptés du périmètre (hors résidence et immobilier physique), valeur en euros.",
+      total: r2(a.total),
+      groupes: Object.keys(a.montants).map((g) => ({ groupe: g, libelle: GROUPES_LABELS[g], montant: r2(a.montants[g]), pct: r1(a.pct[g]) })),
+      par_classe: Object.entries(a.parClasse).map(([k, v]) => ({ classe: k, libelle: (CLASSES_RISQUE[k] || CLASSES_RISQUE.autres).label, montant: r2(v as number) })),
+    },
+    cibles_et_ecarts: sy.ecarts.map((e) => ({ groupe: e.groupe, libelle: e.label, reel_pct: r1(e.reel), cible_min_pct: e.min, cible_max_pct: e.max, statut: e.statut, ecart_pts: r1(e.ecartPts) })),
+    risque_portefeuille: {
+      volatilite_annuelle_pct: r1(rp.volatilite),
+      baisse_plausible_un_an_pct: r1(rp.baissePlausible),
+      pire_baisse_historique_ponderee_pct: r1(rp.pireBaisseHistorique),
+      contributions: rp.contributions.map((x: any) => ({ classe: x.classe, poids_pct: r1(x.poids), contribution_risque_pct: r1(x.contributionPct) })),
+      methode: "σ = √(wᵀΣw) avec volatilités et corrélations simplifiées par classe ; baisse plausible = la plus grave de −2,33 σ et de la moitié de la pire baisse historique pondérée ; profil équivalent = le moins risqué dont la perte tolérée couvre cette baisse.",
+    },
+    surcharges_poche_classe: classes && typeof classes === "object" ? classes : {},
+    mention: "Indicateur pédagogique, pas un conseil en investissement.",
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Schémas d'entrée                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -603,21 +1163,23 @@ export function buildServer({ db, user }: Ctx): McpServer {
   /* ---------- get_overview ---------- */
   server.registerTool("get_overview", {
     title: "Vue d'ensemble",
-    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes ; totaux mensuels du budget et score de santé financière sur 100 (cinq critères sur 20, détail pour le foyer, total par personne).",
+    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes ; totaux mensuels du budget ; score de santé financière sur 100 (cinq critères sur 20, détail pour le foyer, total par personne) ; profil_risque (profil déclaré, profil équivalent du portefeuille) ; bonnes_pratiques du foyer (total sur 100, quatre familles, critères avec points, texte, piste, règle et source).",
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => {
-    const [pr, bi, cr, po, sn, st, cf, bu] = await Promise.all([
+    const [pr, bi, cr, po, sn, st, cf, bu, ob] = await Promise.all([
       db.from("profiles").select("*").maybeSingle(),
       db.from("biens").select("*"),
       db.from("credits").select("*"),
       db.from("positions").select(POS_SELECT),
       db.from("snapshots").select("date, total, p1, p2").order("date", { ascending: false }).limit(1),
       db.from("status").select("*").maybeSingle(),
-      db.from("config").select("cushion").maybeSingle(),
+      db.from("config").select("cushion, milestones").maybeSingle(),
       db.from("budgets").select("lignes").maybeSingle(),
+      db.from("objectifs").select("*").order("priorite").order("created_at"),
     ]);
     const profil = must("profiles", pr) as any ?? {};
+    const objectifs = (must("objectifs", ob) as any[]) ?? [];
     const biens = (must("biens", bi) as any[]) ?? [];
     const credits = (must("credits", cr) as any[]) ?? [];
     const positions = (must("positions", po) as any[]) ?? [];
@@ -660,6 +1222,8 @@ export function buildServer({ db, user }: Ctx): McpServer {
       alertes: status?.alerts ?? [],
       budget: donnees.lignes.length ? { nombre_lignes: donnees.lignes.length, totaux_mensuels_foyer: viewTotaux(budgetTotaux(donnees, "foyer")) } : null,
       sante: scoreSante(donnees, "foyer"),
+      profil_risque: vueRisque(profil.risque ?? null, donnees, "foyer", profil.classes, false),
+      bonnes_pratiques: bonnesPratiques({ d: donnees, scope: "foyer", objectifs, risque: profil.risque ?? null, classes: profil.classes, ref }),
     });
     return result;
   }));
@@ -1113,7 +1677,7 @@ export function buildServer({ db, user }: Ctx): McpServer {
   const OBJ_COLS: Record<string, string> = { nom: "nom", type: "type", cible: "cible", dateCible: "date_cible", deja: "deja", source: "source", poches: "poches", enveloppes: "enveloppes", rendement: "rendement", priorite: "priorite" };
   server.registerTool("upsert_objectifs", {
     title: "Ajouter ou modifier des objectifs",
-    description: "Crée (sans id : nom et cible requis) ou modifie (avec id : seuls les champs fournis changent) des objectifs datés. Toutes les lignes sont validées avant toute écriture. type : apport, matelas, retraite ou projet ; source : saisi (montant deja) ou poches (poches / enveloppes du Pilotage rattachées) ; rendement en % par an (-50 à 50) ; priorite entière (1 = servi en premier).",
+    description: "Crée (sans id : nom et cible requis) ou modifie (avec id : seuls les champs fournis changent) des objectifs datés. Toutes les lignes sont validées avant toute écriture. type : apport, matelas, retraite ou projet ; source : saisi (montant deja) ou poches (poches / enveloppes de Bilan › Placements rattachées) ; rendement en % par an (-50 à 50) ; priorite entière (1 = servi en premier).",
     inputSchema: z.strictObject({ rows: z.array(ObjectifRow).min(1).max(30) }),
     annotations: RW,
   }, wrap(async ({ rows }: any) => {
@@ -1158,6 +1722,61 @@ export function buildServer({ db, user }: Ctx): McpServer {
     const data = must("objectifs", await db.from("objectifs").delete().eq("id", id).select("*")) as any[];
     if (!data?.length) throw new UserError(`Objectif ${id} introuvable.`);
     return { supprime: viewObjectif(data[0]) };
+  }));
+
+  /* ---------- Diagnostic : profil de risque ---------- */
+  server.registerTool("get_risk_profile", {
+    title: "Profil de risque",
+    description: "Profil de risque déclaré par l'utilisateur (questionnaire de l'application : Prudent, Modéré, Équilibré, Dynamique ou Offensif, perte maximale tolérée, date et réponses), allocation réelle des placements par classe comparée aux fourchettes cibles du profil (écarts en points), risque réel du portefeuille (volatilité annuelle, baisse plausible sur un an, contribution de chaque classe) et profil équivalent. Indicateur pédagogique, pas un conseil en investissement.",
+    inputSchema: z.strictObject({
+      perimetre: z.enum(["foyer", "p1", "p2"], { error: "Périmètre invalide : foyer, p1 ou p2." }).optional().describe("foyer (défaut), p1 ou p2 : placements pris en compte."),
+    }),
+    annotations: RO,
+  }, wrap(async ({ perimetre = "foyer" }: any) => {
+    const [pr, po] = await Promise.all([
+      db.from("profiles").select("risque, classes, personnes").maybeSingle(),
+      db.from("positions").select(POS_SELECT),
+    ]);
+    const profil = (must("profiles", pr) as any) ?? {};
+    const positions = (must("positions", po) as any[]) ?? [];
+    if (perimetre === "p2" && !profil.personnes?.p2) throw new UserError("Le foyer ne compte qu'une personne : utilisez foyer ou p1.");
+    const d: Donnees = { profil, biens: [], credits: [], positions, config: null, lignes: [] };
+    return vueRisque(profil.risque ?? null, d, perimetre, profil.classes, true);
+  }));
+
+  /* ---------- Diagnostic : annotation des fonds (RPC annoter_instrument) ---------- */
+  server.registerTool("annotate_instrument", {
+    title: "Annoter un fonds",
+    description: "Renseigne les frais (TER), la zone géographique et la devise d'un fonds détenu, avec la source consultée. Seuls les instruments présents dans les lignes de l'utilisateur peuvent être annotés ; la source (URL du document d'informations clés ou de la page de l'émetteur) est obligatoire ; les champs non fournis restent inchangés. L'annotation est partagée par tous les détenteurs de cet ISIN.",
+    inputSchema: z.strictObject({
+      isin: z.string().trim().min(1).max(20).describe("ISIN du fonds (12 caractères), tel qu'il figure dans list_positions."),
+      ter: z.number({ error: "TER : nombre attendu, en % par an." }).min(0, { error: "TER entre 0 et 10 % par an." }).max(10, { error: "TER entre 0 et 10 % par an." }).optional()
+        .describe("Frais courants (TER / frais courants du DIC) en % par an : 0.2 pour 0,20 %."),
+      zone: z.string().trim().min(1).max(60, { error: "Zone : 60 caractères au plus." }).optional().describe("Zone géographique couverte : Monde, États-Unis, Europe, Zone euro, France, Émergents…"),
+      devise: z.string().trim().regex(/^[A-Za-z]{3}$/, { error: "Devise : code ISO à 3 lettres (EUR, USD…)." }).optional()
+        .describe("Devise d'exposition principale du fonds (code ISO : EUR, USD…), pas la devise de cotation."),
+      source: z.string({ error: "Source obligatoire : URL ou référence du document consulté." }).trim().min(1, { error: "Source obligatoire : URL ou référence du document consulté." })
+        .max(300, { error: "Source : 300 caractères au plus." }).describe("Obligatoire : URL ou référence précise du document consulté (DIC / KID, page de l'émetteur)."),
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const isin = String(a.isin).toUpperCase().replace(/\s/g, "");
+    if (!ISIN_RE.test(isin) && !isin.startsWith("X-")) throw new UserError(`ISIN « ${isin} » invalide (2 lettres, 9 caractères, 1 chiffre).`);
+    if (a.ter == null && a.zone == null && a.devise == null) throw new UserError("Rien à annoter : fournissez au moins ter, zone ou devise.");
+    const lignes = (must("positions", await db.from("positions").select("id, name, status").eq("isin", isin)) as any[]) ?? [];
+    if (!lignes.length) throw new UserError(`Aucune de vos lignes ne porte l'ISIN ${isin} : seuls les fonds détenus peuvent être annotés (voir list_positions).`);
+    const ANN = "isin, name, ter, zone, devise, annote_source, annote_le";
+    const avant = must("instruments", await db.from("instruments").select(ANN).eq("isin", isin).maybeSingle()) as any;
+    const res = await db.rpc("annoter_instrument", { p_isin: isin, p_ter: a.ter ?? null, p_zone: a.zone ?? null, p_devise: a.devise ? a.devise.toUpperCase() : null, p_source: a.source });
+    if (res.error) throw new UserError(`Annotation refusée : ${res.error.message ?? "erreur inconnue"}.`);
+    const apres = res.data as any;
+    const vue = (r: any) => r ? { frais_courants_pct: r.ter != null ? Number(r.ter) : null, zone: r.zone ?? null, devise_exposition: r.devise ?? null, source: r.annote_source ?? null, date: r.annote_le ?? null } : null;
+    return {
+      isin, instrument: apres?.name ?? avant?.name ?? null,
+      lignes_concernees: lignes.map((l) => l.name),
+      modifications: diff(vue(avant), vue(apres), "", 1).filter((m) => m.champ !== "date"),
+      annotation: vue(apres),
+    };
   }));
 
   return server;

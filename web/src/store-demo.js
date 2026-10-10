@@ -8,8 +8,11 @@
    store-demo, store-supabase, auth, reel, modules, app.
 
    Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload() }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
+   risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
+   positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
+   db.doc("profil/main").update({ risque }) / ({ classes }) / ({ protection }) ne touche que ces clés.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
    byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
@@ -25,6 +28,7 @@
     ready: false, dbOk: null, positions: D.positions || [], snapshots: D.snapshots || [], tx: D.tx || [],
     config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
+    risque: D.risque || null, classes: D.classes || {},
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
@@ -54,6 +58,8 @@
       profilLoaded: C.profilLoaded,
       budget: clone(C.budget),
       objectifs: clone(C.objectifs),
+      risque: clone(C.risque),
+      classes: clone(C.classes) || {},
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -109,6 +115,35 @@
     if (has("priorite")) { const v = +o.priorite; if (!Number.isInteger(v)) throw bad("Objectif : priorité invalide (nombre entier attendu)."); out.priorite = v; }
     return out;
   }
+  /* Colonnes du Diagnostic (même validation que store-supabase.js). */
+  const DIAG = ["risque", "classes", "protection"];
+  const objet = v => v != null && typeof v === "object" && !Array.isArray(v);
+  function normDiagnostic(patch) {
+    const out = {};
+    if ("risque" in patch) {
+      if (patch.risque !== null && !objet(patch.risque)) throw bad("Profil de risque invalide : objet { reponses, profil, score, date } ou null attendu.");
+      out.risque = patch.risque;
+    }
+    if ("classes" in patch) {
+      const c = patch.classes == null ? {} : patch.classes;
+      if (!objet(c) || Object.keys(c).some(k => typeof c[k] !== "string" || !c[k])) throw bad("Classes invalides : objet { poche: classe } attendu.");
+      out.classes = c;
+    }
+    if ("protection" in patch) {
+      const pr = patch.protection == null ? {} : patch.protection;
+      if (!objet(pr)) throw bad("Protection invalide : objet { prevoyance, emprunteur } attendu.");
+      out.protection = pr;
+    }
+    return out;
+  }
+  function updateProfil(patch) {
+    const p = clone(patch) || {}, diag = {}, reste = {};
+    Object.keys(p).forEach(k => { (DIAG.includes(k) ? diag : reste)[k] = p[k]; });
+    const d = normDiagnostic(diag);
+    if ("risque" in d) C.risque = d.risque;
+    if ("classes" in d) C.classes = d.classes;
+    C.profil = Object.assign(C.profil || {}, reste, "protection" in d ? { protection: d.protection } : {});
+  }
   const OBJ_DEFAUT = { nom: "", type: "projet", cible: 0, dateCible: null, deja: 0, source: "saisi", poches: [], enveloppes: [], rendement: 2, priorite: 0 };
   const db = {
     doc(path) {
@@ -118,7 +153,7 @@
           await tick();
           if (col === "positions") { const p = C.positions.find(x => x.id === id); if (!p) throw err("not_found", "Position inconnue : " + id); Object.assign(p, clone(patch)); }
           else if (col === "config") C.config = Object.assign(C.config || {}, clone(patch));
-          else if (col === "profil") C.profil = Object.assign(C.profil || {}, clone(patch));
+          else if (col === "profil") updateProfil(patch);
           else if (col === "budget") C.budget = { lignes: normLignes(Object.assign({}, C.budget || {}, clone(patch)).lignes) };
           else throw err("invalid_argument", "Collection inconnue : " + col);
           publish();

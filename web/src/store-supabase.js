@@ -16,7 +16,13 @@
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
    Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload() }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, scope, people, user, error }
+   positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
+   risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
+   classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
+   profil.protection = { prevoyance, emprunteur } (booléens) ou le même objet par personne — profiles.protection.
+   Écriture : db.doc("profil/main").update({ risque }) / ({ classes }) / ({ protection }) n'écrit que ces colonnes
+   (biens et crédits intacts) ; les autres clés du patch passent par l'écriture complète du profil.
    budget = { lignes: [{ id, type: revenu|depense|epargne, categorie, libelle, montant, frequence: mois|an, owner? }] } | null
    objectifs = [{ id, nom, type: apport|matelas|retraite|projet, cible, dateCible, deja, source: saisi|poches, poches, enveloppes,
    rendement, priorite }] (colonne date_cible ↔ dateCible ; tri par priorité puis création). */
@@ -31,7 +37,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -59,6 +65,8 @@
       profilLoaded: C.profilLoaded,
       budget: clone(C.budget),
       objectifs: clone(C.objectifs),
+      risque: clone(C.risque),
+      classes: clone(C.classes) || {},
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -97,6 +105,9 @@
       priceDate: useOv ? r.value_date : insDate,
       value: num(r.value), valueDate: r.value_date || null,
       status: r.status, hypothesis: r.hypothesis || null, qtyEstimated: !!r.qty_estimated, note: r.note || null,
+      // Annotations de l'instrument (outil annotate_instrument du connecteur) : frais courants, zone, devise d'exposition.
+      ter: ins && ins.ter != null ? +ins.ter : null, zone: (ins && ins.zone) || null, devise: (ins && ins.devise) || null,
+      annoteSource: (ins && ins.annote_source) || null, annoteLe: (ins && ins.annote_le) || null,
     };
   };
   const txView = r => ({ id: r.id, positionId: r.position_id, date: r.date, type: r.type, qty: num(r.qty), price: num(r.price), amount: num(r.amount), note: r.note || "", source: r.source, createdAt: r.created_at });
@@ -104,7 +115,7 @@
   const cfgView = r => ({ targets: r.targets || {}, rules: r.rules || [], cushion: r.cushion || null, recurring: r.recurring || [], todo: r.todo || [], milestones: r.milestones || [], hypotheses: r.hypotheses || [] });
   const stView = r => ({ lastRun: r.last_run, summary: r.summary || "", alerts: r.alerts || [], missingPrices: r.missing_prices || 0 });
   const profView = (p, biens, credits) => ({
-    foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {},
+    foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {}, protection: p.protection || {},
     biens: biens.map(b => ({ id: b.id, nom: b.nom, usage: b.usage, valeur: num(b.valeur), part_p1: num(b.part_p1), crd: num(b.crd), mensualite: num(b.mensualite), loyer: num(b.loyer) })),
     credits: credits.map(c => ({ id: c.id, nom: c.nom, owner: c.owner, crd: num(c.crd), mensualite: num(c.mensualite) })),
     updatedAt: p.updated_at,
@@ -121,7 +132,7 @@
       q(sb.from("profiles").select("*").maybeSingle()),
       q(sb.from("biens").select("*").order("created_at")),
       q(sb.from("credits").select("*").order("created_at")),
-      q(sb.from("positions").select("*, instruments(price, price_date, name, symbol, currency)").order("created_at")),
+      q(sb.from("positions").select("*, instruments(price, price_date, name, symbol, currency, ter, zone, devise, annote_source, annote_le)").order("created_at")),
       q(sb.from("transactions").select("*").order("date", { ascending: false }).order("created_at", { ascending: false }).limit(60)),
       q(sb.from("snapshots").select("*").order("date")),
       q(sb.from("config").select("*").maybeSingle()),
@@ -141,6 +152,7 @@
     if (budget !== undefined) C.budget = budget ? budgetView(budget) : null;
     if (objectifs !== undefined) C.objectifs = (objectifs || []).map(objView);
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
+    if (prof !== undefined) { C.risque = (prof && prof.risque) || null; C.classes = (prof && prof.classes) || {}; }
     if (prof !== undefined && biens !== undefined && credits !== undefined) C.profil = prof ? profView(prof, biens || [], credits || []) : null;
     C.profilLoaded = true;
     C.user = { id: session.user.id, email: session.user.email || null };
@@ -209,7 +221,9 @@
   }
   async function setProfil(p, uid) {
     const n0 = v => (v == null || v === "" || isNaN(+v) ? 0 : Math.max(0, +v));
-    await q(sb.from("profiles").upsert({ user_id: uid, foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {} }, { onConflict: "user_id" }));
+    const row = { user_id: uid, foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {} };
+    if (p.protection !== undefined) row.protection = normDiagnostic({ protection: p.protection }).protection;
+    await q(sb.from("profiles").upsert(row, { onConflict: "user_id" }));
     const biens = (p.biens || []).map(b => ({
       id: UUID.test(b.id) ? b.id : newId(), user_id: uid, nom: (b.nom || "").trim() || "Bien",
       usage: ["rp", "locatif", "secondaire"].includes(b.usage) ? b.usage : "rp",
@@ -223,6 +237,35 @@
     await q(sb.from("biens").delete().eq("user_id", uid)); if (biens.length) await q(sb.from("biens").insert(biens));
     await q(sb.from("credits").delete().eq("user_id", uid)); if (credits.length) await q(sb.from("credits").insert(credits));
   }
+  /* Colonnes du Diagnostic (profiles.risque / classes / protection) : validées puis écrites seules, sans toucher
+     aux biens ni aux crédits. Même validation dans store-demo.js. */
+  const DIAG = ["risque", "classes", "protection"];
+  const objet = v => v != null && typeof v === "object" && !Array.isArray(v);
+  function normDiagnostic(patch) {
+    const out = {};
+    if ("risque" in patch) {
+      if (patch.risque !== null && !objet(patch.risque)) throw bad("Profil de risque invalide : objet { reponses, profil, score, date } ou null attendu.");
+      out.risque = patch.risque;
+    }
+    if ("classes" in patch) {
+      const c = patch.classes == null ? {} : patch.classes;
+      if (!objet(c) || Object.keys(c).some(k => typeof c[k] !== "string" || !c[k])) throw bad("Classes invalides : objet { poche: classe } attendu.");
+      out.classes = c;
+    }
+    if ("protection" in patch) {
+      const pr = patch.protection == null ? {} : patch.protection;
+      if (!objet(pr)) throw bad("Protection invalide : objet { prevoyance, emprunteur } attendu.");
+      out.protection = pr;
+    }
+    return out;
+  }
+  async function updateProfil(patch, uid) {
+    const p = patch || {}, diag = {}, reste = {};
+    Object.keys(p).forEach(k => { (DIAG.includes(k) ? diag : reste)[k] = p[k]; });
+    if (Object.keys(diag).length) await q(sb.from("profiles").upsert(Object.assign({ user_id: uid }, normDiagnostic(diag)), { onConflict: "user_id" }));
+    if (Object.keys(reste).length) await setProfil(Object.assign({}, clone(C.profil) || {}, reste), uid);
+  }
+
   async function addTx(doc, uid) {
     const pid = doc.positionId != null ? rid(String(doc.positionId)) : null;
     if (pid && !UUID.test(pid)) console.warn("Boussole : positionId inconnu, transaction enregistrée sans lien :", pid);
@@ -324,7 +367,7 @@
         update(patch) {
           if (col === "positions") return write(() => updatePosition(id, patch));
           if (col === "config") return write(uid => updateConfig(patch, uid));
-          if (col === "profil") return write(uid => setProfil(Object.assign({}, clone(C.profil) || {}, patch), uid));
+          if (col === "profil") return write(uid => updateProfil(patch, uid));
           if (col === "budget") return write(uid => setBudget(Object.assign({}, clone(C.budget) || {}, patch), uid));
           return unknown();
         },

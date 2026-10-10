@@ -19,18 +19,26 @@
   const monthEnd = k => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - k + 1); d.setUTCDate(0); return iso(d); };
   const hier = ago(1);
 
-  const P = o => Object.assign({ isin: null, qty: null, pru: null, price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null }, o);
+  const P = o => Object.assign({ isin: null, qty: null, pru: null, price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null,
+    ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null }, o);
+  /* Annotations d'instruments (frais courants, zone, devise), comme si l'assistant les avait renseignées via le connecteur.
+     Trois lignes sur cinq cotées, soit 49 % des montants cotés : le critère « Frais des fonds » reste à compléter
+     (seuil de 50 %) et invite à faire annoter l'ETF Monde, la plus grosse ligne. */
+  const A = (ter, zone, devise, annoteSource) => ({ ter, zone, devise, annoteSource, annoteLe: at(9, "19:05") });
   const positions = [
     P({ id: "pea-etf-monde", name: "ETF MSCI World", envelope: "PEA Camille", owner: "p1", bloc: "Monde", mode: "market", isin: "IE00B4L5Y983", qty: 120, pru: 88.4, price: 104.26, priceDate: hier }),           // 12 511,20
-    P({ id: "pea-etf-europe", name: "ETF Stoxx Europe 600", envelope: "PEA Camille", owner: "p1", bloc: "Europe", mode: "market", isin: "LU0908500753", qty: 36, pru: 215.1, price: 248.3, priceDate: hier }),     //  8 938,80
+    P({ id: "pea-etf-europe", name: "ETF Stoxx Europe 600", envelope: "PEA Camille", owner: "p1", bloc: "Europe", mode: "market", isin: "LU0908500753", qty: 36, pru: 215.1, price: 248.3, priceDate: hier,
+      ...A(0.07, "Europe", null, "Document d'informations clés du fonds (amundietf.fr), frais courants 0,07 %") }),     //  8 938,80
     P({ id: "pea-air-liquide", name: "Air Liquide", envelope: "PEA Camille", owner: "p1", bloc: "Convictions", mode: "market", isin: "FR0000120073", qty: 22, pru: 162, price: 181.5, priceDate: hier }),          //  3 993,00
-    P({ id: "cto-asml", name: "ASML", envelope: "CTO Sam", owner: "p2", bloc: "Convictions", mode: "market", isin: "NL0010273215", qty: 6, pru: 640, price: 712.4, priceDate: hier }),                             //  4 274,40
+    P({ id: "cto-asml", name: "ASML", envelope: "CTO Sam", owner: "p2", bloc: "Convictions", mode: "market", isin: "NL0010273215", qty: 6, pru: 640, price: 712.4, priceDate: hier,
+      ...A(0, "Pays-Bas", "EUR", "Action détenue en direct : pas de frais courants de fonds (frais de courtage non compris)") }),                             //  4 274,40
     P({ id: "av-fonds-euro", name: "Fonds en euros", envelope: "Assurance vie Sam", owner: "p2", bloc: "Obligations", mode: "manual", value: 18200, valueDate: monthEnd(1) }),                                   // 18 200,00
     P({ id: "av-scpi", name: "SCPI diversifiée", envelope: "Assurance vie Sam", owner: "p2", bloc: "SCPI", mode: "manual", value: 5300, valueDate: monthEnd(1), hypothesis: "Valorisée au prix de retrait 2025, à confirmer sur le relevé annuel." }), // 5 300,00
     P({ id: "livret-a", name: "Livret A", envelope: "Livrets Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4) }),                                                        // 12 000,00
     P({ id: "ldds", name: "LDDS", envelope: "Livrets Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4) }),                                                                     // 12 000,00 (plafond)
     P({ id: "per-camille", name: "PER Camille", envelope: "PER", owner: "p1", bloc: "Monde", mode: "manual", value: 11800, valueDate: monthEnd(1) }),                                                            // 11 800,00
-    P({ id: "crypto-btc", name: "Bitcoin", envelope: "Crypto", owner: "p1", bloc: "Crypto", mode: "market", isin: "X-BTC", qty: 0.042, pru: 58000, price: 61250, priceDate: ago(6), qtyEstimated: true }),      //  2 572,50 (cours ancien)
+    P({ id: "crypto-btc", name: "Bitcoin", envelope: "Crypto", owner: "p1", bloc: "Crypto", mode: "market", isin: "X-BTC", qty: 0.042, pru: 58000, price: 61250, priceDate: ago(6), qtyEstimated: true,
+      ...A(0, null, null, "Détention directe : pas de frais courants de fonds (frais de plateforme non compris)") }),      //  2 572,50 (cours ancien)
     P({ id: "compte-commun", name: "Compte courant commun", envelope: "Banque", owner: "p2", bloc: "Épargne", mode: "manual", value: 3400, valueDate: ago(1) }),                                                 //  3 400,00
     P({ id: "prime-camille", name: "Prime annuelle", envelope: "À recevoir", owner: "p1", bloc: "Épargne", mode: "manual", value: 2500, valueDate: ago(0), status: "à recevoir", note: "Versée avec la paie de décembre." }), // non compté
   ];
@@ -100,6 +108,7 @@
       { id: "credit-auto", nom: "Prêt auto", owner: "commun", crd: 6500, mensualite: 210 },
     ],
     autres: { p1: { usage: 9000, entreprise: 0 }, p2: { usage: 6000, entreprise: 0 } },
+    protection: {}, // non déclarée : le critère « Protection de la famille » reste à compléter (crédit + enfant)
     updatedAt: at(7, "18:40"),
   };
 
@@ -139,7 +148,10 @@
     O({ id: "obj-retraite", nom: "Retraite", type: "retraite", cible: 400000, dateCible: "2058-01-01", poches: ["Monde", "Europe", "Asie"], rendement: 5, priorite: 3 }),
   ];
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs };
+  // Profil de risque jamais rempli (le Diagnostic propose le questionnaire) ; aucune surcharge poche → classe.
+  const risque = null, classes = {};
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);
