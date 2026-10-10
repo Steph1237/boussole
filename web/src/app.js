@@ -25,11 +25,13 @@
     ] },
     { space: "recos", label: "Recommandations", short: "Actions", icon: "recos", primary: true, desc: "Que faire maintenant ?", subs: [
       { id: "actions", label: "Actions", module: "actions" },
+      { id: "fiches", label: "Fiches", module: "fiches-view" },
     ] },
     { space: "profil", label: "Profil et données", short: "Profil", icon: "profil", primary: false, desc: "Foyer, revenus, biens, crédits et règles", subs: [
       { id: "donnees", label: "Données", module: "profil" },
       { id: "regles", label: "Règles", module: "regles" },
       { id: "claude", label: "Avec Claude", module: "claude-guide" },
+      { id: "memoire", label: "Mémoire de l'agent", module: "memoire-view" },
       { id: "propositions", label: "Propositions", module: "propositions" },
     ] },
   ];

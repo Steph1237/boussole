@@ -15,8 +15,8 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, surveillerConnexions(on) }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, scope, people, user, error }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, surveillerConnexions(on) }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
@@ -41,7 +41,15 @@
    connexions_assistant, écrite par le connecteur au plus toutes les 5 minutes par client ; clientId "session" pour un jeton de
    session ordinaire), dans l'ordre de première connexion. Lue avec le reste par loadAll ; Store.surveillerConnexions(true)
    relit cette seule table toutes les 5 s (voyant « Claude est connecté » de l'onboarding) et n'émet que si elle a changé ;
-   surveillerConnexions(false) arrête. Aucune surveillance tant qu'aucun module ne la demande. */
+   surveillerConnexions(false) arrête. Aucune surveillance tant qu'aucun module ne la demande.
+   memoire = [{ id, categorie: contexte|preference|projet|decision|explique|a_suivre, contenu, echeance, epingle, source, creeLe, majLe }] :
+   ce que l'agent retient de l'utilisateur (table privée memoire_agent, écrite par le connecteur MCP), les plus récents d'abord.
+   Store.memoire.modifier(id, { contenu?, epingle?, echeance? }) / supprimer(ids) / toutEffacer() → { ok: true } ou { erreur } (message
+   en français, celui de la base remonté tel quel, ex. « Mémoire pleine… ») ; rechargement puis émission.
+   savoir = { fiches: [{ slug, theme, titre, resume, motsCles, sources: [{ titre, url, consulte_le }], version, misAJourLe }],
+   reperes: [{ cle, libelle, valeur, unite, dateEffet, sourceTitre, sourceUrl, verifieLe, mode }] } : savoir commun (tables publiques
+   savoir_fiches, reperes). Les fiches sont chargées sans leur contenu ; Store.savoir.fiche(slug) → la fiche avec `contenu` (markdown)
+   ou null. Ces trois lectures rejoignent loadAll : une table absente (migration non appliquée) laisse la valeur précédente. */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -53,7 +61,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -85,6 +93,8 @@
       classes: clone(C.classes) || {},
       propositions: clone(C.propositions),
       connexions: clone(C.connexions),
+      memoire: clone(C.memoire),
+      savoir: clone(C.savoir),
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -145,6 +155,11 @@
   });
   const connView = r => ({ clientId: r.client_id, clientNom: r.client_nom || null, premierLe: r.premier_le, dernierLe: r.dernier_le, appels: r.appels == null ? 0 : +r.appels });
   const CONN_SELECT = "client_id, client_nom, premier_le, dernier_le, appels";
+  const memView = r => ({ id: r.id, categorie: r.categorie, contenu: r.contenu, echeance: r.echeance ?? null, epingle: !!r.epingle, source: r.source ?? null, creeLe: r.cree_le, majLe: r.maj_le });
+  const ficheView = r => ({ slug: r.slug, theme: r.theme, titre: r.titre, resume: r.resume, motsCles: r.mots_cles || [], sources: r.sources || [], version: r.version == null ? 1 : +r.version, misAJourLe: r.mis_a_jour_le });
+  // Repères : module pur reperes.js s'il est chargé, sinon la même correspondance.
+  const repView = rows => (window.Reperes && window.Reperes.depuisLignes ? window.Reperes.depuisLignes(rows) : (rows || []).map(x => ({
+    cle: x.cle, libelle: x.libelle, valeur: +x.valeur, unite: x.unite, dateEffet: x.date_effet, sourceTitre: x.source_titre, sourceUrl: x.source_url, verifieLe: x.verifie_le, mode: x.mode })));
   const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
   const objView = r => ({
     id: r.id, nom: r.nom || "", type: r.type, cible: num(r.cible), dateCible: r.date_cible || null, deja: num(r.deja),
@@ -166,8 +181,11 @@
       q(sb.from("objectifs").select("*").order("priorite").order("created_at")),
       q(sb.from("propositions").select("*").order("cree_le", { ascending: false }).limit(200)),
       q(sb.from("connexions_assistant").select(CONN_SELECT).order("premier_le")),
+      q(sb.from("memoire_agent").select("id, categorie, contenu, echeance, epingle, source, cree_le, maj_le").order("cree_le", { ascending: false })),
+      q(sb.from("savoir_fiches").select("slug, theme, titre, resume, mots_cles, sources, version, mis_a_jour_le").order("mis_a_jour_le", { ascending: false }).order("titre")),
+      q(sb.from("reperes").select("cle, libelle, valeur, unite, date_effet, source_titre, source_url, verifie_le, mode").order("cle")),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -180,6 +198,9 @@
     if (objectifs !== undefined) C.objectifs = (objectifs || []).map(objView);
     if (propositions !== undefined) C.propositions = (propositions || []).map(propView);
     if (connexions !== undefined) C.connexions = (connexions || []).map(connView);
+    if (memoire !== undefined) C.memoire = (memoire || []).map(memView);
+    if (fiches !== undefined) C.savoir = Object.assign({}, C.savoir, { fiches: (fiches || []).map(ficheView) });
+    if (reperes !== undefined) C.savoir = Object.assign({}, C.savoir, { reperes: repView(reperes || []) });
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
     if (prof !== undefined) { C.risque = (prof && prof.risque) || null; C.classes = (prof && prof.classes) || {}; }
     if (prof !== undefined && biens !== undefined && credits !== undefined) C.profil = prof ? profView(prof, biens || [], credits || []) : null;
@@ -443,6 +464,61 @@
     },
   };
 
+  /* ---------- mémoire de l'agent (table privée, RLS) et savoir commun ---------- */
+  // Même validation que store-demo.js (et que la base : 1 à 500 caractères, pas de contenu sensible, échéance pour « à suivre »).
+  const SENSIBLE = [/[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}/, /([0-9][ -]?){12,18}[0-9]/, /(mot de passe|password|code secret|code pin|identifiant de connexion)/i];
+  const MSG_SENSIBLE = "Ce souvenir contient une information sensible (numéro de compte ou de carte, identifiant, mot de passe) : il n'est pas enregistré.";
+  function normSouvenir(patch, m) {
+    const p = patch || {}, out = {};
+    if ("contenu" in p) {
+      const t = String(p.contenu == null ? "" : p.contenu).trim();
+      if (!t || t.length > 500) throw bad("Un souvenir compte de 1 à 500 caractères.");
+      if (SENSIBLE.some(re => re.test(t))) throw bad(MSG_SENSIBLE);
+      out.contenu = t;
+    }
+    if ("epingle" in p) out.epingle = !!p.epingle;
+    if ("echeance" in p) {
+      const e = p.echeance == null || p.echeance === "" ? null : String(p.echeance);
+      if (e && (!/^\d{4}-\d{2}-\d{2}$/.test(e) || isNaN(Date.parse(e)))) throw bad("Échéance « " + e + " » invalide (format AAAA-MM-JJ).");
+      if (e && m && m.categorie !== "a_suivre") throw bad("Seul un point « à suivre » porte une échéance.");
+      out.echeance = e;
+    }
+    return out;
+  }
+  const echec = e => { const x = asErr(e); return { erreur: x.code === "23514" ? MSG_SENSIBLE : x.message || String(e) }; };
+  const memoire = {
+    async modifier(id, patch) {
+      try {
+        const m = C.memoire.find(x => x.id === id);
+        if (!m) throw bad("Souvenir introuvable.");
+        const row = normSouvenir(patch, m);
+        if (!Object.keys(row).length) return { ok: true };
+        await write(async () => q(sb.from("memoire_agent").update(row).eq("id", id)));
+        return { ok: true };
+      } catch (e) { return echec(e); }
+    },
+    async supprimer(ids) {
+      const liste = idsValides(ids);
+      if (!liste.length) return { ok: true };
+      try { await write(async () => q(sb.from("memoire_agent").delete().in("id", liste))); return { ok: true }; }
+      catch (e) { return echec(e); }
+    },
+    async toutEffacer() {
+      try { await write(async uid => q(sb.from("memoire_agent").delete().eq("user_id", uid))); return { ok: true }; }
+      catch (e) { return echec(e); }
+    },
+  };
+  const savoir = {
+    /* Fiche complète (avec son contenu markdown), lue à l'ouverture ; null si elle n'existe pas ou si la lecture échoue. */
+    async fiche(slug) {
+      if (!sb) return null;
+      try {
+        const r = await q(sb.from("savoir_fiches").select("slug, theme, titre, resume, contenu, mots_cles, sources, version, mis_a_jour_le").eq("slug", slug).maybeSingle());
+        return r ? Object.assign(ficheView(r), { contenu: r.contenu }) : null;
+      } catch (e) { console.warn("Boussole : lecture de la fiche impossible", e); return null; }
+    },
+  };
+
   /* ---------- connexions de l'assistant : surveillance à la demande (onboarding) ---------- */
   const CONN_INTERVALLE = 5000;
   let connTimer = null, connEnCours = false;
@@ -472,6 +548,8 @@
     mode: "supabase",
     db,
     propositions,
+    memoire,
+    savoir,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

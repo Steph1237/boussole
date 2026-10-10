@@ -7,8 +7,8 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, surveillerConnexions(on) }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, scope, people, user, error }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, surveillerConnexions(on) }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
@@ -19,6 +19,9 @@
    connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] (vide au départ : aucun assistant connecté) ;
    Store.surveillerConnexions(true) simule la connexion de Claude 4 s plus tard (pour montrer le voyant de l'onboarding),
    surveillerConnexions(false) annule la simulation en attente.
+   memoire = [{ id, categorie, contenu, echeance, epingle, source, creeLe, majLe }] (DEMO.memoire) ; Store.memoire.modifier(id, patch) /
+   supprimer(ids) / toutEffacer() → { ok: true } ou { erreur }, en mémoire. savoir = { fiches (sans contenu), reperes } (DEMO.savoir,
+   repères d'exemple) ; Store.savoir.fiche(slug) → la fiche d'exemple avec son contenu, ou null.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
    byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
@@ -35,8 +38,13 @@
     config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
+    memoire: [], savoir: { fiches: [], reperes: [] },
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
+  // Fiches : S n'expose que les résumés (comme store-supabase.js) ; le contenu reste ici pour Store.savoir.fiche(slug).
+  const FICHES = (D.savoir && D.savoir.fiches) || [];
+  C.memoire = D.memoire || [];
+  C.savoir = { fiches: FICHES.map(f => { const o = Object.assign({}, f); delete o.contenu; return o; }), reperes: (D.savoir && D.savoir.reperes) || [] };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -71,6 +79,8 @@
       classes: clone(C.classes) || {},
       propositions: clone(C.propositions),
       connexions: clone(C.connexions),
+      memoire: clone(C.memoire),
+      savoir: clone(C.savoir),
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -361,6 +371,60 @@
     },
   };
 
+  /* ---------- mémoire de l'agent et savoir commun (en mémoire) ---------- */
+  // Même validation que store-supabase.js (et que la base : 1 à 500 caractères, pas de contenu sensible, échéance pour « à suivre »).
+  const SENSIBLE = [/[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}/, /([0-9][ -]?){12,18}[0-9]/, /(mot de passe|password|code secret|code pin|identifiant de connexion)/i];
+  const MSG_SENSIBLE = "Ce souvenir contient une information sensible (numéro de compte ou de carte, identifiant, mot de passe) : il n'est pas enregistré.";
+  function normSouvenir(patch, m) {
+    const p = patch || {}, out = {};
+    if ("contenu" in p) {
+      const t = String(p.contenu == null ? "" : p.contenu).trim();
+      if (!t || t.length > 500) throw bad("Un souvenir compte de 1 à 500 caractères.");
+      if (SENSIBLE.some(re => re.test(t))) throw bad(MSG_SENSIBLE);
+      out.contenu = t;
+    }
+    if ("epingle" in p) out.epingle = !!p.epingle;
+    if ("echeance" in p) {
+      const e = p.echeance == null || p.echeance === "" ? null : String(p.echeance);
+      if (e && (!/^\d{4}-\d{2}-\d{2}$/.test(e) || isNaN(Date.parse(e)))) throw bad("Échéance « " + e + " » invalide (format AAAA-MM-JJ).");
+      if (e && m && m.categorie !== "a_suivre") throw bad("Seul un point « à suivre » porte une échéance.");
+      out.echeance = e;
+    }
+    return out;
+  }
+  const memoire = {
+    async modifier(id, patch) {
+      await tick();
+      try {
+        const m = C.memoire.find(x => x.id === id);
+        if (!m) throw bad("Souvenir introuvable.");
+        const v = normSouvenir(clone(patch), m);
+        if (Object.keys(v).length) { Object.assign(m, v, { majLe: new Date().toISOString() }); publish(); }
+        return { ok: true };
+      } catch (e) { return { erreur: e.message || String(e) }; }
+    },
+    async supprimer(ids) {
+      await tick();
+      const liste = (Array.isArray(ids) ? ids : []).map(String);
+      C.memoire = C.memoire.filter(m => !liste.includes(String(m.id)));
+      publish();
+      return { ok: true };
+    },
+    async toutEffacer() {
+      await tick();
+      C.memoire = [];
+      publish();
+      return { ok: true };
+    },
+  };
+  const savoir = {
+    async fiche(slug) {
+      await tick();
+      const f = FICHES.find(x => x.slug === slug);
+      return f ? clone(f) : null;
+    },
+  };
+
   /* ---------- connexions : simulation de la connexion de Claude (onboarding en démo) ---------- */
   const CLAUDE_ID = (window.BOUSSOLE && window.BOUSSOLE.claude && window.BOUSSOLE.claude.clientId) || "30351516-1e76-4884-8fb2-ae856799a723";
   const DELAI_CONNEXION_DEMO = 4000;
@@ -380,6 +444,8 @@
     mode: "demo",
     db,
     propositions,
+    memoire,
+    savoir,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {
