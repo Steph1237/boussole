@@ -23,8 +23,21 @@ const TOOLS = [
   "get_overview", "get_profile", "update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit",
   "list_positions", "upsert_positions", "record_transaction", "get_config", "update_config",
   "get_budget", "update_budget", "list_objectifs", "upsert_objectifs", "delete_objectif",
-  "get_risk_profile", "annotate_instrument",
+  "get_risk_profile", "annotate_instrument", "etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection",
 ];
+/* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
+const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
+  "update_budget", "upsert_objectifs", "delete_objectif", "set_risk_answers", "set_protection"];
+const PROMPTS = ["bilan_complet", "profil_de_risque", "budget", "placements", "revue_mensuelle"];
+/** Section du code d'un outil (de son registerTool au suivant). delete_bien / delete_credit partagent une boucle. */
+function outil(nom) {
+  let i = code.indexOf(`registerTool("${nom}"`);
+  if (i < 0 && /^delete_(bien|credit)$/.test(nom)) i = code.indexOf('[["delete_bien", "biens", "bien", "Bien"]');
+  assert.ok(i >= 0, `outil ${nom} introuvable`);
+  const debut = code.startsWith("registerTool(", i) ? i : code.indexOf("registerTool(", i);
+  const j = code.indexOf("registerTool(", debut + 20);
+  return code.slice(i, j > 0 ? j : undefined);
+}
 
 test("mcp : route des métadonnées de ressource protégée (et variante suffixée)", () => {
   assert.match(code, /basePath\(\s*["']\/mcp["']\s*\)/);
@@ -54,10 +67,7 @@ test("mcp : tous les outils de la spec sont enregistrés, sans suppression de co
   assert.doesNotMatch(code, /delete_me|export_all|delete_account|auth\.admin/);
 });
 
-test("mcp : budget et objectifs écrivent dans leurs tables, get_overview expose le score de santé", () => {
-  assert.match(code, /from\("budgets"\)\.upsert\(\{\s*user_id:\s*user\.id,\s*lignes/, "update_budget : upsert de budgets sur l'utilisateur du jeton");
-  assert.match(code, /onConflict:\s*"user_id"/);
-  for (const t of ["objectifs"]) assert.match(code, new RegExp(`from\\("${t}"\\)\\.(insert|update|delete)`));
+test("mcp : budget et objectifs (schémas), get_overview expose le score de santé", () => {
   assert.match(code, /z\.enum\(\["remplacer",\s*"fusionner"\]/, "update_budget : modes remplacer / fusionner");
   assert.match(code, /z\.enum\(\["revenu",\s*"depense",\s*"epargne"\]/);
   assert.match(code, /z\.enum\(\["apport",\s*"matelas",\s*"retraite",\s*"projet"\]/);
@@ -69,7 +79,6 @@ test("mcp : budget et objectifs écrivent dans leurs tables, get_overview expose
 });
 
 test("mcp : Diagnostic — annotate_instrument (source obligatoire, RPC), get_risk_profile, get_overview enrichi, consignes", () => {
-  const outil = nom => { const i = code.indexOf(`registerTool("${nom}"`); assert.ok(i >= 0, nom); return code.slice(i, code.indexOf("registerTool(", i + 20) > 0 ? code.indexOf("registerTool(", i + 20) : undefined); };
   const annot = outil("annotate_instrument");
   assert.ok(annot.includes("Renseigne les frais (TER), la zone géographique et la devise d'un fonds détenu, avec la source consultée"), "description française de annotate_instrument");
   assert.match(annot, /source:\s*z\.string\(/, "source : chaîne");
@@ -87,6 +96,57 @@ test("mcp : Diagnostic — annotate_instrument (source obligatoire, RPC), get_ri
   assert.match(src, /annotate_instrument[^"]*source[^"]*obligatoire|Source obligatoire/i, "consignes : source obligatoire");
   assert.ok(src.includes("get_risk_profile"), "consignes : profil de risque");
   assert.doesNotMatch(src, /dans le Pilotage|du Pilotage/, "libellé « Pilotage » remplacé par Bilan › Placements");
+});
+
+test("mcp : aucune écriture directe dans les tables personnelles, hors propositions (et réglages sans montant)", () => {
+  const ecritures = [...code.matchAll(/from\(\s*"(\w+)"\s*\)\s*\.(insert|update|upsert|delete)\(/g)].map(m => `${m[1]}.${m[2]}`);
+  const tables = new Set(ecritures.map(e => e.split(".")[0]));
+  assert.deepEqual([...tables].sort(), ["config", "propositions"], `écritures trouvées : ${ecritures.join(", ")}`);
+  assert.deepEqual([...new Set(ecritures.filter(e => e.startsWith("propositions")))], ["propositions.insert"], "propositions : insertion seulement");
+  // config : seulement dans update_config, qui n'accepte plus le matelas ni les versements programmés (montants).
+  const cfg = outil("update_config");
+  const horsCfg = code.replace(cfg, "");
+  assert.doesNotMatch(horsCfg, /from\("config"\)\.(insert|update|upsert|delete)/, "écriture de config hors update_config");
+  assert.doesNotMatch(cfg, /cushion:\s*CushionPatch|recurring:\s*z\.array/, "update_config : ni matelas ni versements programmés");
+  // aucune écriture par des variables de table (ancienne fonction upsertRows) ni RPC d'écriture autre qu'annoter_instrument
+  assert.doesNotMatch(code, /from\(\s*table\s*\)\s*\.(insert|update|upsert|delete)\(/);
+  assert.deepEqual([...new Set([...code.matchAll(/\.rpc\(\s*"(\w+)"/g)].map(m => m[1]))], ["annoter_instrument"], "seule RPC : annoter_instrument");
+  assert.match(code, /Proposition|proposition/);
+});
+
+test("mcp : chaque outil d'écriture exige une source (DEPOT) et dépose des propositions", () => {
+  const depot = code.slice(code.indexOf("const DEPOT = {"), code.indexOf("};", code.indexOf("const DEPOT = {")));
+  const source = depot.slice(depot.indexOf("source:"), depot.indexOf("justification:"));
+  assert.match(source, /z\.string\(/); assert.match(source, /min\(1/); assert.match(source, /max\(500/);
+  assert.doesNotMatch(source, /\.optional\(\)/, "source jamais optionnelle");
+  assert.ok(source.includes("D'où vient ce chiffre : relevé collé, déclaration de l'utilisateur, document…"), "description française de source");
+  assert.match(depot, /justification:[^\n]*\n?[^\n]*\.optional\(\)/, "justification optionnelle");
+  assert.match(depot, /lot:\s*uuid\.optional\(\)/, "lot optionnel (UUID)");
+  for (const nom of ECRITURE) {
+    const sec = outil(nom);
+    assert.match(sec, /\.\.\.DEPOT/, `${nom} : paramètres source / justification / lot`);
+    assert.match(sec, /deposer\(|proposerLignes\(/, `${nom} : dépôt de propositions`);
+  }
+  assert.match(code, /from\("propositions"\)\.insert\(rows\)/);
+  assert.ok(code.includes("proposition${n > 1 ? \"s\" : \"\"} déposée${n > 1 ? \"s\" : \"\"}, ${VALIDER}"), "réponse : N proposition(s) déposée(s)…");
+  assert.ok(code.includes('const VALIDER = "à valider dans Boussole › Profil et données › Propositions"'));
+  assert.doesNotMatch(outil("annotate_instrument"), /\.\.\.DEPOT|deposer\(/, "annotate_instrument reste direct");
+  // set_risk_answers validé contre les questions ; list_propositions et etat_du_bilan en lecture seule
+  assert.match(outil("set_risk_answers"), /reponses:\s*RisqueReponses/);
+  assert.match(code, /const RisqueReponses = z\.strictObject\(Object\.fromEntries\(QUESTIONS_RISQUE\.map/);
+  for (const nom of ["etat_du_bilan", "list_propositions"]) assert.match(outil(nom), /annotations:\s*RO/, `${nom} en lecture seule`);
+  assert.match(outil("list_propositions"), /eq\("statut", statut\)/);
+});
+
+test("mcp : prompts d'entretien enregistrés (titre, description, conduite)", () => {
+  assert.match(code, /server\.registerPrompt\(p\.nom,\s*\{\s*title:\s*p\.titre,\s*description:\s*p\.description\s*\}/);
+  for (const n of PROMPTS) assert.match(code, new RegExp(`nom:\\s*"${n}",\\s*titre:\\s*"[^"]+",`), `prompt ${n}`);
+  const conduite = code.slice(code.indexOf("const CONDUITE = ["), code.indexOf("const PARCOURS"));
+  for (const k of ["etat_du_bilan", "list_propositions", "UNE seule question", "pourquoi", "relevé", "N'invente jamais un chiffre", "récapitule", "source", "lot",
+    "Boussole › Profil et données › Propositions", "aucune recommandation de produit", "pas un conseil en investissement"]) assert.ok(conduite.includes(k), `conduite : ${k}`);
+  const revue = code.slice(code.indexOf('nom: "revue_mensuelle"'), code.indexOf("].map(", code.indexOf('nom: "revue_mensuelle"')));
+  for (const k of ["90 jours", "budget", "get_overview"]) assert.ok(revue.includes(k), `revue_mensuelle : ${k}`);
+  for (const k of ["etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection", "Profil et données › Propositions", "source"]) assert.ok(src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE")).includes(k), `instructions : ${k}`);
 });
 
 /* ---------- parité de calcul avec web/src (risque.js, marche.js, pratiques.js) ---------- */
@@ -182,6 +242,53 @@ test("parité MCP / pratiques.js : mêmes critères, points, valeurs et textes s
       assert.equal(mcp.criteres.find(c => c.cle === "frais").a_completer, false, "frais calculés une fois l'ETF Monde annoté");
       assert.ok(mcp.criteres.find(c => c.cle === "enveloppes").points < 20, "enveloppes : points d'attention");
     }
+  }
+});
+
+/* ---------- parité état du bilan : web/src/bilan-etat.js ↔ connecteur ---------- */
+function portEtat() {
+  const debut = src.indexOf("/* État du bilan (port de web/src/bilan-etat.js"), fin = src.indexOf("/* Schémas d'entrée");
+  const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ BilanEtat, etatDepuisLignes, QUESTIONS_RISQUE });";
+  return vm.runInNewContext(js, { Date, Math, JSON, Number, String, Object, Array, Set, isFinite });
+}
+const BilanEtatWeb = require("../web/src/bilan-etat.js");
+
+test("parité MCP / bilan-etat.js : mêmes sections, questions, ordre et pourcentage", { skip: SANS_STRIP }, () => {
+  const { BilanEtat, etatDepuisLignes } = portEtat();
+  assert.deepEqual(J(BilanEtat.RISQUE_IDS), BilanEtatWeb.RISQUE_IDS);
+  assert.deepEqual(J(BilanEtat.RISQUE_LIBELLES), BilanEtatWeb.RISQUE_LIBELLES);
+  assert.equal(BilanEtat.FRAICHEUR_JOURS, BilanEtatWeb.FRAICHEUR_JOURS);
+  const S = { positions: DEMO.positions, profil: DEMO.profil, budget: DEMO.budget, objectifs: DEMO.objectifs, risque: DEMO.risque, propositions: DEMO.propositions };
+  const vieux = { ...S, positions: [...DEMO.positions, { name: "Vieux", envelope: "PEL", mode: "manual", value: 1, valueDate: "2025-01-01", status: "actif" }] };
+  const scenarios = [
+    ["démo", S],
+    ["vide", { positions: [], profil: null, budget: null, objectifs: [], risque: null, propositions: [] }],
+    ["un adulte, aucun bien", { ...S, profil: { ...DEMO.profil, foyer: { adultes: 1 }, biens: [], credits: [], biensRenseignes: true, protection: { prevoyance: false } } }],
+    ["risque partiel, montant ancien", { ...vieux, risque: { reponses: { horizon: "8-15", reaction: "rien", connaissances: [] } } }],
+    ["objectifs sans date", { ...S, objectifs: [{ id: "x" }] }],
+  ];
+  for (const [nom, sc] of scenarios) for (const jour of [TODAY, "2027-03-01"]) {
+    assert.deepEqual(J(BilanEtat.etat(sc, jour)), J(BilanEtatWeb.etat(sc, jour)), `${nom} au ${jour}`);
+  }
+  // Lignes SQL (lecture du connecteur) → même état que la vue du store
+  const { d, objectifs } = enLignes(DEMO);
+  const lignes = { profil: { ...d.profil, risque: null }, biens: d.biens, credits: d.credits, positions: d.positions, budget: { lignes: d.lignes }, objectifs, propositions: DEMO.propositions };
+  for (const jour of [TODAY, "2026-12-31"]) assert.deepEqual(J(BilanEtat.etat(etatDepuisLignes(lignes), jour)), J(BilanEtatWeb.etat(S, jour)), `lignes SQL au ${jour}`);
+  const e = BilanEtat.etat(etatDepuisLignes(lignes), TODAY);
+  assert.equal(e.propositionsEnAttente, 5, "les propositions en attente de la démo sont comptées");
+  // « aucun bien » : foyer.biensRenseignes (écrit par update_profile) vaut réponse
+  const aucun = BilanEtat.etat(etatDepuisLignes({ ...lignes, biens: [], credits: [], profil: { ...lignes.profil, foyer: { ...lignes.profil.foyer, biensRenseignes: true } } }), TODAY);
+  assert.equal(aucun.sections.find(s => s.cle === "immobilier").statut, "complet");
+});
+
+test("parité MCP / risque.js : questions et valeurs permises de set_risk_answers", { skip: SANS_STRIP }, () => {
+  const { QUESTIONS_RISQUE } = portEtat();
+  assert.deepEqual(J(QUESTIONS_RISQUE.map(q => q.id)), Risque.QUESTIONS.map(q => q.id));
+  for (const q of Risque.QUESTIONS) {
+    const m = QUESTIONS_RISQUE.find(x => x.id === q.id);
+    assert.equal(m.type, q.type, q.id);
+    assert.deepEqual(J(m.valeurs), q.options.map(o => o.v), q.id);
   }
 });
 

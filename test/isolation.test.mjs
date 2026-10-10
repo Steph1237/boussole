@@ -87,6 +87,13 @@ const TABLES = [
     field: "nom", patch: { nom: "piraté" },
     foreign: (b) => ({ user_id: b.id, nom: "intrus" }),
   },
+  {
+    name: "propositions", mode: "insert",
+    seed: (u) => ({ cible: "protection", operation: "modifier", apres: { prevoyance: true, marqueur: `prop-${u.id}` }, source: `essai ${u.label}` }),
+    match: (u, row) => ({ id: row.id }),
+    field: "source", patch: { source: "piraté" },
+    foreign: (b) => ({ user_id: b.id, cible: "protection", operation: "modifier", apres: { prevoyance: false }, source: "intrus" }),
+  },
 ];
 
 const PRIVATE_TABLES = TABLES.map((t) => t.name);
@@ -285,6 +292,41 @@ describe("isolation RLS entre deux comptes", () => {
     });
   });
 
+  describe("appliquer_propositions() / refuser_propositions() (RPC security invoker)", () => {
+    it("A ne peut ni appliquer ni refuser les propositions de B ; B applique les siennes", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      const propB = B.rows.propositions.id;
+      const before = await B.client.from("profiles").select("protection").eq("user_id", B.id).single();
+      assert.equal(before.error, null);
+      const ap = await A.client.rpc("appliquer_propositions", { p_ids: [propB], p_modifications: {} });
+      assert.equal(ap.error, null, `appliquer_propositions : l'appel par A ne doit pas échouer (${ap.error?.message})`);
+      assert.equal(ap.data, 0, "A n'applique aucune proposition de B");
+      const rf = await A.client.rpc("refuser_propositions", { p_ids: [propB] });
+      assert.equal(rf.error, null); assert.equal(rf.data, 0, "A ne refuse aucune proposition de B");
+      const vu = await B.client.from("propositions").select("statut, decide_le").eq("id", propB).single();
+      assert.equal(vu.data.statut, "en_attente", "la proposition de B reste en attente");
+      const after = await B.client.from("profiles").select("protection").eq("user_id", B.id).single();
+      assert.deepEqual(after.data.protection, before.data.protection, "les données de B sont inchangées");
+      // B l'applique avec une valeur modifiée : seule la protection de B change.
+      const own = await B.client.rpc("appliquer_propositions", { p_ids: [propB], p_modifications: { [propB]: { prevoyance: true, emprunteur: true } } });
+      assert.equal(own.error, null, `appliquer_propositions : B applique la sienne (${own.error?.message})`);
+      assert.equal(own.data, 1);
+      const pB = await B.client.from("profiles").select("protection").eq("user_id", B.id).single();
+      assert.equal(pB.data.protection.prevoyance, true); assert.equal(pB.data.protection.emprunteur, true);
+      const st = await B.client.from("propositions").select("statut, decide_le, apres").eq("id", propB).single();
+      assert.equal(st.data.statut, "acceptee"); assert.ok(st.data.decide_le);
+      assert.deepEqual(st.data.apres, { prevoyance: true, emprunteur: true }, "apres garde la valeur appliquée");
+      // Une cible invalide : tout est annulé, message en français.
+      const bad = await A.client.from("propositions").insert({ cible: "budget", operation: "creer", apres: { type: "salaire", montant: 1 }, source: "essai" }).select("id").single();
+      assert.equal(bad.error, null);
+      const ko = await A.client.rpc("appliquer_propositions", { p_ids: [bad.data.id] });
+      assert.ok(ko.error && /Proposition non appliquée \(ligne de budget, creer\)/.test(ko.error.message), `message français (${ko.error?.message})`);
+      const rA = await A.client.rpc("refuser_propositions", { p_ids: [bad.data.id] });
+      assert.equal(rA.data, 1, "A refuse la sienne");
+      await A.client.from("propositions").delete().eq("id", bad.data.id); // export_all : une seule proposition par compte
+    });
+  });
+
   describe("export_all()", () => {
     it("ne renvoie que les données de A", async (tc) => {
       if (skipIfNoKey(tc)) return;
@@ -299,7 +341,7 @@ describe("isolation RLS entre deux comptes", () => {
       const { data, error } = await A.client.rpc("export_all");
       assert.equal(error, null, `export_all : l'appel par A doit réussir (${error?.message})`);
       assert.ok(data && typeof data === "object", "export_all : doit renvoyer un objet");
-      for (const k of ["profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status", "budget", "objectifs"]) {
+      for (const k of ["profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status", "budget", "objectifs", "propositions"]) {
         assert.ok(k in data, `export_all : la clé ${k} doit être présente`);
       }
       assert.equal(data.profile?.user_id, A.id, "export_all : le profil exporté doit être celui de A");

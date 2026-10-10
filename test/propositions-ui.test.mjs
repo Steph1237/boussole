@@ -115,3 +115,11 @@ test("changements : seulement les champs modifiés ; appliquerSaisies : valeurs 
   const prof = { cible: "profil", operation: "modifier", avant: {}, apres: { foyer: { tmi: 30 } } };
   assert.deepEqual(H.appliquerSaisies(prof, { "foyer.tmi": "41" }, CTX).apres, { foyer: { tmi: 41 } });
 });
+
+test("profil de risque recalculé après validation de réponses proposées par Claude", () => {
+  const js = readFileSync("web/src/propositions.js", "utf8");
+  assert.match(js, /cible === "risque"/);
+  assert.match(js, /window\.Risque/);
+  assert.match(js, /\.evaluer\(rq\.reponses/);
+  assert.match(js, /update\(\{ risque:/);
+});

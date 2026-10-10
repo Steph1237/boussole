@@ -8,6 +8,12 @@
 // Isolation : chaque requête crée un client Supabase portant le JWT de l'utilisateur ; toutes les
 // lectures et écritures passent par lui, donc RLS (user_id = auth.uid()) s'applique. Aucune clé
 // de service n'est utilisée ici.
+//
+// Écritures (entretien guidé, docs/superpowers/specs/2026-10-10-entretien-guide.md) : les outils d'écriture ne touchent
+// aucune table du bilan ; ils déposent des lignes dans `propositions` (avant / après, source obligatoire), que l'utilisateur
+// valide dans l'application (RPC appliquer_propositions, security invoker). Exceptions : annotate_instrument (donnée
+// publique du fonds, RPC annoter_instrument) et update_config limité aux préférences sans montant (cibles en %, règles,
+// ordres, échéances, hypothèses).
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createClient } from "@supabase/supabase-js";
@@ -36,19 +42,53 @@ const PROTECTED_RESOURCE = {
 export const deps = { createClient: createClient as (...a: any[]) => any };
 
 const INSTRUCTIONS = [
-  "Boussole est l'outil de suivi de patrimoine de l'utilisateur : placements (positions), immobilier (biens), crédits, profil du foyer (revenus, statut, tranche d'imposition) et réglages (cibles d'allocation, règles d'alerte, matelas de sécurité, versements programmés).",
+  "Boussole est l'outil de suivi de patrimoine de l'utilisateur : placements (positions), immobilier (biens), crédits, profil du foyer (revenus, statut, tranche d'imposition), budget, objectifs, profil de risque et protection.",
   "Tous les montants sont en euros. Les dates sont au format AAAA-MM-JJ.",
   "p1 et p2 désignent les personnes du foyer dont les prénoms figurent dans le profil (get_profile, champ personnes) ; « foyer » est leur ensemble. Utilise leurs prénoms quand tu parles à l'utilisateur.",
-  "Commence par get_overview ou get_profile pour connaître la situation avant de proposer une modification.",
-  "Avant d'écraser une valeur existante (salaire, valeur d'un bien, quantité d'une ligne, réglage…), montre l'ancienne et la nouvelle valeur et demande confirmation à l'utilisateur.",
-  "N'invente jamais un chiffre : si une information manque, demande-la. Pour un titre coté, l'ISIN et la quantité suffisent : le cours est mis à jour chaque nuit.",
-  "Chaque écriture renvoie ce qui a changé ; rends-en compte à l'utilisateur.",
+  "Claude propose, l'utilisateur dispose : les outils d'écriture (update_profile, upsert_biens, upsert_credits, delete_bien, delete_credit, upsert_positions, record_transaction, update_budget, upsert_objectifs, delete_objectif, set_risk_answers, set_protection) n'écrivent rien directement. Ils déposent des propositions (avant / après, source, justification) que l'utilisateur valide, modifie ou refuse dans Boussole › Profil et données › Propositions. Dis-le à l'utilisateur après chaque dépôt.",
+  "Chaque dépôt exige source : d'où vient le chiffre (« Relevé PEA du 30/09 collé par l'utilisateur », « Dit par l'utilisateur », « Avis d'imposition 2026 »…). Ajoute une justification d'une phrase si elle aide. Regroupe un entretien dans un seul lot : réutilise l'identifiant lot renvoyé par le premier dépôt.",
+  "Entretien : commence par etat_du_bilan (ce qui manque, dans l'ordre, avec le pourquoi) et list_propositions (ce qui attend déjà une validation). Ne repose jamais une question déjà répondue ; une question à la fois, en français simple, avec son pourquoi en une phrase. Des parcours prêts à l'emploi existent (prompts bilan_complet, profil_de_risque, budget, placements, revue_mensuelle).",
+  "L'utilisateur peut coller un relevé (banque, PEA, assurance-vie, tableau d'amortissement) : extrais-en les chiffres, cite le document et sa date. N'invente jamais un chiffre : si une information manque ou est ambiguë, demande-la. Pour un titre coté, l'ISIN et la quantité suffisent : le cours est mis à jour chaque nuit. Récapitule avant de proposer.",
   "Budget mensuel (get_budget, update_budget) : lignes de revenus, dépenses par catégorie et épargne, par mois ou par an. Le salaire et les mensualités de crédit viennent du profil : ne les ajoute pas au budget. update_budget fusionne par défaut (rapprochement par id ou par libellé).",
   "Objectifs datés (list_objectifs, upsert_objectifs, delete_objectif) : apport, matelas, retraite ou projet, avec cible, échéance, montant déjà réuni (saisi ou poches rattachées), rendement attendu et priorité ; list_objectifs calcule l'effort mensuel requis et le statut.",
+  "Réglages (get_config, update_config) : update_config modifie directement les seules préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte, ordres à passer, échéances, hypothèses) ; le matelas de sécurité et les versements programmés se règlent dans Boussole.",
   "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels.",
-  "Profil de risque (get_risk_profile) : profil déclaré par l'utilisateur via le questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, et profil équivalent du portefeuille réel (volatilité, baisse plausible sur un an). Tu ne remplis pas le questionnaire à la place de l'utilisateur : s'il n'est pas rempli, invite-le à le faire dans Diagnostic › Profil de risque. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
-  "Frais, zone et devise des fonds (annotate_instrument) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
+  "Profil de risque (get_risk_profile, set_risk_answers) : questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, profil équivalent du portefeuille réel. Pose les questions et enregistre avec set_risk_answers les seules réponses choisies par l'utilisateur, jamais une réponse déduite ; le profil est calculé par l'application. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
+  "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
+  "Frais, zone et devise des fonds (annotate_instrument, seule écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
 ].join("\n");
+
+/* Parcours d'entretien (prompts MCP) : une conduite commune et un objectif par parcours. */
+const CONDUITE = [
+  "Conduite de l'entretien :",
+  "1. Commence par appeler etat_du_bilan et list_propositions : ne repose jamais une question déjà répondue ni un changement déjà proposé.",
+  "2. Pose UNE seule question à la fois, en français simple, et explique en une phrase pourquoi elle compte (le « pourquoi » d'etat_du_bilan t'y aide).",
+  "3. J'ai le droit de coller un relevé (banque, PEA, assurance-vie, PER, tableau d'amortissement, avis d'imposition) : extrais-en les chiffres, cite le document et sa date, et signale ce qui est illisible ou ambigu.",
+  "4. N'invente jamais un chiffre : si une valeur manque, demande-la ; ne présente jamais une estimation comme un fait.",
+  "5. Avant de proposer, récapitule ce que tu as compris (valeurs, dates, titulaires) et attends ma confirmation.",
+  "6. Enregistre avec les outils d'écriture en renseignant toujours source (« Relevé PEA du 30/09 collé par l'utilisateur », « Dit par l'utilisateur »…) et, si utile, une justification d'une phrase. Tout l'entretien forme un seul lot : garde l'identifiant lot renvoyé par le premier dépôt et passe-le aux appels suivants.",
+  "7. Rappelle-moi que rien n'est appliqué tant que je n'ai pas validé les propositions dans Boussole › Profil et données › Propositions (je peux y corriger une valeur avant de valider).",
+  "8. Reste pédagogique : explique les notions (tranche d'imposition, matelas de précaution, PER, profil de risque…) sans jargon ; aucune recommandation de produit, ni d'achat ou de vente ; ce n'est pas un conseil en investissement.",
+  "9. Termine par un court résumé : ce qui a été proposé, ce qui reste à compléter et la prochaine étape.",
+].join("\n");
+
+const PARCOURS = [
+  { nom: "bilan_complet", titre: "Faire mon bilan patrimonial complet",
+    description: "Entretien guidé de bout en bout : foyer, revenus, budget, placements, immobilier et crédits, protection, objectifs, profil de risque.",
+    objectif: "Je veux faire mon bilan patrimonial complet avec Boussole. Suis les sections dans l'ordre d'etat_du_bilan (foyer, revenus, budget, épargne et placements, immobilier et crédits, protection, objectifs, profil de risque) en partant des « prochaines questions ». À la fin de chaque section, récapitule, dépose les propositions de la section, puis donne-moi l'avancement (pourcentage) avant de passer à la suivante." },
+  { nom: "profil_de_risque", titre: "Établir mon profil de risque",
+    description: "Les 10 questions du profil de risque, une à une, avec leurs réponses possibles en clair.",
+    objectif: "Je veux établir mon profil de risque. Pose les questions manquantes du questionnaire (section « Profil de risque » d'etat_du_bilan) une à une, avec les réponses possibles en clair (pas les codes) et une phrase d'explication. Reformule ma réponse, puis enregistre mes choix avec set_risk_answers (codes des valeurs). Ne déduis jamais une réponse à ma place. Après validation dans Boussole, le profil est calculé par l'application ; tu pourras le commenter avec get_risk_profile, sans recommander de produit." },
+  { nom: "budget", titre: "Établir mon budget mensuel",
+    description: "Dépenses par catégorie et épargne mensuelle, à partir de mes réponses ou d'un relevé bancaire collé.",
+    objectif: "Je veux établir mon budget mensuel. Lis d'abord get_budget. Demande mes dépenses par grande catégorie (logement, alimentation, transport, enfants, santé, loisirs, abonnements, impôts, divers), puis ce que je mets de côté chaque mois et où. Si je colle un relevé bancaire, regroupe les opérations récurrentes par catégorie et montre-moi le regroupement avant de proposer. N'ajoute ni salaire ni mensualités de crédit (ils viennent du profil). Dépose avec update_budget (mode fusionner)." },
+  { nom: "placements", titre: "Mettre à jour mes placements",
+    description: "Recenser comptes et placements avec des montants datés de moins de 90 jours.",
+    objectif: "Je veux recenser et mettre à jour mes placements. Lis list_positions. Pour chaque enveloppe (livrets, PEA, assurance-vie, PER, compte-titres, crypto…), demande le relevé ou le solde avec sa date ; pour un titre coté, l'ISIN et la quantité suffisent. Dépose avec upsert_positions (ou record_transaction pour un achat, une vente, un versement). Signale les montants de plus de 90 jours. Pour les frais d'un fonds, n'utilise annotate_instrument qu'avec une source consultée." },
+  { nom: "revue_mensuelle", titre: "Faire ma revue mensuelle",
+    description: "Rafraîchir les soldes anciens, vérifier la dérive du budget, puis la vue d'ensemble.",
+    objectif: "Je veux faire ma revue mensuelle. 1) Appelle etat_du_bilan et list_propositions. 2) Rafraîchis les soldes de plus de 90 jours (question de fraîcheur de la section placements) : demande un relevé ou le solde de chacun et dépose avec upsert_positions. 3) Vérifie la dérive du budget : compare get_budget à mes dépenses réelles du mois (je peux coller un relevé) et propose les ajustements avec update_budget. 4) Termine par get_overview : patrimoine net, score de santé et bonnes pratiques, présentés comme des indicateurs pédagogiques, et rappelle-moi les propositions à valider." },
+].map(({ objectif, ...p }: any) => ({ ...p, texte: objectif + "\n\n" + CONDUITE }));
 
 /* ------------------------------------------------------------------ */
 /* Utilitaires                                                         */
@@ -1000,6 +1040,164 @@ function vueRisque(risque: any, d: Donnees, scope: string, classes: Surcharge, d
 }
 
 /* ------------------------------------------------------------------ */
+/* État du bilan (port de web/src/bilan-etat.js, à l'identique)        */
+/* Mêmes sections, mêmes questions, même ordre, même pourcentage ;      */
+/* test/mcp.test.mjs compare les deux sur la démo. Fonctions pures.     */
+/* ------------------------------------------------------------------ */
+
+const BilanEtat = (() => {
+  const has = (v: unknown) => v !== undefined && v !== null && v !== "";
+  const num = (v: unknown) => (isFinite(+(v as number)) ? +(v as number) : 0);
+  const jours = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+  const FRAICHEUR_JOURS = 90;
+  /* Identifiants des questions du profil de risque (identiques à web/src/risque.js). */
+  const RISQUE_IDS = ["horizon", "objectif", "reaction", "perte_max", "connaissances", "experience", "revenus", "matelas", "part_investie", "age"];
+  const RISQUE_LIBELLES: Record<string, string> = {
+    horizon: "Dans combien de temps aurez-vous besoin de la majeure partie de cet argent ?",
+    objectif: "Que cherchez-vous d'abord : préserver, compléter vos revenus, faire croître ?",
+    reaction: "Si votre portefeuille perdait 20 % en 3 mois, que feriez-vous ?",
+    perte_max: "Quelle baisse temporaire sur un an pourriez-vous supporter sans vendre ?",
+    connaissances: "Quels placements connaissez-vous bien (livrets, fonds euros, ETF, actions, obligations, crypto) ?",
+    experience: "Depuis combien d'années investissez-vous en bourse ?",
+    revenus: "Vos revenus sont-ils stables (fonctionnaire, CDI, indépendant, variables) ?",
+    matelas: "Avez-vous au moins 3 mois de dépenses disponibles hors placements ?",
+    part_investie: "Quelle part de votre épargne acceptez-vous d'exposer aux marchés ?",
+    age: "Quelle est votre tranche d'âge ?",
+  };
+
+  type Q = { champ: string; question: string; pourquoi: string };
+  type Section = { cle: string; titre: string; total: number; faits?: number; manquants: Q[]; statut?: string; pct?: number };
+  const q = (champ: string, question: string, pourquoi: string): Q => ({ champ, question, pourquoi });
+  const nomDe = (pr: any, k: string) => (pr && pr.personnes && pr.personnes[k] && String(pr.personnes[k].nom || "").trim()) || (k === "p1" ? "vous" : "votre conjoint(e)");
+
+  function sections(S: any, today: string): Section[] {
+    const pr = S.profil || null, f = (pr && pr.foyer) || {}, ps = (pr && pr.personnes) || {};
+    const deux = num(f.adultes) >= 2;
+    const out: Section[] = [];
+
+    // 1. Foyer
+    const foyer: Q[] = [];
+    if (!has(f.adultes)) foyer.push(q("foyer.adultes", "Combien d'adultes composent votre foyer ?", "Le niveau de vie et l'impôt dépendent de la taille du foyer."));
+    if (!has(f.enfants)) foyer.push(q("foyer.enfants", "Avez-vous des enfants à charge ?", "Ils comptent dans l'impôt, le budget et la protection à prévoir."));
+    if (!has(f.age)) foyer.push(q("foyer.age", "Quelle est la tranche d'âge de la personne qui gagne le plus ?", "L'horizon de placement et les repères de patrimoine dépendent de l'âge."));
+    if (!has(f.tmi)) foyer.push(q("foyer.tmi", "Quelle est votre tranche marginale d'imposition (0, 11, 30, 41 ou 45 %) ?", "Elle détermine l'intérêt du PER et la fiscalité de vos placements."));
+    out.push({ cle: "foyer", titre: "Foyer", total: 4, manquants: foyer });
+
+    // 2. Revenus
+    const rev: Q[] = [];
+    ["p1"].concat(deux ? ["p2"] : []).forEach((k) => {
+      const p = ps[k] || {};
+      if (!(num(p.salaire) > 0)) rev.push(q("personnes." + k + ".salaire", "Quel est le salaire de " + nomDe(pr, k) + " (net ou brut, par mois ou par an) ?", "C'est la base du taux d'épargne, de l'endettement et de la capacité d'emprunt."));
+      if (!has(p.statut)) rev.push(q("personnes." + k + ".statut", nomDe(pr, k) + " est-il cadre ou non-cadre ?", "Utile pour convertir un salaire brut en net."));
+    });
+    out.push({ cle: "revenus", titre: "Revenus", total: deux ? 4 : 2, manquants: rev });
+
+    // 3. Budget
+    const lignes: any[] = (S.budget && Array.isArray(S.budget.lignes)) ? S.budget.lignes : [];
+    const bud: Q[] = [];
+    if (!lignes.some((l) => l.type === "depense")) bud.push(q("budget.depenses", "Quelles sont vos principales dépenses mensuelles (logement, courses, transport, abonnements…) ? Un relevé bancaire collé suffit.", "Sans dépenses, impossible de mesurer votre matelas en mois et votre taux d'épargne."));
+    if (!lignes.some((l) => l.type === "epargne")) bud.push(q("budget.epargne", "Combien mettez-vous de côté chaque mois, et où ?", "L'épargne régulière alimente vos objectifs et vos projections."));
+    out.push({ cle: "budget", titre: "Budget", total: 2, manquants: bud });
+
+    // 4. Épargne et placements
+    const pos: any[] = (S.positions || []).filter((p: any) => p.status !== "clôturé");
+    const plac: Q[] = [];
+    if (!pos.length) plac.push(q("positions", "Quels sont vos comptes et placements (livrets, PEA, assurance-vie, PER, compte-titres, crypto) et leurs montants ?", "C'est le cœur du bilan : répartition, risque et diversification en découlent."));
+    else {
+      const vieux = pos.filter((p) => {
+        const d = p.mode === "market" ? p.priceDate : p.valueDate;
+        return p.status !== "à recevoir" && (!d || jours(d, today) > FRAICHEUR_JOURS);
+      });
+      const envs = [...new Set(vieux.map((p) => p.envelope || p.name))];
+      if (envs.length) plac.push(q("positions.fraicheur", "Pouvez-vous me donner le solde à jour de : " + envs.join(", ") + " ?", "Ces montants datent de plus de " + FRAICHEUR_JOURS + " jours."));
+    }
+    // Deux étapes : avoir déclaré ses placements, puis des montants à jour.
+    out.push({ cle: "placements", titre: "Épargne et placements", total: 2, faits: !pos.length ? 0 : plac.length ? 1 : 2, manquants: plac });
+
+    // 5. Immobilier et crédits
+    const immo: Q[] = [];
+    const biens: any[] = (pr && Array.isArray(pr.biens)) ? pr.biens : [];
+    if (!biens.length && !(pr && pr.biensRenseignes)) immo.push(q("biens", "Êtes-vous propriétaire d'un ou plusieurs biens immobiliers ? Avez-vous des crédits en cours (immobilier, auto, conso) ?", "Patrimoine net, endettement et capacité d'emprunt en dépendent. « Aucun » est une réponse valable."));
+    out.push({ cle: "immobilier", titre: "Immobilier et crédits", total: 1, manquants: immo });
+
+    // 6. Protection
+    const prot = (pr && pr.protection) || {};
+    const credits = (pr && Array.isArray(pr.credits) ? pr.credits : []).length + biens.filter((b) => num(b.crd) > 0).length;
+    const protM: Q[] = [];
+    if (!has(prot.prevoyance)) protM.push(q("protection.prevoyance", "Avez-vous une prévoyance (décès, invalidité) au-delà de celle de votre employeur ?", "Protéger les revenus du foyer passe avant l'investissement."));
+    if (credits > 0 && !has(prot.emprunteur)) protM.push(q("protection.emprunteur", "Vos crédits sont-ils couverts par une assurance emprunteur, et à quelle quotité ?", "Elle protège le foyer si un emprunteur ne peut plus rembourser."));
+    out.push({ cle: "protection", titre: "Protection", total: credits > 0 ? 2 : 1, manquants: protM });
+
+    // 7. Objectifs
+    const objs: any[] = (S.objectifs || []);
+    const objM: Q[] = [];
+    if (!objs.length) objM.push(q("objectifs", "Quels sont vos projets et leur échéance (achat immobilier, matelas, études, retraite…) ?", "Les projections et les recommandations se calent sur vos objectifs."));
+    else if (!objs.some((o) => o.dateCible || o.date_cible)) objM.push(q("objectifs.date", "Pour quand visez-vous vos objectifs ?", "Sans date, impossible de calculer l'effort mensuel."));
+    out.push({ cle: "objectifs", titre: "Objectifs", total: 1, manquants: objM });
+
+    // 8. Profil de risque
+    const rep = (S.risque && S.risque.reponses) || {};
+    const risqueM = RISQUE_IDS.filter((id) => !has(rep[id]) || (Array.isArray(rep[id]) && !rep[id].length))
+      .map((id) => q("risque." + id, RISQUE_LIBELLES[id], "Le profil de risque fixe l'allocation cible et la baisse que vous pouvez traverser."));
+    out.push({ cle: "risque", titre: "Profil de risque", total: RISQUE_IDS.length, manquants: risqueM });
+
+    return out;
+  }
+
+  /** État complet : pourcentage (moyenne des sections), statut par section, 3 prochaines questions, propositions en attente. */
+  function etat(S: any, today?: string) {
+    const t = today || new Date().toISOString().slice(0, 10);
+    const secs = sections(S || {}, t).map((s) => {
+      const faits = s.faits != null ? s.faits : Math.max(0, s.total - s.manquants.length);
+      return Object.assign(s, { faits, statut: s.manquants.length === 0 ? "complet" : faits === 0 ? "vide" : "partiel", pct: s.total ? faits / s.total : 1 });
+    });
+    const pourcentage = Math.round(secs.reduce((a, s) => a + (s.pct as number), 0) / secs.length * 100);
+    const prochaines = secs.flatMap((s) => s.manquants.map((m) => Object.assign({ section: s.cle }, m))).slice(0, 3);
+    const propositionsEnAttente = ((S && S.propositions) || []).filter((p: any) => p.statut === "en_attente").length;
+    return { pourcentage, sections: secs, prochaines, propositionsEnAttente };
+  }
+
+  return { etat, RISQUE_IDS, RISQUE_LIBELLES, FRAICHEUR_JOURS };
+})();
+
+/** Données lues en base (lignes SQL) → S à la forme de web/src/store-supabase.js, pour BilanEtat.etat. */
+function etatDepuisLignes(r: { profil: any; biens: any[]; credits: any[]; positions: any[]; budget: any; objectifs: any[]; propositions: any[] }) {
+  const p = r.profil;
+  const profil = p ? {
+    foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {}, protection: p.protection || {},
+    biens: r.biens || [], credits: r.credits || [],
+    ...(p.foyer && p.foyer.biensRenseignes ? { biensRenseignes: true } : {}),
+  } : null;
+  const positions = (r.positions || []).map((x) => {
+    const ins = x.instrument || null, insDate = (ins && ins.price_date) || null;
+    const useOv = x.price_override != null && (!insDate || !x.value_date || x.value_date >= insDate);
+    return { name: x.name, envelope: x.envelope, mode: x.mode, status: x.status, priceDate: useOv ? x.value_date : insDate, valueDate: x.value_date || null };
+  });
+  return {
+    profil, positions,
+    budget: r.budget ? { lignes: Array.isArray(r.budget.lignes) ? r.budget.lignes : [] } : null,
+    objectifs: (r.objectifs || []).map((o) => ({ dateCible: o.date_cible || o.dateCible || null })),
+    risque: (p && p.risque) || null,
+    propositions: r.propositions || [],
+  };
+}
+
+/* Questions du profil de risque : identifiants, type et valeurs permises (identiques à web/src/risque.js QUESTIONS ;
+   test/mcp.test.mjs vérifie la parité). Sert à valider set_risk_answers. */
+const QUESTIONS_RISQUE: { id: string; type: "choix" | "multi" | "nombre"; valeurs: string[] }[] = [
+  { id: "horizon", type: "choix", valeurs: ["lt2", "2-5", "5-8", "8-15", "gt15"] },
+  { id: "objectif", type: "choix", valeurs: ["preserver", "revenus", "croissance", "maximiser"] },
+  { id: "reaction", type: "choix", valeurs: ["vendre_tout", "vendre_partie", "rien", "renforcer"] },
+  { id: "perte_max", type: "choix", valeurs: ["p5", "p10", "p20", "p35", "plus"] },
+  { id: "connaissances", type: "multi", valeurs: ["livrets", "fonds_euros", "etf", "actions", "obligations", "crypto", "levier", "aucun"] },
+  { id: "experience", type: "nombre", valeurs: ["0", "1", "3", "5", "10"] },
+  { id: "revenus", type: "choix", valeurs: ["fonctionnaire", "cdi", "independant", "variables", "sans"] },
+  { id: "matelas", type: "choix", valeurs: ["oui", "non"] },
+  { id: "part_investie", type: "choix", valeurs: ["lt10", "10-25", "25-50", "50-75", "gt75"] },
+  { id: "age", type: "choix", valeurs: ["u30", "a30", "a40", "a50", "a60", "a70"] },
+];
+
+/* ------------------------------------------------------------------ */
 /* Schémas d'entrée                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -1009,6 +1207,16 @@ const isoDate = z.string().regex(DATE_RE, { error: "Date au format AAAA-MM-JJ at
 const pct = z.number().min(0).max(100);
 const TMI = [0, 11, 30, 41, 45] as const;
 
+/* Champs communs à tous les outils d'écriture : rien n'est écrit, une proposition est déposée avec sa source. */
+const SOURCE_REQUISE = "Source obligatoire : d'où vient ce chiffre (relevé collé, déclaration de l'utilisateur, document…).";
+const DEPOT = {
+  source: z.string({ error: SOURCE_REQUISE }).trim().min(1, { error: SOURCE_REQUISE }).max(500, { error: "Source : 500 caractères au plus." })
+    .describe("D'où vient ce chiffre : relevé collé, déclaration de l'utilisateur, document… Obligatoire, affiché à l'utilisateur (ex. « Relevé PEA du 30/09 collé par l'utilisateur », « Dit par l'utilisateur »)."),
+  justification: z.string().trim().max(1000, { error: "Justification : 1000 caractères au plus." }).optional()
+    .describe("Pourquoi ce changement, en une ou deux phrases simples (affiché à l'utilisateur à côté de l'avant / après)."),
+  lot: uuid.optional().describe("Identifiant de lot (UUID) renvoyé par un dépôt précédent : réutilisez-le pour regrouper toutes les propositions d'un même entretien. Absent : nouveau lot."),
+};
+
 const FoyerPatch = z.strictObject({
   adultes: z.number().int().min(1, { error: "Le foyer compte 1 à 3 adultes." }).max(3, { error: "Le foyer compte 1 à 3 adultes." }).nullable().optional(),
   enfants: z.number().int().min(0).max(20).nullable().optional(),
@@ -1017,6 +1225,7 @@ const FoyerPatch = z.strictObject({
   age: z.enum(["u30", "a30", "a40", "a50", "a60", "a70"]).nullable().optional().describe("Tranche d'âge de p1 : u30 (<30), a30 (30-39), a40, a50, a60, a70 (70+)."),
   tmi: z.literal(TMI, { error: "Tranche marginale d'imposition invalide : valeurs possibles 0, 11, 30, 41 ou 45." }).nullable().optional()
     .describe("Tranche marginale d'imposition en % (0, 11, 30, 41 ou 45)."),
+  biensRenseignes: z.boolean().nullable().optional().describe("true : l'utilisateur a confirmé n'avoir aucun bien immobilier ni crédit (« aucun » est une réponse)."),
 });
 const PersonnePatch = z.strictObject({
   nom: z.string().trim().min(1).max(40).optional().describe("Prénom."),
@@ -1077,18 +1286,6 @@ const TargetsPatch = z.strictObject({
   p1: z.record(z.string(), pct.nullable()).optional().describe("Cible en % par poche pour p1 (null retire la poche)."),
   p2: z.record(z.string(), pct.nullable()).optional(),
   tolerancePts: z.number().min(0).max(50).optional().describe("Écart toléré, en points."),
-});
-const CushionPatch = z.strictObject({
-  mode: z.enum(["amount", "months"]).optional().describe("amount = montant fixe, months = nombre de mois de dépenses."),
-  min: money.optional(), max: money.optional(),
-  months: z.number().min(0).max(36).optional(), depenses: money.optional().describe("Dépenses mensuelles du foyer."),
-});
-const RecurringItem = z.looseObject({
-  label: z.string().min(1).max(80),
-  positionId: uuid.describe("Ligne alimentée."),
-  day: z.number().int().min(1).max(28),
-  amount: money,
-  start: isoDate.optional(),
 });
 const TodoItem = z.looseObject({ text: z.string().min(1).max(200), amount: z.union([z.string(), z.number()]).optional(), done: z.boolean().optional() });
 const MilestoneItem = z.looseObject({ title: z.string().min(1).max(80), date: isoDate, text: z.string().max(300).optional(), warnDays: z.number().int().min(0).optional() });
@@ -1158,7 +1355,6 @@ export function buildServer({ db, user }: Ctx): McpServer {
   };
   const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const RW = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
-  const DEL = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 
   /* ---------- get_overview ---------- */
   server.registerTool("get_overview", {
@@ -1243,43 +1439,86 @@ export function buildServer({ db, user }: Ctx): McpServer {
     return { profil: must("profiles", pr) ?? null, biens: must("biens", bi) ?? [], credits: must("credits", cr) ?? [] };
   }));
 
+  /* ---------- dépôt de propositions (aucune écriture directe dans les tables du bilan) ---------- */
+  type Prop = { cible: string; operation: "creer" | "modifier" | "supprimer"; ref?: string | null; avant?: any; apres?: any };
+  const VALIDER = "à valider dans Boussole › Profil et données › Propositions";
+  /** Insère les propositions d'un appel d'outil dans un même lot (ou dans `lot` fourni) ; ignore les doublons exacts déjà en attente. */
+  async function deposer(items: Prop[], d: { source: string; justification?: string; lot?: string }, extra: Record<string, unknown> = {}) {
+    const avertissements: string[] = Array.isArray(extra.avertissements) ? [...(extra.avertissements as string[])] : [];
+    const { avertissements: _a, ...reste } = extra;
+    if (!items.length) return { message: "Aucun changement : les valeurs fournies sont déjà enregistrées.", propositions: [], avertissements, ...reste };
+    const attente = (must("propositions", await db.from("propositions").select("id, cible, operation, ref, apres").eq("statut", "en_attente")) as any[]) ?? [];
+    const unique = (c: string) => ["profil", "risque", "protection"].includes(c);
+    const nouveaux = items.filter((it) => {
+      const doublon = attente.find((p) => p.cible === it.cible && p.operation === it.operation && (p.ref ?? null) === (it.ref ?? null) && same(p.apres, it.apres ?? null));
+      if (doublon) { avertissements.push(`Déjà proposé et en attente (${it.cible}${it.ref ? " " + it.ref : ""}) : non redéposé.`); return false; }
+      const voisin = attente.find((p) => p.cible === it.cible && (it.ref ? p.ref === it.ref : unique(it.cible)));
+      if (voisin) avertissements.push(`Une autre proposition sur ${it.cible}${it.ref ? " " + it.ref : ""} attend déjà la validation de l'utilisateur (list_propositions).`);
+      return true;
+    });
+    if (!nouveaux.length) return { message: "Aucune nouvelle proposition : tout est déjà en attente de validation.", propositions: [], avertissements, ...reste };
+    const lot = d.lot ?? crypto.randomUUID();
+    const rows = nouveaux.map((it) => ({ lot, cible: it.cible, operation: it.operation, ref: it.ref ?? null, avant: it.avant ?? null, apres: it.apres ?? null,
+      source: d.source, justification: d.justification ?? null }));
+    const data = (must("propositions", await db.from("propositions").insert(rows).select("id, cible, operation, ref, avant, apres")) as any[]) ?? [];
+    const n = data.length;
+    return { message: `${n} proposition${n > 1 ? "s" : ""} déposée${n > 1 ? "s" : ""}, ${VALIDER}. Rien n'est appliqué tant que l'utilisateur ne l'a pas validé.`,
+      lot, propositions: data, avertissements, ...reste };
+  }
+  const isObj = (x: unknown): x is Record<string, any> => !!x && typeof x === "object" && !Array.isArray(x);
+  /** Égalité tolérante (12 = "12", numeric renvoyé en texte). */
+  const pareil = (a: unknown, b: unknown) => same(a, b) ||
+    (a != null && b != null && typeof a !== "object" && typeof b !== "object" && a !== "" && b !== "" && !isNaN(Number(a)) && !isNaN(Number(b)) && Number(a) === Number(b));
+  /** Correctif réduit aux valeurs qui changent (récursif sur les objets), avec les valeurs actuelles correspondantes ; null si rien ne change. */
+  function correctif(cur: any, patch: any): { avant: any; apres: any } | null {
+    const avant: any = {}, apres: any = {};
+    for (const [k, v] of Object.entries(patch ?? {})) {
+      if (v === undefined) continue;
+      const c = cur?.[k];
+      if (isObj(v)) { const sub = correctif(isObj(c) ? c : {}, v); if (sub) { avant[k] = isObj(c) ? sub.avant : (c ?? null); apres[k] = sub.apres; } continue; }
+      if (v === null ? c == null : pareil(c, v)) continue;
+      avant[k] = c ?? null; apres[k] = v;
+    }
+    return Object.keys(apres).length ? { avant, apres } : null;
+  }
+  /** Écart entre deux versions complètes d'une ligne (clé disparue = null). */
+  function ecart(a: any, b: any, ignorer: string[] = []): { avant: any; apres: any } | null {
+    const avant: any = {}, apres: any = {};
+    for (const k of new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])) {
+      if (ignorer.includes(k) || pareil(a?.[k] ?? null, b?.[k] ?? null)) continue;
+      avant[k] = a?.[k] ?? null; apres[k] = b?.[k] ?? null;
+    }
+    return Object.keys(apres).length ? { avant, apres } : null;
+  }
+  const sansMeta = (r: any) => { const { user_id: _u, created_at: _c, updated_at: _m, ...rest } = r ?? {}; return rest; };
+  const PROPOSE = "Rien n'est écrit directement : dépose une proposition (avant / après, source) que l'utilisateur valide dans Boussole.";
+
   /* ---------- update_profile ---------- */
   server.registerTool("update_profile", {
-    title: "Modifier le profil",
-    description: "Modifie le profil par fusion : seuls les champs fournis changent ; null efface un champ. personnes.p2 = null retire la seconde personne. Demander confirmation à l'utilisateur avant d'écraser une valeur existante.",
+    title: "Proposer une modification du profil",
+    description: "Propose une modification du profil par fusion : seuls les champs fournis changent ; null efface un champ ; personnes.p2 = null retire la seconde personne ; foyer.biensRenseignes = true enregistre « aucun bien ni crédit ». " + PROPOSE,
     inputSchema: z.strictObject({
       foyer: FoyerPatch.optional(),
       personnes: z.strictObject({ p1: PersonnePatch.optional(), p2: PersonnePatch.nullable().optional() }).optional(),
       autres: z.strictObject({ p1: AutresPatch.optional(), p2: AutresPatch.optional() }).optional().describe("Autres actifs par personne."),
+      ...DEPOT,
     }),
     annotations: RW,
   }, wrap(async (args: any) => {
     if (!args.foyer && !args.personnes && !args.autres) throw new UserError("Rien à modifier : fournissez foyer, personnes ou autres.");
     const cur = must("profiles", await db.from("profiles").select("foyer, personnes, autres").maybeSingle()) as any;
     const before = { foyer: cur?.foyer ?? {}, personnes: cur?.personnes ?? { p1: { nom: "Moi" } }, autres: cur?.autres ?? {} };
-    const after = structuredClone(before);
-    if (args.foyer) after.foyer = clean({ ...after.foyer, ...args.foyer });
-    if (args.personnes) {
-      for (const k of ["p1", "p2"]) {
-        if (!(k in args.personnes)) continue;
-        if (args.personnes[k] === null) { delete after.personnes[k]; continue; }
-        after.personnes[k] = clean({ ...(after.personnes[k] ?? {}), ...args.personnes[k] });
-      }
-      if (!after.personnes.p1?.nom) after.personnes.p1 = { nom: "Moi", ...(after.personnes.p1 ?? {}) };
-      if (after.personnes.p2 && !after.personnes.p2.nom) throw new UserError("Indiquez le prénom de la seconde personne (personnes.p2.nom).");
+    if (args.personnes?.p2) {
+      const p2 = { ...(before.personnes.p2 ?? {}), ...args.personnes.p2 };
+      if (!p2.nom) throw new UserError("Indiquez le prénom de la seconde personne (personnes.p2.nom).");
     }
-    if (args.autres) {
-      for (const k of ["p1", "p2"]) if (args.autres[k]) after.autres[k] = clean({ ...(after.autres[k] ?? {}), ...args.autres[k] });
-    }
-    const changes = diff(before, after, "", 3);
-    if (!changes.length) return { modifications: [], message: "Aucun changement : les valeurs fournies sont déjà enregistrées." };
-    if (cur) must("profiles", await db.from("profiles").update(after).eq("user_id", user.id).select("user_id").single());
-    else must("profiles", await db.from("profiles").insert(after).select("user_id").single());
-    return { modifications: changes };
+    const patch = clean({ foyer: args.foyer, personnes: args.personnes, autres: args.autres });
+    const ch = correctif(before, patch);
+    return deposer(ch ? [{ cible: "profil", operation: "modifier", avant: ch.avant, apres: ch.apres }] : [], args);
   }));
 
   /* ---------- biens / crédits ---------- */
-  async function upsertRows(table: "biens" | "credits", rows: any[], label: string, check: (row: any, nom: string) => string[]) {
+  async function proposerLignes(table: "biens" | "credits", cible: "bien" | "credit", rows: any[], label: string, check: (row: any, nom: string) => string[], d: any) {
     if (!rows.length) throw new UserError("Aucune ligne fournie.");
     const ids = rows.filter((r) => r.id).map((r) => r.id);
     const existing = ids.length ? (must(table, await db.from(table).select("*").in("id", ids)) as any[]) : [];
@@ -1292,50 +1531,42 @@ export function buildServer({ db, user }: Ctx): McpServer {
       const merged = { ...(byId.get(r.id) ?? {}), ...r };
       warnings.push(...check(merged, merged.nom || L));
     });
-    if (errors.length) throw new UserError("Aucune écriture effectuée.\n" + errors.join("\n"));
-    const crees: any[] = [], modifies: any[] = [];
-    for (const r of rows.filter((x) => x.id)) {
+    if (errors.length) throw new UserError("Aucune proposition déposée.\n" + errors.join("\n"));
+    const items: Prop[] = [];
+    for (const r of rows) {
       const { id, ...patch } = r;
-      const old = byId.get(id);
-      const changes = diff(old, { ...old, ...patch }, "", 1);
-      if (!changes.length) { modifies.push({ id, nom: old.nom, modifications: [] }); continue; }
-      must(table, await db.from(table).update(patch).eq("id", id).select("id").single());
-      modifies.push({ id, nom: patch.nom ?? old.nom, modifications: changes });
+      if (!id) { items.push({ cible, operation: "creer", apres: patch }); continue; }
+      const ch = correctif(byId.get(id), patch);
+      if (ch) items.push({ cible, operation: "modifier", ref: id, avant: ch.avant, apres: ch.apres });
     }
-    const inserts = rows.filter((x) => !x.id);
-    if (inserts.length) {
-      const data = must(table, await db.from(table).insert(inserts).select("*")) as any[];
-      data.forEach((d) => { const { user_id: _u, created_at: _c, ...rest } = d; crees.push(rest); });
-    }
-    return { crees, modifies, avertissements: warnings };
+    return deposer(items, d, { avertissements: warnings });
   }
 
   server.registerTool("upsert_biens", {
-    title: "Ajouter ou modifier des biens immobiliers",
-    description: "Crée (sans id) ou modifie (avec id, seuls les champs fournis changent) des biens immobiliers. Montants en euros, ≥ 0 ; part_p1 entre 0 et 100.",
-    inputSchema: z.strictObject({ rows: z.array(BienRow).min(1).max(50) }),
+    title: "Proposer des biens immobiliers",
+    description: "Propose la création (sans id) ou la modification (avec id, seuls les champs fournis changent) de biens immobiliers. Montants en euros, ≥ 0 ; part_p1 entre 0 et 100. " + PROPOSE,
+    inputSchema: z.strictObject({ rows: z.array(BienRow).min(1).max(50), ...DEPOT }),
     annotations: RW,
-  }, wrap(async ({ rows }: any) => upsertRows("biens", rows, "bien", (b, nom) =>
-    pos(b.crd) > pos(b.valeur) && pos(b.valeur) > 0 ? [`${nom} : le capital restant dû dépasse la valeur du bien.`] : [])));
+  }, wrap(async (a: any) => proposerLignes("biens", "bien", a.rows, "bien", (b, nom) =>
+    pos(b.crd) > pos(b.valeur) && pos(b.valeur) > 0 ? [`${nom} : le capital restant dû dépasse la valeur du bien.`] : [], a)));
 
   server.registerTool("upsert_credits", {
-    title: "Ajouter ou modifier des crédits",
-    description: "Crée (sans id) ou modifie (avec id) des crédits hors immobilier : nom, titulaire (p1, p2 ou commun), capital restant dû, mensualité.",
-    inputSchema: z.strictObject({ rows: z.array(CreditRow).min(1).max(50) }),
+    title: "Proposer des crédits",
+    description: "Propose la création (sans id) ou la modification (avec id) de crédits hors immobilier : nom, titulaire (p1, p2 ou commun), capital restant dû, mensualité. " + PROPOSE,
+    inputSchema: z.strictObject({ rows: z.array(CreditRow).min(1).max(50), ...DEPOT }),
     annotations: RW,
-  }, wrap(async ({ rows }: any) => upsertRows("credits", rows, "crédit", () => [])));
+  }, wrap(async (a: any) => proposerLignes("credits", "credit", a.rows, "crédit", () => [], a)));
 
-  for (const [name, table, label] of [["delete_bien", "biens", "Bien"], ["delete_credit", "credits", "Crédit"]] as const) {
+  for (const [name, table, cible, label] of [["delete_bien", "biens", "bien", "Bien"], ["delete_credit", "credits", "credit", "Crédit"]] as const) {
     server.registerTool(name, {
-      title: `Supprimer un ${label.toLowerCase()}`,
-      description: `Supprime définitivement un ${label.toLowerCase()} par son id. Demander confirmation à l'utilisateur avant.`,
-      inputSchema: z.strictObject({ id: uuid }),
-      annotations: DEL,
-    }, wrap(async ({ id }: any) => {
-      const data = must(table, await db.from(table).delete().eq("id", id).select("*")) as any[];
-      if (!data?.length) throw new UserError(`${label} ${id} introuvable.`);
-      const { user_id: _u, ...rest } = data[0];
-      return { supprime: rest };
+      title: `Proposer la suppression d'un ${label.toLowerCase()}`,
+      description: `Propose la suppression d'un ${label.toLowerCase()} par son id (appliquée seulement après validation par l'utilisateur dans Boussole).`,
+      inputSchema: z.strictObject({ id: uuid, ...DEPOT }),
+      annotations: RW,
+    }, wrap(async (a: any) => {
+      const row = must(table, await db.from(table).select("*").eq("id", a.id).maybeSingle()) as any;
+      if (!row) throw new UserError(`${label} ${a.id} introuvable.`);
+      return deposer([{ cible, operation: "supprimer", ref: a.id, avant: sansMeta(row) }], a);
     }));
   }
 
@@ -1352,11 +1583,12 @@ export function buildServer({ db, user }: Ctx): McpServer {
   }));
 
   server.registerTool("upsert_positions", {
-    title: "Ajouter ou modifier des placements",
-    description: "Crée (sans id) ou modifie (avec id, seuls les champs fournis changent) des lignes de placement. Titre coté : mode market, ISIN et quantité (le cours est mis à jour chaque nuit). Livret, fonds euros, SCPI : mode manual et valeur. Pour enregistrer un achat ou une vente sur une ligne existante, préférer record_transaction.",
-    inputSchema: z.strictObject({ rows: z.array(PositionRow).min(1).max(100) }),
+    title: "Proposer des placements",
+    description: "Propose la création (sans id) ou la modification (avec id, seuls les champs fournis changent) de lignes de placement. Titre coté : mode market, ISIN et quantité (le cours est mis à jour chaque nuit). Livret, fonds euros, SCPI : mode manual et valeur. Pour un achat ou une vente sur une ligne existante, préférer record_transaction. " + PROPOSE,
+    inputSchema: z.strictObject({ rows: z.array(PositionRow).min(1).max(100), ...DEPOT }),
     annotations: RW,
-  }, wrap(async ({ rows }: any) => {
+  }, wrap(async (a: any) => {
+    const rows = a.rows;
     const people = await loadPeople(db);
     const ids = rows.filter((r: any) => r.id).map((r: any) => r.id);
     const existing = ids.length ? (must("positions", await db.from("positions").select("*").in("id", ids)) as any[]) : [];
@@ -1383,42 +1615,29 @@ export function buildServer({ db, user }: Ctx): McpServer {
       if (m.status === "clôturé" && m.mode === "market" && Number(m.qty) > 0) warnings.push(`${L} : ligne clôturée avec une quantité non nulle.`);
       return row;
     });
-    if (errors.length) throw new UserError("Aucune écriture effectuée.\n" + errors.join("\n"));
+    if (errors.length) throw new UserError("Aucune proposition déposée.\n" + errors.join("\n"));
 
-    // Instruments : demander ceux qui n'existent pas encore (sans prix ; la fonction nocturne les cotera).
+    // Instruments inconnus : demandés (sans prix) à la validation ; la fonction nocturne les cotera.
     const isins = [...new Set(prepared.map((r: any) => r.isin).filter(Boolean))] as string[];
-    const instruments_demandes: string[] = [];
     if (isins.length) {
       const known = new Set(((must("instruments", await db.from("instruments").select("isin").in("isin", isins)) as any[]) ?? []).map((x) => x.isin));
-      for (const isin of isins.filter((x) => !known.has(x))) {
-        const name = prepared.find((r: any) => r.isin === isin)?.name ?? null;
-        must("request_instrument", await db.rpc("request_instrument", { p_isin: isin, p_name: name, p_symbol: null }));
-        instruments_demandes.push(isin);
-      }
+      const nouveaux = isins.filter((x) => !known.has(x));
+      if (nouveaux.length) warnings.push(`Nouveaux instruments (${nouveaux.join(", ")}) : cours récupéré lors de la mise à jour nocturne qui suit la validation.`);
     }
-
-    const crees: any[] = [], modifies: any[] = [];
-    for (const r of prepared.filter((x: any) => x.id)) {
+    const items: Prop[] = [];
+    for (const r of prepared) {
       const { id, ...patch } = r;
-      const old = byId.get(id);
-      const changes = diff(old, { ...old, ...patch }, "", 1).filter((c) => c.champ !== "value_date");
-      if (!changes.length) { modifies.push({ id, nom: old.name, modifications: [] }); continue; }
-      must("positions", await db.from("positions").update(patch).eq("id", id).select("id").single());
-      modifies.push({ id, nom: patch.name ?? old.name, modifications: changes });
+      if (!id) { items.push({ cible: "position", operation: "creer", apres: patch }); continue; }
+      const ch = correctif(byId.get(id), patch);
+      if (ch && Object.keys(ch.apres).some((k) => k !== "value_date")) items.push({ cible: "position", operation: "modifier", ref: id, avant: ch.avant, apres: ch.apres });
     }
-    const inserts = prepared.filter((x: any) => !x.id);
-    if (inserts.length) {
-      const data = (must("positions", await db.from("positions").insert(inserts).select(POS_SELECT)) as any[]) ?? [];
-      crees.push(...data.map(viewPosition));
-    }
-    if (instruments_demandes.length) warnings.push(`Nouveaux instruments (${instruments_demandes.join(", ")}) : cours récupéré lors de la prochaine mise à jour nocturne.`);
-    return { crees, modifies, instruments_demandes, avertissements: warnings };
+    return deposer(items, a, { avertissements: warnings });
   }));
 
   /* ---------- record_transaction (mêmes règles que le formulaire de web/src/pilotage.js) ---------- */
   server.registerTool("record_transaction", {
-    title: "Enregistrer un mouvement",
-    description: "Enregistre un mouvement sur une ligne et met la ligne à jour : achat/vente (titre coté : quantité et prix ; ligne manuelle : montant), versement/retrait (montant ; converti en parts au cours pour un titre coté), solde (nouvelle quantité ou nouvelle valeur). Le PRU est pondéré à l'achat ; une vente qui ramène la quantité à 0 clôture la ligne.",
+    title: "Proposer un mouvement",
+    description: "Propose un mouvement sur une ligne et la mise à jour de la ligne qui en découle : achat/vente (titre coté : quantité et prix ; ligne manuelle : montant), versement/retrait (montant ; converti en parts au cours pour un titre coté), solde (nouvelle quantité ou nouvelle valeur). Le PRU est pondéré à l'achat ; une vente qui ramène la quantité à 0 clôture la ligne. Le mouvement est enregistré quand l'utilisateur valide la proposition. " + PROPOSE,
     inputSchema: z.strictObject({
       position_id: uuid,
       type: z.enum(["achat", "vente", "versement", "retrait", "solde"]),
@@ -1427,6 +1646,7 @@ export function buildServer({ db, user }: Ctx): McpServer {
       amount: money.optional().describe("Montant en euros (ligne manuelle, versement, retrait, nouveau solde)."),
       date: isoDate.optional().describe("Date du mouvement (défaut : aujourd'hui)."),
       note: z.string().max(200).optional(),
+      ...DEPOT,
     }),
     annotations: RW,
   }, wrap(async (a: any) => {
@@ -1476,19 +1696,13 @@ export function buildServer({ db, user }: Ctx): McpServer {
       else { if (amt == null) no("Indiquez le nouveau solde."); upd.value = amt; upd.value_date = date; }
     }
     if (upd.pru != null) upd.pru = Math.round(upd.pru * 1e6) / 1e6;
+    if (upd.qty != null) upd.qty = Math.round(upd.qty * 1e8) / 1e8;
 
-    const before = Object.fromEntries(Object.keys(upd).map((k) => [k, p[k] ?? null]));
-    must("positions", await db.from("positions").update(upd).eq("id", p.id).select("id").single());
-    const tx = { position_id: p.id, date, type, qty: qty ?? null, price: price ?? null, amount: amt != null ? r2(amt) : null, note: a.note ?? null, source: "mcp" };
-    const ins = await db.from("transactions").insert(tx).select("id, date, type, qty, price, amount, note, source").single();
-    if (ins.error) {
-      await db.from("positions").update(before).eq("id", p.id); // annule la mise à jour de la ligne
-      throw new UserError(dbMessage("transactions", ins.error) + " La ligne n'a pas été modifiée.");
-    }
-    const after = { ...p, ...upd };
-    const out: any = { transaction: ins.data, ligne: { id: p.id, nom: p.name, modifications: diff(before, upd, "", 1) }, valeur_ligne: r2(val(after)) };
-    if (p.mode === "market" && curPrice == null) out.avertissement = "Cours non encore disponible : la ligne sera valorisée après la prochaine mise à jour nocturne.";
-    return out;
+    const avant = Object.fromEntries(Object.keys(upd).map((k) => [k, p[k] ?? null]));
+    const transaction = { date, type, qty: qty ?? null, price: price ?? null, amount: amt != null ? r2(amt) : null, note: a.note ?? null, source: "mcp" };
+    const extra: any = { ligne: { id: p.id, nom: p.name }, valeur_ligne_apres_validation: r2(val({ ...p, ...upd })) };
+    if (p.mode === "market" && curPrice == null) extra.avertissements = ["Cours non encore disponible : la ligne sera valorisée après la prochaine mise à jour nocturne."];
+    return deposer([{ cible: "position", operation: "modifier", ref: p.id, avant, apres: { ...upd, transaction } }], a, extra);
   }));
 
   /* ---------- config ---------- */
@@ -1500,25 +1714,25 @@ export function buildServer({ db, user }: Ctx): McpServer {
     annotations: RO,
   }, wrap(async () => ({ config: must("config", await db.from("config").select(CONFIG_FIELDS).maybeSingle()) ?? null })));
 
+  /* Réglages : écriture directe limitée aux préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte,
+     ordres à passer, échéances, hypothèses). Le matelas (montants) et les versements programmés (qui modifient les lignes
+     chaque nuit) ne sont pas modifiables par le connecteur : l'utilisateur les règle dans Boussole. */
   server.registerTool("update_config", {
     title: "Modifier les réglages",
-    description: "Modifie les réglages par fusion. targets et cushion : seuls les champs fournis changent. rules, recurring, todo, milestones, hypotheses : la liste fournie remplace la liste existante (relire get_config et renvoyer la liste complète). Règles possibles : {type:'max_line_pct', pct}, {type:'max_bloc_pct', bloc, pct}, {type:'price_floor', position_id, price}, {type:'envelope_cap', envelope, cap}, {type:'stale_prices', days}.",
+    description: "Modifie directement des réglages sans montant du bilan, par fusion. targets : seuls les champs fournis changent. rules, todo, milestones, hypotheses : la liste fournie remplace la liste existante (relire get_config et renvoyer la liste complète). Règles possibles : {type:'max_line_pct', pct}, {type:'max_bloc_pct', bloc, pct}, {type:'price_floor', position_id, price}, {type:'envelope_cap', envelope, cap}, {type:'stale_prices', days}. Le matelas de sécurité et les versements programmés se règlent dans Boussole (non modifiables ici). Demander confirmation à l'utilisateur avant.",
     inputSchema: z.strictObject({
       targets: TargetsPatch.optional(),
       rules: z.array(RuleSchema).max(50).optional(),
-      cushion: CushionPatch.optional(),
-      recurring: z.array(RecurringItem).max(50).optional(),
       todo: z.array(TodoItem).max(100).optional(),
       milestones: z.array(MilestoneItem).max(50).optional(),
       hypotheses: z.array(HypothesisItem).max(50).optional(),
     }),
     annotations: RW,
   }, wrap(async (a: any) => {
-    const keys = ["targets", "rules", "cushion", "recurring", "todo", "milestones", "hypotheses"].filter((k) => a[k] !== undefined);
+    const keys = ["targets", "rules", "todo", "milestones", "hypotheses"].filter((k) => a[k] !== undefined);
     if (!keys.length) throw new UserError("Rien à modifier.");
     const cur = must("config", await db.from("config").select(CONFIG_FIELDS).maybeSingle()) as any;
-    const before: any = { targets: cur?.targets ?? { tolerancePts: 3 }, rules: cur?.rules ?? [], cushion: cur?.cushion ?? { mode: "amount", min: 0, max: 0 },
-      recurring: cur?.recurring ?? [], todo: cur?.todo ?? [], milestones: cur?.milestones ?? [], hypotheses: cur?.hypotheses ?? [] };
+    const before: any = { targets: cur?.targets ?? { tolerancePts: 3 }, rules: cur?.rules ?? [], todo: cur?.todo ?? [], milestones: cur?.milestones ?? [], hypotheses: cur?.hypotheses ?? [] };
     const patch: any = {};
     if (a.targets) {
       const t = structuredClone(before.targets);
@@ -1526,19 +1740,12 @@ export function buildServer({ db, user }: Ctx): McpServer {
       if (a.targets.tolerancePts != null) t.tolerancePts = a.targets.tolerancePts;
       patch.targets = t;
     }
-    if (a.cushion) {
-      const c = { ...before.cushion, ...a.cushion };
-      if (c.mode === "months" && (c.months == null || c.depenses == null)) throw new UserError("Matelas en mois : indiquez months et depenses.");
-      if (c.mode !== "months" && c.min == null) throw new UserError("Matelas en montant : indiquez min.");
-      if (c.max != null && c.min != null && c.max < c.min) throw new UserError("Matelas : max doit être supérieur ou égal à min.");
-      patch.cushion = c;
-    }
-    for (const k of ["rules", "recurring", "todo", "milestones", "hypotheses"]) if (a[k] !== undefined) patch[k] = a[k];
-    // Les règles et versements doivent viser des lignes existantes.
-    const refs = [...(a.rules ?? []).filter((r: any) => r.type === "price_floor").map((r: any) => r.position_id), ...(a.recurring ?? []).map((r: any) => r.positionId)];
+    for (const k of ["rules", "todo", "milestones", "hypotheses"]) if (a[k] !== undefined) patch[k] = a[k];
+    // Les règles doivent viser des lignes existantes.
+    const refs = (a.rules ?? []).filter((r: any) => r.type === "price_floor").map((r: any) => r.position_id);
     if (refs.length) {
       const found = new Set(((must("positions", await db.from("positions").select("id").in("id", [...new Set(refs)])) as any[]) ?? []).map((x) => x.id));
-      const missing = refs.filter((id) => !found.has(id));
+      const missing = refs.filter((id: string) => !found.has(id));
       if (missing.length) throw new UserError("Aucune écriture effectuée : ligne(s) introuvable(s) " + [...new Set(missing)].join(", ") + ".");
     }
     const changes = keys.filter((k) => !same(before[k], patch[k] ?? before[k]));
@@ -1581,14 +1788,16 @@ export function buildServer({ db, user }: Ctx): McpServer {
   }));
 
   server.registerTool("update_budget", {
-    title: "Modifier le budget",
-    description: "Modifie le budget mensuel. mode fusionner (défaut) : chaque ligne fournie est rapprochée d'une ligne existante par id, sinon par libellé (sans tenir compte de la casse) ; seuls les champs fournis changent ; les lignes non rapprochées sont ajoutées (type, libelle et montant requis) ; les autres lignes restent. mode remplacer : la liste fournie devient le budget complet (relire get_budget avant). Ne pas y mettre le salaire ni les mensualités de crédit : ils viennent déjà du profil. Demander confirmation à l'utilisateur avant d'écraser un montant.",
+    title: "Proposer des changements de budget",
+    description: "Propose des changements du budget mensuel. mode fusionner (défaut) : chaque ligne fournie est rapprochée d'une ligne existante par id, sinon par libellé (sans tenir compte de la casse) ; seuls les champs fournis changent ; les lignes non rapprochées sont ajoutées (type, libelle et montant requis) ; les autres lignes restent. mode remplacer : la liste fournie devient le budget complet (relire get_budget avant). Ne pas y mettre le salaire ni les mensualités de crédit : ils viennent déjà du profil. Une proposition par ligne ajoutée, modifiée ou retirée. " + PROPOSE,
     inputSchema: z.strictObject({
       lignes: z.array(BudgetLigne).max(200),
       mode: z.enum(["remplacer", "fusionner"], { error: "Mode invalide : remplacer ou fusionner." }).optional().describe("fusionner (défaut) ou remplacer."),
+      ...DEPOT,
     }),
     annotations: RW,
-  }, wrap(async ({ lignes, mode = "fusionner" }: any) => {
+  }, wrap(async (a: any) => {
+    const { lignes, mode = "fusionner" } = a;
     if (mode === "fusionner" && !lignes.length) throw new UserError("Rien à modifier : fournissez au moins une ligne.");
     const { d } = await loadPlan(false);
     const before: any[] = d.lignes.map((l) => ({ ...l }));
@@ -1622,23 +1831,23 @@ export function buildServer({ db, user }: Ctx): McpServer {
     }
     const ids = after.map((l) => String(l.id));
     if (new Set(ids).size !== ids.length) errors.push("Deux lignes portent le même identifiant.");
-    if (errors.length) throw new UserError("Aucune écriture effectuée.\n" + errors.join("\n"));
+    if (errors.length) throw new UserError("Aucune proposition déposée.\n" + errors.join("\n"));
 
     const byId = (list: any[]) => new Map(list.map((l) => [String(l.id), l]));
     const B = byId(before), A2 = byId(after);
-    const ajoutees = after.filter((l) => !B.has(String(l.id)));
-    const supprimees = before.filter((l) => !A2.has(String(l.id)));
-    const modifiees = after.filter((l) => B.has(String(l.id)))
-      .map((l) => ({ id: l.id, libelle: l.libelle, modifications: diff(B.get(String(l.id)), l, "", 1) }))
-      .filter((x) => x.modifications.length);
+    const items: Prop[] = [];
+    after.filter((l) => !B.has(String(l.id))).forEach((l) => items.push({ cible: "budget", operation: "creer", apres: l }));
+    after.filter((l) => B.has(String(l.id))).forEach((l) => {
+      const ch = ecart(B.get(String(l.id)), l, ["id"]);
+      if (ch) items.push({ cible: "budget", operation: "modifier", ref: String(l.id), avant: { libelle: B.get(String(l.id)).libelle, ...ch.avant }, apres: ch.apres });
+    });
+    before.filter((l) => !A2.has(String(l.id))).forEach((l) => items.push({ cible: "budget", operation: "supprimer", ref: String(l.id), avant: l }));
     const resume = (list: any[]) => {
       const t = budgetTotaux({ ...d, lignes: list }, "foyer");
       return { nombre_lignes: list.length, revenus: r2(t.revenus), depenses: r2(t.depenses), epargne: r2(t.epargne), reste: r2(t.reste),
         taux_epargne: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000 };
     };
-    if (!ajoutees.length && !supprimees.length && !modifiees.length) return { mode, modifications: [], message: "Aucun changement : le budget est déjà à jour.", avant: resume(before) };
-    must("budgets", await db.from("budgets").upsert({ user_id: user.id, lignes: after }, { onConflict: "user_id" }).select("user_id").single());
-    return { mode, avant: resume(before), apres: resume(after), ajoutees, modifiees, supprimees };
+    return deposer(items, a, { mode, budget_actuel: resume(before), budget_si_tout_est_valide: resume(after) });
   }));
 
   /* ---------- objectifs ---------- */
@@ -1676,11 +1885,12 @@ export function buildServer({ db, user }: Ctx): McpServer {
 
   const OBJ_COLS: Record<string, string> = { nom: "nom", type: "type", cible: "cible", dateCible: "date_cible", deja: "deja", source: "source", poches: "poches", enveloppes: "enveloppes", rendement: "rendement", priorite: "priorite" };
   server.registerTool("upsert_objectifs", {
-    title: "Ajouter ou modifier des objectifs",
-    description: "Crée (sans id : nom et cible requis) ou modifie (avec id : seuls les champs fournis changent) des objectifs datés. Toutes les lignes sont validées avant toute écriture. type : apport, matelas, retraite ou projet ; source : saisi (montant deja) ou poches (poches / enveloppes de Bilan › Placements rattachées) ; rendement en % par an (-50 à 50) ; priorite entière (1 = servi en premier).",
-    inputSchema: z.strictObject({ rows: z.array(ObjectifRow).min(1).max(30) }),
+    title: "Proposer des objectifs",
+    description: "Propose la création (sans id : nom et cible requis) ou la modification (avec id : seuls les champs fournis changent) d'objectifs datés. Toutes les lignes sont validées avant tout dépôt. type : apport, matelas, retraite ou projet ; source : saisi (montant deja) ou poches (poches / enveloppes de Bilan › Placements rattachées) ; rendement en % par an (-50 à 50) ; priorite entière (1 = servi en premier). Le champ source de chaque ligne (saisi | poches) décrit l'objectif ; le paramètre source de l'appel indique d'où vient l'information. " + PROPOSE,
+    inputSchema: z.strictObject({ rows: z.array(ObjectifRow).min(1).max(30), ...DEPOT }),
     annotations: RW,
-  }, wrap(async ({ rows }: any) => {
+  }, wrap(async (a: any) => {
+    const rows = a.rows;
     const ids = rows.filter((r: any) => r.id).map((r: any) => r.id);
     const existing = ids.length ? (must("objectifs", await db.from("objectifs").select("*").in("id", ids)) as any[]) : [];
     const byId = new Map(existing.map((r) => [r.id, r]));
@@ -1694,34 +1904,26 @@ export function buildServer({ db, user }: Ctx): McpServer {
       if (m.source === "poches" && !(m.poches?.length || m.enveloppes?.length)) warnings.push(`${L} : source poches sans poche ni enveloppe rattachée (montant déjà réuni = 0).`);
       if (m.dateCible && m.dateCible < today()) warnings.push(`${L} : échéance déjà passée.`);
     });
-    if (errors.length) throw new UserError("Aucune écriture effectuée.\n" + errors.join("\n"));
+    if (errors.length) throw new UserError("Aucune proposition déposée.\n" + errors.join("\n"));
     const toRow = (r: any) => Object.fromEntries(Object.entries(r).filter(([k]) => k in OBJ_COLS).map(([k, v]) => [OBJ_COLS[k], v]));
-    const crees: any[] = [], modifies: any[] = [];
-    for (const r of rows.filter((x: any) => x.id)) {
-      const old = byId.get(r.id), patch = toRow(r);
-      const changes = diff(Object.fromEntries(Object.keys(patch).map((k) => [k, old[k] ?? null])), patch, "", 1)
-        .filter((c) => !(typeof c.avant === "string" && typeof c.apres === "number" && Number(c.avant) === c.apres));
-      if (!changes.length) { modifies.push({ id: r.id, nom: old.nom, modifications: [] }); continue; }
-      must("objectifs", await db.from("objectifs").update(patch).eq("id", r.id).select("id").single());
-      modifies.push({ id: r.id, nom: r.nom ?? old.nom, modifications: changes });
+    const items: Prop[] = [];
+    for (const r of rows) {
+      if (!r.id) { items.push({ cible: "objectif", operation: "creer", apres: toRow(r) }); continue; }
+      const ch = correctif(byId.get(r.id), toRow(r));
+      if (ch) items.push({ cible: "objectif", operation: "modifier", ref: r.id, avant: { nom: byId.get(r.id).nom, ...ch.avant }, apres: ch.apres });
     }
-    const inserts = rows.filter((x: any) => !x.id).map(toRow);
-    if (inserts.length) {
-      const data = (must("objectifs", await db.from("objectifs").insert(inserts).select("*")) as any[]) ?? [];
-      crees.push(...data.map(viewObjectif));
-    }
-    return { crees, modifies, avertissements: warnings };
+    return deposer(items, a, { avertissements: warnings });
   }));
 
   server.registerTool("delete_objectif", {
-    title: "Supprimer un objectif",
-    description: "Supprime définitivement un objectif par son id. Demander confirmation à l'utilisateur avant.",
-    inputSchema: z.strictObject({ id: uuid }),
-    annotations: DEL,
-  }, wrap(async ({ id }: any) => {
-    const data = must("objectifs", await db.from("objectifs").delete().eq("id", id).select("*")) as any[];
-    if (!data?.length) throw new UserError(`Objectif ${id} introuvable.`);
-    return { supprime: viewObjectif(data[0]) };
+    title: "Proposer la suppression d'un objectif",
+    description: "Propose la suppression d'un objectif par son id (appliquée seulement après validation par l'utilisateur dans Boussole).",
+    inputSchema: z.strictObject({ id: uuid, ...DEPOT }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const row = must("objectifs", await db.from("objectifs").select("*").eq("id", a.id).maybeSingle()) as any;
+    if (!row) throw new UserError(`Objectif ${a.id} introuvable.`);
+    return deposer([{ cible: "objectif", operation: "supprimer", ref: a.id, avant: viewObjectif(row) }], a);
   }));
 
   /* ---------- Diagnostic : profil de risque ---------- */
@@ -1778,6 +1980,106 @@ export function buildServer({ db, user }: Ctx): McpServer {
       annotation: vue(apres),
     };
   }));
+
+  /* ---------- Entretien guidé : état du bilan, propositions, profil de risque, protection ---------- */
+  server.registerTool("etat_du_bilan", {
+    title: "État du bilan",
+    description: "Ce qui est renseigné et ce qui manque, section par section dans l'ordre d'un entretien (foyer, revenus, budget, épargne et placements, immobilier et crédits, protection, objectifs, profil de risque) : pourcentage d'avancement, statut de chaque section (complet, partiel, vide), questions manquantes avec leur « pourquoi », les 3 prochaines questions à poser et le nombre de propositions en attente de validation. À appeler au début de tout entretien : ne jamais reposer une question déjà répondue.",
+    inputSchema: z.strictObject({}),
+    annotations: RO,
+  }, wrap(async () => {
+    const [pr, bi, cr, po, bu, ob, pp] = await Promise.all([
+      db.from("profiles").select("foyer, personnes, autres, protection, risque").maybeSingle(),
+      db.from("biens").select("id, nom, valeur, crd").order("created_at"),
+      db.from("credits").select("id, nom, crd").order("created_at"),
+      db.from("positions").select(POS_SELECT),
+      db.from("budgets").select("lignes").maybeSingle(),
+      db.from("objectifs").select("id, nom, date_cible"),
+      db.from("propositions").select("id, cible, operation, ref, statut").eq("statut", "en_attente").limit(200),
+    ]);
+    const S = etatDepuisLignes({
+      profil: must("profiles", pr), biens: (must("biens", bi) as any[]) ?? [], credits: (must("credits", cr) as any[]) ?? [],
+      positions: (must("positions", po) as any[]) ?? [], budget: must("budgets", bu), objectifs: (must("objectifs", ob) as any[]) ?? [],
+      propositions: (must("propositions", pp) as any[]) ?? [],
+    });
+    const e = BilanEtat.etat(S, today());
+    return {
+      date: today(),
+      pourcentage: e.pourcentage,
+      sections: e.sections.map((s) => ({ cle: s.cle, titre: s.titre, statut: s.statut, faits: s.faits, total: s.total, manquants: s.manquants })),
+      prochaines_questions: e.prochaines,
+      propositions_en_attente: e.propositionsEnAttente,
+      consigne: "Pose ces questions une à une, dans l'ordre, avec leur pourquoi ; ne repose pas ce qui est complet. Les propositions en attente (list_propositions) ne sont pas encore comptées : rappelle à l'utilisateur de les valider dans Boussole › Profil et données › Propositions.",
+    };
+  }));
+
+  server.registerTool("list_propositions", {
+    title: "Propositions déposées",
+    description: "Propositions déposées par Claude (avant / après, source, justification, lot) : par défaut celles en attente de validation par l'utilisateur, pour éviter les doublons. statut = acceptee, refusee ou toutes pour l'historique (200 au plus, les plus récentes d'abord).",
+    inputSchema: z.strictObject({
+      statut: z.enum(["en_attente", "acceptee", "refusee", "toutes"], { error: "Statut invalide : en_attente, acceptee, refusee ou toutes." }).optional().describe("en_attente (défaut), acceptee, refusee ou toutes."),
+    }),
+    annotations: RO,
+  }, wrap(async ({ statut = "en_attente" }: any) => {
+    let req = db.from("propositions").select("id, lot, cible, operation, ref, avant, apres, source, justification, statut, cree_le, decide_le")
+      .order("cree_le", { ascending: false }).limit(200);
+    if (statut !== "toutes") req = req.eq("statut", statut);
+    const list = (must("propositions", await req) as any[]) ?? [];
+    return { statut, nombre: list.length, propositions: list,
+      rappel: list.length && statut === "en_attente" ? "Ces changements attendent la validation de l'utilisateur dans Boussole › Profil et données › Propositions." : undefined };
+  }));
+
+  const RisqueReponses = z.strictObject(Object.fromEntries(QUESTIONS_RISQUE.map((q) => {
+    const vals = q.valeurs as [string, ...string[]];
+    const err = { error: `${q.id} : valeurs possibles ${q.valeurs.join(", ")}.` };
+    const t: any = q.type === "multi" ? z.array(z.enum(vals, err)).min(1, { error: `${q.id} : au moins une valeur.` })
+      : q.type === "nombre" ? z.number({ error: `${q.id} : nombre d'années (0 ou plus).` }).int({ error: `${q.id} : nombre entier d'années.` }).min(0).max(80)
+      : z.enum(vals, err);
+    const aide = q.type === "nombre" ? " Nombre d'années (0 si jamais)." : " Valeurs : " + q.valeurs.join(", ") + (q.type === "multi" ? " (plusieurs possibles ; aucun seul)." : ".");
+    return [q.id, t.optional().describe(BilanEtat.RISQUE_LIBELLES[q.id] + aide)];
+  })));
+
+  server.registerTool("set_risk_answers", {
+    title: "Proposer des réponses au profil de risque",
+    description: "Propose les réponses de l'utilisateur au questionnaire de profil de risque (10 questions : horizon, objectif, reaction, perte_max, connaissances, experience, revenus, matelas, part_investie, age), validées contre les valeurs permises ; seules les réponses fournies changent. N'enregistre que ce que l'utilisateur a choisi lui-même, jamais une réponse déduite. Le profil (Prudent … Offensif) est calculé par l'application après validation. " + PROPOSE,
+    inputSchema: z.strictObject({ reponses: RisqueReponses, ...DEPOT }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const rep = clean(a.reponses ?? {});
+    if (!Object.keys(rep).length) throw new UserError("Aucune réponse fournie.");
+    const avert: string[] = [];
+    if (Array.isArray(rep.connaissances) && rep.connaissances.includes("aucun") && rep.connaissances.length > 1) avert.push("connaissances : « aucun » coché avec d'autres réponses ; l'application retiendra les réponses précises.");
+    const cur = must("profiles", await db.from("profiles").select("risque").maybeSingle()) as any;
+    const actuelles = isObj(cur?.risque?.reponses) ? cur.risque.reponses : {};
+    const ch = correctif(actuelles, rep);
+    return deposer(ch ? [{ cible: "risque", operation: isObj(cur?.risque) ? "modifier" : "creer", avant: ch.avant, apres: ch.apres }] : [], a, { avertissements: avert });
+  }));
+
+  server.registerTool("set_protection", {
+    title: "Proposer la protection du foyer",
+    description: "Propose la déclaration de protection du foyer : prevoyance (prévoyance décès / invalidité au-delà de celle de l'employeur) et emprunteur (crédits couverts par une assurance emprunteur), en booléens ; seuls les champs fournis changent. " + PROPOSE,
+    inputSchema: z.strictObject({
+      prevoyance: z.boolean({ error: "prevoyance : true ou false." }).optional().describe("true si une prévoyance (décès, invalidité) protège les revenus du foyer au-delà de celle de l'employeur."),
+      emprunteur: z.boolean({ error: "emprunteur : true ou false." }).optional().describe("true si les crédits en cours sont couverts par une assurance emprunteur."),
+      ...DEPOT,
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const patch = clean({ prevoyance: a.prevoyance, emprunteur: a.emprunteur });
+    if (!Object.keys(patch).length) throw new UserError("Rien à proposer : fournissez prevoyance et/ou emprunteur.");
+    const cur = must("profiles", await db.from("profiles").select("protection").maybeSingle()) as any;
+    const actuelle = isObj(cur?.protection) ? cur.protection : {};
+    const ch = correctif(actuelle, patch);
+    return deposer(ch ? [{ cible: "protection", operation: Object.keys(actuelle).length ? "modifier" : "creer", avant: ch.avant, apres: ch.apres }] : [], a);
+  }));
+
+  /* ---------- Prompts : parcours d'entretien lançables depuis Claude ---------- */
+  for (const p of PARCOURS) {
+    server.registerPrompt(p.nom, { title: p.titre, description: p.description }, () => ({
+      description: p.description,
+      messages: [{ role: "user" as const, content: { type: "text" as const, text: p.texte } }],
+    }));
+  }
 
   return server;
 }

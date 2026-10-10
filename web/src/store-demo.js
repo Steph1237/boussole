@@ -12,6 +12,9 @@
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
+   propositions = [{ id, lot, cible, operation, ref, avant, apres, source, justification, statut, creeLe, decideLe }] (toutes, les plus
+   récentes d'abord) ; Store.propositions.appliquer(ids, modifications) / refuser(ids) les décident en mémoire (même effet que la
+   fonction SQL appliquer_propositions, voir l'en-tête de store-supabase.js).
    db.doc("profil/main").update({ risque }) / ({ classes }) / ({ protection }) ne touche que ces clés.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
@@ -28,7 +31,7 @@
     ready: false, dbOk: null, positions: D.positions || [], snapshots: D.snapshots || [], tx: D.tx || [],
     config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
-    risque: D.risque || null, classes: D.classes || {},
+    risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [],
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
@@ -42,6 +45,9 @@
     return out;
   };
 
+  // « Aucun bien ni crédit » : réponse enregistrée dans foyer.biensRenseignes, exposée en profil.biensRenseignes (bilan-etat.js).
+  const avecBiensRenseignes = p => { if (p && p.foyer && p.foyer.biensRenseignes) p.biensRenseignes = true; return p; };
+
   const subs = []; let tmr = null;
   const emit = () => { clearTimeout(tmr); tmr = setTimeout(() => subs.forEach(fn => { try { fn(S); } catch (e) { console.error(e); } }), 60); };
   const S = {};
@@ -54,12 +60,13 @@
       tx: clone(C.tx),
       config: clone(C.config),
       status: clone(C.status),
-      profil: clone(C.profil),
+      profil: avecBiensRenseignes(clone(C.profil)),
       profilLoaded: C.profilLoaded,
       budget: clone(C.budget),
       objectifs: clone(C.objectifs),
       risque: clone(C.risque),
       classes: clone(C.classes) || {},
+      propositions: clone(C.propositions),
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -210,9 +217,150 @@
     },
   };
 
+
+  /* ---------- propositions de Claude (même effet que appliquer_propositions, en mémoire) ---------- */
+  const QUESTIONS_RISQUE = ["horizon", "objectif", "reaction", "perte_max", "connaissances", "experience", "revenus", "matelas", "part_investie", "age"];
+  const sansNull = o => { const r = {}; Object.keys(o || {}).forEach(k => { if (o[k] !== null && o[k] !== undefined) r[k] = o[k]; }); return r; };
+  const POS_VUE = { value_date: "valueDate", qty_estimated: "qtyEstimated", price_override: "price" };
+  function versVuePosition(v) {
+    const o = {};
+    Object.keys(v).forEach(k => { if (k !== "transaction") o[POS_VUE[k] || k] = v[k]; });
+    if ("isin" in o) o.isin = o.isin ? String(o.isin).replace(/\s/g, "").toUpperCase() : null;
+    if ("price" in o && o.price != null) o.priceDate = o.valueDate || new Date().toISOString().slice(0, 10);
+    if ("value" in o && !("valueDate" in o)) o.valueDate = new Date().toISOString().slice(0, 10);
+    return o;
+  }
+  const versVueObjectif = v => { const o = Object.assign({}, v); if ("date_cible" in o) { o.dateCible = o.date_cible; delete o.date_cible; } return o; };
+  function introuvable(quoi, ref) { throw bad(quoi + " « " + ref + " » introuvable."); }
+  function appliquerUne(p, v) {
+    const objetAttendu = () => { if (p.operation !== "supprimer" && !objet(v)) throw bad("valeur proposée invalide (objet attendu)."); };
+    objetAttendu();
+    const pr = C.profil = C.profil || { foyer: {}, personnes: { p1: { nom: "Moi" } }, autres: {}, biens: [], credits: [], protection: {} };
+    const ligne = (liste, quoi) => { const i = liste.findIndex(x => x.id === p.ref); if (i < 0) introuvable(quoi, p.ref); return i; };
+    switch (p.cible) {
+      case "profil": {
+        if ("foyer" in v) { if (!objet(v.foyer)) throw bad("foyer : objet attendu."); pr.foyer = sansNull(Object.assign({}, pr.foyer, v.foyer)); }
+        ["personnes", "autres"].forEach(cle => {
+          if (!(cle in v)) return;
+          if (!objet(v[cle])) throw bad(cle + " : objet attendu.");
+          const cur = Object.assign({}, pr[cle]);
+          Object.keys(v[cle]).forEach(k => {
+            if (!["p1", "p2"].includes(k)) throw bad(cle + " : personne « " + k + " » inconnue (p1 ou p2).");
+            if (v[cle][k] === null && cle === "personnes") { if (k === "p1") throw bad("la première personne du foyer ne peut pas être retirée."); delete cur[k]; }
+            else if (objet(v[cle][k])) cur[k] = sansNull(Object.assign({}, cur[k], v[cle][k]));
+            else throw bad(cle + "." + k + " : objet attendu.");
+          });
+          pr[cle] = cur;
+        });
+        break;
+      }
+      case "budget": {
+        const lignes = (C.budget && C.budget.lignes) || [];
+        if (p.operation === "supprimer") { lignes.splice(ligne(lignes, "ligne de budget"), 1); C.budget = { lignes }; break; }
+        if (p.operation === "creer") {
+          const n = normLignes([sansNull(v)])[0];
+          if (lignes.some(l => l.id === n.id)) throw bad("une ligne de budget porte déjà l'identifiant « " + n.id + " ».");
+          C.budget = { lignes: lignes.concat([n]) };
+        } else {
+          const i = ligne(lignes, "ligne de budget");
+          lignes[i] = normLignes([sansNull(Object.assign({}, lignes[i], v, { id: p.ref }))])[0];
+          C.budget = { lignes };
+        }
+        break;
+      }
+      case "position": {
+        let id = p.ref;
+        if (p.operation === "supprimer") { C.positions.splice(ligne(C.positions, "ligne"), 1); break; }
+        if (p.operation === "creer") {
+          const vue = versVuePosition(v);
+          if (vue.owner && !["p1", "p2"].includes(vue.owner)) throw bad("titulaire « " + vue.owner + " » inconnu (p1 ou p2).");
+          id = newId("pos");
+          C.positions.push(Object.assign({ id, name: "Sans nom", envelope: "", owner: "p1", bloc: "", mode: vue.isin && vue.qty != null ? "market" : "manual", isin: null, qty: null, pru: null,
+            price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null,
+            ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null }, vue));
+        } else {
+          const vue = versVuePosition(v);
+          if (vue.owner && !["p1", "p2"].includes(vue.owner)) throw bad("titulaire « " + vue.owner + " » inconnu (p1 ou p2).");
+          Object.assign(C.positions[ligne(C.positions, "ligne")], vue);
+        }
+        if (objet(v.transaction)) {
+          const t = v.transaction;
+          C.tx.unshift({ id: newId("tx"), positionId: id, date: t.date || new Date().toISOString().slice(0, 10), type: t.type || "autre",
+            qty: t.qty ?? null, price: t.price ?? null, amount: t.amount ?? null, note: t.note || "", source: t.source || "mcp", createdAt: new Date().toISOString() });
+        }
+        break;
+      }
+      case "bien": case "credit": {
+        const cle = p.cible === "bien" ? "biens" : "credits", quoi = p.cible === "bien" ? "bien" : "crédit";
+        const liste = pr[cle] = pr[cle] || [];
+        if (p.cible === "bien" && v && v.usage != null && !["rp", "locatif", "secondaire"].includes(v.usage)) throw bad("usage « " + v.usage + " » inconnu (rp, locatif ou secondaire).");
+        if (p.cible === "credit" && v && v.owner != null && !OWNERS.includes(v.owner)) throw bad("titulaire « " + v.owner + " » inconnu (p1, p2 ou commun).");
+        if (p.operation === "supprimer") liste.splice(ligne(liste, quoi), 1);
+        else if (p.operation === "creer") liste.push(Object.assign(p.cible === "bien" ? { nom: "", usage: "rp", valeur: 0, part_p1: 100, crd: 0, mensualite: 0, loyer: 0 } : { nom: "", owner: "commun", crd: 0, mensualite: 0 }, v, { id: newId(p.cible) }));
+        else Object.assign(liste[ligne(liste, quoi)], v);
+        break;
+      }
+      case "objectif": {
+        if (p.operation === "supprimer") { C.objectifs.splice(ligne(C.objectifs, "objectif"), 1); break; }
+        const n = normObjectif(versVueObjectif(v));
+        if (p.operation === "creer") C.objectifs.push(Object.assign(clone(OBJ_DEFAUT), n, { id: newId("obj") }));
+        else Object.assign(C.objectifs[ligne(C.objectifs, "objectif")], n);
+        C.objectifs.sort((x, y) => x.priorite - y.priorite);
+        break;
+      }
+      case "risque": {
+        const rep = objet(v.reponses) ? v.reponses : v;
+        const inconnue = Object.keys(rep).find(k => !QUESTIONS_RISQUE.includes(k));
+        if (inconnue) throw bad("question « " + inconnue + " » inconnue.");
+        const cur = objet(C.risque) ? C.risque : {};
+        C.risque = Object.assign({}, cur, { reponses: Object.assign({}, objet(cur.reponses) ? cur.reponses : {}, rep) });
+        break;
+      }
+      case "protection":
+        pr.protection = sansNull(Object.assign({}, pr.protection, v));
+        break;
+      default:
+        throw bad("cible « " + p.cible + " » inconnue.");
+    }
+  }
+  const LIBELLES_CIBLE = { profil: "profil", budget: "ligne de budget", position: "placement", bien: "bien immobilier", credit: "crédit", objectif: "objectif", risque: "profil de risque", protection: "protection" };
+  const propositions = {
+    async appliquer(ids, modifications = {}) {
+      await tick();
+      const mods = modifications == null ? {} : modifications;
+      if (!objet(mods)) throw bad("Modifications invalides : objet { identifiant: valeur } attendu.");
+      const liste = (Array.isArray(ids) ? ids : []).map(String);
+      const cibles = C.propositions.filter(p => liste.includes(String(p.id)) && p.statut === "en_attente")
+        .sort((a, b) => String(a.creeLe).localeCompare(String(b.creeLe)));
+      const sauvegarde = clone({ positions: C.positions, tx: C.tx, profil: C.profil, budget: C.budget, objectifs: C.objectifs, risque: C.risque, propositions: C.propositions });
+      try {
+        const now = new Date().toISOString();
+        cibles.forEach(p => {
+          const v = Object.prototype.hasOwnProperty.call(mods, p.id) ? clone(mods[p.id]) : clone(p.apres);
+          try { appliquerUne(p, v); } catch (e) { throw bad("Proposition non appliquée (" + LIBELLES_CIBLE[p.cible] + ", " + p.operation + ") : " + String(e.message || e).replace(/\.$/, "") + "."); }
+          p.statut = "acceptee"; p.decideLe = now; if (p.operation !== "supprimer") p.apres = v;
+        });
+      } catch (e) {
+        Object.assign(C, sauvegarde);
+        throw e;
+      }
+      publish();
+      return { appliquees: cibles.length };
+    },
+    async refuser(ids) {
+      await tick();
+      const liste = (Array.isArray(ids) ? ids : []).map(String), now = new Date().toISOString();
+      let n = 0;
+      C.propositions.forEach(p => { if (liste.includes(String(p.id)) && p.statut === "en_attente") { p.statut = "refusee"; p.decideLe = now; n++; } });
+      publish();
+      return { refusees: n };
+    },
+  };
+
   const Store = {
     mode: "demo",
     db,
+    propositions,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {
