@@ -1,1 +1,79 @@
-<div class="claude-guide"><p class="muted">Chargement…</p></div>
+<div class="claude-guide">
+  <section class="panel cg-hero" aria-labelledby="cgTitle">
+    <div class="cg-ring" id="cgRing" role="img" aria-label="Bilan complet à 0 %"></div>
+    <div class="cg-hero-txt">
+      <h2 id="cgTitle">Faites votre bilan en discutant avec Claude</h2>
+      <p>Claude vous pose les questions qui manquent, une à la fois, comme un conseiller ; il dépose ce qu'il a compris dans Boussole et vous validez ce qui est enregistré.</p>
+      <p class="small muted" id="cgHeroSub"></p>
+    </div>
+  </section>
+
+  <div class="cg-grid">
+    <section class="panel cg-sections" aria-labelledby="cgSecTitle">
+      <div class="panel-head"><h2 id="cgSecTitle">Où en est votre bilan</h2><span class="small muted" id="cgSecCount"></span></div>
+      <ul class="cg-sec-list" id="cgSections"></ul>
+    </section>
+    <section class="panel cg-next" aria-labelledby="cgNextTitle">
+      <div class="panel-head"><h2 id="cgNextTitle">Prochaines questions</h2></div>
+      <ol class="cg-next-list" id="cgNext"></ol>
+      <p class="small muted cg-next-done" id="cgNextDone" hidden>Toutes les questions essentielles ont une réponse. Claude peut encore vous aider à faire la revue du mois.</p>
+    </section>
+  </div>
+
+  <section class="panel cg-steps" aria-labelledby="cgStepsTitle">
+    <div class="panel-head"><h2 id="cgStepsTitle">En trois étapes</h2></div>
+    <ol class="cg-step-list">
+      <li class="cg-step" id="cgStep1">
+        <h3>Ajouter le connecteur Boussole à Claude</h3>
+        <p class="small muted">Une seule fois. Le connecteur ne voit que votre compte, après votre autorisation ; il ne peut ni exporter vos données ni supprimer votre compte.</p>
+        <p class="cg-note" id="cgDemoNote" hidden>Vous êtes en démo : le connecteur fonctionne avec un vrai compte, pas avec ce foyer fictif. <a href="index.html#connexion">Créer mon compte</a></p>
+        <label class="cg-url-l" for="cgUrl">Adresse du connecteur</label>
+        <div class="cg-copyline">
+          <input class="cg-in" id="cgUrl" type="text" readonly value="">
+          <button type="button" class="cg-btn ghost" data-copy-el="cgUrl">Copier l'adresse</button>
+        </div>
+        <details class="cg-how">
+          <summary>claude.ai (site web)</summary>
+          <p>Paramètres → Connecteurs → Ajouter un connecteur personnalisé → collez l'adresse, puis connectez-vous à Boussole et autorisez l'accès.</p>
+        </details>
+        <details class="cg-how">
+          <summary>Claude Desktop et applications mobiles</summary>
+          <p>Paramètres → Connecteurs → Ajouter un connecteur personnalisé → collez l'adresse, puis connectez-vous à Boussole et autorisez l'accès. Un connecteur ajouté sur claude.ai est aussi disponible dans les applications.</p>
+        </details>
+        <details class="cg-how">
+          <summary>Claude Code (terminal)</summary>
+          <p>Dans un terminal, lancez :</p>
+          <div class="cg-copyline">
+            <code class="cg-code" id="cgCmd"></code>
+            <button type="button" class="cg-btn ghost" data-copy-el="cgCmd">Copier</button>
+          </div>
+        </details>
+      </li>
+      <li class="cg-step cg-anon" id="cgStepAnon" hidden>
+        <h3>Sécurisez d'abord votre compte</h3>
+        <p>Votre compte n'a pas encore d'e-mail : pour brancher Claude, ajoutez d'abord un e-mail et un mot de passe. Vos données sont conservées.</p>
+        <a class="cg-btn" href="compte.html#securiser">Sécuriser mon compte</a>
+      </li>
+      <li class="cg-step" id="cgStep2">
+        <h3>Ouvrir Claude avec une demande toute prête</h3>
+        <p class="small muted">Le lien ouvre une nouvelle conversation sur claude.ai avec la demande pré-remplie. Si vous utilisez une autre application, copiez la demande et collez-la.</p>
+        <div class="cg-parcours" id="cgParcours"></div>
+      </li>
+      <li class="cg-step" id="cgStep3">
+        <h3>Revenez ici valider</h3>
+        <p>Claude n'enregistre rien lui-même : chaque changement attend votre accord dans <a href="#profil/propositions" data-goto="profil/propositions">Propositions</a>.</p>
+        <a class="cg-pending" id="cgPending" href="#profil/propositions" data-goto="profil/propositions"></a>
+      </li>
+    </ol>
+    <p class="cg-msg" id="cgMsg" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="cg-alt" aria-labelledby="cgAltTitle">
+    <h2 id="cgAltTitle">Je préfère remplir moi-même</h2>
+    <ul>
+      <li><a href="#profil/donnees" data-goto="profil/donnees">Profil et données</a> <span class="muted">foyer, revenus, biens, crédits, placements</span></li>
+      <li><a href="#avenir/plan" data-goto="avenir/plan">Budget et objectifs</a> <span class="muted">dépenses, épargne, projets</span></li>
+      <li><a href="#diagnostic/risque" data-goto="diagnostic/risque">Profil de risque</a> <span class="muted">dix questions</span></li>
+    </ul>
+  </section>
+</div>

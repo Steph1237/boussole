@@ -131,7 +131,8 @@
       return '<a class="' + (bar ? "bb-item" : "nav-item") + '" href="' + hrefOf(sp.space) + '" data-nav="' + sp.space + '">' +
         (bar ? '<span class="bb-ico">' + svg(sp.icon) + "</span>" : svg(sp.icon)) +
         '<span class="nl">' + esc(bar ? sp.short : sp.label) + "</span>" +
-        (sp.space === "recos" ? '<span class="pill-count" data-recos-count hidden></span>' : "") + "</a>";
+        (sp.space === "recos" ? '<span class="pill-count" data-recos-count hidden></span>' : "") +
+        (sp.space === "profil" ? '<span class="pill-count" data-prop-count hidden></span>' : "") + "</a>";
     }
     function renderNav() {
       const prim = SPACES.filter(s => s.primary), rest = SPACES.filter(s => !s.primary);
@@ -163,17 +164,33 @@
       }
     }
 
-    /* Pastille Recommandations : headline() du module branché sur recos/actions, s'il renvoie un nombre. */
-    function refreshHeadlines() {
-      const s = subOf("recos", "actions"); const m = s && s.module ? mods[s.module] : null;
+    /* Nombre entier renvoyé par headline() du module branché sur espace/sous-vue ; NaN sinon. */
+    function countOf(space, sub) {
+      const s = subOf(space, sub); const m = s && s.module ? mods[s.module] : null;
       let v = null;
       if (m && m.headline) try { v = m.headline(); } catch (e) { v = null; }
-      const n = v == null || !/^\s*\d+\s*$/.test(String(v)) ? NaN : parseInt(v, 10);
-      const show = Number.isFinite(n) && n > 0;
-      document.querySelectorAll("[data-recos-count]").forEach(el => {
-        el.hidden = !show; el.textContent = show ? String(n) : "";
-        if (show) el.setAttribute("aria-label", n + " action" + (n > 1 ? "s" : "") + " à traiter"); else el.removeAttribute("aria-label");
-      });
+      return v == null || !/^\s*\d+\s*$/.test(String(v)) ? NaN : parseInt(v, 10);
+    }
+    /* Pastilles : Recommandations (actions à traiter) et Profil et données (propositions de Claude en attente) ;
+       bandeau global #propBanner « Claude propose N changements », partout sauf sur la vue Propositions. */
+    function refreshHeadlines() {
+      const pill = (sel, n, label) => {
+        const show = Number.isFinite(n) && n > 0;
+        document.querySelectorAll(sel).forEach(el => {
+          el.hidden = !show; el.textContent = show ? String(n) : "";
+          if (show) el.setAttribute("aria-label", label(n)); else el.removeAttribute("aria-label");
+        });
+        return show;
+      };
+      pill("[data-recos-count]", countOf("recos", "actions"), n => n + " action" + (n > 1 ? "s" : "") + " à traiter");
+      const np = countOf("profil", "propositions");
+      const anyProp = pill("[data-prop-count]", np, n => n + " proposition" + (n > 1 ? "s" : "") + " de Claude à examiner");
+      const b = $("propBanner");
+      if (b) {
+        b.hidden = !anyProp || (route.space === "profil" && route.sub === "propositions");
+        const t = anyProp ? "Claude propose " + np + " changement" + (np > 1 ? "s" : "") + " à valider" : "";
+        const el = $("propBannerTxt"); if (el && el.textContent !== t) el.textContent = t;
+      }
     }
 
     const frDate = d => new Date(d + (d.length === 10 ? "T12:00:00" : "")).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });

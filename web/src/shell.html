@@ -32,6 +32,8 @@
 
   <main class="main" id="main">
     <div id="demoBanner" class="banner demo" hidden>Démo avec un foyer fictif : rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a> pour suivre votre propre patrimoine.</div>
+    <!-- Propositions de Claude en attente : affiché par app.js (refreshHeadlines) sur toutes les vues sauf Profil et données › Propositions. -->
+    <div id="propBanner" class="banner prop" role="status" hidden><span id="propBannerTxt"></span><a href="#profil/propositions" data-goto="profil/propositions">Examiner</a></div>
     <!-- Compte anonyme (« Commencer sans e-mail ») : affiché par app.js, masquable pour la session de l'onglet. -->
     <div id="anonBanner" class="banner anon" role="status" hidden><span>Compte sans e-mail : vos données sont liées à ce navigateur. Sécurisez votre compte pour les retrouver ailleurs et éviter leur suppression après 90 jours d'inactivité. <a href="compte.html#securiser">Sécuriser mon compte</a></span><button type="button" class="banner-x" id="anonBannerClose" aria-label="Masquer ce message">×</button></div>
     <header class="page-head">
