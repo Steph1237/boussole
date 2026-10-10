@@ -113,6 +113,17 @@
 #view-bilan .bl-pill.good{color:var(--good)}
 #view-bilan .bl-todo-foot{margin:12px 0 0}
 
+/* carte « Faire mon bilan avec Claude » */
+#view-bilan .bl-claude{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"g g g" "b a x";gap:10px 14px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--radius);background:var(--surface)}
+#view-bilan .bl-claude-g{grid-area:g;position:relative;height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
+#view-bilan .bl-claude-f{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--accent)}
+#view-bilan .bl-claude-b{grid-area:b;min-width:0}
+#view-bilan .bl-claude-b h2{font-size:15px}
+#view-bilan .bl-claude-b p{margin:2px 0 0;color:var(--muted)}
+#view-bilan .bl-claude>.bl-btn{grid-area:a;white-space:nowrap}
+#view-bilan .bl-claude-x{grid-area:x;border:0;background:transparent;color:var(--muted);font:400 18px/1 var(--f-body);width:28px;height:28px;border-radius:6px;cursor:pointer}
+#view-bilan .bl-claude-x:hover{background:var(--sunk);color:var(--ink)}
+
 @media (prefers-reduced-motion:no-preference){#view-bilan .bl-fill{transition:width .35s ease}}
 @media (min-width:600px){#view-bilan .bl-summary{grid-template-columns:repeat(3,minmax(0,1fr))}#view-bilan .bl-big{font-size:24px}#view-bilan .bl-mid{font-size:20px}}
 @media (min-width:900px){
@@ -123,4 +134,4 @@
   #view-bilan .bl-alloc,#view-bilan .bl-evol{grid-column:span 6}
 }
 @media (min-width:1280px){#view-bilan .bl-summary{grid-template-columns:repeat(6,minmax(0,1fr))}#view-bilan .bl-kpi{padding:14px 16px}}
-@media (max-width:420px){#view-bilan .bl-act{grid-template-columns:auto minmax(0,1fr)}#view-bilan .bl-act>.bl-link{grid-column:2}}
+@media (max-width:420px){#view-bilan .bl-act{grid-template-columns:auto minmax(0,1fr)}#view-bilan .bl-act>.bl-link{grid-column:2}#view-bilan .bl-claude{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"g x" "b b" "a a"}#view-bilan .bl-claude>.bl-btn{justify-self:start}}

@@ -87,6 +87,28 @@
     return sc;
   }
 
+  /* ---------- profil de risque (cellule des chiffres clés) ----------
+     Profil enregistré (S.risque.profil, Diagnostic › Profil de risque) ; si le portefeuille réel se comporte comme un autre
+     profil (Risque.synthese, immobilier physique non compté), « portefeuille : Offensif ». Sinon « À définir ». */
+  function renderRisque() {
+    const cell = Array.from(root.querySelectorAll(".bl-summary .bl-kpi")).find(k => { const l = k.querySelector(".label"); return l && l.textContent.trim() === "Profil de risque"; });
+    if (!cell) return;
+    const mid = cell.querySelector(".bl-mid"), sub = cell.querySelector(".small");
+    const R = window.Risque, rq = S.risque && typeof S.risque === "object" ? S.risque : null;
+    const fiche = R && rq && rq.profil ? R.PROFILS.find(p => p.id === rq.profil) : null;
+    sub.removeAttribute("title");
+    if (!fiche) { mid.innerHTML = link("diagnostic/risque", "À définir"); sub.className = "small muted"; sub.textContent = "10 questions, 3 minutes"; return; }
+    mid.innerHTML = link("diagnostic/risque", fiche.label);
+    let syn = null;
+    try { syn = R.synthese(rq.reponses || {}, { positions: S.positions, scope: scope(), surcharge: S.classes || {} }); } catch (e) { console.error("bilan risque", e); }
+    const eq = syn && syn.risque.profilEquivalent ? R.PROFILS.find(p => p.id === syn.risque.profilEquivalent) : null;
+    if (eq && eq.id !== fiche.id) {
+      sub.className = "small";
+      sub.innerHTML = '<span class="bl-verdict ' + (R.PROFILS.indexOf(eq) > R.PROFILS.indexOf(fiche) ? "crit" : "warn") + '">portefeuille : ' + esc(eq.label) + "</span>";
+      sub.title = "Votre portefeuille se comporte comme un profil " + eq.label + ", votre profil est " + fiche.label + ".";
+    } else { sub.className = "small muted"; sub.textContent = eq ? "portefeuille conforme" : "perte tolérée " + fiche.perteMax + " %"; }
+  }
+
   /* ---------- ce que je possède, ce que je dois ---------- */
   function renderComposition(comp) {
     $("blCompScope").textContent = duScope();
@@ -344,15 +366,31 @@
       : '<div class="bl-act good"><span class="bl-pill good">ok</span><div class="bl-act-b">Rien d\'urgent.</div></div>';
   }
 
+  /* ---------- carte « Faire mon bilan avec Claude » (BilanEtat, masquable pour la session de l'onglet) ---------- */
+  const CLAUDE_KEY = "boussole.bilanClaude.masque";
+  function renderClaude(ready) {
+    const card = $("blClaude"); if (!card) return;
+    let masque = false;
+    try { masque = sessionStorage.getItem(CLAUDE_KEY) === "1"; } catch (e) { /* stockage indisponible : carte affichée */ }
+    const E = ready && window.BilanEtat ? window.BilanEtat.etat(S) : null;
+    card.hidden = masque || !E || E.pourcentage >= 100;
+    if (card.hidden) return;
+    $("blClaudeFill").style.width = E.pourcentage + "%";
+    const reste = E.sections.filter(s => s.statut !== "complet").length;
+    $("blClaudeTxt").textContent = "Bilan complet à " + E.pourcentage + " % · " + reste + " section" + (reste > 1 ? "s" : "") + " à compléter. Claude vous pose les questions qui manquent, une à la fois ; vous validez ce qu'il propose.";
+  }
+
   /* ---------- rendu ---------- */
   function render() {
     if (!root || !S) return;
     const ready = S.ready !== false;
     $("blLoading").hidden = ready; $("blBody").hidden = !ready;
+    renderClaude(ready);
     if (!ready || !window.BilanCalc || !window.Plan || !window.Calc) return;
     const comp = window.BilanCalc.composition(S.positions, S.profil, scope());
     const t = totaux();
     const sc = renderSummary(comp, t);
+    renderRisque();
     renderComposition(comp);
     renderFlux(t);
     renderAlloc();
@@ -362,6 +400,7 @@
 
   function mount(r) {
     root = r;
+    $("blClaudeX").addEventListener("click", () => { $("blClaude").hidden = true; try { sessionStorage.setItem(CLAUDE_KEY, "1"); } catch (e) { /* rien */ } });
     $("blAllocSeg").addEventListener("click", e => {
       const b = e.target.closest("[data-mode]"); if (!b || !S) return;
       allocMode = b.dataset.mode;

@@ -1,23 +1,24 @@
 <div class="sante">
   <section class="panel sante-hero" aria-labelledby="santeTitle">
     <div class="sante-score">
-      <h2 class="label" id="santeTitle">Santé financière</h2>
+      <h2 class="label" id="santeTitle">Bonnes pratiques</h2>
       <div class="big num"><span id="santeTotal">—</span><span class="sante-sur">/100</span></div>
       <span class="sj" id="santeJauge" aria-hidden="true"></span>
     </div>
     <div class="sante-txt">
       <div class="sante-verdict" id="santeVerdict">Chargement…</div>
       <p class="small muted" id="santePartiel"></p>
-      <p class="small sante-intro">Cinq critères notés chacun sur 20 : votre réserve de précaution, votre effort d'épargne, le poids de vos crédits, la répartition de vos placements et votre patrimoine au regard de votre âge.</p>
+      <p class="small sante-intro">Les repères qu'un conseiller vérifie d'abord, en quatre familles : votre sécurité (réserve, protection, argent des projets proches), votre effort (épargne, crédits, apport), votre allocation (profil de risque, diversification, part spéculative) et l'efficacité de vos placements (frais, enveloppes, argent qui dort).</p>
     </div>
   </section>
 
-  <div class="sante-items" id="santeItems"></div>
+  <div class="sante-familles" id="santeFamilles"></div>
 
   <details class="panel sante-how">
-    <summary>Comment ce score est calculé</summary>
+    <summary>Comment cette note est calculée</summary>
     <div class="how-body small">
-      <p>Chaque critère vaut 20 points. Le total est ramené sur 100 ; un critère « à compléter » (donnée manquante) n'est pas compté. Au-dessus de 80 : solide ; de 60 à 79 : correct ; sous 60 : à consolider. Jauge verte à partir de 16 points sur 20, orange de 10 à 15, rouge en dessous.</p>
+      <p>Chaque critère vaut 20 points. La note d'une famille est la somme de ses points ramenée sur 100 ; la note globale est la moyenne des familles pondérée : Sécurité 30 %, Effort 25 %, Allocation 30 %, Efficacité 15 %. Un critère « à compléter » (donnée manquante) ou sans objet (pas de crédit, pas de projet immobilier…) ne compte pas ; l'exposition hors euro est une information, sans note. Au-dessus de 80 : solide ; de 60 à 79 : correct ; sous 60 : à consolider. Jauge verte à partir de 16 points sur 20, orange de 10 à 15, rouge en dessous.</p>
+      <p>Chaque critère affiche sa règle et sa source. Quatre d'entre eux reprennent les barèmes historiques du score de santé :</p>
       <dl>
         <dt>Matelas de précaution</dt>
         <dd>Épargne disponible (poche « Épargne ») divisée par vos dépenses mensuelles. Moins d'un mois : 0 point ; de 1 à 3 mois : de 5 à 15 points ; de 3 à 6 mois : 20 points. Au-delà de 6 mois la note redescend doucement, jusqu'à 15 points à 12 mois, car cet argent dort sur des supports peu rémunérés.</dd>
@@ -27,10 +28,8 @@
         <dd>Mensualités de crédit divisées par les revenus. 25 % ou moins : 20 points ; 35 % (plafond des banques, norme HCSF) : 12 ; 45 % ou plus : 0.</dd>
         <dt>Diversification</dt>
         <dd>Poids de la plus grosse ligne dans vos placements. 10 % ou moins : 20 points ; 20 % : 14 ; 40 % ou plus : 0. Moins de 3 poches différentes : 5 points de moins.</dd>
-        <dt>Patrimoine net</dt>
-        <dd>Patrimoine net (placements, biens, moins les crédits) exprimé en années de revenus, comparé à un repère selon l'âge : <span id="santeReperes">0,5 an avant 30 ans, 1 an de 30 à 39 ans, 3 ans de 40 à 49 ans, 6 ans de 50 à 59 ans, 8 ans de 60 à 69 ans, 10 ans à partir de 70 ans</span>. 20 points au repère ou au-dessus, proportionnellement moins en dessous.</dd>
       </dl>
-      <p class="muted">Entre deux paliers, la note progresse en ligne droite.</p>
+      <p class="muted">Entre deux paliers, la note progresse en ligne droite. Le patrimoine comparé à celui des Français de votre âge est dans « Rang parmi les Français ».</p>
     </div>
   </details>
 

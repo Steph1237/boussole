@@ -1,1 +1,135 @@
-/* risque-view : styles à venir, tous scopés sous #view-risque-view. */
+/* Diagnostic › Profil de risque : carte de questionnaire, résultat (profil, jauge, garde-fous), allocation cible vs réelle,
+   risque réel du portefeuille, rattachement des poches. Tout est scopé sous #view-risque-view. */
+#view-risque-view .rv{display:flex;flex-direction:column;gap:16px}
+#view-risque-view #rvMain{display:flex;flex-direction:column;gap:16px;min-width:0}
+#view-risque-view h2.label{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 4px}
+#view-risque-view .panel-head h2{font:700 16px var(--f-display);margin:0}
+#view-risque-view .rv-h3{font:700 14px var(--f-display);margin:18px 0 2px}
+#view-risque-view .rv-sub{margin:0 0 12px}
+#view-risque-view .rv-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;font:600 14px var(--f-body);border-radius:var(--radius-sm);padding:10px 18px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);text-decoration:none;cursor:pointer}
+#view-risque-view .rv-btn:hover{filter:brightness(1.08)}
+#view-risque-view .rv-btn.ghost{background:transparent;color:var(--accent)}
+#view-risque-view .rv-btn.ghost:hover{background:var(--accent-soft);filter:none}
+#view-risque-view .rv-btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+#view-risque-view .rv-lnk{border:0;background:none;padding:0;font:600 13px var(--f-body);color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+#view-risque-view .rv-a{font-weight:600;color:var(--accent)}
+#view-risque-view .rv-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+
+/* intro */
+#view-risque-view .rv-intro h2{font:800 22px var(--f-display);margin:0 0 6px}
+#view-risque-view .rv-lead{font-size:16px;margin:0 0 8px;max-width:640px}
+#view-risque-view .rv-intro .small{max-width:640px;margin:0}
+#view-risque-view .rv-intro .rv-lnk{margin-top:12px}
+
+/* questionnaire */
+#view-risque-view .rv-quiz{max-width:720px;width:100%;display:flex;flex-direction:column;gap:12px;padding:18px}
+#view-risque-view .rv-prog{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px}
+#view-risque-view .rv-theme{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+#view-risque-view .rv-pbar{display:block;height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
+#view-risque-view .rv-pbar>span{display:block;height:100%;background:var(--accent);border-radius:3px}
+#view-risque-view .rv-q{font:700 20px/1.3 var(--f-display);margin:4px 0 0}
+#view-risque-view [tabindex="-1"]:focus{outline:none}
+#view-risque-view .rv-why{margin:0;color:var(--ink)}
+#view-risque-view .rv-why b{display:block;font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px}
+#view-risque-view .rv-aide{margin:0}
+#view-risque-view .rv-pre{margin:0;padding:8px 10px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--ink)}
+#view-risque-view .rv-opts{display:flex;flex-direction:column;gap:8px}
+#view-risque-view .rv-opts.multi{flex-direction:row;flex-wrap:wrap}
+#view-risque-view .rv-opt{display:flex;align-items:center;gap:12px;min-height:52px;width:100%;text-align:left;font:500 15px var(--f-body);color:var(--ink);background:var(--surface);border:1.5px solid var(--line2);border-radius:var(--radius);padding:10px 14px;cursor:pointer}
+#view-risque-view .rv-opts.multi .rv-opt{width:auto;min-height:44px;border-radius:999px;padding:8px 14px}
+#view-risque-view .rv-opt:hover{border-color:var(--accent)}
+#view-risque-view .rv-opt[aria-checked="true"],#view-risque-view .rv-opt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+#view-risque-view .rv-opt kbd{flex:none;display:inline-grid;place-items:center;width:24px;height:24px;border-radius:6px;font:600 12px var(--f-num);background:var(--sunk);color:var(--muted)}
+#view-risque-view .rv-opt[aria-checked="true"] kbd,#view-risque-view .rv-opt[aria-pressed="true"] kbd{background:var(--accent);color:var(--surface)}
+#view-risque-view .rv-step{display:flex;align-items:center;gap:10px}
+#view-risque-view .rv-sb{width:52px;height:52px;border-radius:var(--radius);border:1.5px solid var(--line2);background:var(--surface);color:var(--ink);font:600 22px var(--f-body);cursor:pointer}
+#view-risque-view .rv-sb:hover{border-color:var(--accent)}
+#view-risque-view #rvNombre{width:90px;height:52px;text-align:center;font:600 20px var(--f-num);color:var(--ink);background:var(--surface);border:1.5px solid var(--line2);border-radius:var(--radius)}
+#view-risque-view .rv-unit{color:var(--muted)}
+#view-risque-view .rv-match{margin:0;color:var(--muted)}
+#view-risque-view .rv-err{margin:0;color:var(--crit)}
+#view-risque-view .rv-err:empty{display:none}
+#view-risque-view .rv-nav{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
+#view-risque-view .rv-keys{margin:0}
+
+/* résultat */
+#view-risque-view .rv-hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px 28px;align-items:start}
+#view-risque-view .rv-hero>.rv-gf,#view-risque-view .rv-hero>.rv-actions{grid-column:1/-1}
+#view-risque-view .rv-name{font:800 clamp(30px,6vw,42px)/1.05 var(--f-display);color:var(--accent);margin:2px 0 8px}
+#view-risque-view .rv-desc{margin:0 0 6px;max-width:560px}
+#view-risque-view .rv-hl .small{margin:0}
+#view-risque-view .rv-gh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+#view-risque-view .rv-gh b{font:700 26px var(--f-display)}
+#view-risque-view .rv-gh .muted{font-size:13px;font-weight:500}
+#view-risque-view .rv-gt{display:block;position:relative;height:34px;border-radius:6px;background:var(--sunk)}
+#view-risque-view .rv-gb{position:absolute;top:0;bottom:0;width:20%;border-left:1px solid var(--surface);display:flex;align-items:center;justify-content:center;overflow:hidden}
+#view-risque-view .rv-gb:first-child{border-left:0;border-radius:6px 0 0 6px}
+#view-risque-view .rv-gb:nth-child(5){border-radius:0 6px 6px 0}
+#view-risque-view .rv-gb span{font:600 10.5px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 2px}
+#view-risque-view .rv-gb.on{background:var(--accent-soft)}
+#view-risque-view .rv-gb.on span{color:var(--ink)}
+#view-risque-view .rv-gm{position:absolute;top:-5px;bottom:-5px;width:4px;margin-left:-2px;border-radius:2px;background:var(--ink)}
+#view-risque-view .rv-gs{display:flex;justify-content:space-between;margin-top:6px;font-family:var(--f-num);font-size:10.5px}
+#view-risque-view .rv-gf{border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:var(--radius-sm);padding:10px 12px}
+#view-risque-view .rv-gf p{margin:0 0 4px}
+#view-risque-view .rv-gf ul{margin:6px 0 0;padding-left:18px}
+#view-risque-view .rv-gf li{margin-top:3px}
+
+/* allocation cible vs réelle */
+#view-risque-view .rv-arows{display:flex;flex-direction:column;gap:14px}
+#view-risque-view .rv-ahead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:5px}
+#view-risque-view .rv-al{font-weight:600;min-width:0}
+#view-risque-view .rv-st{font:600 11px var(--f-body);padding:2px 8px;border-radius:999px;white-space:nowrap}
+#view-risque-view .rv-st.ok{background:var(--good-soft);color:var(--good)}
+#view-risque-view .rv-st.off{background:var(--warn-soft);color:var(--warn)}
+#view-risque-view .rv-track{display:block;position:relative;height:16px;border-radius:4px;background:var(--sunk)}
+#view-risque-view .rv-band{position:absolute;top:0;bottom:0;background:var(--s2-soft);border:1.5px dashed var(--s2);border-radius:4px}
+#view-risque-view .rv-band.zero{width:0;border-width:0 0 0 2px;border-style:solid;border-radius:0}
+#view-risque-view .rv-real{position:absolute;left:0;top:4px;height:8px;border-radius:3px;background:var(--good)}
+#view-risque-view .rv-real.off{background:var(--warn)}
+#view-risque-view .rv-mark{position:absolute;top:-3px;bottom:-3px;width:3px;margin-left:-1.5px;border-radius:2px;background:var(--ink)}
+#view-risque-view .rv-anum{margin-top:4px}
+#view-risque-view .rv-div{margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)}
+#view-risque-view .rv-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px}
+#view-risque-view .rv-legend i{display:inline-block;width:14px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle}
+#view-risque-view .rv-legend .lg-band{background:var(--s2-soft);border:1.5px dashed var(--s2)}
+#view-risque-view .rv-legend .lg-real{background:var(--good)}
+#view-risque-view .rv-legend .lg-off{background:var(--warn)}
+#view-risque-view .rv-chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+#view-risque-view .rv-chk input{width:16px;height:16px;accent-color:var(--accent)}
+
+/* risque réel */
+#view-risque-view .rv-bad{font-size:15px;margin:0 0 12px;max-width:720px}
+#view-risque-view .rv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:10px}
+#view-risque-view .rv-kpi{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--sunk);min-width:0}
+#view-risque-view .rv-kpi .label{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+#view-risque-view .rv-kpi b{font:700 20px var(--f-display)}
+#view-risque-view .rv-cmp{margin:12px 0 0;padding:9px 12px;border-radius:var(--radius-sm);border-left:3px solid var(--line2);background:var(--sunk)}
+#view-risque-view .rv-cmp.ok{border-left-color:var(--good);background:var(--good-soft)}
+#view-risque-view .rv-cmp.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+#view-risque-view .rv-cmp.crit{border-left-color:var(--crit);background:var(--crit-soft)}
+#view-risque-view .rv-crows{display:flex;flex-direction:column;gap:7px}
+#view-risque-view .rv-crow{display:grid;grid-template-columns:minmax(0,190px) minmax(40px,1fr) 46px 86px;gap:10px;align-items:center;font-size:13px}
+#view-risque-view .rv-cl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#view-risque-view .rv-ctrack{display:block;height:10px;border-radius:3px;background:var(--sunk);overflow:hidden}
+#view-risque-view .rv-ctrack span{display:block;height:100%;background:var(--s6);border-radius:3px}
+#view-risque-view .rv-cv{text-align:right}
+#view-risque-view .rv-cp{text-align:right;font-size:11.5px}
+#view-risque-view .rv-how{margin-top:14px}
+#view-risque-view .rv-how summary,#view-risque-view .rv-classes summary{cursor:pointer;font-weight:600;color:var(--accent)}
+#view-risque-view .rv-how p{margin:8px 0 0;max-width:760px;line-height:1.5}
+
+/* rattachement des poches */
+#view-risque-view .rv-classes[hidden]{display:none}
+#view-risque-view .rv-classes>div>p{margin:10px 0}
+#view-risque-view .rv-prows{display:flex;flex-direction:column}
+#view-risque-view .rv-prow{display:flex;justify-content:space-between;align-items:center;gap:8px 14px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line)}
+#view-risque-view .rv-pn{display:flex;flex-direction:column;gap:2px;min-width:0}
+#view-risque-view .rv-prow select{min-height:40px;width:min(100%,280px);font:500 14px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--radius-sm);padding:6px 8px}
+#view-risque-view .rv-pmsg{margin:8px 0 0;color:var(--muted)}
+#view-risque-view .rv-pmsg:empty{display:none}
+#view-risque-view .rv-caption{margin:0;font-size:11px}
+
+@media (prefers-reduced-motion:no-preference){#view-risque-view .rv-pbar>span{transition:width .25s ease}#view-risque-view .rv-real,#view-risque-view .rv-mark{transition:all .3s ease}}
+@media (max-width:700px){#view-risque-view .rv-hero{grid-template-columns:minmax(0,1fr)}#view-risque-view .rv-crow{grid-template-columns:minmax(0,1fr) 70px 44px}#view-risque-view .rv-cp{display:none}}
+@media (max-width:420px){#view-risque-view .rv-quiz{padding:14px}#view-risque-view .rv-q{font-size:18px}#view-risque-view .rv-gb span{font-size:9px}#view-risque-view .rv-nav .rv-btn{flex:1}}
