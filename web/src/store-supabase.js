@@ -25,7 +25,18 @@
    (biens et crédits intacts) ; les autres clés du patch passent par l'écriture complète du profil.
    budget = { lignes: [{ id, type: revenu|depense|epargne, categorie, libelle, montant, frequence: mois|an, owner? }] } | null
    objectifs = [{ id, nom, type: apport|matelas|retraite|projet, cible, dateCible, deja, source: saisi|poches, poches, enveloppes,
-   rendement, priorite }] (colonne date_cible ↔ dateCible ; tri par priorité puis création). */
+   rendement, priorite }] (colonne date_cible ↔ dateCible ; tri par priorité puis création).
+   propositions = [{ id, lot, cible: profil|budget|position|bien|credit|objectif|risque|protection, operation: creer|modifier|supprimer,
+   ref, avant, apres, source, justification, statut: en_attente|acceptee|refusee, creeLe, decideLe }] : les 200 dernières, les plus
+   récentes d'abord (table propositions, déposées par le connecteur MCP). `apres` / `avant` suivent les noms des colonnes SQL
+   (positions : name, envelope, owner, bloc, mode, isin, qty, pru, value, value_date, price_override, status, note, transaction? ;
+   biens : nom, usage, valeur, part_p1, crd, mensualite, loyer ; credits : nom, owner, crd, mensualite ; objectifs : nom, type, cible,
+   date_cible, deja, source, poches, enveloppes, rendement, priorite ; budget : une ligne ; profil : { foyer?, personnes?, autres? } ;
+   risque : réponses { horizon, reaction, … } ; protection : { prevoyance, emprunteur }) — détail dans supabase/migrations/0007.
+   Store.propositions.appliquer(ids, modifications = { <id>: apresModifie }) → { appliquees } (RPC appliquer_propositions, tout ou
+   rien) ; Store.propositions.refuser(ids) → { refusees } (RPC refuser_propositions) ; rechargement puis émission ; erreur
+   { code: "invalid_argument", message } en français si une cible est invalide.
+   profil.biensRenseignes = true quand foyer.biensRenseignes l'est (« aucun bien ni crédit » est une réponse, bilan-etat.js). */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -37,7 +48,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -67,6 +78,7 @@
       objectifs: clone(C.objectifs),
       risque: clone(C.risque),
       classes: clone(C.classes) || {},
+      propositions: clone(C.propositions),
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -119,6 +131,11 @@
     biens: biens.map(b => ({ id: b.id, nom: b.nom, usage: b.usage, valeur: num(b.valeur), part_p1: num(b.part_p1), crd: num(b.crd), mensualite: num(b.mensualite), loyer: num(b.loyer) })),
     credits: credits.map(c => ({ id: c.id, nom: c.nom, owner: c.owner, crd: num(c.crd), mensualite: num(c.mensualite) })),
     updatedAt: p.updated_at,
+    ...(p.foyer && p.foyer.biensRenseignes ? { biensRenseignes: true } : {}),
+  });
+  const propView = r => ({
+    id: r.id, lot: r.lot, cible: r.cible, operation: r.operation, ref: r.ref ?? null, avant: r.avant ?? null, apres: r.apres ?? null,
+    source: r.source, justification: r.justification ?? null, statut: r.statut, creeLe: r.cree_le, decideLe: r.decide_le ?? null,
   });
   const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
   const objView = r => ({
@@ -139,8 +156,9 @@
       q(sb.from("status").select("*").maybeSingle()),
       q(sb.from("budgets").select("*").maybeSingle()),
       q(sb.from("objectifs").select("*").order("priorite").order("created_at")),
+      q(sb.from("propositions").select("*").order("cree_le", { ascending: false }).limit(200)),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -151,6 +169,7 @@
     if (status !== undefined) C.status = status ? stView(status) : null;
     if (budget !== undefined) C.budget = budget ? budgetView(budget) : null;
     if (objectifs !== undefined) C.objectifs = (objectifs || []).map(objView);
+    if (propositions !== undefined) C.propositions = (propositions || []).map(propView);
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
     if (prof !== undefined) { C.risque = (prof && prof.risque) || null; C.classes = (prof && prof.classes) || {}; }
     if (prof !== undefined && biens !== undefined && credits !== undefined) C.profil = prof ? profView(prof, biens || [], credits || []) : null;
@@ -394,9 +413,30 @@
     },
   };
 
+  /* ---------- propositions de Claude : décision par les RPC security invoker (RLS) ---------- */
+  const idsValides = ids => [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(id => UUID.test(id)))];
+  const decision = e => { const x = asErr(e); if (x.code === "22023" || x.code === "P0001") x.code = "invalid_argument"; return x; };
+  const propositions = {
+    async appliquer(ids, modifications = {}) {
+      const p_ids = idsValides(ids);
+      const mods = modifications == null ? {} : modifications;
+      if (typeof mods !== "object" || Array.isArray(mods)) throw bad("Modifications invalides : objet { identifiant: valeur } attendu.");
+      if (!p_ids.length) return { appliquees: 0 };
+      try { return await write(async () => ({ appliquees: +(await q(sb.rpc("appliquer_propositions", { p_ids, p_modifications: mods }))) || 0 })); }
+      catch (e) { throw decision(e); }
+    },
+    async refuser(ids) {
+      const p_ids = idsValides(ids);
+      if (!p_ids.length) return { refusees: 0 };
+      try { return await write(async () => ({ refusees: +(await q(sb.rpc("refuser_propositions", { p_ids }))) || 0 })); }
+      catch (e) { throw decision(e); }
+    },
+  };
+
   const Store = {
     mode: "supabase",
     db,
+    propositions,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

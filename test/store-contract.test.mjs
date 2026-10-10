@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const Calc = require("../web/src/calc.js");
 const src = f => readFileSync(new URL("../web/src/" + f, import.meta.url), "utf8");
 
-function browser({ search = "?demo", mode } = {}) {
+function browser({ search = "?demo", mode, prep } = {}) {
   const mem = new Map();
   const ctx = {
     console, setTimeout, clearTimeout,
@@ -25,6 +25,7 @@ function browser({ search = "?demo", mode } = {}) {
   ctx.window = ctx;
   vm.createContext(ctx);
   vm.runInContext(src("demo-data.js"), ctx, { filename: "demo-data.js" });
+  if (prep) prep(ctx.DEMO);
   vm.runInContext(src("store-demo.js"), ctx, { filename: "store-demo.js" });
   return ctx;
 }
@@ -52,7 +53,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -303,6 +304,108 @@ test("démo : façade Diagnostic (risque, classes, protection) sans toucher au r
   assert.equal(ctx.DEMO.risque, null, "window.DEMO n'est pas modifié (copie)");
 });
 
+const PROP_KEYS = ["apres", "avant", "cible", "creeLe", "decideLe", "id", "justification", "lot", "operation", "ref", "source", "statut"];
+
+test("démo : propositions de Claude au contrat (un lot, cinq changements en attente, plusieurs cibles)", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  assert.equal(S.propositions.length, 5);
+  S.propositions.forEach(p => {
+    assert.deepEqual(Object.keys(p).sort(), PROP_KEYS, `forme de la proposition ${p.id}`);
+    assert.equal(p.lot, "demo-lot-1"); assert.equal(p.statut, "en_attente"); assert.equal(p.decideLe, null);
+    assert.ok(["profil", "budget", "position", "bien", "credit", "objectif", "risque", "protection"].includes(p.cible), p.cible);
+    assert.ok(["creer", "modifier", "supprimer"].includes(p.operation), p.operation);
+    assert.ok(p.source && p.source.length <= 500, "source obligatoire");
+    assert.ok(!isNaN(Date.parse(p.creeLe)));
+  });
+  assert.deepEqual(J(S.propositions.map(p => p.cible)).sort(), ["bien", "budget", "position", "protection", "risque"]);
+  assert.ok(S.propositions.some(p => /Relevé PEA du 30\/09/.test(p.source)));
+  const pos = S.propositions.find(p => p.cible === "position");
+  assert.equal(pos.operation, "modifier"); assert.ok(S.positions.some(x => x.id === pos.ref), "la position visée existe");
+  assert.equal(pos.avant.qty, S.positions.find(x => x.id === pos.ref).qty, "avant = valeur actuelle");
+  const bien = S.propositions.find(p => p.cible === "bien");
+  assert.equal(bien.avant.crd, S.profil.biens.find(b => b.id === bien.ref).crd);
+  const Risque = require("../web/src/risque.js");
+  const rq = S.propositions.find(p => p.cible === "risque");
+  for (const [k, v] of Object.entries(rq.apres)) assert.ok(Risque.QUESTIONS.find(q => q.id === k).options.some(o => o.v === v), `réponse valide ${k}=${v}`);
+  assert.equal(typeof ctx.Store.propositions.appliquer, "function");
+  assert.equal(typeof ctx.Store.propositions.refuser, "function");
+});
+
+test("démo : appliquer (avec une valeur modifiée) et refuser changent le statut et les données visées", async () => {
+  const ctx = browser();
+  await whenReady(ctx);
+  const P = ctx.Store.propositions;
+  let n = 0; ctx.Store.on(() => n++);
+  const r = await P.appliquer(["prop-demo-protection", "prop-demo-pea", "prop-demo-sport"], { "prop-demo-pea": { qty: 125 } });
+  assert.deepEqual(J(r), { appliquees: 3 });
+  const S = ctx.Store.get();
+  assert.equal(S.profil.protection.prevoyance, true);
+  assert.equal(S.profil.protection.emprunteur, true);
+  assert.equal(S.positions.find(p => p.id === "pea-etf-monde").qty, 125, "la valeur modifiée par l'utilisateur l'emporte");
+  const sport = S.budget.lignes.find(l => l.libelle === "Salle de sport");
+  assert.ok(sport && sport.id && sport.montant === 39 && sport.frequence === "mois", "ligne de budget ajoutée");
+  const st = id => S.propositions.find(p => p.id === id);
+  for (const id of ["prop-demo-protection", "prop-demo-pea", "prop-demo-sport"]) { assert.equal(st(id).statut, "acceptee"); assert.ok(st(id).decideLe); }
+  assert.deepEqual(J(st("prop-demo-pea").apres), { qty: 125 }, "apres garde la valeur appliquée");
+  assert.equal(st("prop-demo-rp").statut, "en_attente");
+  // déjà décidée : rien ne se passe
+  assert.deepEqual(J(await P.appliquer(["prop-demo-protection"])), { appliquees: 0 });
+
+  assert.deepEqual(J(await P.refuser(["prop-demo-rp", "inconnue"])), { refusees: 1 });
+  const S2 = ctx.Store.get();
+  assert.equal(S2.propositions.find(p => p.id === "prop-demo-rp").statut, "refusee");
+  assert.equal(S2.profil.biens.find(b => b.id === "bien-rp").crd, 150000, "refuser ne touche pas aux données");
+
+  await P.appliquer(["prop-demo-risque"]);
+  assert.deepEqual(J(ctx.Store.get().risque), { reponses: { horizon: "8-15", reaction: "rien" } });
+  await wait(100);
+  assert.ok(n >= 1, "les abonnés ont été notifiés");
+  assert.equal(ctx.DEMO.propositions[0].statut, "en_attente", "window.DEMO n'est pas modifié (copie)");
+});
+
+test("démo : propositions — tout ou rien, refus en français", async () => {
+  const ctx = browser();
+  const S0 = await whenReady(ctx);
+  const P = ctx.Store.propositions;
+  // une modification invalide annule toute la décision
+  await assert.rejects(P.appliquer(["prop-demo-protection", "prop-demo-sport"], { "prop-demo-sport": { type: "salaire", montant: 10 } }),
+    e => e.code === "invalid_argument" && /Proposition non appliquée \(ligne de budget, creer\)/.test(e.message) && /type/.test(e.message));
+  const S = ctx.Store.get();
+  assert.deepEqual(J(S.profil.protection), {}, "rien n'est appliqué");
+  assert.ok(S.propositions.every(p => p.statut === "en_attente"));
+  assert.equal(S.budget.lignes.length, S0.budget.lignes.length);
+  await assert.rejects(P.appliquer(["prop-demo-pea"], [1]), e => e.code === "invalid_argument");
+});
+
+test("démo : propositions sur les autres cibles (profil, crédit, bien, objectif, placement avec mouvement)", async () => {
+  const add = (id, cible, operation, ref, apres) => ({ id, lot: "l2", cible, operation, ref, avant: null, apres, source: "test", justification: null,
+    statut: "en_attente", creeLe: "2026-10-10T10:00:0" + id.slice(-1) + ".000Z", decideLe: null });
+  const ctx = browser({ prep: D => D.propositions.push(
+    add("x1", "profil", "modifier", null, { foyer: { tmi: 41 }, personnes: { p2: { salaire: 2500 } } }),
+    add("x2", "credit", "supprimer", "credit-auto", null),
+    add("x3", "bien", "creer", null, { nom: "Studio", usage: "locatif", valeur: 120000, loyer: 550 }),
+    add("x4", "objectif", "modifier", "obj-apport", { date_cible: "2030-06-30", cible: 70000 }),
+    add("x5", "position", "creer", null, { name: "Livret jeune", envelope: "Livrets", owner: "p1", bloc: "Épargne", mode: "manual", value: 1600, value_date: "2026-09-30",
+      transaction: { date: "2026-09-30", type: "solde", amount: 1600 } }),
+    add("x6", "bien", "modifier", "inconnu", { crd: 1 })) });
+  await whenReady(ctx);
+  const r = await ctx.Store.propositions.appliquer(["x1", "x2", "x3", "x4", "x5"]);
+  assert.deepEqual(J(r), { appliquees: 5 });
+  const S = ctx.Store.get();
+  assert.equal(S.profil.foyer.tmi, 41); assert.equal(S.profil.foyer.adultes, 2, "fusion : le reste du foyer est conservé");
+  assert.equal(S.profil.personnes.p2.salaire, 2500); assert.equal(S.profil.personnes.p2.nom, "Sam");
+  assert.equal(S.profil.credits.length, 0);
+  assert.ok(S.profil.biens.some(b => b.nom === "Studio" && b.usage === "locatif" && b.loyer === 550 && b.id));
+  const ap = S.objectifs.find(o => o.id === "obj-apport");
+  assert.equal(ap.dateCible, "2030-06-30"); assert.equal(ap.cible, 70000);
+  const lj = S.positions.find(p => p.name === "Livret jeune");
+  assert.ok(lj && lj.value === 1600 && lj.valueDate === "2026-09-30" && lj.status === "actif");
+  assert.equal(S.tx[0].positionId, lj.id); assert.equal(S.tx[0].type, "solde"); assert.equal(S.tx[0].source, "mcp");
+  await assert.rejects(ctx.Store.propositions.appliquer(["x6"]), e => e.code === "invalid_argument" && /introuvable/.test(e.message));
+  assert.equal(ctx.Store.get().propositions.find(p => p.id === "x6").statut, "en_attente");
+});
+
 test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = demo", () => {
   assert.equal(browser({ search: "" }).Store, undefined);
   assert.equal(browser({ search: "?x=1&demo" }).Store?.mode, "demo");
@@ -325,6 +428,8 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
   for (const k of ["ter, zone, devise, annote_source, annote_le", "ins.annote_source", "prof.risque", "prof.classes", "protection: p.protection || {}",
     'const DIAG = ["risque", "classes", "protection"]', "updateProfil(patch, uid)", "risque: clone(C.risque)", "classes: clone(C.classes) || {}"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   assert.ok(demo.includes('const DIAG = ["risque", "classes", "protection"]'), "store-demo.js : mêmes colonnes du Diagnostic");
+  for (const k of ['from("propositions")', 'order("cree_le", { ascending: false }).limit(200)', 'rpc("appliquer_propositions", { p_ids, p_modifications: mods })',
+    'rpc("refuser_propositions", { p_ids })', "propositions: clone(C.propositions)", "propositions,"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["price_override", "value_date", "qty_estimated", "request_instrument", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")', 'from("budgets")', 'from("objectifs")', "date_cible", "upsert(row)", "delete()"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["signInWithPassword", "signUp", "signInWithOtp", 'provider: "google"', "onAuthStateChange", "requireSession", "index.html"]) assert.ok(auth.includes(k), `auth.js : ${k}`);
 });

@@ -331,6 +331,15 @@
     }
     return { mods: out };
   }
+  /* La base fusionne les réponses au profil de risque sans recalculer le profil : on le recalcule ici avec le
+     même moteur que le questionnaire, pour que le Bilan et les Bonnes pratiques ne gardent pas un profil périmé. */
+  async function recalculerRisque() {
+    const R = window.Risque, st = window.Store && Store.get(), rq = st && st.risque;
+    if (!R || !rq || !rq.reponses) return;
+    const ev = R.evaluer(rq.reponses, {});
+    if (!ev || ev.profil == null || (rq.profil === ev.profil && rq.score === ev.score)) return;
+    await Store.db.doc("profil/main").update({ risque: Object.assign({}, rq, { profil: ev.profil, score: ev.score, date: new Date().toISOString() }) });
+  }
   async function agir(kind, ids) {
     const api = P();
     if (!api) return dire("Les propositions ne sont pas disponibles dans cette vue.");
@@ -340,7 +349,9 @@
     busy = true; barre();
     try {
       if (kind === "ok") {
+        const touchesRisque = ((window.Store && Store.get().propositions) || []).some(x => ids.includes(x.id) && x.cible === "risque");
         const r = await api.appliquer(ids, m);
+        if (touchesRisque) await recalculerRisque();
         const n = r && r.appliquees != null ? (Array.isArray(r.appliquees) ? r.appliquees.length : +r.appliquees) : ids.length;
         dire(pluriel(n, "changement enregistré", "changements enregistrés") + ".", true);
       } else {

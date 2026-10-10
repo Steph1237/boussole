@@ -151,7 +151,24 @@
   // Profil de risque jamais rempli (le Diagnostic propose le questionnaire) ; aucune surcharge poche → classe.
   const risque = null, classes = {};
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes };
+  /* Propositions de Claude en attente (entretien guidé) : un lot de cinq changements, comme si l'assistant venait de lire
+     un relevé collé par l'utilisateur. `apres` (et `avant`) suivent les noms des colonnes SQL (voir supabase/migrations/0007). */
+  const Pr = (id, cible, operation, ref, avant, apres, source, justification, minutes) => ({ id, lot: "demo-lot-1", cible, operation, ref, avant, apres,
+    source, justification, statut: "en_attente", creeLe: new Date(now - minutes * 6e4).toISOString(), decideLe: null });
+  const propositions = [
+    Pr("prop-demo-protection", "protection", "creer", null, null, { prevoyance: true, emprunteur: true },
+      "Déclaration de l'utilisateur pendant l'entretien", "Camille a une prévoyance d'entreprise complétée par un contrat individuel ; les deux prêts sont assurés à 100 % chacun.", 14),
+    Pr("prop-demo-pea", "position", "modifier", "pea-etf-monde", { qty: 120 }, { qty: 124 },
+      "Relevé PEA du 30/09 (collé par l'utilisateur)", "Le relevé indique 124 parts d'ETF MSCI World : 4 parts achetées depuis la dernière mise à jour.", 13),
+    Pr("prop-demo-rp", "bien", "modifier", "bien-rp", { crd: 150000 }, { crd: 147800 },
+      "Tableau d'amortissement du prêt immobilier (collé par l'utilisateur)", "Capital restant dû après l'échéance de septembre.", 12),
+    Pr("prop-demo-sport", "budget", "creer", null, null, { type: "depense", categorie: "Loisirs", libelle: "Salle de sport", montant: 39, frequence: "mois" },
+      "Relevé bancaire de septembre (collé par l'utilisateur)", "Prélèvement mensuel récurrent absent du budget.", 11),
+    Pr("prop-demo-risque", "risque", "creer", null, null, { horizon: "8-15", reaction: "rien" },
+      "Réponses de l'utilisateur pendant l'entretien", "Deux premières réponses du questionnaire de risque ; les huit autres restent à poser.", 10),
+  ];
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);
