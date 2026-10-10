@@ -154,4 +154,8 @@ body{margin:0}
 .app-link{font:600 13px var(--f-body);color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:1px}
 .app-link:hover{color:var(--ink)}
 .banner.demo{background:var(--accent-soft)}
+.banner.anon:not([hidden]){display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.banner.anon span{min-width:0}
+.banner-x{flex:none;border:0;background:transparent;color:var(--muted);font:400 18px/1 var(--f-body);width:28px;height:28px;margin:-4px -6px -4px 0;border-radius:6px;cursor:pointer}
+.banner-x:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
 .banner a{color:var(--accent);font-weight:600}

@@ -1,11 +1,15 @@
 /* Page « Mon compte » (compte.html) : e-mail, mot de passe, connecteurs d'assistant, export, suppression.
    Dépend de window.Auth (auth.js). Toutes les lectures passent par le client de la session : RLS borne tout
-   au compte courant. Suppression : RPC delete_me() (security definer, supprime auth.users → cascade). */
+   au compte courant. Suppression : RPC delete_me() (security definer, supprime auth.users → cascade).
+   Compte anonyme (« Commencer sans e-mail ») : section #securiser (Auth.secureAccount) à la place des sections
+   e-mail et mot de passe ; suppression confirmée par « SUPPRIMER ». Sans service d'e-mail (BOUSSOLE.emails !== true),
+   le changement d'adresse est immédiat (aucun courrier de confirmation). */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
   const A = window.Auth || null;
-  let client = null, user = null, people = {};
+  const EMAILS = !!(window.BOUSSOLE && window.BOUSSOLE.emails === true);
+  let client = null, user = null, people = {}, anon = false;
 
   /* ---------- messages ---------- */
   function frError(e) {
@@ -13,7 +17,10 @@
     const m = String((e && e.message) || "");
     const is = (codes, re) => codes.includes(code) || (re && re.test(m));
     if (is(["same_password"], /different from the old/i)) return "Le nouveau mot de passe doit être différent de l'ancien.";
-    if (is(["weak_password"], /password should|weak password/i)) return "Mot de passe trop faible : 8 caractères au moins, avec des lettres et des chiffres.";
+    if (is(["email_confirmation_required"])) return m;
+    const weak = A && A.weakPasswordText ? A.weakPasswordText(e) : null;
+    if (weak) return weak;
+    if (is(["weak_password"], /password should|weak password/i)) return "Mot de passe trop faible : 8 caractères minimum, avec des lettres et des chiffres.";
     if (is(["reauthentication_needed"], /reauthentic/i)) return "Pour des raisons de sécurité, déconnectez-vous puis reconnectez-vous avant de changer de mot de passe.";
     if (is(["email_exists", "user_already_exists"], /already (registered|been registered|exists)/i)) return "Cette adresse est déjà utilisée par un autre compte.";
     if (is(["email_address_invalid"], /invalid.*email|email.*invalid|unable to validate email/i)) return "Adresse e-mail invalide.";
@@ -49,9 +56,22 @@
     if (user && v.toLowerCase() === String(user.email || "").toLowerCase()) { say("emailMsg", "C'est déjà votre adresse actuelle."); return; }
     busy(e.submitter || $("emailForm").querySelector("button"), async () => {
       try {
-        await run(client.auth.updateUser({ email: v }, { emailRedirectTo: location.href.split("#")[0] }));
-        say("emailMsg", "Un lien de confirmation a été envoyé à " + v + ". Le changement prend effet quand vous l'ouvrez (un second lien peut aussi être envoyé à votre adresse actuelle).", "ok");
-        $("newEmail").value = "";
+        if (EMAILS) {
+          await run(client.auth.updateUser({ email: v }, { emailRedirectTo: location.href.split("#")[0] }));
+          say("emailMsg", "Un lien de confirmation a été envoyé à " + v + ". Le changement prend effet quand vous l'ouvrez (un second lien peut aussi être envoyé à votre adresse actuelle).", "ok");
+          $("newEmail").value = "";
+          return;
+        }
+        // Sans service d'e-mail : changement immédiat. Si le serveur laisse l'adresse « en attente », il exige une confirmation.
+        const data = await run(client.auth.updateUser({ email: v }));
+        const u = data && data.user;
+        if (u && String(u.email || "").toLowerCase() === v.toLowerCase()) {
+          user = u; $("curEmail").textContent = u.email; $("pwUser").value = u.email; $("newEmail").value = "";
+          $("who").textContent = "Connecté avec " + u.email + ".";
+          say("emailMsg", "Adresse modifiée : connectez-vous désormais avec " + u.email + ".", "ok");
+        } else {
+          say("emailMsg", "Le serveur demande de confirmer la nouvelle adresse par e-mail, mais Boussole n'envoie pas d'e-mail pour le moment. Votre adresse actuelle reste valable. Écrivez à stephane@ceres.agency pour la changer.");
+        }
       } catch (err) { say("emailMsg", frError(err)); }
     });
   });
@@ -60,7 +80,8 @@
   $("pwForm").addEventListener("submit", e => {
     e.preventDefault();
     const a = $("pw1").value, b = $("pw2").value;
-    if (a.length < 8) { say("pwMsg", "Choisissez un mot de passe d'au moins 8 caractères."); return; }
+    const weak = A.passwordProblem(a);
+    if (weak) { say("pwMsg", weak); return; }
     if (a !== b) { say("pwMsg", "Les deux mots de passe ne sont pas identiques."); return; }
     busy(e.submitter || $("pwForm").querySelector("button"), async () => {
       try {
@@ -68,6 +89,25 @@
         $("pw1").value = ""; $("pw2").value = "";
         say("pwMsg", "Mot de passe modifié.", "ok");
       } catch (err) { say("pwMsg", frError(err)); }
+    });
+  });
+
+  /* ---------- compte anonyme → compte permanent ---------- */
+  $("secForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const em = $("secEmail").value.trim(), a = $("secPw1").value, b = $("secPw2").value;
+    if (!EMAIL.test(em)) { say("secMsg", "Indiquez une adresse e-mail valide."); $("secEmail").focus(); return; }
+    const weak = A.passwordProblem(a);
+    if (weak) { say("secMsg", weak); $("secPw1").focus(); return; }
+    if (a !== b) { say("secMsg", "Les deux mots de passe ne sont pas identiques."); $("secPw2").focus(); return; }
+    busy($("secBtn"), async () => {
+      try {
+        await A.secureAccount(em, a);
+        $("secPw1").value = ""; $("secPw2").value = "";
+        say("secMsg", "Compte sécurisé. Vous pouvez maintenant vous connecter avec " + em + " sur n'importe quel appareil.", "ok");
+        // La page se recharge en compte normal (sections e-mail et mot de passe).
+        setTimeout(() => location.replace(location.pathname + location.search), 1800);
+      } catch (err) { say("secMsg", frError(err)); }
     });
   });
 
@@ -158,7 +198,10 @@
   }));
 
   /* ---------- suppression ---------- */
-  const matches = () => !!user && $("delConfirm").value.trim().toLowerCase() === String(user.email || "").toLowerCase();
+  // Compte anonyme : pas d'adresse à retaper, on demande « SUPPRIMER ».
+  const matches = () => !!user && (anon
+    ? $("delConfirm").value.trim().toUpperCase() === "SUPPRIMER"
+    : $("delConfirm").value.trim().toLowerCase() === String(user.email || "").toLowerCase());
   $("delConfirm").addEventListener("input", () => { $("delBtn").disabled = !matches(); });
   $("delForm").addEventListener("submit", e => {
     e.preventDefault();
@@ -191,10 +234,20 @@
     const s = await A.requireSession({ demoOk: false });
     if (!s) return; // redirection vers index.html#connexion en cours
     client = A.client; user = s.user;
-    $("who").textContent = "Connecté avec " + (user.email || "votre compte") + ".";
+    anon = A.isAnonymous(s);
+    $("who").textContent = anon ? "Compte sans e-mail, lié à ce navigateur." : "Connecté avec " + (user.email || "votre compte") + ".";
+    $("securiser").hidden = !anon;
+    $("cardEmail").hidden = anon; $("cardPw").hidden = anon;
+    $("mcpAnon").hidden = !anon;
+    if (EMAILS) $("emailNote").hidden = true;
+    if (anon) {
+      $("delLabel").textContent = "Tapez SUPPRIMER pour confirmer";
+      $("delConfirm").type = "text";
+    }
     $("curEmail").textContent = user.email || "—";
     $("pwUser").value = user.email || "";
     $("main").hidden = false;
+    if (anon && location.hash === "#securiser") $("secEmail").focus();
     A.onChange((ev, sess) => {
       if (!sess) { location.replace(A.urls.connexion()); return; }
       user = sess.user; $("curEmail").textContent = user.email || "—"; $("delBtn").disabled = !matches();

@@ -74,6 +74,11 @@ input.mono{font-family:var(--f-num);font-size:14px}
 .msg{margin:0;padding:10px 12px;border-radius:var(--radius-sm);font-size:14px}
 .msg.err{background:var(--crit-soft)}
 .msg.ok{background:var(--good-soft)}
+.msg.info{background:var(--warn-soft)}
+.msg a{color:var(--accent);font-weight:600}
+.card.secure{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.secform{display:flex;flex-direction:column;gap:12px;margin:0}
+.secform > .fld{flex:none}
 .msg:empty{display:none}
 .copyline{display:flex;gap:8px;align-items:stretch}
 .copyline input{flex:1;min-width:0}
@@ -111,7 +116,32 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
   </div>
 
   <main id="main" class="stack" hidden>
-    <section class="card" aria-labelledby="h-email">
+    <!-- Compte anonyme (« Commencer sans e-mail ») : affiché par account.js, à la place des sections e-mail et mot de passe. -->
+    <section class="card secure" id="securiser" aria-labelledby="h-sec" hidden>
+      <h2 id="h-sec">Sécuriser mon compte</h2>
+      <p>Votre compte n'a pas encore d'adresse e-mail : vos données ne sont accessibles que depuis ce navigateur, et un compte sans e-mail inactif pendant 90 jours est supprimé. Ajoutez une adresse et un mot de passe pour retrouver vos données sur n'importe quel appareil.</p>
+      <form class="secform" id="secForm" novalidate>
+        <div class="fld">
+          <label for="secEmail">Adresse e-mail</label>
+          <input class="in" id="secEmail" type="email" autocomplete="email" inputmode="email" required>
+        </div>
+        <div class="row">
+          <div class="fld">
+            <label for="secPw1">Mot de passe</label>
+            <input class="in" id="secPw1" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <div class="fld">
+            <label for="secPw2">Confirmation</label>
+            <input class="in" id="secPw2" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+        </div>
+        <p class="muted small">8 caractères minimum, avec des lettres et des chiffres. Aucun e-mail ne vous sera envoyé : l'adresse sert d'identifiant de connexion.</p>
+        <div><button type="submit" class="btn" id="secBtn">Sécuriser mon compte</button></div>
+      </form>
+      <p class="msg" id="secMsg" role="status"></p>
+    </section>
+
+    <section class="card" id="cardEmail" aria-labelledby="h-email">
       <h2 id="h-email">Adresse e-mail</h2>
       <p class="muted small">Adresse actuelle</p>
       <p class="cur" id="curEmail"></p>
@@ -122,10 +152,11 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
         </div>
         <button type="submit" class="btn ghost">Changer d'adresse</button>
       </form>
+      <p class="muted small" id="emailNote">Le changement est immédiat : aucun e-mail de confirmation n'est envoyé. Connectez-vous ensuite avec la nouvelle adresse.</p>
       <p class="msg" id="emailMsg" role="status"></p>
     </section>
 
-    <section class="card" aria-labelledby="h-pw">
+    <section class="card" id="cardPw" aria-labelledby="h-pw">
       <h2 id="h-pw">Mot de passe</h2>
       <form class="row" id="pwForm" novalidate>
         <input type="email" autocomplete="username" id="pwUser" hidden>
@@ -139,12 +170,13 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
         </div>
         <button type="submit" class="btn ghost">Changer le mot de passe</button>
       </form>
-      <p class="muted small">8 caractères au moins. Si vous vous êtes connecté par lien e-mail ou par Google, vous pouvez en définir un ici.</p>
+      <p class="muted small">8 caractères minimum, avec des lettres et des chiffres. Si vous vous êtes connecté avec Google, vous pouvez en définir un ici.</p>
       <p class="msg" id="pwMsg" role="status"></p>
     </section>
 
     <section class="card" aria-labelledby="h-mcp">
       <h2 id="h-mcp">Connecteurs d'assistant</h2>
+      <p class="msg info" id="mcpAnon" hidden>Pour brancher un assistant, ajoutez d'abord un e-mail et un mot de passe à votre compte : <a href="#securiser">Sécuriser mon compte</a>.</p>
       <p>Un connecteur permet à Claude de lire votre situation et de mettre à jour vos placements quand vous le lui demandez. Il ne voit que votre compte, et seulement après votre autorisation. Il ne peut ni exporter vos données ni supprimer votre compte.</p>
       <div class="fld">
         <label for="mcpUrl">Adresse du connecteur</label>
@@ -180,7 +212,7 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
       <p>La suppression efface immédiatement votre compte et toutes vos données : profil, placements, historique, réglages et autorisations des connecteurs. Elle est définitive. Pensez à télécharger vos données avant.</p>
       <form class="row" id="delForm" novalidate>
         <div class="fld">
-          <label for="delConfirm">Tapez votre adresse e-mail pour confirmer</label>
+          <label for="delConfirm" id="delLabel">Tapez votre adresse e-mail pour confirmer</label>
           <input class="in" id="delConfirm" type="email" autocomplete="off" spellcheck="false">
         </div>
         <button type="submit" class="btn danger" id="delBtn" disabled>Supprimer définitivement</button>

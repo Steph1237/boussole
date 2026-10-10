@@ -1,12 +1,16 @@
 /* Page de consentement OAuth 2.1 (connecteurs MCP) : web/oauth/consent.html.
    Supabase Auth redirige ici avec ?authorization_id=… ; on exige une session (connexion sur place si besoin),
    on affiche le client et les droits demandés, puis on approuve ou refuse et on renvoie vers le client.
-   API : supabase.auth.oauth.getAuthorizationDetails / approveAuthorization / denyAuthorization (supabase-js ≥ 2.8x). */
+   API : supabase.auth.oauth.getAuthorizationDetails / approveAuthorization / denyAuthorization (supabase-js ≥ 2.8x).
+   Sans service d'e-mail (BOUSSOLE.emails !== true) : connexion par mot de passe uniquement (pas de lien magique).
+   Un compte anonyme (« Commencer sans e-mail ») ne peut pas autoriser de connecteur : il doit d'abord être sécurisé. */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
   const cfg = window.BOUSSOLE || {};
   const authId = new URLSearchParams(location.search).get("authorization_id");
+  const EMAILS = cfg.emails === true;
+  const isAnon = session => !!(session && session.user && session.user.is_anonymous);
   let sb = null, state = "loading", busy = false, lastRetry = null, signingIn = false;
 
   /* ---------- états ---------- */
@@ -52,7 +56,9 @@
     if (isNetwork(e)) return "Impossible de joindre Boussole. Vérifiez votre connexion puis réessayez.";
     switch (e.code) {
       case "invalid_credentials": return "E-mail ou mot de passe incorrect.";
-      case "email_not_confirmed": return "Adresse e-mail pas encore confirmée : ouvrez le lien reçu lors de l'inscription.";
+      case "email_not_confirmed": return EMAILS
+        ? "Adresse e-mail pas encore confirmée : ouvrez le lien reçu lors de l'inscription."
+        : "Adresse e-mail pas confirmée, et Boussole n'envoie pas d'e-mail pour le moment. Écrivez à stephane@ceres.agency.";
       case "otp_disabled":
       case "signup_disabled":
       case "user_not_found": return "Aucun compte Boussole n'utilise cette adresse.";
@@ -122,6 +128,8 @@
     const { data: s } = await sb.auth.getSession();
     const session = s && s.session;
     if (!session) return showSignin();
+    // Compte anonyme : pas d'autorisation de connecteur tant qu'il n'a ni e-mail ni mot de passe.
+    if (isAnon(session)) return show("anon");
     let res;
     try { res = await sb.auth.oauth.getAuthorizationDetails(authId); }
     catch (e) { res = { data: null, error: e }; }
@@ -157,6 +165,10 @@
 
   async function decide(approve) {
     if (busy) return;
+    if (approve) {
+      const { data: s } = await sb.auth.getSession().catch(() => ({ data: null }));
+      if (isAnon(s && s.session)) return show("anon");
+    }
     setBusy(true);
     $(approve ? "approveBtn" : "denyBtn").textContent = approve ? "Autorisation…" : "Refus…";
     let res;
@@ -204,7 +216,7 @@
       ev.preventDefault();
       const email = $("email").value.trim(), password = $("password").value;
       if (!email) return note($("signinMsg"), "Indiquez votre adresse e-mail.");
-      if (!password) return note($("signinMsg"), "Indiquez votre mot de passe, ou recevez un lien de connexion par e-mail.");
+      if (!password) return note($("signinMsg"), EMAILS ? "Indiquez votre mot de passe, ou recevez un lien de connexion par e-mail." : "Indiquez votre mot de passe.");
       setSigninBusy(true); note($("signinMsg"), "");
       let res;
       signingIn = true;
@@ -215,7 +227,8 @@
       loadDetails();
     });
 
-    $("otpBtn").addEventListener("click", async () => {
+    $("otpBox").hidden = !EMAILS;
+    if (EMAILS) $("otpBtn").addEventListener("click", async () => {
       const email = $("email").value.trim();
       if (!email) { note($("signinMsg"), "Indiquez d'abord votre adresse e-mail."); return $("email").focus(); }
       setSigninBusy(true); note($("signinMsg"), "");

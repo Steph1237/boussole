@@ -72,6 +72,9 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,6.2vw,64px)
 .btn.ghost:hover{border-color:var(--accent);filter:none}
 .btn:disabled{opacity:.55;cursor:default;filter:none}
 .fine{margin:14px 0 0;font-size:13px;color:var(--muted)}
+.anon-line{margin-top:10px;max-width:52ch}
+.anon-msg{margin-top:12px;max-width:52ch}
+.demo-link{color:var(--accent);font-weight:600;text-underline-offset:3px}
 
 /* vignette : un registre de banquier, en silhouette */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0;box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px -24px rgba(24,34,44,.25)}
@@ -143,6 +146,7 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
 .msg.ok{background:var(--good-soft)}
 .msg:empty{display:none}
 .hint{margin:0;font-size:12px;color:var(--muted)}
+.hint a{color:var(--accent);overflow-wrap:anywhere}
 .g{width:18px;height:18px;flex:none}
 </style>
 </head>
@@ -163,15 +167,20 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
       <div>
         <h1 id="h-hero">Pilotez votre patrimoine, sans tableur</h1>
         <p class="lede">Boussole rassemble vos placements, votre immobilier et vos revenus au même endroit. Les cours sont mis à jour chaque soir, vous voyez où vous vous situez parmi les ménages français, et vous comparez acheter, louer ou placer avec vos propres chiffres.</p>
-        <div class="ctas" id="ctasOut">
-          <a class="btn" href="app.html?demo">Essayer sans compte</a>
-          <a class="btn ghost" href="#connexion" data-auth="signup">Créer mon compte</a>
+        <div id="ctasOut">
+          <div class="ctas">
+            <button type="button" class="btn" id="anonStart">Commencer sans e-mail</button>
+            <a class="btn ghost" href="#connexion" data-auth="signup">Créer un compte</a>
+            <a class="btn ghost" href="#connexion" data-auth="signin">Se connecter</a>
+          </div>
+          <p class="fine anon-line">Vos données sont enregistrées tout de suite. Ajoutez un e-mail plus tard pour les retrouver sur un autre appareil.</p>
+          <p class="msg err anon-msg" id="anonMsg" role="alert"></p>
         </div>
         <div class="ctas" id="ctasIn" hidden>
           <a class="btn" href="app.html">Ouvrir mon espace</a>
-          <a class="btn ghost" href="compte.html">Mon compte</a>
+          <a class="btn ghost" href="compte.html" id="ctaAccount">Mon compte</a>
         </div>
-        <p class="fine">Gratuit, sans publicité. La démo utilise un foyer d'exemple ; rien n'y est enregistré.</p>
+        <p class="fine">Gratuit, sans publicité. <a class="demo-link" href="app.html?demo">Essayer la démo</a> : un foyer d'exemple, rien n'y est enregistré.</p>
       </div>
 
       <aside class="card" aria-label="Aperçu de l'application, chiffres d'exemple">
@@ -270,17 +279,18 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
       <div class="fld">
         <label for="authPw">Mot de passe</label>
         <input id="authPw" name="password" type="password" autocomplete="current-password" required>
-        <small id="pwHint" hidden>8 caractères au moins.</small>
+        <small id="pwHint" hidden>8 caractères minimum, avec des lettres et des chiffres.</small>
       </div>
       <p class="msg" id="authMsg" role="alert"></p>
       <button type="submit" class="btn" id="authSubmit">Se connecter</button>
-      <button type="button" class="btn ghost" id="authMagic">Recevoir un lien de connexion</button>
+      <!-- Lien magique : affiché par landing.js seulement si BOUSSOLE.emails === true. -->
+      <button type="button" class="btn ghost" id="authMagic" hidden>Recevoir un lien de connexion</button>
       <div class="or">ou</div>
       <button type="button" class="btn ghost" id="authGoogle">
         <svg class="g" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.3V7.1H2.1a11 11 0 0 0 0 9.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3 .6 4.2 1.6l3.1-3.1A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>
         Continuer avec Google
       </button>
-      <p class="hint" id="authHint">Mot de passe oublié ? Recevez un lien de connexion, puis choisissez un nouveau mot de passe dans Mon compte.</p>
+      <p class="hint" id="authHint">Mot de passe oublié : sans service d'e-mail, la réinitialisation n'est pas encore possible. Écrivez à <a href="mailto:stephane@ceres.agency">stephane@ceres.agency</a>.</p>
     </form>
   </div>
 </dialog>

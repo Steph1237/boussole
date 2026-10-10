@@ -90,6 +90,8 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
 @keyframes spin{to{transform:rotate(360deg)}}
 
 .card a{color:var(--accent);text-underline-offset:3px}
+.card a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink)}
+.card a.btn.primary{color:var(--accent-ink)}
 .foot{margin-top:auto;padding-top:24px;font-size:12px;color:var(--muted);text-align:center}
 .foot a{color:inherit;text-decoration:underline;text-underline-offset:3px}
 </style>
@@ -119,11 +121,23 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
         <label>Adresse e-mail<input id="email" type="email" autocomplete="email" inputmode="email" required></label>
         <label>Mot de passe<input id="password" type="password" autocomplete="current-password"></label>
         <button class="btn primary block" id="signinBtn" type="submit">Se connecter</button>
-        <div class="or">ou</div>
-        <button class="btn block" id="otpBtn" type="button">Recevoir un lien de connexion</button>
+        <!-- Lien de connexion par e-mail : affiché par consent.js seulement si BOUSSOLE.emails === true. -->
+        <div id="otpBox" style="display:grid;gap:12px" hidden>
+          <div class="or">ou</div>
+          <button class="btn block" id="otpBtn" type="button">Recevoir un lien de connexion</button>
+        </div>
       </form>
       <p class="msg" id="signinMsg" hidden></p>
       <p class="muted small" style="margin-top:16px">Pas encore de compte&nbsp;? <a href="../">Créez-le sur Boussole</a>, puis relancez la connexion depuis votre assistant.</p>
+    </section>
+
+    <!-- Compte anonyme : il faut d'abord ajouter un e-mail et un mot de passe -->
+    <section data-state="anon" hidden>
+      <p class="eyebrow">Compte à sécuriser</p>
+      <h1>Ajoutez d'abord <span style="white-space:nowrap">un e-mail</span> à votre compte</h1>
+      <p class="muted">Pour brancher un assistant, ajoutez d'abord un e-mail et un mot de passe à votre compte.</p>
+      <p class="muted small">Votre compte a été créé sans e-mail : il n'existe que dans ce navigateur. Une fois sécurisé, relancez la connexion de Boussole depuis votre assistant.</p>
+      <div class="actions"><a class="btn primary" id="secureLink" href="../compte.html#securiser">Sécuriser mon compte</a></div>
     </section>
 
     <!-- Consentement -->
