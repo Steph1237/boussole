@@ -15,7 +15,13 @@ const require = createRequire(import.meta.url);
 
 const path = rel => fileURLToPath(new URL("../" + rel, import.meta.url));
 const src = readFileSync(path("supabase/functions/mcp/index.ts"), "utf8");
-const code = src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""); // sans commentaires
+const sansCommentaires = s => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+const code = sansCommentaires(src); // sans commentaires
+/* Connecteur v6 (AG1) : savoir commun et mémoire de l'agent dans deux modules voisins, enregistrés par index.ts. */
+const srcSavoir = readFileSync(path("supabase/functions/mcp/savoir.ts"), "utf8");
+const srcMemoire = readFileSync(path("supabase/functions/mcp/memoire.ts"), "utf8");
+const srcAll = [src, srcSavoir, srcMemoire].join("\n");
+const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
 const PRM_URL = `${BASE}/.well-known/oauth-protected-resource`;
@@ -25,6 +31,7 @@ const TOOLS = [
   "get_budget", "update_budget", "list_objectifs", "upsert_objectifs", "delete_objectif",
   "get_risk_profile", "annotate_instrument", "etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection",
   "demarrer_onboarding",
+  "demarrer_session", "consulter_savoir", "reperes", "memoriser", "se_souvenir", "oublier",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
@@ -32,12 +39,12 @@ const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bi
 const PROMPTS = ["bilan_complet", "profil_de_risque", "budget", "placements", "revue_mensuelle"];
 /** Section du code d'un outil (de son registerTool au suivant). delete_bien / delete_credit partagent une boucle. */
 function outil(nom) {
-  let i = code.indexOf(`registerTool("${nom}"`);
-  if (i < 0 && /^delete_(bien|credit)$/.test(nom)) i = code.indexOf('[["delete_bien", "biens", "bien", "Bien"]');
+  let i = codeAll.indexOf(`registerTool("${nom}"`);
+  if (i < 0 && /^delete_(bien|credit)$/.test(nom)) i = codeAll.indexOf('[["delete_bien", "biens", "bien", "Bien"]');
   assert.ok(i >= 0, `outil ${nom} introuvable`);
-  const debut = code.startsWith("registerTool(", i) ? i : code.indexOf("registerTool(", i);
-  const j = code.indexOf("registerTool(", debut + 20);
-  return code.slice(i, j > 0 ? j : undefined);
+  const debut = codeAll.startsWith("registerTool(", i) ? i : codeAll.indexOf("registerTool(", i);
+  const j = codeAll.indexOf("registerTool(", debut + 20);
+  return codeAll.slice(i, j > 0 ? j : undefined);
 }
 
 test("mcp : route des métadonnées de ressource protégée (et variante suffixée)", () => {
@@ -64,8 +71,8 @@ test("mcp : jeton vérifié par le serveur avec un client porteur du JWT (RLS)",
 });
 
 test("mcp : tous les outils de la spec sont enregistrés, sans suppression de compte ni export", () => {
-  for (const t of TOOLS) assert.match(code, new RegExp(`["']${t}["']`), `outil ${t} absent`);
-  assert.doesNotMatch(code, /delete_me|export_all|delete_account|auth\.admin/);
+  for (const t of TOOLS) assert.match(codeAll, new RegExp(`["']${t}["']`), `outil ${t} absent`);
+  assert.doesNotMatch(codeAll, /delete_me|export_all|delete_account|auth\.admin/);
 });
 
 test("mcp : budget et objectifs (schémas), get_overview expose le score de santé", () => {
@@ -99,10 +106,13 @@ test("mcp : Diagnostic — annotate_instrument (source obligatoire, RPC), get_ri
   assert.doesNotMatch(src, /dans le Pilotage|du Pilotage/, "libellé « Pilotage » remplacé par Bilan › Placements");
 });
 
-test("mcp : aucune écriture directe dans les tables personnelles, hors propositions (et réglages sans montant)", () => {
-  const ecritures = [...code.matchAll(/from\(\s*"(\w+)"\s*\)\s*\.(insert|update|upsert|delete)\(/g)].map(m => `${m[1]}.${m[2]}`);
+test("mcp : aucune écriture directe dans les tables personnelles, hors propositions, mémoire de l'agent (et réglages sans montant)", () => {
+  const ecritures = [...codeAll.matchAll(/from\(\s*"(\w+)"\s*\)\s*\.(insert|update|upsert|delete)\(/g)].map(m => `${m[1]}.${m[2]}`);
   const tables = new Set(ecritures.map(e => e.split(".")[0]));
-  assert.deepEqual([...tables].sort(), ["config", "propositions"], `écritures trouvées : ${ecritures.join(", ")}`);
+  assert.deepEqual([...tables].sort(), ["config", "memoire_agent", "propositions"], `écritures trouvées : ${ecritures.join(", ")}`);
+  // memoire_agent : écriture directe (ne touche pas au bilan), seulement dans memoire.ts
+  for (const e of ecritures.filter(e => e.startsWith("memoire_agent"))) assert.ok(["memoire_agent.insert", "memoire_agent.update", "memoire_agent.delete"].includes(e), e);
+  assert.doesNotMatch(code, /from\("memoire_agent"\)\.(insert|update|upsert|delete)/, "écriture de la mémoire hors memoire.ts");
   assert.deepEqual([...new Set(ecritures.filter(e => e.startsWith("propositions")))], ["propositions.insert"], "propositions : insertion seulement");
   // config : seulement dans update_config, qui n'accepte plus le matelas ni les versements programmés (montants).
   const cfg = outil("update_config");
@@ -110,9 +120,9 @@ test("mcp : aucune écriture directe dans les tables personnelles, hors proposit
   assert.doesNotMatch(horsCfg, /from\("config"\)\.(insert|update|upsert|delete)/, "écriture de config hors update_config");
   assert.doesNotMatch(cfg, /cushion:\s*CushionPatch|recurring:\s*z\.array/, "update_config : ni matelas ni versements programmés");
   // aucune écriture par des variables de table (ancienne fonction upsertRows) ni RPC d'écriture autre qu'annoter_instrument
-  assert.doesNotMatch(code, /from\(\s*table\s*\)\s*\.(insert|update|upsert|delete)\(/);
-  assert.deepEqual([...new Set([...code.matchAll(/\.rpc\(\s*"(\w+)"/g)].map(m => m[1]))].sort(), ["annoter_instrument", "noter_connexion"],
-    "seules RPC : annoter_instrument et noter_connexion (connexion de l'assistant)");
+  assert.doesNotMatch(codeAll, /from\(\s*table\s*\)\s*\.(insert|update|upsert|delete)\(/);
+  assert.deepEqual([...new Set([...codeAll.matchAll(/\.rpc\(\s*"(\w+)"/g)].map(m => m[1]))].sort(), ["annoter_instrument", "chercher_savoir", "marquer_savoir_vu", "noter_connexion"],
+    "seules RPC : annoter_instrument, noter_connexion (connexion de l'assistant), chercher_savoir et marquer_savoir_vu (savoir commun)");
   assert.match(code, /Proposition|proposition/);
 });
 
@@ -419,8 +429,174 @@ test("connexions : client_id lu dans le jeton (Claude, inconnu, session)", () =>
   assert.deepEqual(J(lire("pas-un-jeton")), { id: "session", nom: "Assistant" });
 });
 
+/* ---------- AG1 : savoir commun et mémoire de l'agent (savoir.ts, memoire.ts, demarrer_session) ---------- */
+test("AG1 : demarrer_session — conduite experte, mémoire, nouveautés par marquer_savoir_vu, lecture", () => {
+  const o = outil("demarrer_session");
+  assert.match(o, /marquer_savoir_vu/);
+  assert.match(o, /CONDUITE_EXPERT/);
+  assert.match(o, /a_suivre_echus/);
+  assert.match(o, /onboarding_conseille/);
+  assert.match(o, /annotations:\s*RO/, "lecture seule");
+  for (const k of ["memoire:", "memoire_total:", "bilan:", "propositions_en_attente:", "nouveautes_savoir:"]) assert.ok(o.includes(k), `réponse : ${k}`);
+  assert.match(o, /client\?\.id \?\? "session"/, "nouveautés propres à chaque client (claim client_id du jeton)");
+  const instr = code.slice(code.indexOf("const INSTRUCTIONS"), code.indexOf("].join", code.indexOf("const INSTRUCTIONS")));
+  assert.match(instr, /demarrer_session/);
+  for (const k of ["reperes", "consulter_savoir", "memoriser", "Mémoire de l'agent"]) assert.ok(instr.includes(k), `instructions : ${k}`);
+  // le client du jeton est transmis au serveur (source des souvenirs, nouveautés par client)
+  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\) \}\)/);
+  assert.match(code, /registerSavoir\(server, h\)/); assert.match(code, /registerMemoire\(server, h\)/);
+});
+test("AG1 : conduite experte — reperes avant tout chiffre, consulter_savoir, mémoire effaçable, jamais d'identifiants", () => {
+  const c = srcAll.slice(srcAll.indexOf("CONDUITE_EXPERT = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_EXPERT = [")));
+  for (const m of [/reperes/, /consulter_savoir/, /memoriser/, /Mémoire de l'agent/, /IBAN/, /mot(s)? de passe/, /pas un conseil en investissement/]) assert.match(c, m);
+});
+test("AG1 : filtre sensible identique au SQL (IBAN, carte, mots interdits) et ISIN accepté", () => {
+  const m = srcAll.match(/export const SENSIBLE = \[([\s\S]*?)\];/);
+  assert.ok(m, "SENSIBLE exporté");
+  const sql = readFileSync(path("supabase/migrations/0009_savoir_memoire.sql"), "utf8");
+  for (const motif of ["[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}", "([0-9][ -]?){12,18}[0-9]", "mot de passe|password|code secret|code pin|identifiant de connexion"]) {
+    assert.ok(sql.includes(motif) && m[1].includes(motif), "motif partagé : " + motif);
+  }
+  const res = [new RegExp("[A-Z]{2}[0-9]{2}( ?[A-Z0-9]){11,30}"), new RegExp("([0-9][ -]?){12,18}[0-9]"), new RegExp("mot de passe|password|code secret|code pin|identifiant de connexion", "i")];
+  const sensible = t => res.some(r => r.test(t));
+  assert.equal(sensible("FR76 3000 6000 0112 3456 7890 189"), true);
+  assert.equal(sensible("IE00B4L5Y983 et FR0010315770"), false);
+  assert.equal(sensible("Achat prévu à 350 000 € en 2028"), false);
+});
+test("AG1 : consulter_savoir et reperes en lecture seule, memoriser / oublier écrivent dans memoire_agent", () => {
+  assert.match(outil("consulter_savoir"), /chercher_savoir/);
+  assert.match(outil("consulter_savoir"), /RO/);
+  assert.match(outil("reperes"), /from\("reperes"\)|lireReperes\(/);
+  assert.match(srcSavoir, /from\("reperes"\)/);
+  assert.match(outil("memoriser"), /from\("memoire_agent"\)\.insert/);
+  assert.match(outil("oublier"), /from\("memoire_agent"\)\.delete/);
+  assert.match(outil("se_souvenir"), /annotations:\s*RO/);
+  assert.match(outil("oublier"), /destructiveHint:\s*true/);
+});
+test("AG1 : demarrer_onboarding renvoie aussi la mémoire, et sa conduite apprend à mémoriser", () => {
+  assert.match(outil("demarrer_onboarding"), /memoire:/);
+  const c = conduiteOnboarding();
+  assert.match(c, /memoriser/); assert.match(c, /jamais d'identifiants/);
+  assert.match(code, /new McpServer\(\{ name: "boussole", version: "1\.1\.0" \}/, "version du serveur");
+});
+
+/* Exécution des deux modules (types retirés, zod simulé, base factice) : refus, règles et requêtes réellement envoyées. */
+class UserErrorT extends Error {}
+const fauxZ = () => { const f = new Proxy(function () {}, { get: (_, k) => (k === "then" ? undefined : f), apply: () => f }); return f; };
+function chargerModule(source) {
+  const noms = [...source.matchAll(/^export (?:const|function|async function) (\w+)/gm)].map(m => m[1]);
+  const js = strip(source, { mode: "strip" }).replace(/^import .*$/gm, "").replace(/^export (const|function|async function)/gm, "$1");
+  return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { z: fauxZ(), RegExp, Date, Math, JSON, Number, String, Object, Array, Set, Promise, console });
+}
+/** Base factice : chaque requête (from / rpc) est notée avec ses appels chaînés ; `reponse(requete)` fournit { data, error }. */
+function fauxDb(reponse = () => ({ data: null, error: null })) {
+  const appels = [];
+  const from = table => {
+    const r = { table, ops: [] }; appels.push(r);
+    const p = new Proxy({}, { get: (_, k) => (k === "then" ? (ok, ko) => Promise.resolve(reponse(r)).then(ok, ko) : (...a) => { r.ops.push([k, ...a]); return p; }) });
+    return p;
+  };
+  return { appels, from, rpc: async (nom, args) => { const r = { rpc: nom, args, ops: [] }; appels.push(r); return reponse(r); } };
+}
+function serveur(register, db, extra = {}) {
+  const outils = {};
+  const h = {
+    db, UserError: UserErrorT, RO: { readOnlyHint: true }, RW: { readOnlyHint: false }, source: "Claude", today: () => TODAY,
+    must: (t, r) => { if (r.error) throw new UserErrorT(`Erreur base de données (${t}) : ${r.error.message}`); return r.data; },
+    wrap: fn => async a => { try { return { ok: await fn(a) }; } catch (e) { if (e instanceof UserErrorT) return { erreur: e.message }; throw e; } },
+    ...extra,
+  };
+  register({ registerTool: (nom, def, handler) => { outils[nom] = { def, handler }; } }, h);
+  return outils;
+}
+
+test("AG1 : memoire.ts — refus sensible, échéance réservée, insertion, limite lisible, oubli", { skip: SANS_STRIP }, async () => {
+  const M = chargerModule(srcMemoire);
+  assert.equal(M.estSensible("FR76 3000 6000 0112 3456 7890 189"), true);
+  assert.equal(M.estSensible("Carte 4970 1012 3456 7890"), true);
+  assert.equal(M.estSensible("Mon Mot de passe est soleil"), true);
+  assert.equal(M.estSensible("PEA chez la banque X : IE00B4L5Y983, FR0010315770"), false);
+  assert.equal(M.estSensible("Achat prévu à 350 000 € en 2028"), false);
+  assert.deepEqual(J(M.CATEGORIES), ["contexte", "preference", "projet", "decision", "explique", "a_suivre"]);
+
+  let db = fauxDb(r => ({ data: { id: "m1", ...(r.ops.find(o => o[0] === "insert") || [])[1] }, error: null }));
+  let T = serveur(M.registerMemoire, db);
+  assert.deepEqual(Object.keys(T).sort(), ["memoriser", "oublier", "se_souvenir"]);
+  let r = await T.memoriser.handler({ categorie: "contexte", contenu: "Mon IBAN : FR76 3000 6000 0112 3456 7890 189" });
+  assert.match(r.erreur, /^Refusé/); assert.equal(db.appels.length, 0, "rien n'est envoyé à la base");
+  r = await T.memoriser.handler({ categorie: "projet", contenu: "Achat d'une maison", echeance: "2027-06-01" });
+  assert.match(r.erreur, /a_suivre/); assert.equal(db.appels.length, 0);
+  r = await T.memoriser.handler({ categorie: "a_suivre", contenu: "Revoir le PER après la naissance", echeance: "2027-01-15", epingle: true });
+  assert.equal(r.ok.retenu.id, "m1"); assert.match(r.ok.rappel, /Mémoire de l'agent/);
+  const ins = db.appels[0].ops.find(o => o[0] === "insert")[1];
+  assert.deepEqual(J(ins), { categorie: "a_suivre", contenu: "Revoir le PER après la naissance", echeance: "2027-01-15", epingle: true, source: "Claude" });
+  r = await T.memoriser.handler({ categorie: "contexte", contenu: "Deux enfants" });
+  assert.deepEqual(J(db.appels[1].ops.find(o => o[0] === "insert")[1]), { categorie: "contexte", contenu: "Deux enfants", echeance: null, epingle: false, source: "Claude" });
+
+  db = fauxDb(() => ({ data: null, error: { code: "54000", message: "Mémoire pleine : 200 souvenirs au plus. Supprimez-en dans Boussole › Profil et données › Mémoire de l'agent." } }));
+  r = await serveur(M.registerMemoire, db).memoriser.handler({ categorie: "contexte", contenu: "Un de trop" });
+  assert.equal(r.erreur, "Mémoire pleine : 200 souvenirs au plus. Supprimez-en dans Boussole › Profil et données › Mémoire de l'agent.", "message de la limite remonté tel quel");
+
+  db = fauxDb(() => ({ data: [{ id: "a" }, { id: "b" }], error: null }));
+  T = serveur(M.registerMemoire, db);
+  assert.match((await T.oublier.handler({})).erreur, /id ou ids/);
+  r = await T.oublier.handler({ id: "a", ids: ["b", "a"] });
+  assert.equal(r.ok.oublies, 2);
+  const del = db.appels.at(-1);
+  assert.equal(del.table, "memoire_agent"); assert.ok(del.ops.some(o => o[0] === "delete"));
+  assert.deepEqual(J(del.ops.find(o => o[0] === "in")), ["in", "id", ["b", "a"]], "identifiants dédoublonnés");
+
+  db = fauxDb(() => ({ data: [], error: null }));
+  await serveur(M.registerMemoire, db).se_souvenir.handler({ categorie: "projet" });
+  const sel = db.appels[0].ops;
+  assert.deepEqual(J(sel.filter(o => o[0] === "order").map(o => o[1])), ["epingle", "cree_le"], "épinglés d'abord, puis les plus récents");
+  assert.deepEqual(J(sel.find(o => o[0] === "eq")), ["eq", "categorie", "projet"]);
+});
+
+test("AG1 : memoire.ts — mémoire de session (épinglés puis 30 récents) et points à suivre échus", { skip: SANS_STRIP }, () => {
+  const M = chargerModule(srcMemoire);
+  const l = [
+    { id: "e1", epingle: true, categorie: "contexte" }, { id: "e2", epingle: true, categorie: "preference" },
+    ...Array.from({ length: 40 }, (_, i) => ({ id: "r" + i, epingle: false, categorie: i === 3 ? "a_suivre" : "projet", echeance: i === 3 ? "2026-10-01" : null })),
+    { id: "s1", epingle: false, categorie: "a_suivre", echeance: "2026-10-10" }, { id: "s2", epingle: false, categorie: "a_suivre", echeance: "2026-11-01" },
+    { id: "s3", epingle: false, categorie: "a_suivre", echeance: null },
+  ];
+  const s = M.memoireDeSession(l);
+  assert.equal(s.length, 32); assert.deepEqual(J(s.slice(0, 3).map(m => m.id)), ["e1", "e2", "r0"]);
+  assert.deepEqual(J(M.aSuivreEchus(l, TODAY).map(m => m.id)), ["r3", "s1"], "échéance ≤ aujourd'hui, sans échéance exclu");
+});
+
+test("AG1 : savoir.ts — consulter_savoir (slug, recherche, rien inventé), reperes à vérifier, nouveautés", { skip: SANS_STRIP }, async () => {
+  const S = chargerModule(srcSavoir);
+  assert.deepEqual(J(S.THEMES), ["epargne", "enveloppes", "fiscalite", "immobilier", "retraite", "protection", "marches", "comportement", "credit"]);
+  let db = fauxDb(r => (r.rpc ? { data: [], error: null } : { data: null, error: null }));
+  let T = serveur(S.registerSavoir, db);
+  assert.deepEqual(Object.keys(T).sort(), ["consulter_savoir", "reperes"]);
+  assert.match((await T.consulter_savoir.handler({})).erreur, /question, theme ou slug/);
+  assert.match((await T.consulter_savoir.handler({ slug: "livret-a" })).erreur, /Fiche introuvable : livret-a/);
+  let r = await T.consulter_savoir.handler({ question: "livret A" });
+  assert.equal(r.ok.nombre, 0); assert.match(r.ok.consigne, /n'inventez rien/);
+  assert.deepEqual(J(db.appels.at(-1)), { rpc: "chercher_savoir", args: { p_question: "livret A", p_theme: null, p_limite: 5 }, ops: [] });
+
+  db = fauxDb(() => ({ data: [
+    { cle: "livret_a_taux", valeur: "1.7", verifie_le: "2026-09-01" },
+    { cle: "pass", valeur: "47100", verifie_le: "2026-01-15" },
+  ], error: null }));
+  r = await serveur(S.registerSavoir, db).reperes.handler({ cles: ["livret_a_taux", "pass"] });
+  assert.deepEqual(J(r.ok.reperes.map(x => [x.cle, x.valeur, x.a_verifier])), [["livret_a_taux", 1.7, false], ["pass", 47100, true]], "valeur numérique ; > 180 jours : à vérifier");
+  assert.deepEqual(J(db.appels[0].ops.find(o => o[0] === "in")), ["in", "cle", ["livret_a_taux", "pass"]]);
+
+  db = fauxDb(() => ({ data: [{ slug: "pea" }], error: null }));
+  assert.deepEqual(J(await S.nouveautes(db, (t, x) => x.data, null)), [], "première session : rien");
+  assert.equal(db.appels.length, 0);
+  assert.deepEqual(J(await S.nouveautes(db, (t, x) => x.data, "2026-10-01T08:00:00+00:00")), [{ slug: "pea" }]);
+  const ops = db.appels[0].ops;
+  assert.deepEqual(J(ops.find(o => o[0] === "gt")), ["gt", "mis_a_jour_le", "2026-10-01"]);
+  assert.deepEqual(J(ops.find(o => o[0] === "limit")), ["limit", 10]);
+});
+
 test("mcp : aucune clé de service", () => {
-  assert.doesNotMatch(src, /SERVICE_ROLE|service_role|sb_secret_/i);
+  assert.doesNotMatch(srcAll, /SERVICE_ROLE|service_role|sb_secret_/i);
 });
 
 test("mcp : verify_jwt désactivé assumé (vérification faite par le serveur) et documenté", () => {
@@ -432,7 +608,13 @@ test("mcp : deno.json épingle les dépendances npm", () => {
   const specs = Object.values(deno.imports);
   assert.ok(specs.length >= 5);
   for (const s of specs) assert.match(s, /^npm:(@[^/]+\/)?[^@/]+@\d+\.\d+\.\d+/, `version non épinglée : ${s}`);
-  for (const imp of src.matchAll(/from\s+"([^"]+)"/g)) assert.ok(imp[1] in deno.imports, `import non mappé : ${imp[1]}`);
+  for (const imp of srcAll.matchAll(/from\s+"([^"]+)"/g)) {
+    if (imp[1].startsWith("./")) { assert.ok(existsSync(path("supabase/functions/mcp/" + imp[1].slice(2))), `module relatif absent : ${imp[1]}`); continue; }
+    assert.ok(imp[1] in deno.imports, `import non mappé : ${imp[1]}`);
+  }
+  assert.match(src, /import \{[^}]*\bregisterSavoir\b[^}]*\} from "\.\/savoir\.ts"/);
+  assert.match(src, /import \{[^}]*\bregisterMemoire\b[^}]*\bSENSIBLE\b[^}]*\} from "\.\/memoire\.ts"/);
+  assert.doesNotMatch(srcSavoir + srcMemoire, /from "\.\/index\.ts"/, "pas d'import circulaire vers index.ts");
 });
 
 test("consentement : page autonome, scripts et appels OAuth attendus", () => {

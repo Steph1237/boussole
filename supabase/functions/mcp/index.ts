@@ -19,12 +19,25 @@
 // (claim client_id du jeton OAuth, "session" sinon) par la RPC noter_connexion (security invoker, au plus une écriture toutes
 // les 5 minutes par client), en parallèle de l'appel et sans jamais le bloquer. Le board s'en sert pour le voyant de connexion.
 // Point d'entrée d'un nouvel utilisateur : outil demarrer_onboarding (feuille de conduite de l'agent expert) et prompt onboarding.
+//
+// Mémoire et savoir (connecteur v6, AG1, docs/superpowers/specs/2026-10-10-ag1-memoire-savoir.md) : toute conversation
+// commence par demarrer_session (conduite de l'agent expert, mémoire, points à suivre, état du bilan, nouveautés du savoir).
+// savoir.ts : savoir commun en lecture seule (consulter_savoir sur savoir_fiches par la RPC chercher_savoir ; reperes, chiffres
+// réglementaires datés) ; les nouveautés sont suivies par client avec la RPC marquer_savoir_vu (connexions_assistant.savoir_vu_le).
+// memoire.ts : mémoire privée de l'agent (memoriser, se_souvenir, oublier). Autre exception aux propositions : écriture
+// directe dans memoire_agent, qui ne touche pas au bilan ; RLS propriétaire, contenu sensible refusé (ici et en base par
+// public.contenu_sensible, mêmes motifs SENSIBLE), 200 souvenirs au plus ; l'utilisateur la voit et l'efface dans Boussole.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createClient } from "@supabase/supabase-js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
+import { registerSavoir, nouveautes } from "./savoir.ts";
+import { registerMemoire, lireMemoire, memoireDeSession, aSuivreEchus, SENSIBLE } from "./memoire.ts";
+
+// Motifs du filtre de contenu sensible (mêmes que public.contenu_sensible), réexportés comme contrat public du connecteur.
+export { SENSIBLE };
 
 z.config(z.locales.fr());
 
@@ -48,6 +61,8 @@ export const deps = { createClient: createClient as (...a: any[]) => any };
 
 const INSTRUCTIONS = [
   "Boussole est l'outil de suivi de patrimoine de l'utilisateur : placements (positions), immobilier (biens), crédits, profil du foyer (revenus, statut, tranche d'imposition), budget, objectifs, profil de risque et protection.",
+  "Au début de chaque conversation, appelle demarrer_session : il renvoie ta conduite d'agent expert, ce que tu sais déjà de l'utilisateur (mémoire), les points à reprendre, l'état du bilan et les nouveautés du savoir Boussole. Avant de citer un taux, un plafond ou un barème, appelle reperes ; avant d'expliquer une notion de fond, consulter_savoir ; cite la fiche ou le repère et sa date.",
+  "Mémoire (memoriser, se_souvenir, oublier) : retiens ce qui est durable et utile pour la suite (contexte de vie, préférences, projets, décisions prises, notions déjà expliquées, points à suivre avec échéance), une phrase courte par souvenir, sans recopier le bilan ; demande l'accord avant une information sensible (santé, famille, emploi) ; jamais d'identifiants, d'IBAN, de numéros de compte ou de carte, ni de mots de passe. C'est une écriture directe (pas de proposition) : l'utilisateur voit et efface sa mémoire dans Boussole › Profil et données › Mémoire de l'agent.",
   "Point d'entrée d'un nouvel utilisateur : quand il veut commencer ou reprendre son onboarding (« Lance l'onboarding Boussole », « je débute »), appelle d'abord demarrer_onboarding et suis à la lettre la conduite qu'il renvoie (prompt MCP équivalent : onboarding).",
   "Tous les montants sont en euros. Les dates sont au format AAAA-MM-JJ.",
   "p1 et p2 désignent les personnes du foyer dont les prénoms figurent dans le profil (get_profile, champ personnes) ; « foyer » est leur ensemble. Utilise leurs prénoms quand tu parles à l'utilisateur.",
@@ -61,7 +76,7 @@ const INSTRUCTIONS = [
   "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels. Scores honnêtes : sante.total vaut null sous 3 critères calculés (sante.calcules) et bonnes_pratiques.provisoire est vrai quand moins de la moitié du poids des familles est notée (bonnes_pratiques.couverture) : dis-le plutôt que d'annoncer une note.",
   "Profil de risque (get_risk_profile, set_risk_answers) : questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, profil équivalent du portefeuille réel. Pose les questions et enregistre avec set_risk_answers les seules réponses choisies par l'utilisateur, jamais une réponse déduite ; le profil est calculé par l'application. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
   "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
-  "Frais, zone et devise des fonds (annotate_instrument, seule écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
+  "Frais, zone et devise des fonds (annotate_instrument, écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
 ].join("\n");
 
 /* Parcours d'entretien (prompts MCP) : une conduite commune et un objectif par parcours. */
@@ -126,6 +141,7 @@ const CONDUITE_ONBOARDING = [
   "3.3 Après chaque dépôt, dis : « N changements à valider dans Boussole › Profil et données › Propositions ». Rien n'est appliqué sans sa validation ; il peut y corriger une valeur avant de valider.",
   "3.4 « Aucun bien ni crédit » est une réponse : enregistre-la (update_profile, foyer.biensRenseignes = true).",
   "3.5 Avant de déposer, vérifie avec list_propositions ce qui attend déjà une validation.",
+  "3.6 Retiens avec memoriser ce qui est durable (contexte de vie, projets, notions expliquées, points à suivre avec échéance), une phrase courte par souvenir ; jamais d'identifiants. La mémoire déjà connue est dans le champ memoire.",
   "",
   "4. Sécurité",
   "4.1 Ne demande jamais et n'accepte jamais d'identifiants bancaires, d'IBAN, de numéros de compte ou de carte, de mots de passe ou codes, de numéros fiscaux ou de sécurité sociale. S'il en colle, demande-lui de les retirer, ne les répète pas et ne les enregistre nulle part (ni source, ni justification, ni note).",
@@ -140,6 +156,20 @@ const CONDUITE_ONBOARDING = [
   "5.4 Rappelle de valider les propositions dans Boussole › Profil et données › Propositions.",
   "5.5 Propose la suite : le parcours profil_de_risque s'il n'est pas fait, sinon budget ou placements selon ce qui manque.",
 ].join("\n");
+/* Agent expert (AG1) : conduite renvoyée par demarrer_session au début de chaque conversation. */
+const CONDUITE_EXPERT = [
+  "Tu es l'agent expert de Boussole : un conseiller en gestion de patrimoine pédagogue, chaleureux et précis, qui parle français simple.",
+  "1. Tu as appelé demarrer_session : salue l'utilisateur en tenant compte de sa mémoire (prénom, contexte, projets) et reprends d'abord les points « à suivre » échus (a_suivre_echus).",
+  "2. Si des nouveautés du savoir (nouveautes_savoir) concernent sa situation, signale-les en une phrase chacune (titre et date de la fiche).",
+  "3. Avant de citer un taux, un plafond ou un barème : appelle reperes, cite la valeur avec sa date d'effet ; si a_verifier est vrai, dis que la valeur doit être revérifiée.",
+  "4. Avant d'expliquer une notion de fond : consulter_savoir, puis cite la fiche (titre, date). Sans fiche, dis-le et reste prudent ; n'invente jamais.",
+  "5. Mémoire : avec memoriser, retiens ce qui est durable et utile pour la suite (contexte de vie, préférences, projets, décisions prises, notions déjà expliquées, points à suivre avec échéance) ; une phrase courte par souvenir ; ne recopie pas ce qui est déjà dans le bilan ; demande l'accord avant une information sensible (santé, famille, emploi). Efface avec oublier ce qui est périmé ou ce que l'utilisateur te demande d'oublier.",
+  "6. Ne retiens et ne demande jamais d'identifiants bancaires, IBAN, numéros de compte ou de carte, ni mots de passe.",
+  "7. Rappelle, la première fois, que l'utilisateur voit et efface sa mémoire dans Boussole › Profil et données › Mémoire de l'agent.",
+  "8. Pour modifier le bilan, dépose des propositions (source obligatoire) : rien n'est appliqué avant validation dans Boussole › Profil et données › Propositions. Si onboarding_conseille est vrai (bilan rempli à moins de 50 %), propose l'onboarding (demarrer_onboarding).",
+  "9. Reste pédagogique : classes d'actifs et comportements, jamais de produit à acheter ni d'établissement ; ce n'est pas un conseil en investissement.",
+].join("\n");
+
 const PROMPT_ONBOARDING = "Lance l'onboarding Boussole. Commence par appeler l'outil demarrer_onboarding, puis suis à la lettre la conduite qu'il renvoie (champ conduite), en t'appuyant sur l'état du bilan (etat) et en passant lot_suggere à chaque dépôt de propositions.";
 
 /* ------------------------------------------------------------------ */
@@ -1383,7 +1413,7 @@ const ObjectifRow = z.strictObject({
 /* Serveur MCP (un par requête, lié au client de l'utilisateur)        */
 /* ------------------------------------------------------------------ */
 
-type Ctx = { db: any; user: { id: string; email?: string } };
+type Ctx = { db: any; user: { id: string; email?: string }; client?: { id: string; nom: string } };
 
 function wrap<A>(fn: (args: A) => Promise<unknown>) {
   return async (args: A) => {
@@ -1405,8 +1435,8 @@ async function loadPeople(db: any) {
   return people;
 }
 
-export function buildServer({ db, user }: Ctx): McpServer {
-  const server = new McpServer({ name: "boussole", version: "1.0.0" }, { instructions: INSTRUCTIONS });
+export function buildServer({ db, user, client }: Ctx): McpServer {
+  const server = new McpServer({ name: "boussole", version: "1.1.0" }, { instructions: INSTRUCTIONS });
   // Erreurs de validation des paramètres : message français lisible (isError: true) au lieu du JSON brut du SDK.
   (server as any).validateToolInput = async (tool: any, args: unknown, name: string) => {
     if (!tool.inputSchema) return undefined;
@@ -1417,6 +1447,12 @@ export function buildServer({ db, user }: Ctx): McpServer {
   };
   const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const RW = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+
+  /* ---------- Savoir commun (savoir.ts) et mémoire de l'agent (memoire.ts) ---------- */
+  // source des souvenirs : nom de l'assistant (claim client_id du jeton, « Assistant » sinon).
+  const h = { db, wrap, must, UserError, RO, RW, today, source: client?.nom ?? "Assistant" };
+  registerSavoir(server, h);
+  registerMemoire(server, h);
 
   /* ---------- get_overview ---------- */
   server.registerTool("get_overview", {
@@ -2097,6 +2133,34 @@ export function buildServer({ db, user }: Ctx): McpServer {
       propositions_en_attente: vue.propositions_en_attente,
       lot_suggere: recent ? recent.lot : crypto.randomUUID(),
       premiere_lecture_disponible: scoreSante(donnees, "foyer").total != null,
+      memoire: memoireDeSession(await lireMemoire(db, must)),
+    };
+  }));
+
+  /* ---------- Session : point d'entrée de toute conversation (agent expert, mémoire, savoir) ---------- */
+  server.registerTool("demarrer_session", {
+    title: "Démarrer la session",
+    description: "À appeler au début de chaque conversation : conduite de l'agent expert, mémoire de l'utilisateur (épinglés puis 30 plus récents), points à suivre échus, état du bilan (pourcentage, prochaines questions), propositions en attente et nouveautés du savoir Boussole depuis la session précédente de cet assistant.",
+    inputSchema: z.strictObject({}),
+    annotations: RO,
+  }, wrap(async () => {
+    // marquer_savoir_vu renvoie la date de la session précédente de ce client (null la première fois) et la remplace par
+    // maintenant : seule écriture de l'outil, de pure tenue de compte. Un échec n'empêche pas la session.
+    const [{ vue }, memoire, vu] = await Promise.all([
+      lireEtat(),
+      lireMemoire(db, must),
+      db.rpc("marquer_savoir_vu", { p_client_id: client?.id ?? "session" }),
+    ]);
+    if (vu.error) console.warn("marquer_savoir_vu :", vu.error.message);
+    return {
+      conduite: CONDUITE_EXPERT,
+      memoire: memoireDeSession(memoire),
+      memoire_total: memoire.length,
+      a_suivre_echus: aSuivreEchus(memoire, today()),
+      bilan: { pourcentage: vue.pourcentage, prochaines_questions: vue.prochaines_questions },
+      propositions_en_attente: vue.propositions_en_attente,
+      nouveautes_savoir: await nouveautes(db, must, vu.error ? null : vu.data),
+      onboarding_conseille: vue.pourcentage < 50,
     };
   }));
 
@@ -2250,7 +2314,7 @@ async function handleMcp(c: any) {
   // finir après la réponse (EdgeRuntime.waitUntil), sinon on l'attend avant de rendre la main.
   const connexion = noterConnexion(db, token);
   const runtime = (globalThis as any).EdgeRuntime;
-  const server = buildServer({ db, user: { id: data.user.id, email: data.user.email } });
+  const server = buildServer({ db, user: { id: data.user.id, email: data.user.email }, client: clientDuJeton(token) });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {
