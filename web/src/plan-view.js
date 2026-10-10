@@ -358,6 +358,15 @@
       "</div></article>";
   }
 
+  /** Taux du Livret A lu dans les repères du savoir commun, avec sa date d'effet ; jamais de taux codé en dur. */
+  function livretA() {
+    const rl = window.Reperes && S && S.savoir ? window.Reperes.trouver(S.savoir.reperes, "livret_a_taux") : null;
+    if (!rl) return "taux réglementé en vigueur";
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(rl.dateEffet || ""));
+    const d = m ? m[3] + "/" + m[2] + "/" + m[1] : (rl.dateEffet ? new Date(rl.dateEffet).toLocaleDateString("fr-FR") : "");
+    return window.Reperes.format(rl) + (d && d !== "Invalid Date" ? " depuis le " + d : "");
+  }
+
   function formCard() {
     const d = objEdit.data, isNew = objEdit.id == null, f = "pvf-";
     const opt = (list, cur) => list.map(([v, x]) => '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? " selected" : "") + ">" + esc(x) + "</option>").join("");
@@ -380,7 +389,7 @@
           '<p class="small muted f-wide">L\'argent d\'une poche sert d\'abord l\'objectif prioritaire ; le reste passe au suivant.</p>'
         : '<div class="pv-field"><label class="lbl" for="' + f + 'deja">Montant déjà de côté</label><span class="money"><input id="' + f + 'deja" data-o="deja" type="number" inputmode="decimal" min="0" step="any" value="' + esc(d.deja ?? 0) + '"><span class="u">€</span></span></div>') +
       '<div class="pv-field"><label class="lbl" for="' + f + 'rend">Rendement attendu</label><span class="money"><input id="' + f + 'rend" data-o="rendement" type="number" inputmode="decimal" step="0.1" min="-50" max="50" value="' + esc(d.rendement ?? "") + '"><span class="u">% / an</span></span>' +
-      '<span class="small muted">repère : Livret A 2,4 %, fonds euros ~2,5 %, actions mondiales ~6 % sur longue période</span></div>' +
+      '<span class="small muted">repère : Livret A ' + esc(livretA()) + ', fonds euros ~2,5 %, actions mondiales ~6 % sur longue période</span></div>' +
       "</div>" +
       (objEdit.err ? '<p class="pv-err" role="alert">' + esc(objEdit.err) + "</p>" : "") +
       '<div class="pv-obj-act"><button type="button" class="btn ghost" id="pvf-cancel" data-pv-ocancel>Annuler</button>' +
