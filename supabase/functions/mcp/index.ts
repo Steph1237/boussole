@@ -14,6 +14,11 @@
 // valide dans l'application (RPC appliquer_propositions, security invoker). Exceptions : annotate_instrument (donnée
 // publique du fonds, RPC annoter_instrument) et update_config limité aux préférences sans montant (cibles en %, règles,
 // ordres, échéances, hypothèses).
+//
+// Connexions (onboarding, docs/superpowers/specs/2026-10-10-onboarding-assistant.md) : chaque appel authentifié note le client
+// (claim client_id du jeton OAuth, "session" sinon) par la RPC noter_connexion (security invoker, au plus une écriture toutes
+// les 5 minutes par client), en parallèle de l'appel et sans jamais le bloquer. Le board s'en sert pour le voyant de connexion.
+// Point d'entrée d'un nouvel utilisateur : outil demarrer_onboarding (feuille de conduite de l'agent expert) et prompt onboarding.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createClient } from "@supabase/supabase-js";
@@ -43,6 +48,7 @@ export const deps = { createClient: createClient as (...a: any[]) => any };
 
 const INSTRUCTIONS = [
   "Boussole est l'outil de suivi de patrimoine de l'utilisateur : placements (positions), immobilier (biens), crédits, profil du foyer (revenus, statut, tranche d'imposition), budget, objectifs, profil de risque et protection.",
+  "Point d'entrée d'un nouvel utilisateur : quand il veut commencer ou reprendre son onboarding (« Lance l'onboarding Boussole », « je débute »), appelle d'abord demarrer_onboarding et suis à la lettre la conduite qu'il renvoie (prompt MCP équivalent : onboarding).",
   "Tous les montants sont en euros. Les dates sont au format AAAA-MM-JJ.",
   "p1 et p2 désignent les personnes du foyer dont les prénoms figurent dans le profil (get_profile, champ personnes) ; « foyer » est leur ensemble. Utilise leurs prénoms quand tu parles à l'utilisateur.",
   "Claude propose, l'utilisateur dispose : les outils d'écriture (update_profile, upsert_biens, upsert_credits, delete_bien, delete_credit, upsert_positions, record_transaction, update_budget, upsert_objectifs, delete_objectif, set_risk_answers, set_protection) n'écrivent rien directement. Ils déposent des propositions (avant / après, source, justification) que l'utilisateur valide, modifie ou refuse dans Boussole › Profil et données › Propositions. Dis-le à l'utilisateur après chaque dépôt.",
@@ -52,7 +58,7 @@ const INSTRUCTIONS = [
   "Budget mensuel (get_budget, update_budget) : lignes de revenus, dépenses par catégorie et épargne, par mois ou par an. Le salaire et les mensualités de crédit viennent du profil : ne les ajoute pas au budget. update_budget fusionne par défaut (rapprochement par id ou par libellé).",
   "Objectifs datés (list_objectifs, upsert_objectifs, delete_objectif) : apport, matelas, retraite ou projet, avec cible, échéance, montant déjà réuni (saisi ou poches rattachées), rendement attendu et priorité ; list_objectifs calcule l'effort mensuel requis et le statut.",
   "Réglages (get_config, update_config) : update_config modifie directement les seules préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte, ordres à passer, échéances, hypothèses) ; le matelas de sécurité et les versements programmés se règlent dans Boussole.",
-  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels.",
+  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels. Scores honnêtes : sante.total vaut null sous 3 critères calculés (sante.calcules) et bonnes_pratiques.provisoire est vrai quand moins de la moitié du poids des familles est notée (bonnes_pratiques.couverture) : dis-le plutôt que d'annoncer une note.",
   "Profil de risque (get_risk_profile, set_risk_answers) : questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, profil équivalent du portefeuille réel. Pose les questions et enregistre avec set_risk_answers les seules réponses choisies par l'utilisateur, jamais une réponse déduite ; le profil est calculé par l'application. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
   "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
   "Frais, zone et devise des fonds (annotate_instrument, seule écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
@@ -89,6 +95,52 @@ const PARCOURS = [
     description: "Rafraîchir les soldes anciens, vérifier la dérive du budget, puis la vue d'ensemble.",
     objectif: "Je veux faire ma revue mensuelle. 1) Appelle etat_du_bilan et list_propositions. 2) Rafraîchis les soldes de plus de 90 jours (question de fraîcheur de la section placements) : demande un relevé ou le solde de chacun et dépose avec upsert_positions. 3) Vérifie la dérive du budget : compare get_budget à mes dépenses réelles du mois (je peux coller un relevé) et propose les ajustements avec update_budget. 4) Termine par get_overview : patrimoine net, score de santé et bonnes pratiques, présentés comme des indicateurs pédagogiques, et rappelle-moi les propositions à valider." },
 ].map(({ objectif, ...p }: any) => ({ ...p, texte: objectif + "\n\n" + CONDUITE }));
+
+/* Onboarding (docs/superpowers/specs/2026-10-10-onboarding-assistant.md) : la feuille de conduite EST l'agent expert.
+   Renvoyée par l'outil demarrer_onboarding (clients sans prompts MCP) ; le prompt onboarding demande de l'appeler. */
+const CONDUITE_ONBOARDING = [
+  "Feuille de conduite de l'onboarding Boussole. Suis-la à la lettre.",
+  "",
+  "Rôle : tu es un conseiller en gestion de patrimoine pédagogue, au service de l'utilisateur, sans rien à vendre. Vouvoiement par défaut, phrases courtes, français simple. Objectif : un premier bilan patrimonial juste et compris, en une quinzaine de minutes.",
+  "",
+  "1. Ouverture",
+  "1.1 Présente-toi en deux phrases : tu es l'assistant de l'utilisateur, connecté à Boussole, et tu vas faire avec lui son bilan patrimonial, comme avec un conseiller.",
+  "1.2 Pose le cadre : Boussole est pédagogique ; ce n'est pas un conseil en investissement réglementé et tu ne recommandes aucun produit.",
+  "1.3 Confidentialité : ses réponses passent par cet assistant (selon ses conditions d'utilisation) et ne sont enregistrées dans Boussole qu'après sa validation.",
+  "1.4 Demande son accord pour commencer et le temps dont il dispose (compter environ 15 minutes). Dis-lui qu'il peut s'arrêter et reprendre quand il veut : Boussole garde la trace de ce qui est fait.",
+  "1.5 Reprise (etat.pourcentage > 0 ou propositions en attente) : résume en une phrase ce qui est déjà fait et reprends là où il s'était arrêté, sans tout réexpliquer.",
+  "",
+  "2. Méthode",
+  "2.1 Suis l'ordre de etat.sections (foyer, revenus, budget, épargne et placements, immobilier et crédits, protection, objectifs, profil de risque). Saute les sections au statut complet ; dans une section, pars de ses manquants. Ne repose jamais une question déjà répondue ni un changement déjà proposé.",
+  "2.2 Une question à la fois. Jamais de liste de questions dans un même message.",
+  "2.3 Donne le « pourquoi » en une phrase (celui de etat.sections t'y aide).",
+  "2.4 Propose des formats de réponse : une fourchette convient (« entre 2 000 et 2 500 € par mois »), « je ne sais pas » aussi : tu passes à la suite et tu notes ce qui reste à compléter.",
+  "2.5 Reformule et fais confirmer chaque chiffre avant de le proposer : montant, mensuel ou annuel, net ou brut, titulaire, date.",
+  "2.6 Relevés collés (banque, PEA, assurance-vie, PER, avis d'imposition, tableau d'amortissement) : extrais les chiffres, résume-les dans un petit tableau (ligne, montant, date), fais confirmer, signale ce qui est illisible ou ambigu.",
+  "2.7 Explique chaque notion technique en une phrase au moment où elle apparaît : TMI (tranche marginale d'imposition), PEA, fonds euros, matelas de précaution, PER, capital restant dû…",
+  "2.8 Si l'utilisateur s'écarte du sujet, réponds brièvement puis reviens à la question en cours.",
+  "",
+  "3. Écriture",
+  "3.1 Dépose les propositions à la fin de chaque section (pas à chaque réponse), avec les outils d'écriture : update_profile, update_budget, upsert_positions, upsert_biens, upsert_credits, set_protection, upsert_objectifs, set_risk_answers.",
+  "3.2 source = « déclaré par l'utilisateur pendant l'onboarding », ou la description du relevé (« relevé PEA du 30/09 collé par l'utilisateur ») ; lot = lot_suggere sur tous les dépôts de l'entretien.",
+  "3.3 Après chaque dépôt, dis : « N changements à valider dans Boussole › Profil et données › Propositions ». Rien n'est appliqué sans sa validation ; il peut y corriger une valeur avant de valider.",
+  "3.4 « Aucun bien ni crédit » est une réponse : enregistre-la (update_profile, foyer.biensRenseignes = true).",
+  "3.5 Avant de déposer, vérifie avec list_propositions ce qui attend déjà une validation.",
+  "",
+  "4. Sécurité",
+  "4.1 Ne demande jamais et n'accepte jamais d'identifiants bancaires, d'IBAN, de numéros de compte ou de carte, de mots de passe ou codes, de numéros fiscaux ou de sécurité sociale. S'il en colle, demande-lui de les retirer, ne les répète pas et ne les enregistre nulle part (ni source, ni justification, ni note).",
+  "4.2 N'invente jamais un chiffre : n'enregistre que ce que l'utilisateur a dit ou montré. Pour le profil de risque, n'enregistre que ses propres choix, jamais une réponse déduite.",
+  "4.3 Aucune recommandation de produit, de fonds ou d'établissement ; aucune promesse de rendement.",
+  "4.4 Détresse financière (dettes qu'il n'arrive plus à rembourser, découverts permanents, surendettement) : dis avec tact que Boussole n'est pas l'outil adapté à cette situation et oriente-le vers « Banque de France — surendettement » (banque-france.fr) et un Point conseil budget, gratuit et confidentiel. N'insiste pas pour poursuivre le bilan.",
+  "",
+  "5. Clôture",
+  "5.1 Appelle get_overview.",
+  "5.2 Donne une première lecture en 2 ou 3 points d'attention, formulés de façon pédagogique à partir des indicateurs : par exemple la part spéculative comparée à son repère, le matelas exprimé en mois de dépenses, la diversification des placements. Ce sont des repères, pas des conseils. Si le score de santé n'a pas de total (moins de 3 critères calculés) ou si les bonnes pratiques sont provisoires, dis-le simplement.",
+  "5.3 Donne le pourcentage du bilan (etat_du_bilan) et ce qui reste à compléter.",
+  "5.4 Rappelle de valider les propositions dans Boussole › Profil et données › Propositions.",
+  "5.5 Propose la suite : le parcours profil_de_risque s'il n'est pas fait, sinon budget ou placements selon ce qui manque.",
+].join("\n");
+const PROMPT_ONBOARDING = "Lance l'onboarding Boussole. Commence par appeler l'outil demarrer_onboarding, puis suis à la lettre la conduite qu'il renvoie (champ conduite), en t'appuyant sur l'état du bilan (etat) et en passant lot_suggere à chaque dépôt de propositions.";
 
 /* ------------------------------------------------------------------ */
 /* Utilitaires                                                         */
@@ -466,7 +518,12 @@ function itemPatrimoine(d: Donnees, scope: string, totaux: Totaux): Item {
   return { ...base, valeur: annees, points, aCompleter: false, texte, piste };
 }
 
-/** Score de santé sur 100 : cinq critères sur 20 ; les critères à compléter sont exclus et le total ramené sur 100. */
+/** Pas de note globale sur moins de 3 critères calculés (identique à Plan.SCORE_MIN_CRITERES) : un 100/100 calculé
+    sur un seul critère serait trompeur. */
+const SCORE_MIN_CRITERES = 3;
+
+/** Score de santé sur 100 : cinq critères sur 20 ; les critères à compléter sont exclus et le total ramené sur 100 ;
+    total null sous SCORE_MIN_CRITERES critères calculés. */
 function scoreSante(d: Donnees, scope: string) {
   const totaux = budgetTotaux(d, scope);
   const items = [
@@ -477,9 +534,10 @@ function scoreSante(d: Donnees, scope: string) {
     itemPatrimoine(d, scope, totaux),
   ].map((i) => ({ ...i, points: i.aCompleter ? 0 : Math.round(i.points ?? 0), sur: 20 }));
   const complets = items.filter((i) => !i.aCompleter);
-  const total = complets.length ? Math.round(sum(complets, (i) => i.points) / (20 * complets.length) * 100) : 0;
+  const total = complets.length >= SCORE_MIN_CRITERES ? Math.round(sum(complets, (i) => i.points) / (20 * complets.length) * 100) : null;
   return {
-    total, complet: complets.length === items.length, criteres_calcules: complets.length,
+    total, complet: complets.length === items.length, calcules: complets.length, minimum_criteres: SCORE_MIN_CRITERES,
+    ...(total == null ? { message: `Pas de note globale : ${complets.length} critère${complets.length > 1 ? "s" : ""} calculé${complets.length > 1 ? "s" : ""} sur 5 (il en faut au moins ${SCORE_MIN_CRITERES}). Complétez le bilan pour l'obtenir.` } : {}),
     items: items.map((i) => ({ cle: i.cle, titre: i.titre, points: i.points, sur: i.sur, a_completer: i.aCompleter,
       valeur: i.valeur == null ? null : Math.round(i.valeur * 1000) / 1000, cible: i.cible, texte: i.texte, piste: i.piste })),
     mention: "Indicateur pédagogique, pas un conseil en investissement.",
@@ -989,13 +1047,17 @@ function bonnesPratiques(c: ContexteBP) {
   const notees = familles.filter((f) => f.total != null);
   const poids = sum(notees, (f) => f.poids);
   const comptes = criteres.filter((x) => !x.informatif);
+  // Couverture = part du poids des familles réellement notées ; sous 50 %, la note est provisoire (identique à Pratiques.agreger).
+  const couverture = poids / sum(FAMILLES, (f) => f.poids);
   return {
-    total: poids > 0 ? Math.round(sum(notees, (f) => (f.total as number) * f.poids) / poids) : 0,
+    total: poids > 0 ? Math.round(sum(notees, (f) => (f.total as number) * f.poids) / poids) : null,
+    couverture: Math.round(couverture * 1000) / 1000,
+    provisoire: couverture < 0.5,
     complet: comptes.length > 0 && comptes.every((x) => !x.aCompleter),
     familles,
     criteres: criteres.map((x) => sansIndefini({ cle: x.cle, famille: x.famille, titre: x.titre, points: x.points, sur: x.sur, a_completer: x.aCompleter, informatif: x.informatif || undefined,
       valeur: x.valeur == null ? null : Math.round(x.valeur * 1000) / 1000, cible: x.cible, texte: x.texte, piste: x.piste, regle: x.regle, source: x.source, details: x.details })),
-    calcul: "Critère sur 20 ; famille = somme des points ÷ (20 × critères notés) × 100 ; total = moyenne des familles notées pondérée 30 / 25 / 30 / 15 (Sécurité, Effort, Allocation, Efficacité). Critères à compléter et informatifs exclus des totaux ; critères sans objet omis.",
+    calcul: "Critère sur 20 ; famille = somme des points ÷ (20 × critères notés) × 100 ; total = moyenne des familles notées pondérée 30 / 25 / 30 / 15 (Sécurité, Effort, Allocation, Efficacité), null si aucune famille n'est notée. Couverture = poids des familles notées ÷ 100 ; sous 50 %, la note est provisoire (à présenter comme telle). Critères à compléter et informatifs exclus des totaux ; critères sans objet omis.",
     mention: "Indicateur pédagogique, pas un conseil en investissement.",
   };
 }
@@ -1359,7 +1421,7 @@ export function buildServer({ db, user }: Ctx): McpServer {
   /* ---------- get_overview ---------- */
   server.registerTool("get_overview", {
     title: "Vue d'ensemble",
-    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes ; totaux mensuels du budget ; score de santé financière sur 100 (cinq critères sur 20, détail pour le foyer, total par personne) ; profil_risque (profil déclaré, profil équivalent du portefeuille) ; bonnes_pratiques du foyer (total sur 100, quatre familles, critères avec points, texte, piste, règle et source).",
+    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes ; totaux mensuels du budget ; score de santé financière sur 100 (cinq critères sur 20, détail pour le foyer, total par personne ; total null tant que moins de 3 critères sont calculés, nombre dans calcules) ; profil_risque (profil déclaré, profil équivalent du portefeuille) ; bonnes_pratiques du foyer (total sur 100 ou null, couverture = part du poids des familles notées, provisoire si couverture < 50 %, quatre familles, critères avec points, texte, piste, règle et source).",
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => {
@@ -1982,34 +2044,59 @@ export function buildServer({ db, user }: Ctx): McpServer {
   }));
 
   /* ---------- Entretien guidé : état du bilan, propositions, profil de risque, protection ---------- */
-  server.registerTool("etat_du_bilan", {
-    title: "État du bilan",
-    description: "Ce qui est renseigné et ce qui manque, section par section dans l'ordre d'un entretien (foyer, revenus, budget, épargne et placements, immobilier et crédits, protection, objectifs, profil de risque) : pourcentage d'avancement, statut de chaque section (complet, partiel, vide), questions manquantes avec leur « pourquoi », les 3 prochaines questions à poser et le nombre de propositions en attente de validation. À appeler au début de tout entretien : ne jamais reposer une question déjà répondue.",
-    inputSchema: z.strictObject({}),
-    annotations: RO,
-  }, wrap(async () => {
-    const [pr, bi, cr, po, bu, ob, pp] = await Promise.all([
+  /** Lit le bilan et calcule l'état (etat_du_bilan) ; renvoie aussi les propositions en attente et les données du score. */
+  async function lireEtat() {
+    const [pr, bi, cr, po, bu, ob, pp, cf] = await Promise.all([
       db.from("profiles").select("foyer, personnes, autres, protection, risque").maybeSingle(),
-      db.from("biens").select("id, nom, valeur, crd").order("created_at"),
-      db.from("credits").select("id, nom, crd").order("created_at"),
+      db.from("biens").select("*").order("created_at"),
+      db.from("credits").select("*").order("created_at"),
       db.from("positions").select(POS_SELECT),
       db.from("budgets").select("lignes").maybeSingle(),
       db.from("objectifs").select("id, nom, date_cible"),
-      db.from("propositions").select("id, cible, operation, ref, statut").eq("statut", "en_attente").limit(200),
+      db.from("propositions").select("id, lot, cible, operation, ref, statut, cree_le").eq("statut", "en_attente").order("cree_le", { ascending: false }).limit(200),
+      db.from("config").select("cushion").maybeSingle(),
     ]);
-    const S = etatDepuisLignes({
-      profil: must("profiles", pr), biens: (must("biens", bi) as any[]) ?? [], credits: (must("credits", cr) as any[]) ?? [],
-      positions: (must("positions", po) as any[]) ?? [], budget: must("budgets", bu), objectifs: (must("objectifs", ob) as any[]) ?? [],
-      propositions: (must("propositions", pp) as any[]) ?? [],
-    });
+    const profil = must("profiles", pr) as any, biens = (must("biens", bi) as any[]) ?? [], credits = (must("credits", cr) as any[]) ?? [];
+    const positions = (must("positions", po) as any[]) ?? [], budget = must("budgets", bu) as any;
+    const enAttente = (must("propositions", pp) as any[]) ?? [];
+    const S = etatDepuisLignes({ profil, biens, credits, positions, budget, objectifs: (must("objectifs", ob) as any[]) ?? [], propositions: enAttente });
     const e = BilanEtat.etat(S, today());
-    return {
+    const vue = {
       date: today(),
       pourcentage: e.pourcentage,
       sections: e.sections.map((s) => ({ cle: s.cle, titre: s.titre, statut: s.statut, faits: s.faits, total: s.total, manquants: s.manquants })),
       prochaines_questions: e.prochaines,
       propositions_en_attente: e.propositionsEnAttente,
       consigne: "Pose ces questions une à une, dans l'ordre, avec leur pourquoi ; ne repose pas ce qui est complet. Les propositions en attente (list_propositions) ne sont pas encore comptées : rappelle à l'utilisateur de les valider dans Boussole › Profil et données › Propositions.",
+    };
+    const donnees: Donnees = { profil: profil ?? {}, biens, credits, positions, config: must("config", cf) as any, lignes: Array.isArray(budget?.lignes) ? budget.lignes : [] };
+    return { vue, enAttente, donnees };
+  }
+
+  server.registerTool("etat_du_bilan", {
+    title: "État du bilan",
+    description: "Ce qui est renseigné et ce qui manque, section par section dans l'ordre d'un entretien (foyer, revenus, budget, épargne et placements, immobilier et crédits, protection, objectifs, profil de risque) : pourcentage d'avancement, statut de chaque section (complet, partiel, vide), questions manquantes avec leur « pourquoi », les 3 prochaines questions à poser et le nombre de propositions en attente de validation. À appeler au début de tout entretien : ne jamais reposer une question déjà répondue.",
+    inputSchema: z.strictObject({}),
+    annotations: RO,
+  }, wrap(async () => (await lireEtat()).vue));
+
+  /* ---------- Onboarding : point d'entrée d'un nouvel utilisateur ---------- */
+  const LOT_REPRISE_MS = 24 * 3600 * 1000;
+  server.registerTool("demarrer_onboarding", {
+    title: "Démarrer l'onboarding",
+    description: "À appeler quand l'utilisateur veut commencer ou reprendre son onboarding Boussole : renvoie la conduite de l'entretien, l'état du bilan, les prochaines questions et les propositions en attente.",
+    inputSchema: z.strictObject({}),
+    annotations: RO,
+  }, wrap(async () => {
+    const { vue, enAttente, donnees } = await lireEtat();
+    // Reprise : on regroupe dans le lot le plus récent encore en attente (moins de 24 h) ; sinon un nouveau lot.
+    const recent = enAttente.find((p) => p.lot && Date.now() - Date.parse(p.cree_le) < LOT_REPRISE_MS);
+    return {
+      conduite: CONDUITE_ONBOARDING,
+      etat: vue,
+      propositions_en_attente: vue.propositions_en_attente,
+      lot_suggere: recent ? recent.lot : crypto.randomUUID(),
+      premiere_lecture_disponible: scoreSante(donnees, "foyer").total != null,
     };
   }));
 
@@ -2074,6 +2161,10 @@ export function buildServer({ db, user }: Ctx): McpServer {
   }));
 
   /* ---------- Prompts : parcours d'entretien lançables depuis Claude ---------- */
+  server.registerPrompt("onboarding", { title: "Onboarding Boussole", description: "Premier entretien guidé (ou reprise) : l'assistant appelle demarrer_onboarding et suit sa conduite." }, () => ({
+    description: "Premier entretien guidé (ou reprise) avec l'agent expert de Boussole.",
+    messages: [{ role: "user" as const, content: { type: "text" as const, text: PROMPT_ONBOARDING } }],
+  }));
   for (const p of PARCOURS) {
     server.registerPrompt(p.nom, { title: p.titre, description: p.description }, () => ({
       description: p.description,
@@ -2108,6 +2199,36 @@ const unauthorized = (c: any, description?: string) =>
     "WWW-Authenticate": description ? `${WWW_AUTHENTICATE}, error="invalid_token"` : WWW_AUTHENTICATE,
   });
 
+/* ---------- Détection de connexion (voyant « Claude est connecté » de l'onboarding) ---------- */
+/* Clients OAuth connus : identifiant public → nom affiché. Le nom des clients OAuth est dans le schéma auth (non exposé
+   au client de l'utilisateur) : une table fixe suffit, les clients étant déclarés à l'avance (pas d'enregistrement dynamique). */
+const CLIENTS_CONNUS: Record<string, string> = { "30351516-1e76-4884-8fb2-ae856799a723": "Claude" };
+
+/** Claim client_id du JWT (partie centrale, base64url) ; "session" pour un jeton de session ordinaire (sans client_id).
+    Nom : table des clients connus, « Assistant » sinon. */
+export function clientDuJeton(token: string): { id: string; nom: string } {
+  let id = "session";
+  try {
+    const b64 = (token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0))));
+    if (typeof claims?.client_id === "string" && claims.client_id.trim()) id = claims.client_id.trim().slice(0, 200);
+  } catch { /* jeton illisible : déjà validé par getUser, on le traite comme une session */ }
+  return { id, nom: CLIENTS_CONNUS[id] ?? "Assistant" };
+}
+
+/** Note la connexion (RPC noter_connexion : au plus une écriture toutes les 5 minutes par client, filtrée en SQL).
+    Ne lève jamais : un échec est journalisé et l'appel d'outil continue. */
+export async function noterConnexion(db: any, token: string): Promise<void> {
+  try {
+    const client = clientDuJeton(token);
+    const { error } = await db.rpc("noter_connexion", { p_client_id: client.id, p_client_nom: client.nom });
+    if (error) console.warn("noter_connexion :", error.message ?? error);
+  } catch (e) {
+    console.warn("noter_connexion :", e instanceof Error ? e.message : e);
+  }
+}
+
 async function handleMcp(c: any) {
   const authorization = c.req.header("authorization") ?? "";
   const m = authorization.match(/^Bearer\s+(\S+)$/i);
@@ -2125,12 +2246,18 @@ async function handleMcp(c: any) {
   if (c.req.method !== "POST") {
     return c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Méthode non autorisée : utilisez POST." }, id: null }, 405, { Allow: "POST" });
   }
+  // Écriture de connexion en parallèle de l'appel, sans le bloquer (noterConnexion ne lève jamais) ; le runtime la laisse
+  // finir après la réponse (EdgeRuntime.waitUntil), sinon on l'attend avant de rendre la main.
+  const connexion = noterConnexion(db, token);
+  const runtime = (globalThis as any).EdgeRuntime;
   const server = buildServer({ db, user: { id: data.user.id, email: data.user.email } });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {
     return await transport.handleRequest(c.req.raw);
   } finally {
+    if (runtime && typeof runtime.waitUntil === "function") runtime.waitUntil(connexion);
+    else await connexion;
     // La réponse JSON est déjà construite : on libère le serveur de cette requête.
     queueMicrotask(() => { server.close().catch(() => {}); });
   }

@@ -5,7 +5,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  hasServiceKey, SKIP_REASON, adminClient, createTestUser, deleteTestUser,
+  hasServiceKey, SKIP_REASON, adminClient, userClient, createTestUser, deleteTestUser,
 } from "./helpers/supabase.mjs";
 
 const SKIP = !hasServiceKey;
@@ -93,6 +93,13 @@ const TABLES = [
     match: (u, row) => ({ id: row.id }),
     field: "source", patch: { source: "piraté" },
     foreign: (b) => ({ user_id: b.id, cible: "protection", operation: "modifier", apres: { prevoyance: false }, source: "intrus" }),
+  },
+  {
+    name: "connexions_assistant", mode: "insert",
+    seed: (u) => ({ client_id: `client-${u.label}`, client_nom: `Assistant ${u.label}` }),
+    match: (u, row) => ({ user_id: u.id, client_id: row.client_id }),
+    field: "appels", patch: { appels: 999 },
+    foreign: (b) => ({ user_id: b.id, client_id: "intrus" }),
   },
 ];
 
@@ -327,6 +334,42 @@ describe("isolation RLS entre deux comptes", () => {
     });
   });
 
+  describe("noter_connexion() (RPC security invoker, écriture limitée à une toutes les 5 minutes)", () => {
+    it("n'écrit que pour l'appelant, une seule fois par fenêtre de 5 minutes", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      const lire = async (u) => {
+        const { data, error } = await u.client.from("connexions_assistant").select("client_id, client_nom, appels, dernier_le").eq("client_id", "test-onboarding");
+        assert.equal(error, null, `connexions_assistant : lecture par ${u.label} (${error?.message})`);
+        return data;
+      };
+      try {
+        for (let i = 0; i < 3; i++) {
+          const { error } = await A.client.rpc("noter_connexion", { p_client_id: "test-onboarding", p_client_nom: "Test" });
+          assert.equal(error, null, `noter_connexion : appel ${i + 1} par A (${error?.message})`);
+        }
+        const rowsA = await lire(A);
+        assert.equal(rowsA.length, 1, "une ligne pour A");
+        assert.equal(rowsA[0].appels, 1, "trois appels rapprochés : une seule écriture");
+        assert.equal(rowsA[0].client_nom, "Test");
+        assert.deepEqual(await lire(B), [], "B ne voit pas la connexion de A");
+        // Fenêtre de 5 minutes écoulée : l'appel suivant met à jour la ligne.
+        const vieux = new Date(Date.now() - 6 * 60000).toISOString();
+        const up = await admin.from("connexions_assistant").update({ dernier_le: vieux }).eq("user_id", A.id).eq("client_id", "test-onboarding");
+        assert.equal(up.error, null);
+        const again = await A.client.rpc("noter_connexion", { p_client_id: "test-onboarding", p_client_nom: null });
+        assert.equal(again.error, null);
+        const apres = await lire(A);
+        assert.equal(apres[0].appels, 2, "nouvelle écriture après 5 minutes");
+        assert.equal(apres[0].client_nom, "Test", "nom conservé quand il n'est pas fourni");
+        assert.ok(Date.parse(apres[0].dernier_le) > Date.parse(vieux));
+        const anon = await userClient().rpc("noter_connexion", { p_client_id: "x", p_client_nom: null });
+        assert.ok(anon.error, "noter_connexion : refusée sans session");
+      } finally {
+        await A.client.from("connexions_assistant").delete().eq("client_id", "test-onboarding"); // export_all : une seule connexion pour A
+      }
+    });
+  });
+
   describe("export_all()", () => {
     it("ne renvoie que les données de A", async (tc) => {
       if (skipIfNoKey(tc)) return;
@@ -341,7 +384,7 @@ describe("isolation RLS entre deux comptes", () => {
       const { data, error } = await A.client.rpc("export_all");
       assert.equal(error, null, `export_all : l'appel par A doit réussir (${error?.message})`);
       assert.ok(data && typeof data === "object", "export_all : doit renvoyer un objet");
-      for (const k of ["profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status", "budget", "objectifs", "propositions"]) {
+      for (const k of ["profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status", "budget", "objectifs", "propositions", "connexions_assistant"]) {
         assert.ok(k in data, `export_all : la clé ${k} doit être présente`);
       }
       assert.equal(data.profile?.user_id, A.id, "export_all : le profil exporté doit être celui de A");

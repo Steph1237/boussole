@@ -15,8 +15,8 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload() }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, scope, people, user, error }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, surveillerConnexions(on) }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
@@ -36,7 +36,12 @@
    Store.propositions.appliquer(ids, modifications = { <id>: apresModifie }) → { appliquees } (RPC appliquer_propositions, tout ou
    rien) ; Store.propositions.refuser(ids) → { refusees } (RPC refuser_propositions) ; rechargement puis émission ; erreur
    { code: "invalid_argument", message } en français si une cible est invalide.
-   profil.biensRenseignes = true quand foyer.biensRenseignes l'est (« aucun bien ni crédit » est une réponse, bilan-etat.js). */
+   profil.biensRenseignes = true quand foyer.biensRenseignes l'est (« aucun bien ni crédit » est une réponse, bilan-etat.js).
+   connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] : assistants qui ont appelé le connecteur MCP (table
+   connexions_assistant, écrite par le connecteur au plus toutes les 5 minutes par client ; clientId "session" pour un jeton de
+   session ordinaire), dans l'ordre de première connexion. Lue avec le reste par loadAll ; Store.surveillerConnexions(true)
+   relit cette seule table toutes les 5 s (voyant « Claude est connecté » de l'onboarding) et n'émet que si elle a changé ;
+   surveillerConnexions(false) arrête. Aucune surveillance tant qu'aucun module ne la demande. */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -48,7 +53,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -79,6 +84,7 @@
       risque: clone(C.risque),
       classes: clone(C.classes) || {},
       propositions: clone(C.propositions),
+      connexions: clone(C.connexions),
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -137,6 +143,8 @@
     id: r.id, lot: r.lot, cible: r.cible, operation: r.operation, ref: r.ref ?? null, avant: r.avant ?? null, apres: r.apres ?? null,
     source: r.source, justification: r.justification ?? null, statut: r.statut, creeLe: r.cree_le, decideLe: r.decide_le ?? null,
   });
+  const connView = r => ({ clientId: r.client_id, clientNom: r.client_nom || null, premierLe: r.premier_le, dernierLe: r.dernier_le, appels: r.appels == null ? 0 : +r.appels });
+  const CONN_SELECT = "client_id, client_nom, premier_le, dernier_le, appels";
   const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
   const objView = r => ({
     id: r.id, nom: r.nom || "", type: r.type, cible: num(r.cible), dateCible: r.date_cible || null, deja: num(r.deja),
@@ -157,8 +165,9 @@
       q(sb.from("budgets").select("*").maybeSingle()),
       q(sb.from("objectifs").select("*").order("priorite").order("created_at")),
       q(sb.from("propositions").select("*").order("cree_le", { ascending: false }).limit(200)),
+      q(sb.from("connexions_assistant").select(CONN_SELECT).order("premier_le")),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -170,6 +179,7 @@
     if (budget !== undefined) C.budget = budget ? budgetView(budget) : null;
     if (objectifs !== undefined) C.objectifs = (objectifs || []).map(objView);
     if (propositions !== undefined) C.propositions = (propositions || []).map(propView);
+    if (connexions !== undefined) C.connexions = (connexions || []).map(connView);
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
     if (prof !== undefined) { C.risque = (prof && prof.risque) || null; C.classes = (prof && prof.classes) || {}; }
     if (prof !== undefined && biens !== undefined && credits !== undefined) C.profil = prof ? profView(prof, biens || [], credits || []) : null;
@@ -433,6 +443,31 @@
     },
   };
 
+  /* ---------- connexions de l'assistant : surveillance à la demande (onboarding) ---------- */
+  const CONN_INTERVALLE = 5000;
+  let connTimer = null, connEnCours = false;
+  async function lireConnexions() {
+    if (connEnCours || !sb || !session) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return; // onglet caché : pas de requête
+    connEnCours = true;
+    try {
+      const rows = await q(sb.from("connexions_assistant").select(CONN_SELECT).order("premier_le"));
+      const next = (rows || []).map(connView);
+      if (JSON.stringify(next) !== JSON.stringify(C.connexions)) { C.connexions = next; publish(); }
+    } catch (e) {
+      console.warn("Boussole : lecture des connexions impossible", e);
+    } finally { connEnCours = false; }
+  }
+  function surveillerConnexions(on) {
+    if (on) {
+      if (connTimer) return;
+      connTimer = setInterval(lireConnexions, CONN_INTERVALLE);
+      lireConnexions();
+    } else if (connTimer) {
+      clearInterval(connTimer); connTimer = null;
+    }
+  }
+
   const Store = {
     mode: "supabase",
     db,
@@ -448,6 +483,7 @@
     emit,
     reload,
     markOnboarded() { return write(uid => q(sb.from("profiles").update({ onboarding_done: true }).eq("user_id", uid))); },
+    surveillerConnexions,
   };
   window.Store = Store;
   publish();
