@@ -45,11 +45,13 @@ test("claude-guide.js : parcours ouverts sur claude.ai/new?q= (encodé, nouvel o
 
 test("claude-guide : connecteur (adresse, Claude Code), compte anonyme, démo, alternative manuelle", () => {
   assert.match(js, /"\/functions\/v1\/mcp"/);
-  assert.match(js, /claude mcp add boussole -t http /);
+  assert.match(js, /Accueil\.connexion\(\$\("cgConnexion"\)\)/, "bloc de connexion partagé avec l'accueil (étapes, identifiant client, Claude Code)");
+  assert.match(js, /App\.accueil\(\{ etape: 1 \}\)/, "« Revoir l'accueil »");
+  assert.match(html, /data-accueil>Revoir l'accueil</);
   assert.match(js, /Auth\.isAnonymous\(s\)/);
   assert.match(js, /Store\.mode === "demo"/);
   assert.match(html, /href="compte\.html#securiser"/);
-  assert.match(html, /Paramètres → Connecteurs → Ajouter un connecteur personnalisé/);
+  assert.match(html, /id="cgConnexion"/);
   for (const r of ["profil/donnees", "avenir/plan", "diagnostic/risque", "profil/propositions"]) assert.match(html, new RegExp('data-goto="' + r + '"'));
   const ids = [...js.matchAll(/\$\("(cg[A-Za-z0-9]+)"\)/g)].map(m => m[1]);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);

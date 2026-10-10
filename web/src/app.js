@@ -301,19 +301,33 @@
         if (typeof Auth.onChange === "function") Auth.onChange((ev, s) => { if (s) anonAccount(s); });
       }
       let onboardingShown = false;
-      /* Premiers pas : une fois par chargement, pour un compte réel qui ne les a ni faits ni passés. */
+      /* Premiers pas en formulaires (« Je n'utilise pas d'assistant ») : écriture du profil, des placements, puis onboarding fait. */
+      const formulaires = () => ({
+        onSave: async (patch, rows) => {
+          await Store.db.doc("profil/main").update(patch);
+          if (rows && rows.length) await Store.db.collection("positions").addMany(rows);
+          await Store.markOnboarded();
+        },
+        onSkip: () => Store.markOnboarded().catch(e => console.warn("Boussole : premiers pas non marqués", e)),
+      });
+      /* Accueil (accueil.js) : bienvenue, choix de l'assistant, connexion de Claude, entretien, suivi.
+         Aussi rouvert depuis Avec Claude (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
+      App.accueil = o => {
+        if (!window.Accueil) return false;
+        Accueil.open(Object.assign({ formulaires: formulaires() }, o || {}));
+        return true;
+      };
+      /* ?accueil dans l'URL : force l'ouverture (démo comprise) pour tester le parcours. */
+      const forceAccueil = new URLSearchParams(location.search).has("accueil");
+      /* Une fois par chargement, pour un compte réel qui n'a pas terminé l'onboarding (sauf « Reprendre plus tard »
+         dans cet onglet). Sans accueil.js, repli sur les premiers pas en formulaires. */
       function maybeOnboard(S) {
-        if (onboardingShown || demo || !window.Onboarding || !S.ready || !S.dbOk || S.onboardingDone) return;
+        if (onboardingShown || !S.ready) return;
+        if (forceAccueil && window.Accueil) { onboardingShown = true; Accueil.open({ formulaires: formulaires(), etape: 1 }); return; }
+        if (demo || !S.dbOk || S.onboardingDone) return;
         onboardingShown = true;
-        Onboarding.open({
-          profil: S.profil,
-          onSave: async (patch, rows) => {
-            await Store.db.doc("profil/main").update(patch);
-            if (rows && rows.length) await Store.db.collection("positions").addMany(rows);
-            await Store.markOnboarded();
-          },
-          onSkip: () => Store.markOnboarded().catch(e => console.warn("Boussole : premiers pas non marqués", e)),
-        });
+        if (window.Accueil) { if (!Accueil.reporte()) Accueil.open({ formulaires: formulaires() }); }
+        else if (window.Onboarding) Onboarding.open(Object.assign({ profil: S.profil }, formulaires()));
       }
       Store.on(S => {
         maybeOnboard(S);

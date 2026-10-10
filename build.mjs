@@ -18,7 +18,7 @@ const outArg = process.argv.find(a => a.startsWith("--out="));
 const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
 
 const MODULES = ["bilan", "pilotage", "sante", "toise", "simu", "plan-view", "actions", "risque-view", "profil", "regles", "claude-guide", "propositions"];
-const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", "rules", "plan", "bilan-calc", "bilan-etat", "periodes", "marche", "risque", "pratiques", "assistant", "import", "onboarding", ...MODULES, "app"];
+const SCRIPTS = ["calc", "demo-data", "store-demo", "store-supabase", "auth", "reel", "rules", "plan", "bilan-calc", "bilan-etat", "periodes", "marche", "risque", "pratiques", "assistant", "import", "onboarding", "accueil", ...MODULES, "app"];
 // supabase-js v2, build UMD épinglé (window.supabase). Le paquet n'est pas publié sur cdnjs : jsdelivr sert
 // le fichier du paquet npm officiel. Chargé juste après config.js, avant les adaptateurs store-* et auth.js.
 const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js";
@@ -39,7 +39,7 @@ function wrap(fragment) {
 
 // --- app.html : coque + fragments ---
 let app = read(join(SRC, "shell.html"));
-const css = [read(join(SRC, "theme.css")), ...MODULES.map(m => read(join(SRC, `${m}.css`))), read(join(SRC, "import.css")), read(join(SRC, "onboarding.css"))].join("\n");
+const css = [read(join(SRC, "theme.css")), ...MODULES.map(m => read(join(SRC, `${m}.css`))), read(join(SRC, "import.css")), read(join(SRC, "onboarding.css")), read(join(SRC, "accueil.css"))].join("\n");
 app = app.replace("/*@css*/", () => css);
 for (const m of MODULES) {
   app = app.replace(`<!--@${m}-->`, () => read(join(SRC, `${m}.html`)) || `<p class="muted">Module ${m} en construction.</p>`);

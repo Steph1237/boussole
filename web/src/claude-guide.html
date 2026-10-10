@@ -5,6 +5,7 @@
       <h2 id="cgTitle">Faites votre bilan en discutant avec Claude</h2>
       <p>Claude vous pose les questions qui manquent, une à la fois, comme un conseiller ; il dépose ce qu'il a compris dans Boussole et vous validez ce qui est enregistré.</p>
       <p class="small muted" id="cgHeroSub"></p>
+      <button type="button" class="cg-btn ghost cg-revoir" data-accueil>Revoir l'accueil</button>
     </div>
   </section>
 
@@ -27,27 +28,7 @@
         <h3>Ajouter le connecteur Boussole à Claude</h3>
         <p class="small muted">Une seule fois. Le connecteur ne voit que votre compte, après votre autorisation ; il ne peut ni exporter vos données ni supprimer votre compte.</p>
         <p class="cg-note" id="cgDemoNote" hidden>Vous êtes en démo : le connecteur fonctionne avec un vrai compte, pas avec ce foyer fictif. <a href="index.html#connexion">Créer mon compte</a></p>
-        <label class="cg-url-l" for="cgUrl">Adresse du connecteur</label>
-        <div class="cg-copyline">
-          <input class="cg-in" id="cgUrl" type="text" readonly value="">
-          <button type="button" class="cg-btn ghost" data-copy-el="cgUrl">Copier l'adresse</button>
-        </div>
-        <details class="cg-how">
-          <summary>claude.ai (site web)</summary>
-          <p>Paramètres → Connecteurs → Ajouter un connecteur personnalisé → collez l'adresse, puis connectez-vous à Boussole et autorisez l'accès.</p>
-        </details>
-        <details class="cg-how">
-          <summary>Claude Desktop et applications mobiles</summary>
-          <p>Paramètres → Connecteurs → Ajouter un connecteur personnalisé → collez l'adresse, puis connectez-vous à Boussole et autorisez l'accès. Un connecteur ajouté sur claude.ai est aussi disponible dans les applications.</p>
-        </details>
-        <details class="cg-how">
-          <summary>Claude Code (terminal)</summary>
-          <p>Dans un terminal, lancez :</p>
-          <div class="cg-copyline">
-            <code class="cg-code" id="cgCmd"></code>
-            <button type="button" class="cg-btn ghost" data-copy-el="cgCmd">Copier</button>
-          </div>
-        </details>
+        <div class="cg-cx" id="cgConnexion"></div>
       </li>
       <li class="cg-step cg-anon" id="cgStepAnon" hidden>
         <h3>Sécurisez d'abord votre compte</h3>
