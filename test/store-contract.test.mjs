@@ -52,7 +52,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -70,7 +70,8 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.equal(S.scope, "foyer");
   assert.equal(S.positions.length, 12);
   S.positions.forEach(p => assert.ok(["p1", "p2"].includes(p.owner), `owner canonique pour ${p.id} : ${p.owner}`));
-  const POS_KEYS = ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "valueDate", "status", "hypothesis", "qtyEstimated", "note"];
+  const POS_KEYS = ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "valueDate", "status", "hypothesis", "qtyEstimated", "note",
+    "ter", "zone", "devise", "annoteSource", "annoteLe"];
   S.positions.forEach(p => assert.deepEqual(Object.keys(p).sort(), [...POS_KEYS].sort(), `forme de la position ${p.id}`));
   assert.ok(S.positions.some(p => p.status === "à recevoir"), "une ligne à recevoir");
   // snapshots / config / profil / status aux clés attendues par pilotage.js, reel.js, profil.js
@@ -83,7 +84,18 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.deepEqual(J(S.config.cushion), { mode: "amount", min: 15000, max: 20000 });
   assert.deepEqual(J(S.config.rules.map(r => r.type).sort()), ["envelope_cap", "max_bloc_pct", "max_line_pct", "min_bloc_pct", "price_floor", "stale_prices"], "une règle de chaque type");
   assert.equal(S.config.recurring.length, 2); assert.equal(S.config.todo.length, 2); assert.equal(S.config.milestones.length, 1);
-  assert.deepEqual(Object.keys(S.profil).sort(), ["autres", "biens", "credits", "foyer", "personnes", "updatedAt"]);
+  assert.deepEqual(Object.keys(S.profil).sort(), ["autres", "biens", "credits", "foyer", "personnes", "protection", "updatedAt"]);
+  assert.deepEqual(J(S.profil.protection), {}, "protection non déclarée dans la démo");
+  assert.equal(S.risque, null, "démo : questionnaire de risque jamais rempli");
+  assert.deepEqual(J(S.classes), {}, "démo : aucune surcharge poche → classe");
+  // annotations d'instruments : trois lignes cotées sur cinq ont un TER sourcé, moins de la moitié des montants cotés
+  const cotees = S.positions.filter(p => p.mode === "market" && counted(p));
+  const avecTer = cotees.filter(p => p.ter != null);
+  assert.equal(avecTer.length, 3);
+  avecTer.forEach(p => { assert.ok(p.ter >= 0 && p.ter <= 10); assert.ok(p.annoteSource && p.annoteSource.length <= 300, `source du TER de ${p.id}`); assert.ok(p.annoteLe); });
+  const part = avecTer.reduce((a, p) => a + val(p), 0) / cotees.reduce((a, p) => a + val(p), 0);
+  assert.ok(part > 0.3 && part < 0.5, `couverture des TER : ${part}`);
+  S.positions.filter(p => p.ter == null).forEach(p => { assert.equal(p.annoteSource, null); assert.equal(p.zone, null); assert.equal(p.devise, null); });
   assert.deepEqual(Object.keys(S.profil.personnes).sort(), ["p1", "p2"]);
   assert.equal(S.profil.personnes.p1.salaire, 2800); assert.equal(S.profil.personnes.p2.salaire, 2300);
   assert.equal(S.profil.biens[0].part_p1, 50); assert.equal("partSteph" in S.profil.biens[0], false);
@@ -258,6 +270,39 @@ test("démo : façade budget et objectifs (set, upsert création / mise à jour,
   assert.equal(ctx.DEMO.objectifs.length, 3, "window.DEMO n'est pas modifié (copie)");
 });
 
+test("démo : façade Diagnostic (risque, classes, protection) sans toucher au reste du profil", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  const db = ctx.Store.db;
+  const biens = J(S.profil.biens), personnes = J(S.profil.personnes);
+
+  const risque = { reponses: { horizon: "8-15", reaction: "rien" }, profil: "equilibre", score: 55, date: "2026-10-10" };
+  await db.doc("profil/main").update({ risque });
+  assert.deepEqual(J(ctx.Store.get().risque), risque);
+  assert.equal("risque" in ctx.Store.get().profil, false, "risque est exposé dans S.risque, pas dans le profil");
+
+  await db.doc("profil/main").update({ classes: { Obligations: "fonds_euros", Convictions: "actions" } });
+  assert.deepEqual(J(ctx.Store.get().classes), { Obligations: "fonds_euros", Convictions: "actions" });
+  assert.deepEqual(J(ctx.Store.get().risque), risque, "le profil de risque est conservé");
+
+  await db.doc("profil/main").update({ protection: { prevoyance: true, emprunteur: false } });
+  const P = ctx.Store.get().profil;
+  assert.deepEqual(J(P.protection), { prevoyance: true, emprunteur: false });
+  assert.deepEqual(J(P.biens), biens, "biens intacts");
+  assert.deepEqual(J(P.personnes), personnes, "personnes intactes");
+  assert.equal("classes" in P, false);
+
+  await db.doc("profil/main").update({ risque: null });
+  assert.equal(ctx.Store.get().risque, null, "null efface le profil de risque");
+  assert.deepEqual(J(ctx.Store.get().classes), { Obligations: "fonds_euros", Convictions: "actions" });
+
+  await assert.rejects(db.doc("profil/main").update({ risque: "dynamique" }), e => e.code === "invalid_argument");
+  await assert.rejects(db.doc("profil/main").update({ classes: { Obligations: 3 } }), e => e.code === "invalid_argument");
+  await assert.rejects(db.doc("profil/main").update({ protection: [true] }), e => e.code === "invalid_argument");
+  assert.deepEqual(J(ctx.Store.get().profil.protection), { prevoyance: true, emprunteur: false }, "un refus ne modifie rien");
+  assert.equal(ctx.DEMO.risque, null, "window.DEMO n'est pas modifié (copie)");
+});
+
 test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = demo", () => {
   assert.equal(browser({ search: "" }).Store, undefined);
   assert.equal(browser({ search: "?x=1&demo" }).Store?.mode, "demo");
@@ -277,6 +322,9 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
   for (const k of ["foyer: num(r.total)", "part_p1: num(b.part_p1)", 'setScope(c)']) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   // le store Supabase expose le même contrat
   for (const k of ['mode: "supabase"', "get: () => S", "on(fn)", "setScope(s)", "emit,", "reload,", "db,", "window.Store = Store"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  for (const k of ["ter, zone, devise, annote_source, annote_le", "ins.annote_source", "prof.risque", "prof.classes", "protection: p.protection || {}",
+    'const DIAG = ["risque", "classes", "protection"]', "updateProfil(patch, uid)", "risque: clone(C.risque)", "classes: clone(C.classes) || {}"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  assert.ok(demo.includes('const DIAG = ["risque", "classes", "protection"]'), "store-demo.js : mêmes colonnes du Diagnostic");
   for (const k of ["price_override", "value_date", "qty_estimated", "request_instrument", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")', 'from("budgets")', 'from("objectifs")', "date_cible", "upsert(row)", "delete()"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["signInWithPassword", "signUp", "signInWithOtp", 'provider: "google"', "onAuthStateChange", "requireSession", "index.html"]) assert.ok(auth.includes(k), `auth.js : ${k}`);
 });

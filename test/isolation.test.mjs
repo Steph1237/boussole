@@ -231,9 +231,71 @@ describe("isolation RLS entre deux comptes", () => {
     });
   });
 
+  describe("annoter_instrument() (RPC security definer, colonnes d'annotation des instruments)", () => {
+    it("refusée pour un ISIN que l'appelant ne détient pas, acceptée pour un ISIN détenu, cours intouché", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      // L'instrument doit exister (clé étrangère de positions.isin) : request_instrument est idempotente.
+      const pre = await admin.from("instruments").select("isin, price, ter, zone, devise, annote_source, annote_le").eq("isin", TEST_ISIN).maybeSingle();
+      assert.equal(pre.error, null, `instruments : lecture préalable impossible (${pre.error?.message})`);
+      if (!pre.data) instrumentPreexisted = false;
+      const req = await A.client.rpc("request_instrument", { p_isin: TEST_ISIN, p_name: "Test", p_symbol: null });
+      assert.equal(req.error, null, `request_instrument : ${req.error?.message}`);
+      if (!pre.data) instrumentCreated = true;
+      const annot = { p_isin: TEST_ISIN, p_ter: 0.6, p_zone: "États-Unis", p_devise: "usd", p_source: "https://example.org/dic-test.pdf" };
+      let extra = null;
+      try {
+        // Ni A ni B ne détiennent encore cet ISIN : refus pour les deux.
+        for (const u of [A, B]) {
+          const { error } = await u.client.rpc("annoter_instrument", annot);
+          assert.ok(error, `annoter_instrument : ${u.label} ne détient pas ${TEST_ISIN}, l'appel doit être refusé`);
+          assert.match(error.message, /non détenu/, `annoter_instrument : motif du refus (${error.message})`);
+        }
+        // A ouvre une ligne sur cet ISIN : l'annotation passe, sourcée et datée.
+        const ins = await A.client.from("positions").insert({ name: "ETF test", envelope: "PEA", owner: "p1", bloc: "Monde", mode: "market", isin: TEST_ISIN, qty: 1 }).select().single();
+        assert.equal(ins.error, null, `positions : A doit pouvoir créer une ligne cotée (${ins.error?.message})`);
+        extra = ins.data.id;
+        const sans = await A.client.rpc("annoter_instrument", { ...annot, p_source: "  " });
+        assert.ok(sans.error && /source requise/.test(sans.error.message), "annoter_instrument : la source est obligatoire");
+        const hors = await A.client.rpc("annoter_instrument", { ...annot, p_ter: 12 });
+        assert.ok(hors.error && /TER invalide/.test(hors.error.message), "annoter_instrument : TER borné à 0..10");
+        const { data, error } = await A.client.rpc("annoter_instrument", annot);
+        assert.equal(error, null, `annoter_instrument : A détient ${TEST_ISIN}, l'appel doit réussir (${error?.message})`);
+        assert.equal(Number(data.ter), 0.6);
+        assert.equal(data.zone, "États-Unis");
+        assert.equal(data.devise, "USD", "devise normalisée en majuscules");
+        assert.equal(data.annote_source, annot.p_source);
+        assert.ok(data.annote_le, "date d'annotation renseignée");
+        assert.equal(data.price ?? null, pre.data?.price ?? null, "le cours n'est pas modifiable par cette RPC");
+        // B ne détient toujours pas l'ISIN : toujours refusé, mais l'annotation (donnée publique du fonds) lui est visible.
+        const refus = await B.client.rpc("annoter_instrument", { ...annot, p_ter: 0.01 });
+        assert.ok(refus.error, "annoter_instrument : B reste refusé");
+        const vu = await B.client.from("instruments").select("ter, annote_source").eq("isin", TEST_ISIN).single();
+        assert.equal(vu.error, null);
+        assert.equal(Number(vu.data.ter), 0.6, "B voit le TER annoté par A (instrument partagé), pas celui qu'il a tenté d'écrire");
+        // Écriture directe toujours interdite.
+        const direct = await A.client.from("instruments").update({ ter: 0.01 }).eq("isin", TEST_ISIN).select();
+        assert.ok(direct.error, "instruments : la mise à jour directe du TER par un utilisateur doit échouer");
+      } finally {
+        if (extra) await A.client.from("positions").delete().eq("id", extra); // export_all attend une seule position pour A
+        if (pre.data) { // instrument réel préexistant : on restaure ses annotations
+          const { ter, zone, devise, annote_source, annote_le } = pre.data;
+          await admin.from("instruments").update({ ter, zone, devise, annote_source, annote_le }).eq("isin", TEST_ISIN);
+        }
+      }
+    });
+  });
+
   describe("export_all()", () => {
     it("ne renvoie que les données de A", async (tc) => {
       if (skipIfNoKey(tc)) return;
+      // Colonnes du Diagnostic : écrites par A, exportées pour A seulement, invisibles pour B.
+      const diag = { risque: { profil: "equilibre", score: 55, date: today, marqueur: `risque-${A.id}` }, classes: { Protection: "fonds_euros" }, protection: { prevoyance: true, emprunteur: false } };
+      const up = await A.client.from("profiles").update(diag).eq("user_id", A.id).select("risque, classes, protection").single();
+      assert.equal(up.error, null, `profiles : A doit pouvoir écrire risque / classes / protection (${up.error?.message})`);
+      const volB = await B.client.from("profiles").select("user_id, risque, classes, protection");
+      assert.equal(volB.error, null);
+      assert.ok(volB.data.every((r) => r.user_id === B.id), "profiles : B ne lit que son profil");
+      assert.ok(!JSON.stringify(volB.data).includes(`risque-${A.id}`), "profiles : le profil de risque de A est invisible pour B");
       const { data, error } = await A.client.rpc("export_all");
       assert.equal(error, null, `export_all : l'appel par A doit réussir (${error?.message})`);
       assert.ok(data && typeof data === "object", "export_all : doit renvoyer un objet");
@@ -241,6 +303,11 @@ describe("isolation RLS entre deux comptes", () => {
         assert.ok(k in data, `export_all : la clé ${k} doit être présente`);
       }
       assert.equal(data.profile?.user_id, A.id, "export_all : le profil exporté doit être celui de A");
+      for (const k of ["risque", "classes", "protection"]) assert.deepEqual(data.profile[k], diag[k], `export_all : profile.${k} de A exporté`);
+      const exB = await B.client.rpc("export_all");
+      assert.equal(exB.error, null);
+      assert.ok(!JSON.stringify(exB.data).includes(`risque-${A.id}`), "export_all : l'export de B ne contient pas le profil de risque de A");
+      assert.ok("risque" in exB.data.profile && "classes" in exB.data.profile && "protection" in exB.data.profile, "export_all : colonnes du Diagnostic présentes pour B aussi");
       assert.equal(data.positions.length, 1, "export_all : A doit avoir exactement une position");
       assert.equal(data.positions[0].id, A.positionId, "export_all : la position exportée doit être celle de A");
       const json = JSON.stringify(data);
