@@ -108,10 +108,12 @@
     return out;
   }
 
-  /* ---------- contrôles intégrés ---------- */
+  /* ---------- contrôles intégrés ----------
+     Chaque alerte porte `kind`, pour la reconnaître sans lire son texte : "cible" (écart aux cibles), "matelas",
+     "nocturne" (mise à jour nocturne en retard), "agent" (alertes déposées dans status.alerts), "jalon" (config.milestones). */
   function builtins(ctx) {
     ctx = ctx || {};
-    const A = [], cfg = ctx.config || {}, t = today(ctx), add = (level, title, text) => A.push({ level, title, text, rule: null });
+    const A = [], cfg = ctx.config || {}, t = today(ctx), add = (level, title, text, kind) => A.push({ level, title, text, rule: null, kind });
     const positions = ctx.positions || [], people = ctx.people && ctx.people.length ? ctx.people : [{ id: "p1", nom: DEFAULT_NOMS.p1 }];
     // Écart aux cibles, par personne (toutes au périmètre Foyer, sinon la personne choisie).
     const tg = cfg.targets || {}, tol = num(tg.tolerancePts) ?? 3;
@@ -125,7 +127,7 @@
         const cible = num(targets[k]); if (cible == null) return;
         const cur = (by[k] || 0) / tot * 100, gap = cur - cible;
         if (Math.abs(gap) > tol) add(Math.abs(gap) > tol * 2 ? "warn" : "info", "Poche " + k + " " + (gap > 0 ? "au-dessus" : "en dessous") + " de la cible" + suffix,
-          pct(cur) + " contre " + pct(cible) + " visés (" + sgn(gap) + gap.toFixed(1).replace(".", ",") + " pts).");
+          pct(cur) + " contre " + pct(cible) + " visés (" + sgn(gap) + gap.toFixed(1).replace(".", ",") + " pts).", "cible");
       });
     });
     // Matelas : épargne de précaution du foyer (poche « Épargne », lignes comptées).
@@ -133,18 +135,18 @@
     if (m && m.min > 0) {
       const cush = totalOf(positions.filter(p => p.bloc === "Épargne" && C().counted(p)));
       const cible = m.mode === "months" ? " (" + nf0.format(m.months) + " mois de dépenses)" : "";
-      if (cush < m.min) add("info", "Matelas sous la cible", eur(cush) + " d'épargne disponible contre " + eur(m.min) + " visés" + cible + ".");
-      else if (m.max != null && m.max > 0 && cush > m.max) add("info", "Matelas au-dessus de la cible", eur(cush) + " d'épargne disponible pour une cible de " + eur(m.min) + " à " + eur(m.max) + " : " + eur(cush - m.max) + " pourraient être placés.");
+      if (cush < m.min) add("info", "Matelas sous la cible", eur(cush) + " d'épargne disponible contre " + eur(m.min) + " visés" + cible + ".", "matelas");
+      else if (m.max != null && m.max > 0 && cush > m.max) add("info", "Matelas au-dessus de la cible", eur(cush) + " d'épargne disponible pour une cible de " + eur(m.min) + " à " + eur(m.max) + " : " + eur(cush - m.max) + " pourraient être placés.", "matelas");
     }
     // Mise à jour nocturne.
     const st = ctx.status || null;
-    if (st && st.lastRun && daysBetween(String(st.lastRun).slice(0, 10), t) > 2) add("warn", "Mise à jour nocturne en retard", "Dernier passage le " + frDate(String(st.lastRun).slice(0, 10)) + ".");
-    (st && Array.isArray(st.alerts) ? st.alerts : []).forEach(a => a && add(["crit", "warn", "info"].includes(a.level) ? a.level : "info", a.title || "Alerte", a.text || ""));
+    if (st && st.lastRun && daysBetween(String(st.lastRun).slice(0, 10), t) > 2) add("warn", "Mise à jour nocturne en retard", "Dernier passage le " + frDate(String(st.lastRun).slice(0, 10)) + ".", "nocturne");
+    (st && Array.isArray(st.alerts) ? st.alerts : []).forEach(a => a && add(["crit", "warn", "info"].includes(a.level) ? a.level : "info", a.title || "Alerte", a.text || "", "agent"));
     // Échéances.
     (Array.isArray(cfg.milestones) ? cfg.milestones : []).forEach(ms => {
       if (!ms || !ms.date) return;
       const d = daysBetween(t, ms.date);
-      if (d >= 0 && d <= (num(ms.warnDays) ?? 60)) add("info", ms.title || "Échéance", "Le " + frDate(ms.date) + " (dans " + d + " jour" + (d > 1 ? "s" : "") + "). " + (ms.text || ""));
+      if (d >= 0 && d <= (num(ms.warnDays) ?? 60)) add("info", ms.title || "Échéance", "Le " + frDate(ms.date) + " (dans " + d + " jour" + (d > 1 ? "s" : "") + "). " + (ms.text || ""), "jalon");
     });
     return A;
   }

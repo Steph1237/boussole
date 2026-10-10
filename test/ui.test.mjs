@@ -581,6 +581,88 @@ test("periode (DOM) : « Personnalisée » montre deux dates étiquetées ; leur
   assert.equal(dates.hidden, true);
 });
 
+test("panneau : retour arrière (popstate) ou hash changé pendant l'ouverture → fermé sans reprise du focus ; écouteurs retirés à la fermeture", () => {
+  const { UI: G, doc, ctx, declencheur } = montage();
+  const ls = {};
+  ctx.addEventListener = (t, f) => { (ls[t] ||= []).push(f); };
+  ctx.removeEventListener = (t, f) => { ls[t] = (ls[t] || []).filter(x => x !== f); };
+  const n = t => (ls[t] || []).length;
+  assert.equal(n("hashchange") + n("popstate"), 0, "rien avant l'ouverture");
+  G.panneau.ouvrir({ titre: "T", contenu: "<p>x</p>" });
+  assert.equal(n("hashchange"), 1); assert.equal(n("popstate"), 1);
+  G.panneau.ouvrir({ titre: "T2", contenu: "" });
+  assert.equal(n("popstate"), 1, "rouvrir ne double pas les écouteurs");
+  const focusAvant = declencheur.focusCount;
+  ls.popstate[0]({ type: "popstate" });
+  assert.equal(G.panneau.ouvert(), false, "fermé par le retour arrière");
+  assert.equal(declencheur.focusCount, focusAvant, "focus non repris : la coque le pose sur la vue atteinte");
+  assert.equal(n("hashchange") + n("popstate"), 0, "écouteurs retirés");
+  G.panneau.ouvrir({ titre: "T", contenu: "" });
+  ls.hashchange[0]({ type: "hashchange" });
+  assert.equal(G.panneau.ouvert(), false, "fermé par un changement de hash");
+  assert.equal(n("hashchange") + n("popstate"), 0);
+  G.panneau.ouvrir({ titre: "T", contenu: "" });
+  G.panneau.fermer();
+  assert.equal(n("hashchange") + n("popstate"), 0, "fermeture ordinaire : écouteurs retirés aussi");
+  // fermer({ focus: false }) (la coque, avant de naviguer) : pas de reprise du focus
+  declencheur.focus();
+  G.panneau.ouvrir({ titre: "T", contenu: "" });
+  const f2 = declencheur.focusCount;
+  G.panneau.fermer({ focus: false });
+  assert.equal(G.panneau.ouvert(), false);
+  assert.equal(declencheur.focusCount, f2);
+  declencheur.focus();
+  G.panneau.ouvrir({ titre: "T", contenu: "" });
+  G.panneau.fermer();
+  assert.equal(declencheur.focusCount, f2 + 2, "fermer() sans option rend le focus");
+  assert.equal(doc.body.querySelector(".ui-panneau").hidden, true);
+});
+
+test("voirPlus : balise \"ul\" → deux listes <ul> (le rendu fournit les <li>) ; \"div\" par défaut", () => {
+  const li = x => "<li>" + UI.esc(x) + "</li>";
+  const h = UI.voirPlus(["a", "b", "c"], 2, li, "Voir plus", "ul");
+  assert.match(h, /^<div class="ui-voirplus"><ul class="ui-voirplus-liste"><li>a<\/li><li>b<\/li><\/ul><ul class="ui-voirplus-liste ui-voirplus-reste" id="[^"]+" hidden><li>c<\/li><\/ul><button/);
+  assert.match(UI.voirPlus(["a"], 2, li, "", "ol"), /^<div class="ui-voirplus"><ol class="ui-voirplus-liste"><li>a<\/li><\/ol><\/div>$/);
+  assert.match(UI.voirPlus(["a"], 2), /^<div class="ui-voirplus"><div class="ui-voirplus-liste">a<\/div><\/div>$/);
+  assert.match(UI.voirPlus(["a"], 2, null, "", "script"), /<div class="ui-voirplus-liste">/, "balise inconnue → div");
+  assert.match(css, /\.ui-voirplus-liste\{[^}]*list-style:none/);
+  const mobile = css.slice(css.indexOf("@media (max-width:899.98px)"));
+  assert.match(mobile, /\.ui-voirplus-btn\{min-height:40px/, "« Voir plus » d'au moins 40 px de haut sur mobile");
+});
+
+test("periode (DOM) : « Tout » sans première date puis « Personnalisée » → 1 an (pas du = au) ; premiere(date) met à jour « Tout »", () => {
+  const { UI: G, dom } = charger(true);
+  const racine = dom.doc.body.appendChild(dom.doc.createElement("div"));
+  const vus = [];
+  const ctl = G.periode(racine, { periode: "tout", today: "2026-10-10", surChange: e => vus.push(e) });
+  assert.equal(typeof ctl.premiere, "function");
+  assert.deepEqual(simple(ctl.valeur()), { periode: "tout", granularite: "jour", du: "2026-10-10", au: "2026-10-10" }, "sans données : du = au");
+  // les photos arrivent : « Tout » part de la première, la granularité automatique suit (et la vue est prévenue)
+  ctl.premiere("2024-02-03");
+  assert.deepEqual(simple(ctl.valeur()), { periode: "tout", granularite: "mois", du: "2024-02-03", au: "2026-10-10" });
+  assert.deepEqual(simple(vus.pop()), { periode: "tout", granularite: "mois", du: "2024-02-03", au: "2026-10-10" });
+  ctl.premiere("2024-02-03");
+  assert.equal(vus.length, 0, "même date : rien");
+  racine.querySelector('[data-ui-id="perso"]').click();
+  const [du, au] = racine.querySelectorAll('input[type="date"]');
+  assert.equal(du.value, "2024-02-03", "« Personnalisée » reprend la période « Tout »"); assert.equal(au.value, "2026-10-10");
+  // sans première date : repli sur 1 an
+  const r2 = dom.doc.body.appendChild(dom.doc.createElement("div"));
+  const vus2 = [];
+  G.periode(r2, { periode: "tout", today: "2026-10-10", surChange: e => vus2.push(e) });
+  r2.querySelector('[data-ui-id="perso"]').click();
+  const [du2, au2] = r2.querySelectorAll('input[type="date"]');
+  assert.equal(du2.value, "2025-10-10"); assert.equal(au2.value, "2026-10-10");
+  assert.equal(vus2.pop().du, "2025-10-10");
+  // sans window.Periodes non plus
+  const { UI: G3, dom: d3 } = charger(false);
+  const r3 = d3.doc.body.appendChild(d3.doc.createElement("div"));
+  G3.periode(r3, { periode: "tout", today: "2024-02-29" });
+  r3.querySelector('[data-ui-id="perso"]').click();
+  assert.equal(r3.querySelector("[data-ui-du]").value, "2023-03-01");
+  assert.equal(r3.querySelector("[data-ui-au]").value, "2024-02-29");
+});
+
 /* ============================================================ CSS ============================================================ */
 
 test("ui.css : sélecteurs tous préfixés .ui-, couleurs issues des variables de theme.css, panneau responsive", () => {

@@ -14,7 +14,7 @@
     <a class="brand" href="#aujourdhui/vue" data-goto="aujourdhui/vue"><span data-brand-icon></span>Boussole</a>
     <nav class="side-nav" id="sideNav" aria-label="Destinations"></nav>
     <div class="side-foot">
-      <a class="veille" id="veilleLine" href="#aujourdhui/vue" data-goto="aujourdhui/vue">Veille : jamais lancée</a>
+      <a class="veille" id="veilleLine" href="#agent/connexion" data-goto="agent/connexion">Veille : jamais lancée</a>
       <nav class="side-compte" id="sideCompte" aria-label="Compte"></nav>
       <a class="app-link" id="accountLink" href="compte.html">Mon compte</a>
       <div class="side-demo" id="sideDemo" hidden>Démo : foyer fictif, rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a></div>
@@ -25,8 +25,8 @@
   <header class="mhead">
     <a class="brand" href="#aujourdhui/vue" data-goto="aujourdhui/vue"><span data-brand-icon></span>Boussole</a>
     <div class="mhead-actions">
-      <button type="button" class="icon-btn" id="profileBtn" data-goto="compte/donnees" aria-label="Compte" title="Compte"></button>
-      <a class="icon-btn" id="accountLinkM" href="compte.html" aria-label="Mon compte" title="Mon compte"></a>
+      <button type="button" class="icon-btn" id="profileBtn" data-goto="compte/donnees" aria-label="Compte et réglages" title="Compte et réglages"></button>
+      <a class="icon-btn" id="accountLinkM" href="compte.html" aria-label="Sécurité du compte" title="Sécurité du compte"></a>
     </div>
   </header>
 
@@ -36,7 +36,7 @@
     <div id="anonBanner" class="banner anon" role="status" hidden><span>Compte sans e-mail : vos données sont liées à ce navigateur. Sécurisez votre compte pour les retrouver ailleurs et éviter leur suppression après 90 jours d'inactivité. <a href="compte.html#securiser">Sécuriser mon compte</a></span><button type="button" class="banner-x" id="anonBannerClose" aria-label="Masquer ce message">×</button></div>
     <header class="page-head">
       <div class="page-title">
-        <h1 id="spaceTitle">Aujourd'hui</h1>
+        <h1 id="spaceTitle" tabindex="-1">Aujourd'hui</h1>
         <p id="spaceDesc">Ce qui demande mon attention</p>
         <a class="app-link page-link" id="accountLinkC" href="compte.html" hidden>Mon compte : e-mail, sécurité, export</a>
       </div>
@@ -47,8 +47,8 @@
     <div class="fresh" id="fresh">Chargement des données…</div>
     <div id="dbBanner" class="banner" hidden></div>
 
-    <!-- Aujourd'hui -->
-    <section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" role="tabpanel" aria-labelledby="subtab-aujourdhui-vue" hidden>
+    <!-- Aujourd'hui : une seule sous-vue, donc pas d'onglets ni de role="tabpanel". -->
+    <section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" hidden>
 <!--@aujourdhui-->
     </section>
 

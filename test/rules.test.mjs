@@ -123,3 +123,22 @@ test("describe et normalize : règles en français, saisie validée", () => {
   assert.ok(Rules.normalize({ type: "x" }).error);
   assert.deepEqual(Object.keys(Rules.TYPES).sort(), ["envelope_cap", "max_bloc_pct", "max_line_pct", "min_bloc_pct", "price_floor", "stale_prices"]);
 });
+
+test("contrôles intégrés : chaque alerte porte un kind (cible, matelas, nocturne, agent, jalon) ; les règles de l'utilisateur n'en ont pas", () => {
+  const config = {
+    targets: { p1: { Monde: 50, Nasdaq: 10, "Épargne": 40 }, tolerancePts: 3 },
+    cushion: { mode: "amount", min: 25000, max: 30000 },
+    milestones: [{ title: "Fin de période d'essai", date: "2026-10-25", warnDays: 30 }],
+    rules: [{ type: "max_line_pct", pct: 1 }],
+  };
+  const status = { lastRun: "2026-09-30T20:30:00Z", alerts: [{ level: "warn", title: "Cours manquant", text: "X" }] };
+  const B = Rules.builtins(ctx({ config, status }));
+  const kind = t => B.find(a => a.title === t).kind;
+  assert.equal(kind("Poche Nasdaq au-dessus de la cible (Camille)"), "cible");
+  assert.equal(kind("Matelas sous la cible"), "matelas");
+  assert.equal(kind("Mise à jour nocturne en retard"), "nocturne");
+  assert.equal(kind("Cours manquant"), "agent");
+  assert.equal(kind("Fin de période d'essai"), "jalon");
+  assert.ok(B.every(a => ["cible", "matelas", "nocturne", "agent", "jalon"].includes(a.kind)));
+  assert.ok(Rules.evaluate(config.rules, ctx({ config })).every(a => a.kind === undefined));
+});

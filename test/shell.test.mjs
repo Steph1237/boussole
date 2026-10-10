@@ -172,8 +172,9 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
     assert.ok(mods.includes(m), `${m} absent de MODULES (build.mjs)`);
   }
-  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["memoire-view", "agent", "memoire"], ["aujourdhui", "aujourdhui", "vue"]])
+  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["memoire-view", "agent", "memoire"]])
     assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
+  assert.match(shell, /<section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" hidden>\s*<!--@aujourdhui-->\s*<\/section>/);
   const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
   assert.ok(scripts.indexOf('"reperes"') >= 0 && scripts.indexOf('"reperes"') < scripts.indexOf('"plan"'), "reperes chargé avant plan");
   assert.ok(scripts.indexOf('"sensible"') >= 0 && scripts.indexOf('"sensible"') < scripts.indexOf('"store-demo"'), "sensible (filtre partagé) chargé avant les stores");
@@ -188,7 +189,8 @@ test("coque : éléments communs présents (navigation, Compte, périmètre, vei
   for (const id of ["sideNav", "sideCompte", "bottomBar", "subTabs", "spaceTitle", "spaceDesc", "scopeSeg", "veilleLine", "accountLink", "accountLinkM", "accountLinkC", "profileBtn", "demoBanner", "sideDemo", "dbBanner", "fresh"])
     assert.match(shell, new RegExp(`id="${id}"`), id);
   assert.match(shell, /id="subTabs" role="tablist"/);
-  assert.match(shell, /id="profileBtn" data-goto="compte\/donnees" aria-label="Compte"/);
+  assert.match(shell, /id="profileBtn" data-goto="compte\/donnees" aria-label="Compte et réglages" title="Compte et réglages"/);
+  assert.match(shell, /id="accountLinkM" href="compte\.html" aria-label="Sécurité du compte" title="Sécurité du compte"/, "engrenage distinct de l'avatar");
   assert.match(shell, /class="brand" href="#aujourdhui\/vue" data-goto="aujourdhui\/vue"/);
   assert.doesNotMatch(shell, /href="#(bilan|recos|profil|diagnostic|avenir|decisions)\//, "plus de lien vers une ancienne route dans la coque");
   assert.doesNotMatch(shell, /app-tabs/);
@@ -223,4 +225,53 @@ test("theme.css : point de rupture à 900 px et barre basse à 4 entrées avec z
   assert.match(theme, /\.side\{[^}]*position:sticky[^}]*top:var\(--top\)/);
   assert.doesNotMatch(theme, /\.app-tabs/);
   assert.doesNotMatch(theme, /propBanner/);
+});
+
+/* ------------------------------------------------ revue finale CK1 ------------------------------------------------ */
+
+test("routage : sous-vue par défaut = première sous-vue branchée sur un module (Agent → Propositions, pas le Journal « bientôt »)", () => {
+  const { defSub } = require("../web/src/app.js");
+  for (const sp of SPACES) assert.equal(defSub(sp), sp.subs.find(s => s.module).id, sp.space);
+  assert.deepEqual(resolve("agent"), { space: "agent", sub: "propositions" });
+  assert.deepEqual(resolve("agent/inconnu"), { space: "agent", sub: "propositions" });
+  assert.deepEqual(resolveHash("#agent"), { space: "agent", sub: "propositions", legacy: true });
+  assert.deepEqual(resolve("agent", null, { agent: "journal" }), { space: "agent", sub: "journal" }, "dernière sous-vue visitée prioritaire");
+  assert.deepEqual(resolveHash("#agent/journal"), { space: "agent", sub: "journal", legacy: false }, "le Journal reste accessible");
+  assert.match(app, /const hrefOf = space => "#" \+ space \+ "\/" \+ \(lastSubs\[space\] \|\| defSub\(spaceOf\(space\)\)\)/, "liens de navigation : même défaut");
+  assert.doesNotMatch(app, /subs\[0\]\.id/, "plus de subs[0] comme défaut");
+});
+
+test("focus après navigation : titre de page (tabindex -1, preventScroll) si la destination change ou si le focus est perdu ; pas au chargement", () => {
+  const { focusApres } = require("../web/src/app.js");
+  const r = (space, sub) => ({ space, sub });
+  assert.equal(focusApres(r("aujourdhui", "vue"), r("agent", "propositions"), false), true, "destination changée");
+  assert.equal(focusApres(r("agent", "propositions"), r("agent", "memoire"), false), false, "sous-onglet : le focus reste sur l'onglet");
+  assert.equal(focusApres(r("agent", "propositions"), r("agent", "memoire"), true), true, "focus perdu (lien d'une vue ou du panneau masqués)");
+  assert.match(shell, /<h1 id="spaceTitle" tabindex="-1">/);
+  assert.match(app, /h\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(app, /a\.closest\("\[hidden\]"\)/, "élément actif dans un bloc masqué = focus perdu");
+  assert.match(app, /navigate\(route, \{ focus: false \}\);/, "chargement initial : pas de vol de focus");
+  assert.match(app, /\.ui-panneau a\[href\^="#"\]/, "lien interne du panneau vers la vue courante : focus sur le titre");
+  assert.match(app, /function onHash\(\) \{[\s\S]{0,400}UI\.panneau\.fermer\(\{ focus: false \}\)[\s\S]{0,200}resolveHash/, "retour arrière : panneau fermé avant la navigation");
+});
+
+test("accessibilité : role=\"tabpanel\" seulement pour les destinations à plusieurs sous-vues ; pastilles lues via .ui-sr", () => {
+  for (const sp of SPACES) for (const s of sp.subs) {
+    const tag = shell.match(new RegExp(`<section\\b[^>]*data-space="${sp.space}" data-sub="${s.id}"[^>]*>`))[0];
+    if (sp.subs.length < 2) {
+      assert.doesNotMatch(tag, /role="tabpanel"/, sp.space + " : pas d'onglets, pas de tabpanel");
+      assert.doesNotMatch(tag, /aria-labelledby="subtab-/, sp.space + " : pas d'onglet qui le nomme");
+    } else assert.match(tag, /role="tabpanel" aria-labelledby="subtab-/, sp.space + "/" + s.id);
+  }
+  const refresh = app.slice(app.indexOf("function refreshHeadlines()"), app.indexOf("const frDate"));
+  assert.doesNotMatch(refresh, /setAttribute\("aria-label"/, "pas d'aria-label sur un <span>");
+  assert.match(refresh, /s\.className = "ui-sr"/);
+});
+
+test("coque : « Veille » mène à Agent › Connexion ; libellés distincts de l'avatar et de l'engrenage", () => {
+  assert.match(shell, /id="veilleLine" href="#agent\/connexion" data-goto="agent\/connexion"/);
+  assert.match(app, /labelM = anon \? "Sécuriser mon compte" : "Sécurité du compte"/);
+  const guide = readFileSync("web/src/claude-guide.html", "utf8");
+  assert.doesNotMatch(guide, /Compte › Données<\/a> <span class="muted">[^<]*placements/, "les placements ne sont plus dans Compte › Données");
+  assert.match(guide, /href="#patrimoine\/placements" data-goto="patrimoine\/placements">Patrimoine › Placements<\/a>/);
 });

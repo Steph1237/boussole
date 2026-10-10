@@ -143,3 +143,17 @@ test("démo : les 3 premières entrées « À traiter » = tête de la liste Act
   const rang = { crit: 0, warn: 1, info: 2, piste: 3 };
   for (let i = 1; i < items.length; i++) assert.ok(rang[items[i - 1].level] <= rang[items[i].level], "tri par gravité");
 });
+
+test("bilan.js : « À traiter » — une piste mène à la page de son critère, une alerte à Aujourd'hui ; pas de compteur visible (règle 9)", () => {
+  const src = js.match(/function lienTodo\(a\) \{[\s\S]*?\n  \}/);
+  assert.ok(src, "lienTodo présent");
+  const lienTodo = new Function(src[0] + "; return lienTodo;")();
+  assert.deepEqual(lienTodo({ level: "warn", title: "Poche" }), { route: "aujourdhui/vue", label: "Voir" });
+  assert.deepEqual(lienTodo({ level: "piste", lien: { route: "patrimoine/budget", label: "Ouvrir le budget" } }), { route: "patrimoine/budget", label: "Ouvrir le budget" });
+  assert.deepEqual(lienTodo({ level: "piste" }), { route: "pilotage/sante", label: "Voir le détail" }, "repli sans lien : Pilotage › Santé");
+  assert.equal(lienTodo({ level: "piste", lien: { route: 'x" onclick="y', label: "z" } }).route, "pilotage/sante", "route non canonique refusée");
+  assert.match(js, /link\(l\.route, l\.label\)/);
+  assert.doesNotMatch(js, /Même liste que la boîte de réception/);
+  assert.doesNotMatch(js, /"3 sur "/);
+  assert.match(html, /<span class="ui-sr" id="blTodoCount"><\/span>/);
+});

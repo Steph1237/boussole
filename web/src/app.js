@@ -62,9 +62,11 @@
   const SCOPED = ["aujourdhui", "patrimoine", "pilotage"];
 
   const spaceOf = id => SPACES.find(s => s.space === id) || null;
+  /* Sous-vue par défaut d'une destination : la première qui a un module (Agent → Propositions, pas la carte « Bientôt » du Journal). */
+  const defSub = sp => (sp.subs.find(x => x.module) || sp.subs[0]).id;
   const subOf = (space, sub) => { const sp = spaceOf(space); return sp ? sp.subs.find(x => x.id === sub) || null : null; };
   /* « destination », « destination/sous-vue » ou ancienne route → { space, sub } ; sous-vue par défaut : dernière visitée,
-     sinon la première. Inconnu → null (les sous-onglets internes de la Toise utilisent aussi data-goto). */
+     sinon la première qui a un module (defSub). Inconnu → null (les sous-onglets internes de la Toise utilisent aussi data-goto). */
   function resolve(target, sub, lastSubs) {
     if (target == null) return null;
     let t = String(target).replace(/^#/, "");
@@ -77,7 +79,7 @@
     if (sub) s = sub;
     const sp = spaceOf(space);
     if (!sp) return null;
-    if (!subOf(space, s)) s = lastSubs && subOf(space, lastSubs[space]) ? lastSubs[space] : sp.subs[0].id;
+    if (!subOf(space, s)) s = lastSubs && subOf(space, lastSubs[space]) ? lastSubs[space] : defSub(sp);
     return { space, sub: s };
   }
   /* Hash d'URL → { space, sub, legacy } (legacy : le hash n'est pas sous forme canonique et sera réécrit).
@@ -88,6 +90,9 @@
     const r = resolve(hash, null, lastSubs) || resolve(DEFAULT_ROUTE);
     return Object.assign(r, { legacy: hash !== "#" + r.space + "/" + r.sub });
   }
+  /* Focus après navigation (navigate) : sur le titre de page quand la destination change (pas pour un simple changement de
+     sous-onglet, le focus reste sur l'onglet) ou quand l'élément actif a disparu (dans une vue ou un panneau masqués, ou BODY). */
+  const focusApres = (avant, apres, perdu) => !!perdu || !!(avant && apres && avant.space !== apres.space);
   const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name) return { space: sp.space, sub: s.id }; return null; };
 
   /* ---------- navigateur ---------- */
@@ -134,9 +139,13 @@
     (window.__pending || []).forEach(reg => reg());
     window.__pending = [];
 
+    /* Élément actif perdu : BODY, ou à l'intérieur d'un élément masqué (vue quittée, panneau fermé par un lien). */
+    const focusLost = () => { const a = document.activeElement; return !a || a === document.body || !!(a.closest && a.closest("[hidden]")); };
+    const focusTitle = () => { const h = $("spaceTitle"); if (!h) return; try { h.focus({ preventScroll: true }); } catch (e) { h.focus(); } };
+    /* o.focus === false : pas de déplacement du focus (chargement initial). */
     function navigate(r, o) {
       o = o || {};
-      const changed = key(r) !== key(route);
+      const changed = key(r) !== key(route), before = route;
       route = r;
       lastSubs[r.space] = r.sub;
       try { localStorage.setItem("app-route", key(r)); } catch (e) {}
@@ -146,10 +155,11 @@
       const s = subOf(r.space, r.sub); const m = s && s.module && mounted.has(s.module) ? mods[s.module] : null;
       if (m && m.show) try { m.show(); } catch (e) { console.error(s.module, e); }
       refreshHeadlines();
+      if (o.focus !== false && changed && focusApres(before, r, focusLost())) focusTitle();
       if (o.scroll && changed && window.scrollY > 0) window.scrollTo({ top: 0 });
     }
 
-    const hrefOf = space => "#" + space + "/" + (lastSubs[space] || spaceOf(space).subs[0].id);
+    const hrefOf = space => "#" + space + "/" + (lastSubs[space] || defSub(spaceOf(space)));
     function navItem(sp, bar) {
       return '<a class="' + (bar ? "bb-item" : "nav-item") + '" href="' + hrefOf(sp.space) + '" data-nav="' + sp.space + '">' +
         (bar ? '<span class="bb-ico">' + svg(sp.icon) + "</span>" : svg(sp.icon)) +
@@ -202,15 +212,16 @@
     /* Pastilles (seuls compteurs de l'interface) : Aujourd'hui (éléments de la boîte de réception, headline() du module
        aujourdhui) et Agent (propositions de Claude en attente, headline() du module propositions). */
     function refreshHeadlines() {
-      const pill = (sel, n, label) => {
+      /* Le nombre visible, suivi de sa légende pour les lecteurs d'écran (texte .ui-sr : un aria-label sur <span> n'est pas lu). */
+      const pill = (sel, n, suffix) => {
         const show = Number.isFinite(n) && n > 0;
         document.querySelectorAll(sel).forEach(el => {
           el.hidden = !show; el.textContent = show ? String(n) : "";
-          if (show) el.setAttribute("aria-label", label(n)); else el.removeAttribute("aria-label");
+          if (show) { const s = document.createElement("span"); s.className = "ui-sr"; s.textContent = suffix(n); el.appendChild(s); }
         });
       };
-      pill("[data-today-count]", countOf("aujourdhui", "vue"), n => n + " élément" + (n > 1 ? "s" : "") + " à traiter");
-      pill("[data-prop-count]", countOf("agent", "propositions"), n => n + " proposition" + (n > 1 ? "s" : "") + " de Claude à examiner");
+      pill("[data-today-count]", countOf("aujourdhui", "vue"), n => " élément" + (n > 1 ? "s" : "") + " à traiter");
+      pill("[data-prop-count]", countOf("agent", "propositions"), n => " proposition" + (n > 1 ? "s" : "") + " de Claude à examiner");
     }
 
     const frDate = d => new Date(d + (d.length === 10 ? "T12:00:00" : "")).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
@@ -261,6 +272,9 @@
 
     /* Précédent / suivant, hash saisi à la main ou lien <a href="#…"> : on suit le hash (forme ancienne réécrite). */
     function onHash() {
+      /* Retour arrière avec le panneau de détail ouvert : il se ferme d'abord (sans reprendre le focus), sinon le reste de la
+         page est encore inerte quand navigate() pose le focus sur le titre (window appelle cet écouteur avant celui du panneau). */
+      if (window.UI && UI.panneau && UI.panneau.ouvert()) UI.panneau.fermer({ focus: false });
       const r = resolveHash(location.hash, lastSubs);
       if (!r) return;
       if (r.legacy) history.replaceState(null, "", "#" + key(r));
@@ -282,10 +296,10 @@
         }
       }
       const link = $("accountLink"), linkM = $("accountLinkM"), linkC = $("accountLinkC");
-      const label = anon ? "Sécuriser mon compte" : "Mon compte", href = anon ? "compte.html#securiser" : "compte.html";
+      const label = anon ? "Sécuriser mon compte" : "Mon compte", labelM = anon ? "Sécuriser mon compte" : "Sécurité du compte", href = anon ? "compte.html#securiser" : "compte.html";
       if (link) { link.textContent = label; link.href = href; }
       if (linkC) { linkC.textContent = anon ? "Sécuriser mon compte (e-mail, mot de passe)" : "Mon compte : e-mail, sécurité, export"; linkC.href = href; }
-      if (linkM) { linkM.href = href; linkM.setAttribute("aria-label", label); linkM.title = label; }
+      if (linkM) { linkM.href = href; linkM.setAttribute("aria-label", labelM); linkM.title = labelM; }
     }
 
     function boot() {
@@ -294,16 +308,21 @@
       $("accountLinkM").innerHTML = svg("reglages");
       renderNav();
       const tabs = $("subTabs");
-      tabs.addEventListener("click", e => { const b = e.target.closest("[data-sub]"); if (b) App.go(route.space, b.dataset.sub); });
+      /* Les onglets sont redessinés à chaque navigation : le focus suit l'onglet choisi (clic comme clavier). */
+      const focusTab = () => { const b = $("subtab-" + route.space + "-" + route.sub); if (b) b.focus(); };
+      tabs.addEventListener("click", e => { const b = e.target.closest("[data-sub]"); if (b) { App.go(route.space, b.dataset.sub); focusTab(); } });
       tabs.addEventListener("keydown", e => {
         const subs = spaceOf(route.space).subs.map(s => s.id); let i = subs.indexOf(route.sub);
         if (e.key === "ArrowRight") i = (i + 1) % subs.length; else if (e.key === "ArrowLeft") i = (i + subs.length - 1) % subs.length;
         else if (e.key === "Home") i = 0; else if (e.key === "End") i = subs.length - 1; else return;
         e.preventDefault();
         App.go(route.space, subs[i]);
-        const b = $("subtab-" + route.space + "-" + route.sub); if (b) b.focus();
+        focusTab();
       });
       document.addEventListener("click", e => {
+        /* Lien interne du panneau de détail : le panneau se ferme sans rendre le focus ; s'il pointe vers la vue courante
+           (pas de navigation), le focus irait sur BODY : on le pose sur le titre de page. */
+        if (e.target.closest && e.target.closest('.ui-panneau a[href^="#"]')) setTimeout(() => { if (focusLost()) focusTitle(); }, 0);
         const sc = e.target.closest(".scope-seg [data-scope]"); if (sc) { Store.setScope(sc.dataset.scope); return; }
         if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         const n = e.target.closest("[data-nav]"); if (n) { e.preventDefault(); App.go(n.dataset.nav); return; }
@@ -363,7 +382,7 @@
         mounted.forEach(k => { const m = mods[k]; if (m.update) try { m.update(S, isActive(k)); } catch (e) { console.error(k, e); } });
         refreshHeadlines();
       });
-      navigate(route, {});
+      navigate(route, { focus: false });
       /* Après le montage : l'URL prend la forme canonique, sans entrée d'historique supplémentaire. */
       if (location.hash !== "#" + key(route)) history.replaceState(null, "", "#" + key(route));
       window.addEventListener("hashchange", onHash);
@@ -377,5 +396,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, routeOfModule };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, routeOfModule, defSub, focusApres };
 })();

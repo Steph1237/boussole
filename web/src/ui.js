@@ -20,11 +20,14 @@
                           tendance: { sens: "hausse", texte: "+3,2 %" }, badge: "Provisoire" })
 
    UI.panneau.ouvrir({ titre, contenu, lien?, pied?, retour?, surFermeture? }) → élément de contenu (.ui-panneau-corps)
-   UI.panneau.fermer()   UI.panneau.ouvert() → booléen
+   UI.panneau.fermer({ focus? }?)   UI.panneau.ouvert() → booléen
      Panneau de détail unique (role="dialog", aria-modal="true", aria-labelledby sur le titre), créé dans document.body à la
      première ouverture : volet latéral droit de 420 px à partir de 900 px, feuille du bas (85 vh max) en dessous. Fond voilé,
      reste de la page inerte, focus piégé (Tab / Maj+Tab), fermeture par Échap, clic sur le voile, bouton « Fermer » ou lien
      interne (#…) cliqué dans le panneau ; le focus revient à `retour` ou, à défaut, à l'élément actif avant l'ouverture.
+     Retour arrière du navigateur (popstate) ou hash changé pendant l'ouverture : le panneau se ferme sans reprendre le
+     focus (la coque le pose sur la vue atteinte) ; ces écouteurs de window ne sont posés que tant que le panneau est ouvert.
+     Un écouteur posé avant eux (la coque) peut fermer le panneau lui-même avant de naviguer : fermer({ focus: false }).
      titre : texte (posé en textContent). contenu : HTML déjà échappé, ou un nœud DOM. lien = { label, href } (href « #… »
      ou « https://… » seulement) affiché en pied ; pied : HTML déjà échappé ajouté au pied (ex. UI.demanderAClaude(…)).
      Rouvrir pendant que le panneau est ouvert remplace son contenu.
@@ -48,9 +51,10 @@
      <details class="ui-acc"> fermé par défaut, pour hypothèses, méthode et sources. contenu : HTML déjà échappé.
      Exemple : UI.accordeon({ titre: "Méthode", contenu: "<p>" + UI.esc(methode) + "</p>" })
 
-   UI.voirPlus(liste, n = 5, rendu?(x, i) → HTML, libelle = "Voir plus") → HTML
+   UI.voirPlus(liste, n = 5, rendu?(x, i) → HTML, libelle = "Voir plus", balise = "div") → HTML
      Les n premiers éléments, puis les autres dans un bloc caché et un bouton « Voir plus (k) » (data-ui-voirplus,
      aria-expanded) que UI.brancher fait déplier / replier. Sans rendu, chaque élément est échappé tel quel.
+     balise = "ul" ou "ol" : les deux blocs sont des listes (le rendu doit alors renvoyer des <li>) ; "div" par défaut.
      Exemple : $("boite").innerHTML = UI.voirPlus(elements, 5, e => "<div class=\"it\">" + UI.esc(e.titre) + "</div>");
                UI.brancher($("boite"));
 
@@ -58,12 +62,15 @@
      Délégation de clics sur `racine` : boutons « Voir plus » et cartes (surCarte reçoit data-ui-carte et le bouton).
      Exemple : UI.brancher(root, { surCarte: id => UI.panneau.ouvrir(detail(id)) })
 
-   UI.periode(racine, { periode?, granularite?, du?, au?, premiere?, today?, label?, surChange?(etat) }) → { valeur() }
+   UI.periode(racine, { periode?, granularite?, du?, au?, premiere?, today?, label?, surChange?(etat) }) → { valeur(), premiere(date) }
      Sélecteur de période (1 m · 3 m · 1 an · Tout · Personnalisée) et de granularité (jour → année), deux bascules.
      « Personnalisée » affiche deux champs date (Du, Au). etat = { periode, granularite, du, au } : bornes calculées par
      window.Periodes (web/src/periodes.js) s'il est chargé (null sinon, hors période personnalisée). Sans granularité donnée,
      elle suit Periodes.auto(bornes) (« mois » sans Periodes) jusqu'à ce que l'utilisateur en choisisse une.
-     premiere = date de la première donnée (pour « Tout »). Défaut : 1 an.
+     premiere = date de la première donnée (pour « Tout ») ; premiere(date) la met à jour quand les données arrivent après
+     la création (sans notifier, sauf si « Tout » est actif et que sa granularité automatique change). Passer de « Tout »
+     (ou d'une période sans durée) à « Personnalisée » préremplit les dates avec la période précédente, sinon avec 1 an.
+     Défaut : 1 an.
      Exemple : UI.periode($("frisePeriode"), { periode: "1a", granularite: "mois", premiere: snaps[0].date,
                                                surChange: e => dessiner(Periodes.agreger(snaps, e, e.granularite, s => s.net)) })
 
@@ -221,16 +228,17 @@
       '<span class="ui-acc-chevron">' + CHEVRON_BAS + '</span></summary><div class="ui-acc-corps">' + (o.contenu == null ? "" : String(o.contenu)) + "</div></details>";
   }
 
-  function voirPlus(liste, n, rendu, libelle) {
+  function voirPlus(liste, n, rendu, libelle, balise) {
     const xs = Array.isArray(liste) ? liste : [];
+    const b = balise === "ul" || balise === "ol" ? balise : "div";
     const k = n == null || !isFinite(+n) ? 5 : Math.max(0, Math.floor(+n));
     const r = typeof rendu === "function" ? rendu : x => esc(x);
     const tete = xs.slice(0, k).map((x, i) => r(x, i)).join("");
     const reste = xs.slice(k);
-    if (!reste.length) return '<div class="ui-voirplus"><div class="ui-voirplus-liste">' + tete + "</div></div>";
+    if (!reste.length) return '<div class="ui-voirplus"><' + b + ' class="ui-voirplus-liste">' + tete + "</" + b + "></div>";
     const id = uid("reste"), lib = vide(libelle) ? "Voir plus" : String(libelle);
-    return '<div class="ui-voirplus"><div class="ui-voirplus-liste">' + tete + "</div>" +
-      '<div class="ui-voirplus-liste ui-voirplus-reste" id="' + id + '" hidden>' + reste.map((x, i) => r(x, i + k)).join("") + "</div>" +
+    return '<div class="ui-voirplus"><' + b + ' class="ui-voirplus-liste">' + tete + "</" + b + ">" +
+      "<" + b + ' class="ui-voirplus-liste ui-voirplus-reste" id="' + id + '" hidden>' + reste.map((x, i) => r(x, i + k)).join("") + "</" + b + ">" +
       '<button type="button" class="ui-voirplus-btn" data-ui-voirplus data-ui-libelle="' + esc(lib) + '" data-ui-nombre="' + reste.length + '" aria-expanded="false" aria-controls="' + id + '">' +
       esc(lib) + " (" + reste.length + ")</button></div>";
   }
@@ -282,6 +290,7 @@
     o = o || {};
     nettoyer(racine);
     const today = o.today || aujourdhui();
+    let prem = o.premiere || undefined;
     const valide = (liste, id) => liste.some(x => x.id === id);
     let p = valide(PERIODES, o.periode) ? o.periode : "1a";
     let du = o.du || "", au = o.au || "";
@@ -290,9 +299,16 @@
       const P = lesPeriodes();
       if (p === "perso") {
         if (!du || !au) return null;
-        return P ? P.bornes({ du, au }, today, o.premiere) : du <= au ? { du, au } : { du: au, au: du };
+        return P ? P.bornes({ du, au }, today, prem) : du <= au ? { du, au } : { du: au, au: du };
       }
-      return P ? P.bornes(p, today, o.premiere) : null;
+      return P ? P.bornes(p, today, prem) : null;
+    };
+    /* Un an jusqu'à aujourd'hui : repli de « Personnalisée » quand la période précédente n'a pas de durée (« Tout » sans données). */
+    const unAn = () => {
+      const P = lesPeriodes();
+      if (P) return P.bornes("1a", today);
+      const [y, m, j] = today.split("-").map(Number), d = new Date(Date.UTC(y - 1, m - 1, j));
+      return { du: d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()), au: today };
     };
     const auto = () => { const P = lesPeriodes(), b = bornes(); const g = P && b ? P.auto(b) : "mois"; return valide(GRANULARITES, g) ? g : "mois"; };
     let g = gChoisie ? o.granularite : auto();
@@ -312,8 +328,10 @@
         const avant = bornes();
         p = id;
         if (p === "perso") {
-          if (!du) du = avant ? avant.du : "";
-          if (!au) au = avant ? avant.au : today;
+          const b = avant && avant.du && avant.au && avant.du !== avant.au ? avant : unAn();
+          if (!du) du = b.du;
+          if (!au) au = b.au;
+          if (du === au) { const a = unAn(); du = a.du; au = a.au; }
           champDu.value = du; champAu.value = au;
         }
         dates.hidden = p !== "perso";
@@ -329,7 +347,13 @@
     };
     dates.addEventListener("change", surDate);
     ecouteurs.set(racine, () => dates.removeEventListener("change", surDate));
-    return { valeur };
+    function premiere(date) {
+      const n = typeof date === "string" && /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : undefined;
+      if (n === prem) return;
+      prem = n;
+      if (p === "tout" && !gChoisie) { const g2 = auto(); if (g2 !== g) { g = g2; cg.choisir(g); notifier(); } }
+    }
+    return { valeur, premiere };
   }
 
   /* ============================================================ Demander à Claude ============================================================ */
@@ -400,6 +424,9 @@
     function surFocus(e) {
       if (estOuvert && el && e.target && !el.contains(e.target)) titreEl.focus();
     }
+    /* Retour arrière / hash changé pendant l'ouverture : fermeture sans reprise du focus (la vue atteinte le gère). */
+    const fenetre = () => (typeof window !== "undefined" && window && typeof window.addEventListener === "function" ? window : null);
+    function surHistorique() { fermer({ focus: false }); }
     function ouvrir(o) {
       const d = leDocument();
       if (!d) return null;
@@ -422,6 +449,8 @@
         d.documentElement.classList.add("ui-bloque");
         d.addEventListener("keydown", surTouche, true);
         d.addEventListener("focusin", surFocus, true);
+        const w = fenetre();
+        if (w) { w.addEventListener("hashchange", surHistorique); w.addEventListener("popstate", surHistorique); }
       }
       corps.scrollTop = 0;
       titreEl.focus();
@@ -433,6 +462,8 @@
       estOuvert = false;
       d.removeEventListener("keydown", surTouche, true);
       d.removeEventListener("focusin", surFocus, true);
+      const w = fenetre();
+      if (w) { w.removeEventListener("hashchange", surHistorique); w.removeEventListener("popstate", surHistorique); }
       inertes.forEach(c => { c.inert = false; });
       inertes = [];
       el.hidden = true;
@@ -443,7 +474,7 @@
       if (!(opts && opts.focus === false) && r && r !== d.body && typeof r.focus === "function") r.focus();
       if (f) f();
     }
-    return { ouvrir, fermer: () => fermer(), ouvert: () => estOuvert };
+    return { ouvrir, fermer: o => fermer(o && o.focus === false ? { focus: false } : null), ouvert: () => estOuvert };
   })();
 
   return {

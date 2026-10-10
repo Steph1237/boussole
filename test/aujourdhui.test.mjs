@@ -130,10 +130,10 @@ test("boite : alertes des règles, urgence selon la gravité, vers la page conce
   const R = fauxRules(
     [{ level: "crit", title: "Seuil de cours touché : Air Liquide", text: "Seuil atteint.", rule: { type: "price_floor" } },
       { level: "info", title: "Cours anciens", text: "1 ligne…", rule: { type: "stale_prices" } }],
-    [{ level: "warn", title: "Poche Monde au-dessus de la cible", text: "52 % contre 45 %." },
-      { level: "info", title: "Matelas sous la cible", text: "10 000 € contre 15 000 €." },
-      { level: "info", title: "Fin de période d'essai", text: "Le 20 oct. 2026 (dans 10 jours). " },
-      { level: "warn", title: "Mise à jour nocturne en retard", text: "Dernier passage le 01 oct. 2026." }]);
+    [{ level: "warn", title: "Poche Monde au-dessus de la cible", text: "52 % contre 45 %.", kind: "cible" },
+      { level: "info", title: "Matelas sous la cible", text: "10 000 € contre 15 000 €.", kind: "matelas" },
+      { level: "info", title: "Fin de période d'essai", text: "Le 20 oct. 2026 (dans 10 jours). ", kind: "jalon" },
+      { level: "warn", title: "Mise à jour nocturne en retard", text: "Dernier passage le 01 oct. 2026.", kind: "nocturne" }]);
   const b = A.boite(vide(), TODAY, { Rules: R });
   assert.deepEqual(b.map(x => [x.type, x.urgence, x.titre]), [
     ["alerte", 1, "Seuil de cours touché : Air Liquide"],
@@ -404,4 +404,104 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   api.show();
   assert.equal(api.headline(), "");
   assert.match(els.get("ajBoite").innerHTML, /Rien à traiter\./);
+});
+
+/* ------------------------------------------------ revue finale CK1 ------------------------------------------------ */
+
+test("delai : jours jusqu'à 60, puis mois jusqu'à 24 mois, puis années ; forme courte « j » pour les cartes", () => {
+  assert.equal(A.delai(0), "aujourd'hui");
+  assert.equal(A.delai(1), "demain");
+  assert.equal(A.delai(2), "dans 2 jours");
+  assert.equal(A.delai(60), "dans 60 jours");
+  assert.equal(A.delai(45, true), "dans 45 j");
+  assert.equal(A.delai(61), "dans 2 mois");
+  assert.equal(A.delai(200), "dans 7 mois");
+  assert.equal(A.delai(730), "dans 24 mois");
+  assert.equal(A.delai(760), "dans 2 ans");
+  assert.equal(A.delai(3650), "dans 10 ans");
+  assert.equal(A.delai(-3), "aujourd'hui", "jamais négatif");
+  // dans les cartes et le panneau des échéances
+  const S = vide({ objectifs: [{ id: "o", nom: "Retraite", cible: 1, dateCible: "2046-10-10" }] });
+  const ind = A.indicateurs(S, TODAY, { id: "1a" }, DEPS);
+  assert.match(A.cartes(ind, { carte: o => JSON.stringify(o) }, { id: "1a" }), /"valeur":"Dans 20 ans"/);
+  assert.match(A.detail("echeance", ind, { id: "1a" }).contenu, /dans 20 ans/);
+});
+
+test("premiereDate : date de la première photo (pour la période « Tout »)", () => {
+  assert.equal(A.premiereDate([{ date: "2026-03-01" }, { date: "2025-11-15T20:00:00Z" }, { date: "x" }, null]), "2025-11-15");
+  assert.equal(A.premiereDate([]), undefined);
+  assert.equal(A.premiereDate(null), undefined);
+  assert.match(js, /premiere: S \? premiereDate\(S\.snapshots\) : undefined/, "passée à UI.periode au montage");
+  assert.match(js, /ctlPeriode\.premiere\(/, "mise à jour quand les photos arrivent");
+});
+
+test("boite : contrôles intégrés reconnus par leur kind (rules.js), pas par leur texte", () => {
+  const config = { milestones: [{ title: "Fin de période d'essai", date: "2026-10-20", warnDays: 30 }], cushion: { mode: "amount", min: 999999 } };
+  const S = vide({ config, status: { lastRun: "2026-10-01T20:00:00Z", alerts: [{ level: "warn", title: "Signal de la nuit", text: "x" }] } });
+  const b = A.boite(S, TODAY, DEPS);
+  const alertes = b.filter(x => x.type === "alerte").map(x => x.titre);
+  assert.deepEqual(alertes.sort(), ["Matelas sous la cible", "Signal de la nuit"], "jalon et nuit en retard : déjà présents sous une autre forme");
+  assert.ok(b.some(x => x.type === "echeance" && x.titre === "Fin de période d'essai"));
+  assert.ok(b.some(x => x.type === "cours" && x.titre === "Mise à jour nocturne en retard"));
+  assert.equal(b.find(x => x.titre === "Matelas sous la cible").action.route, "patrimoine/budget");
+  // un texte qui ressemble à un jalon n'est plus filtré s'il n'en est pas un
+  const R = fauxRules([], [{ level: "info", title: "Signal", text: "Le marché bouge (dans 3 jours)", kind: "agent" }]);
+  assert.equal(A.boite(vide(), TODAY, { Rules: R }).filter(x => x.type === "alerte").length, 1);
+  assert.doesNotMatch(js, /dans \\d\+ jours\?/, "plus de reconnaissance par expression régulière");
+});
+
+test("boiteHtml : éléments de la boîte en <ul>/<li>", { skip: !HAS_UI && "web/src/ui.js pas encore là" }, () => {
+  const b = A.boite(demoS(), jourLocal(), DEPS);
+  const h = A.boiteHtml(b, UI);
+  assert.match(h, /<ul class="ui-voirplus-liste"><li class="aj-it /);
+  assert.match(h, /<ul class="ui-voirplus-liste ui-voirplus-reste"[^>]*hidden><li class="aj-it /);
+  assert.equal((h.match(/<li class="aj-it /g) || []).length, b.length);
+  assert.doesNotMatch(h, /<div class="aj-it /);
+});
+
+test("aujourdhui.html : nombre d'éléments réservé aux lecteurs d'écran (règle 9)", () => {
+  assert.match(html, /<span class="ui-sr" id="ajBoiteN" role="status" aria-live="polite"><\/span>/);
+});
+
+test("module : indicateurs calculés seulement quand la vue est visible ; DOM non réécrit quand rien n'a changé ; headline ne dépend que de la boîte", () => {
+  const src = f => readFileSync("web/src/" + f, "utf8");
+  const reg = {};
+  const ctx = { console, Intl, Date, Math, JSON, setTimeout, clearTimeout, encodeURIComponent, decodeURIComponent,
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    document: { readyState: "complete", addEventListener() {}, activeElement: null, body: {} },
+    App: { register: (n, api) => { reg[n] = api; }, refreshHeadlines() {} } };
+  ctx.window = ctx; ctx.self = ctx;
+  vm.createContext(ctx);
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
+  const premieres = [];
+  ctx.UI = Object.assign({}, ctx.UI, { brancher() {}, periode: () => ({ valeur: () => null, premiere: d => premieres.push(d) }) });
+  let evaluations = 0;
+  const ev = ctx.Pratiques.evaluer;
+  ctx.Pratiques.evaluer = (...a) => { evaluations++; return ev(...a); };
+  vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
+  const api = reg.aujourdhui;
+  const { root, els } = faux();
+  api.mount(root);
+  const S = demoS();
+  api.update(S, false);
+  assert.equal(evaluations, 0, "vue cachée : pas d'indicateurs");
+  assert.equal(api.headline(), String(A.boite(S, jourLocal(), DEPS).length), "pastille à jour même vue cachée");
+  assert.equal(premieres.pop(), A.premiereDate(S.snapshots), "première photo transmise au sélecteur de période");
+  api.show();
+  assert.equal(evaluations, 1, "calculés à l'affichage");
+  api.show();
+  assert.equal(evaluations, 1, "pas recalculés sans changement");
+  // compte des écritures dans le DOM
+  const ecritures = {};
+  for (const id of ["ajCartes", "ajBoite", "ajFrise"]) {
+    const el = els.get(id); let v = el.innerHTML; ecritures[id] = 0;
+    Object.defineProperty(el, "innerHTML", { get: () => v, set: x => { v = x; ecritures[id]++; } });
+  }
+  api.update(S, true);
+  api.update(J(S), true);
+  assert.deepEqual(ecritures, { ajCartes: 0, ajBoite: 0, ajFrise: 0 }, "même contenu : rien n'est réécrit (focus et « Voir plus » préservés)");
+  api.update(Object.assign(J(S), { propositions: [] }), true);
+  assert.equal(ecritures.ajBoite, 1, "la boîte change : réécrite");
+  assert.match(js, /function headline\(\) \{ return items\.length \? String\(items\.length\) : ""; \}/);
 });

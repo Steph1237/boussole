@@ -4,7 +4,7 @@
    - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), alertes des règles
      (rules.js), points « à suivre » échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard.
    - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an, au mois).
-   Fonctions pures exportées pour les tests (module.exports) : boite, echeances, indicateurs, frise, urlClaude, et les rendus HTML
+   Fonctions pures exportées pour les tests (module.exports) : boite, echeances, indicateurs, frise, urlClaude, delai, et les rendus HTML
    cartes, detail, boiteHtml, friseSvg (qui reçoivent UI en paramètre quand ils en ont besoin ; aucune ne touche au DOM).
    Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes } ; window.* par défaut. */
 (function () {
@@ -27,7 +27,17 @@
   const joursEntre = (a, b) => Math.round((utc(b) - utc(a)) / 864e5);
   const jj = v => (v ? String(v).slice(0, 10) : "");
   const dateFr = s => (isoOk(s) ? new Date(s + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "");
-  const dans = d => (d === 0 ? "aujourd'hui" : d === 1 ? "demain" : "dans " + d + " jours");
+  /** Délai lisible jusqu'à une date à `jours` jours : « aujourd'hui », « demain », « dans N jours » (jusqu'à 60 jours),
+      « dans N mois » (jusqu'à 24 mois), puis « dans N ans ». court : « dans N j » au lieu de « dans N jours ». */
+  function delai(jours, court) {
+    const d = Math.max(0, Math.round(+jours || 0));
+    if (d === 0) return "aujourd'hui";
+    if (d === 1) return "demain";
+    if (d <= 60) return "dans " + d + (court ? " j" : " jours");
+    const mois = Math.round(d / 30.4375);
+    if (mois <= 24) return "dans " + mois + " mois";
+    return "dans " + Math.round(d / 365.25) + " ans";
+  }
 
   /* ---------- nombres et textes ---------- */
   const nf0 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
@@ -52,11 +62,12 @@
   const CIBLES = { protection: "protection de la famille", position: "placements", bien: "biens immobiliers", credit: "crédits", budget: "budget",
     objectif: "objectifs", risque: "profil de risque", profil: "profil" };
   const URGENCE = { crit: 1, warn: 2, info: 3 };
-  /* Contrôles intégrés déjà présents sous une autre forme : échéances de config.milestones (type « echeance ») et mise à jour nocturne (type « cours »). */
-  const estJalon = a => !a.rule && /^Le .*\(dans \d+ jours?\)/.test(String(a.text || ""));
-  const estNocturne = a => !a.rule && /^Mise à jour nocturne en retard/.test(String(a.title || ""));
+  /* Contrôles intégrés déjà présents sous une autre forme, reconnus par leur `kind` (rules.js) : échéances de config.milestones
+     (type « echeance ») et mise à jour nocturne (type « cours »). */
+  const estJalon = a => !a.rule && a.kind === "jalon";
+  const estNocturne = a => !a.rule && a.kind === "nocturne";
   function lienAlerte(a) {
-    if (!a.rule && /^Matelas/i.test(String(a.title || ""))) return { label: "Voir le budget", route: R.budget };
+    if (!a.rule && a.kind === "matelas") return { label: "Voir le budget", route: R.budget };
     return { label: "Voir les placements", route: R.placements }; // règles de l'utilisateur, écarts aux cibles, signaux de la nuit
   }
 
@@ -125,7 +136,7 @@
 
     // 4. Échéances à 30 jours au plus (jalons de config, objectifs datés).
     echeances(S, t).filter(e => e.source !== "a_suivre" && e.jours <= 30).forEach(e => out.push({ type: "echeance", urgence: e.jours <= 7 ? 2 : 3, date: e.date,
-      titre: e.titre, contexte: "Le " + dateFr(e.date) + " (" + dans(e.jours) + ")." + (e.texte ? " " + e.texte : "") + (e.cible ? " Cible : " + eur(e.cible) + "." : ""),
+      titre: e.titre, contexte: "Le " + dateFr(e.date) + " (" + delai(e.jours) + ")." + (e.texte ? " " + e.texte : "") + (e.cible ? " Cible : " + eur(e.cible) + "." : ""),
       action: { label: "Voir budget et objectifs", route: R.budget } }));
 
     // 5. Cours manquants et photo nocturne en retard (fraîcheur de l'en-tête : positions cotées, S.status).
@@ -200,10 +211,17 @@
     return { net, pratiques, allocation, echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4) }, frise: f };
   }
 
+  /** Date (AAAA-MM-JJ) de la première photo de S.snapshots, pour la période « Tout » ; undefined sans photo. */
+  function premiereDate(snapshots) {
+    let p;
+    (Array.isArray(snapshots) ? snapshots : []).forEach(x => { const d = x && jj(x.date); if (isoOk(d) && (!p || d < p)) p = d; });
+    return p;
+  }
+
   /* =============================================================== rendus HTML =============================================================== */
   const fpts = v => nf1.format(Math.abs(v)) + (Math.abs(v) >= 2 ? " pts" : " pt");
   const fpct = v => nf0.format(v) + " %";
-  const quand = e => (e.jours === 0 ? "Aujourd'hui" : e.jours === 1 ? "Demain" : "Dans " + e.jours + " j");
+  const quand = e => maj(delai(e.jours, true));
 
   /** Les 4 cartes du bandeau (UI.carte échappe chaque champ). */
   function cartes(ind, U, periode) {
@@ -285,18 +303,18 @@
   }
   function itemHtml(x) {
     const t = TYPE_TXT[x.type] ? x.type : "alerte", u = URG_TXT[x.urgence] ? +x.urgence : 3;
-    return '<div class="aj-it u' + u + '" data-type="' + t + '">' +
+    return '<li class="aj-it u' + u + '" data-type="' + t + '">' +
       '<span class="aj-pic">' + ico(t) + "</span>" +
       '<div class="aj-txt"><p class="aj-t"><span class="ui-sr">' + esc(TYPE_TXT[t] + ", " + URG_TXT[u] + " : ") + "</span>" + esc(x.titre) + "</p>" +
       (x.contexte ? '<p class="aj-c">' + esc(x.contexte) + "</p>" : "") + "</div>" +
-      actionHtml(x.action) + "</div>";
+      actionHtml(x.action) + "</li>";
   }
-  /** Liste de la boîte de réception : 5 éléments puis « Voir plus » (UI.voirPlus) ; vide : « Rien à traiter. » et « Faire le point avec Claude ». */
+  /** Liste de la boîte de réception (<ul>/<li>) : 5 éléments puis « Voir plus » (UI.voirPlus) ; vide : « Rien à traiter. » et « Faire le point avec Claude ». */
   function boiteHtml(items, U) {
     if (!items || !items.length) return '<div class="aj-vide"><p class="aj-vide-t">Rien à traiter.</p>' +
       '<p class="aj-vide-x">Aucune proposition, alerte ni échéance proche. Pour un regard d\'ensemble, faites le point avec votre assistant.</p>' +
       U.demanderAClaude("Fais le point sur ma situation avec Boussole", "Faire le point avec Claude") + "</div>";
-    return U.voirPlus(items, 5, itemHtml, "Voir plus");
+    return U.voirPlus(items, 5, itemHtml, "Voir plus", "ul");
   }
 
   /** Courbe SVG du patrimoine net agrégé (f = frise()) ; texte d'état vide si moins de deux points. */
@@ -341,13 +359,16 @@
       '<path class="aj-aire" d="' + aire + '"/><path class="aj-ligne" d="' + d + '"/>' + pts + "</svg>";
   }
 
-  const H = { boite, echeances, indicateurs, frise, urlClaude, cartes, detail, boiteHtml, friseSvg, jour };
+  const H = { boite, echeances, indicateurs, frise, urlClaude, cartes, detail, boiteHtml, friseSvg, jour, delai, premiereDate };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
   /* =============================================================== vue =============================================================== */
   const CLE = "aujourdhui-periode";
-  let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, sigBoite = ""; // largeur : celle du dernier dessin de la frise
+  /* items (boîte) est calculé à chaque émission du store : headline() en dépend pour la pastille. ind (indicateurs et frise)
+     ne l'est qu'au rendu, quand la vue est visible. sigX : dernier HTML écrit ; rien n'est réécrit (ni le focus perdu,
+     ni un « Voir plus » replié) quand il n'a pas changé. */
+  let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, sigBoite = "", sigCartes = "", sigFrise = "", ctlPeriode = null; // largeur : celle du dernier dessin de la frise
   let periode = { id: "1a", granularite: "mois" };
   try { const p = JSON.parse(localStorage.getItem(CLE) || "null"); if (p && typeof p.id === "string") periode = { id: p.id, granularite: String(p.granularite || "mois"), du: p.du, au: p.au }; } catch (e) {}
   const $ = id => root.querySelector("#" + id);
@@ -358,33 +379,41 @@
     return C && C.deNom ? C.deNom(p && p.nom, S.scope === "p2" ? 2 : 1) : "";
   };
 
-  function calcule() { const t = jour(); items = boite(S, t); ind = S ? indicateurs(S, t, periode) : null; }
   function render() {
     const u = U();
-    if (!root || !S || !ind || !u) return;
-    $("ajCartes").innerHTML = cartes(ind, u, periode);
+    if (!root || !S || !u) return;
+    ind = indicateurs(S, jour(), periode);
+    renderCartes();
     // Même contenu : on ne réécrit pas la liste (une émission du store ne replie pas un « Voir plus » déplié).
     const sig = JSON.stringify(items);
     if (sig !== sigBoite) { sigBoite = sig; $("ajBoite").innerHTML = boiteHtml(items, u); }
-    $("ajBoiteN").textContent = items.length ? pluriel(items.length, "élément") : "";
+    // Nombre d'éléments pour les lecteurs d'écran seulement (règle 9 : les compteurs visibles sont dans la navigation).
+    const n = items.length ? pluriel(items.length, "élément") + " à traiter" : "";
+    if ($("ajBoiteN").textContent !== n) $("ajBoiteN").textContent = n;
     renderFrise();
+  }
+  function renderCartes() {
+    const h = cartes(ind, U(), periode);
+    if (h !== sigCartes) { sigCartes = h; $("ajCartes").innerHTML = h; }
   }
   function renderFrise() {
     const f = ind.frise, r = f.resume || {};
     const el = $("ajFrise");
     largeur = el.clientWidth || 0;
-    el.innerHTML = friseSvg(f, { scopeLabel: scopeLabel(), largeur });
-    $("ajFriseResume").textContent = f.points.length > 1 && r.variation != null
+    const h = friseSvg(f, { scopeLabel: scopeLabel(), largeur });
+    if (h !== sigFrise) { sigFrise = h; el.innerHTML = h; }
+    const t = f.points.length > 1 && r.variation != null
       ? eurS(r.variation) + " " + periodeTxt(periode) + (r.variationPct != null ? " (" + (r.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(r.variationPct)) + " %)" : "") : "";
+    if ($("ajFriseResume").textContent !== t) $("ajFriseResume").textContent = t;
   }
   /* Période ou granularité changée (UI.periode) : la frise et la variation de la carte « Patrimoine net » suivent. */
   function surPeriode(o) {
     const x = o && typeof o === "object" ? o : { periode: o };
     periode = { id: String(x.periode || x.id || periode.id), granularite: String(x.granularite || periode.granularite || "mois"), du: x.du || undefined, au: x.au || undefined };
     try { localStorage.setItem(CLE, JSON.stringify(periode)); } catch (e) {}
-    if (!S || !U()) return;
+    if (!S || !U() || !root) return;
     ind = indicateurs(S, jour(), periode);
-    $("ajCartes").innerHTML = cartes(ind, U(), periode);
+    renderCartes();
     renderFrise();
   }
   /* Carte → panneau de détail (le lien interne du pied ferme le panneau puis la coque suit le hash). Le focus revient à la carte,
@@ -399,7 +428,8 @@
   function mount(r) {
     root = r;
     const u = U();
-    if (u && u.periode) u.periode($("ajPeriode"), { periode: periode.id, granularite: periode.granularite, du: periode.du, au: periode.au, surChange: surPeriode });
+    if (u && u.periode) ctlPeriode = u.periode($("ajPeriode"), { periode: periode.id, granularite: periode.granularite, du: periode.du, au: periode.au,
+      premiere: S ? premiereDate(S.snapshots) : undefined, surChange: surPeriode });
     $("ajClaude").innerHTML = u && u.demanderAClaude
       ? u.demanderAClaude("Explique-moi simplement l'évolution de mon patrimoine net dans Boussole sur la dernière année : qu'est-ce qui l'a fait bouger ?", "Commenter avec Claude") : "";
     if (u && u.brancher) u.brancher(root, { surCarte: ouvrirCarte }); // cartes et « Voir plus » de la boîte de réception
@@ -409,9 +439,15 @@
       if (ind && w && Math.abs(w - largeur) > 24) renderFrise();
     }).observe($("ajFrise"));
   }
-  function update(snap, visible) { S = snap; calcule(); dirty = true; if (visible) { render(); dirty = false; } }
+  function update(snap, visible) {
+    S = snap;
+    items = boite(S, jour());
+    if (ctlPeriode && typeof ctlPeriode.premiere === "function") ctlPeriode.premiere(S ? premiereDate(S.snapshots) : undefined); // « Tout » part de la première photo
+    dirty = true;
+    if (visible) { render(); dirty = false; }
+  }
   function show() { if (dirty) { render(); dirty = false; } }
-  /* Pastille de la navigation : nombre d'éléments de la boîte de réception ; vide quand il n'y en a pas. */
+  /* Pastille de la navigation : nombre d'éléments de la boîte de réception (ne dépend que de `items`) ; vide quand il n'y en a pas. */
   function headline() { return items.length ? String(items.length) : ""; }
 
   const api = { mount, update, show, headline };

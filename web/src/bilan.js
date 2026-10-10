@@ -335,7 +335,9 @@
   }
 
   /* ---------- à traiter ----------
-     Même liste que la boîte de réception d'Aujourd'hui : construite par Actions.construire (actions.js) sur l'état courant.
+     Alertes des règles et pistes des bonnes pratiques, construites par Actions.construire (actions.js) sur l'état courant.
+     Les alertes figurent aussi dans la boîte de réception d'Aujourd'hui (« Voir » y mène) ; les pistes n'y sont pas :
+     chacune renvoie vers la page de son critère (lien, souvent Pilotage › Santé).
      (Actions.items() renvoie la liste calculée lors du dernier update du module Actions, qui passe après le Bilan :
      on reconstruit donc avec le même contexte pour ne jamais afficher la liste du périmètre précédent.)
      Repli sans actions.js : alertes des règles puis pistes du score, triées crit > warn > info > piste. */
@@ -360,13 +362,22 @@
       .forEach(i => out.push({ level: "piste", title: i.titre, text: i.piste }));
     return out;
   }
+  /* Lien d'une entrée : une piste vers la page de son critère (a.lien = { route, label } d'Actions, Pilotage › Santé à défaut),
+     une alerte vers Aujourd'hui où elle figure dans la boîte de réception. */
+  function lienTodo(a) {
+    if (a.level !== "piste") return { route: "aujourdhui/vue", label: "Voir" };
+    const l = a.lien && typeof a.lien === "object" ? a.lien : null;
+    const route = l && /^[a-z]+\/[a-z-]+$/.test(String(l.route || "")) ? l.route : "pilotage/sante";
+    return { route, label: (l && l.label) || "Voir le détail" };
+  }
   function renderTodo(sc) {
     const A = aTraiter(sc), top = A.slice(0, 3);
-    $("blTodoCount").textContent = A.length > 3 ? "3 sur " + A.length : "";
-    $("blTodo").innerHTML = top.length ? top.map(a =>
+    // Pas de compteur visible (règle 9 : les compteurs sont dans la navigation) ; l'information reste lue aux lecteurs d'écran.
+    $("blTodoCount").textContent = A.length > 3 ? "3 premiers éléments sur " + A.length : "";
+    $("blTodo").innerHTML = top.length ? top.map(a => { const l = lienTodo(a); return (
       '<div class="bl-act ' + esc(a.level) + '"><span class="bl-pill ' + esc(a.level) + '">' + (LEVEL_TXT[a.level] || "info") + "</span>" +
       '<div class="bl-act-b"><strong>' + esc(a.title) + '</strong><div class="small">' + esc(a.text) + "</div></div>" +
-      link("aujourdhui/vue", "Voir") + "</div>").join("")
+      link(l.route, l.label) + "</div>"); }).join("")
       : '<div class="bl-act good"><span class="bl-pill good">ok</span><div class="bl-act-b">Rien d\'urgent.</div></div>';
   }
 

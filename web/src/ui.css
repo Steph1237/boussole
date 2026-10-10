@@ -62,7 +62,7 @@
 
 /* ---------- voir plus ---------- */
 .ui-voirplus{display:flex;flex-direction:column;gap:8px}
-.ui-voirplus-liste{display:flex;flex-direction:column;gap:8px}
+.ui-voirplus-liste{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
 .ui-voirplus-reste[hidden]{display:none}
 .ui-voirplus-btn{align-self:flex-start;padding:6px 2px;border:0;background:none;color:var(--accent);font:600 13px var(--f-body);cursor:pointer;
   text-decoration:underline;text-underline-offset:3px}
@@ -109,6 +109,7 @@
   .ui-carte-valeur{font-size:18px}
   .ui-bascule-option{min-height:36px}
   .ui-periode-g .ui-bascule-option{min-height:32px}
+  .ui-voirplus-btn{min-height:40px;padding:8px 4px}
   .ui-panneau{left:0;right:0;bottom:0;max-height:85vh;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px);animation:ui-monte .22s ease-out}
   .ui-panneau-tete{padding-top:6px}
 }
