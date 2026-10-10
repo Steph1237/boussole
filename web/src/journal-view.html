@@ -1,0 +1,31 @@
+<div class="jv">
+  <section class="panel jv-tete" aria-labelledby="jvTitre">
+    <h2 id="jvTitre">Journal des décisions</h2>
+    <p class="jv-intro">L'historique de ce que vous avez décidé avec votre assistant : avis, décisions, scénarios comparés, hypothèses, revues. Chaque entrée garde l'état de votre patrimoine au moment où elle a été écrite, pour le comparer à aujourd'hui. Rien ne se réécrit en silence : une fois confirmée, toute correction est tracée.</p>
+    <div class="jv-consent">
+      <p class="jv-consent-t">Ce que l'agent peut enregistrer</p>
+      <div class="jv-consent-b" id="jvConsent"></div>
+      <p class="jv-consent-x" id="jvConsentX" aria-live="polite"></p>
+      <p class="jv-msg err" id="jvConsentErr" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <p class="jv-msg" id="jvMsg" role="status" aria-live="polite" hidden></p>
+
+  <section class="panel jv-corps" id="jvCorps" aria-labelledby="jvListeTitre" hidden>
+    <h2 class="ui-sr" id="jvListeTitre">Entrées du journal</h2>
+    <div class="jv-filtres">
+      <div id="jvFiltreStatut"></div>
+      <div id="jvFiltreType"></div>
+    </div>
+    <div class="jv-liste" id="jvListe"></div>
+  </section>
+
+  <p class="jv-err" id="jvErr" hidden>Lecture impossible pour le moment. Le journal n'a pas pu être chargé ; réessayez dans quelques instants.</p>
+
+  <section class="panel jv-vide" id="jvVide" aria-labelledby="jvVideTitre" hidden>
+    <h2 id="jvVideTitre">Votre journal est encore vide</h2>
+    <p>Quand vous prenez une décision avec votre assistant, ou qu'il vous donne un avis, il peut l'enregistrer ici avec votre accord : ce qui a été décidé, pourquoi, les options écartées et l'état de votre patrimoine à ce moment-là. Vous relisez chaque entrée avant de la confirmer, et vous pouvez la corriger ou la supprimer à tout moment.</p>
+    <div id="jvVideClaude"></div>
+  </section>
+</div>
