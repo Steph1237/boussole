@@ -1,1 +1,21 @@
-<div class="memoire-view"></div>
+<div class="memoire-view">
+  <section class="panel mv-intro" aria-labelledby="mvTitle">
+    <h2 id="mvTitle">Ce que l'agent retient de vous</h2>
+    <p>Votre assistant retient ici ce qui l'aide à mieux vous accompagner d'une conversation à l'autre : votre contexte, vos préférences, vos projets, vos décisions, ce qu'il vous a déjà expliqué et les points à reprendre. Ces souvenirs sont privés, stockés dans votre compte Boussole, et vous pouvez les modifier ou les effacer à tout moment. Ils ne contiennent jamais d'identifiants bancaires ni de mots de passe.</p>
+  </section>
+
+  <p class="mv-msg" id="mvMsg" role="status" aria-live="polite" hidden></p>
+
+  <div class="mv-bar" id="mvBar" hidden>
+    <p class="mv-count" id="mvCount"></p>
+    <button type="button" class="mv-btn danger" id="mvClear">Tout effacer</button>
+  </div>
+
+  <div class="mv-groups" id="mvGroups"></div>
+
+  <section class="panel mv-empty" id="mvEmpty" aria-labelledby="mvEmptyTitle" hidden>
+    <h2 id="mvEmptyTitle">L'agent n'a encore rien retenu</h2>
+    <p>Pendant vos conversations, votre assistant retient ce qui est utile pour la suite. Commencez par votre bilan avec Claude.</p>
+    <a class="mv-btn" href="#profil/claude" data-goto="profil/claude">Faire mon bilan avec Claude</a>
+  </section>
+</div>

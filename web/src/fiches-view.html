@@ -1,1 +1,47 @@
-<div class="fiches-view"></div>
+<div class="fiches-view">
+  <header class="fv-head">
+    <h2>Ce que sait l'agent</h2>
+    <p>Les fiches et les chiffres sur lesquels s'appuie l'agent de Boussole, avec leurs sources et leur date. Elles sont relues avant publication et mises à jour avec l'actualité.</p>
+    <p class="fv-legende">Indicateur pédagogique, pas un conseil en investissement.</p>
+  </header>
+
+  <div class="fv-liste" id="fvListe">
+    <div class="fv-outils" id="fvOutils" hidden>
+      <div class="fv-recherche">
+        <label for="fvQ">Rechercher une fiche</label>
+        <input type="search" id="fvQ" placeholder="Livret A, PEA, crédit…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="fv-themes" id="fvThemes" role="group" aria-label="Filtrer par thème"></div>
+    </div>
+    <p class="fv-compte" id="fvCompte" role="status" aria-live="polite"></p>
+    <ul class="fv-cartes" id="fvCartes"></ul>
+
+    <section class="panel fv-vide" id="fvVide" aria-labelledby="fvVideTitre" hidden>
+      <h3 id="fvVideTitre">Le savoir de l'agent arrive bientôt.</h3>
+      <p>Les fiches pédagogiques sur lesquelles s'appuie l'agent (épargne, enveloppes, fiscalité, crédit…) apparaîtront ici, chacune avec ses sources et sa date de mise à jour.</p>
+    </section>
+
+    <section class="panel fv-reperes" id="fvReperes" aria-labelledby="fvRepTitre" hidden>
+      <h3 id="fvRepTitre">Chiffres de référence</h3>
+      <p class="fv-rep-intro">Les taux et plafonds que l'agent utilise dans ses explications, avec leur date d'effet et leur source officielle.</p>
+      <table class="fv-tab">
+        <thead><tr><th scope="col">Repère</th><th scope="col">Valeur</th><th scope="col">En vigueur</th><th scope="col">Source</th></tr></thead>
+        <tbody id="fvRepCorps"></tbody>
+      </table>
+      <p class="fv-rep-note" id="fvRepNote" hidden>« À vérifier » : ce chiffre n'a pas été revérifié depuis plus de six mois ; consultez la source avant de vous y fier.</p>
+    </section>
+  </div>
+
+  <article class="panel fv-detail" id="fvDetail" aria-labelledby="fvDTitre" hidden>
+    <button type="button" class="fv-retour" id="fvRetour"><span aria-hidden="true">←</span> Retour aux fiches</button>
+    <p class="fv-theme" id="fvDTheme"></p>
+    <h3 class="fv-d-titre" id="fvDTitre" tabindex="-1"></h3>
+    <div class="fv-md" id="fvDContenu" aria-live="polite"></div>
+    <section class="fv-sources" id="fvDSrc" aria-labelledby="fvDSrcTitre" hidden>
+      <h4 id="fvDSrcTitre">Sources</h4>
+      <ul id="fvDSources"></ul>
+    </section>
+    <p class="fv-d-meta" id="fvDMeta"></p>
+    <p class="fv-legende">Indicateur pédagogique, pas un conseil en investissement.</p>
+  </article>
+</div>

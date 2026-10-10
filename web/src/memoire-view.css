@@ -1,0 +1,53 @@
+/* Profil et données › Mémoire de l'agent : souvenirs groupés par catégorie (épinglés d'abord), modifier, épingler, supprimer, tout effacer. */
+#view-memoire-view [hidden]{display:none!important}
+#view-memoire-view .memoire-view{display:flex;flex-direction:column;gap:16px;max-width:880px;min-width:0}
+#view-memoire-view .mv-intro h2{font:700 16px var(--f-display);margin:0 0 6px}
+#view-memoire-view .mv-intro p{margin:0;font-size:14px;line-height:1.5;max-width:680px}
+#view-memoire-view .mv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:13px;border-left:3px solid var(--line2);background:var(--sunk);overflow-wrap:anywhere}
+#view-memoire-view .mv-msg.ok{border-left-color:var(--good);background:var(--good-soft)}
+#view-memoire-view .mv-msg.err{border-left-color:var(--crit);background:var(--crit-soft)}
+#view-memoire-view .mv-bar{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
+#view-memoire-view .mv-count{margin:0;font-size:13.5px;color:var(--muted);min-width:0;border-radius:4px}
+#view-memoire-view .mv-count b{color:var(--ink);font-weight:700}
+#view-memoire-view .mv-late{color:var(--warn);font-weight:600}
+#view-memoire-view .mv-groups{display:flex;flex-direction:column;gap:14px}
+#view-memoire-view .mv-groups:empty{display:none}
+#view-memoire-view .mv-grp h3{display:flex;align-items:baseline;gap:8px;font:700 12px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 4px}
+#view-memoire-view .mv-n{font:600 11px var(--f-num);letter-spacing:0}
+#view-memoire-view .mv-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+#view-memoire-view .mv-item{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:12px 0 12px 12px;border-top:1px solid var(--line);border-left:3px solid transparent;min-width:0}
+#view-memoire-view .mv-item:first-child{border-top:0}
+#view-memoire-view .mv-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
+#view-memoire-view .mv-item.is-pin{border-left-color:var(--accent)}
+#view-memoire-view .mv-item.echu{border-left-color:var(--warn)}
+#view-memoire-view .mv-txt{margin:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere;white-space:pre-line;max-width:680px}
+#view-memoire-view .mv-meta{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:12px;color:var(--muted)}
+#view-memoire-view .mv-who{overflow-wrap:anywhere}
+#view-memoire-view .mv-ico{width:13px;height:13px;flex:none}
+#view-memoire-view .mv-tag{display:inline-flex;align-items:center;gap:4px;font:600 11px var(--f-body);padding:2px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+#view-memoire-view .mv-tag.pin{background:var(--accent-soft);color:var(--accent)}
+#view-memoire-view .mv-tag.late{background:var(--warn-soft);color:var(--warn)}
+#view-memoire-view .mv-act{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+#view-memoire-view .mv-lnk{border:0;background:none;padding:4px 0;font:600 12.5px var(--f-body);color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer;border-radius:3px}
+#view-memoire-view .mv-lnk:hover{color:var(--ink)}
+#view-memoire-view .mv-lnk.danger{color:var(--crit)}
+#view-memoire-view .mv-lnk:disabled{opacity:.5;cursor:default}
+#view-memoire-view .mv-btn{display:inline-block;font:600 13px var(--f-body);border-radius:var(--radius-sm);padding:9px 14px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer;text-decoration:none}
+#view-memoire-view .mv-btn:hover{filter:brightness(1.08)}
+#view-memoire-view .mv-btn.ghost{background:transparent;color:var(--accent)}
+#view-memoire-view .mv-btn.danger{background:transparent;border-color:var(--crit);color:var(--crit)}
+#view-memoire-view .mv-btn.danger:hover{background:var(--crit-soft);filter:none}
+#view-memoire-view .mv-btn.sm{padding:7px 12px;font-size:12.5px}
+#view-memoire-view .mv-btn:disabled{opacity:.5;cursor:default;filter:none}
+#view-memoire-view .mv-edit{align-self:stretch;display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:8px;background:var(--sunk);min-width:0}
+#view-memoire-view .mv-lab{font-size:12px;font-weight:600;color:var(--muted)}
+#view-memoire-view .mv-ta,#view-memoire-view .mv-date{font:14px/1.45 var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px 10px;width:100%;min-width:0;color-scheme:inherit}
+#view-memoire-view .mv-ta{resize:vertical;min-height:72px}
+#view-memoire-view .mv-date{max-width:200px}
+#view-memoire-view .mv-ta:focus-visible,#view-memoire-view .mv-date:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#view-memoire-view .mv-cpt{margin:0;text-align:right}
+#view-memoire-view .mv-empty{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+#view-memoire-view .mv-empty h2{font:700 16px var(--f-display);margin:0;border-radius:4px}
+#view-memoire-view .mv-empty p{margin:0;line-height:1.5;max-width:640px}
+
+@media (max-width:480px){#view-memoire-view .mv-item{padding-left:10px}#view-memoire-view .mv-act{gap:2px 18px}#view-memoire-view .mv-lnk{padding:8px 0}}
