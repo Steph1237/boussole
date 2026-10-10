@@ -79,3 +79,12 @@ test("build.mjs : module plan-view assemblé, moteur plan chargé avant", () => 
   assert.ok(mods.includes("plan-view"));
   assert.match(build, /const SCRIPTS = \[[^\]]*"plan"[^\]]*\.\.\.MODULES/);
 });
+
+test("plan-view.js : le repère Livret A est lu dans les repères (plus de taux codé en dur)", () => {
+  assert.doesNotMatch(js, /Livret A 2,4/);
+  assert.match(js, /Reperes\.trouver\([^)]*"livret_a_taux"\)/);
+  assert.match(js, /Reperes\.format\(/);
+  assert.match(js, /dateEffet/);
+  assert.match(js, /taux réglementé en vigueur/);
+  assert.match(js, /window\.Reperes/, "protégé si Reperes est absent");
+});
