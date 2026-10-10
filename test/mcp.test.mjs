@@ -20,7 +20,9 @@ const code = sansCommentaires(src); // sans commentaires
 /* Connecteur v6 (AG1) : savoir commun et mémoire de l'agent dans deux modules voisins, enregistrés par index.ts. */
 const srcSavoir = readFileSync(path("supabase/functions/mcp/savoir.ts"), "utf8");
 const srcMemoire = readFileSync(path("supabase/functions/mcp/memoire.ts"), "utf8");
-const srcAll = [src, srcSavoir, srcMemoire].join("\n");
+/* CK2 : journal des décisions dans un troisième module voisin (journal.ts), enregistré par index.ts. */
+const srcJournal = existsSync(path("supabase/functions/mcp/journal.ts")) ? readFileSync(path("supabase/functions/mcp/journal.ts"), "utf8") : "";
+const srcAll = [src, srcSavoir, srcMemoire, srcJournal].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
@@ -32,6 +34,7 @@ const TOOLS = [
   "get_risk_profile", "annotate_instrument", "etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection",
   "demarrer_onboarding",
   "demarrer_session", "consulter_savoir", "reperes", "memoriser", "se_souvenir", "oublier",
+  "journaliser", "lire_journal", "completer_journal", "cloturer_session",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
@@ -108,13 +111,16 @@ test("mcp : Diagnostic — annotate_instrument (source obligatoire, RPC), get_ri
 
 test("mcp : chemins de navigation du cockpit (Agent, Patrimoine, Pilotage, Compte), plus les anciens", () => {
   assert.doesNotMatch(codeAll, /Profil et données|Bilan ›|Diagnostic ›|Recommandations ›|Avenir ›|Ma position|Mémoire de l'agent/);
-  for (const k of ["Boussole › Agent › Propositions", "Boussole › Agent › Mémoire", "Patrimoine › Placements", "Pilotage › Risque"]) assert.ok(codeAll.includes(k), k);
+  for (const k of ["Boussole › Agent › Propositions", "Boussole › Agent › Mémoire", "Boussole › Agent › Journal", "Patrimoine › Placements", "Pilotage › Risque"]) assert.ok(codeAll.includes(k), k);
 });
 
-test("mcp : aucune écriture directe dans les tables personnelles, hors propositions, mémoire de l'agent (et réglages sans montant)", () => {
+test("mcp : aucune écriture directe dans les tables personnelles, hors propositions, mémoire et journal de l'agent (et réglages sans montant)", () => {
   const ecritures = [...codeAll.matchAll(/from\(\s*"(\w+)"\s*\)\s*\.(insert|update|upsert|delete)\(/g)].map(m => `${m[1]}.${m[2]}`);
   const tables = new Set(ecritures.map(e => e.split(".")[0]));
-  assert.deepEqual([...tables].sort(), ["config", "memoire_agent", "propositions"], `écritures trouvées : ${ecritures.join(", ")}`);
+  assert.deepEqual([...tables].sort(), ["config", "journal", "memoire_agent", "propositions"], `écritures trouvées : ${ecritures.join(", ")}`);
+  // journal : insertion (journaliser) et mise à jour (completer_journal) seulement, dans journal.ts ; l'agent ne supprime rien.
+  assert.deepEqual([...new Set(ecritures.filter(e => e.startsWith("journal.")))].sort(), ["journal.insert", "journal.update"]);
+  assert.doesNotMatch(code, /from\("journal"\)\.(insert|update|upsert|delete)/, "écriture du journal hors journal.ts");
   // memoire_agent : écriture directe (ne touche pas au bilan), seulement dans memoire.ts
   for (const e of ecritures.filter(e => e.startsWith("memoire_agent"))) assert.ok(["memoire_agent.insert", "memoire_agent.update", "memoire_agent.delete"].includes(e), e);
   assert.doesNotMatch(code, /from\("memoire_agent"\)\.(insert|update|upsert|delete)/, "écriture de la mémoire hors memoire.ts");
@@ -174,7 +180,7 @@ const SANS_STRIP = typeof strip !== "function" && "module.stripTypeScriptTypes i
 function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
-  const js = strip(bloc, { mode: "strip" }) + "\n;({ scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE });";
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE });";
   return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
 }
 const TODAY = "2026-10-10";
@@ -480,7 +486,7 @@ test("AG1 : filtre sensible identique au SQL (IBAN, carte, mots interdits) et IS
 });
 test("AG1 : demarrer_session marque le savoir vu après les lectures ; demarrer_onboarding n'est pas bloqué par la mémoire ; memoriser renvoie epingle", () => {
   const o = outil("demarrer_session");
-  const iLectures = o.indexOf("Promise.all([lireEtat(), lireMemoire(db, must)])"), iVu = o.indexOf('db.rpc("marquer_savoir_vu"');
+  const iLectures = o.indexOf("Promise.all([lireEtat(), lireMemoire(db, must), journalDeSession(db, must, today())])"), iVu = o.indexOf('db.rpc("marquer_savoir_vu"');
   assert.ok(iLectures >= 0, "lectures d'abord (état et mémoire)");
   assert.ok(iVu > iLectures, "marquer_savoir_vu après la réussite des lectures");
   assert.doesNotMatch(o.slice(0, iVu), /Promise\.all\(\[[^\]]*marquer_savoir_vu/, "pas en parallèle des lectures");
@@ -510,10 +516,10 @@ test("AG1 : demarrer_onboarding renvoie aussi la mémoire, et sa conduite appren
 /* Exécution des deux modules (types retirés, zod simulé, base factice) : refus, règles et requêtes réellement envoyées. */
 class UserErrorT extends Error {}
 const fauxZ = () => { const f = new Proxy(function () {}, { get: (_, k) => (k === "then" ? undefined : f), apply: () => f }); return f; };
-function chargerModule(source) {
+function chargerModule(source, globaux = {}) {
   const noms = [...source.matchAll(/^export (?:const|function|async function) (\w+)/gm)].map(m => m[1]);
   const js = strip(source, { mode: "strip" }).replace(/^import .*$/gm, "").replace(/^export (const|function|async function)/gm, "$1");
-  return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { z: fauxZ(), RegExp, Date, Math, JSON, Number, String, Object, Array, Set, Promise, console });
+  return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { z: fauxZ(), RegExp, Date, Math, JSON, Number, String, Object, Array, Set, Promise, console, ...globaux });
 }
 /** Base factice : chaque requête (from / rpc) est notée avec ses appels chaînés ; `reponse(requete)` fournit { data, error }. */
 function fauxDb(reponse = () => ({ data: null, error: null })) {
@@ -623,6 +629,281 @@ test("AG1 : savoir.ts — consulter_savoir (slug, recherche, rien inventé), rep
   const ops = db.appels[0].ops;
   assert.deepEqual(J(ops.find(o => o[0] === "gt")), ["gt", "mis_a_jour_le", "2026-10-01"]);
   assert.deepEqual(J(ops.find(o => o[0] === "limit")), ["limit", 10]);
+});
+
+/* ---------- CK2 : journal des décisions (journal.ts, demarrer_session, conduite) ---------- */
+test("CK2 : journal.ts enregistré par index.ts, calculs injectés (pas dupliqués), lecture seule et écriture annotées", () => {
+  assert.ok(srcJournal, "supabase/functions/mcp/journal.ts présent");
+  assert.match(src, /import \{ registerJournal, journalDeSession \} from "\.\/journal\.ts";/);
+  assert.match(code, /registerJournal\(server, \{ \.\.\.h, calcul: \{ charger: chargerDonnees, bilan, bonnesPratiques, syntheseRisque, lireReperes: \(cles: string\[\]\) => lireReperes\(db, must, cles, today\(\)\) \} \}\)/);
+  assert.match(src, /import \{ registerSavoir, nouveautes, lireReperes \} from "\.\/savoir\.ts";/);
+  // journal.ts ne recalcule rien : aucune fonction de calcul du bilan n'y est définie
+  assert.doesNotMatch(srcJournal, /function (bilan|bonnesPratiques|syntheseRisque|scoreSante|allocationReelle)\b/);
+  assert.match(srcJournal, /import \{ estSensible \} from "\.\/memoire\.ts";/, "même filtre sensible que la mémoire");
+  // get_overview et l'état figé partagent le même chargement
+  assert.match(outil("get_overview"), /chargerDonnees\(\)/);
+  for (const nom of ["lire_journal", "cloturer_session"]) assert.match(outil(nom), /annotations:\s*RO/, `${nom} en lecture seule`);
+  for (const nom of ["journaliser", "completer_journal"]) assert.match(outil(nom), /annotations:\s*RW/, `${nom} en écriture`);
+  assert.match(srcJournal, /export const JOURNAL = "Boussole › Agent › Journal";/, "chemin de la nouvelle navigation");
+  for (const nom of ["journaliser", "completer_journal"]) assert.match(outil(nom), /\+ JOURNAL \+/, `${nom} : renvoie vers Agent › Journal`);
+  // en-tête du connecteur
+  assert.match(src.slice(0, src.indexOf("import ")), /journal\.ts/);
+});
+
+test("CK2 : demarrer_session renvoie le journal et le consentement, sans jamais bloquer", () => {
+  const o = outil("demarrer_session");
+  for (const k of ["journal:", "journal_consentement:"]) assert.ok(o.includes(k), `réponse : ${k}`);
+  assert.match(o, /journalDeSession\(db, must, today\(\)\)/);
+  assert.match(srcJournal, /export async function journalDeSession\([^)]*\)[\s\S]*?try \{[\s\S]*?\} catch[\s\S]*?console\.warn/, "table absente : valeurs vides et avertissement");
+});
+
+test("CK2 : conduite experte et instructions — clôture, consentement, mots de l'utilisateur", () => {
+  const c = srcAll.slice(srcAll.indexOf("CONDUITE_EXPERT = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_EXPERT = [")));
+  assert.match(c, /quand l'échange a abouti à un avis ou une décision, appelle cloturer_session/i);
+  assert.match(c, /ne journalise jamais sans respecter journal_consentement/i);
+  assert.match(c, /en mode demander, pose la question et n'écris qu'après un oui explicite/i);
+  assert.match(c, /reprends les mots de l'utilisateur pour la décision/i);
+  assert.match(c, /revues_dues/); assert.match(c, /Agent › Journal/);
+  const instr = code.slice(code.indexOf("const INSTRUCTIONS"), code.indexOf("].join", code.indexOf("const INSTRUCTIONS")));
+  for (const k of ["journaliser", "lire_journal", "completer_journal", "cloturer_session", "Agent › Journal", "accord_utilisateur"]) assert.ok(instr.includes(k), `instructions : ${k}`);
+});
+
+/** Journal : base factice qui répond selon la table. */
+function dbJournal({ consentement = "demander", insertion, ligne, liste = [], compte = 0, erreur } = {}) {
+  return fauxDb(r => {
+    if (r.table === "profiles") return { data: consentement === undefined ? null : { journal_consentement: consentement }, error: null };
+    if (r.table === "journal") {
+      const ins = r.ops.find(o => o[0] === "insert"), up = r.ops.find(o => o[0] === "update");
+      if (erreur && (ins || up)) return { data: null, error: erreur };
+      if (ins) return { data: { id: "j1", statut: "a_relire", ...ins[1] }, error: null };
+      if (up) return { data: { id: ligne?.id ?? "j1", ...ligne, ...up[1] }, error: null };
+      if (r.ops.some(o => o[0] === "maybeSingle")) return { data: ligne ?? null, error: null };
+      if (r.ops.some(o => o[0] === "select" && o[2]?.head)) return { data: null, error: null, count: compte };
+      return { data: liste, error: null };
+    }
+    return { data: liste, error: null };
+  });
+}
+const REPERES_FAUX = [{ cle: "livret_a_taux", valeur: 1.7, date_effet: "2026-08-01" }, { cle: "pfu_taux", valeur: 31.4, date_effet: "2026-01-01" }];
+const calculFaux = (surcharge = {}) => ({
+  charger: async () => ({ donnees: { positions: [] }, objectifs: [], risque: null, classes: null }),
+  bilan: () => ({ net: 100000.456, financier: 60000.123, dettes: 20000 }),
+  bonnesPratiques: () => ({ total: 72, provisoire: false, couverture: 0.8 }),
+  syntheseRisque: () => ({ declare: { id: "equilibre", label: "Équilibré" }, equivalent: { id: "dynamique", label: "Dynamique" },
+    allocation: { pct: { actions: 62.345, obligations: 10, securise: 27.655, immobilier: 0, speculatif: 0, diversifiants: 0 } } }),
+  lireReperes: async () => REPERES_FAUX,
+  ...surcharge,
+});
+const chargerJournal = (globaux = {}) => chargerModule(srcJournal, { estSensible: chargerModule(srcMemoire).estSensible, ...globaux });
+const journalSrv = (db, calcul = calculFaux()) => serveur(chargerJournal().registerJournal, db, { calcul });
+const ENTREE = { type: "decision", titre: "Garder le PEA", synthese: "On garde le PEA et on verse 300 € par mois.", raisonnement: "Horizon long.",
+  options: [{ titre: "Garder", retenue: true, pourquoi: "Fiscalité après 5 ans" }, { titre: "Clôturer", pourquoi: "Besoin de liquidités" }] };
+const insertion = db => (db.appels.find(a => a.table === "journal" && a.ops.some(o => o[0] === "insert"))?.ops.find(o => o[0] === "insert") || [])[1];
+
+test("CK2 : journal.ts — outils enregistrés, types, statuts et consentements", { skip: SANS_STRIP }, () => {
+  const Jn = chargerJournal();
+  assert.deepEqual(J(Jn.TYPES), ["avis", "decision", "scenario", "revue", "hypothese", "evenement"]);
+  assert.deepEqual(J(Jn.STATUTS), ["a_relire", "actif", "realise", "abandonne", "archive"]);
+  assert.deepEqual(J(Jn.STATUTS_AGENT), ["actif", "realise", "abandonne", "archive"], "pas de retour à a_relire par l'agent");
+  assert.deepEqual(J(Jn.CONSENTEMENTS), ["demander", "prevenir", "jamais"]);
+  assert.deepEqual(Object.keys(journalSrv(dbJournal())).sort(), ["cloturer_session", "completer_journal", "journaliser", "lire_journal"]);
+  // statuts de la migration
+  const sql = readFileSync(path("supabase/migrations/0013_journal.sql"), "utf8");
+  assert.ok(sql.includes("check (type in ('avis','decision','scenario','revue','hypothese','evenement'))"));
+  assert.ok(sql.includes("check (statut in ('a_relire','actif','realise','abandonne','archive'))"));
+  assert.ok(sql.includes("check (journal_consentement in ('demander','prevenir','jamais'))"));
+});
+
+test("CK2 : journaliser — consentement jamais, demander (accord exigé), prevenir, défaut demander", { skip: SANS_STRIP }, async () => {
+  // jamais : refus lisible, rien d'écrit
+  let db = dbJournal({ consentement: "jamais" });
+  let r = await journalSrv(db).journaliser.handler({ ...ENTREE, accord_utilisateur: true });
+  assert.match(r.erreur, /désactivé le journal dans Boussole › Agent › Journal/);
+  assert.equal(insertion(db), undefined, "rien n'est inséré");
+  // demander sans accord : refus qui rappelle de demander ; rien d'écrit
+  db = dbJournal({ consentement: "demander" });
+  r = await journalSrv(db).journaliser.handler({ ...ENTREE });
+  assert.match(r.erreur, /accord_utilisateur: true/); assert.match(r.erreur, /demande/i);
+  assert.equal(insertion(db), undefined);
+  r = await journalSrv(db).journaliser.handler({ ...ENTREE, accord_utilisateur: false });
+  assert.ok(r.erreur, "accord false : refus"); assert.equal(insertion(db), undefined);
+  // profil sans consentement (null) : demander par défaut
+  db = dbJournal({ consentement: null });
+  r = await journalSrv(db).journaliser.handler({ ...ENTREE });
+  assert.match(r.erreur, /accord_utilisateur/); assert.equal(insertion(db), undefined);
+  // demander avec accord : écrit en a_relire
+  db = dbJournal({ consentement: "demander" });
+  r = await journalSrv(db).journaliser.handler({ ...ENTREE, accord_utilisateur: true });
+  assert.equal(r.ok.entree.id, "j1"); assert.match(r.ok.rappel, /Agent › Journal/);
+  let ins = insertion(db);
+  assert.equal(ins.statut, "a_relire"); assert.equal(ins.source, "Claude"); assert.equal(ins.type, "decision");
+  assert.equal(ins.date_decision, TODAY, "décision datée du jour par défaut");
+  assert.deepEqual(J(ins.options), [{ titre: "Garder", retenue: true, pourquoi: "Fiscalité après 5 ans" }, { titre: "Clôturer", retenue: false, pourquoi: "Besoin de liquidités" }]);
+  assert.deepEqual(J(ins.liens), {}); assert.equal(ins.revue_le, null);
+  assert.ok(!("accord_utilisateur" in ins), "l'accord n'est pas une colonne");
+  // prevenir : pas d'accord requis ; consigne de prévenir
+  db = dbJournal({ consentement: "prevenir" });
+  r = await journalSrv(db).journaliser.handler({ type: "avis", titre: "Matelas suffisant", synthese: "Le matelas couvre 5 mois." });
+  assert.equal(r.ok.consentement, "prevenir"); assert.match(r.ok.consigne, /enregistr/i);
+  ins = insertion(db);
+  assert.equal(ins.statut, "a_relire"); assert.equal(ins.date_decision, null, "avis : pas de date de décision imposée"); assert.equal(ins.raisonnement, null);
+});
+
+test("CK2 : journaliser — état figé calculé par les fonctions injectées ; échec de calcul non bloquant", { skip: SANS_STRIP }, async () => {
+  let db = dbJournal({ consentement: "prevenir" });
+  await journalSrv(db).journaliser.handler({ ...ENTREE });
+  const etat = insertion(db).etat;
+  assert.deepEqual(J(etat), {
+    date: TODAY, patrimoine_net: 100000.46, financier: 60000.12, dettes: 20000,
+    bonnes_pratiques: { total: 72, provisoire: false },
+    profil_declare: { id: "equilibre", libelle: "Équilibré" }, profil_equivalent: { id: "dynamique", libelle: "Dynamique" },
+    allocation_pct: { actions: 62.3, obligations: 10, securise: 27.7, immobilier: 0, speculatif: 0, diversifiants: 0 },
+    reperes: { livret_a_taux: { valeur: 1.7, date_effet: "2026-08-01" }, pfu_taux: { valeur: 31.4, date_effet: "2026-01-01" } },
+  });
+  // repères indisponibles : le reste de l'état est gardé
+  db = dbJournal({ consentement: "prevenir" });
+  await journalSrv(db, calculFaux({ lireReperes: async () => { throw new Error("reperes absente"); } })).journaliser.handler({ ...ENTREE });
+  assert.equal(insertion(db).etat.patrimoine_net, 100000.46); assert.deepEqual(J(insertion(db).etat.reperes), {});
+  // calcul impossible : { date, indisponible: true } et l'entrée est quand même écrite
+  db = dbJournal({ consentement: "prevenir" });
+  const avert = [];
+  const Jn = chargerJournal({ console: { warn: (...a) => avert.push(a.join(" ")), error() {}, log() {} } });
+  const T = serveur(Jn.registerJournal, db, { calcul: calculFaux({ charger: async () => { throw new Error("panne"); } }) });
+  const r = await T.journaliser.handler({ ...ENTREE });
+  assert.equal(r.ok.entree.id, "j1");
+  assert.deepEqual(J(insertion(db).etat), { date: TODAY, indisponible: true });
+  assert.ok(avert.length, "échec signalé par console.warn");
+});
+
+test("CK2 : état figé avec les vraies fonctions du connecteur sur la démo", { skip: SANS_STRIP }, async () => {
+  const M = portMcp(), Jn = chargerJournal();
+  const { d, objectifs } = enLignes(DEMO);
+  const calcul = { charger: async () => ({ donnees: d, objectifs, risque: d.profil.risque ?? null, classes: d.profil.classes }),
+    bilan: M.bilan, bonnesPratiques: M.bonnesPratiques, syntheseRisque: M.syntheseRisque, lireReperes: async () => REPERES_FAUX };
+  const e = await Jn.etatFige(calcul, TODAY);
+  const b = M.bilan(d, "foyer");
+  assert.equal(e.patrimoine_net, Math.round(b.net * 100) / 100); assert.equal(e.financier, Math.round(b.financier * 100) / 100);
+  assert.equal(e.bonnes_pratiques.total, M.bonnesPratiques({ d, scope: "foyer", objectifs, risque: d.profil.risque ?? null, classes: d.profil.classes, ref: TODAY }).total);
+  assert.deepEqual(Object.keys(e.allocation_pct).sort(), ["actions", "diversifiants", "immobilier", "obligations", "securise", "speculatif"]);
+  assert.ok(e.profil_equivalent && e.profil_equivalent.libelle, "profil équivalent du portefeuille de démo");
+  assert.ok(!e.indisponible);
+});
+
+test("CK2 : journaliser — contenu sensible refusé (titre, synthèse, raisonnement, options) avant tout appel ; refus de la base traduits", { skip: SANS_STRIP }, async () => {
+  const IBAN = "FR76 3000 6000 0112 3456 7890 189";
+  for (const a of [{ titre: "IBAN " + IBAN }, { synthese: "Virement depuis " + IBAN }, { raisonnement: "Mon mot de passe est soleil" },
+    { options: [{ titre: "Carte 4970 1012 3456 7890" }] }, { options: [{ titre: "Garder", pourquoi: "code secret 1234" }] }]) {
+    const db = dbJournal({ consentement: "prevenir" });
+    const r = await journalSrv(db).journaliser.handler({ ...ENTREE, ...a });
+    assert.match(r.erreur, /^Refusé/, JSON.stringify(a));
+    assert.equal(db.appels.length, 0, "rien n'est envoyé à la base : " + JSON.stringify(a));
+  }
+  let db = dbJournal({ consentement: "prevenir", erreur: { code: "23514", message: 'new row for relation "journal" violates check constraint "journal_contenu_sensible"' } });
+  let r = await journalSrv(db).journaliser.handler({ ...ENTREE });
+  assert.match(r.erreur, /^Refusé/);
+  db = dbJournal({ consentement: "prevenir", erreur: { code: "54000", message: "Journal plein : 2 000 entrées au plus. Supprimez-en dans Boussole › Agent › Journal." } });
+  r = await journalSrv(db).journaliser.handler({ ...ENTREE });
+  assert.equal(r.erreur, "Journal plein : 2 000 entrées au plus. Supprimez-en dans Boussole › Agent › Journal.", "message de la limite remonté tel quel");
+});
+
+test("CK2 : lire_journal — 50 par défaut, plus récentes d'abord, filtres", { skip: SANS_STRIP }, async () => {
+  let db = dbJournal({ liste: [{ id: "a" }, { id: "b" }] });
+  let r = await journalSrv(db).lire_journal.handler({});
+  assert.equal(r.ok.nombre, 2);
+  let ops = db.appels[0].ops;
+  assert.equal(db.appels[0].table, "journal");
+  assert.deepEqual(J(ops.find(o => o[0] === "order")), ["order", "cree_le", { ascending: false }]);
+  assert.deepEqual(J(ops.find(o => o[0] === "limit")), ["limit", 50]);
+  assert.ok(!ops.some(o => o[0] === "eq"), "aucun filtre par défaut");
+  db = dbJournal({ liste: [] });
+  await journalSrv(db).lire_journal.handler({ type: "decision", statut: "actif", depuis: "2026-01-01", limite: 10 });
+  ops = db.appels[0].ops;
+  assert.deepEqual(J(ops.filter(o => o[0] === "eq")), [["eq", "type", "decision"], ["eq", "statut", "actif"]]);
+  assert.deepEqual(J(ops.find(o => o[0] === "gte")), ["gte", "cree_le", "2026-01-01"]);
+  assert.deepEqual(J(ops.find(o => o[0] === "limit")), ["limit", 10]);
+});
+
+test("CK2 : completer_journal — note datée en fin de raisonnement, statut et revue ; jamais titre ni synthèse", { skip: SANS_STRIP }, async () => {
+  const Jn = chargerJournal();
+  assert.equal(Jn.noteDatee("Horizon long.", "Versement fait.", TODAY, "Claude"), "Horizon long.\n\n— Note du 2026-10-10 (Claude) : Versement fait.");
+  assert.equal(Jn.noteDatee(null, "Versement fait.", TODAY, "Claude"), "— Note du 2026-10-10 (Claude) : Versement fait.");
+  const ligne = { id: "j1", raisonnement: "Horizon long.", statut: "actif", maj_le: "2026-10-09T08:00:00.123456+00:00" };
+  let db = dbJournal({ ligne });
+  let r = await journalSrv(db).completer_journal.handler({ id: "j1", note: "Versement fait.", statut: "realise", revue_le: "2027-04-01" });
+  const up = db.appels.find(a => a.ops.some(o => o[0] === "update"));
+  const patch = up.ops.find(o => o[0] === "update")[1];
+  assert.deepEqual(J(patch), { raisonnement: "Horizon long.\n\n— Note du 2026-10-10 (Claude) : Versement fait.", statut: "realise", revue_le: "2027-04-01" });
+  assert.ok(!("titre" in patch) && !("synthese" in patch), "ni titre ni synthèse");
+  assert.deepEqual(J(up.ops.filter(o => o[0] === "eq")), [["eq", "id", "j1"], ["eq", "maj_le", ligne.maj_le]], "écriture conditionnée à la version lue");
+  assert.match(r.ok.rappel, /Agent › Journal/);
+  // raisonnement null
+  db = dbJournal({ ligne: { ...ligne, raisonnement: null } });
+  await journalSrv(db).completer_journal.handler({ id: "j1", note: "Première note." });
+  assert.deepEqual(J(db.appels.find(a => a.ops.some(o => o[0] === "update")).ops.find(o => o[0] === "update")[1]), { raisonnement: "— Note du 2026-10-10 (Claude) : Première note." });
+  // même si l'agent passe titre / synthese, rien n'est écrit sur ces champs
+  db = dbJournal({ ligne });
+  await journalSrv(db).completer_journal.handler({ id: "j1", revue_le: "2027-01-01", titre: "Nouveau titre", synthese: "Autre" });
+  assert.deepEqual(J(db.appels.find(a => a.ops.some(o => o[0] === "update")).ops.find(o => o[0] === "update")[1]), { revue_le: "2027-01-01" });
+  // rien à faire, introuvable, note sensible, retour à a_relire, entrée encore à relire, raisonnement plein, conflit
+  db = dbJournal({ ligne });
+  assert.match((await journalSrv(db).completer_journal.handler({ id: "j1" })).erreur, /note, statut ou revue_le/);
+  db = dbJournal({ ligne: null });
+  assert.match((await journalSrv(db).completer_journal.handler({ id: "j9", note: "x" })).erreur, /introuvable/);
+  db = dbJournal({ ligne });
+  r = await journalSrv(db).completer_journal.handler({ id: "j1", note: "IBAN FR76 3000 6000 0112 3456 7890 189" });
+  assert.match(r.erreur, /^Refusé/); assert.equal(db.appels.length, 0, "rien n'est lu ni écrit");
+  db = dbJournal({ ligne });
+  assert.match((await journalSrv(db).completer_journal.handler({ id: "j1", statut: "a_relire" })).erreur, /statut/);
+  db = dbJournal({ ligne: { ...ligne, statut: "a_relire" } });
+  r = await journalSrv(db).completer_journal.handler({ id: "j1", statut: "actif" });
+  assert.match(r.erreur, /relue? et confirmée? par l'utilisateur|confirme/); assert.ok(!db.appels.some(a => a.ops.some(o => o[0] === "update")));
+  db = dbJournal({ ligne: { ...ligne, raisonnement: "x".repeat(7990) } });
+  assert.match((await journalSrv(db).completer_journal.handler({ id: "j1", note: "Une note trop longue pour la place restante." })).erreur, /8 000/);
+  db = fauxDb(rq => rq.ops.some(o => o[0] === "update") ? { data: null, error: null } : { data: ligne, error: null });
+  assert.match((await journalSrv(db).completer_journal.handler({ id: "j1", note: "x" })).erreur, /modifiée entre-temps/);
+});
+
+test("CK2 : cloturer_session — consigne de clôture, écrits du jour de ce client, propositions en attente", { skip: SANS_STRIP }, async () => {
+  const db = dbJournal({ consentement: "prevenir", liste: [{ id: "x" }] });
+  const r = await journalSrv(db).cloturer_session.handler({});
+  for (const m of [/journal/, /consentement|accord/, /décisions prises/, /hypothèses/, /scénarios/, /revue/, /memoriser/, /liste courte/]) assert.match(r.ok.consigne, m);
+  assert.equal(r.ok.journal_consentement, "prevenir");
+  const j = db.appels.find(a => a.table === "journal"), m = db.appels.find(a => a.table === "memoire_agent"), p = db.appels.find(a => a.table === "propositions");
+  assert.ok(j && m && p, "journal, mémoire et propositions lus");
+  for (const a of [j, m]) {
+    assert.deepEqual(J(a.ops.find(o => o[0] === "eq")), ["eq", "source", "Claude"], a.table + " : écrits de ce client");
+    const gte = a.ops.find(o => o[0] === "gte");
+    assert.equal(gte[1], "cree_le"); assert.ok(gte[2] <= TODAY + "T00:00:00Z" && gte[2] >= "2026-10-09T21:00:00", "depuis minuit, heure de Paris : " + gte[2]);
+  }
+  assert.deepEqual(J(p.ops.find(o => o[0] === "eq")), ["eq", "statut", "en_attente"]);
+  assert.deepEqual(J(Object.keys(r.ok.ecrit_aujourdhui).sort()), ["journal", "memoire"]);
+  assert.equal(r.ok.propositions_en_attente.nombre, 1);
+  assert.ok(!db.appels.some(a => a.ops.some(o => ["insert", "update", "delete", "upsert"].includes(o[0]))), "lecture seule");
+});
+
+test("CK2 : journalDeSession — à relire, décisions en cours, revues dues ; table absente sans blocage", { skip: SANS_STRIP }, async () => {
+  const Jn = chargerJournal();
+  let db = dbJournal({ consentement: "jamais", compte: 3, liste: [{ id: "d1", titre: "Garder le PEA", date_decision: "2026-09-01", revue_le: "2026-10-01" }] });
+  let s = await Jn.journalDeSession(db, (t, x) => { if (x.error) throw new Error(x.error.message); return x.data; }, TODAY);
+  assert.equal(s.journal_consentement, "jamais");
+  assert.equal(s.journal.a_relire, 3);
+  assert.equal(s.journal.en_cours.length, 1); assert.equal(s.journal.revues_dues.length, 1);
+  const lectures = db.appels.filter(a => a.table === "journal");
+  const enCours = lectures.find(a => a.ops.some(o => o[0] === "eq" && o[1] === "type"));
+  assert.deepEqual(J(enCours.ops.filter(o => o[0] === "eq")), [["eq", "type", "decision"], ["eq", "statut", "actif"]]);
+  assert.deepEqual(J(enCours.ops.find(o => o[0] === "limit")), ["limit", 10]);
+  const dues = lectures.find(a => a.ops.some(o => o[0] === "lte"));
+  assert.deepEqual(J(dues.ops.find(o => o[0] === "lte")), ["lte", "revue_le", TODAY]);
+  assert.deepEqual(J(dues.ops.find(o => o[0] === "eq")), ["eq", "statut", "actif"]);
+  const compte = lectures.find(a => a.ops.some(o => o[0] === "select" && o[2]?.head));
+  assert.deepEqual(J(compte.ops.find(o => o[0] === "eq")), ["eq", "statut", "a_relire"]);
+  // table ou colonne absente : valeurs vides, consentement par défaut, avertissement
+  const avert = [];
+  const Jw = chargerJournal({ console: { warn: (...a) => avert.push(a.join(" ")), error() {}, log() {} } });
+  db = fauxDb(() => ({ data: null, error: { code: "42P01", message: 'relation "public.journal" does not exist' } }));
+  s = await Jw.journalDeSession(db, (t, x) => { if (x.error) throw new Error(x.error.message); return x.data; }, TODAY);
+  assert.deepEqual(J(s), { journal: { a_relire: 0, en_cours: [], revues_dues: [] }, journal_consentement: "demander" });
+  assert.ok(avert.length);
 });
 
 test("mcp : aucune clé de service", () => {
