@@ -36,6 +36,12 @@ test("registre : modules existants placés selon la spec", () => {
   assert.deepEqual(routeOfModule("simu"), { space: "decisions", sub: "acheter" });
   assert.deepEqual(routeOfModule("plan"), { space: "avenir", sub: "plan" });
   assert.deepEqual(routeOfModule("profil"), { space: "profil", sub: "donnees" });
+  assert.deepEqual(routeOfModule("fiches-view"), { space: "recos", sub: "fiches" });
+  assert.deepEqual(routeOfModule("memoire-view"), { space: "profil", sub: "memoire" });
+  const recos = SPACES.find(s => s.space === "recos").subs, profil = SPACES.find(s => s.space === "profil").subs;
+  assert.deepEqual(recos.find(s => s.id === "fiches"), { id: "fiches", label: "Fiches", module: "fiches-view" });
+  assert.deepEqual(profil.find(s => s.id === "memoire"), { id: "memoire", label: "Mémoire de l'agent", module: "memoire-view" });
+  assert.equal(profil.findIndex(s => s.id === "memoire"), profil.findIndex(s => s.id === "claude") + 1, "Mémoire de l'agent juste après « Avec Claude »");
   const mods = SPACES.flatMap(sp => sp.subs.map(s => s.module)).filter(Boolean);
   assert.equal(new Set(mods).size, mods.length, "un module n'occupe qu'une sous-vue");
 });
@@ -104,12 +110,16 @@ test("coque : chaque sous-vue a exactement une section, masquée au départ ; au
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["actions", "bilan", "claude-guide", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["actions", "bilan", "claude-guide", "fiches-view", "memoire-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   for (const m of markers) {
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
     assert.ok(mods.includes(m), `${m} absent de MODULES (build.mjs)`);
   }
+  for (const [m, space, sub] of [["fiches-view", "recos", "fiches"], ["memoire-view", "profil", "memoire"]])
+    assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
+  const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
+  assert.ok(scripts.indexOf('"reperes"') >= 0 && scripts.indexOf('"reperes"') < scripts.indexOf('"plan"'), "reperes chargé avant plan");
   assert.match(shell, /<!--@scripts-->/);
   assert.match(shell, /\/\*@css\*\//);
 });

@@ -53,7 +53,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -437,6 +437,105 @@ test("démo : connexions vides, surveillerConnexions(true) simule Claude après 
   on.Store.surveillerConnexions(true); await wait(50);
   assert.equal(on.Store.get().connexions.length, 1, "déjà connecté : pas de doublon");
   assert.deepEqual(J(on.DEMO.connexions), [], "window.DEMO n'est pas modifié (copie)");
+});
+
+const MEM_KEYS = ["categorie", "contenu", "creeLe", "echeance", "epingle", "id", "majLe", "source"];
+const FICHE_KEYS = ["misAJourLe", "motsCles", "resume", "slug", "sources", "theme", "titre", "version"];
+const REPERE_KEYS = ["cle", "dateEffet", "libelle", "mode", "sourceTitre", "sourceUrl", "unite", "valeur", "verifieLe"];
+const CATEGORIES = ["contexte", "preference", "projet", "decision", "explique", "a_suivre"];
+
+test("démo : mémoire de l'agent et savoir commun au contrat (6 souvenirs, 4 fiches sans contenu, 4 repères d'exemple)", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal(S.memoire.length, 6);
+  S.memoire.forEach(m => {
+    assert.deepEqual(Object.keys(m).sort(), MEM_KEYS, `forme du souvenir ${m.id}`);
+    assert.ok(CATEGORIES.includes(m.categorie), m.categorie);
+    assert.ok(m.contenu.length >= 1 && m.contenu.length <= 500);
+    assert.equal(typeof m.epingle, "boolean");
+    assert.ok(m.echeance === null || m.categorie === "a_suivre", "échéance seulement pour « à suivre »");
+    assert.ok(!isNaN(Date.parse(m.creeLe)) && !isNaN(Date.parse(m.majLe)));
+  });
+  assert.ok(S.memoire.some(m => m.categorie === "a_suivre" && m.echeance && m.echeance <= today), "un « à suivre » échu");
+  assert.ok(S.memoire.some(m => m.epingle), "un souvenir épinglé");
+  assert.ok(new Set(S.memoire.map(m => m.categorie)).size >= 4, "plusieurs catégories");
+
+  assert.deepEqual(Object.keys(S.savoir).sort(), ["fiches", "reperes"]);
+  assert.equal(S.savoir.fiches.length, 4);
+  S.savoir.fiches.forEach(f => {
+    assert.deepEqual(Object.keys(f).sort(), FICHE_KEYS, `forme de la fiche ${f.slug} (sans contenu)`);
+    assert.match(f.slug, /^[a-z0-9-]{3,80}$/);
+    assert.ok(["epargne", "enveloppes", "fiscalite", "immobilier", "retraite", "protection", "marches", "comportement", "credit"].includes(f.theme), f.theme);
+    assert.ok(f.sources.length >= 1 && f.sources.every(s => /^https:\/\//.test(s.url) && s.titre), "sources https");
+    assert.ok(f.resume.length <= 400 && f.titre.length <= 120);
+  });
+  assert.deepEqual(J(S.savoir.reperes.map(r => r.cle)).sort(), ["hcsf_taux_effort", "livret_a_taux", "pea_plafond", "pfu_taux"]);
+  S.savoir.reperes.forEach(r => {
+    assert.deepEqual(Object.keys(r).sort(), REPERE_KEYS, `forme du repère ${r.cle}`);
+    assert.equal(typeof r.valeur, "number");
+    assert.ok(["%", "€", "ans"].includes(r.unite));
+    assert.match(r.sourceTitre, /exemple/i, "valeur d'exemple signalée");
+    assert.match(r.sourceUrl, /^https:\/\//);
+  });
+  // les fiches d'exemple ont un contenu markdown (100 à 200 mots)
+  ctx.DEMO.savoir.fiches.forEach(f => {
+    const mots = f.contenu.split(/\s+/).filter(Boolean).length;
+    assert.ok(mots >= 100 && mots <= 220, `${f.slug} : ${mots} mots`);
+  });
+  for (const k of ["modifier", "supprimer", "toutEffacer"]) assert.equal(typeof ctx.Store.memoire[k], "function", "Store.memoire." + k);
+  assert.equal(typeof ctx.Store.savoir.fiche, "function");
+});
+
+test("démo : Store.memoire (modifier, supprimer, toutEffacer) et Store.savoir.fiche en mémoire", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  const M = ctx.Store.memoire;
+  const [a, b] = S.memoire;
+  assert.deepEqual(J(await M.modifier(a.id, { contenu: "  Texte corrigé  ", epingle: true, categorie: "projet" })), { ok: true });
+  let m = ctx.Store.get().memoire.find(x => x.id === a.id);
+  assert.equal(m.contenu, "Texte corrigé"); assert.equal(m.epingle, true); assert.equal(m.categorie, a.categorie, "la catégorie n'est pas modifiable");
+  const refus = await M.modifier(a.id, { contenu: "x".repeat(501) });
+  assert.ok(refus.erreur && /500/.test(refus.erreur), "contenu trop long refusé");
+  assert.ok((await M.modifier(a.id, { contenu: "   " })).erreur, "contenu vide refusé");
+  assert.ok(/sensible/.test((await M.modifier(a.id, { contenu: "Mon mot de passe est chat" })).erreur || ""), "contenu sensible refusé");
+  assert.ok((await M.modifier("inconnu", { epingle: true })).erreur, "souvenir inconnu");
+  assert.equal(ctx.Store.get().memoire.find(x => x.id === a.id).contenu, "Texte corrigé", "un refus ne modifie rien");
+
+  assert.deepEqual(J(await M.supprimer([b.id])), { ok: true });
+  assert.equal(ctx.Store.get().memoire.length, 5);
+  assert.ok(!ctx.Store.get().memoire.some(x => x.id === b.id));
+  assert.deepEqual(J(await M.toutEffacer()), { ok: true });
+  assert.deepEqual(J(ctx.Store.get().memoire), []);
+  assert.equal(ctx.DEMO.memoire.length, 6, "window.DEMO n'est pas modifié (copie)");
+
+  const slug = S.savoir.fiches[0].slug;
+  const f = await ctx.Store.savoir.fiche(slug);
+  assert.deepEqual(Object.keys(f).sort(), [...FICHE_KEYS, "contenu"].sort());
+  assert.ok(f.contenu.length > 200);
+  assert.equal(await ctx.Store.savoir.fiche("inconnue"), null);
+  assert.equal("contenu" in ctx.Store.get().savoir.fiches[0], false, "S reste sans contenu");
+});
+
+test("store-supabase.js : mémoire de l'agent et savoir commun (lecture au démarrage, API)", () => {
+  const sup = src("store-supabase.js"), demo = src("store-demo.js");
+  for (const s of [sup, demo]) {
+    assert.match(s, /S = \{[^\n]*memoire, savoir,/, "en-tête : S documente memoire et savoir");
+    assert.match(s, /memoire: \[\], savoir: \{ fiches: \[\], reperes: \[\] \}/, "état initial");
+    for (const k of ["memoire: clone(C.memoire)", "savoir: clone(C.savoir)", "memoire,", "savoir,", "Store.memoire", "Store.savoir"]) assert.ok(s.includes(k), k);
+  }
+  for (const k of ['from("memoire_agent").select("id, categorie, contenu, echeance, epingle, source, cree_le, maj_le")',
+    'from("savoir_fiches").select("slug, theme, titre, resume, mots_cles, sources, version, mis_a_jour_le")',
+    'from("reperes").select(', "Reperes.depuisLignes", "memView", "ficheView",
+    'from("memoire_agent").update(', 'from("memoire_agent").delete().in("id", ', 'from("memoire_agent").delete().eq("user_id", uid)',
+    'select("slug, theme, titre, resume, contenu, mots_cles, sources, version, mis_a_jour_le").eq("slug", slug).maybeSingle()']) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  // les trois lectures rejoignent le Promise.allSettled de loadAll (une table absente ne casse rien)
+  const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
+  for (const t of ["memoire_agent", "savoir_fiches", "reperes"]) assert.ok(load.includes(`from("${t}")`), `loadAll lit ${t}`);
+  assert.ok(load.includes("if (memoire !== undefined)") && load.includes("if (fiches !== undefined)") && load.includes("if (reperes !== undefined)"));
+  // la liste chargée au démarrage ne contient pas le contenu des fiches
+  assert.doesNotMatch(load, /savoir_fiches"\)\.select\("[^"]*contenu/);
+  assert.match(demo, /D\.memoire/); assert.match(demo, /D\.savoir/);
 });
 
 test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = demo", () => {

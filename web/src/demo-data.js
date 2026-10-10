@@ -171,7 +171,86 @@
   // Aucun assistant connecté au départ : Store.surveillerConnexions(true) simule la connexion de Claude (onboarding).
   const connexions = [];
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions };
+  /* Mémoire de l'agent : ce que Claude a retenu du foyer au fil des conversations (table memoire_agent). Un point « à suivre »
+     échu (relevé de la SCPI, cohérent avec l'hypothèse de la ligne av-scpi) et un souvenir épinglé (période d'essai de Sam). */
+  const Mem = (id, categorie, contenu, jours, o) => Object.assign({ id, categorie, contenu, echeance: null, epingle: false, source: "Claude", creeLe: at(jours, "20:15"), majLe: at(jours, "20:15") }, o);
+  const memoire = [
+    Mem("mem-demo-essai", "contexte", "Sam est en période d'essai dans son nouveau poste : le foyer préfère ne prendre aucun engagement long avant sa confirmation.", 21, { epingle: true }),
+    Mem("mem-demo-style", "preference", "Camille préfère des explications courtes et chiffrées, avec un exemple concret, plutôt que de longs développements.", 34),
+    Mem("mem-demo-maison", "projet", "Achat d'une maison vers 2029 dans l'Est lyonnais, avec une chambre de plus ; apport visé de 60 000 €.", 34),
+    Mem("mem-demo-matelas", "decision", "Le Livret A et le LDDS restent le matelas de précaution ; les nouveaux versements vont au PEA de Camille (ETF Monde).", 21),
+    Mem("mem-demo-pea-av", "explique", "Différence entre PEA et assurance vie déjà expliquée : plafond de versement du PEA, fiscalité après 5 ans (PEA) et 8 ans (assurance vie).", 21),
+    Mem("mem-demo-scpi", "a_suivre", "Vérifier sur le relevé annuel la valeur de retrait de la SCPI de l'assurance vie de Sam.", 21, { echeance: ago(5) }),
+  ];
+
+  /* Savoir commun : 4 fiches d'exemple (le vrai contenu vient de la table savoir_fiches) et 4 repères dont les valeurs sont
+     marquées « exemple » (les valeurs vérifiées viennent de la table reperes). */
+  const src = (titre, url) => ({ titre, url, consulte_le: ago(30) });
+  const fiches = [
+    { slug: "livret-a-ldds", theme: "epargne", titre: "Livret A et LDDS : l'épargne de précaution", version: 1, misAJourLe: ago(30),
+      resume: "Deux livrets réglementés, disponibles à tout moment et sans impôt : la place naturelle du matelas de précaution.",
+      motsCles: ["livret a", "ldds", "épargne de précaution", "livret réglementé"],
+      sources: [src("Livret A — service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2365"), src("Livret de développement durable et solidaire (LDDS) — service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2368")],
+      contenu: [
+        "## À quoi servent ces livrets",
+        "Le **Livret A** et le **LDDS** sont des livrets réglementés : l'argent reste disponible à tout moment, le capital est garanti et les intérêts ne sont soumis ni à l'impôt sur le revenu ni aux prélèvements sociaux. C'est l'endroit naturel pour le matelas de précaution, cette réserve qui couvre quelques mois de dépenses en cas d'imprévu.",
+        "## Les règles à connaître",
+        "- Un seul Livret A et un seul LDDS par personne.\n- Plafond de dépôt : 22 950 € pour le Livret A, 12 000 € pour le LDDS (hors intérêts capitalisés).\n- Le taux est fixé par l'État et peut être révisé deux fois par an.",
+        "## Ce qu'il faut garder en tête",
+        "Le rendement de ces livrets suit à peu près l'inflation : ils protègent l'épargne de court terme, mais ne la font pas croître sur la durée. Au-delà du matelas, une épargne de long terme a d'autres enveloppes.",
+        "Pour aller plus loin : [la fiche Livret A de service-public.fr](https://www.service-public.fr/particuliers/vosdroits/F2365).",
+      ].join("\n\n") },
+    { slug: "pea-fonctionnement", theme: "enveloppes", titre: "Le PEA : fonctionnement et fiscalité", version: 1, misAJourLe: ago(30),
+      resume: "Une enveloppe pour investir en actions européennes, dont les gains échappent à l'impôt sur le revenu après 5 ans.",
+      motsCles: ["pea", "plan d'épargne en actions", "actions", "fiscalité", "5 ans"],
+      sources: [src("Plan d'épargne en actions (PEA) — service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2385")],
+      contenu: [
+        "## Le principe",
+        "Le **plan d'épargne en actions** (PEA) permet d'investir en actions d'entreprises européennes, directement ou au travers de fonds éligibles (dont de nombreux ETF). Chaque personne majeure peut en ouvrir un seul, dans la limite de 150 000 € de versements.",
+        "## La fiscalité dépend de l'âge du plan",
+        "- **Avant 5 ans** : un retrait entraîne en principe la clôture du plan, et les gains sont imposés.\n- **Après 5 ans** : les retraits sont possibles sans clôture ; les gains sont exonérés d'impôt sur le revenu, seuls les prélèvements sociaux restent dus.",
+        "## Pourquoi l'ouvrir tôt",
+        "Le délai de 5 ans court à partir du premier versement. Ouvrir un PEA avec une petite somme prend date, même si l'on n'investit davantage que plus tard.",
+        "Les actions restent un placement risqué : leur valeur peut baisser fortement, ce qui les réserve à un horizon long.",
+      ].join("\n\n") },
+    { slug: "diversifier-ses-placements", theme: "marches", titre: "Diversifier ses placements", version: 1, misAJourLe: ago(45),
+      resume: "Répartir son épargne entre plusieurs supports, zones et horizons réduit le risque de tout perdre sur un seul pari.",
+      motsCles: ["diversification", "risque", "allocation", "etf", "horizon"],
+      sources: [src("Espace épargnants — Autorité des marchés financiers", "https://www.amf-france.org/fr/espace-epargnants")],
+      contenu: [
+        "## L'idée",
+        "Diversifier, c'est **ne pas mettre tous ses œufs dans le même panier** : répartir son épargne entre plusieurs types de placements (livrets, fonds en euros, actions, immobilier), plusieurs zones géographiques et plusieurs entreprises. Une mauvaise surprise sur l'un pèse alors moins sur l'ensemble.",
+        "## Trois niveaux de diversification",
+        "- **Entre classes d'actifs** : la part placée en actions dépend de l'horizon et de la tolérance aux baisses.\n- **À l'intérieur des actions** : un fonds indiciel mondial couvre des milliers d'entreprises en une seule ligne.\n- **Dans le temps** : investir régulièrement lisse le prix d'achat.",
+        "## Ce que la diversification ne fait pas",
+        "Elle réduit le risque propre à une entreprise ou un secteur, mais pas le risque de marché : lors d'une crise générale, presque tout baisse en même temps. D'où l'importance de garder le matelas de précaution à part.",
+        "L'AMF rappelle qu'aucun rendement élevé n'existe sans risque élevé.",
+      ].join("\n\n") },
+    { slug: "taux-effort-hcsf", theme: "credit", titre: "Le taux d'effort et la norme du HCSF", version: 1, misAJourLe: ago(60),
+      resume: "Les banques limitent les mensualités de crédit à 35 % des revenus, assurance comprise, et la durée à 25 ans.",
+      motsCles: ["taux d'effort", "taux d'endettement", "hcsf", "crédit immobilier", "35 %"],
+      sources: [src("Haut Conseil de stabilité financière — economie.gouv.fr", "https://www.economie.gouv.fr/hcsf")],
+      contenu: [
+        "## De quoi s'agit-il",
+        "Le **taux d'effort** rapporte l'ensemble des mensualités de crédit (assurance emprunteur comprise) aux revenus nets du foyer. Le Haut Conseil de stabilité financière (HCSF) impose aux banques une norme : en règle générale, ce taux ne doit pas dépasser **35 %**, et la durée d'un crédit immobilier est limitée à **25 ans** (27 ans pour un logement neuf avec différé).",
+        "## Un exemple",
+        "Un foyer qui gagne 5 100 € nets par mois peut consacrer au plus environ 1 785 € par mois à l'ensemble de ses crédits, prêt immobilier, prêt auto et assurances comprises.",
+        "## Les marges de souplesse",
+        "- Les banques peuvent déroger à la norme pour une petite partie de leurs dossiers, en priorité pour la résidence principale.\n- Rembourser un petit crédit avant de demander un prêt immobilier libère de la capacité.",
+        "Le reste à vivre, ce qui reste une fois les mensualités payées, compte aussi dans la décision de la banque.",
+      ].join("\n\n") },
+  ];
+  const rep = (cle, libelle, valeur, unite, dateEffet, site, sourceUrl) => ({ cle, libelle, valeur, unite, dateEffet,
+    sourceTitre: "Valeur d'exemple (démo) — " + site, sourceUrl, verifieLe: ago(20), mode: "manuel" });
+  const reperes = [
+    rep("livret_a_taux", "Taux du Livret A", 1.7, "%", "2025-08-01", "service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2365"),
+    rep("pea_plafond", "Plafond de versements du PEA", 150000, "€", "2014-01-01", "service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2385"),
+    rep("hcsf_taux_effort", "Taux d'effort maximal (norme HCSF)", 35, "%", "2022-01-01", "economie.gouv.fr", "https://www.economie.gouv.fr/hcsf"),
+    rep("pfu_taux", "Prélèvement forfaitaire unique", 30, "%", "2018-01-01", "impots.gouv.fr", "https://www.impots.gouv.fr/particulier"),
+  ];
+  const savoir = { fiches, reperes };
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);
