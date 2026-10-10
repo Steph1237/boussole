@@ -314,11 +314,11 @@ describe("agrégation", () => {
     assert.equal(r.complet, false);
     assert.equal(r.familles.length, 4);
   });
-  test("complet si aucun critère à compléter ; 0 si rien n'est noté", () => {
+  test("complet si aucun critère à compléter ; pas de note si rien n'est noté", () => {
     assert.equal(Pratiques.agreger([C("effort", 12)]).complet, true);
     assert.equal(Pratiques.agreger([C("effort", 12)]).total, 60);
     const vide = Pratiques.agreger([C("effort", 0, { aCompleter: true })]);
-    assert.equal(vide.total, 0);
+    assert.equal(vide.total, null);
     assert.equal(vide.complet, false);
   });
 });

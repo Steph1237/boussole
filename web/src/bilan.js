@@ -74,12 +74,16 @@
     // santé
     const el = $("blSante"), sub = $("blSanteSub");
     let sc = null;
-    try { sc = window.Plan.score({ positions: S.positions, profil: S.profil, config: S.config, budget: S.budget, scope: scope(), today: new Date() }); } catch (e) { console.error("bilan score", e); }
-    const complets = sc ? sc.items.filter(i => !i.aCompleter).length : 0;
-    if (complets) {
+    // Même indicateur que Diagnostic › Santé (Bonnes pratiques), repli sur l'ancien score.
+    try {
+      sc = window.Pratiques
+        ? window.Pratiques.evaluer({ positions: S.positions, profil: S.profil, config: S.config, budget: S.budget, objectifs: S.objectifs, scope: scope(), risque: S.risque, classes: S.classes, today: new Date() })
+        : window.Plan.score({ positions: S.positions, profil: S.profil, config: S.config, budget: S.budget, scope: scope(), today: new Date() });
+    } catch (e) { console.error("bilan score", e); }
+    if (sc && sc.total != null) {
       const cls = sc.total >= 80 ? "good" : sc.total >= 60 ? "warn" : "crit";
       el.innerHTML = '<span class="bl-score ' + cls + '">' + sc.total + '</span><span class="bl-sur">/100</span>';
-      sub.innerHTML = '<span class="bl-verdict ' + cls + '">' + (cls === "good" ? "Solide" : cls === "warn" ? "Correct" : "À consolider") + "</span> · " + link("diagnostic/sante", "Détail");
+      sub.innerHTML = (sc.provisoire ? '<span class="bl-verdict">Provisoire</span>' : '<span class="bl-verdict ' + cls + '">' + (cls === "good" ? "Solide" : cls === "warn" ? "Correct" : "À consolider") + "</span>") + " · " + link("diagnostic/sante", "Détail");
     } else {
       el.textContent = "—";
       sub.innerHTML = link("diagnostic/sante", "Compléter pour calculer");
