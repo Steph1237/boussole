@@ -23,40 +23,65 @@ const scopedSelectors = (src, prefix) => {
   return sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith(prefix));
 };
 
-test("santé : la vue calcule le score avec Plan.score, dans le périmètre courant, et s'enregistre", () => {
-  assert.match(js, /window\.Plan\.score\(\{[^}]*positions:S\.positions[^}]*profil:S\.profil[^}]*config:S\.config[^}]*budget:S\.budget[^}]*scope:S\.scope/);
-  assert.match(js, /if\(!window\.Plan\|\|typeof window\.Plan\.score!=="function"\) return null;/, "sans plan.js : pas de score, pas d'erreur");
-  assert.match(js, /scope:snap\.scope/);
-  assert.match(js, /profil:snap\.profil/);
-  assert.match(js, /budget:snap\.budget/);
+test("santé : la vue calcule les bonnes pratiques avec Pratiques.evaluer, dans le périmètre courant, et s'enregistre", () => {
+  assert.match(js, /window\.Pratiques\.evaluer\(\{positions:S\.positions,profil:S\.profil,config:S\.config,budget:S\.budget,objectifs:S\.objectifs,scope:S\.scope,risque:S\.risque,classes:S\.classes,today:/);
+  assert.match(js, /if\(!window\.Pratiques\|\|typeof window\.Pratiques\.evaluer!=="function"\) return null;/, "sans pratiques.js : pas de note, pas d'erreur");
+  for (const k of ["scope", "profil", "budget", "objectifs", "risque", "classes"]) assert.match(js, new RegExp(k + ":snap\\." + k));
   assert.match(js, /last=calcule\(\)/, "recalculé à chaque mise à jour du store");
   assert.match(js, /App\.register\("sante",api\)/);
+  assert.doesNotMatch(js, /Plan\.score/, "le score historique n'est plus affiché ici");
 });
 
-test("santé : verdicts (80 / 60), jauges sur 20 et liens vers les vues à compléter", () => {
-  assert.match(js, /sc\.total>=80\?"Solide"/);
-  assert.match(js, /sc\.total>=60\?"Correct, "/);
+test("santé : titre « Bonnes pratiques », verdicts (80 / 60), familles, critères (jauge, règle, source, à compléter, informatif)", () => {
+  assert.match(js, /"Bonnes pratiques "\+scopeDe\(\)/);
+  assert.ok(html.includes(">Bonnes pratiques<"));
+  assert.match(js, /r\.total>=80\?"Solide"/);
+  assert.match(js, /r\.total>=60\?"Correct, "/);
   assert.match(js, /"À consolider"/);
-  assert.match(js, /i\.points>=16\?"good":i\.points>=10\?"warn":"crit"/);
-  assert.match(js, /matelas:"avenir\/plan",epargne:"avenir\/plan",endettement:"profil\/donnees",patrimoine:"profil\/donnees"/);
-  assert.match(js, /data-goto="\$\{lien\}"/);
-  assert.match(js, /"Score calculé sur "/);
-  assert.match(js, /esc\(i\.piste\)/, "piste toujours affichée");
+  assert.match(js, /c\.points>=16\?"good":c\.points>=10\?"warn":"crit"/);
+  assert.match(js, /r\.familles\.map\(f=>/);
+  assert.match(js, /poids \$\{f\.poids\} %/);
+  assert.match(js, /<summary>Règle et source<\/summary>/);
+  assert.match(js, /esc\(c\.regle\)/);
+  assert.match(js, /esc\(c\.source\)/);
+  assert.match(js, /esc\(c\.piste\)/, "piste affichée");
+  assert.match(js, /data-goto="\$\{esc\(c\.lien\)\}"/, "lien du critère pour compléter");
+  assert.match(js, /c\.informatif\?'<span class="pill">information<\/span>'/);
+  assert.match(js, /'<span class="pill">à compléter<\/span>'/);
   assert.doesNotMatch(js, /data-goto-tab/);
 });
 
-test("santé : chiffre clé « 94/100 », mention permanente et explication du calcul", () => {
-  assert.match(js, /function headline\(\)\{ return last&&last\.items\.some\(i=>!i\.aCompleter\)\?last\.total\+"\/100":"–"; \}/);
+test("santé : chiffre clé « 90/100 », mention permanente et explication du calcul", () => {
+  assert.match(js, /function headline\(\)\{ return last&&last\.familles\.some\(f=>f\.total!=null\)\?last\.total\+"\/100":"–"; \}/);
   assert.ok(html.includes("Indicateur pédagogique, pas un conseil en investissement."));
-  assert.match(html, /<details[^>]*>\s*<summary>Comment ce score est calculé<\/summary>/);
-  // Paliers de l'explication = barèmes de plan.js.
+  assert.match(html, /<details[^>]*>\s*<summary>Comment cette note est calculée<\/summary>/);
+  assert.ok(html.includes("Sécurité 30 %, Effort 25 %, Allocation 30 %, Efficacité 15 %"));
+  // Paliers de l'explication = barèmes de plan.js (repris par pratiques.js pour matelas, épargne, endettement, concentration).
   for (const b of ["[[1, 5], [3, 15]]", "[[6, 20], [12, 15]]", "[[0, 0], [5, 6], [10, 12], [15, 16], [20, 20]]", "[[25, 20], [35, 12], [45, 0]]", "[[10, 20], [20, 14], [40, 0]]"])
     assert.ok(compact(planJs).includes(compact(b)), `plan.js : barème ${b} absent`);
   for (const t of ["de 1 à 3 mois : de 5 à 15 points", "de 3 à 6 mois : 20 points", "jusqu'à 15 points à 12 mois",
     "0 % : 0 point ; 5 % : 6 ; 10 % : 12 ; 15 % : 16 ; 20 % ou plus : 20", "25 % ou moins : 20 points ; 35 %", "45 % ou plus : 0",
     "10 % ou moins : 20 points ; 20 % : 14 ; 40 % ou plus : 0", "Moins de 3 poches différentes : 5 points de moins", "Au-dessus de 80", "à partir de 16 points"])
     assert.ok(html.includes(t), `sante.html : « ${t} » absent`);
-  assert.match(js, /window\.Plan&&window\.Plan\.REPERES_AGE/, "repères d'âge lus dans plan.js");
+  // Poids de l'explication = poids de pratiques.js.
+  const P = require("../web/src/pratiques.js");
+  assert.deepEqual(P.FAMILLES.map(f => f.titre + " " + f.poids + " %"), ["Sécurité 30 %", "Effort 25 %", "Allocation 30 %", "Efficacité 15 %"]);
+});
+
+test("bonnes pratiques sur la démo : 4 familles, critères au contrat, liens vers des routes connues", () => {
+  global.window = global.window || {};
+  require("../web/src/demo-data.js");
+  const P = require("../web/src/pratiques.js"), App = require("../web/src/app.js");
+  const D = global.window.DEMO;
+  for (const scope of ["foyer", "p1", "p2"]) {
+    const r = P.evaluer({ positions: D.positions, profil: D.profil, config: D.config, budget: D.budget, objectifs: D.objectifs, scope, risque: D.risque, classes: D.classes, today: new Date("2026-10-09T12:00:00") });
+    assert.equal(r.familles.length, 4);
+    assert.ok(r.total >= 0 && r.total <= 100);
+    for (const c of r.criteres) {
+      assert.ok(c.titre && c.regle && c.source && c.cible, scope + " " + c.cle);
+      if (c.lien) assert.ok(App.resolve(c.lien) && App.resolve(c.lien).space + "/" + App.resolve(c.lien).sub === c.lien, "route inconnue : " + c.lien);
+    }
+  }
 });
 
 test("santé : CSS entièrement scopé sous #view-sante", () => {

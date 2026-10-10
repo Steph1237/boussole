@@ -1,4 +1,14 @@
 <div class="bilan">
+  <!-- Faire mon bilan avec Claude : tant que l'état du bilan (BilanEtat) est sous 100 %, masquable pour la session. -->
+  <section class="bl-claude" id="blClaude" aria-labelledby="blClaudeTitle" hidden>
+    <div class="bl-claude-g" aria-hidden="true"><span class="bl-claude-f" id="blClaudeFill"></span></div>
+    <div class="bl-claude-b">
+      <h2 id="blClaudeTitle">Faire mon bilan avec Claude</h2>
+      <p class="small" id="blClaudeTxt"></p>
+    </div>
+    <a class="bl-btn" href="#profil/claude" data-goto="profil/claude">Commencer</a>
+    <button type="button" class="bl-claude-x" id="blClaudeX" aria-label="Masquer cette carte pour la session">×</button>
+  </section>
   <p class="bl-loading muted" id="blLoading">Chargement des données…</p>
   <div class="bl-grid" id="blBody" hidden>
 

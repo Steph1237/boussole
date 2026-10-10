@@ -1,4 +1,4 @@
-/* Diagnostic › Santé : note sur 100 en tête, cinq critères en cartes, explication du calcul dépliable. */
+/* Diagnostic › Santé (Bonnes pratiques) : note sur 100 en tête, quatre familles en cartes avec leurs critères, explication dépliable. */
 #view-sante .sante{display:flex;flex-direction:column;gap:16px}
 #view-sante h2.label{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 4px}
 #view-sante .sante-hero{display:grid;grid-template-columns:minmax(160px,220px) minmax(0,1fr);gap:12px 28px;align-items:center}
@@ -11,17 +11,25 @@
 #view-sante .sante-verdict.good{color:var(--good)}
 #view-sante .sante-verdict.warn{color:var(--warn)}
 #view-sante .sante-verdict.crit{color:var(--crit)}
-#view-sante .sante-intro{color:var(--muted);max-width:620px}
-#view-sante .sante-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:14px}
-#view-sante .scard{display:flex;flex-direction:column;gap:9px;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--line2);border-radius:var(--radius);padding:14px 16px;min-width:0}
-#view-sante .scard.good{border-top-color:var(--good)}
-#view-sante .scard.warn{border-top-color:var(--warn)}
-#view-sante .scard.crit{border-top-color:var(--crit)}
+#view-sante .sante-intro{color:var(--muted);max-width:680px}
+#view-sante .sante-familles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,440px),1fr));gap:16px;align-items:start}
+#view-sante .sfam{display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--line2);border-radius:var(--radius);padding:14px 16px;min-width:0}
+#view-sante .sfam.good{border-top-color:var(--good)}
+#view-sante .sfam.warn{border-top-color:var(--warn)}
+#view-sante .sfam.crit{border-top-color:var(--crit)}
+#view-sante .sf-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+#view-sante .sf-head h3{font:800 18px var(--f-display);margin:0}
+#view-sante .sf-pts{font-size:24px;font-weight:600;white-space:nowrap}
+#view-sante .sf-pts .muted{font-size:13px}
+#view-sante .sf-crits{display:flex;flex-direction:column}
+#view-sante .scrit{display:flex;flex-direction:column;gap:7px;padding:12px 0;border-top:1px solid var(--line);min-width:0}
+#view-sante .scrit:first-child{border-top:0;padding-top:4px}
 #view-sante .sc-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-#view-sante .sc-head h3{font:700 15px var(--f-display);margin:0;min-width:0}
-#view-sante .sc-pts{font-size:18px;font-weight:500;white-space:nowrap}
-#view-sante .sc-pts .muted{font-size:13px}
-#view-sante .sg{display:block;position:relative;height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}
+#view-sante .sc-head h4{font:700 14.5px var(--f-display);margin:0;min-width:0}
+#view-sante .sc-pts{font-size:16px;font-weight:500;white-space:nowrap}
+#view-sante .sc-pts .muted{font-size:12px}
+#view-sante .sg{display:block;position:relative;height:7px;background:var(--sunk);border-radius:4px;overflow:hidden}
+#view-sante .sf-g{height:8px}
 #view-sante .sgf,#view-sante .sj-f{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--muted)}
 #view-sante .sgf.good,#view-sante .sj-f.good{background:var(--good)}
 #view-sante .sgf.warn,#view-sante .sj-f.warn{background:var(--warn)}
@@ -30,8 +38,18 @@
 #view-sante .sc-dl dt{color:var(--muted);font-size:12px;font-weight:600;padding-top:1px}
 #view-sante .sc-dl dd{margin:0;overflow-wrap:anywhere}
 #view-sante .sc-piste{margin:0;padding:8px 10px;border-radius:7px;background:var(--sunk);line-height:1.45}
+#view-sante .sc-det{margin:0;padding:8px 10px 8px 26px;border-radius:7px;background:var(--sunk);font-size:12.5px;line-height:1.45}
+#view-sante .sc-det li+li{margin-top:4px}
+#view-sante .sc-det li.probleme::marker{color:var(--crit)}
+#view-sante .sc-det li.ok::marker{color:var(--good)}
+#view-sante .sc-src summary{cursor:pointer;color:var(--muted);font-weight:600;width:max-content;max-width:100%}
+#view-sante .sc-src dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px;margin:6px 0 0}
+#view-sante .sc-src dt{color:var(--muted);font-weight:600}
+#view-sante .sc-src dd{margin:0;overflow-wrap:anywhere}
 #view-sante .sc-go{align-self:flex-start;font:600 13px var(--f-body);color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 #view-sante .sc-go:hover{color:var(--ink)}
+#view-sante .sc-go.cta{text-decoration:none;border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px 11px}
+#view-sante .sc-go.cta:hover{background:var(--accent-soft)}
 #view-sante .pill{display:inline-block;font:600 11px var(--f-body);padding:2px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap}
 #view-sante .sante-how summary{cursor:pointer;font-weight:600;color:var(--accent)}
 #view-sante .how-body{line-height:1.5;max-width:760px}
