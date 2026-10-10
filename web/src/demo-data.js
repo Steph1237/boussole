@@ -168,7 +168,10 @@
       "Réponses de l'utilisateur pendant l'entretien", "Deux premières réponses du questionnaire de risque ; les huit autres restent à poser.", 10),
   ];
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions };
+  // Aucun assistant connecté au départ : Store.surveillerConnexions(true) simule la connexion de Claude (onboarding).
+  const connexions = [];
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);

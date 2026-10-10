@@ -24,6 +24,7 @@ const TOOLS = [
   "list_positions", "upsert_positions", "record_transaction", "get_config", "update_config",
   "get_budget", "update_budget", "list_objectifs", "upsert_objectifs", "delete_objectif",
   "get_risk_profile", "annotate_instrument", "etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection",
+  "demarrer_onboarding",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
@@ -110,7 +111,8 @@ test("mcp : aucune écriture directe dans les tables personnelles, hors proposit
   assert.doesNotMatch(cfg, /cushion:\s*CushionPatch|recurring:\s*z\.array/, "update_config : ni matelas ni versements programmés");
   // aucune écriture par des variables de table (ancienne fonction upsertRows) ni RPC d'écriture autre qu'annoter_instrument
   assert.doesNotMatch(code, /from\(\s*table\s*\)\s*\.(insert|update|upsert|delete)\(/);
-  assert.deepEqual([...new Set([...code.matchAll(/\.rpc\(\s*"(\w+)"/g)].map(m => m[1]))], ["annoter_instrument"], "seule RPC : annoter_instrument");
+  assert.deepEqual([...new Set([...code.matchAll(/\.rpc\(\s*"(\w+)"/g)].map(m => m[1]))].sort(), ["annoter_instrument", "noter_connexion"],
+    "seules RPC : annoter_instrument et noter_connexion (connexion de l'assistant)");
   assert.match(code, /Proposition|proposition/);
 });
 
@@ -157,7 +159,7 @@ const SANS_STRIP = typeof strip !== "function" && "module.stripTypeScriptTypes i
 function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
-  const js = strip(bloc, { mode: "strip" }) + "\n;({ bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE });";
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE });";
   return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
 }
 const TODAY = "2026-10-10";
@@ -237,12 +239,60 @@ test("parité MCP / pratiques.js : mêmes critères, points, valeurs et textes s
       if (!["matelas", "epargne", "endettement", "concentration"].includes(w.cle)) { assert.equal(m.texte, w.texte, C); assert.equal(m.piste, w.piste, C); }
     });
     assert.equal(mcp.total, web.total, L + " : total"); assert.equal(mcp.complet, web.complet, L);
+    proche(mcp.couverture, Math.round(web.couverture * 1000) / 1000, L + " : couverture"); assert.equal(mcp.provisoire, web.provisoire, L + " : provisoire");
     assert.deepEqual(J(mcp.familles.map(f => f.total)), web.familles.map(f => f.total), L + " : familles");
     if (sc.D && scope === "foyer") {
       assert.equal(mcp.criteres.find(c => c.cle === "frais").a_completer, false, "frais calculés une fois l'ETF Monde annoté");
       assert.ok(mcp.criteres.find(c => c.cle === "enveloppes").points < 20, "enveloppes : points d'attention");
     }
   }
+});
+
+/* Scénarios clairsemés (scores honnêtes) : bilan vide, deux critères calculables, trois critères calculables. */
+const Plan = require("../web/src/plan.js");
+const sansMatelas = { ...DEMO.config, cushion: null };
+const CLAIRSEMES = [
+  ["vide", { ...DEMO, positions: [], budget: { lignes: [] }, objectifs: [], config: sansMatelas,
+    profil: { ...DEMO.profil, foyer: { adultes: 1 }, personnes: { p1: { nom: "Léa" } }, autres: {}, biens: [], credits: [] } }],
+  ["deux critères", { ...DEMO, budget: { lignes: [] }, config: sansMatelas,
+    profil: { ...DEMO.profil, foyer: { adultes: 1 }, personnes: { p1: { nom: "Léa", salaire: 3000, salaireUnite: "nm" } }, autres: {}, biens: [], credits: [] } }],
+  ["trois critères", { ...DEMO, budget: { lignes: [] }, config: sansMatelas,
+    profil: { ...DEMO.profil, foyer: { adultes: 1, age: "a30" }, personnes: { p1: { nom: "Léa", salaire: 3000, salaireUnite: "nm" } }, autres: {}, biens: [], credits: [] } }],
+];
+
+test("parité MCP / plan.js : score de santé honnête (total null sous 3 critères, calcules)", { skip: SANS_STRIP }, () => {
+  const M = portMcp();
+  assert.equal(M.SCORE_MIN_CRITERES, Plan.SCORE_MIN_CRITERES);
+  const vus = new Set();
+  for (const [nom, D] of [["démo", DEMO], ...CLAIRSEMES]) for (const scope of ["foyer", "p1"]) {
+    const { d } = enLignes(D);
+    const mcp = M.scoreSante(d, scope);
+    const web = Plan.score({ positions: D.positions, profil: D.profil, config: D.config, budget: D.budget, scope, today: new Date(TODAY + "T12:00:00") });
+    const L = `${nom} / ${scope}`;
+    assert.equal(mcp.total, web.total, L + " : total"); assert.equal(mcp.calcules, web.calcules, L + " : calcules"); assert.equal(mcp.complet, web.complet, L);
+    assert.deepEqual(J(mcp.items.map(i => [i.cle, i.points, i.a_completer])), web.items.map(i => [i.cle, i.points, i.aCompleter]), L + " : critères");
+    if (mcp.total == null) { assert.ok(mcp.calcules < 3, L); assert.match(mcp.message, /Pas de note globale/); } else assert.equal(mcp.message, undefined, L);
+    vus.add(mcp.total == null ? "null" : "note");
+  }
+  assert.deepEqual([...vus].sort(), ["note", "null"], "les deux cas (note et pas de note) sont couverts");
+  const deux = M.scoreSante(enLignes(CLAIRSEMES[1][1]).d, "foyer"), trois = M.scoreSante(enLignes(CLAIRSEMES[2][1]).d, "foyer");
+  assert.equal(deux.calcules, 2); assert.equal(deux.total, null);
+  assert.equal(trois.calcules, 3); assert.equal(typeof trois.total, "number");
+});
+
+test("parité MCP / pratiques.js : bilan clairsemé — total null, couverture et note provisoire", { skip: SANS_STRIP }, () => {
+  const M = portMcp();
+  const provisoires = [];
+  for (const [nom, D] of CLAIRSEMES) {
+    const { d, objectifs } = enLignes(D);
+    const mcp = M.bonnesPratiques({ d, scope: "foyer", objectifs, risque: null, classes: undefined, ref: TODAY });
+    const web = Pratiques.evaluer({ positions: D.positions, profil: D.profil, config: D.config, budget: D.budget, objectifs: D.objectifs, scope: "foyer", risque: null, today: TODAY });
+    assert.equal(mcp.total, web.total, nom + " : total"); assert.equal(mcp.provisoire, web.provisoire, nom + " : provisoire");
+    proche(mcp.couverture, Math.round(web.couverture * 1000) / 1000, nom + " : couverture");
+    provisoires.push(mcp.provisoire);
+    if (nom === "vide") { assert.equal(mcp.total, null, "aucune famille notée : pas de note"); assert.equal(mcp.couverture, 0); assert.equal(mcp.provisoire, true); }
+  }
+  assert.ok(provisoires.includes(true));
 });
 
 /* ---------- parité état du bilan : web/src/bilan-etat.js ↔ connecteur ---------- */
@@ -290,6 +340,83 @@ test("parité MCP / risque.js : questions et valeurs permises de set_risk_answer
     assert.equal(m.type, q.type, q.id);
     assert.deepEqual(J(m.valeurs), q.options.map(o => o.v), q.id);
   }
+});
+
+/* ---------- onboarding : outil demarrer_onboarding, prompt onboarding, feuille de conduite ---------- */
+const conduiteOnboarding = () => {
+  const bloc = src.slice(src.indexOf("const CONDUITE_ONBOARDING = ["), src.indexOf('].join("\\n");', src.indexOf("const CONDUITE_ONBOARDING = [")));
+  return vm.runInNewContext(bloc.replace("const CONDUITE_ONBOARDING = ", "") + "]").join("\n");
+};
+
+test("onboarding : outil demarrer_onboarding (description, lecture seule, réponse) et prompt onboarding", () => {
+  const sec = outil("demarrer_onboarding");
+  assert.ok(sec.includes("À appeler quand l'utilisateur veut commencer ou reprendre son onboarding Boussole : renvoie la conduite de l'entretien, l'état du bilan, les prochaines questions et les propositions en attente."), "description française");
+  assert.match(sec, /annotations:\s*RO/, "lecture seule");
+  for (const k of ["conduite: CONDUITE_ONBOARDING", "etat: vue", "propositions_en_attente:", "lot_suggere:", "premiere_lecture_disponible:"]) assert.ok(sec.includes(k), `réponse : ${k}`);
+  assert.match(sec, /crypto\.randomUUID\(\)/, "lot suggéré : UUID (nouveau lot si rien de récent en attente)");
+  assert.match(sec, /scoreSante\(donnees, "foyer"\)\.total != null/, "première lecture : score de santé calculable");
+  assert.match(outil("etat_du_bilan"), /lireEtat\(\)\)\.vue/, "etat_du_bilan et demarrer_onboarding partagent la même lecture");
+  assert.match(code, /server\.registerPrompt\("onboarding",/);
+  const prompt = src.slice(src.indexOf("const PROMPT_ONBOARDING"), src.indexOf("\n", src.indexOf("const PROMPT_ONBOARDING")));
+  assert.ok(prompt.includes("demarrer_onboarding") && prompt.includes("conduite"), "le prompt demande d'appeler demarrer_onboarding et de suivre sa conduite");
+  const instr = src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE"));
+  assert.ok(instr.includes("demarrer_onboarding") && /nouvel utilisateur/.test(instr), "instructions : point d'entrée demarrer_onboarding");
+});
+
+test("onboarding : la feuille de conduite porte les règles de l'agent expert", () => {
+  const c = conduiteOnboarding();
+  const mots = c.split(/\s+/).filter(Boolean).length;
+  assert.ok(mots <= 900, `feuille de conduite trop longue : ${mots} mots`);
+  assert.ok(c.includes("conseiller en gestion de patrimoine pédagogue, au service de l'utilisateur, sans rien à vendre"), "persona");
+  assert.match(c, /^1\. Ouverture$/m); assert.match(c, /^5\. Clôture$/m); assert.match(c, /^4\.1 /m, "règles numérotées");
+  assert.match(c, /une question à la fois/i, "une question à la fois");
+  assert.match(c, /pourquoi/);
+  assert.match(c, /je ne sais pas/);
+  assert.match(c, /petit tableau/, "relevés collés : résumé en tableau");
+  for (const k of ["TMI", "PEA", "fonds euros", "matelas"]) assert.ok(c.includes(k), `jargon expliqué : ${k}`);
+  assert.match(c, /fin de chaque section/, "dépôt à la fin de chaque section");
+  assert.ok(c.includes("déclaré par l'utilisateur pendant l'onboarding") && c.includes("lot_suggere"), "source et lot des dépôts");
+  assert.ok(c.includes("changements à valider dans Boussole › Profil et données › Propositions"), "rappel après chaque dépôt");
+  const credentials = c.split("\n").find(l => /identifiants bancaires/.test(l));
+  assert.ok(credentials, "règle sur les identifiants bancaires");
+  for (const k of ["Ne demande jamais", "IBAN", "numéros de compte", "carte", "mots de passe", "sécurité sociale", "retirer", "ne les enregistre"]) assert.ok(credentials.includes(k), `identifiants : ${k}`);
+  assert.match(c, /N'invente jamais un chiffre/);
+  assert.match(c, /Aucune recommandation de produit/); assert.match(c, /aucune promesse de rendement/);
+  assert.ok(c.includes("Banque de France — surendettement") && c.includes("Point conseil budget"), "orientation surendettement");
+  assert.match(c, /get_overview/); assert.match(c, /2 ou 3 points d'attention/); assert.match(c, /profil_de_risque/);
+  assert.match(c, /15 minutes/); assert.match(c, /reprendre/); assert.match(c, /pas un conseil en investissement réglementé/);
+});
+
+/* ---------- connexions de l'assistant (voyant de l'onboarding) ---------- */
+test("connexions : écriture limitée (5 minutes, en SQL) et jamais bloquante", () => {
+  const sql = readFileSync(path("supabase/migrations/0008_connexions.sql"), "utf8");
+  assert.match(sql, /create table public\.connexions_assistant/);
+  assert.match(sql, /primary key \(user_id, client_id\)/);
+  assert.match(sql, /on delete cascade/);
+  for (const op of ["select", "insert", "update", "delete"]) assert.match(sql, new RegExp(`"connexions_assistant: ${op}" on public\\.connexions_assistant for ${op} to authenticated`), `politique ${op}`);
+  assert.match(sql, /function public\.noter_connexion\(p_client_id text, p_client_nom text default null\)\s*returns void\s*language plpgsql\s*security invoker/);
+  assert.match(sql, /on conflict \(user_id, client_id\) do update[\s\S]*where c\.dernier_le < now\(\) - interval '5 minutes'/, "au plus une écriture toutes les 5 minutes");
+  assert.match(sql, /'connexions_assistant', \(select coalesce\(jsonb_agg/, "export_all inclut les connexions");
+  const noter = code.slice(code.indexOf("async function noterConnexion("), code.indexOf("async function handleMcp("));
+  assert.match(noter, /try \{[\s\S]*db\.rpc\("noter_connexion", \{ p_client_id: client\.id, p_client_nom: client\.nom \}\)[\s\S]*\} catch/, "RPC dans un try / catch");
+  assert.match(noter, /console\.warn/, "échec journalisé");
+  const h = code.slice(code.indexOf("async function handleMcp("));
+  const iUser = h.indexOf("auth.getUser(token)"), iNote = h.indexOf("const connexion = noterConnexion(db, token)"), iHandle = h.indexOf("transport.handleRequest(");
+  assert.ok(iUser >= 0 && iUser < iNote && iNote < iHandle, "notée après getUser, lancée avant le traitement, sans attente préalable");
+  assert.doesNotMatch(h.slice(iNote, iHandle), /await connexion/, "l'appel d'outil n'attend pas l'écriture de connexion");
+  assert.match(h, /waitUntil\(connexion\)/);
+});
+
+test("connexions : client_id lu dans le jeton (Claude, inconnu, session)", () => {
+  const debut = src.indexOf("const CLIENTS_CONNUS"), fin = src.indexOf("/** Note la connexion");
+  const js = strip(src.slice(debut, fin).replace("export function", "function"), { mode: "strip" }) + "\n;clientDuJeton";
+  const lire = vm.runInNewContext(js, { atob, TextDecoder, Uint8Array, JSON });
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const jeton = claims => b64({ alg: "ES256" }) + "." + b64(claims) + ".signature";
+  assert.deepEqual(J(lire(jeton({ sub: "u", client_id: "30351516-1e76-4884-8fb2-ae856799a723" }))), { id: "30351516-1e76-4884-8fb2-ae856799a723", nom: "Claude" });
+  assert.deepEqual(J(lire(jeton({ sub: "u", client_id: "autre-client", nom: "é" }))), { id: "autre-client", nom: "Assistant" });
+  assert.deepEqual(J(lire(jeton({ sub: "u", role: "authenticated" }))), { id: "session", nom: "Assistant" });
+  assert.deepEqual(J(lire("pas-un-jeton")), { id: "session", nom: "Assistant" });
 });
 
 test("mcp : aucune clé de service", () => {

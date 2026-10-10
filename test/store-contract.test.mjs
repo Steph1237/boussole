@@ -53,7 +53,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -406,6 +406,39 @@ test("démo : propositions sur les autres cibles (profil, crédit, bien, objecti
   assert.equal(ctx.Store.get().propositions.find(p => p.id === "x6").statut, "en_attente");
 });
 
+const CONN_KEYS = ["appels", "clientId", "clientNom", "dernierLe", "premierLe"];
+const CLAUDE_ID = "30351516-1e76-4884-8fb2-ae856799a723";
+
+test("démo : connexions vides, surveillerConnexions(true) simule Claude après 4 s, false annule", async () => {
+  const on = browser(), off = browser();
+  const [S1, S2] = await Promise.all([whenReady(on), whenReady(off)]);
+  assert.deepEqual(J(S1.connexions), [], "aucun assistant connecté au départ");
+  assert.equal(typeof on.Store.surveillerConnexions, "function");
+  const t0 = Date.now();
+  const connecte = new Promise((res, rej) => {
+    const t = setTimeout(() => rej(new Error("Claude n'est jamais connecté")), 6000);
+    on.Store.on(S => { if (S.connexions.length) { clearTimeout(t); res(S); } });
+  });
+  on.Store.surveillerConnexions(true);
+  on.Store.surveillerConnexions(true); // idempotent : une seule simulation
+  off.Store.surveillerConnexions(true);
+  await wait(100);
+  assert.equal(on.Store.get().connexions.length, 0, "pas de connexion immédiate");
+  off.Store.surveillerConnexions(false);
+  const S = await connecte;
+  assert.ok(Date.now() - t0 >= 3900, "connexion simulée environ 4 s plus tard");
+  assert.equal(S.connexions.length, 1);
+  const c = S.connexions[0];
+  assert.deepEqual(Object.keys(c).sort(), CONN_KEYS, "forme d'une connexion");
+  assert.equal(c.clientId, CLAUDE_ID); assert.equal(c.clientNom, "Claude"); assert.equal(c.appels, 1);
+  assert.ok(!isNaN(Date.parse(c.premierLe)) && c.premierLe === c.dernierLe);
+  await wait(250);
+  assert.equal(off.Store.get().connexions.length, 0, "surveillerConnexions(false) annule la simulation");
+  on.Store.surveillerConnexions(true); await wait(50);
+  assert.equal(on.Store.get().connexions.length, 1, "déjà connecté : pas de doublon");
+  assert.deepEqual(J(on.DEMO.connexions), [], "window.DEMO n'est pas modifié (copie)");
+});
+
 test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = demo", () => {
   assert.equal(browser({ search: "" }).Store, undefined);
   assert.equal(browser({ search: "?x=1&demo" }).Store?.mode, "demo");
@@ -430,6 +463,15 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
   assert.ok(demo.includes('const DIAG = ["risque", "classes", "protection"]'), "store-demo.js : mêmes colonnes du Diagnostic");
   for (const k of ['from("propositions")', 'order("cree_le", { ascending: false }).limit(200)', 'rpc("appliquer_propositions", { p_ids, p_modifications: mods })',
     'rpc("refuser_propositions", { p_ids })', "propositions: clone(C.propositions)", "propositions,"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  for (const k of ['from("connexions_assistant").select(CONN_SELECT).order("premier_le")', 'const CONN_SELECT = "client_id, client_nom, premier_le, dernier_le, appels"',
+    "connexions: clone(C.connexions)", "const CONN_INTERVALLE = 5000", "setInterval(lireConnexions, CONN_INTERVALLE)", "clearInterval(connTimer)",
+    "if (JSON.stringify(next) !== JSON.stringify(C.connexions)) { C.connexions = next; publish(); }", "surveillerConnexions,"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  // la surveillance ne relit que la table des connexions, et ne démarre qu'à la demande
+  const lire = sup.slice(sup.indexOf("async function lireConnexions()"), sup.indexOf("function surveillerConnexions("));
+  assert.deepEqual([...lire.matchAll(/from\("(\w+)"\)/g)].map(m => m[1]), ["connexions_assistant"], "lecture légère : une seule table");
+  assert.doesNotMatch(lire, /loadAll|reload\(/, "pas de rechargement complet");
+  assert.equal((sup.match(/setInterval\(/g) || []).length, 1, "un seul minuteur, celui de surveillerConnexions");
+  assert.doesNotMatch(sup.slice(sup.indexOf("async function boot()")), /surveillerConnexions\(true\)|setInterval/, "aucune surveillance au démarrage");
   for (const k of ["price_override", "value_date", "qty_estimated", "request_instrument", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")', 'from("budgets")', 'from("objectifs")', "date_cible", "upsert(row)", "delete()"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["signInWithPassword", "signUp", "signInWithOtp", 'provider: "google"', "onAuthStateChange", "requireSession", "index.html"]) assert.ok(auth.includes(k), `auth.js : ${k}`);
 });

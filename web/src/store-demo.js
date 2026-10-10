@@ -7,8 +7,8 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload() }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, scope, people, user, error }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, surveillerConnexions(on) }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
@@ -16,6 +16,9 @@
    récentes d'abord) ; Store.propositions.appliquer(ids, modifications) / refuser(ids) les décident en mémoire (même effet que la
    fonction SQL appliquer_propositions, voir l'en-tête de store-supabase.js).
    db.doc("profil/main").update({ risque }) / ({ classes }) / ({ protection }) ne touche que ces clés.
+   connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] (vide au départ : aucun assistant connecté) ;
+   Store.surveillerConnexions(true) simule la connexion de Claude 4 s plus tard (pour montrer le voyant de l'onboarding),
+   surveillerConnexions(false) annule la simulation en attente.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
    byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
@@ -31,7 +34,7 @@
     ready: false, dbOk: null, positions: D.positions || [], snapshots: D.snapshots || [], tx: D.tx || [],
     config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
-    risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [],
+    risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
@@ -67,6 +70,7 @@
       risque: clone(C.risque),
       classes: clone(C.classes) || {},
       propositions: clone(C.propositions),
+      connexions: clone(C.connexions),
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -357,6 +361,21 @@
     },
   };
 
+  /* ---------- connexions : simulation de la connexion de Claude (onboarding en démo) ---------- */
+  const CLAUDE_ID = (window.BOUSSOLE && window.BOUSSOLE.claude && window.BOUSSOLE.claude.clientId) || "30351516-1e76-4884-8fb2-ae856799a723";
+  const DELAI_CONNEXION_DEMO = 4000;
+  let connTimer = null;
+  function surveillerConnexions(on) {
+    if (!on) { clearTimeout(connTimer); connTimer = null; return; }
+    if (connTimer || C.connexions.some(c => c.clientId === CLAUDE_ID)) return;
+    connTimer = setTimeout(() => {
+      connTimer = null;
+      const now = new Date().toISOString();
+      C.connexions.push({ clientId: CLAUDE_ID, clientNom: "Claude", premierLe: now, dernierLe: now, appels: 1 });
+      publish();
+    }, DELAI_CONNEXION_DEMO);
+  }
+
   const Store = {
     mode: "demo",
     db,
@@ -372,6 +391,7 @@
     emit,
     reload() { publish(); return Promise.resolve(); },
     markOnboarded() { return Promise.resolve(); },
+    surveillerConnexions,
   };
   window.Store = Store;
 
