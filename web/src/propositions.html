@@ -1,1 +1,28 @@
-<div class="propositions"><p class="muted">Chargement…</p></div>
+<div class="propositions">
+  <p class="pp-intro" id="ppIntro" hidden>Claude a proposé ces changements. Rien n'est enregistré tant que vous ne les validez pas.</p>
+  <p class="pp-msg" id="ppMsg" role="status" aria-live="polite" hidden></p>
+
+  <div class="pp-lots" id="ppLots"></div>
+
+  <div class="pp-bar" id="ppBar" hidden>
+    <button type="button" class="pp-btn" id="ppOk">Valider la sélection (0)</button>
+    <button type="button" class="pp-btn ghost" id="ppNo" aria-label="Refuser la sélection">Refuser<span class="pp-long"> la sélection</span></button>
+    <span class="small muted pp-bar-note">Les valeurs corrigées avec « Modifier » sont enregistrées telles que vous les avez saisies.</span>
+  </div>
+
+  <section class="panel pp-empty" id="ppEmpty" aria-labelledby="ppEmptyTitle" hidden>
+    <h2 id="ppEmptyTitle">Aucune proposition en attente</h2>
+    <p>Quand vous faites votre bilan avec Claude, il ne modifie rien directement : il dépose ici ce qu'il a compris (un montant à jour, une nouvelle dépense, une réponse au profil de risque), avec sa source et sa justification.</p>
+    <ol class="pp-flow">
+      <li>Vous discutez avec Claude, une question à la fois.</li>
+      <li>Claude dépose ses propositions dans Boussole.</li>
+      <li>Vous relisez, corrigez si besoin, puis validez ou refusez ici.</li>
+    </ol>
+    <a class="pp-btn" href="#profil/claude" data-goto="profil/claude">Faire mon bilan avec Claude</a>
+  </section>
+
+  <details class="panel pp-hist" id="ppHist" hidden>
+    <summary>Historique <span class="muted" id="ppHistN"></span></summary>
+    <ul class="pp-hist-list" id="ppHistList"></ul>
+  </details>
+</div>
