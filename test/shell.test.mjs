@@ -310,3 +310,9 @@ test("lien profond : #agent/journal?entree=<id> garde la route (quelle que soit 
   // pastille Agent : à défaut du module, S.journalARelire
   assert.match(app, /Number\.isFinite\(S\.journalARelire\) \? S\.journalARelire/);
 });
+
+test("theme.css : les règles de la barre latérale visent .app>.side (pas les cartes .side du simulateur)", () => {
+  const css = readFileSync("web/src/theme.css", "utf8");
+  assert.doesNotMatch(css, /(^|[}\s])\.side\s*\{/m, "aucune règle nue .side { … }");
+  assert.match(css, /\.app>\.side\{display:flex/);
+});
