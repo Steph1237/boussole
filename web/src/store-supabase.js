@@ -10,7 +10,8 @@
    à la forme canonique (foyer / p1 / p2, voir l'en-tête de store-demo.js) et exposé tel quel aux modules.
    Lecture seule (spec docs/superpowers/specs/2026-10-11-saisie-par-agent.md § 2) : la saisie passe par l'assistant, qui dépose
    des propositions. Seules restent les écritures de contrôle : propositions (appliquer, refuser, corriger à l'application),
-   journal (confirmer, modifier, statuts, supprimer, consentement), mémoire (modifier, supprimer, tout effacer), règles
+   journal (confirmer, modifier, statuts, supprimer, consentement), mémoire (modifier, supprimer, tout effacer), routines (bascule
+   active / en pause : Store.routines.pause), règles
    (bascule actif : db.doc("config/main").update({ rules })), profil de risque recalculé après application de propositions
    (db.doc("profil/main").update({ risque })) et compte (markOnboarded). Toute autre écriture de la façade `db` est refusée
    (invalid_argument). Après chaque écriture : reload() puis emit().
@@ -18,9 +19,9 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on), markOnboarded() }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, routines, surveillerConnexions(on), markOnboarded() }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
@@ -64,7 +65,14 @@
    Store.journal.confirmer(ids) (a_relire → actif) / modifier(id, { titre?, synthese?, statut? (actif|realise|abandonne|archive),
    revueLe? | revue_le?, dateDecision? | date_decision? }) (autres clés ignorées) / supprimer(ids) / consentement(mode) → { ok: true }
    ou { erreur } (message en français ; refus de la contrainte journal_contenu_sensible → « information sensible ») ; rechargement
-   puis émission. */
+   puis émission.
+   routines = [{ type: revue_mensuelle, jour (1-28), active, consentementJournal, dernierPassage (horodatage | null), dernierClient,
+   prochainPassage (AAAA-MM-JJ | null), questions: [{ question, pourquoi (| null), champ (| null) }], synthese (| null) }] : routines de
+   l'agent (table privée routines, 0020 ; une ligne par type), triées par type ; lues avec le reste par loadAll ; table absente →
+   valeur précédente ([] au départ). routinesLues = true dès qu'une lecture de la table a réussi (Aujourd'hui ne propose
+   « Active ta revue mensuelle » qu'à cette condition). Store.routines.pause(type, enPause) → { ok: true } ou { erreur } : seule
+   écriture, update routines set active = !enPause where type = … (le déclencheur routines_maj recalcule le prochain passage à la
+   réactivation) ; rechargement puis émission. */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -75,7 +83,7 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalARelire: 0, journalConsentement: "demander", onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -112,6 +120,8 @@
       journal: clone(C.journal),
       journalARelire: C.journalARelire,
       journalConsentement: C.journalConsentement,
+      routines: clone(C.routines),
+      routinesLues: C.routinesLues,
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -186,6 +196,13 @@
     source: r.source ?? null, historique: Array.isArray(r.historique) ? r.historique : [], creeLe: r.cree_le, majLe: r.maj_le,
   });
   const CONSENTEMENTS = ["demander", "prevenir", "jamais"];
+  const ROUTINE_SELECT = "type, jour, active, consentement_journal, dernier_passage, dernier_client, prochain_passage, questions, synthese";
+  const questionView = x => ({ question: String((x && x.question) || ""), pourquoi: (x && x.pourquoi) || null, champ: (x && x.champ) || null });
+  const routineView = r => ({
+    type: r.type, jour: r.jour == null ? 1 : +r.jour, active: !!r.active, consentementJournal: !!r.consentement_journal,
+    dernierPassage: r.dernier_passage ?? null, dernierClient: r.dernier_client ?? null, prochainPassage: r.prochain_passage ?? null,
+    questions: Array.isArray(r.questions) ? r.questions.filter(x => x && typeof x === "object").map(questionView) : [], synthese: r.synthese ?? null,
+  });
   const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
   const objView = r => ({
     id: r.id, nom: r.nom || "", type: r.type, cible: num(r.cible), dateCible: r.date_cible || null, deja: num(r.deja),
@@ -212,8 +229,9 @@
       q(sb.from("reperes").select("cle, libelle, valeur, unite, date_effet, source_titre, source_url, verifie_le, mode").order("cle")),
       q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
       qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire")),
+      q(sb.from("routines").select(ROUTINE_SELECT).order("type")),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, journal, nARelire] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, journal, nARelire, routines] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -232,6 +250,8 @@
     if (journal !== undefined) C.journal = (journal || []).map(journalView);
     // Pastille « à relire » : compte exact ; à défaut, compte fait sur les entrées lues.
     C.journalARelire = nARelire !== undefined ? nARelire : C.journal.filter(e => e && e.statut === "a_relire").length;
+    // Routines (0020) : table absente → valeur précédente, comme le journal ; routinesLues reste vrai après une première lecture.
+    if (routines !== undefined) { C.routines = (routines || []).map(routineView); C.routinesLues = true; }
     // Colonne absente (migration 0013 non appliquée) ou valeur inconnue : « demander », comme le connecteur.
     if (prof !== undefined) C.journalConsentement = prof && CONSENTEMENTS.includes(prof.journal_consentement) ? prof.journal_consentement : "demander";
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
@@ -433,6 +453,20 @@
     },
   };
 
+  /* ---------- routines de l'agent (table privée routines, RLS) : seule la bascule active / en pause s'écrit ici ---------- */
+  const ROUTINE_TYPES = ["revue_mensuelle"];
+  const routines = {
+    async pause(type, enPause) {
+      if (!ROUTINE_TYPES.includes(type)) return { erreur: "Routine « " + type + " » inconnue (revue_mensuelle)." };
+      if (typeof enPause !== "boolean") return { erreur: "Pause invalide : vrai (en pause) ou faux (active) attendu." };
+      try {
+        const rows = await write(async () => q(sb.from("routines").update({ active: !enPause }).eq("type", type).select("type")));
+        if (!Array.isArray(rows) || !rows.length) return { erreur: "Routine introuvable : demande à Claude de l'activer." };
+        return { ok: true };
+      } catch (e) { const x = asErr(e); return { erreur: x.message || String(e) }; }
+    },
+  };
+
   const savoir = {
     /* Fiche complète (avec son contenu markdown), lue à l'ouverture ; null si elle n'existe pas ou si la lecture échoue. */
     async fiche(slug) {
@@ -476,6 +510,7 @@
     memoire,
     savoir,
     journal,
+    routines,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

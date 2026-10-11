@@ -16,6 +16,7 @@
 #view-aujourdhui .aj-it.u3{border-left-color:var(--line2)}
 #view-aujourdhui .aj-pic{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--sunk);color:var(--muted)}
 #view-aujourdhui .aj-it[data-type="proposition"] .aj-pic{background:var(--accent-soft);color:var(--accent)}
+#view-aujourdhui .aj-it[data-type="routine"] .aj-pic{background:var(--accent-soft);color:var(--accent)}
 #view-aujourdhui .aj-it.u1[data-type="alerte"] .aj-pic{background:var(--crit-soft);color:var(--crit)}
 #view-aujourdhui .aj-it.u2 .aj-pic{background:var(--warn-soft);color:var(--warn)}
 #view-aujourdhui .aj-ico{width:17px;height:17px}

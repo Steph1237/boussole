@@ -72,6 +72,45 @@
 #view-claude-guide .cg-msg.ok{color:var(--good)}
 #view-claude-guide .cg-msg.err{color:var(--crit)}
 
+/* ta revue mensuelle (routine) : voyant, bascule active / en pause (modèle des règles), questions, tâche planifiée */
+#view-claude-guide .cg-routines{display:flex;flex-direction:column;gap:10px}
+#view-claude-guide .cg-rt-intro{margin:0;font-size:13.5px;line-height:1.55;max-width:760px}
+#view-claude-guide .cg-rt{display:flex;flex-direction:column;gap:12px;min-width:0}
+#view-claude-guide .cg-rt-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
+#view-claude-guide .cg-rt-voyant{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:14px}
+#view-claude-guide .cg-rt-pt{width:10px;height:10px;border-radius:50%;background:var(--line2);flex:none}
+#view-claude-guide .cg-rt-voyant.on .cg-rt-pt{background:var(--good);box-shadow:0 0 0 3px var(--good-soft)}
+#view-claude-guide .cg-rt-voyant.retard .cg-rt-pt{background:var(--warn);box-shadow:0 0 0 3px var(--warn-soft)}
+#view-claude-guide .cg-rt-voyant.off{color:var(--muted)}
+#view-claude-guide .cg-rt-voyant.attente{color:var(--muted)}
+#view-claude-guide .cg-rt-voyant.attente b{font-weight:400}
+#view-claude-guide .cg-rt-switch{display:inline-flex;align-items:center;gap:8px;margin:0;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font:600 13px var(--f-body);cursor:pointer}
+#view-claude-guide .cg-rt-switch:hover{color:var(--ink);border-color:var(--line2)}
+#view-claude-guide .cg-rt-switch:disabled{opacity:.6;cursor:progress}
+#view-claude-guide .cg-rt-piste{position:relative;display:block;width:38px;height:22px;border-radius:11px;background:var(--line2);transition:background-color .15s;flex:none}
+#view-claude-guide .cg-rt-pouce{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+#view-claude-guide .cg-rt-switch[aria-checked="true"]{color:var(--accent)}
+#view-claude-guide .cg-rt-switch[aria-checked="true"] .cg-rt-piste{background:var(--accent)}
+#view-claude-guide .cg-rt-switch[aria-checked="true"] .cg-rt-pouce{transform:translateX(16px)}
+#view-claude-guide .cg-rt-err{margin:0;padding:8px 10px;border-radius:8px;background:var(--crit-soft);color:var(--crit);font-size:13px}
+#view-claude-guide .cg-rt-faits{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:13.5px;color:var(--muted)}
+#view-claude-guide .cg-rt-retard{color:var(--warn);font-weight:700}
+#view-claude-guide .cg-rt-p{margin:0;font-size:13.5px;line-height:1.5;max-width:680px}
+#view-claude-guide .cg-rt-act{display:flex;flex-wrap:wrap;gap:6px}
+#view-claude-guide .cg-rt-q{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--sunk)}
+#view-claude-guide .cg-rt-q-t{margin:0;font-size:13.5px}
+#view-claude-guide .cg-rt-q-l{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.4}
+#view-claude-guide .cg-rt-q-l b{display:block;font-weight:600}
+#view-claude-guide .cg-rt-q-l span{display:block;color:var(--muted);font-size:12.5px}
+#view-claude-guide .cg-rt-tache{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+#view-claude-guide .cg-rt-tache p{margin:0;line-height:1.5;max-width:680px}
+#view-claude-guide .cg-rt-prompt{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px}
+#view-claude-guide .cg-rt-prompt pre{flex:1 1 260px;min-width:0;margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--sunk);color:var(--ink);font:12.5px/1.5 var(--f-body);white-space:pre-wrap;overflow-wrap:anywhere}
+#view-claude-guide .cg-rt-etapes{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:4px;font-size:13.5px;line-height:1.45}
+#view-claude-guide .cg-rt + .cg-msg{margin:0}
+@media (pointer:coarse){#view-claude-guide .cg-rt-switch{min-height:44px;padding-inline:14px}}
+@media (prefers-reduced-motion:reduce){#view-claude-guide .cg-rt-piste,#view-claude-guide .cg-rt-pouce{transition:none}}
+
 /* comment se remplit Boussole (saisie avec Claude), veille */
 #view-claude-guide .cg-alt{display:flex;flex-direction:column;gap:8px}
 #view-claude-guide .cg-alt h2{font-size:15px;margin:0}

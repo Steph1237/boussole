@@ -44,3 +44,23 @@ test("phrase : sections réglages cohérentes avec le connecteur (matelas, verse
 test("phrase : tutoiement (aucun vous / votre)", () => {
   for (const s of Object.keys(P.SECTIONS)) assert.doesNotMatch(P.phrase(s), /\b(vous|votre|vos)\b/i);
 });
+
+test("PROMPT_TACHE.revue_mensuelle : texte exact de la tâche planifiée (contrat RT1), non modifiable", () => {
+  assert.equal(P.PROMPT_TACHE.revue_mensuelle,
+    "Boussole : fais ma revue mensuelle. Appelle demarrer_routine avec le type revue_mensuelle et suis la conduite qu'il renvoie.");
+  assert.deepEqual(Object.keys(P.PROMPT_TACHE), ["revue_mensuelle"]);
+  assert.ok(Object.isFrozen(P.PROMPT_TACHE));
+  assert.doesNotMatch(P.PROMPT_TACHE.revue_mensuelle, /\b(vous|votre|vos)\b/i);
+});
+
+test("phrase(\"routine\") : répondre aux questions de la revue mensuelle (demarrer_routine, formulaire, questions_routine), avec les questions en contexte", () => {
+  const t = P.phrase("routine");
+  assert.match(t, /^Boussole : réponds avec moi aux questions de ma revue mensuelle \(demarrer_routine, puis le formulaire, puis questions_routine\)\./);
+  assert.match(t, /formulaires interactifs Boussole/);
+  assert.match(P.phrase("routine", "As-tu fait un versement ce mois-ci ?"), /Concerne : As-tu fait un versement ce mois-ci \? Commence/, "une question garde son « ? », sans point ajouté");
+});
+
+test("phrase(\"revue\") : la revue du mois passe par demarrer_routine (type revue_mensuelle)", () => {
+  assert.equal(P.SECTIONS.revue, "faisons ma revue du mois (demarrer_routine, type revue_mensuelle).");
+  assert.match(P.phrase("revue"), /^Boussole : faisons ma revue du mois \(demarrer_routine, type revue_mensuelle\)\. Commence par demarrer_session/);
+});

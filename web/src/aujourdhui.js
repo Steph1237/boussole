@@ -2,16 +2,17 @@
    - Bandeau de 4 indicateurs en cartes (UI.carte) : patrimoine net et variation sur la période de la frise, bonnes pratiques,
      écart d'allocation au profil de risque, prochaine échéance ; chaque carte ouvre UI.panneau (2-4 lignes + lien vers la page).
    - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), entrées du journal à relire
-     (CK2), alertes des règles (rules.js), points « à suivre » échus de la mémoire de l'agent, échéances à 30 jours, cours manquants /
-     photo nocturne en retard.
+     (CK2), revue mensuelle (routine de l'agent, RT1 : en retard, prête ou à activer), alertes des règles (rules.js), points « à suivre »
+     échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard.
    - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an ;
      granularité automatique selon la période, sauf si l'utilisateur la choisit sur sa bascule : elle est alors mémorisée) ;
      repères verticaux aux dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
    Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
-   Fonctions pures exportées pour les tests (module.exports) : boite, echeances, indicateurs, frise, reperesJournal, urlClaude, delai,
+   Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, delai,
    lirePeriode, periodeAEnregistrer, phraseRevue, et les rendus HTML cartes, detail, repereDetail, boiteHtml, friseSvg (qui reçoivent UI en paramètre quand ils en ont besoin ; aucune ne touche
    au DOM).
-   Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes } ; window.* par défaut. */
+   Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes } ; window.* par défaut. boite accepte aussi
+   deps.aujRevue : jour de Paris pour la revue mensuelle (RoutineEtat.aujParis() dans la vue), le reste de la boîte restant au jour local. */
 (function () {
   "use strict";
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,6 +21,10 @@
   /* Phrases « … avec Claude » (ClaudePrompts) : global du navigateur, sinon le module voisin sous Node (tests). */
   const prompts = () => glob("ClaudePrompts") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
+  /* État de la revue mensuelle (RoutineEtat, routine-etat.js) : seule copie de la règle côté app ; global du navigateur, sinon le module
+     voisin sous Node (tests). */
+  const RE = () => glob("RoutineEtat") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./routine-etat.js") : null);
 
   /* ---------- dates (AAAA-MM-JJ, jours calendaires) ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -63,7 +68,7 @@
   /* ---------- liens ---------- */
   /* Lien profond vers une entrée du journal : la coque retient le paramètre et Agent › Journal ouvre l'entrée (app.js, journal-view.js). */
   const lienEntree = id => "agent/journal?entree=" + encodeURIComponent(String(id));
-  const R = { propositions: "agent/propositions", journal: "agent/journal", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque" };
+  const R = { propositions: "agent/propositions", journal: "agent/journal", connexion: "agent/connexion", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque" };
   /** Lien vers une nouvelle conversation Claude, question préremplie (même forme que UI.demanderAClaude). */
   function urlClaude(question) { return "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? "")); }
   const httpsOk = u => /^https:\/\//.test(String(u || ""));
@@ -101,8 +106,39 @@
     return out.map((x, i) => ({ x, i })).sort((a, b) => a.x.jours - b.x.jours || a.i - b.i).map(o => o.x);
   }
 
+  /* ---------- revue mensuelle (routine de l'agent, RT1 ; règle unique : RoutineEtat.etat) ---------- */
+  /** État de la revue mensuelle à la date `today` (date de Paris) : RoutineEtat.etat(S.routines, today, { lues, dbOk }) →
+      { code: inconnu|a_activer|pause|retard|prete|a_jour, routine, retard, questions, prochain, dernier }. « a_activer » seulement si
+      la base est là (S.dbOk) et la table lue (S.routinesLues). */
+  function etatRevue(S, today) {
+    const s = S || {};
+    return RE().etat(s.routines, jour(today), { lues: s.routinesLues === true, dbOk: s.dbOk === true });
+  }
+  /** Élément de la boîte pour la revue mensuelle, ou null (en pause, à jour, état inconnu). */
+  function elementRevue(S, t) {
+    const e = etatRevue(S, t);
+    if (e.code === "retard") {
+      const n = e.questions.length;
+      return { type: "routine", urgence: 2, date: e.prochain,
+        titre: e.retard > 0 ? "Revue mensuelle en retard de " + pluriel(e.retard, "jour") : "Revue mensuelle due aujourd'hui",
+        contexte: "Prévue le " + dateFr(e.prochain) + " : Claude fait le point du mois et prépare les questions à te poser." +
+          (n ? " " + pluriel(n, "question") + " du mois précédent " + (n > 1 ? "attendent" : "attend") + " encore ta réponse." : ""),
+        action: { label: "Lancer ma revue avec Claude", url: urlClaude(phraseRevue()) } };
+    }
+    if (e.code === "prete") {
+      return { type: "routine", urgence: 1, date: e.dernier || t, titre: "Ta revue du mois est prête : " + pluriel(e.questions.length, "question"),
+        contexte: plat(e.questions[0].question), action: { label: "Répondre avec Claude", url: urlClaude(RE().phraseRoutine(e.questions)) } };
+    }
+    if (e.code === "a_activer") {
+      return { type: "routine", urgence: 3, date: t, titre: "Active ta revue mensuelle",
+        contexte: "Chaque mois, Claude fait le point sur ton patrimoine et prépare les questions à te poser. Elle s'active avec lui en une phrase.",
+        action: { label: "Voir comment", route: R.connexion } };
+    }
+    return null;
+  }
+
   /** Tout ce qui demande une action, trié par urgence (1 haute … 3) puis date (la plus ancienne d'abord).
-      → [{ type: proposition|journal|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
+      → [{ type: proposition|journal|routine|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
       Textes bruts : l'échappement se fait au rendu. deps = { Rules } (window.Rules par défaut). */
   function boite(S, today, deps) {
     if (!S || S.ready === false) return [];
@@ -136,6 +172,11 @@
         contexte: (titres ? titres + " : c" : "C") + "onfirme ou corrige ce que l'agent a noté.",
         action: { label: "Relire", route: nRelire === 1 && aRelire.length === 1 ? lienEntree(aRelire[0].id) : R.journal } });
     }
+
+    // 1 ter. Revue mensuelle (routine de l'agent) : en retard (urgence 2, prioritaire sur « prête »), prête (urgence 1, questions du
+    // mois en attente), à activer (urgence 3, aucune routine) ; rien si elle est en pause ou à jour.
+    const rv = elementRevue(S, deps && deps.aujRevue ? jour(deps.aujRevue) : t);
+    if (rv) out.push(rv);
 
     // 2. Alertes des règles de l'utilisateur et des contrôles intégrés (même contexte que Recommandations › Actions).
     if (Rules) {
@@ -354,8 +395,9 @@
     a_suivre: '<path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/><path d="M12 8v4.5l3 1.8"/>',
     echeance: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     cours: '<path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/>',
+    routine: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/><path d="M8.5 12.2l2.4 2.4 4.6-4.6"/>',
   };
-  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
+  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 
@@ -372,11 +414,8 @@
       (x.contexte ? '<p class="aj-c">' + esc(x.contexte) + "</p>" : "") + "</div>" +
       actionHtml(x.action) + "</li>";
   }
-  /** Phrase prête de « Faire le point avec Claude » : la revue du mois de l'agent (ClaudePrompts.phrase("revue")). */
-  function phraseRevue() {
-    const P = prompts();
-    return P ? P.phrase("revue") : "Boussole : faisons ma revue du mois. Commence par demarrer_session.";
-  }
+  /** Phrase prête de « Faire le point avec Claude » : la revue du mois de l'agent (ClaudePrompts.phrase("revue"), via RoutineEtat). */
+  function phraseRevue() { return RE().phraseRevue(); }
   /** Liste de la boîte de réception (<ul>/<li>) : 5 éléments puis « Voir plus » (UI.voirPlus, clé fixe : un bloc déplié le reste
       quand la liste change) ; vide : « Rien à traiter. » et « Faire le point avec Claude » (revue du mois). */
   function boiteHtml(items, U) {
@@ -466,7 +505,7 @@
     return out;
   }
 
-  const H = { boite, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, friseSvg, jour, delai, premiereDate,
+  const H = { boite, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, friseSvg, jour, delai, premiereDate,
     lirePeriode, periodeAEnregistrer };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
@@ -578,7 +617,7 @@
   }
   function update(snap, visible) {
     S = snap;
-    items = boite(S, jour());
+    items = boite(S, jour(), { aujRevue: RE().aujParis() }); // revue au jour de Paris, comme le serveur ; le reste au jour local
     if (ctlPeriode && typeof ctlPeriode.premiere === "function") ctlPeriode.premiere(S ? premiereDate(S.snapshots) : undefined); // « Tout » part de la première photo
     dirty = true;
     if (visible) { render(); dirty = false; }

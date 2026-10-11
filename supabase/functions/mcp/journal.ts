@@ -21,7 +21,7 @@ export const REPERES_ETAT = ["livret_a_taux", "pfu_taux"];
 export const JOURNAL = "Boussole › Agent › Journal";
 const COLS = "id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le";
 const RAISONNEMENT_MAX = 8000;
-const REFUS_SENSIBLE = "Refusé : ce texte ressemble à un identifiant, un IBAN, un numéro de compte ou de carte, ou à un mot de passe. Boussole n'enregistre jamais ces informations au journal.";
+export const REFUS_SENSIBLE = "Refusé : ce texte ressemble à un identifiant, un IBAN, un numéro de compte ou de carte, ou à un mot de passe. Boussole n'enregistre jamais ces informations au journal.";
 
 const r2 = (v: unknown) => Math.round(Number(v ?? 0) * 100) / 100;
 const r1 = (v: unknown) => Math.round(Number(v ?? 0) * 10) / 10;

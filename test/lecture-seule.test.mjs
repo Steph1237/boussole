@@ -5,7 +5,9 @@
 //     d'exploration restent locaux et ne sont jamais enregistrés ;
 //   - aucune écriture au store hors liste blanche : propositions (appliquer, refuser), journal (confirmer, modifier, supprimer,
 //     consentement), mémoire (modifier, supprimer, toutEffacer), règles (bascule actif : config/main ← { rules }), profil de
-//     risque recalculé après application de propositions (profil/main ← { risque }), compte (markOnboarded) ;
+//     risque recalculé après application de propositions (profil/main ← { risque }), compte (markOnboarded), routines (bascule
+//     active / en pause de la revue mensuelle dans Agent › Connexion : Store.routines.pause, spec RT1 — même nature que la bascule
+//     des règles : un contrôle, pas une saisie) ;
 //   - aucune requête directe à la base (sb.from, .rpc) ni façade d'écriture retirée (collection, addMany, upsert, set, delete).
 // Les simulateurs ne sont pas dispensés de la règle d'écriture : ils n'écrivent rien non plus.
 import { test } from "node:test";
@@ -24,6 +26,7 @@ const API_AUTORISEE = {
   propositions: ["appliquer", "refuser"],
   journal: ["confirmer", "modifier", "supprimer", "consentement"],
   memoire: ["modifier", "supprimer", "toutEffacer"],
+  routines: ["pause"], // bascule active / en pause de la revue mensuelle (claude-guide.js)
   savoir: ["fiche"], // lecture
 };
 const STORE_AUTORISE = ["get", "on", "emit", "reload", "mode", "setScope", "surveillerConnexions", "markOnboarded", "db", ...Object.keys(API_AUTORISEE)];
@@ -62,7 +65,7 @@ test("lecture seule : aucune écriture au store hors liste blanche (simulateurs 
     assert.doesNotMatch(s, /\bsb\.from\(|\.from\(\s*["'](positions|profiles|config|budgets|objectifs|biens|credits|transactions)["']\)|\.rpc\(/, f + " : requête directe à la base");
     // API du store : seules les entrées connues, et pour les API dédiées seulement les méthodes de contrôle.
     for (const m of s.matchAll(/\bStore\s*\.\s*(\w+)/g)) assert.ok(STORE_AUTORISE.includes(m[1]), `${f} : Store.${m[1]} inconnu`);
-    for (const m of s.matchAll(/\bStore\s*\.\s*(propositions|journal|memoire|savoir)\s*\.\s*(\w+)/g))
+    for (const m of s.matchAll(/\bStore\s*\.\s*(propositions|journal|memoire|savoir|routines)\s*\.\s*(\w+)/g))
       assert.ok(API_AUTORISEE[m[1]].includes(m[2]), `${f} : Store.${m[1]}.${m[2]} hors liste blanche`);
   }
 });
@@ -75,4 +78,5 @@ test("lecture seule : les vues de contrôle appellent bien les API dédiées (le
   assert.match(lire("journal-view.js"), /window\.Store\.journal/);
   assert.match(lire("memoire-view.js"), /window\.Store\.memoire/);
   assert.match(lire("accueil.js"), /St\.markOnboarded\(\)/);
+  assert.match(lire("claude-guide.js"), /window\.Store\.routines\.pause\(type, active\)/, "Agent › Connexion : bascule de la revue mensuelle");
 });

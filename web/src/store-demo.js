@@ -1,16 +1,16 @@
 /* Store démo : même contrat que store-supabase.js, en mémoire, sur les données de window.DEMO (demo-data.js).
-   Rien n'est enregistré : les écritures de contrôle (propositions, journal, mémoire, règles, profil de risque recalculé)
+   Rien n'est enregistré : les écritures de contrôle (propositions, journal, mémoire, bascule des routines, règles, profil de risque recalculé)
    modifient la mémoire puis réémettent ; comme store-supabase.js, la façade `db` refuse toute autre écriture (lecture seule).
 
    Choix du mode au démarrage (pas de store.js intermédiaire) : chaque adaptateur vérifie lui-même son mode
    et seul celui qui correspond installe window.Store. Ce fichier s'installe quand l'URL contient `demo`
    (app.html?demo) ou quand window.BOUSSOLE_MODE === "demo" ; store-supabase.js s'installe dans tous les
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
-   store-demo, store-supabase, auth, reel, modules, app.
+   sensible, routine-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on), markOnboarded() }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, routines, surveillerConnexions(on), markOnboarded() }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
@@ -29,6 +29,10 @@
    (D.journal, plus récentes d'abord), journalARelire (nombre d'entrées « à relire », calculé comme le count de store-supabase.js)
    et journalConsentement = "demander" ; Store.journal.confirmer(ids) / modifier(id, patch) / supprimer(ids) /
    consentement(mode) → { ok: true } ou { erreur }, en mémoire, avec le même historique que le déclencheur SQL journal_historique.
+   routines = [{ type, jour, active, consentementJournal, dernierPassage, dernierClient, prochainPassage, questions: [{ question, pourquoi,
+   champ }], synthese }] (D.routines : la revue mensuelle de la démo, prête avec deux questions) ; routinesLues = true une fois prêt.
+   Store.routines.pause(type, enPause) → { ok: true } ou { erreur }, en mémoire ; la réactivation recalcule le prochain passage
+   comme le déclencheur routines_maj (premier jour `jour` d'un mois au plus tôt dans 7 jours, date de Paris).
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
    byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
@@ -46,6 +50,7 @@
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
     memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalARelire: 0, journalConsentement: "demander",
+    routines: D.routines || [], routinesLues: false,
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
   // Fiches : S n'expose que les résumés (comme store-supabase.js) ; le contenu reste ici pour Store.savoir.fiche(slug).
@@ -92,6 +97,8 @@
       journal: clone(C.journal),
       journalARelire: C.journal.filter(e => e && e.statut === "a_relire").length,
       journalConsentement: C.journalConsentement,
+      routines: clone(C.routines),
+      routinesLues: C.routinesLues,
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -511,6 +518,26 @@
     },
   };
 
+  /* ---------- routines de l'agent (en mémoire ; même validation que store-supabase.js, même recalcul que routines_maj) ---------- */
+  const ROUTINE_TYPES = ["revue_mensuelle"];
+  /* Date de Paris et routine_date de 0020 : RoutineEtat (routine-etat.js, chargé avant ce fichier par build.mjs), seule copie côté app. */
+  const RE = () => (typeof window !== "undefined" && window.RoutineEtat) ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./routine-etat.js") : null);
+  const routines = {
+    async pause(type, enPause) {
+      await tick();
+      if (!ROUTINE_TYPES.includes(type)) return { erreur: "Routine « " + type + " » inconnue (revue_mensuelle)." };
+      if (typeof enPause !== "boolean") return { erreur: "Pause invalide : vrai (en pause) ou faux (active) attendu." };
+      const r = C.routines.find(x => x.type === type);
+      if (!r) return { erreur: "Routine introuvable : demande à Claude de l'activer." };
+      if (r.active === !enPause) return { ok: true };
+      r.active = !enPause;
+      if (r.active) r.prochainPassage = RE().routineDate(r.jour, RE().aujParis(), 7); // pause → active : comme le déclencheur routines_maj
+      publish();
+      return { ok: true };
+    },
+  };
+
   const savoir = {
     async fiche(slug) {
       await tick();
@@ -541,6 +568,7 @@
     memoire,
     savoir,
     journal,
+    routines,
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {
@@ -558,5 +586,5 @@
 
   publish();
   // Un court délai pour exercer les états « Chargement… » des modules, comme avec une vraie base.
-  setTimeout(() => { C.ready = true; C.dbOk = true; C.profilLoaded = true; publish(); }, 150);
+  setTimeout(() => { C.ready = true; C.dbOk = true; C.profilLoaded = true; C.routinesLues = true; publish(); }, 150);
 })();

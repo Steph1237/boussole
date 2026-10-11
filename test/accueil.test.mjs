@@ -32,7 +32,7 @@ test("accueil : 4 étapes (plus de choix « sans assistant »), dans l'ordre, et
     "Ne mets pas ton e-mail comme identifiant", "vérifie ton compte", "authentifie-toi", "Se reconnecter", "<kbd>/mcp</kbd>",
     "En attente de la connexion de Claude…", "Claude est connecté", "J'ai terminé", "Sécurise d\\'abord ton compte", "compte.html#securiser",
     "formulaires interactifs", "Je préfère commencer plus tard", "Examiner les propositions",
-    "Claude te proposera d'activer ta revue mensuelle ; elle s'affichera ici.",
+    "Ta revue mensuelle s'activera à la fin de ton entretien avec Claude.", "Revue mensuelle active",
     "Tu pourras relancer Claude à tout moment depuis Agent › Connexion.", "Reprendre plus tard"]) {
     assert.ok(js.includes(t), "texte manquant : " + t);
   }
@@ -92,13 +92,16 @@ test("accueil : une seule phrase, affichée à copier (étape 3) et envoyée par
 
 /* Accueil exécuté dans un contexte vm avec un document minimal (pas de DOM disponible sous Node).
    origine : nom de l'élément qui a le focus à l'ouverture (null = <body>) ; titre : présence de #spaceTitle. */
-function accueilVm({ mode, origine = null, titre = true, retiree = false } = {}) {
-  const stock = new Map(), focus = [];
+function accueilVm({ mode, origine = null, titre = true, retiree = false, snap = {} } = {}) {
+  const stock = new Map(), focus = [], ecoute = [];
+  /* Zone du voyant de la revue (#acN-revue) : compte les réécritures de son contenu. */
+  const revue = { ecritures: 0, _h: "", dataset: {}, classes: new Set(), get innerHTML() { return this._h; }, set innerHTML(v) { this.ecritures++; this._h = String(v); },
+    classList: { toggle(c, f) { f ? revue.classes.add(c) : revue.classes.delete(c); } } };
   const el = nom => ({ nom, isConnected: true, closest: () => null, focus() { focus.push(nom); } });
   const bidon = { textContent: "", innerHTML: "", disabled: false, dataset: {}, style: {}, classList: { add() {}, remove() {}, toggle() {} },
     setAttribute() {}, addEventListener() {}, focus() {}, querySelector: () => bidon, querySelectorAll: () => [] };
   const dlg = { open: false, className: "", innerHTML: "", isConnected: true,
-    setAttribute() {}, addEventListener(t, f) { (this.l = this.l || {})[t] = f; }, querySelector: () => bidon, querySelectorAll: () => [],
+    setAttribute() {}, addEventListener(t, f) { (this.l = this.l || {})[t] = f; }, querySelector: s => (/-revue$/.test(s) ? revue : bidon), querySelectorAll: () => [],
     showModal() { this.open = true; }, close() { this.open = false; }, remove() { this.isConnected = false; } };
   const body = Object.assign(el("body"), { appendChild() {} });
   const elOrigine = origine ? el(origine) : body, elTitre = el("titre");
@@ -107,12 +110,14 @@ function accueilVm({ mode, origine = null, titre = true, retiree = false } = {})
   const ctx = { document, console, encodeURIComponent, Date, Math, parseInt, setTimeout,
     localStorage: { getItem: k => (stock.has(k) ? stock.get(k) : null), setItem: (k, v) => stock.set(k, String(v)), removeItem: k => stock.delete(k) },
     sessionStorage: { getItem: () => null, setItem() {} },
-    Store: { mode, get: () => ({}), on() {}, markOnboarded: async () => {} }, BOUSSOLE: {} };
+    Store: { mode, get: () => snap, on(f) { ecoute.push(f); }, markOnboarded: async () => {} }, BOUSSOLE: {} };
   ctx.self = ctx;
   vm.createContext(ctx);
+  vm.runInContext(readFileSync("web/src/routine-etat.js", "utf8"), ctx, { filename: "routine-etat.js" }); // chargé avant accueil.js (build.mjs)
   vm.runInContext(js, ctx, { filename: "accueil.js" });
   const clic = act => dlg.l.click({ target: { closest: () => ({ dataset: { act }, disabled: false }) }, preventDefault() {} });
-  return { A: ctx.Accueil, stock, focus, dlg, clic };
+  const emettre = S => ecoute.forEach(f => f(S));
+  return { A: ctx.Accueil, stock, focus, dlg, clic, revue, emettre };
 }
 
 test("accueil : l'étape mémorisée a une clé distincte en démo (accueil-etape-v2-demo) et ne se mélange pas au compte réel", () => {
@@ -183,4 +188,50 @@ test("accueil.css : entièrement scopé sous .accueil (fenêtre dialog.accueil o
   const hors = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !/^(dialog)?\.accueil(\b|::|\s|$)/.test(x));
   assert.deepEqual(hors, []);
   assert.match(css, /@media \(max-width:640px\)\{\s*dialog\.accueil\{width:100vw;height:100dvh/, "plein écran sur téléphone");
+});
+
+test("accueil : voyant de la revue mensuelle à l'étape 4 (Store.get().routines), état par RoutineEtat.etat", () => {
+  const AUJ = "2026-10-11";
+  const r = o => ({ type: "revue_mensuelle", jour: 1, active: true, dernierPassage: "2026-10-01T07:00:00Z", prochainPassage: "2026-11-01", questions: [], ...o });
+  assert.deepEqual(A.voyantRoutine([r()], AUJ), { actif: true, code: "a_jour", texte: "Revue mensuelle active — prochaine le 01/11" });
+  assert.deepEqual(A.voyantRoutine([r({ prochainPassage: null })], AUJ), { actif: true, code: "a_jour", texte: "Revue mensuelle active" });
+  for (const v of [undefined, [], [{ type: "autre", active: true }]])
+    assert.equal(A.voyantRoutine(v, AUJ).texte, "Ta revue mensuelle s'activera à la fin de ton entretien avec Claude.");
+  assert.equal(A.voyantRoutine([r({ active: false })], AUJ).actif, false);
+  assert.match(A.voyantRoutine([r({ active: false })], AUJ).texte, /en pause/);
+  assert.equal(A.voyantRoutine([r({ active: false, prochainPassage: "2026-09-01", dernierPassage: null })], AUJ).code, "pause", "en pause : jamais « en retard »");
+  // en retard (même règle qu'Aujourd'hui et le connecteur)
+  assert.deepEqual(A.voyantRoutine([r({ prochainPassage: "2026-10-01", dernierPassage: "2026-09-01T07:00:00Z" })], AUJ),
+    { actif: true, code: "retard", texte: "Revue mensuelle en retard de 10 jours" });
+  assert.equal(A.voyantRoutine([r({ prochainPassage: "2026-10-10", dernierPassage: null })], AUJ).texte, "Revue mensuelle en retard de 1 jour");
+  assert.equal(A.voyantRoutine([r({ prochainPassage: "2026-10-11", dernierPassage: null })], AUJ).texte, "Revue mensuelle due aujourd'hui");
+  for (const x of [r({ active: false }), r({ prochainPassage: "2026-10-01", dernierPassage: null })]) assert.doesNotMatch(A.voyantRoutine([x], AUJ).texte, /\b(vous|votre|vos)\b/i);
+  // rendu de l'étape 4 : le voyant lit le store
+  const actif = accueilVm({ mode: "demo", snap: { routines: [r({ prochainPassage: "2099-11-01" })] } });
+  actif.A.open({ etape: 4 });
+  assert.match(actif.dlg.innerHTML, /Revue mensuelle active — prochaine le 01\/11/);
+  const sans = accueilVm({ mode: "demo", snap: {} });
+  sans.A.open({ etape: 4 });
+  assert.match(sans.dlg.innerHTML, /Ta revue mensuelle s'activera à la fin de ton entretien avec Claude\./);
+  assert.match(js, /revueHtml\(S && S\.routines\)/, "mis à jour à chaque instantané du store (suivi)");
+});
+
+test("accueil : la zone annoncée du voyant (role=status) n'est réécrite que si son état change (signature actif|texte, pas innerHTML)", () => {
+  const r = o => ({ type: "revue_mensuelle", jour: 1, active: true, dernierPassage: null, prochainPassage: "2099-11-01", questions: [], ...o });
+  const v = accueilVm({ mode: "demo", snap: { routines: [r()] } });
+  v.A.open({ etape: 4 });
+  assert.match(v.dlg.innerHTML, /id="ac\d+-revue" data-sig="true\|Revue mensuelle active — prochaine le 01\/11" role="status"/, "signature posée dès le premier rendu");
+  const n = v.revue.ecritures;
+  for (let i = 0; i < 3; i++) v.emettre({ routines: [r()] }); // publications du store sans changement de la revue
+  assert.equal(v.revue.ecritures, n, "aucune réécriture (pas de réannonce)");
+  v.emettre({ routines: [r({ active: false })] });
+  assert.equal(v.revue.ecritures, n + 1);
+  assert.match(v.revue.innerHTML, /en pause/);
+  assert.equal(v.revue.dataset.sig, "false|Revue mensuelle en pause : tu peux la réactiver dans Agent › Connexion.");
+  v.emettre({ routines: [r({ prochainPassage: "2020-01-01" })] });
+  assert.match(v.revue.innerHTML, /Revue mensuelle en retard de \d+ jours/);
+  assert.ok(v.revue.classes.has("retard") && !v.revue.classes.has("on"), "voyant « en retard »");
+  const m = v.revue.ecritures;
+  v.emettre({ routines: [r({ prochainPassage: "2020-01-01" })] });
+  assert.equal(v.revue.ecritures, m);
 });

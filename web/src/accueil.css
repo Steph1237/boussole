@@ -109,6 +109,10 @@ dialog.accueil::backdrop{background:rgba(18,24,29,.62)}
 .accueil .ac-revue p{margin:0;display:flex;flex-direction:column;gap:2px;min-width:0}
 .accueil .ac-revue b{font:700 15px var(--f-display)}
 .accueil .ac-revue span{font-size:13.5px;color:var(--muted)}
+.accueil .ac-revue.on{border-style:solid;border-color:var(--good);background:var(--good-soft)}
+.accueil .ac-revue.on .ac-ico{color:var(--good)}
+.accueil .ac-revue.retard{border-style:solid;border-color:var(--warn);background:var(--warn-soft)}
+.accueil .ac-revue.retard .ac-ico{color:var(--warn)}
 
 /* pied et boutons */
 .accueil .ac-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 12px;padding:14px 24px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}

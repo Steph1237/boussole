@@ -52,6 +52,16 @@ export function miniDom() {
         toggle: (c, f) => { const on = f == null ? !lire().includes(c) : f; on ? el.classList.add(c) : el.classList.remove(c); return on; },
       };
     }
+    /* dataset : attributs data-* (camelCase ↔ kebab-case), en lecture, écriture et suppression. */
+    get dataset() {
+      const el = this, nom = k => "data-" + String(k).replace(/[A-Z]/g, c => "-" + c.toLowerCase());
+      return new Proxy({}, {
+        get: (t, k) => (typeof k === "string" && el.hasAttribute(nom(k)) ? el.getAttribute(nom(k)) : undefined),
+        set: (t, k, v) => { el.setAttribute(nom(k), v); return true; },
+        deleteProperty: (t, k) => { el.removeAttribute(nom(k)); return true; },
+        has: (t, k) => el.hasAttribute(nom(k)),
+      });
+    }
     get hidden() { return this.hasAttribute("hidden"); }
     set hidden(v) { v ? this.setAttribute("hidden", "") : this.removeAttribute("hidden"); }
     get type() { return this.getAttribute("type") || ""; }

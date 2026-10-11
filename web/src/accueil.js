@@ -2,9 +2,10 @@
    n'est pas terminé) et à tout moment depuis Agent › Connexion (« Revoir l'accueil »). Boussole fonctionne avec un assistant
    (Claude disponible, ChatGPT bientôt) : aucun formulaire de saisie ici, la seule écriture est « onboarding terminé ».
    1. Bienvenue (promesses, assistants)  2. Connecter Claude (voyant en direct)  3. Lancer l'entretien  4. Suivre et valider
-   (avec la mention de la revue mensuelle, sans fonctionnalité pour l'instant).
+   (avec le voyant de la revue mensuelle : « Revue mensuelle active — prochaine le JJ/MM », « en pause » ou « en retard de N jours »,
+   lu dans Store.get().routines, état par RoutineEtat.etat ; voyantRoutine est pur et testé).
 
-   window.Accueil = { open({ onDone, etape }), connexion(el), reporte(), estConnecte(…), lienClaude, ETAPES }
+   window.Accueil = { open({ onDone, etape }), connexion(el), reporte(), estConnecte(…), voyantRoutine(routines, auj?), lienClaude, ETAPES }
    - onDone() après « Terminer » (étape 4, qui marque l'onboarding fait par Store.markOnboarded()).
    - etape : étape de départ (1 à 4) ; par défaut, celle mémorisée dans localStorage « accueil-etape-v2 »
      (« accueil-etape-v2-demo » en démo, pour ne pas mélanger la démo et le compte réel).
@@ -67,6 +68,30 @@
     agenda: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   };
   const svg = (k, cls) => '<svg class="' + (cls || "ac-ico") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICON[k] + "</svg>";
+
+  /* Voyant de la revue mensuelle (étape 4), lu dans Store.get().routines (undefined = pas encore lu). État par RoutineEtat.etat
+     (routine-etat.js, chargé avant ce fichier ; module voisin sous Node), au jour de Paris par défaut. Pur, testé.
+     → { actif, code, texte } ; code = celui de RoutineEtat (retard : « en retard de N jours » / « due aujourd'hui »). */
+  const RE = () => (root && root.RoutineEtat) ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./routine-etat.js") : null);
+  const jjmm = iso => (typeof iso === "string" && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.slice(8, 10) + "/" + iso.slice(5, 7) : "");
+  function voyantRoutine(routines, auj) {
+    const E = RE().etat(routines, auj == null ? RE().aujParis() : auj), code = E.code;
+    if (code === "retard") return { actif: true, code, texte: E.retard > 0 ? "Revue mensuelle en retard de " + E.retard + " jour" + (E.retard > 1 ? "s" : "") : "Revue mensuelle due aujourd'hui" };
+    if (code === "a_jour" || code === "prete") return { actif: true, code, texte: "Revue mensuelle active" + (jjmm(E.prochain) ? " — prochaine le " + jjmm(E.prochain) : "") };
+    if (code === "pause") return { actif: false, code, texte: "Revue mensuelle en pause : tu peux la réactiver dans Agent › Connexion." };
+    return { actif: false, code, texte: "Ta revue mensuelle s'activera à la fin de ton entretien avec Claude." };
+  }
+  /* Signature de la zone annoncée (role=status) : réécrite seulement quand elle change (comparer innerHTML ne marche pas : le
+     navigateur resérialise le SVG autrement, la zone serait réécrite et réannoncée à chaque publication du store). */
+  const sigRevue = v => v.actif + "|" + v.texte;
+  function revueHtml(routines) {
+    const v = voyantRoutine(routines);
+    if (v.code === "retard") return svg("alerte", "ac-ico lg") + "<p><b>" + esc(v.texte) + "</b><span>Lance-la avec Claude depuis Aujourd'hui ou Agent › Connexion.</span></p>";
+    return svg(v.actif ? "main" : "agenda", "ac-ico lg") + "<p>" + (v.actif ? "<b>" + esc(v.texte) + "</b><span>Claude prépare ta revue chaque mois ; tu réponds ensuite à ses questions.</span>"
+      : "<b>Revue mensuelle</b><span>" + esc(v.texte) + "</span>") + "</p>";
+  }
+  const classeRevue = v => (v.code === "retard" ? " retard" : v.actif ? " on" : "");
 
   async function copier(text, el) {
     try { if (!navigator.clipboard) throw new Error("indisponible"); await navigator.clipboard.writeText(text); return true; }
@@ -264,6 +289,7 @@
           '<button type="button" class="ac-link" data-act="plus-tard">Je préfère commencer plus tard</button></div>';
     }
     function e4() {
+      const vr = voyantRoutine(S && S.routines);
       return '<p class="ac-lead">Pendant l\'entretien, ton bilan se remplit ici. Rien n\'est enregistré sans ton accord.</p>' +
         '<div class="ac-suivi">' +
           '<div class="ac-jauge" id="' + id + '-jauge" role="img"></div>' +
@@ -271,8 +297,7 @@
           '<p class="ac-pending" id="' + id + '-pending" aria-live="polite"></p>' +
           '<button type="button" class="ac-btn ghost" data-act="examiner">Examiner les propositions</button></div>' +
         "</div>" +
-        '<div class="ac-revue">' + svg("agenda", "ac-ico lg") +
-          "<p><b>Revue mensuelle</b><span>Claude te proposera d'activer ta revue mensuelle ; elle s'affichera ici.</span></p></div>" +
+        '<div class="ac-revue' + classeRevue(vr) + '" id="' + id + '-revue" data-sig="' + esc(sigRevue(vr)) + '" role="status" aria-live="polite">' + revueHtml(S && S.routines) + "</div>" +
         '<p class="ac-fine">Tu pourras relancer Claude à tout moment depuis Agent › Connexion.</p>';
     }
     function suivi() {
@@ -289,6 +314,12 @@
       const pe = $("#" + id + "-pending");
       pe.textContent = n ? n + " proposition" + (n > 1 ? "s" : "") + " de Claude en attente de ton accord" : "Aucune proposition en attente pour le moment.";
       pe.classList.toggle("has", n > 0);
+      const rv = $("#" + id + "-revue");
+      if (rv) {
+        const v = voyantRoutine(S && S.routines), sig = sigRevue(v);
+        if (rv.dataset.sig !== sig) { rv.dataset.sig = sig; rv.innerHTML = revueHtml(S && S.routines); }
+        rv.classList.toggle("on", classeRevue(v) === " on"); rv.classList.toggle("retard", v.code === "retard");
+      }
     }
 
     /* ---- rendu ---- */
@@ -417,5 +448,5 @@
     return inst.api;
   }
 
-  return { open, connexion, reporte, estConnecte, lienClaude, ETAPES, PHRASE: PROMPT_CLAUDE, PROMPT_CLAUDE };
+  return { open, connexion, reporte, estConnecte, voyantRoutine, lienClaude, ETAPES, PHRASE: PROMPT_CLAUDE, PROMPT_CLAUDE };
 });

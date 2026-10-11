@@ -299,7 +299,26 @@
         creeLe: at(62, "21:05"), majLe: at(21, "20:15") }),
   ];
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal };
+  /* Routines de l'agent (table routines, 0020 ; RT1) : la revue mensuelle, active le 1er du mois. Claude l'a passée le 1er du mois
+     courant (tâche planifiée) et attend les réponses du foyer à deux questions : Aujourd'hui affiche « Ta revue du mois est prête ».
+     Prochain passage le 1er du mois suivant. Les questions reprennent la démo : période d'essai de Sam (mémoire, journal) et SCPI
+     comptée au prix de retrait 2025 en attendant le relevé annuel (hypothèse du journal). */
+  const debutMois = k => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + k); return iso(d); };
+  const routines = [{
+    type: "revue_mensuelle", jour: 1, active: true, consentementJournal: true,
+    dernierPassage: debutMois(0) + "T06:12:00.000Z", dernierClient: "Claude", prochainPassage: debutMois(1),
+    questions: [
+      { question: "Sam a-t-il été confirmé à la fin de sa période d'essai, et son salaire a-t-il changé ?",
+        pourquoi: "Ta décision sur le PEA attend cette confirmation ; un nouveau salaire change aussi le budget et le reste à vivre.", champ: "personnes.p2.salaire" },
+      { question: "Le relevé annuel de l'assurance vie de Sam est-il arrivé ?",
+        pourquoi: "La SCPI est comptée au prix de retrait 2025 en attendant ce relevé ; dépose-le pour mettre à jour le fonds en euros et la SCPI.", champ: null },
+    ],
+    synthese: "Patrimoine net d'environ 193 500 €, en légère hausse sur le mois avec les marchés actions.\n" +
+      "Le matelas de précaution couvre l'objectif de 21 100 € ; le LDDS de Sam est au plafond.\n" +
+      "La décision sur le PEA de Camille est à revoir : le versement programmé de 300 € par mois continue.",
+  }];
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, routines };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);

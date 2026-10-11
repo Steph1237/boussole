@@ -27,6 +27,7 @@ function browser({ search = "?demo", mode, prep } = {}) {
   vm.runInContext(src("demo-data.js"), ctx, { filename: "demo-data.js" });
   if (prep) prep(ctx.DEMO);
   vm.runInContext(src("sensible.js"), ctx, { filename: "sensible.js" }); // filtre partagé (window.Sensible), chargé avant les stores comme dans build.mjs
+  vm.runInContext(src("routine-etat.js"), ctx, { filename: "routine-etat.js" }); // règle de la revue mensuelle (window.RoutineEtat), avant les stores comme dans build.mjs
   vm.runInContext(src("store-demo.js"), ctx, { filename: "store-demo.js" });
   return ctx;
 }
@@ -54,7 +55,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -652,6 +653,92 @@ test("store-supabase.js : journal (lecture des 500 plus récentes, table absente
   assert.match(demo, /D\.journal/);
 });
 
+/* ------------------------------------------------ routines de l'agent (RT1) ------------------------------------------------ */
+
+const ROUTINE_KEYS = ["active", "consentementJournal", "dernierClient", "dernierPassage", "jour", "prochainPassage", "questions", "synthese", "type"];
+
+test("démo : routines au contrat (revue mensuelle active, passée le 1er du mois, prochaine le 1er du mois suivant, 2 questions, synthèse de 3 lignes)", async () => {
+  const ctx = browser();
+  const S0 = ctx.Store.get();
+  assert.equal(S0.routinesLues, false, "pas encore lue avant le tick");
+  const S = await whenReady(ctx);
+  assert.equal(S.routinesLues, true);
+  assert.equal(S.routines.length, 1);
+  const r = S.routines[0];
+  assert.deepEqual(Object.keys(r).sort(), ROUTINE_KEYS);
+  assert.equal(r.type, "revue_mensuelle"); assert.equal(r.jour, 1); assert.equal(r.active, true); assert.equal(r.consentementJournal, true);
+  assert.equal(r.dernierClient, "Claude");
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  const debut = k => { const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k, 1)); return x.getUTCFullYear() + "-" + p(x.getUTCMonth() + 1) + "-01"; };
+  assert.equal(r.dernierPassage.slice(0, 10), debut(0), "dernier passage le 1er du mois courant");
+  assert.ok(!isNaN(Date.parse(r.dernierPassage)));
+  assert.equal(r.prochainPassage, debut(1), "prochain passage le 1er du mois suivant");
+  assert.equal(r.questions.length, 2);
+  r.questions.forEach(q => {
+    assert.deepEqual(Object.keys(q).sort(), ["champ", "pourquoi", "question"]);
+    assert.ok(q.question.length >= 1 && q.question.length <= 300);
+    assert.ok(q.pourquoi === null || q.pourquoi.length <= 300);
+    assert.ok(q.champ === null || q.champ.length <= 60);
+    for (const t of [q.question, q.pourquoi]) { assert.equal(ctx.Sensible.estSensible(t || ""), false); assert.doesNotMatch(t || "", /\b(vous|votre|vos)\b/i); }
+  });
+  assert.equal(r.synthese.split("\n").length, 3, "synthèse de 3 lignes");
+  assert.ok(r.synthese.length <= 4000);
+  assert.equal(ctx.Sensible.estSensible(r.synthese), false);
+  assert.equal(typeof ctx.Store.routines.pause, "function");
+  // Aujourd'hui (fonction pure, même module que la vue) : la démo affiche « Ta revue du mois est prête »
+  const A = require("../web/src/aujourdhui.js");
+  const b = A.boite(J(S), new Date().toISOString().slice(0, 10), { Rules: null });
+  assert.ok(b.some(x => x.type === "routine" && x.titre === "Ta revue du mois est prête : 2 questions"), b.map(x => x.titre).join(" | "));
+});
+
+test("démo : Store.routines.pause en mémoire (pause, réactivation qui recalcule le prochain passage, refus en français)", async () => {
+  const ctx = browser({ prep: D => { D.routines[0].prochainPassage = "2020-01-01"; } });
+  await whenReady(ctx);
+  const R = ctx.Store.routines, get = () => ctx.Store.get().routines[0];
+  assert.deepEqual(J(await R.pause("revue_mensuelle", true)), { ok: true });
+  assert.equal(get().active, false);
+  assert.equal(get().prochainPassage, "2020-01-01", "la pause ne touche pas au prochain passage");
+  assert.deepEqual(J(await R.pause("revue_mensuelle", true)), { ok: true }, "déjà en pause : rien ne change");
+  assert.deepEqual(J(await R.pause("revue_mensuelle", false)), { ok: true });
+  const r = get();
+  assert.equal(r.active, true);
+  // routines_maj : pause → active recalcule routine_date(jour, auj, 7) : un 1er du mois, entre 7 jours et 7 jours + un mois
+  assert.match(r.prochainPassage, /^\d{4}-\d{2}-01$/);
+  const ecart = (Date.parse(r.prochainPassage) - Date.parse(new Date().toISOString().slice(0, 10))) / 864e5;
+  assert.ok(ecart >= 6 && ecart <= 7 + 31, "prochain passage dans 7 jours au moins : " + r.prochainPassage);
+  for (const [args, re] of [[["veille", true], /inconnue/], [["revue_mensuelle", "oui"], /Pause invalide/], [["revue_mensuelle"], /Pause invalide/]]) {
+    const x = await R.pause(...args);
+    assert.ok(x.erreur && re.test(x.erreur), JSON.stringify(args) + " → " + JSON.stringify(x));
+    assert.doesNotMatch(x.erreur, /\b(vous|votre|vos)\b/i);
+  }
+  const vide = browser({ prep: D => { D.routines = []; } });
+  const S = await whenReady(vide);
+  assert.deepEqual(J(S.routines), []);
+  assert.match((await vide.Store.routines.pause("revue_mensuelle", true)).erreur, /introuvable/);
+  assert.equal(ctx.DEMO.routines[0].active, true, "window.DEMO n'est pas modifié (copie)");
+});
+
+test("store-supabase.js : routines (lecture dans loadAll, table absente sans casse, routinesLues, seule écriture : la bascule active)", () => {
+  const sup = src("store-supabase.js"), demo = src("store-demo.js");
+  for (const s of [sup, demo]) {
+    assert.match(s, /S = \{[^\n]*journalConsentement, routines, routinesLues,/, "en-tête : S documente routines et routinesLues");
+    assert.match(s, /Contrat : window\.Store = \{[^\n]*journal, routines, surveillerConnexions/, "en-tête : Store.routines");
+    for (const k of ["routines: clone(C.routines)", "routinesLues: C.routinesLues", "routines,", "Store.routines.pause(type, enPause)", 'const ROUTINE_TYPES = ["revue_mensuelle"]'])
+      assert.ok(s.includes(k), k);
+  }
+  const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
+  assert.ok(load.includes('q(sb.from("routines").select(ROUTINE_SELECT).order("type"))'), "lecture des routines dans le même Promise.allSettled");
+  assert.ok(sup.includes('const ROUTINE_SELECT = "type, jour, active, consentement_journal, dernier_passage, dernier_client, prochain_passage, questions, synthese"'));
+  assert.ok(load.includes("if (routines !== undefined) { C.routines = (routines || []).map(routineView); C.routinesLues = true; }"), "table absente : valeur précédente");
+  assert.match(sup, /routines: \[\], routinesLues: false/, "état initial");
+  for (const k of ["consentementJournal: !!r.consentement_journal", "dernierPassage: r.dernier_passage ?? null", "dernierClient: r.dernier_client ?? null",
+    "prochainPassage: r.prochain_passage ?? null", "synthese: r.synthese ?? null"]) assert.ok(sup.includes(k), "routineView : " + k);
+  // seule écriture : update active = !enPause where type = …, ligne renvoyée (aucune ligne → introuvable)
+  assert.ok(sup.includes('from("routines").update({ active: !enPause }).eq("type", type).select("type")'));
+  assert.deepEqual([...sup.matchAll(/from\("routines"\)\.(\w+)\(/g)].map(m => m[1]).sort(), ["select", "update"]);
+  assert.match(demo, /D\.routines/);
+});
+
 test("choix du mode : store-demo ne s'installe que si ?demo ou BOUSSOLE_MODE = demo", () => {
   assert.equal(browser({ search: "" }).Store, undefined);
   assert.equal(browser({ search: "?x=1&demo" }).Store?.mode, "demo");
@@ -688,7 +775,7 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
   for (const k of ["signInWithPassword", "signUp", "signInWithOtp", 'provider: "google"', "onAuthStateChange", "requireSession", "index.html"]) assert.ok(auth.includes(k), `auth.js : ${k}`);
 });
 
-test("lecture seule : les deux stores n'écrivent plus que les données de contrôle (propositions, journal, mémoire, règles, risque, compte)", () => {
+test("lecture seule : les deux stores n'écrivent plus que les données de contrôle (propositions, journal, mémoire, routines, règles, risque, compte)", () => {
   const sup = src("store-supabase.js"), demo = src("store-demo.js");
   for (const [nom, s] of [["store-supabase.js", sup], ["store-demo.js", demo]]) {
     assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\) \}/, nom + " : en-tête du contrat à jour");
@@ -701,7 +788,7 @@ test("lecture seule : les deux stores n'écrivent plus que les données de contr
   }
   // Côté Supabase : plus aucune écriture sur les tables de saisie (positions, transactions, biens, crédits, budgets, objectifs).
   const ecritures = [...sup.matchAll(/from\("(\w+)"\)\.(insert|update|upsert|delete)\(/g)].map(m => m[1] + "." + m[2]);
-  assert.deepEqual([...new Set(ecritures)].sort(), ["config.upsert", "journal.delete", "journal.update", "memoire_agent.delete", "memoire_agent.update", "profiles.update", "profiles.upsert"].sort());
+  assert.deepEqual([...new Set(ecritures)].sort(), ["config.upsert", "journal.delete", "journal.update", "memoire_agent.delete", "memoire_agent.update", "profiles.update", "profiles.upsert", "routines.update"].sort());
   assert.doesNotMatch(sup, /rpc\("request_instrument"/, "plus de demande d'instrument (ajout de placement)");
   assert.deepEqual([...sup.matchAll(/rpc\("(\w+)"/g)].map(m => m[1]).sort(), ["appliquer_propositions", "refuser_propositions"]);
 });

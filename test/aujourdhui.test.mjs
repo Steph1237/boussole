@@ -22,6 +22,7 @@ const Risque = require("../web/src/risque.js");
 const Periodes = require("../web/src/periodes.js");
 const DEMO = require("../web/src/demo-data.js");
 const ClaudePrompts = require("../web/src/claude-prompts.js");
+const RoutineEtat = require("../web/src/routine-etat.js");
 const HAS_UI = existsSync("web/src/ui.js");
 const UI = HAS_UI ? require("../web/src/ui.js") : null;
 
@@ -235,13 +236,17 @@ test("boite : tri par urgence puis date, tous types mêlés", () => {
   }
 });
 
-test("boite : sur la démo, un lot de 5 propositions, le point SCPI à reprendre, les alertes des règles", () => {
+test("boite : sur la démo, la revue du mois prête, un lot de 5 propositions, le point SCPI à reprendre, les alertes des règles", () => {
   const S = demoS();
   const b = A.boite(S, jourLocal(), DEPS);
   const t = b.map(x => x.titre);
-  assert.equal(b[0].titre, "Claude propose 5 changements");
+  // Urgence 1 : la revue (prête depuis le 1er du mois, donc la plus ancienne, sauf le 1er où elle passe après), les propositions,
+  // puis l'avis à relire.
+  const u1 = b.filter(x => x.urgence === 1).map(x => x.titre);
+  assert.deepEqual(u1.filter(x => x !== "Ta revue du mois est prête : 2 questions"), ["Claude propose 5 changements", "1 entrée du journal à relire"], t.join(" | "));
+  assert.ok(u1.includes("Ta revue du mois est prête : 2 questions"), t.join(" | "));
   assert.equal(b.filter(x => x.type === "proposition").length, 1);
-  assert.equal(b[1].titre, "1 entrée du journal à relire", "l'avis de la démo, juste après les propositions");
+  assert.equal(b.filter(x => x.type === "routine").length, 1);
   assert.ok(b.some(x => x.type === "a_suivre" && /SCPI/.test(x.titre)), t.join(" | "));
   assert.ok(b.some(x => x.type === "alerte" && /Seuil de cours touché|proche de son seuil/.test(x.titre)), t.join(" | "));
   assert.ok(!b.some(x => x.type === "echeance"), "l'échéance de la démo est à 40 jours");
@@ -291,6 +296,127 @@ test("boite : entrées du journal à relire → un élément « N entrées du jo
   assert.match(h, /data-type="journal"/);
   assert.match(h, /href="#agent\/journal" data-goto="agent\/journal"/);
   assert.doesNotMatch(h, /<b>LDDS/);
+});
+
+/* ------------------------------------------------------------------ revue mensuelle (RT1) ------------------------------------------------------------------ */
+
+const Q = (question, o) => Object.assign({ question, pourquoi: null, champ: null }, o);
+const RT = o => Object.assign({ type: "revue_mensuelle", jour: 1, active: true, consentementJournal: true, dernierPassage: "2026-10-01T06:12:00.000Z",
+  dernierClient: "Claude", prochainPassage: "2026-11-01", questions: [], synthese: null }, o);
+const sansRegles = { Rules: fauxRules([], []) };
+const routine = (S, today) => A.boite(S, today || TODAY, sansRegles).filter(x => x.type === "routine");
+
+test("boite : revue prête → « Ta revue du mois est prête : N questions », urgence 1, première question en contexte, « Répondre avec Claude »", () => {
+  const qs = [Q("As-tu fait un versement <b>exceptionnel</b> ce mois-ci ?", { pourquoi: "Le PEA n'a pas bougé.", champ: "mouvement" }), Q("Ton salaire a-t-il changé ?")];
+  const b = routine(vide({ routines: [RT({ questions: qs })] }));
+  assert.equal(b.length, 1);
+  const x = b[0];
+  assert.equal(x.urgence, 1);
+  assert.equal(x.titre, "Ta revue du mois est prête : 2 questions");
+  assert.equal(x.contexte, "As-tu fait un versement <b>exceptionnel</b> ce mois-ci ?", "texte brut : l'échappement se fait au rendu");
+  assert.equal(x.date, "2026-10-01", "prête depuis le passage de Claude");
+  assert.equal(x.action.label, "Répondre avec Claude");
+  // URL préremplie : le nombre de questions seulement (leur texte vient d'une exécution planifiée de l'agent ; demarrer_routine les fournit)
+  assert.equal(x.action.url, A.urlClaude(ClaudePrompts.phrase("routine", "2 questions en attente")));
+  assert.equal(x.action.url, A.urlClaude(RoutineEtat.phraseRoutine(qs)), "même phrase qu'Agent › Connexion");
+  const q = decodeURIComponent(x.action.url.split("?q=")[1]);
+  assert.match(q, /questions de ma revue mensuelle \(demarrer_routine, puis le formulaire, puis questions_routine\)\. Concerne : 2 questions en attente\./);
+  assert.doesNotMatch(q, /versement|salaire/i, "aucun texte de question dans l'URL");
+  assert.equal(routine(vide({ routines: [RT({ questions: [Q("Une seule question ?")] })] }))[0].titre, "Ta revue du mois est prête : 1 question");
+  // questions vides ignorées ; aucune question → rien (ni prête ni en retard)
+  assert.deepEqual(routine(vide({ routines: [RT({ questions: [Q("  "), null] })] })), []);
+});
+
+test("boite : revue en retard (prioritaire sur « prête ») → urgence 2, « Lancer ma revue avec Claude » (phrase revue) ; « due aujourd'hui » à 0 jour", () => {
+  const S = vide({ routines: [RT({ prochainPassage: "2026-10-01", dernierPassage: "2026-09-01T06:00:00.000Z" })] });
+  const b = routine(S);
+  assert.equal(b.length, 1);
+  assert.equal(b[0].urgence, 2);
+  assert.equal(b[0].titre, "Revue mensuelle en retard de 9 jours");
+  assert.equal(b[0].date, "2026-10-01");
+  assert.match(b[0].contexte, /^Prévue le 1 oct\. 2026 : Claude fait le point du mois et prépare les questions à te poser\.$/);
+  assert.deepEqual(J(b[0].action), { label: "Lancer ma revue avec Claude", url: A.urlClaude(ClaudePrompts.phrase("revue")) });
+  assert.equal(routine(S, "2026-10-02")[0].titre, "Revue mensuelle en retard de 1 jour");
+  assert.equal(routine(S, "2026-10-01")[0].titre, "Revue mensuelle due aujourd'hui");
+  assert.deepEqual(routine(S, "2026-09-30"), [], "pas encore due");
+  // jamais passée : en retard aussi
+  assert.equal(routine(vide({ routines: [RT({ prochainPassage: "2026-10-05", dernierPassage: null })] }))[0].titre, "Revue mensuelle en retard de 5 jours");
+  // en retard avec des questions du mois précédent : un seul élément, le retard
+  const r = routine(vide({ routines: [RT({ prochainPassage: "2026-10-01", dernierPassage: "2026-09-01T06:00:00.000Z", questions: [Q("Ancienne question ?")] })] }));
+  assert.equal(r.length, 1);
+  assert.equal(r[0].titre, "Revue mensuelle en retard de 9 jours");
+  assert.match(r[0].contexte, /1 question du mois précédent attend encore ta réponse\.$/);
+  const r2 = routine(vide({ routines: [RT({ prochainPassage: "2026-10-01", dernierPassage: null, questions: [Q("Une ?"), Q("Deux ?")] })] }));
+  assert.match(r2[0].contexte, /2 questions du mois précédent attendent encore ta réponse\.$/);
+  // passée le jour prévu ou après : plus en retard
+  assert.deepEqual(routine(vide({ routines: [RT({ prochainPassage: "2026-10-01", dernierPassage: "2026-10-01T09:00:00.000Z" })] })), []);
+});
+
+test("boite : date du passage lue à Paris (dernier_passage::date) — passage le 1er à 0 h 30 heure de Paris = 31 au soir en UTC", () => {
+  const S = vide({ routines: [RT({ prochainPassage: "2026-11-01", dernierPassage: "2026-10-31T23:30:00.000Z", questions: [Q("Question ?")] })] });
+  const b = routine(S, "2026-11-05");
+  assert.equal(b.length, 1);
+  assert.equal(b[0].titre, "Ta revue du mois est prête : 1 question", "passée le 1er novembre à Paris : pas en retard");
+  assert.equal(b[0].date, "2026-11-01");
+  assert.equal(A.etatRevue(S, "2026-11-05").code, "prete");
+});
+
+test("boite : revue en pause → rien, même en retard ou avec des questions", () => {
+  assert.deepEqual(routine(vide({ routines: [RT({ active: false, prochainPassage: "2026-09-01", dernierPassage: null, questions: [Q("Question ?")] })] })), []);
+  assert.equal(A.etatRevue(vide({ routines: [RT({ active: false })] }), TODAY).code, "pause");
+});
+
+test("boite : aucune revue → « Active ta revue mensuelle » (urgence 3, Agent › Connexion), seulement si la base est là et la table lue", () => {
+  const b = routine(vide({ routines: [], routinesLues: true }));
+  assert.equal(b.length, 1);
+  assert.equal(b[0].urgence, 3);
+  assert.equal(b[0].titre, "Active ta revue mensuelle");
+  assert.deepEqual(J(b[0].action), { label: "Voir comment", route: "agent/connexion" });
+  assert.match(b[0].contexte, /Claude fait le point sur ton patrimoine/);
+  assert.deepEqual(routine(vide({ routines: [], routinesLues: false })), [], "table pas encore lue (migration absente, lecture en échec)");
+  assert.deepEqual(routine(vide({ routines: [] })), [], "store ancien, sans routinesLues");
+  assert.deepEqual(routine(vide({ routines: undefined, routinesLues: true })), [{ ...b[0] }].map(J), "routines absent, table lue : à activer");
+  assert.deepEqual(routine(vide({ dbOk: false, routines: [], routinesLues: true })), [], "sans base : rien");
+  // une autre routine (extension future) ne compte pas comme la revue mensuelle
+  assert.equal(routine(vide({ routines: [RT({ type: "veille_hebdo" })], routinesLues: true }))[0].titre, "Active ta revue mensuelle");
+});
+
+test("boite : revue ni prête ni en retard → rien ; état « a_jour »", () => {
+  const S = vide({ routines: [RT()], routinesLues: true });
+  assert.deepEqual(routine(S), []);
+  assert.equal(A.etatRevue(S, TODAY).code, "a_jour");
+  assert.equal(A.etatRevue(null, TODAY).code, "inconnu");
+  // une seule règle : celle de RoutineEtat (routine-etat.js), avec S.routinesLues et S.dbOk
+  for (const T of [vide({ routines: [RT({ prochainPassage: "2026-10-01", dernierPassage: null })] }), vide({ routines: [], routinesLues: true }), vide({ routines: [] })])
+    assert.deepEqual(J(A.etatRevue(T, TODAY)), J(RoutineEtat.etat(T.routines, TODAY, { lues: T.routinesLues === true, dbOk: T.dbOk === true })));
+});
+
+test("boite : la revue est évaluée au jour de Paris (deps.aujRevue = RoutineEtat.aujParis()), le reste au jour local", () => {
+  const S = vide({ routines: [RT({ prochainPassage: "2026-10-11", dernierPassage: null })] });
+  assert.deepEqual(routine(S, "2026-10-10"), [], "jour local : pas encore due");
+  const b = A.boite(S, "2026-10-10", { Rules: fauxRules([], []), aujRevue: "2026-10-11" }).filter(x => x.type === "routine");
+  assert.equal(b[0].titre, "Revue mensuelle due aujourd'hui", "minuit passé à Paris : due");
+  assert.match(js, /items = boite\(S, jour\(\), \{ aujRevue: RE\(\)\.aujParis\(\) \}\)/, "la vue passe la date de Paris");
+});
+
+test("boiteHtml : élément « routine » (pictogramme, libellé pour lecteur d'écran, lien Claude en nouvel onglet), texte échappé ; tutoiement", () => {
+  const items = A.boite(vide({ routines: [RT({ questions: [Q("Versement <b>PEA</b> ?")] })] }), TODAY, sansRegles)
+    .concat(A.boite(vide({ routines: [RT({ prochainPassage: "2026-10-01", dernierPassage: null })] }), TODAY, sansRegles))
+    .concat(A.boite(vide({ routines: [], routinesLues: true }), TODAY, sansRegles));
+  assert.deepEqual(items.map(x => x.type), ["routine", "routine", "routine"]);
+  const h = A.boiteHtml(items, UI || { voirPlus: (l, n, r) => l.map(r).join("") });
+  assert.equal((h.match(/data-type="routine"/g) || []).length, 3);
+  assert.match(h, /<span class="ui-sr">Revue mensuelle, urgent : <\/span>Ta revue du mois est prête : 1 question/);
+  assert.match(h, /Revue mensuelle, à traiter : <\/span>Revue mensuelle en retard de 9 jours/);
+  assert.match(h, /Revue mensuelle, à surveiller : <\/span>Active ta revue mensuelle/);
+  assert.match(h, /href="https:\/\/claude\.ai\/new\?q=[^"]+" target="_blank" rel="noopener noreferrer">Répondre avec Claude/);
+  assert.match(h, />Lancer ma revue avec Claude</);
+  assert.match(h, /href="#agent\/connexion" data-goto="agent\/connexion">Voir comment</);
+  assert.match(h, /Versement &lt;b&gt;PEA&lt;\/b&gt; \?/);
+  assert.doesNotMatch(h, /<b>PEA/);
+  assert.match(h, /<svg class="aj-ico"[^>]*><path d="M20 12a8 8/, "pictogramme de la revue");
+  for (const x of items) assert.doesNotMatch(x.titre + " " + x.contexte + " " + x.action.label, VOUVOIEMENT);
+  assert.match(css, /\.aj-it\[data-type="routine"\] \.aj-pic/);
 });
 
 test("reperesJournal : décisions non abandonnées et datées, triées par date", () => {
@@ -508,7 +634,7 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   else ctx.UI = { esc: s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
     carte: o => '<button type="button" class="ui-carte" data-ui-carte="' + o.id + '">' + ctx.UI.esc(o.titre) + "</button>",
@@ -603,7 +729,7 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
     App: { register: (n, api) => { reg[n] = api; }, refreshHeadlines() {} } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   const premieres = [];
   ctx.UI = Object.assign({}, ctx.UI, { brancher() {}, periode: () => ({ valeur: () => null, premiere: d => premieres.push(d) }) });
@@ -712,7 +838,7 @@ function vueDom(stock) {
     App: { register: (n, a) => { reg[n] = a; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js"])
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js"])
     vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const root = doc.body.appendChild(doc.createElement("section"));

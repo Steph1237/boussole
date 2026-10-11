@@ -12,7 +12,7 @@ l'onboarding ; routine mensuelle pour demander des nouvelles du portefeuille : n
 - « Obligatoire » = **activée par défaut** à l'onboarding (pause possible) + **contrat côté serveur** qui sait quand la revue est due
   et la réclame (Aujourd'hui, `demarrer_session`), qu'une tâche planifiée existe ou non.
 
-## 1. Données (migration `0018_routines.sql`)
+## 1. Données (migration `0020_routines.sql`)
 `routines` (privée, RLS propriétaire) : `user_id`, `type` (`revue_mensuelle` en RT1 ; extensible : `veille_hebdo`, `revue_decisions`),
 `jour` (1-28, jour du mois), `active` bool, `consentement_journal` bool (la revue est déposée au journal sans redemander, toujours
 « à relire »), `cree_le`, `dernier_passage` timestamptz, `dernier_client` text, `prochain_passage` date (calculé), `questions`
