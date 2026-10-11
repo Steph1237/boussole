@@ -16,7 +16,7 @@
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
    Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on) }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalConsentement, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
@@ -55,6 +55,8 @@
    liens: { objectifs?, positions?, biens?, credits? } (identifiants), etat (état figé par le connecteur), source, historique:
    [{ le, champ, avant, apres } | { le, champ: "raisonnement", ajout }] (tenu par le déclencheur journal_historique), creeLe, majLe }] :
    journal des décisions (table privée journal, 0013), les 500 plus récentes d'abord ; table absente → valeur précédente.
+   journalARelire = nombre exact d'entrées « à relire » (requête count, head: true ; au-delà des 500 lues), pour les pastilles ;
+     requête en échec → compte fait sur journal.
    journalConsentement = profiles.journal_consentement : "demander" (défaut) | "prevenir" | "jamais".
    Store.journal.confirmer(ids) (a_relire → actif) / modifier(id, { titre?, synthese?, statut? (actif|realise|abandonne|archive),
    revueLe? | revue_le?, dateDecision? | date_decision? }) (autres clés ignorées) / supprimer(ids) / consentement(mode) → { ok: true }
@@ -71,7 +73,7 @@
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalConsentement: "demander", onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalARelire: 0, journalConsentement: "demander", onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -106,6 +108,7 @@
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
       journal: clone(C.journal),
+      journalARelire: C.journalARelire,
       journalConsentement: C.journalConsentement,
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
@@ -130,6 +133,8 @@
     return out;
   }
   const q = async pr => { const { data, error } = await pr; if (error) throw asErr(error); return data; };
+  /* Comptage exact sans lire les lignes (select(…, { count: "exact", head: true })). */
+  const qCompte = async pr => { const { count, error } = await pr; if (error) throw asErr(error); return Number.isFinite(count) ? count : 0; };
 
   /* ---------- lecture : lignes SQL → vue canonique ---------- */
   let sb = null, session = null;
@@ -204,8 +209,9 @@
       q(sb.from("savoir_fiches").select("slug, theme, titre, resume, mots_cles, sources, version, mis_a_jour_le").order("mis_a_jour_le", { ascending: false }).order("titre")),
       q(sb.from("reperes").select("cle, libelle, valeur, unite, date_effet, source_titre, source_url, verifie_le, mode").order("cle")),
       q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
+      qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire")),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, journal] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, journal, nARelire] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -222,6 +228,8 @@
     if (fiches !== undefined) C.savoir = Object.assign({}, C.savoir, { fiches: (fiches || []).map(ficheView) });
     if (reperes !== undefined) C.savoir = Object.assign({}, C.savoir, { reperes: repView(reperes || []) });
     if (journal !== undefined) C.journal = (journal || []).map(journalView);
+    // Pastille « à relire » : compte exact ; à défaut, compte fait sur les entrées lues.
+    C.journalARelire = nARelire !== undefined ? nARelire : C.journal.filter(e => e && e.statut === "a_relire").length;
     // Colonne absente (migration 0013 non appliquée) ou valeur inconnue : « demander », comme le connecteur.
     if (prof !== undefined) C.journalConsentement = prof && CONSENTEMENTS.includes(prof.journal_consentement) ? prof.journal_consentement : "demander";
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);

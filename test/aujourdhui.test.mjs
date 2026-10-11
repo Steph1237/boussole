@@ -269,6 +269,16 @@ test("boite : entrées du journal à relire → un élément « N entrées du jo
   assert.equal(x.date, "2026-10-09");
   const un = A.boite(vide({ journal: [E("a", "avis", "a_relire")] }), TODAY, { Rules: fauxRules([], []) });
   assert.equal(un[0].titre, "1 entrée du journal à relire");
+  assert.deepEqual(J(un[0].action), { label: "Relire", route: "agent/journal?entree=a" }, "une seule entrée : lien profond qui l'ouvre");
+  // nombre exact du store (S.journalARelire), au-delà des entrées lues ; plusieurs : la liste (filtre « À relire »)
+  const exact = A.boite(vide({ journal: [E("a", "avis", "a_relire")], journalARelire: 7 }), TODAY, { Rules: fauxRules([], []) });
+  assert.equal(exact[0].titre, "7 entrées du journal à relire");
+  assert.deepEqual(J(exact[0].action), { label: "Relire", route: "agent/journal" });
+  const horsLecture = A.boite(vide({ journal: [], journalARelire: 1 }), TODAY, { Rules: fauxRules([], []) });
+  assert.equal(horsLecture[0].titre, "1 entrée du journal à relire");
+  assert.equal(horsLecture[0].contexte, "Confirmez ou corrigez ce que l'agent a noté.");
+  assert.equal(horsLecture[0].action.route, "agent/journal", "entrée non lue : la liste");
+  assert.deepEqual(A.boite(vide({ journal: [E("a", "avis", "a_relire")], journalARelire: 0 }), TODAY, { Rules: fauxRules([], []) }), [], "compte exact à 0 : rien");
   assert.deepEqual(A.boite(vide({ journal: [E("c", "decision", "actif")] }), TODAY, { Rules: fauxRules([], []) }), [], "rien à relire");
   assert.deepEqual(A.boite(vide({ journal: undefined }), TODAY, { Rules: fauxRules([], []) }), [], "journal absent (store ancien) : rien ne casse");
   // à urgence et date égales, les propositions passent avant le journal
@@ -322,7 +332,8 @@ test("frise : repères verticaux des décisions dans la période, titre au survo
 test("repereDetail : panneau d'une décision (synthèse, date, statut) et lien vers Agent › Journal, texte échappé", () => {
   const d = A.repereDetail({ id: "x", date: "2026-08-10", titre: "Titre", synthese: PIEGE_J, statut: "actif" });
   assert.equal(d.titre, "Titre");
-  assert.deepEqual(J(d.lien), { label: "Ouvrir le journal", href: "#agent/journal" });
+  assert.deepEqual(J(d.lien), { label: "Ouvrir dans le journal", href: "#agent/journal?entree=x" }, "lien profond : ouvre l'entrée");
+  assert.equal(A.repereDetail({ id: "a b/é", titre: "T" }).lien.href, "#agent/journal?entree=a%20b%2F%C3%A9", "identifiant encodé");
   assert.doesNotMatch(d.contenu, /<img/);
   assert.match(d.contenu, /&lt;img/);
   assert.match(sp(d.contenu), /10 août 2026/);
@@ -592,7 +603,7 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
   assert.match(js, /function headline\(\) \{ return items\.length \? String\(items\.length\) : ""; \}/);
   // journal : l'avis confirmé sort de la boîte ; une décision renommée redessine la frise (signatures)
   const S2 = Object.assign(J(S), { propositions: [] });
-  S2.journal.forEach(e => { if (e.statut === "a_relire") e.statut = "actif"; });
+  S2.journal.forEach(e => { if (e.statut === "a_relire") e.statut = "actif"; }); S2.journalARelire = 0;
   api.update(S2, true);
   assert.equal(ecritures.ajBoite, 2, "journal relu : boîte réécrite");
   assert.equal(ecritures.ajFrise, 0, "frise inchangée");

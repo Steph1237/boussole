@@ -54,7 +54,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], journal: ["array"], journalConsentement: ["string"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -567,6 +567,7 @@ test("démo : journal au contrat (5 entrées cohérentes avec le foyer, plus ré
   const Sensible = ctx.Sensible;
   assert.equal(S.journalConsentement, "demander");
   assert.equal(S.journal.length, 5);
+  assert.equal(S.journalARelire, 1, "compte des entrées à relire (même champ que store-supabase.js)");
   S.journal.forEach(e => {
     assert.deepEqual(Object.keys(e).sort(), JOURNAL_KEYS, `forme de l'entrée ${e.id}`);
     assert.ok(J_TYPES.includes(e.type), e.type);
@@ -661,6 +662,20 @@ test("démo : Store.journal (confirmer, modifier avec validation et historique, 
   assert.ok((await Jn.modifier("inconnue", { titre: "Titre valable" })).erreur, "entrée inconnue");
   assert.deepEqual(J(await Jn.modifier(dec.id, {})), { ok: true }, "patch vide");
 
+  // ordre de l'historique = ordre des champs du déclencheur (… statut, date_decision, revue_le) ; plafond 20 premières + 180 dernières
+  const n1 = get(dec.id).historique.length;
+  assert.deepEqual(J(await Jn.modifier(dec.id, { revueLe: "2027-03-01", dateDecision: "2026-07-02", statut: "archive", titre: "Titre réordonné" })), { ok: true });
+  assert.deepEqual(J(get(dec.id).historique.slice(n1).map(h => h.champ)), ["titre", "statut", "date_decision", "revue_le"], "même ordre que journal_historique");
+  const premieres = J(get(dec.id).historique), m = premieres.length;
+  assert.ok(m > 0 && m < 20, "historique initial court (" + m + ")");
+  for (let k = 0; k < 220; k++) await Jn.modifier(dec.id, { titre: "Titre n° " + k });
+  const h = J(get(dec.id).historique);
+  assert.equal(h.length, 200, "plafond 200");
+  assert.deepEqual(h.slice(0, m), premieres, "les premières corrections restent");
+  assert.equal(h[19].apres, "Titre n° " + (19 - m), "les 20 premières entrées sont gardées");
+  assert.equal(h[20].apres, "Titre n° 40", "puis les 180 dernières");
+  assert.equal(h[199].apres, "Titre n° 219", "la plus récente est gardée");
+
   // supprimer
   assert.deepEqual(J(await Jn.supprimer([avis.id])), { ok: true });
   assert.equal(ctx.Store.get().journal.length, 4);
@@ -677,13 +692,18 @@ test("démo : Store.journal (confirmer, modifier avec validation et historique, 
 test("store-supabase.js : journal (lecture des 500 plus récentes, table absente sans casse, écritures et consentement)", () => {
   const sup = src("store-supabase.js"), demo = src("store-demo.js");
   for (const s of [sup, demo]) {
-    assert.match(s, /S = \{[^\n]*journal, journalConsentement,/, "en-tête : S documente journal et journalConsentement");
+    assert.match(s, /S = \{[^\n]*journal, journalARelire, journalConsentement,/, "en-tête : S documente journal, journalARelire et journalConsentement");
     for (const k of ["journal: clone(C.journal)", "journalConsentement: C.journalConsentement", "journal,", "Store.journal"]) assert.ok(s.includes(k), k);
   }
   const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
   assert.ok(load.includes('from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)'), "lecture du journal");
   assert.ok(load.includes("if (journal !== undefined) C.journal = (journal || []).map(journalView)"), "table absente : valeur précédente");
   assert.match(load, /prof\.journal_consentement/);
+  // Pastille « à relire » : comptage exact (head: true), repli sur les entrées lues si la requête échoue
+  assert.ok(load.includes('qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire"))'), "count exact des entrées à relire");
+  assert.ok(load.includes('C.journalARelire = nARelire !== undefined ? nARelire : C.journal.filter(e => e && e.statut === "a_relire").length'), "repli sur les entrées lues");
+  assert.match(sup, /const qCompte = async pr => \{ const \{ count, error \} = await pr;/);
+  assert.ok(sup.includes("journalARelire: C.journalARelire"));
   for (const k of ['from("journal").update({ statut: "actif" }).in("id", liste).eq("statut", "a_relire")', 'from("journal").update(row).eq("id", id).select("id")',
     'from("journal").delete().in("id", liste)', "journal_consentement: mode", "journal_contenu_sensible", 'if (!Array.isArray(rows) || !rows.length) return { erreur: "Entrée du journal introuvable." };'])
     assert.ok(sup.includes(k), `store-supabase.js : ${k}`);

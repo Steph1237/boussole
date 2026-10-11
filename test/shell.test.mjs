@@ -291,3 +291,21 @@ test("pastille Agent : propositions en attente + entrées du journal à relire, 
   assert.match(refresh, /legendeAgent\(/);
   assert.match(refresh, /statut === "a_relire"/, "repli : compte lu dans le store si le module Journal n'a pas de headline");
 });
+
+test("lien profond : #agent/journal?entree=<id> garde la route (quelle que soit la dernière sous-vue), paramètres retenus pour la vue", () => {
+  const { separerParametres } = require("../web/src/app.js");
+  assert.deepEqual(separerParametres("agent/journal?entree=abc"), ["agent/journal", "entree=abc"]);
+  assert.deepEqual(separerParametres("agent/journal"), ["agent/journal", ""]);
+  assert.deepEqual(resolveHash("#agent/journal?entree=abc", { agent: "memoire" }), { space: "agent", sub: "journal", legacy: true, query: "entree=abc" },
+    "route conservée ; URL réécrite sans paramètres (legacy)");
+  assert.deepEqual(resolve("agent/journal?entree=abc", null, { agent: "memoire" }), { space: "agent", sub: "journal" }, "App.go / data-goto");
+  assert.deepEqual(resolveHash("#agent/journal"), { space: "agent", sub: "journal", legacy: false }, "sans paramètre : forme inchangée");
+  // coque : paramètres retenus (démarrage, hash, App.go), lus une fois par la vue active, oubliés ailleurs ; show() rappelé sur la même vue
+  assert.match(app, /if \(fromHash\) \{ route = \{ space: fromHash\.space, sub: fromHash\.sub \}; retenirLien\(route, fromHash\.query\); \}/);
+  assert.match(app, /if \(!sub\) retenirLien\(r, separerParametres\(target\)\[1\]\);/);
+  assert.match(app, /retenirLien\(r, r\.query\);\s*\n[^\n]*\n\s*if \(key\(r\) !== key\(route\) \|\| r\.query\) navigate/);
+  assert.match(app, /parametres\(\) \{\s*if \(!lien \|\| lien\.cle !== key\(route\)\) return \{\};\s*const p = lien\.params; lien = null; return p;/);
+  assert.match(app, /if \(lien && lien\.cle !== key\(r\)\) lien = null;/);
+  // pastille Agent : à défaut du module, S.journalARelire
+  assert.match(app, /Number\.isFinite\(S\.journalARelire\) \? S\.journalARelire/);
+});

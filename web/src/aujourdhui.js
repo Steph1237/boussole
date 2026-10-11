@@ -56,6 +56,8 @@
   const counted = p => !!p && p.status !== "à recevoir" && p.status !== "clôturé";
 
   /* ---------- liens ---------- */
+  /* Lien profond vers une entrée du journal : la coque retient le paramètre et Agent › Journal ouvre l'entrée (app.js, journal-view.js). */
+  const lienEntree = id => "agent/journal?entree=" + encodeURIComponent(String(id));
   const R = { propositions: "agent/propositions", journal: "agent/journal", placements: "patrimoine/placements", budget: "patrimoine/budget", sante: "pilotage/sante", risque: "pilotage/risque" };
   /** Lien vers une nouvelle conversation Claude, question préremplie (même forme que UI.demanderAClaude). */
   function urlClaude(question) { return "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? "")); }
@@ -117,14 +119,17 @@
         action: { label: "Examiner", route: R.propositions } });
     });
 
-    // 1 bis. Entrées du journal à relire (écrites par l'agent, à confirmer ou corriger), un seul élément.
+    // 1 bis. Entrées du journal à relire (écrites par l'agent, à confirmer ou corriger), un seul élément. Nombre exact :
+    // S.journalARelire (comptage du store, au-delà des entrées lues) ; à défaut, les entrées lues. Une seule entrée : lien
+    // profond qui l'ouvre directement (#agent/journal?entree=<id>).
     const aRelire = (Array.isArray(S.journal) ? S.journal : []).filter(e => e && e.statut === "a_relire");
-    if (aRelire.length) {
-      const titres = aRelire.slice(0, 2).map(e => "« " + extrait(e.titre, 60) + " »").join(", ") + (aRelire.length > 2 ? "…" : "");
+    const nRelire = Number.isFinite(S.journalARelire) && S.journalARelire >= 0 ? S.journalARelire : aRelire.length;
+    if (nRelire) {
+      const titres = aRelire.slice(0, 2).map(e => "« " + extrait(e.titre, 60) + " »").join(", ") + (nRelire > 2 ? "…" : "");
       out.push({ type: "journal", urgence: 1, date: aRelire.map(e => jj(e.creeLe)).filter(isoOk).sort().pop() || t,
-        titre: pluriel(aRelire.length, "entrée") + " du journal à relire",
-        contexte: titres + " : confirmez ou corrigez ce que l'agent a noté.",
-        action: { label: "Relire", route: R.journal } });
+        titre: pluriel(nRelire, "entrée") + " du journal à relire",
+        contexte: (titres ? titres + " : c" : "C") + "onfirmez ou corrigez ce que l'agent a noté.",
+        action: { label: "Relire", route: nRelire === 1 && aRelire.length === 1 ? lienEntree(aRelire[0].id) : R.journal } });
     }
 
     // 2. Alertes des règles de l'utilisateur et des contrôles intégrés (même contexte que Recommandations › Actions).
@@ -314,7 +319,7 @@
     return { titre: plat(x.titre) || "Décision",
       contenu: '<ul class="aj-det">' + ligne("Décision du", dateFr(x.date) || "—") + ligne("Statut", STATUT_TXT[x.statut] || plat(x.statut) || "—") + "</ul>" +
         '<p class="aj-det-note">' + esc(x.synthese) + "</p>",
-      lien: { label: "Ouvrir le journal", href: "#" + R.journal } };
+      lien: { label: "Ouvrir dans le journal", href: "#" + (x.id != null && x.id !== "" ? lienEntree(x.id) : R.journal) } };
   }
 
   const ICO = {

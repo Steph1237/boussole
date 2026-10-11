@@ -8,7 +8,7 @@
    store-demo, store-supabase, auth, reel, modules, app.
 
    Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on) }
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalConsentement, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
@@ -23,7 +23,8 @@
    supprimer(ids) / toutEffacer() → { ok: true } ou { erreur }, en mémoire. savoir = { fiches (sans contenu), reperes } (DEMO.savoir,
    repères d'exemple) ; Store.savoir.fiche(slug) → la fiche d'exemple avec son contenu, ou null.
    journal = [{ id, type, titre, synthese, raisonnement, options, statut, dateDecision, revueLe, liens, etat, source, historique, creeLe, majLe }]
-   (D.journal, plus récentes d'abord) et journalConsentement = "demander" ; Store.journal.confirmer(ids) / modifier(id, patch) / supprimer(ids) /
+   (D.journal, plus récentes d'abord), journalARelire (nombre d'entrées « à relire », calculé comme le count de store-supabase.js)
+   et journalConsentement = "demander" ; Store.journal.confirmer(ids) / modifier(id, patch) / supprimer(ids) /
    consentement(mode) → { ok: true } ou { erreur }, en mémoire, avec le même historique que le déclencheur SQL journal_historique.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
@@ -41,7 +42,7 @@
     config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
-    memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalConsentement: "demander",
+    memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalARelire: 0, journalConsentement: "demander",
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
   // Fiches : S n'expose que les résumés (comme store-supabase.js) ; le contenu reste ici pour Store.savoir.fiche(slug).
@@ -86,6 +87,7 @@
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
       journal: clone(C.journal),
+      journalARelire: C.journal.filter(e => e && e.statut === "a_relire").length,
       journalConsentement: C.journalConsentement,
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
@@ -428,6 +430,11 @@
   const J_STATUTS = ["actif", "realise", "abandonne", "archive"], J_CONSENTEMENTS = ["demander", "prevenir", "jamais"];
   const MSG_SENSIBLE_J = "Cette entrée contient une information sensible (numéro de compte ou de carte, identifiant, mot de passe) : elle n'est pas enregistrée.";
   const J_COLS = { titre: "titre", synthese: "synthese", statut: "statut", revueLe: "revue_le", dateDecision: "date_decision" };
+  /* Ordre des champs du déclencheur journal_historique (type, titre, synthese, raisonnement, statut, date_decision, revue_le,
+     options, liens) restreint aux champs modifiables ici : l'historique de la démo s'écrit dans le même ordre que la base. */
+  const J_ORDRE = ["titre", "synthese", "statut", "dateDecision", "revueLe"];
+  /* Plafond de l'historique (0014_journal_durcissement.sql) : les 20 premières entrées et les 180 dernières. */
+  const plafondHistorique = h => (h.length > 200 ? h.slice(0, 20).concat(h.slice(-180)) : h);
   function normEntree(patch) {
     const p = patch || {}, out = {}, has = k => Object.prototype.hasOwnProperty.call(p, k) && p[k] !== undefined;
     const texte = (k, min, max, quoi) => {
@@ -465,13 +472,13 @@
         const e = C.journal.find(x => x.id === id);
         if (!e) throw bad("Entrée du journal introuvable.");
         const v = normEntree(clone(patch));
-        const champs = Object.keys(v).filter(k => v[k] !== e[k]);
+        const champs = J_ORDRE.filter(k => k in v && v[k] !== e[k]);
         if (!champs.length) return { ok: true };
         const now = new Date().toISOString();
-        // Historique dès que l'entrée a été confirmée (statut ≠ a_relire ou historique déjà commencé), 200 dernières entrées.
+        // Historique dès que l'entrée a été confirmée (statut ≠ a_relire ou historique déjà commencé) ; 20 premières + 180 dernières.
         if (e.statut !== "a_relire" || e.historique.length) {
           champs.forEach(k => e.historique.push({ le: now, champ: J_COLS[k], avant: e[k] ?? null, apres: v[k] ?? null }));
-          if (e.historique.length > 200) e.historique = e.historique.slice(-200);
+          e.historique = plafondHistorique(e.historique);
         }
         champs.forEach(k => { e[k] = v[k]; });
         e.majLe = now;

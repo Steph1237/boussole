@@ -30,7 +30,11 @@
      Un écouteur posé avant eux (la coque) peut fermer le panneau lui-même avant de naviguer : fermer({ focus: false }).
      titre : texte (posé en textContent). contenu : HTML déjà échappé, ou un nœud DOM. lien = { label, href } (href « #… »
      ou « https://… » seulement) affiché en pied ; pied : HTML déjà échappé ajouté au pied (ex. UI.demanderAClaude(…)).
-     Rouvrir pendant que le panneau est ouvert remplace son contenu.
+     Rouvrir pendant que le panneau est ouvert remplace son contenu. Si ce nouvel appel ne fournit ni `retour` ni
+     `surFermeture` (simple rafraîchissement du contenu), les précédents sont conservés : le focus reviendra au même endroit
+     et le même rappel sera appelé ; s'il en fournit un, `retour` fourni remplace l'ancien et `surFermeture` est remplacé
+     (absent = plus de rappel). surFermeture({ focus }) est appelé après la fermeture ; focus vaut false quand le panneau a
+     été fermé sans reprise du focus (fermer({ focus: false }), retour arrière, lien interne).
      Exemple : const corps = UI.panneau.ouvrir({ titre: "Patrimoine net", contenu: "<p>" + UI.esc(detail) + "</p>",
                                                  lien: { label: "Voir les placements", href: "#patrimoine/placements" } });
 
@@ -432,6 +436,8 @@
       if (!d) return null;
       o = o || {};
       if (!el || !el.parentNode) construire(d);
+      // Rafraîchissement d'un panneau ouvert sans retour ni surFermeture : on garde les précédents (sinon le focus se perd).
+      const garder = estOuvert && !o.retour && typeof o.surFermeture !== "function";
       if (!estOuvert) retourEl = o.retour || d.activeElement;
       else if (o.retour) retourEl = o.retour;
       titreEl.textContent = o.titre == null ? "" : String(o.titre);
@@ -439,7 +445,7 @@
       else { const contenuHtml = o.contenu == null ? "" : String(o.contenu); corps.innerHTML = contenuHtml; }
       piedEl.innerHTML = htmlPied(o.lien, o.pied);
       piedEl.hidden = !piedEl.querySelector("a,button") && !o.pied;
-      surFermeture = typeof o.surFermeture === "function" ? o.surFermeture : null;
+      if (!garder) surFermeture = typeof o.surFermeture === "function" ? o.surFermeture : null;
       if (!estOuvert) {
         estOuvert = true;
         inertes = Array.from(d.body.children).filter(c => c !== el && c !== voile && !c.inert);
@@ -469,10 +475,10 @@
       el.hidden = true;
       voile.hidden = true;
       d.documentElement.classList.remove("ui-bloque");
-      const r = retourEl, f = surFermeture;
+      const r = retourEl, f = surFermeture, focus = !(opts && opts.focus === false);
       retourEl = null; surFermeture = null;
-      if (!(opts && opts.focus === false) && r && r !== d.body && typeof r.focus === "function") r.focus();
-      if (f) f();
+      if (focus && r && r !== d.body && typeof r.focus === "function") r.focus();
+      if (f) f({ focus });
     }
     return { ouvrir, fermer: o => fermer(o && o.focus === false ? { focus: false } : null), ouvert: () => estOuvert };
   })();

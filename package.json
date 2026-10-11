@@ -7,6 +7,7 @@
     "dev": "node build.mjs --dev"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.7",
     "@supabase/supabase-js": "^2.117.2"
   }
 }

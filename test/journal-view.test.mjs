@@ -277,6 +277,8 @@ test("detailHtml : synthèse, raisonnement rendu, options (retenue en évidence)
   assert.ok(h.includes("élément supprimé"));
   assert.match(h, /<details class="ui-acc"/);
   assert.ok(h.includes("Statut : À relire → En cours"));
+  assert.ok(h.includes("<span>Historique des modifications</span>"), "titre de l'historique sans compteur");
+  assert.doesNotMatch(h, /Historique des modifications \(/);
   for (const a of ["realise", "abandonner", "corriger", "archiver", "supprimer"]) assert.ok(h.includes('data-jv-act="' + a + '"'), a);
   assert.ok(!h.includes('data-jv-act="confirmer"'));
   assert.ok(!/<script>|<img/.test(h));
@@ -300,14 +302,18 @@ test("detailHtml : état indisponible expliqué, formulaire de correction (titre
   const f = JV.detailHtml(e, S, UI, { deps: DEPS, edition: { titre: "T <x>", synthese: "S", statut: "a_relire", revueLe: "" } });
   assert.match(f, /<input[^>]+id="jv-f-titre"[^>]+maxlength="120"/);
   assert.match(f, /<textarea[^>]+id="jv-f-synthese"[^>]+maxlength="600"/);
-  assert.match(f, /<select[^>]+id="jv-f-statut"/);
+  assert.doesNotMatch(f, /<select/, "statut : boutons segmentés, pas de liste déroulante");
+  assert.match(f, /<div class="jv-f-statut" id="jv-f-statut" data-jv-statut role="group" aria-labelledby="jv-f-statut-l"><div class="ui-bascule" role="radiogroup" aria-label="Statut">/);
   assert.match(f, /<input[^>]+type="date"[^>]+id="jv-f-revue"/);
   assert.ok(f.includes('value="T &lt;x&gt;"'));
   assert.ok(f.includes('data-jv-act="enregistrer"'));
   assert.ok(f.includes('data-jv-act="annuler"'));
-  assert.ok(f.includes('<option value="a_relire" selected>'));
+  assert.match(f, /role="radio" data-ui-id="a_relire" aria-checked="true"/);
+  assert.deepEqual(J(JV.optionsStatut("a_relire").map(o => o.id)), ["a_relire", "actif", "realise", "abandonne", "archive"]);
   const g = JV.detailHtml(E("x3"), S, UI, { deps: DEPS, edition: { titre: "T", synthese: "S", statut: "actif", revueLe: "" } });
-  assert.ok(!g.includes('value="a_relire"'), "pas de retour à « à relire » pour une entrée confirmée");
+  assert.ok(!g.includes('data-ui-id="a_relire"'), "pas de retour à « à relire » pour une entrée confirmée");
+  assert.match(g, /role="radio" data-ui-id="actif" aria-checked="true"/);
+  assert.deepEqual(J(JV.optionsStatut("actif").map(o => o.id)), ["actif", "realise", "abandonne", "archive"]);
 });
 
 test("questionClaude : cite le titre de l'entrée ; patchCorrection ne garde que les champs changés et valide les longueurs", () => {
@@ -331,10 +337,121 @@ test("consentement : trois modes, chacun expliqué par une phrase", () => {
   JV.CONSENTEMENTS.forEach(c => assert.ok(c.texte.length > 30));
 });
 
+test("typesPresents : types de la liste déjà filtrée par statut, dans l'ordre d'affichage", () => {
+  const j = [E("a", { type: "avis", statut: "a_relire" }), E("b", { type: "decision" }), E("c", { type: "scenario", statut: "archive" }), E("d", { type: "decision", statut: "a_relire" })];
+  assert.deepEqual(J(JV.typesPresents(j, "a_relire")), ["decision", "avis"]);
+  assert.deepEqual(J(JV.typesPresents(j, "actif")), ["decision"]);
+  assert.deepEqual(J(JV.typesPresents(j, "tout")), ["decision", "avis", "scenario"]);
+  assert.match(js, /const presents = typesPresents\(liste, statutEffectif\(\)\)/);
+});
+
 test("nARelire et statutParDefaut : « À relire » par défaut s'il y en a, sinon « Tout »", () => {
   assert.equal(JV.nARelire([E("a", { statut: "a_relire" }), E("b"), E("c", { statut: "a_relire" })]), 2);
   assert.equal(JV.nARelire(null), 0);
   assert.equal(JV.statutParDefaut([E("a", { statut: "a_relire" })]), "a_relire");
   assert.equal(JV.statutParDefaut([E("b")]), "tout");
   assert.equal(JV.statutParDefaut([]), "tout");
+});
+
+/* ------------------------------------------------------------------ vue dans un mini-DOM ------------------------------------------------------------------ */
+import { miniDom } from "./helpers/mini-dom.mjs";
+const uiJs = readFileSync("web/src/ui.js", "utf8");
+const attendre = () => new Promise(r => setTimeout(r, 0));
+/** Monte Agent › Journal (ui.js + journal-view.js + journal-view.html) dans le mini-DOM, avec un Store.journal en mémoire. */
+function vueDom(S0, o = {}) {
+  const dom = miniDom(), { doc } = dom;
+  let S = J(S0), params = o.parametres || {};
+  const modules = {};
+  const ctx = { document: doc, console, setTimeout, clearTimeout, confirm: () => true, CSS: { escape: s => String(s).replace(/["\\]/g, "\\$&") } };
+  ctx.window = ctx; ctx.self = ctx;
+  ctx.App = { register: (n, api) => { modules[n] = api; }, refreshHeadlines() {}, parametres: () => { const p = params; params = {}; return p; } };
+  const changer = (id, f) => { S = J(S); const e = S.journal.find(x => x.id === id); if (e) f(e); };
+  ctx.Store = { get: () => S, journal: {
+    modifier: async (id, patch) => { changer(id, e => Object.assign(e, patch)); return { ok: true }; },
+    confirmer: async ids => { ids.forEach(id => changer(id, e => { e.statut = "actif"; })); return { ok: true }; },
+    supprimer: async ids => { S = J(S); S.journal = S.journal.filter(e => !ids.includes(e.id)); return { ok: true }; },
+    consentement: async () => ({ ok: true }),
+  } };
+  vm.createContext(ctx);
+  vm.runInContext(uiJs, ctx, { filename: "ui.js" });
+  vm.runInContext(js, ctx, { filename: "journal-view.js" });
+  const root = doc.body.appendChild(doc.createElement("section"));
+  root.innerHTML = html;
+  const api = modules["journal-view"];
+  api.mount(root);
+  api.update(S, true);
+  return { ctx, dom, doc, root, api, S: () => S, lien: p => { params = p; } };
+}
+const carte = (root, id) => root.querySelector('[data-ui-carte="' + id + '"]');
+const SV = () => Object.assign(demoS(), { journal: [E("j1", { titre: "Garder le PEA", dateDecision: "2026-09-12" }), E("j2", { type: "avis", titre: "Matelas suffisant" })], journalARelire: 0 });
+
+test("vue (DOM) : après une action qui redessine la liste, Échap rend le focus à la carte du même id (focus non perdu)", async () => {
+  const { doc, root, dom } = vueDom(SV());
+  const c0 = carte(root, "j1");
+  assert.ok(c0, "carte affichée");
+  c0.focus(); c0.click();
+  const dlg = doc.body.querySelector('[role="dialog"]');
+  assert.equal(dlg.hidden, false, "panneau ouvert");
+  dlg.querySelector('[data-jv-act="realise"]').click();
+  await attendre(); await attendre();
+  const c1 = carte(root, "j1");
+  assert.ok(c1 && c1 !== c0, "la liste a été redessinée (nouvelle carte)");
+  assert.equal(c0.isConnected, false, "l'ancienne carte est détachée");
+  assert.match(dlg.querySelector("[data-jv-msg]").textContent, /réalisée/);
+  dom.touche(doc.activeElement, "Escape");
+  assert.equal(dlg.hidden, true, "Échap ferme le panneau");
+  assert.equal(doc.activeElement, c1, "focus rendu à la carte du même id dans la liste redessinée");
+});
+
+test("vue (DOM) : rafraîchi par le store pendant l'ouverture, le panneau garde son retour et son rappel de fermeture", async () => {
+  const v = vueDom(SV());
+  const c0 = carte(v.root, "j2");
+  c0.focus(); c0.click();
+  const S2 = J(v.S()); S2.journal.find(e => e.id === "j2").synthese = "Synthèse mise à jour par Claude";
+  v.api.update(S2, true); // émission du store : liste et panneau redessinés
+  assert.match(v.doc.body.querySelector(".ui-panneau-corps").textContent, /mise à jour par Claude/);
+  const c1 = carte(v.root, "j2");
+  assert.ok(c1 !== c0 && !c0.isConnected);
+  v.dom.touche(v.doc.activeElement, "Escape");
+  assert.equal(v.doc.activeElement, c1);
+});
+
+test("vue (DOM) : Corriger — le statut se choisit avec une bascule (clavier), enregistré avec la correction", async () => {
+  const v = vueDom(SV());
+  carte(v.root, "j1").click();
+  const dlg = v.doc.body.querySelector('[role="dialog"]');
+  dlg.querySelector('[data-jv-act="corriger"]').click();
+  assert.equal(dlg.querySelector("select"), null);
+  const radios = () => dlg.querySelector("[data-jv-statut]").querySelectorAll('[role="radio"]');
+  assert.deepEqual(radios().map(r => r.getAttribute("data-ui-id")), ["actif", "realise", "abandonne", "archive"]);
+  assert.equal(radios()[0].getAttribute("aria-checked"), "true");
+  v.dom.touche(radios()[0], "ArrowRight");
+  assert.equal(radios()[1].getAttribute("aria-checked"), "true");
+  dlg.querySelector('[data-jv-act="enregistrer"]').click();
+  await attendre(); await attendre();
+  assert.equal(v.S().journal.find(e => e.id === "j1").statut, "realise");
+});
+
+test("vue (DOM) : lien profond — App.parametres().entree ouvre l'entrée au show(), filtres élargis ; entrée inconnue signalée", () => {
+  const S0 = Object.assign(SV(), { journal: [E("r1", { statut: "a_relire", titre: "À relire" }), E("j1", { titre: "Garder le PEA" })], journalARelire: 1 });
+  const v = vueDom(S0);
+  assert.equal(carte(v.root, "j1"), null, "filtre « À relire » par défaut : j1 n'est pas listée");
+  assert.equal(v.api.headline(), "1", "pastille : S.journalARelire");
+  v.lien({ entree: "j1" });
+  v.api.show();
+  const dlg = v.doc.body.querySelector('[role="dialog"]');
+  assert.equal(dlg.hidden, false);
+  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Garder le PEA");
+  assert.ok(carte(v.root, "j1"), "filtres élargis : la carte est visible");
+  v.dom.touche(v.doc.activeElement, "Escape");
+  assert.equal(v.doc.activeElement, carte(v.root, "j1"), "Échap : focus sur la carte de l'entrée");
+  v.lien({ entree: "inconnue" });
+  v.api.show();
+  assert.equal(dlg.hidden, true);
+  assert.match(v.root.querySelector("#jvMsg").textContent, /n'est plus dans le journal/);
+  // pastille : compte exact du store, au-delà des entrées lues
+  v.api.update(Object.assign(J(v.S()), { journalARelire: 12 }), true);
+  assert.equal(v.api.headline(), "12");
+  v.api.update(Object.assign(J(v.S()), { journalARelire: 0 }), true);
+  assert.equal(v.api.headline(), "");
 });

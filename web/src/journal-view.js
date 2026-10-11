@@ -3,13 +3,14 @@
      options: [{ titre, retenue, pourquoi }], statut: a_relire|actif|realise|abandonne|archive, dateDecision, revueLe,
      liens: { objectifs, positions, biens, credits }, etat (état du patrimoine figé à l'écriture, ou { date, indisponible: true }),
      source, historique: [{ le, champ, avant, apres } | { le, champ: "raisonnement", ajout }], creeLe, majLe }] (plus récentes d'abord) ;
-   S.journalConsentement = demander | prevenir | jamais.
+   S.journalConsentement = demander | prevenir | jamais ; S.journalARelire = nombre exact d'entrées à relire (pastille).
+   Lien profond : #agent/journal?entree=<id> (la coque retient le paramètre, App.parametres()) ouvre l'entrée au show().
    Actions : Store.journal.confirmer(ids), .modifier(id, patch), .supprimer(ids), .consentement(mode) → { ok: true } ou { erreur }.
    Page : consentement (bascule + phrase), filtres (statut, type), liste groupée par mois en cartes UI.carte (5 par mois puis
    « Voir plus »), panneau de détail UI.panneau (synthèse, raisonnement, options, « au moment / aujourd'hui », liens, historique,
    actions selon le statut, « Reprendre avec Claude »).
    Fonctions pures exportées pour les tests : filtrer, grouperParMois, comparaison, libelleHistorique, rendreMarkdown, listeHtml,
-   detailHtml, actionsPour, questionClaude, patchCorrection, nARelire, statutParDefaut, CONSENTEMENTS.
+   detailHtml, actionsPour, questionClaude, patchCorrection, nARelire, statutParDefaut, typesPresents, optionsStatut, CONSENTEMENTS.
    Dépendances de calcul injectées (deps) : { Calc, Pratiques, Risque } ; window.* par défaut. */
 (function () {
   "use strict";
@@ -276,17 +277,23 @@
       '<p class="jv-note">Patrimoine du foyer. Les écarts décrivent ce qui a changé, sans jugement : à relire avec le raisonnement de l\'époque.</p></section>';
   }
 
-  function formHtml(ed, actuel) {
-    // « À relire » n'est proposé que pour une entrée encore à relire : une entrée confirmée n'y revient pas.
-    const opts = Object.keys(STATUTS).filter(k => k !== "a_relire" || actuel === "a_relire").map(k => '<option value="' + k + '"' + (ed.statut === k ? " selected" : "") + ">" + esc(STATUTS[k]) + "</option>").join("");
+  /** Statuts proposés dans « Corriger » : « À relire » seulement pour une entrée encore à relire (une entrée confirmée n'y revient pas). */
+  const optionsStatut = actuel => Object.keys(STATUTS).filter(k => k !== "a_relire" || actuel === "a_relire").map(k => ({ id: k, label: STATUTS[k] }));
+  /* Choix du statut : boutons segmentés UI.bascule (HTML rendu par UI.htmlBascule, comportement branché par la vue). */
+  function statutHtml(ed, actuel, U) {
+    const o = { label: "Statut", options: optionsStatut(actuel), actif: ed.statut };
+    return U && typeof U.htmlBascule === "function" ? U.htmlBascule(o)
+      : o.options.map(x => '<button type="button" role="radio" data-ui-id="' + esc(x.id) + '" aria-checked="' + (x.id === ed.statut) + '">' + esc(x.label) + "</button>").join("");
+  }
+  function formHtml(ed, actuel, U) {
     return '<form class="jv-form" data-jv-form novalidate aria-labelledby="jv-f-t">' +
       '<h3 class="jv-d-t" id="jv-f-t">Corriger l\'entrée</h3>' +
       '<label class="jv-lab" for="jv-f-titre">Titre</label>' +
       '<input class="jv-in" id="jv-f-titre" data-jv-champ="titre" type="text" maxlength="120" required value="' + esc(ed.titre) + '">' +
       '<label class="jv-lab" for="jv-f-synthese">Synthèse</label>' +
       '<textarea class="jv-in jv-ta" id="jv-f-synthese" data-jv-champ="synthese" maxlength="600" rows="4" required>' + esc(ed.synthese) + "</textarea>" +
-      '<div class="jv-f-ligne"><div class="jv-f-col"><label class="jv-lab" for="jv-f-statut">Statut</label>' +
-      '<select class="jv-in" id="jv-f-statut" data-jv-champ="statut">' + opts + "</select></div>" +
+      '<div class="jv-f-ligne"><div class="jv-f-col jv-f-col-statut"><p class="jv-lab" id="jv-f-statut-l">Statut</p>' +
+      '<div class="jv-f-statut" id="jv-f-statut" data-jv-statut role="group" aria-labelledby="jv-f-statut-l">' + statutHtml(ed, actuel, U) + "</div></div>" +
       '<div class="jv-f-col"><label class="jv-lab" for="jv-f-revue">Date de revue <span class="jv-fac">(facultative)</span></label>' +
       '<input class="jv-in" type="date" id="jv-f-revue" data-jv-champ="revueLe" value="' + esc(ed.revueLe) + '"></div></div>' +
       '<p class="jv-note">Une fois l\'entrée confirmée, chaque correction est tracée dans son historique.</p>' +
@@ -313,7 +320,7 @@
     if (e.statut === "a_relire") h += '<p class="jv-relire">Écrite par ' + esc(plat(e.source) || "l'agent") + " : relisez-la. Confirmez-la si elle reflète bien ce qui a été dit, corrigez-la sinon.</p>";
     h += '<p class="jv-synthese">' + esc(e.synthese) + "</p>";
     if (opt.message && opt.message.texte) h += '<p class="jv-msg ' + (opt.message.ok ? "ok" : "err") + '" data-jv-msg tabindex="-1" role="' + (opt.message.ok ? "status" : "alert") + '">' + esc(opt.message.texte) + "</p>";
-    h += opt.edition ? formHtml(opt.edition, e.statut) : actionsHtml(e, opt.busy);
+    h += opt.edition ? formHtml(opt.edition, e.statut, U) : actionsHtml(e, opt.busy);
     if (plat(e.raisonnement)) h += '<section class="jv-d">' + blocTitre("Raisonnement") + '<div class="jv-md">' + rendreMarkdown(e.raisonnement) + "</div></section>";
     if (ops.length) h += '<section class="jv-d">' + blocTitre("Options comparées") + '<ul class="jv-opts">' + ops.map(x =>
       '<li class="jv-opt' + (x.retenue ? " is-retenue" : "") + '"><p class="jv-opt-t">' + esc(plat(x.titre) || "Option") +
@@ -321,7 +328,7 @@
     h += comparaisonHtml(comparaison(e.etat, S, opt.deps));
     if (liens.length) h += '<section class="jv-d">' + blocTitre("Lié à") + '<ul class="jv-liens">' + liens.map(l =>
       "<li><span class=\"jv-lien-l\">" + esc(l.label) + "</span>" + (l.route ? '<a href="#' + esc(l.route) + '" data-goto="' + esc(l.route) + '">' + esc(l.nom) + "</a>" : '<span class="jv-muet">' + esc(l.nom) + "</span>") + "</li>").join("") + "</ul></section>";
-    if (hist.length) h += U.accordeon({ titre: "Historique des modifications (" + hist.length + ")",
+    if (hist.length) h += U.accordeon({ titre: "Historique des modifications",
       contenu: '<ol class="jv-hist">' + hist.slice().reverse().map(x => { const l = libelleHistorique(x);
         return "<li>" + (l.date ? '<span class="jv-hist-d">' + esc(l.date) + "</span>" : "") + '<span class="jv-hist-t">' + esc(l.texte) + "</span></li>"; }).join("") + "</ol>" });
     else if (e.statut !== "a_relire") h += '<p class="jv-note">Aucune modification depuis la confirmation.</p>';
@@ -344,6 +351,10 @@
     return { patch };
   }
 
+  /** Types présents (ordre d'affichage) parmi les entrées du statut choisi : le filtre de type ne propose que ce qui existe
+      dans la liste déjà filtrée par statut. */
+  const typesPresents = (journal, statut) => { const f = filtrer(journal, "tout", statut); return ORDRE_TYPES.filter(t => f.some(e => e.type === t)); };
+
   /** État à afficher quand le journal est vide : "chargement", "erreur" ou "vide" ; null s'il n'est pas vide. */
   function etatVide(S, n) {
     if (n > 0) return null;
@@ -352,7 +363,7 @@
   }
 
   const H = { filtrer, grouperParMois, comparaison, libelleHistorique, rendreMarkdown, listeHtml, detailHtml, actionsPour, questionClaude,
-    patchCorrection, liensDe, nARelire, statutParDefaut, etatVide, CONSENTEMENTS, TYPES, STATUTS };
+    patchCorrection, liensDe, nARelire, statutParDefaut, typesPresents, optionsStatut, etatVide, CONSENTEMENTS, TYPES, STATUTS };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -361,7 +372,7 @@
   let S = null, root = null, dirty = true, busy = false;
   let sigListe = "", sigTypes = "", sigPanneau = "";
   let type = "tout", statutChoisi = null, ctlType = null, ctlStatut = null, ctlConsent = null, consentAffiche = null;
-  let ouvertId = null, edition = null, msgPanneau = null, corpsPanneau = null;
+  let ouvertId = null, edition = null, msgPanneau = null, corpsPanneau = null, retourCarte = null, lienEntree = null;
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
   const API = () => (window.Store && window.Store.journal) || null;
@@ -409,8 +420,9 @@
 
   function renderFiltres(liste) {
     const u = U();
-    // Type : « Tout » + types présents (filtre caché s'il n'y en a qu'un) ; recréé seulement si les types présents changent.
-    const presents = ORDRE_TYPES.filter(t => liste.some(e => e.type === t));
+    // Type : « Tout » + types présents dans la liste filtrée par statut (filtre caché s'il n'y en a qu'un) ; recréé
+    // seulement si les types présents changent.
+    const presents = typesPresents(liste, statutEffectif());
     if (!presents.includes(type)) type = "tout";
     const sigT = presents.join(",");
     if (sigT !== sigTypes || !ctlType) {
@@ -444,23 +456,52 @@
       if (h !== sigListe) { sigListe = h; $("jvListe").innerHTML = h; }
     }
     renderPanneau();
+    ouvrirLien();
+  }
+
+  /* Lien profond (#agent/journal?entree=<id>) : ouvre l'entrée dès qu'elle est chargée ; filtres élargis si elle n'est pas visible. */
+  function ouvrirLien() {
+    if (!lienEntree || !S || S.ready === false) return;
+    const id = lienEntree, e = entree(id);
+    lienEntree = null;
+    if (!e) { dire($("jvMsg"), "Cette entrée n'est plus dans le journal : elle a peut-être été supprimée."); return; }
+    if (!filtrer(journal(), type, statutEffectif()).includes(e)) { statutChoisi = "tout"; type = "tout"; render(); }
+    const u = U();
+    if (u && u.panneau.ouvert() && ouvertId !== String(id)) u.panneau.fermer({ focus: false });
+    ouvrir(id, carteDe(id));
   }
 
   /* ---------- panneau de détail ---------- */
+  const carteDe = id => (root && id != null ? root.querySelector('[data-ui-carte="' + CSS.escape(String(id)) + '"]') : null);
   function contenuPanneau(e) { return detailHtml(e, S, U(), { edition, busy, message: msgPanneau }); }
+  /* Options d'ouverture du panneau, identiques à la première ouverture et à chaque rafraîchissement : même retour, même
+     rappel de fermeture (sinon UI.panneau oublierait où rendre le focus). */
+  function optionsPanneau(e, h) {
+    const u = U();
+    return { titre: plat(e.titre) || "Entrée du journal", contenu: h, retour: retourCarte,
+      pied: u.demanderAClaude(questionClaude(e), "Reprendre avec Claude"), surFermeture: fermeture };
+  }
+  /* Fermeture : le focus revient à la carte d'origine ; si la liste a été redessinée entre-temps (action, émission du store),
+     à la carte du même id dans la liste redessinée, sinon au titre de la page. Rien si la fermeture ne reprend pas le focus. */
+  function fermeture(o) {
+    const fid = ouvertId, el = retourCarte;
+    ouvertId = null; edition = null; msgPanneau = null; retourCarte = null;
+    if ((o && o.focus === false) || !root) return;
+    if (el && el.isConnected) return; // UI.panneau lui a déjà rendu le focus
+    const c = carteDe(fid);
+    if (c) { c.focus(); return; }
+    const t = $(journal().length ? "jvTitre" : "jvVideTitre");
+    if (t) t.focus();
+  }
   function ouvrir(id, el) {
     const u = U(), e = entree(id);
     if (!u || !e) return;
-    ouvertId = String(id); edition = null; msgPanneau = null;
+    ouvertId = String(id); edition = null; msgPanneau = null; retourCarte = el || null;
     const h = contenuPanneau(e);
     sigPanneau = h + "|" + e.titre;
-    corpsPanneau = u.panneau.ouvrir({ titre: plat(e.titre) || "Entrée du journal", contenu: h, retour: el,
-      pied: u.demanderAClaude(questionClaude(e), "Reprendre avec Claude"),
-      surFermeture: () => {
-        const fid = ouvertId; ouvertId = null; edition = null; msgPanneau = null;
-        if (el && !el.isConnected && root) { const c = root.querySelector('[data-ui-carte="' + CSS.escape(fid || "") + '"]'); if (c) c.focus(); }
-      } });
+    corpsPanneau = u.panneau.ouvrir(optionsPanneau(e, h));
     brancherPanneau(corpsPanneau);
+    brancherStatut(e);
   }
   /* Rafraîchit le panneau ouvert si son contenu a changé (action, émission du store) ; garde le défilement ; `cible` reçoit le focus. */
   function renderPanneau(cible) {
@@ -472,10 +513,19 @@
     if (sig === sigPanneau && !cible) return;
     sigPanneau = sig;
     const y = corpsPanneau ? corpsPanneau.scrollTop : 0;
-    corpsPanneau = u.panneau.ouvrir({ titre: plat(e.titre) || "Entrée du journal", contenu: h, pied: u.demanderAClaude(questionClaude(e), "Reprendre avec Claude") });
+    corpsPanneau = u.panneau.ouvrir(optionsPanneau(e, h));
     corpsPanneau.scrollTop = y;
+    brancherStatut(e);
     const f = cible && corpsPanneau.querySelector(cible);
     if (f) f.focus();
+  }
+
+  /* Statut de la correction : UI.bascule (clavier, aria-checked) ; le choix est gardé dans le brouillon sans redessiner. */
+  function brancherStatut(e) {
+    const u = U(), b = edition && corpsPanneau ? corpsPanneau.querySelector("[data-jv-statut]") : null;
+    if (!u || !b) return;
+    u.bascule(b, { label: "Statut", options: optionsStatut(e.statut), actif: edition.statut,
+      surChange: id => { if (!edition) return; edition.statut = id; sigPanneau = contenuPanneau(e) + "|" + e.titre; } });
   }
 
   const branches = new WeakSet();
@@ -569,9 +619,13 @@
     }
   }
   function update(snap, visible) { S = snap; dirty = true; if (visible) { render(); dirty = false; } }
-  function show() { if (dirty) { render(); dirty = false; } }
-  /* Pastille : nombre d'entrées à relire, "" sinon. */
-  function headline() { const n = nARelire(journal()); return n ? String(n) : ""; }
+  function show() {
+    const p = window.App && typeof App.parametres === "function" ? App.parametres() : {};
+    if (p && p.entree) lienEntree = String(p.entree);
+    if (dirty) { render(); dirty = false; } else ouvrirLien();
+  }
+  /* Pastille : nombre exact d'entrées à relire (S.journalARelire, comptage du store) ; à défaut, entrées lues ; "" sinon. */
+  function headline() { const n = S && Number.isFinite(S.journalARelire) ? S.journalARelire : nARelire(journal()); return n > 0 ? String(n) : ""; }
 
   const api = { mount, update, show, headline };
   const reg = () => App.register("journal-view", api);

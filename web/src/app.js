@@ -68,9 +68,14 @@
   const subOf = (space, sub) => { const sp = spaceOf(space); return sp ? sp.subs.find(x => x.id === sub) || null : null; };
   /* « destination », « destination/sous-vue » ou ancienne route → { space, sub } ; sous-vue par défaut : dernière visitée,
      sinon la première qui a un module (defSub). Inconnu → null (les sous-onglets internes de la Toise utilisent aussi data-goto). */
+  /* Lien profond « destination/sous-vue?cle=valeur » : sépare la route de ses paramètres → [route, "cle=valeur" | ""]. */
+  function separerParametres(t) {
+    const s = String(t == null ? "" : t), i = s.indexOf("?");
+    return i < 0 ? [s, ""] : [s.slice(0, i), s.slice(i + 1)];
+  }
   function resolve(target, sub, lastSubs) {
     if (target == null) return null;
-    let t = String(target).replace(/^#/, "");
+    let t = separerParametres(String(target).replace(/^#/, ""))[0];
     if (!sub) {
       const old = t.split("/")[0];
       if (LEGACY[t]) t = LEGACY[t];
@@ -84,12 +89,15 @@
     return { space, sub: s };
   }
   /* Hash d'URL → { space, sub, legacy } (legacy : le hash n'est pas sous forme canonique et sera réécrit).
-     Hash inconnu → Aujourd'hui. */
+     Hash inconnu → Aujourd'hui. Lien profond « #agent/journal?entree=<id> » : même route, plus query: "entree=<id>" ;
+     legacy vrai (l'URL est réécrite sans les paramètres, que la coque retient pour la vue : App.parametres()). */
   function resolveHash(hash, lastSubs) {
     if (!hash || hash === "#") return null;
-    if (LEGACY_HASHES[hash]) return Object.assign(resolve(LEGACY_HASHES[hash]), { legacy: true });
-    const r = resolve(hash, null, lastSubs) || resolve(DEFAULT_ROUTE);
-    return Object.assign(r, { legacy: hash !== "#" + r.space + "/" + r.sub });
+    const [h, query] = separerParametres(hash);
+    const avec = r => (query ? Object.assign(r, { query }) : r);
+    if (LEGACY_HASHES[h]) return avec(Object.assign(resolve(LEGACY_HASHES[h]), { legacy: true }));
+    const r = resolve(h, null, lastSubs) || resolve(DEFAULT_ROUTE);
+    return avec(Object.assign(r, { legacy: hash !== "#" + r.space + "/" + r.sub }));
   }
   /* Focus après navigation (navigate) : sur le titre de page quand la destination change (pas pour un simple changement de
      sous-onglet, le focus reste sur l'onglet) ou quand l'élément actif a disparu (dans une vue ou un panneau masqués, ou BODY). */
@@ -122,6 +130,15 @@
     const mounted = new Set();
     const lastSubs = {};
     let route = null;
+    /* Paramètres d'un lien profond (#agent/journal?entree=<id>, App.go("agent/journal?entree=<id>")) : retenus pour la route
+       visée, lus une fois par la vue (App.parametres()), oubliés si l'on navigue ailleurs. */
+    let lien = null;
+    const retenirLien = (r, query) => {
+      if (!query) return;
+      const params = {};
+      try { new URLSearchParams(query).forEach((v, k) => { params[k] = v; }); } catch (e) { return; }
+      lien = { cle: r.space + "/" + r.sub, params };
+    };
     const key = r => r.space + "/" + r.sub;
     const panelOf = r => document.querySelector('section.view[data-space="' + r.space + '"][data-sub="' + r.sub + '"]');
     const isActive = name => { const r = routeOfModule(name); return !!(r && r.space === route.space && r.sub === route.sub); };
@@ -129,7 +146,7 @@
     /* Route de départ : hash (nouveau ou ancien) > dernière route mémorisée > Aujourd'hui. */
     try { const saved = resolve(localStorage.getItem("app-route")); if (saved) { route = saved; lastSubs[saved.space] = saved.sub; } } catch (e) {}
     const fromHash = resolveHash(location.hash, lastSubs);
-    if (fromHash) route = { space: fromHash.space, sub: fromHash.sub };
+    if (fromHash) { route = { space: fromHash.space, sub: fromHash.sub }; retenirLien(route, fromHash.query); }
     if (!route) route = resolve(DEFAULT_ROUTE);
     lastSubs[route.space] = route.sub;
 
@@ -141,7 +158,17 @@
       spaces: () => SPACES,
       /* App.go("patrimoine"), App.go("patrimoine", "budget"), App.go("patrimoine/budget"), ancienne route App.go("avenir/plan")
          ou ancien onglet App.go("plan"). */
-      go(target, sub) { const r = resolve(target, sub, lastSubs); if (r) navigate(r, { push: true, scroll: true }); },
+      go(target, sub) {
+        const r = resolve(target, sub, lastSubs);
+        if (!r) return;
+        if (!sub) retenirLien(r, separerParametres(target)[1]);
+        navigate(r, { push: true, scroll: true });
+      },
+      /* Paramètres du lien profond qui a mené à la vue active ({ entree: "<id>" }…) ; {} sinon. Lus une seule fois. */
+      parametres() {
+        if (!lien || lien.cle !== key(route)) return {};
+        const p = lien.params; lien = null; return p;
+      },
     };
     window.App = App;
     /* Les modules chargés avant app.js ont mis leur enregistrement en attente. */
@@ -156,6 +183,7 @@
       o = o || {};
       const changed = key(r) !== key(route), before = route;
       route = r;
+      if (lien && lien.cle !== key(r)) lien = null; // paramètres d'une autre vue : oubliés
       lastSubs[r.space] = r.sub;
       try { localStorage.setItem("app-route", key(r)); } catch (e) {}
       if (o.push && changed && location.hash !== "#" + key(r)) history.pushState(null, "", "#" + key(r));
@@ -220,7 +248,7 @@
     }
     /* Pastilles (seuls compteurs de l'interface) : Aujourd'hui (éléments de la boîte de réception, headline() du module
        aujourdhui) et Agent (propositions de Claude en attente, headline() du module propositions, + entrées du journal à relire,
-       headline() du module journal-view ; à défaut, compte lu dans le store). */
+       headline() du module journal-view ; à défaut, S.journalARelire du store). */
     function refreshHeadlines() {
       /* Le nombre visible, suivi de sa légende pour les lecteurs d'écran (texte .ui-sr : un aria-label sur <span> n'est pas lu). */
       const pill = (sel, n, suffix) => {
@@ -233,7 +261,10 @@
       pill("[data-today-count]", countOf("aujourdhui", "vue"), n => " élément" + (n > 1 ? "s" : "") + " à traiter");
       const p = countOf("agent", "propositions");
       let j = countOf("agent", "journal");
-      if (!Number.isFinite(j)) { const S = window.Store && Store.get(); j = S && Array.isArray(S.journal) ? S.journal.filter(e => e && e.statut === "a_relire").length : NaN; }
+      if (!Number.isFinite(j)) {
+        const S = window.Store && Store.get();
+        j = S && Number.isFinite(S.journalARelire) ? S.journalARelire : S && Array.isArray(S.journal) ? S.journal.filter(e => e && e.statut === "a_relire").length : NaN;
+      }
       pill("[data-prop-count]", Number.isFinite(p) || Number.isFinite(j) ? (Number.isFinite(p) ? p : 0) + (Number.isFinite(j) ? j : 0) : NaN, () => legendeAgent(p, j));
     }
 
@@ -291,7 +322,9 @@
       const r = resolveHash(location.hash, lastSubs);
       if (!r) return;
       if (r.legacy) history.replaceState(null, "", "#" + key(r));
-      if (key(r) !== key(route)) navigate({ space: r.space, sub: r.sub }, {});
+      retenirLien(r, r.query);
+      /* Lien profond vers la vue déjà affichée : navigate() rappelle show(), qui lit les paramètres. */
+      if (key(r) !== key(route) || r.query) navigate({ space: r.space, sub: r.sub }, {});
     }
 
     const ANON_KEY = "boussole.anonBanner.masque";
@@ -409,5 +442,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, routeOfModule, defSub, focusApres, legendeAgent };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent };
 })();

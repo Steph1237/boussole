@@ -97,6 +97,10 @@
 .ui-panneau .jv-in:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .ui-panneau .jv-f-ligne{display:flex;flex-wrap:wrap;gap:8px 12px}
 .ui-panneau .jv-f-col{display:flex;flex-direction:column;gap:6px;flex:1 1 140px;min-width:0}
+/* Statut de la correction : boutons segmentés (UI.bascule) sur toute la largeur, repliés à la ligne sur mobile. */
+.ui-panneau .jv-f-col-statut{flex-basis:100%}
+.ui-panneau .jv-f-statut .ui-bascule{flex-wrap:wrap}
+.ui-panneau .jv-lab{margin-bottom:0}
 .ui-panneau .jv-form .jv-acts{margin-top:6px}
 
 @media (max-width:560px){
