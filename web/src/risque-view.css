@@ -1,18 +1,12 @@
 /* Pilotage › Risque : verdict, cartes (UI.carte), allocation cible vs réelle, accordéons (contributions, méthode, poches).
-   Scopé #view-risque-view ; le questionnaire et le détail des cartes vivent dans .ui-panneau (injecté dans body par UI),
-   d'où .ui-panneau .rv-…. */
+   Lecture seule : le questionnaire se fait dans Claude. Scopé #view-risque-view ; le détail des cartes vit dans .ui-panneau
+   (injecté dans body par UI), d'où .ui-panneau .rv-…. */
 #view-risque-view [hidden]{display:none!important}
 #view-risque-view .rv{display:flex;flex-direction:column;gap:16px;min-width:0}
 #view-risque-view .rv-main{display:flex;flex-direction:column;gap:16px;min-width:0}
 #view-risque-view h2.label{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 6px}
 #view-risque-view .rv-h2{font:700 16px var(--f-display);margin:0 0 4px}
 #view-risque-view .rv-sub{margin:0 0 12px;font-size:13px;color:var(--muted)}
-#view-risque-view .rv-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;font:600 14px var(--f-body);border-radius:var(--radius-sm);padding:10px 18px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);text-decoration:none;cursor:pointer}
-#view-risque-view .rv-btn:hover{filter:brightness(1.08)}
-#view-risque-view .rv-btn.ghost{background:transparent;color:var(--accent)}
-#view-risque-view .rv-btn.ghost:hover{background:var(--accent-soft);filter:none}
-#view-risque-view .rv-btn:focus-visible,#view-risque-view .rv-lnk:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-#view-risque-view .rv-lnk{align-self:flex-start;border:0;background:none;padding:0;font:600 13px var(--f-body);color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 #view-risque-view .rv-a{font-weight:600;color:var(--accent)}
 
 /* verdict */
@@ -65,65 +59,23 @@
 #view-risque-view .rv-cv{text-align:right}
 #view-risque-view .rv-cp{text-align:right;font-size:11.5px}
 #view-risque-view .rv-classes .ui-acc-corps>p{margin:6px 0 10px;line-height:1.5}
-#view-risque-view .rv-prows{display:flex;flex-direction:column}
+#view-risque-view .rv-prows{display:flex;flex-direction:column;list-style:none;margin:0;padding:0}
 #view-risque-view .rv-prow{display:flex;justify-content:space-between;align-items:center;gap:8px 14px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line)}
 #view-risque-view .rv-pn{display:flex;flex-direction:column;gap:2px;min-width:0}
-#view-risque-view .rv-prow select{min-height:40px;width:min(100%,280px);font:500 14px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--radius-sm);padding:6px 8px}
-#view-risque-view .rv-pmsg{margin:8px 0 0;color:var(--muted)}
-#view-risque-view .rv-pmsg:empty{display:none}
+#view-risque-view .rv-pc{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:14px;text-align:right}
+#view-risque-view .rv-pt{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+#view-risque-view .rv-pacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 #view-risque-view .rv-caption{margin:0;font-size:11px;color:var(--muted)}
 
-/* panneau : boutons et textes communs */
-.ui-panneau .rv-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;font:600 14px var(--f-body);border-radius:var(--radius-sm);padding:10px 18px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer}
-.ui-panneau .rv-btn:hover{filter:brightness(1.08)}
-.ui-panneau .rv-btn.ghost{background:transparent;color:var(--accent)}
-.ui-panneau .rv-btn.ghost:hover{background:var(--accent-soft);filter:none}
-.ui-panneau .rv-btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
-.ui-panneau .rv-btn:focus-visible,.ui-panneau .rv-lnk:focus-visible,.ui-panneau .rv-opt:focus-visible,.ui-panneau .rv-sb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.ui-panneau .rv-lnk{border:0;background:none;padding:0;font:600 13px var(--f-body);color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+/* panneau : textes communs */
 .ui-panneau .rv-muet{color:var(--muted);font-size:12.5px}
 .ui-panneau .rv-kl{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 
-/* panneau : questionnaire */
-.ui-panneau .rv-quiz{display:flex;flex-direction:column;gap:12px}
-.ui-panneau .rv-prog{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px;color:var(--muted)}
-.ui-panneau .rv-theme{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.ui-panneau .rv-pbar{display:block;height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
-.ui-panneau .rv-pbar>span{display:block;height:100%;background:var(--accent);border-radius:3px}
-.ui-panneau .rv-q{font:700 19px/1.3 var(--f-display);margin:4px 0 0;border-radius:4px}
-.ui-panneau .rv-q:focus{outline:none}
-.ui-panneau .rv-q:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-.ui-panneau .rv-why{margin:0;font-size:13px;color:var(--ink)}
-.ui-panneau .rv-why b{display:block;font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px}
-.ui-panneau .rv-aide{margin:0;font-size:13px;color:var(--muted)}
-.ui-panneau .rv-pre{margin:0;padding:8px 10px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--ink);font-size:13px}
-.ui-panneau .rv-opts{display:flex;flex-direction:column;gap:8px}
-.ui-panneau .rv-opts.multi{flex-direction:row;flex-wrap:wrap}
-.ui-panneau .rv-opt{display:flex;align-items:center;gap:12px;min-height:50px;width:100%;text-align:left;font:500 15px var(--f-body);color:var(--ink);background:var(--surface);border:1.5px solid var(--line2);border-radius:var(--radius);padding:10px 14px;cursor:pointer}
-.ui-panneau .rv-opts.multi .rv-opt{width:auto;min-height:44px;border-radius:999px;padding:8px 14px}
-.ui-panneau .rv-opt:hover{border-color:var(--accent)}
-.ui-panneau .rv-opt[aria-checked="true"],.ui-panneau .rv-opt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
-.ui-panneau .rv-opt kbd{flex:none;display:inline-grid;place-items:center;width:24px;height:24px;border-radius:6px;font:600 12px var(--f-num);background:var(--sunk);color:var(--muted)}
-.ui-panneau .rv-opt[aria-checked="true"] kbd,.ui-panneau .rv-opt[aria-pressed="true"] kbd{background:var(--accent);color:var(--surface)}
-.ui-panneau .rv-step{display:flex;align-items:center;gap:10px}
-.ui-panneau .rv-sb{width:50px;height:50px;border-radius:var(--radius);border:1.5px solid var(--line2);background:var(--surface);color:var(--ink);font:600 22px var(--f-body);cursor:pointer}
-.ui-panneau .rv-sb:hover{border-color:var(--accent)}
-.ui-panneau #rvNombre{width:90px;height:50px;text-align:center;font:600 20px var(--f-num);color:var(--ink);background:var(--surface);border:1.5px solid var(--line2);border-radius:var(--radius);color-scheme:inherit}
-.ui-panneau .rv-unit{color:var(--muted)}
-.ui-panneau .rv-match{margin:0;color:var(--muted);font-size:13px}
-.ui-panneau .rv-err{margin:0;color:var(--crit);font-size:13px}
-.ui-panneau .rv-err:empty{display:none}
-.ui-panneau .rv-nav{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
-.ui-panneau .rv-keys{margin:0;font-size:12px;color:var(--muted)}
-.ui-panneau .rv-apercu{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--accent-soft)}
-.ui-panneau .rv-apercu b{font:800 22px var(--f-display);color:var(--accent)}
 .ui-panneau .rv-rlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .ui-panneau .rv-rlist li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
 .ui-panneau .rv-rlist li:first-child{border-top:0}
 .ui-panneau .rv-rq{grid-column:1;font:600 12px var(--f-body);color:var(--muted)}
 .ui-panneau .rv-rv{grid-column:1;overflow-wrap:anywhere}
-.ui-panneau .rv-rlist .rv-lnk{grid-column:2;grid-row:1 / span 2;align-self:center}
-.ui-panneau .rv-rlist li.manque .rv-rv{color:var(--crit);font-weight:600}
 
 /* panneau : profil déclaré */
 .ui-panneau .rv-desc{line-height:1.5}
@@ -157,6 +109,6 @@
 .ui-panneau .rv-meth p{margin:8px 0 0;line-height:1.5}
 .ui-panneau .rv-meth p:first-child{margin-top:0}
 
-@media (prefers-reduced-motion:no-preference){.ui-panneau .rv-pbar>span{transition:width .25s ease}#view-risque-view .rv-real,#view-risque-view .rv-mark{transition:all .3s ease}}
+@media (prefers-reduced-motion:no-preference){#view-risque-view .rv-real,#view-risque-view .rv-mark{transition:all .3s ease}}
 @media (max-width:700px){#view-risque-view .rv-crow{grid-template-columns:minmax(0,1fr) 70px 44px}#view-risque-view .rv-cp{display:none}#view-risque-view .rv-verdict{font-size:17px}}
-@media (max-width:420px){.ui-panneau .rv-q{font-size:17px}.ui-panneau .rv-nav .rv-btn{flex:1}.ui-panneau .rv-gb span{font-size:9px}}
+@media (max-width:420px){.ui-panneau .rv-gb span{font-size:9px}#view-risque-view .rv-pc{align-items:flex-start;text-align:left}}

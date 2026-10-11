@@ -1,5 +1,6 @@
-// Pilotage › Risque (web/src/risque-view.*) : questionnaire en cartes, résultat, allocation cible vs réelle,
-// risque réel et rattachement des poches. Contrôles statiques + fonctions pures (module.exports).
+// Pilotage › Risque (web/src/risque-view.*) : lecture seule — verdict, profil validé, allocation cible vs réelle, risque réel et
+// rattachement des poches ; le questionnaire se fait dans Claude (« Faire mon profil de risque avec Claude »). Contrôles statiques,
+// fonctions pures (module.exports) et vue dans un mini-DOM.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -21,35 +22,37 @@ test("risque-view.js : se compile, s'enregistre sous « risque-view » et sans r
   assert.match(js, /App\.register\("risque-view",api\)/);
   assert.match(js, /__pending/);
   assert.ok(!js.split("\n").some(l => /document\.(querySelector|querySelectorAll|getElementById)\(/.test(l)));
-  assert.doesNotMatch(js, /document\.addEventListener\("keydown"/, "clavier du questionnaire branché sur le panneau, pas sur tout le document");
+  assert.doesNotMatch(js, /addEventListener\("keydown"/, "plus de questionnaire au clavier dans l'app");
 });
 
-test("risque-view.js : calcule avec Risque.evaluer et Risque.synthese, écrit risque et classes par la façade", () => {
-  assert.match(js, /R\(\)\.evaluer\(rep,\{\}\)/);
+const sansCommentaires = t => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const VOUVOIEMENT = /\b(vous|votre|vos|Vous|Votre|Vos)\b|\b(complétez|indiquez|ouvrez|répondez|renseignez|corrigez|vérifiez|choisissez|cochez)\b/i;
+const chainesJs = src => [...sansCommentaires(src).matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g)].map(m => m[1] ?? m[2] ?? m[3]);
+
+test("risque-view.js : calcule avec Risque.synthese, en lecture seule (aucune écriture au store, plus de questionnaire)", () => {
   assert.match(js, /R\(\)\.synthese\(rq\?rq\.reponses\|\|\{\}:\{\},ctx\(avecImmo\)\)/);
   assert.match(js, /R\(\)\.ecarts\(decl\.id,sa\.allocation\)/, "écarts rapportés au profil enregistré");
-  assert.match(js, /Store\.db\.doc\("profil\/main"\)\.update\(\{risque\}\)/);
-  assert.match(js, /Store\.db\.doc\("profil\/main"\)\.update\(\{classes:c\}\)/);
-  assert.match(js, /const risque=\{reponses:rep,profil:ev\.profil,score:ev\.score,date:/, "forme { reponses, profil, score, date }");
-  assert.match(js, /const BROUILLON="risque-brouillon"/);
   assert.match(js, /M_\.classeRisque/);
   assert.match(js, /verdict\(\{declare:decl,equivalent:eq,ecarts:decl\?sa\.ecarts:\[\]\},R\(\)\.PROFILS\)/, "comparaison rapportée au profil enregistré");
+  const code = sansCommentaires(js);
+  assert.doesNotMatch(code, /Store\.|\.db\.|\.update\(\{|\.insert\(|\.upsert\(/, "aucune écriture au store");
+  assert.doesNotMatch(code, /localStorage|risque-brouillon|enregistrer|etapeHtml|data-opt|<select|<input|<form/, "questionnaire, brouillon et sélecteurs de classe retirés");
+  assert.doesNotMatch(html, /<select|<input|<form/);
 });
 
-test("risque-view : textes clés (question, intro, Claude, étapes, résumé, garde-fous, mauvaise année, rattachement)", () => {
-  for (const t of ["Mon portefeuille correspond-il à mon profil ?", "questions, 3 minutes. Ce profil sert à comparer votre portefeuille à ce que vous pouvez supporter.",
-    "Commencer le questionnaire", "Le faire avec Claude", 'data-goto="agent/connexion"', "Pourquoi cette question", "Pré-rempli d'après votre",
-    "Précédent", "Vérifiez vos réponses", "Profil obtenu", "Plafonné à ", "Dans une mauvaise année (1 sur 100), votre portefeuille pourrait perdre environ",
-    "Compter mon immobilier", "Refaire le questionnaire", "Le revoir avec Claude", "Protection", "fonds euros et or", "Échap", "D'où vient le risque",
-    "Comment c'est calculé", "Allocation par classe", "Perte plausible sur un an", "Comportement du portefeuille", "Profil déclaré"])
+test("risque-view : textes clés et liens Claude (faire, revoir, corriger), au tutoiement", () => {
+  for (const t of ["Mon portefeuille correspond-il à mon profil ?", "Faire mon profil de risque avec Claude", "Le revoir avec Claude", "Corriger avec Claude",
+    "Agent › Propositions", "Plafonné à ", "Dans une mauvaise année (1 sur 100), ton portefeuille pourrait perdre environ", "Compter mon immobilier",
+    "Protection", "fonds euros et or", "D'où vient le risque", "Comment c'est calculé", "Allocation par classe", "Perte plausible sur un an",
+    "Comportement du portefeuille", "Profil déclaré", "Tes réponses validées"])
     assert.ok(js.includes(t) || html.includes(t), `« ${t} » absent`);
-  assert.ok(html.includes("Corriger le classement de vos poches"));
+  assert.match(js, /phraseRisque\("risque"\)/, "section risque de ClaudePrompts");
+  assert.ok(html.includes("Le classement de tes poches"));
   assert.match(html, /<details class="ui-acc rv-classes" id="rvClasses">/, "classement des poches en accordéon fermé");
   assert.ok(html.includes("Indicateur pédagogique, pas un conseil en investissement"));
   assert.match(js, /function headline\(\)\{ const id=S\.risque&&S\.risque\.profil; return id\?labelProfil\(id\):"À définir"; \}/);
-  assert.match(js, /e\.key==="Enter"/);
-  assert.match(js, /\/\^\[1-9\]\$\/\.test\(e\.key\)/);
-  assert.match(js, /e\.key==="ArrowDown"\|\|e\.key==="ArrowUp"/);
+  assert.doesNotMatch(html.replace(/<[^>]+>/g, " "), VOUVOIEMENT, "risque-view.html");
+  assert.deepEqual(chainesJs(js).filter(t => VOUVOIEMENT.test(t)), [], "risque-view.js (hors textes de risque.js : questions, descriptions des profils, garde-fous)");
 });
 
 test("risque-view.css : chaque @media commence après une règle fermée", () => {
@@ -64,7 +67,8 @@ test("risque-view.css : CSS entièrement scopé sous #view-risque-view ou .ui-pa
   const tous = sels.flatMap(s => s.split(",").map(x => x.trim()));
   const unscoped = tous.filter(x => !x.startsWith("#view-risque-view") && !/^\.ui-panneau (\.rv-|#rvNombre)/.test(x));
   assert.deepEqual(unscoped, []);
-  assert.ok(tous.some(x => x.startsWith(".ui-panneau .rv-quiz")), "questionnaire stylé dans le panneau");
+  assert.ok(tous.some(x => x.startsWith(".ui-panneau .rv-gauge") || x.startsWith(".ui-panneau .rv-g")), "panneau du profil stylé");
+  assert.ok(!tous.some(x => /rv-quiz|rv-opt|rvNombre/.test(x)), "styles du questionnaire retirés");
 });
 
 test("prerempli : matelas en mois de dépenses (poche Épargne ÷ dépenses du budget) et tranche d'âge du profil", () => {
@@ -85,29 +89,22 @@ test("prerempli : matelas en mois de dépenses (poche Épargne ÷ dépenses du b
   assert.equal(V.valeurPreremplie(Q("age"), { age: "zz" }), undefined, "tranche inconnue : pas de prérempli");
 });
 
-test("valide, basculer, effectives : réponses par type de question", () => {
+test("valide : réponses par type de question", () => {
   assert.equal(V.valide(Q("horizon"), "gt15"), true);
   assert.equal(V.valide(Q("horizon"), "x"), false);
   assert.equal(V.valide(Q("experience"), 0), true);
   assert.equal(V.valide(Q("experience"), -1), false);
   assert.equal(V.valide(Q("connaissances"), []), false);
   assert.equal(V.valide(Q("connaissances"), ["etf"]), true);
-  const c = Q("connaissances");
-  assert.deepEqual(V.basculer(c, ["etf"], "actions"), ["etf", "actions"]);
-  assert.deepEqual(V.basculer(c, ["etf", "actions"], "etf"), ["actions"]);
-  assert.deepEqual(V.basculer(c, ["etf", "actions"], "aucun"), ["aucun"], "« Aucun » efface les autres cases");
-  assert.deepEqual(V.basculer(c, ["aucun"], "crypto"), ["crypto"], "une case précise efface « Aucun »");
-  const e = V.effectives(Risque.QUESTIONS, { horizon: "8-15", matelas: "non" }, { matelasMois: 5, age: "a40" });
-  assert.deepEqual(e, { horizon: "8-15", matelas: "non", age: "a40" }, "la réponse explicite l'emporte sur le prérempli");
+  assert.equal(V.basculer, undefined, "questionnaire retiré de l'app");
+  assert.equal(V.etape, undefined);
 });
 
-test("effectives + Risque.evaluer : un questionnaire complet donne un profil et un score", () => {
-  const rep = V.effectives(Risque.QUESTIONS, { horizon: "8-15", objectif: "croissance", reaction: "rien", perte_max: "p20", connaissances: ["etf", "actions"],
-    experience: 5, revenus: "cdi", part_investie: "50-75" }, { matelasMois: 4, age: "a30" });
-  const ev = Risque.evaluer(rep, {});
-  assert.equal(ev.complet, true);
-  assert.equal(ev.profil, "equilibre");
-  assert.ok(ev.score >= 0 && ev.score <= 100);
+test("phraseRisque : phrases ClaudePrompts (risque, placements)", () => {
+  const P = require("../web/src/claude-prompts.js");
+  assert.equal(V.phraseRisque("risque"), P.phrase("risque"));
+  assert.equal(V.phraseRisque("risque", "revoir mon profil Équilibré"), P.phrase("risque", "revoir mon profil Équilibré"));
+  assert.match(V.phraseRisque("placements", "x"), /placements/);
 });
 
 test("geometrie : bande cible et barre réelle bornées à 0-100 %", () => {
@@ -138,39 +135,21 @@ test("ecartNiveaux, horsFourchette, verdict : une phrase qui répond à la quest
   assert.equal(V.horsFourchette(null), 0);
   const ok = V.verdict({ declare: P("equilibre"), equivalent: P("equilibre"), ecarts: ec }, Risque.PROFILS);
   assert.equal(ok.ton, "ok");
-  assert.equal(ok.phrase, "Oui : votre portefeuille se comporte comme un profil Équilibré, conforme à votre profil.");
+  assert.equal(ok.phrase, "Oui : ton portefeuille se comporte comme un profil Équilibré, conforme à ton profil.");
   assert.equal(ok.allocation, "2 classes sur 5 hors de la fourchette du profil Équilibré.");
   const plus = V.verdict({ declare: P("modere"), equivalent: P("dynamique"), ecarts: [{ statut: "dans" }] }, Risque.PROFILS);
   assert.equal(plus.ton, "crit");
   assert.equal(plus.ecart, 2);
-  assert.match(plus.phrase, /^Non : .*profil Dynamique, alors que votre profil est Modéré ; il prend plus de risque que vous ne le souhaitez\.$/);
+  assert.match(plus.phrase, /^Non : .*profil Dynamique, alors que ton profil est Modéré ; il prend plus de risque que tu ne le souhaites\.$/);
   assert.equal(plus.allocation, "Chaque classe est dans la fourchette du profil Modéré.");
   const moins = V.verdict({ declare: P("dynamique"), equivalent: P("prudent"), ecarts: [] }, Risque.PROFILS);
   assert.equal(moins.ton, "warn");
-  assert.match(moins.phrase, /^Pas tout à fait : .*moins de risque que votre profil ne le permet\.$/);
+  assert.match(moins.phrase, /^Pas tout à fait : .*moins de risque que ton profil ne le permet\.$/);
   assert.match(V.verdict({ declare: null, equivalent: P("prudent") }, Risque.PROFILS).phrase, /pas encore défini/);
-  assert.match(V.verdict({ declare: P("prudent"), equivalent: null }, Risque.PROFILS).phrase, /^Aucun placement à comparer à votre profil Prudent/);
+  assert.match(V.verdict({ declare: P("prudent"), equivalent: null }, Risque.PROFILS).phrase, /^Aucun placement à comparer à ton profil Prudent/);
 });
 
-test("etape, premiereEtape : questions une à une puis résumé avant enregistrement", () => {
-  const L = Risque.QUESTIONS, n = L.length;
-  const e0 = V.etape(L, 0);
-  assert.deepEqual([e0.type, e0.numero, e0.total, e0.premier, e0.suivant.action, e0.suivant.label], ["question", 1, n, true, "suivant", "Suivant"]);
-  assert.equal(e0.question, L[0]);
-  const der = V.etape(L, n - 1);
-  assert.deepEqual([der.premier, der.suivant.label], [false, "Voir le résumé"]);
-  const r = V.etape(L, n);
-  assert.deepEqual([r.type, r.question, r.suivant.action, r.suivant.label], ["resume", null, "enregistrer", "Enregistrer mon profil"]);
-  assert.equal(V.etape(L, 99).type, "resume", "borné au résumé");
-  assert.equal(V.etape(L, -3).index, 0, "borné à la première question");
-  assert.equal(V.premiereEtape(L, {}, {}), 0);
-  assert.equal(V.premiereEtape(L, { horizon: "8-15", objectif: "croissance" }, {}), 2);
-  const complet = { horizon: "8-15", objectif: "croissance", reaction: "rien", perte_max: "p20", connaissances: ["etf"], experience: 5, revenus: "cdi", part_investie: "50-75" };
-  assert.equal(V.premiereEtape(L, complet, { matelasMois: 4, age: "a30" }), n, "tout répondu (prérempli compris) : résumé");
-  assert.equal(V.premiereEtape(L, complet, {}), L.findIndex(q => q.id === "matelas"), "sans prérempli : la question du matelas");
-});
-
-test("libelleReponse, resume : réponses lisibles, prérempli signalé, manque repéré", () => {
+test("libelleReponse, resume : réponses validées lisibles, prérempli signalé, manque repéré", () => {
   assert.equal(V.libelleReponse(Q("horizon"), "8-15"), "8 à 15 ans");
   assert.equal(V.libelleReponse(Q("connaissances"), ["etf", "actions"]), "ETF (fonds indiciels cotés), Actions");
   assert.equal(V.libelleReponse(Q("experience"), 5), "5 ans (5 à 9 ans)");
@@ -203,7 +182,7 @@ function vueRisque(S0, o = {}) {
   ctx.App = { register: (n, api) => { modules[n] = api; } };
   ctx.Store = { db: { doc: () => ({ update: async patch => { if (o.echec) throw new Error("réseau coupé"); ecrits.push(patch); Object.assign(S, patch); } }) } };
   vm.createContext(ctx);
-  for (const f of ["calc.js", "plan.js", "marche.js", "risque.js", "ui.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
+  for (const f of ["calc.js", "plan.js", "marche.js", "risque.js", "ui.js", "claude-prompts.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "risque-view.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.innerHTML = html;
@@ -219,142 +198,106 @@ const demoS = () => {
   return { scope: "foyer", people: D.people || [], positions: D.positions, config: D.config, profil: D.profil, budget: D.budget, risque: null, classes: {} };
 };
 
-test("vue (DOM) : sans profil, invitation ; questionnaire complet au clavier dans le panneau, résumé, enregistrement, verdict focalisé", async () => {
-  const v = vueRisque(demoS());
-  const dlg = () => v.doc.body.querySelector('[role="dialog"]');
-  const corps = () => v.doc.body.querySelector(".ui-panneau-corps");
-  assert.match(v.root.querySelector("#rvVerdict").textContent, /pas encore défini/);
-  assert.equal(v.api.headline(), "À définir");
-  const start = v.root.querySelector('[data-rv="start"]');
-  start.focus(); start.click();
-  assert.equal(dlg().hidden, false, "questionnaire dans le panneau");
-  assert.equal(v.doc.activeElement.getAttribute("id"), "rvQ", "focus sur la question");
-  assert.match(corps().textContent, /Question 1 sur 10/);
-  assert.equal(corps().querySelector('[data-rv="precedent"]').hasAttribute("disabled"), true);
-  // Q1 horizon : touche 4 (8 à 15 ans), puis Entrée
-  v.dom.touche(v.doc.activeElement, "4");
-  assert.equal(corps().querySelector('[data-opt="8-15"]').getAttribute("aria-checked"), "true");
-  v.dom.touche(v.doc.activeElement, "Enter");
-  assert.match(corps().textContent, /Question 2 sur 10/);
-  // Précédent revient à la question 1, réponse gardée
-  corps().querySelector('[data-rv="precedent"]').click();
-  assert.match(corps().textContent, /Question 1 sur 10/);
-  assert.equal(corps().querySelector('[data-opt="8-15"]').getAttribute("aria-checked"), "true");
-  v.dom.touche(v.doc.activeElement, "Enter");
-  // Q2 objectif : flèche bas depuis l'option choisie (radio)
-  v.dom.touche(v.doc.activeElement, "3");
-  const o3 = corps().querySelector('[data-opt="croissance"]');
-  assert.equal(o3.getAttribute("aria-checked"), "true");
-  assert.equal(o3.getAttribute("tabindex"), "0", "radio : seule l'option choisie est tabulable");
-  o3.focus();
-  v.dom.touche(o3, "ArrowUp");
-  assert.equal(corps().querySelector('[data-opt="revenus"]').getAttribute("aria-checked"), "true");
-  assert.equal(v.doc.activeElement.getAttribute("data-opt"), "revenus", "le focus suit la flèche");
-  v.dom.touche(corps().querySelector("#rvQ"), "Enter");
-  // Q3 réaction, Q4 perte max
-  corps().querySelector("#rvQ").focus(); v.dom.touche(v.doc.activeElement, "3"); v.dom.touche(v.doc.activeElement, "Enter");
-  v.dom.touche(v.doc.activeElement, "3"); v.dom.touche(v.doc.activeElement, "Enter");
-  // Q5 connaissances (multi) : 3 et 4
-  assert.match(corps().textContent, /Question 5 sur 10/);
-  v.dom.touche(v.doc.activeElement, "3"); v.dom.touche(v.doc.activeElement, "4");
-  assert.equal(corps().querySelector('[data-opt="etf"]').getAttribute("aria-pressed"), "true");
-  assert.equal(corps().querySelector('[data-opt="actions"]').getAttribute("aria-pressed"), "true");
-  v.dom.touche(v.doc.activeElement, "Enter");
-  // Q6 expérience (nombre) : focus dans le champ, + puis Entrée
-  assert.equal(v.doc.activeElement.getAttribute("id"), "rvNombre");
-  corps().querySelector('[data-rv="plus"]').click();
-  corps().querySelector('[data-rv="plus"]').click();
-  assert.equal(corps().querySelector("#rvNombre").value, "2");
-  v.dom.touche(corps().querySelector("#rvNombre"), "Enter");
-  // Q7 revenus ; Q8 matelas (pré-rempli) ; Q9 part investie ; Q10 âge (pré-rempli)
-  v.dom.touche(v.doc.activeElement, "2"); v.dom.touche(v.doc.activeElement, "Enter");
-  assert.match(corps().textContent, /Pré-rempli d'après votre bilan/);
-  v.dom.touche(v.doc.activeElement, "Enter");
-  v.dom.touche(v.doc.activeElement, "4"); v.dom.touche(v.doc.activeElement, "Enter");
-  assert.match(corps().textContent, /Question 10 sur 10/);
-  assert.match(corps().querySelector('[data-rv="suivant"]').textContent, /Voir le résumé/);
-  v.dom.touche(v.doc.activeElement, "Enter");
-  // Résumé
-  assert.match(corps().textContent, /Vérifiez vos réponses/);
-  assert.match(corps().textContent, /Profil obtenu/);
-  assert.match(corps().textContent, /8 à 15 ans/);
-  assert.equal(corps().querySelectorAll('[data-rv="aller"]').length, 10);
-  assert.equal(v.ecrits.length, 0, "rien n'est enregistré avant la confirmation");
-  // Modifier une réponse depuis le résumé, puis revenir
-  corps().querySelector('[data-rv="aller"]').click();
-  assert.match(corps().textContent, /Question 1 sur 10/);
-  for (let i = 0; i < 10; i++) v.dom.touche(corps().querySelector("#rvQ") || v.doc.activeElement, "Enter");
-  assert.match(corps().textContent, /Vérifiez vos réponses/);
-  corps().querySelector('[data-rv="enregistrer"]').click();
-  await attendre(); await attendre();
-  assert.equal(v.ecrits.length, 1);
-  const r = v.ecrits[0].risque;
-  assert.equal(Object.keys(r).sort().join(), "date,profil,reponses,score");
-  assert.equal(r.reponses.horizon, "8-15");
-  assert.equal(JSON.stringify(r.reponses.connaissances), JSON.stringify(["etf", "actions"]));
-  assert.equal(r.reponses.experience, 2);
-  const attendu = Risque.evaluer(r.reponses, {});
-  assert.equal(r.profil, attendu.profil);
-  assert.equal(r.score, attendu.score);
-  assert.equal(dlg().hidden, true, "panneau fermé après l'enregistrement");
-  assert.equal(v.doc.activeElement.getAttribute("id"), "rvVerdict", "focus sur le verdict");
-  assert.equal(v.stock.has("risque-brouillon"), false, "brouillon effacé");
-  // Le store émet le profil enregistré : page de résultat
-  v.api.update(v.S(), true);
-  assert.match(v.root.querySelector("#rvVerdict").textContent, /portefeuille se comporte comme un profil/);
-  assert.ok(v.root.querySelector('[data-ui-carte="declare"]'));
-  assert.ok(v.root.querySelector('[data-ui-carte="perte"]'));
-  assert.ok(v.root.querySelector(".rv-alloc"), "barres d'allocation");
-  assert.notEqual(v.api.headline(), "À définir");
-});
-
-test("vue (DOM) : Échap ferme le questionnaire sans perdre les réponses ; Reprendre repart de la première question sans réponse", () => {
-  const v = vueRisque(demoS());
-  const corps = () => v.doc.body.querySelector(".ui-panneau-corps");
-  const start = v.root.querySelector('[data-rv="start"]');
-  start.focus(); start.click();
-  v.dom.touche(v.doc.activeElement, "5"); v.dom.touche(v.doc.activeElement, "Enter");
-  v.dom.touche(v.doc.activeElement, "Escape");
-  assert.equal(v.doc.body.querySelector('[role="dialog"]').hidden, true);
-  assert.equal(v.doc.activeElement, start, "focus rendu au bouton");
-  assert.match(v.stock.get("risque-brouillon"), /"horizon":"gt15"/);
-  v.api.update(v.S(), true); // le store émet : la page affiche « Reprendre »
-  const rep = v.root.querySelector('[data-rv="start"]');
-  assert.match(rep.textContent, /Reprendre le questionnaire \(\d+ \/ 10\)/);
-  rep.click();
-  assert.match(corps().textContent, /Question 2 sur 10/);
-});
-
-test("vue (DOM) : profil enregistré — cartes → panneaux (profil, risque réel), Refaire depuis le panneau, échappement ; échec d'écriture signalé", async () => {
+const profilEnregistre = () => {
   const rq = { reponses: { horizon: "8-15", objectif: "croissance", reaction: "rien", perte_max: "p20", connaissances: ["etf", "actions"], experience: 5, revenus: "cdi", matelas: "oui", part_investie: "50-75", age: "a30" } };
   const ev = Risque.evaluer(rq.reponses, {});
-  const S0 = Object.assign(demoS(), { risque: Object.assign(rq, { profil: ev.profil, score: ev.score, date: "2026-10-01" }) });
+  return Object.assign(rq, { profil: ev.profil, score: ev.score, date: "2026-10-01" });
+};
+
+test("vue (DOM) : sans profil, « Faire mon profil de risque avec Claude » (section risque), aucun questionnaire ni écriture", () => {
+  const v = vueRisque(demoS());
+  const P = require("../web/src/claude-prompts.js");
+  assert.match(v.root.querySelector("#rvVerdict").textContent, /pas encore défini/);
+  assert.equal(v.api.headline(), "À définir");
+  const lien = v.root.querySelector(".rv-hero").querySelector(".ui-claude");
+  assert.ok(lien, "lien vers Claude");
+  assert.match(lien.textContent, /Faire mon profil de risque avec Claude/);
+  assert.equal(lien.getAttribute("href"), "https://claude.ai/new?q=" + encodeURIComponent(P.phrase("risque")));
+  assert.equal(v.root.querySelector("[data-rv]"), null, "plus de bouton de questionnaire");
+  assert.equal(v.root.querySelector("select"), null);
+  assert.equal(v.ecrits.length, 0);
+  assert.equal(v.stock.size, 0, "plus de brouillon");
+});
+
+test("vue (DOM) : profil enregistré — cartes → panneaux (profil validé en lecture, risque réel), « Le revoir avec Claude », échappement, focus", () => {
+  const S0 = Object.assign(demoS(), { risque: profilEnregistre() });
   S0.positions[0].bloc = "<img src=x onerror=alert(1)>";
-  const v = vueRisque(S0, { echec: true });
-  assert.doesNotMatch(v.root.querySelector("#rvClassesBody").innerHTML, /<img/);
-  assert.match(v.root.querySelector("#rvClassesBody").innerHTML, /&lt;img/);
+  const v = vueRisque(S0);
+  assert.match(v.root.querySelector("#rvVerdict").textContent, /portefeuille se comporte comme un profil/);
+  assert.match(v.root.querySelector(".rv-hero").textContent, /Le revoir avec Claude/);
+  assert.ok(v.root.querySelector(".rv-alloc"), "barres d'allocation");
+  assert.notEqual(v.api.headline(), "À définir");
+  const classes = v.root.querySelector("#rvClassesBody");
+  assert.doesNotMatch(classes.innerHTML, /<img/);
+  assert.match(classes.innerHTML, /&lt;img/);
+  assert.match(classes.textContent, /Corriger avec Claude/);
+  assert.equal(classes.querySelector("select"), null, "classement en lecture seule");
   const c = v.root.querySelector('[data-ui-carte="declare"]');
   c.focus(); c.click();
   const corps = () => v.doc.body.querySelector(".ui-panneau-corps");
   assert.match(v.doc.body.querySelector(".ui-panneau-titre").textContent, /^Profil /);
-  assert.match(corps().innerHTML, /Vos réponses/);
+  assert.match(corps().innerHTML, /Tes réponses validées/);
+  assert.match(corps().textContent, /8 à 15 ans/);
   assert.match(corps().textContent, /1er octobre 2026|1 octobre 2026/);
+  assert.match(corps().textContent, /Le revoir avec Claude/);
+  assert.equal(corps().querySelector("button[data-rv]"), null, "plus de « Refaire le questionnaire »");
   v.dom.touche(v.doc.activeElement, "Escape");
   assert.equal(v.doc.activeElement, c);
   const p = v.root.querySelector('[data-ui-carte="perte"]');
-  p.click();
+  p.focus(); p.click();
   assert.match(v.doc.body.querySelector(".ui-panneau-titre").textContent, /Risque réel du portefeuille/);
   assert.match(corps().textContent, /Dans une mauvaise année/);
+  // la carte d'origine disparaît pendant l'ouverture : le focus revient au verdict
+  v.root.querySelector(".rv-cartes").innerHTML = "";
   v.dom.touche(v.doc.activeElement, "Escape");
-  // Refaire depuis le panneau du profil : questionnaire prérempli avec les réponses enregistrées
-  v.root.querySelector('[data-ui-carte="declare"]').click();
-  corps().querySelector('[data-rv="refaire"]').click();
-  assert.match(corps().textContent, /Question 1 sur 10/);
-  assert.equal(corps().querySelector('[data-opt="8-15"]').getAttribute("aria-checked"), "true");
-  for (let i = 0; i < 10; i++) v.dom.touche(corps().querySelector("#rvQ") || v.doc.activeElement, "Enter");
-  assert.match(corps().textContent, /Vérifiez vos réponses/);
-  corps().querySelector('[data-rv="enregistrer"]').click();
-  await attendre(); await attendre();
-  assert.match(corps().textContent, /Enregistrement impossible : réseau coupé\. Vos réponses sont gardées/);
-  assert.equal(v.doc.body.querySelector('[role="dialog"]').hidden, false, "le panneau reste ouvert");
+  assert.equal(v.doc.activeElement.getAttribute("id"), "rvVerdict");
+  assert.equal(v.ecrits.length, 0, "aucune écriture");
+});
+
+test("vue (DOM) : accordéons « D'où vient le risque » et « Comment c'est calculé » gardés ouverts à travers les réécritures ; contributions en 5 puis Voir plus", () => {
+  const S0 = Object.assign(demoS(), { risque: profilEnregistre() });
+  const v = vueRisque(S0);
+  const acc = k => v.root.querySelector('[data-rv-acc="' + k + '"]');
+  for (const k of ["contributions", "methode"]) {
+    assert.equal(acc(k).hasAttribute("open"), false, k + " fermé par défaut");
+    acc(k).setAttribute("open", "");
+    acc(k).dispatchEvent(new v.dom.Ev("toggle"));
+  }
+  const avant = acc("contributions");
+  v.api.update(v.S(), true); // même état : rien n'est réécrit
+  assert.equal(acc("contributions"), avant, "pas de réécriture inutile");
+  // le périmètre change : la page est réécrite, les accordéons restent ouverts
+  v.api.update(Object.assign({}, v.S(), { scope: "p1" }), true);
+  assert.notEqual(acc("contributions"), avant, "page réécrite");
+  assert.ok(acc("contributions").hasAttribute("open"));
+  assert.ok(acc("methode").hasAttribute("open"));
+  // refermer : l'état fermé est retenu lui aussi
+  acc("methode").removeAttribute("open"); acc("methode").dispatchEvent(new v.dom.Ev("toggle"));
+  v.api.update(Object.assign({}, v.S(), { scope: "foyer" }), true);
+  assert.equal(acc("methode").hasAttribute("open"), false);
+  // « Voir plus » après 5 classes, si plus de 5 contributions
+  const lignes = acc("contributions").querySelectorAll(".rv-crow");
+  const btn = acc("contributions").querySelector("[data-ui-voirplus]");
+  if (lignes.length > 5) {
+    assert.ok(btn, "bouton Voir plus");
+    assert.equal(acc("contributions").querySelector(".ui-voirplus-liste").querySelectorAll(".rv-crow").length, 5);
+    btn.click();
+    assert.equal(btn.getAttribute("aria-expanded"), "true");
+  } else assert.equal(btn, null);
+});
+
+test("vue (DOM) : plus de 5 contributions → 5 puis Voir plus (le reste caché)", () => {
+  const S0 = Object.assign(demoS(), { risque: profilEnregistre() });
+  // portefeuille varié : une ligne par classe
+  const base = S0.positions[0];
+  const blocs = ["Actions monde", "Small caps", "Émergents", "Obligations", "Fonds euros", "Monétaire", "SCPI", "Or", "Crypto"];
+  S0.positions = blocs.map((b, i) => Object.assign({}, base, { id: "x" + i, bloc: b, nom: b, valeur: 10000 + i * 1000, qty: 1, prix: 10000 + i * 1000 }));
+  const v = vueRisque(S0);
+  const bloc = v.root.querySelector('[data-rv-acc="contributions"]');
+  const n = bloc.querySelectorAll(".rv-crow").length;
+  assert.ok(n > 5, "portefeuille de test : plus de 5 classes");
+  assert.equal(bloc.querySelector(".ui-voirplus-liste").querySelectorAll(".rv-crow").length, 5, "5 d'abord");
+  const reste = bloc.querySelector(".ui-voirplus-reste");
+  assert.ok(reste && reste.hidden, "au-delà de 5 : bloc caché");
+  assert.equal(bloc.querySelector("[data-ui-voirplus]").textContent, "Voir plus (" + (n - 5) + ")");
 });

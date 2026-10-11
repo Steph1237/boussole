@@ -24,6 +24,17 @@ const scopedSelectors = (src, prefix) => {
   const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(s => s && !s.startsWith("@") && !/^(from|to|\d+%)$/.test(s));
   return sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith(prefix));
 };
+/* Variante stricte pour la santé : chaque « @media … { » est remplacé par « } », pour contrôler aussi la première règle de chaque
+   @media (comme test/risque-view.test.mjs). */
+const selecteursHorsPortee = (src, prefix) => {
+  const c = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "}");
+  const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(s => s && !/^(from|to|\d+%)$/.test(s));
+  return sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith(prefix));
+};
+/* Textes affichés au tutoiement : plus de « vous / votre / vos » (ni d'impératif en -ez) hors textes des moteurs. */
+const VOUVOIEMENT = /\b(vous|votre|vos|Vous|Votre|Vos)\b|\b(complétez|indiquez|ouvrez|répondez|renseignez|laissez|survolez|cochez)\b/i;
+const textesHtml = h => h.replace(/<[^>]+>/g, " ");
+const chainesJs = src => [...sansCommentaires(src).matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g)].map(m => m[1] ?? m[2] ?? m[3]);
 
 test("santé : la vue calcule les bonnes pratiques avec Pratiques.evaluer, dans le périmètre courant, et s'enregistre", () => {
   assert.match(js, /window\.Pratiques\.evaluer\(\{positions:S\.positions,profil:S\.profil,config:S\.config,budget:S\.budget,objectifs:S\.objectifs,scope:S\.scope,risque:S\.risque,classes:S\.classes,today:/);
@@ -46,6 +57,20 @@ test("santé : structure — question, verdict, familles en accordéons, critèr
   assert.match(js, /u\.demanderAClaude\(questionPage\(r\)\)/);
   assert.match(js, /u\.brancher\(root,\{surCarte:/, "cartes → panneau");
   assert.match(js, /u\.panneau\.ouvrir\(/);
+});
+
+test("santé : lecture seule — aucune écriture au store, « Compléter avec Claude » ciblés, plus de lienDe", () => {
+  assert.doesNotMatch(sansCommentaires(js), /Store\.|\.db\.|\.update\(\{|\.insert\(|\.upsert\(/, "aucune écriture au store");
+  assert.doesNotMatch(js + html, /<form|<input|<select|<textarea/, "aucun formulaire de saisie");
+  assert.doesNotMatch(js, /lienDe|CRITERES_OBJECTIFS/, "lienDe retiré (pratiques.js renvoie déjà patrimoine/objectifs)");
+  assert.match(js, /"Compléter avec Claude"/);
+  assert.match(js, /ClaudePrompts/);
+});
+
+test("santé : textes affichés au tutoiement (hors textes de pratiques.js)", () => {
+  assert.doesNotMatch(textesHtml(html), VOUVOIEMENT, "sante.html");
+  const bad = chainesJs(js).filter(t => VOUVOIEMENT.test(t));
+  assert.deepEqual(bad, [], "sante.js");
 });
 
 test("santé : chiffre clé « 90/100 », mention permanente et explication du calcul", () => {
@@ -78,28 +103,29 @@ test("verdict : une phrase selon la note (80 / 60), provisoire, sans note, indis
   const solide = SV.verdict(R([C("a"), C("b", { famille: "effort" }), C("c", { famille: "allocation" }), C("d", { famille: "efficacite", points: 12 })]));
   assert.equal(solide.label, "Solide");
   assert.equal(solide.ton, "good");
-  assert.equal(solide.phrase, "Oui, votre situation est solide, avec un point à travailler.");
+  assert.equal(solide.phrase, "Oui, ta situation est solide, avec un point à travailler.");
   const correct = SV.verdict(R([C("a", { points: 12 }), C("b", { famille: "effort", points: 14 }), C("c", { famille: "allocation", points: 14 }), C("d", { famille: "efficacite" })]));
   assert.equal(correct.label, "Correct");
   assert.equal(correct.ton, "warn");
-  assert.equal(correct.phrase, "Dans l'ensemble, oui : votre situation est correcte, avec trois points à travailler.");
+  assert.equal(correct.phrase, "Dans l'ensemble, oui : ta situation est correcte, avec trois points à travailler.");
   const faible = SV.verdict(R([C("a", { points: 4 }), C("b", { famille: "effort", points: 8 }), C("c", { famille: "allocation", points: 20 })]));
   assert.equal(faible.label, "À consolider");
   assert.equal(faible.ton, "crit");
-  assert.match(faible.phrase, /^Pas encore : votre situation est à consolider, avec deux points à travailler\.$/);
+  assert.match(faible.phrase, /^Pas encore : ta situation est à consolider, avec deux points à travailler\.$/);
   const parfait = SV.verdict(R([C("a"), C("b", { famille: "effort" }), C("c", { famille: "allocation" })]));
-  assert.equal(parfait.phrase, "Oui, votre situation est solide.");
+  assert.equal(parfait.phrase, "Oui, ta situation est solide.");
   // Provisoire : moins de la moitié du poids noté (Effort seul, 25 %)
   const prov = SV.verdict(R([C("b", { famille: "effort" }), C("x", { aCompleter: true, points: 0 })]));
   assert.equal(prov.provisoire, true);
   assert.equal(prov.label, "Provisoire");
   assert.equal(prov.note, "100");
-  assert.equal(prov.phrase, "Note provisoire : 1 famille sur 4 notée ; complétez votre bilan pour une note fiable.");
-  assert.equal(prov.partiel, "Note calculée sur 1 critère : 1 à compléter ne compte pas encore.");
+  assert.equal(prov.phrase, "Note provisoire : 1 famille sur 4 notée ; complète ton bilan pour une note fiable.");
+  assert.equal(prov.partiel, "Les critères à compléter ne comptent pas encore dans la note : ils sont regroupés en bas de page.");
   const rien = SV.verdict(R([C("x", { aCompleter: true, points: 0 }), C("y", { aCompleter: true, points: 0 })]));
   assert.equal(rien.note, "—");
   assert.match(rien.phrase, /^Pas encore de note/);
-  assert.equal(rien.partiel, "2 critères à compléter, regroupés en bas de page.");
+  assert.equal(rien.partiel, "Les critères à compléter sont regroupés en bas de page.");
+  assert.doesNotMatch(rien.partiel + prov.partiel, /\d/, "règle 9 : pas de compteur hors navigation");
   assert.deepEqual(SV.verdict(null), { note: "—", label: "", phrase: "Le score n'est pas disponible dans cette vue.", ton: "", provisoire: false, partiel: "" });
 });
 
@@ -113,30 +139,35 @@ test("niveau, valeurCarte, resumeFamille : jauge 16 / 10, information sans note"
   assert.equal(SV.valeurCarte(C("a", { aCompleter: true })), "À compléter");
   assert.equal(SV.valeurCarte(C("a", { informatif: true, valeur: 0.342 })), "34 %");
   const f = { cle: "securite", titre: "Sécurité", poids: 30, total: 70, criteres: [C("a"), C("b", { points: 8 }), C("c", { aCompleter: true }), C("d", { informatif: true })] };
-  assert.deepEqual(SV.resumeFamille(f), { note: "70", ton: "warn", notes: 2, aTravailler: 1, aCompleter: 1, sous: "2 critères notés · 1 à travailler · 1 à compléter" });
+  assert.deepEqual(SV.resumeFamille(f), { note: "70", ton: "warn", notes: 2, aTravailler: 1, aCompleter: 1, sous: "des points à travailler · des données à compléter" });
   assert.equal(SV.resumeFamille({ total: null, criteres: [] }).sous, "aucun critère pour le moment");
-  assert.equal(SV.resumeFamille({ total: 100, criteres: [C("a")] }).sous, "1 critère noté · tout est au vert");
+  assert.equal(SV.resumeFamille({ total: 100, criteres: [C("a")] }).sous, "tout est au vert");
+  assert.equal(SV.resumeFamille({ total: null, criteres: [C("c", { aCompleter: true })] }).sous, "des données à compléter");
 });
 
-test("groupesACompleter : critères à compléter regroupés par action qui les débloque ; objectifs → Patrimoine › Objectifs", () => {
-  const cs = [C("matelas", { aCompleter: true, lien: "patrimoine/budget" }), C("ok"), C("apport", { aCompleter: true, lien: "patrimoine/budget" }),
-    C("dormant", { aCompleter: true, lien: "patrimoine/budget" }), C("liquidite_objectifs", { aCompleter: true, lien: "patrimoine/budget" }),
-    C("protection", { aCompleter: true, lien: "compte/donnees" }), C("sans", { aCompleter: true, lien: null })];
+test("groupesACompleter : critères à compléter regroupés par section de Claude (lien du critère tel quel), dans l'ordre", () => {
+  const cs = [C("matelas", { aCompleter: true, lien: "patrimoine/budget" }), C("ok"), C("apport", { aCompleter: true, lien: "patrimoine/objectifs" }),
+    C("dormant", { aCompleter: true, lien: "patrimoine/budget" }), C("liquidite_objectifs", { aCompleter: true, lien: "patrimoine/objectifs" }),
+    C("protection", { aCompleter: true, lien: "compte/donnees" }), C("endettement", { aCompleter: true, lien: "compte/donnees" }),
+    C("adequation", { aCompleter: true, lien: "pilotage/risque" }), C("frais", { aCompleter: true, lien: "patrimoine/placements" }), C("sans", { aCompleter: true, lien: null })];
   const g = SV.groupesACompleter(cs);
-  assert.deepEqual(g.map(x => [x.route, x.action, x.criteres.map(c => c.cle)]), [
-    ["patrimoine/budget", "Compléter le budget", ["matelas", "dormant"]],
-    ["patrimoine/objectifs", "Compléter les objectifs", ["apport", "liquidite_objectifs"]],
-    ["compte/donnees", "Compléter le profil", ["protection"]],
-    [null, "À compléter", ["sans"]],
+  assert.deepEqual(g.map(x => [x.section, x.titre, x.route, x.action, x.criteres.map(c => c.cle)]), [
+    ["budget", "Ton budget", "patrimoine/budget", "Voir le budget", ["matelas", "dormant"]],
+    ["objectifs", "Tes objectifs", "patrimoine/objectifs", "Voir les objectifs", ["apport", "liquidite_objectifs"]],
+    ["protection", "Ta protection", "compte/donnees", "Voir tes données", ["protection"]],
+    ["revenus", "Tes revenus", "compte/donnees", "Voir tes données", ["endettement"]],
+    ["risque", "Ton profil de risque", "pilotage/risque", "Voir le profil de risque", ["adequation"]],
+    ["placements", "Tes placements", "patrimoine/placements", "Voir les placements", ["frais"]],
+    ["bilan", "Ton bilan", null, "", ["sans"]],
   ]);
   assert.deepEqual(SV.groupesACompleter([C("a")]), []);
-  assert.equal(SV.lienDe(C("apport", { lien: "patrimoine/budget" })), "patrimoine/objectifs");
-  assert.equal(SV.lienDe(C("matelas", { lien: "patrimoine/budget" })), "patrimoine/budget");
-  assert.equal(SV.lienDe(C("x", { lien: null })), null);
+  assert.equal(SV.lienDe, undefined, "lienDe retiré : le lien du critère est utilisé tel quel");
+  assert.equal(SV.sectionDe(C("protection", { lien: "compte/donnees" })), "protection");
+  assert.equal(SV.sectionDe(C("speculatif", { lien: "patrimoine/placements" })), "placements");
 });
 
 test("lienPanneau et questions pour Claude : où agir seulement si utile, question citant le critère", () => {
-  assert.deepEqual(SV.lienPanneau(C("matelas", { aCompleter: true, lien: "patrimoine/budget" })), { label: "Compléter le budget", href: "#patrimoine/budget" });
+  assert.deepEqual(SV.lienPanneau(C("matelas", { aCompleter: true, lien: "patrimoine/budget" })), { label: "Voir le budget", href: "#patrimoine/budget" });
   assert.deepEqual(SV.lienPanneau(C("frais", { points: 8 })), { label: "Où agir : Patrimoine › Placements", href: "#patrimoine/placements" });
   assert.equal(SV.lienPanneau(C("frais", { points: 16 })), null, "critère au vert : pas de lien");
   assert.equal(SV.lienPanneau(C("devises", { informatif: true, points: null })), null);
@@ -144,6 +175,13 @@ test("lienPanneau et questions pour Claude : où agir seulement si utile, questi
   assert.match(SV.questionCritere(C("x", { aCompleter: true })), /est à compléter/);
   assert.match(SV.questionPage(R([C("a")])), /est de 100\/100/);
   assert.match(SV.questionPage(null), /compléter mon bilan/);
+  // Pied du panneau : « Compléter avec Claude » ciblé (section du critère) pour un critère à compléter, « Demander à Claude » sinon.
+  const P = require("../web/src/claude-prompts.js");
+  const pc = SV.piedCritere(C("matelas", { aCompleter: true, lien: "patrimoine/budget", titre: "Matelas" }), UIm);
+  assert.match(pc, />Compléter avec Claude</);
+  assert.ok(pc.includes(UIm.esc(UIm.urlClaude(P.phrase("budget", "le critère « Matelas » de mes bonnes pratiques")))));
+  assert.match(SV.piedCritere(C("frais", { points: 8 }), UIm), />Demander à Claude</);
+  assert.equal(SV.phraseCompleter("protection", "x"), P.phrase("protection", "x"));
 });
 
 test("rendus : échappement du critère, règle et source en accordéon fermé, familles fermées par défaut", () => {
@@ -152,7 +190,7 @@ test("rendus : échappement du critère, règle et source en accordéon fermé, 
   assert.doesNotMatch(d, /<script>|<img|<i>p|& <b>|x<b>/);
   assert.match(d, /&lt;script&gt;r&lt;\/script&gt;/);
   assert.match(d, /<details class="ui-acc"><summary class="ui-acc-titre"><span>Règle et source<\/span>/);
-  assert.match(d, /<dt>Votre situation<\/dt><dd>a &amp; &lt;b&gt;<\/dd>/);
+  assert.match(d, /<dt>Ta situation<\/dt><dd>a &amp; &lt;b&gt;<\/dd>/);
   assert.match(d, /Piste<\/b> &lt;i&gt;p&lt;\/i&gt;/);
   const r = R([x, C("b", { famille: "effort" })]);
   const f = SV.famillesHtml(r, UIm, new Set(["effort"]));
@@ -163,8 +201,10 @@ test("rendus : échappement du critère, règle et source en accordéon fermé, 
   assert.doesNotMatch(f, /<img|<b>/);
   assert.match(f, /data-ui-carte="x&lt;b&gt;"/);
   const ac = SV.aCompleterHtml([C("matelas", { aCompleter: true, lien: "patrimoine/budget", titre: "<u>m</u>" })], UIm);
-  assert.match(ac, /data-goto="patrimoine\/budget">Compléter le budget<\/a>/);
-  assert.doesNotMatch(ac, /<u>/);
+  assert.match(ac, /data-goto="patrimoine\/budget">Voir le budget<\/a>/);
+  assert.match(ac, /class="ui-claude"[^>]*>.*Compléter avec Claude/);
+  assert.match(ac, /Ton budget <span class="st-grp-etat">à compléter<\/span>/);
+  assert.doesNotMatch(ac, /Débloque|<u>/, "plus de compteur « Débloque N critères »");
 });
 
 test("bonnes pratiques sur la démo : 4 familles, critères au contrat, liens vers des routes connues", () => {
@@ -181,9 +221,9 @@ test("bonnes pratiques sur la démo : 4 familles, critères au contrat, liens ve
       assert.ok(c.titre && c.regle && c.source && c.cible, scope + " " + c.cle);
       // Route canonique ou ancienne route de la table de correspondance : doit mener à une sous-vue existante.
       if (c.lien) { const x = App.resolve(c.lien); assert.ok(x && known.has(x.space + "/" + x.sub), "route inconnue : " + c.lien); }
-      // Lien affiché par la vue : celui du critère, ou Patrimoine › Objectifs pour les critères d'objectifs.
-      const l = SV.lienDe(c);
-      assert.ok(l === c.lien || (l === "patrimoine/objectifs" && ["liquidite_objectifs", "apport"].includes(c.cle)), c.cle);
+      // Critères d'objectifs : pratiques.js renvoie déjà Patrimoine › Objectifs (d'où le retrait de lienDe dans la vue).
+      if (["liquidite_objectifs", "apport"].includes(c.cle)) assert.equal(c.lien, "patrimoine/objectifs", c.cle);
+      assert.ok(["budget", "objectifs", "revenus", "protection", "risque", "placements"].includes(SV.sectionDe(c)), c.cle);
     }
     assert.ok(SV.verdict(r).phrase.length > 10);
   }
@@ -198,7 +238,7 @@ function vueSante(S0) {
   ctx.window = ctx; ctx.self = ctx;
   ctx.App = { register: (n, api) => { modules[n] = api; } };
   vm.createContext(ctx);
-  for (const f of ["calc.js", "plan.js", "marche.js", "risque.js", "pratiques.js", "ui.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
+  for (const f of ["calc.js", "plan.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "sante.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.innerHTML = html;
@@ -228,7 +268,7 @@ test("vue (DOM) : verdict en tête, 4 familles fermées, carte → panneau (règ
   carte.focus(); carte.click();
   const dlg = v.doc.body.querySelector('[role="dialog"]');
   assert.equal(dlg.hidden, false, "panneau ouvert");
-  assert.match(dlg.querySelector(".ui-panneau-corps").textContent, /Votre situation/);
+  assert.match(dlg.querySelector(".ui-panneau-corps").textContent, /Ta situation/);
   assert.match(dlg.querySelector(".ui-panneau-corps").innerHTML, /Règle et source/);
   assert.match(dlg.querySelector(".ui-panneau-pied").innerHTML, /Demander à Claude/);
   v.dom.touche(v.doc.activeElement, "Escape");
@@ -245,10 +285,12 @@ test("vue (DOM) : sans budget ni profil, critères à compléter regroupés en f
   assert.equal(ac.hidden, false, "bloc « À compléter » visible");
   const liste = v.root.querySelector("#santeACList");
   assert.match(liste.innerHTML, /data-goto="patrimoine\/budget"/);
-  assert.match(liste.innerHTML, /Débloque \d+ critère/);
+  assert.doesNotMatch(liste.innerHTML, /Débloque/);
+  assert.match(liste.innerHTML, /Compléter avec Claude/);
   const c0 = ac.querySelector("[data-ui-carte]");
   const cle = c0.getAttribute("data-ui-carte");
   c0.focus(); c0.click();
+  assert.match(v.doc.body.querySelector(".ui-panneau-pied").innerHTML, /Compléter avec Claude/, "critère à compléter : Compléter avec Claude");
   // le store émet un état différent pendant l'ouverture : la page est redessinée
   v.api.update(Object.assign(demoS(), { budget: null, profil: null, risque: null, config: null, positions: demoS().positions.slice(1) }), true);
   v.dom.touche(v.doc.activeElement, "Escape");
@@ -257,9 +299,32 @@ test("vue (DOM) : sans budget ni profil, critères à compléter regroupés en f
   assert.equal(v.doc.activeElement, c1);
 });
 
-test("santé : CSS entièrement scopé sous #view-sante (et .ui-panneau .st-… pour le panneau)", () => {
-  assert.deepEqual(scopedSelectors(css, "#view-sante").filter(x => !x.startsWith(".ui-panneau .st-")), []);
-  assert.ok(scopedSelectors(css, "#view-sante").length > 0, "styles du panneau présents");
+test("vue (DOM) : panneau ouvert rafraîchi par le store sans voler le focus ni rouvrir le panneau", () => {
+  const v = vueSante(demoS());
+  const carte = v.root.querySelector('[data-ui-carte="geographie"]');
+  const cle = carte.getAttribute("data-ui-carte");
+  carte.focus(); carte.click();
+  const corps = v.doc.body.querySelector(".ui-panneau-corps"), titre = v.doc.body.querySelector(".ui-panneau-titre");
+  const sum = corps.querySelector("summary");
+  sum.setAttribute("x", "1"); corps.querySelector("details").setAttribute("open", "");
+  sum.focus();
+  const avant = corps.innerHTML, focusTitre = titre.focusCount;
+  // le store émet un état différent (première position revalorisée) : le texte du critère change, le panneau reste ouvert
+  const S1 = demoS(); S1.positions = S1.positions.map((p, i) => i === 0 ? Object.assign({}, p, { qty: (p.qty || 1) * 1.1, valeur: (p.valeur || 0) * 1.1 }) : p);
+  v.api.update(S1, true);
+  assert.equal(v.doc.body.querySelector('[role="dialog"]').hidden, false);
+  assert.notEqual(corps.innerHTML, avant, "corps réécrit");
+  assert.equal(titre.focusCount, focusTitre, "le focus n'est pas remis sur le titre");
+  assert.equal(v.doc.activeElement.localName, "summary", "focus rendu au même élément du corps");
+  assert.ok(corps.contains(v.doc.activeElement));
+  assert.ok(corps.querySelector("details").hasAttribute("open"), "accordéon ouvert gardé");
+  v.dom.touche(v.doc.activeElement, "Escape");
+  assert.equal(v.doc.activeElement, v.root.querySelector('[data-ui-carte="' + cle + '"]'));
+});
+
+test("santé : CSS entièrement scopé sous #view-sante (et .ui-panneau .st-… pour le panneau), première règle des @media comprise", () => {
+  assert.deepEqual(selecteursHorsPortee(css, "#view-sante").filter(x => !x.startsWith(".ui-panneau .st-")), []);
+  assert.ok(selecteursHorsPortee(css, "#view-sante").length > 0, "styles du panneau présents");
 });
 
 test("pilotage (Bilan › Placements) : plus de carte santé, d'alertes ni de règles", () => {

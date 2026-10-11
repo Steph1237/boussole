@@ -293,6 +293,9 @@
 .ui-panneau .ts-p-kpis dd{margin:0;font:700 17px/1.25 var(--f-display)}
 .ui-panneau .ts-p-kpis small{display:block;font:400 11.5px var(--f-body);color:var(--muted)}
 .ui-panneau .ts-p-marge,.ui-panneau .ts-p-plafond{margin:0 0 8px;font-size:13px;line-height:1.45;color:var(--muted)}
+#view-toise .ts-msg{margin:0;font-size:13px;color:var(--muted)}
+#view-toise .ts-msg:empty{display:none}
+.ui-panneau .ts-p-avert{margin:0 0 10px;padding:8px 10px;border-left:3px solid var(--warn);border-radius:var(--radius-sm);background:var(--warn-soft);font-size:13px;line-height:1.45;color:var(--ink)}
 .ui-panneau .ts-p-next{margin:0 0 12px;padding-top:10px;border-top:1px dashed var(--line2);font-size:14px;line-height:1.45}
 .ui-panneau .ts-p-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}@media (max-width:720px){
   #view-toise .verdict{grid-template-columns:1fr;padding:18px}
