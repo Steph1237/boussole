@@ -1,103 +1,44 @@
-<div class="bilan">
-  <!-- Faire mon bilan avec Claude : tant que l'état du bilan (BilanEtat) est sous 100 %, masquable pour la session. -->
-  <section class="bl-claude" id="blClaude" aria-labelledby="blClaudeTitle" hidden>
-    <div class="bl-claude-g" aria-hidden="true"><span class="bl-claude-f" id="blClaudeFill"></span></div>
-    <div class="bl-claude-b">
-      <h2 id="blClaudeTitle">Faire mon bilan avec Claude</h2>
-      <p class="small" id="blClaudeTxt"></p>
+<div class="bl">
+  <section class="bl-tete" aria-labelledby="blTitre">
+    <div class="bl-tete-l">
+      <h2 id="blTitre" tabindex="-1">Qu'est-ce que je possède en immobilier et que dois-je ?</h2>
+      <p class="bl-verdict" id="blVerdict">Chargement…</p>
     </div>
-    <a class="bl-btn" href="#agent/connexion" data-goto="agent/connexion">Commencer</a>
-    <button type="button" class="bl-claude-x" id="blClaudeX" aria-label="Masquer cette carte pour la session">×</button>
+    <div class="bl-tete-act" id="blDemander"></div>
   </section>
-  <p class="bl-loading muted" id="blLoading">Chargement des données…</p>
-  <div class="bl-grid" id="blBody" hidden>
 
-    <section class="bl-summary" aria-label="Chiffres clés">
-      <div class="bl-kpi bl-kpi-net">
-        <div class="label" id="blNetLabel">Patrimoine net</div>
-        <div class="bl-big num" id="blNet">—</div>
-        <div class="small muted" id="blNetSub"></div>
-      </div>
-      <div class="bl-kpi">
-        <div class="label">Placements financiers</div>
-        <div class="bl-mid num" id="blFin">—</div>
-        <div class="small" id="blFinSub"></div>
-      </div>
-      <div class="bl-kpi">
-        <div class="label">Épargne du mois</div>
-        <div class="bl-mid num" id="blEpargne">—</div>
-        <div class="small muted" id="blEpargneSub"></div>
-      </div>
-      <div class="bl-kpi">
-        <div class="label">Matelas</div>
-        <div class="bl-mid num" id="blMatelas">—</div>
-        <div class="small muted" id="blMatelasSub"></div>
-      </div>
-      <div class="bl-kpi">
-        <div class="label">Santé</div>
-        <div class="bl-mid num" id="blSante">—</div>
-        <div class="small" id="blSanteSub"></div>
-      </div>
-      <div class="bl-kpi">
-        <div class="label">Profil de risque</div>
-        <div class="bl-mid"><a class="bl-link" href="#pilotage/risque" data-goto="pilotage/risque">À définir</a></div>
-        <div class="small muted">un court questionnaire, bientôt</div>
-      </div>
+  <p class="bl-etat" id="blEtat" role="status">Chargement des données…</p>
+
+  <div class="bl-corps" id="blCorps" hidden>
+    <section aria-label="Chiffres clés">
+      <div class="bl-tuiles" id="blTuiles"></div>
     </section>
 
-    <section class="panel bl-comp" aria-labelledby="blCompTitle">
-      <div class="panel-head"><h2 id="blCompTitle">Ce que je possède, ce que je dois</h2><span class="small muted" id="blCompScope"></span></div>
-      <div class="bl-bars" id="blCompBars"></div>
-      <div class="bl-legend" id="blCompLegend"></div>
-      <div class="bl-ctable" id="blCompTable"></div>
-      <p class="small muted bl-hint" id="blCompHint" hidden>Ajoutez vos biens et crédits dans <a class="bl-link" href="#compte/donnees" data-goto="compte/donnees">Compte › Données</a> pour un bilan complet.</p>
-    </section>
+    <div class="bl-vide" id="blVide" hidden></div>
 
-    <section class="panel bl-flux" aria-labelledby="blFluxTitle">
-      <div class="panel-head"><h2 id="blFluxTitle">Flux du mois</h2><span class="small muted" id="blFluxHead"></span></div>
-      <div id="blFlux"></div>
-    </section>
-
-    <section class="panel bl-alloc" aria-labelledby="blAllocTitle">
-      <div class="panel-head"><h2 id="blAllocTitle">Allocation</h2><span class="small muted" id="blAllocTotal"></span></div>
-      <div class="bl-alloc-ctl">
-        <div class="seg" id="blAllocSeg" role="group" aria-label="Regrouper par">
-          <button type="button" data-mode="classe" aria-pressed="true">Classe d'actifs</button>
-          <button type="button" data-mode="enveloppe" aria-pressed="false">Enveloppes</button>
-          <button type="button" data-mode="liquidite" aria-pressed="false">Liquidité</button>
-        </div>
-        <label class="bl-chk"><input type="checkbox" id="blAllocImmo" checked> Inclure l'immobilier physique</label>
+    <section class="bl-sec" id="blBiensSec" aria-labelledby="blBiensT">
+      <div class="bl-sec-tete">
+        <h2 class="bl-h2" id="blBiensT">Mes biens immobiliers</h2>
+        <a class="bl-btn" href="#compte/donnees?section=biens" data-goto="compte/donnees?section=biens">Ajouter un bien</a>
       </div>
-      <div class="bl-rows" id="blAlloc"></div>
-      <p class="small muted bl-note" id="blAllocNote"></p>
+      <div class="bl-cartes" id="blBiens"></div>
     </section>
 
-    <section class="panel bl-evol" aria-labelledby="blEvolTitle">
-      <div class="panel-head"><h2 id="blEvolTitle">Évolution</h2><span class="small muted" id="blEvolNote"></span></div>
-      <div class="bl-evo-ctl" id="blEvoCtl" hidden>
-        <div class="seg bl-evo-per" id="blEvoPer" role="group" aria-label="Période"></div>
-        <div class="bl-evo-dates" id="blEvoDates" hidden>
-          <label>Du <input type="date" id="blEvoDu"></label>
-          <label>au <input type="date" id="blEvoAu"></label>
-        </div>
-        <div class="bl-evo-row">
-          <label class="bl-evo-gran">Pas <select id="blEvoGran"></select></label>
-          <div class="seg" id="blEvoVue" role="group" aria-label="Affichage" hidden>
-            <button type="button" data-vue="courbe" aria-pressed="true">Courbe</button>
-            <button type="button" data-vue="variations" aria-pressed="false">Variations</button>
-          </div>
-        </div>
+    <section class="bl-sec" id="blCreditsSec" aria-labelledby="blCreditsT">
+      <div class="bl-sec-tete">
+        <h2 class="bl-h2" id="blCreditsT">Mes crédits</h2>
+        <a class="bl-btn" href="#compte/donnees?section=credits" data-goto="compte/donnees?section=credits">Ajouter un crédit</a>
       </div>
-      <p class="small bl-evo-resume" id="blEvoResume"></p>
-      <div class="bl-chart" id="blChart"></div>
-      <div class="bl-legend" id="blEvolLegend"></div>
+      <div class="bl-cartes" id="blCredits"></div>
     </section>
 
-    <section class="panel bl-todo" aria-labelledby="blTodoTitle">
-      <div class="panel-head"><h2 id="blTodoTitle">À traiter</h2><span class="ui-sr" id="blTodoCount"></span></div>
-      <div class="bl-todo-list" id="blTodo"></div>
-      <p class="bl-todo-foot"><a class="bl-link" href="#aujourdhui/vue" data-goto="aujourdhui/vue">Tout voir dans Aujourd'hui</a></p>
-    </section>
-
+    <details class="ui-acc bl-how">
+      <summary class="ui-acc-titre"><span>Comment ces chiffres sont calculés</span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps bl-how-corps">
+        <p>Valeurs, restes à rembourser, mensualités et loyers sont ceux déclarés dans Compte › Données, par vous ou par Claude avec votre accord ; Boussole ne réévalue pas les biens.</p>
+        <p>Périmètre : un bien compte pour la quote-part de chaque personne (50 % par défaut) et son prêt suit cette quote-part ; un autre crédit compte pour son titulaire, ou pour moitié à chacun s'il est commun.</p>
+        <p>Taux d'endettement : mensualités de tous les crédits divisées par les revenus mensuels (salaires nets et autres revenus du profil, loyers perçus, revenus ajoutés au budget). Les banques le plafonnent à 35 % (norme du Haut Conseil de stabilité financière) ; votre capacité d'emprunt est détaillée dans Pilotage › Rang.</p>
+      </div>
+    </details>
   </div>
 </div>

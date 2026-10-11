@@ -26,13 +26,13 @@ function lienAlerte(a){
   if(a&&a.rule) return {lien:L_PLACEMENTS,lien2:L_REGLES};
   const t=String(a&&a.title||"");
   if(/^Matelas/i.test(t)) return {lien:L_BUDGET,lien2:{route:"compte/regles",label:"Régler la cible"}};
-  if(/^Le .*\(dans \d+ jours?\)/.test(String(a&&a.text||""))) return {lien:{route:"patrimoine/budget",label:"Voir les objectifs"},lien2:null}; // échéance (config.milestones)
+  if(/^Le .*\(dans \d+ jours?\)/.test(String(a&&a.text||""))) return {lien:{route:"patrimoine/objectifs",label:"Voir les objectifs"},lien2:null}; // échéance (config.milestones) → Patrimoine › Objectifs
   return {lien:L_PLACEMENTS,lien2:null}; // écart aux cibles, mise à jour nocturne, signaux de l'agent
 }
 const PISTE_LIEN={matelas:L_BUDGET,epargne:L_BUDGET,endettement:L_PROFIL,patrimoine:L_PROFIL,concentration:L_PLACEMENTS};
 const lienPiste=cle=>PISTE_LIEN[cle]||L_PROFIL;
 /* Lien d'un critère des bonnes pratiques (route) → { route, label }. */
-const ROUTE_LABEL={"patrimoine/budget":"Ouvrir le budget","compte/donnees":"Compléter le profil","patrimoine/placements":"Voir les placements",
+const ROUTE_LABEL={"patrimoine/budget":"Ouvrir le budget","patrimoine/objectifs":"Voir les objectifs","compte/donnees":"Compléter le profil","patrimoine/placements":"Voir les placements",
   "pilotage/risque":"Voir le profil de risque","pilotage/sante":"Voir les bonnes pratiques","aujourdhui/vue":"Voir Aujourd'hui","agent/connexion":"Compléter avec Claude"};
 const lienRoute=route=>route&&String(route).includes("/")?{route:String(route),label:ROUTE_LABEL[route]||"Voir le détail"}:{route:"pilotage/sante",label:ROUTE_LABEL["pilotage/sante"]};
 /* Pistes des bonnes pratiques : critères notés (ni « à compléter » ni informatifs) sous 20 points, liés à leur critère. */

@@ -1,4 +1,4 @@
-// Agent › Connexion (web/src/claude-guide.*) et carte « Faire mon bilan avec Claude » du Bilan.
+// Agent › Connexion (web/src/claude-guide.*) ; la carte « Faire mon bilan avec Claude » de l'ancien Bilan est couverte par l'accueil et cette page.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -52,7 +52,10 @@ test("claude-guide : connecteur (adresse, Claude Code), compte anonyme, démo, a
   assert.match(js, /Store\.mode === "demo"/);
   assert.match(html, /href="compte\.html#securiser"/);
   assert.match(html, /id="cgConnexion"/);
-  for (const r of ["compte/donnees", "patrimoine/budget", "pilotage/risque", "agent/propositions"]) assert.match(html, new RegExp('data-goto="' + r + '"'));
+  for (const r of ["compte/donnees", "patrimoine/budget", "patrimoine/objectifs", "pilotage/risque", "agent/propositions"]) assert.match(html, new RegExp('data-goto="' + r + '"'));
+  assert.match(html, /data-goto="patrimoine\/budget">Patrimoine › Budget<\/a>/);
+  assert.match(html, /data-goto="patrimoine\/objectifs">Patrimoine › Objectifs<\/a>/);
+  assert.doesNotMatch(html, /Budget et objectifs/);
   const ids = [...js.matchAll(/\$\("(cg[A-Za-z0-9]+)"\)/g)].map(m => m[1]);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
 });
@@ -65,10 +68,11 @@ test("claude-guide.css : entièrement scopé sous #view-claude-guide", () => {
   assert.deepEqual(unscoped(css, "#view-claude-guide"), []);
 });
 
-test("Bilan : carte « Faire mon bilan avec Claude » tant que l'état est sous 100 %, masquable pour la session", () => {
-  assert.match(bilanHtml, /id="blClaude"[\s\S]*Faire mon bilan avec Claude[\s\S]*data-goto="agent\/connexion"[^>]*>Commencer</);
-  assert.match(bilanJs, /window\.BilanEtat\.etat\(S\)/);
-  assert.match(bilanJs, /E\.pourcentage >= 100/);
-  assert.match(bilanJs, /sessionStorage\.setItem\(CLAUDE_KEY, "1"\)/);
-  assert.deepEqual(unscoped(bilanCss, "#view-bilan"), []);
+test("Faire mon bilan avec Claude : plus dans Patrimoine › Immobilier et crédits, couvert par l'accueil et Agent › Connexion (BilanEtat)", () => {
+  assert.doesNotMatch(bilanHtml, /id="blClaude"|Faire mon bilan avec Claude/);
+  assert.doesNotMatch(bilanJs, /BilanEtat/);
+  assert.match(readFileSync("web/src/accueil.js", "utf8"), /BilanEtat\.etat\(S\)/);
+  assert.match(js, /window\.BilanEtat\.etat\(S\)/);
+  assert.match(html, /Je préfère remplir moi-même/);
+  assert.deepEqual(unscoped(bilanCss, "#view-bilan").filter(x => !x.startsWith(".ui-panneau .bl-")), []);
 });

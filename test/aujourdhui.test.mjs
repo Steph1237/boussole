@@ -189,7 +189,7 @@ test("boite : échéances à 30 jours au plus (config et objectifs datés), urge
   assert.match(sp(b[0].contexte), /dans 5 jours/);
   assert.match(b[0].contexte, /Prévoir 1 100 €\./);
   assert.match(sp(b[1].contexte), /dans 7 jours/);
-  assert.equal(b[0].action.route, "patrimoine/budget");
+  assert.deepEqual(b[0].action, { label: "Voir les objectifs", route: "patrimoine/objectifs" }, "échéances → Patrimoine › Objectifs");
   const lim = A.boite(vide({ config: { milestones: [{ title: "Pile 30", date: "2026-11-09" }, { title: "31", date: "2026-11-10" }, { title: "Pile 7", date: "2026-10-17" }, { title: "Jour J", date: TODAY }] } }), TODAY, { Rules: fauxRules([], []) });
   assert.deepEqual(lim.map(x => [x.titre, x.urgence]), [["Jour J", 2], ["Pile 7", 2], ["Pile 30", 3]]);
   assert.match(lim[0].contexte, /aujourd'hui/);
@@ -435,18 +435,49 @@ test("rendu : 4 cartes, boîte de réception (5 puis « Voir plus »), état vid
 test("detail : 2 à 4 lignes et un lien vers la page complète pour chaque carte, texte échappé", () => {
   const S = demoS(), t = jourLocal();
   const ind = A.indicateurs(S, t, { id: "1a", granularite: "mois" }, DEPS);
-  const routes = { net: "patrimoine/placements", pratiques: "pilotage/sante", allocation: "pilotage/risque", echeance: "patrimoine/budget" };
+  const routes = { net: "patrimoine/placements", pratiques: "pilotage/sante", allocation: "pilotage/risque", echeance: "patrimoine/objectifs" };
   for (const [id, r] of Object.entries(routes)) {
     const d = A.detail(id, ind, { id: "1a", granularite: "mois" });
     assert.ok(d.titre, id);
-    const n = (d.contenu.match(/<li/g) || []).length;
-    assert.ok(n >= 2 && n <= 4, id + " : " + n + " lignes");
+    const n = ((id === "net" ? d.contenu.split('<details')[0] : d.contenu).match(/<li/g) || []).length;
+    assert.ok(n >= 2 && n <= (id === "net" ? 6 : 4), id + " : " + n + " lignes");
     assert.equal(d.lien.href, "#" + r, id + " → " + r);
     assert.ok(d.lien.label);
     assert.ok(d.question && d.question.length > 20, id + " : question pour « Demander à Claude »");
   }
   const ip = A.indicateurs(vide({ config: { milestones: [{ title: PIEGE, date: "2026-10-12", text: PIEGE }] } }), TODAY, { id: "1a" }, DEPS);
   assert.doesNotMatch(A.detail("echeance", ip, { id: "1a" }).contenu, /<img/);
+  const e = A.detail("echeance", A.indicateurs(vide(), TODAY, { id: "1a" }, DEPS), { id: "1a" });
+  assert.deepEqual(e.lien, { label: "Voir les objectifs", href: "#patrimoine/objectifs" });
+  assert.match(e.contenu, /dans Objectifs/);
+  assert.doesNotMatch(js, /Budget et objectifs|budget et objectifs/);
+});
+
+test("detail (Patrimoine net) : « Ce que je possède, ce que je dois » — mêmes calculs que l'ancienne carte du Bilan (BilanCalc.composition)", () => {
+  const nb = x => String(x).replace(/[\u00a0\u202f]/g, " ");
+  const S = demoS(), t = jourLocal();
+  const ind = A.indicateurs(S, t, { id: "1a", granularite: "mois" }, DEPS);
+  const comp = BilanCalc.composition(S.positions, S.profil, "foyer"), pat = Calc.patrimoine(S.positions, S.profil, "foyer");
+  assert.deepEqual(J(ind.net.composition), J(comp));
+  assert.equal(ind.net.usage, pat.usage); assert.equal(ind.net.entreprise, pat.entreprise);
+  const d = A.detail("net", ind, { id: "1a", granularite: "mois" });
+  const c = nb(d.contenu).replace(/&#39;/g, "'");
+  assert.match(c, /Ce que je possède, ce que je dois/);
+  const resume = c.split("<details")[0];
+  const lignes = [...resume.matchAll(/<li><span class="aj-det-l">([^<]+)<\/span><span class="aj-det-v">([^<]+)<\/span><\/li>/g)].map(m => [m[1], m[2]]);
+  const e = v => nb(new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(Math.round(v)))) + " €";
+  assert.deepEqual(lignes, [["Placements financiers", e(pat.financier)], ["Immobilier", e(pat.immobilier)], ["Biens d'usage (voiture, meubles…)", e(pat.usage)],
+    ["Dettes", "−" + e(pat.dettes)], ["Patrimoine net", e(pat.net)]], "parts d'entreprise absentes de la démo : pas de ligne");
+  // détail ligne par ligne en accordéon fermé : enveloppes, biens, autres biens, dettes
+  assert.match(c, /<details class="ui-acc"><summary class="ui-acc-titre"><span>Le détail, ligne par ligne<\/span>/);
+  for (const l of comp.actifs[0].lignes.concat(comp.actifs[1].lignes, comp.dettes.lignes)) assert.ok(c.includes(nb(l.label)), l.label);
+  assert.ok(c.includes("Voiture, meubles…"));
+  // parts d'entreprise et échappement des noms
+  const S2 = vide({ profil: { foyer: { adultes: 1 }, biens: [{ nom: PIEGE, valeur: 1000, part_p1: 100, crd: 0 }], credits: [], autres: { p1: { usage: 0, entreprise: 5000 } } } });
+  const d2 = A.detail("net", A.indicateurs(S2, TODAY, { id: "1a" }, DEPS), { id: "1a" });
+  assert.match(nb(d2.contenu), /Parts d(&#39;|')entreprise<\/span><span class="aj-det-v">5 000 €/);
+  assert.doesNotMatch(d2.contenu, /<img/);
+  assert.doesNotMatch(d2.contenu.split("<details")[0], /Biens d/, "pas de biens d'usage : pas de ligne");
 });
 
 /* --------------------------------------------------------- module complet en vm (démo) --------------------------------------------------------- */

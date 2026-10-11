@@ -416,3 +416,10 @@ test("score : pas de note globale sur moins de 3 critères calculés", () => {
   assert.equal(s.total, null);
   assert.equal(s.complet, false);
 });
+
+test("plan.js : libellé de navigation « Patrimoine › Objectifs » (plus de « Budget et objectifs »)", () => {
+  const { readFileSync } = require("node:fs");
+  const src = readFileSync("web/src/plan.js", "utf8");
+  assert.doesNotMatch(src, /Budget et objectifs/);
+  assert.match(src, /vos objectifs \(Patrimoine › Objectifs\) en donnent le rythme/);
+});

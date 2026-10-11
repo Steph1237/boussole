@@ -272,7 +272,8 @@ test("detailHtml : synthèse, raisonnement rendu, options (retenue en évidence)
   assert.ok(h.includes("Au moment"));
   assert.ok(h.includes("Aujourd'hui") || h.includes("Aujourd&#39;hui"));
   assert.ok(h.includes(UI.esc(obj.nom)));
-  assert.ok(h.includes('href="#patrimoine/budget"'));
+  assert.ok(h.includes('href="#patrimoine/objectifs"'), "lien Objectif → Patrimoine › Objectifs");
+  assert.ok(!h.includes('href="#patrimoine/budget"'));
   assert.ok(h.includes('href="#patrimoine/placements"'));
   assert.ok(h.includes("élément supprimé"));
   assert.match(h, /<details class="ui-acc"/);

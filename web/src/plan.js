@@ -330,7 +330,7 @@
     const points = clamp(annees / repere, 0, 1) * 20;
     const texte = "Patrimoine net : " + fr(Math.max(annees, 0)) + " année" + (annees >= 2 ? "s" : "") + " de revenus (repère à votre âge : " + fr(repere) + ").";
     const piste = annees >= repere ? "Vous êtes au niveau du repère de votre tranche d'âge."
-      : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs (Patrimoine › Budget et objectifs) en donnent le rythme.";
+      : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs (Patrimoine › Objectifs) en donnent le rythme.";
     return { ...base, valeur: annees, points, aCompleter: false, texte, piste };
   }
 

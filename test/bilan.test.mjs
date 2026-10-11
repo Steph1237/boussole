@@ -1,159 +1,257 @@
-// Patrimoine › Immobilier et crédits (module bilan) (web/src/bilan.*) : vérifications statiques du module, puis les calculs de la vue sur la démo.
+// Patrimoine › Immobilier et crédits (module bilan, web/src/bilan.*) : contrôles statiques, fonctions pures sur la démo et sur des
+// cas construits, puis la vue dans un mini-DOM (cartes → panneau, liens vers Compte › Données, états vide et chargement).
+// Les calculs de BilanCalc (composition, évolution…) sont testés dans test/bilan-calc.test.mjs et test/aujourdhui.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
+import { miniDom } from "./helpers/mini-dom.mjs";
 
 const require = createRequire(import.meta.url);
 const js = readFileSync("web/src/bilan.js", "utf8");
 const css = readFileSync("web/src/bilan.css", "utf8");
 const html = readFileSync("web/src/bilan.html", "utf8");
-
-test("bilan.js : le fichier se compile", () => {
-  assert.doesNotThrow(() => new vm.Script(js, { filename: "bilan.js" }));
-});
-
-test("bilan.js : s'enregistre auprès de l'App sous le nom « bilan »", () => {
-  assert.match(js, /App\.register\(["']bilan["']/);
-  assert.match(js, /__pending/);
-  assert.match(js, /\{ mount, update, show, headline \}/);
-});
-
-test("bilan.js : s'appuie sur BilanCalc, Plan.score et Rules.evaluate", () => {
-  for (const f of ["composition", "allocation", "flux", "evolution"]) assert.match(js, new RegExp("BilanCalc\\." + f + "\\("), "BilanCalc." + f);
-  assert.match(js, /Plan\.budgetTotaux\(/);
-  assert.match(js, /Plan\.capaciteEpargne\(/);
-  assert.match(js, /Plan\.score\(/);
-  assert.match(js, /Rules\.evaluate\(/);
-  assert.match(js, /Rules\.builtins\(/);
-});
-
-test("bilan.js : « À traiter » reprend la liste du module Actions, avec repli direct", () => {
-  assert.match(js, /window\.Actions/);
-  assert.match(js, /\.construire\(ctx, window\.Rules, window\.Plan\)/);
-  assert.match(js, /\.items\(\)/);
-  assert.match(js, /top = A\.slice\(0, 3\)/);
-});
-
-test("bilan.js : graphique Évolution filtré par Periodes (bornes, agrégation, résumé), choix mémorisés", () => {
-  assert.match(js, /Periodes\.bornes\(/);
-  assert.match(js, /Periodes\.agreger\(/);
-  assert.match(js, /Periodes\.resume\(/);
-  assert.match(js, /window\.Periodes/);
-  assert.match(js, /"bilan-evo"/);
-  assert.match(html, /id="blEvoPer"/);
-  assert.match(html, /type="date" id="blEvoDu"/);
-  assert.match(html, /data-vue="variations"/);
-});
-
-test("bilan.js : liens vers les sous-vues concernées", () => {
-  const routes = new Set([...(js + html).matchAll(/(?:data-goto="|link\(")([a-z]+\/[a-z]+)"/g)].map(m => m[1]));
-  for (const r of ["patrimoine/budget", "pilotage/sante", "pilotage/risque", "compte/donnees", "aujourdhui/vue"]) assert.ok(routes.has(r), r);
-  const { resolve, SPACES } = require("../web/src/app.js");
-  const known = new Set(SPACES.flatMap(sp => sp.subs.map(s => sp.space + "/" + s.id)));
-  // Routes canoniques ou anciennes routes de la table de correspondance (LEGACY) : toutes mènent à une sous-vue existante.
-  for (const r of routes) { const x = resolve(r); assert.ok(x && known.has(x.space + "/" + x.sub), r + " est une route connue"); }
-});
-
-test("bilan.js : aucune requête DOM globale hors racine du module", () => {
-  const bad = js.split("\n").filter(l => /document\.(querySelector|querySelectorAll|getElementById)\(/.test(l));
-  assert.deepEqual(bad, [], "utiliser root.querySelector* au lieu de document.*");
-});
-
-test("bilan.html : les identifiants utilisés par le script existent", () => {
-  const ids = [...js.matchAll(/\$\("([A-Za-z0-9_-]+)"\)/g)].map(m => m[1]);
-  assert.ok(ids.length > 15, "identifiants introuvables");
-  const missing = [...new Set(ids)].filter(id => !html.includes('id="' + id + '"'));
-  assert.deepEqual(missing, []);
-  const sel = [...js.matchAll(/querySelectorAll?\("#([A-Za-z0-9_-]+)/g)].map(m => m[1]).filter(id => !html.includes('id="' + id + '"'));
-  assert.deepEqual(sel, []);
-});
-
-test("bilan.css : chaque @media commence après une règle fermée", () => {
-  const c = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const bad = [...c.matchAll(/@media/g)].filter(m => !/(^|\})\s*$/.test(c.slice(0, m.index)));
-  assert.deepEqual(bad.map(m => m.index), []);
-});
-
-test("bilan.css : CSS entièrement scopé sous #view-bilan (y compris dans les @media)", () => {
-  // Les blocs @media sont « aplatis » : leurs règles sont contrôlées comme celles du niveau supérieur.
-  const c = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "}");
-  const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(s => s && !/^(from|to|\d+%)$/.test(s));
-  assert.ok(sels.length > 30, "sélecteurs introuvables");
-  const unscoped = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith("#view-bilan"));
-  assert.deepEqual(unscoped, []);
-});
-
-/* ---------- calculs de la vue sur les données de démonstration ---------- */
+const B = require("../web/src/bilan.js");
 const Calc = require("../web/src/calc.js");
 const Plan = require("../web/src/plan.js");
-const B = require("../web/src/bilan-calc.js");
+const UI = require("../web/src/ui.js");
 const DEMO = require("../web/src/demo-data.js");
+const DEPS = { Calc, Plan };
+const clone = o => JSON.parse(JSON.stringify(o));
+const sp = s => String(s).replace(/[\u00a0\u202f]/g, " ").replace(/&#39;/g, "'");
+const PIEGE = '<img src=x onerror="alert(1)">';
 
-test("démo : patrimoine net de la vue = Calc.patrimoine, sur chaque périmètre", () => {
-  for (const scope of ["foyer", "p1", "p2"]) {
-    const c = B.composition(DEMO.positions, DEMO.profil, scope), p = Calc.patrimoine(DEMO.positions, DEMO.profil, scope);
-    assert.ok(Math.abs(c.net - p.net) < 1e-6, scope);
-    assert.ok(Math.abs(c.actifs[0].total - p.financier) < 1e-6, scope);
-  }
-  const f = B.composition(DEMO.positions, DEMO.profil, "foyer");
-  assert.ok(Math.abs(f.actifs[0].total - 94989.9) < 0.01);
-  assert.equal(f.dettes.total, 156500);
+/* ------------------------------------------------------------ statique ------------------------------------------------------------ */
+test("bilan.js : se compile, s'enregistre sous « bilan », exporte ses fonctions pures", () => {
+  assert.doesNotThrow(() => new vm.Script(js, { filename: "bilan.js" }));
+  assert.match(js, /App\.register\("bilan", api\)/);
+  assert.match(js, /__pending/);
+  assert.match(js, /const api = \{ mount, update, show, headline \}/);
+  for (const f of ["analyser", "verdict", "tuilesHtml", "carteBienHtml", "carteCreditHtml", "detailBienHtml", "detailCreditHtml", "lienModifier", "videHtml", "headlineDe"])
+    assert.equal(typeof B[f], "function", f);
 });
 
-test("démo : épargne du mois et taux, flux sans déficit", () => {
+test("bilan : l'ancienne vue d'ensemble a disparu (carte Claude, composition, flux, allocation, évolution, à traiter)", () => {
+  for (const id of ["blClaude", "blComp", "blFlux", "blAlloc", "blChart", "blEvoPer", "blTodo", "blSante", "blMatelas"]) assert.doesNotMatch(html + js, new RegExp('"' + id), id);
+  for (const f of ["BilanEtat", "BilanCalc", "Rules.evaluate", "window.Actions", "sessionStorage", "localStorage"]) assert.ok(!js.includes(f), f);
+  assert.match(html, /Qu'est-ce que je possède en immobilier et que dois-je \?/);
+  assert.match(html, /<details class="ui-acc bl-how">/, "méthode en accordéon fermé");
+  assert.doesNotMatch(html, /<details[^>]*\sopen/);
+});
+
+test("bilan : « Ajouter » mène à Compte › Données, section dépliée ; toutes les routes sont connues", () => {
+  assert.match(html, /href="#compte\/donnees\?section=biens" data-goto="compte\/donnees\?section=biens">Ajouter un bien</);
+  assert.match(html, /href="#compte\/donnees\?section=credits" data-goto="compte\/donnees\?section=credits">Ajouter un crédit</);
+  const { resolve, SPACES } = require("../web/src/app.js");
+  const known = new Set(SPACES.flatMap(s => s.subs.map(x => s.space + "/" + x.id)));
+  const routes = new Set([...(js + html).matchAll(/data-goto="([a-z]+\/[a-z-]+)(?:\?section=[a-z]+)?"/g)].map(m => m[1]));
+  for (const r of ["compte/donnees", "pilotage/rang"]) assert.ok(routes.has(r), r);
+  for (const r of routes) { const x = resolve(r); assert.ok(x && known.has(x.space + "/" + x.sub), r); }
+  assert.deepEqual(B.lienModifier("bien"), { label: "Modifier dans Compte › Données", href: "#compte/donnees?section=biens" });
+  assert.equal(B.lienModifier("pret").href, "#compte/donnees?section=biens", "le prêt se saisit avec son bien");
+  assert.equal(B.lienModifier("credit").href, "#compte/donnees?section=credits");
+});
+
+test("bilan.js : aucune requête DOM globale hors racine du module ; identifiants présents dans le HTML", () => {
+  assert.deepEqual(js.split("\n").filter(l => /document\.(querySelector|querySelectorAll|getElementById)\(/.test(l)), []);
+  const ids = [...new Set([...js.matchAll(/\$\("([A-Za-z0-9_-]+)"\)/g)].map(m => m[1]))];
+  assert.ok(ids.length >= 6);
+  assert.deepEqual(ids.filter(id => !html.includes('id="' + id + '"')), []);
+  for (const [, id] of js.matchAll(/ecrire(?:Cartes)?\("([A-Za-z]+)"/g)) assert.ok(html.includes('id="' + id + '"'), id);
+});
+
+test("bilan.css : entièrement scopé sous #view-bilan (et .ui-panneau .bl-… pour le panneau), @media après une règle fermée", () => {
+  const c = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.deepEqual([...c.matchAll(/@media/g)].filter(m => !/(^|\})\s*$/.test(c.slice(0, m.index))).map(m => m.index), []);
+  const plat = c.replace(/@media[^{]*\{/g, "}");
+  const sels = [...plat.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(Boolean).flatMap(s => s.split(",").map(x => x.trim()));
+  assert.ok(sels.length > 30);
+  assert.deepEqual(sels.filter(x => !x.startsWith("#view-bilan") && !x.startsWith(".ui-panneau .bl-")), []);
+  assert.ok(sels.some(x => x.startsWith(".ui-panneau .bl-")), "styles du panneau présents");
+});
+
+/* ------------------------------------------------------------ fonctions pures ------------------------------------------------------------ */
+const S0 = (o = {}) => Object.assign({ scope: "foyer", people: [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }], profil: clone(DEMO.profil), budget: clone(DEMO.budget) }, o);
+
+test("analyser (démo, foyer) : totaux de Calc, un bien, prêt du bien puis prêt auto, taux = mensualités ÷ revenus de Plan.budgetTotaux", () => {
+  const a = B.analyser(S0(), DEPS);
+  assert.equal(a.immobilier, Calc.immobilier(DEMO.profil, "foyer"));
+  assert.equal(a.dettes, Calc.dettes(DEMO.profil, "foyer"));
+  assert.equal(a.mensualites, Calc.mensualites(DEMO.profil, "foyer"));
+  assert.equal(a.immobilier, 240000); assert.equal(a.dettes, 156500); assert.equal(a.mensualites, 1030);
   const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
-  assert.equal(Math.round(t.tauxEpargne * 100), 31);
-  assert.ok(Math.abs(Plan.capaciteEpargne(t) - (t.revenus - t.depenses)) < 1e-6);
-  const f = B.flux(t);
-  assert.equal(f.vide, false);
-  assert.equal(f.deficit, false);
-  assert.ok(f.sorties.some(s => s.type === "epargne") && f.sorties.some(s => s.type === "reste"));
-  const mois = Calc.poche(DEMO.positions, "foyer", "Épargne") / t.depenses;
-  assert.ok(mois > 6 && mois < 9, "matelas de la démo : environ 7,8 mois");
+  assert.ok(Math.abs(a.taux - t.mensualites / t.revenus) < 1e-12, "même taux que le critère « endettement » de Pilotage › Santé");
+  assert.equal(a.biens.length, 1);
+  assert.deepEqual([a.biens[0].key, a.biens[0].usageLabel, a.biens[0].valeur, a.biens[0].crd, a.biens[0].net, a.biens[0].poids], ["bien:bien-rp", "Résidence principale", 240000, 150000, 90000, 1]);
+  assert.deepEqual(a.credits.map(c => [c.key, c.kind, c.crd, c.mensualite]), [["pret:bien-rp", "pret", 150000, 820], ["credit:credit-auto", "credit", 6500, 210]]);
+  assert.equal(a.credits[1].titulaire, "Commun");
+  assert.equal(a.vide, false); assert.equal(a.renseigne, true); assert.equal(a.deuxAdultes, true);
+  assert.equal(a.duScope, "du foyer");
 });
 
-test("démo : budget vide → pas d'épargne exploitable (la vue affiche « À renseigner »)", () => {
-  const t = Plan.budgetTotaux([], DEMO.profil, "foyer");
-  assert.ok(t.revenus > 0 && t.depensesLignes === 0 && t.epargne === 0);
+test("analyser : périmètre — quote-part du bien et de son prêt, crédit commun pour moitié, bien d'une autre personne écarté", () => {
+  const p1 = B.analyser(S0({ scope: "p1" }), DEPS);
+  assert.equal(p1.biens[0].valeur, 120000);
+  assert.equal(p1.credits[0].crd, 75000);
+  assert.equal(p1.credits[1].crd, 3250);
+  assert.equal(p1.dettes, Calc.dettes(DEMO.profil, "p1"));
+  assert.equal(p1.duScope, "de Camille");
+  const pr = clone(DEMO.profil);
+  pr.biens[0].part_p1 = 100;
+  pr.credits[0].owner = "p1";
+  const p2 = B.analyser(S0({ scope: "p2", profil: pr }), DEPS);
+  assert.equal(p2.biens.length, 0, "bien à 100 % pour Camille : rien pour Sam");
+  assert.equal(p2.credits.length, 0);
+  assert.equal(p2.vide, true);
+  assert.equal(p2.renseigne, true);
 });
 
-test("démo : allocation par liquidité avec l'immobilier physique dans « Bloqué »", () => {
-  const l = B.allocation(DEMO.positions, DEMO.profil, "foyer", "liquidite");
-  assert.equal(l[0].cle, "bloque");
-  assert.ok(l.find(x => x.cle === "bloque").montant >= 240000);
-  const sans = B.allocation(DEMO.positions, DEMO.profil, "foyer", "liquidite", { financierSeul: true });
-  assert.ok(Math.abs(sans.reduce((a, x) => a + x.montant, 0) - 94989.9) < 0.01);
+test("analyser : sans profil, sans revenus, identifiants absents, valeurs négatives ramenées à 0", () => {
+  const rien = B.analyser({ scope: "foyer", profil: null }, DEPS);
+  assert.equal(rien.vide, true); assert.equal(rien.renseigne, false); assert.equal(rien.taux, null);
+  const pr = { foyer: { adultes: 1 }, biens: [{ nom: "Studio", usage: "locatif", valeur: 100000, part_p1: 100, crd: -5, mensualite: 400, loyer: 550 }], credits: [{ nom: "Conso", owner: "p1", crd: 2000, mensualite: 90 }] };
+  const a = B.analyser({ scope: "foyer", profil: pr }, DEPS);
+  assert.equal(a.taux, a.mensualites / a.revenus, "loyers comptés dans les revenus");
+  assert.equal(a.biens[0].key, "bien:i0");
+  assert.equal(a.biens[0].crd, 0);
+  assert.equal(a.credits[0].key, "pret:i0", "mensualité sans reste dû : le prêt apparaît quand même");
+  assert.equal(a.credits[1].titulaire, "Personne 1");
+  assert.equal(a.loyers, 550);
+  const sansRev = B.analyser({ scope: "foyer", profil: { biens: [], credits: [{ nom: "Auto", owner: "commun", crd: 1000, mensualite: 100 }] } }, DEPS);
+  assert.equal(sansRev.taux, null);
 });
 
-test("démo : évolution sur au moins trois points, dont le point du jour", () => {
-  const e = B.evolution(DEMO.snapshots, DEMO.positions, DEMO.profil, "foyer", new Date().toISOString().slice(0, 10));
-  assert.ok(e.length >= 3);
-  assert.equal(e[e.length - 1].live, true);
-  assert.ok(e.every(p => p.net > p.financier), "net estimé au-dessus du financier (immobilier net de dettes positif)");
+test("verdict : une phrase (immobilier, reste dû, poids des mensualités), tons bon / critique, vide orienté agent", () => {
+  const v = B.verdict(B.analyser(S0(), DEPS));
+  assert.equal(v.ton, "bon");
+  assert.match(sp(v.phrase), /^Immobilier et crédits du foyer : 240 000 € d'immobilier, 156 500 € restant à rembourser\. Vos mensualités pèsent \d+ % de vos revenus, sous le plafond de 35 % des banques\.$/);
+  const pr = clone(DEMO.profil); pr.biens[0].mensualite = 3000;
+  assert.equal(B.verdict(B.analyser(S0({ profil: pr }), DEPS)).ton, "critique");
+  assert.match(B.verdict(B.analyser({ scope: "foyer", profil: null }, DEPS)).phrase, /dites à Claude si vous êtes propriétaire ou si vous avez des crédits/);
+  assert.match(B.verdict(B.analyser({ scope: "foyer", profil: { biens: [], credits: [] } }, DEPS)).phrase, /^Aucun bien immobilier ni crédit enregistré du foyer\.$/);
+  assert.match(B.verdict(B.analyser({ scope: "foyer", profil: { biens: [], credits: [{ nom: "Auto", crd: 1000, mensualite: 100 }] } }, DEPS)).phrase, /Renseignez vos revenus/);
 });
 
-test("démo : les 3 premières entrées « À traiter » = tête de la liste Actions (même tri)", () => {
-  const Actions = require("../web/src/actions.js"), Rules = require("../web/src/rules.js");
-  const ctx = { positions: DEMO.positions, config: DEMO.config, scope: "foyer", people: [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }],
-    today: new Date().toISOString().slice(0, 10), status: DEMO.status, profil: DEMO.profil, budget: DEMO.budget };
-  const items = Actions.construire(ctx, Rules, Plan);
-  assert.ok(items.length >= 3);
-  const rang = { crit: 0, warn: 1, info: 2, piste: 3 };
-  for (let i = 1; i < items.length; i++) assert.ok(rang[items[i - 1].level] <= rang[items[i].level], "tri par gravité");
+test("tuilesHtml : immobilier, reste à rembourser, mensualités, taux d'endettement avec lien vers Pilotage › Rang (ou vers les revenus)", () => {
+  const h = sp(B.tuilesHtml(B.analyser(S0(), DEPS)));
+  for (const id of ["immobilier", "dettes", "mensualites", "taux"]) assert.match(h, new RegExp('data-bl-tuile="' + id + '"'));
+  assert.match(h, /240 000 €/); assert.match(h, /156 500 €/); assert.match(h, /1 030 €\/mois/);
+  assert.match(h, /href="#pilotage\/rang" data-goto="pilotage\/rang">Ma capacité d'emprunt</);
+  assert.match(h, /bl-tuile bon/);
+  const sans = B.tuilesHtml(B.analyser({ scope: "foyer", profil: { biens: [], credits: [{ nom: "Auto", crd: 1000, mensualite: 100 }] } }, DEPS));
+  assert.match(sans, /data-goto="compte\/donnees\?section=revenus"/);
 });
 
-test("bilan.js : « À traiter » — une piste mène à la page de son critère, une alerte à Aujourd'hui ; pas de compteur visible (règle 9)", () => {
-  const src = js.match(/function lienTodo\(a\) \{[\s\S]*?\n  \}/);
-  assert.ok(src, "lienTodo présent");
-  const lienTodo = new Function(src[0] + "; return lienTodo;")();
-  assert.deepEqual(lienTodo({ level: "warn", title: "Poche" }), { route: "aujourdhui/vue", label: "Voir" });
-  assert.deepEqual(lienTodo({ level: "piste", lien: { route: "patrimoine/budget", label: "Ouvrir le budget" } }), { route: "patrimoine/budget", label: "Ouvrir le budget" });
-  assert.deepEqual(lienTodo({ level: "piste" }), { route: "pilotage/sante", label: "Voir le détail" }, "repli sans lien : Pilotage › Santé");
-  assert.equal(lienTodo({ level: "piste", lien: { route: 'x" onclick="y', label: "z" } }).route, "pilotage/sante", "route non canonique refusée");
-  assert.match(js, /link\(l\.route, l\.label\)/);
-  assert.doesNotMatch(js, /Même liste que la boîte de réception/);
-  assert.doesNotMatch(js, /"3 sur "/);
-  assert.match(html, /<span class="ui-sr" id="blTodoCount"><\/span>/);
+test("cartes et panneaux : texte échappé, prêt rattaché au bien, répartition au foyer, part dans le périmètre", () => {
+  const pr = { foyer: { adultes: 2 }, biens: [{ id: PIEGE, nom: PIEGE, usage: "locatif", valeur: 200000, part_p1: 70, crd: 250000, mensualite: 900, loyer: 1000 }],
+    credits: [{ id: "c<1>", nom: PIEGE, owner: "p2", crd: 3000, mensualite: 100 }] };
+  const S = { scope: "foyer", profil: pr, people: [{ id: "p1", nom: "<b>A</b>" }, { id: "p2", nom: PIEGE }] };
+  const a = B.analyser(S, DEPS);
+  const tout = a.biens.map(B.carteBienHtml).concat(a.credits.map(B.carteCreditHtml)).join("") +
+    B.detailBienHtml(a.biens[0], { scope: "foyer", nomP1: "<b>A</b>", nomP2: PIEGE, deuxAdultes: true }) + a.credits.map(c => B.detailCreditHtml(c, { scope: "foyer" })).join("");
+  assert.doesNotMatch(tout, /<img|<b>/);
+  assert.match(tout, /data-ui-carte="bien:&lt;img/);
+  const cb = sp(B.carteBienHtml(a.biens[0]));
+  assert.match(cb, /<span class="ui-carte-titre">Locatif<\/span><span class="ui-badge attention">À vérifier<\/span>/, "reste dû au-delà de la valeur");
+  assert.match(cb, /100 % de l'immobilier/); assert.match(cb, /loyer 1 000 €\/mois/);
+  const db = sp(B.detailBienHtml(a.biens[0], { scope: "foyer", nomP1: "Camille", nomP2: "Sam", deuxAdultes: true }));
+  assert.match(db, /<dt>Répartition<\/dt><dd>Camille 70 % · Sam 30 %<\/dd>/);
+  assert.match(db, /<dt>Loyer moins mensualité<\/dt><dd>\+100 €\/mois<\/dd>/);
+  assert.match(db, /bl-d-alerte/);
+  const p1 = B.analyser(Object.assign({}, S, { scope: "p1" }), DEPS);
+  assert.match(sp(B.detailBienHtml(p1.biens[0], { scope: "p1" })), /<dt>Votre part<\/dt><dd>70 % de 200 000 €<\/dd>/);
+  const pret = sp(B.detailCreditHtml(a.credits[0], { scope: "foyer" }));
+  assert.match(pret, /<dt>Type<\/dt><dd>Prêt immobilier<\/dd><dt>Bien financé<\/dt>/);
+  assert.match(B.carteCreditHtml(a.credits[1]), /Crédit · &lt;img/);
+  assert.match(B.questionBien(a.biens[0]), /^Dans Boussole, mon bien « /);
+  assert.doesNotMatch(B.questionBien(a.biens[0]) + B.questionCredit(a.credits[0]) + B.questionPage(a), /[\u00a0\u202f]/, "questions en espaces simples");
+});
+
+test("videHtml et headlineDe : « Dites à Claude… » puis « Ajouter à la main » ; chiffre clé = immobilier, sinon reste dû", () => {
+  const v = B.videHtml(B.analyser({ scope: "foyer", profil: null }, DEPS), UI);
+  assert.match(v, /Dites à Claude si vous êtes propriétaire ou si vous avez des crédits/);
+  assert.match(v, /claude\.ai\/new\?q=/);
+  assert.match(v, />Le dire à Claude</);
+  assert.match(v, /href="#compte\/donnees\?section=biens" data-goto="compte\/donnees\?section=biens">Ajouter à la main</);
+  assert.match(sp(B.videHtml(B.analyser({ scope: "foyer", profil: { biens: [], credits: [] } }, DEPS), UI)), /Vous n'avez déclaré ni bien immobilier ni crédit\./);
+  assert.equal(sp(B.headlineDe(B.analyser(S0(), DEPS))), "240 k€");
+  assert.equal(sp(B.headlineDe(B.analyser({ scope: "foyer", profil: { credits: [{ nom: "Auto", crd: 6500, mensualite: 100 }] } }, DEPS))), "7 k€ dus");
+  assert.equal(B.headlineDe(B.analyser({ scope: "foyer", profil: null }, DEPS)), "–");
+});
+
+/* ------------------------------------------------------------ vue dans un mini-DOM ------------------------------------------------------------ */
+function vueBilan(snap) {
+  const dom = miniDom(), { doc } = dom;
+  const modules = {};
+  const ctx = { document: doc, console, setTimeout, clearTimeout, Intl, CSS: { escape: s => String(s).replace(/["\\]/g, "\\$&") } };
+  ctx.window = ctx; ctx.self = ctx;
+  ctx.App = { register: (n, api) => { modules[n] = api; } };
+  vm.createContext(ctx);
+  for (const f of ["calc.js", "plan.js", "ui.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
+  vm.runInContext(js, ctx, { filename: "bilan.js" });
+  const root = doc.body.appendChild(doc.createElement("section"));
+  root.setAttribute("id", "view-bilan");
+  root.innerHTML = html;
+  const api = modules.bilan;
+  api.mount(root);
+  api.update(snap, true);
+  return { dom, doc, root, api, $: id => root.querySelector("#" + id) };
+}
+const demoSnap = (o = {}) => Object.assign({ ready: true, dbOk: true, scope: "foyer", people: [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }],
+  positions: clone(DEMO.positions), profil: clone(DEMO.profil), budget: clone(DEMO.budget) }, o);
+
+test("vue (DOM) : verdict, tuiles, cartes des biens et des crédits ; carte → panneau (Modifier → Compte › Données, Claude), Échap rend le focus", () => {
+  const v = vueBilan(demoSnap());
+  assert.equal(v.$("blEtat").hidden, true);
+  assert.equal(v.$("blCorps").hidden, false);
+  assert.match(sp(v.$("blVerdict").textContent), /^Immobilier et crédits du foyer : 240 000 €/);
+  assert.match(v.$("blDemander").innerHTML, /claude\.ai\/new\?q=/);
+  assert.equal(v.$("blTuiles").querySelectorAll("[data-bl-tuile]").length, 4);
+  assert.equal(v.$("blBiens").querySelectorAll("[data-ui-carte]").length, 1);
+  assert.equal(v.$("blCredits").querySelectorAll("[data-ui-carte]").length, 2);
+  assert.equal(v.$("blVide").hidden, true);
+  const carte = v.$("blBiens").querySelector('[data-ui-carte="bien:bien-rp"]');
+  carte.focus(); carte.click();
+  const dlg = v.doc.body.querySelector('[role="dialog"]');
+  assert.equal(dlg.hidden, false);
+  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Appartement (résidence principale)");
+  assert.match(sp(dlg.querySelector(".ui-panneau-corps").textContent), /Reste à rembourser150 000 €/);
+  const pied = dlg.querySelector(".ui-panneau-pied");
+  assert.equal(pied.querySelector(".ui-panneau-lien").getAttribute("href"), "#compte/donnees?section=biens");
+  assert.match(pied.innerHTML, /Demander à Claude/);
+  v.dom.touche(v.doc.activeElement, "Escape");
+  assert.equal(dlg.hidden, true);
+  assert.equal(v.doc.activeElement, carte, "focus rendu à la carte");
+  const credit = v.$("blCredits").querySelector('[data-ui-carte="credit:credit-auto"]');
+  credit.click();
+  assert.equal(v.doc.body.querySelector(".ui-panneau-lien").getAttribute("href"), "#compte/donnees?section=credits");
+  assert.equal(sp(v.api.headline()), "240 k€");
+});
+
+test("vue (DOM) : panneau ouvert et bien supprimé par le store → panneau fermé ; périmètre suivi", () => {
+  const v = vueBilan(demoSnap());
+  v.$("blBiens").querySelector("[data-ui-carte]").click();
+  const dlg = v.doc.body.querySelector('[role="dialog"]');
+  const pr = clone(DEMO.profil); pr.biens = [];
+  v.api.update(demoSnap({ profil: pr }), true);
+  assert.equal(dlg.hidden, true);
+  assert.match(v.$("blBiens").innerHTML, /Aucun bien immobilier du foyer/);
+  v.api.update(demoSnap({ scope: "p1" }), true);
+  assert.match(sp(v.$("blVerdict").textContent), /de Camille : 120 000 €/);
+});
+
+test("vue (DOM) : chargement, puis état vide orienté agent ; données indisponibles", () => {
+  const v = vueBilan(demoSnap({ ready: false }));
+  assert.equal(v.$("blEtat").hidden, false);
+  assert.match(v.$("blEtat").textContent, /Chargement/);
+  assert.equal(v.$("blCorps").hidden, true);
+  v.api.update(demoSnap({ profil: null }), true);
+  assert.equal(v.$("blEtat").hidden, true);
+  assert.equal(v.$("blVide").hidden, false);
+  assert.match(v.$("blVide").textContent, /Dites à Claude si vous êtes propriétaire/);
+  assert.equal(v.$("blBiensSec").hidden, true);
+  assert.equal(v.api.headline(), "–");
+  v.api.update(demoSnap({ dbOk: false, profil: null }), true);
+  assert.match(v.$("blEtat").textContent, /Données indisponibles/);
 });

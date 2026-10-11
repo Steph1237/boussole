@@ -58,7 +58,7 @@
   /* ---------- liens ---------- */
   /* Lien profond vers une entrée du journal : la coque retient le paramètre et Agent › Journal ouvre l'entrée (app.js, journal-view.js). */
   const lienEntree = id => "agent/journal?entree=" + encodeURIComponent(String(id));
-  const R = { propositions: "agent/propositions", journal: "agent/journal", placements: "patrimoine/placements", budget: "patrimoine/budget", sante: "pilotage/sante", risque: "pilotage/risque" };
+  const R = { propositions: "agent/propositions", journal: "agent/journal", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque" };
   /** Lien vers une nouvelle conversation Claude, question préremplie (même forme que UI.demanderAClaude). */
   function urlClaude(question) { return "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? "")); }
   const httpsOk = u => /^https:\/\//.test(String(u || ""));
@@ -155,7 +155,7 @@
     // 4. Échéances à 30 jours au plus (jalons de config, objectifs datés).
     echeances(S, t).filter(e => e.source !== "a_suivre" && e.jours <= 30).forEach(e => out.push({ type: "echeance", urgence: e.jours <= 7 ? 2 : 3, date: e.date,
       titre: e.titre, contexte: "Le " + dateFr(e.date) + " (" + delai(e.jours) + ")." + (e.texte ? " " + e.texte : "") + (e.cible ? " Cible : " + eur(e.cible) + "." : ""),
-      action: { label: "Voir budget et objectifs", route: R.budget } }));
+      action: { label: "Voir les objectifs", route: R.objectifs } }));
 
     // 5. Cours manquants et photo nocturne en retard (fraîcheur de l'en-tête : positions cotées, S.status).
     const sans = (S.positions || []).filter(p => counted(p) && p.mode === "market" && p.price == null);
@@ -205,11 +205,15 @@
   /** Les 4 indicateurs du bandeau (périmètre S.scope), en valeurs brutes ; le texte est composé par cartes() et detail(). */
   function indicateurs(S, today, periode, deps) {
     const s = S || {}, t = jour(today), scope = s.scope || "foyer", positions = s.positions || [];
-    const C = dep(deps, "Calc"), Pr = dep(deps, "Pratiques"), Ri = dep(deps, "Risque");
-    // Patrimoine net (et variation sur la période de la frise)
+    const C = dep(deps, "Calc"), Pr = dep(deps, "Pratiques"), Ri = dep(deps, "Risque"), BC = dep(deps, "BilanCalc");
+    // Patrimoine net (et variation sur la période de la frise) ; composition « Ce que je possède, ce que je dois » (BilanCalc.composition,
+    // mêmes calculs que l'ancienne carte du Bilan) pour le panneau de la carte.
     const pat = C ? C.patrimoine(positions, s.profil || null, scope) : { financier: 0, immobilier: 0, usage: 0, entreprise: 0, dettes: 0, net: 0 };
     const f = frise(s, t, periode, deps);
-    const net = { valeur: pat.net, financier: pat.financier, immobilier: pat.immobilier, autres: pat.usage + pat.entreprise, dettes: pat.dettes,
+    let composition = null;
+    if (BC && typeof BC.composition === "function") { try { composition = BC.composition(positions, s.profil || null, scope); } catch (e) { composition = null; } }
+    const net = { valeur: pat.net, financier: pat.financier, immobilier: pat.immobilier, autres: pat.usage + pat.entreprise, usage: pat.usage, entreprise: pat.entreprise,
+      dettes: pat.dettes, composition,
       vide: !positions.some(counted) && !pat.immobilier && !pat.dettes && !pat.usage && !pat.entreprise,
       variation: f.historique ? f.resume.variation : null, variationPct: f.historique ? f.resume.variationPct : null };
     // Bonnes pratiques
@@ -267,6 +271,24 @@
   }
 
   const ligne = (label, valeur) => '<li><span class="aj-det-l">' + esc(label) + '</span><span class="aj-det-v">' + esc(valeur) + "</span></li>";
+  const CHEVRON_BAS = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
+  /** Accordéon fermé (même balisage que UI.accordeon) ; contenu déjà échappé. */
+  const accordeon = (titre, contenu) => '<details class="ui-acc"><summary class="ui-acc-titre"><span>' + esc(titre) + '</span><span class="ui-acc-chevron">' + CHEVRON_BAS +
+    '</span></summary><div class="ui-acc-corps">' + contenu + "</div></details>";
+  /** « Ce que je possède, ce que je dois » (panneau de la carte Patrimoine net) : financier, immobilier, biens d'usage, parts d'entreprise,
+      dettes, net ; puis le détail ligne par ligne de BilanCalc.composition (enveloppes, biens, autres biens, dettes) en accordéon fermé. */
+  function compositionHtml(n) {
+    const lignes = [["Placements financiers", eur(n.financier)], ["Immobilier", eur(n.immobilier)]];
+    if (n.usage > 0) lignes.push(["Biens d'usage (voiture, meubles…)", eur(n.usage)]);
+    if (n.entreprise > 0) lignes.push(["Parts d'entreprise", eur(n.entreprise)]);
+    lignes.push(["Dettes", eur(-n.dettes)], ["Patrimoine net", eur(n.valeur)]);
+    const c = n.composition;
+    const groupe = (label, ls) => '<p class="aj-det-note">' + esc(label) + '</p><ul class="aj-det">' + ls.map(l => ligne(l.label, eur(l.montant))).join("") + "</ul>";
+    const det = c ? c.actifs.filter(b => b.lignes.length).map(b => groupe(b.label + " · " + eur(b.total), b.lignes)).join("") +
+      (c.dettes.lignes.length ? groupe("Dettes · " + eur(-c.dettes.total), c.dettes.lignes.map(l => ({ label: l.label, montant: -l.montant }))) : "") : "";
+    return '<p class="aj-det-note">Ce que je possède, ce que je dois</p><ul class="aj-det">' + lignes.map(l => ligne(l[0], l[1])).join("") + "</ul>" +
+      (det ? accordeon("Le détail, ligne par ligne", det) : "");
+  }
   /** Panneau d'une carte : { titre, contenu (HTML échappé : 2 à 4 lignes et une note), lien: { label, href } vers la page complète,
       question } — question préremplie pour « Demander à Claude » (pédagogique : expliquer, pas conseiller). */
   function detail(id, ind, periode) {
@@ -275,9 +297,6 @@
     if (id === "net") {
       titre = "Patrimoine net"; route = R.placements; label = "Voir les placements";
       question = "Explique-moi la composition de mon patrimoine net dans Boussole et ce qui l'a fait varier récemment.";
-      lignes = [["Placements financiers", eur(n.financier)], ["Immobilier", eur(n.immobilier)]];
-      if (n.autres) lignes.push(["Autres biens", eur(n.autres)]);
-      lignes.push(["Dettes", eur(-n.dettes)]);
       note = n.variation == null ? "La variation apparaîtra après la première photo nocturne du patrimoine."
         : "Variation " + periodeTxt(periode) + " : " + eurS(n.variation) + ". Estimation : placements de chaque photo, immobilier, autres biens et dettes d'aujourd'hui.";
     } else if (id === "pratiques") {
@@ -301,14 +320,14 @@
         note = al.points ? "Chaque point mesure l'écart d'une classe d'actifs à la borne la plus proche de sa fourchette." : "Chaque classe d'actifs est dans la fourchette de votre profil.";
       }
     } else {
-      titre = "Prochaines échéances"; route = R.budget; label = "Voir budget et objectifs";
+      titre = "Prochaines échéances"; route = R.objectifs; label = "Voir les objectifs";
       question = "Passons en revue mes prochaines échéances et mes objectifs datés dans Boussole.";
       lignes = ec.liste.slice(0, 4).map(e => [extrait(e.titre, 70), dateFr(e.date) + " · " + quand(e).toLowerCase()]);
       if (!lignes.length) lignes.push(["Échéances à venir", "aucune"]);
-      if (lignes.length < 2) lignes.push(["Objectifs datés", "dans Budget et objectifs"]);
+      if (lignes.length < 2) lignes.push(["Objectifs datés", "dans Objectifs"]);
       note = "Dates tirées de vos objectifs, des échéances enregistrées et des points que l'agent doit reprendre avec vous.";
     }
-    return { titre, contenu: '<ul class="aj-det">' + lignes.slice(0, 4).map(l => ligne(l[0], l[1])).join("") + "</ul>" +
+    return { titre, contenu: (id === "net" ? compositionHtml(n) : '<ul class="aj-det">' + lignes.slice(0, 4).map(l => ligne(l[0], l[1])).join("") + "</ul>") +
       '<p class="aj-det-note">' + esc(note) + "</p>", lien: { label, href: "#" + route }, question };
   }
 

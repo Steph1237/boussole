@@ -62,7 +62,7 @@ test("liens : règle → placements (+ réglages), matelas → budget, pistes se
   assert.equal(A.lienAlerte({ rule: { type: "price_floor" }, title: "x" }).lien2.route, "compte/regles");
   assert.equal(A.lienAlerte({ rule: null, title: "Matelas sous la cible" }).lien.route, "patrimoine/budget");
   assert.equal(A.lienAlerte({ rule: null, title: "Poche Monde au-dessus de la cible" }).lien.route, "patrimoine/placements");
-  assert.equal(A.lienAlerte({ rule: null, title: "Fin de période d'essai", text: "Le 25 oct. 2026 (dans 15 jours). " }).lien.route, "patrimoine/budget");
+  assert.deepEqual(A.lienAlerte({ rule: null, title: "Fin de période d'essai", text: "Le 25 oct. 2026 (dans 15 jours). " }).lien, { route: "patrimoine/objectifs", label: "Voir les objectifs" });
   assert.equal(A.lienPiste("matelas").route, "patrimoine/budget");
   assert.equal(A.lienPiste("epargne").route, "patrimoine/budget");
   assert.equal(A.lienPiste("endettement").route, "compte/donnees");
@@ -112,6 +112,7 @@ test("pistesPratiques : critères notés sous 20, liés à leur critère, sans �
   assert.equal(P[1].lien.route, "patrimoine/placements");
   assert.equal(A.lienRoute(null).route, "pilotage/sante", "sans lien : vers les bonnes pratiques");
   assert.equal(A.lienRoute("patrimoine/budget").label, "Ouvrir le budget");
+  assert.equal(A.lienRoute("patrimoine/objectifs").label, "Voir les objectifs");
 });
 
 test("construire avec Pratiques : pistes des bonnes pratiques (pas de Plan.score), triées, liens des critères", () => {

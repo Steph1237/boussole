@@ -374,3 +374,15 @@ describe("données de démonstration", () => {
     assert.equal(crit(r, "adequation").points, 20);
   });
 });
+
+describe("liens et libellés vers Patrimoine › Objectifs", () => {
+  test("projets proches et apport mènent à Patrimoine › Objectifs ; plus de « Budget et objectifs »", () => {
+    const { readFileSync } = require("node:fs");
+    const r = Pratiques.evaluer({ positions: [P("Épargne", 1000)], budget: lignes(2000), today: TODAY,
+      objectifs: [{ id: "o", type: "apport", source: "saisi", deja: 0, cible: 0, dateCible: "2027-06-30" }] }, SANS);
+    for (const cle of ["liquidite_objectifs", "apport"]) assert.equal(crit(r, cle).lien, "patrimoine/objectifs", cle);
+    assert.equal(crit(r, "matelas").lien, "patrimoine/budget", "le matelas reste lié au budget");
+    assert.match(crit(r, "apport").piste, /Patrimoine › Objectifs\)/);
+    assert.doesNotMatch(readFileSync("web/src/pratiques.js", "utf8"), /Budget et objectifs/);
+  });
+});

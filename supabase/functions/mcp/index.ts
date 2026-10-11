@@ -557,7 +557,7 @@ function itemPatrimoine(d: Donnees, scope: string, totaux: Totaux): Item {
   const points = clamp(annees / repere, 0, 1) * 20;
   const texte = "Patrimoine net : " + fr(Math.max(annees, 0)) + " année" + (annees >= 2 ? "s" : "") + " de revenus (repère à votre âge : " + fr(repere) + ").";
   const piste = annees >= repere ? "Vous êtes au niveau du repère de votre tranche d'âge."
-    : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs (Patrimoine › Budget et objectifs) en donnent le rythme.";
+    : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs (Patrimoine › Objectifs) en donnent le rythme.";
   return { ...base, valeur: annees, points, aCompleter: false, texte, piste };
 }
 
@@ -909,12 +909,12 @@ function bpApport(c: ContexteBP, deja: Record<string, number>): Critere | null {
   if (!L.length) return null;
   const cible = sum(L, (o) => (pos(o.cible) > 0 ? pos(o.cible) : 0.18 * pos(o.prix)));
   const reuni = sum(L, (o) => pos(deja[o.id]));
-  if (cible <= 0) return aCompleter("effort", "apport", BP.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport (Patrimoine › Budget et objectifs).");
+  if (cible <= 0) return aCompleter("effort", "apport", BP.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport (Patrimoine › Objectifs).");
   const ratio = reuni / cible;
   return critere("effort", "apport", BP.apport, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
     texte: eurP(reuni) + " réunis sur " + eurP(cible) + " d'apport visé (" + pctP(ratio) + ").",
     piste: ratio >= 1 ? "Votre apport est réuni : les banques regarderont aussi votre endettement après l'achat."
-      : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Budget et objectifs indique l'effort mensuel pour y arriver." });
+      : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Objectifs indique l'effort mensuel pour y arriver." });
 }
 
 function bpAdequation(c: ContexteBP, financier: number): Critere {

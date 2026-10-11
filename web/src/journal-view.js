@@ -35,7 +35,7 @@
   const CHAMPS = { type: "Type", titre: "Titre", synthese: "Synthèse", raisonnement: "Raisonnement", statut: "Statut",
     date_decision: "Date de décision", revue_le: "Date de revue", options: "Options", liens: "Liens" };
   const LIENS = [
-    { cle: "objectifs", label: "Objectif", route: "patrimoine/budget", liste: S => S.objectifs, nom: x => x.nom },
+    { cle: "objectifs", label: "Objectif", route: "patrimoine/objectifs", liste: S => S.objectifs, nom: x => x.nom },
     { cle: "positions", label: "Placement", route: "patrimoine/placements", liste: S => S.positions, nom: x => x.name || x.nom },
     { cle: "biens", label: "Bien", route: "patrimoine/immobilier", liste: S => S.profil && S.profil.biens, nom: x => x.nom },
     { cle: "credits", label: "Crédit", route: "patrimoine/immobilier", liste: S => S.profil && S.profil.credits, nom: x => x.nom },

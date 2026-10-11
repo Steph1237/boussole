@@ -101,3 +101,40 @@ test("0012 : libellés de navigation des fiches, uniquement des update public.sa
   // les nouveaux libellés sont ceux du cockpit
   for (const k of ["Pilotage › Rang", "Compte › Données", "Aujourd''hui", "Patrimoine › Budget et objectifs"]) assert.ok(m12.includes(k), k);
 });
+
+test("0015 : « Patrimoine › Budget et objectifs » → « Patrimoine › Objectifs » dans les fiches (même forme que 0012)", () => {
+  const m15 = lire("supabase/migrations/0015_savoir_libelles_objectifs.sql");
+  assert.ok(m15, "migration 0015_savoir_libelles_objectifs.sql absente");
+  const instr = m15.replace(/--[^\n]*/g, "").split(";").map(s => s.trim()).filter(Boolean);
+  const slugs = instr.map(s => {
+    assert.match(s, /^update public\.savoir_fiches\s+set contenu = replace\(/);
+    assert.match(s, /version = version \+ 1, mis_a_jour_le = '2026-10-11'/);
+    assert.match(s, /and strpos\(contenu, 'Patrimoine › Budget et objectifs'\) > 0$/, "rejouable");
+    return (s.match(/where slug = '([a-z0-9-]+)'/) || [])[1];
+  });
+  // toutes les fiches qui portent l'ancien libellé après 0011 + 0012 sont traitées
+  const m12 = lire("supabase/migrations/0012_savoir_libelles.sql");
+  const visees = [...m12.matchAll(/update public\.savoir_fiches[\s\S]*?where slug = '([a-z0-9-]+)'[^;]*;/g)].filter(m => m[0].includes("Patrimoine › Budget et objectifs")).map(m => m[1]);
+  assert.deepEqual(slugs, visees);
+  assert.deepEqual(slugs, ["investissement-programme"]);
+});
+
+test("0015 sur PGlite : remplacement effectué, version incrémentée une seule fois (rejouable)", async () => {
+  const { baseAvec } = await import("./helpers/pglite.mjs");
+  const db = await baseAvec(["0009_savoir_memoire.sql", "0010_savoir_reperes.sql", "0011_savoir_fiches.sql", "0012_savoir_libelles.sql"]);
+  const fiche = async () => (await db.query("select contenu, version, mis_a_jour_le::text d from public.savoir_fiches where slug = 'investissement-programme'")).rows[0];
+  const avant = await fiche();
+  assert.ok(avant.contenu.includes("Dans Patrimoine › Budget et objectifs, Boussole calcule"));
+  const m15 = readFileSync("supabase/migrations/0015_savoir_libelles_objectifs.sql", "utf8");
+  await db.exec(m15);
+  const apres = await fiche();
+  assert.ok(apres.contenu.includes("Dans Patrimoine › Objectifs, Boussole calcule, pour chacun de vos objectifs,"));
+  assert.ok(!apres.contenu.includes("Budget et objectifs"));
+  assert.equal(apres.version, avant.version + 1);
+  assert.equal(apres.d, "2026-10-11");
+  await db.exec(m15);
+  assert.equal((await fiche()).version, avant.version + 1, "rejoué : rien ne change");
+  const reste = (await db.query("select slug from public.savoir_fiches where strpos(contenu, 'Budget et objectifs') > 0")).rows;
+  assert.deepEqual(reste, [], "plus aucune fiche avec l'ancien libellé");
+  await db.close();
+});

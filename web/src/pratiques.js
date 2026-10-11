@@ -96,10 +96,10 @@
       source: "Repère usuel des conseillers en gestion de patrimoine ; assurance emprunteur demandée par les banques pour un crédit immobilier", lien: "compte/donnees" },
     liquidite_objectifs: { titre: "Argent disponible pour les projets proches", cible: "100 % du besoin des objectifs à moins de 2 ans",
       regle: "Argent disponible sous quelques jours ÷ montant restant à réunir pour les objectifs à moins de 2 ans ; repère 100 %",
-      source: "Repère usuel des conseillers : l'argent nécessaire à moins de 2 ans reste disponible et peu risqué", lien: "patrimoine/budget" },
+      source: "Repère usuel des conseillers : l'argent nécessaire à moins de 2 ans reste disponible et peu risqué", lien: "patrimoine/objectifs" },
     apport: { titre: "Apport pour le projet immobilier", cible: "l'apport visé (10 % du prix + frais de notaire)",
       regle: "Apport réuni ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
-      source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)", lien: "patrimoine/budget" },
+      source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)", lien: "patrimoine/objectifs" },
     adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de votre profil",
       regle: "Somme des écarts hors fourchette, par classe d'actifs, entre votre allocation et celle de votre profil ; repère 0 point",
       source: "Questionnaire de profil inspiré de l'adéquation MiFID II ; allocations indicatives de Boussole", lien: "pilotage/risque" },
@@ -165,12 +165,12 @@
     if (!L.length) return null;
     const cible = sum(L, o => (pos(o.cible) > 0 ? pos(o.cible) : 0.18 * pos(o.prix)));
     const reuni = sum(L, o => pos(deja[o.id]));
-    if (cible <= 0) return aCompleter("effort", "apport", B.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport (Patrimoine › Budget et objectifs).");
+    if (cible <= 0) return aCompleter("effort", "apport", B.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport (Patrimoine › Objectifs).");
     const ratio = reuni / cible;
     return critere("effort", "apport", B.apport, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
       texte: eur(reuni) + " réunis sur " + eur(cible) + " d'apport visé (" + pct(ratio) + ").",
       piste: ratio >= 1 ? "Votre apport est réuni : les banques regarderont aussi votre endettement après l'achat."
-        : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Budget et objectifs indique l'effort mensuel pour y arriver." });
+        : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Objectifs indique l'effort mensuel pour y arriver." });
   }
 
   /* ---------- Allocation ---------- */
