@@ -1,7 +1,7 @@
-// Patrimoine › Objectifs (module objectifs-view, web/src/objectifs-view.*) : « Vais-je atteindre mes projets ? ».
-// Verdict en tête, une carte par objectif (échéance, progression, statut, effort mensuel requis) → panneau (détail, poches
-// rattachées, projection de l'objectif, modifier, supprimer, priorité), « Ajouter un objectif » (modèles), projection du
-// patrimoine financier en accordéon.
+// Patrimoine › Objectifs (module objectifs-view, web/src/objectifs-view.*) : « Vais-je atteindre mes projets ? », en lecture seule.
+// Verdict en tête, une carte par objectif (échéance, progression, statut, effort mensuel requis) → panneau (détail, rendement et
+// repère Livret A, poches rattachées, projection de l'objectif, « Corriger avec Claude »), « Compléter avec Claude » en tête,
+// projection du patrimoine financier en accordéon (paramètre « scénario » local, jamais enregistré). Aucune écriture, tutoiement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,32 +18,59 @@ const UI = require("../web/src/ui.js");
 const Plan = require("../web/src/plan.js");
 const Calc = require("../web/src/calc.js");
 const Reperes = require("../web/src/reperes.js");
+const ClaudePrompts = require("../web/src/claude-prompts.js");
 const DEMO = require("../web/src/demo-data.js");
 
 const J = v => JSON.parse(JSON.stringify(v));
 const sp = s => String(s).replace(/[\u00a0\u202f]/g, " ").replace(/&#39;/g, "'");
+const P = (s, c) => sp(ClaudePrompts.phrase(s, c));
 const DEPS = { Plan, Calc };
 const PEOPLE = [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }];
 const TODAY = "2026-10-11";
 const demoS = () => Object.assign(J(DEMO), { ready: true, dbOk: true, scope: "foyer", people: PEOPLE, error: null });
+const questions = h => [...String(h).matchAll(/href="https:\/\/claude\.ai\/new\?q=([^"]*)"/g)].map(m => sp(decodeURIComponent(m[1].replace(/&amp;/g, "&"))));
+/* Tutoiement : aucun « vous / votre / vos » ; les textes venant du moteur (plan.js) sont listés en exception (aucun affiché ici). */
+const EXCEPTIONS_MOTEUR = [];
+const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+const sansExceptions = t => EXCEPTIONS_MOTEUR.reduce((a, e) => a.split(e).join(""), String(t));
+/* Sept objectifs (plus de 5 : « Voir plus ») à partir de la démo. */
+const septObjectifs = () => {
+  const S = demoS();
+  for (let i = 4; i <= 7; i++) S.objectifs.push({ id: "obj-p" + i, nom: "Projet " + i, type: "projet", cible: 3000 * i, dateCible: (2027 + i) + "-06-30", source: "saisi", deja: 100 * i, rendement: 2, priorite: i });
+  return S;
+};
 
 /* ------------------------------------------------------------------ structure ------------------------------------------------------------------ */
 test("objectifs-view.js : se compile, s'enregistre sous « objectifs-view », exporte ses fonctions pures", () => {
   assert.doesNotThrow(() => new vm.Script(js, { filename: "objectifs-view.js" }));
   assert.match(js, /App\.register\("objectifs-view", api\)/);
   assert.match(js, /__pending/);
-  for (const f of ["trier", "analyser", "resumeObjectifs", "carteHtml", "detailHtml", "formHtml", "serieObjectif", "modele", "validerObjectif", "ligneObjectif", "deplacer", "livretA", "versementReel", "projectionSvg", "projectionTableHtml", "hypothesesHtml"])
+  for (const f of ["trier", "analyser", "resumeObjectifs", "carteHtml", "detailHtml", "serieObjectif", "livretA", "versementReel", "projectionSvg", "projectionTableHtml", "hypothesesHtml", "boutonClaude"])
     assert.equal(typeof OV[f], "function", f);
+  for (const f of ["formHtml", "modele", "validerObjectif", "ligneObjectif", "deplacer"]) assert.equal(OV[f], undefined, f + " : plus de saisie dans l'app");
 });
 
-test("objectifs-view.js : calculs de plan.js (cascade des poches, statut, répartition de l'épargne, projection) ; écritures objectifs seulement", () => {
+test("objectifs-view.js : calculs de plan.js (cascade des poches, statut, répartition de l'épargne, projection) ; aucune écriture au store", () => {
   assert.match(js, /\.affecterDeja\(/);
   assert.match(js, /statutObjectif\([^)]*deja:/);
   assert.match(js, /repartirEpargne\(/);
   assert.match(js, /\.projection\(/);
-  assert.match(js, /collection\("objectifs"\)\.upsert\(/);
-  assert.match(js, /doc\("objectifs\/" \+ id\)\.delete\(/);
+  assert.doesNotMatch(js, /Store\.db|\.db\b/, "aucun accès à Store.db");
+  assert.doesNotMatch(js, /\.upsert\(|\.delete\(|\.set\(\s*\{|collection\(|doc\("objectifs/, "aucune écriture");
   assert.doesNotMatch(js, /doc\("budget\/main"\)/);
+});
+
+test("objectifs-view : lecture seule — plus de formulaire, de modèles, de priorité monter / descendre ni de suppression", () => {
+  for (const src of [js, html]) {
+    assert.doesNotMatch(src, /<form|<textarea|<select|<dialog|type="checkbox"|type="date"/);
+    assert.doesNotMatch(src, /Ajouter un objectif|data-ov-modele|data-ov-act|ovAjouter|ov-bascule|Monter|Descendre|Supprimer|Modifier/);
+  }
+  // seul champ restant : le versement de la projection, paramètre d'exploration du simulateur
+  assert.deepEqual([...html.matchAll(/<input[^>]*id="([^"]+)"/g)].map(m => m[1]), ["ovVers"]);
+  assert.equal((js.match(/<input/g) || []).length, 0);
+  assert.match(js, /ClaudePrompts/);
+  assert.match(js, /"Compléter avec Claude"/);
+  assert.match(js, /"Corriger avec Claude"/);
 });
 
 test("objectifs-view.js : le repère Livret A est lu dans les repères (aucun taux codé en dur)", () => {
@@ -59,7 +86,7 @@ test("objectifs-view.js : aucune requête DOM globale hors racine du module", ()
   assert.deepEqual(bad, []);
 });
 
-test("objectifs-view.css : scopé sous #view-objectifs-view (panneau sous .ui-panneau .ov-…), mobile, couleurs du thème", () => {
+test("objectifs-view.css : scopé sous #view-objectifs-view (panneau sous .ui-panneau .ov-…), mobile, couleurs du thème, styles de saisie retirés", () => {
   const c0 = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const badMedia = [...c0.matchAll(/@media/g)].filter(m => !/(^|\})\s*$/.test(c0.slice(0, m.index)));
   assert.deepEqual(badMedia.map(m => m.index), []);
@@ -70,16 +97,22 @@ test("objectifs-view.css : scopé sous #view-objectifs-view (panneau sous .ui-pa
   assert.deepEqual(bad, []);
   assert.match(css, /@media \(max-width:\s*\d+px\)/);
   assert.doesNotMatch(css.replace(/rgba\([^)]*\)/g, ""), /#[0-9a-fA-F]{3,6}\b(?![-\w])/);
+  assert.doesNotMatch(css, /ov-bascule|ov-form|ov-modele|ov-confirm|ov-chk/);
 });
 
-test("objectifs-view.html : identifiants utilisés par le script, question, projection en accordéon fermé", () => {
+test("objectifs-view.html : identifiants utilisés par le script, question, « Compléter avec Claude », projection en accordéon fermé", () => {
   const ids = [...js.matchAll(/\$\("(ov[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 8);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
   assert.match(html, /Vais-je atteindre mes projets/);
   assert.match(html, /<details class="ui-acc ov-proj" id="ovProjAcc">/);
   assert.match(html, /Projection du patrimoine financier/);
-  assert.match(html, /id="ovAjouter"[^>]*>Ajouter un objectif</);
+  assert.match(html, /id="ovCompleter"/);
+});
+
+test("objectifs-view : tutoiement — aucun « vous / votre / vos » dans les textes du module (hors textes du moteur listés)", () => {
+  assert.doesNotMatch(sansExceptions(js), VOUVOIEMENT);
+  assert.doesNotMatch(sansExceptions(html), VOUVOIEMENT);
 });
 
 /* ------------------------------------------------------------------ fonctions pures ------------------------------------------------------------------ */
@@ -106,18 +139,19 @@ test("analyser : cascade des poches (Plan.affecterDeja), épargne répartie par 
   assert.deepEqual(OV.analyser(Object.assign(demoS(), { objectifs: [] }), DEPS, TODAY).liste, []);
 });
 
-test("resumeObjectifs : verdict en une phrase, compte par statut, ton", () => {
+test("resumeObjectifs : verdict en une phrase (tutoiement), compte par statut, ton", () => {
   const st = s => ({ o: { id: s }, st: { statut: s } });
   const ok = OV.resumeObjectifs([st("avance"), st("dans_les_temps"), st("atteint")]);
   assert.equal(ok.n, 3); assert.equal(ok.ton, "bon");
-  assert.match(ok.verdict, /3 objectifs sont en bonne voie/);
+  assert.match(ok.verdict, /Tes 3 objectifs sont en bonne voie/);
   const ko = OV.resumeObjectifs([st("avance"), st("retard"), st("hors_portee")]);
   assert.equal(ko.ton, "critique");
-  assert.match(ko.verdict, /2 objectifs sur 3 demandent votre attention/);
+  assert.match(ko.verdict, /2 objectifs sur 3 demandent ton attention/);
   assert.match(ko.detail, /1 en avance · 1 en retard · 1 hors de portée/);
   const un = OV.resumeObjectifs([st("retard")]);
   assert.equal(un.ton, "attention");
-  assert.match(un.verdict, /Votre objectif est en retard/);
+  assert.match(un.verdict, /Ton objectif est en retard/);
+  assert.match(OV.resumeObjectifs([st("avance")]).verdict, /Ton objectif est en bonne voie/);
   assert.match(OV.resumeObjectifs([]).verdict, /Aucun objectif/);
 });
 
@@ -140,33 +174,39 @@ test("carteHtml : bouton-carte (nom, échéance, progression, statut, effort req
   assert.match(e, /data-ui-carte="a&quot;b"/);
 });
 
-test("detailHtml : détail chiffré, poches rattachées avec leur valeur, cascade expliquée, projection de l'objectif, actions", () => {
+test("detailHtml : détail chiffré, rendement et repère Livret A, poches et cascade, projection, « Corriger avec Claude », aucune action d'écriture", () => {
   const S = demoS();
   const a = OV.analyser(S, DEPS, TODAY);
   const ap = a.liste.find(x => x.o.id === "obj-apport");
-  const ctx = { positions: S.positions, scope: "foyer", Calc, Plan, today: TODAY, n: 3, dbOk: true, duScope: "du foyer" };
+  const ctx = { positions: S.positions, scope: "foyer", Calc, Plan, today: TODAY, n: 3, duScope: "du foyer", livretA: OV.livretA(S, Reperes), U: UI };
   const h = sp(OV.detailHtml(ap, ctx));
   assert.match(h, /Cible/); assert.match(h, /60 000 €/);
   assert.match(h, /Déjà de côté/);
   assert.match(h, /Effort requis/);
-  assert.match(h, /Votre épargne actuelle en couvre/);
+  assert.match(h, /Ton épargne actuelle en couvre/);
+  assert.match(h, /Rendement attendu/); assert.match(h, /2,4 %\/an/);
+  assert.match(h, /repère : Livret A 1,7 % depuis le 01\/08\/2026/);
   assert.match(h, /role="progressbar"/);
   assert.match(h, /Poches rattachées/);
   assert.match(h, /Épargne/);
   assert.match(h, /servent d'abord un objectif prioritaire/);
   assert.match(h, /Projection de l'objectif/);
   assert.match(h, /<svg[^>]*role="img"/);
-  for (const act of ["modifier", "supprimer", "monter", "descendre"]) assert.match(h, new RegExp('data-ov-act="' + act + '"'));
-  const first = sp(OV.detailHtml(a.liste[0], Object.assign({}, ctx, { rang: 1 })));
-  assert.match(first, /data-ov-act="monter" disabled/);
-  const conf = sp(OV.detailHtml(ap, Object.assign({}, ctx, { confirmer: true })));
-  assert.match(conf, /data-ov-act="supprimer-oui"/);
+  assert.doesNotMatch(h, /data-ov-act|<form|<input|Supprimer|Monter|Descendre/);
+  assert.match(h, />Corriger avec Claude</);
+  assert.deepEqual(questions(h), [P("objectifs", "l'objectif « Apport maison » (60 000 € d'ici juin 2029, priorité 2 sur 3)")]);
+  assert.match(h, /Agent › Propositions/);
   const saisi = { o: { id: "s", nom: "Voyage <Japon>", type: "projet", cible: 5000, dateCible: "2027-08-31", source: "saisi", deja: 1000, rendement: 0, priorite: 4 },
     st: Plan.statutObjectif({ cible: 5000, dateCible: "2027-08-31", rendement: 0 }, { deja: 1000, versementAlloue: 0, today: TODAY }), brut: 1000, rang: 4 };
   const hs = sp(OV.detailHtml(saisi, ctx));
   assert.match(hs, /Montant saisi/);
+  assert.match(hs, /passe par Claude/);
   assert.doesNotMatch(hs, /<Japon>/);
   assert.match(hs, /Aucune épargne n'y est affectée/);
+  const sansPoche = sp(OV.detailHtml(Object.assign({}, ap, { o: Object.assign({}, ap.o, { poches: [], enveloppes: [] }) }), ctx));
+  assert.match(sansPoche, /demande à Claude d'en rattacher une/);
+  const sansRepere = sp(OV.detailHtml(ap, Object.assign({}, ctx, { livretA: null })));
+  assert.match(sansRepere, /Livret A taux réglementé en vigueur/);
 });
 
 test("serieObjectif : part du déjà, suit le rythme actuel et l'effort requis jusqu'à l'échéance", () => {
@@ -184,46 +224,6 @@ test("serieObjectif : part du déjà, suit le rythme actuel et l'effort requis j
   assert.ok(sansDate.mois >= 10);
 });
 
-test("modele : matelas = 6 mois de dépenses (arrondi à 100 €) sur la poche Épargne, retraite selon l'âge, rendements par défaut", () => {
-  const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
-  const m = OV.modele("matelas", { totaux: t, blocs: ["Épargne", "Monde"], age: "a30", today: TODAY });
-  assert.equal(m.nom, "Matelas de précaution");
-  assert.equal(m.cible, Math.round(6 * t.depenses / 100) * 100);
-  assert.equal(m.source, "poches"); assert.deepEqual(m.poches, ["Épargne"]);
-  assert.equal(m.dateCible, "2027-10-31");
-  assert.equal(m.rendement, 2.4);
-  const r = OV.modele("retraite", { totaux: t, blocs: ["Monde", "Europe", "Crypto"], age: "a30", today: TODAY });
-  assert.deepEqual(r.poches, ["Monde", "Europe"]);
-  assert.equal(r.dateCible.slice(0, 4), String(2026 + 29));
-  assert.equal(r.rendement, 5);
-  const p = OV.modele("projet", { totaux: t, blocs: [], today: TODAY });
-  assert.equal(p.source, "saisi"); assert.equal(p.cible, 10000); assert.equal(p.rendement, 3);
-  assert.equal(OV.modele("apport", { totaux: t, blocs: [], today: TODAY }).source, "saisi");
-});
-
-test("validerObjectif : nom, cible, date future, poches ou montant, rendement borné", () => {
-  const ok = { nom: "Voyage", cible: 3000, dateCible: "2027-06-30", source: "saisi", deja: 0, rendement: 2 };
-  assert.equal(OV.validerObjectif(ok, TODAY), null);
-  assert.match(OV.validerObjectif(Object.assign({}, ok, { nom: " " }), TODAY), /Donnez un nom/);
-  assert.match(OV.validerObjectif(Object.assign({}, ok, { cible: 0 }), TODAY), /montant cible/);
-  assert.match(OV.validerObjectif(Object.assign({}, ok, { dateCible: "2026-01-01" }), TODAY), /dans le futur/);
-  assert.match(OV.validerObjectif(Object.assign({}, ok, { source: "poches", poches: [], enveloppes: [] }), TODAY), /Cochez au moins une poche/);
-  assert.match(OV.validerObjectif(Object.assign({}, ok, { deja: "" }), TODAY), /déjà de côté/);
-  assert.match(OV.validerObjectif(Object.assign({}, ok, { rendement: 80 }), TODAY), /entre -50 et 50/);
-  assert.equal(OV.validerObjectif(Object.assign({}, ok, { dateCible: "" }), TODAY), null, "sans échéance : accepté");
-});
-
-test("ligneObjectif : ligne enregistrée (nouvel objectif en dernière priorité, poches ou montant) ; deplacer : priorités échangées", () => {
-  const objs = [{ id: "a", priorite: 1 }, { id: "b", priorite: 2 }, { id: "c", priorite: 5 }];
-  const n = OV.ligneObjectif({ nom: " Voyage ", type: "projet", cible: "3000", dateCible: "", source: "saisi", deja: "200", rendement: "2", poches: ["X"] }, null, objs);
-  assert.deepEqual(n, { nom: "Voyage", type: "projet", cible: 3000, dateCible: null, source: "saisi", poches: [], enveloppes: [], deja: 200, rendement: 2, priorite: 6 });
-  const e = OV.ligneObjectif({ nom: "Apport", type: "apport", cible: 1, dateCible: "2030-01-31", source: "poches", poches: ["Épargne"], enveloppes: [], deja: 99, rendement: 2.4 }, "b", objs);
-  assert.equal(e.id, "b"); assert.equal(e.deja, 0); assert.deepEqual(e.poches, ["Épargne"]); assert.equal(e.priorite, undefined);
-  assert.deepEqual(OV.deplacer(objs, "b", -1), [{ id: "b", priorite: 1 }, { id: "a", priorite: 2 }, { id: "c", priorite: 3 }]);
-  assert.deepEqual(OV.deplacer(objs, "c", -1), [{ id: "c", priorite: 2 }, { id: "b", priorite: 3 }]);
-  assert.deepEqual(OV.deplacer(objs, "a", -1), []);
-});
-
 test("livretA : taux et date d'effet lus dans les repères ; sans repère, formule générique", () => {
   const S = demoS();
   assert.equal(sp(OV.livretA(S, Reperes)), "1,7 % depuis le 01/08/2026");
@@ -238,7 +238,7 @@ test("versementReel : épargne du budget, sinon versements programmés du périm
   const S2 = Object.assign(demoS(), { budget: { lignes: [] }, config: Object.assign(J(DEMO.config), { recurring: [{ positionId: S.positions[0].id, amount: 120 }] }) });
   const r = OV.versementReel(S2, Plan.budgetTotaux([], S2.profil, "foyer"), "foyer");
   assert.equal(r.v, 120);
-  assert.match(r.src, /versements programmés/);
+  assert.match(r.src, /tes versements programmés/);
   assert.equal(OV.versementReel(Object.assign(demoS(), { budget: { lignes: [] }, config: {} }), Plan.budgetTotaux([], null, "foyer"), "foyer"), null);
 });
 
@@ -254,22 +254,14 @@ test("projection : courbe (role=img, scénario central), tableau des scénarios,
   assert.match(hyp, /<th>Poche<\/th>/);
 });
 
-test("formHtml : champs échappés, bascules type et source, poches cochées avec leur valeur, repère Livret A", () => {
-  const ed = { nom: 'Voyage "<x>"', type: "projet", cible: 3000, dateCible: "2027-06-30", source: "poches", poches: ["Épargne"], enveloppes: [], deja: 0, rendement: 3 };
-  const h = sp(OV.formHtml(ed, { blocs: [["Épargne", 12000], ["Monde", 30000]], enveloppes: [["PEA Camille", 25000]], livretA: "1,7 % depuis le 01/08/2026", nouvelle: true, erreur: "Oups <b>" }));
-  assert.match(h, /value="Voyage &quot;&lt;x&gt;&quot;"/);
-  assert.match(h, /data-ov-bascule="type"/);
-  assert.match(h, /data-ov-bascule="source"/);
-  assert.match(h, /<input type="checkbox" data-ov-liste="poches" value="Épargne" checked>/);
-  assert.match(h, /<input type="checkbox" data-ov-liste="poches" value="Monde">/);
-  assert.match(h, /12 000 €/);
-  assert.match(h, /Livret A 1,7 % depuis le 01\/08\/2026/);
-  assert.match(h, /role="alert"[^>]*>Oups &lt;b&gt;</);
-  assert.match(h, /Ajouter l'objectif/);
-  const saisi = sp(OV.formHtml(Object.assign({}, ed, { source: "saisi", deja: 500 }), { blocs: [], enveloppes: [], livretA: "x", nouvelle: false }));
-  assert.match(saisi, /id="ovf-deja"[^>]*value="500"/);
-  assert.doesNotMatch(saisi, /data-ov-liste/);
-  assert.match(saisi, /Enregistrer l'objectif/);
+test("tutoiement des rendus : verdicts, cartes, panneaux", () => {
+  const S = septObjectifs();
+  const a = OV.analyser(S, DEPS, TODAY);
+  const ctx = { positions: S.positions, scope: "p1", Calc, Plan, today: TODAY, n: a.liste.length, duScope: "de Camille", livretA: "x", U: UI };
+  const rendus = a.liste.flatMap(x => [OV.carteHtml(x, a.liste.length), OV.detailHtml(x, ctx)]);
+  const st = s => ({ o: { id: s }, st: { statut: s } });
+  for (const l of [[st("avance")], [st("retard")], [st("avance"), st("atteint")], [st("retard"), st("hors_portee")], []]) rendus.push(OV.resumeObjectifs(l).verdict);
+  for (const h of rendus) assert.doesNotMatch(sansExceptions(sp(h).replace(/href="[^"]*"/g, "")), VOUVOIEMENT);
 });
 
 /* ------------------------------------------------------------------ vue dans un mini-DOM ------------------------------------------------------------------ */
@@ -277,138 +269,100 @@ const uiJs = readFileSync("web/src/ui.js", "utf8");
 const planJs = readFileSync("web/src/plan.js", "utf8");
 const calcJs = readFileSync("web/src/calc.js", "utf8");
 const reperesJs = readFileSync("web/src/reperes.js", "utf8");
-const attendre = () => new Promise(r => setTimeout(r, 0));
-function vueDom(S0, o = {}) {
+const promptsJs = readFileSync("web/src/claude-prompts.js", "utf8");
+function vueDom(S0) {
   const dom = miniDom(), { doc } = dom;
   let S = J(S0);
-  const ecrits = [];
+  const acces = [];
   const modules = {};
-  const emettre = () => modules["objectifs-view"].update(S, true);
   const c = { document: doc, console, setTimeout, clearTimeout, CSS: { escape: s => String(s).replace(/["\\]/g, "\\$&") } };
   c.window = c; c.self = c;
   c.App = { register: (n, api) => { modules[n] = api; }, refreshHeadlines() {}, parametres: () => ({}) };
-  c.Store = { get: () => S, db: {
-    collection: name => ({ upsert: async row => {
-      if (o.echec) throw Object.assign(new Error("panne"), { code: "unavailable" });
-      ecrits.push({ op: "upsert", name, row: J(row) });
-      S = J(S);
-      let cur = row.id && S.objectifs.find(x => x.id === row.id);
-      if (cur) Object.assign(cur, row); else { cur = Object.assign({ id: "obj-n" + ecrits.length }, row); S.objectifs.push(cur); }
-      emettre();
-      return { id: cur.id };
-    } }),
-    doc: path => ({ delete: async () => { ecrits.push({ op: "delete", path }); S = J(S); S.objectifs = S.objectifs.filter(x => "objectifs/" + x.id !== path); emettre(); return {}; } }),
-  } };
+  // Tout accès au store (db, écritures) est consigné : la vue ne doit jamais y toucher.
+  c.Store = new Proxy({ get: () => S }, { get: (o, k) => { if (k !== "get") acces.push(String(k)); return o[k]; } });
   vm.createContext(c);
   vm.runInContext(calcJs, c, { filename: "calc.js" });
   vm.runInContext(planJs, c, { filename: "plan.js" });
   vm.runInContext(reperesJs, c, { filename: "reperes.js" });
   vm.runInContext(uiJs, c, { filename: "ui.js" });
+  vm.runInContext(promptsJs, c, { filename: "claude-prompts.js" });
   vm.runInContext(js, c, { filename: "objectifs-view.js" });
+  // Compteur d'analyses : Plan.affecterDeja est appelé une fois par analyse.
+  const compte = { analyses: 0, projections: 0 };
+  const aff = c.Plan.affecterDeja, proj = c.Plan.projection;
+  c.Plan.affecterDeja = (...xs) => { compte.analyses++; return aff(...xs); };
+  c.Plan.projection = (...xs) => { compte.projections++; return proj(...xs); };
   const root = doc.body.appendChild(doc.createElement("section"));
   root.setAttribute("id", "view-objectifs-view");
   root.innerHTML = html;
   const api = modules["objectifs-view"];
   api.mount(root);
   api.update(S, true);
-  return { c, dom, doc, root, api, S: () => S, ecrits };
+  return { c, dom, doc, root, api, S: () => S, acces, compte };
 }
 const dlgDe = doc => doc.body.querySelector('[role="dialog"]');
 const saisir = (dom, el, v) => { el.value = v; el.dispatchEvent(new dom.Ev("input")); };
 const carte = (root, id) => root.querySelector('[data-ui-carte="' + id + '"]');
+const ouvrirProj = v => { const acc = v.root.querySelector("#ovProjAcc"); acc.setAttribute("open", ""); acc.dispatchEvent(new v.dom.Ev("toggle")); };
 
-test("vue (DOM) : verdict, une carte par objectif dans l'ordre des priorités, panneau de détail, Échap rend le focus", () => {
+test("vue (DOM) : verdict, une carte par objectif dans l'ordre des priorités, panneau de lecture, Échap rend le focus", () => {
   const v = vueDom(demoS());
   assert.match(sp(v.root.querySelector("#ovVerdict").textContent), /objectif/);
   const cartes = v.root.querySelector("#ovCartes").querySelectorAll("[data-ui-carte]");
   assert.deepEqual(cartes.map(x => x.getAttribute("data-ui-carte")), ["obj-matelas", "obj-apport", "obj-retraite"]);
+  assert.match(v.root.querySelector("#ovCompleter").textContent, /Compléter avec Claude/);
+  assert.deepEqual(questions(v.root.querySelector("#ovCompleter").innerHTML), [P("objectifs")]);
   const c0 = carte(v.root, "obj-apport");
   c0.focus(); c0.click();
   const dlg = dlgDe(v.doc);
   assert.equal(dlg.hidden, false);
   assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Apport maison");
   assert.match(sp(dlg.textContent), /Poches rattachées/);
+  assert.match(sp(dlg.textContent), /Livret A 1,7 %/);
+  assert.equal(dlg.querySelector("[data-ov-act]"), null);
+  assert.equal(dlg.querySelectorAll("form, input, textarea, select").length, 0);
+  const corriger = dlg.querySelectorAll("a.ui-claude").find(a => /Corriger avec Claude/.test(a.textContent));
+  assert.ok(corriger);
+  assert.match(decodeURIComponent(corriger.getAttribute("href")), /l'objectif « Apport maison »/);
   assert.match(dlg.querySelector(".ui-panneau-pied").innerHTML, /claude\.ai\/new\?q=/);
   v.dom.touche(v.doc.activeElement, "Escape");
   assert.equal(dlg.hidden, true);
   assert.equal(v.doc.activeElement, carte(v.root, "obj-apport"));
+  assert.deepEqual(v.acces, [], "aucun accès au store");
 });
 
-test("vue (DOM) : Modifier → formulaire dans le panneau, enregistré par upsert ; priorité ; suppression confirmée", async () => {
+test("vue (DOM) : objectif retiré par le store → panneau fermé ; modifié → panneau rafraîchi", () => {
   const v = vueDom(demoS());
   carte(v.root, "obj-retraite").click();
   const dlg = dlgDe(v.doc);
-  dlg.querySelector('[data-ov-act="modifier"]').click();
-  const nom = dlg.querySelector("#ovf-nom");
-  assert.equal(nom.value, "Retraite");
-  saisir(v.dom, nom, "Retraite anticipée");
-  dlg.querySelector('[data-ov-act="enregistrer"]').click();
-  await attendre(); await attendre();
-  assert.equal(v.ecrits.length, 1);
-  assert.equal(v.ecrits[0].row.id, "obj-retraite");
-  assert.equal(v.ecrits[0].row.nom, "Retraite anticipée");
-  assert.deepEqual(v.ecrits[0].row.poches, ["Monde", "Europe", "Asie"]);
-  assert.match(dlg.querySelector("[data-ov-msg]").textContent, /enregistré/);
+  const S2 = J(v.S()); S2.objectifs.find(o => o.id === "obj-retraite").nom = "Retraite anticipée";
+  v.api.update(S2, true);
   assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Retraite anticipée");
-  // priorité : monter
-  dlg.querySelector('[data-ov-act="monter"]').click();
-  await attendre(); await attendre(); await attendre();
-  const ups = v.ecrits.slice(1).map(e => [e.row.id, e.row.priorite]);
-  assert.deepEqual(ups, [["obj-retraite", 2], ["obj-apport", 3]]);
-  assert.deepEqual(v.root.querySelector("#ovCartes").querySelectorAll("[data-ui-carte]").map(x => x.getAttribute("data-ui-carte")), ["obj-matelas", "obj-retraite", "obj-apport"]);
-  // suppression
-  dlg.querySelector('[data-ov-act="supprimer"]').click();
-  assert.equal(v.ecrits.filter(e => e.op === "delete").length, 0);
-  dlg.querySelector('[data-ov-act="supprimer-oui"]').click();
-  await attendre(); await attendre();
-  assert.deepEqual(v.ecrits.filter(e => e.op === "delete").map(e => e.path), ["objectifs/obj-retraite"]);
+  const S3 = J(S2); S3.objectifs = S3.objectifs.filter(o => o.id !== "obj-retraite");
+  v.api.update(S3, true);
   assert.equal(dlg.hidden, true);
-  assert.match(v.root.querySelector("#ovMsg").textContent, /supprimé/);
   assert.equal(carte(v.root, "obj-retraite"), null);
 });
 
-test("vue (DOM) : Ajouter un objectif → modèle → formulaire (source « Montant saisi ») → nouvel objectif en dernière priorité", async () => {
+test("vue (DOM) : analyser() une fois par émission du store (cartes, projection, panneau, titre de navigation)", () => {
   const v = vueDom(demoS());
-  v.root.querySelector("#ovAjouter").click();
-  const dlg = dlgDe(v.doc);
-  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Ajouter un objectif");
-  dlg.querySelector('[data-ov-modele="projet"]').click();
-  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Nouvel objectif");
-  saisir(v.dom, dlg.querySelector("#ovf-nom"), "Voyage au Japon");
-  saisir(v.dom, dlg.querySelector("#ovf-cible"), "6000");
-  saisir(v.dom, dlg.querySelector("#ovf-deja"), "500");
-  dlg.querySelector('[data-ov-act="enregistrer"]').click();
-  await attendre(); await attendre();
-  assert.equal(v.ecrits.length, 1);
-  const row = v.ecrits[0].row;
-  assert.equal(row.nom, "Voyage au Japon"); assert.equal(row.cible, 6000); assert.equal(row.deja, 500); assert.equal(row.source, "saisi");
-  assert.equal(row.priorite, 4);
-  assert.ok(carte(v.root, "obj-n1"), "nouvelle carte");
-  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Voyage au Japon");
+  carte(v.root, "obj-apport").click();
+  ouvrirProj(v);
+  v.compte.analyses = 0;
+  v.api.update(J(v.S()), true);
+  v.api.headline();
+  assert.equal(v.compte.analyses, 1, "une seule analyse pour le rendu, la projection, le panneau et le titre");
+  // un réglage du simulateur ne relance pas l'analyse
+  v.root.querySelector("#ovHorizon").querySelectorAll('[role="radio"]')[2].click();
+  assert.equal(v.compte.analyses, 1);
+  v.api.update(J(v.S()), true);
+  assert.equal(v.compte.analyses, 2);
 });
 
-test("vue (DOM) : formulaire invalide → erreur dans le panneau ; bascule de source → poches à cocher", async () => {
+test("vue (DOM) : projection en accordéon — dessinée à l'ouverture, horizon en bascule, versement « scénario » local jamais enregistré", () => {
   const v = vueDom(demoS());
-  v.root.querySelector("#ovAjouter").click();
-  const dlg = dlgDe(v.doc);
-  dlg.querySelector('[data-ov-modele="projet"]').click();
-  dlg.querySelector('[data-ov-act="enregistrer"]').click();
-  await attendre();
-  assert.equal(v.ecrits.length, 0);
-  assert.match(dlg.querySelector('[role="alert"]').textContent, /Donnez un nom/);
-  const src = dlg.querySelector('[data-ov-bascule="source"]').querySelectorAll('[role="radio"]');
-  src[1].click();
-  const cases = dlg.querySelectorAll("[data-ov-liste]");
-  assert.ok(cases.length >= 3, "poches et enveloppes à cocher");
-  assert.equal(dlg.querySelector("#ovf-deja"), null);
-});
-
-test("vue (DOM) : projection en accordéon — dessinée à l'ouverture, horizon en bascule, versement « scénario » local", () => {
-  const v = vueDom(demoS());
-  const acc = v.root.querySelector("#ovProjAcc");
   assert.equal(v.root.querySelector("#ovChart").innerHTML, "", "rien n'est dessiné tant que l'accordéon est fermé");
-  acc.setAttribute("open", "");
-  acc.dispatchEvent(new v.dom.Ev("toggle"));
+  ouvrirProj(v);
   assert.match(v.root.querySelector("#ovChart").innerHTML, /<svg/);
   assert.match(sp(v.root.querySelector("#ovProjTable").textContent), /Dans 10 ans/);
   const h = v.root.querySelector("#ovHorizon").querySelectorAll('[role="radio"]');
@@ -419,16 +373,69 @@ test("vue (DOM) : projection en accordéon — dessinée à l'ouverture, horizon
   assert.equal(vers.value, "650");
   saisir(v.dom, vers, "1000");
   assert.match(v.root.querySelector("#ovVersTag").innerHTML, /scénario/);
-  assert.match(sp(v.root.querySelector("#ovVersSrc").textContent), /réel : 650 €\/mois/);
+  assert.match(sp(v.root.querySelector("#ovVersSrc").textContent), /simulation locale, non enregistrée · réel : 650 €\/mois/);
+  v.root.querySelector("[data-ov-vreset]").click();
+  assert.equal(v.root.querySelector("#ovVers").value, "650");
+  assert.match(v.root.querySelector("#ovVersTag").innerHTML, /réel/);
+  assert.deepEqual(v.acces, [], "le simulateur n'écrit rien");
 });
 
-test("vue (DOM) : aucun objectif → état vide orienté (modèles, Claude) ; lecture seule → boutons désactivés", () => {
+test("vue (DOM) : SVG de projection redessiné seulement si ses données changent", () => {
+  const v = vueDom(demoS());
+  ouvrirProj(v);
+  const svg0 = v.root.querySelector("#ovChart").children[0], table0 = v.root.querySelector("#ovProjTable").children[0];
+  assert.ok(svg0);
+  v.api.update(J(v.S()), true);
+  v.api.update(J(v.S()), true);
+  assert.equal(v.root.querySelector("#ovChart").children[0], svg0, "même SVG : pas de redessin");
+  assert.equal(v.root.querySelector("#ovProjTable").children[0], table0);
+  // un objectif renommé ne change pas la projection du patrimoine
+  const S2 = J(v.S()); S2.objectifs[0].nom = "Matelas";
+  v.api.update(S2, true);
+  assert.equal(v.root.querySelector("#ovChart").children[0], svg0);
+  // le versement change : redessin
+  saisir(v.dom, v.root.querySelector("#ovVers"), "2000");
+  assert.notEqual(v.root.querySelector("#ovChart").children[0], svg0);
+});
+
+test("vue (DOM) : anti-redessin des cartes avec plus de 5 objectifs ; « Voir plus » déplié le reste", () => {
+  const v = vueDom(septObjectifs());
+  const zone = v.root.querySelector("#ovCartes");
+  const btn = zone.querySelector("[data-ui-voirplus]");
+  assert.ok(btn, "7 objectifs : « Voir plus »");
+  assert.match(btn.textContent, /Voir plus d'objectifs \(2\)/);
+  const c0 = zone.children[0];
+  v.api.update(J(v.S()), true);
+  v.api.update(J(v.S()), true);
+  assert.equal(zone.children[0], c0, "deux rendus identiques : DOM non réécrit");
+  btn.click();
+  assert.equal(zone.querySelector(".ui-voirplus-reste").hidden, false);
+  // nouvelle émission avec des données changées (premier objectif) : le bloc reste déplié
+  const S2 = J(v.S()); S2.objectifs[0].cible = 25000;
+  v.api.update(S2, true);
+  assert.equal(zone.querySelector(".ui-voirplus-reste").hidden, false, "toujours déplié");
+  assert.equal(zone.querySelector("[data-ui-voirplus]").getAttribute("aria-expanded"), "true");
+  assert.ok(carte(v.root, "obj-p7"));
+  const c1 = zone.children[0];
+  v.api.update(J(S2), true);
+  assert.equal(zone.children[0], c1);
+});
+
+test("vue (DOM) : aucun objectif → état vide orienté vers Claude ; tutoiement de tout le texte affiché", () => {
   const v = vueDom(Object.assign(demoS(), { objectifs: [] }));
   const t = sp(v.root.querySelector("#ovCartes").textContent);
   assert.match(t, /Aucun objectif pour l'instant/);
-  assert.ok(v.root.querySelector("#ovCartes").querySelector('[data-ov-modele="matelas"]'));
-  assert.match(v.root.querySelector("#ovCartes").innerHTML, /claude\.ai\/new/);
-  const ro = vueDom(Object.assign(demoS(), { dbOk: false }));
-  carte(ro.root, "obj-matelas").click();
-  assert.ok(dlgDe(ro.doc).querySelector('[data-ov-act="modifier"]').hasAttribute("disabled"));
+  assert.match(t, /Compléter avec Claude/);
+  assert.deepEqual(questions(v.root.querySelector("#ovCartes").innerHTML), [P("objectifs")]);
+  assert.equal(v.root.querySelector("[data-ov-modele]"), null);
+  assert.equal(v.api.headline(), "Objectifs à fixer");
+  assert.doesNotMatch(sansExceptions(v.root.textContent), VOUVOIEMENT);
+  const w = vueDom(septObjectifs());
+  ouvrirProj(w);
+  assert.doesNotMatch(sansExceptions(w.root.textContent), VOUVOIEMENT);
+  for (const id of ["obj-matelas", "obj-apport", "obj-p5"]) {
+    carte(w.root, id).click();
+    assert.doesNotMatch(sansExceptions(dlgDe(w.doc).textContent), VOUVOIEMENT, id);
+  }
+  assert.deepEqual(w.acces, []);
 });

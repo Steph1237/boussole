@@ -1,24 +1,27 @@
-/* Patrimoine › Objectifs (module « objectifs-view ») : « Vais-je atteindre mes projets ? ».
+/* Patrimoine › Objectifs (module « objectifs-view ») : « Vais-je atteindre mes projets ? ». Lecture seule : la saisie passe par
+   Claude (spec docs/superpowers/specs/2026-10-11-saisie-par-agent.md) ; ce module n'écrit jamais dans le store.
    - En-tête : verdict en une phrase (objectifs en bonne voie ou qui demandent attention), épargne mensuelle répartie par
-     priorité, « Ajouter un objectif », « Demander à Claude ».
+     priorité, « Compléter avec Claude », « Demander à Claude ».
    - Une carte par objectif (ordre des priorités) : nom, échéance, cible, progression (barre), statut (atteint, en avance,
      dans les temps, en retard, hors de portée), effort mensuel requis ; 5 puis « Voir plus ».
-   - Panneau (UI.panneau) : détail chiffré, poches rattachées (valeur, cascade entre objectifs), projection de l'objectif
-     (rythme actuel et effort requis jusqu'à l'échéance), « Modifier » (formulaire dans le panneau), « Monter » / « Descendre »
-     (priorité), « Supprimer » (confirmation). « Ajouter un objectif » : choix d'un modèle (matelas, apport, retraite, projet),
-     puis le même formulaire.
-   - Projection du patrimoine financier : accordéon fermé (dessinée à l'ouverture), horizon en bascule, versement « réel » ou
-     « scénario » local jamais enregistré, tableau des scénarios, hypothèses de rendement. CK4 la déplacera dans Pilotage › Projections.
-   Calculs inchangés (plan.js : affecterDeja, repartirEpargne, statutObjectif, projection…) ; l'épargne vient du budget enregistré.
-   Écritures : Store.db.collection("objectifs").upsert(row), Store.db.doc("objectifs/<id>").delete().
-   Fonctions pures exportées pour les tests : trier, analyser, resumeObjectifs, carteHtml, detailHtml, formHtml, serieObjectif,
-   modele, validerObjectif, ligneObjectif, deplacer, livretA, versementReel, projectionSvg, projectionTableHtml, hypothesesHtml.
-   Dépendances injectées (deps / ctx) : { Plan, Calc } ; window.* par défaut. */
+   - Panneau (UI.panneau, lecture) : détail chiffré, rendement attendu (repère Livret A), poches rattachées (valeur, cascade
+     entre objectifs), projection de l'objectif (rythme actuel et effort requis jusqu'à l'échéance), « Corriger avec Claude ».
+   - Projection du patrimoine financier : accordéon fermé (dessinée à l'ouverture, redessinée seulement si ses données
+     changent), horizon en bascule, versement « réel » ou « scénario » : paramètre d'exploration local, jamais enregistré
+     (simulateur). CK4 la déplacera dans Pilotage › Projections.
+   Calculs inchangés (plan.js : affecterDeja, repartirEpargne, statutObjectif, projection…), faits une fois par émission du
+   store ; l'épargne vient du budget enregistré.
+   Fonctions pures exportées pour les tests : trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA,
+   versementReel, projectionSvg, projectionTableHtml, hypothesesHtml, valeurPoche, boutonClaude.
+   Dépendances injectées (deps / ctx) : { Plan, Calc } ; window.* par défaut (ClaudePrompts compris). */
 (function () {
   "use strict";
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const glob = k => (typeof window !== "undefined" && window[k]) || (typeof self !== "undefined" && self[k]) || null;
   const dep = (d, k) => (d && Object.prototype.hasOwnProperty.call(d, k) && d[k] ? d[k] : glob(k));
+  /* Phrases « Compléter avec Claude » : global du navigateur, sinon le module voisin sous Node (tests). */
+  const prompts = () => glob("ClaudePrompts") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
 
   /* ---------- formats et dates ---------- */
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
@@ -26,41 +29,36 @@
   const eurM = v => eur(v) + "/mois";
   const pct = v => (v == null || !isFinite(v) ? "—" : (v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " %");
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
-  const clone = o => JSON.parse(JSON.stringify(o));
   const kEur = v => (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " M€" : nf.format(v / 1000) + " k€");
   const moisAn = d => (d ? new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "");
   const isoToday = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0, 10); };
-  /** Fin du mois, k mois après `today` (AAAA-MM-JJ). */
-  const plusMois = (k, today) => { const [y, m] = String(today || isoToday()).split("-").map(Number); return new Date(Date.UTC(y, m - 1 + k + 1, 0)).toISOString().slice(0, 10); };
   const dateCible = o => (o && (o.dateCible || o.date_cible)) || null;
 
   /* ---------- vocabulaire ---------- */
-  const OBJ_TYPES = [{ id: "matelas", label: "Matelas" }, { id: "apport", label: "Apport" }, { id: "retraite", label: "Retraite" }, { id: "projet", label: "Projet" }];
   const OBJ_LABEL = { matelas: "Matelas", apport: "Apport", retraite: "Retraite", projet: "Projet" };
-  const SOURCES = [{ id: "saisi", label: "Montant saisi" }, { id: "poches", label: "Poches de vos placements" }];
-  const REND_DEF = { matelas: 2.4, apport: 2.4, retraite: 5, projet: 3 };
   /* statut → [ton du badge UI, libellé] */
   const STATUTS = {
     atteint: ["bon", "atteint"], avance: ["bon", "en avance"], dans_les_temps: ["info", "dans les temps"],
     retard: ["attention", "en retard"], hors_portee: ["critique", "hors de portée"],
   };
   const ORDRE_STATUTS = ["atteint", "avance", "dans_les_temps", "retard", "hors_portee"];
-  const ACTIONS = ["Monde", "Europe", "Asie", "Nasdaq 2x", "Convictions tech", "Convictions"];
-  const MODELES = [
-    { id: "matelas", titre: "Matelas de précaution", texte: "Six mois de dépenses de côté, disponibles à tout moment." },
-    { id: "apport", titre: "Apport immobilier", texte: "La somme à réunir avant d'acheter votre logement." },
-    { id: "retraite", titre: "Retraite", texte: "Un capital pour compléter vos pensions, placé sur le long terme." },
-    { id: "projet", titre: "Projet", texte: "Voyage, voiture, travaux : un montant à une date." },
-  ];
   const CHEVRON_D = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg>';
+
+  /** Bouton « Compléter avec Claude » (ou libellé contextuel) : ouvre Claude avec la phrase prête de la section. */
+  function boutonClaude(U, section, contexte, libelle) {
+    const u = U || glob("UI"), CP = prompts();
+    if (!u || typeof u.demanderAClaude !== "function") return "";
+    const q = CP ? CP.phrase(section, contexte) : "Boussole : aide-moi à définir ou mettre à jour mes objectifs." + (contexte ? " Concerne : " + contexte + "." : "");
+    return u.demanderAClaude(q, libelle || "Compléter avec Claude");
+  }
 
   /* =============================================================== calculs de présentation =============================================================== */
   /** Objectifs triés : priorité croissante (sans priorité à la fin), puis échéance la plus proche. */
   const trier = objs => (Array.isArray(objs) ? objs.slice() : []).filter(Boolean).sort((a, b) =>
     ((a.priorite ?? Infinity) - (b.priorite ?? Infinity)) || String(dateCible(a) || "9999").localeCompare(String(dateCible(b) || "9999")));
 
-  /** Situation de chaque objectif, mêmes calculs qu'avant : « déjà » par la cascade des poches (Plan.affecterDeja), épargne mensuelle
-      (budget enregistré, Plan.capaciteEpargne) répartie par priorité (Plan.repartirEpargne), statut (Plan.statutObjectif).
+  /** Situation de chaque objectif : « déjà » par la cascade des poches (Plan.affecterDeja), épargne mensuelle (budget enregistré,
+      Plan.capaciteEpargne) répartie par priorité (Plan.repartirEpargne), statut (Plan.statutObjectif).
       → { liste: [{ o, st, brut, rang }], totaux, capacite } ; brut = tout ce que contiennent les poches rattachées, avant la cascade. */
   function analyser(S, deps, today) {
     const P = dep(deps, "Plan"), s = S || {}, scope = s.scope || "foyer", t0 = today || isoToday();
@@ -88,9 +86,9 @@
     const alerte = (compte.retard || 0) + (compte.hors_portee || 0);
     const ton = compte.hors_portee ? "critique" : alerte ? "attention" : "bon";
     let verdict;
-    if (!alerte) verdict = n === 1 ? "Votre objectif est en bonne voie." : "Vos " + n + " objectifs sont en bonne voie.";
-    else if (n === 1) verdict = "Votre objectif est " + STATUTS[xs[0].st.statut][1] + ".";
-    else verdict = pluriel(alerte, "objectif") + " sur " + n + (alerte > 1 ? " demandent" : " demande") + " votre attention.";
+    if (!alerte) verdict = n === 1 ? "Ton objectif est en bonne voie." : "Tes " + n + " objectifs sont en bonne voie.";
+    else if (n === 1) verdict = "Ton objectif est " + STATUTS[xs[0].st.statut][1] + ".";
+    else verdict = pluriel(alerte, "objectif") + " sur " + n + (alerte > 1 ? " demandent" : " demande") + " ton attention.";
     return { n, compte, verdict, detail, ton };
   }
 
@@ -122,6 +120,7 @@
       '<span class="ui-carte-pied"><span>' + esc(pct(prog)) + " de la cible</span><span>Effort requis : " + esc(eff[0]) + "</span></span>" +
       '<span class="ui-carte-ouvrir">' + CHEVRON_D + "</span></button>";
   }
+
 
   /** Valeur, dans le périmètre, des lignes d'une poche (key = "bloc") ou d'une enveloppe (key = "envelope"). */
   function valeurPoche(positions, scope, key, nom, Calc) {
@@ -165,119 +164,39 @@
       '<p class="ov-legende"><span><i class="ov-l-actuel"></i>au rythme actuel</span>' + (fin.requis != null ? '<span><i class="ov-l-requis"></i>avec l\'effort requis</span>' : "") + '<span><i class="ov-l-cible"></i>cible</span></p>';
   }
 
-  const msgHtml = m => (m && m.texte ? '<p class="ov-msg ' + (m.ok ? "ok" : "err") + '" role="' + (m.ok ? "status" : "alert") + '" data-ov-msg tabindex="-1">' + esc(m.texte) + "</p>" : "");
-
-  /** Contenu du panneau d'un objectif. ctx = { positions, scope, Calc, Plan, today, n, dbOk, confirmer, message, busy, duScope }. */
+  /** Contenu du panneau d'un objectif (lecture) et « Corriger avec Claude » pour cet objectif.
+      ctx = { positions, scope, Calc, Plan, today, n, duScope, livretA, U }. */
   function detailHtml(x, ctx) {
     const c = ctx || {}, { o, st } = x, C = dep(c, "Calc"), P = dep(c, "Plan"), scope = c.scope || "foyer", n = c.n || 1, r = x.rang || c.rang || 1;
     const done = st.statut === "atteint", eff = effortTxt(x), prog = Math.max(0, Math.min(1, +st.progression || 0));
     const poches = [].concat(o.poches || []), envs = [].concat(o.enveloppes || []);
     const src = o.source === "poches" ? (poches.length || envs.length ? "pris sur " + poches.concat(envs).join(", ") : "aucune poche rattachée") : "montant saisi";
+    const nom = plat(o.nom) || "sans nom";
     const rows = [
       ["Cible", eur(o.cible), dateCible(o) ? moisAn(dateCible(o)) : "sans échéance"],
       ["Déjà de côté", eur(st.deja), src],
       ["Effort requis", eff[0], eff[1]],
-      ["Votre épargne actuelle en couvre", eurM(st.versementAlloue), done ? "plus rien à verser" : "versement alloué, par ordre de priorité"],
+      ["Ton épargne actuelle en couvre", eurM(st.versementAlloue), done ? "plus rien à verser" : "versement alloué, par ordre de priorité"],
+      ["Rendement attendu", o.rendement == null || o.rendement === "" ? "—" : String(o.rendement).replace(".", ",") + " %/an", "repère : Livret A " + (c.livretA || "taux réglementé en vigueur")],
     ];
-    const dis = c.busy || !c.dbOk ? " disabled" : "";
-    const actions = c.confirmer
-      ? '<div class="ov-confirm" role="group" aria-label="Confirmer la suppression"><p>Supprimer l\'objectif « ' + esc(plat(o.nom) || "sans nom") + " » ?</p>" +
-        '<div class="ov-acts"><button type="button" class="ov-btn danger" data-ov-act="supprimer-oui"' + dis + '>Oui, supprimer</button><button type="button" class="ov-btn ghost" data-ov-act="supprimer-non">Non</button></div></div>'
-      : '<div class="ov-acts"><button type="button" class="ov-btn" data-ov-act="modifier"' + dis + ">Modifier</button>" +
-        '<button type="button" class="ov-btn ghost" data-ov-act="monter"' + (r <= 1 ? " disabled" : dis) + ' aria-label="Monter la priorité">↑ Monter</button>' +
-        '<button type="button" class="ov-btn ghost" data-ov-act="descendre"' + (r >= n ? " disabled" : dis) + ' aria-label="Descendre la priorité">↓ Descendre</button>' +
-        '<button type="button" class="ov-btn ghost danger" data-ov-act="supprimer"' + dis + ">Supprimer</button></div>";
+    const ctxClaude = "l'objectif « " + nom + " » (" + eur(o.cible) + (dateCible(o) ? " d'ici " + moisAn(dateCible(o)) : "") + ", priorité " + r + " sur " + n + ")";
     let pochesHtml;
     if (o.source === "poches") {
       const items = poches.map(p => ["Poche", p, valeurPoche(c.positions, scope, "bloc", p, C)]).concat(envs.map(e => ["Enveloppe", e, valeurPoche(c.positions, scope, "envelope", e, C)]));
-      pochesHtml = (items.length ? '<ul class="ov-poches">' + items.map(([k, nom, v]) => '<li><span><span class="ov-poche-k">' + esc(k) + "</span> " + esc(nom) + '</span><b class="ov-num">' + esc(eur(v)) + "</b></li>").join("") + "</ul>"
-        : '<p class="ov-note">Aucune poche rattachée : cochez-en dans « Modifier ».</p>') +
+      pochesHtml = (items.length ? '<ul class="ov-poches">' + items.map(([k, nm, v]) => '<li><span><span class="ov-poche-k">' + esc(k) + "</span> " + esc(nm) + '</span><b class="ov-num">' + esc(eur(v)) + "</b></li>").join("") + "</ul>"
+        : '<p class="ov-note">Aucune poche rattachée : demande à Claude d\'en rattacher une.</p>') +
         (x.brut > st.deja + 0.5 && !done ? '<p class="ov-note">Ces poches contiennent ' + esc(eur(x.brut)) + " " + esc(c.duScope || "du foyer") + " ; " + esc(eur(x.brut - st.deja)) + " servent d'abord un objectif prioritaire.</p>" : "") +
         '<p class="ov-note">L\'argent d\'une poche sert d\'abord l\'objectif prioritaire ; le reste passe au suivant.</p>';
-    } else pochesHtml = '<p class="ov-note">Montant saisi : ' + esc(eur(st.deja)) + ". Mettez-le à jour dans « Modifier », ou rattachez l'objectif à des poches de vos placements pour qu'il suive leur valeur.</p>";
-    return msgHtml(c.message) +
-      '<div class="ov-meta">' + badgeHtml(st.statut) + "<span>Priorité " + esc(r) + " sur " + esc(n) + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span></div>" +
+    } else pochesHtml = '<p class="ov-note">Montant saisi : ' + esc(eur(st.deja)) + ". Pour le mettre à jour, ou pour rattacher l'objectif à des poches de tes placements (il suivra alors leur valeur), passe par Claude.</p>";
+    return '<div class="ov-meta">' + badgeHtml(st.statut) + "<span>Priorité " + esc(r) + " sur " + esc(n) + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span></div>" +
       '<p class="ov-quand">' + esc(quandTxt(x)) + "</p>" +
       '<div class="ov-prog" role="progressbar" aria-label="Progression" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(prog * 100) + '"><i style="width:' + (prog * 100).toFixed(1) + '%"></i></div>' +
       '<p class="ov-note">' + esc(pct(prog)) + " de la cible</p>" +
       '<dl class="ov-dl">' + rows.map(([k, v, s]) => "<div><dt>" + esc(k) + "</dt><dd><b>" + esc(v) + "</b><span>" + esc(s) + "</span></dd></div>").join("") + "</dl>" +
-      actions + (c.dbOk ? "" : '<p class="ov-note">Lecture seule : les objectifs ne peuvent pas être modifiés pour le moment.</p>') +
+      '<div class="ov-acts">' + boutonClaude(c.U, "objectifs", ctxClaude, "Corriger avec Claude") + "</div>" +
+      '<p class="ov-note">Cible, échéance, priorité ou poches : demande à Claude de les corriger, puis valide sa proposition dans Agent › Propositions.</p>' +
       '<section class="ov-sec"><h3 class="ov-sec-t">Poches rattachées</h3>' + pochesHtml + "</section>" +
       '<section class="ov-sec"><h3 class="ov-sec-t">Projection de l\'objectif</h3>' + serieSvg(serieObjectif(o, st, c.today, P), o, c.today) + "</section>";
-  }
-
-  /** Formulaire d'objectif (bascules branchées par la vue). ed = { nom, type, cible, dateCible, source, poches, enveloppes, deja, rendement }.
-      ctx = { blocs: [[nom, valeur]], enveloppes: [[nom, valeur]], livretA, nouvelle, erreur, busy, U }. */
-  function formHtml(ed, ctx) {
-    const c = ctx || {}, d = ed || {}, U = c.U || null, f = "ovf-";
-    const bascule = (cle, label, options, actif) => '<div class="ov-champ"><span class="ov-lab" id="' + f + cle + '-l">' + esc(label) + "</span>" +
-      '<div class="ov-bascule" data-ov-bascule="' + cle + '" aria-labelledby="' + f + cle + '-l">' + (U && U.htmlBascule ? U.htmlBascule({ label, options, actif }) : "") + "</div></div>";
-    const coches = (cle, liste, sel) => liste.length ? liste.map(([nom, v]) => '<label class="ov-chk"><input type="checkbox" data-ov-liste="' + cle + '" value="' + esc(nom) + '"' + (sel.includes(nom) ? " checked" : "") + "> " +
-      esc(nom) + ' <span class="ov-num ov-muet">' + esc(eur(v)) + "</span></label>").join("") : '<span class="ov-note">Aucune dans vos placements.</span>';
-    const avec = (liste, sel) => liste.concat(sel.filter(n => !liste.some(([x]) => x === n)).map(n => [n, 0]));
-    const poches = [].concat(d.poches || []), envs = [].concat(d.enveloppes || []);
-    return '<form class="ov-form" data-ov-form novalidate aria-label="' + (c.nouvelle ? "Nouvel objectif" : "Modifier l'objectif") + '">' +
-      (c.erreur ? '<p class="ov-msg err" role="alert" data-ov-msg tabindex="-1">' + esc(c.erreur) + "</p>" : "") +
-      '<div class="ov-champ"><label class="ov-lab" for="ovf-nom">Nom</label><input class="ov-in" id="ovf-nom" data-ov-champ="nom" autocomplete="off" value="' + esc(d.nom || "") + '" placeholder="ex. Voyage au Japon"></div>' +
-      bascule("type", "Type", OBJ_TYPES, d.type || "projet") +
-      '<div class="ov-ligne2"><div class="ov-champ"><label class="ov-lab" for="ovf-cible">Montant cible</label><span class="ov-money"><input id="ovf-cible" data-ov-champ="cible" type="number" inputmode="decimal" min="0" step="any" value="' + esc(d.cible ?? "") + '"><span class="ov-u">€</span></span></div>' +
-      '<div class="ov-champ"><label class="ov-lab" for="ovf-date">Date visée</label><input class="ov-in" id="ovf-date" data-ov-champ="dateCible" type="date" value="' + esc(d.dateCible || "") + '"></div></div>' +
-      bascule("source", "Déjà mis de côté", SOURCES, d.source === "poches" ? "poches" : "saisi") +
-      (d.source === "poches"
-        ? '<fieldset class="ov-coches"><legend class="ov-lab">Poches</legend>' + coches("poches", avec(c.blocs || [], poches), poches) + "</fieldset>" +
-          '<fieldset class="ov-coches"><legend class="ov-lab">Enveloppes</legend>' + coches("enveloppes", avec(c.enveloppes || [], envs), envs) + "</fieldset>" +
-          '<p class="ov-note">L\'argent d\'une poche sert d\'abord l\'objectif prioritaire ; le reste passe au suivant.</p>'
-        : '<div class="ov-champ"><label class="ov-lab" for="ovf-deja">Montant déjà de côté</label><span class="ov-money"><input id="ovf-deja" data-ov-champ="deja" type="number" inputmode="decimal" min="0" step="any" value="' + esc(d.deja ?? 0) + '"><span class="ov-u">€</span></span></div>') +
-      '<div class="ov-champ"><label class="ov-lab" for="ovf-rend">Rendement attendu</label><span class="ov-money"><input id="ovf-rend" data-ov-champ="rendement" type="number" inputmode="decimal" step="0.1" min="-50" max="50" value="' + esc(d.rendement ?? "") + '"><span class="ov-u">% / an</span></span>' +
-      '<span class="ov-note">repère : Livret A ' + esc(c.livretA || "taux réglementé en vigueur") + ", fonds euros ~2,5 %, actions mondiales ~6 % sur longue période</span></div>" +
-      '<div class="ov-acts"><button type="button" class="ov-btn" data-ov-act="enregistrer"' + (c.busy ? " disabled" : "") + ">" + (c.nouvelle ? "Ajouter l'objectif" : "Enregistrer l'objectif") + "</button>" +
-      '<button type="button" class="ov-btn ghost" data-ov-act="annuler">Annuler</button></div></form>';
-  }
-
-  /** Modèle d'objectif (« Ajouter un objectif »). ctx = { totaux, blocs (noms de poches), age (clé de la toise), today }. */
-  function modele(kind, ctx) {
-    const c = ctx || {}, t = c.totaux || {}, blocs = c.blocs || [], ep = blocs.includes("Épargne"), today = c.today || isoToday();
-    const k = REND_DEF[kind] != null ? kind : "projet";
-    const base = { nom: "", type: k, cible: 10000, dateCible: plusMois(24, today), source: "saisi", poches: [], enveloppes: [], deja: 0, rendement: REND_DEF[k] };
-    if (k === "matelas") return Object.assign(base, { nom: "Matelas de précaution", cible: t.depenses > 0 ? Math.round(6 * t.depenses / 100) * 100 : 10000, dateCible: plusMois(12, today), source: ep ? "poches" : "saisi", poches: ep ? ["Épargne"] : [] });
-    if (k === "apport") return Object.assign(base, { nom: "Apport immobilier", cible: 40000, dateCible: plusMois(36, today), source: ep ? "poches" : "saisi", poches: ep ? ["Épargne"] : [] });
-    if (k === "retraite") {
-      const age = { u30: 25, a30: 35, a40: 45, a50: 55, a60: 62, a70: 70 }[c.age];
-      const ans = Math.max(5, 64 - (age || 40)), act = blocs.filter(b => ACTIONS.includes(b));
-      return Object.assign(base, { nom: "Retraite", cible: 300000, dateCible: plusMois(ans * 12, today), source: act.length ? "poches" : "saisi", poches: act });
-    }
-    return base;
-  }
-
-  /** Message d'erreur du formulaire, ou null. */
-  function validerObjectif(d, today) {
-    const t0 = today || isoToday();
-    if (!plat(d.nom)) return "Donnez un nom à l'objectif.";
-    if (!(+d.cible > 0)) return "Indiquez un montant cible supérieur à 0 €.";
-    if (d.dateCible && !/^\d{4}-\d{2}-\d{2}$/.test(d.dateCible)) return "Date visée invalide.";
-    if (d.dateCible && d.dateCible <= t0) return "La date visée doit être dans le futur.";
-    if (d.source === "poches" && !(d.poches || []).length && !(d.enveloppes || []).length) return "Cochez au moins une poche ou une enveloppe, ou choisissez « Montant saisi ».";
-    if (d.source !== "poches" && (d.deja === "" || d.deja == null || !(+d.deja >= 0))) return "Indiquez le montant déjà de côté (0 si rien).";
-    if (d.rendement === "" || d.rendement == null || !isFinite(+d.rendement) || +d.rendement < -50 || +d.rendement > 50) return "Indiquez un rendement entre -50 et 50 % par an.";
-    return null;
-  }
-
-  /** Ligne écrite par upsert : objectif existant (id) ou nouveau (priorité après la dernière). */
-  function ligneObjectif(d, id, objs) {
-    const poches = d.source === "poches";
-    const row = { nom: plat(d.nom), type: d.type, cible: +d.cible, dateCible: d.dateCible || null, source: poches ? "poches" : "saisi",
-      poches: poches ? [].concat(d.poches || []) : [], enveloppes: poches ? [].concat(d.enveloppes || []) : [], deja: poches ? 0 : +d.deja, rendement: +d.rendement };
-    if (id != null) row.id = id;
-    else row.priorite = (objs || []).reduce((m, o) => Math.max(m, +o.priorite || 0), 0) + 1;
-    return row;
-  }
-
-  /** Priorités à réécrire pour monter (dir = -1) ou descendre (dir = 1) un objectif : [{ id, priorite }] (seules celles qui changent). */
-  function deplacer(objs, id, dir) {
-    const list = trier(objs), i = list.findIndex(o => o.id === id), j = i + dir;
-    if (i < 0 || j < 0 || j >= list.length) return [];
-    const ordre = list.slice(); [ordre[i], ordre[j]] = [ordre[j], ordre[i]];
-    return ordre.map((o, k) => ({ id: o.id, priorite: k + 1 })).filter(u => list.find(o => o.id === u.id).priorite !== u.priorite);
   }
 
   /** Taux du Livret A lu dans les repères du savoir commun, avec sa date d'effet ; jamais de taux codé en dur. */
@@ -297,7 +216,7 @@
       const p = (s.positions || []).find(x => x.id === r.positionId);
       return (scope || "foyer") === "foyer" || (p && p.owner === scope);
     }).reduce((a, r) => a + Math.max(0, +r.amount || 0), 0);
-    if (rec > 0) return { v: rec, src: "d'après vos versements programmés (budget sans épargne)" };
+    if (rec > 0) return { v: rec, src: "d'après tes versements programmés (budget sans épargne)" };
     return null;
   }
 
@@ -337,17 +256,20 @@
         return "<tr><td>" + esc(b === "_autre" ? "Autres" : b) + '</td><td class="n">' + esc(eur(pb.capital)) + '</td><td class="n">' + esc(pct(pb.poids)) + '</td><td class="n">' + esc(fr(r.pessimiste)) + '</td><td class="n">' + esc(fr(r.central)) + '</td><td class="n">' + esc(fr(r.optimiste)) + "</td></tr>"; }).join("") + "</tbody>";
   }
 
-  const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, formHtml, serieObjectif, modele, validerObjectif, ligneObjectif, deplacer, livretA,
-    versementReel, projectionSvg, projectionTableHtml, hypothesesHtml, valeurPoche, STATUTS, OBJ_TYPES, MODELES };
+  const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA, versementReel, projectionSvg, projectionTableHtml,
+    hypothesesHtml, valeurPoche, boutonClaude, STATUTS };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
   /* =================================================================== vue =================================================================== */
-  let root = null, S = null, aRendre = true, sigCartes = "", sigPanneau = "";
-  /* panneau : { kind: "objectif" | "modeles" | "nouveau", id, edition, rendTouched, confirmer, message, busy, retour } */
+  let root = null, S = null, aRendre = true;
+  /* anti-redessin : signatures des derniers contenus écrits ; analyse mémorisée pour l'émission courante du store */
+  let sigCartes = "", sigPanneau = "", cache = null;
+  const sigProj = { resume: "", chart: "", legende: "", table: "", hyp: "", tag: "", src: "", note: "" };
+  /* panneau : { id, retour } */
   let pan = null, corpsPanneau = null;
-  /* projection : réglages locaux, jamais enregistrés */
-  let horizon = 10, versOverride = null, ctlHorizon = null;
+  /* projection : paramètres d'exploration locaux, jamais enregistrés */
+  let horizon = 10, versOverride = null;
 
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
@@ -357,91 +279,81 @@
   const people = () => (S && Array.isArray(S.people) ? S.people : []);
   const nomDe = k => { const p = people().find(x => x.id === k); return (p && p.nom) || (k === "p2" ? "Conjoint(e)" : "Moi"); };
   const duScope = () => (scope() === "foyer" ? "du foyer" : C().deNom(nomDe(scope()), scope() === "p2" ? 2 : 1));
-  const objectifs = () => trier(S && S.objectifs);
-  const objectif = id => objectifs().find(o => String(o.id) === String(id)) || null;
   const echap = s => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, "\\$&"));
-  const livePos = () => ((S && S.positions) || []).filter(p => C().counted(p));
-  const noms = key => [...new Set(livePos().map(p => p[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
-  const avecValeur = key => noms(key).map(n => [n, valeurPoche(S.positions, scope(), key, n, C())]);
-
-  function dire(m, ok) { const el = $("ovMsg"); el.textContent = m || ""; el.className = "ov-page-msg " + (ok ? "ok" : "err"); el.hidden = !m; }
-  function writeError(e) {
-    const m = (e && e.message) || "";
-    if (e && e.code === "invalid_argument" && /^Objectif/.test(m)) return m;
-    if (e && e.code === "invalid_argument") return "Enregistrement refusé : vous n'avez pas les droits d'écriture sur ce tableau de bord.";
-    return "Enregistrement impossible pour le moment (" + ((e && e.code) || "erreur") + "). Réessayez dans un instant.";
+  /** Analyse de l'émission courante : calculée une fois (update l'invalide), partagée par les cartes, la projection, le panneau
+      et le titre de navigation. */
+  function analyse() {
+    const j = isoToday();
+    if (!cache || cache.S !== S || cache.jour !== j) cache = { S, jour: j, a: analyser(S, deps(), j) };
+    return cache.a;
   }
+  const entree = id => { const a = analyse(); return { x: a.liste.find(y => String(y.o.id) === String(id)) || null, n: a.liste.length }; };
+  /* Écrit seulement si le contenu a changé (cle : entrée de sigProj). */
+  const poser = (cle, el, h, texte) => { if (sigProj[cle] === h) return; sigProj[cle] = h; if (texte) el.textContent = h; else el.innerHTML = h; };
 
   /* ---------- rendu de la page ---------- */
   function videHtml() {
-    const u = U();
     return '<div class="ov-vide"><p class="ov-vide-t">Aucun objectif pour l\'instant.</p>' +
-      "<p>Un objectif daté (matelas, apport, retraite, projet) dit combien mettre de côté chaque mois et si votre épargne actuelle suffit. Partez d'un modèle :</p>" +
-      '<div class="ov-modeles">' + MODELES.map(m => '<button type="button" class="ov-modele" data-ov-modele="' + m.id + '"><b>' + esc(m.titre) + "</b><span>" + esc(m.texte) + "</span></button>").join("") + "</div>" +
-      (u ? u.demanderAClaude("Aide-moi à fixer mes objectifs financiers dans Boussole : matelas de précaution, projets, retraite, avec un montant et une date.", "Fixer mes objectifs avec Claude") : "") + "</div>";
+      "<p>Un objectif daté (matelas de précaution, apport immobilier, retraite, projet) dit combien mettre de côté chaque mois et si ton épargne actuelle suffit. " +
+      "Claude t'aide à les définir ; tu valides ensuite ses propositions.</p>" +
+      '<div class="ov-vide-act">' + boutonClaude(U(), "objectifs", "", "Compléter avec Claude") + "</div></div>";
   }
   function render() {
     const u = U();
     if (!root || !S || !u) return;
-    const a = analyser(S, deps(), isoToday()), r = resumeObjectifs(a.liste);
+    const a = analyse(), r = resumeObjectifs(a.liste);
     $("ovVerdict").textContent = r.verdict + (r.detail && r.n > 1 ? " (" + r.detail + ")" : "");
     $("ovVerdict").className = "ov-verdict ton-" + r.ton;
     const partage = a.liste.filter(x => x.o.source === "poches").some((x, i, L) => L.some((y, j) => j > i &&
       ((x.o.poches || []).some(p => (y.o.poches || []).includes(p)) || (x.o.enveloppes || []).some(p => (y.o.enveloppes || []).includes(p)))));
     $("ovNote").textContent = a.liste.length ? "Épargne mensuelle répartie par priorité : " + eurM(a.capacite) + " (épargne prévue au budget et reste positif)." +
       (partage ? " Plusieurs objectifs partagent une poche : l'argent d'une poche sert d'abord l'objectif prioritaire." : "") : "";
-    const h = a.liste.length ? u.voirPlus(a.liste, 5, x => carteHtml(x, a.liste.length), "Voir plus d'objectifs") : videHtml();
+    const h = a.liste.length ? u.voirPlus(a.liste, 5, x => carteHtml(x, a.liste.length), "Voir plus d'objectifs", "div", "ov-objectifs") : videHtml();
     if (h !== sigCartes) {
-      const act = document.activeElement, porteur = act && $("ovCartes").contains(act) && act.closest ? act.closest("[data-ui-carte]") : null;
-      const id = porteur ? porteur.getAttribute("data-ui-carte") : null;
+      const act = document.activeElement, dedans = act && $("ovCartes").contains(act) && act.closest;
+      const porteur = dedans ? act.closest("[data-ui-carte]") || act.closest("[data-ui-voirplus]") : null;
+      const sel = !porteur ? null : porteur.hasAttribute("data-ui-carte") ? '[data-ui-carte="' + echap(porteur.getAttribute("data-ui-carte")) + '"]'
+        : '[aria-controls="' + echap(porteur.getAttribute("aria-controls")) + '"]';
       sigCartes = h; $("ovCartes").innerHTML = h;
-      const n = id && $("ovCartes").querySelector('[data-ui-carte="' + echap(id) + '"]'); if (n) n.focus();
+      const n = sel && $("ovCartes").querySelector(sel); if (n) n.focus();
     }
     renderProjection();
     renderPanneau();
   }
 
-  /* ---------- projection (accordéon) ---------- */
+  /* ---------- projection (accordéon, simulateur local) ---------- */
   function renderProjection(forceInput) {
     if (!root || !S) return;
-    const t = analyser(S, deps(), isoToday()).totaux, real = versementReel(S, t, scope()), inp = $("ovVers");
+    const t = analyse().totaux, real = versementReel(S, t, scope()), inp = $("ovVers");
     const v = versOverride != null ? versOverride : real ? real.v : 0;
     const res = P().projection({ positions: S.positions, scope: scope(), versementMensuel: v, annees: horizon });
     const N = horizon, y0 = new Date().getFullYear();
-    $("ovProjResume").textContent = "· dans " + N + " ans : " + eur(res.central[N]) + " (central)";
+    poser("resume", $("ovProjResume"), "· dans " + N + " ans : " + eur(res.central[N]) + " (central)", true);
     if (!$("ovProjAcc").hasAttribute("open")) return; // dessinée à l'ouverture seulement
-    if (forceInput || versOverride == null || document.activeElement !== inp) inp.value = String(Math.round(v * 100) / 100);
-    $("ovVersTag").innerHTML = versOverride != null ? '<button type="button" class="ov-tag scen" data-ov-vreset title="Revenir à la valeur réelle">scénario ↺</button>'
-      : real ? '<span class="ov-tag reel" title="Repris de vos données">réel</span>' : "";
-    $("ovVersSrc").textContent = versOverride != null ? "simulation locale, non enregistrée" + (real ? " · réel : " + eurM(real.v) : "") : real ? real.src : "aucune épargne mensuelle connue : saisissez un montant";
-    $("ovProjNote").textContent = "Patrimoine financier " + duScope() + " aujourd'hui : " + eur(res.central[0]) + ".";
-    $("ovChart").innerHTML = projectionSvg(res, N, y0, $("ovChart").clientWidth || 640);
-    $("ovLegend").innerHTML = '<span><i class="ln"></i>scénario central</span><span><i class="bd"></i>entre pessimiste et optimiste (pointillés)</span>';
-    $("ovProjTable").innerHTML = projectionTableHtml(res, v, N, y0);
-    $("ovHyp").innerHTML = hypothesesHtml(res, P().RENDEMENTS);
+    if (forceInput || versOverride == null || document.activeElement !== inp) {
+      const val = String(Math.round(v * 100) / 100);
+      if (inp.value !== val) inp.value = val;
+    }
+    poser("tag", $("ovVersTag"), versOverride != null ? '<button type="button" class="ov-tag scen" data-ov-vreset title="Revenir à la valeur réelle">scénario ↺</button>'
+      : real ? '<span class="ov-tag reel" title="Repris de tes données">réel</span>' : "");
+    poser("src", $("ovVersSrc"), versOverride != null ? "simulation locale, non enregistrée" + (real ? " · réel : " + eurM(real.v) : "") : real ? real.src : "aucune épargne mensuelle connue : essaie un montant", true);
+    poser("note", $("ovProjNote"), "Patrimoine financier " + duScope() + " aujourd'hui : " + eur(res.central[0]) + ".", true);
+    poser("chart", $("ovChart"), projectionSvg(res, N, y0, $("ovChart").clientWidth || 640));
+    poser("legende", $("ovLegend"), '<span><i class="ln"></i>scénario central</span><span><i class="bd"></i>entre pessimiste et optimiste (pointillés)</span>');
+    poser("table", $("ovProjTable"), projectionTableHtml(res, v, N, y0));
+    poser("hyp", $("ovHyp"), hypothesesHtml(res, P().RENDEMENTS));
   }
 
-  /* ---------- panneau ---------- */
-  function entree(id) { const a = analyser(S, deps(), isoToday()); return { x: a.liste.find(y => String(y.o.id) === String(id)) || null, n: a.liste.length }; }
+  /* ---------- panneau (lecture) ---------- */
   function contenuPanneau() {
-    const u = U();
-    if (pan.kind === "modeles") return '<p class="ov-note">Choisissez un point de départ ; tout se modifie ensuite.</p><div class="ov-modeles">' +
-      MODELES.map(m => '<button type="button" class="ov-modele" data-ov-modele="' + m.id + '"><b>' + esc(m.titre) + "</b><span>" + esc(m.texte) + "</span></button>").join("") + "</div>";
-    if (pan.edition) return formHtml(pan.edition, { blocs: avecValeur("bloc"), enveloppes: avecValeur("envelope"), livretA: livretA(S, window.Reperes || null),
-      nouvelle: pan.kind === "nouveau", erreur: pan.message && !pan.message.ok ? pan.message.texte : null, busy: pan.busy, U: u });
     const { x, n } = entree(pan.id);
-    return detailHtml(x, { positions: S.positions, scope: scope(), Calc: C(), Plan: P(), today: isoToday(), n, dbOk: !!(S && S.dbOk),
-      confirmer: pan.confirmer, message: pan.message, busy: pan.busy, duScope: duScope() });
+    return detailHtml(x, { positions: S.positions, scope: scope(), Calc: C(), Plan: P(), today: isoToday(), n, duScope: duScope(),
+      livretA: livretA(S, window.Reperes || null), U: U() });
   }
   function optionsPanneau(h) {
-    const u = U();
-    let titre = "Ajouter un objectif", pied = null;
-    if (pan.kind === "nouveau") titre = "Nouvel objectif";
-    else if (pan.kind === "objectif") {
-      const o = objectif(pan.id);
-      titre = plat(o && o.nom) || "Objectif sans nom";
-      if (o) pied = u.demanderAClaude("Aide-moi à atteindre mon objectif « " + titre + " » (" + eur(o.cible) + (dateCible(o) ? " d'ici " + moisAn(dateCible(o)) : "") + ") avec Boussole : quel effort, sur quels placements ?");
-    }
+    const u = U(), { x } = entree(pan.id), o = x && x.o;
+    const titre = plat(o && o.nom) || "Objectif sans nom";
+    const pied = o ? u.demanderAClaude("Aide-moi à atteindre mon objectif « " + titre + " » (" + eur(o.cible) + (dateCible(o) ? " d'ici " + moisAn(dateCible(o)) : "") + ") avec Boussole : quel effort, sur quels placements ?") : null;
     return { titre, contenu: h, retour: pan.retour, pied, surFermeture: fermeture };
   }
   function fermeture(o) {
@@ -450,163 +362,27 @@
     if ((o && o.focus === false) || !root || !p) return;
     if (p.retour && p.retour.isConnected) return;
     const el = p.id != null && root.querySelector('[data-ui-carte="' + echap(p.id) + '"]');
-    if (el) { el.focus(); return; }
-    const a = $("ovAjouter"); if (a) a.focus();
+    (el || $("ovTitre")).focus();
   }
   function ouvrir(p) {
     const u = U();
-    if (!u) return;
-    pan = Object.assign({ edition: null, rendTouched: false, confirmer: false, message: null, busy: false }, p);
+    if (!u || !entree(p.id).x) return;
+    pan = Object.assign({}, p);
     const h = contenuPanneau();
     sigPanneau = h;
     corpsPanneau = u.panneau.ouvrir(optionsPanneau(h));
-    brancherPanneau(corpsPanneau);
-    brancherBascules();
   }
-  /* Rafraîchit le panneau ouvert ; pendant une saisie ou une écriture, seulement sur demande (force). cible : sélecteur simple ou fonction. */
-  function renderPanneau(cible, force) {
+  /* Rafraîchit le panneau ouvert quand ses données changent. */
+  function renderPanneau() {
     const u = U();
     if (!pan || !u || !u.panneau.ouvert()) return;
-    if (pan.busy && !force) return;
-    if (pan.kind === "objectif" && !objectif(pan.id)) { u.panneau.fermer({ focus: false }); return; }
-    if ((pan.edition || pan.kind === "modeles") && !force && !cible) return;
+    if (!entree(pan.id).x) { u.panneau.fermer({ focus: false }); return; }
     const h = contenuPanneau();
-    if (h === sigPanneau && !cible && !force) return;
+    if (h === sigPanneau) return;
     sigPanneau = h;
     const y = corpsPanneau ? corpsPanneau.scrollTop : 0;
     corpsPanneau = u.panneau.ouvrir(optionsPanneau(h));
     corpsPanneau.scrollTop = y;
-    brancherBascules();
-    const f = typeof cible === "function" ? cible() : cible && corpsPanneau.querySelector(cible);
-    if (f) f.focus();
-  }
-  function brancherBascules() {
-    const u = U(), ed = pan && pan.edition;
-    if (!u || !ed || !corpsPanneau) return;
-    const b = cle => corpsPanneau.querySelector('[data-ov-bascule="' + cle + '"]');
-    if (b("type")) u.bascule(b("type"), { label: "Type", options: OBJ_TYPES, actif: ed.type, surChange: id => {
-      if (!pan || !pan.edition) return;
-      pan.edition.type = id;
-      if (!pan.rendTouched) { pan.edition.rendement = REND_DEF[id]; const ri = corpsPanneau.querySelector("#ovf-rend"); if (ri) ri.value = String(pan.edition.rendement); }
-    } });
-    if (b("source")) u.bascule(b("source"), { label: "Déjà mis de côté", options: SOURCES, actif: ed.source === "poches" ? "poches" : "saisi", surChange: id => {
-      if (!pan || !pan.edition) return;
-      pan.edition.source = id; pan.message = null;
-      renderPanneau(() => { const c = corpsPanneau.querySelector('[data-ov-bascule="source"]'); return c && c.querySelector('[aria-checked="true"]'); }, true);
-    } });
-  }
-  const branches = new WeakSet();
-  function brancherPanneau(corps) {
-    if (!corps || branches.has(corps)) return;
-    branches.add(corps);
-    corps.addEventListener("click", e => {
-      const t = e.target;
-      if (!t || !t.closest || !pan) return;
-      const m = t.closest("[data-ov-modele]");
-      if (m && corps.contains(m)) { choisirModele(m.getAttribute("data-ov-modele")); return; }
-      const b = t.closest("[data-ov-act]");
-      if (!b || !corps.contains(b) || b.disabled || b.hasAttribute("disabled") || pan.busy) return;
-      agir(b.getAttribute("data-ov-act"));
-    });
-    const saisir = e => {
-      const el = e.target;
-      if (!el || !el.closest || !pan || !pan.edition) return;
-      const f = el.closest("[data-ov-champ]");
-      if (f) { const k = f.getAttribute("data-ov-champ"); pan.edition[k] = f.value; if (k === "rendement") pan.rendTouched = true; return; }
-      const l = el.closest("[data-ov-liste]");
-      if (l && e.type === "change") {
-        const key = l.getAttribute("data-ov-liste"), cur = new Set(pan.edition[key] || []);
-        if (l.checked) cur.add(l.value); else cur.delete(l.value);
-        pan.edition[key] = [...cur];
-      }
-    };
-    corps.addEventListener("input", saisir);
-    corps.addEventListener("change", saisir);
-    corps.addEventListener("keydown", e => {
-      if (e.key === "Enter" && pan && pan.edition && e.target && e.target.localName === "input" && e.target.type !== "checkbox" && e.target.closest && e.target.closest("[data-ov-form]")) { e.preventDefault(); agir("enregistrer"); }
-    });
-  }
-
-  function choisirModele(kind, retour) {
-    const t = analyser(S, deps(), isoToday()).totaux;
-    const ed = modele(kind, { totaux: t, blocs: noms("bloc"), age: S && S.profil && S.profil.foyer && S.profil.foyer.age, today: isoToday() });
-    if (!pan) ouvrir({ kind: "nouveau", id: null, edition: ed, retour });
-    else { Object.assign(pan, { kind: "nouveau", id: null, edition: ed, rendTouched: false, message: null, confirmer: false }); renderPanneau("#ovf-nom", true); }
-    const n = corpsPanneau && corpsPanneau.querySelector("#ovf-nom"); if (n) n.focus();
-  }
-
-  async function agir(act) {
-    if (!pan) return;
-    if (act === "modifier") {
-      const o = objectif(pan.id); if (!o) return;
-      pan.edition = Object.assign({ deja: 0, poches: [], enveloppes: [], source: "saisi" }, clone(o), { dateCible: dateCible(o) || "" });
-      pan.rendTouched = true; pan.message = null; pan.confirmer = false;
-      renderPanneau("#ovf-nom", true);
-    } else if (act === "annuler") {
-      if (pan.kind === "nouveau") { U().panneau.fermer(); return; }
-      pan.edition = null; pan.message = null; renderPanneau('[data-ov-act="modifier"]', true);
-    } else if (act === "supprimer") { pan.confirmer = true; pan.message = null; renderPanneau('[data-ov-act="supprimer-non"]', true); }
-    else if (act === "supprimer-non") { pan.confirmer = false; renderPanneau('[data-ov-act="supprimer"]', true); }
-    else if (act === "supprimer-oui") await supprimer();
-    else if (act === "enregistrer") await enregistrer();
-    else if (act === "monter" || act === "descendre") await deplacerObjectif(act === "monter" ? -1 : 1);
-  }
-
-  async function enregistrer() {
-    const db = window.Store && window.Store.db, ed = pan.edition;
-    if (!db || !ed) return;
-    const err = validerObjectif(ed, isoToday());
-    if (err) { pan.message = { texte: err }; renderPanneau("[data-ov-msg]", true); return; }
-    const row = ligneObjectif(ed, pan.kind === "nouveau" ? null : pan.id, objectifs());
-    pan.busy = true; pan.message = null; renderPanneau(null, true);
-    try {
-      const r = await db.collection("objectifs").upsert(row);
-      const id = row.id != null ? row.id : r && r.id;
-      if (!pan) { dire("Objectif « " + row.nom + " » enregistré.", true); return; }
-      pan.busy = false;
-      if (id != null && objectif(id)) {
-        Object.assign(pan, { kind: "objectif", id, edition: null, confirmer: false, message: { texte: "Objectif « " + row.nom + " » enregistré.", ok: true } });
-        render();
-        renderPanneau("[data-ov-msg]", true);
-      } else { pan = null; U().panneau.fermer({ focus: false }); dire("Objectif « " + row.nom + " » enregistré.", true); render(); const a = $("ovAjouter"); if (a) a.focus(); }
-    } catch (e) {
-      if (!pan) { dire(writeError(e)); return; }
-      pan.busy = false; pan.message = { texte: writeError(e) };
-      renderPanneau("[data-ov-msg]", true);
-    }
-  }
-
-  async function deplacerObjectif(dir) {
-    const db = window.Store && window.Store.db, id = pan.id, ups = deplacer(S.objectifs, id, dir);
-    if (!db || !ups.length) return;
-    pan.busy = true; pan.message = null; renderPanneau(null, true);
-    let erreur = null;
-    try { for (const u of ups) await db.collection("objectifs").upsert(u); }
-    catch (e) { erreur = writeError(e); }
-    render();
-    if (!pan) return;
-    pan.busy = false;
-    pan.message = erreur ? { texte: erreur } : { texte: "Priorité modifiée.", ok: true };
-    const sel = '[data-ov-act="' + (dir < 0 ? "monter" : "descendre") + '"]';
-    renderPanneau(() => { const b = corpsPanneau.querySelector(sel); return b && !b.hasAttribute("disabled") ? b : corpsPanneau.querySelector("[data-ov-msg]"); }, true);
-  }
-
-  async function supprimer() {
-    const db = window.Store && window.Store.db, o = objectif(pan.id);
-    if (!db || !o) return;
-    const ids = objectifs().map(x => String(x.id)), i = ids.indexOf(String(o.id)), voisin = ids[i + 1] || ids[i - 1];
-    pan.busy = true; renderPanneau(null, true);
-    const id = o.id;
-    try { await db.doc("objectifs/" + id).delete(); }
-    catch (e) {
-      if (pan) { pan.busy = false; pan.confirmer = false; pan.message = { texte: writeError(e) }; renderPanneau("[data-ov-msg]", true); } else dire(writeError(e));
-      return;
-    }
-    if (pan) { pan = null; U().panneau.fermer({ focus: false }); }
-    dire("Objectif « " + (plat(o.nom) || "sans nom") + " » supprimé.", true);
-    render();
-    const c = voisin && root.querySelector('[data-ui-carte="' + echap(voisin) + '"]');
-    (c || $("ovAjouter")).focus();
   }
 
   function mount(r) {
@@ -614,18 +390,15 @@
     $("ovTitre").setAttribute("tabindex", "-1");
     const u = U();
     if (u) {
+      $("ovCompleter").innerHTML = boutonClaude(u, "objectifs", "", "Compléter avec Claude");
       $("ovClaude").innerHTML = u.demanderAClaude("Vais-je atteindre mes objectifs dans Boussole ? Passe-les en revue avec moi et dis-moi quoi ajuster.");
-      u.brancher($("ovCartes"), { surCarte: (id, el) => { dire(""); ouvrir({ kind: "objectif", id, retour: el }); } });
-      ctlHorizon = u.bascule($("ovHorizon"), { label: "Horizon", options: [5, 10, 20, 30].map(n => ({ id: String(n), label: n + " ans" })), actif: String(horizon),
+      u.brancher($("ovCartes"), { surCarte: (id, el) => ouvrir({ id, retour: el }) });
+      u.bascule($("ovHorizon"), { label: "Horizon", options: [5, 10, 20, 30].map(n => ({ id: String(n), label: n + " ans" })), actif: String(horizon),
         surChange: id => { horizon = +id; renderProjection(); } });
     }
     root.addEventListener("click", e => {
       const t = e.target;
-      if (!t || !t.closest) return;
-      let b;
-      if ((b = t.closest("#ovAjouter"))) { dire(""); ouvrir({ kind: "modeles", id: null, retour: b }); return; }
-      if ((b = t.closest("[data-ov-modele]")) && root.contains(b)) { dire(""); if (U() && U().panneau.ouvert()) U().panneau.fermer({ focus: false }); choisirModele(b.getAttribute("data-ov-modele"), b); return; }
-      if (t.closest("[data-ov-vreset]")) { versOverride = null; renderProjection(true); $("ovVers").focus(); }
+      if (t && t.closest && t.closest("[data-ov-vreset]")) { versOverride = null; renderProjection(true); $("ovVers").focus(); }
     });
     root.addEventListener("input", e => {
       if (e.target && e.target.id === "ovVers") { versOverride = e.target.value === "" ? 0 : Math.max(0, +e.target.value || 0); renderProjection(); }
@@ -638,15 +411,15 @@
     });
   }
   function update(snap, visible) {
-    S = snap;
-    if (pan && pan.kind === "objectif" && !(snap.objectifs || []).some(o => String(o.id) === String(pan.id)) && !pan.busy && U()) U().panneau.fermer({ focus: false });
+    S = snap; cache = null;
+    if (pan && !(snap.objectifs || []).some(o => String(o.id) === String(pan.id)) && U()) U().panneau.fermer({ focus: false });
     aRendre = true;
     if (visible) { render(); aRendre = false; }
   }
   function show() { if (aRendre) { render(); aRendre = false; } }
   function headline() {
     if (!S || !(S.ready || S.dbOk === false)) return "–";
-    const r = resumeObjectifs(analyser(S, deps(), isoToday()).liste);
+    const r = resumeObjectifs(analyse().liste);
     return r.n ? r.verdict : "Objectifs à fixer";
   }
 

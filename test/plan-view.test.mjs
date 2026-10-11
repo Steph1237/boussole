@@ -1,6 +1,7 @@
-// Patrimoine › Budget (module plan, web/src/plan-view.*) : « Où va mon argent chaque mois ? ».
-// En-tête (revenus, dépenses, épargne, reste ; bascule Par mois · Par an), barre des catégories, une carte par catégorie
-// qui se déplie en lignes, panneau d'une ligne (modifier, supprimer), « Ajouter une ligne », « Remplir avec mon assistant ».
+// Patrimoine › Budget (module plan, web/src/plan-view.*) : « Où va mon argent chaque mois ? », en lecture seule.
+// En-tête (revenus, dépenses, épargne, reste ; bascule Par mois · Par an), barre des catégories et sa légende, une carte par
+// catégorie qui se déplie en lignes, panneau d'une ligne (lecture) ; toute la saisie passe par « Compléter avec Claude » /
+// « Corriger avec Claude » (spec 2026-10-11-saisie-par-agent). Aucun formulaire, aucune écriture, tutoiement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,6 +20,7 @@ const PV = require("../web/src/plan-view.js");
 const UI = require("../web/src/ui.js");
 const Plan = require("../web/src/plan.js");
 const Calc = require("../web/src/calc.js");
+const ClaudePrompts = require("../web/src/claude-prompts.js");
 const DEMO = require("../web/src/demo-data.js");
 
 const J = v => JSON.parse(JSON.stringify(v));
@@ -27,24 +29,37 @@ const DEPS = { Plan, Calc };
 const PEOPLE = [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }];
 const demoS = () => Object.assign(J(DEMO), { ready: true, dbOk: true, scope: "foyer", people: PEOPLE, error: null });
 const ctx = (o = {}) => Object.assign({ profil: DEMO.profil, scope: "foyer", people: PEOPLE }, DEPS, o);
+const P = (s, c) => sp(ClaudePrompts.phrase(s, c));
 const proche = (a, b, eps = 0.01) => assert.ok(Math.abs(a - b) < eps, a + " ≈ " + b);
+/* Questions des liens « … avec Claude » (href décodé). */
+const questions = h => [...String(h).matchAll(/href="https:\/\/claude\.ai\/new\?q=([^"]*)"/g)].map(m => sp(decodeURIComponent(m[1].replace(/&amp;/g, "&"))));
+/* Tutoiement : aucun « vous / votre / vos » ; les textes venant du moteur (plan.js) sont listés en exception (aucun affiché ici). */
+const EXCEPTIONS_MOTEUR = [];
+const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+const sansExceptions = t => EXCEPTIONS_MOTEUR.reduce((a, e) => a.split(e).join(""), String(t));
 
 /* ------------------------------------------------------------------ structure ------------------------------------------------------------------ */
 test("plan-view.js : se compile, s'enregistre sous « plan », exporte ses fonctions pures", () => {
   assert.doesNotThrow(() => new vm.Script(js, { filename: "plan-view.js" }));
   assert.match(js, /App\.register\("plan", api\)/);
   assert.match(js, /__pending/);
-  for (const f of ["lignesProfil", "regrouper", "resume", "barre", "validerLigne", "lignesAEnregistrer", "cartesHtml", "barreHtml", "groupesHtml", "ligneDetailHtml", "ligneFormHtml", "resumeDetailHtml"])
+  for (const f of ["lignesProfil", "regrouper", "resume", "barre", "segments", "cartesHtml", "barreHtml", "groupesHtml", "ligneDetailHtml", "resumeDetailHtml", "boutonClaude"])
     assert.equal(typeof PV[f], "function", f);
+  for (const f of ["validerLigne", "lignesAEnregistrer", "ligneFormHtml"]) assert.equal(PV[f], undefined, f + " : plus de saisie dans l'app");
 });
 
-test("plan-view.js : budget seul — écrit budget/main par Store.db, dialogue assistant conservé ; objectifs et projection partis", () => {
-  assert.match(js, /doc\("budget\/main"\)\.set\(/);
-  assert.match(js, /\.prompt\("budget"\)/);
-  assert.match(js, /\.parse\(.*"budget"\)/);
-  assert.doesNotMatch(js, /collection\("objectifs"\)/);
-  assert.doesNotMatch(js, /\.projection\(/);
-  assert.doesNotMatch(js, /affecterDeja|statutObjectif/);
+test("plan-view : lecture seule — aucun appel d'écriture au store, aucun formulaire, plus d'assistant copier-coller ni de brouillon", () => {
+  assert.doesNotMatch(js, /Store\s*&&\s*window\.Store\.db|Store\.db|\.db\b/, "aucun accès à Store.db");
+  assert.doesNotMatch(js, /\.(set|upsert|delete|update)\(\s*\{|\.delete\(\)/, "aucune écriture");
+  assert.doesNotMatch(js, /Assistant|\.prompt\("budget"\)|\.parse\(/, "plus de dialogue « Remplir avec mon assistant »");
+  assert.doesNotMatch(js, /collection\("objectifs"\)|\.projection\(|affecterDeja|statutObjectif/, "objectifs et projection restent dans objectifs-view");
+  for (const src of [js, html]) {
+    assert.doesNotMatch(src, /<form|<input|<textarea|<select|<dialog|datalist/);
+    assert.doesNotMatch(src, /Ajouter une ligne|Ajouter à la main|Remplir avec mon assistant|Enregistrer le budget|Modifier à la main|data-pv-ajout|data-pv-act|pv-bascule/);
+  }
+  assert.match(js, /ClaudePrompts/);
+  assert.match(js, /"Compléter avec Claude"/);
+  assert.match(js, /"Corriger avec Claude"/);
 });
 
 test("plan-view.js : aucune requête DOM globale hors racine du module", () => {
@@ -63,18 +78,23 @@ test("plan-view.css : scopé sous #view-plan (contenu du panneau sous .ui-pannea
   assert.deepEqual(unscoped, []);
   assert.match(css, /@media \(max-width:\s*\d+px\)/);
   assert.doesNotMatch(css.replace(/rgba\([^)]*\)/g, ""), /#[0-9a-fA-F]{3,6}\b(?![-\w])/, "couleurs par variables du thème (clair et sombre)");
+  assert.doesNotMatch(css, /pv-bascule|pv-form|pv-dialog|pv-save/, "styles de saisie retirés");
 });
 
-test("plan-view.html : identifiants utilisés par le script, question de la page, dialogue assistant", () => {
+test("plan-view.html : identifiants utilisés par le script, question de la page, emplacements « … avec Claude »", () => {
   const ids = [...js.matchAll(/\$\("(pv[A-Za-z]+)"\)/g)].map(m => m[1]);
-  assert.ok(ids.length >= 10);
+  assert.ok(ids.length >= 8);
   const missing = [...new Set(ids)].filter(id => !html.includes('id="' + id + '"'));
   assert.deepEqual(missing, []);
   assert.match(html, /Où va mon argent/);
-  assert.match(html, /<dialog class="pv-dialog" id="pvAssist"/);
-  assert.match(html, /id="pvAssistBtn"[^>]*>Remplir avec mon assistant</);
-  assert.match(html, /id="pvAjouter"[^>]*>Ajouter une ligne</);
-  assert.match(html, /id="pvMsg"[^>]*role="status"/);
+  assert.match(html, /id="pvCompleter"/);
+  assert.match(html, /id="pvClaude"/);
+});
+
+test("plan-view : tutoiement — aucun « vous / votre / vos » dans les textes du module (hors textes du moteur listés)", () => {
+  assert.doesNotMatch(sansExceptions(js), VOUVOIEMENT);
+  assert.doesNotMatch(sansExceptions(html), VOUVOIEMENT);
+  assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g, ""), VOUVOIEMENT);
 });
 
 /* ------------------------------------------------------------------ fonctions pures ------------------------------------------------------------------ */
@@ -133,7 +153,7 @@ test("regrouper : périmètre d'une personne — ligne commune pour moitié, lig
   assert.deepEqual(PV.regrouper([], ctx({ profil: null })).groupes, { revenu: [], depense: [], epargne: [] });
 });
 
-test("resume : montants par mois ou par an (×12), taux d'épargne et son repère, reste inconnu sans ligne", () => {
+test("resume : montants par mois ou par an (×12), taux d'épargne et son repère ; sans ligne : reste et taux inconnus", () => {
   const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
   const m = PV.resume(t, "mois", true), a = PV.resume(t, "an", true);
   proche(m.revenus, 5100); proche(a.revenus, 5100 * 12);
@@ -147,33 +167,38 @@ test("resume : montants par mois ou par an (×12), taux d'épargne et son repèr
   assert.equal(vide.reste, null);
   assert.equal(vide.negatif, false);
   assert.equal(PV.resume(Object.assign({}, t, { reste: -50 }), "mois", true).negatif, true);
+  // correctif : sans ligne de budget, les seuls revenus de Compte › Données donneraient un taux trompeur
+  assert.equal(PV.resume(t, "mois", false).taux, null);
+  assert.equal(PV.resume(t, "mois", false).ton, null);
+  assert.ok(Plan.budgetTotaux([], DEMO.profil, "foyer").tauxEpargne > 0.5, "le moteur, lui, compte tout le reste comme épargne : la vue doit filtrer");
+  assert.equal(vide.taux, null);
 });
 
-test("barre : dépenses par catégorie (crédits compris), triées, parts qui somment à 1 ; vide → []", () => {
+test("barre et segments : dépenses par catégorie triées ; 8 couleurs distinctes au plus, le reste regroupé à motif", () => {
   const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
   const b = PV.barre(t);
   assert.equal(b[0].categorie, "Crédits");
   for (let i = 1; i < b.length; i++) assert.ok(b[i - 1].mensuel >= b[i].mensuel);
   proche(b.reduce((s, x) => s + x.part, 0), 1);
   assert.deepEqual(PV.barre(Plan.budgetTotaux([], null, "foyer")), []);
+  assert.equal(b.length, 10, "la démo a 10 catégories de dépenses");
+  const segs = PV.segments(b);
+  assert.equal(segs.length, 8);
+  const couleurs = segs.map(s => s.couleur);
+  assert.equal(new Set(couleurs).size, couleurs.length, "aucune couleur répétée");
+  for (let i = 1; i < segs.length; i++) assert.notEqual(segs[i].couleur, segs[i - 1].couleur, "voisines distinctes");
+  const autres = segs[segs.length - 1];
+  assert.equal(autres.categorie, "Autres catégories"); assert.equal(autres.motif, true);
+  assert.deepEqual(autres.detail, b.slice(7).map(c => c.categorie));
+  proche(segs.reduce((s, x) => s + x.mensuel, 0), b.reduce((s, x) => s + x.mensuel, 0));
+  const peu = PV.segments(b.slice(0, 4));
+  assert.equal(peu.length, 4); assert.ok(peu.every(s => !s.motif));
+  // nombreuses catégories : toujours aucune couleur répétée
+  const beaucoup = PV.segments(Array.from({ length: 20 }, (_, i) => ({ categorie: "C" + i, mensuel: 20 - i, part: 0.05 })));
+  assert.equal(new Set(beaucoup.map(s => s.couleur)).size, beaucoup.length);
 });
 
-test("validerLigne : montant obligatoire et positif ; lignesAEnregistrer : libellé, catégorie, fréquence et titulaire normalisés", () => {
-  assert.match(PV.validerLigne({ libelle: "Courses", montant: null }), /indiquez un montant/);
-  assert.match(PV.validerLigne({ libelle: "Courses", montant: "" }), /indiquez un montant/);
-  assert.match(PV.validerLigne({ libelle: "", montant: -3 }), /ne peut pas être négatif/);
-  assert.equal(PV.validerLigne({ libelle: "Courses", montant: 0 }), null);
-  const out = PV.lignesAEnregistrer([
-    { id: "x", type: "depense", categorie: "  ", libelle: " ", montant: "12", frequence: "mois", owner: "p1" },
-    { id: "y", type: "epargne", categorie: "", libelle: "PEA", montant: 100, frequence: "an" },
-  ], false);
-  assert.deepEqual(out[0], { id: "x", type: "depense", categorie: "Divers", libelle: "Divers", montant: 12, frequence: "mois" });
-  assert.deepEqual(out[1], { id: "y", type: "epargne", categorie: "Épargne", libelle: "PEA", montant: 100, frequence: "an" });
-  assert.equal(PV.lignesAEnregistrer([{ id: "z", type: "depense", categorie: "A", libelle: "B", montant: 1, owner: "p2" }], true)[0].owner, "p2");
-  assert.equal(PV.lignesAEnregistrer([{ id: "z", type: "depense", categorie: "A", libelle: "B", montant: 1, frequence: "semaine" }], true)[0].frequence, "mois");
-});
-
-test("cartesHtml : quatre cartes (revenus, dépenses, épargne, reste), taux d'épargne en badge, reste négatif signalé", () => {
+test("cartesHtml : quatre cartes, taux d'épargne en badge, reste négatif signalé ; sans ligne : « remplis ton budget avec Claude »", () => {
   const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
   const h = sp(PV.cartesHtml(PV.resume(t, "mois", true), UI, { duScope: "du foyer" }));
   assert.deepEqual([...h.matchAll(/data-ui-carte="([^"]+)"/g)].map(m => m[1]), ["revenu", "depense", "epargne", "reste"]);
@@ -188,21 +213,32 @@ test("cartesHtml : quatre cartes (revenus, dépenses, épargne, reste), taux d'�
   const neg = sp(PV.cartesHtml(PV.resume(Object.assign({}, t, { reste: -80 }), "mois", true), UI, { duScope: "du foyer" }));
   assert.match(neg, /dépense plus qu'il ne reçoit/);
   assert.match(neg, /ui-badge critique/);
+  const vide = sp(PV.cartesHtml(PV.resume(t, "mois", false), UI, { duScope: "du foyer" }));
+  assert.match(vide, /remplis ton budget avec Claude pour le calculer/);
+  assert.doesNotMatch(vide, /Taux d'épargne \d|au-dessus du repère/);
 });
 
-test("barreHtml : barre empilée lisible (role=img + légende), pas de couleur codée en dur ; vide → message", () => {
+test("barreHtml : barre lisible (role=img avec toutes les catégories), légende en 5 puis « Voir plus », pas de couleur codée en dur", () => {
   const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
-  const h = sp(PV.barreHtml(PV.barre(t), "mois"));
+  const b = PV.barre(t);
+  const h = sp(PV.barreHtml(b, "mois", UI));
   assert.match(h, /role="img" aria-label="Crédits \d+ %/);
+  for (const c of b) assert.ok(h.includes(c.categorie + " "), c.categorie + " dans le libellé lu");
   assert.match(h, /var\(--s1\)/);
-  assert.match(h, /<ul class="pv-leg">/);
-  assert.match(PV.barreHtml([], "mois"), /Aucune dépense/);
+  assert.match(h, /class="pv-motif"/);
+  assert.match(h, /<div class="pv-leg">/);
+  const leg = h.slice(h.indexOf('<div class="pv-leg">'));
+  assert.equal((leg.match(/<li>/g) || []).length, 8);
+  assert.match(leg, /data-ui-voirplus[^>]*>Voir plus de catégories \(3\)</);
+  assert.match(leg, /Autres catégories/);
+  assert.equal(PV.barreHtml(b, "mois", UI), PV.barreHtml(b, "mois", UI), "rendu stable (id du « Voir plus » stable)");
+  assert.match(PV.barreHtml([], "mois", UI), /Aucune dépense dans ton budget/);
 });
 
-test("groupesHtml : cartes dépliables (montant, part), lignes cliquables, catégories ouvertes conservées, 5 puis « Voir plus », tout échappé", () => {
+test("groupesHtml : cartes dépliables (montant, part lue aussi sur mobile), lignes cliquables, 5 puis « Voir plus », « Compléter avec Claude », tout échappé", () => {
   const lignes = J(DEMO.budget.lignes).concat([{ id: "evil", type: "depense", categorie: "<b>X</b>", libelle: "<img src=x onerror=alert(1)>", montant: 5, frequence: "mois" }]);
-  const { groupes } = PV.regrouper(lignes, ctx());
-  const h = sp(PV.groupesHtml(groupes, { mode: "mois", ouverts: new Set(["depense:Logement"]), two: true, U: UI }));
+  const { groupes, totaux } = PV.regrouper(lignes, ctx());
+  const h = sp(PV.groupesHtml(groupes, { mode: "mois", ouverts: new Set(["depense:Logement"]), totaux, U: UI }));
   assert.doesNotMatch(h, /<img src=x|<b>X<\/b>/);
   assert.match(h, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.match(h, /<details class="ui-acc pv-cat" data-pv-cat="depense:Logement" open>/);
@@ -212,75 +248,109 @@ test("groupesHtml : cartes dépliables (montant, part), lignes cliquables, caté
   assert.match(h, /data-ui-voirplus/, "plus de 5 catégories de dépenses : « Voir plus »");
   assert.match(h, /Repris de Compte › Données/);
   assert.match(h, /href="#compte\/donnees"/);
-  assert.match(h, /data-pv-ajout="depense" data-pv-ajout-cat="Logement"/);
+  assert.match(h, /<span class="pv-cat-part" aria-hidden="true">\d+ %<\/span><span class="ui-sr">, soit \d+ % des dépenses<\/span>/);
   assert.match(h, /<h3[^>]*>Revenus<\/h3>/);
   assert.match(h, /<h3[^>]*>Dépenses<\/h3>/);
   assert.match(h, /<h3[^>]*>Épargne<\/h3>/);
-  const an = sp(PV.groupesHtml(groupes, { mode: "an", ouverts: new Set(), two: true, U: UI }));
+  const qs = questions(h);
+  assert.ok(qs.includes(P("budget", "la catégorie « Logement » (dépenses)")), "« Compléter avec Claude » de la catégorie Logement");
+  assert.ok(qs.includes(P("revenus", "mes salaires et loyers")), "« Corriger avec Claude » des revenus repris");
+  assert.ok(qs.includes(P("immobilier", "mes prêts et crédits")), "« Corriger avec Claude » des crédits repris");
+  assert.match(h, />Compléter avec Claude</);
+  assert.match(h, />Corriger avec Claude</);
+  const an = sp(PV.groupesHtml(groupes, { mode: "an", ouverts: new Set(), totaux, U: UI }));
   assert.match(an, /data-pv-cat="depense:Logement">/);
   assert.match(an, /9 000 €\/an/, "Alimentation 750 €/mois → 9 000 €/an");
+  assert.equal(PV.groupesHtml(groupes, { mode: "mois", ouverts: new Set(), totaux, U: UI }), PV.groupesHtml(groupes, { mode: "mois", ouverts: new Set(), totaux, U: UI }), "rendu stable");
+  const vide = sp(PV.groupesHtml({ revenu: [], depense: [], epargne: [] }, { mode: "mois", U: UI }));
+  assert.match(vide, /Aucune dépense dans ton budget/);
+  assert.ok(questions(vide).includes(P("budget", "les dépenses du budget")));
 });
 
-test("ligneDetailHtml et ligneFormHtml : détail (montant, équivalent, part), actions, formulaire échappé avec ses bascules", () => {
+test("groupesHtml : totaux de section = Plan.budgetTotaux (comme les cartes), même avec un seul adulte et des données p2 restantes", () => {
+  const seul = [{ id: "p1", nom: "Camille" }];
+  assert.ok(Calc.salaireNetMensuel(DEMO.profil.personnes.p2) > 0, "la démo garde un salaire pour p2");
+  const { groupes, totaux } = PV.regrouper(DEMO.budget.lignes, ctx({ people: seul }));
+  const h = sp(PV.groupesHtml(groupes, { mode: "mois", ouverts: new Set(), totaux, U: UI }));
+  const totalSection = type => sp(h.match(new RegExp('id="pv-sec-' + type + '">[^<]*</h3><span class="pv-num pv-sec-t">([^<]*)<'))[1]);
+  const eur = v => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.round(v)).replace(/[\u00a0\u202f]/g, " ") + " €/mois";
+  assert.equal(totalSection("revenu"), eur(totaux.revenus));
+  assert.equal(totalSection("depense"), eur(totaux.depenses));
+  assert.equal(totalSection("epargne"), eur(totaux.epargne));
+  const cartes = sp(PV.cartesHtml(PV.resume(totaux, "mois", true), UI, { duScope: "du foyer" }));
+  assert.ok(cartes.includes(eur(totaux.revenus).replace("/mois", "")), "même montant que la carte Revenus");
+  proche(groupes.revenu.reduce((a, g) => a + g.mensuel, 0), totaux.revenus, 0.5);
+  // même avec un total fourni absent : repli sur la somme des groupes
+  assert.match(sp(PV.groupesHtml(groupes, { mode: "mois", U: UI })), /pv-sec-t/);
+});
+
+test("ligneDetailHtml : détail (montant, équivalent, part), « Corriger avec Claude » sur la ligne, aucune action d'écriture, échappé", () => {
   const l = { id: "t", type: "depense", categorie: "Logement", libelle: "Taxe <foncière>", montant: 1200, frequence: "an", owner: "commun" };
-  const d = sp(PV.ligneDetailHtml(l, { scope: "p1", people: PEOPLE, Calc, Plan, dbOk: true }));
+  const d = sp(PV.ligneDetailHtml(l, { scope: "p1", people: PEOPLE, Calc, Plan, U: UI }));
   assert.match(d, /1 200 €\/an/);
   assert.match(d, /100 €\/mois/);
   assert.match(d, /Commun/);
   assert.match(d, /50 %/);
-  assert.match(d, /data-pv-act="modifier"[^>]*>Modifier à la main</);
-  assert.match(d, /data-pv-act="supprimer"/);
-  const conf = sp(PV.ligneDetailHtml(l, { scope: "foyer", people: PEOPLE, Calc, Plan, dbOk: true, confirmer: true }));
-  assert.match(conf, /Supprimer « Taxe &lt;foncière&gt; » du budget/);
-  assert.match(conf, /data-pv-act="supprimer-oui"/);
-  assert.match(conf, /data-pv-act="supprimer-non"/);
-  const ro = sp(PV.ligneDetailHtml(l, { scope: "foyer", people: PEOPLE, Calc, Plan, dbOk: false }));
-  assert.match(ro, /data-pv-act="modifier" disabled/);
-  const f = sp(PV.ligneFormHtml({ type: "depense", categorie: "Lo\"gement", libelle: "<x>", montant: 12, frequence: "mois", owner: "commun" }, { two: true, nouvelle: false, erreur: "Oups <b>" }));
-  assert.match(f, /value="Lo&quot;gement"/);
-  assert.match(f, /value="&lt;x&gt;"/);
-  assert.match(f, /role="alert"[^>]*>Oups &lt;b&gt;</);
-  assert.match(f, /data-pv-bascule="type"/);
-  assert.match(f, /data-pv-bascule="frequence"/);
-  assert.match(f, /data-pv-bascule="owner"/);
-  assert.match(f, /<datalist id="pvf-cats">/);
-  assert.match(f, /data-pv-act="enregistrer"/);
-  assert.doesNotMatch(sp(PV.ligneFormHtml({ type: "revenu", montant: null, frequence: "mois" }, { two: false, nouvelle: true })), /data-pv-bascule="owner"/);
-  assert.match(sp(PV.ligneFormHtml({ type: "revenu", montant: null, frequence: "mois" }, { two: false, nouvelle: true, enAttente: true })), /changements en attente/);
+  assert.match(d, /Taxe &lt;foncière&gt;|Taxe%20%3Cfonci/);
+  assert.doesNotMatch(d, /<foncière>/);
+  assert.doesNotMatch(d, /data-pv-act|<form|<input|Supprimer|Modifier à la main/);
+  assert.match(d, />Corriger avec Claude</);
+  assert.deepEqual(questions(d), [P("budget", "la ligne « Taxe <foncière> » (Logement, 1 200 €/an)")], "phrase contextualisée par la ligne");
+  assert.match(d, /passe par Claude/);
 });
 
-test("resumeDetailHtml : détail d'une carte de l'en-tête (catégories du type, taux d'épargne expliqué)", () => {
+test("resumeDetailHtml : détail d'une carte (dépenses en 5 puis « Voir plus », taux expliqué, « Compléter avec Claude »)", () => {
   const { groupes, totaux } = PV.regrouper(DEMO.budget.lignes, ctx());
   const r = PV.resume(totaux, "mois", true);
-  const ep = sp(PV.resumeDetailHtml("epargne", groupes, r));
+  const ep = sp(PV.resumeDetailHtml("epargne", groupes, r, UI));
   assert.match(ep, /Épargne/); assert.match(ep, /650 €\/mois/); assert.match(ep, /repère 15 %/);
-  const dep = sp(PV.resumeDetailHtml("depense", groupes, r));
+  assert.match(ep, />Compléter avec Claude</);
+  const dep = sp(PV.resumeDetailHtml("depense", groupes, r, UI));
   assert.match(dep, /Crédits/); assert.match(dep, /Alimentation/);
-  const re = sp(PV.resumeDetailHtml("reste", groupes, r));
+  assert.equal((dep.match(/class="pv-det-i"/g) || []).length, groupes.depense.length);
+  assert.match(dep, /data-ui-voirplus[^>]*>Voir plus de catégories \(\d+\)</);
+  assert.match(dep, /tes prêts et crédits/);
+  const re = sp(PV.resumeDetailHtml("reste", groupes, r, UI));
   assert.match(re, /revenus − dépenses − épargne/);
+  const rev = sp(PV.resumeDetailHtml("revenu", groupes, r, UI));
+  assert.ok(questions(rev).includes(P("revenus", "")));
+  const sansLigne = sp(PV.resumeDetailHtml("epargne", groupes, PV.resume(totaux, "mois", false), UI));
+  assert.match(sansLigne, /remplis ton budget avec Claude pour le calculer/);
+});
+
+test("tutoiement des rendus : cartes, barre, sections, panneaux, dans tous les états", () => {
+  const { groupes, totaux } = PV.regrouper(DEMO.budget.lignes, ctx({ scope: "p1" }));
+  const rendus = [
+    PV.cartesHtml(PV.resume(totaux, "mois", true), UI, {}), PV.cartesHtml(PV.resume(Object.assign({}, totaux, { reste: -1, revenusProfil: 0 }), "an", false), UI, {}),
+    PV.barreHtml(PV.barre(totaux), "an", UI), PV.barreHtml([], "mois", UI),
+    PV.groupesHtml(groupes, { mode: "mois", totaux, U: UI }), PV.groupesHtml({ revenu: [], depense: [], epargne: [] }, { U: UI }),
+    ...["revenu", "depense", "epargne", "reste"].map(k => PV.resumeDetailHtml(k, groupes, PV.resume(totaux, "mois", true), UI)),
+    ...["revenu", "depense", "epargne", "reste"].map(k => PV.resumeDetailHtml(k, {}, PV.resume(totaux, "mois", false), UI)),
+    PV.ligneDetailHtml(DEMO.budget.lignes[0], { scope: "p1", people: PEOPLE, Calc, Plan, U: UI }),
+  ];
+  for (const h of rendus) assert.doesNotMatch(sansExceptions(decodeURIComponent(sp(h).replace(/%(?![0-9A-F]{2})/g, "%25"))), VOUVOIEMENT);
 });
 
 /* ------------------------------------------------------------------ vue dans un mini-DOM ------------------------------------------------------------------ */
 const uiJs = readFileSync("web/src/ui.js", "utf8");
 const planJs = readFileSync("web/src/plan.js", "utf8");
 const calcJs = readFileSync("web/src/calc.js", "utf8");
-const attendre = () => new Promise(r => setTimeout(r, 0));
-function vueDom(S0, o = {}) {
+const promptsJs = readFileSync("web/src/claude-prompts.js", "utf8");
+function vueDom(S0) {
   const dom = miniDom(), { doc } = dom;
   let S = J(S0);
-  const ecrits = [];
+  const acces = [];
   const modules = {};
   const c = { document: doc, console, setTimeout, clearTimeout, CSS: { escape: s => String(s).replace(/["\\]/g, "\\$&") } };
   c.window = c; c.self = c;
   c.App = { register: (n, api) => { modules[n] = api; }, refreshHeadlines() {}, parametres: () => ({}) };
-  c.Store = { get: () => S, db: { doc: path => ({ set: async v => {
-    if (o.echec) throw Object.assign(new Error("panne"), { code: "unavailable" });
-    ecrits.push({ path, v: J(v) }); S = Object.assign(J(S), { budget: J(v) }); modules.plan.update(S, true); return {};
-  } }) } };
+  // Tout accès au store (db, écritures) est consigné : la vue ne doit jamais y toucher.
+  c.Store = new Proxy({ get: () => S }, { get: (o, k) => { if (k !== "get") acces.push(String(k)); return o[k]; } });
   vm.createContext(c);
   vm.runInContext(calcJs, c, { filename: "calc.js" });
   vm.runInContext(planJs, c, { filename: "plan.js" });
   vm.runInContext(uiJs, c, { filename: "ui.js" });
+  vm.runInContext(promptsJs, c, { filename: "claude-prompts.js" });
   vm.runInContext(js, c, { filename: "plan-view.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.setAttribute("id", "view-plan");
@@ -288,18 +358,21 @@ function vueDom(S0, o = {}) {
   const api = modules.plan;
   api.mount(root);
   api.update(S, true);
-  return { c, dom, doc, root, api, S: () => S, ecrits };
+  return { c, dom, doc, root, api, S: () => S, setS: v => { S = v; }, acces };
 }
 const dlgDe = doc => doc.body.querySelector('[role="dialog"]');
-const saisir = (dom, el, v) => { el.value = v; el.dispatchEvent(new dom.Ev("input")); };
+const sansSaisie = el => el.querySelectorAll("form, input, textarea, select, dialog").length === 0;
 
-test("vue (DOM) : en-tête, bascule Par mois · Par an, catégories dépliées conservées au redessin", () => {
+test("vue (DOM) : en-tête, bascule Par mois · Par an, « Compléter avec Claude » en tête, catégories dépliées conservées au redessin", () => {
   const v = vueDom(demoS());
   const cartes = v.root.querySelector("#pvCartes").querySelectorAll("[data-ui-carte]");
   assert.equal(cartes.length, 4);
   assert.match(sp(cartes[0].textContent), /5 100 €/);
   const radios = v.root.querySelector("#pvMode").querySelectorAll('[role="radio"]');
   assert.deepEqual(radios.map(r => r.textContent), ["Par mois", "Par an"]);
+  assert.match(v.root.querySelector("#pvCompleter").textContent, /Compléter avec Claude/);
+  assert.deepEqual(questions(v.root.querySelector("#pvCompleter").innerHTML), [P("budget")]);
+  assert.match(v.root.querySelector("#pvClaude").textContent, /Demander à Claude/);
   radios[1].click();
   assert.match(sp(v.root.querySelector("#pvCartes").querySelectorAll("[data-ui-carte]")[0].textContent), /61 200 €/);
   assert.match(sp(v.root.querySelector("#pvBudget").textContent), /9 000 €\/an/);
@@ -310,94 +383,101 @@ test("vue (DOM) : en-tête, bascule Par mois · Par an, catégories dépliées c
   v.api.update(Object.assign(J(v.S()), { budget: { lignes: J(v.S().budget.lignes).concat([{ id: "n1", type: "depense", categorie: "Loisirs", libelle: "Piscine", montant: 20, frequence: "mois" }]) } }), true);
   assert.ok(v.root.querySelector('[data-pv-cat="depense:Logement"]').hasAttribute("open"));
   assert.ok(v.root.querySelector('[data-pv-ligne="n1"]'));
+  assert.ok(sansSaisie(v.root), "aucun formulaire dans la page");
+  assert.deepEqual(v.acces, [], "aucun accès au store");
 });
 
-test("vue (DOM) : une ligne ouvre son panneau ; « Modifier à la main » → enregistrée dans budget/main ; Échap rend le focus à la ligne", async () => {
+test("vue (DOM) : une ligne ouvre son panneau en lecture (« Corriger avec Claude ») ; Échap rend le focus à la ligne ; aucune écriture", () => {
   const v = vueDom(demoS());
   const b = v.root.querySelector('[data-pv-ligne="bl-courses"]');
   b.focus(); b.click();
   const dlg = dlgDe(v.doc);
   assert.equal(dlg.hidden, false);
   assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Courses et marché");
-  dlg.querySelector('[data-pv-act="modifier"]').click();
-  const mt = dlg.querySelector("#pvf-montant");
-  assert.ok(mt, "formulaire affiché dans le panneau");
-  saisir(v.dom, mt, "800");
-  const freq = dlg.querySelector('[data-pv-bascule="frequence"]').querySelectorAll('[role="radio"]');
-  freq[1].click(); // par an
-  dlg.querySelector('[data-pv-act="enregistrer"]').click();
-  await attendre(); await attendre();
-  assert.equal(v.ecrits.length, 1);
-  assert.equal(v.ecrits[0].path, "budget/main");
-  const l = v.ecrits[0].v.lignes.find(x => x.id === "bl-courses");
-  assert.equal(l.montant, 800); assert.equal(l.frequence, "an");
-  assert.equal(v.ecrits[0].v.lignes.length, DEMO.budget.lignes.length);
-  assert.match(dlg.querySelector("[data-pv-msg]").textContent, /enregistrée/);
+  assert.ok(sansSaisie(dlg), "panneau sans formulaire");
+  assert.equal(dlg.querySelector("[data-pv-act]"), null);
+  const corriger = dlg.querySelectorAll("a.ui-claude").find(a => /Corriger avec Claude/.test(a.textContent));
+  assert.ok(corriger, "« Corriger avec Claude » dans le panneau");
+  assert.match(decodeURIComponent(corriger.getAttribute("href")), /la ligne « Courses et marché » \(Alimentation/);
+  assert.match(dlg.querySelector(".ui-panneau-pied").innerHTML, /claude\.ai\/new\?q=/);
   v.dom.touche(v.doc.activeElement, "Escape");
   assert.equal(dlg.hidden, true);
   assert.equal(v.doc.activeElement, v.root.querySelector('[data-pv-ligne="bl-courses"]'));
+  assert.deepEqual(v.acces, []);
 });
 
-test("vue (DOM) : montant invalide refusé dans le panneau ; suppression confirmée ; ajout d'une ligne", async () => {
+test("vue (DOM) : carte Dépenses → panneau avec 5 catégories puis « Voir plus » qui se déplie ; mise à jour du store reflétée", () => {
   const v = vueDom(demoS());
-  v.root.querySelector('[data-pv-ligne="bl-abos"]').click();
+  v.root.querySelector('[data-ui-carte="depense"]').click();
   const dlg = dlgDe(v.doc);
-  dlg.querySelector('[data-pv-act="modifier"]').click();
-  saisir(v.dom, dlg.querySelector("#pvf-montant"), "");
-  dlg.querySelector('[data-pv-act="enregistrer"]').click();
-  await attendre();
-  assert.equal(v.ecrits.length, 0);
-  assert.match(dlg.querySelector('[role="alert"]').textContent, /indiquez un montant/);
-  dlg.querySelector('[data-pv-act="annuler"]').click();
-  dlg.querySelector('[data-pv-act="supprimer"]').click();
-  assert.equal(v.ecrits.length, 0, "la suppression demande une confirmation");
-  dlg.querySelector('[data-pv-act="supprimer-oui"]').click();
-  await attendre(); await attendre();
-  assert.equal(v.ecrits.length, 1);
-  assert.equal(v.ecrits[0].v.lignes.some(x => x.id === "bl-abos"), false);
-  assert.equal(dlg.hidden, true);
-  assert.match(v.root.querySelector("#pvMsg").textContent, /supprimée/);
-  // ajout
-  v.root.querySelector("#pvAjouter").click();
-  assert.equal(dlg.hidden, false);
-  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Nouvelle ligne");
-  const type = dlg.querySelector('[data-pv-bascule="type"]').querySelectorAll('[role="radio"]');
-  assert.deepEqual(type.map(r => r.textContent), ["Dépense", "Revenu", "Épargne"]);
-  type[2].click();
-  saisir(v.dom, dlg.querySelector("#pvf-libelle"), "Livret jeune");
-  saisir(v.dom, dlg.querySelector("#pvf-montant"), "50");
-  dlg.querySelector('[data-pv-act="enregistrer"]').click();
-  await attendre(); await attendre();
-  assert.equal(v.ecrits.length, 2);
-  const n = v.ecrits[1].v.lignes.find(x => x.libelle === "Livret jeune");
-  assert.ok(n && n.id, "nouvelle ligne avec un identifiant");
-  assert.equal(n.type, "epargne"); assert.equal(n.categorie, "Épargne"); assert.equal(n.montant, 50);
-  assert.equal(n.owner, "commun", "deux personnes : titulaire commun par défaut");
+  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Dépenses");
+  const btn = dlg.querySelector("[data-ui-voirplus]");
+  assert.ok(btn, "« Voir plus » dans le panneau");
+  const reste = dlg.querySelector(".ui-voirplus-reste");
+  assert.equal(reste.hidden, true);
+  btn.click();
+  assert.equal(reste.hidden, false);
+  assert.equal(btn.getAttribute("aria-expanded"), "true");
+  // le store émet un changement : le panneau se met à jour et le « Voir plus » reste déplié
+  const S2 = J(v.S()); S2.budget.lignes.find(l => l.id === "bl-courses").montant = 900;
+  v.api.update(S2, true);
+  assert.match(sp(dlg.textContent), /Alimentation/);
+  assert.equal(dlg.querySelector(".ui-voirplus-reste").hidden, false, "déplié conservé au rafraîchissement du panneau");
+  assert.deepEqual(v.acces, []);
 });
 
-test("vue (DOM) : « Ajouter une ligne ici » préremplit la catégorie ; écriture refusée → message dans le panneau, saisie conservée", async () => {
-  const v = vueDom(demoS(), { echec: true });
-  v.root.querySelector('[data-pv-ajout-cat="Logement"]').click();
-  const dlg = dlgDe(v.doc);
-  assert.equal(dlg.querySelector("#pvf-categorie").value, "Logement");
-  saisir(v.dom, dlg.querySelector("#pvf-montant"), "25");
-  dlg.querySelector('[data-pv-act="enregistrer"]').click();
-  await attendre(); await attendre();
-  assert.match(dlg.querySelector('[role="alert"]').textContent, /Enregistrement impossible/);
-  assert.equal(dlg.querySelector("#pvf-montant").value, "25");
+test("vue (DOM) : anti-redessin — deux rendus identiques ne réécrivent pas le DOM (plus de 5 catégories) ; « Voir plus » déplié le reste", () => {
+  const v = vueDom(demoS());
+  const zones = ["#pvCartes", "#pvBar", "#pvBudget"];
+  const avant = zones.map(z => v.root.querySelector(z).children[0]);
+  assert.ok(v.root.querySelector("#pvBudget").querySelector("[data-ui-voirplus]"), "la démo a plus de 5 catégories de dépenses");
+  v.api.update(J(v.S()), true);
+  v.api.update(J(v.S()), true);
+  zones.forEach((z, i) => assert.equal(v.root.querySelector(z).children[0], avant[i], z + " non réécrit"));
+  // déplier les catégories et la légende, puis une émission qui change les montants
+  const voir = v.root.querySelector("#pvBudget").querySelector("[data-ui-voirplus]");
+  voir.click();
+  const leg = v.root.querySelector("#pvBar").querySelector("[data-ui-voirplus]");
+  leg.click();
+  const S2 = J(v.S()); S2.budget.lignes.find(l => l.id === "bl-courses").montant = 760;
+  v.api.update(S2, true);
+  assert.equal(v.root.querySelector("#pvBudget").querySelectorAll(".ui-voirplus-reste")[0].hidden, false, "catégories toujours dépliées");
+  assert.equal(v.root.querySelector("#pvBar").querySelector(".ui-voirplus-reste").hidden, false, "légende toujours dépliée");
+  assert.equal(v.root.querySelector("#pvBudget").querySelector("[data-ui-voirplus]").getAttribute("aria-expanded"), "true");
+  // et un rendu identique après le dépli ne réécrit pas non plus
+  const b0 = v.root.querySelector("#pvBudget").children[0];
+  v.api.update(J(S2), true);
+  v.api.update(J(S2), true);
+  assert.equal(v.root.querySelector("#pvBudget").children[0], b0);
 });
 
-test("vue (DOM) : budget vide → état qui oriente (assistant, ajout à la main, déjà connu) ; carte de l'en-tête → panneau", () => {
+test("vue (DOM) : budget vide → état qui oriente vers Claude (déjà connu affiché, taux non calculé) ; carte de l'en-tête → panneau", () => {
   const v = vueDom(Object.assign(demoS(), { budget: { lignes: [] } }));
   const t = sp(v.root.querySelector("#pvBudget").textContent);
-  assert.match(t, /Votre budget est vide/);
+  assert.match(t, /Ton budget est vide/);
   assert.match(t, /Déjà connu grâce à Compte › Données/);
-  assert.ok(v.root.querySelector("#pvBudget").querySelector("[data-pv-assist]"));
+  assert.match(t, /Compléter avec Claude/);
+  assert.deepEqual(questions(v.root.querySelector("#pvBudget").innerHTML), [P("budget")]);
+  assert.match(sp(v.root.querySelector("#pvCartes").textContent), /remplis ton budget avec Claude pour le calculer/);
+  assert.equal(v.root.querySelector("#pvBarBloc").hidden, true);
   v.root.querySelector('[data-ui-carte="revenu"]').click();
   const dlg = dlgDe(v.doc);
   assert.equal(dlg.hidden, false);
   assert.match(sp(dlg.textContent), /Salaire net de Camille/);
   assert.equal(v.api.headline(), "Budget à remplir");
+  assert.ok(sansSaisie(v.root) && sansSaisie(dlg));
+  assert.deepEqual(v.acces, []);
+});
+
+test("vue (DOM) : tutoiement de tout le texte affiché (page et panneaux)", () => {
+  for (const S0 of [demoS(), Object.assign(demoS(), { budget: { lignes: [] } }), Object.assign(demoS(), { scope: "p2" })]) {
+    const v = vueDom(S0);
+    assert.doesNotMatch(sansExceptions(v.root.textContent), VOUVOIEMENT);
+    for (const id of ["revenu", "depense", "epargne", "reste"]) {
+      v.root.querySelector('[data-ui-carte="' + id + '"]').click();
+      assert.doesNotMatch(sansExceptions(dlgDe(v.doc).textContent), VOUVOIEMENT, id);
+    }
+  }
 });
 
 test("coque : Patrimoine › Budget (#view-plan) et Patrimoine › Objectifs (#view-objectifs-view), avec leurs fragments", () => {
@@ -420,9 +500,10 @@ test("app.js : « plan » sur patrimoine/budget, « objectifs-view » sur patrim
   assert.deepEqual(resolveHash("#patrimoine/budget"), { space: "patrimoine", sub: "budget", legacy: false });
 });
 
-test("build.mjs : modules plan-view et objectifs-view assemblés, moteur plan et repères chargés avant", () => {
+test("build.mjs : modules plan-view et objectifs-view assemblés, moteur plan, repères et phrases Claude chargés avant", () => {
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   assert.ok(mods.includes("plan-view"));
   assert.ok(mods.includes("objectifs-view"));
   assert.match(build, /const SCRIPTS = \[[^\]]*"reperes"[^\]]*"plan"[^\]]*\.\.\.MODULES/);
+  assert.match(build, /const SCRIPTS = \[[^\]]*"claude-prompts"[^\]]*\.\.\.MODULES/);
 });

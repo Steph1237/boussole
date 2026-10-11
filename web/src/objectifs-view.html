@@ -6,12 +6,10 @@
       <p class="ov-note" id="ovNote"></p>
     </div>
     <div class="ov-tete-act">
-      <button type="button" class="ov-btn" id="ovAjouter">Ajouter un objectif</button>
-      <span id="ovClaude"></span>
+      <span class="ov-claude" id="ovCompleter"></span>
+      <span class="ov-claude" id="ovClaude"></span>
     </div>
   </section>
-
-  <p class="ov-page-msg" id="ovMsg" role="status" aria-live="polite" hidden></p>
 
   <section aria-label="Mes objectifs">
     <div class="ov-cartes" id="ovCartes"></div>
@@ -22,7 +20,7 @@
     <div class="ui-acc-corps ov-proj-corps">
       <p class="ov-note" id="ovProjNote"></p>
       <div class="ov-proj-ctl">
-        <div class="ov-champ"><span class="ov-lab">Horizon</span><div id="ovHorizon"></div></div>
+        <div class="ov-champ"><span class="ov-lab" aria-hidden="true">Horizon</span><div id="ovHorizon"></div></div>
         <div class="ov-champ"><label class="ov-lab" for="ovVers">Versement mensuel <span id="ovVersTag"></span></label>
           <div class="ov-money"><input id="ovVers" type="number" inputmode="decimal" min="0" step="any"><span class="ov-u">€ / mois</span></div>
           <span class="ov-note" id="ovVersSrc"></span>
@@ -34,7 +32,7 @@
       <details class="ov-hyp">
         <summary>Hypothèses de rendement</summary>
         <div class="ov-scroll"><table class="ov-table" id="ovHyp"></table></div>
-        <p class="ov-note">Rendements annuels moyens indicatifs par poche ; les versements sont répartis comme votre portefeuille actuel.</p>
+        <p class="ov-note">Rendements annuels moyens indicatifs par poche ; les versements sont répartis comme ton portefeuille actuel.</p>
       </details>
       <p class="ov-note">Projection indicative, hors inflation et fiscalité ; les marchés ne suivent pas une moyenne.</p>
     </div>

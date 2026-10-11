@@ -1,5 +1,5 @@
-/* Patrimoine › Objectifs : en-tête (question, verdict, ajout), cartes des objectifs (progression, statut, effort requis),
-   projection du patrimoine financier en accordéon. Scopé #view-objectifs-view ; le contenu du panneau de détail (UI.panneau,
+/* Patrimoine › Objectifs (lecture seule) : en-tête (question, verdict, « Compléter avec Claude »), cartes des objectifs
+   (progression, statut, effort requis), projection du patrimoine financier en accordéon (simulateur local). Scopé #view-objectifs-view ; le contenu du panneau de détail (UI.panneau,
    injecté dans body) sous .ui-panneau .ov-…. */
 #view-objectifs-view [hidden]{display:none!important}
 #view-objectifs-view .ov{display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -16,11 +16,8 @@
 #view-objectifs-view .ov-verdict.ton-attention{color:var(--warn)}
 #view-objectifs-view .ov-verdict.ton-critique{color:var(--crit)}
 #view-objectifs-view .ov-tete-act{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
-#view-objectifs-view .ov-page-msg{margin:0;font-size:13px;font-weight:600}
-#view-objectifs-view .ov-page-msg.ok{color:var(--good)}
-#view-objectifs-view .ov-page-msg.err{color:var(--crit)}
-#view-objectifs-view .ov-btn{font:600 13px var(--f-body);border-radius:var(--radius-sm);padding:8px 13px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer;white-space:nowrap}
-#view-objectifs-view .ov-btn:focus-visible,#view-objectifs-view .ov-modele:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#view-objectifs-view .ov-claude:empty{display:none}
+#view-objectifs-view .ov-tag:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* cartes */
 #view-objectifs-view .ov-cartes .ui-voirplus-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
@@ -41,14 +38,11 @@
 #view-objectifs-view .ov-carte.st-critique .ov-barre i{background:var(--crit)}
 #view-objectifs-view .ov-carte .ui-carte-pied{justify-content:space-between}
 
-/* état vide et modèles */
+/* état vide */
 #view-objectifs-view .ov-vide{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;border:1px dashed var(--line2);border-radius:var(--radius);font-size:13.5px;line-height:1.5}
 #view-objectifs-view .ov-vide p{margin:0}
 #view-objectifs-view .ov-vide-t{font:700 15px var(--f-display)}
-#view-objectifs-view .ov-modeles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;width:100%}
-#view-objectifs-view .ov-modele{display:flex;flex-direction:column;gap:3px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:13px var(--f-body);cursor:pointer}
-#view-objectifs-view .ov-modele:hover{border-color:var(--accent);background:var(--accent-soft)}
-#view-objectifs-view .ov-modele span{color:var(--muted);font-size:12.5px}
+#view-objectifs-view .ov-vide-act{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 
 /* projection */
 #view-objectifs-view .ov-proj-res{font:500 12.5px var(--f-body);color:var(--muted)}
@@ -88,12 +82,7 @@
 
 /* panneau de détail (UI.panneau, hors de la vue) */
 .ui-panneau .ov-num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
-.ui-panneau .ov-muet{color:var(--muted)}
 .ui-panneau .ov-note{margin:0;font-size:12.5px;line-height:1.5;color:var(--muted)}
-.ui-panneau .ov-msg{margin:0;font-size:13px;font-weight:600}
-.ui-panneau .ov-msg.ok{color:var(--good)}
-.ui-panneau .ov-msg.err{color:var(--crit)}
-.ui-panneau .ov-msg:focus{outline:none}
 .ui-panneau .ov-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .ui-panneau .ov-quand{margin:0;font-size:14px;line-height:1.45}
 .ui-panneau .ov-prog{flex:none;height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
@@ -106,16 +95,6 @@
 .ui-panneau .ov-dl dd b{font:600 14px var(--f-num)}
 .ui-panneau .ov-dl dd span{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .ui-panneau .ov-acts{display:flex;gap:8px;flex-wrap:wrap}
-.ui-panneau .ov-btn{font:600 13px var(--f-body);border-radius:var(--radius-sm);padding:8px 12px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer}
-.ui-panneau .ov-btn.ghost{background:transparent;color:var(--accent)}
-.ui-panneau .ov-btn.ghost:hover{background:var(--accent-soft)}
-.ui-panneau .ov-btn.danger{background:var(--crit);border-color:var(--crit);color:var(--surface)}
-.ui-panneau .ov-btn.ghost.danger{background:transparent;color:var(--crit)}
-.ui-panneau .ov-btn.ghost.danger:hover{background:var(--crit-soft)}
-.ui-panneau .ov-btn:disabled{opacity:.45;cursor:default}
-.ui-panneau .ov-btn:focus-visible,.ui-panneau .ov-modele:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.ui-panneau .ov-confirm{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:var(--radius-sm);background:var(--crit-soft)}
-.ui-panneau .ov-confirm p{margin:0;font-weight:600;color:var(--crit)}
 .ui-panneau .ov-sec{display:flex;flex-direction:column;gap:8px}
 .ui-panneau .ov-sec-t{margin:0;font:700 14px var(--f-display)}
 .ui-panneau .ov-poches{list-style:none;margin:0;padding:0}
@@ -133,25 +112,6 @@
 .ui-panneau .ov-l-actuel{border-top:2px solid var(--accent)}
 .ui-panneau .ov-l-requis{border-top:2px dashed var(--accent)}
 .ui-panneau .ov-l-cible{border-top:2px dotted var(--warn)}
-.ui-panneau .ov-modeles{display:flex;flex-direction:column;gap:8px}
-.ui-panneau .ov-modele{display:flex;flex-direction:column;gap:3px;text-align:left;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:14px var(--f-body);cursor:pointer}
-.ui-panneau .ov-modele:hover{border-color:var(--accent);background:var(--accent-soft)}
-.ui-panneau .ov-modele span{color:var(--muted);font-size:12.5px}
-.ui-panneau .ov-form{display:flex;flex-direction:column;gap:14px}
-.ui-panneau .ov-champ{display:flex;flex-direction:column;gap:6px;min-width:0}
-.ui-panneau .ov-ligne2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
-.ui-panneau .ov-lab{font-size:12.5px;font-weight:600;color:var(--muted)}
-.ui-panneau .ov-in{font:14px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px 10px;width:100%;min-width:0;box-sizing:border-box}
-.ui-panneau .ov-in:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
-.ui-panneau .ov-money{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden;max-width:220px}
-.ui-panneau .ov-money:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.ui-panneau .ov-money input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--ink);font:500 14px var(--f-num);padding:8px 10px;outline:none}
-.ui-panneau .ov-u{display:flex;align-items:center;padding-right:10px;color:var(--muted);font:12px var(--f-num);white-space:nowrap}
-.ui-panneau .ov-bascule{max-width:100%;overflow-x:auto}
-.ui-panneau .ov-coches{display:flex;flex-wrap:wrap;gap:6px;border:0;padding:0;margin:0;min-width:0}
-.ui-panneau .ov-coches legend{padding:0;margin-bottom:6px}
-.ui-panneau .ov-chk{display:inline-flex;gap:7px;align-items:center;font-size:13px;cursor:pointer;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm)}
-.ui-panneau .ov-chk input{width:16px;height:16px;accent-color:var(--accent);margin:0}
 
 @media (max-width:640px){
   #view-objectifs-view .ov-tete-act{width:100%}

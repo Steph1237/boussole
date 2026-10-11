@@ -6,13 +6,10 @@
     </div>
     <div class="pv-tete-act">
       <div class="pv-mode" id="pvMode"></div>
-      <button type="button" class="pv-btn" id="pvAjouter">Ajouter une ligne</button>
-      <button type="button" class="pv-btn ghost" id="pvAssistBtn">Remplir avec mon assistant</button>
-      <span id="pvClaude"></span>
+      <span class="pv-claude" id="pvCompleter"></span>
+      <span class="pv-claude" id="pvClaude"></span>
     </div>
   </section>
-
-  <p class="pv-page-msg" id="pvMsg" role="status" aria-live="polite" hidden></p>
 
   <section aria-label="Synthèse du budget">
     <div class="ui-cartes pv-cartes" id="pvCartes"></div>
@@ -24,35 +21,5 @@
       <div id="pvBar"></div>
     </div>
     <div class="pv-budget" id="pvBudget"></div>
-    <div class="pv-save" id="pvSave" hidden>
-      <div class="pv-msgs" id="pvMsgs" aria-live="polite"></div>
-      <div class="pv-save-act">
-        <button type="button" class="pv-btn ghost" id="pvCancel">Annuler</button>
-        <button type="button" class="pv-btn" id="pvSubmit">Enregistrer le budget</button>
-      </div>
-    </div>
   </section>
-
-  <dialog class="pv-dialog" id="pvAssist" aria-labelledby="pvAssistTitle">
-    <form method="dialog" class="pv-dlg-in">
-      <div class="pv-dlg-head"><h2 id="pvAssistTitle">Remplir le budget avec mon assistant</h2><button class="pv-x" value="close" aria-label="Fermer">×</button></div>
-      <ol class="pv-steps">
-        <li>
-          <p><b>Copiez ce message</b> dans Claude, ChatGPT ou l'assistant de votre choix. Vous pouvez y joindre vos relevés bancaires : il regroupera les dépenses par catégorie, puis répondra avec un bloc de données.</p>
-          <textarea id="pvPrompt" class="pv-in" rows="6" readonly aria-label="Message à copier"></textarea>
-          <button type="button" class="pv-btn ghost" id="pvCopy">Copier le message</button>
-        </li>
-        <li>
-          <p><b>Collez sa réponse</b> ici :</p>
-          <textarea id="pvPaste" class="pv-in" rows="6" aria-label="Réponse de l'assistant" placeholder="Collez toute la réponse, texte compris : le bloc de données est retrouvé automatiquement."></textarea>
-          <button type="button" class="pv-btn ghost" id="pvRead">Lire la réponse</button>
-        </li>
-      </ol>
-      <div class="pv-preview" id="pvPreview" aria-live="polite"></div>
-      <div class="pv-dlg-foot">
-        <span class="pv-note">Rien n'est enregistré tant que vous n'avez pas cliqué sur « Enregistrer le budget ».</span>
-        <button type="button" class="pv-btn" id="pvApply" disabled>Appliquer au budget</button>
-      </div>
-    </form>
-  </dialog>
 </div>
