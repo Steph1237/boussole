@@ -22,6 +22,8 @@ for (const [mod, src, a, b] of BLOCKS) {
   });
 }
 
+/* Contenu des panneaux de détail (UI.panneau, injecté dans body, hors de #view-<module>) : scopé par le préfixe du module. */
+const PANNEAU = { toise: ".ui-panneau .ts-" };
 for (const mod of ["toise", "simu"]) {
   test(`${mod} : aucune requête DOM globale hors racine du module`, () => {
     const js = readFileSync(`web/src/${mod}.js`, "utf8");
@@ -31,10 +33,10 @@ for (const mod of ["toise", "simu"]) {
   test(`${mod} : s'enregistre auprès de l'App`, () => {
     assert.match(readFileSync(`web/src/${mod}.js`, "utf8"), new RegExp(`App\\.register\\(["']${mod}["']`));
   });
-  test(`${mod} : CSS entièrement scopé sous #view-${mod}`, () => {
+  test(`${mod} : CSS entièrement scopé sous #view-${mod}${PANNEAU[mod] ? ` (et ${PANNEAU[mod]}… pour le panneau)` : ""}`, () => {
     const css = readFileSync(`web/src/${mod}.css`, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     const sels = [...css.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(s => s && !/^(from|to|\d+%)$/.test(s));
-    const unscoped = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith(`#view-${mod}`));
+    const unscoped = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith(`#view-${mod}`) && !(PANNEAU[mod] && x.startsWith(PANNEAU[mod])));
     assert.deepEqual(unscoped, []);
   });
 }

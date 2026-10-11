@@ -1,6 +1,16 @@
-/* Pilotage › Rang (module « toise ») : portage de « La toise des revenus » (sources/toise.html) en module de l'App.
-   Le moteur de calcul (ENGINE-START … ENGINE-END) est recopié à l'identique ; seuls le câblage DOM,
-   la persistance et le branchement sur les données réelles (Reel) changent. */
+/* Pilotage › Rang (module « toise ») : « Où je me situe parmi les Français ? ». Portage de « La toise des revenus »
+   (sources/toise.html) : le moteur de calcul (ENGINE-START … ENGINE-END) est recopié à l'identique (test/port.test.mjs).
+   En haut : verdict en une phrase (niveau de vie parmi les Français, patrimoine net parmi les ménages), « Calculé pour : … »,
+   « Modifier mes hypothèses » et « Demander à Claude ». Puis quatre cartes de rang (UI.carte) : niveau de vie, salaire,
+   patrimoine net, emprunt (capacité ou endettement, rapporté au plafond HCSF du repère « hcsf_taux_effort ») ; chaque carte
+   ouvre un panneau (UI.panneau) : rang, phrase, marge, palier suivant, « Voir le détail », « Modifier mes hypothèses ».
+   Le détail de chaque rang est dans un onglet (UI.onglets : Niveau de vie · Salaire · Patrimoine · Emprunt), graphiques
+   secondaires, tableaux, marges d'erreur et règles en accordéons fermés ; méthode et sources en accordéon en bas de page.
+   Les saisies (foyer, salaire, patrimoine, emprunt) sont dans #tsHyp, conteneur masqué de la page, déplacé dans le panneau
+   « Mes hypothèses » le temps de l'édition ; elles sont préremplies par les données réelles (Reel) comme avant.
+   Anciennes ancres (#foyer, #salaire, #patrimoine, #emprunt) : onglet correspondant au montage.
+   Fonctions pures exportées pour les tests (module.exports) : plafondHcsf, position, verdict, cartes, resumeHypotheses,
+   panneauHtml, questionPage, questionCarte, derive (avec _etat, DEFAULTS), foyerTab, tabValue, hhName. */
 (function(){
 'use strict';
 /*ENGINE-START*/
@@ -238,8 +248,14 @@ const NVTYPE={seul:['personnes seules',24980,'personnes seules ou familles monop
 const SAL_MEAN={cadre:['cadres',4629],inter:['professions intermédiaires',2633],empl:['employés',1941],ouv:['ouvriers',2051]};
 const PAT_CSP={agri:['agriculteurs',[152700,698000,2282900]],indep:['artisans, commerçants et chefs d\'entreprise',[11200,324800,1805000]],liber:['professions libérales',[42500,560500,2039100]],cadre:['cadres',[22200,279700,1060600]],inter:['professions intermédiaires',[9600,136600,503600]],empl:['employés',[2300,38900,347900]],ouv:['ouvriers',[2200,34900,289000]],r_indep:['retraités anciens indépendants',[41700,314900,1097500]],r_cadre:['retraités anciens cadres',[121300,525200,1663500]],r_inter:['retraités anciennes professions intermédiaires',[35000,320100,772400]],r_empl:['retraités anciens employés ou ouvriers',[3500,140800,458000]],inact:['autres inactifs',[900,7300,300200]]};
 
-let root;
-const $=id=>root.querySelector('#'+CSS.escape(id));
+let root=null,hyp=null,hypHolder=null;
+/* Les saisies (#tsHyp) vivent dans la page, dans un conteneur masqué, ou dans le panneau « Modifier mes hypothèses »
+   (injecté dans body par UI, donc hors de la racine) : les recherches couvrent les deux. */
+const horsRacine=()=>!!(hyp&&root&&!root.contains(hyp));
+const $=id=>{const s='#'+CSS.escape(id);return root.querySelector(s)||(horsRacine()?hyp.querySelector(s):null)};
+const all=sel=>{const a=Array.from(root.querySelectorAll(sel));return horsRacine()?a.concat(Array.from(hyp.querySelectorAll(sel))):a};
+const dedans=el=>!!el&&((!!root&&root.contains(el))||(!!hyp&&hyp.contains(el)));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const NS='http://www.w3.org/2000/svg';
 function S(tag,a,p,t){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;if(p)p.appendChild(e);return e}
 const tickP=p=>(p%1===0?nf0.format(p):p.toLocaleString('fr-FR',{maximumFractionDigits:2}))+' %';
@@ -253,9 +269,9 @@ const HASH={'#foyer':'rev','#salaire':'sal','#patrimoine':'pat','#emprunt':'loan
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}};
 const NUMK=['ad','kids','teens','k3'];
 
-function hhName(){const a=+state.ad,k=+state.kids+ +state.k3,ks=k?k+' enfant'+(k>1?'s':''):'';
+function hhName(st){st=st||state;const a=+st.ad,k=+st.kids+ +st.k3,ks=k?k+' enfant'+(k>1?'s':''):'';
   if(a===1)return k?'Parent seul, '+ks:'Personne seule';if(a===2)return k?'Couple, '+ks:'Couple sans enfant';return a+' adultes'+(k?', '+ks:'')}
-function hhType(){const a=+state.ad,k=+state.kids+ +state.k3;if(a===1)return k?'mono':'seul';if(a===2)return k?'cae':'cse';return 'autre'}
+function hhType(st){st=st||state;const a=+st.ad,k=+st.kids+ +st.k3;if(a===1)return k?'mono':'seul';if(a===2)return k?'cae':'cse';return 'autre'}
 
 /* ---------- conversions de montants ---------- */
 const brutRate=()=>state.statut==='cadre'?.75:.78;
@@ -277,7 +293,8 @@ function derive(){
   const h=Object.assign({},hb,{incM:toNetMonthly(Math.max(0,+state.inc||0),state.incUnit,hb)});
   const H=household(h),aF=h.incM>0?assess(D_NV,H.nv*(1+gR.c),{g:gR}):null;
   const B=bandsOf(GRIDS[state.grid].classes,D_NV);
-  if(state.tab==='rev')B.forEach(c=>{c.incLo=c.lo>0?incomeFor(h,c.lo):0;c.incHi=incomeFor(h,c.hi)});
+  /* Revenus de chaque classe : calculés quel que soit l'onglet, la carte « Niveau de vie » et son panneau lisent le palier suivant. */
+  B.forEach(c=>{c.incLo=c.lo>0?incomeFor(h,c.lo):0;c.incHi=incomeFor(h,c.hi)});
   const rate=state.statut==='cadre'?.75:.78,sraw=Math.max(0,+state.sal||0),brut=state.salUnit[0]==='b';
   const sal=salToNet(sraw,state.salUnit),conv=brut?[(rate-.01)/rate,(rate+.01)/rate]:null;
   const aS=sal>0?assess(D_SAL.E,sal,{g:gR,conv}):null,aSF=sal>0?assess(D_SAL.F,sal,{g:gR,conv}):null,aSH=sal>0?assess(D_SAL.H,sal,{g:gR,conv}):null;
@@ -287,7 +304,7 @@ function derive(){
   const AG=AGE[state.age],DAge=mk(AG.n,P9,AG.neff),aAge=hasPat?assess(DAge,pn,{g:gP}):null;
   const CS=PAT_CSP[state.csp],DCsp=CS?mk(CS[1],[10,50,90],650):null,aCsp=CS&&hasPat?assess(DCsp,pn,{g:gP}):null;
   const D={h,hb,H,gR,gP,aF,B,sal,brut,rate,aS,aSF,aSH,own,owe,pn,aPN,aPB,DAge,aAge,DCsp,aCsp,PB:bandsOf(PGRID,D_PN)};
-  D.L=loanPlan(loanInputs(D));
+  D.Lo=loanInputs(D);D.L=loanPlan(D.Lo);
   return D;
 }
 
@@ -327,19 +344,24 @@ function eqRows(el,rows){el.textContent='';rows.forEach(r=>{const d=document.cre
 const classFill=B=>i=>{const p=i+.5;const c=B.find(c=>p<c.phi)||B[B.length-1];return 'f-'+c.col};
 
 /* ---------- foyer ---------- */
-function renderFoyer(D){
+/* Verdict d'un rang (repris tel quel de l'ancienne page) : sert au bloc de l'onglet et au panneau de la carte. */
+function verdictFoyer(D){
   const{h,H,aF,B}=D;
+  if(!aF)return{eye:hhName(),sent:'Indiquez les revenus du foyer pour voir votre position.'};
+  const ci=classIndex(B,aF.xc),cls=B[ci],nx=B[ci+1],rb=rankBig(aF,'les plus modestes'),need=nx&&isFinite(cls.incHi)?Math.max(0,cls.incHi-h.incM):null;
+  return{eye:hhName(),big:(aF.est?'≈ ':'')+rb.t,small:rb.small,a:aF,cls,str:straddle(B,aF),fill:classFill(B),
+    sent:aF.below||aF.above?'Niveau de vie de '+eur(H.nv*H.d)+' par mois.':'Votre niveau de vie ('+eur(H.nv*H.d)+' par mois) dépasse celui de '+nf0.format(Math.round(aF.p))+' % des Français.',
+    cap:aF.below||aF.above?'':'Sur 100 Français, vous passez devant '+nf0.format(Math.round(aF.p))+'.',
+    next:need!=null?'Encore '+eur(need)+' par mois avant impôt pour passer en « '+nx.n+' ».':'Classe la plus haute de cette définition.'};
+}
+function renderFoyer(D){
+  const{h,H}=D;
   eqRows($('eq'),[{l:'Revenus nets avant impôt',v:eur(h.incM)}].concat(state.k3>0?[{l:'+ revenus des enfants autonomes',v:eur(h.kincM)}]:[],
     [{l:(H.estimated?'− impôt sur le revenu estimé':'− impôt sur le revenu payé'),v:eur(H.taxA/12*H.d),c:'minus'}],h.aidM>0?[{l:'+ aides non imposables',v:eur(h.aidM)}]:[],
     [{l:'= revenu disponible',v:eur(H.dispA/12*H.d),c:'total'},{l:'÷ unités de consommation',v:dec(H.uc,1).replace(/,0$/,'')},{l:'= niveau de vie',v:eur(H.nv*H.d)+' / mois',c:'total'}]));
   $('calc-sum').textContent=h.incM>0?'impôt '+eur(H.taxA/12*H.d)+' · niveau de vie '+eur(H.nv*H.d):'';
   const nOpt=(+state.teens>0)+(h.aidM>0)+(+state.k3>0)+(h.taxM>0)+(state.year!=='2026')+(state.union==='sep'&&+state.ad>=2);$('opt-rev-n').textContent=nOpt?'('+nOpt+')':'';
-  if(!aF){setVerdict('v-rev',{eye:hhName(),sent:'Indiquez les revenus du foyer pour voir votre position.'});return}
-  const ci=classIndex(B,aF.xc),cls=B[ci],nx=B[ci+1],rb=rankBig(aF,'les plus modestes'),need=nx&&isFinite(cls.incHi)?Math.max(0,cls.incHi-h.incM):null;
-  setVerdict('v-rev',{eye:hhName(),big:(aF.est?'≈ ':'')+rb.t,small:rb.small,a:aF,cls,str:straddle(B,aF),fill:classFill(B),
-    sent:aF.below||aF.above?'Niveau de vie de '+eur(H.nv*H.d)+' par mois.':'Votre niveau de vie ('+eur(H.nv*H.d)+' par mois) dépasse celui de '+nf0.format(Math.round(aF.p))+' % des Français.',
-    cap:aF.below||aF.above?'':'Sur 100 Français, vous passez devant '+nf0.format(Math.round(aF.p))+'.',
-    next:need!=null?'Encore '+eur(need)+' par mois avant impôt pour passer en « '+nx.n+' ».':'Classe la plus haute de cette définition.'});
+  setVerdict('v-rev',verdictFoyer(D));
 }
 function ticksLin(max){const st=max<=6000?1000:max<=15000?2500:max<=40000?5000:max<=100000?20000:Math.pow(10,Math.floor(Math.log10(max)));const t=[];for(let v=0;v<=max;v+=st)t.push(v);return t}
 function chartW(el,min,max){const w=el&&el.parentElement?el.parentElement.getBoundingClientRect().width:0;return Math.round(clamp(w>10?w:max,min,max))}
@@ -380,16 +402,21 @@ function renderCmpFoyer(D){
 }
 
 /* ---------- salaire ---------- */
-function renderSalaire(D){
-  const{aS,aSF,aSH,sal,brut}=D,K=D_SAL.E.K;
-  $('sal-help').textContent={nm:'Net avant impôt, en équivalent temps plein.',na:'Net avant impôt sur l\'année, primes comprises : '+eur(sal)+' par mois.',bm:'Brut mensuel : environ '+eur(sal)+' net avant impôt.',ba:'Brut annuel, primes comprises : environ '+eur(sal)+' net par mois.'}[state.salUnit];
-  $('opt-sal-n').textContent=(state.csp&&SAL_MEAN[state.csp]?1:0)+(state.year!=='2026')?'('+((state.csp&&SAL_MEAN[state.csp]?1:0)+(state.year!=='2026'?1:0))+')':'';
-  if(!aS){setVerdict('v-sal',{eye:'Votre salaire',sent:'Indiquez votre salaire pour voir votre position.'});$('cmp-sal').textContent='';return}
+function verdictSalaire(D){
+  const{aS,sal}=D,K=D_SAL.E.K;
+  if(!aS)return{eye:'Votre salaire',sent:'Indiquez votre salaire pour voir votre position.'};
   const rb=rankBig(aS,'les moins payés');
-  setVerdict('v-sal',{eye:eur(sal)+' nets par mois',big:rb.t,small:rb.small,a:aS,fill:i=>i<Math.floor(aS.p)?'g-lo':'g-hi',
+  return{eye:eur(sal)+' nets par mois',big:rb.t,small:rb.small,a:aS,fill:i=>i<Math.floor(aS.p)?'g-lo':'g-hi',
     sent:aS.below?'Sous le 1er décile : ces salaires concernent surtout des apprentis et stagiaires.':aS.above?'Au-delà du dernier seuil publié : vous faites partie du 1 % le mieux payé.':'Votre salaire dépasse celui de '+nf0.format(Math.round(aS.p))+' % des salariés du privé.',
     cap:aS.below||aS.above?'':'Sur 100 salariés, vous passez devant '+nf0.format(Math.round(aS.p))+'.',
-    next:aS.xc<K[8][0]?'Encore '+eur((K[8][0]-aS.xc)*(1+D.gR.c))+' par mois pour entrer dans le top 10 %.':aS.xc<K[10][0]?'Encore '+eur((K[10][0]-aS.xc)*(1+D.gR.c))+' par mois pour entrer dans le top 1 %.':''});
+    next:aS.xc<K[8][0]?'Encore '+eur((K[8][0]-aS.xc)*(1+D.gR.c))+' par mois pour entrer dans le top 10 %.':aS.xc<K[10][0]?'Encore '+eur((K[10][0]-aS.xc)*(1+D.gR.c))+' par mois pour entrer dans le top 1 %.':''};
+}
+function renderSalaire(D){
+  const{aS,aSF,aSH,sal}=D,K=D_SAL.E.K;
+  $('sal-help').textContent={nm:'Net avant impôt, en équivalent temps plein.',na:'Net avant impôt sur l\'année, primes comprises : '+eur(sal)+' par mois.',bm:'Brut mensuel : environ '+eur(sal)+' net avant impôt.',ba:'Brut annuel, primes comprises : environ '+eur(sal)+' net par mois.'}[state.salUnit];
+  $('opt-sal-n').textContent=(state.csp&&SAL_MEAN[state.csp]?1:0)+(state.year!=='2026')?'('+((state.csp&&SAL_MEAN[state.csp]?1:0)+(state.year!=='2026'?1:0))+')':'';
+  setVerdict('v-sal',verdictSalaire(D));
+  if(!aS){$('cmp-sal').textContent='';return}
   const s=aS.xc,rows=[
     {l:'Tous les salariés du privé',K:D_SAL.E.K,a:aS,v:s,right:rankShort(aS,'les moins payés'),right2:'médiane '+eur(K[4][0])},
     {l:'Les femmes',K:D_SAL.F.K,a:aSF,v:s,right:rankShort(aSF,'les moins payées'),right2:'médiane '+eur(D_SAL.F.K[4][0])},
@@ -404,15 +431,20 @@ function renderSalaire(D){
 }
 
 /* ---------- patrimoine ---------- */
-function renderPatrimoine(D){
-  const{own,owe,pn,aPN,aAge,aCsp,aPB,PB,gP}=D;
-  $('opt-pat-n').textContent=(state.csp&&PAT_CSP[state.csp]?1:0)+(state.year!=='2026'?1:0)?'('+((state.csp&&PAT_CSP[state.csp]?1:0)+(state.year!=='2026'?1:0))+')':'';
-  if(!aPN){setVerdict('v-pat',{eye:'Votre patrimoine',sent:'Indiquez ce que vous possédez et ce que vous devez.'});$('cmp-pat').textContent='';return}
+function verdictPatrimoine(D){
+  const{own,owe,pn,aPN,PB,gP}=D;
+  if(!aPN)return{eye:'Votre patrimoine',sent:'Indiquez ce que vous possédez et ce que vous devez.'};
   const ci=classIndex(PB,aPN.xc),cls=PB[ci],nx=PB[ci+1],rb=rankBig(aPN,'les moins dotés');
-  setVerdict('v-pat',{eye:'Patrimoine net : '+eur(own)+' − '+eur(owe)+' = '+eur(pn),big:rb.t,small:rb.small,a:aPN,cls,str:straddle(PB,aPN),fill:classFill(PB),
+  return{eye:'Patrimoine net : '+eur(own)+' − '+eur(owe)+' = '+eur(pn),big:rb.t,small:rb.small,a:aPN,cls,str:straddle(PB,aPN),fill:classFill(PB),
     sent:pn<=0?'Vos crédits dépassent ce que vous possédez, comme pour les 10 % de ménages les moins dotés.':aPN.above?'Au-delà du dernier seuil publié : vous faites partie du 1 % le mieux doté.':'Votre ménage possède plus que '+nf0.format(Math.round(aPN.p))+' % des ménages, crédits déduits.',
     cap:aPN.below||aPN.above?'':'Sur 100 ménages, vous passez devant '+nf0.format(Math.round(aPN.p))+'.',
-    next:nx?'Encore '+eur((cls.hi-aPN.xc)*(1+gP.c))+' de patrimoine net pour passer en « '+nx.n+' ».':''});
+    next:nx?'Encore '+eur((cls.hi-aPN.xc)*(1+gP.c))+' de patrimoine net pour passer en « '+nx.n+' ».':''};
+}
+function renderPatrimoine(D){
+  const{own,aPN,aAge,aCsp,aPB,gP}=D;
+  $('opt-pat-n').textContent=(state.csp&&PAT_CSP[state.csp]?1:0)+(state.year!=='2026'?1:0)?'('+((state.csp&&PAT_CSP[state.csp]?1:0)+(state.year!=='2026'?1:0))+')':'';
+  setVerdict('v-pat',verdictPatrimoine(D));
+  if(!aPN){$('cmp-pat').textContent='';return}
   const p=aPN.xc,rows=[
     {l:'Tous les ménages',K:D_PN.K,a:aPN,v:p,right:rankShort(aPN,'les moins dotés'),right2:'marge ± '+pts((aPN.hi-aPN.lo)/2)+' pt'},
     {l:'Les ménages de '+AGE[state.age].l,K:D.DAge.K,a:aAge,v:p,right:aAge.above?'top 10 % de votre âge':rankShort(aAge,'les moins dotés'),right2:'marge ± '+pts((aAge.hi-aAge.lo)/2)+' pt'}];
@@ -434,37 +466,48 @@ function loanInputs(D,over){
 }
 function checkItem(ul,status,title,text){const li=document.createElement('li');li.className='ck '+status;li.innerHTML='<span class="ck-i" aria-hidden="true"></span><div><b></b><span></span></div>';li.querySelector('b').textContent=title;li.querySelector('div span').textContent=text;const sr=document.createElement('span');sr.className='sr';sr.textContent=status==='ok'?'Conforme : ':status==='warn'?'À surveiller : ':'Bloquant : ';li.querySelector('div').prepend(sr);ul.appendChild(li)}
 function kpis(el,items){el.textContent='';items.forEach(([l,v,sub])=>{const d=document.createElement('div');d.className='kpi';d.innerHTML='<span></span><b></b><em></em>';d.querySelector('span').textContent=l;d.querySelector('b').textContent=v;d.querySelector('em').textContent=sub||'';el.appendChild(d)})}
+/* Textes du verdict de l'emprunt (repris tels quels de l'ancienne page) : null tant que les revenus du foyer manquent. */
+function texteEmprunt(D){
+  const{h}=D,o=D.Lo,L=D.L;
+  if(!(h.incM>0))return null;
+  const bienTxt=o.bien==='neuf'?'neuf':'ancien',ptzOn=L.ptz.ok&&L.ptz.amt>0;
+  const t={eye:hhName()+' · '+eur(L.R)+' de revenus retenus par mois',status:null,small:false};
+  if(state.lmode==='cap'){
+    const low=loanPlan(Object.assign({},o,{ratePct:o.ratePct+.3})),high=loanPlan(Object.assign({},o,{ratePct:Math.max(.1,o.ratePct-.3)}));
+    t.big=L.C>0?'≈ '+eur(r1000(L.C+L.ptz.amt)):'0 €';
+    t.sent=L.C>0?'C\'est ce que votre foyer peut emprunter sur '+o.years+' ans'+(ptzOn?', dont un PTZ de '+eur(r1000(L.ptz.amt))+' à 0 %':'')+'.':'Vos crédits en cours atteignent déjà 35 % de vos revenus : la banque ne peut pas prêter davantage, sauf dérogation.';
+    t.kpis=L.C>0?[['Mensualité',eur(L.monthly),'assurance comprise'],['Logement visé','≈ '+eur(r1000(L.price)),bienTxt+', frais inclus'],['Reste à vivre',eur(L.rav),'par mois, après crédits']]:[];
+    t.range=L.C>0?'Selon le taux obtenu (±0,3 point) : de '+keur(low.C+low.ptz.amt)+' à '+keur(high.C+high.ptz.amt)+' · taux '+dec(o.ratePct,2)+' %, assurance '+dec(o.insPct,2)+' %':'';
+  }else{
+    const ok=L.dti<=.35+1e-9,lim=!ok&&L.dti<=.40;
+    t.status={cls:ok?'ok':lim?'warn':'ko',texte:ok?'Finançable':lim?'Au-delà de la norme : dérogation nécessaire':'Hors des normes bancaires'};
+    t.big=nf0.format(Math.round(L.dti*100))+' % d\'endettement';t.small=true;
+    let miss='';
+    if(!ok){const needR=(o.creditsM+L.monthly)/LOAN.dti,cap=loanPlan(Object.assign({},o,{price:null})),extraApport=Math.max(0,L.C+L.ptz.amt-(cap.C+cap.ptz.amt))*(1-LOAN.guarantee);
+      miss=' Pour rester à 35 %, il faudrait '+eur(needR-L.R)+' de revenus en plus par mois, ou environ '+eur(r1000(extraApport))+' d\'apport en plus, ou viser '+eur(r1000(cap.price))+'.'}
+    t.sent=ok?'Ce logement à '+eur(o.price)+' entre dans les normes bancaires.':'Pour ce logement à '+eur(o.price)+' :'+miss;
+    t.kpis=[['Mensualité',eur(L.monthly),'assurance comprise'],['À emprunter',eur(r1000(L.C+L.ptz.amt)),ptzOn?'dont PTZ '+eur(r1000(L.ptz.amt)):'sur '+o.years+' ans'],['Reste à vivre',eur(L.rav),'par mois, après crédits']];
+    t.range='Taux '+dec(o.ratePct,2)+' %, assurance '+dec(o.insPct,2)+' %, coût total de l\'achat '+eur(L.total);
+  }
+  return t;
+}
 function renderLoan(D){
-  const{h,H}=D,o=loanInputs(D),L=loanPlan(o);D.L=L;
+  const{h,H}=D,o=D.Lo,L=D.L;
   $('loan-inc').textContent=eur(h.incM)+' / mois';$('loan-hh').textContent=hhName()+' · net avant impôt';
   $('rate-help').textContent='Vide : taux moyen du marché sur '+o.years+' ans ('+dec(LOAN.rates[o.years],2)+' %, août 2026).';
   $('ins-help').textContent='Vide : taux indicatif pour votre âge ('+dec(LOAN.ins[state.age],2)+' %).';
   $('rfr-help').textContent='Vide : estimé à '+eur(o.rfrEst)+' à partir de vos revenus.';
-  $('price-q').hidden=state.lmode!=='price';$('type-field').hidden=state.bien!=='neuf';$('trav-field').hidden=state.bien!=='ancien';
+  $('type-field').hidden=state.bien!=='neuf';$('trav-field').hidden=state.bien!=='ancien';
   const nOpt=(state.rateC>0)+(state.insC>0)+(+state.loyers>0)+(state.primo==='non')+(+state.rfr>0);$('opt-loan-n').textContent=nOpt?'('+nOpt+')':'';
-  const st=$('l-status');
-  if(!(h.incM>0)){$('l-kpis').textContent='';$('l-eye').textContent='';st.hidden=true;$('l-big').textContent='–';$('l-sent').textContent='Indiquez les revenus du foyer dans « Mon foyer » pour lancer la simulation.';['l-range','l-next','l-cap'].forEach(i=>$(i).textContent='');$('l-bar').textContent='';$('loan-checks').textContent='';return}
-  const bienTxt=o.bien==='neuf'?'neuf':'ancien',ptzOn=L.ptz.ok&&L.ptz.amt>0;
-  $('l-eye').textContent=hhName()+' · '+eur(L.R)+' de revenus retenus par mois';
-  if(state.lmode==='cap'){
-    st.hidden=true;
-    const low=loanPlan(Object.assign({},o,{ratePct:o.ratePct+.3})),high=loanPlan(Object.assign({},o,{ratePct:Math.max(.1,o.ratePct-.3)}));
-    $('l-big').textContent=L.C>0?'≈ '+eur(r1000(L.C+L.ptz.amt)):'0 €';
-    $('l-sent').textContent=L.C>0?'C\'est ce que votre foyer peut emprunter sur '+o.years+' ans'+(ptzOn?', dont un PTZ de '+eur(r1000(L.ptz.amt))+' à 0 %':'')+'.':'Vos crédits en cours atteignent déjà 35 % de vos revenus : la banque ne peut pas prêter davantage, sauf dérogation.';
-    kpis($('l-kpis'),L.C>0?[['Mensualité',eur(L.monthly),'assurance comprise'],['Logement visé','≈ '+eur(r1000(L.price)),bienTxt+', frais inclus'],['Reste à vivre',eur(L.rav),'par mois, après crédits']]:[]);
-    $('l-range').textContent=L.C>0?'Selon le taux obtenu (±0,3 point) : de '+keur(low.C+low.ptz.amt)+' à '+keur(high.C+high.ptz.amt)+' · taux '+dec(o.ratePct,2)+' %, assurance '+dec(o.insPct,2)+' %':'';
-  }else{
-    const ok=L.dti<=.35+1e-9,lim=!ok&&L.dti<=.40;
-    st.hidden=false;st.className='l-status '+(ok?'ok':lim?'warn':'ko');st.textContent=ok?'Finançable':lim?'Au-delà de la norme : dérogation nécessaire':'Hors des normes bancaires';
-    $('l-big').textContent=nf0.format(Math.round(L.dti*100))+' % d\'endettement';$('l-big').classList.add('small');
-    let miss='';
-    if(!ok){const needR=(o.creditsM+L.monthly)/LOAN.dti,cap=loanPlan(Object.assign({},o,{price:null})),extraApport=Math.max(0,L.C+L.ptz.amt-(cap.C+cap.ptz.amt))*(1-LOAN.guarantee);
-      miss=' Pour rester à 35 %, il faudrait '+eur(needR-L.R)+' de revenus en plus par mois, ou environ '+eur(r1000(extraApport))+' d\'apport en plus, ou viser '+eur(r1000(cap.price))+'.'}
-    $('l-sent').textContent=ok?'Ce logement à '+eur(o.price)+' entre dans les normes bancaires.':'Pour ce logement à '+eur(o.price)+' :'+miss;
-    kpis($('l-kpis'),[['Mensualité',eur(L.monthly),'assurance comprise'],['À emprunter',eur(r1000(L.C+L.ptz.amt)),ptzOn?'dont PTZ '+eur(r1000(L.ptz.amt)):'sur '+o.years+' ans'],['Reste à vivre',eur(L.rav),'par mois, après crédits']]);
-    $('l-range').textContent='Taux '+dec(o.ratePct,2)+' %, assurance '+dec(o.insPct,2)+' %, coût total de l\'achat '+eur(L.total);
-  }
-  if(state.lmode==='cap')$('l-big').classList.remove('small');
+  const st=$('l-status'),t=texteEmprunt(D);
+  if(!t){$('l-kpis').textContent='';$('l-eye').textContent='';st.hidden=true;$('l-big').textContent='–';$('l-sent').textContent='Indiquez les revenus du foyer dans « Mon foyer » pour lancer la simulation.';['l-range','l-next','l-cap'].forEach(i=>$(i).textContent='');$('l-bar').textContent='';$('loan-checks').textContent='';return}
+  const ptzOn=L.ptz.ok&&L.ptz.amt>0;
+  $('l-eye').textContent=t.eye;
+  st.hidden=!t.status;if(t.status){st.className='l-status '+t.status.cls;st.textContent=t.status.texte}
+  $('l-big').textContent=t.big;$('l-big').classList.toggle('small',t.small);
+  $('l-sent').textContent=t.sent;
+  kpis($('l-kpis'),t.kpis);
+  $('l-range').textContent=t.range;
   const ravUc=L.rav/H.uc,poor=1337;
 
   // barre des revenus
@@ -495,15 +538,15 @@ function renderLoan(D){
   eqRows($('loan-cost'),[{l:'Mensualité du prêt principal',v:eur(L.mens)},{l:'+ assurance emprunteur',v:eur(L.insM)},ptzOn?{l:'+ PTZ ('+(L.ptz.diff?'après '+L.ptz.diff+' ans de différé':'dès le début')+')',v:eur(L.ptz.monthly)}:null,{l:'= mensualité totale',v:eur(L.monthly),c:'total'},{l:'Intérêts sur '+o.years+' ans',v:eur(L.interest)},{l:'Assurance sur '+o.years+' ans',v:eur(L.insTotal)},{l:'= coût du crédit',v:eur(L.interest+L.insTotal),c:'total'},{l:'TAEG estimé '+dec(L.taeg,2)+' %, garantie et dossier compris.',c:'note'}].filter(Boolean));
   renderAmort(L,o);
   // durée × taux
-  const t=$('loan-heat');t.textContent='';const deltas=[-.5,0,.5],durs=[15,20,25];
+  const t2=$('loan-heat');t2.textContent='';const deltas=[-.5,0,.5],durs=[15,20,25];
   const cells=durs.map(y=>deltas.map(dl=>{const base=state.rateC>0?state.rateC:LOAN.rates[y],r=Math.max(.1,base+dl),P=loanPlan(Object.assign({},o,{years:y,ratePct:r}));return{y,r,P,cur:y===o.years&&dl===0}}));
   const val=c=>state.lmode==='price'?c.P.dti:c.P.C+c.P.ptz.amt;
   const vals=cells.flat().map(val),mx=Math.max(...vals),mn=Math.min(...vals);
   $('heat-desc').textContent=state.lmode==='price'?'Taux d\'endettement pour ce logement. En rouge : au-delà de 35 %. La case encadrée correspond à votre simulation.':'Montant total que vous pouvez emprunter, PTZ compris. La case encadrée correspond à votre simulation.';
-  const thead=document.createElement('tr');thead.innerHTML='<th>Durée</th><th class="num">Taux −0,5 pt</th><th class="num">'+(state.rateC>0?'Votre taux':'Taux du marché')+'</th><th class="num">Taux +0,5 pt</th>';t.appendChild(thead);
+  const thead=document.createElement('tr');thead.innerHTML='<th>Durée</th><th class="num">Taux −0,5 pt</th><th class="num">'+(state.rateC>0?'Votre taux':'Taux du marché')+'</th><th class="num">Taux +0,5 pt</th>';t2.appendChild(thead);
   cells.forEach((row,i)=>{const tr=document.createElement('tr');const th=document.createElement('td');th.textContent=durs[i]+' ans';tr.appendChild(th);
     row.forEach(c=>{const td=document.createElement('td'),v=val(c);td.className='num heat-c'+(c.cur?' cur':'')+(state.lmode==='price'&&v>.35?' bad':'');const k=mx>mn?(state.lmode==='price'?(mx-v)/(mx-mn):(v-mn)/(mx-mn)):1;td.style.setProperty('--k',(.06+.36*k).toFixed(3));td.innerHTML='<b></b><span></span>';td.querySelector('b').textContent=state.lmode==='price'?nf0.format(Math.round(v*100))+' %':keur(v);td.querySelector('span').textContent=dec(c.r,2)+' %'+(state.lmode==='price'?' · '+eur(c.P.monthly)+'/mois':'');tr.appendChild(td)});
-    t.appendChild(tr)});
+    t2.appendChild(tr)});
 }
 let amortCtx=null;
 function renderAmort(L,o){
@@ -630,10 +673,114 @@ function renderCurve(D){
   S('rect',{x:L,y:Tc,width:pw,height:ph,fill:'transparent'},svg);curveCtx={svg,hl,L,pw,W,xmax,D};
 }
 
+/* ---------- page : verdict, cartes, hypothèses (fonctions pures, exportées pour les tests) ---------- */
+/** Plafond d'endettement (fraction) : repère « hcsf_taux_effort » (en %) du savoir commun s'il est disponible, sinon celui du
+    moteur (LOAN.dti, 35 %). Affichage seulement : la capacité d'emprunt reste calculée par le moteur, à 35 %. */
+function plafondHcsf(reperes,R){
+  const r=R&&typeof R.trouver==='function'?R.trouver(reperes,'hcsf_taux_effort'):null,v=r?+r.valeur:NaN;
+  return isFinite(v)&&v>0&&v<100?v/100:LOAN.dti;
+}
+const pctEnt=x=>nf0.format(Math.round(x*100))+' %';
+/** Position dans une phrase : « dans le top 25 % », « parmi les 13 % les plus modestes ». */
+function position(a,low){
+  if(a.below)return 'parmi les '+pctA(a.hi)+' '+low;
+  if(a.above)return 'dans le top '+pctA(100-a.lo);
+  if(a.p>=50)return 'dans le top '+fmtShare(100-a.p,decimals(a));
+  return 'parmi les '+nf0.format(Math.max(1,Math.round(a.p)))+' % '+low;
+}
+/** Verdict de la page, en une phrase : niveau de vie parmi les Français, patrimoine net parmi les ménages. */
+function verdict(D){
+  const f=D.aF,p=D.aPN;
+  const sf=f?position(f,'les plus modestes')+' des Français'+(f.est?' (estimation)':''):'',sp=p?position(p,'les moins dotés')+' des ménages':'';
+  if(f&&p)return{phrase:'Votre niveau de vie vous place '+sf+' ; votre patrimoine net, '+sp+'.'};
+  if(f)return{phrase:'Votre niveau de vie vous place '+sf+'.'};
+  if(p)return{phrase:'Votre patrimoine net vous place '+sp+'. Indiquez les revenus du foyer pour situer votre niveau de vie.'};
+  return{phrase:'Indiquez les revenus de votre foyer et votre patrimoine pour vous situer parmi les Français.'};
+}
+/** Les quatre cartes de rang (UI.carte) : niveau de vie, salaire, patrimoine net, emprunt rapporté au plafond HCSF.
+    o = { lmode: "cap" | "price", plafond (fraction) }. */
+function cartes(D,o){
+  o=o||{};const plafond=o.plafond>0?o.plafond:LOAN.dti,L=D.L,Lo=D.Lo,pl='plafond HCSF '+pctEnt(plafond);
+  const rev={id:'rev',titre:'Niveau de vie',valeur:foyerTab(D),sous:D.aF?D.B[classIndex(D.B,D.aF.xc)].n:'Indiquez les revenus du foyer',badge:null};
+  const sal={id:'sal',titre:'Salaire',valeur:D.aS?tabValue(D.aS,'moins payés'):'–',sous:D.aS?'parmi les salariés du privé':'Indiquez votre salaire',badge:null};
+  const pat={id:'pat',titre:'Patrimoine net',valeur:D.aPN?tabValue(D.aPN,'moins dotés'):'–',sous:D.aPN?D.PB[classIndex(D.PB,D.aPN.xc)].n:'Indiquez votre patrimoine',badge:null};
+  let loan;
+  if(!(D.h.incM>0))loan={id:'loan',titre:o.lmode==='price'?'Endettement':'Capacité d\'emprunt',valeur:'–',sous:'Indiquez les revenus du foyer',badge:null};
+  else if(o.lmode==='price'){
+    const b=L.dti<=plafond+1e-9?{texte:'Finançable',ton:'bon'}:L.dti<=plafond+.05+1e-9?{texte:'Dérogation nécessaire',ton:'attention'}:{texte:'Hors des normes',ton:'critique'};
+    loan={id:'loan',titre:'Endettement',valeur:pctEnt(L.dti),sous:'pour un logement à '+eur(Lo.price)+' · '+pl,badge:b};
+  }else{
+    const actuel=L.R>0?Math.max(0,Lo.creditsM)/L.R:0;
+    loan={id:'loan',titre:'Capacité d\'emprunt',valeur:L.C>0?'≈ '+keur(L.C+L.ptz.amt):'0 €',sous:'sur '+Lo.years+' ans · endettement actuel '+pctEnt(actuel)+', '+pl,
+      badge:actuel>=plafond-1e-9?{texte:'Au plafond',ton:'critique'}:null};
+  }
+  return[rev,sal,pat,loan];
+}
+const UNITE_REV={nm:'net / mois',na:'net / an',ba:'brut / an',am:'après impôt / mois'},UNITE_SAL={nm:'net / mois',na:'net / an',bm:'brut / mois',ba:'brut / an'};
+const montant=v=>nf0.format(Math.max(0,Math.round(+v||0)))+' €';
+/** Résumé des hypothèses de saisie : une ligne courte (en-tête de page) et une ligne par section du panneau. */
+function resumeHypotheses(st){
+  st=st||state;
+  const own=st.patDetail?['immo','fin','pro','res'].reduce((s,k)=>s+Math.max(0,+st[k]||0),0):Math.max(0,+st.own||0);
+  const rev=montant(st.inc)+' '+(UNITE_REV[st.incUnit]||''),age=AGE[st.age]?AGE[st.age].l:'';
+  const court=[hhName(st),rev,age].concat(st.year!=='2026'?['montants de '+st.year]:[]).filter(Boolean).join(', ');
+  const loan=(st.lmode==='price'?['Logement à '+montant(st.price),'apport '+montant(st.apport)]:['Apport '+montant(st.apport)])
+    .concat([st.duree+' ans',st.bien==='neuf'?'neuf':'ancien'],+st.credits>0?['crédits '+montant(st.credits)+' / mois']:[]);
+  return{court,sections:{
+    rev:hhName(st)+' · '+rev,
+    sal:montant(st.sal)+' '+(UNITE_SAL[st.salUnit]||'')+(String(st.salUnit)[0]==='b'?(st.statut==='cadre'?', cadre':', non-cadre'):''),
+    pat:montant(own)+' possédés · '+montant(st.debt)+' dus',
+    loan:loan.join(' · ')}};
+}
+/** Contenu du panneau d'une carte (HTML échappé) : rang, phrase, classe, chiffres clés, marge, plafond, palier suivant, actions. */
+function panneauHtml(id,v){
+  v=v||{};
+  const p=(cls,t)=>t?'<p class="'+cls+'">'+esc(t)+'</p>':'';
+  let h=p('ts-p-eye',v.eye);
+  if(v.status)h+='<p class="ts-p-statut '+esc(v.status.cls)+'">'+esc(v.status.texte)+'</p>';
+  if(v.big)h+='<p class="ts-p-big'+(v.small?' small':'')+'">'+esc(v.big)+'</p>';
+  h+=p('ts-p-sent',v.sent);
+  if(v.cls&&v.cls.n)h+='<p class="ts-p-classe"><span>Classe</span> <b>'+esc(v.cls.n)+'</b></p>';
+  if(Array.isArray(v.kpis)&&v.kpis.length)h+='<dl class="ts-p-kpis">'+v.kpis.map(k=>'<div><dt>'+esc(k[0])+'</dt><dd>'+esc(k[1])+(k[2]?'<small>'+esc(k[2])+'</small>':'')+'</dd></div>').join('')+'</dl>';
+  if(v.a)h+=p('ts-p-marge',rangeLine(v.a));
+  h+=p('ts-p-marge',v.range)+p('ts-p-plafond',v.plafond)+p('ts-p-next',v.next);
+  return h+'<div class="ts-p-actions"><button type="button" class="ts-btn" data-ts-act="voir" data-ts-id="'+esc(id)+'">Voir le détail</button>'+
+    '<button type="button" class="ts-btn ts-btn-2" data-ts-act="hyp" data-ts-id="'+esc(id)+'">Modifier mes hypothèses</button></div>';
+}
+/** Question préremplie de « Demander à Claude » pour la page (rangs seulement, aucun montant). */
+function questionPage(D){
+  const f=D.aF,p=D.aPN,m=[];
+  if(!f&&!p)return 'Aide-moi à renseigner mon foyer, mes revenus et mon patrimoine dans Boussole pour me situer parmi les Français.';
+  if(f)m.push('mon niveau de vie me place '+position(f,'les plus modestes')+' des Français');
+  if(p)m.push('mon patrimoine net me place '+position(p,'les moins dotés')+' des ménages');
+  return 'Dans Boussole, '+m.join(' et ')+'. Explique-moi ce que cela signifie et ce qui pourrait faire évoluer ma position.';
+}
+/** Question préremplie pour une carte (rangs et pourcentages seulement, aucun montant). */
+function questionCarte(id,D,o){
+  o=o||{lmode:state.lmode,plafond:LOAN.dti};
+  const fin=' Explique-moi ce que cela signifie et ce qui pourrait le faire évoluer.',pl=o.plafond>0?o.plafond:LOAN.dti;
+  if(id==='rev')return D.aF?'Dans Boussole, mon niveau de vie me place '+position(D.aF,'les plus modestes')+' des Français (« '+D.B[classIndex(D.B,D.aF.xc)].n.toLowerCase()+' »).'+fin
+    :'Comment calculer le niveau de vie de mon foyer pour me situer parmi les Français ?';
+  if(id==='sal')return D.aS?'Dans Boussole, mon salaire me place '+position(D.aS,'les moins payés')+' des salariés du privé.'+fin:'Comment situer mon salaire parmi ceux des salariés du privé ?';
+  if(id==='pat')return D.aPN?'Dans Boussole, mon patrimoine net me place '+position(D.aPN,'les moins dotés')+' des ménages (« '+D.PB[classIndex(D.PB,D.aPN.xc)].n.toLowerCase()+' »).'+fin
+    :'Comment calculer mon patrimoine net pour le comparer à celui des ménages français ?';
+  if(!(D.h.incM>0))return 'Comment estimer ma capacité d\'emprunt immobilier ?';
+  if(o.lmode==='price')return 'Dans Boussole, un achat immobilier porterait mon endettement à '+pctEnt(D.L.dti)+' de mes revenus, pour un plafond HCSF de '+pctEnt(pl)+'. Explique-moi ce que la banque en penserait et comment améliorer mon dossier.';
+  return 'Dans Boussole, j\'ai estimé ma capacité d\'emprunt sur '+D.Lo.years+' ans, avec un endettement plafonné à '+pctEnt(pl)+' (norme HCSF). Explique-moi ce qui la détermine et comment l\'améliorer.';
+}
+
 /* ---------- rendu ---------- */
+const ONGLETS=[{id:'rev',label:'Niveau de vie'},{id:'sal',label:'Salaire'},{id:'pat',label:'Patrimoine'},{id:'loan',label:'Emprunt'}];
+const QUESTION_HYP='Aide-moi à renseigner mon foyer, mes revenus et mon patrimoine dans Boussole pour me situer parmi les Français.';
+const U=()=>(typeof window!=='undefined'&&window.UI)||null;
+let ong=null,ctlLmode=null,plafond=LOAN.dti,ouvertCarte=null,retourCarte=null,sigPanneau='',hypRetour=null;
+const sig={};
+/* Rien n'est réécrit (ni focus perdu) quand le HTML n'a pas changé. */
+const ecrire=(id,h)=>{const el=$(id);if(el&&sig[id]!==h){sig[id]=h;el.innerHTML=h}};
+const opts=()=>({lmode:state.lmode,plafond});
 function syncControls(){
-  root.querySelectorAll('[data-seg]').forEach(g=>{const k=g.dataset.seg;g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===String(state[k]))))});
-  root.querySelectorAll('[data-num]').forEach(i=>{if(document.activeElement!==i)i.value=nf0.format(Math.round(+state[i.dataset.num]||0))});
+  all('[data-seg]').forEach(g=>{const k=g.dataset.seg;g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===String(state[k]))))});
+  all('[data-num]').forEach(i=>{if(document.activeElement!==i)i.value=nf0.format(Math.round(+state[i.dataset.num]||0))});
   const kids=+state.kids;if(+state.teens>kids)state.teens=kids;
   const tg=$('teens');tg.textContent='';for(let i=0;i<=kids;i++){const b=document.createElement('button');b.type='button';b.textContent=i;b.setAttribute('aria-pressed',String(i===+state.teens));b.addEventListener('click',()=>{state.teens=i;ov('teens');render()});tg.appendChild(b)}
   $('teen-field').hidden=kids===0;$('union-field').hidden=+state.ad<2;$('kinc-field').hidden=+state.k3===0;
@@ -641,22 +788,28 @@ function syncControls(){
   $('inc-help').textContent={nm:'Net avant impôt par mois, tous les adultes réunis : salaires, pensions, revenus d\'indépendant.',na:'Net avant impôt sur l\'année, tous les adultes réunis, primes comprises.',ba:'Brut annuel de tous les adultes, primes comprises : converti en net (environ 22 % de cotisations, 25 % pour les cadres).',am:'Ce qui arrive sur vos comptes chaque mois, après prélèvement de l\'impôt : le net avant impôt en est déduit.'}[state.incUnit];
   $('pat-detail').hidden=!state.patDetail;$('own').readOnly=state.patDetail;$('detail-btn').textContent=state.patDetail?'Saisir un total':'Détailler';
   if(state.patDetail&&document.activeElement!==$('own'))$('own').value=nf0.format(['immo','fin','pro','res'].reduce((s,k)=>s+Math.max(0,+state[k]||0),0));
-  root.querySelectorAll('[data-dec]').forEach(i=>{if(document.activeElement!==i)i.value=state[i.dataset.dec]>0?dec(state[i.dataset.dec],2):'';const k=i.dataset.dec;i.placeholder=k==='rateC'?dec(LOAN.rates[+state.duree],2):dec(LOAN.ins[state.age],2)});
-  root.querySelectorAll('[data-csp]').forEach(s=>{if([...s.options].some(o=>o.value===state.csp))s.value=state.csp;else s.value=''});
+  all('[data-dec]').forEach(i=>{if(document.activeElement!==i)i.value=state[i.dataset.dec]>0?dec(state[i.dataset.dec],2):'';const k=i.dataset.dec;i.placeholder=k==='rateC'?dec(LOAN.rates[+state.duree],2):dec(LOAN.ins[state.age],2)});
+  all('[data-csp]').forEach(s=>{if([...s.options].some(o=>o.value===state.csp))s.value=state.csp;else s.value=''});
   $('toise-desc').textContent=GRIDS[state.grid].desc+' Montants avant impôt pour : '+hhName().toLowerCase()+'.';
+  $('price-q').hidden=state.lmode!=='price';
   syncPills();
 }
-function renderTabs(D){
-  root.querySelectorAll('[data-tab]').forEach(b=>{const on=b.dataset.tab===state.tab;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
-  $('toise-p-rev').hidden=state.tab!=='rev';$('toise-p-sal').hidden=state.tab!=='sal';$('toise-p-pat').hidden=state.tab!=='pat';
-  $('tv-rev').textContent=headlineCache=foyerTab(D);
-  $('tv-sal').textContent=D.aS?tabValue(D.aS,'moins payés'):'–';
-  $('tv-pat').textContent=D.aPN?tabValue(D.aPN,'moins dotés'):'–';
-  $('tv-loan').textContent=!(D.h.incM>0)?'–':state.lmode==='price'?nf0.format(Math.round(D.L.dti*100))+' % des revenus':(D.L.C>0?'≈ '+keur(D.L.C+D.L.ptz.amt):'0 €');
-  $('toise-p-loan').hidden=state.tab!=='loan';
+/* En-tête (verdict, hypothèses, Claude), cartes, onglet actif, résumés des sections du panneau d'hypothèses. */
+function renderPage(D){
+  const u=U();
+  ONGLETS.forEach(o=>{$('toise-p-'+o.id).hidden=state.tab!==o.id});
+  if(ong&&ong.actif()!==state.tab)ong.choisir(state.tab);
+  if(ctlLmode&&ctlLmode.actif()!==state.lmode)ctlLmode.choisir(state.lmode);
+  headlineCache=foyerTab(D);
+  $('tsVerdict').textContent=verdict(D).phrase;
+  const r=resumeHypotheses(state);
+  $('tsPour').textContent='Calculé pour : '+r.court+'.';
+  ONGLETS.forEach(o=>{const e=$('tsSec-'+o.id);if(e)e.textContent=r.sections[o.id]});
+  if(u){ecrire('tsCartes',cartes(D,opts()).map(c=>u.carte(c)).join(''));ecrire('tsClaude',u.demanderAClaude(questionPage(D)));}
+  rafraichirPanneau(D);
 }
 function render(){
-  dirty=false;syncControls();const D=derive();renderTabs(D);
+  dirty=false;syncControls();const D=derive();renderPage(D);
   window.App&&App.refreshHeadlines&&App.refreshHeadlines();
   if(state.tab==='rev'){
     renderFoyer(D);renderCmpFoyer(D);classToise($('toise-f'),D.B,D.aF,rangeRev,100,' des Français');
@@ -680,6 +833,81 @@ function render(){
   save();
 }
 
+/* ---------- panneaux : carte de rang, hypothèses ---------- */
+function vueCarte(id,D){
+  if(id==='rev')return verdictFoyer(D);
+  if(id==='sal')return verdictSalaire(D);
+  if(id==='pat')return verdictPatrimoine(D);
+  const t=texteEmprunt(D);
+  if(!t)return{eye:hhName(),sent:'Indiquez les revenus du foyer dans « Mon foyer » pour lancer la simulation.'};
+  const actuel=D.L.R>0?Math.max(0,D.Lo.creditsM)/D.L.R:0;
+  return Object.assign({},t,{plafond:'Plafond d\'endettement (norme HCSF) : '+pctEnt(plafond)+' des revenus, assurance comprise. Vos crédits en cours en représentent '+pctEnt(actuel)+'.'});
+}
+function optionsCarte(id,D,u){
+  const c=cartes(D,opts()).find(x=>x.id===id)||{titre:''};
+  return{titre:c.titre,contenu:panneauHtml(id,vueCarte(id,D)),pied:u.demanderAClaude(questionCarte(id,D,opts()))};
+}
+const branches=new WeakSet();
+function brancherPanneau(corps){
+  if(!corps||branches.has(corps))return;branches.add(corps);
+  corps.addEventListener('click',e=>{
+    const b=e.target&&e.target.closest?e.target.closest('[data-ts-act]'):null;if(!b||!corps.contains(b))return;
+    const id=b.getAttribute('data-ts-id');
+    if(b.getAttribute('data-ts-act')==='voir')voirDetail(id);else ouvrirHyp(id,null,id);
+  });
+}
+function ouvrirCarte(id,el){
+  const u=U();if(!u||!ONGLETS.some(o=>o.id===id))return;
+  rangerHyp();
+  const D=derive();ouvertCarte=id;retourCarte=el||null;
+  const op=optionsCarte(id,D,u);sigPanneau=op.titre+'|'+op.contenu;
+  brancherPanneau(u.panneau.ouvrir(Object.assign(op,{retour:retourCarte,surFermeture:fermetureCarte})));
+}
+/* Le store a émis (ou une saisie a changé) pendant l'ouverture : contenu mis à jour s'il a changé. */
+function rafraichirPanneau(D){
+  const u=U();if(!ouvertCarte||!u||!u.panneau.ouvert())return;
+  const op=optionsCarte(ouvertCarte,D,u),s=op.titre+'|'+op.contenu;
+  if(s===sigPanneau)return;sigPanneau=s;u.panneau.ouvrir(op);
+}
+/* Fermeture : focus rendu à la carte d'origine, ou à la carte du même rang si les cartes ont été redessinées. */
+function fermetureCarte(o){
+  const id=ouvertCarte,el=retourCarte;ouvertCarte=null;retourCarte=null;sigPanneau='';
+  if((o&&o.focus===false)||!root||(el&&el.isConnected))return;
+  const c=root.querySelector('[data-ui-carte="'+CSS.escape(String(id))+'"]');if(c)c.focus();
+}
+/* « Voir le détail » : ferme le panneau, choisit l'onglet du rang et amène la vue au titre « Le détail de chaque rang ». */
+function voirDetail(id){
+  const u=U();
+  if(u&&u.panneau.ouvert())u.panneau.fermer({focus:false});
+  if(ONGLETS.some(o=>o.id===id))state.tab=id;
+  render();
+  const t=$('tsOnglets'),h=$('tsDetailT');if(!t)return;
+  window.scrollTo({top:Math.max(0,(h||t).getBoundingClientRect().top+window.scrollY-12),behavior:'auto'});
+  const b=t.querySelector('[aria-selected="true"]');if(b)try{b.focus({preventScroll:true})}catch(e){b.focus()}
+}
+/* « Modifier mes hypothèses » : les saisies (#tsHyp) passent dans le panneau, section `sec` ouverte ; elles reviennent dans
+   leur conteneur masqué à la fermeture. */
+function ouvrirHyp(sec,el,carteId){
+  const u=U();if(!u||!hyp)return;
+  const retour=el||retourCarte||$('tsHypBtn');
+  ouvertCarte=null;retourCarte=null;sigPanneau='';
+  hypRetour={el:retour,carteId:carteId||null};
+  ouvrirSection(sec||state.tab,false);
+  u.panneau.ouvrir({titre:'Mes hypothèses',contenu:hyp,retour,surFermeture:rangerHyp,pied:u.demanderAClaude(QUESTION_HYP)});
+  syncControls();
+}
+function ouvrirSection(sec,focus){
+  hyp.querySelectorAll('[data-ts-sec]').forEach(d=>{d.open=d.getAttribute('data-ts-sec')===sec});
+  if(focus){const s=hyp.querySelector('[data-ts-sec="'+CSS.escape(sec)+'"] > summary');if(s)s.focus()}
+}
+function rangerHyp(o){
+  if(hyp&&hypHolder&&hyp.parentNode!==hypHolder)hypHolder.appendChild(hyp);
+  const r=hypRetour;hypRetour=null;
+  if(!r||(o&&o.focus===false)||!root||(r.el&&r.el.isConnected))return;
+  const c=r.carteId?root.querySelector('[data-ui-carte="'+CSS.escape(r.carteId)+'"]'):null;
+  (c||$('tsHypBtn')).focus();
+}
+
 /* ---------- données réelles (Reel) ---------- */
 const MOD='toise';
 const MAPPED=new Set(['inc','incUnit','ad','kids','teens','union','age','sal','salUnit','statut','csp','patDetail','fin','immo','pro','res','debt','apport','credits','loyers']);
@@ -691,7 +919,7 @@ const foyerTab=D=>D.aF?(D.aF.est?'≈ ':'')+tabValue(D.aF,'plus modestes'):'–'
 function ov(...ks){const r=window.Reel;if(r)ks.forEach(k=>{if(MAPPED.has(k))r.override(MOD,k)})}
 /* Ne jamais écraser le champ en cours de saisie. */
 function typing(k){
-  const a=document.activeElement;if(!a||!root||!root.contains(a))return false;
+  const a=document.activeElement;if(!a||!dedans(a))return false;
   if(a.dataset&&a.dataset.num===k)return true;
   if(k==='patDetail')return a.dataset&&a.dataset.num==='own';
   if(k==='incUnit')return a.id==='inc-unit';if(k==='salUnit')return a.id==='sal-unit';
@@ -729,44 +957,51 @@ function applyReal(){
 }
 function syncPills(){
   const Reel=window.Reel,on=Reel&&snapS&&snapS.ready;
-  root.querySelectorAll('.src-slot').forEach(s=>{const k=s.dataset.key;s.innerHTML=on?Reel.tag(Reel.kind(MOD,k,!!hasReal[k]),MOD,k):''});
+  all('.src-slot').forEach(s=>{const k=s.dataset.key;s.innerHTML=on?Reel.tag(Reel.kind(MOD,k,!!hasReal[k]),MOD,k):''});
 }
 function profileBox(){
   const b=$('toise-fp');if(!b||!snapS)return;
   b.hidden=!(snapS.dbOk!==false&&snapS.profilLoaded&&!snapS.profil);
 }
-/* Décalage de la barre d'onglets de l'App (collante) pour les défilements vers les sous-onglets. */
-function barOffset(){const a=root.parentElement&&root.parentElement.querySelector('.app-tabs');return a?a.getBoundingClientRect().height+8:0}
 
 /* ---------- interactions ---------- */
 function mount(r){
-  root=r;
+  root=r;hyp=root.querySelector('#tsHyp');hypHolder=root.querySelector('#tsHypHolder');
   if(HASH[location.hash])state.tab=HASH[location.hash];
-  root.querySelectorAll('[data-seg]').forEach(g=>g.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{const k=g.dataset.seg;state[k]=NUMK.includes(k)?Number(b.dataset.v):b.dataset.v;ov(k);render()})));
+  const u=U();
+  if(u){
+    ong=u.onglets($('tsOnglets'),{label:'Détail de mon rang',onglets:ONGLETS.map(o=>({id:o.id,label:o.label,controle:'toise-p-'+o.id})),actif:state.tab,surChange:id=>{state.tab=id;render()}});
+    $('tsOnglets').querySelectorAll('[data-ui-id]').forEach(b=>{b.id='toise-tab-'+b.getAttribute('data-ui-id')});
+    ctlLmode=u.bascule($('tsLmode'),{label:'Votre question',options:[{id:'cap',label:'Mon budget max'},{id:'price',label:'Un bien précis'}],actif:state.lmode,surChange:id=>{state.lmode=id;render()}});
+    u.brancher(root,{surCarte:(id,el)=>ouvrirCarte(id,el)});
+  }
+  $('tsHypBtn').addEventListener('click',e=>ouvrirHyp(state.tab,e.currentTarget));
+  all('[data-seg]').forEach(g=>g.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{const k=g.dataset.seg;state[k]=NUMK.includes(k)?Number(b.dataset.v):b.dataset.v;ov(k);render()})));
   $('inc-unit').addEventListener('change',e=>{const D=derive(),m=D.h.incM;state.incUnit=e.target.value;state.inc=Math.round(fromNetMonthly(m,state.incUnit,D.hb));ov('inc','incUnit');render()});
   $('sal-unit').addEventListener('change',e=>{const m=salToNet(+state.sal||0,state.salUnit);state.salUnit=e.target.value;state.sal=Math.round(salFromNet(m,state.salUnit));ov('sal','salUnit');render()});
-  root.querySelectorAll('[data-num]').forEach(i=>{
+  all('[data-num]').forEach(i=>{
     i.addEventListener('input',()=>{const v=Number(i.value.replace(/[^\d]/g,''));state[i.dataset.num]=isFinite(v)?v:0;ov(i.dataset.num==='own'?'patDetail':i.dataset.num);render()});
     i.addEventListener('blur',()=>{i.value=nf0.format(Math.round(+state[i.dataset.num]||0))});
     i.addEventListener('focus',()=>{i.value=String(Math.round(+state[i.dataset.num]||0));try{i.select()}catch(e){}});
   });
-  root.querySelectorAll('[data-csp]').forEach(s=>s.addEventListener('change',()=>{state.csp=s.value;ov('csp');render()}));
-  root.querySelectorAll('[data-dec]').forEach(i=>{
+  all('[data-csp]').forEach(s=>s.addEventListener('change',()=>{state.csp=s.value;ov('csp');render()}));
+  all('[data-dec]').forEach(i=>{
     i.addEventListener('input',()=>{const v=parseFloat(i.value.replace(',','.').replace(/[^\d.]/g,''));state[i.dataset.dec]=isFinite(v)&&v>0?Math.min(v,20):0;render()});
     i.addEventListener('blur',()=>{i.value=state[i.dataset.dec]>0?dec(state[i.dataset.dec],2):''});
   });
-  root.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>{state.tab=b.dataset.goto;render();window.scrollTo({top:root.querySelector('.tabs').getBoundingClientRect().top+window.scrollY-barOffset(),behavior:'auto'})}));
   $('detail-btn').addEventListener('click',()=>{
     if(!state.patDetail){const sum=['immo','fin','pro','res'].reduce((s,k)=>s+Math.max(0,+state[k]||0),0);if(Math.abs(sum-state.own)>1){state.immo=state.own;state.fin=0;state.pro=0;state.res=0}}
     else state.own=['immo','fin','pro','res'].reduce((s,k)=>s+Math.max(0,+state[k]||0),0);
     state.patDetail=!state.patDetail;ov('patDetail');render()});
-  $('sal-hint-b').addEventListener('click',()=>{const D=derive();state.inc=Math.round(fromNetMonthly(D.sal,state.incUnit,D.hb));ov('inc');state.tab='rev';render()});
-  root.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{state.tab=b.dataset.tab;render();const y=root.querySelector('.tabs').getBoundingClientRect().top+window.scrollY-barOffset();if(window.scrollY>y)window.scrollTo({top:y,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})}));
-  root.querySelector('.tabs').addEventListener('keydown',e=>{const o=['rev','sal','pat','loan'];if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft')return;const i=o.indexOf(state.tab);state.tab=o[(i+(e.key==='ArrowRight'?1:3))%4];render();$('toise-tab-'+state.tab).focus()});
-  root.querySelectorAll('details.more').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)render()}));
+  $('sal-hint-b').addEventListener('click',()=>{const D=derive();state.inc=Math.round(fromNetMonthly(D.sal,state.incUnit,D.hb));ov('inc');state.tab='rev';render();ouvrirSection('rev',true)});
+  all('details.more').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)render()}));
   $('toise-reset').addEventListener('click',e=>{const b=e.currentTarget;if(b.dataset.armed){const tab=state.tab;if(window.Reel)Reel.clearAll(MOD);Object.assign(state,JSON.parse(JSON.stringify(DEFAULTS)),{tab});applyReal();delete b.dataset.armed;b.textContent='Saisies réinitialisées';setTimeout(()=>{b.textContent='Réinitialiser mes saisies'},2500);render()}else{b.dataset.armed='1';b.textContent='Confirmer : tout effacer ?';setTimeout(()=>{if(b.dataset.armed){delete b.dataset.armed;b.textContent='Réinitialiser mes saisies'}},4000)}});
-  /* Pastille « scénario ↺ » : revient à la valeur réelle. */
-  root.addEventListener('click',e=>{const b=e.target.closest('[data-reel-reset]');if(!b||!root.contains(b)||!window.Reel)return;e.preventDefault();
+  /* Dans les hypothèses : « Modifier dans « Mon foyer » » ouvre la section du foyer ; la pastille « scénario ↺ » revient
+     à la valeur réelle. Écouteurs posés sur #tsHyp, qui passe dans le panneau. */
+  hyp.addEventListener('click',e=>{
+    const t=e.target&&e.target.closest?e.target:null;if(!t)return;
+    const o=t.closest('[data-ts-ouvrir]');if(o&&hyp.contains(o)){ouvrirSection(o.getAttribute('data-ts-ouvrir'),true);return}
+    const b=t.closest('[data-reel-reset]');if(!b||!hyp.contains(b)||!window.Reel)return;e.preventDefault();
     const k=b.dataset.reelReset.split(':').pop();Reel.clear(MOD,k);if(UNIT_OF[k])Reel.clear(MOD,UNIT_OF[k]);applyReal();render()});
   $('amort').addEventListener('pointermove',ev=>{
     if(!amortCtx)return;const{svg,hl,rows,Lm,pw,W,o,L}=amortCtx,b=svg.getBoundingClientRect(),vx=(ev.clientX-b.left)*W/b.width,y=Math.round((vx-Lm)/pw*o.years),tip=$('tip2');
@@ -795,9 +1030,13 @@ function mount(r){
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(!root.hidden)render()});
 }
 
+const PURE={plafondHcsf,position,verdict,cartes,resumeHypotheses,panneauHtml,questionPage,questionCarte,derive,foyerTab,tabValue,hhName,_etat:state,DEFAULTS};
+if(typeof module==="object"&&module.exports){module.exports=PURE;}
+if(typeof document==="undefined")return;
+
 const api={
   mount,
-  update(S,visible){snapS=S;applyReal();profileBox();headlineCache=null;if(visible)render();else dirty=true},
+  update(S,visible){snapS=S;plafond=plafondHcsf(S&&S.savoir&&S.savoir.reperes,window.Reperes);applyReal();profileBox();headlineCache=null;if(visible)render();else dirty=true},
   show(){render()},
   headline(){if(headlineCache==null){try{headlineCache=foyerTab(derive())}catch(e){return '–'}}return headlineCache},
 };
