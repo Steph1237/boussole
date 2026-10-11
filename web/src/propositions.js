@@ -2,7 +2,12 @@
    S.propositions = [{ id, lot, cible, operation: creer|modifier|supprimer, ref, avant, apres, source, justification,
    statut: en_attente|acceptee|refusee, creeLe, decideLe }]. Rien n'est appliqué sans validation :
    Store.propositions.appliquer(ids, { [id]: apresModifie }) et Store.propositions.refuser(ids).
-   Les fonctions de description (decrire, changements, sujet) sont pures et exportées pour les tests. */
+   Les fonctions de description (decrire, changements, sujet) sont pures et exportées pour les tests.
+   Réglages (migration 0019) : cible config, apres { cushion?, recurring? } (matelas de précaution, versements programmés en liste
+   complète), et clé classes du profil ({ <poche>: <classe> | null }) ; décrits en phrases (« Matelas de précaution : 6 mois de
+   dépenses… », « Versement programmé de 200 € le 5 du mois sur PEA · ETF Monde », « Classe de la poche Asie : actions
+   émergentes ») et corrigeables avant validation comme les autres cibles (cible du matelas, montant et jour de chaque versement
+   ajouté ou modifié, classe). */
 (function () {
   "use strict";
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
@@ -21,8 +26,9 @@
     credit: { label: "Crédits", nouveau: "Nouveau crédit", suppr: "Supprimer le crédit", entite: true },
     objectif: { label: "Objectifs", nouveau: "Nouvel objectif", suppr: "Supprimer l'objectif", entite: true },
     risque: { label: "Profil de risque", nouveau: "Profil de risque", suppr: "Retirer" },
+    config: { label: "Réglages", nouveau: "Réglages", suppr: "Retirer" },
   };
-  const ORDRE_CIBLES = ["profil", "protection", "budget", "position", "bien", "credit", "objectif", "risque"];
+  const ORDRE_CIBLES = ["profil", "protection", "budget", "position", "bien", "credit", "objectif", "risque", "config"];
   const NOUV_BUDGET = { depense: "Nouvelle dépense", revenu: "Nouveau revenu", epargne: "Nouvelle épargne" };
 
   /* ---------- champs connus : libellé, genre (f), nature (k) et options ---------- */
@@ -32,7 +38,18 @@
     owner: [["p1", "personne 1"], ["p2", "personne 2"], ["commun", "commun"]],
     statut: [["cadre", "cadre"], ["non-cadre", "non-cadre"]],
     usage: [["rp", "résidence principale"], ["locatif", "locatif"], ["secondaire", "résidence secondaire"]],
+    /* Classes d'actifs d'une poche (liste fermée de la migration 0019, CLASSES de web/src/marche.js). */
+    classe: [["actions", "actions (monde développé)"], ["small_caps", "actions de petites entreprises"], ["emergents", "actions émergentes"],
+      ["levier", "produits à effet de levier"], ["obligations", "obligations"], ["immobilier", "immobilier"], ["monetaire", "monétaire et livrets"],
+      ["fonds_euros", "fonds euros"], ["or", "or"], ["crypto", "cryptoactifs"], ["autres", "autres (non classé)"]],
+    mode: [["amount", "en montant"], ["months", "en mois de dépenses"]],
   };
+  /* Réglages (cible config) : champs de la cible du matelas, et d'un versement programmé. */
+  const F_MATELAS = {
+    mode: { l: "cible exprimée", f: true, k: "enum" }, min: { l: "minimum", k: "eur" }, max: { l: "maximum", k: "eur" },
+    months: { l: "nombre de mois", k: "num" }, depenses: { l: "dépenses mensuelles", f: true, k: "eur" },
+  };
+  const F_VERSEMENT = { amount: { l: "montant", k: "eur" }, day: { l: "jour du mois", k: "num" } };
   const F = {
     qty: { l: "parts", f: true, k: "qty" }, value: { l: "valeur", f: true, k: "eur" }, valeur: { l: "valeur", f: true, k: "eur" },
     price: { l: "cours", k: "eur" }, pru: { l: "prix de revient", k: "eur" }, crd: { l: "reste à rembourser", k: "eur" },
@@ -71,7 +88,7 @@
   const lire = (o, path) => path.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o);
   function poser(o, path, v) {
     const ks = path.split("."); let cur = o;
-    ks.slice(0, -1).forEach(k => { if (!isObj(cur[k])) cur[k] = {}; cur = cur[k]; });
+    ks.slice(0, -1).forEach(k => { if (!isObj(cur[k]) && !Array.isArray(cur[k])) cur[k] = {}; cur = cur[k]; });
     cur[ks[ks.length - 1]] = v;
     return o;
   }
@@ -96,6 +113,7 @@
       const q = questionsDe(ctx).find(x => x.id === last);
       return { l: RISQUE_THEMES[last], f: /^(réaction|baisse|stabilité|épargne|part|tranche|expérience)/.test(RISQUE_THEMES[last]), k: "risque", q, multi: !!(q && q.type === "multi") };
     }
+    if (p.cible === "profil" && ks[0] === "classes" && ks.length > 1) return { l: "classe de la poche " + ks.slice(1).join("."), f: true, k: "classe", opts: OPT.classe, vide: "classe automatique" };
     const base = F[last] || { l: last.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() };
     const c = Object.assign({}, base);
     if (c.k === "enum") c.opts = OPT[last] || [];
@@ -108,7 +126,7 @@
   const frDate = d => { const t = Date.parse(String(d).length === 10 ? d + "T12:00:00" : d); return isFinite(t) ? new Date(t).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : String(d); };
   /* Valeur → texte : euros, parts, %, oui/non, dates, options. */
   function valeurTxt(v, c, suffixe) {
-    if (vide(v)) return c && c.f ? "non renseignée" : "non renseigné";
+    if (vide(v)) return c && c.vide ? c.vide : c && c.f ? "non renseignée" : "non renseigné";
     if (typeof v === "boolean") return v ? "oui" : "non";
     if (c && c.k === "risque" && c.q) {
       const lab = x => { const o = (c.q.options || []).find(o => o.v === x); return o ? o.label : String(x); };
@@ -150,6 +168,7 @@
   /** Champs modifiés (modifier), ou renseignés (creer), avec libellés et valeurs mises en forme. */
   function changements(p, ctx) {
     if (p.operation === "supprimer") return [];
+    if (p.cible === "config") return changementsConfig(p);
     const a = commeObjet(p.apres), b = commeObjet(p.avant);
     const plat = aplatir(a, "");
     const e = p.cible === "budget" ? entite(p, ctx) : null;
@@ -160,13 +179,79 @@
         const c = champ(path, p, ctx);
         const sx = c.k === "eur" && path === "montant" ? suf : "";
         return { path, label: c.l, kind: c.k || (typeof plat[path] === "boolean" ? "bool" : typeof plat[path] === "number" ? "num" : "text"), opts: c.opts || (c.q ? (c.q.options || []).map(o => [o.v, o.label]) : null), multi: !!c.multi,
-          avant: lire(b, path), apres: plat[path], avantTxt: valeurTxt(lire(b, path), c, sx), apresTxt: valeurTxt(plat[path], c, sx) };
+          avant: lire(b, path), apres: plat[path], avantTxt: valeurTxt(lire(b, path), c, sx), apresTxt: valeurTxt(plat[path], c, sx), vide: c.vide || null };
       });
+  }
+
+  /* ---------- réglages (cible config) : matelas de précaution et versements programmés ---------- */
+  function ch_(path, base, avant, apres) {
+    const c = Object.assign({}, base, base.k === "enum" ? { opts: OPT.mode } : null);
+    return { path, label: c.l, kind: c.k, opts: c.opts || null, multi: false, avant, apres, avantTxt: valeurTxt(avant, c), apresTxt: valeurTxt(apres, c), vide: null };
+  }
+  const parId = l => new Map((Array.isArray(l) ? l : []).filter(isObj).map(r => [String(r.id), r]));
+  /** Champs corrigeables d'une proposition de réglages : cible du matelas (champs qui changent), montant et jour de chaque
+      versement ajouté ou modifié (les versements retirés ne se corrigent pas : refuser la proposition les garde). */
+  function changementsConfig(p) {
+    const a = commeObjet(p.apres), b = commeObjet(p.avant), out = [];
+    if (isObj(a.cushion)) {
+      const bc = isObj(b.cushion) ? b.cushion : {};
+      ["mode", "min", "max", "months", "depenses"].filter(k => k in a.cushion && (p.operation === "creer" || !egal(bc[k], a.cushion[k])))
+        .forEach(k => out.push(ch_("cushion." + k, F_MATELAS[k], bc[k], a.cushion[k])));
+    }
+    if (Array.isArray(a.recurring)) {
+      const av = parId(b.recurring);
+      a.recurring.forEach((r, i) => {
+        if (!isObj(r)) return;
+        const o = av.get(String(r.id));
+        if (o && egal(versementSansSuivi(o), versementSansSuivi(r))) return;
+        ["amount", "day"].forEach(k => {
+          const c = Object.assign({}, F_VERSEMENT[k], { l: F_VERSEMENT[k].l + " de « " + (r.label || "versement") + " »" });
+          out.push(ch_("recurring." + i + "." + k, c, o ? o[k] : null, r[k]));
+        });
+      });
+    }
+    return out;
+  }
+  const versementSansSuivi = r => { const o = Object.assign({}, r); delete o.lastApplied; return o; };
+  const matelasRegle = c => isObj(c) && (c.mode === "months" ? +c.months > 0 && +c.depenses > 0 : +c.min > 0);
+  /** Cible du matelas en clair : « 6 mois de dépenses (2 500 €/mois, soit 15 000 €) », « 15 000 € à 20 000 € », « au moins 10 000 € ». */
+  function texteMatelas(c) {
+    if (!matelasRegle(c)) return "aucune cible";
+    const e = v => nf.format(Math.round(+v || 0)) + " €";
+    if (c.mode === "months") return nf.format(+c.months) + " mois de dépenses (" + e(c.depenses) + "/mois, soit " + e(+c.months * +c.depenses) + ")";
+    return c.max != null && c.max !== "" && +c.max > 0 ? e(c.min) + " à " + e(c.max) : "au moins " + e(c.min);
+  }
+  function ligneDe(id, ctx) {
+    const x = ((ctx && ctx.positions) || []).find(q => String(q.id) === String(id));
+    return x ? [x.envelope, x.name || x.nom].filter(Boolean).join(" · ") || "une ligne sans nom" : "une ligne introuvable";
+  }
+  const versementTxt = (r, ctx) => nf.format(+r.amount || 0) + " € le " + (+r.day === 1 ? "1er" : r.day) + " du mois sur " + ligneDe(r.positionId, ctx);
+  /** Versements programmés : ajouts, modifications et retraits, comparés par identifiant. */
+  function decrireVersements(av, ap, ctx) {
+    const avant = parId(av), apres = Array.isArray(ap) ? ap.filter(isObj) : [], ids = new Set(apres.map(r => String(r.id)));
+    const parts = [];
+    apres.forEach(r => {
+      const o = avant.get(String(r.id));
+      if (!o) parts.push("Versement programmé de " + versementTxt(r, ctx));
+      else if (!egal(versementSansSuivi(o), versementSansSuivi(r))) {
+        const x = versementTxt(o, ctx), y = versementTxt(r, ctx);
+        parts.push("Versement programmé « " + (r.label || o.label || "sans libellé") + " » : " + (x === y ? "libellé « " + (o.label || "") + " » → « " + (r.label || "") + " »" : x + " → " + y));
+      }
+    });
+    avant.forEach((o, id) => { if (!ids.has(id)) parts.push("Fin du versement programmé de " + versementTxt(o, ctx)); });
+    return parts.length ? parts.join(" ; ") : "Versements programmés : aucun changement";
+  }
+  function decrireConfig(p, ctx) {
+    const a = commeObjet(p.apres), b = commeObjet(p.avant), parts = [];
+    if ("cushion" in a) parts.push("Matelas de précaution : " + (matelasRegle(b.cushion) && !egal(b.cushion, a.cushion) ? texteMatelas(b.cushion) + " → " : "") + texteMatelas(a.cushion));
+    if ("recurring" in a) parts.push(decrireVersements(b.recurring, a.recurring, ctx));
+    return parts.length ? parts.join(" ; ") : "Réglages : aucun changement";
   }
 
   /** Phrase en français : « PEA · Amundi MSCI World : 120 parts → 135 parts », « Nouvelle dépense : Assurance auto 45 €/mois »… */
   function decrire(p, ctx) {
     const C = CIBLES[p.cible] || { label: cap(String(p.cible || "Donnée")), nouveau: "Nouveau", suppr: "Supprimer" };
+    if (p.cible === "config") return decrireConfig(p, ctx);
     const suj = sujet(p, ctx);
     if (p.operation === "supprimer") return C.suppr + " : " + (suj || C.label);
     const ch = changements(p, ctx);
@@ -182,7 +267,8 @@
     }
     if (!ch.length) return (suj || C.label) + " : aucun changement";
     if (suj) return suj + " : " + ch.map(c => (c.kind === "qty" ? "" : c.label + " ") + c.avantTxt + " → " + c.apresTxt).join(" ; ");
-    return ch.map(c => cap(c.label) + " : " + c.avantTxt + " → " + c.apresTxt).join(" ; ");
+    // classe d'une poche sans correction jusqu'ici : la nouvelle classe seule (« Classe de la poche Asie : actions émergentes »)
+    return ch.map(c => cap(c.label) + " : " + (c.kind === "classe" && vide(c.avant) ? "" : c.avantTxt + " → ") + c.apresTxt).join(" ; ");
   }
 
   /* ---------- saisie d'une valeur modifiée ---------- */
@@ -213,7 +299,7 @@
     return { apres: scalaire ? out.valeur : out };
   }
 
-  const H = { CIBLES, ORDRE_CIBLES, decrire, changements, sujet, valeurTxt, lireSaisie, appliquerSaisies, aplatir };
+  const H = { CIBLES, ORDRE_CIBLES, decrire, changements, sujet, valeurTxt, lireSaisie, appliquerSaisies, aplatir, texteMatelas };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -227,6 +313,7 @@
     credit: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
     objectif: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>',
     risque: '<path d="M4 17a8 8 0 0 1 16 0M12 17l4.5-5"/>',
+    config: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
     source: '<path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/>',
   };
   const svg = k => '<svg class="pp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + (ICONS[k] || ICONS.profil) + "</svg>";
@@ -252,7 +339,7 @@
   const selection = () => enAttente().filter(p => sel.get(p.id) !== false).map(p => p.id);
 
   /* Plusieurs champs changés (ou renseignés hors entité : protection, risque, profil) : liste champ par champ. */
-  const enListe = (p, ch) => ch.length > 1 && (p.operation === "modifier" || !(CIBLES[p.cible] && CIBLES[p.cible].entite));
+  const enListe = (p, ch) => p.cible !== "config" && ch.length > 1 && (p.operation === "modifier" || !(CIBLES[p.cible] && CIBLES[p.cible].entite));
   function rowHtml(p) {
     const c = ctx(), ch = changements(p, c), ed = edition.has(p.id), mod = saisies[p.id] && Object.keys(saisies[p.id]).length;
     const vue = mod ? Object.assign({}, p, { apres: appliquerSaisies(p, saisies[p.id], c).apres ?? p.apres }) : p;
@@ -266,7 +353,7 @@
       if (x.kind === "bool") input = "<select" + att + ">" + [["", "non renseigné"], ["oui", "oui"], ["non", "non"]].map(([o, t]) => '<option value="' + o + '"' + (o === v ? " selected" : "") + ">" + t + "</option>").join("") + "</select>";
       else if (x.opts && x.opts.length) {
         const opts = x.opts.slice(); if (!x.multi && v !== "" && !opts.some(o => o[0] === v)) opts.unshift([v, v]);
-        input = "<select" + att + (x.multi ? " multiple size=\"" + Math.min(6, opts.length) + "\"" : "") + ">" + (x.multi ? "" : '<option value="">non renseigné</option>') +
+        input = "<select" + att + (x.multi ? " multiple size=\"" + Math.min(6, opts.length) + "\"" : "") + ">" + (x.multi ? "" : '<option value="">' + esc(x.vide || "non renseigné") + "</option>") +
           opts.map(([o, t]) => '<option value="' + esc(o) + '"' + ((x.multi ? v.includes(o) : o === v) ? " selected" : "") + ">" + esc(t) + "</option>").join("") + "</select>";
       } else if (x.kind === "date") input = '<input type="date"' + att + ' value="' + esc(String(v).slice(0, 10)) + '">';
       else if (["eur", "qty", "pct", "num"].includes(x.kind) || typeof x.apres === "number") input = '<input type="text" inputmode="decimal"' + att + ' value="' + esc(v) + '">';

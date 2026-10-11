@@ -25,7 +25,9 @@ const srcJournal = existsSync(path("supabase/functions/mcp/journal.ts")) ? readF
 /* Saisie par l'agent : formulaires dynamiques (formulaire.ts, page formulaire-ui.ts, catalogue généré catalogue.gen.ts). */
 const srcFormulaire = readFileSync(path("supabase/functions/mcp/formulaire.ts"), "utf8");
 const srcFormulaireUi = readFileSync(path("supabase/functions/mcp/formulaire-ui.ts"), "utf8");
-const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire].join("\n");
+/* Réglages par propositions (matelas, versements programmés, classe d'une poche) : reglages.ts, enregistré par index.ts. */
+const srcReglages = readFileSync(path("supabase/functions/mcp/reglages.ts"), "utf8");
+const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
@@ -39,10 +41,12 @@ const TOOLS = [
   "demarrer_session", "consulter_savoir", "reperes", "memoriser", "se_souvenir", "oublier",
   "journaliser", "lire_journal", "completer_journal", "cloturer_session",
   "formulaire", "soumettre_formulaire",
+  "regler_matelas", "regler_versements", "corriger_classe",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
-  "update_budget", "upsert_objectifs", "delete_objectif", "set_risk_answers", "set_protection"];
+  "update_budget", "upsert_objectifs", "delete_objectif", "set_risk_answers", "set_protection",
+  "regler_matelas", "regler_versements", "corriger_classe"];
 const PROMPTS = ["bilan_complet", "profil_de_risque", "budget", "placements", "revue_mensuelle"];
 /** Section du code d'un outil (de son registerTool au suivant). delete_bien / delete_credit partagent une boucle. */
 function outil(nom) {
@@ -1001,6 +1005,123 @@ test("CK2 : journalDeSession — à relire, décisions en cours, revues dues ; t
   s = await Jw.journalDeSession(db, (t, x) => { if (x.error) throw new Error(x.error.message); return x.data; }, TODAY);
   assert.deepEqual(J(s), { journal: { a_relire: 0, en_cours: [], revues_dues: [] }, journal_consentement: "demander" });
   assert.ok(avert.length);
+});
+
+/* ---------- Réglages par propositions (reglages.ts) : matelas, versements programmés, classe d'une poche ---------- */
+test("réglages : outils enregistrés par index.ts avec DEPOT et deposer ; textes corrigés (plus « se règlent dans Boussole »)", () => {
+  assert.doesNotMatch(srcAll, /se règlent dans Boussole/, "texte périmé");
+  assert.match(code, /registerReglages\(server, \{ db, wrap, must, UserError, RO, RW, DEPOT, deposer,/);
+  assert.match(code, /depensesMensuelles: async \(\) => \{ const t = budgetTotaux\(/);
+  assert.match(code, /const unique = \(c: string\) => \["profil", "risque", "protection", "config"\]\.includes\(c\);/, "une seule proposition de réglages en attente signalée");
+  const instr = src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE"));
+  for (const k of ["regler_matelas", "regler_versements", "corriger_classe", "mode remplacer", "après l'accord de l'utilisateur dans la conversation"]) assert.ok(instr.includes(k), "instructions : " + k);
+  assert.match(outil("update_config"), /propose-les avec regler_matelas et regler_versements/);
+  for (const nom of ["regler_matelas", "regler_versements", "corriger_classe"]) {
+    const sec = outil(nom);
+    assert.match(sec, /annotations: RW/, nom); assert.match(sec, /\.\.\.DEPOT/, nom); assert.match(sec, /deposer\(items, a/, nom);
+    assert.doesNotMatch(sec, /from\("(config|profiles)"\)\.(insert|update|upsert|delete)/, nom + " : aucune écriture directe");
+  }
+  if (SANS_STRIP) return;
+  // liste fermée des classes : identique à marche.js et à la migration 0019 ; jour du mois borné à 28 des deux côtés
+  const R = chargerModule(srcReglages, { Intl, Map });
+  assert.deepEqual(J(R.CLASSES), Object.keys(Marche.CLASSES));
+  const sql = readFileSync(path("supabase/migrations/0019_propositions_reglages.sql"), "utf8");
+  assert.ok(sql.includes("(" + R.CLASSES.map(c => `'${c}'`).join(", ") + ")"), "migration : même liste de classes");
+  assert.equal(R.JOUR_MAX, 28); assert.match(sql, /v_num2 < 1 or v_num2 > 28/);
+});
+
+/** Base factice des réglages : config, positions et profil d'un petit foyer. */
+const P1 = "aaaaaaaa-0000-4000-8000-000000000001", P2 = "aaaaaaaa-0000-4000-8000-000000000002", P3 = "aaaaaaaa-0000-4000-8000-000000000003";
+const POSITIONS_R = [{ id: P1, name: "ETF Monde", envelope: "PEA", status: "actif", bloc: "Monde" }, { id: P2, name: "Livret A", envelope: "Livrets", status: "actif", bloc: "Épargne" },
+  { id: P3, name: "Ancien CTO", envelope: "CTO", status: "clôturé", bloc: "Asie" }];
+const REC = [{ id: "rec-pea", label: "Versement PEA", positionId: P1, amount: 300, day: 5, start: "2026-01-01", lastApplied: "2026-10", hypothesis: "prime" }];
+function reglagesSrv({ cushion = { mode: "amount", min: 15000, max: 20000 }, recurring = REC, classes = { Protection: "or" }, depenses = 2500 } = {}) {
+  const depots = [];
+  const db = fauxDb(r => r.table === "config" ? { data: { cushion, recurring }, error: null } : r.table === "positions" ? { data: POSITIONS_R, error: null }
+    : r.table === "profiles" ? { data: { classes }, error: null } : { data: null, error: null });
+  let n = 0;
+  const R = chargerModule(srcReglages, { Intl, Map });
+  const T = serveur(R.registerReglages, db, { DEPOT: {}, deposer: async (items, d, extra) => { depots.push({ items: J(items), d, extra: J(extra) }); return { items: J(items), extra: J(extra) }; },
+    depensesMensuelles: async () => depenses, nouvelId: () => "rec-n" + (++n) });
+  return { T, db, depots };
+}
+const SRC = { source: "Dit par l'utilisateur" };
+
+test("réglages : regler_matelas — proposition config { cushion } en mois (dépenses du budget ou fournies) ou en montant ; valeurs contrôlées", { skip: SANS_STRIP }, async () => {
+  let { T, depots } = reglagesSrv();
+  assert.deepEqual(Object.keys(T).sort(), ["corriger_classe", "regler_matelas", "regler_versements"]);
+  let r = await T.regler_matelas.handler({ mode: "mois", mois: 6, ...SRC });
+  assert.deepEqual(r.ok.items, [{ cible: "config", operation: "modifier", avant: { cushion: { mode: "amount", min: 15000, max: 20000 } },
+    apres: { cushion: { mode: "months", months: 6, depenses: 2500 } } }]);
+  assert.equal(depots[0].d.source, "Dit par l'utilisateur", "source transmise au dépôt");
+  assert.equal(r.ok.extra.depenses_du_budget, 2500);
+  assert.match(r.ok.extra.cible_proposee, /^6 mois de dépenses \(2\s500 €\/mois, soit 15\s000 €\)$/);
+  r = await T.regler_matelas.handler({ mode: "mois", mois: 3, depenses: 1800, ...SRC });
+  assert.deepEqual(r.ok.items[0].apres, { cushion: { mode: "months", months: 3, depenses: 1800 } });
+  r = await T.regler_matelas.handler({ mode: "montant", montant: 10000, ...SRC });
+  assert.deepEqual(r.ok.items[0].apres, { cushion: { mode: "amount", min: 10000, max: null } });
+  r = await T.regler_matelas.handler({ mode: "montant", montant: 15000, maximum: 20000, ...SRC });
+  assert.deepEqual(r.ok.items, [], "déjà la cible actuelle : rien à proposer");
+  const n = depots.length;
+  for (const [a, motif] of [[{ mode: "montant", montant: 20000, maximum: 10000 }, /maximum : au moins égal au montant minimum/], [{ mode: "montant" }, /montant : montant minimum/],
+    [{ mode: "mois", mois: 0 }, /mois : nombre de mois/], [{ mode: "mois", mois: 6, montant: 100 }, /seulement en mode montant/], [{ mode: "semaine" }, /mode : montant .* ou mois/]]) {
+    r = await T.regler_matelas.handler({ ...a, ...SRC });
+    assert.match(r.erreur, /^Aucune proposition déposée :/); assert.match(r.erreur, motif, JSON.stringify(a));
+  }
+  assert.equal(depots.length, n, "aucun dépôt après un refus");
+  ({ T, depots } = reglagesSrv({ depenses: 0 }));
+  r = await T.regler_matelas.handler({ mode: "mois", mois: 6, ...SRC });
+  assert.match(r.erreur, /aucune dépense mensuelle dans le budget ; demande à l'utilisateur ses dépenses mensuelles/);
+  assert.equal(depots.length, 0);
+});
+
+test("réglages : regler_versements — liste complète, champs inconnus gardés, lastApplied jamais proposé, validation", { skip: SANS_STRIP }, async () => {
+  const { T, depots } = reglagesSrv();
+  let r = await T.regler_versements.handler({ mode: "remplacer", versements: [
+    { id: "rec-pea", label: "Versement PEA", positionId: P1, amount: 200, day: 5 },
+    { label: "Épargne Livret A", positionId: P2, amount: 100, day: 1, start: "2026-11-01" },
+  ], ...SRC });
+  assert.deepEqual(r.ok.items, [{ cible: "config", operation: "modifier",
+    avant: { recurring: [{ id: "rec-pea", label: "Versement PEA", positionId: P1, amount: 300, day: 5, start: "2026-01-01", hypothesis: "prime" }] },
+    apres: { recurring: [
+      { id: "rec-pea", label: "Versement PEA", positionId: P1, amount: 200, day: 5, start: "2026-01-01", hypothesis: "prime" },
+      { label: "Épargne Livret A", positionId: P2, amount: 100, day: 1, start: "2026-11-01", id: "rec-n1" },
+    ] } }]);
+  assert.deepEqual(r.ok.extra.versements_proposes, ["Versement PEA : 200 € le 5 du mois sur PEA · ETF Monde", "Épargne Livret A : 100 € le 1er du mois sur Livrets · Livret A"]);
+  assert.deepEqual(r.ok.extra.avertissements, []);
+  // liste vide : suppression annoncée en avertissement
+  r = await T.regler_versements.handler({ mode: "remplacer", versements: [], ...SRC });
+  assert.deepEqual(r.ok.items[0].apres, { recurring: [] });
+  assert.deepEqual(r.ok.extra.avertissements, ["Supprimé si l'utilisateur valide : Versement PEA : 300 € le 5 du mois sur PEA · ETF Monde."]);
+  // inchangé (lastApplied ignoré) : rien à proposer
+  r = await T.regler_versements.handler({ mode: "remplacer", versements: [{ id: "rec-pea", label: "Versement PEA", positionId: P1, amount: 300, day: 5, lastApplied: "2025-01" }], ...SRC });
+  assert.deepEqual(r.ok.items, []);
+  const n = depots.length;
+  const v = o => ({ label: "X", positionId: P1, amount: 50, day: 5, ...o });
+  for (const [versements, motif] of [[[v({ day: 29 })], /jour du mois \(day\) entier de 1 à 28/], [[v({ day: 2.5 })], /day/], [[v({ amount: 0 })], /montant \(amount\) strictement positif/],
+    [[v({ positionId: "inconnue" })], /ligne « inconnue » introuvable/], [[v({ positionId: P3 })], /la ligne « Ancien CTO » est clôturée/],
+    [[v({ id: "a" }), v({ id: "a" })], /identifiant « a » en double/], [[v({ start: "2026-02-31" })], /date de début \(start\)/], [[v({ label: "" })], /libellé \(label\)/]]) {
+    r = await T.regler_versements.handler({ mode: "remplacer", versements, ...SRC });
+    assert.match(r.erreur, /^Aucune proposition déposée :/); assert.match(r.erreur, motif, JSON.stringify(versements));
+  }
+  r = await T.regler_versements.handler({ mode: "fusionner", versements: [], ...SRC });
+  assert.match(r.erreur, /mode : remplacer/);
+  assert.equal(depots.length, n, "aucun dépôt après un refus");
+});
+
+test("réglages : corriger_classe — proposition profil { classes }, null retire la correction, classe hors liste refusée", { skip: SANS_STRIP }, async () => {
+  const { T } = reglagesSrv();
+  let r = await T.corriger_classe.handler({ poche: "Asie", classe: "emergents", ...SRC });
+  assert.deepEqual(r.ok.items, [{ cible: "profil", operation: "modifier", avant: { classes: { Asie: null } }, apres: { classes: { Asie: "emergents" } } }]);
+  assert.equal(r.ok.extra.classe_proposee, "actions émergentes"); assert.deepEqual(r.ok.extra.avertissements, []);
+  r = await T.corriger_classe.handler({ poche: "Protection", classe: null, ...SRC });
+  assert.deepEqual(r.ok.items, [{ cible: "profil", operation: "modifier", avant: { classes: { Protection: "or" } }, apres: { classes: { Protection: null } } }]);
+  r = await T.corriger_classe.handler({ poche: "Monde", classe: null, ...SRC });
+  assert.deepEqual(r.ok.items, [], "pas de correction à retirer");
+  r = await T.corriger_classe.handler({ poche: "Inconnue", classe: "or", ...SRC });
+  assert.match(r.ok.extra.avertissements[0], /Aucune ligne dans la poche « Inconnue »/);
+  r = await T.corriger_classe.handler({ poche: "Asie", classe: "actions_emergentes", ...SRC });
+  assert.match(r.erreur, /^classe : actions, small_caps, emergents/);
 });
 
 test("mcp : aucune clé de service", () => {

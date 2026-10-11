@@ -317,7 +317,37 @@ test("démo : propositions sur les autres cibles (profil, crédit, bien, objecti
   assert.equal(ctx.Store.get().propositions.find(p => p.id === "x6").statut, "en_attente");
 });
 
-const CONN_KEYS = ["appels", "clientId", "clientNom", "dernierLe", "premierLe"];
+test("démo : propositions de réglages (0019) — matelas, versements programmés, classe d'une poche ; tout ou rien", async () => {
+  const add = (id, cible, apres) => ({ id, lot: "l3", cible, operation: "modifier", ref: null, avant: null, apres, source: "test", justification: null,
+    statut: "en_attente", creeLe: "2026-10-11T10:00:0" + id.slice(-1) + ".000Z", decideLe: null });
+  const ctx = browser({ prep: D => D.propositions.push(
+    add("r1", "config", { cushion: { mode: "months", months: 6, depenses: 2500 } }),
+    add("r2", "config", { recurring: [
+      { id: "rec-pea", label: "Versement PEA Camille", positionId: "pea-etf-monde", amount: 250, day: 10, lastApplied: "2020-01", hypothesis: null },
+      { id: "rec-new", label: "Livret", positionId: "livret-a", amount: 50, day: 1 } ] }),
+    add("r3", "profil", { classes: { Asie: "emergents" } }),
+    add("r4", "config", { recurring: [{ id: "x", label: "X", positionId: "pea-etf-monde", amount: 10, day: 31 }] }),
+    add("r5", "config", { rules: [] })) });
+  const S0 = await whenReady(ctx);
+  const P = ctx.Store.propositions;
+  // tout ou rien : un versement invalide annule le matelas et la classe
+  await assert.rejects(P.appliquer(["r1", "r3", "r4"]), e => e.code === "invalid_argument" && /Proposition non appliquée \(réglages, modifier\) : versement « X » : jour \(day\) invalide/.test(e.message));
+  let S = ctx.Store.get();
+  assert.deepEqual(J(S.config.cushion), J(S0.config.cushion)); assert.deepEqual(J(S.classes), {});
+  await assert.rejects(P.appliquer(["r5"]), e => /réglage « rules » non modifiable/.test(e.message));
+  // validation : matelas corrigé avant validation, versements, classe
+  assert.deepEqual(J(await P.appliquer(["r1", "r2", "r3"], { r1: { cushion: { mode: "months", months: 4, depenses: 2500 } } })), { appliquees: 3 });
+  S = ctx.Store.get();
+  assert.deepEqual(J(S.config.cushion), { mode: "months", months: 4, depenses: 2500 });
+  const prev = S0.config.recurring.find(r => r.id === "rec-pea");
+  assert.deepEqual(J(S.config.recurring), [
+    { id: "rec-pea", label: "Versement PEA Camille", positionId: "pea-etf-monde", amount: 250, day: 10, hypothesis: null, lastApplied: prev.lastApplied },
+    { id: "rec-new", label: "Livret", positionId: "livret-a", amount: 50, day: 1 } ], "lastApplied repris de l'existant, jamais de la proposition");
+  assert.deepEqual(J(S.classes), { Asie: "emergents" });
+  assert.ok(["r1", "r2", "r3"].every(id => S.propositions.find(p => p.id === id).statut === "acceptee"));
+});
+
+const CONN_KEYS =["appels", "clientId", "clientNom", "dernierLe", "premierLe"];
 const CLAUDE_ID = "30351516-1e76-4884-8fb2-ae856799a723";
 
 test("démo : connexions vides, surveillerConnexions(true) simule Claude après 4 s, false annule", async () => {

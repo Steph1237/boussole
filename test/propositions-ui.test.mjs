@@ -115,6 +115,54 @@ test("changements : seulement les champs modifiés ; appliquerSaisies : valeurs 
   assert.deepEqual(H.appliquerSaisies(prof, { "foyer.tmi": "41" }, CTX).apres, { foyer: { tmi: 41 } });
 });
 
+/* ---------- réglages (migration 0019) : matelas, versements programmés, classe d'une poche ---------- */
+const CTX_R = { ...CTX, positions: [{ id: "pea", name: "ETF Monde", envelope: "PEA" }, { id: "liv", name: "Livret A", envelope: "Livrets" }] };
+const MATELAS = { cible: "config", operation: "modifier", avant: { cushion: { mode: "amount", min: 15000, max: 20000 } }, apres: { cushion: { mode: "months", months: 6, depenses: 2500 } } };
+const VERSEMENTS = { cible: "config", operation: "modifier",
+  avant: { recurring: [{ id: "a", label: "Versement PEA", positionId: "pea", amount: 300, day: 5, lastApplied: "2026-10" }, { id: "b", label: "Livret", positionId: "liv", amount: 100, day: 1 }] },
+  apres: { recurring: [{ id: "a", label: "Versement PEA", positionId: "pea", amount: 300, day: 5 }, { id: "c", label: "PEA bis", positionId: "pea", amount: 200, day: 5 }] } };
+
+test("decrire : réglages — matelas de précaution, versements programmés, classe d'une poche", () => {
+  assert.equal(H.CIBLES.config.label, "Réglages"); assert.ok(H.ORDRE_CIBLES.includes("config"));
+  assert.equal(d({ ...MATELAS, avant: { cushion: null } }, CTX_R), "Matelas de précaution : 6 mois de dépenses (2 500 €/mois, soit 15 000 €)");
+  assert.equal(d(MATELAS, CTX_R), "Matelas de précaution : 15 000 € à 20 000 € → 6 mois de dépenses (2 500 €/mois, soit 15 000 €)");
+  assert.equal(d({ cible: "config", operation: "modifier", avant: { cushion: { mode: "amount", min: 0, max: 0 } }, apres: { cushion: { mode: "amount", min: 10000, max: null } } }, CTX_R),
+    "Matelas de précaution : au moins 10 000 €", "matelas à 0 : pas d'avant affiché");
+  assert.equal(d({ cible: "config", operation: "modifier", avant: { recurring: [] }, apres: { recurring: [{ id: "n", label: "PEA", positionId: "pea", amount: 200, day: 5 }] } }, CTX_R),
+    "Versement programmé de 200 € le 5 du mois sur PEA · ETF Monde");
+  assert.equal(d(VERSEMENTS, CTX_R), "Versement programmé de 200 € le 5 du mois sur PEA · ETF Monde ; Fin du versement programmé de 100 € le 1er du mois sur Livrets · Livret A",
+    "versement inchangé (lastApplied ignoré) non cité");
+  assert.equal(d({ ...VERSEMENTS, apres: { recurring: [{ id: "a", label: "Versement PEA", positionId: "pea", amount: 250, day: 10 }, VERSEMENTS.avant.recurring[1]] } }, CTX_R),
+    "Versement programmé « Versement PEA » : 300 € le 5 du mois sur PEA · ETF Monde → 250 € le 10 du mois sur PEA · ETF Monde");
+  assert.equal(d({ cible: "profil", operation: "modifier", avant: { classes: { Asie: null } }, apres: { classes: { Asie: "emergents" } } }, CTX_R), "Classe de la poche Asie : actions émergentes");
+  assert.equal(d({ cible: "profil", operation: "modifier", avant: { classes: { Protection: "or" } }, apres: { classes: { Protection: "fonds_euros" } } }, CTX_R), "Classe de la poche Protection : or → fonds euros");
+  assert.equal(d({ cible: "profil", operation: "modifier", avant: { classes: { Protection: "or" } }, apres: { classes: { Protection: null } } }, CTX_R), "Classe de la poche Protection : or → classe automatique");
+});
+
+test("réglages : corrigeables avant validation (cible du matelas, montant et jour d'un versement, classe)", () => {
+  assert.deepEqual(H.changements(MATELAS, CTX_R).map(c => [c.path, c.kind]), [["cushion.mode", "enum"], ["cushion.months", "num"], ["cushion.depenses", "eur"]]);
+  assert.deepEqual(H.changements(MATELAS, CTX_R)[0].opts.map(o => o[0]), ["amount", "months"]);
+  assert.deepEqual(H.appliquerSaisies(MATELAS, { "cushion.months": "3", "cushion.depenses": "2 800" }, CTX_R).apres, { cushion: { mode: "months", months: 3, depenses: 2800 } });
+  // versements : seuls l'ajouté (ou le modifié) se corrigent ; la liste reste une liste
+  assert.deepEqual(H.changements(VERSEMENTS, CTX_R).map(c => c.path), ["recurring.1.amount", "recurring.1.day"]);
+  assert.equal(H.changements(VERSEMENTS, CTX_R)[0].label, "montant de « PEA bis »");
+  const v = H.appliquerSaisies(VERSEMENTS, { "recurring.1.amount": "150", "recurring.1.day": "12" }, CTX_R).apres;
+  assert.ok(Array.isArray(v.recurring));
+  assert.deepEqual(v.recurring[1], { id: "c", label: "PEA bis", positionId: "pea", amount: 150, day: 12 });
+  assert.match(H.appliquerSaisies(VERSEMENTS, { "recurring.1.amount": "beaucoup" }, CTX_R).erreur, /n'est pas un nombre \(montant de « PEA bis »\)/);
+  assert.match(d({ ...VERSEMENTS, apres: v }, CTX_R), /^Versement programmé de 150 € le 12 du mois sur PEA · ETF Monde/);
+  // classe : liste fermée, vide = classe automatique
+  const cl = { cible: "profil", operation: "modifier", avant: { classes: { Asie: null } }, apres: { classes: { Asie: "emergents" } } };
+  const [c] = H.changements(cl, CTX_R);
+  assert.equal(c.path, "classes.Asie"); assert.equal(c.vide, "classe automatique");
+  assert.deepEqual(c.opts.map(o => o[0]), ["actions", "small_caps", "emergents", "levier", "obligations", "immobilier", "monetaire", "fonds_euros", "or", "crypto", "autres"]);
+  assert.deepEqual(H.appliquerSaisies(cl, { "classes.Asie": "or" }, CTX_R).apres, { classes: { Asie: "or" } });
+  assert.deepEqual(H.appliquerSaisies(cl, { "classes.Asie": "" }, CTX_R).apres, { classes: { Asie: null } });
+  // l'option vide du sélecteur porte le libellé du champ (« classe automatique »), pas « non renseigné »
+  assert.match(js, /'<option value="">' \+ esc\(x\.vide \|\| "non renseigné"\) \+ "<\/option>"/);
+  assert.match(js, /p\.cible !== "config" && ch\.length > 1/, "réglages : une phrase, pas une liste champ par champ");
+});
+
 test("profil de risque recalculé après validation de réponses proposées par Claude", () => {
   const js = readFileSync("web/src/propositions.js", "utf8");
   assert.match(js, /cible === "risque"/);

@@ -22,14 +22,22 @@
     mouvement: "je veux enregistrer un mouvement sur mes placements (achat, vente, versement, retrait).",
     immobilier: "aide-moi à renseigner mes biens immobiliers et mes crédits.",
     objectifs: "aide-moi à définir ou mettre à jour mes objectifs.",
-    regles: "aide-moi à régler mes règles d'alerte et mon épargne de précaution.",
+    regles: "aide-moi à régler mes règles d'alerte et la cible de mon matelas de précaution.",
+    versements: "aide-moi à régler mes versements programmés (montant, jour du mois, ligne qui les reçoit).",
     revue: "faisons ma revue du mois.",
   };
+  const CONTEXTE_MAX = 120;
+  /** Contexte borné à CONTEXTE_MAX caractères : coupé au dernier espace (jamais en plein mot, sauf mot unique trop long), avec « … ». */
+  function borner(t) {
+    if (t.length <= CONTEXTE_MAX) return t + ".";
+    const coupe = t.slice(0, CONTEXTE_MAX), i = coupe.lastIndexOf(" ");
+    return (i > 0 ? coupe.slice(0, i) : coupe.slice(0, CONTEXTE_MAX - 1)).replace(/[\s,;:.«(–—-]+$/, "") + "…";
+  }
   /** Phrase prête pour la section ; `contexte` (facultatif) précise l'élément concerné, par ex. « la ligne PEA Monde ». */
   function phrase(section, contexte) {
     const objet = SECTIONS[section] || SECTIONS.bilan;
-    const ctx = contexte == null || String(contexte).trim() === "" ? "" : " Concerne : " + String(contexte).trim().slice(0, 120) + ".";
-    return DEBUT + objet + ctx + FIN;
+    const t = contexte == null ? "" : String(contexte).replace(/\s+/g, " ").trim();
+    return DEBUT + objet + (t ? " Concerne : " + borner(t) : "") + FIN;
   }
   return { phrase, SECTIONS };
 });

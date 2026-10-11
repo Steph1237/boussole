@@ -410,13 +410,14 @@
   }
   function versementsHtml(S, today, U, deps) {
     const vs = versements(S, today, deps);
-    const corriger = '<div class="pl-acts pl-suivi-claude">' + lienClaude(U, phraseClaude("placements", "mes versements programmés", deps), vs.length ? "Corriger avec Claude" : "Compléter avec Claude") + "</div>";
-    if (!vs.length) return '<p class="pl-muet">Aucun versement programmé.</p>' + corriger;
+    /* Réglés avec Claude : il dépose une proposition (regler_versements, cible config, migration 0019) validée dans Agent › Propositions. */
+    const corriger = '<div class="pl-acts pl-suivi-claude">' + lienClaude(U, phraseClaude("versements", "", deps), "Régler avec Claude") + "</div>";
+    if (!vs.length) return '<p class="pl-muet">Aucun versement programmé. Règle-les avec Claude : il dépose une proposition que tu valides dans Agent › Propositions.</p>' + corriger;
     const ETAT = { hypothese: ["hypothèse", "info"], prevu: ["prévu", "neutre"], actif: ["actif", "bon"] };
     return U.voirPlus(vs, 5, v => '<li><span class="pl-li-t">' + esc(v.label) + '<span class="pl-li-s">' + esc([v.enveloppe, "le " + v.jour + " du mois",
       v.debut ? "à partir du " + dateFr(v.debut) : "", v.dernier ? "dernier : " + v.dernier : ""].filter(Boolean).join(" · ")) + "</span></span>" +
       '<span class="pl-li-v"><span class="pl-num">' + esc(eur(v.montant)) + "</span> " + chip({ texte: ETAT[v.etat][0], ton: ETAT[v.etat][1] }) + "</span></li>", "Voir plus de versements", "ul", "pl-versements") +
-      '<p class="pl-note">Appliqués chaque mois par l\'agent, sans saisie de ta part.</p>' + corriger;
+      '<p class="pl-note">Appliqués chaque mois par l\'agent, sans saisie de ta part. Pour en ajouter, en changer ou en arrêter, règle-les avec Claude : il dépose une proposition que tu valides dans Agent › Propositions.</p>' + corriger;
   }
   /** Hypothèses à confirmer : chacune se confirme (ou se corrige) avec Claude, qui dépose une proposition. */
   function hypothesesHtml(S, U, deps) {

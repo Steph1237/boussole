@@ -13,7 +13,8 @@
 // aucune table du bilan ; ils déposent des lignes dans `propositions` (avant / après, source obligatoire), que l'utilisateur
 // valide dans l'application (RPC appliquer_propositions, security invoker). Exceptions : annotate_instrument (donnée
 // publique du fonds, RPC annoter_instrument) et update_config limité aux préférences sans montant (cibles en %, règles,
-// ordres, échéances, hypothèses).
+// ordres, échéances, hypothèses). Matelas de précaution, versements programmés et classe d'une poche : reglages.ts
+// (regler_matelas, regler_versements, corriger_classe), par propositions (cible config ou profil.classes, migration 0019).
 //
 // Connexions (onboarding, docs/superpowers/specs/2026-10-10-onboarding-assistant.md) : chaque appel authentifié note le client
 // (claim client_id du jeton OAuth, "session" sinon) par la RPC noter_connexion (security invoker, au plus une écriture toutes
@@ -53,6 +54,7 @@ import { registerSavoir, nouveautes, lireReperes } from "./savoir.ts";
 import { registerMemoire, lireMemoire, memoireDeSession, aSuivreEchus, SENSIBLE } from "./memoire.ts";
 import { registerJournal, journalDeSession } from "./journal.ts";
 import { registerFormulaire } from "./formulaire.ts";
+import { registerReglages } from "./reglages.ts";
 import { CATALOGUE } from "./catalogue.gen.ts";
 
 // Motifs du filtre de contenu sensible (mêmes que public.contenu_sensible), réexportés comme contrat public du connecteur.
@@ -87,14 +89,15 @@ const INSTRUCTIONS = [
   "Point d'entrée d'un nouvel utilisateur : quand il veut commencer ou reprendre son onboarding (« Lance l'onboarding Boussole », « je débute »), appelle d'abord demarrer_onboarding et suis à la lettre la conduite qu'il renvoie (prompt MCP équivalent : onboarding).",
   "Tous les montants sont en euros. Les dates sont au format AAAA-MM-JJ.",
   "p1 et p2 désignent les personnes du foyer dont les prénoms figurent dans le profil (get_profile, champ personnes) ; « foyer » est leur ensemble. Utilise leurs prénoms quand tu parles à l'utilisateur.",
-  "Claude propose, l'utilisateur dispose : les outils d'écriture (update_profile, upsert_biens, upsert_credits, delete_bien, delete_credit, upsert_positions, record_transaction, update_budget, upsert_objectifs, delete_objectif, set_risk_answers, set_protection) n'écrivent rien directement. Ils déposent des propositions (avant / après, source, justification) que l'utilisateur valide, modifie ou refuse dans Boussole › Agent › Propositions. Dis-le à l'utilisateur après chaque dépôt.",
+  "Claude propose, l'utilisateur dispose : les outils d'écriture (update_profile, upsert_biens, upsert_credits, delete_bien, delete_credit, upsert_positions, record_transaction, update_budget, upsert_objectifs, delete_objectif, set_risk_answers, set_protection, regler_matelas, regler_versements, corriger_classe) n'écrivent rien directement. Ils déposent des propositions (avant / après, source, justification) que l'utilisateur valide, modifie ou refuse dans Boussole › Agent › Propositions. Dis-le à l'utilisateur après chaque dépôt.",
   "Chaque dépôt exige source : d'où vient le chiffre (« Relevé PEA du 30/09 collé par l'utilisateur », « Dit par l'utilisateur », « Avis d'imposition 2026 »…). Ajoute une justification d'une phrase si elle aide. Regroupe un entretien dans un seul lot : réutilise l'identifiant lot renvoyé par le premier dépôt.",
   "Entretien : commence par etat_du_bilan (ce qui manque, dans l'ordre, avec le pourquoi) et list_propositions (ce qui attend déjà une validation). Ne repose jamais une question déjà répondue ; en texte, une question à la fois, en français simple, avec son pourquoi en une phrase. Des parcours prêts à l'emploi existent (prompts bilan_complet, profil_de_risque, budget, placements, revue_mensuelle, completer_profil).",
   "Formulaires (formulaire) : dès que tu dois poser plusieurs questions (formulaire, questionnaire, données manquantes), utilise l'outil formulaire plutôt que des questions en texte. Ne réponds jamais à la place de l'utilisateur. Les aides informent, elles ne recommandent pas. Après l'envoi, résume ce qui a été proposé ; pour le profil de risque, résume le profil estimé et signale tout écart avec le risque réel du portefeuille. Les réponses arrivent en propositions (un seul lot, source « Saisi par l'utilisateur dans le formulaire interactif ») ; si le formulaire ne s'affiche pas, pose ses questions en texte et dépose les réponses avec les outils d'écriture.",
   "Fichiers déposés (relevés bancaires, exports de courtier, avis d'imposition, tableaux d'amortissement) : extrais les chiffres et agrège-les (budget : totaux mensuels par catégorie, jamais les lignes brutes ; placements : soldes, positions, opérations sur titres) ; retire tout identifiant (IBAN, numéros de compte ou de carte) ; cite le document et sa date ; récapitule, puis dépose les propositions avec la source « Relevé … du … déposé par l'utilisateur ». Le formulaire sert à confirmer ou compléter ce qui est ambigu. N'invente jamais un chiffre : si une information manque ou est ambiguë, demande-la. Pour un titre coté, l'ISIN et la quantité suffisent : le cours est mis à jour chaque nuit.",
   "Budget mensuel (get_budget, update_budget) : lignes de revenus, dépenses par catégorie et épargne, par mois ou par an. Le salaire et les mensualités de crédit viennent du profil : ne les ajoute pas au budget. update_budget fusionne par défaut (rapprochement par id ou par libellé).",
   "Objectifs datés (list_objectifs, upsert_objectifs, delete_objectif) : apport, matelas, retraite ou projet, avec cible, échéance, montant déjà réuni (saisi ou poches rattachées), rendement attendu et priorité ; list_objectifs calcule l'effort mensuel requis et le statut.",
-  "Réglages (get_config, update_config) : update_config modifie directement les seules préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte, ordres à passer, échéances, hypothèses) ; le matelas de sécurité et les versements programmés se règlent dans Boussole.",
+  "Réglages (get_config, update_config) : update_config modifie directement, après l'accord de l'utilisateur dans la conversation, les seules préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte, ordres à passer, échéances, hypothèses) ; l'utilisateur peut mettre une règle en pause dans Boussole.",
+  "Matelas, versements programmés et classes (regler_matelas, regler_versements, corriger_classe) : ces réglages passent par des propositions, comme le bilan. regler_matelas propose la cible du matelas de précaution, en montant (minimum, maximum facultatif) ou en mois de dépenses. regler_versements propose la liste complète des versements programmés (mode remplacer : lis get_config et renvoie tous les versements à garder avec leur id ; un versement absent est supprimé), appliqués chaque nuit par Boussole sur la ligne visée. corriger_classe propose la classe d'actifs d'une poche quand celle déduite de son nom ne correspond pas à son contenu (null : retour à la classe automatique). Demande toujours la valeur à l'utilisateur et récapitule avant de déposer.",
   "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels. Scores honnêtes : sante.total vaut null sous 3 critères calculés (sante.calcules) et bonnes_pratiques.provisoire est vrai quand moins de la moitié du poids des familles est notée (bonnes_pratiques.couverture) : dis-le plutôt que d'annoncer une note.",
   "Profil de risque (get_risk_profile, set_risk_answers) : questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, profil équivalent du portefeuille réel. Pose les questions avec l'outil formulaire (champs risque.*), ou en texte à défaut, et enregistre les seules réponses choisies par l'utilisateur (set_risk_answers en texte), jamais une réponse déduite ; le profil définitif est calculé par l'application après validation. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
   "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
@@ -1594,7 +1597,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
     const { avertissements: _a, ...reste } = extra;
     if (!items.length) return { message: "Aucun changement : les valeurs fournies sont déjà enregistrées.", propositions: [], avertissements, ...reste };
     const attente = (must("propositions", await db.from("propositions").select("id, cible, operation, ref, apres").eq("statut", "en_attente")) as any[]) ?? [];
-    const unique = (c: string) => ["profil", "risque", "protection"].includes(c);
+    const unique = (c: string) => ["profil", "risque", "protection", "config"].includes(c);
     const nouveaux = items.filter((it) => {
       const doublon = attente.find((p) => p.cible === it.cible && p.operation === it.operation && (p.ref ?? null) === (it.ref ?? null) && same(p.apres, it.apres ?? null));
       if (doublon) { avertissements.push(`Déjà proposé et en attente (${it.cible}${it.ref ? " " + it.ref : ""}) : non redéposé.`); return false; }
@@ -1880,10 +1883,10 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
 
   /* Réglages : écriture directe limitée aux préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte,
      ordres à passer, échéances, hypothèses). Le matelas (montants) et les versements programmés (qui modifient les lignes
-     chaque nuit) ne sont pas modifiables par le connecteur : l'utilisateur les règle dans Boussole. */
+     chaque nuit) passent par des propositions : regler_matelas et regler_versements (reglages.ts). */
   server.registerTool("update_config", {
     title: "Modifier les réglages",
-    description: "Modifie directement des réglages sans montant du bilan, par fusion. targets : seuls les champs fournis changent. rules, todo, milestones, hypotheses : la liste fournie remplace la liste existante (relire get_config et renvoyer la liste complète). Règles possibles : {type:'max_line_pct', pct}, {type:'max_bloc_pct', bloc, pct}, {type:'price_floor', position_id, price}, {type:'envelope_cap', envelope, cap}, {type:'stale_prices', days}, chacune avec actif (booléen, facultatif : false = règle mise en pause par l'utilisateur dans Boussole, absent = active). Quand tu réécris rules, conserve tous les champs reçus de get_config pour chaque règle, dont actif : ne réactive jamais en silence une règle en pause ; pour changer actif, demande d'abord à l'utilisateur. Le matelas de sécurité et les versements programmés se règlent dans Boussole (non modifiables ici). Demande confirmation à l'utilisateur avant.",
+    description: "Modifie directement des réglages sans montant du bilan, par fusion. targets : seuls les champs fournis changent. rules, todo, milestones, hypotheses : la liste fournie remplace la liste existante (relire get_config et renvoyer la liste complète). Règles possibles : {type:'max_line_pct', pct}, {type:'max_bloc_pct', bloc, pct}, {type:'price_floor', position_id, price}, {type:'envelope_cap', envelope, cap}, {type:'stale_prices', days}, chacune avec actif (booléen, facultatif : false = règle mise en pause par l'utilisateur dans Boussole, absent = active). Quand tu réécris rules, conserve tous les champs reçus de get_config pour chaque règle, dont actif : ne réactive jamais en silence une règle en pause ; pour changer actif, demande d'abord à l'utilisateur. Le matelas de sécurité et les versements programmés ne sont pas modifiables ici : propose-les avec regler_matelas et regler_versements. Demande confirmation à l'utilisateur avant.",
     inputSchema: z.strictObject({
       targets: TargetsPatch.optional(),
       rules: z.array(RuleSchema).max(50).optional(),
@@ -2292,6 +2295,10 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
     if (!Object.keys(patch).length) throw new UserError("Rien à proposer : fournis prevoyance et/ou emprunteur.");
     return deposer(await propositionProtection(patch), a);
   }));
+
+  /* ---------- Matelas, versements programmés et classe d'une poche (reglages.ts) : par propositions ---------- */
+  registerReglages(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer,
+    depensesMensuelles: async () => { const t = budgetTotaux((await loadPlan(false)).d, "foyer"); return t.depensesLignes > 0 ? r2(t.depenses) : 0; } });
 
   /* ---------- Formulaires dynamiques (formulaire.ts) : mêmes fonctions de dépôt, un seul lot ---------- */
   registerFormulaire(server, { db, must, UserError, RO, RW, today,

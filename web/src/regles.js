@@ -4,7 +4,9 @@
    (config.cushion), en LECTURE SEULE sauf la bascule actif / inactif (spec 2026-10-11-saisie-par-agent) : c'est la seule écriture
    de la page (config/main ← update({rules}), la règle porte actif: false ou ne le porte plus). Ajouter une règle, changer un seuil,
    en supprimer une ou régler le matelas se fait avec Claude : « Régler avec Claude » (UI.demanderAClaude + ClaudePrompts.phrase,
-   section « regles », avec la règle ou le matelas en contexte). Les alertes qui en découlent s'affichent dans Aujourd'hui.
+   section « regles », avec la règle ou le matelas en contexte). Claude modifie les règles d'alerte après l'accord de l'utilisateur
+   dans la conversation (update_config) ; la cible du matelas passe par une proposition (regler_matelas, cible config, migration
+   0019) validée dans Agent › Propositions. Les alertes qui en découlent s'affichent dans Aujourd'hui.
    Une carte par règle : type, règle en français (Rules.describe), état du moment (Rules.evaluate sur cette seule règle), et une
    bascule actif / inactif (role="switch", aria-label « Règle : <texte> », l'état est porté par aria-checked). La carte ouvre un
    panneau en lecture (état, alertes du moment, « Régler avec Claude »). 5 règles puis « Voir les autres règles » (clé fixe).
@@ -104,14 +106,14 @@ function reglePanneauHtml(res){
   return `<div class="rg-p"><div class="rg-p-tete"><span class="ui-badge ${res.actif?"bon":"neutre"}">${res.actif?"Active":"Inactive"}</span></div>`+
     `<p class="rg-p-texte">${esc(res.texte)}</p>`+
     `<p class="rg-p-etat ${esc(res.ton)}">${esc(res.actif?res.etat:"Inactive : elle ne déclenche aucune alerte. Réactive-la avec la bascule de sa carte.")}</p>`+alertes+
-    `<p class="rg-p-intro">Pour changer son seuil ou la supprimer, règle-la avec Claude : il dépose sa proposition, que tu valides dans Agent › Propositions. Pour la mettre en pause sans la perdre, utilise la bascule de sa carte.</p></div>`;
+    `<p class="rg-p-intro">Pour changer son seuil ou la supprimer, règle-la avec Claude. Claude modifie tes règles d'alerte après ton accord dans la conversation ; tu peux les mettre en pause ici, avec la bascule de leur carte.</p></div>`;
 }
 /** Panneau du matelas (lecture) : cible actuelle, épargne disponible, méthode ; le réglage se fait avec Claude. */
 function matelasPanneauHtml(res,badgeHtml){
   return `<div class="rg-p"><div class="rg-p-tete"><span class="rg-p-val">${esc(res.valeur)}</span>${badgeHtml||""}</div>`+
     `<p class="rg-p-sous">${esc(res.sous)}</p>`+
     `<p class="rg-p-intro">L'épargne disponible est celle de la poche « Épargne » du foyer (livrets, comptes). La cible s'exprime en montant (minimum, et maximum facultatif) ou en mois de dépenses : elle vaut alors le nombre de mois multiplié par tes dépenses mensuelles, sans plafond.</p>`+
-    `<p class="rg-p-intro">Pour la fixer ou la changer, règle-la avec Claude : il te demande ce qu'il faut et dépose sa proposition, que tu valides dans Agent › Propositions.</p></div>`;
+    `<p class="rg-p-intro">Pour la fixer ou la changer, règle-la avec Claude : il dépose une proposition que tu valides dans Agent › Propositions.</p></div>`;
 }
 
 const PURE={estActive,resumeRegle,compteRegles,basculerRegle,epargneDisponible,resumeMatelas,phraseRegles,phraseRegle,phraseMatelas,

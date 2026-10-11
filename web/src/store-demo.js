@@ -16,7 +16,8 @@
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
    propositions = [{ id, lot, cible, operation, ref, avant, apres, source, justification, statut, creeLe, decideLe }] (toutes, les plus
    récentes d'abord) ; Store.propositions.appliquer(ids, modifications) / refuser(ids) les décident en mémoire (même effet que la
-   fonction SQL appliquer_propositions, voir l'en-tête de store-supabase.js).
+   fonction SQL appliquer_propositions, voir l'en-tête de store-supabase.js), réglages compris (0019 : cible config, matelas et
+   versements programmés ; clé classes du profil → S.classes).
    db.doc("profil/main").update({ risque }) ne touche que cette clé ; db.doc("config/main").update({ rules }) que les règles.
    connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] (vide au départ : aucun assistant connecté) ;
    Store.surveillerConnexions(true) simule la connexion de Claude 4 s plus tard (pour montrer le voyant de l'onboarding),
@@ -193,6 +194,63 @@
   }
   const versVueObjectif = v => { const o = Object.assign({}, v); if ("date_cible" in o) { o.dateCible = o.date_cible; delete o.date_cible; } return o; };
   function introuvable(quoi, ref) { throw bad(quoi + " « " + ref + " » introuvable."); }
+  /* Réglages (migration 0019) : mêmes règles et mêmes messages que appliquer_propositions. */
+  const CLASSES = ["actions", "small_caps", "emergents", "levier", "obligations", "immobilier", "monetaire", "fonds_euros", "or", "crypto", "autres"];
+  const num = x => (x === "" || x == null || typeof x === "boolean" ? NaN : +x);
+  function fusionClasses(cl) {
+    if (!objet(cl)) throw bad("classes : objet { poche: classe } attendu.");
+    const out = Object.assign({}, C.classes);
+    Object.keys(cl).forEach(k => {
+      if (!k.trim() || k.length > 60) throw bad("classes : nom de poche invalide (1 à 60 caractères).");
+      if (cl[k] === null) { delete out[k]; return; }
+      if (!CLASSES.includes(cl[k])) throw bad("classe « " + cl[k] + " » inconnue pour la poche « " + k + " » (" + CLASSES.slice(0, -1).join(", ") + " ou autres).");
+      out[k] = cl[k];
+    });
+    return out;
+  }
+  function normMatelas(c) {
+    if (!objet(c)) throw bad("cushion : objet attendu.");
+    const champs = c.mode === "months" ? ["mode", "months", "depenses"] : ["mode", "min", "max"];
+    if (c.mode === "months" || c.mode === "amount") { const k = Object.keys(c).find(x => !champs.includes(x)); if (k) throw bad("cushion : champ « " + k + " » inconnu (" + champs.join(", ") + ")."); }
+    if (c.mode === "months") {
+      const m = num(c.months), d = num(c.depenses);
+      if (!(m > 0 && m <= 120)) throw bad("cushion.months invalide (nombre de mois entre 0 et 120 attendu).");
+      if (!(d > 0)) throw bad("cushion.depenses invalide (dépenses mensuelles positives attendues).");
+      return { mode: "months", months: m, depenses: d };
+    }
+    if (c.mode === "amount") {
+      const min = num(c.min), max = c.max == null ? null : num(c.max);
+      if (!(min >= 0)) throw bad("cushion.min invalide (montant positif attendu).");
+      if (max !== null && !(max >= min)) throw bad("cushion.max invalide (montant au moins égal au minimum, ou null).");
+      return { mode: "amount", min, max };
+    }
+    throw bad("cushion.mode « " + (c.mode ?? "") + " » inconnu (amount ou months).");
+  }
+  function normVersements(liste, existants) {
+    if (!Array.isArray(liste)) throw bad("recurring : liste de versements attendue.");
+    if (liste.length > 50) throw bad("recurring : 50 versements au plus.");
+    const avant = Array.isArray(existants) ? existants : [], vus = [];
+    return liste.map((r, i) => {
+      const n = i + 1;
+      if (!objet(r)) throw bad("versement " + n + " : objet attendu.");
+      const id = String(r.id ?? "").trim();
+      if (!id || id.length > 64) throw bad("versement " + n + " : identifiant (id) manquant ou trop long.");
+      if (vus.includes(id)) throw bad("versement " + n + " : identifiant « " + id + " » en double.");
+      vus.push(id);
+      const label = String(r.label ?? "").trim();
+      if (!label || label.length > 80) throw bad("versement " + n + " : libellé (label) manquant ou trop long (80 caractères au plus).");
+      if (!C.positions.some(x => String(x.id) === String(r.positionId) && x.status !== "clôturé")) throw bad("versement « " + label + " » : ligne « " + (r.positionId ?? "") + " » introuvable ou clôturée.");
+      const amount = num(r.amount), day = num(r.day);
+      if (!(amount > 0)) throw bad("versement « " + label + " » : montant (amount) invalide (nombre strictement positif attendu).");
+      if (!(Number.isInteger(day) && day >= 1 && day <= 28)) throw bad("versement « " + label + " » : jour (day) invalide (entier de 1 à 28).");
+      if (r.start != null && (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.start)) || isNaN(Date.parse(r.start)))) throw bad("versement « " + label + " » : date de début (start) invalide (AAAA-MM-JJ).");
+      const o = Object.assign({}, r, { id, label, amount, day });
+      delete o.lastApplied; // tenu par l'agent nocturne : repris de l'existant, jamais de la proposition
+      const ex = avant.find(x => x && String(x.id) === id);
+      if (ex && typeof ex.lastApplied === "string") o.lastApplied = ex.lastApplied;
+      return o;
+    });
+  }
   function appliquerUne(p, v) {
     const objetAttendu = () => { if (p.operation !== "supprimer" && !objet(v)) throw bad("valeur proposée invalide (objet attendu)."); };
     objetAttendu();
@@ -201,6 +259,7 @@
     switch (p.cible) {
       case "profil": {
         if ("foyer" in v) { if (!objet(v.foyer)) throw bad("foyer : objet attendu."); pr.foyer = sansNull(Object.assign({}, pr.foyer, v.foyer)); }
+        if ("classes" in v) C.classes = fusionClasses(v.classes);
         ["personnes", "autres"].forEach(cle => {
           if (!(cle in v)) return;
           if (!objet(v[cle])) throw bad(cle + " : objet attendu.");
@@ -280,11 +339,22 @@
       case "protection":
         pr.protection = sansNull(Object.assign({}, pr.protection, v));
         break;
+      case "config": {
+        if (p.operation !== "modifier") throw bad("réglages : seule la modification est possible.");
+        const autre = Object.keys(v).find(k => !["cushion", "recurring"].includes(k));
+        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion ou recurring seulement).");
+        if (!("cushion" in v) && !("recurring" in v)) throw bad("réglages : cushion ou recurring attendu.");
+        const cfg = Object.assign({}, C.config || {});
+        if ("cushion" in v) cfg.cushion = normMatelas(v.cushion);
+        if ("recurring" in v) cfg.recurring = normVersements(v.recurring, cfg.recurring);
+        C.config = cfg;
+        break;
+      }
       default:
         throw bad("cible « " + p.cible + " » inconnue.");
     }
   }
-  const LIBELLES_CIBLE = { profil: "profil", budget: "ligne de budget", position: "placement", bien: "bien immobilier", credit: "crédit", objectif: "objectif", risque: "profil de risque", protection: "protection" };
+  const LIBELLES_CIBLE = { profil: "profil", budget: "ligne de budget", position: "placement", bien: "bien immobilier", credit: "crédit", objectif: "objectif", risque: "profil de risque", protection: "protection", config: "réglages" };
   const propositions = {
     async appliquer(ids, modifications = {}) {
       await tick();
@@ -293,7 +363,7 @@
       const liste = (Array.isArray(ids) ? ids : []).map(String);
       const cibles = C.propositions.filter(p => liste.includes(String(p.id)) && p.statut === "en_attente")
         .sort((a, b) => String(a.creeLe).localeCompare(String(b.creeLe)));
-      const sauvegarde = clone({ positions: C.positions, tx: C.tx, profil: C.profil, budget: C.budget, objectifs: C.objectifs, risque: C.risque, propositions: C.propositions });
+      const sauvegarde = clone({ positions: C.positions, tx: C.tx, profil: C.profil, budget: C.budget, objectifs: C.objectifs, risque: C.risque, classes: C.classes, config: C.config, propositions: C.propositions });
       try {
         const now = new Date().toISOString();
         cibles.forEach(p => {

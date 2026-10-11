@@ -20,6 +20,27 @@ test("phrase : section inconnue → bilan ; contexte facultatif, borné", () => 
   assert.ok(P.phrase("placements", "x".repeat(500)).length < 400);
 });
 
+test("phrase : contexte long coupé au dernier espace avec « … », jamais en plein mot (revue M2)", () => {
+  const mots = "Le compte courant commun est compté comme épargne de précaution et il faudra vérifier cela avec les relevés bancaires du mois prochain";
+  const t = P.phrase("placements", "l'hypothèse « " + mots + " » à confirmer");
+  const ctx = t.slice(t.indexOf("Concerne : ") + 11, t.indexOf(" Commence par"));
+  assert.ok(ctx.endsWith("…"), ctx);
+  assert.ok(ctx.length <= 121, "120 caractères au plus, plus « … »");
+  const coupe = ctx.slice(0, -1);
+  assert.ok(("l'hypothèse « " + mots + " » à confirmer").startsWith(coupe + " "), "coupé juste avant un espace : " + coupe);
+  assert.doesNotMatch(coupe, /[\s,;:]$/, "pas d'espace ni de ponctuation avant « … »");
+  // court : inchangé, avec un point final ; espaces multiples ramenés à un
+  assert.match(P.phrase("placements", "  la ligne\n PEA   Monde "), /Concerne : la ligne PEA Monde\. Commence/);
+  // un seul mot trop long : coupé à la limite, avec « … »
+  const long = P.phrase("placements", "x".repeat(300));
+  assert.match(long, /Concerne : x{119}… Commence/);
+});
+
+test("phrase : sections réglages cohérentes avec le connecteur (matelas, versements programmés)", () => {
+  assert.match(P.phrase("regles"), /mes règles d'alerte et la cible de mon matelas de précaution\./);
+  assert.match(P.phrase("versements"), /aide-moi à régler mes versements programmés/);
+});
+
 test("phrase : tutoiement (aucun vous / votre)", () => {
   for (const s of Object.keys(P.SECTIONS)) assert.doesNotMatch(P.phrase(s), /\b(vous|votre|vos)\b/i);
 });
