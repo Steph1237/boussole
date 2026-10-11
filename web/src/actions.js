@@ -81,7 +81,7 @@ const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 const today=()=>new Date().toISOString().slice(0,10);
 const PILL={crit:"urgent",warn:"à traiter",info:"à surveiller",piste:"piste"};
 const FILTRES={tout:()=>true,urgent:i=>i.level==="crit"||i.level==="warn",surveiller:i=>i.level==="info",pistes:i=>i.level==="piste"};
-const VIDE={tout:"Rien à signaler pour le moment : vos règles d'alerte ne relèvent aucun point et chaque bonne pratique notée est au maximum.",
+const VIDE={tout:"Rien à signaler pour le moment : tes règles d'alerte ne relèvent aucun point et chaque bonne pratique notée est au maximum.",
   urgent:"Rien d'urgent : aucune alerte à traiter.",surveiller:"Aucun point à surveiller.",pistes:"Aucune piste : chaque bonne pratique notée est au maximum."};
 
 function calcule(){
@@ -91,7 +91,7 @@ function calcule(){
 const lienHtml=(l,cls)=>l?`<a class="${cls}" href="#${esc(l.route)}" data-goto="${esc(l.route)}">${esc(l.label)}</a>`:"";
 function render(){
   const lr=S.status&&S.status.veille&&S.status.veille.lastReport, t=lr?new Date(lr):null;
-  $("acVeille").textContent=t&&!isNaN(t)?"Veille : dernier rapport le "+t.toLocaleDateString("fr-FR",{day:"2-digit",month:"long"})+" — les signaux et opportunités déposés par votre Claude apparaîtront ici (bientôt).":"Veille : jamais lancée — votre Claude pourra déposer ici des signaux et opportunités (bientôt).";
+  $("acVeille").textContent=t&&!isNaN(t)?"Veille : dernier rapport le "+t.toLocaleDateString("fr-FR",{day:"2-digit",month:"long"})+" — les signaux et opportunités déposés par ton Claude apparaîtront ici (bientôt).":"Veille : jamais lancée — ton Claude pourra déposer ici des signaux et opportunités (bientôt).";
   const n={tout:items.length,urgent:items.filter(FILTRES.urgent).length,surveiller:items.filter(FILTRES.surveiller).length,pistes:items.filter(FILTRES.pistes).length};
   root.querySelectorAll("[data-ac-filtre]").forEach(b=>{const k=b.dataset.acFiltre; b.setAttribute("aria-pressed",String(k===filtre)); b.querySelector(".ac-n").textContent=n[k]?String(n[k]):"";});
   const u=urgents(items);

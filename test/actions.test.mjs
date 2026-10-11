@@ -38,7 +38,7 @@ test("actions : headline = nombre crit + warn en chaîne d'entiers, vide à zér
 test("actions : filtres, bandeau de veille, liens data-goto", () => {
   for (const f of ["tout", "urgent", "surveiller", "pistes"]) assert.match(html, new RegExp(`data-ac-filtre="${f}"`));
   for (const l of ["Tout", "Urgent", "À surveiller", "Pistes"]) assert.ok(html.includes(">" + l + " <"), l);
-  assert.ok(html.includes("Veille : jamais lancée — votre Claude pourra déposer ici des signaux et opportunités (bientôt)."));
+  assert.ok(html.includes("Veille : jamais lancée — ton Claude pourra déposer ici des signaux et opportunités (bientôt)."));
   assert.match(js, /data-goto="\$\{esc\(l\.route\)\}"/);
 });
 

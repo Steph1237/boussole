@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Boussole</title>
-<meta name="description" content="Pilotez votre patrimoine, sans tableur : patrimoine suivi chaque soir, rang parmi les Français, acheter, louer ou placer. Outil gratuit, données privées.">
+<meta name="description" content="Pilote ton patrimoine, sans tableur : patrimoine suivi chaque soir, rang parmi les Français, acheter, louer ou placer. Outil gratuit, données privées.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -84,7 +84,7 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,6.2vw,64px)
 .bars{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;align-items:end;height:72px;margin-top:18px}
 .bars i{display:block;border-radius:3px 3px 0 0;background:var(--q4);min-height:6px}
 .bars i.me{background:var(--me);position:relative}
-.bars i.me::after{content:"vous";position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);font:600 10px/1 var(--f-body);color:var(--me);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.bars i.me::after{content:"toi";position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);font:600 10px/1 var(--f-body);color:var(--me);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
 .rows{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}
 .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;font-size:13px}
 .row .n{display:flex;align-items:center;gap:8px;min-width:0}
@@ -165,15 +165,15 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
   <main>
     <section class="hero" aria-labelledby="h-hero">
       <div>
-        <h1 id="h-hero">Pilotez votre patrimoine, sans tableur</h1>
-        <p class="lede">Boussole rassemble vos placements, votre immobilier et vos revenus au même endroit. Les cours sont mis à jour chaque soir, vous voyez où vous vous situez parmi les ménages français, et vous comparez acheter, louer ou placer avec vos propres chiffres.</p>
+        <h1 id="h-hero">Pilote ton patrimoine, sans tableur</h1>
+        <p class="lede">Boussole rassemble tes placements, ton immobilier et tes revenus au même endroit. Ton assistant (Claude) remplit ton bilan avec toi, les cours sont mis à jour chaque soir, tu vois où tu te situes parmi les ménages français, et tu compares acheter, louer ou placer avec tes propres chiffres.</p>
         <div id="ctasOut">
           <div class="ctas">
             <button type="button" class="btn" id="anonStart">Commencer sans e-mail</button>
             <a class="btn ghost" href="#connexion" data-auth="signup">Créer un compte</a>
             <a class="btn ghost" href="#connexion" data-auth="signin">Se connecter</a>
           </div>
-          <p class="fine anon-line">Vos données sont enregistrées tout de suite. Ajoutez un e-mail plus tard pour les retrouver sur un autre appareil.</p>
+          <p class="fine anon-line">Tes données sont enregistrées tout de suite. Ajoute un e-mail plus tard pour les retrouver sur un autre appareil.</p>
           <p class="msg err anon-msg" id="anonMsg" role="alert"></p>
         </div>
         <div class="ctas" id="ctasIn" hidden>
@@ -209,39 +209,40 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
         <article class="feat">
           <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M15 8h5v5"/></svg></span>
           <h3>Suivi chaque soir</h3>
-          <p>Les cours de vos ETF et actions sont relevés chaque soir. Boussole garde une photo quotidienne de votre patrimoine et signale les règles que vous avez fixées quand elles sont franchies : une ligne trop lourde, un matelas trop bas.</p>
+          <p>Les cours de tes ETF et actions sont relevés chaque soir. Boussole garde une photo quotidienne de ton patrimoine et signale les règles que tu as fixées quand elles sont franchies : une ligne trop lourde, un matelas trop bas.</p>
         </article>
         <article class="feat">
           <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V12M10 20V8M15 20V11M20 20V4"/></svg></span>
-          <h3>Votre rang parmi les Français</h3>
-          <p>Votre niveau de vie et votre patrimoine placés sur les distributions publiées par l'INSEE, selon la composition de votre foyer. Les sources et les hypothèses sont affichées.</p>
+          <h3>Ton rang parmi les Français</h3>
+          <p>Ton niveau de vie et ton patrimoine placés sur les distributions publiées par l'INSEE, selon la composition de ton foyer. Les sources et les hypothèses sont affichées.</p>
         </article>
         <article class="feat">
           <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span>
           <h3>Acheter, louer ou placer</h3>
-          <p>Le simulateur compare l'achat d'un logement avec la location et le placement de l'apport, année par année, à partir de vos revenus et de votre épargne réels.</p>
+          <p>Le simulateur compare l'achat d'un logement avec la location et le placement de l'apport, année par année, à partir de tes revenus et de ton épargne réels.</p>
         </article>
       </div>
       <div class="assist">
         <div>
-          <h3>Remplissez avec votre assistant</h3>
-          <p>Pas besoin de tout saisir à la main. Votre assistant lit vos relevés et prépare la liste ; vous la vérifiez avant qu'elle soit enregistrée.</p>
+          <h3>Ton assistant remplit, tu valides</h3>
+          <p>Rien à saisir dans Boussole. Ton assistant te pose les questions, lit les relevés que tu lui donnes et prépare des propositions ; Boussole les affiche et tu valides chacune avant qu'elle soit enregistrée.</p>
         </div>
         <ol class="steps">
-          <li><span><b>Copier-coller :</b> Boussole vous donne un message à coller dans Claude ou ChatGPT avec vos relevés. Vous recollez la réponse dans Boussole, qui affiche chaque ligne avant de l'ajouter.</span></li>
-          <li><span><b>Connecteur pour Claude :</b> ajoutez Boussole comme connecteur MCP. Claude peut alors lire votre situation et mettre à jour vos placements quand vous le lui demandez, avec votre autorisation.</span></li>
+          <li><span><b>Connecte Claude :</b> ajoute Boussole comme connecteur dans Claude, une seule fois, avec ton autorisation. ChatGPT arrive bientôt.</span></li>
+          <li><span><b>Réponds et dépose tes fichiers :</b> Claude te pose les questions dans des formulaires interactifs ; tu peux aussi déposer tes relevés bancaires ou l'export de ton courtier dans la conversation.</span></li>
+          <li><span><b>Valide dans Boussole :</b> chaque changement proposé par Claude attend ton accord. Boussole affiche ensuite ton patrimoine, les calculs et les alertes.</span></li>
         </ol>
       </div>
     </section>
 
     <section class="block privacy" aria-labelledby="h-priv">
       <div>
-        <h2 id="h-priv">Vos données restent privées</h2>
-        <p>Boussole est un outil gratuit et non commercial. Vos chiffres servent à faire fonctionner l'outil pour vous, et à rien d'autre.</p>
+        <h2 id="h-priv">Tes données restent privées</h2>
+        <p>Boussole est un outil gratuit et non commercial. Tes chiffres servent à faire fonctionner l'outil pour toi, et à rien d'autre.</p>
       </div>
       <ul class="checks">
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Chaque compte a son espace isolé : la base de données refuse à un compte toute lecture des données d'un autre.</span></li>
-        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Export de toutes vos données et suppression du compte en un clic, depuis la page Mon compte.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Export de toutes tes données et suppression du compte en un clic, depuis la page Mon compte.</span></li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Pas de publicité, pas de revente, pas de traceur publicitaire. Données hébergées dans l'Union européenne.</span></li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>Code source public : <a href="https://github.com/Steph1237/boussole" rel="noopener">github.com/Steph1237/boussole</a>.</span></li>
       </ul>
@@ -263,7 +264,7 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
     <div class="auth-head">
       <h2 id="authTitle">
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5 13.4 13.4 8.5 15.5l2.1-4.9z" fill="var(--me)"/><path d="M10.6 10.6 8.5 15.5l4.9-2.1" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-        Votre espace Boussole
+        Ton espace Boussole
       </h2>
       <button type="button" class="x" id="authClose" aria-label="Fermer">×</button>
     </div>
@@ -290,7 +291,7 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
         <svg class="g" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.3V7.1H2.1a11 11 0 0 0 0 9.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3 .6 4.2 1.6l3.1-3.1A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>
         Continuer avec Google
       </button>
-      <p class="hint" id="authHint">Mot de passe oublié : sans service d'e-mail, la réinitialisation n'est pas encore possible. Écrivez à <a href="mailto:stephane@ceres.agency">stephane@ceres.agency</a>.</p>
+      <p class="hint" id="authHint">Mot de passe oublié : sans service d'e-mail, la réinitialisation n'est pas encore possible. Écris à <a href="mailto:stephane@ceres.agency">stephane@ceres.agency</a>.</p>
     </form>
   </div>
 </dialog>

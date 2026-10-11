@@ -21,13 +21,13 @@
     const weak = A && A.weakPasswordText ? A.weakPasswordText(e) : null;
     if (weak) return weak;
     if (is(["weak_password"], /password should|weak password/i)) return "Mot de passe trop faible : 8 caractères minimum, avec des lettres et des chiffres.";
-    if (is(["reauthentication_needed"], /reauthentic/i)) return "Pour des raisons de sécurité, déconnectez-vous puis reconnectez-vous avant de changer de mot de passe.";
+    if (is(["reauthentication_needed"], /reauthentic/i)) return "Pour des raisons de sécurité, déconnecte-toi puis reconnecte-toi avant de changer de mot de passe.";
     if (is(["email_exists", "user_already_exists"], /already (registered|been registered|exists)/i)) return "Cette adresse est déjà utilisée par un autre compte.";
     if (is(["email_address_invalid"], /invalid.*email|email.*invalid|unable to validate email/i)) return "Adresse e-mail invalide.";
-    if (is(["over_email_send_rate_limit", "over_request_rate_limit", "429"], /rate limit|too many/i)) return "Trop de demandes en peu de temps. Patientez quelques minutes avant de réessayer.";
-    if (is(["session_not_found", "bad_jwt", "401", "403"], /jwt|session/i)) return "Votre session a expiré. Reconnectez-vous.";
-    if (is(["network"], /fetch|network|failed to load/i)) return "Connexion au serveur impossible. Vérifiez votre connexion internet et réessayez.";
-    return "Une erreur est survenue" + (m ? " (" + m + ")" : "") + ". Réessayez.";
+    if (is(["over_email_send_rate_limit", "over_request_rate_limit", "429"], /rate limit|too many/i)) return "Trop de demandes en peu de temps. Patiente quelques minutes avant de réessayer.";
+    if (is(["session_not_found", "bad_jwt", "401", "403"], /jwt|session/i)) return "Ta session a expiré. Reconnecte-toi.";
+    if (is(["network"], /fetch|network|failed to load/i)) return "Connexion au serveur impossible. Vérifie ta connexion internet et réessaie.";
+    return "Une erreur est survenue" + (m ? " (" + m + ")" : "") + ". Réessaie.";
   }
   const say = (id, text, kind) => { const el = $(id); el.textContent = text || ""; el.className = "msg " + (kind || "err"); };
   const run = async pr => { const { data, error } = await pr; if (error) throw error; return data; };
@@ -52,13 +52,13 @@
   $("emailForm").addEventListener("submit", e => {
     e.preventDefault();
     const v = $("newEmail").value.trim();
-    if (!EMAIL.test(v)) { say("emailMsg", "Indiquez une adresse e-mail valide."); return; }
-    if (user && v.toLowerCase() === String(user.email || "").toLowerCase()) { say("emailMsg", "C'est déjà votre adresse actuelle."); return; }
+    if (!EMAIL.test(v)) { say("emailMsg", "Indique une adresse e-mail valide."); return; }
+    if (user && v.toLowerCase() === String(user.email || "").toLowerCase()) { say("emailMsg", "C'est déjà ton adresse actuelle."); return; }
     busy(e.submitter || $("emailForm").querySelector("button"), async () => {
       try {
         if (EMAILS) {
           await run(client.auth.updateUser({ email: v }, { emailRedirectTo: location.href.split("#")[0] }));
-          say("emailMsg", "Un lien de confirmation a été envoyé à " + v + ". Le changement prend effet quand vous l'ouvrez (un second lien peut aussi être envoyé à votre adresse actuelle).", "ok");
+          say("emailMsg", "Un lien de confirmation a été envoyé à " + v + ". Le changement prend effet quand tu l'ouvres (un second lien peut aussi être envoyé à ton adresse actuelle).", "ok");
           $("newEmail").value = "";
           return;
         }
@@ -68,9 +68,9 @@
         if (u && String(u.email || "").toLowerCase() === v.toLowerCase()) {
           user = u; $("curEmail").textContent = u.email; $("pwUser").value = u.email; $("newEmail").value = "";
           $("who").textContent = "Connecté avec " + u.email + ".";
-          say("emailMsg", "Adresse modifiée : connectez-vous désormais avec " + u.email + ".", "ok");
+          say("emailMsg", "Adresse modifiée : connecte-toi désormais avec " + u.email + ".", "ok");
         } else {
-          say("emailMsg", "Le serveur demande de confirmer la nouvelle adresse par e-mail, mais Boussole n'envoie pas d'e-mail pour le moment. Votre adresse actuelle reste valable. Écrivez à stephane@ceres.agency pour la changer.");
+          say("emailMsg", "Le serveur demande de confirmer la nouvelle adresse par e-mail, mais Boussole n'envoie pas d'e-mail pour le moment. Ton adresse actuelle reste valable. Écris à stephane@ceres.agency pour la changer.");
         }
       } catch (err) { say("emailMsg", frError(err)); }
     });
@@ -96,7 +96,7 @@
   $("secForm").addEventListener("submit", e => {
     e.preventDefault();
     const em = $("secEmail").value.trim(), a = $("secPw1").value, b = $("secPw2").value;
-    if (!EMAIL.test(em)) { say("secMsg", "Indiquez une adresse e-mail valide."); $("secEmail").focus(); return; }
+    if (!EMAIL.test(em)) { say("secMsg", "Indique une adresse e-mail valide."); $("secEmail").focus(); return; }
     const weak = A.passwordProblem(a);
     if (weak) { say("secMsg", weak); $("secPw1").focus(); return; }
     if (a !== b) { say("secMsg", "Les deux mots de passe ne sont pas identiques."); $("secPw2").focus(); return; }
@@ -104,7 +104,7 @@
       try {
         await A.secureAccount(em, a);
         $("secPw1").value = ""; $("secPw2").value = "";
-        say("secMsg", "Compte sécurisé. Vous pouvez maintenant vous connecter avec " + em + " sur n'importe quel appareil.", "ok");
+        say("secMsg", "Compte sécurisé. Tu peux maintenant te connecter avec " + em + " sur n'importe quel appareil.", "ok");
         // La page se recharge en compte normal (sections e-mail et mot de passe).
         setTimeout(() => location.replace(location.pathname + location.search), 1800);
       } catch (err) { say("secMsg", frError(err)); }
@@ -123,7 +123,7 @@
     const b = e.target.closest("[data-copy]"); if (!b) return;
     const el = $(b.dataset.copy);
     const ok = await copy(el.value != null ? el.value : el.textContent, el.value != null ? el : null);
-    say("copyMsg", ok ? "Copié dans le presse-papiers." : "Copie impossible : sélectionnez le texte et copiez-le (Ctrl+C ou ⌘C).", ok ? "ok" : "err");
+    say("copyMsg", ok ? "Copié dans le presse-papiers." : "Copie impossible : sélectionne le texte et copie-le (Ctrl+C ou ⌘C).", ok ? "ok" : "err");
   });
 
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -134,7 +134,7 @@
   async function loadGrants() {
     const box = $("grants"), oa = oauth();
     if (!oa || typeof oa.listGrants !== "function") {
-      box.innerHTML = '<p class="muted small">La liste des applications autorisées arrive bientôt. En attendant, vous pouvez retirer un connecteur depuis les réglages de Claude, ou changer de mot de passe pour couper tous les accès.</p>';
+      box.innerHTML = '<p class="muted small">La liste des applications autorisées arrive bientôt. En attendant, tu peux retirer un connecteur depuis les réglages de Claude, ou changer de mot de passe pour couper tous les accès.</p>';
       return;
     }
     try {
@@ -230,18 +230,18 @@
 
   /* ---------- démarrage ---------- */
   (async () => {
-    if (!A || !A.client) { $("who").textContent = "Connexion au serveur impossible. Rechargez la page dans un instant."; return; }
+    if (!A || !A.client) { $("who").textContent = "Connexion au serveur impossible. Recharge la page dans un instant."; return; }
     const s = await A.requireSession({ demoOk: false });
     if (!s) return; // redirection vers index.html#connexion en cours
     client = A.client; user = s.user;
     anon = A.isAnonymous(s);
-    $("who").textContent = anon ? "Compte sans e-mail, lié à ce navigateur." : "Connecté avec " + (user.email || "votre compte") + ".";
+    $("who").textContent = anon ? "Compte sans e-mail, lié à ce navigateur." : "Connecté avec " + (user.email || "ton compte") + ".";
     $("securiser").hidden = !anon;
     $("cardEmail").hidden = anon; $("cardPw").hidden = anon;
     $("mcpAnon").hidden = !anon;
     if (EMAILS) $("emailNote").hidden = true;
     if (anon) {
-      $("delLabel").textContent = "Tapez SUPPRIMER pour confirmer";
+      $("delLabel").textContent = "Tape SUPPRIMER pour confirmer";
       $("delConfirm").type = "text";
     }
     $("curEmail").textContent = user.email || "—";

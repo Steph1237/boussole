@@ -1,14 +1,15 @@
-/* Accueil : assistant de bienvenue en 5 étapes, ouvert par l'app à la première connexion (tant que l'onboarding
-   n'est pas terminé) et à tout moment depuis Agent › Connexion (« Revoir l'accueil »).
-   1. Bienvenue  2. Votre assistant  3. Connecter Claude (voyant en direct)  4. Lancer l'entretien  5. Suivre et valider
+/* Accueil : assistant de bienvenue en 4 étapes, ouvert par l'app à la première connexion (tant que l'onboarding
+   n'est pas terminé) et à tout moment depuis Agent › Connexion (« Revoir l'accueil »). Boussole fonctionne avec un assistant
+   (Claude disponible, ChatGPT bientôt) : aucun formulaire de saisie ici, la seule écriture est « onboarding terminé ».
+   1. Bienvenue (promesses, assistants)  2. Connecter Claude (voyant en direct)  3. Lancer l'entretien  4. Suivre et valider
+   (avec la mention de la revue mensuelle, sans fonctionnalité pour l'instant).
 
-   window.Accueil = { open({ onDone, formulaires, etape }), connexion(el), reporte(), estConnecte(…), lienClaude, ETAPES }
-   - formulaires : { onSave, onSkip } transmis à Onboarding.open (premiers pas en formulaires) pour « Je n'utilise pas d'assistant ».
-   - onDone() après « Terminer » (étape 5, qui marque l'onboarding fait par Store.markOnboarded()).
-   - etape : étape de départ (1 à 5) ; par défaut, celle mémorisée dans localStorage « accueil-etape ».
+   window.Accueil = { open({ onDone, etape }), connexion(el), reporte(), estConnecte(…), lienClaude, ETAPES }
+   - onDone() après « Terminer » (étape 4, qui marque l'onboarding fait par Store.markOnboarded()).
+   - etape : étape de départ (1 à 4) ; par défaut, celle mémorisée dans localStorage « accueil-etape-v2 ».
    - connexion(el) : bloc « Connecter Claude » (onglets claude.ai / Claude Code, valeurs à copier, pièges), sans le voyant,
      réutilisé par la page Agent › Connexion.
-   Voyant : Store.surveillerConnexions(true) tant que l'étape 3 est affichée, false en la quittant ; « Claude est connecté »
+   Voyant : Store.surveillerConnexions(true) tant que l'étape 2 est affichée, false en la quittant ; « Claude est connecté »
    dès que S.connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] contient un client. Sans ce contrat
    (store plus ancien), un bouton « J'ai terminé » le remplace. Échap ou « Reprendre plus tard » ferme sans rien marquer. */
 (function (root, factory) {
@@ -18,11 +19,13 @@
 })(typeof self !== "undefined" ? self : this, function (root) {
   "use strict";
 
-  const ETAPES = ["Bienvenue", "Votre assistant", "Connecter Claude", "Lancer l'entretien", "Suivre et valider"];
+  const ETAPES = ["Bienvenue", "Connecter Claude", "Lancer l'entretien", "Suivre et valider"];
+  const N = ETAPES.length, CONNEXION = 2, ENTRETIEN = 3, SUIVI = 4;
   const PHRASE = "Lance l'onboarding Boussole";
   const PROMPT_CLAUDE = "Utilise le connecteur Boussole : lance l'onboarding avec l'outil demarrer_onboarding.";
   const lienClaude = prompt => "https://claude.ai/new?q=" + encodeURIComponent(prompt);
-  const CLE_ETAPE = "accueil-etape", CLE_REPORT = "accueil-plus-tard";
+  /* « -v2 » : l'ancienne clé numérotait 5 étapes (avec le choix de l'assistant). */
+  const CLE_ETAPE = "accueil-etape-v2", CLE_ANCIENNE = "accueil-etape", CLE_REPORT = "accueil-plus-tard";
 
   /* Connecté : une connexion vue depuis l'ouverture de l'assistant (marge d'une minute pour l'écart d'horloge),
      ou n'importe laquelle si l'utilisateur était déjà connecté avant d'ouvrir l'assistant. Pur, testé. */
@@ -60,7 +63,7 @@
     alerte: '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/>',
     claude: '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/>',
     bulle: '<path d="M4 5h16v11H9l-5 4z"/>',
-    stylo: '<path d="M4 20l4-1 11-11-3-3L5 16zM14 6l3 3"/>',
+    agenda: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   };
   const svg = (k, cls) => '<svg class="' + (cls || "ac-ico") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICON[k] + "</svg>";
 
@@ -89,31 +92,32 @@
     const c = config();
     const tab = (k, t, on) => '<button type="button" role="tab" id="' + id + "-t-" + k + '" aria-controls="' + id + "-p-" + k + '" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-onglet="' + k + '">' + t + "</button>";
     return '<div class="ac-cx">' +
-      '<div class="ac-tabs" role="tablist" aria-label="Où utilisez-vous Claude ?">' + tab("web", "claude.ai / Desktop", true) + tab("code", "Claude Code", false) + "</div>" +
+      '<div class="ac-tabs" role="tablist" aria-label="Où utilises-tu Claude ?">' + tab("web", "claude.ai / Desktop", true) + tab("code", "Claude Code", false) + "</div>" +
       '<div class="ac-panel" role="tabpanel" id="' + id + '-p-web" aria-labelledby="' + id + '-t-web">' +
         '<ol class="ac-steps">' +
-          "<li><b>Ouvrez Claude</b> sur claude.ai ou dans l'application, puis allez dans " +
+          "<li><b>Ouvre Claude</b> sur claude.ai ou dans l'application, puis va dans " +
             '<span class="ac-path"><kbd>Paramètres</kbd> → <kbd>Connecteurs</kbd> → <kbd>Ajouter</kbd> → <kbd>Ajouter un connecteur personnalisé</kbd></span>.</li>' +
-          "<li><b>Remplissez le formulaire</b> avec ces valeurs :" +
+          "<li><b>Remplis le formulaire de Claude</b> avec ces valeurs :" +
             champ(id + "-nom", "Nom", "Boussole") +
             champ(id + "-url", "URL", c.url) + "</li>" +
-          "<li><b>Choisissez</b> :" +
+          /* Libellés entre <kbd> : ceux de l'interface de Claude, cités tels quels (« Utiliser votre propre client OAuth » compris). */
+          "<li><b>Choisis</b> :" +
             '<ul class="ac-choix"><li>Authentification : <kbd>Se connecter maintenant</kbd></li><li>Client OAuth : <kbd>Utiliser votre propre client OAuth</kbd></li></ul>' +
-            champ(id + "-cid", "Identifiant client", c.clientId, "Laissez le secret vide.") + "</li>" +
-          "<li><b>Validez</b> : cliquez <kbd>Ajouter</kbd>, puis <kbd>Se connecter</kbd>.</li>" +
-          "<li><b>Autorisez</b> : la page de Boussole s'ouvre ; vérifiez votre compte et cliquez <kbd>Autoriser</kbd>.</li>" +
+            champ(id + "-cid", "Identifiant client", c.clientId, "Laisse le secret vide.") + "</li>" +
+          "<li><b>Valide</b> : clique <kbd>Ajouter</kbd>, puis <kbd>Se connecter</kbd>.</li>" +
+          "<li><b>Autorise</b> : la page de Boussole s'ouvre ; vérifie ton compte et clique <kbd>Autoriser</kbd>.</li>" +
         "</ol>" +
         '<div class="ac-pieges" role="note"><p class="ac-pieges-t">' + svg("alerte") + "Pièges fréquents</p><ul>" +
-          "<li>Ne mettez pas votre e-mail comme identifiant : collez l'identifiant client ci-dessus.</li>" +
-          "<li>Laissez le champ secret vide.</li>" +
-          "<li>Si Claude affiche « A cessé de fonctionner », cliquez <kbd>Se reconnecter</kbd>.</li>" +
+          "<li>Ne mets pas ton e-mail comme identifiant : colle l'identifiant client ci-dessus.</li>" +
+          "<li>Laisse le champ secret vide.</li>" +
+          "<li>Si Claude affiche « A cessé de fonctionner », clique <kbd>Se reconnecter</kbd>.</li>" +
         "</ul></div>" +
       "</div>" +
       '<div class="ac-panel" role="tabpanel" id="' + id + '-p-code" aria-labelledby="' + id + '-t-code" hidden>' +
         '<ol class="ac-steps">' +
-          "<li><b>Dans un terminal</b>, ajoutez le connecteur :" + champ(id + "-cmd", "Commande", "claude mcp add boussole -t http " + c.url) + "</li>" +
-          "<li><b>Dans Claude Code</b>, tapez <kbd>/mcp</kbd>, choisissez <kbd>boussole</kbd> puis authentifiez-vous et autorisez l'accès." +
-            champ(id + "-cid2", "Identifiant client", c.clientId, "Si Claude Code le demande, collez le même identifiant ; laissez le secret vide.") + "</li>" +
+          "<li><b>Dans un terminal</b>, ajoute le connecteur :" + champ(id + "-cmd", "Commande", "claude mcp add boussole -t http " + c.url) + "</li>" +
+          "<li><b>Dans Claude Code</b>, tape <kbd>/mcp</kbd>, choisis <kbd>boussole</kbd> puis authentifie-toi et autorise l'accès." +
+            champ(id + "-cid2", "Identifiant client", c.clientId, "Si Claude Code le demande, colle le même identifiant ; laisse le secret vide.") + "</li>" +
         "</ol>" +
       "</div>" +
     "</div>";
@@ -130,7 +134,7 @@
       const el = box.querySelector("#" + b.dataset.copie) || (box.ownerDocument || document).getElementById(b.dataset.copie);
       const ok = await copier(el ? el.textContent : "", el);
       flash(b, ok);
-      if (annoncer) annoncer(ok ? "Copié dans le presse-papiers." : "Copie impossible : le texte est sélectionné, copiez-le avec Ctrl+C ou ⌘C.");
+      if (annoncer) annoncer(ok ? "Copié dans le presse-papiers." : "Copie impossible : le texte est sélectionné, copie-le avec Ctrl+C ou ⌘C.");
     });
     box.addEventListener("keydown", e => {
       const t = e.target.closest("[data-onglet]"); if (!t) return;
@@ -167,7 +171,8 @@
     const surveillable = !!(St && typeof St.surveillerConnexions === "function");
     const auDepart = Array.isArray(S0.connexions) && S0.connexions.length > 0;
     const demo = !!(St && St.mode === "demo");
-    let etape = Math.min(5, Math.max(1, parseInt(o.etape || lire(CLE_ETAPE), 10) || 1));
+    ecrire(CLE_ANCIENNE, null);
+    let etape = Math.min(N, Math.max(1, parseInt(o.etape || lire(CLE_ETAPE), 10) || 1));
     let S = S0, connecte = null, manuel = false, anon = false, surveille = false, fini = false;
 
     const dlg = document.createElement("dialog");
@@ -180,42 +185,37 @@
     function e1() {
       const promesse = (ic, t, d) => '<li class="ac-promesse">' + svg(ic, "ac-ico lg") + "<div><b>" + t + "</b><span>" + d + "</span></div></li>";
       const benef = (ic, t) => "<li>" + svg(ic) + "<span>" + t + "</span></li>";
-      return '<p class="ac-lead">Boussole rassemble votre patrimoine en un seul endroit et vous aide à y voir clair.</p>' +
+      const assistant = (ic, nom, badge, d, dispo) => '<li class="ac-assistant' + (dispo ? " reco" : " off") + '">' + svg(ic, "ac-ico xl") +
+        '<span class="ac-card-t"><b>' + nom + '</b><span class="ac-badge' + (dispo ? " ok" : "") + '">' + badge + "</span></span>" +
+        '<span class="ac-card-d">' + d + "</span></li>";
+      return '<p class="ac-lead">Boussole rassemble ton patrimoine en un seul endroit et t\'aide à y voir clair.</p>' +
         '<ul class="ac-benefs">' +
-          benef("bilan", "<b>Un bilan réel</b> : vos comptes, biens, crédits et placements, à jour.") +
-          benef("diag", "<b>Un diagnostic</b> : est-ce que votre situation est saine, et pourquoi.") +
+          benef("bilan", "<b>Un bilan réel</b> : tes comptes, biens, crédits et placements, à jour.") +
+          benef("diag", "<b>Un diagnostic</b> : est-ce que ta situation est saine, et pourquoi.") +
           benef("simu", "<b>Des simulations</b> : acheter, épargner, anticiper, chiffres à l'appui.") +
         "</ul>" +
         '<ul class="ac-promesses">' +
           promesse("livre", "Pédagogique", "Boussole explique ; ce n'est pas du conseil en investissement réglementé.") +
-          promesse("cadenas", "Privé", "Vos données ne sont visibles que par vous.") +
-          promesse("main", "Vous décidez", "Votre assistant propose, vous validez.") +
-          promesse("pause", "Interruptible", "Environ 15 minutes, reprenez quand vous voulez.") +
+          promesse("cadenas", "Privé", "Tes données ne sont visibles que par toi.") +
+          promesse("main", "Tu valides", "Ton assistant propose, tu valides.") +
+          promesse("pause", "Interruptible", "Environ 15 minutes, reprends quand tu veux.") +
         "</ul>" +
-        '<p class="ac-fine">Vos réponses transitent par l\'assistant que vous choisissez, selon ses propres conditions d\'utilisation.</p>';
+        '<h3 class="ac-sous-titre">Boussole fonctionne avec ton assistant</h3>' +
+        '<p class="ac-fine">Il te pose les questions, lit les relevés que tu lui donnes et prépare ton bilan ; Boussole l\'affiche et te fait valider chaque changement.</p>' +
+        '<ul class="ac-assistants" aria-label="Assistants compatibles">' +
+          assistant("claude", "Claude", "Disponible", "Connexion sécurisée en quelques minutes, à l'étape suivante.", true) +
+          assistant("bulle", "ChatGPT", "Bientôt", "La connexion sécurisée pour ChatGPT arrive prochainement.", false) +
+        "</ul>" +
+        '<p class="ac-fine">Tes réponses transitent par ton assistant, selon ses propres conditions d\'utilisation.</p>';
     }
     function e2() {
-      return '<p class="ac-lead">Un assistant conversationnel vous pose les questions une à une et prépare votre bilan. Lequel utilisez-vous ?</p>' +
-        '<div class="ac-cards">' +
-          '<button type="button" class="ac-card reco" data-act="claude">' + svg("claude", "ac-ico xl") +
-            '<span class="ac-card-t"><b>Claude</b><span class="ac-badge ok">Recommandé · disponible</span></span>' +
-            '<span class="ac-card-d">Connexion sécurisée en quelques minutes.</span></button>' +
-          '<button type="button" class="ac-card" disabled aria-disabled="true" data-assistant="chatgpt">' + svg("bulle", "ac-ico xl") +
-            '<span class="ac-card-t"><b>ChatGPT</b><span class="ac-badge">Bientôt</span></span>' +
-            '<span class="ac-card-d">La connexion sécurisée pour ChatGPT arrive prochainement.</span></button>' +
-          '<button type="button" class="ac-card" data-act="sans">' + svg("stylo", "ac-ico xl") +
-            '<span class="ac-card-t"><b>Je n\'utilise pas d\'assistant</b></span>' +
-            '<span class="ac-card-d">Trois écrans de questions à remplir vous-même.</span></button>' +
-        "</div>";
-    }
-    function e3() {
       if (anon) {
-        return '<div class="ac-anon"><h3>Sécurisez d\'abord votre compte</h3>' +
-          "<p>Votre compte n'a pas encore d'e-mail : pour brancher Claude, ajoutez d'abord un e-mail et un mot de passe. Vos données sont conservées.</p>" +
+        return '<div class="ac-anon"><h3>Sécurise d\'abord ton compte</h3>' +
+          "<p>Ton compte n'a pas encore d'e-mail : pour brancher Claude, ajoute d'abord un e-mail et un mot de passe. Tes données sont conservées.</p>" +
           '<a class="ac-btn" href="compte.html#securiser">Sécuriser mon compte</a></div>';
       }
-      return '<p class="ac-lead">Une seule fois. Claude n\'accède qu\'à votre compte, après votre accord ; il ne peut ni exporter vos données ni supprimer votre compte.</p>' +
-        (demo ? '<p class="ac-note">Vous êtes en démo : le connecteur fonctionne avec un vrai compte. ' + (surveillable ? "Ici, la connexion est simulée." : "") + "</p>" : "") +
+      return '<p class="ac-lead">Une seule fois. Claude n\'accède qu\'à ton compte, après ton accord ; il ne peut ni exporter tes données ni supprimer ton compte.</p>' +
+        (demo ? '<p class="ac-note">Tu es en démo : le connecteur fonctionne avec un vrai compte. ' + (surveillable ? "Ici, la connexion est simulée." : "") + "</p>" : "") +
         connexionHtml(id) +
         '<div class="ac-voyant" id="' + id + '-voyant"><div class="ac-voyant-etat" role="status" aria-live="polite"></div><div class="ac-voyant-act"></div></div>';
     }
@@ -232,14 +232,14 @@
         etat = '<p class="ac-etat ok">' + svg("ok", "ac-ico ok") +
           "<span><b>" + (connecte ? "Claude est connecté" : "C'est noté") + "</b>" +
           (connecte ? (h ? '<span class="ac-etat-d">Dernier échange à ' + h + (connecte.clientNom && !/claude/i.test(connecte.clientNom) ? " · " + esc(connecte.clientNom) : "") + "</span>" : "")
-            : '<span class="ac-etat-d">Passez à l\'étape suivante.</span>') + "</span></p>";
+            : '<span class="ac-etat-d">Passe à l\'étape suivante.</span>') + "</span></p>";
       } else if (surveillable && Array.isArray(S.connexions)) {
         etat = '<p class="ac-etat attente"><span class="ac-pulse" aria-hidden="true"></span>' +
           "<span><b>En attente de la connexion de Claude…</b>" +
           '<span class="ac-etat-d">Ce voyant passe au vert dès que Claude se connecte.</span></span></p>';
         action = '<button type="button" class="ac-link" data-act="manuel">Continuer sans attendre</button>';
       } else {
-        etat = '<p class="ac-etat"><span><b>Une fois l\'accès autorisé, revenez ici.</b></span></p>';
+        etat = '<p class="ac-etat"><span><b>Une fois l\'accès autorisé, reviens ici.</b></span></p>';
         action = '<button type="button" class="ac-btn ghost" data-act="manuel">' + svg("ok") + "J'ai terminé</button>";
       }
       /* La zone annoncée (role=status) reste en place ; seul son contenu change. */
@@ -247,26 +247,28 @@
       v.querySelector(".ac-voyant-act").innerHTML = action;
       pied();
     }
-    function e4() {
-      return '<p class="ac-lead">Claude va vous poser les questions une à une, déposer ses propositions dans Boussole à la fin de chaque thème. Vous les validez ensuite ici.</p>' +
+    function e3() {
+      return '<p class="ac-lead">Claude va te poser les questions dans des formulaires interactifs et déposer ses propositions dans Boussole à la fin de chaque thème. Tu les valides ensuite ici.</p>' +
         '<ol class="ac-steps compact">' +
-          "<li>Ouvrez une nouvelle conversation avec Claude.</li>" +
-          "<li>Écrivez ou collez cette phrase :" + champ(id + "-phrase", "Phrase", PHRASE) + "</li>" +
-          "<li>Répondez à votre rythme ; vous pouvez vous arrêter et reprendre plus tard.</li>" +
+          "<li>Ouvre une nouvelle conversation avec Claude.</li>" +
+          "<li>Écris ou colle cette phrase :" + champ(id + "-phrase", "Phrase", PHRASE) + "</li>" +
+          "<li>Réponds à ton rythme ; tu peux aussi déposer tes relevés bancaires ou l'export de ton courtier dans la conversation, t'arrêter et reprendre plus tard.</li>" +
         "</ol>" +
         '<div class="ac-cta"><a class="ac-btn lg" id="' + id + '-ouvrir" href="' + esc(lienClaude(PROMPT_CLAUDE)) + '" target="_blank" rel="noopener" data-act="ouvrir">' +
           svg("ext") + 'Ouvrir Claude<span class="ac-sr"> (nouvel onglet)</span></a>' +
           '<button type="button" class="ac-link" data-act="plus-tard">Je préfère commencer plus tard</button></div>';
     }
-    function e5() {
-      return '<p class="ac-lead">Pendant l\'entretien, votre bilan se remplit ici. Rien n\'est enregistré sans votre accord.</p>' +
+    function e4() {
+      return '<p class="ac-lead">Pendant l\'entretien, ton bilan se remplit ici. Rien n\'est enregistré sans ton accord.</p>' +
         '<div class="ac-suivi">' +
           '<div class="ac-jauge" id="' + id + '-jauge" role="img"></div>' +
           '<div class="ac-suivi-t"><p class="ac-suivi-l" id="' + id + '-jauge-t" aria-live="polite"></p>' +
           '<p class="ac-pending" id="' + id + '-pending" aria-live="polite"></p>' +
           '<button type="button" class="ac-btn ghost" data-act="examiner">Examiner les propositions</button></div>' +
         "</div>" +
-        '<p class="ac-fine">Vous pourrez relancer Claude à tout moment depuis Agent › Connexion.</p>';
+        '<div class="ac-revue">' + svg("agenda", "ac-ico lg") +
+          "<p><b>Revue mensuelle</b><span>Claude te proposera d'activer ta revue mensuelle ; elle s'affichera ici.</span></p></div>" +
+        '<p class="ac-fine">Tu pourras relancer Claude à tout moment depuis Agent › Connexion.</p>';
     }
     function suivi() {
       const j = $("#" + id + "-jauge"); if (!j) return;
@@ -277,10 +279,10 @@
         '<circle cx="40" cy="40" r="' + r + '" class="ac-ring-fg" stroke-dasharray="' + (c * f).toFixed(1) + " " + c.toFixed(1) + '" transform="rotate(-90 40 40)"/></svg>' +
         '<span class="ac-ring-v">' + pct + "<small>%</small></span>";
       j.setAttribute("aria-label", "Bilan complet à " + pct + " %");
-      $("#" + id + "-jauge-t").textContent = pct >= 100 ? "Votre bilan est complet." : "Votre bilan est complet à " + pct + " %.";
+      $("#" + id + "-jauge-t").textContent = pct >= 100 ? "Ton bilan est complet." : "Ton bilan est complet à " + pct + " %.";
       const n = ((S && S.propositions) || []).filter(p => p.statut === "en_attente").length;
       const pe = $("#" + id + "-pending");
-      pe.textContent = n ? n + " proposition" + (n > 1 ? "s" : "") + " de Claude en attente de votre accord" : "Aucune proposition en attente pour le moment.";
+      pe.textContent = n ? n + " proposition" + (n > 1 ? "s" : "") + " de Claude en attente de ton accord" : "Aucune proposition en attente pour le moment.";
       pe.classList.toggle("has", n > 0);
     }
 
@@ -288,7 +290,7 @@
     function pied() {
       const f = $(".ac-foot"); if (!f) return;
       const suiv = $('[data-act="suivant"]');
-      if (suiv) suiv.disabled = etape === 3 && (anon || !(connecte || manuel));
+      if (suiv) suiv.disabled = etape === CONNEXION && (anon || !(connecte || manuel));
     }
     function surveiller(on) {
       if (!surveillable || on === surveille) return;
@@ -297,14 +299,13 @@
     }
     function render(focus) {
       ecrire(CLE_ETAPE, etape);
-      const corps = [e1, e2, e3, e4, e5][etape - 1]();
-      const libSuiv = etape === 1 ? "Commencer" : etape === 5 ? "Terminer" : "Continuer";
-      const montrerSuiv = etape !== 2; // étape 2 : les cartes font avancer
+      const corps = [e1, e2, e3, e4][etape - 1]();
+      const libSuiv = etape === 1 ? "Commencer" : etape === N ? "Terminer" : "Continuer";
       dlg.innerHTML =
         '<div class="ac-box">' +
         '<header class="ac-head">' +
           '<div class="ac-head-l"><p class="ac-kicker">Bienvenue sur Boussole</p>' +
-          '<p class="ac-progress">Étape ' + etape + " sur " + ETAPES.length + "</p></div>" +
+          '<p class="ac-progress">Étape ' + etape + " sur " + N + "</p></div>" +
           '<button type="button" class="ac-later" data-act="fermer">Reprendre plus tard</button>' +
           '<ol class="ac-bar" aria-label="Progression">' + ETAPES.map((t, i) =>
             '<li class="' + (i + 1 < etape ? "fait" : i + 1 === etape ? "on" : "") + '"' + (i + 1 === etape ? ' aria-current="step"' : "") + '><i></i><span>' + t + "</span></li>").join("") + "</ol>" +
@@ -312,15 +313,15 @@
         '<div class="ac-body"><h2 id="' + id + '-h" tabindex="-1">' + (etape === 1 ? "Bienvenue dans Boussole" : ETAPES[etape - 1]) + "</h2>" + corps + "</div>" +
         '<footer class="ac-foot"><span class="ac-msg" role="status" aria-live="polite"></span>' +
           (etape > 1 ? '<button type="button" class="ac-btn ghost" data-act="retour">Retour</button>' : "") +
-          (montrerSuiv ? '<button type="button" class="ac-btn' + (etape === 4 ? " ghost" : "") + '" data-act="suivant">' + libSuiv + "</button>" : "") +
+          '<button type="button" class="ac-btn' + (etape === ENTRETIEN ? " ghost" : "") + '" data-act="suivant">' + libSuiv + "</button>" +
         "</footer></div>";
-      if (etape === 3 && !anon) { lierConnexion($(".ac-cx"), m => { $(".ac-msg").textContent = m; }); voyant(); }
-      if (etape === 5) suivi();
-      surveiller(etape === 3 && !anon);
+      if (etape === CONNEXION && !anon) { lierConnexion($(".ac-cx"), m => { $(".ac-msg").textContent = m; }); voyant(); }
+      if (etape === SUIVI) suivi();
+      surveiller(etape === CONNEXION && !anon);
       pied();
       if (focus) { const h = $("#" + id + "-h"); if (h) h.focus(); }
     }
-    function aller(n) { etape = Math.min(5, Math.max(1, n)); render(true); }
+    function aller(n) { etape = Math.min(N, Math.max(1, n)); render(true); }
 
     /* Fermeture et nettoyage synchrones (l'évènement close peut arriver tard, onglet en arrière-plan). */
     let nettoye = false;
@@ -338,15 +339,6 @@
       fini = true;
       nettoyer();
     }
-    function sansAssistant() {
-      const On = root.Onboarding;
-      ecrire(CLE_ETAPE, null);
-      fini = true; nettoyer();
-      if (On && typeof On.open === "function") {
-        const S1 = St && St.get ? St.get() : {};
-        On.open(Object.assign({ profil: S1.profil }, o.formulaires || {}));
-      }
-    }
     async function terminer() {
       const b = $('[data-act="suivant"]'); if (b) b.disabled = true;
       $(".ac-msg").textContent = "Enregistrement…";
@@ -357,20 +349,18 @@
         if (typeof o.onDone === "function") o.onDone();
       } catch (err) {
         if (b) b.disabled = false;
-        $(".ac-msg").textContent = "Enregistrement impossible : " + ((err && err.message) || err) + ". Réessayez.";
+        $(".ac-msg").textContent = "Enregistrement impossible : " + ((err && err.message) || err) + ". Réessaie.";
       }
     }
 
     dlg.addEventListener("click", e => {
       const b = e.target.closest("[data-act]"); if (!b) return;
       const act = b.dataset.act;
-      if (act === "ouvrir") { setTimeout(() => aller(5), 300); return; } // le lien s'ouvre dans un nouvel onglet
+      if (act === "ouvrir") { setTimeout(() => aller(SUIVI), 300); return; } // le lien s'ouvre dans un nouvel onglet
       e.preventDefault();
-      if (act === "suivant") { if (b.disabled) return; if (etape === 5) terminer(); else aller(etape + 1); }
+      if (act === "suivant") { if (b.disabled) return; if (etape === N) terminer(); else aller(etape + 1); }
       else if (act === "retour") aller(etape - 1);
       else if (act === "fermer" || act === "plus-tard") fermer("plus-tard");
-      else if (act === "claude") aller(3);
-      else if (act === "sans") sansAssistant();
       else if (act === "manuel") { manuel = true; voyant(); const s = $('[data-act="suivant"]'); if (s) s.focus(); }
       else if (act === "examiner") {
         fermer("plus-tard");
@@ -384,12 +374,12 @@
     const inst = {
       maj(snap) {
         S = snap || S;
-        if (etape === 3 && !connecte) {
+        if (etape === CONNEXION && !connecte) {
           const c = estConnecte(S.connexions, ouvertLe, auDepart);
           if (c) connecte = c;
           voyant();
         }
-        if (etape === 5) suivi();
+        if (etape === SUIVI) suivi();
       },
       focus() { const h = $("#" + id + "-h"); if (h) h.focus(); },
       api: { close: () => fermer("plus-tard"), dialog: dlg, etape: () => etape },
@@ -398,12 +388,12 @@
     abonner();
     connecte = estConnecte(S0.connexions, ouvertLe, auDepart);
 
-    /* Compte anonyme (mode Supabase seulement) : l'étape 3 devient « Sécurisez d'abord votre compte ». */
+    /* Compte anonyme (mode Supabase seulement) : l'étape 2 devient « Sécurise d'abord ton compte ». */
     const A = root.Auth;
     if (!demo && A && typeof A.session === "function") {
       A.session().then(s => {
         const a = typeof A.isAnonymous === "function" ? A.isAnonymous(s) : !!(s && s.user && s.user.is_anonymous);
-        if (a !== anon) { anon = a; if (etape === 3 && dlg.open) render(); }
+        if (a !== anon) { anon = a; if (etape === CONNEXION && dlg.open) render(); }
       }, () => {});
     }
 

@@ -31,7 +31,7 @@
     el.className = "msg " + (kind || "err");
     el.hidden = !text;
   }
-  const RELAUNCH = "Relancez la connexion de Boussole depuis votre assistant (Claude ou autre).";
+  const RELAUNCH = "Relance la connexion de Boussole depuis ton assistant (Claude ou autre).";
 
   /* ---------- erreurs Supabase → français ---------- */
   function isNetwork(e) {
@@ -41,29 +41,29 @@
     return !!e && (e.name === "AuthSessionMissingError" || e.code === "session_not_found" || e.code === "bad_jwt" || e.status === 401);
   }
   function explainOAuth(e) {
-    if (isNetwork(e)) return ["Serveur injoignable", "Impossible de joindre Boussole. Vérifiez votre connexion puis réessayez.", true];
-    if (e.code === "feature_disabled") return ["Connecteur pas encore ouvert", "Le serveur d'autorisation de Boussole n'est pas encore activé. Réessayez plus tard.", false];
+    if (isNetwork(e)) return ["Serveur injoignable", "Impossible de joindre Boussole. Vérifie ta connexion puis réessaie.", true];
+    if (e.code === "feature_disabled") return ["Connecteur pas encore ouvert", "Le serveur d'autorisation de Boussole n'est pas encore activé. Réessaie plus tard.", false];
     if (e.status === 404 || e.code === "oauth_authorization_not_found" || /not found|expired|expir/i.test(e.message || ""))
       return ["Demande expirée ou introuvable", "Cette demande d'autorisation n'existe plus (elle expire au bout de quelques minutes ou a déjà été traitée). " + RELAUNCH, false];
     if (e.status === 400 || e.status === 422)
       return ["Demande invalide", "La demande d'autorisation n'est pas valide ou a déjà été utilisée. " + RELAUNCH, false];
     if (e.status === 403)
-      return ["Accès refusé", "Ce compte ne peut pas répondre à cette demande. Changez de compte ou " + RELAUNCH.charAt(0).toLowerCase() + RELAUNCH.slice(1), false];
-    if (e.status === 429) return ["Trop de tentatives", "Patientez une minute puis réessayez.", true];
-    return ["Une erreur est survenue", "Le serveur a répondu : « " + (e.message || "erreur inconnue") + " ». Réessayez ; si le problème continue, " + RELAUNCH.charAt(0).toLowerCase() + RELAUNCH.slice(1), true];
+      return ["Accès refusé", "Ce compte ne peut pas répondre à cette demande. Change de compte ou " + RELAUNCH.charAt(0).toLowerCase() + RELAUNCH.slice(1), false];
+    if (e.status === 429) return ["Trop de tentatives", "Patiente une minute puis réessaie.", true];
+    return ["Une erreur est survenue", "Le serveur a répondu : « " + (e.message || "erreur inconnue") + " ». Réessaie ; si le problème continue, " + RELAUNCH.charAt(0).toLowerCase() + RELAUNCH.slice(1), true];
   }
   function explainSignin(e) {
-    if (isNetwork(e)) return "Impossible de joindre Boussole. Vérifiez votre connexion puis réessayez.";
+    if (isNetwork(e)) return "Impossible de joindre Boussole. Vérifie ta connexion puis réessaie.";
     switch (e.code) {
       case "invalid_credentials": return "E-mail ou mot de passe incorrect.";
       case "email_not_confirmed": return EMAILS
-        ? "Adresse e-mail pas encore confirmée : ouvrez le lien reçu lors de l'inscription."
-        : "Adresse e-mail pas confirmée, et Boussole n'envoie pas d'e-mail pour le moment. Écrivez à stephane@ceres.agency.";
+        ? "Adresse e-mail pas encore confirmée : ouvre le lien reçu lors de l'inscription."
+        : "Adresse e-mail pas confirmée, et Boussole n'envoie pas d'e-mail pour le moment. Écris à stephane@ceres.agency.";
       case "otp_disabled":
       case "signup_disabled":
       case "user_not_found": return "Aucun compte Boussole n'utilise cette adresse.";
       case "over_request_rate_limit":
-      case "over_email_send_rate_limit": return "Trop de tentatives : patientez une minute avant de réessayer.";
+      case "over_email_send_rate_limit": return "Trop de tentatives : patiente une minute avant de réessayer.";
       case "email_address_invalid": return "Adresse e-mail invalide.";
       case "user_banned": return "Ce compte est suspendu.";
     }
@@ -74,10 +74,10 @@
 
   /* ---------- droits demandés ---------- */
   const SCOPES = {
-    email: "connaître votre adresse e-mail",
-    profile: "connaître votre nom de profil",
-    openid: "vous identifier auprès de l'application (OpenID)",
-    phone: "connaître votre numéro de téléphone",
+    email: "connaître ton adresse e-mail",
+    profile: "connaître ton nom de profil",
+    openid: "t'identifier auprès de l'application (OpenID)",
+    phone: "connaître ton numéro de téléphone",
   };
   const TICK = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4.5 10.5 8 14l7.5-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function perm(text) {
@@ -104,7 +104,7 @@
     $("redirectHost").textContent = host(d.redirect_uri);
     const ul = $("perms");
     ul.textContent = "";
-    ul.appendChild(perm("lire et modifier votre profil, vos placements et vos réglages Boussole ;"));
+    ul.appendChild(perm("lire et modifier ton profil, tes placements et tes réglages Boussole ;"));
     String(d.scope || "").split(/\s+/).filter(Boolean).forEach(s => ul.appendChild(perm((SCOPES[s] || "accès « " + s + " »") + " ;")));
     const last = ul.lastElementChild && ul.lastElementChild.querySelector("span");
     if (last) last.textContent = last.textContent.replace(/ ;$/, ".");
@@ -137,7 +137,7 @@
     if (error) {
       if (isSessionError(error) && error.code !== "feature_disabled") {
         await sb.auth.signOut({ scope: "local" }).catch(() => {});
-        return showSignin("Votre session a expiré : reconnectez-vous.");
+        return showSignin("Ta session a expiré : reconnecte-toi.");
       }
       const [t, x, retry] = explainOAuth(error);
       return fail(t, x, retry ? loadDetails : null);
@@ -183,7 +183,7 @@
       setBusy(false);
       if (isSessionError(error)) {
         await sb.auth.signOut({ scope: "local" }).catch(() => {});
-        return showSignin("Votre session a expiré : reconnectez-vous puis validez à nouveau.");
+        return showSignin("Ta session a expiré : reconnecte-toi puis valide à nouveau.");
       }
       const [t, x, retry] = explainOAuth(error);
       if (retry) return note($("consentMsg"), t + " : " + x);
@@ -195,16 +195,16 @@
   /* ---------- démarrage ---------- */
   function init() {
     if (!authId) {
-      return fail("Lien incomplet", "Cette page s'ouvre automatiquement quand vous connectez Boussole à un assistant. Il manque l'identifiant de la demande. " + RELAUNCH, null);
+      return fail("Lien incomplet", "Cette page s'ouvre automatiquement quand tu connectes Boussole à un assistant. Il manque l'identifiant de la demande. " + RELAUNCH, null);
     }
     if (!window.supabase || !window.supabase.createClient || !cfg.supabaseUrl || !cfg.supabaseKey) {
-      return fail("Chargement incomplet", "Un composant de la page n'a pas pu être chargé (bloqueur de contenu ou réseau). Rechargez la page.", () => location.reload());
+      return fail("Chargement incomplet", "Un composant de la page n'a pas pu être chargé (bloqueur de contenu ou réseau). Recharge la page.", () => location.reload());
     }
     sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
     if (!sb.auth.oauth || typeof sb.auth.oauth.getAuthorizationDetails !== "function") {
-      return fail("Version incompatible", "La bibliothèque d'authentification chargée ne gère pas l'autorisation OAuth. Rechargez la page.", () => location.reload());
+      return fail("Version incompatible", "La bibliothèque d'authentification chargée ne gère pas l'autorisation OAuth. Recharge la page.", () => location.reload());
     }
 
     // Retour d'un lien de connexion (ou connexion dans un autre onglet) : on reprend là où on en était.
@@ -215,8 +215,8 @@
     $("signinForm").addEventListener("submit", async ev => {
       ev.preventDefault();
       const email = $("email").value.trim(), password = $("password").value;
-      if (!email) return note($("signinMsg"), "Indiquez votre adresse e-mail.");
-      if (!password) return note($("signinMsg"), EMAILS ? "Indiquez votre mot de passe, ou recevez un lien de connexion par e-mail." : "Indiquez votre mot de passe.");
+      if (!email) return note($("signinMsg"), "Indique ton adresse e-mail.");
+      if (!password) return note($("signinMsg"), EMAILS ? "Indique ton mot de passe, ou reçois un lien de connexion par e-mail." : "Indique ton mot de passe.");
       setSigninBusy(true); note($("signinMsg"), "");
       let res;
       signingIn = true;
@@ -230,7 +230,7 @@
     $("otpBox").hidden = !EMAILS;
     if (EMAILS) $("otpBtn").addEventListener("click", async () => {
       const email = $("email").value.trim();
-      if (!email) { note($("signinMsg"), "Indiquez d'abord votre adresse e-mail."); return $("email").focus(); }
+      if (!email) { note($("signinMsg"), "Indique d'abord ton adresse e-mail."); return $("email").focus(); }
       setSigninBusy(true); note($("signinMsg"), "");
       let res;
       try {
@@ -238,7 +238,7 @@
       } catch (e) { res = { error: e }; }
       setSigninBusy(false);
       if (res.error) return note($("signinMsg"), explainSignin(res.error));
-      note($("signinMsg"), "Lien envoyé à " + email + ". Ouvrez-le sur cet appareil : vous reviendrez ici pour valider l'accès. La demande expire au bout de quelques minutes.", "ok");
+      note($("signinMsg"), "Lien envoyé à " + email + ". Ouvre-le sur cet appareil : tu reviendras ici pour valider l'accès. La demande expire au bout de quelques minutes.", "ok");
     });
 
     $("approveBtn").addEventListener("click", () => decide(true));

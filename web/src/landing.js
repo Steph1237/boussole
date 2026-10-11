@@ -2,7 +2,7 @@
    Dépend de window.Auth (auth.js). `index.html#connexion` ouvre le panneau : c'est là qu'arrivent les visiteurs
    non connectés renvoyés par app.html et compte.html. `?compte-supprime` affiche la confirmation de suppression.
    Mode sans e-mail (BOUSSOLE.emails !== true) : « Commencer sans e-mail » crée un compte anonyme (Auth.signInAnon) ;
-   pas de lien magique, pas de « vérifiez votre boîte mail » : l'inscription ouvre directement app.html. */
+   pas de lien magique, pas de « vérifie ta boîte mail » : l'inscription ouvre directement app.html. */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
@@ -21,23 +21,23 @@
     const is = (codes, re) => codes.includes(code) || (re && re.test(m));
     if (is(["invalid_credentials"], /invalid login credentials/i)) return "Adresse e-mail ou mot de passe incorrect.";
     if (is(["email_not_confirmed"], /email not confirmed/i)) return EMAILS
-      ? "Votre adresse e-mail n'est pas encore confirmée. Cliquez sur le lien reçu à l'inscription, ou demandez un lien de connexion."
-      : "Cette adresse n'a pas été confirmée et Boussole n'envoie pas d'e-mail pour le moment. Écrivez à stephane@ceres.agency.";
-    if (is(["over_email_send_rate_limit", "over_request_rate_limit", "over_sms_send_rate_limit", "429"], /rate limit|too many/i)) return "Trop de tentatives en peu de temps. Patientez quelques minutes avant de réessayer.";
+      ? "Ton adresse e-mail n'est pas encore confirmée. Clique sur le lien reçu à l'inscription, ou demande un lien de connexion."
+      : "Cette adresse n'a pas été confirmée et Boussole n'envoie pas d'e-mail pour le moment. Écris à stephane@ceres.agency.";
+    if (is(["over_email_send_rate_limit", "over_request_rate_limit", "over_sms_send_rate_limit", "429"], /rate limit|too many/i)) return "Trop de tentatives en peu de temps. Patiente quelques minutes avant de réessayer.";
     if (is(["user_already_exists", "email_exists"], /already (registered|exists)/i)) return EXISTS;
     const weak = A && A.weakPasswordText ? A.weakPasswordText(e) : null;
     if (weak) return weak;
-    if (is(["anonymous_provider_disabled"], /anonymous sign-ins are disabled/i)) return "Le démarrage sans e-mail est fermé pour le moment. Créez un compte avec une adresse e-mail et un mot de passe.";
+    if (is(["anonymous_provider_disabled"], /anonymous sign-ins are disabled/i)) return "Le démarrage sans e-mail est fermé pour le moment. Crée un compte avec une adresse e-mail et un mot de passe.";
     if (is(["email_address_invalid"], /invalid.*email|email.*invalid|unable to validate email/i)) return "Adresse e-mail invalide.";
-    if (is(["email_address_not_authorized"], /not authorized/i)) return "L'envoi d'e-mails vers cette adresse n'est pas possible pour le moment. Réessayez plus tard.";
+    if (is(["email_address_not_authorized"], /not authorized/i)) return "L'envoi d'e-mails vers cette adresse n'est pas possible pour le moment. Réessaie plus tard.";
     if (is(["signup_disabled"], /signups? not allowed|signup.*disabled/i)) return "Les inscriptions sont fermées pour le moment.";
     if (is(["provider_disabled"], /provider is not enabled|unsupported provider/i)) return "Connexion Google indisponible pour le moment.";
-    if (is(["otp_expired"], /expired/i)) return "Ce lien a expiré. Demandez-en un nouveau.";
-    if (is(["network"], /fetch|network|failed to load|supabase indisponible/i)) return "Connexion au serveur impossible. Vérifiez votre connexion internet et réessayez.";
-    return "Une erreur est survenue" + (m ? " (" + m + ")" : "") + ". Réessayez.";
+    if (is(["otp_expired"], /expired/i)) return "Ce lien a expiré. Demandes-en un nouveau.";
+    if (is(["network"], /fetch|network|failed to load|supabase indisponible/i)) return "Connexion au serveur impossible. Vérifie ta connexion internet et réessaie.";
+    return "Une erreur est survenue" + (m ? " (" + m + ")" : "") + ". Réessaie.";
   }
 
-  const EXISTS = "Un compte existe déjà avec cette adresse. Connectez-vous" + (EMAILS ? ", ou demandez un lien de connexion." : ".");
+  const EXISTS = "Un compte existe déjà avec cette adresse. Connecte-toi" + (EMAILS ? ", ou demande un lien de connexion." : ".");
   function say(text, kind) { msg.textContent = text || ""; msg.className = "msg " + (kind || "err"); msg.setAttribute("role", kind === "ok" ? "status" : "alert"); }
   function setBusy(b) { busy = b; [submit, magic, google, anonBtn].forEach(x => { if (x) x.disabled = b; }); }
 
@@ -85,7 +85,7 @@
   const goApp = () => { location.href = A && A.urls ? A.urls.app() : "app.html"; };
   function checkEmail() {
     const v = email.value.trim();
-    if (!EMAIL.test(v)) { say("Indiquez une adresse e-mail valide."); email.focus(); return null; }
+    if (!EMAIL.test(v)) { say("Indique une adresse e-mail valide."); email.focus(); return null; }
     return v;
   }
   async function guarded(fn) {
@@ -99,7 +99,7 @@
     e.preventDefault();
     const em = checkEmail(); if (!em) return;
     const p = pw.value;
-    if (!p) { say("Indiquez votre mot de passe."); pw.focus(); return; }
+    if (!p) { say("Indique ton mot de passe."); pw.focus(); return; }
     const weak = mode === "signup" && A && A.passwordProblem ? A.passwordProblem(p) : null;
     if (weak) { say(weak); pw.focus(); return; }
     guarded(async () => {
@@ -115,7 +115,7 @@
         await A.signInPassword(em, p); goApp(); return;
       }
       pw.value = "";
-      say("Vérifiez votre boîte mail pour confirmer votre adresse.", "ok");
+      say("Vérifie ta boîte mail pour confirmer ton adresse.", "ok");
     });
   });
 
@@ -124,10 +124,10 @@
       const em = checkEmail(); if (!em) return;
       guarded(async () => {
         await A.signInMagic(em);
-        say("Un lien de connexion a été envoyé à " + em + ". Ouvrez-le depuis cet appareil.", "ok");
+        say("Un lien de connexion a été envoyé à " + em + ". Ouvre-le depuis cet appareil.", "ok");
       });
     });
-    hint.textContent = "Mot de passe oublié ? Recevez un lien de connexion, puis choisissez un nouveau mot de passe dans Mon compte.";
+    hint.textContent = "Mot de passe oublié ? Reçois un lien de connexion, puis choisis un nouveau mot de passe dans Mon compte.";
   }
 
   /* ---------- « Commencer sans e-mail » : compte anonyme ---------- */
@@ -136,7 +136,7 @@
   if (anonBtn) anonBtn.addEventListener("click", async () => {
     if (busy) return;
     if (!A || !A.client) { sayAnon(frError({ code: "network" })); return; }
-    setBusy(true); sayAnon(""); anonBtn.textContent = "Création de votre espace…";
+    setBusy(true); sayAnon(""); anonBtn.textContent = "Création de ton espace…";
     try { await A.signInAnon(); goApp(); }
     catch (e) { sayAnon(frError(e)); anonBtn.textContent = ANON_LABEL; }
     finally { setBusy(false); }
@@ -169,7 +169,7 @@
 
   const qs = new URLSearchParams(location.search);
   if (qs.has("compte-supprime")) {
-    $("noticeText").textContent = "Votre compte et toutes vos données ont été supprimés. Merci d'avoir utilisé Boussole.";
+    $("noticeText").textContent = "Ton compte et toutes tes données ont été supprimés. Merci d'avoir utilisé Boussole.";
     $("notice").hidden = false;
     qs.delete("compte-supprime");
     const rest = qs.toString();

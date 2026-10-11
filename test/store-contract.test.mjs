@@ -62,7 +62,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   for (const [k, types] of Object.entries(CONTRACT)) assert.ok(types.includes(kind(S[k])), `S.${k} est ${kind(S[k])}, attendu ${types.join("|")}`);
   assert.equal(S.ready, true); assert.equal(S.dbOk, true); assert.equal(S.profilLoaded, true); assert.equal(S.error, null);
   assert.equal(typeof ctx.Store.reload, "function");
-  assert.equal(typeof ctx.Store.db.doc, "function"); assert.equal(typeof ctx.Store.db.collection, "function");
+  assert.equal(typeof ctx.Store.db.doc, "function"); assert.equal(ctx.Store.db.collection, undefined, "lecture seule : plus de collection()");
 });
 
 test("démo : foyer de deux personnes, formes canoniques", async () => {
@@ -132,55 +132,52 @@ test("démo : setScope n'accepte que foyer / p1 / p2 et le mémorise", async () 
   ctx.Store.setScope("foyer"); assert.equal(ctx.Store.get().scope, "foyer");
   ctx.Store.setScope("steph"); assert.equal(ctx.Store.get().scope, "foyer", "l'ancien vocabulaire est refusé");
   ctx.Store.setScope("n'importe quoi"); assert.equal(ctx.Store.get().scope, "foyer");
-  // un foyer d'une seule personne : pas de p2, le périmètre retombe sur le foyer
-  ctx.Store.setScope("p2");
-  const profil = JSON.parse(JSON.stringify(ctx.Store.get().profil)); profil.foyer.adultes = 1;
-  await ctx.Store.db.doc("profil/main").set(profil);
-  assert.deepEqual(J(ctx.Store.get().people), [{ id: "p1", nom: "Camille" }]);
-  assert.equal(ctx.Store.get().scope, "foyer");
+  // un foyer d'une seule personne : pas de p2, le périmètre (même mémorisé à p2) retombe sur le foyer
+  const seul = browser({ prep: D => { D.profil.foyer.adultes = 1; } });
+  seul.Store.setScope("p2");
+  await whenReady(seul);
+  assert.deepEqual(J(seul.Store.get().people), [{ id: "p1", nom: "Camille" }]);
+  assert.equal(seul.Store.get().scope, "foyer");
 });
 
-test("démo : la façade db écrit en mémoire (positions, transactions, config, profil) et réémet", async () => {
+test("démo : façade db réduite aux écritures de contrôle (règles, profil de risque), le reste est refusé", async () => {
   const ctx = browser();
   const S = await whenReady(ctx);
   let n = 0; ctx.Store.on(() => n++);
+  const db = ctx.Store.db;
+  assert.deepEqual(Object.keys(db), ["doc"], "plus de collection() (transactions, positions, objectifs)");
+  assert.deepEqual(Object.keys(db.doc("config/main")), ["update"], "plus de set() ni de delete()");
 
-  await ctx.Store.db.doc("positions/livret-a").update({ value: 13000, valueDate: "2026-10-05" });
-  assert.equal(ctx.Store.get().positions.find(p => p.id === "livret-a").value, 13000);
-
-  await ctx.Store.db.doc("positions/cto-nouvelle").set({ id: "cto-nouvelle", name: "Nouvelle ligne", envelope: "CTO Sam", owner: "p2", bloc: "Monde", isin: null, mode: "market", qty: 2, pru: 10, price: 10, priceDate: "2026-10-05", value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false });
-  const nl = ctx.Store.get().positions.find(p => p.id === "cto-nouvelle");
-  assert.equal(nl.owner, "p2", "owner canonique");
-  assert.equal(ctx.DEMO.positions.length, 12, "window.DEMO n'est pas modifié (copie)");
-
-  const before = ctx.Store.get().tx.length;
-  const r = await ctx.Store.db.collection("transactions").add({ date: "2026-10-05", type: "achat", positionId: "cto-nouvelle", qty: 2, price: 10, amount: 20, note: "", source: "manuel", createdAt: new Date().toISOString() });
-  assert.ok(r && r.id);
-  assert.equal(ctx.Store.get().tx.length, before + 1);
-  assert.equal(ctx.Store.get().tx[0].positionId, "cto-nouvelle");
-
-  const todo = S.config.todo.map((o, i) => (i === 0 ? { ...o, done: true } : o));
-  await ctx.Store.db.doc("config/main").update({ todo });
-  assert.equal(ctx.Store.get().config.todo[0].done, true);
+  // Règles : bascule actif / inactif (regles.js), seule clé acceptée sur config/main.
+  const rules = J(S.config.rules).map((r, i) => (i === 0 ? { ...r, actif: false } : r));
+  await db.doc("config/main").update({ rules });
+  assert.equal(ctx.Store.get().config.rules[0].actif, false);
   assert.ok(ctx.Store.get().config.targets.p1, "les autres clés de config sont conservées");
-  const n0 = ctx.Store.get().config.rules.length;
-  await ctx.Store.db.doc("config/main").update({ rules: [...ctx.Store.get().config.rules, { type: "stale_prices", days: 10 }] });
-  assert.equal(ctx.Store.get().config.rules.length, n0 + 1);
-  await ctx.Store.db.doc("config/main").update({ cushion: { mode: "months", months: 6, depenses: 3000 } });
-  assert.deepEqual(J(ctx.Store.get().config.cushion), { mode: "months", months: 6, depenses: 3000 });
+  await assert.rejects(db.doc("config/main").update({ cushion: { mode: "months", months: 6 } }), e => e.code === "invalid_argument" && /Claude/.test(e.message));
+  await assert.rejects(db.doc("config/main").update({ rules, todo: [] }), e => e.code === "invalid_argument", "une clé hors liste blanche refuse tout le patch");
+  await assert.rejects(db.doc("config/main").update({ rules: "non" }), e => e.code === "invalid_argument");
+  assert.equal(ctx.Store.get().config.rules.length, rules.length, "un refus ne modifie rien");
 
-  const profil = JSON.parse(JSON.stringify(S.profil));
-  profil.personnes.p1.salaire = 3000; profil.personnes.p1.nom = "Camille-Anne"; profil.biens[0].part_p1 = 40; profil.credits[0].owner = "p1"; profil.updatedAt = "2026-10-05T10:00:00.000Z";
-  await ctx.Store.db.doc("profil/main").set(profil);
-  const P = ctx.Store.get().profil;
-  assert.equal(P.personnes.p1.salaire, 3000);
-  assert.equal(P.biens[0].part_p1, 40);
-  assert.equal(P.credits[0].owner, "p1");
-  assert.equal(P.updatedAt, "2026-10-05T10:00:00.000Z");
-  assert.deepEqual(J(ctx.Store.get().people).map(p => p.nom), ["Camille-Anne", "Sam"], "le renommage se répercute sur people");
+  // Profil de risque recalculé après application de propositions (propositions.js) : clé risque seule.
+  const biens = J(S.profil.biens), personnes = J(S.profil.personnes);
+  const risque = { reponses: { horizon: "8-15", reaction: "rien" }, profil: "equilibre", score: 55, date: "2026-10-10" };
+  await db.doc("profil/main").update({ risque });
+  assert.deepEqual(J(ctx.Store.get().risque), risque);
+  assert.equal("risque" in ctx.Store.get().profil, false, "risque est exposé dans S.risque, pas dans le profil");
+  assert.deepEqual(J(ctx.Store.get().profil.biens), biens, "biens intacts");
+  assert.deepEqual(J(ctx.Store.get().profil.personnes), personnes, "personnes intactes");
+  await db.doc("profil/main").update({ risque: null });
+  assert.equal(ctx.Store.get().risque, null, "null efface le profil de risque");
+  await assert.rejects(db.doc("profil/main").update({ risque: "dynamique" }), e => e.code === "invalid_argument");
+  for (const patch of [{ classes: { Obligations: "fonds_euros" } }, { protection: { prevoyance: true } }, { personnes: {} }, { foyer: { adultes: 2 } }])
+    await assert.rejects(db.doc("profil/main").update(patch), e => e.code === "invalid_argument", "profil : " + Object.keys(patch)[0] + " passe par Claude");
 
-  await assert.rejects(ctx.Store.db.doc("positions/inexistante").update({ value: 1 }), e => e.code === "not_found");
-  await assert.rejects(ctx.Store.db.doc("inconnue/x").set({}), e => e.code === "invalid_argument");
+  // Saisie retirée : positions, budget, objectifs, transactions.
+  for (const path of ["positions/livret-a", "budget/main", "objectifs/obj-apport", "transactions/x", "inconnue/x"])
+    await assert.rejects(db.doc(path).update({ value: 1 }), e => e.code === "invalid_argument", path);
+  assert.equal(ctx.Store.get().positions.find(p => p.id === "livret-a").value, S.positions.find(p => p.id === "livret-a").value, "placements inchangés");
+  assert.equal(ctx.DEMO.positions.length, 12, "window.DEMO n'est pas modifié (copie)");
+  assert.equal(ctx.DEMO.risque, null, "window.DEMO n'est pas modifié (copie)");
 
   await wait(100);
   assert.ok(n >= 1, "les abonnés ont été notifiés");
@@ -216,93 +213,6 @@ test("démo : budget et objectifs d'exemple, au contrat et cohérents avec le fo
   const matelas = S.objectifs.find(o => o.type === "matelas");
   assert.equal(matelas.cible, Math.round((6 * depenses) / 100) * 100, "matelas = 6 mois de dépenses");
   assert.deepEqual(J(S.objectifs.find(o => o.type === "retraite").poches), ["Monde", "Europe", "Asie"]);
-});
-
-test("démo : façade budget et objectifs (set, upsert création / mise à jour, delete, refus)", async () => {
-  const ctx = browser();
-  await whenReady(ctx);
-  const db = ctx.Store.db;
-
-  await db.doc("budget/main").set({ lignes: [{ type: "depense", categorie: "Logement", libelle: "Loyer garage", montant: "90" }, { id: "x", type: "epargne", categorie: "Épargne", libelle: "PEL", montant: 45, frequence: "an", owner: "p2" }] });
-  const B = ctx.Store.get().budget;
-  assert.equal(B.lignes.length, 2);
-  assert.equal(B.lignes[0].montant, 90, "montant converti en nombre");
-  assert.equal(B.lignes[0].frequence, "mois", "fréquence par défaut");
-  assert.ok(B.lignes[0].id, "identifiant attribué");
-  assert.equal(B.lignes[1].owner, "p2");
-  await assert.rejects(db.doc("budget/main").set({ lignes: [{ type: "salaire", montant: 1 }] }), e => e.code === "invalid_argument" && /type/.test(e.message));
-  await assert.rejects(db.doc("budget/main").set({ lignes: [{ type: "depense", montant: -5 }] }), e => e.code === "invalid_argument");
-  await assert.rejects(db.doc("budget/main").set({ lignes: "non" }), e => e.code === "invalid_argument");
-  assert.equal(ctx.Store.get().budget.lignes.length, 2, "un refus ne modifie rien");
-
-  const r = await db.collection("objectifs").upsert({ nom: "Voyage au Japon", type: "projet", cible: "8000", dateCible: "2028-04-01", deja: 500, source: "saisi", rendement: 2, priorite: 4 });
-  assert.ok(r && r.id, "création : identifiant renvoyé");
-  let O = ctx.Store.get().objectifs;
-  assert.equal(O.length, 4);
-  const nv = O.find(o => o.id === r.id);
-  assert.deepEqual(Object.keys(nv).sort(), OBJ_KEYS);
-  assert.equal(nv.cible, 8000); assert.equal(nv.dateCible, "2028-04-01"); assert.deepEqual(J(nv.poches), []);
-
-  const r2 = await db.collection("objectifs").upsert({ id: "obj-apport", cible: 65000, deja: 1000, source: "saisi" });
-  assert.equal(r2.id, "obj-apport", "mise à jour : même identifiant");
-  O = ctx.Store.get().objectifs;
-  assert.equal(O.length, 4, "pas de doublon");
-  const ap = O.find(o => o.id === "obj-apport");
-  assert.equal(ap.cible, 65000); assert.equal(ap.deja, 1000); assert.equal(ap.nom, "Apport maison", "les autres champs sont conservés");
-
-  const r3 = await db.collection("objectifs").upsert({ id: "inconnu", nom: "Id inconnu", type: "projet" });
-  assert.notEqual(r3.id, "inconnu", "un id inconnu crée un nouvel objectif");
-  assert.equal(ctx.Store.get().objectifs.length, 5);
-
-  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", type: "vacances" }), e => e.code === "invalid_argument" && /type/.test(e.message));
-  await assert.rejects(db.collection("objectifs").upsert({ id: "obj-apport", type: "nimporte" }), e => e.code === "invalid_argument");
-  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", cible: -1 }), e => e.code === "invalid_argument");
-  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", rendement: 80 }), e => e.code === "invalid_argument");
-  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", dateCible: "31/12/2030" }), e => e.code === "invalid_argument");
-  await assert.rejects(db.collection("objectifs").upsert({ nom: "X", source: "banque" }), e => e.code === "invalid_argument");
-  assert.equal(ctx.Store.get().objectifs.find(o => o.id === "obj-apport").type, "apport", "un refus ne modifie rien");
-  assert.equal(ctx.Store.get().objectifs.length, 5);
-
-  await db.doc("objectifs/" + r.id).delete();
-  assert.ok(!ctx.Store.get().objectifs.some(o => o.id === r.id));
-  assert.equal(ctx.Store.get().objectifs.length, 4);
-  await assert.rejects(db.doc("objectifs/" + r.id).delete(), e => e.code === "not_found");
-  await assert.rejects(db.doc("positions/livret-a").delete(), e => e.code === "invalid_argument");
-  await assert.rejects(db.collection("positions").upsert({}), e => e.code === "invalid_argument");
-  assert.equal(ctx.DEMO.objectifs.length, 3, "window.DEMO n'est pas modifié (copie)");
-});
-
-test("démo : façade Diagnostic (risque, classes, protection) sans toucher au reste du profil", async () => {
-  const ctx = browser();
-  const S = await whenReady(ctx);
-  const db = ctx.Store.db;
-  const biens = J(S.profil.biens), personnes = J(S.profil.personnes);
-
-  const risque = { reponses: { horizon: "8-15", reaction: "rien" }, profil: "equilibre", score: 55, date: "2026-10-10" };
-  await db.doc("profil/main").update({ risque });
-  assert.deepEqual(J(ctx.Store.get().risque), risque);
-  assert.equal("risque" in ctx.Store.get().profil, false, "risque est exposé dans S.risque, pas dans le profil");
-
-  await db.doc("profil/main").update({ classes: { Obligations: "fonds_euros", Convictions: "actions" } });
-  assert.deepEqual(J(ctx.Store.get().classes), { Obligations: "fonds_euros", Convictions: "actions" });
-  assert.deepEqual(J(ctx.Store.get().risque), risque, "le profil de risque est conservé");
-
-  await db.doc("profil/main").update({ protection: { prevoyance: true, emprunteur: false } });
-  const P = ctx.Store.get().profil;
-  assert.deepEqual(J(P.protection), { prevoyance: true, emprunteur: false });
-  assert.deepEqual(J(P.biens), biens, "biens intacts");
-  assert.deepEqual(J(P.personnes), personnes, "personnes intactes");
-  assert.equal("classes" in P, false);
-
-  await db.doc("profil/main").update({ risque: null });
-  assert.equal(ctx.Store.get().risque, null, "null efface le profil de risque");
-  assert.deepEqual(J(ctx.Store.get().classes), { Obligations: "fonds_euros", Convictions: "actions" });
-
-  await assert.rejects(db.doc("profil/main").update({ risque: "dynamique" }), e => e.code === "invalid_argument");
-  await assert.rejects(db.doc("profil/main").update({ classes: { Obligations: 3 } }), e => e.code === "invalid_argument");
-  await assert.rejects(db.doc("profil/main").update({ protection: [true] }), e => e.code === "invalid_argument");
-  assert.deepEqual(J(ctx.Store.get().profil.protection), { prevoyance: true, emprunteur: false }, "un refus ne modifie rien");
-  assert.equal(ctx.DEMO.risque, null, "window.DEMO n'est pas modifié (copie)");
 });
 
 const PROP_KEYS = ["apres", "avant", "cible", "creeLe", "decideLe", "id", "justification", "lot", "operation", "ref", "source", "statut"];
@@ -732,8 +642,7 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
   // le store Supabase expose le même contrat
   for (const k of ['mode: "supabase"', "get: () => S", "on(fn)", "setScope(s)", "emit,", "reload,", "db,", "window.Store = Store"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["ter, zone, devise, annote_source, annote_le", "ins.annote_source", "prof.risque", "prof.classes", "protection: p.protection || {}",
-    'const DIAG = ["risque", "classes", "protection"]', "updateProfil(patch, uid)", "risque: clone(C.risque)", "classes: clone(C.classes) || {}"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
-  assert.ok(demo.includes('const DIAG = ["risque", "classes", "protection"]'), "store-demo.js : mêmes colonnes du Diagnostic");
+    "risque: clone(C.risque)", "classes: clone(C.classes) || {}"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ['from("propositions")', 'order("cree_le", { ascending: false }).limit(200)', 'rpc("appliquer_propositions", { p_ids, p_modifications: mods })',
     'rpc("refuser_propositions", { p_ids })', "propositions: clone(C.propositions)", "propositions,"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ['from("connexions_assistant").select(CONN_SELECT).order("premier_le")', 'const CONN_SELECT = "client_id, client_nom, premier_le, dernier_le, appels"',
@@ -745,6 +654,24 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
   assert.doesNotMatch(lire, /loadAll|reload\(/, "pas de rechargement complet");
   assert.equal((sup.match(/setInterval\(/g) || []).length, 1, "un seul minuteur, celui de surveillerConnexions");
   assert.doesNotMatch(sup.slice(sup.indexOf("async function boot()")), /surveillerConnexions\(true\)|setInterval/, "aucune surveillance au démarrage");
-  for (const k of ["price_override", "value_date", "qty_estimated", "request_instrument", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")', 'from("budgets")', 'from("objectifs")', "date_cible", "upsert(row)", "delete()"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
+  for (const k of ["price_override", "value_date", "qty_estimated", "visibilitychange", 'from("transactions")', 'from("biens")', 'from("credits")', 'from("profiles")', 'from("config")', 'from("budgets")', 'from("objectifs")', "date_cible"]) assert.ok(sup.includes(k), `store-supabase.js : ${k}`);
   for (const k of ["signInWithPassword", "signUp", "signInWithOtp", 'provider: "google"', "onAuthStateChange", "requireSession", "index.html"]) assert.ok(auth.includes(k), `auth.js : ${k}`);
+});
+
+test("lecture seule : les deux stores n'écrivent plus que les données de contrôle (propositions, journal, mémoire, règles, risque, compte)", () => {
+  const sup = src("store-supabase.js"), demo = src("store-demo.js");
+  for (const [nom, s] of [["store-supabase.js", sup], ["store-demo.js", demo]]) {
+    assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\) \}/, nom + " : en-tête du contrat à jour");
+    assert.match(s, /db = \{ doc\("config\/main"\)\.update\(\{ rules \}\), doc\("profil\/main"\)\.update\(\{ risque \}\) \}/, nom + " : façade db documentée");
+    assert.ok(s.includes('const LECTURE_SEULE = "Écriture non disponible dans l\'app : complète ou corrige avec Claude, puis valide sa proposition."'), nom + " : refus au tutoiement, même texte");
+    assert.match(s, /seulement\(p(atch)?, \["rules"\]\)/, nom + " : config/main n'accepte que rules");
+    assert.match(s, /seulement\(patch, \["risque"\]\)/, nom + " : profil/main n'accepte que risque");
+    for (const retire of ["addMany(", "upsert(row)", "addTx", "setProfil", "setBudget", "upsertObjectif", "deleteObjectif", "setPosition", "updatePosition", "addPositions", "collection(name)"])
+      assert.ok(!s.includes(retire), nom + " : écriture retirée encore présente : " + retire);
+  }
+  // Côté Supabase : plus aucune écriture sur les tables de saisie (positions, transactions, biens, crédits, budgets, objectifs).
+  const ecritures = [...sup.matchAll(/from\("(\w+)"\)\.(insert|update|upsert|delete)\(/g)].map(m => m[1] + "." + m[2]);
+  assert.deepEqual([...new Set(ecritures)].sort(), ["config.upsert", "journal.delete", "journal.update", "memoire_agent.delete", "memoire_agent.update", "profiles.update", "profiles.upsert"].sort());
+  assert.doesNotMatch(sup, /rpc\("request_instrument"/, "plus de demande d'instrument (ajout de placement)");
+  assert.deepEqual([...sup.matchAll(/rpc\("(\w+)"/g)].map(m => m[1]).sort(), ["appliquer_propositions", "refuser_propositions"]);
 });

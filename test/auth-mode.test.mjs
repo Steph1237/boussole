@@ -78,12 +78,12 @@ test("auth.js : secureAccount explique en français si le serveur exige une conf
 
 test("accueil : « Commencer sans e-mail » branché sur signInAnon, démo en lien tertiaire", () => {
   assert.match(landing, /<button[^>]*id="anonStart"[^>]*>Commencer sans e-mail<\/button>/);
-  assert.ok(landing.includes("Vos données sont enregistrées tout de suite. Ajoutez un e-mail plus tard pour les retrouver sur un autre appareil."));
+  assert.ok(landing.includes("Tes données sont enregistrées tout de suite. Ajoute un e-mail plus tard pour les retrouver sur un autre appareil."));
   assert.match(landing, /data-auth="signup">Créer un compte</);
   assert.match(landing, /data-auth="signin">Se connecter</);
   assert.match(landing, /href="app\.html\?demo">Essayer la démo</);
   assert.ok(landing.includes("8 caractères minimum, avec des lettres et des chiffres"));
-  assert.ok(landing.includes("Mot de passe oublié : sans service d'e-mail, la réinitialisation n'est pas encore possible. Écrivez à"));
+  assert.ok(landing.includes("Mot de passe oublié : sans service d'e-mail, la réinitialisation n'est pas encore possible. Écris à"));
   assert.match(landingJs, /\$\("anonStart"\)/);
   assert.match(landingJs, /anonBtn\.addEventListener\("click"[\s\S]*?A\.signInAnon\(\)[\s\S]*?goApp\(\)/);
 });
@@ -98,14 +98,14 @@ test("accueil : aucun lien magique ni « boîte mail » quand emails:false", () 
   assert.equal(landingJs.indexOf("signInMagic"), landingJs.indexOf("signInMagic", guard), "signInMagic appelé seulement dans la branche EMAILS");
   // Inscription : sans e-mail, on entre directement dans l'app avant tout message « boîte mail ».
   const noMail = landingJs.indexOf("if (!EMAILS) {");
-  const box = landingJs.indexOf("Vérifiez votre boîte mail");
+  const box = landingJs.indexOf("Vérifie ta boîte mail");
   assert.ok(noMail > 0 && box > noMail, "branche sans e-mail avant le message boîte mail");
   assert.match(landingJs.slice(noMail, box), /goApp\(\); return;/);
 });
 
 test("app : bandeau #anonBanner pour une session anonyme, lien « Sécuriser mon compte »", () => {
   assert.match(shell, /<div id="anonBanner" class="banner anon"[^>]*hidden>/);
-  assert.ok(shell.includes("Compte sans e-mail : vos données sont liées à ce navigateur. Sécurisez votre compte pour les retrouver ailleurs et éviter leur suppression après 90 jours d'inactivité."));
+  assert.ok(shell.includes("Compte sans e-mail : tes données sont liées à ce navigateur. Sécurise ton compte pour les retrouver ailleurs et éviter leur suppression après 90 jours d'inactivité."));
   assert.match(shell, /href="compte\.html#securiser"/);
   assert.match(appJs, /Auth\.session\(\)\.then\(anonAccount/);
   assert.match(appJs, /if \(!demo && window\.Auth/);
@@ -130,7 +130,7 @@ test("consentement : mot de passe seul, compte anonyme bloqué", () => {
   assert.match(consentJs, /\$\("otpBox"\)\.hidden = !EMAILS/);
   assert.match(consentJs, /if \(EMAILS\) \$\("otpBtn"\)\.addEventListener/);
   assert.match(consent, /data-state="anon"/);
-  assert.ok(consent.includes("Pour brancher un assistant, ajoutez d'abord un e-mail et un mot de passe à votre compte"));
+  assert.ok(consent.includes("Pour brancher un assistant, ajoute d'abord un e-mail et un mot de passe à ton compte"));
   assert.ok(consent.includes('href="../compte.html#securiser"'));
   assert.match(consentJs, /if \(isAnon\(session\)\) return show\("anon"\)/);
 });

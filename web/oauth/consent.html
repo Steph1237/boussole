@@ -115,8 +115,8 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
     <!-- Connexion -->
     <section data-state="signin" hidden>
       <p class="eyebrow">Connexion</p>
-      <h1>Connectez-vous pour autoriser votre assistant</h1>
-      <p class="muted small">Un assistant demande l'accès à votre espace Boussole. Identifiez-vous d'abord ; vous pourrez ensuite accepter ou refuser.</p>
+      <h1>Connecte-toi pour autoriser ton assistant</h1>
+      <p class="muted small">Un assistant demande l'accès à ton espace Boussole. Identifie-toi d'abord ; tu pourras ensuite accepter ou refuser.</p>
       <form id="signinForm" novalidate>
         <label>Adresse e-mail<input id="email" type="email" autocomplete="email" inputmode="email" required></label>
         <label>Mot de passe<input id="password" type="password" autocomplete="current-password"></label>
@@ -128,35 +128,35 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
         </div>
       </form>
       <p class="msg" id="signinMsg" hidden></p>
-      <p class="muted small" style="margin-top:16px">Pas encore de compte&nbsp;? <a href="../">Créez-le sur Boussole</a>, puis relancez la connexion depuis votre assistant.</p>
+      <p class="muted small" style="margin-top:16px">Pas encore de compte&nbsp;? <a href="../">Crée-le sur Boussole</a>, puis relance la connexion depuis ton assistant.</p>
     </section>
 
     <!-- Compte anonyme : il faut d'abord ajouter un e-mail et un mot de passe -->
     <section data-state="anon" hidden>
       <p class="eyebrow">Compte à sécuriser</p>
-      <h1>Ajoutez d'abord <span style="white-space:nowrap">un e-mail</span> à votre compte</h1>
-      <p class="muted">Pour brancher un assistant, ajoutez d'abord un e-mail et un mot de passe à votre compte.</p>
-      <p class="muted small">Votre compte a été créé sans e-mail : il n'existe que dans ce navigateur. Une fois sécurisé, relancez la connexion de Boussole depuis votre assistant.</p>
+      <h1>Ajoute d'abord <span style="white-space:nowrap">un e-mail</span> à ton compte</h1>
+      <p class="muted">Pour brancher un assistant, ajoute d'abord un e-mail et un mot de passe à ton compte.</p>
+      <p class="muted small">Ton compte a été créé sans e-mail : il n'existe que dans ce navigateur. Une fois sécurisé, relance la connexion de Boussole depuis ton assistant.</p>
       <div class="actions"><a class="btn primary" id="secureLink" href="../compte.html#securiser">Sécuriser mon compte</a></div>
     </section>
 
     <!-- Consentement -->
     <section data-state="consent" hidden>
       <p class="eyebrow">Autorisation</p>
-      <h1><span id="clientName">Une application</span> souhaite accéder à votre Boussole</h1>
+      <h1><span id="clientName">Une application</span> souhaite accéder à ta Boussole</h1>
       <div class="who"><span>Connecté en tant que <strong id="userEmail"></strong></span><button class="linkbtn" id="switchBtn" type="button">Changer de compte</button></div>
-      <p class="small" style="margin-bottom:4px"><strong>Si vous autorisez, cet assistant pourra&nbsp;:</strong></p>
+      <p class="small" style="margin-bottom:4px"><strong>Si tu autorises, cet assistant pourra&nbsp;:</strong></p>
       <ul class="perms" id="perms"></ul>
       <p class="small" style="margin-bottom:4px"><strong>Le connecteur Boussole ne lui permet pas de&nbsp;:</strong></p>
       <ul class="perms">
-        <li class="no"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 10h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>supprimer votre compte ni changer votre e-mail ou votre mot de passe ;</span></li>
+        <li class="no"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 10h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>supprimer ton compte ni changer ton e-mail ou ton mot de passe ;</span></li>
         <li class="no"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 10h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>voir les données des autres utilisateurs.</span></li>
       </ul>
       <div class="detail">
         <span>Application&nbsp;: <b id="clientInfo"></b></span>
         <span>Retour vers&nbsp;: <b id="redirectHost"></b></span>
       </div>
-      <p class="muted small" style="margin-top:12px">N'autorisez que les assistants que vous avez vous-même connectés. Vous pourrez retirer cet accès à tout moment depuis <a href="../compte.html">Mon compte</a>.</p>
+      <p class="muted small" style="margin-top:12px">N'autorise que les assistants que tu as toi-même connectés. Tu pourras retirer cet accès à tout moment depuis <a href="../compte.html">Mon compte</a>.</p>
       <div class="actions">
         <button class="btn" id="denyBtn" type="button">Refuser</button>
         <button class="btn primary" id="approveBtn" type="button">Autoriser</button>
@@ -168,7 +168,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
     <section data-state="done" hidden>
       <div class="spinner" aria-hidden="true"></div>
       <h1 id="doneTitle">Accès autorisé</h1>
-      <p class="muted" id="doneText">Retour à votre assistant…</p>
+      <p class="muted" id="doneText">Retour à ton assistant…</p>
       <p class="small"><a id="doneLink" href="#">Continuer manuellement</a></p>
     </section>
 
@@ -180,7 +180,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
       <div class="actions"><button class="btn" id="retryBtn" type="button" hidden>Réessayer</button></div>
     </section>
 
-    <noscript><p class="msg err">Cette page a besoin de JavaScript pour vous connecter et enregistrer votre choix.</p></noscript>
+    <noscript><p class="msg err">Cette page a besoin de JavaScript pour te connecter et enregistrer ton choix.</p></noscript>
   </main>
 
   <footer class="foot">Boussole · <a href="../legal/confidentialite.html">Confidentialité</a></footer>

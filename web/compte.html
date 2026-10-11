@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Mon compte · Boussole</title>
-<meta name="description" content="Adresse e-mail, mot de passe, connecteurs d'assistant, export et suppression de vos données Boussole.">
+<meta name="description" content="Adresse e-mail, mot de passe, connecteurs d'assistant, export et suppression de tes données Boussole.">
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -78,7 +78,7 @@ input.mono{font-family:var(--f-num);font-size:14px}
 .msg a{color:var(--accent);font-weight:600}
 .card.secure{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .secform{display:flex;flex-direction:column;gap:12px;margin:0}
-.secform > .fld{flex:none}
+.secform > .fld,.card > .fld{flex:none} /* carte en colonne : la base de 220 px ne vaut que dans une .row */
 .msg:empty{display:none}
 .copyline{display:flex;gap:8px;align-items:stretch}
 .copyline input{flex:1;min-width:0}
@@ -119,7 +119,7 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
     <!-- Compte anonyme (« Commencer sans e-mail ») : affiché par account.js, à la place des sections e-mail et mot de passe. -->
     <section class="card secure" id="securiser" aria-labelledby="h-sec" hidden>
       <h2 id="h-sec">Sécuriser mon compte</h2>
-      <p>Votre compte n'a pas encore d'adresse e-mail : vos données ne sont accessibles que depuis ce navigateur, et un compte sans e-mail inactif pendant 90 jours est supprimé. Ajoutez une adresse et un mot de passe pour retrouver vos données sur n'importe quel appareil.</p>
+      <p>Ton compte n'a pas encore d'adresse e-mail : tes données ne sont accessibles que depuis ce navigateur, et un compte sans e-mail inactif pendant 90 jours est supprimé. Ajoute une adresse et un mot de passe pour retrouver tes données sur n'importe quel appareil.</p>
       <form class="secform" id="secForm" novalidate>
         <div class="fld">
           <label for="secEmail">Adresse e-mail</label>
@@ -135,7 +135,7 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
             <input class="in" id="secPw2" type="password" autocomplete="new-password" minlength="8" required>
           </div>
         </div>
-        <p class="muted small">8 caractères minimum, avec des lettres et des chiffres. Aucun e-mail ne vous sera envoyé : l'adresse sert d'identifiant de connexion.</p>
+        <p class="muted small">8 caractères minimum, avec des lettres et des chiffres. Aucun e-mail ne te sera envoyé : l'adresse sert d'identifiant de connexion.</p>
         <div><button type="submit" class="btn" id="secBtn">Sécuriser mon compte</button></div>
       </form>
       <p class="msg" id="secMsg" role="status"></p>
@@ -152,7 +152,7 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
         </div>
         <button type="submit" class="btn ghost">Changer d'adresse</button>
       </form>
-      <p class="muted small" id="emailNote">Le changement est immédiat : aucun e-mail de confirmation n'est envoyé. Connectez-vous ensuite avec la nouvelle adresse.</p>
+      <p class="muted small" id="emailNote">Le changement est immédiat : aucun e-mail de confirmation n'est envoyé. Connecte-toi ensuite avec la nouvelle adresse.</p>
       <p class="msg" id="emailMsg" role="status"></p>
     </section>
 
@@ -170,14 +170,14 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
         </div>
         <button type="submit" class="btn ghost">Changer le mot de passe</button>
       </form>
-      <p class="muted small">8 caractères minimum, avec des lettres et des chiffres. Si vous vous êtes connecté avec Google, vous pouvez en définir un ici.</p>
+      <p class="muted small">8 caractères minimum, avec des lettres et des chiffres. Si tu t'es connecté avec Google, tu peux en définir un ici.</p>
       <p class="msg" id="pwMsg" role="status"></p>
     </section>
 
     <section class="card" aria-labelledby="h-mcp">
       <h2 id="h-mcp">Connecteurs d'assistant</h2>
-      <p class="msg info" id="mcpAnon" hidden>Pour brancher un assistant, ajoutez d'abord un e-mail et un mot de passe à votre compte : <a href="#securiser">Sécuriser mon compte</a>.</p>
-      <p>Un connecteur permet à Claude de lire votre situation et de mettre à jour vos placements quand vous le lui demandez. Il ne voit que votre compte, et seulement après votre autorisation. Il ne peut ni exporter vos données ni supprimer votre compte.</p>
+      <p class="msg info" id="mcpAnon" hidden>Pour brancher un assistant, ajoute d'abord un e-mail et un mot de passe à ton compte : <a href="#securiser">Sécuriser mon compte</a>.</p>
+      <p>Un connecteur permet à Claude de lire ta situation et de te proposer des mises à jour (profil, budget, placements…), à partir de tes réponses ou des fichiers que tu lui donnes ; chaque changement attend ton accord dans Boussole. Il ne voit que ton compte, et seulement après ton autorisation. Il ne peut ni exporter tes données ni supprimer ton compte.</p>
       <div class="fld">
         <label for="mcpUrl">Adresse du connecteur</label>
         <div class="copyline">
@@ -186,8 +186,8 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
         </div>
       </div>
       <ol class="howto">
-        <li><b>Claude (site et applications) :</b> Paramètres → Connecteurs → Ajouter un connecteur personnalisé → collez l'adresse, puis connectez-vous à Boussole et autorisez l'accès.</li>
-        <li><b>Claude Code :</b> dans un terminal, lancez <code id="mcpCmd">claude mcp add boussole -t http https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp</code> <button type="button" class="pill" data-copy="mcpCmd" style="padding:3px 10px;font-size:13px">Copier</button></li>
+        <li><b>Claude (site et applications) :</b> Paramètres → Connecteurs → Ajouter un connecteur personnalisé → colle l'adresse, puis connecte-toi à Boussole et autorise l'accès.</li>
+        <li><b>Claude Code :</b> dans un terminal, lance <code id="mcpCmd">claude mcp add boussole -t http https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp</code> <button type="button" class="pill" data-copy="mcpCmd" style="padding:3px 10px;font-size:13px">Copier</button></li>
       </ol>
       <p class="msg" id="copyMsg" role="status"></p>
       <div class="sep"></div>
@@ -198,21 +198,21 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
 
     <section class="card" aria-labelledby="h-data">
       <h2 id="h-data">Mes données</h2>
-      <p>Téléchargez une copie de tout ce que Boussole conserve pour vous : profil, biens, crédits, placements, mouvements, historique et réglages.</p>
+      <p>Télécharge une copie de tout ce que Boussole conserve pour toi : profil, biens, crédits, placements, mouvements, historique et réglages.</p>
       <div class="row">
         <button type="button" class="btn ghost" id="exportJson">Télécharger mes données (JSON)</button>
         <button type="button" class="btn ghost" id="exportCsv">Télécharger mes placements (CSV)</button>
       </div>
-      <p class="muted small">Le CSV utilise le point-virgule et la virgule décimale : il s'ouvre dans Excel ou LibreOffice, et se réimporte dans Boussole.</p>
+      <p class="muted small">Le CSV utilise le point-virgule et la virgule décimale : il s'ouvre dans Excel ou LibreOffice, et tu peux le donner à Claude pour une mise à jour.</p>
       <p class="msg" id="dataMsg" role="status"></p>
     </section>
 
     <section class="card danger" aria-labelledby="h-del">
       <h2 id="h-del">Supprimer mon compte</h2>
-      <p>La suppression efface immédiatement votre compte et toutes vos données : profil, placements, historique, réglages et autorisations des connecteurs. Elle est définitive. Pensez à télécharger vos données avant.</p>
+      <p>La suppression efface immédiatement ton compte et toutes tes données : profil, placements, historique, réglages et autorisations des connecteurs. Elle est définitive. Pense à télécharger tes données avant.</p>
       <form class="row" id="delForm" novalidate>
         <div class="fld">
-          <label for="delConfirm" id="delLabel">Tapez votre adresse e-mail pour confirmer</label>
+          <label for="delConfirm" id="delLabel">Tape ton adresse e-mail pour confirmer</label>
           <input class="in" id="delConfirm" type="email" autocomplete="off" spellcheck="false">
         </div>
         <button type="submit" class="btn danger" id="delBtn" disabled>Supprimer définitivement</button>

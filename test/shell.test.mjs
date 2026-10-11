@@ -159,7 +159,7 @@ test("coque : états « bientôt » orientés vers l'agent (Projections) ; le Jo
     const m = shell.match(new RegExp(`<section class="view placeholder" id="sub-${space}-${sub}"[^>]*>([\\s\\S]*?)</section>`));
     assert.ok(m, space + "/" + sub);
     assert.match(m[1], /Bientôt ici : /);
-    assert.match(m[1], /Demandez-le à Claude en attendant\./);
+    assert.match(m[1], /Demande-le à Claude en attendant\./);
     assert.match(m[1], /href="https:\/\/claude\.ai\/new\?q=[^"]+" target="_blank" rel="noopener noreferrer"/);
   }
 });

@@ -7,30 +7,30 @@
 (function () {
   /* ---------- registre (données pures, testées par test/shell.test.mjs) ---------- */
   const SPACES = [
-    { space: "aujourdhui", label: "Aujourd'hui", short: "Aujourd'hui", icon: "aujourdhui", primary: true, desc: "Ce qui demande mon attention", subs: [
+    { space: "aujourdhui", label: "Aujourd'hui", short: "Aujourd'hui", icon: "aujourdhui", primary: true, desc: "Ce qui demande ton attention", subs: [
       { id: "vue", label: "Aujourd'hui", module: "aujourdhui" },
     ] },
-    { space: "patrimoine", label: "Patrimoine", short: "Patrimoine", icon: "patrimoine", primary: true, desc: "Ce que je possède, ce que je dois, mon budget et mes projets", subs: [
+    { space: "patrimoine", label: "Patrimoine", short: "Patrimoine", icon: "patrimoine", primary: true, desc: "Ce que tu possèdes, ce que tu dois, ton budget et tes projets", subs: [
       { id: "placements", label: "Placements", module: "pilotage" },
       { id: "immobilier", label: "Immobilier et crédits", module: "bilan" },
       { id: "budget", label: "Budget", module: "plan" },
       { id: "objectifs", label: "Objectifs", module: "objectifs-view" },
     ] },
-    { space: "pilotage", label: "Pilotage", short: "Pilotage", icon: "pilotage", primary: true, desc: "Ma situation est-elle saine ? Et si… ?", subs: [
+    { space: "pilotage", label: "Pilotage", short: "Pilotage", icon: "pilotage", primary: true, desc: "Ta situation est-elle saine ? Et si… ?", subs: [
       { id: "sante", label: "Santé", module: "sante" },
       { id: "risque", label: "Risque", module: "risque-view" },
       { id: "rang", label: "Rang", module: "toise" },
       { id: "projections", label: "Projections", module: null },
       { id: "scenarios", label: "Scénarios", module: "simu" },
     ] },
-    { space: "agent", label: "Agent", short: "Agent", icon: "agent", primary: true, desc: "Ce que Claude a fait, sait et propose", subs: [
+    { space: "agent", label: "Agent", short: "Agent", icon: "agent", primary: true, desc: "Ce que Claude a fait, sait et te propose", subs: [
       { id: "journal", label: "Journal", module: "journal-view" },
       { id: "propositions", label: "Propositions", module: "propositions" },
       { id: "memoire", label: "Mémoire", module: "memoire-view" },
       { id: "fiches", label: "Fiches", module: "fiches-view" },
       { id: "connexion", label: "Connexion", module: "claude-guide" },
     ] },
-    { space: "compte", label: "Compte", short: "Compte", icon: "compte", primary: false, desc: "Mes données, mes règles et mon compte", subs: [
+    { space: "compte", label: "Compte", short: "Compte", icon: "compte", primary: false, desc: "Tes données, tes règles et ton compte", subs: [
       { id: "donnees", label: "Données", module: "profil" },
       { id: "regles", label: "Règles", module: "regles" },
     ] },
@@ -68,7 +68,7 @@
   const defSub = sp => (sp.subs.find(x => x.module) || sp.subs[0]).id;
   const subOf = (space, sub) => { const sp = spaceOf(space); return sp ? sp.subs.find(x => x.id === sub) || null : null; };
   /* « destination », « destination/sous-vue » ou ancienne route → { space, sub } ; sous-vue par défaut : dernière visitée,
-     sinon la première qui a un module (defSub). Inconnu → null (les sous-onglets internes de la Toise utilisent aussi data-goto). */
+     sinon la première qui a un module (defSub). Inconnu → null. */
   /* Lien profond « destination/sous-vue?cle=valeur » : sépare la route de ses paramètres → [route, "cle=valeur" | ""]. */
   function separerParametres(t) {
     const s = String(t == null ? "" : t), i = s.indexOf("?");
@@ -277,8 +277,8 @@
         (last ? "Cours au " + frDate(last) : "Cours non encore mis à jour") + (S.status && S.status.lastRun ? " · agent passé le " + new Date(S.status.lastRun).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
       $("fresh").textContent = t;
       const b = $("dbBanner");
-      if (S.dbOk === false) { b.hidden = false; b.textContent = "Connexion à votre espace impossible pour le moment. Rechargez la page ; si le problème persiste, reconnectez-vous."; }
-      else if (S.error) { b.hidden = false; b.textContent = "Lecture des données interrompue (" + S.error + "). Rechargez la page."; }
+      if (S.dbOk === false) { b.hidden = false; b.textContent = "Connexion à ton espace impossible pour le moment. Recharge la page ; si le problème persiste, reconnecte-toi."; }
+      else if (S.error) { b.hidden = false; b.textContent = "Lecture des données interrompue (" + S.error + "). Recharge la page."; }
       else b.hidden = true;
       scopeSeg(S);
       veille(S);
@@ -374,7 +374,8 @@
         if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         const n = e.target.closest("[data-nav]"); if (n) { e.preventDefault(); App.go(n.dataset.nav); return; }
         const t = e.target.closest("[data-goto-tab]"); if (t) { e.preventDefault(); App.go(t.dataset.gotoTab); return; }
-        /* [data-goto] sert aussi aux sous-onglets internes de la Toise (« rev »…) : seules les routes « espace/sous-vue » sont traitées ici. */
+        /* [data-goto] : liens internes « espace/sous-vue » (les anciens noms d'onglets seuls passent par [data-goto-tab]) ; une valeur
+           sans « / » ou inconnue est laissée au navigateur. */
         const g = e.target.closest("[data-goto]"); if (g && g.dataset.goto.includes("/") && resolve(g.dataset.goto)) { e.preventDefault(); App.go(g.dataset.goto); }
       });
       /* Montage de chaque module enregistré dont le conteneur #view-<module> existe. Le hash d'origine est encore
@@ -395,33 +396,24 @@
         if (typeof Auth.onChange === "function") Auth.onChange((ev, s) => { if (s) anonAccount(s); });
       }
       let onboardingShown = false;
-      /* Premiers pas en formulaires (« Je n'utilise pas d'assistant ») : écriture du profil, des placements, puis onboarding fait. */
-      const formulaires = () => ({
-        onSave: async (patch, rows) => {
-          await Store.db.doc("profil/main").update(patch);
-          if (rows && rows.length) await Store.db.collection("positions").addMany(rows);
-          await Store.markOnboarded();
-        },
-        onSkip: () => Store.markOnboarded().catch(e => console.warn("Boussole : premiers pas non marqués", e)),
-      });
-      /* Accueil (accueil.js) : bienvenue, choix de l'assistant, connexion de Claude, entretien, suivi.
+      /* Accueil (accueil.js) : bienvenue, connexion de Claude, entretien, suivi et validation. Aucune saisie dans l'app :
+         Boussole fonctionne avec un assistant, la seule écriture est « onboarding terminé » (Store.markOnboarded, dans l'accueil).
          Aussi rouvert depuis Agent › Connexion (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
       App.accueil = o => {
         if (!window.Accueil) return false;
-        Accueil.open(Object.assign({ formulaires: formulaires() }, o || {}));
+        Accueil.open(Object.assign({}, o || {}));
         return true;
       };
       /* ?accueil dans l'URL : force l'ouverture (démo comprise) pour tester le parcours. */
       const forceAccueil = new URLSearchParams(location.search).has("accueil");
       /* Une fois par chargement, pour un compte réel qui n'a pas terminé l'onboarding (sauf « Reprendre plus tard »
-         dans cet onglet). Sans accueil.js, repli sur les premiers pas en formulaires. */
+         dans cet onglet). */
       function maybeOnboard(S) {
-        if (onboardingShown || !S.ready) return;
-        if (forceAccueil && window.Accueil) { onboardingShown = true; Accueil.open({ formulaires: formulaires(), etape: 1 }); return; }
+        if (onboardingShown || !S.ready || !window.Accueil) return;
+        if (forceAccueil) { onboardingShown = true; Accueil.open({ etape: 1 }); return; }
         if (demo || !S.dbOk || S.onboardingDone) return;
         onboardingShown = true;
-        if (window.Accueil) { if (!Accueil.reporte()) Accueil.open({ formulaires: formulaires() }); }
-        else if (window.Onboarding) Onboarding.open(Object.assign({ profil: S.profil }, formulaires()));
+        if (!Accueil.reporte()) Accueil.open({});
       }
       Store.on(S => {
         maybeOnboard(S);

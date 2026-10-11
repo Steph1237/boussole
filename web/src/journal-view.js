@@ -286,7 +286,8 @@
       : o.options.map(x => '<button type="button" role="radio" data-ui-id="' + esc(x.id) + '" aria-checked="' + (x.id === ed.statut) + '">' + esc(x.label) + "</button>").join("");
   }
   function formHtml(ed, actuel, U) {
-    return '<form class="jv-form" data-jv-form novalidate aria-labelledby="jv-f-t">' +
+    /* Groupe de champs (pas de <form> : rien n'est envoyé, « Enregistrer » appelle Store.journal.modifier). */
+    return '<div class="jv-form" role="group" data-jv-form aria-labelledby="jv-f-t">' +
       '<h3 class="jv-d-t" id="jv-f-t">Corriger l\'entrée</h3>' +
       '<label class="jv-lab" for="jv-f-titre">Titre</label>' +
       '<input class="jv-in" id="jv-f-titre" data-jv-champ="titre" type="text" maxlength="120" required value="' + esc(ed.titre) + '">' +
@@ -298,7 +299,7 @@
       '<input class="jv-in" type="date" id="jv-f-revue" data-jv-champ="revueLe" value="' + esc(ed.revueLe) + '"></div></div>' +
       '<p class="jv-note">Une fois l\'entrée confirmée, chaque correction est tracée dans son historique.</p>' +
       '<div class="jv-acts"><button type="button" class="jv-btn" data-jv-act="enregistrer">Enregistrer</button>' +
-      '<button type="button" class="jv-btn ghost" data-jv-act="annuler">Annuler</button></div></form>';
+      '<button type="button" class="jv-btn ghost" data-jv-act="annuler">Annuler</button></div></div>';
   }
 
   function actionsHtml(e, busy) {

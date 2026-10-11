@@ -1,5 +1,6 @@
 /* Store démo : même contrat que store-supabase.js, en mémoire, sur les données de window.DEMO (demo-data.js).
-   Rien n'est enregistré : les écritures de la façade `db` modifient la mémoire puis réémettent.
+   Rien n'est enregistré : les écritures de contrôle (propositions, journal, mémoire, règles, profil de risque recalculé)
+   modifient la mémoire puis réémettent ; comme store-supabase.js, la façade `db` refuse toute autre écriture (lecture seule).
 
    Choix du mode au démarrage (pas de store.js intermédiaire) : chaque adaptateur vérifie lui-même son mode
    et seul celui qui correspond installe window.Store. Ce fichier s'installe quand l'URL contient `demo`
@@ -7,7 +8,8 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on) }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, surveillerConnexions(on), markOnboarded() }
+   db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
@@ -15,7 +17,7 @@
    propositions = [{ id, lot, cible, operation, ref, avant, apres, source, justification, statut, creeLe, decideLe }] (toutes, les plus
    récentes d'abord) ; Store.propositions.appliquer(ids, modifications) / refuser(ids) les décident en mémoire (même effet que la
    fonction SQL appliquer_propositions, voir l'en-tête de store-supabase.js).
-   db.doc("profil/main").update({ risque }) / ({ classes }) / ({ protection }) ne touche que ces clés.
+   db.doc("profil/main").update({ risque }) ne touche que cette clé ; db.doc("config/main").update({ rules }) que les règles.
    connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] (vide au départ : aucun assistant connecté) ;
    Store.surveillerConnexions(true) simule la connexion de Claude 4 s plus tard (pour montrer le voyant de l'onboarding),
    surveillerConnexions(false) annule la simulation en attente.
@@ -98,12 +100,11 @@
     emit();
   }
 
-  /* ---------- façade db (même surface que l'ancien store : doc().update/set, collection().add) ---------- */
+  /* ---------- validation (application des propositions) et façade db de contrôle ---------- */
   const tick = () => new Promise(r => setTimeout(r, 30));
-  const err = (code, message) => Object.assign(new Error(message), { code });
   const newId = p => p + "-" + Math.random().toString(36).slice(2, 9);
-  // Validation commune aux deux stores (même texte dans store-supabase.js) : une valeur invalide est refusée
-  // (code invalid_argument, message en français), jamais corrigée en silence.
+  // Une valeur invalide est refusée (code invalid_argument, message en français), jamais corrigée en silence.
+  // normLignes / normObjectif servent à l'application des propositions en mémoire (rôle de appliquer_propositions côté SQL).
   const bad = m => Object.assign(new Error(m), { code: "invalid_argument" });
   const TYPES_LIGNE = ["revenu", "depense", "epargne"], FREQS = ["mois", "an"], OWNERS = ["p1", "p2", "commun"];
   function normLignes(lignes) {
@@ -144,101 +145,39 @@
     if (has("priorite")) { const v = +o.priorite; if (!Number.isInteger(v)) throw bad("Objectif : priorité invalide (nombre entier attendu)."); out.priorite = v; }
     return out;
   }
-  /* Colonnes du Diagnostic (même validation que store-supabase.js). */
-  const DIAG = ["risque", "classes", "protection"];
   const objet = v => v != null && typeof v === "object" && !Array.isArray(v);
-  function normDiagnostic(patch) {
-    const out = {};
-    if ("risque" in patch) {
-      if (patch.risque !== null && !objet(patch.risque)) throw bad("Profil de risque invalide : objet { reponses, profil, score, date } ou null attendu.");
-      out.risque = patch.risque;
-    }
-    if ("classes" in patch) {
-      const c = patch.classes == null ? {} : patch.classes;
-      if (!objet(c) || Object.keys(c).some(k => typeof c[k] !== "string" || !c[k])) throw bad("Classes invalides : objet { poche: classe } attendu.");
-      out.classes = c;
-    }
-    if ("protection" in patch) {
-      const pr = patch.protection == null ? {} : patch.protection;
-      if (!objet(pr)) throw bad("Protection invalide : objet { prevoyance, emprunteur } attendu.");
-      out.protection = pr;
-    }
-    return out;
-  }
-  function updateProfil(patch) {
-    const p = clone(patch) || {}, diag = {}, reste = {};
-    Object.keys(p).forEach(k => { (DIAG.includes(k) ? diag : reste)[k] = p[k]; });
-    const d = normDiagnostic(diag);
-    if ("risque" in d) C.risque = d.risque;
-    if ("classes" in d) C.classes = d.classes;
-    C.profil = Object.assign(C.profil || {}, reste, "protection" in d ? { protection: d.protection } : {});
-  }
   const OBJ_DEFAUT = { nom: "", type: "projet", cible: 0, dateCible: null, deja: 0, source: "saisi", poches: [], enveloppes: [], rendement: 2, priorite: 0 };
+  /* Seules les écritures de contrôle passent (même texte et même validation que store-supabase.js). */
+  const LECTURE_SEULE = "Écriture non disponible dans l'app : complète ou corrige avec Claude, puis valide sa proposition.";
+  function seulement(patch, cles) {
+    if (!objet(patch)) throw bad("Modification invalide : objet attendu.");
+    const autres = Object.keys(patch).filter(k => !cles.includes(k));
+    if (autres.length || !Object.keys(patch).length) throw bad(LECTURE_SEULE);
+  }
+  function normRegles(rules) {
+    if (!Array.isArray(rules) || rules.some(r => !objet(r) || typeof r.type !== "string")) throw bad("Règles invalides : liste de règles { type, … } attendue.");
+    return rules;
+  }
+  function normRisque(patch) {
+    seulement(patch, ["risque"]);
+    if (patch.risque !== null && !objet(patch.risque)) throw bad("Profil de risque invalide : objet { reponses, profil, score, date } ou null attendu.");
+    return patch.risque;
+  }
   const db = {
     doc(path) {
-      const [col, id] = String(path).split("/");
+      const [col] = String(path).split("/");
       return {
         async update(patch) {
           await tick();
-          if (col === "positions") { const p = C.positions.find(x => x.id === id); if (!p) throw err("not_found", "Position inconnue : " + id); Object.assign(p, clone(patch)); }
-          else if (col === "config") C.config = Object.assign(C.config || {}, clone(patch));
-          else if (col === "profil") updateProfil(patch);
-          else if (col === "budget") C.budget = { lignes: normLignes(Object.assign({}, C.budget || {}, clone(patch)).lignes) };
-          else throw err("invalid_argument", "Collection inconnue : " + col);
+          const p = clone(patch);
+          if (col === "config") { seulement(p, ["rules"]); C.config = Object.assign(C.config || {}, { rules: normRegles(p.rules) }); }
+          else if (col === "profil") C.risque = normRisque(p);
+          else throw bad(LECTURE_SEULE);
           publish();
-        },
-        async set(doc) {
-          await tick();
-          if (col === "positions") { const d = Object.assign(clone(doc), { id }); const i = C.positions.findIndex(x => x.id === id); if (i >= 0) C.positions[i] = d; else C.positions.push(d); }
-          else if (col === "config") C.config = clone(doc);
-          else if (col === "profil") C.profil = clone(doc);
-          else if (col === "budget") C.budget = { lignes: normLignes(clone(doc || {}).lignes) };
-          else throw err("invalid_argument", "Collection inconnue : " + col);
-          publish();
-        },
-        async delete() {
-          await tick();
-          if (col !== "objectifs") throw err("invalid_argument", "Collection inconnue : " + col);
-          const i = C.objectifs.findIndex(o => o.id === id);
-          if (i < 0) throw err("not_found", "Objectif introuvable : " + id);
-          C.objectifs.splice(i, 1);
-          publish();
-        },
-      };
-    },
-    collection(name) {
-      return {
-        async add(doc) {
-          await tick();
-          if (name !== "transactions") throw err("invalid_argument", "Collection inconnue : " + name);
-          const row = Object.assign({ id: "tx-" + Math.random().toString(36).slice(2, 9), createdAt: new Date().toISOString() }, clone(doc));
-          C.tx.unshift(row);
-          publish();
-          return { id: row.id };
-        },
-        async addMany(rows) {
-          await tick();
-          if (name !== "positions") throw err("invalid_argument", "Collection inconnue : " + name);
-          (rows || []).forEach(r => C.positions.push(Object.assign({ id: "pos-" + Math.random().toString(36).slice(2, 9), status: "actif" }, clone(r))));
-          publish();
-          return { count: (rows || []).length };
-        },
-        async upsert(row) {
-          await tick();
-          if (name !== "objectifs") throw err("invalid_argument", "Collection inconnue : " + name);
-          const v = normObjectif(clone(row));
-          const id = row && row.id != null ? String(row.id) : "";
-          const cur = id && C.objectifs.find(o => o.id === id);
-          const out = cur ? Object.assign(cur, v) : Object.assign(clone(OBJ_DEFAUT), v, { id: newId("obj") });
-          if (!cur) C.objectifs.push(out);
-          C.objectifs.sort((x, y) => x.priorite - y.priorite); // tri stable : priorité puis ordre de création
-          publish();
-          return { id: out.id };
         },
       };
     },
   };
-
 
   /* ---------- propositions de Claude (même effet que appliquer_propositions, en mémoire) ---------- */
   const QUESTIONS_RISQUE = ["horizon", "objectif", "reaction", "perte_max", "connaissances", "experience", "revenus", "matelas", "part_investie", "age"];

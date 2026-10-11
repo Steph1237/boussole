@@ -23,7 +23,7 @@
   const run = async fn => { need(); const { data, error } = await fn(); if (error) throw asErr(error); return data; };
   const EMAILS = B.emails === true;
   const CONFIRM_REQUIRED = "Le serveur demande de confirmer cette adresse par e-mail, mais Boussole n'envoie pas d'e-mail pour le moment. " +
-    "Votre compte reste utilisable sur ce navigateur. Écrivez à stephane@ceres.agency pour finaliser l'ajout de l'adresse.";
+    "Ton compte reste utilisable sur ce navigateur. Écris à stephane@ceres.agency pour finaliser l'ajout de l'adresse.";
 
   // Règles de mot de passe du projet (supabase/config.toml) : 8 caractères minimum, lettres et chiffres.
   function passwordProblem(pw) {
@@ -39,7 +39,7 @@
     const m = String((e && e.message) || c.message || "");
     if (code !== "weak_password" && !/password should|weak password|password is known/i.test(m)) return null;
     const r = Array.isArray(c.reasons) ? c.reasons : Array.isArray(e && e.reasons) ? e.reasons : [];
-    if (r.includes("pwned") || /known to be weak|pwned|leaked/i.test(m)) return "Ce mot de passe figure dans des fuites de données connues. Choisissez-en un autre.";
+    if (r.includes("pwned") || /known to be weak|pwned|leaked/i.test(m)) return "Ce mot de passe figure dans des fuites de données connues. Choisis-en un autre.";
     if (r.includes("length") || /at least \d+ characters/i.test(m)) return "Mot de passe trop court : 8 caractères minimum, avec des lettres et des chiffres.";
     if (r.includes("characters") || /one character of each/i.test(m)) return "Le mot de passe doit contenir des lettres et des chiffres.";
     return "Mot de passe trop faible : 8 caractères minimum, avec des lettres et des chiffres.";
