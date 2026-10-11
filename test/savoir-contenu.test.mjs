@@ -138,3 +138,61 @@ test("0015 sur PGlite : remplacement effectué, version incrémentée une seule 
   assert.deepEqual(reste, [], "plus aucune fiche avec l'ancien libellé");
   await db.close();
 });
+
+const AVANT_0018 = ["0009_savoir_memoire.sql", "0010_savoir_reperes.sql", "0011_savoir_fiches.sql", "0012_savoir_libelles.sql",
+  "0013_journal.sql", "0014_journal_durcissement.sql", "0015_savoir_libelles_objectifs.sql"];
+
+test("0018 : une mise à jour rejouable par fiche (titre, résumé, contenu, version + 1), rien d'autre", () => {
+  const m18 = lire("supabase/migrations/0018_savoir_tutoiement.sql");
+  assert.ok(m18, "migration 0018_savoir_tutoiement.sql absente");
+  // découpe sur « $f$; » en fin de ligne (le texte des fiches contient des « ; » en fin de ligne)
+  const instr = m18.replace(/^--[^\n]*\n/gm, "").split(/(?<=\$f\$);\s*$/m).map(s => s.trim()).filter(Boolean);
+  const slugs = instr.map(s => {
+    assert.match(s, /^update public\.savoir_fiches\s+set titre = '(?:[^']|'')*',\s+resume = '(?:[^']|'')*',\s+contenu = \$f\$[\s\S]*?\$f\$,\s+version = version \+ 1, mis_a_jour_le = '2026-10-11'\s+where slug = '[a-z0-9-]+' and contenu is distinct from \$f\$[\s\S]*\$f\$$/,
+      "instruction inattendue : " + s.slice(0, 80));
+    const [, a, b] = s.match(/contenu = \$f\$([\s\S]*?)\$f\$,[\s\S]*contenu is distinct from \$f\$([\s\S]*)\$f\$$/);
+    assert.equal(a, b, "même texte dans set et where");
+    assert.doesNotMatch(s, /sources/, "les sources ne sont pas touchées");
+    return s.match(/where slug = '([a-z0-9-]+)'/)[1];
+  });
+  assert.deepEqual([...slugs].sort(), [...FICHES].sort(), "les 19 fiches, une instruction chacune");
+  assert.doesNotMatch(m18, /TODO|TBD|lorem|XXX|à compléter|<valeur|<date|<résumé|<contenu/i);
+  assert.doesNotMatch(m18, /\b(achetez|souscrivez chez|nous recommandons|je recommande)\b/i);
+});
+
+test("0018 sur PGlite : 19 fiches au tutoiement, version + 1, sources intactes, rejouable", async () => {
+  const { baseAvec } = await import("./helpers/pglite.mjs");
+  const db = await baseAvec(AVANT_0018);
+  const etat = async () => (await db.query("select slug, titre, resume, contenu, sources, version, mis_a_jour_le::text d from public.savoir_fiches order by slug")).rows;
+  const avant = await etat();
+  assert.equal(avant.length, 19);
+  assert.ok(avant.some(f => /\b(vous|votre|vos)\b/i.test(f.contenu)), "point de départ au vouvoiement");
+  const m18 = readFileSync("supabase/migrations/0018_savoir_tutoiement.sql", "utf8");
+  await db.exec(m18);
+  const apres = await etat();
+  assert.deepEqual(apres.map(f => f.slug), avant.map(f => f.slug));
+  apres.forEach((f, i) => {
+    const a = avant[i];
+    for (const champ of ["titre", "resume", "contenu"]) assert.doesNotMatch(f[champ], /\b(vous|votre|vos)\b/i, `${f.slug}.${champ} encore au vouvoiement`);
+    assert.doesNotMatch(f.contenu, /\b(?!chez\b|assez\b)\p{L}+ez\b/iu, f.slug + " : impératif en -ez");
+    assert.equal(f.version, a.version + 1, f.slug + " : version + 1");
+    assert.equal(f.d, "2026-10-11");
+    assert.deepEqual(f.sources, a.sources, f.slug + " : sources inchangées");
+    // le fond ne bouge pas : mêmes intertitres (hors « se poser » → « te poser »), mêmes chiffres, mêmes liens
+    const chiffres = t => (t.match(/\d[\d  ,.]*/g) || []).join("|");
+    assert.equal(chiffres(f.contenu), chiffres(a.contenu), f.slug + " : chiffres inchangés");
+    const liens = t => (t.match(/https?:\/\/\S+/g) || []).join("|");
+    assert.equal(liens(f.contenu), liens(a.contenu), f.slug + " : liens inchangés");
+    const titres = t => (t.match(/^##.*$/gm) || []).map(h => h.replace(" te poser", " se poser")).join("|");
+    assert.equal(titres(f.contenu), titres(a.contenu), f.slug + " : mêmes sections");
+    const mots = f.contenu.split(/\s+/).filter(Boolean).length;
+    assert.ok(mots >= 200 && mots <= 900, `longueur de ${f.slug} : ${mots} mots`);
+  });
+  // « Comment Boussole s'en sert » : la saisie passe par Claude, plus de « renseigner » dans l'app
+  const toutes = apres.map(f => f.contenu).join("\n");
+  assert.doesNotMatch(toutes, /\brenseign/i);
+  for (const k of ["Pilotage › Rang", "Patrimoine › Objectifs", "Compte › Données", "Aujourd'hui"]) assert.ok(toutes.includes(k), k);
+  await db.exec(m18);
+  assert.deepEqual(await etat(), apres, "rejoué : rien ne change");
+  await db.close();
+});
