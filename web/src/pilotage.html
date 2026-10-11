@@ -1,106 +1,46 @@
-<div class="pilotage">
-  <section class="summary" aria-label="Synthèse">
-    <div>
-      <div class="label" id="totLabel">Patrimoine financier du foyer</div>
-      <div class="big num" id="total">—</div>
-      <div class="small muted" id="pending"></div>
-    </div>
-    <div><div class="label">Depuis 30 jours</div><div class="mid delta" id="d30">—</div><div class="small muted" id="d30s"></div></div>
-    <div><div class="label">Plus-values latentes</div><div class="mid" id="pl">—</div><div class="small muted">lignes cotées avec prix de revient</div></div>
-    <div><div class="label">Épargne de précaution</div><div class="mid" id="cush">—</div><div class="small muted" id="cushs"></div><a class="small cush-link" href="#compte/regles" data-goto="compte/regles">Régler la cible</a></div>
-  </section>
-
-  <div class="grid2">
-    <section class="panel chart" aria-label="Évolution">
-      <div class="panel-head"><h2>Évolution</h2><span class="small muted" id="chartNote"></span></div>
-      <div class="evo-ctl" id="evoCtl" hidden>
-        <div class="seg evo-per" id="evoPer" role="group" aria-label="Période"></div>
-        <div class="evo-perso" id="evoPerso" hidden>
-          <label>Du<input type="date" id="evoDu"></label>
-          <label>Au<input type="date" id="evoAu"></label>
-        </div>
-        <label class="evo-gran">Pas<select id="evoGran" aria-label="Pas du graphique"></select></label>
+<div class="pl">
+  <section class="panel pl-tete" aria-labelledby="plTitre">
+    <div class="pl-tete-haut">
+      <div class="pl-tete-txt">
+        <h2 class="pl-label" id="plTitre">Placements du foyer</h2>
+        <p class="pl-total" id="plTotal">—</p>
+        <p class="pl-sous" id="plSous" aria-live="polite"></p>
       </div>
-      <div class="small evo-res" id="evoRes" aria-live="polite"></div>
-      <div id="chart"></div>
-    </section>
-    <section class="panel" aria-label="Enveloppes">
-      <div class="panel-head"><h2>Par enveloppe</h2></div>
-      <div class="envbar" id="envbar"></div>
-      <ul class="clean" id="envlist"></ul>
-    </section>
-  </div>
-
-  <section class="panel" aria-label="Allocation">
-    <div class="panel-head"><h2>Allocation par poche</h2><span class="small muted" id="allocNote"></span></div>
-    <div class="alloc" id="alloc"></div>
+      <div class="pl-tete-acts">
+        <button type="button" class="pl-btn" id="plMouvement" aria-haspopup="dialog" hidden>Enregistrer un mouvement</button>
+        <button type="button" class="pl-btn ghost" data-pl-ajouter aria-haspopup="dialog">Ajouter à la main</button>
+      </div>
+    </div>
+    <ul class="pl-faits" id="plFaits"></ul>
+    <div class="pl-periode" id="plPeriode"></div>
+    <div class="pl-courbe" id="plCourbe"></div>
+    <div class="pl-pied">
+      <p class="pl-note" id="plCourbeNote"></p>
+      <div id="plClaude"></div>
+    </div>
   </section>
 
-  <section class="panel" aria-label="Positions">
-    <div class="panel-head"><h2>Positions</h2><span class="small muted">Cours mis à jour chaque soir par l'agent · valeurs manuelles pour fonds euros, SCPI, livrets</span></div>
-    <div class="scroll"><table id="ledger"><thead><tr><th>Ligne</th><th>Quantité</th><th>Cours</th><th>Valeur</th><th>+/- latente</th><th>Poids</th><th>Donnée</th></tr></thead><tbody></tbody></table></div>
+  <p class="pl-chargement" id="plChargement" role="status">Chargement de vos placements…</p>
+
+  <section class="panel pl-vide" id="plVide" aria-labelledby="plVideTitre" hidden>
+    <h2 id="plVideTitre">Aucun placement enregistré</h2>
+    <p>Dites à votre assistant ce que vous détenez (PEA, assurance vie, livrets, compte-titres…) : il prépare les lignes, vous les validez. Vous pouvez aussi les saisir vous-même ou importer un fichier.</p>
+    <div class="pl-acts">
+      <span id="plVideClaude"></span>
+      <button type="button" class="pl-btn ghost" data-pl-ajouter aria-haspopup="dialog">Ajouter à la main</button>
+    </div>
   </section>
 
-  <section class="panel" aria-label="Saisie">
-    <div class="panel-head"><h2>Enregistrer un mouvement</h2><span class="small muted">Achats, ventes et soldes hors versements programmés</span></div>
-    <form id="txForm" autocomplete="off">
-      <label>Type
-        <select id="txType">
-          <option value="achat">Achat (quantité × prix)</option>
-          <option value="vente">Vente (quantité × prix)</option>
-          <option value="versement">Versement (montant)</option>
-          <option value="retrait">Retrait (montant)</option>
-          <option value="solde">Nouveau solde / nouvelle quantité</option>
-        </select>
-      </label>
-      <label>Ligne<select id="txPos"></select></label>
-      <label>Quantité<input id="txQty" type="number" step="any" inputmode="decimal" placeholder="ex. 10"></label>
-      <label>Prix unitaire (€)<input id="txPrice" type="number" step="any" inputmode="decimal" placeholder="ex. 25,40"></label>
-      <label>Montant (€)<input id="txAmt" type="number" step="any" inputmode="decimal" placeholder="ex. 500"></label>
-      <label>Date<input id="txDate" type="date"></label>
-      <label style="grid-column:1/-1">Note<input id="txNote" type="text" placeholder="optionnel"></label>
-      <div><button class="btn" type="submit" id="txBtn">Enregistrer</button></div>
-      <div class="formnote muted" id="txMsg"></div>
-    </form>
-    <div class="import-row"><button type="button" class="btn ghost" id="importBtn">Importer des placements (fichier CSV ou assistant)</button></div>
-    <details style="margin-top:14px">
-      <summary>Ajouter une nouvelle ligne</summary>
-      <form id="newForm" autocomplete="off" style="margin-top:10px">
-        <label>Nom<input id="nfName" type="text" required placeholder="ex. Amundi PEA Japon TOPIX"></label>
-        <label>Enveloppe<select id="nfEnv"></select></label>
-        <label>Titulaire<select id="nfOwner"></select></label>
-        <label>Poche<select id="nfBloc"></select></label>
-        <label>ISIN<input id="nfIsin" type="text" placeholder="FR0013411980"></label>
-        <label>Mode<select id="nfMode"><option value="market">Coté (cours auto)</option><option value="manual">Valeur manuelle</option></select></label>
-        <label>Quantité<input id="nfQty" type="number" step="any"></label>
-        <label>Prix d'achat (€)<input id="nfPrice" type="number" step="any"></label>
-        <label>Valeur (si manuelle)<input id="nfVal" type="number" step="any"></label>
-        <div><button class="btn" type="submit">Créer la ligne</button></div>
-        <div class="formnote muted" id="nfMsg"></div>
-      </form>
-    </details>
+  <section class="panel pl-groupes" id="plGroupesBloc" aria-labelledby="plGroupesTitre" hidden>
+    <div class="pl-head">
+      <h2 id="plGroupesTitre">Mes lignes</h2>
+      <div class="pl-mode" id="plMode"></div>
+    </div>
+    <p class="pl-mode-note" id="plModeNote"></p>
+    <div id="plGroupes"></div>
   </section>
 
-  <div class="lists">
-    <section class="panel" aria-label="Ordres à passer">
-      <div class="panel-head"><h2>Ordres à passer</h2><span class="small muted">plan du dossier</span></div>
-      <ul class="clean todo" id="todo"></ul>
-    </section>
-    <section class="panel" aria-label="Versements programmés">
-      <div class="panel-head"><h2>Versements programmés</h2><span class="small muted">appliqués par l'agent</span></div>
-      <ul class="clean" id="recur"></ul>
-    </section>
-  </div>
+  <section class="pl-suivi" id="plSuivi" aria-label="Suivi des placements" hidden></section>
 
-  <div class="lists">
-    <section class="panel" aria-label="Hypothèses">
-      <div class="panel-head"><h2>Hypothèses à confirmer</h2><span class="small muted" id="hypCount"></span></div>
-      <ul class="clean" id="hyps"></ul>
-    </section>
-    <section class="panel" aria-label="Journal">
-      <div class="panel-head"><h2>Journal des mouvements</h2></div>
-      <ul class="clean" id="journal"></ul>
-    </section>
-  </div>
-  <p class="small muted" id="agentNote"></p>
+  <p class="pl-agent" id="plAgent"></p>
 </div>
