@@ -1,6 +1,7 @@
 // Patrimoine › Placements (web/src/pilotage.*) : en-tête (total, variation sur la période, courbe), regroupements
-// (enveloppe, poche, titulaire, disponibilité), panneau d'une ligne (détail, mouvement, « Modifier à la main »),
-// accordéons de suivi (allocation, ordres, versements, hypothèses, journal des mouvements).
+// (enveloppe, poche, titulaire, disponibilité), panneau d'une ligne (détail en lecture, liens Claude), accordéons de suivi
+// (allocation, ordres, versements, hypothèses, journal des mouvements). Lecture seule : aucune écriture au store, la saisie passe
+// par Claude (« Compléter avec Claude », « Corriger avec Claude »), textes au tutoiement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,17 +17,20 @@ const PL = require("../web/src/pilotage.js");
 const UI = require("../web/src/ui.js");
 const Calc = require("../web/src/calc.js");
 const Periodes = require("../web/src/periodes.js");
+const ClaudePrompts = require("../web/src/claude-prompts.js");
 const DEMO = require("../web/src/demo-data.js");
 
-const DEPS = { Calc, Periodes };
+const DEPS = { Calc, Periodes, ClaudePrompts };
 const TODAY = "2026-10-11";
 const J = v => JSON.parse(JSON.stringify(v));
-const sp = s => String(s).replace(/[  ]/g, " ");
+const sp = s => String(s).replace(/[\u00a0\u202f]/g, " ");
 const demoS = o => Object.assign(J(DEMO), { ready: true, dbOk: true, scope: "foyer", people: [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }], error: null }, o);
 const POS = (id, o) => Object.assign({ id, name: "Ligne " + id, envelope: "PEA", owner: "p1", bloc: "Monde", mode: "market", isin: null, qty: 10, pru: 100, price: 110,
   priceDate: "2026-10-10", value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null }, o);
 const XSS = '<img src=x onerror="alert(1)">';
 const sansCommentaires = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+/** Phrase d'un lien Claude, décodée depuis son href. */
+const phrasesClaude = h => [...String(h).matchAll(/href="https:\/\/claude\.ai\/new\?q=([^"]*)"/g)].map(m => decodeURIComponent(m[1].replace(/&#39;/g, "'").replace(/&amp;/g, "&")));
 
 /* ------------------------------------------------------------------ structure ------------------------------------------------------------------ */
 test("pilotage.js : se compile, s'enregistre sous « pilotage », aucune requête DOM globale hors racine", () => {
@@ -56,10 +60,8 @@ test("pilotage.html : identifiants utilisés par le script, en-tête, bascule, �
   const ids = [...js.matchAll(/\$\("(pl[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 12);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  for (const id of ["plTotal", "plSous", "plPeriode", "plCourbe", "plMode", "plGroupes", "plSuivi", "plVide", "plChargement", "plMouvement"]) assert.match(html, new RegExp('id="' + id + '"'), id);
-  assert.match(html, /data-pl-ajouter/);
-  assert.match(html, /Enregistrer un mouvement/);
-  assert.match(html, /Ajouter à la main/);
+  for (const id of ["plTotal", "plSous", "plPeriode", "plCourbe", "plMode", "plGroupes", "plSuivi", "plVide", "plChargement", "plCompleter", "plMvtClaude", "plVideClaude"])
+    assert.match(html, new RegExp('id="' + id + '"'), id);
   assert.doesNotMatch(html, /<select|<table/, "plus de formulaire ni de tableau affichés d'un coup");
 });
 
@@ -71,20 +73,36 @@ test("pilotage.css : scopé sous #view-pilotage (contenu du panneau sous .ui-pan
   assert.deepEqual(bad, []);
   assert.match(css, /@media \(max-width:\s*\d+px\)/);
   assert.doesNotMatch(css, /#[0-9a-fA-F]{3,6}\b(?![-\w])/, "couleurs par variables du thème (clair et sombre)");
+  assert.doesNotMatch(css, /\.pl-form\b|\.pl-in\b|\.pl-check\b/, "plus de styles de formulaire");
 });
 
-test("pilotage.js : écritures par Store.db (positions, transactions, import, config todo / recurring / hypotheses), jamais les règles", () => {
-  assert.match(js, /\.doc\("positions\/" \+ p\.id\)\.update\(r\.upd\)/);
-  assert.match(js, /\.doc\("positions\/" \+ r\.id\)\.set\(r\.doc\)/);
-  assert.match(js, /\.collection\("transactions"\)\.add\(/);
-  assert.match(js, /window\.Store\.db\.collection\("positions"\)\.addMany\(rows\)/);
-  assert.match(js, /Import\.open\(\{ people:/);
-  for (const k of ["todo", "recurring", "hypotheses"]) assert.match(js, new RegExp('doc\\("config/main"\\)\\.update\\(\\{ ' + k));
-  assert.doesNotMatch(js, /config\/main"\)\.update\(\{ ?(rules|cushion)/);
+test("pilotage : lecture seule — aucun formulaire, aucune écriture au store, aucun import", () => {
+  for (const [nom, src] of [["pilotage.js", js], ["pilotage.html", html]]) {
+    assert.doesNotMatch(src, /<form|type="submit"|<input|<select|<textarea|<datalist/, nom + " : formulaire");
+    assert.doesNotMatch(src, /Store\.|\.doc\(|\.collection\(|\.addMany\(|Import\.open|window\.Import/, nom + " : écriture au store ou import");
+    assert.doesNotMatch(src, /Modifier à la main|Ajouter à la main|data-pl-ajouter|data-pl-todo|data-pl-hyp=|data-pl-act/, nom + " : ancienne saisie");
+  }
+  for (const f of ["mouvement", "champsMouvement", "nouvelleLigne", "modificationLigne", "formMouvementHtml", "formLigneHtml"]) assert.equal(PL[f], undefined, f);
+});
+
+test("pilotage : boutons « Compléter avec Claude » (placements) et mouvement, branchés sur ClaudePrompts", () => {
+  assert.match(js, /u\.demanderAClaude\(phraseClaude\("placements"\), "Compléter avec Claude"\)/);
+  assert.match(js, /u\.demanderAClaude\(phraseClaude\("mouvement"\), "Enregistrer un mouvement avec Claude"\)/);
+  assert.match(js, /\$\("plVideClaude"\)\.innerHTML = u\.demanderAClaude\(phraseClaude\("placements"\), "Compléter avec Claude"\)/);
+  assert.equal(PL.phraseClaude("placements", "la ligne « X »", DEPS), ClaudePrompts.phrase("placements", "la ligne « X »"));
+  assert.match(PL.phraseClaude("placements", "", { ClaudePrompts: null }), /^Boussole : /, "repli sans ClaudePrompts");
+});
+
+test("pilotage : tutoiement — aucun « vous / votre / vos » dans le module", () => {
+  for (const [nom, src] of [["pilotage.js", js], ["pilotage.html", html]]) {
+    const m = src.match(/\b(vous|votre|vos)\b/gi);
+    assert.equal(m, null, nom + " : " + (m || []).join(", "));
+  }
 });
 
 test("pilotage.js : courbe filtrée par période et granularité (UI.periode + Periodes), choix mémorisés", () => {
-  assert.match(js, /u\.periode\(\$\("plPeriode"\)/);
+  assert.match(js, /u\.periode\(\$\("plPeriode"\), o\)/);
+  assert.match(js, /const pp = \$\("plPeriode"\)/);
   assert.match(js, /Pe\.agreger\(pts, b, g, x => x\.v\)/);
   assert.match(js, /Pe\.resume\(ag, pts, b, x => x\.v\)/);
   assert.match(js, /Pe\.bornes\(/);
@@ -92,6 +110,7 @@ test("pilotage.js : courbe filtrée par période et granularité (UI.periode + P
   assert.match(js, /EVO_KEY = "pilotage-evo"/);
   assert.match(js, /localStorage\.setItem\(EVO_KEY/);
   assert.match(js, /localStorage\.setItem\(CLE_MODE/);
+  assert.match(js, /if \(granChoisie\) o\.granularite = periode\.granularite;/, "granularité passée à UI.periode seulement si choisie");
 });
 
 /* ------------------------------------------------------------------ grouper ------------------------------------------------------------------ */
@@ -187,6 +206,7 @@ test("evolution : période personnalisée, période inconnue → 1 an, granulari
   assert.equal(perso.serie.length, 1);
   assert.deepEqual(PL.evolution(S, TODAY, { periode: "6m" }, DEPS).bornes, Periodes.bornes("1a", TODAY));
   assert.equal(PL.evolution(S, TODAY, { periode: "1a" }, DEPS).granularite, Periodes.auto(Periodes.bornes("1a", TODAY)));
+  assert.equal(PL.evolution(S, TODAY, { periode: "tout" }, DEPS).granularite, Periodes.auto(Periodes.bornes("tout", TODAY, SNAPS[0].date)), "sans choix : granularité automatique selon la période");
   const vide = PL.evolution({ scope: "foyer", positions: [], snapshots: [] }, TODAY, { periode: "1a" }, DEPS);
   assert.equal(vide.historique, false);
   assert.equal(vide.serie.length, 1);
@@ -196,8 +216,8 @@ test("evolution : période personnalisée, période inconnue → 1 an, granulari
 });
 
 test("courbeSvg : état vide orienté, SVG accessible et échappé, tiret pour la valeur en direct", () => {
-  assert.match(PL.courbeSvg({ serie: [], historique: false }), /Pas encore d'historique/);
-  assert.match(PL.courbeSvg({ serie: [{ date: TODAY, valeur: 1, label: "x" }], historique: true }), /élargissez la période/);
+  assert.match(PL.courbeSvg({ serie: [], historique: false }), /Pas encore d'historique : chaque nuit, Boussole prend une photo de tes placements/);
+  assert.match(PL.courbeSvg({ serie: [{ date: TODAY, valeur: 1, label: "x" }], historique: true }), /élargis la période ou choisis un pas plus fin/);
   const ev = { serie: [{ date: "2026-08-01", valeur: 1000, label: XSS }, { date: "2026-09-01", valeur: 1100, label: "sept." }, { date: TODAY, valeur: 1200, label: "oct.", live: true }],
     resume: { variation: 200 }, historique: true };
   const svg = PL.courbeSvg(ev, { largeur: 600, scopeLabel: "du foyer" });
@@ -218,7 +238,7 @@ test("etatDonnee : à recevoir, manuel daté, cours à récupérer, cours récen
   assert.deepEqual(PL.etatDonnee(null, TODAY), []);
 });
 
-test("detailLigne : cours et date, quantité, PRU, plus-value latente, poids, frais / zone / devise avec source, statut", () => {
+test("detailLigne : cours et date, quantité, PRU, plus-value latente, poids, frais / zone / devise avec source, statut, contexte pour Claude", () => {
   const S = demoS();
   const p = S.positions.find(x => x.id === "pea-etf-europe");
   const d = PL.detailLigne(p, S, TODAY, DEPS);
@@ -235,6 +255,7 @@ test("detailLigne : cours et date, quantité, PRU, plus-value latente, poids, fr
   const total = Calc.financier(S.positions, "foyer");
   assert.ok(Math.abs(d.poids - Calc.val(p) / total * 100) < 1e-9);
   assert.equal(F["Statut"], "Actif");
+  assert.equal(d.contexte, "la ligne « ETF Stoxx Europe 600 » (PEA Camille)");
 });
 
 test("detailLigne : ligne manuelle, ligne à recevoir (non comptée), sans annotation", () => {
@@ -251,131 +272,74 @@ test("detailLigne : ligne manuelle, ligne à recevoir (non comptée), sans annot
   assert.equal(r.poids, null);
 });
 
-test("detailHtml : tout est échappé ; actions Mouvement et « Modifier à la main », zone de formulaire, message", () => {
+test("detailHtml : lecture seule et échappé ; « Corriger avec Claude » et « Enregistrer un mouvement avec Claude » portent la ligne", () => {
   const p = POS("x", { name: XSS, envelope: XSS, note: XSS, hypothesis: XSS, annoteSource: XSS });
-  const h = PL.detailHtml(PL.detailLigne(p, { scope: "foyer", positions: [p] }, TODAY, DEPS), { message: XSS });
+  const h = PL.detailHtml(PL.detailLigne(p, { scope: "foyer", positions: [p] }, TODAY, DEPS), UI, { deps: DEPS });
   assert.doesNotMatch(h, /<img/);
-  assert.match(h, /data-pl-act="mouvement"/);
-  assert.match(h, /data-pl-act="modifier"[^>]*aria-expanded="false"/);
-  assert.match(h, /data-pl-zone/);
-  assert.match(h, /data-pl-msg role="status"/);
-});
-
-/* ------------------------------------------------------------------ mouvements ------------------------------------------------------------------ */
-test("mouvement : achat coté (PRU moyen, cours daté), vente (quantité, clôture à zéro), refus au-delà de la quantité", () => {
-  const p = POS("a", { qty: 10, pru: 100, price: 110, priceDate: "2026-10-01" });
-  const a = PL.mouvement(p, { type: "achat", qty: "10", price: "130", date: "2026-10-05", note: " DCA " }, TODAY);
-  assert.deepEqual(a.upd, { qty: 20, pru: 115, price: 130, priceDate: "2026-10-05" });
-  assert.deepEqual(a.tx, { date: "2026-10-05", type: "achat", positionId: "a", qty: 10, price: 130, amount: 1300, note: "DCA", source: "manuel" });
-  assert.equal(PL.mouvement(p, { type: "achat", amt: "1300", price: "130" }, TODAY).upd.qty, 20, "montant ÷ prix");
-  assert.equal(PL.mouvement(p, { type: "achat", qty: "1", price: "1", date: "2026-09-01" }, TODAY).upd.price, undefined, "un cours plus ancien n'écrase pas le cours");
-  assert.deepEqual(PL.mouvement(p, { type: "vente", qty: "10", price: "120" }, TODAY).upd.status, "clôturé");
-  assert.equal(PL.mouvement(p, { type: "vente", qty: "11", price: "120" }, TODAY).erreur, "Quantité vendue supérieure à la quantité détenue.");
-  assert.equal(PL.mouvement(p, { type: "achat", qty: "1" }, TODAY).erreur, "Indiquez la quantité et le prix unitaire.");
-});
-
-test("mouvement : versement / retrait (parts au dernier cours, valeur manuelle), nouveau solde, erreurs", () => {
-  const c = POS("c", { qty: 10, pru: 100, price: 100 });
-  const v = PL.mouvement(c, { type: "versement", amt: "500" }, TODAY);
-  assert.equal(v.upd.qty, 15);
-  assert.equal(v.upd.pru, 100);
-  assert.equal(v.tx.price, 100);
-  assert.equal(PL.mouvement(c, { type: "retrait", amt: "2000" }, TODAY).erreur, "Retrait supérieur à la position.");
-  assert.equal(PL.mouvement(POS("z", { price: null }), { type: "versement", amt: "10" }, TODAY).erreur, "Indiquez le prix unitaire pour convertir le montant en parts.");
-  const m = POS("m", { mode: "manual", value: 1000, qty: null, price: null });
-  assert.deepEqual(PL.mouvement(m, { type: "retrait", amt: "250", date: "2026-10-02" }, TODAY).upd, { value: 750, valueDate: "2026-10-02" });
-  assert.deepEqual(PL.mouvement(m, { type: "achat", qty: "2", price: "50" }, TODAY).upd.value, 1100);
-  assert.equal(PL.mouvement(m, { type: "achat" }, TODAY).erreur, "Indiquez un montant pour une ligne à valeur manuelle.");
-  assert.deepEqual(PL.mouvement(m, { type: "solde", amt: "1234,5" }, TODAY).upd, { value: 1234.5, valueDate: TODAY });
-  assert.deepEqual(PL.mouvement(c, { type: "solde", qty: "12" }, TODAY).upd, { qty: 12, qtyEstimated: false });
-  assert.equal(PL.mouvement(c, { type: "solde" }, TODAY).erreur, "Indiquez la nouvelle quantité.");
-  assert.equal(PL.mouvement(null, { type: "achat" }, TODAY).erreur, "Choisissez une ligne.");
-  assert.equal(PL.mouvement(c, { type: "?" }, TODAY).erreur, "Choisissez le type de mouvement.");
-});
-
-test("champsMouvement : champs utiles selon le type et le mode de la ligne", () => {
-  assert.deepEqual(PL.champsMouvement("achat", "market"), ["qty", "price", "amt"]);
-  assert.deepEqual(PL.champsMouvement("vente", "manual"), ["amt"]);
-  assert.deepEqual(PL.champsMouvement("versement", "market"), ["amt", "price"]);
-  assert.deepEqual(PL.champsMouvement("retrait", "manual"), ["amt"]);
-  assert.deepEqual(PL.champsMouvement("solde", "market"), ["qty", "price"]);
-  assert.deepEqual(PL.champsMouvement("solde", "manual"), ["amt"]);
-  assert.deepEqual(PL.champsMouvement("?", "market"), []);
-  assert.deepEqual(PL.TYPES_MVT.map(t => t.id), ["achat", "vente", "versement", "retrait", "solde"]);
-});
-
-/* ------------------------------------------------------------------ lignes ------------------------------------------------------------------ */
-test("nouvelleLigne : identifiant lisible, ligne cotée ou manuelle, transaction de création, validations", () => {
-  const r = PL.nouvelleLigne({ name: "Amundi PEA Japon", envelope: "PEA Camille", owner: "p1", bloc: "Asie", isin: " fr0013411980 ", mode: "market", qty: "4", price: "25" }, TODAY);
-  assert.equal(r.id, "pea-camill-amundi-pea-japon");
-  assert.equal(r.doc.isin, "FR0013411980");
-  assert.equal(r.doc.priceDate, TODAY);
-  assert.equal(r.doc.value, null);
-  assert.equal(r.tx.amount, 100);
-  assert.equal(r.tx.type, "creation");
-  const m = PL.nouvelleLigne({ name: "Livret", envelope: "Livrets", bloc: "Épargne", mode: "manual", value: "3000", owner: "p2" }, TODAY);
-  assert.equal(m.doc.owner, "p2");
-  assert.equal(m.doc.qty, null);
-  assert.equal(m.doc.valueDate, TODAY);
-  assert.equal(PL.nouvelleLigne({ envelope: "x", bloc: "y" }, TODAY).erreur, "Indiquez le nom de la ligne.");
-  assert.equal(PL.nouvelleLigne({ name: "a", bloc: "y" }, TODAY).erreur, "Indiquez l'enveloppe (compte ou contrat).");
-  assert.equal(PL.nouvelleLigne({ name: "a", envelope: "x" }, TODAY).erreur, "Indiquez la poche.");
-  assert.match(PL.nouvelleLigne({ name: "a", envelope: "x", bloc: "y", qty: "-1" }, TODAY).erreur, /négatifs/);
-});
-
-test("modificationLigne : seuls les champs changés ; quantité → qtyEstimated faux ; valeur → valueDate du jour ; validations", () => {
-  const p = POS("a", { qtyEstimated: true });
-  const base = { name: p.name, envelope: p.envelope, bloc: p.bloc, owner: p.owner, mode: p.mode, status: p.status, isin: "", qty: "10", pru: "100", note: "" };
-  assert.deepEqual(PL.modificationLigne(p, base, TODAY).upd, {});
-  assert.deepEqual(PL.modificationLigne(p, Object.assign({}, base, { qty: "12", note: " à surveiller ", status: "à recevoir" }), TODAY).upd,
-    { status: "à recevoir", note: "à surveiller", qty: 12, qtyEstimated: false });
-  assert.deepEqual(PL.modificationLigne(p, Object.assign({}, base, { mode: "manual", value: "900" }), TODAY).upd, { mode: "manual", value: 900, valueDate: TODAY });
-  assert.deepEqual(PL.modificationLigne(p, Object.assign({}, base, { isin: "ie00b4l5y983", owner: "p2" }), TODAY).upd, { owner: "p2", isin: "IE00B4L5Y983" });
-  assert.equal(PL.modificationLigne(p, Object.assign({}, base, { name: " " }), TODAY).erreur, "Indiquez le nom de la ligne.");
-  assert.equal(PL.modificationLigne(p, Object.assign({}, base, { qty: "" }), TODAY).erreur, "Indiquez la quantité détenue.");
-  assert.equal(PL.modificationLigne(p, Object.assign({}, base, { mode: "manual" }), TODAY).erreur, "Indiquez la valeur de la ligne.");
-  assert.match(PL.modificationLigne(p, Object.assign({}, base, { pru: "-3" }), TODAY).erreur, /négatifs/);
-  assert.equal(PL.modificationLigne(null, base, TODAY).erreur, "Ligne introuvable.");
-  assert.deepEqual(PL.STATUTS.map(s => s.id), ["actif", "à recevoir", "clôturé"]);
-});
-
-test("formulaires : échappés, champs du mouvement et de la ligne, suggestions d'enveloppes et de poches", () => {
-  const S = demoS();
-  S.positions[0].name = XSS; S.positions[0].envelope = XSS;
-  const fm = PL.formMouvementHtml(S, S.positions[1].id, TODAY);
-  assert.doesNotMatch(fm, /<img/);
-  for (const f of ["ligne", "qty", "price", "amt", "date", "note"]) assert.match(fm, new RegExp('data-pl-f="' + f + '"'), f);
-  assert.match(fm, new RegExp('value="' + S.positions[1].id + '" selected'));
-  assert.match(fm, /data-pl-type/);
-  const fe = PL.formLigneHtml(S.positions[0], S);
-  assert.doesNotMatch(fe, /<img/);
-  assert.match(fe, /data-pl-form="modifier"/);
-  assert.match(fe, /data-pl-statut/);
-  assert.match(fe, /data-pl-owner/, "deux personnes : bascule du titulaire");
-  assert.match(fe, /data-pl-f="pru"/);
-  const fn = PL.formLigneHtml(null, Object.assign({}, S, { people: [{ id: "p1", nom: "Camille" }] }));
-  assert.match(fn, /data-pl-form="nouvelle"/);
-  assert.doesNotMatch(fn, /data-pl-owner|data-pl-statut/);
-  assert.match(fn, /<datalist id="plNEnv">.*<option value="Assurance vie Sam"><\/option><option value="Banque">/);
-  assert.match(fn, /<datalist id="plNBloc"><option value="Convictions">/);
+  assert.doesNotMatch(h, /<form|<input|<button|data-pl-act|data-pl-zone|data-pl-msg/);
+  assert.match(h, />Corriger avec Claude</);
+  assert.match(h, />Enregistrer un mouvement avec Claude</);
+  const [corriger, mvt] = phrasesClaude(h);
+  assert.equal(corriger, ClaudePrompts.phrase("placements", "la ligne « " + XSS + " » (" + XSS + ")"));
+  assert.equal(mvt, ClaudePrompts.phrase("mouvement", "la ligne « " + XSS + " » (" + XSS + ")"));
+  assert.match(h, /Hypothèse à confirmer :/);
 });
 
 /* ------------------------------------------------------------------ suivi ------------------------------------------------------------------ */
-test("hypotheses, versements, journalMouvements : contenu et ordre (démo)", () => {
+test("hypotheses, versements, ordres, journalMouvements : contenu et ordre (démo)", () => {
   const S = demoS();
   S.positions[2].hypothesis = "Quantité lue sur un relevé ancien";
   S.config.recurring[1].hypothesis = "Montant à vérifier";
-  const H = PL.hypotheses(S);
+  const H = PL.hypotheses(S, DEPS);
   const attendues = S.positions.filter(p => p.hypothesis).map(p => "pos:" + p.id).concat(["rec:1", "cfg:0"]);
   assert.deepEqual(H.map(h => h.kind + ":" + h.id), attendues);
   assert.match(H.find(h => h.kind === "rec").text, /^Épargne Livret A : Montant à vérifier$/);
   S.config.recurring[1].hypothesis = null;
-  const vs = PL.versements(S, TODAY);
+  const vs = PL.versements(S, TODAY, DEPS);
   assert.deepEqual(vs.map(v => [v.label, v.enveloppe, v.etat, v.montant]), [["Versement PEA Camille", "PEA Camille", "actif", 300], ["Épargne Livret A", vs[1].enveloppe, "actif", 200]]);
-  assert.equal(PL.versements(S, "2026-01-01")[0].etat, "prevu");
-  const jm = PL.journalMouvements({ positions: [POS("a")], tx: [{ date: "2026-09-01", type: "achat", positionId: "a", qty: 2, price: 10 }, { date: "2026-10-01", type: "programme", positionId: "zz", amount: 300, source: "agent" }] });
+  assert.equal(PL.versements(S, "2026-01-01", DEPS)[0].etat, "prevu");
+  assert.deepEqual(PL.ordres(S).map(o => o.fait), [false, false]);
+  const jm = PL.journalMouvements({ positions: [POS("a")], tx: [{ date: "2026-09-01", type: "achat", positionId: "a", qty: 2, price: 10 }, { date: "2026-10-01", type: "programme", positionId: "zz", amount: 300, source: "agent" }] }, 50, DEPS);
   assert.deepEqual(jm.map(x => [x.type, x.ligne, x.agent]), [["Versement programmé", "zz", true], ["Achat", "Ligne a", false]]);
-  assert.equal(PL.journalMouvements({ tx: Array.from({ length: 80 }, (_, i) => ({ date: "2026-01-01", type: "achat", positionId: "a", createdAt: String(i) })) }).length, 50);
+  assert.equal(PL.journalMouvements({ tx: Array.from({ length: 80 }, (_, i) => ({ date: "2026-01-01", type: "achat", positionId: "a", createdAt: String(i) })) }, undefined, DEPS).length, 50);
+});
+
+test("périmètre : hypothèses, versements et journal des mouvements suivent S.scope (Calc.inScope)", () => {
+  const S = demoS({ scope: "p2" });
+  const camille = S.positions.find(p => p.owner === "p1"), sam = S.positions.find(p => p.owner === "p2");
+  camille.hypothesis = "à Camille"; sam.hypothesis = "à Sam";
+  S.config.recurring[0].hypothesis = "versement de Camille";
+  S.config.hypotheses.push({ text: "Hypothèse de Sam", owner: "p2", done: false });
+  S.tx.push({ date: TODAY, type: "achat", positionId: sam.id, qty: 1, price: 10, amount: 10 });
+  const H = PL.hypotheses(S, DEPS).map(h => h.text);
+  assert.ok(H.some(t => /à Sam/.test(t)) && !H.some(t => /à Camille|versement de Camille/.test(t)), "lignes et versements de Sam seulement");
+  assert.ok(H.includes("Hypothèse de Sam"));
+  assert.ok(!H.some(t => /compte courant commun/.test(t)), "hypothèse du foyer (sans titulaire) : vue Foyer seulement");
+  assert.ok(PL.hypotheses(demoS(), DEPS).some(h => /compte courant commun/.test(h.text)));
+  assert.deepEqual(PL.versements(S, TODAY, DEPS), [], "les versements programmés de la démo sont sur des lignes de Camille");
+  const jm = PL.journalMouvements(S, 50, DEPS);
+  const nomsSam = S.positions.filter(p => p.owner === "p2").map(p => p.name);
+  assert.equal(jm[0].ligne, sam.name);
+  assert.ok(jm.every(x => nomsSam.includes(x.ligne)), "journal limité aux lignes de Sam");
+  assert.equal(PL.journalMouvements(demoS({ scope: "p1" }), 50, DEPS).length, DEMO.tx.filter(x => (DEMO.positions.find(p => p.id === x.positionId) || {}).owner === "p1").length);
+  assert.equal(PL.journalMouvements(demoS(), 50, DEPS).length, DEMO.tx.length, "foyer : tout");
+});
+
+test("titresSuivi : un mot d'état par accordéon, sans compteur", () => {
+  const S = demoS();
+  const T = PL.titresSuivi(S, TODAY, DEPS);
+  assert.deepEqual(Object.keys(T), ["alloc", "ordres", "versements", "hyp", "journal"]);
+  assert.equal(T.ordres, "Ordres à passer · en attente");
+  assert.equal(T.hyp, "Hypothèses à confirmer · à vérifier");
+  assert.equal(sp(T.versements), "Versements programmés · 500 € par mois");
+  assert.equal(T.journal, "Journal des mouvements");
+  for (const t of Object.values(T)) assert.doesNotMatch(t, /\d+ (ordre|hypothèse|mouvement|ligne)/, t);
+  S.config.todo.forEach(o => { o.done = true; }); S.config.hypotheses = []; S.tx = []; S.positions.forEach(p => { p.hypothesis = null; });
+  const T2 = PL.titresSuivi(S, TODAY, DEPS);
+  assert.equal(T2.ordres, "Ordres à passer · tous passés");
+  assert.equal(T2.hyp, "Hypothèses à confirmer · toutes confirmées");
+  assert.equal(T2.journal, "Journal des mouvements · vide");
+  assert.equal(PL.titresSuivi({ config: {} }, TODAY, DEPS).ordres, "Ordres à passer · aucun");
 });
 
 test("allocation : parts par poche, cibles et écarts de la personne (tolérance), aucune cible pour le foyer", () => {
@@ -392,20 +356,33 @@ test("allocation : parts par poche, cibles et écarts de la personne (tolérance
   assert.ok(f.lignes.every(l => l.cible === null));
 });
 
-test("rendus du suivi : échappés, cases d'ordres, boutons Confirmer, 5 mouvements puis « Voir plus », états vides", () => {
-  const S = { scope: "foyer", positions: [POS("a", { name: XSS, hypothesis: XSS })], config: { todo: [{ text: XSS, amount: XSS, done: true }], recurring: [], hypotheses: [] },
+test("rendus du suivi : échappés, en lecture (pas de case ni de bouton), liens Claude, 5 puis « Voir plus », états vides", () => {
+  const S = { scope: "foyer", positions: [POS("a", { name: XSS, hypothesis: XSS })],
+    config: { todo: Array.from({ length: 7 }, (_, i) => ({ text: i ? "Ordre " + i : XSS, amount: XSS, done: i === 0 })), recurring: Array.from({ length: 6 }, (_, i) => ({ label: "V" + i, positionId: "a", amount: 10, day: 1, start: "2026-01-01" })), hypotheses: [] },
     tx: Array.from({ length: 7 }, (_, i) => ({ date: "2026-10-0" + (i + 1), type: "achat", positionId: "a", qty: 1, price: 10, note: XSS })) };
-  const o = PL.ordresHtml(S), h = PL.hypothesesHtml(S), j = PL.journalHtml(S, UI), v = PL.versementsHtml(S, TODAY), al = PL.allocationHtml(S, DEPS);
-  for (const x of [o, h, j, v, al]) assert.doesNotMatch(x, /<img/);
-  assert.match(o, /<input type="checkbox" data-pl-todo="0" checked>/);
-  assert.match(o, /class="pl-fait"/);
-  assert.match(h, /data-pl-hyp="pos:a"/);
+  const o = PL.ordresHtml(S, UI, DEPS), h = PL.hypothesesHtml(S, UI, DEPS), j = PL.journalHtml(S, UI, DEPS), v = PL.versementsHtml(S, TODAY, UI, DEPS), al = PL.allocationHtml(S, DEPS);
+  for (const x of [o, h, j, v, al]) {
+    assert.doesNotMatch(x, /<img/);
+    assert.doesNotMatch(x, /<input|<button(?![^>]*data-ui-voirplus)|<form/, "lecture seule");
+  }
+  assert.match(o, /class="pl-li-t pl-fait"/);
+  assert.match(o, /<span class="pl-chip bon">passé<\/span>/);
+  assert.match(o, /<span class="pl-chip attention">à passer<\/span>/);
+  assert.match(o, /Voir plus d(&#39;|')ordres \(2\)/);
+  assert.match(o, />Signaler un ordre passé à Claude</);
+  assert.match(h, />Confirmer avec Claude</);
+  assert.equal(phrasesClaude(h)[0], ClaudePrompts.phrase("placements", "l'hypothèse « " + XSS + " : " + XSS + " » à confirmer ou corriger"));
   assert.match(j, /Voir plus de mouvements \(2\)/);
-  assert.match(v, /Aucun versement programmé/);
+  assert.match(j, />Enregistrer un mouvement avec Claude</);
+  assert.match(v, /Voir plus de versements \(1\)/);
+  assert.match(v, />Corriger avec Claude</);
+  assert.match(v, /sans saisie de ta part/);
   assert.match(al, /href="#pilotage\/risque"/);
-  assert.match(PL.ordresHtml({ config: {} }), /Aucun ordre en attente/);
-  assert.match(PL.hypothesesHtml({ config: {}, positions: [] }), /Toutes les hypothèses sont confirmées/);
-  assert.match(PL.journalHtml({ tx: [] }, UI), /Aucun mouvement enregistré/);
+  assert.match(PL.ordresHtml({ config: {} }, UI, DEPS), /Aucun ordre en attente\. Les ordres décidés avec ton assistant/);
+  assert.match(PL.hypothesesHtml({ config: {}, positions: [] }, UI, DEPS), /Toutes les hypothèses sont confirmées/);
+  assert.match(PL.journalHtml({ tx: [] }, UI, DEPS), /Aucun mouvement enregistré/);
+  assert.match(PL.versementsHtml({ config: {} }, TODAY, UI, DEPS), /Aucun versement programmé.*>Compléter avec Claude</);
+  assert.match(PL.allocationHtml(demoS(), DEPS), /choisis un prénom en haut de page/);
 });
 
 test("groupesHtml : cartes dépliables (aria-expanded / aria-controls), lignes en boutons, 5 puis « Voir plus », échappement", () => {
@@ -434,27 +411,21 @@ test("groupesHtml : cartes dépliables (aria-expanded / aria-controls), lignes e
 
 /* ------------------------------------------------------------------ vue (mini-DOM) ------------------------------------------------------------------ */
 const uiJs = readFileSync("web/src/ui.js", "utf8");
-const attendre = () => new Promise(r => setTimeout(r, 0));
-/** Monte Placements (calc, periodes, ui, pilotage) dans le mini-DOM, avec un Store.db en mémoire qui journalise les écritures. */
-function vueDom(S0) {
+/** Monte Placements (calc, periodes, ui, claude-prompts, pilotage) dans le mini-DOM. Le store n'expose aucune écriture : la vue est
+    en lecture seule. stockage = contenu initial du localStorage simulé (clé → valeur). */
+function vueDom(S0, stockage) {
   const dom = miniDom(), { doc } = dom;
   let S = J(S0);
-  const ecrits = [], modules = {};
+  const modules = {}, store = new Map(Object.entries(stockage || {}));
   const ctx = { document: doc, console, setTimeout, clearTimeout, Intl, Date, Math, JSON };
   ctx.window = ctx; ctx.self = ctx;
+  ctx.localStorage = { getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => { store.set(k, String(v)); }, removeItem: k => { store.delete(k); } };
   ctx.App = { register: (n, api) => { modules[n] = api; } };
-  const db = {
-    doc: path => ({
-      update: async patch => { ecrits.push(["update", path, J(patch)]); const [col, id] = path.split("/"); S = J(S);
-        if (col === "positions") Object.assign(S.positions.find(p => p.id === id), patch); else Object.assign(S.config, patch); },
-      set: async d => { ecrits.push(["set", path, J(d)]); S = J(S); S.positions.push(J(d)); },
-    }),
-    collection: name => ({ add: async d => { ecrits.push(["add", name, J(d)]); S = J(S); S.tx.unshift(J(d)); }, addMany: async rows => { ecrits.push(["addMany", name, rows]); } }),
-  };
-  ctx.Store = { get: () => S, db };
+  ctx.Store = { get: () => S };
   vm.createContext(ctx);
   for (const f of ["calc.js", "periodes.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
   vm.runInContext(uiJs, ctx, { filename: "ui.js" });
+  vm.runInContext(readFileSync("web/src/claude-prompts.js", "utf8"), ctx, { filename: "claude-prompts.js" });
   vm.runInContext(js, ctx, { filename: "pilotage.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.setAttribute("id", "view-pilotage");
@@ -465,17 +436,21 @@ function vueDom(S0) {
   const rafraichir = () => api.update(S, true);
   rafraichir.avec = S1 => { S = J(S1); api.update(S, true); };
   const dlg = () => doc.body.querySelector('[role="dialog"]');
-  return { ctx, dom, doc, root, api, ecrits, rafraichir, dlg, S: () => S };
+  return { ctx, dom, doc, root, api, rafraichir, dlg, store, S: () => S };
 }
 const $ = (root, id) => root.querySelector("#" + id);
 
-test("vue (DOM) : en-tête (total, lignes), bascule de regroupement à 4 options, groupes repliés, suivi en accordéons fermés", () => {
+test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de regroupement à 4 options, groupes repliés, suivi en accordéons fermés", () => {
   const { root, api } = vueDom(demoS());
   const total = Calc.financier(DEMO.positions, "foyer");
   assert.equal(sp($(root, "plTotal").textContent), sp(new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.round(total)) + " €"));
   assert.equal(api.headline(), $(root, "plTotal").textContent);
   assert.match($(root, "plTitre").textContent, /^Placements du foyer$/);
   assert.match($(root, "plSous").textContent, /\d+ lignes/);
+  assert.match($(root, "plCompleter").innerHTML, />Compléter avec Claude</);
+  assert.deepEqual(phrasesClaude($(root, "plCompleter").innerHTML), [ClaudePrompts.phrase("placements")]);
+  assert.equal($(root, "plMvtClaude").hidden, false);
+  assert.deepEqual(phrasesClaude($(root, "plMvtClaude").innerHTML), [ClaudePrompts.phrase("mouvement")]);
   const radios = $(root, "plMode").querySelectorAll('[role="radio"]');
   assert.deepEqual(radios.map(r => r.textContent), ["Par enveloppe", "Par poche", "Par titulaire", "Par disponibilité"]);
   assert.ok(root.querySelectorAll("[data-pl-groupe-btn]").length >= 6);
@@ -484,17 +459,21 @@ test("vue (DOM) : en-tête (total, lignes), bascule de regroupement à 4 options
   const accs = $(root, "plSuivi").querySelectorAll("[data-pl-acc]").map(x => x.getAttribute("data-pl-acc"));
   assert.deepEqual(accs, ["alloc", "ordres", "versements", "hyp", "journal"]);
   assert.ok($(root, "plSuivi").querySelectorAll("details").every(d => !d.hasAttribute("open")));
+  assert.deepEqual($(root, "plSuivi").querySelectorAll(".ui-acc-titre").map(s => sp(s.textContent)).slice(1, 3), ["Ordres à passer · en attente", "Versements programmés · 500 € par mois"]);
   assert.equal($(root, "plVide").hidden, true);
   assert.equal($(root, "plChargement").hidden, true);
   assert.match($(root, "plClaude").innerHTML, /claude\.ai\/new\?q=/);
+  assert.equal(root.querySelectorAll("input").filter(i => !i.closest("#plPeriode")).length, 0, "aucun champ de saisie hors du sélecteur de période");
 });
 
-test("vue (DOM) : bascule « Par disponibilité » puis dépliage d'un groupe ; l'état déplié survit à une mise à jour du store", () => {
+test("vue (DOM) : bascule « Par disponibilité » (note limitée au financier) puis dépliage d'un groupe ; l'état déplié survit à une mise à jour du store", () => {
   const { root, dom, rafraichir } = vueDom(demoS());
   const radio = $(root, "plMode").querySelectorAll('[role="radio"]')[3];
   radio.click();
   assert.equal(radio.getAttribute("aria-checked"), "true");
-  assert.match($(root, "plModeNote").textContent, /Délai pour récupérer l'argent/);
+  assert.match($(root, "plModeNote").textContent, /Délai pour récupérer l'argent placé/);
+  assert.match($(root, "plModeNote").textContent, /Vue limitée aux placements financiers/);
+  assert.doesNotMatch($(root, "plModeNote").textContent, /PER, immobilier/);
   const noms = root.querySelectorAll(".pl-g-nom").map(x => x.textContent);
   assert.deepEqual(noms, Object.values(Calc.LIQUIDITE_LABELS).filter(l => noms.includes(l)));
   const b = root.querySelector("[data-pl-groupe-btn]");
@@ -508,16 +487,13 @@ test("vue (DOM) : bascule « Par disponibilité » puis dépliage d'un groupe ; 
   assert.equal($(root, "plMode").querySelectorAll('[role="radio"]')[0].getAttribute("aria-checked"), "true", "bascule au clavier");
 });
 
-test("vue (DOM) : « Voir plus de groupes » déplié le reste quand les données changent (réécriture), focus conservé", async () => {
-  const { root, doc, ecrits, rafraichir } = vueDom(demoS());
+test("vue (DOM) : « Voir plus de groupes » déplié le reste quand les données changent (réécriture), focus conservé", () => {
+  const { root, doc, rafraichir } = vueDom(demoS());
   const vp = () => $(root, "plGroupes").querySelector("[data-ui-voirplus]");
   assert.match(vp().textContent, /^Voir plus de groupes \(\d\)$/);
   vp().focus(); vp().click();
   assert.equal(vp().getAttribute("aria-expanded"), "true");
   const avant = $(root, "plGroupes").innerHTML;
-  $(root, "plSuivi").querySelector('[data-pl-hyp="cfg:0"]').click(); // écrit config/main ; la démo change (signature des groupes inchangée)
-  await attendre();
-  assert.equal(ecrits.length, 1);
   const S2 = demoS(); S2.positions[0].qty += 1; // données des lignes changées → les groupes sont réécrits
   vp().focus();
   rafraichir.avec(S2);
@@ -526,7 +502,29 @@ test("vue (DOM) : « Voir plus de groupes » déplié le reste quand les donnée
   assert.equal(doc.activeElement, vp(), "focus rendu au même bouton");
 });
 
-test("vue (DOM) : une ligne ouvre le panneau (détail, Demander à Claude) ; Échap rend le focus à la ligne", () => {
+test("vue (DOM) : journal des mouvements dans un « Voir plus » qui reste déplié quand un mouvement arrive (identifiant stable)", () => {
+  const S0 = demoS();
+  S0.tx = Array.from({ length: 8 }, (_, i) => ({ id: "t" + i, date: "2026-09-0" + (i + 1), type: "achat", positionId: "pea-etf-monde", qty: 1, price: 100, amount: 100, createdAt: "x" }));
+  const { root, rafraichir } = vueDom(S0);
+  const journal = () => $(root, "plSuivi").querySelector('[data-pl-acc="journal"]');
+  journal().querySelector("details").setAttribute("open", "");
+  const vp = () => journal().querySelector("[data-ui-voirplus]");
+  assert.match(vp().textContent, /^Voir plus de mouvements \(3\)$/);
+  vp().click();
+  assert.equal(vp().getAttribute("aria-expanded"), "true");
+  const S1 = J(S0); S1.tx.push({ id: "t9", date: "2026-10-10", type: "vente", positionId: "pea-etf-monde", qty: 1, price: 105, amount: 105, createdAt: "y" });
+  rafraichir.avec(S1);
+  assert.match(journal().textContent, /Vente/, "le journal a été réécrit avec le nouveau mouvement en tête");
+  assert.ok(journal().querySelector("details").hasAttribute("open"), "accordéon toujours ouvert");
+  assert.equal(vp().getAttribute("aria-expanded"), "true", "toujours déplié");
+  assert.equal(journal().querySelector(".ui-voirplus-reste").hidden, false);
+  assert.equal(vp().textContent, "Voir moins");
+  vp().click();
+  rafraichir.avec(S0);
+  assert.equal(vp().getAttribute("aria-expanded"), "false", "replié reste replié");
+});
+
+test("vue (DOM) : une ligne ouvre le panneau en lecture (détail, Corriger avec Claude, Demander à Claude) ; Échap rend le focus à la ligne", () => {
   const { root, doc, dom, dlg } = vueDom(demoS());
   root.querySelector('[data-pl-groupe-btn="PEA Camille"]').click();
   const l = root.querySelector('[data-pl-ligne="pea-etf-europe"]');
@@ -534,116 +532,87 @@ test("vue (DOM) : une ligne ouvre le panneau (détail, Demander à Claude) ; Éc
   assert.equal(dlg().hidden, false);
   assert.equal(dlg().querySelector(".ui-panneau-titre").textContent, "ETF Stoxx Europe 600");
   assert.match(sp(dlg().querySelector(".pl-det").textContent), /Frais courants0,07 % par an/);
+  assert.equal(dlg().querySelectorAll("form, input, select, textarea").length, 0);
+  const corps = dlg().querySelector(".ui-panneau-corps").innerHTML;
+  assert.deepEqual(phrasesClaude(corps), [ClaudePrompts.phrase("placements", "la ligne « ETF Stoxx Europe 600 » (PEA Camille)"), ClaudePrompts.phrase("mouvement", "la ligne « ETF Stoxx Europe 600 » (PEA Camille)")]);
   assert.match(dlg().querySelector(".ui-panneau-pied").innerHTML, /Demander à Claude/);
   dom.touche(doc.activeElement, "Escape");
   assert.equal(dlg().hidden, true);
   assert.equal(doc.activeElement, l);
 });
 
-test("vue (DOM) : « Modifier à la main » dans le panneau → patch de la ligne écrit par Store.db, message de confirmation", async () => {
-  const { root, dlg, ecrits } = vueDom(demoS());
+test("vue (DOM) : panneau d'une ligne rafraîchi quand le store émet, fermé proprement si la ligne disparaît (focus au titre)", () => {
+  const { root, doc, dlg, rafraichir } = vueDom(demoS());
   root.querySelector('[data-pl-groupe-btn="PEA Camille"]').click();
   root.querySelector('[data-pl-ligne="pea-air-liquide"]').click();
-  dlg().querySelector('[data-pl-act="modifier"]').click();
-  const form = dlg().querySelector('[data-pl-form="modifier"]');
-  assert.ok(form, "formulaire de la ligne dans le panneau");
-  assert.equal(dlg().querySelector('[data-pl-f="name"]').value, "Air Liquide");
-  dlg().querySelector('[data-pl-f="qty"]').value = "25";
-  dlg().querySelector('[data-pl-f="note"]').value = "Renforcé en octobre";
-  dlg().querySelector('[data-pl-statut]').querySelectorAll('[role="radio"]')[0].click();
-  form.dispatchEvent(new (miniDom().Ev)("submit"));
-  await attendre(); await attendre();
-  assert.deepEqual(ecrits, [["update", "positions/pea-air-liquide", { note: "Renforcé en octobre", qty: 25, qtyEstimated: false }]]);
-  assert.match(dlg().querySelector("[data-pl-msg]").textContent, /Modifications enregistrées/);
-  assert.match(dlg().querySelector(".pl-det").textContent, /Quantité25/);
-});
-
-test("vue (DOM) : « Modifier à la main » refuse une saisie invalide sans rien écrire", async () => {
-  const { root, dlg, ecrits } = vueDom(demoS());
+  assert.equal(dlg().hidden, false);
+  const S1 = demoS(); S1.positions.find(p => p.id === "pea-air-liquide").qty = 25;
+  rafraichir.avec(S1);
+  assert.equal(dlg().hidden, false, "toujours ouvert");
+  assert.match(dlg().querySelector(".pl-det").textContent, /Quantité25/, "contenu mis à jour");
+  const S2 = J(S1); S2.positions = S2.positions.filter(p => p.id !== "pea-air-liquide");
+  rafraichir.avec(S2);
+  assert.equal(dlg().hidden, true, "ligne disparue : panneau fermé");
+  assert.equal(doc.activeElement, $(root, "plTitre"), "focus posé sur le titre de la page");
+  // Ligne d'une autre personne quand le périmètre change.
   root.querySelector('[data-pl-groupe-btn="PEA Camille"]').click();
-  root.querySelector('[data-pl-ligne="pea-air-liquide"]').click();
-  dlg().querySelector('[data-pl-act="modifier"]').click();
-  dlg().querySelector('[data-pl-f="name"]').value = "";
-  dlg().querySelector('[data-pl-form="modifier"]').dispatchEvent(new (miniDom().Ev)("submit"));
-  await attendre();
-  assert.deepEqual(ecrits, []);
-  assert.equal(dlg().querySelector('[data-pl-form="modifier"]').querySelector("[data-pl-msg]").textContent, "Indiquez le nom de la ligne.");
+  root.querySelector('[data-pl-ligne="pea-etf-europe"]').click();
+  assert.equal(dlg().hidden, false);
+  rafraichir.avec(Object.assign(J(S2), { scope: "p2" }));
+  assert.equal(dlg().hidden, true, "ligne hors du périmètre : panneau fermé");
 });
 
-test("vue (DOM) : « Enregistrer un mouvement » (en-tête puis depuis une ligne) → position mise à jour et transaction ajoutée", async () => {
-  const { root, dlg, ecrits, ctx } = vueDom(demoS());
-  $(root, "plMouvement").click();
-  assert.equal(dlg().querySelector(".ui-panneau-titre").textContent, "Enregistrer un mouvement");
-  const sel = dlg().querySelector('[data-pl-f="ligne"]');
-  sel.value = "pea-etf-monde";
-  sel.dispatchEvent(new (miniDom().Ev)("change"));
-  assert.equal(dlg().querySelector('[data-pl-champ="amt"]').hidden, false);
-  dlg().querySelector('[data-pl-f="qty"]').value = "10";
-  dlg().querySelector('[data-pl-f="price"]').value = "100";
-  dlg().querySelector('[data-pl-f="date"]').value = "2026-10-11";
-  dlg().querySelector('[data-pl-form="mouvement"]').dispatchEvent(new (miniDom().Ev)("submit"));
-  await attendre(); await attendre();
-  const p = DEMO.positions.find(x => x.id === "pea-etf-monde");
-  assert.equal(ecrits[0][0], "update");
-  assert.equal(ecrits[0][1], "positions/pea-etf-monde");
-  assert.equal(ecrits[0][2].qty, p.qty + 10);
-  assert.equal(ecrits[1][0], "add");
-  assert.equal(ecrits[1][1], "transactions");
-  assert.equal(ecrits[1][2].type, "achat");
-  assert.equal(ecrits[1][2].amount, 1000);
-  assert.ok(ecrits[1][2].createdAt);
-  assert.match(dlg().querySelector("[data-pl-msg]").textContent, /Mouvement enregistré/);
-  assert.equal(dlg().querySelector('[data-pl-f="qty"]').value, "", "champs vidés");
-  // Depuis le panneau d'une ligne manuelle : type « Nouveau solde », seul le montant est proposé.
-  ctx.UI.panneau.fermer();
-  root.querySelector('[data-pl-groupe-btn="Livrets Camille"]').click();
-  root.querySelector("[data-pl-groupe=\"Livrets Camille\"]").querySelector("[data-pl-ligne]").click();
-  dlg().querySelector('[data-pl-act="mouvement"]').click();
-  dlg().querySelector("[data-pl-type]").querySelectorAll('[role="radio"]')[4].click();
-  assert.equal(dlg().querySelector('[data-pl-champ="qty"]').hidden, true);
-  assert.equal(dlg().querySelector('[data-pl-champ="amt"]').querySelector("span").textContent, "Nouveau solde (€)");
+test("vue (DOM) : granularité automatique tant qu'elle n'a pas été choisie ; seul un clic sur la bascule de granularité l'enregistre", () => {
+  // Ancien enregistrement (granularité « jour » posée automatiquement) : ignoré, la granularité suit la période.
+  const v = vueDom(demoS(), { "pilotage-evo": JSON.stringify({ periode: "1a", granularite: "jour" }) });
+  const pp = $(v.root, "plPeriode");
+  const actifG = () => pp.querySelector(".ui-periode-g").querySelector('[aria-checked="true"]').getAttribute("data-ui-id");
+  const radioP = id => pp.querySelector(".ui-periode-p").querySelector('[data-ui-id="' + id + '"]');
+  const radioG = id => pp.querySelector(".ui-periode-g").querySelector('[data-ui-id="' + id + '"]');
+  const memo = () => JSON.parse(v.store.get("pilotage-evo"));
+  assert.equal(actifG(), Periodes.auto(Periodes.bornes("1a", PL.jour())));
+  assert.notEqual(actifG(), "jour", "l'ancienne granularité automatique enregistrée n'est pas reprise");
+  radioP("1m").click();
+  assert.deepEqual(memo(), { periode: "1m" }, "changer de période n'enregistre pas de granularité");
+  assert.equal(actifG(), Periodes.auto(Periodes.bornes("1m", PL.jour())), "granularité automatique");
+  radioG("mois").click();
+  assert.deepEqual(memo(), { periode: "1m", granularite: "mois", gChoisie: true }, "choix explicite enregistré");
+  radioP("1a").click();
+  assert.notEqual(Periodes.auto(Periodes.bornes("1a", PL.jour())), "mois");
+  assert.equal(actifG(), "mois", "le choix explicite tient quand la période change");
+  assert.equal(memo().granularite, "mois");
+  // Rechargement : le choix explicite est rendu à UI.periode.
+  const w = vueDom(demoS(), { "pilotage-evo": JSON.stringify(memo()) });
+  assert.equal($(w.root, "plPeriode").querySelector(".ui-periode-g").querySelector('[aria-checked="true"]').getAttribute("data-ui-id"), "mois");
+  // Au clavier aussi.
+  const x = vueDom(demoS());
+  const g = $(x.root, "plPeriode").querySelector(".ui-periode-g").querySelector('[aria-checked="true"]');
+  x.dom.touche(g, "ArrowRight");
+  assert.equal(JSON.parse(x.store.get("pilotage-evo")).gChoisie, true);
 });
 
-test("vue (DOM) : « Ajouter à la main » → nouvelle ligne (set + transaction de création)", async () => {
-  const { root, dlg, ecrits } = vueDom(demoS());
-  root.querySelector("[data-pl-ajouter]").click();
-  assert.equal(dlg().querySelector(".ui-panneau-titre").textContent, "Ajouter à la main");
-  const f = k => dlg().querySelector('[data-pl-f="' + k + '"]');
-  f("name").value = "ETF Japon"; f("envelope").value = "PEA Camille"; f("bloc").value = "Asie"; f("qty").value = "3"; f("price").value = "20";
-  dlg().querySelector('[data-pl-form="nouvelle"]').dispatchEvent(new (miniDom().Ev)("submit"));
-  await attendre(); await attendre();
-  assert.equal(ecrits[0][0], "set");
-  assert.equal(ecrits[0][1], "positions/pea-camill-etf-japon");
-  assert.equal(ecrits[0][2].owner, "p1");
-  assert.equal(ecrits[1][2].type, "creation");
-  assert.match(dlg().querySelector("[data-pl-msg]").textContent, /Ligne « ETF Japon » créée/);
-});
-
-test("vue (DOM) : ordres cochés et hypothèses confirmées écrivent config/main ; l'accordéon ouvert le reste après mise à jour", async () => {
+test("vue (DOM) : l'accordéon ouvert le reste après une mise à jour du store ; ordres et hypothèses en lecture", () => {
   const S0 = demoS();
-  const { root, ecrits, rafraichir, ctx } = vueDom(S0);
+  const { root, rafraichir } = vueDom(S0);
   const acc = $(root, "plSuivi").querySelector('[data-pl-acc="ordres"]').querySelector("details");
   acc.setAttribute("open", "");
-  const cb = $(root, "plSuivi").querySelector('[data-pl-todo="1"]');
-  cb.checked = true;
-  cb.dispatchEvent(new (miniDom().Ev)("change"));
-  await attendre();
-  assert.equal(ecrits[0][1], "config/main");
-  assert.deepEqual(ecrits[0][2].todo.map(o => o.done), [false, true]);
-  rafraichir();
-  assert.ok($(root, "plSuivi").querySelector('[data-pl-acc="ordres"]').querySelector("details").hasAttribute("open"), "toujours ouvert");
-  $(root, "plSuivi").querySelector('[data-pl-hyp="cfg:0"]').click();
-  await attendre();
-  assert.deepEqual(ecrits[1], ["update", "config/main", { hypotheses: [Object.assign({}, S0.config.hypotheses[0], { done: true })] }]);
+  assert.equal($(root, "plSuivi").querySelectorAll('input[type="checkbox"]').length, 0);
+  const S1 = demoS(); S1.config.todo[1].done = true;
+  rafraichir.avec(S1);
+  const acc2 = $(root, "plSuivi").querySelector('[data-pl-acc="ordres"]');
+  assert.ok(acc2.querySelector("details").hasAttribute("open"), "toujours ouvert");
+  assert.ok(acc2.querySelectorAll(".pl-chip.bon").some(c => c.textContent === "passé"));
+  assert.match($(root, "plSuivi").querySelector('[data-pl-acc="hyp"]').textContent, /Confirmer avec Claude/);
 });
 
-test("vue (DOM) : état vide orienté (Claude + Ajouter à la main), chargement, périmètre d'une personne", () => {
+test("vue (DOM) : état vide orienté (Compléter avec Claude), chargement, périmètre d'une personne", () => {
   const v = vueDom(demoS({ positions: [], tx: [] }));
   assert.equal($(v.root, "plVide").hidden, false);
-  assert.match($(v.root, "plVideClaude").innerHTML, /Lancez votre bilan avec Claude/);
+  assert.match($(v.root, "plVideClaude").innerHTML, />Compléter avec Claude</);
+  assert.match($(v.root, "plVide").textContent, /Dis à Claude ce que tu détiens/);
   assert.equal($(v.root, "plGroupesBloc").hidden, true);
   assert.equal($(v.root, "plSuivi").hidden, true);
-  assert.equal($(v.root, "plMouvement").hidden, true);
+  assert.equal($(v.root, "plMvtClaude").hidden, true);
   assert.equal(v.api.headline(), "–");
   const c = vueDom(demoS({ ready: false, positions: [] }));
   assert.equal($(c.root, "plChargement").hidden, false);

@@ -19,7 +19,7 @@
     <section class="bl-sec" id="blBiensSec" aria-labelledby="blBiensT">
       <div class="bl-sec-tete">
         <h2 class="bl-h2" id="blBiensT">Mes biens immobiliers</h2>
-        <a class="bl-btn" href="#compte/donnees?section=biens" data-goto="compte/donnees?section=biens">Ajouter un bien</a>
+        <span class="bl-sec-act" id="blBiensClaude"></span>
       </div>
       <div class="bl-cartes" id="blBiens"></div>
     </section>
@@ -27,7 +27,7 @@
     <section class="bl-sec" id="blCreditsSec" aria-labelledby="blCreditsT">
       <div class="bl-sec-tete">
         <h2 class="bl-h2" id="blCreditsT">Mes crédits</h2>
-        <a class="bl-btn" href="#compte/donnees?section=credits" data-goto="compte/donnees?section=credits">Ajouter un crédit</a>
+        <span class="bl-sec-act" id="blCreditsClaude"></span>
       </div>
       <div class="bl-cartes" id="blCredits"></div>
     </section>
@@ -35,9 +35,9 @@
     <details class="ui-acc bl-how">
       <summary class="ui-acc-titre"><span>Comment ces chiffres sont calculés</span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
       <div class="ui-acc-corps bl-how-corps">
-        <p>Valeurs, restes à rembourser, mensualités et loyers sont ceux déclarés dans Compte › Données, par vous ou par Claude avec votre accord ; Boussole ne réévalue pas les biens.</p>
-        <p>Périmètre : un bien compte pour la quote-part de chaque personne (50 % par défaut) et son prêt suit cette quote-part ; un autre crédit compte pour son titulaire, ou pour moitié à chacun s'il est commun.</p>
-        <p>Taux d'endettement : mensualités de tous les crédits divisées par les revenus mensuels (salaires nets et autres revenus du profil, loyers perçus, revenus ajoutés au budget). Les banques le plafonnent à 35 % (norme du Haut Conseil de stabilité financière) ; votre capacité d'emprunt est détaillée dans Pilotage › Rang.</p>
+        <p>Valeurs, restes à rembourser, mensualités et loyers sont ceux que tu as validés dans Boussole (préparés par Claude, avec ton accord) ; Boussole ne réévalue pas les biens. Pour en ajouter ou en corriger, passe par « Compléter avec Claude ».</p>
+        <p>Périmètre : un bien compte pour la quote-part de chaque personne (50 % par défaut) et son prêt suit cette quote-part ; un autre crédit compte pour son titulaire, ou pour moitié à chacun s'il est commun (sans titulaire renseigné, il ne compte que pour le foyer).</p>
+        <p>Taux d'endettement : mensualités de tous les crédits divisées par les revenus mensuels du foyer, ou de la personne affichée (salaires nets et autres revenus du profil, loyers perçus comptés en entier, revenus ajoutés au budget). Les banques le plafonnent à <span id="blPlafond">35 %</span> (norme du Haut Conseil de stabilité financière) et ne comptent les loyers qu'à 70 % ; ta capacité d'emprunt est détaillée dans Pilotage › Rang.</p>
       </div>
     </details>
   </div>

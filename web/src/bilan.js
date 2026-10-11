@@ -1,19 +1,22 @@
 /* Patrimoine › Immobilier et crédits (module « bilan ») : « Qu'est-ce que je possède en immobilier et que dois-je ? ».
+   Lecture seule : le board lit, l'agent écrit (docs/superpowers/specs/2026-10-11-saisie-par-agent.md). Les biens et crédits se
+   complètent ou se corrigent avec Claude (UI.demanderAClaude + ClaudePrompts.phrase, section immobilier, avec le bien ou le crédit
+   en contexte) ; aucune écriture au store depuis ce module.
    - En-tête : verdict en une phrase, « Demander à Claude » ; quatre tuiles : immobilier (valeur), reste à rembourser (dettes),
-     mensualités, taux d'endettement (mensualités ÷ revenus, lien vers Pilotage › Rang pour la capacité d'emprunt).
-   - Une carte par bien (usage, valeur, part de l'immobilier, déjà à vous, reste dû, mensualité, loyer) et une carte par crédit
+     mensualités, taux d'endettement (mensualités ÷ revenus du foyer ou de la personne, rapporté au plafond HCSF du repère
+     « hcsf_taux_effort », 35 % en secours ; lien vers Pilotage › Rang, où la banque compte les loyers à 70 %).
+   - Une carte par bien (usage, valeur, part de l'immobilier, déjà à toi, reste dû, mensualité, loyer) et une carte par crédit
      (prêt rattaché à un bien ou autre crédit : reste dû, mensualité, titulaire) ; 5 puis « Voir plus » ; une carte ouvre un
-     panneau (UI.panneau) : détail, « Modifier dans Compte › Données » (#compte/donnees?section=biens|credits, la page Compte ouvre
-     la section demandée via App.parametres()), « Demander à Claude ». « Ajouter un bien » / « Ajouter un crédit » : même ancre.
-   - État vide orienté agent (« Dites à Claude si vous êtes propriétaire ou si vous avez des crédits ») ; chargement, données
-     indisponibles. Méthode en accordéon fermé.
+     panneau (UI.panneau, lecture) : détail, « Corriger avec Claude », « Demander à Claude ». Le panneau suit le store
+     (contenu mis à jour, fermé si l'élément disparaît). « Compléter avec Claude » en tête des deux sections.
+   - État vide orienté agent (« Dis à Claude si tu es propriétaire… ») ; chargement, données indisponibles. Méthode en accordéon fermé.
    Respecte le périmètre (Foyer / personne) : Calc.part (quote-part d'un bien) et Calc.partCredit. Aucun calcul nouveau : totaux de
    Calc.immobilier / dettes / mensualites, revenus de Plan.budgetTotaux (même taux d'endettement que Pilotage › Santé).
-   Lecture seule : les saisies vivent dans Compte › Données. La composition « Ce que je possède, ce que je dois » est dans le panneau
-   de la carte Patrimoine net d'Aujourd'hui ; la vue par disponibilité dans Patrimoine › Placements ; « à traiter » dans Aujourd'hui.
-   Fonctions pures exportées pour les tests (module.exports) : analyser, verdict, tuilesHtml, carteBienHtml, carteCreditHtml,
-   detailBienHtml, detailCreditHtml, lienModifier, questionPage, questionBien, questionCredit, videHtml, headlineDe.
-   Dépendances injectées (deps) : { Calc, Plan } ; window.* par défaut. */
+   La composition « Ce que je possède, ce que je dois » est dans le panneau de la carte Patrimoine net d'Aujourd'hui ; la vue par
+   disponibilité dans Patrimoine › Placements ; « à traiter » dans Aujourd'hui.
+   Fonctions pures exportées pour les tests (module.exports) : analyser, plafondHcsf, situerTaux, verdict, tuilesHtml, carteBienHtml,
+   carteCreditHtml, detailBienHtml, detailCreditHtml, phraseClaude, contexteElement, questionPage, questionBien, questionCredit,
+   videHtml, headlineDe. Dépendances injectées (deps) : { Calc, Plan, Reperes, ClaudePrompts } ; window.* par défaut. */
 (function () {
   "use strict";
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -22,6 +25,7 @@
 
   /* ---------- formats ---------- */
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
+  const nf1 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const num = v => (isFinite(+v) ? +v : 0);
   const pos = v => Math.max(0, num(v));
   const eur = v => (v == null || !isFinite(v) ? "—" : (Math.round(v) < 0 ? "−" : "") + nf.format(Math.abs(Math.round(v))) + "\u00a0€");
@@ -29,12 +33,10 @@
   const kEur = v => (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + "\u00a0M€" : nf.format(Math.round(v / 1000)) + "\u00a0k€");
   const pct = v => (v == null || !isFinite(v) ? "—" : Math.round(v * 100).toLocaleString("fr-FR") + "\u00a0%");
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
-  const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
-  const PLAFOND = 0.35;
+  const PLAFOND_SECOURS = 0.35;
 
   /* ---------- vocabulaire ---------- */
   const USAGES = { rp: "Résidence principale", locatif: "Locatif", secondaire: "Résidence secondaire" };
-  const SECTION = { bien: "biens", pret: "biens", credit: "credits" };
   const CHEVRON_D = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg>';
 
   /* =============================================================== calculs de présentation =============================================================== */
@@ -53,12 +55,28 @@
   }
   const cle = (prefixe, x, i) => prefixe + ":" + (x && x.id != null && String(x.id) !== "" ? String(x.id) : "i" + i);
 
+  /** Plafond d'endettement (fraction) : repère « hcsf_taux_effort » (en %) du savoir commun, sinon 35 % (comme Pilotage › Rang). */
+  function plafondHcsf(reperes, R) {
+    const r = R && typeof R.trouver === "function" ? R.trouver(reperes, "hcsf_taux_effort") : null, v = r ? +r.valeur : NaN;
+    return isFinite(v) && v > 0 && v < 100 ? v / 100 : PLAFOND_SECOURS;
+  }
+  /** Taux affiché et sa position par rapport au plafond, jugée sur la valeur AFFICHÉE (une décimale à moins d'un demi-point du
+      seuil) : jamais « 35 % » avec « au-delà du plafond ». → { texte, etat: sous | au | au-dela | null, ton: bon | attention | critique | "" } */
+  function situerTaux(taux, plafond) {
+    if (taux == null || !isFinite(taux)) return { texte: "—", etat: null, ton: "" };
+    const P = Math.round((plafond > 0 ? plafond : PLAFOND_SECOURS) * 1000) / 10, v = taux * 100, pres = Math.abs(v - P) < 0.5;
+    const aff = pres ? Math.round(v * 10) / 10 : Math.round(v);
+    const etat = aff > P ? "au-dela" : aff === P ? "au" : "sous";
+    return { texte: (pres ? nf1.format(aff) : nf.format(aff)) + "\u00a0%", etat, ton: { sous: "bon", au: "attention", "au-dela": "critique" }[etat] };
+  }
+  const pctPlafond = p => (Math.round(p * 1000) / 10).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + "\u00a0%";
+
   /** Biens et crédits du profil dans le périmètre, totaux et taux d'endettement.
       → { scope, duScope, renseigne, vide, biens: [{ key, index, nom, usage, usageLabel, valeur, valeurTotale, part, partP1, crd, mensualite, loyer,
-          net, poids, alerte }], credits: [{ key, kind: pret|credit, nom, titulaire, owner, crd, mensualite, part, bienKey, bienNom }],
-          immobilier, dettes, mensualites, loyers, revenus, taux, nbBiens, nbCredits, deuxAdultes }
+          net, poids, alerte }], credits: [{ key, kind: pret|credit, nom, titulaire, owner (p1|p2|commun|inconnu), crd, mensualite, part, bienKey, bienNom }],
+          immobilier, dettes, mensualites, loyers, revenus, taux, plafond, nbBiens, nbCredits, deuxAdultes }
       Un bien ou un crédit qui ne compte pas dans le périmètre (quote-part nulle) est écarté. Les prêts des biens (crd ou mensualité)
-      rejoignent la liste des crédits, en tête. deps = { Calc, Plan }. */
+      rejoignent la liste des crédits, en tête. deps = { Calc, Plan, Reperes }. */
   function analyser(S, deps) {
     const s = S || {}, Calc = dep(deps, "Calc"), Plan = dep(deps, "Plan");
     const scope = s.scope || "foyer", profil = s.profil || null;
@@ -83,8 +101,9 @@
       if (!c) return;
       const part = Calc.partCredit(scope, c.owner);
       if (!(part > 0)) return;
-      const owner = c.owner === "p1" || c.owner === "p2" ? c.owner : "commun";
-      credits.push({ key: cle("credit", c, i), kind: "credit", nom: plat(c.nom) || "Crédit", owner, titulaire: owner === "commun" ? "Commun" : nomDe(s, owner),
+      const owner = c.owner === "p1" || c.owner === "p2" || c.owner === "commun" ? c.owner : "inconnu";
+      credits.push({ key: cle("credit", c, i), kind: "credit", nom: plat(c.nom) || "Crédit", owner,
+        titulaire: owner === "commun" ? "Commun" : owner === "inconnu" ? "Titulaire non renseigné" : nomDe(s, owner),
         crd: pos(c.crd) * part, mensualite: pos(c.mensualite) * part, part, bienKey: null, bienNom: "" });
     });
     const immobilier = Calc.immobilier(profil, scope), dettes = Calc.dettes(profil, scope), mensualites = Calc.mensualites(profil, scope);
@@ -96,37 +115,60 @@
     const tout = prets.sort((a, b) => b.crd - a.crd).concat(credits.sort((a, b) => b.crd - a.crd));
     return { scope, duScope: duScope(s, Calc), renseigne: !!profil && (Array.isArray(profil.biens) || Array.isArray(profil.credits) || !!profil.biensRenseignes),
       vide: !biens.length && !tout.length, biens, credits: tout, immobilier, dettes, mensualites, loyers: biens.reduce((a, b) => a + b.loyer, 0),
-      revenus, taux: revenus > 0 ? mensualites / revenus : null, nbBiens: biens.length, nbCredits: tout.length, deuxAdultes };
+      revenus, taux: revenus > 0 ? mensualites / revenus : null, plafond: plafondHcsf(s.savoir && s.savoir.reperes, dep(deps, "Reperes")),
+      nbBiens: biens.length, nbCredits: tout.length, deuxAdultes };
   }
 
   /** Verdict de la page, en une phrase : { phrase, ton } (ton : bon | attention | critique | neutre). */
   function verdict(a) {
     if (!a || a.vide) return { phrase: a && a.renseigne ? "Aucun bien immobilier ni crédit enregistré " + a.duScope + "."
-      : "Pas encore de bien ni de crédit enregistré : dites à Claude si vous êtes propriétaire ou si vous avez des crédits.", ton: "neutre" };
+      : "Pas encore de bien ni de crédit enregistré : dis à Claude si tu es propriétaire ou si tu as des crédits.", ton: "neutre" };
     const morceaux = [];
     if (a.immobilier > 0) morceaux.push(eur(a.immobilier) + " d'immobilier");
     morceaux.push(a.dettes > 0 ? eur(a.dettes) + " restant à rembourser" : "aucun crédit en cours");
     let phrase = "Immobilier et crédits " + a.duScope + " : " + morceaux.join(", ") + ".";
     let ton = "neutre";
     if (a.taux != null && a.mensualites > 0) {
-      ton = a.taux <= PLAFOND ? "bon" : "critique";
-      phrase += " Vos mensualités pèsent " + pct(a.taux) + " de vos revenus" + (a.taux <= PLAFOND ? ", sous le plafond de 35 % des banques." : ", au-delà du plafond de 35 % des banques.");
-    } else if (a.mensualites > 0) phrase += " Renseignez vos revenus pour connaître votre taux d'endettement.";
+      const t = situerTaux(a.taux, a.plafond), P = pctPlafond(a.plafond);
+      ton = t.ton;
+      phrase += " Tes mensualités pèsent " + t.texte + " de tes revenus, " +
+        { sous: "sous le plafond de " + P + " des banques.", au: "au niveau du plafond de " + P + " des banques.", "au-dela": "au-delà du plafond de " + P + " des banques." }[t.etat];
+    } else if (a.mensualites > 0) phrase += " Complète tes revenus avec Claude pour connaître ton taux d'endettement.";
     return { phrase, ton };
   }
 
-  /** Les quatre tuiles de l'en-tête (texte échappé ; liens internes vers Pilotage › Rang ou Compte › Données). */
-  function tuilesHtml(a) {
-    const t = (id, label, valeur, sous, ton) => '<div class="bl-tuile' + (ton ? " " + ton : "") + '" data-bl-tuile="' + id + '"><span class="bl-tuile-l">' + esc(label) + "</span>" +
+  /* ---------- Claude ---------- */
+  /** Phrase prête des liens « Compléter / Corriger avec Claude » (ClaudePrompts.phrase), avec un repli si le module n'est pas chargé. */
+  function phraseClaude(section, contexte, deps) {
+    const P = dep(deps, "ClaudePrompts");
+    if (P && typeof P.phrase === "function") return P.phrase(section, contexte);
+    return "Boussole : aide-moi à renseigner mes biens immobiliers et mes crédits." + (plat(contexte) ? " Concerne : " + plat(contexte) + "." : "");
+  }
+  /** Contexte d'un bien ou d'un crédit pour l'agent : « le bien « Appartement » », « le prêt immobilier du bien « … » », « le crédit « … » ». */
+  function contexteElement(x) {
+    if (!x) return "";
+    if (x.kind === "pret") return "le prêt immobilier du bien « " + x.bienNom + " »";
+    if (x.kind === "credit") return "le crédit « " + x.nom + " »" + (x.owner === "inconnu" ? " (titulaire non renseigné)" : "");
+    return "le bien « " + x.nom + " » (" + x.usageLabel.toLowerCase() + ")";
+  }
+
+  /** Les quatre tuiles de l'en-tête (texte échappé). Une tuile porte un mot d'état, pas de compteur (les compteurs vivent dans la
+      navigation). U (facultatif) sert au lien « Compléter avec Claude » des revenus manquants. */
+  function tuilesHtml(a, U, deps) {
+    const t = (id, label, valeur, sous, ton) => '<div class="bl-tuile' + (ton ? " " + ton : "") + '" data-bl-tuile="' + id + '"><span class="bl-tuile-l">' + label + "</span>" +
       '<span class="bl-tuile-v">' + esc(valeur) + '</span><span class="bl-tuile-s">' + sous + "</span></div>";
-    const tauxTon = a.taux == null ? "" : a.mensualites <= 0 ? "" : a.taux <= PLAFOND ? "bon" : "critique";
+    const st = situerTaux(a.taux, a.plafond), P = pctPlafond(a.plafond);
+    const tauxTon = a.taux == null || a.mensualites <= 0 ? "" : st.ton;
+    const lienRevenus = U && typeof U.urlClaude === "function"
+      ? ' · <a href="' + esc(U.urlClaude(phraseClaude("revenus", "", deps))) + '" target="_blank" rel="noopener noreferrer">Compléter avec Claude<span class="ui-sr"> (nouvel onglet)</span></a>' : "";
     const tauxSous = a.taux == null
-      ? 'revenus à renseigner · <a href="#compte/donnees?section=revenus" data-goto="compte/donnees?section=revenus">Compte › Données</a>'
-      : esc(a.taux <= PLAFOND ? "plafond des banques : 35 %" : "au-delà du plafond de 35 %") + ' · <a href="#pilotage/rang" data-goto="pilotage/rang">Ma capacité d\'emprunt</a>';
-    return t("immobilier", "Immobilier", eur(a.immobilier), esc(a.nbBiens ? pluriel(a.nbBiens, "bien") + (a.loyers > 0 ? " · loyers " + eurM(a.loyers) : "") : "aucun bien")) +
-      t("dettes", "Reste à rembourser", eur(a.dettes), esc(a.nbCredits ? pluriel(a.nbCredits, "crédit") : "aucun crédit")) +
+      ? "revenus à renseigner" + lienRevenus
+      : esc({ sous: "plafond des banques : " + P, au: "au niveau du plafond de " + P, "au-dela": "au-delà du plafond de " + P }[st.etat]) +
+        ' · <a href="#pilotage/rang" data-goto="pilotage/rang">Ta capacité d\'emprunt</a> (la banque y compte les loyers à 70\u00a0%)';
+    return t("immobilier", "Immobilier", eur(a.immobilier), esc(a.nbBiens ? (a.loyers > 0 ? "loyers " + eurM(a.loyers) : "sans loyer perçu") : "aucun bien")) +
+      t("dettes", "Reste à rembourser", eur(a.dettes), esc(a.nbCredits ? "en cours de remboursement" : "aucun crédit")) +
       t("mensualites", "Mensualités", eurM(a.mensualites), esc(a.mensualites > 0 ? "tous crédits confondus" : "aucune mensualité")) +
-      t("taux", "Taux d'endettement", a.taux == null ? "—" : pct(a.taux), tauxSous, tauxTon);
+      t("taux", 'Taux d\'endettement<span class="bl-tuile-def">' + esc("mensualités ÷ revenus " + a.duScope) + "</span>", a.taux == null ? "—" : st.texte, tauxSous, tauxTon);
   }
 
   /** Carte repliée d'un bien (bouton data-ui-carte, ouvert en panneau par UI.brancher). */
@@ -138,27 +180,21 @@
       '<span class="ui-carte-tete"><span class="ui-carte-titre">' + esc(b.usageLabel) + "</span>" + (b.alerte ? '<span class="ui-badge attention">À vérifier</span>' : "") + "</span>" +
       '<span class="bl-carte-nom">' + esc(b.nom) + "</span>" +
       '<span class="ui-carte-valeur">' + esc(eur(b.valeur)) + "</span>" +
-      (b.crd > 0 ? '<span class="bl-barre" aria-hidden="true"><i style="width:' + (deja * 100).toFixed(1) + '%"></i></span><span class="bl-carte-deja">' + esc("Déjà à vous : " + eur(b.net) + " (" + pct(deja) + ")") + "</span>" : "") +
+      (b.crd > 0 ? '<span class="bl-barre" aria-hidden="true"><i style="width:' + (deja * 100).toFixed(1) + '%"></i></span><span class="bl-carte-deja">' + esc("Déjà à toi : " + eur(b.net) + " (" + pct(deja) + ")") + "</span>" : "") +
       '<span class="ui-carte-pied">' + pied.map(p => "<span>" + esc(p) + "</span>").join("") + "</span>" +
       '<span class="ui-carte-ouvrir">' + CHEVRON_D + "</span></button>";
   }
 
   /** Carte repliée d'un crédit (prêt d'un bien ou autre crédit). */
   function carteCreditHtml(c) {
-    const titre = c.kind === "pret" ? "Prêt immobilier" : "Crédit · " + c.titulaire;
+    const titre = c.kind === "pret" ? "Prêt immobilier" : c.owner === "inconnu" ? "Crédit" : "Crédit · " + c.titulaire;
     const nom = c.kind === "pret" ? c.bienNom : c.nom;
     return '<button type="button" class="ui-carte bl-carte bl-credit" data-ui-carte="' + esc(c.key) + '" aria-haspopup="dialog">' +
-      '<span class="ui-carte-tete"><span class="ui-carte-titre">' + esc(titre) + "</span></span>" +
+      '<span class="ui-carte-tete"><span class="ui-carte-titre">' + esc(titre) + "</span>" + (c.owner === "inconnu" ? '<span class="ui-badge attention">Titulaire non renseigné</span>' : "") + "</span>" +
       '<span class="bl-carte-nom">' + esc(nom) + "</span>" +
       '<span class="ui-carte-valeur">' + esc(eur(c.crd)) + "</span>" +
       '<span class="ui-carte-pied"><span>reste à rembourser</span>' + (c.mensualite > 0 ? "<span>" + esc(eurM(c.mensualite)) + "</span>" : "") + "</span>" +
       '<span class="ui-carte-ouvrir">' + CHEVRON_D + "</span></button>";
-  }
-
-  /** Lien « Modifier » du panneau : Compte › Données, section concernée dépliée (biens pour un bien et son prêt, credits sinon). */
-  function lienModifier(kind) {
-    const section = SECTION[kind] || "biens";
-    return { label: "Modifier dans Compte › Données", href: "#compte/donnees?section=" + section };
   }
 
   const dl = lignes => '<dl class="bl-d-dl">' + lignes.filter(Boolean).map(l => "<dt>" + esc(l[0]) + "</dt><dd>" + esc(l[1]) + "</dd>").join("") + "</dl>";
@@ -167,25 +203,26 @@
     const c = ctx || {}, foyer = !c.scope || c.scope === "foyer";
     const partLigne = foyer
       ? (c.deuxAdultes || b.partP1 !== 100 ? ["Répartition", (c.nomP1 || "Personne 1") + " " + b.partP1 + " % · " + (c.nomP2 || "Personne 2") + " " + (100 - b.partP1) + " %"] : null)
-      : ["Votre part", pct(b.part) + " de " + eur(b.valeurTotale)];
-    const lignes = [["Usage", b.usageLabel], ["Valeur" + (foyer ? "" : " (votre part)"), eur(b.valeur)], partLigne,
-      ["Reste à rembourser", b.crd > 0 ? eur(b.crd) : "aucun crédit"], ["Déjà à vous", eur(b.net) + (b.valeur > 0 ? " (" + pct(Math.max(0, b.net) / b.valeur) + ")" : "")],
+      : ["Ta part", pct(b.part) + " de " + eur(b.valeurTotale)];
+    const lignes = [["Usage", b.usageLabel], ["Valeur" + (foyer ? "" : " (ta part)"), eur(b.valeur)], partLigne,
+      ["Reste à rembourser", b.crd > 0 ? eur(b.crd) : "aucun crédit"], ["Déjà à toi", eur(b.net) + (b.valeur > 0 ? " (" + pct(Math.max(0, b.net) / b.valeur) + ")" : "")],
       ["Mensualité", b.mensualite > 0 ? eurM(b.mensualite) : "—"], ["Loyer perçu", b.loyer > 0 ? eurM(b.loyer) : "—"],
       b.loyer > 0 && b.mensualite > 0 ? ["Loyer moins mensualité", (b.loyer - b.mensualite >= 0 ? "+" : "") + eurM(b.loyer - b.mensualite)] : null,
       ["Part de l'immobilier", pct(b.poids)]];
     return dl(lignes) +
-      (b.alerte ? '<p class="bl-d-alerte" role="note">Le reste à rembourser dépasse la valeur du bien : vérifiez les deux montants.</p>' : "") +
-      '<p class="bl-d-note">Montants déclarés dans Compte › Données ; Boussole ne réévalue pas la valeur du bien.</p>';
+      (b.alerte ? '<p class="bl-d-alerte" role="note">Le reste à rembourser dépasse la valeur du bien : vérifie les deux montants avec Claude.</p>' : "") +
+      '<p class="bl-d-note">Montants que tu as validés dans Boussole ; Boussole ne réévalue pas la valeur du bien.</p>';
   }
   /** Contenu du panneau d'un crédit (HTML échappé). ctx = { scope }. */
   function detailCreditHtml(c, ctx) {
     const foyer = !(ctx && ctx.scope) || ctx.scope === "foyer";
-    const lignes = [["Type", c.kind === "pret" ? "Prêt immobilier" : "Crédit"], c.kind === "pret" ? ["Bien financé", c.bienNom] : ["Titulaire", c.titulaire],
-      ["Reste à rembourser" + (foyer ? "" : " (votre part)"), eur(c.crd)], ["Mensualité" + (foyer ? "" : " (votre part)"), c.mensualite > 0 ? eurM(c.mensualite) : "—"],
+    const lignes = [["Type", c.kind === "pret" ? "Prêt immobilier" : "Crédit"], c.kind === "pret" ? ["Bien financé", c.bienNom] : ["Titulaire", c.owner === "inconnu" ? "Non renseigné" : c.titulaire],
+      ["Reste à rembourser" + (foyer ? "" : " (ta part)"), eur(c.crd)], ["Mensualité" + (foyer ? "" : " (ta part)"), c.mensualite > 0 ? eurM(c.mensualite) : "—"],
       !foyer && c.part < 1 ? ["Part comptée", pct(c.part)] : null];
-    return dl(lignes) + '<p class="bl-d-note">' + esc(c.kind === "pret"
-      ? "Ce prêt est saisi avec le bien « " + c.bienNom + " » dans Compte › Données (reste à rembourser et mensualité du bien)."
-      : "Montants déclarés dans Compte › Données. Un crédit commun compte pour moitié à chacun.") + "</p>";
+    const note = c.kind === "pret" ? "Ce prêt est enregistré avec le bien « " + c.bienNom + " » (reste à rembourser et mensualité du bien)."
+      : c.owner === "inconnu" ? "Sans titulaire renseigné, ce crédit ne compte que dans la vue du foyer : précise-le avec Claude."
+      : "Montants que tu as validés dans Boussole. Un crédit commun compte pour moitié à chacun.";
+    return dl(lignes) + '<p class="bl-d-note">' + esc(note) + "</p>";
   }
 
   /** Questions préremplies de « Demander à Claude » (espaces simples). */
@@ -193,7 +230,7 @@
   function questionPage(a) {
     if (!a || a.vide) return "Aide-moi à renseigner dans Boussole mes biens immobiliers et mes crédits : pose-moi les questions une à une (propriétaire ou locataire, valeur, reste à rembourser, mensualités).";
     return nbsp("Explique-moi mon immobilier et mes crédits dans Boussole : ce que je possède, ce qu'il me reste à rembourser et ce que pèsent mes mensualités" +
-      (a.taux != null ? " (" + pct(a.taux) + " de mes revenus)" : "") + ".");
+      (a.taux != null ? " (" + situerTaux(a.taux, a.plafond).texte + " de mes revenus)" : "") + ".");
   }
   function questionBien(b) {
     return nbsp("Dans Boussole, mon bien « " + b.nom + " » (" + b.usageLabel.toLowerCase() + ") vaut " + eur(b.valeur) +
@@ -205,13 +242,12 @@
       (c.mensualite > 0 ? ", " + eurM(c.mensualite) : "") + ". Explique-moi son poids dans mon budget et les questions à me poser (remboursement anticipé, renégociation).");
   }
 
-  /** État vide orienté agent : « Dites à Claude… », puis ajout à la main. */
-  function videHtml(a, U) {
-    const titre = a && a.renseigne ? "Vous n'avez déclaré ni bien immobilier ni crédit." : "Aucun bien ni crédit enregistré pour l'instant.";
+  /** État vide orienté agent : « Dis à Claude… » et « Compléter avec Claude ». */
+  function videHtml(a, U, deps) {
+    const titre = a && a.renseigne ? "Tu n'as déclaré ni bien immobilier ni crédit." : "Aucun bien ni crédit enregistré pour l'instant.";
     return '<p class="bl-vide-t">' + esc(titre) + "</p>" +
-      "<p>Dites à Claude si vous êtes propriétaire ou si vous avez des crédits (immobilier, auto, consommation) : il les enregistre avec votre accord, et Boussole en tire votre patrimoine net et votre taux d'endettement.</p>" +
-      '<div class="bl-vide-act">' + (U && U.demanderAClaude ? U.demanderAClaude(questionPage(a), "Le dire à Claude") : "") +
-      '<a class="bl-lien" href="#compte/donnees?section=biens" data-goto="compte/donnees?section=biens">Ajouter à la main</a></div>';
+      "<p>Dis à Claude si tu es propriétaire ou si tu as des crédits (immobilier, auto, consommation) : il prépare les propositions, tu les valides, et Boussole en tire ton patrimoine net et ton taux d'endettement.</p>" +
+      '<div class="bl-vide-act">' + (U && U.demanderAClaude ? U.demanderAClaude(phraseClaude("immobilier", "", deps), "Compléter avec Claude") : "") + "</div>";
   }
 
   /** Chiffre clé de la sous-vue : valeur de l'immobilier, sinon reste à rembourser, sinon « – ». */
@@ -220,8 +256,8 @@
     return a.immobilier > 0 ? kEur(a.immobilier) : kEur(a.dettes) + " dus";
   }
 
-  const H = { analyser, verdict, tuilesHtml, carteBienHtml, carteCreditHtml, detailBienHtml, detailCreditHtml, lienModifier, questionPage, questionBien, questionCredit,
-    videHtml, headlineDe, USAGES };
+  const H = { analyser, plafondHcsf, situerTaux, verdict, tuilesHtml, carteBienHtml, carteCreditHtml, detailBienHtml, detailCreditHtml, phraseClaude, contexteElement,
+    questionPage, questionBien, questionCredit, videHtml, headlineDe, USAGES };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -238,7 +274,7 @@
   function render() {
     if (!root || !S) return;
     const u = U(), charge = S.ready !== false, indispo = S.dbOk === false;
-    const etat = !charge ? "Chargement des données…" : indispo && !S.profil ? "Données indisponibles pour le moment : rechargez la page ou reconnectez-vous." : "";
+    const etat = !charge ? "Chargement des données…" : indispo && !S.profil ? "Données indisponibles pour le moment : recharge la page ou reconnecte-toi." : "";
     $("blEtat").textContent = etat; $("blEtat").hidden = !etat;
     $("blCorps").hidden = !!etat || !calculable();
     if (etat || !calculable() || !u) { $("blVerdict").textContent = etat || "Chargement…"; $("blVerdict").className = "bl-verdict"; return; }
@@ -246,14 +282,15 @@
     const v = verdict(a);
     $("blVerdict").textContent = v.phrase;
     $("blVerdict").className = "bl-verdict ton-" + v.ton;
+    $("blPlafond").textContent = pctPlafond(a.plafond);
     ecrire("blDemander", "claude", u.demanderAClaude(questionPage(a)));
-    ecrire("blTuiles", "tuiles", tuilesHtml(a));
+    ecrire("blTuiles", "tuiles", tuilesHtml(a, u));
     $("blVide").hidden = !a.vide;
     ecrire("blVide", "vide", a.vide ? videHtml(a, u) : "");
     $("blBiensSec").hidden = a.vide; $("blCreditsSec").hidden = a.vide;
-    ecrireCartes("blBiens", "biens", a.biens.length ? u.voirPlus(a.biens, 5, carteBienHtml, "Voir plus de biens")
-      : '<p class="bl-aucun">Aucun bien immobilier ' + esc(a.duScope) + '. <a href="#compte/donnees?section=biens" data-goto="compte/donnees?section=biens">Ajouter un bien</a></p>');
-    ecrireCartes("blCredits", "credits", a.credits.length ? u.voirPlus(a.credits, 5, carteCreditHtml, "Voir plus de crédits")
+    ecrireCartes("blBiens", "biens", a.biens.length ? u.voirPlus(a.biens, 5, carteBienHtml, "Voir plus de biens", "div", "bl-biens")
+      : '<p class="bl-aucun">Aucun bien immobilier ' + esc(a.duScope) + ".</p>");
+    ecrireCartes("blCredits", "credits", a.credits.length ? u.voirPlus(a.credits, 5, carteCreditHtml, "Voir plus de crédits", "div", "bl-credits")
       : '<p class="bl-aucun">Aucun crédit en cours ' + esc(a.duScope) + ".</p>");
     rafraichirPanneau();
   }
@@ -266,7 +303,7 @@
     const n = cleF && $(id).querySelector('[data-ui-carte="' + echap(cleF) + '"]'); if (n) n.focus();
   }
 
-  /* ---------- panneau d'un bien ou d'un crédit ---------- */
+  /* ---------- panneau d'un bien ou d'un crédit (lecture) ---------- */
   const element = key => (last ? last.biens.find(b => b.key === key) || last.credits.find(c => c.key === key) : null) || null;
   function options(key, u) {
     const x = element(key);
@@ -274,12 +311,12 @@
     const bien = key.indexOf("bien:") === 0;
     const ctx = { scope: last.scope, nomP1: nomDe(S, "p1"), nomP2: nomDe(S, "p2"), deuxAdultes: last.deuxAdultes };
     return { titre: bien ? x.nom : x.kind === "pret" ? "Prêt · " + x.bienNom : x.nom, contenu: bien ? detailBienHtml(x, ctx) : detailCreditHtml(x, ctx),
-      lien: lienModifier(bien ? "bien" : x.kind), pied: u.demanderAClaude(bien ? questionBien(x) : questionCredit(x)) };
+      pied: u.demanderAClaude(phraseClaude("immobilier", contexteElement(x)), "Corriger avec Claude") + u.demanderAClaude(bien ? questionBien(x) : questionCredit(x)) };
   }
   function ouvrir(key, el) {
     const u = U(); if (!u) return;
     const o = options(key, u); if (!o) return;
-    ouvert = key; retour = el || null; sig.panneau = o.titre + "|" + o.contenu;
+    ouvert = key; retour = el || null; sig.panneau = o.titre + "|" + o.contenu + "|" + o.pied;
     u.panneau.ouvrir(Object.assign(o, { retour, surFermeture: fermeture }));
   }
   /* Le store a émis pendant l'ouverture : contenu mis à jour s'il a changé, panneau fermé si l'élément a disparu. */
@@ -288,7 +325,7 @@
     if (!ouvert || !u || !u.panneau.ouvert()) return;
     const o = options(ouvert, u);
     if (!o) { u.panneau.fermer({ focus: false }); return; }
-    const s = o.titre + "|" + o.contenu;
+    const s = o.titre + "|" + o.contenu + "|" + o.pied;
     if (s === sig.panneau) return;
     sig.panneau = s; u.panneau.ouvrir(o);
   }
@@ -305,7 +342,10 @@
   function mount(r) {
     root = r;
     const u = U();
-    if (u) u.brancher(root, { surCarte: (id, el) => ouvrir(id, el) });
+    if (!u) return;
+    u.brancher(root, { surCarte: (id, el) => ouvrir(id, el) });
+    $("blBiensClaude").innerHTML = u.demanderAClaude(phraseClaude("immobilier", "mes biens immobiliers"), "Compléter avec Claude");
+    $("blCreditsClaude").innerHTML = u.demanderAClaude(phraseClaude("immobilier", "mes crédits (immobilier, auto, consommation)"), "Compléter avec Claude");
   }
   function update(snap, visible) {
     S = Object.assign({}, snap, { scope: snap.scope || "foyer", people: snap.people || [] });

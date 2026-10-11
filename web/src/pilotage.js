@@ -1,20 +1,21 @@
-/* Patrimoine › Placements (module « pilotage ») — « Qu'est-ce que j'ai en placements ? » (le board lit, l'agent écrit).
-   - En-tête : total financier du périmètre, variation sur la période (UI.periode, défaut 1 an au mois), nombre de lignes,
-     plus-values latentes, épargne de précaution (cible réglée dans Compte › Règles) ; courbe d'évolution (photos nocturnes + point du jour).
+/* Patrimoine › Placements (module « pilotage ») — « Qu'est-ce que j'ai en placements ? ». Lecture seule : le board lit, l'agent écrit
+   (docs/superpowers/specs/2026-10-11-saisie-par-agent.md). Toute saisie passe par Claude : boutons « Compléter avec Claude »,
+   « Corriger avec Claude », « Enregistrer un mouvement avec Claude » (UI.demanderAClaude + ClaudePrompts.phrase, sections placements
+   et mouvement, avec la ligne concernée en contexte). Aucune écriture au store depuis ce module.
+   - En-tête : total financier du périmètre, variation sur la période (UI.periode, défaut 1 an ; granularité automatique tant que
+     l'utilisateur ne l'a pas choisie lui-même), nombre de lignes, plus-values latentes, épargne de précaution (cible réglée dans
+     Compte › Règles) ; courbe d'évolution (photos nocturnes + point du jour).
    - Bascule de regroupement (UI.bascule) : Par enveloppe · Par poche · Par titulaire · Par disponibilité (liquidité, Calc.liquidite) ;
      une carte par groupe (nom, montant, part, plus-value latente) qui se déplie en lignes compactes (5 puis « Voir plus ») ;
-     une ligne ouvre UI.panneau : cours et date, quantité, PRU, plus-value latente, poids, frais / zone / devise (avec source),
-     statut, note, « Enregistrer un mouvement », « Modifier à la main » (formulaire de la ligne dans le panneau), « Demander à Claude ».
-   - Boutons « Enregistrer un mouvement » et « Ajouter à la main » (nouvelle ligne, import CSV ou assistant) : formulaires dans le panneau.
-   - Accordéons fermés en bas : Allocation par poche, Ordres à passer, Versements programmés, Hypothèses à confirmer, Journal des mouvements.
-   Écritures par Store.db : positions/<id> update / set, collection transactions add, collection positions addMany (import),
-   config/main update ({ todo }, { recurring }, { hypotheses }). Le score de santé est dans Pilotage › Santé, les alertes dans
-   Aujourd'hui, les règles et la cible du matelas dans Compte › Règles.
-   Fonctions pures exportées pour les tests (module.exports) : grouper, totaux, matelas, evolution, etatDonnee, detailLigne, mouvement,
-   champsMouvement, nouvelleLigne, modificationLigne, hypotheses, versements, journalMouvements, allocation, et les rendus HTML
-   groupesHtml, detailHtml, courbeSvg, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, formMouvementHtml,
-   formLigneHtml (UI reçu en paramètre quand il en faut ; aucune ne touche au DOM). Dépendances injectées (deps) : { Calc, Periodes },
-   window.* par défaut. */
+     une ligne ouvre UI.panneau (lecture) : cours et date, quantité, PRU, plus-value latente, poids, frais / zone / devise (avec
+     source), statut, note, liens Claude. Le panneau se met à jour quand le store émet et se ferme si la ligne disparaît.
+   - Accordéons fermés en bas : Allocation par poche, Ordres à passer, Versements programmés, Hypothèses à confirmer, Journal des
+     mouvements (listes en 5 puis « Voir plus », dans le périmètre S.scope).
+   Le score de santé est dans Pilotage › Santé, les alertes dans Aujourd'hui, les règles et la cible du matelas dans Compte › Règles.
+   Fonctions pures exportées pour les tests (module.exports) : grouper, totaux, matelas, evolution, etatDonnee, detailLigne, hypotheses,
+   versements, ordres, journalMouvements, allocation, phraseClaude, et les rendus HTML groupesHtml, detailHtml, courbeSvg,
+   allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml (UI reçu en paramètre quand il en faut ; aucune ne touche
+   au DOM). Dépendances injectées (deps) : { Calc, Periodes, ClaudePrompts }, window.* par défaut. */
 (function () {
   "use strict";
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -69,9 +70,9 @@
   const ORDRE_LIQ = ["immediate", "jours", "semaines", "bloque"];
   const NOTE_MODE = {
     enveloppe: "Une carte par compte ou contrat.",
-    poche: "Les poches regroupent vos lignes par usage ou par thème ; l'écart aux cibles est dans « Allocation par poche ».",
+    poche: "Les poches regroupent tes lignes par usage ou par thème ; l'écart aux cibles est dans « Allocation par poche ».",
     titulaire: "Une carte par personne du foyer.",
-    disponibilite: "Délai pour récupérer l'argent, d'après l'enveloppe. Bloqué : PER, immobilier ; quelques semaines : assurance-vie.",
+    disponibilite: "Délai pour récupérer l'argent placé, estimé d'après l'enveloppe (livrets : tout de suite ; assurance-vie : quelques semaines ; PER, SCPI : bloqué). Vue limitée aux placements financiers : ton immobilier en direct est dans Immobilier et crédits.",
   };
   /** Cibles d'allocation par poche de la personne affichée (config.targets[p]) ; null pour le foyer. */
   function ciblesPoche(S) { const t = (S && S.config && S.config.targets) || {}; const sc = scopeDe(S); return sc === "foyer" ? null : t[sc] || null; }
@@ -155,8 +156,8 @@
   function courbeSvg(ev, o) {
     const opt = o || {}, rows = (ev && ev.serie) || [];
     if (rows.length < 2) return '<p class="pl-vide-courbe">' + (ev && ev.historique
-      ? "Pas assez de points sur cette période pour tracer une courbe : élargissez la période ou choisissez un pas plus fin."
-      : "Pas encore d'historique : chaque nuit, Boussole prend une photo de vos placements ; la courbe se dessine au fil des jours.") + "</p>";
+      ? "Pas assez de points sur cette période pour tracer une courbe : élargis la période ou choisis un pas plus fin."
+      : "Pas encore d'historique : chaque nuit, Boussole prend une photo de tes placements ; la courbe se dessine au fil des jours.") + "</p>";
     const W = Math.max(300, Math.min(1000, Math.round(+opt.largeur) || 720)), H = W < 480 ? 190 : 220, L = 60, R = 14, T = 16, B = 28;
     const ts = rows.map(p => utc(p.date)), x0 = ts[0], x1 = ts[ts.length - 1];
     let lo = Math.min(...rows.map(p => p.valeur)), hi = Math.max(...rows.map(p => p.valeur));
@@ -169,11 +170,13 @@
       const v = lo + (hi - lo) * k / 3, y = Y(v).toFixed(1);
       g += '<line class="pl-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="pl-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(axe(v)) + "</text>";
     }
-    let droite = -Infinity; const xFin = X(x1);
+    // Largeur estimée d'une étiquette (police chiffrée de 11 px) : les étiquettes longues (« sem. du 28 sept. ») ne se chevauchent pas.
+    const larg = s => Math.max(40, String(s || "").length * 6.6);
+    let droite = -Infinity; const xFin = X(x1), wFin = larg(rows[rows.length - 1].label);
     rows.forEach((p, i) => {
-      const x = X(ts[i]), last = i === rows.length - 1, w = 64;
+      const x = X(ts[i]), last = i === rows.length - 1, w = larg(p.label);
       const a = i === 0 ? x : last ? x - w : x - w / 2, b = i === 0 ? x + w : last ? x : x + w / 2;
-      if (!last && (a < droite + 6 || b > xFin - w - 6)) return;
+      if (!last && (a < droite + 6 || b > xFin - wFin - 6)) return;
       droite = b;
       g += '<text class="pl-axe" x="' + x.toFixed(1) + '" y="' + (H - 7) + '" text-anchor="' + (i === 0 ? "start" : last ? "end" : "middle") + '">' + esc(p.label) + "</text>";
     });
@@ -207,7 +210,7 @@
   }
   const STATUT_TXT = { actif: "Actif", "à recevoir": "À recevoir (non compté)", "clôturé": "Clôturé" };
 
-  /** Détail d'une ligne pour le panneau : { titre, meta, valeur, poids, faits: [[libellé, valeur]], source, note, hypothese, chips }. */
+  /** Détail d'une ligne pour le panneau : { titre, meta, valeur, poids, faits: [[libellé, valeur]], source, note, hypothese, chips, contexte }. */
   function detailLigne(p, S, today, deps) {
     const C = dep(deps, "Calc"), s = S || {}, x = p || {};
     const total = totaux(s, deps).total, v = C.val(x), compte = C.counted(x);
@@ -238,133 +241,61 @@
     return { titre: plat(x.name) || "Ligne sans nom", meta: [plat(x.envelope), plat(x.bloc), ouQui].filter(Boolean).join(" · "),
       valeur: eur(v), poids: compte && total ? v / total * 100 : null, faits,
       source: x.annoteSource ? plat(x.annoteSource) + (dateFr(x.annoteLe) ? ", relevé le " + dateFr(x.annoteLe) : "") : null,
-      note: plat(x.note) || null, hypothese: plat(x.hypothesis) || null, chips: etatDonnee(x, today) };
+      note: plat(x.note) || null, hypothese: plat(x.hypothesis) || null, chips: etatDonnee(x, today), contexte: contexteLigne(x) };
   }
 
-  /* =============================================================== saisies =============================================================== */
-  const TYPES_MVT = [
-    { id: "achat", label: "Achat", aria: "Achat (quantité × prix)" }, { id: "vente", label: "Vente", aria: "Vente (quantité × prix)" },
-    { id: "versement", label: "Versement", aria: "Versement (montant)" }, { id: "retrait", label: "Retrait", aria: "Retrait (montant)" },
-    { id: "solde", label: "Nouveau solde", aria: "Nouveau solde ou nouvelle quantité" },
-  ];
-  /** Champs utiles d'un mouvement selon son type et le mode de la ligne (market | manual), parmi qty, price, amt. */
-  function champsMouvement(type, mode) {
-    const cote = mode === "market";
-    if (type === "achat" || type === "vente") return cote ? ["qty", "price", "amt"] : ["amt"];
-    if (type === "versement" || type === "retrait") return cote ? ["amt", "price"] : ["amt"];
-    if (type === "solde") return cote ? ["qty", "price"] : ["amt"];
-    return [];
-  }
-  /** Calcul d'un mouvement sur une ligne (mêmes règles que le formulaire historique) :
-      saisie = { type, qty, price, amt, date, note } → { erreur } ou { upd (patch de la ligne), tx (transaction, sans createdAt) }. */
-  function mouvement(p, saisie, today) {
-    if (!p) return { erreur: "Choisissez une ligne." };
-    const s = saisie || {}, type = s.type, date = isoOk(s.date) ? s.date : jour(today), note = plat(s.note);
-    let qty = num(s.qty), price = num(s.price), amt = num(s.amt);
-    const upd = {};
-    if (type === "achat" || type === "vente") {
-      if (p.mode !== "market") {
-        if (amt == null && qty != null && price != null) amt = qty * price;
-        if (amt == null) return { erreur: "Indiquez un montant pour une ligne à valeur manuelle." };
-        upd.value = (Number(p.value) || 0) + (type === "achat" ? amt : -amt); upd.valueDate = date;
-      } else {
-        if (qty == null && amt != null && price) qty = amt / price;
-        if (qty == null || price == null) return { erreur: "Indiquez la quantité et le prix unitaire." };
-        const q0 = p.qty || 0;
-        if (type === "achat") { const q1 = q0 + qty; upd.qty = q1; upd.pru = p.pru ? ((p.pru * q0 + qty * price) / q1) : price; }
-        else { if (qty > q0 + 1e-9) return { erreur: "Quantité vendue supérieure à la quantité détenue." }; upd.qty = q0 - qty; if (upd.qty < 1e-9) upd.status = "clôturé"; }
-        if (!p.priceDate || date >= p.priceDate) { upd.price = price; upd.priceDate = date; }
-        amt = qty * price;
-      }
-    } else if (type === "versement" || type === "retrait") {
-      if (amt == null) return { erreur: "Indiquez un montant." };
-      if (p.mode === "market") {
-        const px = price || p.price;
-        if (!px) return { erreur: "Indiquez le prix unitaire pour convertir le montant en parts." };
-        qty = amt / px; price = px;
-        const q0 = p.qty || 0, q1 = type === "versement" ? q0 + qty : q0 - qty;
-        if (q1 < -1e-9) return { erreur: "Retrait supérieur à la position." };
-        upd.qty = q1; if (type === "versement") upd.pru = p.pru ? ((p.pru * q0 + amt) / q1) : px;
-      } else { upd.value = (Number(p.value) || 0) + (type === "versement" ? amt : -amt); upd.valueDate = date; }
-    } else if (type === "solde") {
-      if (p.mode === "market") {
-        if (qty == null) return { erreur: "Indiquez la nouvelle quantité." };
-        upd.qty = qty; upd.qtyEstimated = false; if (price != null) { upd.price = price; upd.priceDate = date; }
-      } else { if (amt == null) return { erreur: "Indiquez le nouveau solde." }; upd.value = amt; upd.valueDate = date; }
-    } else return { erreur: "Choisissez le type de mouvement." };
-    return { upd, tx: { date, type, positionId: p.id, qty: qty ?? null, price: price ?? null, amount: amt ?? null, note, source: "manuel" } };
-  }
 
-  const ISIN = v => { const s = plat(v).toUpperCase(); return s || null; };
-  /** Nouvelle ligne : saisie = { name, envelope, owner, bloc, isin, mode, qty, price, value } → { erreur } ou { id, doc, tx }. */
-  function nouvelleLigne(saisie, today) {
-    const s = saisie || {}, t = jour(today), name = plat(s.name), env = plat(s.envelope), bloc = plat(s.bloc);
-    if (!name) return { erreur: "Indiquez le nom de la ligne." };
-    if (!env) return { erreur: "Indiquez l'enveloppe (compte ou contrat)." };
-    if (!bloc) return { erreur: "Indiquez la poche." };
-    const mode = s.mode === "manual" ? "manual" : "market";
-    const q = num(s.qty), pr = num(s.price), v = num(s.value);
-    if ([q, pr, v].some(x => x != null && x < 0)) return { erreur: "Les montants et quantités ne peuvent pas être négatifs." };
-    const id = ((env || "x").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 10) + "-" + name.toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").slice(0, 30)).replace(/-+$/, "");
-    const doc = { id, name, envelope: env, owner: s.owner === "p2" ? "p2" : "p1", bloc, isin: ISIN(s.isin), mode,
-      qty: mode === "market" ? q : null, pru: mode === "market" ? pr : null, price: mode === "market" ? pr : null, priceDate: mode === "market" && pr ? t : null,
-      value: mode === "manual" ? v : null, valueDate: mode === "manual" ? t : null, status: "actif", hypothesis: null, qtyEstimated: false };
-    return { id, doc, tx: { date: t, type: "creation", positionId: id, qty: q, price: pr, amount: mode === "market" && q && pr ? q * pr : v, note: "", source: "manuel" } };
+  /* =============================================================== Claude =============================================================== */
+  /** Phrase prête des liens « Compléter / Corriger avec Claude » (ClaudePrompts.phrase), avec un repli si le module n'est pas chargé. */
+  function phraseClaude(section, contexte, deps) {
+    const P = dep(deps, "ClaudePrompts");
+    if (P && typeof P.phrase === "function") return P.phrase(section, contexte);
+    return "Boussole : aide-moi à mettre à jour mes placements." + (plat(contexte) ? " Concerne : " + plat(contexte) + "." : "");
   }
-
-  const STATUTS = [{ id: "actif", label: "Active" }, { id: "à recevoir", label: "À recevoir" }, { id: "clôturé", label: "Clôturée" }];
-  /** Correction d'une ligne (« Modifier à la main ») : saisie = { name, envelope, owner, bloc, isin, mode, qty, pru, value, status, note }
-      → { erreur } ou { upd } (champs changés seulement ; valeur changée → valueDate du jour ; quantité changée → qtyEstimated = false). */
-  function modificationLigne(p, saisie, today) {
-    if (!p) return { erreur: "Ligne introuvable." };
-    const s = saisie || {}, t = jour(today), upd = {};
-    const name = plat(s.name), env = plat(s.envelope), bloc = plat(s.bloc);
-    if (!name) return { erreur: "Indiquez le nom de la ligne." };
-    if (!env) return { erreur: "Indiquez l'enveloppe (compte ou contrat)." };
-    if (!bloc) return { erreur: "Indiquez la poche." };
-    const mode = s.mode === "manual" || s.mode === "market" ? s.mode : p.mode;
-    const status = STATUTS.some(x => x.id === s.status) ? s.status : p.status || "actif";
-    const owner = s.owner === "p1" || s.owner === "p2" ? s.owner : p.owner;
-    const qty = num(s.qty), pru = num(s.pru), value = num(s.value);
-    if ([qty, pru, value].some(x => x != null && x < 0)) return { erreur: "Les montants et quantités ne peuvent pas être négatifs." };
-    const change = (k, v) => { if ((p[k] ?? null) !== (v ?? null)) upd[k] = v; };
-    change("name", name); change("envelope", env); change("bloc", bloc); change("owner", owner); change("mode", mode); change("status", status);
-    change("isin", ISIN(s.isin)); change("note", plat(s.note) || null);
-    if (mode === "market") {
-      if (qty == null) return { erreur: "Indiquez la quantité détenue." };
-      change("qty", qty); change("pru", pru);
-      if ("qty" in upd) upd.qtyEstimated = false;
-    } else {
-      if (value == null) return { erreur: "Indiquez la valeur de la ligne." };
-      change("value", value);
-      if ("value" in upd || "mode" in upd) upd.valueDate = t;
-    }
-    return { upd };
-  }
+  /** Contexte d'une ligne pour l'agent : « la ligne « ETF Monde » (PEA Camille) ». */
+  const contexteLigne = p => { const x = p || {}; return "la ligne « " + (plat(x.name) || "sans nom") + " »" + (plat(x.envelope) ? " (" + plat(x.envelope) + ")" : ""); };
+  /** Lien Claude rendu par UI (rien si UI absent). */
+  const lienClaude = (U, phrase, libelle) => (U && typeof U.demanderAClaude === "function" ? U.demanderAClaude(phrase, libelle) : "");
 
   /* =============================================================== suivi =============================================================== */
-  /** Hypothèses à confirmer : lignes, versements programmés et config.hypotheses non confirmées → [{ kind: pos|rec|cfg, id, text }]. */
-  function hypotheses(S) {
-    const s = S || {}, cfg = s.config || {}, H = [];
-    (s.positions || []).forEach(p => { if (p && p.hypothesis) H.push({ kind: "pos", id: p.id, text: plat(p.name) + " : " + plat(p.hypothesis) }); });
-    (cfg.recurring || []).forEach((r, i) => { if (r && r.hypothesis) H.push({ kind: "rec", id: i, text: plat(r.label) + " : " + plat(r.hypothesis) }); });
-    (cfg.hypotheses || []).forEach((h, i) => { if (h && !h.done) H.push({ kind: "cfg", id: i, text: plat(h.text) }); });
+  const inScopeDe = deps => { const C = dep(deps, "Calc"); return C && typeof C.inScope === "function" ? C.inScope : (p, sc) => sc === "foyer" || (!!p && p.owner === sc); };
+  /** La ligne d'identifiant id est-elle dans le périmètre ? Au foyer, tout ; pour une personne, ses lignes (une ligne introuvable n'y est pas). */
+  function ligneDansScope(S, id, deps) {
+    const s = S || {}, sc = scopeDe(s);
+    if (sc === "foyer") return true;
+    const p = (s.positions || []).find(x => x && x.id === id);
+    return !!p && inScopeDe(deps)(p, sc);
+  }
+  /** Hypothèse de configuration : sans titulaire, elle concerne le foyer (vue Foyer seulement) ; avec, sa personne. */
+  const cfgDansScope = (S, h) => scopeDe(S) === "foyer" || (!!h && h.owner === scopeDe(S));
+
+  /** Hypothèses à confirmer du périmètre : lignes, versements programmés et config.hypotheses non confirmées → [{ kind: pos|rec|cfg, id, text }]. */
+  function hypotheses(S, deps) {
+    const s = S || {}, cfg = s.config || {}, sc = scopeDe(s), dans = inScopeDe(deps), H = [];
+    (s.positions || []).forEach(p => { if (p && p.hypothesis && dans(p, sc)) H.push({ kind: "pos", id: p.id, text: plat(p.name) + " : " + plat(p.hypothesis) }); });
+    (cfg.recurring || []).forEach((r, i) => { if (r && r.hypothesis && ligneDansScope(s, r.positionId, deps)) H.push({ kind: "rec", id: i, text: plat(r.label) + " : " + plat(r.hypothesis) }); });
+    (cfg.hypotheses || []).forEach((h, i) => { if (h && !h.done && cfgDansScope(s, h)) H.push({ kind: "cfg", id: i, text: plat(h.text) }); });
     return H;
   }
-  /** Versements programmés → [{ label, enveloppe, jour, debut, dernier, montant, etat: hypothese|prevu|actif }]. */
-  function versements(S, today) {
+  /** Versements programmés du périmètre → [{ label, enveloppe, jour, debut, dernier, montant, etat: hypothese|prevu|actif }]. */
+  function versements(S, today, deps) {
     const s = S || {}, t = jour(today);
-    return ((s.config && s.config.recurring) || []).filter(Boolean).map(r => {
+    return ((s.config && s.config.recurring) || []).filter(r => r && ligneDansScope(s, r.positionId, deps)).map(r => {
       const p = (s.positions || []).find(x => x && x.id === r.positionId), futur = isoOk(jj(r.start)) && jj(r.start) > t;
       return { label: plat(r.label), enveloppe: p ? plat(p.envelope) : "", jour: r.day, debut: futur ? jj(r.start) : null, dernier: plat(r.lastApplied) || null,
         montant: +r.amount || 0, etat: r.hypothesis ? "hypothese" : futur ? "prevu" : "actif" };
     });
   }
+  /** Ordres décidés avec l'agent (config.todo, propres au foyer) → [{ text, amount, fait }]. */
+  function ordres(S) {
+    return ((S && S.config && S.config.todo) || []).filter(o => o && plat(o.text)).map(o => ({ text: plat(o.text), amount: plat(o.amount), fait: !!o.done }));
+  }
   const TYPE_TX = { achat: "Achat", vente: "Vente", versement: "Versement", retrait: "Retrait", solde: "Nouveau solde", programme: "Versement programmé", creation: "Nouvelle ligne" };
-  /** Journal des mouvements, plus récents d'abord (date puis saisie), n au plus (50 par défaut). */
-  function journalMouvements(S, n) {
+  /** Journal des mouvements du périmètre, plus récents d'abord (date puis saisie), n au plus (50 par défaut). */
+  function journalMouvements(S, n, deps) {
     const s = S || {};
-    return (s.tx || []).filter(Boolean).slice().sort((a, b) => (String(b.date) + String(b.createdAt || "")) > (String(a.date) + String(a.createdAt || "")) ? 1 : -1)
+    return (s.tx || []).filter(x => x && ligneDansScope(s, x.positionId, deps)).slice()
+      .sort((a, b) => (String(b.date) + String(b.createdAt || "")) > (String(a.date) + String(a.createdAt || "")) ? 1 : -1)
       .slice(0, n == null ? 50 : n).map(x => {
         const p = (s.positions || []).find(y => y && y.id === x.positionId);
         return { type: TYPE_TX[x.type] || plat(x.type), ligne: p ? plat(p.name) : plat(x.positionId), date: jj(x.date), agent: x.source === "agent", note: plat(x.note),
@@ -383,6 +314,16 @@
       return { poche: k, montant: by[k] || 0, pct: cur, cible: t, ecart, ton: ecart == null ? null : Math.abs(ecart) > tol * 2 ? "critique" : Math.abs(ecart) > tol ? "attention" : "bon" };
     });
     return { lignes, tolerance: tol, cibles: !!ciblesPoche(s) };
+  }
+
+  /** Titres des accordéons du suivi : un mot d'état, pas de compteur (les compteurs vivent dans la navigation). */
+  function titresSuivi(S, today, deps) {
+    const ord = ordres(S), vs = versements(S, today, deps).filter(v => v.etat !== "hypothese");
+    return { alloc: "Allocation par poche",
+      ordres: "Ordres à passer · " + (!ord.length ? "aucun" : ord.some(o => !o.fait) ? "en attente" : "tous passés"),
+      versements: "Versements programmés · " + (vs.length ? eur(sum(vs, v => v.montant)) + " par mois" : "aucun"),
+      hyp: "Hypothèses à confirmer · " + (hypotheses(S, deps).length ? "à vérifier" : "toutes confirmées"),
+      journal: "Journal des mouvements" + (journalMouvements(S, 1, deps).length ? "" : " · vide") };
   }
 
   /* =============================================================== rendus HTML =============================================================== */
@@ -424,75 +365,25 @@
         '<span class="pl-g-chev" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span>' +
         '<span class="pl-g-barre" aria-hidden="true"><span style="width:' + Math.min(100, total ? g.montant / total * 100 : 0).toFixed(1) + '%"></span></span></button></h3>' +
         '<div class="pl-g-corps" id="' + id + '"' + (ouvert ? "" : " hidden") + ' data-pl-vp="' + esc(mode + ":" + g.cle) + '">' +
-        U.voirPlus(g.lignes, 5, p => ligneHtml(p, S, total, mode, today, opt.deps), "Voir plus de lignes", "ul") + "</div></li>";
+        U.voirPlus(g.lignes, 5, p => ligneHtml(p, S, total, mode, today, opt.deps), "Voir plus de lignes", "ul", "pl-lignes:" + mode + ":" + g.cle) + "</div></li>";
     };
-    return '<div class="pl-groupes-vp" data-pl-vp="' + esc("groupes:" + mode) + '">' + U.voirPlus(groupes, 5, carte, "Voir plus de groupes", "ul") + "</div>";
+    return '<div class="pl-groupes-vp" data-pl-vp="' + esc("groupes:" + mode) + '">' + U.voirPlus(groupes, 5, carte, "Voir plus de groupes", "ul", "pl-groupes:" + mode) + "</div>";
   }
 
-  /** Contenu du panneau d'une ligne (d = detailLigne()). La zone [data-pl-zone] reçoit les formulaires ; [data-pl-msg] les messages. */
-  function detailHtml(d, o) {
-    const opt = o || {};
+  /** Contenu du panneau d'une ligne (d = detailLigne()), en lecture : chiffres, pastilles, hypothèse, note, source, et les liens
+      « Corriger avec Claude » / « Enregistrer un mouvement avec Claude » qui portent la ligne en contexte. o = { deps }. */
+  function detailHtml(d, U, o) {
+    const deps = (o || {}).deps;
     return '<div class="pl-d">' +
       (d.meta ? '<p class="pl-d-meta">' + esc(d.meta) + "</p>" : "") +
       '<p class="pl-d-val">' + esc(d.valeur) + (d.poids != null ? '<span class="pl-d-poids"> · ' + esc(pct(d.poids)) + " des placements</span>" : "") + "</p>" +
       '<p class="pl-d-chips">' + d.chips.map(chip).join(" ") + "</p>" +
-      '<p class="pl-msg" data-pl-msg role="status" tabindex="-1"' + (opt.message ? "" : " hidden") + ">" + esc(opt.message || "") + "</p>" +
       (d.hypothese ? '<p class="pl-d-hyp"><strong>Hypothèse à confirmer :</strong> ' + esc(d.hypothese) + "</p>" : "") +
-      '<div class="pl-acts"><button type="button" class="pl-btn" data-pl-act="mouvement">Enregistrer un mouvement</button>' +
-      '<button type="button" class="pl-btn ghost" data-pl-act="modifier" aria-expanded="false">Modifier à la main</button></div>' +
-      '<div class="pl-zone" data-pl-zone></div>' +
+      '<div class="pl-acts pl-d-claude">' + lienClaude(U, phraseClaude("placements", d.contexte, deps), "Corriger avec Claude") +
+        lienClaude(U, phraseClaude("mouvement", d.contexte, deps), "Enregistrer un mouvement avec Claude") + "</div>" +
       '<ul class="pl-det">' + d.faits.map(f => '<li><span class="pl-det-l">' + esc(f[0]) + '</span><span class="pl-det-v">' + esc(f[1]) + "</span></li>").join("") + "</ul>" +
       (d.note ? '<p class="pl-d-note"><strong>Note :</strong> ' + esc(d.note) + "</p>" : "") +
       (d.source ? '<p class="pl-d-note">Source des frais, de la zone et de la devise : ' + esc(d.source) + ".</p>" : "") + "</div>";
-  }
-
-  const champ = (id, label, type, valeur, extra) => '<label class="pl-lab" data-pl-champ="' + id + '"><span>' + esc(label) + "</span>" +
-    '<input class="pl-in" data-pl-f="' + id + '" type="' + type + '"' + (valeur == null || valeur === "" ? "" : ' value="' + esc(valeur) + '"') + (extra || "") + "></label>";
-  const champNum = (id, label, valeur, ph) => champ(id, label, "number", valeur, ' step="any" inputmode="decimal"' + (ph ? ' placeholder="' + esc(ph) + '"' : ""));
-  const datalist = (id, xs) => '<datalist id="' + id + '">' + xs.map(x => '<option value="' + esc(x) + '"></option>').join("") + "</datalist>";
-  /** Enveloppes et poches connues, triées (pour les listes de suggestions des formulaires). */
-  function connus(S) {
-    const s = S || {}, ps = (s.positions || []).filter(Boolean), tg = (s.config && s.config.targets) || {};
-    const tri = xs => [...new Set(xs.map(plat).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
-    return { envelopes: tri(ps.map(p => p.envelope)), blocs: tri(ps.map(p => p.bloc).concat((s.people || []).flatMap(p => Object.keys(tg[p.id] || {})))) };
-  }
-  const personnes = S => ((S && S.people && S.people.length) ? S.people : [{ id: "p1", nom: "Moi" }]);
-
-  /** Formulaire de mouvement : ligne (liste), type (bascule rendue par la vue dans [data-pl-type]), quantité, prix, montant, date, note. */
-  function formMouvementHtml(S, id, today) {
-    const s = S || {};
-    const ps = (s.positions || []).filter(p => p && p.status !== "clôturé").sort((a, b) => (plat(a.envelope) + plat(a.name)).localeCompare(plat(b.envelope) + plat(b.name), "fr"));
-    return '<form class="pl-form" data-pl-form="mouvement" autocomplete="off" novalidate>' +
-      '<p class="pl-form-x">Achats, ventes et soldes hors versements programmés (ceux-là, l\'agent les applique seul).</p>' +
-      '<label class="pl-lab"><span>Ligne</span><select class="pl-in" data-pl-f="ligne">' +
-      ps.map(p => '<option value="' + esc(p.id) + '"' + (p.id === id ? " selected" : "") + ">" + esc(plat(p.envelope) + " · " + plat(p.name)) + "</option>").join("") + "</select></label>" +
-      '<div class="pl-lab"><span id="plTypeLab">Type de mouvement</span><div data-pl-type></div></div>' +
-      '<div class="pl-f-ligne">' + champNum("qty", "Quantité", null, "ex. 10") + champNum("price", "Prix unitaire (€)", null, "ex. 25,40") + champNum("amt", "Montant (€)", null, "ex. 500") + "</div>" +
-      '<div class="pl-f-ligne">' + champ("date", "Date", "date", jour(today)) + champ("note", "Note (facultatif)", "text", null) + "</div>" +
-      '<p class="pl-msg" data-pl-msg role="status" tabindex="-1" hidden></p>' +
-      '<div class="pl-acts"><button class="pl-btn" type="submit" data-pl-envoyer>Enregistrer</button></div></form>';
-  }
-
-  /** Formulaire d'une ligne : p = ligne à corriger (« Modifier à la main ») ou null (nouvelle ligne). Titulaire, mode et statut
-      sont des bascules rendues par la vue dans [data-pl-owner], [data-pl-mode], [data-pl-statut]. */
-  function formLigneHtml(p, S) {
-    const x = p || {}, k = connus(S), nouveau = !p;
-    const pfx = nouveau ? "plN" : "plE";
-    return '<form class="pl-form" data-pl-form="' + (nouveau ? "nouvelle" : "modifier") + '" autocomplete="off" novalidate>' +
-      champ("name", "Nom", "text", x.name, nouveau ? ' placeholder="ex. Amundi PEA Japon TOPIX"' : "") +
-      '<div class="pl-f-ligne">' + champ("envelope", "Enveloppe", "text", x.envelope, ' list="' + pfx + 'Env" placeholder="ex. PEA"') +
-      champ("bloc", "Poche", "text", x.bloc, ' list="' + pfx + 'Bloc" placeholder="ex. Monde"') + "</div>" +
-      datalist(pfx + "Env", k.envelopes) + datalist(pfx + "Bloc", k.blocs) +
-      (personnes(S).length > 1 ? '<div class="pl-lab"><span>Titulaire</span><div data-pl-owner></div></div>' : "") +
-      '<div class="pl-lab"><span>Suivi de la valeur</span><div data-pl-mode></div></div>' +
-      champ("isin", "ISIN (facultatif)", "text", x.isin, ' placeholder="FR0013411980" autocapitalize="characters" spellcheck="false"') +
-      '<div class="pl-f-ligne" data-pl-si="market">' + champNum("qty", nouveau ? "Quantité" : "Quantité détenue", x.qty) +
-        champNum(nouveau ? "price" : "pru", nouveau ? "Prix d'achat unitaire (€)" : "Prix de revient unitaire (€)", nouveau ? null : x.pru) + "</div>" +
-      '<div class="pl-f-ligne" data-pl-si="manual">' + champNum("value", "Valeur (€)", x.value) + "</div>" +
-      (nouveau ? "" : '<div class="pl-lab"><span>Statut</span><div data-pl-statut></div></div>' + champ("note", "Note (facultatif)", "text", x.note)) +
-      '<p class="pl-msg" data-pl-msg role="status" tabindex="-1" hidden></p>' +
-      '<div class="pl-acts"><button class="pl-btn" type="submit" data-pl-envoyer>' + (nouveau ? "Créer la ligne" : "Enregistrer les modifications") + "</button>" +
-      (nouveau ? "" : '<button class="pl-btn ghost" type="button" data-pl-act="annuler">Annuler</button>') + "</div></form>";
   }
 
   function allocationHtml(S, deps) {
@@ -506,67 +397,75 @@
       (l.cible != null ? '<span class="pl-a-cible" style="left:calc(' + (l.cible / max * 100).toFixed(2) + '% - 1px)"></span>' : "") + "</span>" +
       '<span class="pl-a-v"><span class="pl-num">' + esc(pct(l.pct)) + "</span>" + (l.ecart != null ? ' <span class="pl-chip ' + l.ton + '">' + esc((l.ecart > 0 ? "+" : l.ecart < 0 ? "−" : "") + nf1.format(Math.abs(l.ecart))) +
         '<span class="ui-sr"> point(s) par rapport à la cible de ' + esc(pct(l.cible)) + ", " + TON[l.ton] + "</span></span>" : "") + "</span></div>").join("") + "</div>" +
-      '<p class="pl-note">' + (a.cibles ? "Trait = cible de la personne · écart en points (tolérance " + nf0.format(a.tolerance) + " pts)." : "Les cibles se règlent par personne : choisissez un prénom en haut de page pour les comparer.") +
+      '<p class="pl-note">' + (a.cibles ? "Trait = cible de la personne · écart en points (tolérance " + nf0.format(a.tolerance) + " pts)." : "Les cibles se règlent par personne : choisis un prénom en haut de page pour les comparer.") +
       ' Le détail du risque (classes d\'actifs, profil) est dans <a href="#pilotage/risque" data-goto="pilotage/risque">Pilotage › Risque</a>.</p>';
   }
-  function ordresHtml(S) {
-    const todo = ((S && S.config && S.config.todo) || []);
-    if (!todo.length) return '<p class="pl-muet">Aucun ordre en attente. Les ordres décidés avec votre assistant apparaîtront ici.</p>';
-    return '<ul class="pl-liste pl-todo">' + todo.map((o, i) => '<li><label class="pl-check"><input type="checkbox" data-pl-todo="' + i + '"' + (o && o.done ? " checked" : "") + ">" +
-      '<span class="' + (o && o.done ? "pl-fait" : "") + '">' + esc(o && o.text) + (o && o.amount ? ' <span class="pl-muet">· ' + esc(o.amount) + "</span>" : "") + "</span></label></li>").join("") + "</ul>";
+  /** Ordres à passer, en lecture (5 puis « Voir plus ») ; un ordre passé se signale à Claude. */
+  function ordresHtml(S, U, deps) {
+    const xs = ordres(S);
+    if (!xs.length) return '<p class="pl-muet">Aucun ordre en attente. Les ordres décidés avec ton assistant apparaîtront ici.</p>';
+    return U.voirPlus(xs, 5, o => '<li><span class="pl-li-t' + (o.fait ? " pl-fait" : "") + '">' + esc(o.text) + (o.amount ? ' <span class="pl-muet">· ' + esc(o.amount) + "</span>" : "") + "</span>" +
+      '<span class="pl-li-v">' + chip(o.fait ? { texte: "passé", ton: "bon" } : { texte: "à passer", ton: "attention" }) + "</span></li>", "Voir plus d'ordres", "ul", "pl-ordres") +
+      '<div class="pl-acts pl-suivi-claude">' + lienClaude(U, phraseClaude("mouvement", "un ordre de ma liste « Ordres à passer » que j'ai passé", deps), "Signaler un ordre passé à Claude") + "</div>";
   }
-  function versementsHtml(S, today) {
-    const vs = versements(S, today);
-    if (!vs.length) return '<p class="pl-muet">Aucun versement programmé.</p>';
+  function versementsHtml(S, today, U, deps) {
+    const vs = versements(S, today, deps);
+    const corriger = '<div class="pl-acts pl-suivi-claude">' + lienClaude(U, phraseClaude("placements", "mes versements programmés", deps), vs.length ? "Corriger avec Claude" : "Compléter avec Claude") + "</div>";
+    if (!vs.length) return '<p class="pl-muet">Aucun versement programmé.</p>' + corriger;
     const ETAT = { hypothese: ["hypothèse", "info"], prevu: ["prévu", "neutre"], actif: ["actif", "bon"] };
-    return '<ul class="pl-liste">' + vs.map(v => '<li><span class="pl-li-t">' + esc(v.label) + '<span class="pl-li-s">' + esc([v.enveloppe, "le " + v.jour + " du mois",
+    return U.voirPlus(vs, 5, v => '<li><span class="pl-li-t">' + esc(v.label) + '<span class="pl-li-s">' + esc([v.enveloppe, "le " + v.jour + " du mois",
       v.debut ? "à partir du " + dateFr(v.debut) : "", v.dernier ? "dernier : " + v.dernier : ""].filter(Boolean).join(" · ")) + "</span></span>" +
-      '<span class="pl-li-v"><span class="pl-num">' + esc(eur(v.montant)) + "</span> " + chip({ texte: ETAT[v.etat][0], ton: ETAT[v.etat][1] }) + "</span></li>").join("") + "</ul>" +
-      '<p class="pl-note">Appliqués chaque mois par l\'agent, sans saisie de votre part.</p>';
+      '<span class="pl-li-v"><span class="pl-num">' + esc(eur(v.montant)) + "</span> " + chip({ texte: ETAT[v.etat][0], ton: ETAT[v.etat][1] }) + "</span></li>", "Voir plus de versements", "ul", "pl-versements") +
+      '<p class="pl-note">Appliqués chaque mois par l\'agent, sans saisie de ta part.</p>' + corriger;
   }
-  function hypothesesHtml(S) {
-    const H = hypotheses(S);
+  /** Hypothèses à confirmer : chacune se confirme (ou se corrige) avec Claude, qui dépose une proposition. */
+  function hypothesesHtml(S, U, deps) {
+    const H = hypotheses(S, deps);
     if (!H.length) return '<p class="pl-muet">Toutes les hypothèses sont confirmées.</p>';
-    return '<ul class="pl-liste">' + H.map(h => '<li><span class="pl-li-t">' + esc(h.text) + "</span>" +
-      '<button type="button" class="pl-btn ghost petit" data-pl-hyp="' + esc(h.kind + ":" + h.id) + '">Confirmer</button></li>').join("") + "</ul>";
+    return U.voirPlus(H, 5, h => '<li><span class="pl-li-t">' + esc(h.text) + "</span>" +
+      '<span class="pl-li-v pl-li-claude">' + lienClaude(U, phraseClaude("placements", "l'hypothèse « " + h.text + " » à confirmer ou corriger", deps), "Confirmer avec Claude") + "</span></li>",
+      "Voir plus d'hypothèses", "ul", "pl-hypotheses");
   }
-  function journalHtml(S, U) {
-    const xs = journalMouvements(S, 50);
-    if (!xs.length) return '<p class="pl-muet">Aucun mouvement enregistré. Les achats, ventes et versements saisis ici ou par l\'agent apparaîtront dans ce journal.</p>';
+  function journalHtml(S, U, deps) {
+    const xs = journalMouvements(S, 50, deps);
+    const signaler = '<div class="pl-acts pl-suivi-claude">' + lienClaude(U, phraseClaude("mouvement", "", deps), "Enregistrer un mouvement avec Claude") + "</div>";
+    if (!xs.length) return '<p class="pl-muet">Aucun mouvement enregistré. Les achats, ventes et versements que tu signales à Claude, ou que l\'agent applique, apparaîtront dans ce journal.</p>' + signaler;
     return U.voirPlus(xs, 5, x => '<li><span class="pl-li-t"><strong>' + esc(x.type) + "</strong> · " + esc(x.ligne) +
       '<span class="pl-li-s">' + esc([dateFr(x.date), x.agent ? "agent" : "", x.note].filter(Boolean).join(" · ")) + "</span></span>" +
-      '<span class="pl-li-v pl-num">' + esc((x.qty ? nfq.format(x.qty) + " × " + eur2(x.price) + " " : "") + (x.montant != null ? eur(x.montant) : "")) + "</span></li>", "Voir plus de mouvements", "ul");
+      '<span class="pl-li-v pl-num">' + esc((x.qty ? nfq.format(x.qty) + " × " + eur2(x.price) + " " : "") + (x.montant != null ? eur(x.montant) : "")) + "</span></li>",
+      "Voir plus de mouvements", "ul", "pl-journal") + signaler;
   }
 
-  const H = { MODES, TYPES_MVT, STATUTS, grouper, totaux, matelas, evolution, courbeSvg, etatDonnee, detailLigne, detailHtml, mouvement, champsMouvement, nouvelleLigne,
-    modificationLigne, hypotheses, versements, journalMouvements, allocation, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml,
-    formMouvementHtml, formLigneHtml, periodeTxt, jour };
+  const H = { MODES, grouper, totaux, matelas, evolution, courbeSvg, etatDonnee, detailLigne, detailHtml, hypotheses, versements, ordres, journalMouvements, allocation,
+    titresSuivi, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, periodeTxt, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
   /* =============================================================== vue =============================================================== */
-  const CLE_MODE = "pilotage-groupe", EVO_KEY = "pilotage-evo";
+  const CLE_MODE = "pilotage-groupe", EVO_KEY = "pilotage-evo", GRANULARITES = ["jour", "semaine", "mois", "trimestre", "annee"];
   let S = null, root = null, dirty = true, largeur = 0, ctlPeriode = null;
-  let mode = "enveloppe", periode = { periode: "1a", granularite: "mois" };
+  let mode = "enveloppe", periode = { periode: "1a" };
+  /* Granularité : automatique (selon la période) tant que l'utilisateur ne l'a pas choisie lui-même sur la bascule ; ce choix seul
+     est mémorisé (gChoisie). granEnCours vaut vrai pendant le traitement d'un clic ou d'une touche sur la bascule de granularité. */
+  let granChoisie = false, granEnCours = false;
+  let ouverte = null, sigPanneau = ""; // ligne affichée dans le panneau et signature de son contenu
   const ouverts = new Set(); // groupes dépliés (clé « mode:groupe »)
   const sig = {};
   try { const m = localStorage.getItem(CLE_MODE); if (MODES.some(x => x.id === m)) mode = m; } catch (e) {}
   try {
     const o = JSON.parse(localStorage.getItem(EVO_KEY) || "null");
-    if (o && typeof o === "object" && ["1m", "3m", "1a", "tout", "perso"].includes(o.periode))
-      periode = { periode: o.periode, granularite: ["jour", "semaine", "mois", "trimestre", "annee"].includes(o.granularite) ? o.granularite : undefined, du: o.du, au: o.au };
+    if (o && typeof o === "object" && ["1m", "3m", "1a", "tout", "perso"].includes(o.periode)) {
+      granChoisie = o.gChoisie === true && GRANULARITES.includes(o.granularite);
+      periode = { periode: o.periode, granularite: granChoisie ? o.granularite : undefined, du: o.du, au: o.au };
+    }
   } catch (e) {}
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
-  const db = () => (window.Store && window.Store.db) || null;
   const scopeLabel = () => (!S || scopeDe(S) === "foyer" ? "du foyer" : window.Calc.deNom(nomDe(S, S.scope), S.scope === "p2" ? 2 : 1));
-  const position = id => ((S && S.positions) || []).find(p => p && p.id === id) || null;
-  const erreurEcriture = e => (e && e.code === "invalid_argument" ? "Enregistrement refusé : vous n'avez pas les droits d'écriture sur ce tableau de bord."
-    : "Enregistrement impossible pour le moment (" + ((e && e.code) || "erreur") + "). Réessayez dans un instant.");
   const ouvertsDuMode = () => new Set([...ouverts].filter(k => k.startsWith(mode + ":")).map(k => k.slice(mode.length + 1)));
 
-  /* Écrit html dans el seulement s'il a changé ; garde l'état des accordéons, des « Voir plus » et le focus (même élément repéré par ses data-). */
-  const REPERES_FOCUS = ["data-pl-ligne", "data-pl-groupe-btn", "data-pl-todo", "data-pl-hyp", "data-ui-voirplus"];
+  /* Écrit html dans el seulement s'il a changé ; garde l'état des « Voir plus » et le focus (même élément repéré par ses data-). */
+  const REPERES_FOCUS = ["data-pl-ligne", "data-pl-groupe-btn", "data-ui-voirplus"];
   const vpDe = x => { const c = x && x.closest ? x.closest("[data-pl-vp]") : null; return c ? c.getAttribute("data-pl-vp") : null; };
   /* Bouton « Voir plus » propre à un bloc [data-pl-vp] (et non celui d'un bloc imbriqué) : .ui-voirplus enfant direct. */
   const boutonVp = x => { const b = Array.from(x.children).find(c => c.classList.contains("ui-voirplus")); return b ? Array.from(b.children).find(c => c.hasAttribute("data-ui-voirplus")) || null : null; };
@@ -593,7 +492,7 @@
     $("plVide").hidden = !vide;
     $("plGroupesBloc").hidden = !pret || vide;
     $("plSuivi").hidden = !pret || vide;
-    $("plMouvement").hidden = !t.lignes;
+    $("plMvtClaude").hidden = !t.lignes;
     $("plTitre").textContent = "Placements " + scopeLabel();
     $("plTotal").textContent = pret ? eur(t.total) : "—";
     renderEvolution(t);
@@ -603,7 +502,7 @@
     const faits = [];
     if (t.cout) faits.push('<li><span class="pl-fait-l">Plus-values latentes</span><span class="pl-fait-v ' + (t.plusValue >= 0 ? "pos" : "neg") + '">' + esc(eurS(t.plusValue)) + '</span><span class="pl-fait-s">lignes cotées avec prix de revient</span></li>');
     faits.push('<li><span class="pl-fait-l">Épargne de précaution</span><span class="pl-fait-v">' + esc(eur(m.montant)) + '</span><span class="pl-fait-s">' + esc(m.cible + (m.aRecevoir ? " · +" + eur(m.aRecevoir) + " à recevoir" : "")) +
-      ' · <a href="#compte/regles" data-goto="compte/regles">Régler la cible</a></span></li>');
+      ' · <a href="#compte/regles" data-goto="compte/regles">Voir la cible</a></span></li>');
     if (t.aRecevoir.length) faits.push('<li><span class="pl-fait-l">À recevoir (non compté)</span><span class="pl-fait-v">' + esc(eur(sum(t.aRecevoir, x => x.montant))) + '</span><span class="pl-fait-s">' + esc(t.aRecevoir.map(x => x.nom).join(", ")) + "</span></li>");
     ecrire("faits", $("plFaits"), vide ? "" : faits.join(""));
     if (vide) return;
@@ -623,20 +522,20 @@
       esc(eurS(r.variation) + (r.variationPct != null ? " (" + pctS(r.variationPct) + ")" : "")) + "</span> " + esc(periodeTxt(periode)) : ev.historique ? "" : "historique en cours de constitution";
     const n = t && t.nb ? pluriel(t.nb, "ligne") : "";
     ecrire("sous", $("plSous"), [varTxt, esc(n)].filter(Boolean).join(" · "));
-    $("plCourbeNote").textContent = [ev.reconstitue ? "Premiers points reconstitués depuis vos relevés." : "", ev.serie.length > 1 && ev.serie[ev.serie.length - 1].live ? "Pointillé : valeur en direct." : ""].filter(Boolean).join(" ");
+    $("plCourbeNote").textContent = [ev.reconstitue ? "Premiers points reconstitués depuis tes relevés." : "", ev.serie.length > 1 && ev.serie[ev.serie.length - 1].live ? "Pointillé : valeur en direct." : ""].filter(Boolean).join(" ");
   }
 
   function renderSuivi() {
-    const u = U(), t = jour(), todo = (S.config && S.config.todo) || [], H = hypotheses(S), vs = versements(S, t), tx = (S.tx || []).length;
-    const restants = todo.filter(o => o && !o.done).length, actifs = vs.filter(v => v.etat !== "hypothese");
+    const u = U(), t = jour(), T = titresSuivi(S, t);
     const accs = [
-      ["alloc", "Allocation par poche", allocationHtml(S)],
-      ["ordres", "Ordres à passer · " + (restants ? pluriel(restants, "ordre") + " à passer" : "aucun en attente"), ordresHtml(S)],
-      ["versements", "Versements programmés · " + (actifs.length ? eur(sum(actifs, v => v.montant)) + " par mois" : "aucun"), versementsHtml(S, t)],
-      ["hyp", "Hypothèses à confirmer · " + (H.length ? pluriel(H.length, "hypothèse") : "toutes confirmées"), hypothesesHtml(S)],
-      ["journal", "Journal des mouvements" + (tx ? "" : " · vide"), journalHtml(S, u)],
+      ["alloc", T.alloc, allocationHtml(S)],
+      ["ordres", T.ordres, ordresHtml(S, u)],
+      ["versements", T.versements, versementsHtml(S, t, u)],
+      ["hyp", T.hyp, hypothesesHtml(S, u)],
+      ["journal", T.journal, journalHtml(S, u)],
     ];
-    // Signature du contenu seul : l'état ouvert des accordéons est relu dans le DOM et reconduit à chaque réécriture.
+    // Signature du contenu seul : l'état ouvert des accordéons est relu dans le DOM et reconduit à chaque réécriture ; l'état déplié
+    // des « Voir plus » est retenu par UI.voirPlus (identifiant stable par clé).
     const brut = accs.map(a => a[1] + a[2]).join("|"), el = $("plSuivi");
     if (sig.suiviBrut === brut) return;
     sig.suiviBrut = brut; sig.suivi = null;
@@ -645,170 +544,47 @@
   }
 
   function surPeriode(v) {
-    periode = { periode: v.periode, granularite: v.granularite, du: v.periode === "perso" ? v.du : undefined, au: v.periode === "perso" ? v.au : undefined };
-    try { localStorage.setItem(EVO_KEY, JSON.stringify(periode)); } catch (e) {}
+    if (granEnCours) granChoisie = true;
+    const perso = v.periode === "perso";
+    periode = { periode: v.periode, granularite: granChoisie ? v.granularite : undefined, du: perso ? v.du : undefined, au: perso ? v.au : undefined };
+    const memo = { periode: periode.periode, du: periode.du, au: periode.au };
+    if (granChoisie) { memo.granularite = v.granularite; memo.gChoisie = true; }
+    try { localStorage.setItem(EVO_KEY, JSON.stringify(memo)); } catch (e) {}
     if (S && root) renderEvolution(totaux(S));
   }
 
-  /* ---------- panneaux ---------- */
-  function noeud(html) { const d = document.createElement("div"); d.className = "pl-p"; d.innerHTML = html; return d; }
-  function message(n, txt, ok) {
-    const m = n.querySelector("[data-pl-msg]"); if (!m) return;
-    m.textContent = txt || ""; m.hidden = !txt; m.classList.toggle("ok", !!ok); m.classList.toggle("err", !!txt && !ok);
-    if (txt) m.focus();
-  }
-  const valeurChamp = (n, id) => { const el = n.querySelector('[data-pl-f="' + id + '"]'); return el ? el.value : ""; };
-  const visibleChamp = (n, id) => { const l = n.querySelector('[data-pl-champ="' + id + '"]'); return !!l && !l.hidden && !(l.closest("[hidden]")); };
-  /* Focus rendu à la ligne d'origine, ou à la ligne du même id si un rendu l'a remplacée entre-temps. */
-  const retourLigne = (el, id) => () => { if (el && el.isConnected) return; const c = Array.from(root.querySelectorAll("[data-pl-ligne]")).find(x => x.getAttribute("data-pl-ligne") === id); if (c) c.focus(); };
-
-  function ouvrirLigne(id, el, msg, pOverride) {
-    const u = U(), p = pOverride || position(id);
-    if (!u || !p) return;
+  /* ---------- panneau d'une ligne (lecture) ---------- */
+  const ligneVisible = id => (S && window.Calc ? visibles(S, window.Calc).find(p => p.id === id) : null) || null;
+  function optionsLigne(p, u) {
     const d = detailLigne(p, S, jour());
-    const n = noeud(detailHtml(d, { message: msg }));
-    n.addEventListener("click", e => {
-      const b = e.target && e.target.closest ? e.target.closest("[data-pl-act]") : null;
-      if (!b || !n.contains(b)) return;
-      const act = b.getAttribute("data-pl-act");
-      if (act === "mouvement") ouvrirMouvement(id);
-      else if (act === "modifier") afficherEdition(n, p, b);
-      else if (act === "annuler") { n.querySelector("[data-pl-zone]").innerHTML = ""; const m = n.querySelector('[data-pl-act="modifier"]'); m.setAttribute("aria-expanded", "false"); m.hidden = false; m.focus(); }
-    });
-    const opts = { titre: d.titre, contenu: n,
-      pied: u.demanderAClaude("Explique-moi ma ligne « " + d.titre + " » (" + d.meta + ") dans Boussole : ce qu'elle contient, ses frais et son poids dans mes placements.") };
-    if (el) { opts.retour = el; opts.surFermeture = retourLigne(el, id); }
-    u.panneau.ouvrir(opts);
-    if (msg) message(n, msg, true);
+    const contenu = '<div class="pl-p">' + detailHtml(d, u) + "</div>";
+    return { titre: d.titre, contenu, sig: d.titre + "|" + contenu,
+      pied: u.demanderAClaude("Explique-moi ma ligne « " + d.titre + " »" + (d.meta ? " (" + d.meta + ")" : "") + " dans Boussole : ce qu'elle contient, ses frais et son poids dans mes placements.") };
   }
-
-  /* Bascules d'un formulaire de ligne (titulaire, mode, statut) ; renvoie les contrôleurs. */
-  function basculesLigne(n, p) {
-    const u = U(), ctl = {};
-    const ow = n.querySelector("[data-pl-owner]");
-    if (ow) ctl.owner = u.bascule(ow, { label: "Titulaire", options: personnes(S).map(x => ({ id: x.id, label: x.nom || DEFAULT_NOMS[x.id] })), actif: (p && p.owner) || (S.scope === "p2" ? "p2" : "p1") });
-    const majMode = id => n.querySelectorAll("[data-pl-si]").forEach(x => { x.hidden = x.getAttribute("data-pl-si") !== id; });
-    ctl.mode = u.bascule(n.querySelector("[data-pl-mode]"), { label: "Suivi de la valeur", options: [{ id: "market", label: "Coté (cours auto)" }, { id: "manual", label: "Valeur manuelle" }],
-      actif: (p && p.mode) || "market", surChange: majMode });
-    majMode(ctl.mode.actif());
-    const st = n.querySelector("[data-pl-statut]");
-    if (st) ctl.statut = u.bascule(st, { label: "Statut", options: STATUTS, actif: (p && p.status) || "actif" });
-    return ctl;
+  /* Fermeture : focus rendu à la ligne d'origine, ou à la ligne du même id si un rendu l'a remplacée, sinon au titre de la page. */
+  const fermeture = (el, id) => o => {
+    ouverte = null; sigPanneau = "";
+    if ((o && o.focus === false) || !root || (el && el.isConnected)) return;
+    const c = Array.from(root.querySelectorAll("[data-pl-ligne]")).find(x => x.getAttribute("data-pl-ligne") === id);
+    if (c) c.focus(); else $("plTitre").focus();
+  };
+  function ouvrirLigne(id, el) {
+    const u = U(), p = ligneVisible(id);
+    if (!u || !p) return;
+    const o = optionsLigne(p, u);
+    ouverte = id; sigPanneau = o.sig;
+    u.panneau.ouvrir({ titre: o.titre, contenu: o.contenu, pied: o.pied, retour: el || null, surFermeture: fermeture(el, id) });
   }
-  const saisieLigne = (n, ctl) => ({ name: valeurChamp(n, "name"), envelope: valeurChamp(n, "envelope"), bloc: valeurChamp(n, "bloc"), isin: valeurChamp(n, "isin"),
-    owner: ctl.owner ? ctl.owner.actif() : (S.scope === "p2" ? "p2" : "p1"), mode: ctl.mode.actif(), status: ctl.statut ? ctl.statut.actif() : "actif",
-    qty: valeurChamp(n, "qty"), pru: valeurChamp(n, "pru"), price: valeurChamp(n, "price"), value: valeurChamp(n, "value"), note: valeurChamp(n, "note") });
-
-  function afficherEdition(n, p, bouton) {
-    const zone = n.querySelector("[data-pl-zone]");
-    zone.innerHTML = '<h3 class="pl-z-t">Modifier à la main</h3>' + formLigneHtml(p, S);
-    bouton.setAttribute("aria-expanded", "true"); bouton.hidden = true;
-    const ctl = basculesLigne(zone, p);
-    const form = zone.querySelector("form");
-    form.addEventListener("submit", async e => {
-      e.preventDefault();
-      const r = modificationLigne(p, saisieLigne(zone, ctl), jour());
-      if (r.erreur) return message(zone, r.erreur);
-      if (!Object.keys(r.upd).length) return message(zone, "Aucune modification à enregistrer.");
-      const base = db(); if (!base) return message(zone, "Base indisponible dans cette vue.");
-      const btn = zone.querySelector("[data-pl-envoyer]"); btn.disabled = true;
-      try {
-        await base.doc("positions/" + p.id).update(r.upd);
-        if (r.upd.status === "clôturé") { U().panneau.fermer(); return; }
-        ouvrirLigne(p.id, null, "Modifications enregistrées.", Object.assign({}, p, r.upd));
-      } catch (err) { message(zone, erreurEcriture(err)); btn.disabled = false; }
-    });
-    const premier = zone.querySelector('[data-pl-f="name"]'); if (premier) premier.focus();
-  }
-
-  function ouvrirMouvement(id, el) {
-    const u = U(); if (!u) return;
-    const ps = ((S && S.positions) || []).filter(p => p && p.status !== "clôturé");
-    const choisi = id || (ps[0] && ps[0].id) || null;
-    const n = noeud(formMouvementHtml(S, choisi, jour()));
-    const sel = n.querySelector('[data-pl-f="ligne"]');
-    if (choisi) sel.value = choisi;
-    let type = "achat";
-    const majChamps = () => {
-      const p = position(sel.value), vis = champsMouvement(type, p ? p.mode : "market");
-      ["qty", "price", "amt"].forEach(k => { const l = n.querySelector('[data-pl-champ="' + k + '"]'); if (l) l.hidden = !vis.includes(k); });
-      const lab = k => n.querySelector('[data-pl-champ="' + k + '"]').querySelector("span");
-      lab("qty").textContent = type === "solde" ? "Nouvelle quantité" : "Quantité";
-      lab("amt").textContent = type === "solde" ? "Nouveau solde (€)" : (type === "achat" || type === "vente") && p && p.mode === "market" ? "ou montant (€)" : "Montant (€)";
-      lab("price").textContent = type === "versement" || type === "retrait" ? "Prix de la part (€, sinon dernier cours)" : "Prix unitaire (€)";
-    };
-    u.bascule(n.querySelector("[data-pl-type]"), { label: "Type de mouvement", options: TYPES_MVT, actif: type, surChange: v => { type = v; majChamps(); } });
-    sel.addEventListener("change", majChamps);
-    majChamps();
-    n.addEventListener("submit", async e => {
-      e.preventDefault();
-      const base = db(); if (!base) return message(n, "Base indisponible dans cette vue.");
-      const p = position(sel.value);
-      const lire = k => (visibleChamp(n, k) ? valeurChamp(n, k) : "");
-      const r = mouvement(p, { type, qty: lire("qty"), price: lire("price"), amt: lire("amt"), date: valeurChamp(n, "date"), note: valeurChamp(n, "note") }, jour());
-      if (r.erreur) return message(n, r.erreur);
-      const btn = n.querySelector("[data-pl-envoyer]"); btn.disabled = true;
-      try {
-        await base.doc("positions/" + p.id).update(r.upd);
-        await base.collection("transactions").add(Object.assign({}, r.tx, { createdAt: new Date().toISOString() }));
-        ["qty", "price", "amt", "note"].forEach(k => { const f = n.querySelector('[data-pl-f="' + k + '"]'); if (f) f.value = ""; });
-        message(n, "Mouvement enregistré : " + (TYPE_TX[type] || type).toLowerCase() + " sur « " + plat(p.name) + " ».", true);
-      } catch (err) { message(n, erreurEcriture(err)); }
-      finally { btn.disabled = false; }
-    });
-    const opts = { titre: "Enregistrer un mouvement", contenu: n,
-      pied: u.demanderAClaude("Aide-moi à enregistrer un mouvement sur mes placements dans Boussole (achat, vente, versement ou nouveau solde).") };
-    if (el) { opts.retour = el; opts.surFermeture = null; }
-    u.panneau.ouvrir(opts);
-  }
-
-  function ouvrirAjout(el) {
-    const u = U(); if (!u) return;
-    const n = noeud('<p class="pl-form-x">Une ligne par fonds, action ou contrat. Pour plusieurs lignes d\'un coup, importez un fichier ou la réponse de votre assistant.</p>' +
-      (window.Import ? '<div class="pl-acts"><button type="button" class="pl-btn ghost" data-pl-import>Importer des placements (fichier CSV ou assistant)</button></div>' : "") +
-      '<h3 class="pl-z-t">Ajouter une ligne</h3>' + formLigneHtml(null, S));
-    const ctl = basculesLigne(n, null);
-    n.addEventListener("click", e => {
-      const b = e.target && e.target.closest ? e.target.closest("[data-pl-import]") : null;
-      if (!b) return;
-      u.panneau.fermer({ focus: false });
-      window.Import.open({ people: window.Store.get().people, onApply: rows => window.Store.db.collection("positions").addMany(rows) });
-    });
-    n.addEventListener("submit", async e => {
-      e.preventDefault();
-      const base = db(); if (!base) return message(n, "Base indisponible dans cette vue.");
-      const r = nouvelleLigne(saisieLigne(n, ctl), jour());
-      if (r.erreur) return message(n, r.erreur);
-      const btn = n.querySelector("[data-pl-envoyer]"); btn.disabled = true;
-      try {
-        await base.doc("positions/" + r.id).set(r.doc);
-        await base.collection("transactions").add(Object.assign({}, r.tx, { createdAt: new Date().toISOString() }));
-        ["name", "isin", "qty", "price", "value"].forEach(k => { const f = n.querySelector('[data-pl-f="' + k + '"]'); if (f) f.value = ""; });
-        message(n, "Ligne « " + r.doc.name + " » créée." + (r.doc.mode === "market" && r.doc.isin ? " L'agent récupérera son cours ce soir." : ""), true);
-      } catch (err) { message(n, "Création impossible (" + ((err && err.code) || "erreur") + ")."); }
-      finally { btn.disabled = false; }
-    });
-    const opts = { titre: "Ajouter à la main", contenu: n,
-      pied: u.demanderAClaude("Aide-moi à ajouter mes placements dans Boussole à partir de mes relevés (enveloppes, lignes, quantités).") };
-    if (el) opts.retour = el;
-    u.panneau.ouvrir(opts);
-  }
-
-  async function confirmerHypothese(b) {
-    const base = db(), [kind, id] = String(b.getAttribute("data-pl-hyp")).split(":");
-    if (!base || (kind !== "pos" && !S.config)) return;
-    b.disabled = true;
-    try {
-      if (kind === "pos") await base.doc("positions/" + id).update({ hypothesis: null });
-      else if (kind === "rec") await base.doc("config/main").update({ recurring: S.config.recurring.map((r, k) => (k === +id ? Object.assign({}, r, { hypothesis: null }) : r)) });
-      else await base.doc("config/main").update({ hypotheses: S.config.hypotheses.map((r, k) => (k === +id ? Object.assign({}, r, { done: true }) : r)) });
-    } catch (e) { b.disabled = false; }
-  }
-  async function cocherOrdre(cb) {
-    const base = db(), i = +cb.getAttribute("data-pl-todo");
-    if (!base || !S.config || !Array.isArray(S.config.todo)) return;
-    const todo = S.config.todo.map((o, k) => (k === i ? Object.assign({}, o, { done: cb.checked, doneDate: cb.checked ? jour() : null }) : o));
-    try { await base.doc("config/main").update({ todo }); } catch (e) { cb.checked = !cb.checked; }
+  /* Le store a émis pendant l'ouverture : contenu mis à jour s'il a changé ; panneau fermé si la ligne a disparu du périmètre. */
+  function rafraichirPanneau() {
+    const u = U();
+    if (!ouverte || !u || !u.panneau.ouvert()) return;
+    const p = ligneVisible(ouverte);
+    if (!p) { u.panneau.fermer(); return; }
+    const o = optionsLigne(p, u);
+    if (o.sig === sigPanneau) return;
+    sigPanneau = o.sig;
+    u.panneau.ouvrir({ titre: o.titre, contenu: o.contenu, pied: o.pied }); // sans retour ni surFermeture : ceux de l'ouverture sont gardés
   }
 
   function basculerGroupe(b) {
@@ -827,19 +603,25 @@
     if (!u) return;
     u.bascule($("plMode"), { label: "Regrouper les lignes", options: MODES.map(x => ({ id: x.id, label: x.label, aria: x.aria })), actif: mode,
       surChange: id => { mode = id; try { localStorage.setItem(CLE_MODE, id); } catch (e) {} if (S) render(); } });
-    ctlPeriode = u.periode($("plPeriode"), { periode: periode.periode, granularite: periode.granularite, du: periode.du, au: periode.au, label: "Période de la courbe", surChange: surPeriode });
+    const pp = $("plPeriode");
+    const surGranularite = e => !!(e.target && e.target.closest && e.target.closest(".ui-periode-g"));
+    ["click", "keydown"].forEach(type => {
+      pp.addEventListener(type, e => { granEnCours = surGranularite(e); }, true); // capture : avant le surChange de la bascule
+      pp.addEventListener(type, () => { granEnCours = false; });
+    });
+    const o = { periode: periode.periode, du: periode.du, au: periode.au, label: "Période de la courbe", surChange: surPeriode };
+    if (granChoisie) o.granularite = periode.granularite;
+    ctlPeriode = u.periode($("plPeriode"), o);
     $("plClaude").innerHTML = u.demanderAClaude("Explique-moi simplement mes placements dans Boussole : la répartition par enveloppe et par poche, et ce qui les a fait bouger sur la dernière année.");
-    $("plVideClaude").innerHTML = u.demanderAClaude("Aidons-moi à enregistrer mes placements dans Boussole à partir de mes relevés (PEA, assurance vie, livrets…).", "Lancez votre bilan avec Claude");
+    $("plCompleter").innerHTML = u.demanderAClaude(phraseClaude("placements"), "Compléter avec Claude");
+    $("plMvtClaude").innerHTML = u.demanderAClaude(phraseClaude("mouvement"), "Enregistrer un mouvement avec Claude");
+    $("plVideClaude").innerHTML = u.demanderAClaude(phraseClaude("placements"), "Compléter avec Claude");
     u.brancher(root);
     root.addEventListener("click", e => {
       const t = e.target; if (!t || !t.closest) return;
       const g = t.closest("[data-pl-groupe-btn]"); if (g) { basculerGroupe(g); return; }
-      const l = t.closest("[data-pl-ligne]"); if (l) { ouvrirLigne(l.getAttribute("data-pl-ligne"), l); return; }
-      const h = t.closest("[data-pl-hyp]"); if (h) { confirmerHypothese(h); return; }
-      const a = t.closest("#plMouvement"); if (a) { ouvrirMouvement(null, a); return; }
-      const n = t.closest("[data-pl-ajouter]"); if (n) { ouvrirAjout(n); return; }
+      const l = t.closest("[data-pl-ligne]"); if (l) ouvrirLigne(l.getAttribute("data-pl-ligne"), l);
     });
-    root.addEventListener("change", e => { const cb = e.target && e.target.closest ? e.target.closest("[data-pl-todo]") : null; if (cb) cocherOrdre(cb); });
     if (typeof ResizeObserver === "function") new ResizeObserver(() => {
       const w = $("plCourbe").clientWidth;
       if (S && w && Math.abs(w - largeur) > 24) renderEvolution(totaux(S));
@@ -853,6 +635,7 @@
     }
     dirty = true;
     if (visible) { render(); dirty = false; }
+    rafraichirPanneau();
   }
   function show() { if (dirty) { render(); dirty = false; } }
   /* Chiffre clé (titres, pastilles) : le total financier du périmètre. */

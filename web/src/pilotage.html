@@ -2,13 +2,13 @@
   <section class="panel pl-tete" aria-labelledby="plTitre">
     <div class="pl-tete-haut">
       <div class="pl-tete-txt">
-        <h2 class="pl-label" id="plTitre">Placements du foyer</h2>
+        <h2 class="pl-label" id="plTitre" tabindex="-1">Placements du foyer</h2>
         <p class="pl-total" id="plTotal">—</p>
         <p class="pl-sous" id="plSous" aria-live="polite"></p>
       </div>
       <div class="pl-tete-acts">
-        <button type="button" class="pl-btn" id="plMouvement" aria-haspopup="dialog" hidden>Enregistrer un mouvement</button>
-        <button type="button" class="pl-btn ghost" data-pl-ajouter aria-haspopup="dialog">Ajouter à la main</button>
+        <span id="plCompleter"></span>
+        <span id="plMvtClaude" hidden></span>
       </div>
     </div>
     <ul class="pl-faits" id="plFaits"></ul>
@@ -20,14 +20,13 @@
     </div>
   </section>
 
-  <p class="pl-chargement" id="plChargement" role="status">Chargement de vos placements…</p>
+  <p class="pl-chargement" id="plChargement" role="status">Chargement de tes placements…</p>
 
   <section class="panel pl-vide" id="plVide" aria-labelledby="plVideTitre" hidden>
     <h2 id="plVideTitre">Aucun placement enregistré</h2>
-    <p>Dites à votre assistant ce que vous détenez (PEA, assurance vie, livrets, compte-titres…) : il prépare les lignes, vous les validez. Vous pouvez aussi les saisir vous-même ou importer un fichier.</p>
+    <p>Dis à Claude ce que tu détiens (PEA, assurance vie, livrets, compte-titres…), ou donne-lui tes relevés ou l'export de ton courtier : il prépare les lignes, tu les valides dans Agent › Propositions.</p>
     <div class="pl-acts">
       <span id="plVideClaude"></span>
-      <button type="button" class="pl-btn ghost" data-pl-ajouter aria-haspopup="dialog">Ajouter à la main</button>
     </div>
   </section>
 

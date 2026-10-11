@@ -11,6 +11,7 @@
 #view-bilan .bl-tete h2:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 #view-bilan .bl-verdict{margin:0;font-size:14.5px;font-weight:600;line-height:1.45}
 #view-bilan .bl-verdict.ton-bon{color:var(--good)}
+#view-bilan .bl-verdict.ton-attention{color:var(--warn)}
 #view-bilan .bl-verdict.ton-critique{color:var(--crit)}
 #view-bilan .bl-tete-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #view-bilan .bl-etat{margin:0;font-size:13.5px;color:var(--muted)}
@@ -19,20 +20,20 @@
 /* tuiles */
 #view-bilan .bl-tuiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 #view-bilan .bl-tuile{display:flex;flex-direction:column;gap:4px;min-width:0;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
-#view-bilan .bl-tuile-l{font:600 12px/1.3 var(--f-body);color:var(--muted)}
+#view-bilan .bl-tuile-l{font:600 12px/1.3 var(--f-body);color:var(--muted);display:flex;flex-direction:column;gap:1px}
+#view-bilan .bl-tuile-def{font-weight:500;font-size:11.5px}
 #view-bilan .bl-tuile-v{font:600 22px/1.15 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:anywhere}
 #view-bilan .bl-tuile.bon .bl-tuile-v{color:var(--good)}
+#view-bilan .bl-tuile.attention .bl-tuile-v{color:var(--warn)}
 #view-bilan .bl-tuile.critique .bl-tuile-v{color:var(--crit)}
 #view-bilan .bl-tuile-s{font-size:12px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
-#view-bilan .bl-tuile-s a,#view-bilan .bl-aucun a{color:var(--accent);font-weight:600;text-underline-offset:2px}
+#view-bilan .bl-tuile-s a{color:var(--accent);font-weight:600;text-underline-offset:2px}
 
 /* sections et cartes */
 #view-bilan .bl-sec{display:flex;flex-direction:column;gap:10px;min-width:0}
 #view-bilan .bl-sec-tete{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
 #view-bilan .bl-h2{font:700 16px var(--f-display);margin:0}
-#view-bilan .bl-btn{display:inline-flex;align-items:center;min-height:36px;font:600 13px var(--f-body);color:var(--accent);text-decoration:none;border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px 12px;white-space:nowrap}
-#view-bilan .bl-btn:hover{background:var(--accent-soft)}
-#view-bilan .bl-btn:focus-visible,#view-bilan .bl-lien:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#view-bilan .bl-sec-act{display:inline-flex}
 #view-bilan .bl-cartes .ui-voirplus-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:12px}
 #view-bilan .bl-cartes .ui-voirplus-reste{margin-top:12px}
 #view-bilan .bl-carte{border-left:4px solid var(--s3,var(--accent));height:100%}
@@ -48,7 +49,6 @@
 #view-bilan .bl-vide p{margin:0}
 #view-bilan .bl-vide-t{font:700 15px var(--f-display)}
 #view-bilan .bl-vide-act{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap}
-#view-bilan .bl-lien{font:600 13px var(--f-body);color:var(--accent);text-underline-offset:2px;border-radius:4px}
 
 /* méthode */
 #view-bilan .bl-how-corps{line-height:1.5;max-width:760px}
@@ -61,5 +61,5 @@
 .ui-panneau .bl-d-alerte{margin:0;padding:10px 12px;border-radius:8px;background:var(--warn-soft);color:var(--ink);font-size:13px;line-height:1.5}
 .ui-panneau .bl-d-note{margin:0;font-size:12.5px;line-height:1.5;color:var(--muted)}
 
-@media (max-width:900px){#view-bilan .bl-tuiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:1100px){#view-bilan .bl-tuiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:420px){#view-bilan .bl-tuile{padding:12px}#view-bilan .bl-tuile-v{font-size:19px}}
