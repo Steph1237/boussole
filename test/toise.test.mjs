@@ -453,3 +453,29 @@ test("vue (DOM) : périmètre — préremplissage réel du foyer, de p1 et de p2
   const s2 = v.$("sal"); s2.value = "3100"; s2.dispatchEvent(new v.dom.Ev("input"));
   assert.equal(v.$("tsMsg").textContent, "");
 });
+
+test("bandeau « valeurs d'exemple » : visible dès que revenus ou foyer réels manquent (même avec une ligne de profil), masqué sinon", () => {
+  global.window = global.window || {};
+  require("../web/src/demo-data.js");
+  const D = JSON.parse(JSON.stringify(global.window.DEMO));
+  const base = profil => ({ ready: true, scope: "foyer", people: [], profil, profilLoaded: true, positions: [], config: D.config, budget: D.budget });
+  // nouveau compte réel : ligne de profil créée par handle_new_user, sans rien dedans
+  const vide = { foyer: {}, personnes: {}, biens: [], credits: [] };
+  const v = vueToise(base(vide), { reel: true });
+  assert.equal(v.$("toise-fp").hidden, false, "profil vide mais présent : bandeau affiché");
+  assert.match(v.$("tsFpClaude").textContent, /Complète tes données avec Claude/);
+  assert.match(v.$("tsFpClaude").innerHTML, /aide-moi%20%C3%A0%20compl%C3%A9ter%20mes%20revenus|compl%C3%A9ter%20mes%20revenus/, "phrase « revenus » de ClaudePrompts");
+  // revenus renseignés, foyer manquant : toujours des valeurs d'exemple pour le foyer
+  const sansFoyer = JSON.parse(JSON.stringify(D.profil)); sansFoyer.foyer = {};
+  v.api.update(base(sansFoyer), true);
+  assert.equal(v.$("toise-fp").hidden, false, "foyer absent : bandeau affiché");
+  // profil complet (démo) : pas de bandeau
+  v.api.update(base(D.profil), true);
+  assert.equal(v.$("toise-fp").hidden, true, "revenus et foyer réels : bandeau masqué");
+  // profil absent (null) : bandeau affiché, comme avant
+  v.api.update(base(null), true);
+  assert.equal(v.$("toise-fp").hidden, false);
+  // base indisponible : jamais de bandeau
+  v.api.update(Object.assign(base(null), { dbOk: false }), true);
+  assert.equal(v.$("toise-fp").hidden, true);
+});

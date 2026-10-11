@@ -80,19 +80,84 @@ test("accueil : phrase d'onboarding et lien claude.ai encodé", () => {
   const u = new URL(A.lienClaude(A.PROMPT_CLAUDE));
   assert.equal(u.origin + u.pathname, "https://claude.ai/new");
   assert.equal(u.searchParams.get("q"), "Utilise le connecteur Boussole : lance l'onboarding avec l'outil demarrer_onboarding.");
-  assert.equal(A.PHRASE, "Lance l'onboarding Boussole");
   assert.match(js, /target="_blank" rel="noopener"/);
 });
 
-test("accueil : fin (markOnboarded, onDone), revue des propositions, étape mémorisée, Échap", () => {
-  assert.match(js, /St\.markOnboarded\(\)/);
-  assert.match(js, /o\.onDone\(\)/);
-  assert.match(js, /App\.go\("agent\/propositions"\)/);
-  assert.match(js, /BilanEtat\.etat\(S\)/);
-  assert.match(js, /"accueil-etape-v2"/);
-  assert.match(js, /ecrire\(CLE_ANCIENNE, null\)/, "l'ancienne clé (5 étapes) est effacée");
-  assert.match(js, /addEventListener\("cancel"/);
-  assert.match(js, /h\.focus\(\)/, "focus sur le titre de l'étape");
+test("accueil : une seule phrase, affichée à copier (étape 3) et envoyée par « Ouvrir Claude »", () => {
+  assert.equal(A.PHRASE, A.PROMPT_CLAUDE);
+  assert.doesNotMatch(js, /Lance l'onboarding Boussole/, "plus de seconde phrase en dur");
+  assert.match(js, /champ\(id \+ "-phrase", "Phrase", PROMPT_CLAUDE\)/, "phrase affichée = constante");
+  assert.match(js, /lienClaude\(PROMPT_CLAUDE\)/, "phrase envoyée = même constante");
+});
+
+/* Accueil exécuté dans un contexte vm avec un document minimal (pas de DOM disponible sous Node).
+   origine : nom de l'élément qui a le focus à l'ouverture (null = <body>) ; titre : présence de #spaceTitle. */
+function accueilVm({ mode, origine = null, titre = true, retiree = false } = {}) {
+  const stock = new Map(), focus = [];
+  const el = nom => ({ nom, isConnected: true, closest: () => null, focus() { focus.push(nom); } });
+  const bidon = { textContent: "", innerHTML: "", disabled: false, dataset: {}, style: {}, classList: { add() {}, remove() {}, toggle() {} },
+    setAttribute() {}, addEventListener() {}, focus() {}, querySelector: () => bidon, querySelectorAll: () => [] };
+  const dlg = { open: false, className: "", innerHTML: "", isConnected: true,
+    setAttribute() {}, addEventListener(t, f) { (this.l = this.l || {})[t] = f; }, querySelector: () => bidon, querySelectorAll: () => [],
+    showModal() { this.open = true; }, close() { this.open = false; }, remove() { this.isConnected = false; } };
+  const body = Object.assign(el("body"), { appendChild() {} });
+  const elOrigine = origine ? el(origine) : body, elTitre = el("titre");
+  if (retiree) elOrigine.isConnected = false;
+  const document = { body, activeElement: elOrigine, createElement: () => dlg, getElementById: id => (id === "spaceTitle" && titre ? elTitre : null) };
+  const ctx = { document, console, encodeURIComponent, Date, Math, parseInt, setTimeout,
+    localStorage: { getItem: k => (stock.has(k) ? stock.get(k) : null), setItem: (k, v) => stock.set(k, String(v)), removeItem: k => stock.delete(k) },
+    sessionStorage: { getItem: () => null, setItem() {} },
+    Store: { mode, get: () => ({}), on() {}, markOnboarded: async () => {} }, BOUSSOLE: {} };
+  ctx.self = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(js, ctx, { filename: "accueil.js" });
+  const clic = act => dlg.l.click({ target: { closest: () => ({ dataset: { act }, disabled: false }) }, preventDefault() {} });
+  return { A: ctx.Accueil, stock, focus, dlg, clic };
+}
+
+test("accueil : l'étape mémorisée a une clé distincte en démo (accueil-etape-v2-demo) et ne se mélange pas au compte réel", () => {
+  const demo = accueilVm({ mode: "demo" });
+  demo.A.open({ etape: 3 });
+  assert.equal(demo.stock.get("accueil-etape-v2-demo"), "3");
+  assert.equal(demo.stock.has("accueil-etape-v2"), false, "la démo n'écrit pas la clé du compte réel");
+  const reel = accueilVm({ mode: "supabase" });
+  reel.A.open({ etape: 2 });
+  assert.equal(reel.stock.get("accueil-etape-v2"), "2");
+  assert.equal(reel.stock.has("accueil-etape-v2-demo"), false);
+  const croise = accueilVm({ mode: "demo" });
+  croise.stock.set("accueil-etape-v2", "4");
+  croise.A.open({});
+  assert.equal(croise.stock.get("accueil-etape-v2-demo"), "1", "démo : repart de l'étape 1 malgré l'étape 4 du compte réel");
+  const reprise = accueilVm({ mode: "supabase" });
+  reprise.stock.set("accueil-etape-v2-demo", "4");
+  reprise.A.open({});
+  assert.equal(reprise.stock.get("accueil-etape-v2"), "1");
+});
+
+test("accueil : à la fermeture, le focus revient à l'élément d'origine (« Revoir l'accueil »), sinon au titre de la page, jamais à <body>", async () => {
+  // « Reprendre plus tard » ouvert depuis « Revoir l'accueil » : retour au bouton
+  const a = accueilVm({ origine: "revoir" });
+  a.A.open({ etape: 1 });
+  a.clic("fermer");
+  assert.equal(a.dlg.isConnected, false);
+  assert.deepEqual(a.focus, ["revoir"]);
+  // première connexion (focus sur <body>) puis « Terminer » : repli sur le titre de la page
+  const b = accueilVm({ origine: null });
+  b.A.open({ etape: 4, onDone() {} });
+  b.clic("suivant");
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(b.dlg.isConnected, false);
+  assert.deepEqual(b.focus, ["titre"]);
+  // origine retirée de la page : repli sur le titre
+  const c = accueilVm({ origine: "revoir", retiree: true });
+  c.A.open({ etape: 1 });
+  c.clic("fermer");
+  assert.deepEqual(c.focus, ["titre"]);
+  // ni origine ni titre : rien ne plante, rien n'est focalisé
+  const d = accueilVm({ origine: null, titre: false });
+  d.A.open({ etape: 1 });
+  assert.doesNotThrow(() => d.clic("fermer"));
+  assert.deepEqual(d.focus, []);
 });
 
 test("app.js : Accueil.open quand l'onboarding n'est pas fait, ?accueil force l'ouverture", () => {

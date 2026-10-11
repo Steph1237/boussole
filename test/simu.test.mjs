@@ -95,3 +95,14 @@ test("tutoiement : aucun « vous / votre / vos » ni impératif au vouvoiement d
     assert.doesNotMatch(t, /\b(Indiquez|Renseignez|Complétez|Modifiez|Ajoutez|Choisissez|Répondez|Cliquez)\b/, f);
   }
 });
+
+test("liens de sources externes : https, ouverts dans un nouvel onglet avec rel=\"noopener noreferrer\"", () => {
+  const liens = html.match(/<a\s[^>]*>/g) || [];
+  assert.ok(liens.length >= 25, "liens de sources introuvables");
+  for (const a of liens) {
+    assert.match(a, /href="https:\/\//, "lien externe en https : " + a);
+    assert.match(a, /target="_blank"/, a);
+    assert.match(a, /rel="noopener noreferrer"/, a);
+  }
+  assert.doesNotMatch(html, /href="http:\/\//, "aucun lien http en clair");
+});

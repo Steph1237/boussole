@@ -812,6 +812,12 @@ function phraseClaude(contexte){
   if(P&&typeof P.phrase==='function')return P.phrase('bilan',contexte);
   return 'Boussole : aide-moi à compléter mon bilan ('+contexte+'). Commence par demarrer_session, puis utilise les formulaires interactifs Boussole.';
 }
+/* Phrase du bandeau « valeurs d'exemple » : la section « revenus » de ClaudePrompts (repli : phraseClaude). */
+function phraseRevenus(){
+  const P=typeof window!=='undefined'&&window.ClaudePrompts;
+  if(P&&typeof P.phrase==='function')return P.phrase('revenus');
+  return phraseClaude('mes revenus et mon foyer, utilisés par Pilotage › Rang');
+}
 const CONTEXTE_HYP='mon foyer, mes revenus, mon salaire et mon patrimoine, utilisés par Pilotage › Rang';
 let per=perimetre('foyer'),msgPerimetre='';
 let ong=null,ctlLmode=null,repereHcsf=null,ouvertCarte=null,retourCarte=null,corpsCarte=null,sigPanneau='',hypRetour=null;
@@ -873,7 +879,7 @@ function renderPage(D){
   $('tsPour').textContent='Calculé pour : '+r.court+'.';
   ONGLETS.forEach(o=>{const e=$('tsSec-'+o.id);if(e)e.textContent=r.sections[o.id]});
   if(u){ecrire('tsCartes',cartes(D,opts()).map(c=>u.carte(c)).join(''));ecrire('tsClaude',u.demanderAClaude(questionPage(D,per)));
-    ecrire('tsFpClaude',u.demanderAClaude(phraseClaude('mon foyer, mes revenus et mon salaire, utilisés par Pilotage › Rang'),'Compléter avec Claude'));}
+    ecrire('tsFpClaude',u.demanderAClaude(phraseRevenus(),'Complète tes données avec Claude'));}
   rafraichirPanneau(D);
 }
 function render(){
@@ -1066,9 +1072,17 @@ function syncPills(){
   const Reel=window.Reel,on=Reel&&snapS&&snapS.ready;
   all('.src-slot').forEach(s=>{const k=s.dataset.key;s.innerHTML=on?Reel.tag(Reel.kind(MOD,k,!!hasReal[k]),MOD,k):''});
 }
+/* Vrai tant que les revenus ou le foyer réels manquent (le calcul retombe alors sur des valeurs d'exemple). Un nouveau compte a
+   toujours une ligne de profil (handle_new_user), donc « profil absent » ne suffit pas : on regarde ce que Reel.values a trouvé
+   (hasReal, rempli par applyReal). En vue individuelle, le foyer n'entre pas dans le calcul : seuls les revenus comptent. */
+function donneesManquantes(){
+  if(!snapS||!snapS.profil)return true;
+  if(!('inc' in hasReal))return false;
+  return !hasReal.inc||!hasReal.ad;
+}
 function profileBox(){
   const b=$('toise-fp');if(!b||!snapS)return;
-  b.hidden=!(snapS.dbOk!==false&&snapS.profilLoaded&&!snapS.profil);
+  b.hidden=!(snapS.dbOk!==false&&snapS.profilLoaded&&donneesManquantes());
 }
 
 /* ---------- interactions ---------- */

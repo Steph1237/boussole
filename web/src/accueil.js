@@ -6,7 +6,8 @@
 
    window.Accueil = { open({ onDone, etape }), connexion(el), reporte(), estConnecte(…), lienClaude, ETAPES }
    - onDone() après « Terminer » (étape 4, qui marque l'onboarding fait par Store.markOnboarded()).
-   - etape : étape de départ (1 à 4) ; par défaut, celle mémorisée dans localStorage « accueil-etape-v2 ».
+   - etape : étape de départ (1 à 4) ; par défaut, celle mémorisée dans localStorage « accueil-etape-v2 »
+     (« accueil-etape-v2-demo » en démo, pour ne pas mélanger la démo et le compte réel).
    - connexion(el) : bloc « Connecter Claude » (onglets claude.ai / Claude Code, valeurs à copier, pièges), sans le voyant,
      réutilisé par la page Agent › Connexion.
    Voyant : Store.surveillerConnexions(true) tant que l'étape 2 est affichée, false en la quittant ; « Claude est connecté »
@@ -21,11 +22,11 @@
 
   const ETAPES = ["Bienvenue", "Connecter Claude", "Lancer l'entretien", "Suivre et valider"];
   const N = ETAPES.length, CONNEXION = 2, ENTRETIEN = 3, SUIVI = 4;
-  const PHRASE = "Lance l'onboarding Boussole";
+  /* Une seule phrase : celle qui s'affiche à copier (étape 3) est exactement celle que « Ouvrir Claude » envoie. */
   const PROMPT_CLAUDE = "Utilise le connecteur Boussole : lance l'onboarding avec l'outil demarrer_onboarding.";
   const lienClaude = prompt => "https://claude.ai/new?q=" + encodeURIComponent(prompt);
   /* « -v2 » : l'ancienne clé numérotait 5 étapes (avec le choix de l'assistant). */
-  const CLE_ETAPE = "accueil-etape-v2", CLE_ANCIENNE = "accueil-etape", CLE_REPORT = "accueil-plus-tard";
+  const CLE_ETAPE = "accueil-etape-v2", CLE_ETAPE_DEMO = CLE_ETAPE + "-demo", CLE_ANCIENNE = "accueil-etape", CLE_REPORT = "accueil-plus-tard";
 
   /* Connecté : une connexion vue depuis l'ouverture de l'assistant (marge d'une minute pour l'écart d'horloge),
      ou n'importe laquelle si l'utilisateur était déjà connecté avant d'ouvrir l'assistant. Pur, testé. */
@@ -171,8 +172,12 @@
     const surveillable = !!(St && typeof St.surveillerConnexions === "function");
     const auDepart = Array.isArray(S0.connexions) && S0.connexions.length > 0;
     const demo = !!(St && St.mode === "demo");
+    /* Étape mémorisée : clé distincte en démo, pour que la démo ne fasse pas reprendre le vrai compte à l'étape 3 ou 4. */
+    const cleEtape = demo ? CLE_ETAPE_DEMO : CLE_ETAPE;
+    /* Élément qui avait le focus à l'ouverture (ex. « Revoir l'accueil ») : on le lui rend à la fermeture. */
+    const origine = document.activeElement;
     ecrire(CLE_ANCIENNE, null);
-    let etape = Math.min(N, Math.max(1, parseInt(o.etape || lire(CLE_ETAPE), 10) || 1));
+    let etape = Math.min(N, Math.max(1, parseInt(o.etape || lire(cleEtape), 10) || 1));
     let S = S0, connecte = null, manuel = false, anon = false, surveille = false, fini = false;
 
     const dlg = document.createElement("dialog");
@@ -251,7 +256,7 @@
       return '<p class="ac-lead">Claude va te poser les questions dans des formulaires interactifs et déposer ses propositions dans Boussole à la fin de chaque thème. Tu les valides ensuite ici.</p>' +
         '<ol class="ac-steps compact">' +
           "<li>Ouvre une nouvelle conversation avec Claude.</li>" +
-          "<li>Écris ou colle cette phrase :" + champ(id + "-phrase", "Phrase", PHRASE) + "</li>" +
+          "<li>Écris ou colle cette phrase :" + champ(id + "-phrase", "Phrase", PROMPT_CLAUDE) + "</li>" +
           "<li>Réponds à ton rythme ; tu peux aussi déposer tes relevés bancaires ou l'export de ton courtier dans la conversation, t'arrêter et reprendre plus tard.</li>" +
         "</ol>" +
         '<div class="ac-cta"><a class="ac-btn lg" id="' + id + '-ouvrir" href="' + esc(lienClaude(PROMPT_CLAUDE)) + '" target="_blank" rel="noopener" data-act="ouvrir">' +
@@ -298,7 +303,7 @@
       try { St.surveillerConnexions(on); } catch (e) { console.warn("Boussole : surveillance des connexions", e); }
     }
     function render(focus) {
-      ecrire(CLE_ETAPE, etape);
+      ecrire(cleEtape, etape);
       const corps = [e1, e2, e3, e4][etape - 1]();
       const libSuiv = etape === 1 ? "Commencer" : etape === N ? "Terminer" : "Continuer";
       dlg.innerHTML =
@@ -332,6 +337,15 @@
       if (courant === inst) courant = null;
       if (dlg.open) dlg.close();
       dlg.remove();
+      rendreFocus();
+    }
+    /* Focus de retour : l'élément d'origine s'il est encore là et visible, sinon le titre de la page (#spaceTitle),
+       jamais <body>. */
+    function rendreFocus() {
+      const ok = el => !!el && el !== document.body && el.isConnected !== false && typeof el.focus === "function" && !(el.closest && el.closest("[hidden]"));
+      const cible = ok(origine) ? origine : document.getElementById("spaceTitle");
+      if (!cible || typeof cible.focus !== "function") return;
+      try { cible.focus({ preventScroll: true }); } catch (e) { try { cible.focus(); } catch (e2) { /* rien */ } }
     }
     function fermer(motif) {
       if (fini) return;
@@ -344,7 +358,7 @@
       $(".ac-msg").textContent = "Enregistrement…";
       try {
         if (St && typeof St.markOnboarded === "function") await St.markOnboarded();
-        ecrire(CLE_ETAPE, null);
+        ecrire(cleEtape, null);
         fini = true; nettoyer();
         if (typeof o.onDone === "function") o.onDone();
       } catch (err) {
@@ -403,5 +417,5 @@
     return inst.api;
   }
 
-  return { open, connexion, reporte, estConnecte, lienClaude, ETAPES, PHRASE, PROMPT_CLAUDE };
+  return { open, connexion, reporte, estConnecte, lienClaude, ETAPES, PHRASE: PROMPT_CLAUDE, PROMPT_CLAUDE };
 });
