@@ -225,8 +225,8 @@ test("voirPlus : 5 premiers visibles, le reste caché, bouton « Voir plus (k) �
   const [visibles, reste] = h.split("ui-voirplus-reste");
   assert.equal((visibles.match(/class="it"/g) || []).length, 5);
   assert.equal((reste.match(/class="it"/g) || []).length, 2);
-  assert.match(h, /<div class="ui-voirplus-liste ui-voirplus-reste" id="(ui-reste-\d+)" hidden>/);
-  const id = /id="(ui-reste-\d+)"/.exec(h)[1];
+  assert.match(h, /<div class="ui-voirplus-liste ui-voirplus-reste" id="(ui-reste-[0-9a-z]+)" hidden>/);
+  const id = /id="(ui-reste-[0-9a-z]+)"/.exec(h)[1];
   assert.match(h, new RegExp('<button type="button" class="ui-voirplus-btn" data-ui-voirplus [^>]*aria-expanded="false" aria-controls="' + id + '">Voir plus \\(2\\)</button>'));
   // n par défaut = 5, rendu par défaut = texte échappé, libellé personnalisé échappé
   assert.match(UI.voirPlus(["a", "b", "c", "d", "e", "f"]), /Voir plus \(1\)/);
@@ -587,4 +587,13 @@ test("ui.css : sélecteurs tous préfixés .ui-, couleurs issues des variables d
   assert.match(css, /max-height:85vh/);
   assert.match(css, /width:min\(420px/);
   assert.match(css, /\.ui-sr\{/);
+});
+
+test("voirPlus : id stable d'un rendu à l'autre et état déplié conservé (signatures anti-redessin)", () => {
+  const UIm = require("../web/src/ui.js");
+  const xs = Array.from({ length: 8 }, (_, i) => "x" + i);
+  const a = UIm.voirPlus(xs, 5), b = UIm.voirPlus(xs, 5);
+  assert.equal(a, b, "même contenu → même HTML");
+  assert.notEqual(UIm.voirPlus(xs, 5, null, null, null, "cle-a"), UIm.voirPlus(xs, 5, null, null, null, "cle-b"), "clés différentes → ids différents");
+  assert.match(a, /id="ui-reste-[0-9a-z]+" hidden/);
 });

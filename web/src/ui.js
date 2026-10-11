@@ -55,7 +55,9 @@
      <details class="ui-acc"> fermé par défaut, pour hypothèses, méthode et sources. contenu : HTML déjà échappé.
      Exemple : UI.accordeon({ titre: "Méthode", contenu: "<p>" + UI.esc(methode) + "</p>" })
 
-   UI.voirPlus(liste, n = 5, rendu?(x, i) → HTML, libelle = "Voir plus", balise = "div") → HTML
+   UI.voirPlus(liste, n = 5, rendu?(x, i) → HTML, libelle = "Voir plus", balise = "div", cle?) → HTML
+     Id stable (dérivé de cle, sinon du libellé et du début de la liste) : deux rendus identiques donnent le même HTML, et un
+     bloc déplié le reste au rendu suivant.
      Les n premiers éléments, puis les autres dans un bloc caché et un bouton « Voir plus (k) » (data-ui-voirplus,
      aria-expanded) que UI.brancher fait déplier / replier. Sans rendu, chaque élément est échappé tel quel.
      balise = "ul" ou "ol" : les deux blocs sont des listes (le rendu doit alors renvoyer des <li>) ; "div" par défaut.
@@ -232,7 +234,11 @@
       '<span class="ui-acc-chevron">' + CHEVRON_BAS + '</span></summary><div class="ui-acc-corps">' + (o.contenu == null ? "" : String(o.contenu)) + "</div></details>";
   }
 
-  function voirPlus(liste, n, rendu, libelle, balise) {
+  /* Identifiant stable d'un « Voir plus » : même contenu → même id, pour que les signatures de HTML (anti-redessin) restent
+     égales d'un rendu à l'autre ; l'état déplié est retenu par clé et restauré au rendu suivant. */
+  const deplies = new Set();
+  function hacher(t) { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+  function voirPlus(liste, n, rendu, libelle, balise, cle) {
     const xs = Array.isArray(liste) ? liste : [];
     const b = balise === "ul" || balise === "ol" ? balise : "div";
     const k = n == null || !isFinite(+n) ? 5 : Math.max(0, Math.floor(+n));
@@ -240,11 +246,14 @@
     const tete = xs.slice(0, k).map((x, i) => r(x, i)).join("");
     const reste = xs.slice(k);
     if (!reste.length) return '<div class="ui-voirplus"><' + b + ' class="ui-voirplus-liste">' + tete + "</" + b + "></div>";
-    const id = uid("reste"), lib = vide(libelle) ? "Voir plus" : String(libelle);
+    const lib = vide(libelle) ? "Voir plus" : String(libelle);
+    const corps = reste.map((x, i) => r(x, i + k)).join("");
+    const id = "ui-reste-" + hacher(vide(cle) ? lib + "|" + tete.slice(0, 200) : String(cle));
+    const ouvert = deplies.has(id);
     return '<div class="ui-voirplus"><' + b + ' class="ui-voirplus-liste">' + tete + "</" + b + ">" +
-      "<" + b + ' class="ui-voirplus-liste ui-voirplus-reste" id="' + id + '" hidden>' + reste.map((x, i) => r(x, i + k)).join("") + "</" + b + ">" +
-      '<button type="button" class="ui-voirplus-btn" data-ui-voirplus data-ui-libelle="' + esc(lib) + '" data-ui-nombre="' + reste.length + '" aria-expanded="false" aria-controls="' + id + '">' +
-      esc(lib) + " (" + reste.length + ")</button></div>";
+      "<" + b + ' class="ui-voirplus-liste ui-voirplus-reste" id="' + id + '"' + (ouvert ? "" : " hidden") + ">" + corps + "</" + b + ">" +
+      '<button type="button" class="ui-voirplus-btn" data-ui-voirplus data-ui-libelle="' + esc(lib) + '" data-ui-nombre="' + reste.length + '" aria-expanded="' + ouvert + '" aria-controls="' + id + '">' +
+      (ouvert ? "Voir moins" : esc(lib) + " (" + reste.length + ")") + "</button></div>";
   }
   function basculerVoirPlus(btn) {
     const bloc = btn.closest(".ui-voirplus");
@@ -252,6 +261,7 @@
     if (!reste) return;
     const deplier = reste.hidden;
     reste.hidden = !deplier;
+    if (reste.id) { if (deplier) deplies.add(reste.id); else deplies.delete(reste.id); }
     btn.setAttribute("aria-expanded", String(deplier));
     btn.textContent = deplier ? "Voir moins" : btn.getAttribute("data-ui-libelle") + " (" + btn.getAttribute("data-ui-nombre") + ")";
   }
