@@ -50,15 +50,15 @@ export function registerSavoir(server: any, h: { db: any; wrap: any; must: any; 
   }, wrap(async (a: any) => {
     if (a.slug) {
       const f = must("savoir_fiches", await db.from("savoir_fiches").select("slug, theme, titre, resume, contenu, sources, version, mis_a_jour_le").eq("slug", a.slug).maybeSingle());
-      if (!f) throw new UserError(`Fiche introuvable : ${a.slug}. Cherchez avec question ou theme.`);
-      return { fiche: f, consigne: "Citez la fiche (titre, date de mise à jour) ; ses sources sont dans sources." };
+      if (!f) throw new UserError(`Fiche introuvable : ${a.slug}. Cherche avec question ou theme.`);
+      return { fiche: f, consigne: "Cite la fiche (titre, date de mise à jour) ; ses sources sont dans sources." };
     }
-    if (!a.question && !a.theme) throw new UserError("Fournissez question, theme ou slug.");
+    if (!a.question && !a.theme) throw new UserError("Fournis question, theme ou slug.");
     const res = (must("chercher_savoir", await db.rpc("chercher_savoir", { p_question: a.question ?? null, p_theme: a.theme ?? null, p_limite: 5 })) as any[]) ?? [];
     return {
       nombre: res.length,
       fiches: res,
-      consigne: res.length ? "Ouvrez la fiche utile avec slug, puis citez-la (titre, date)." : "Aucune fiche ne correspond : dites-le à l'utilisateur et n'inventez rien.",
+      consigne: res.length ? "Ouvre la fiche utile avec slug, puis cite-la (titre, date)." : "Aucune fiche ne correspond : dis-le à l'utilisateur et n'invente rien.",
     };
   }));
 

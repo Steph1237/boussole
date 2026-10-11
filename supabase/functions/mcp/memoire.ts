@@ -91,7 +91,7 @@ export function registerMemoire(server: any, h: { db: any; wrap: any; must: any;
     annotations: { ...RW, destructiveHint: true },
   }, wrap(async (a: any) => {
     const ids = [...new Set([...(a.ids ?? []), ...(a.id ? [a.id] : [])])];
-    if (!ids.length) throw new UserError("Fournissez id ou ids (identifiants renvoyés par se_souvenir).");
+    if (!ids.length) throw new UserError("Fournis id ou ids (identifiants renvoyés par se_souvenir).");
     const del = must("memoire_agent", await db.from("memoire_agent").delete().in("id", ids).select("id")) as any[];
     const n = (del ?? []).length;
     return { oublies: n, ...(n < ids.length ? { avertissement: `${ids.length - n} identifiant(s) introuvable(s) : déjà effacé(s) ?` } : {}) };

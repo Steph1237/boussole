@@ -202,7 +202,7 @@ export function registerJournal(server: any, h: { db: any; wrap: any; must: any;
     }),
     annotations: RW,
   }, wrap(async (a: any) => {
-    if (a.note === undefined && a.statut === undefined && a.revue_le === undefined) throw new UserError("Fournissez note, statut ou revue_le.");
+    if (a.note === undefined && a.statut === undefined && a.revue_le === undefined) throw new UserError("Fournis note, statut ou revue_le.");
     if (a.statut !== undefined && !(STATUTS_AGENT as readonly string[]).includes(a.statut)) throw new UserError("statut : " + STATUTS_AGENT.join(", ") + " (jamais de retour à a_relire).");
     if (a.note !== undefined && sensible(a.note)) throw new UserError(REFUS_SENSIBLE);
     // Consentement avant toute lecture ou écriture de l'entrée (même règle que journaliser).
@@ -210,13 +210,13 @@ export function registerJournal(server: any, h: { db: any; wrap: any; must: any;
     if (consentement === "jamais") throw new UserError("Refusé : l'utilisateur a désactivé le journal dans " + JOURNAL + ". N'y modifie rien.");
     if (consentement === "demander" && a.accord_utilisateur !== true) throw new UserError("Accord requis : l'utilisateur veut qu'on lui demande. Montre-lui d'abord ce que tu veux changer (la note, le statut ou la date de revue) et demande-lui s'il accepte, puis rappelle completer_journal avec accord_utilisateur: true seulement après un oui explicite.");
     const cur = must("journal", await db.from("journal").select("id, raisonnement, statut, maj_le").eq("id", a.id).maybeSingle()) as any;
-    if (!cur) throw new UserError(`Entrée du journal introuvable : ${a.id}. Relisez le journal avec lire_journal.`);
-    if (a.statut !== undefined && cur.statut === "a_relire") throw new UserError("Cette entrée attend la relecture de l'utilisateur : lui seul la confirme dans " + JOURNAL + ". Vous pouvez y ajouter une note ou une date de revue.");
+    if (!cur) throw new UserError(`Entrée du journal introuvable : ${a.id}. Relis le journal avec lire_journal.`);
+    if (a.statut !== undefined && cur.statut === "a_relire") throw new UserError("Cette entrée attend la relecture de l'utilisateur : lui seul la confirme dans " + JOURNAL + ". Tu peux y ajouter une note ou une date de revue.");
     // Seuls raisonnement (note ajoutée à la fin), statut et revue_le sont écrits : jamais titre ni synthèse.
     const patch: Record<string, unknown> = {};
     if (a.note !== undefined) {
       const r = noteDatee(cur.raisonnement, a.note, today(), source);
-      if (r.length > RAISONNEMENT_MAX) throw new UserError("Raisonnement plein : 8 000 caractères au plus. Raccourcissez la note.");
+      if (r.length > RAISONNEMENT_MAX) throw new UserError("Raisonnement plein : 8 000 caractères au plus. Raccourcis la note.");
       patch.raisonnement = r;
     }
     if (a.statut !== undefined) patch.statut = a.statut;
@@ -225,7 +225,7 @@ export function registerJournal(server: any, h: { db: any; wrap: any; must: any;
     const res = await db.from("journal").update(patch).eq("id", a.id).eq("maj_le", cur.maj_le).select(COLS).maybeSingle();
     if (res.error && /journal_contenu_sensible/.test(res.error.message ?? "")) throw new UserError(REFUS_SENSIBLE);
     const row = must("journal", res);
-    if (!row) throw new UserError("Entrée modifiée entre-temps (dans Boussole ?) : relisez-la avec lire_journal puis réessayez.");
+    if (!row) throw new UserError("Entrée modifiée entre-temps (dans Boussole ?) : relis-la avec lire_journal puis réessaie.");
     return {
       entree: row,
       consentement,

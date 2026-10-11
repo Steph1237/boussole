@@ -22,7 +22,10 @@ const srcSavoir = readFileSync(path("supabase/functions/mcp/savoir.ts"), "utf8")
 const srcMemoire = readFileSync(path("supabase/functions/mcp/memoire.ts"), "utf8");
 /* CK2 : journal des décisions dans un troisième module voisin (journal.ts), enregistré par index.ts. */
 const srcJournal = existsSync(path("supabase/functions/mcp/journal.ts")) ? readFileSync(path("supabase/functions/mcp/journal.ts"), "utf8") : "";
-const srcAll = [src, srcSavoir, srcMemoire, srcJournal].join("\n");
+/* Saisie par l'agent : formulaires dynamiques (formulaire.ts, page formulaire-ui.ts, catalogue généré catalogue.gen.ts). */
+const srcFormulaire = readFileSync(path("supabase/functions/mcp/formulaire.ts"), "utf8");
+const srcFormulaireUi = readFileSync(path("supabase/functions/mcp/formulaire-ui.ts"), "utf8");
+const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
@@ -35,6 +38,7 @@ const TOOLS = [
   "demarrer_onboarding",
   "demarrer_session", "consulter_savoir", "reperes", "memoriser", "se_souvenir", "oublier",
   "journaliser", "lire_journal", "completer_journal", "cloturer_session",
+  "formulaire", "soumettre_formulaire",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
@@ -156,9 +160,27 @@ test("mcp : chaque outil d'écriture exige une source (DEPOT) et dépose des pro
   assert.doesNotMatch(outil("annotate_instrument"), /\.\.\.DEPOT|deposer\(/, "annotate_instrument reste direct");
   // set_risk_answers validé contre les questions ; list_propositions et etat_du_bilan en lecture seule
   assert.match(outil("set_risk_answers"), /reponses:\s*RisqueReponses/);
-  assert.match(code, /const RisqueReponses = z\.strictObject\(Object\.fromEntries\(QUESTIONS_RISQUE\.map/);
+  assert.match(code, /const CHAMPS_RISQUE = CATALOGUE\.filter\(\(c: any\) => c\.cible === "risque"\);/, "set_risk_answers validé contre le catalogue généré");
+  assert.match(code, /const RisqueReponses = z\.strictObject\(Object\.fromEntries\(CHAMPS_RISQUE\.map/);
+  assert.doesNotMatch(code, /QUESTIONS_RISQUE/, "plus de copie manuelle des questions de risque");
   for (const nom of ["etat_du_bilan", "list_propositions"]) assert.match(outil(nom), /annotations:\s*RO/, `${nom} en lecture seule`);
   assert.match(outil("list_propositions"), /eq\("statut", statut\)/);
+});
+
+test("mcp : update_config — actif des règles documenté (schéma et description), champs de get_config conservés", () => {
+  const cfg = outil("update_config");
+  const schema = code.slice(code.indexOf("const RuleSchema = z.discriminatedUnion("), code.indexOf("const TargetsPatch"));
+  const types = [...schema.matchAll(/type: z\.literal\("(\w+)"\)/g)].map(m => m[1]);
+  assert.deepEqual(types, ["max_line_pct", "max_bloc_pct", "price_floor", "envelope_cap", "stale_prices"]);
+  assert.equal((schema.match(/actif: actifRegle/g) || []).length, types.length, "actif explicite sur chaque type de règle");
+  assert.match(code, /const actifRegle = z\.boolean\(\{ error: "actif : true ou false\." \}\)\.optional\(\)/, "actif : booléen facultatif");
+  assert.match(cfg, /actif \(booléen, facultatif : false = règle mise en pause par l'utilisateur dans Boussole, absent = active\)/);
+  assert.match(cfg, /conserve tous les champs reçus de get_config pour chaque règle, dont actif/);
+  assert.match(cfg, /ne réactive jamais en silence une règle en pause/);
+  assert.match(cfg, /Demande confirmation à l'utilisateur avant/, "au tutoiement");
+  // l'app respecte actif: false (web/src/rules.js) : le connecteur ne le retire pas (la liste fournie est écrite telle quelle)
+  assert.match(readFileSync(path("web/src/rules.js"), "utf8"), /actif !== false/);
+  assert.match(cfg, /for \(const k of \["rules", "todo", "milestones", "hypotheses"\]\) if \(a\[k\] !== undefined\) patch\[k\] = a\[k\];/, "règles écrites telles quelles (actif compris)");
 });
 
 test("mcp : prompts d'entretien enregistrés (titre, description, conduite)", () => {
@@ -228,7 +250,7 @@ test("parité MCP / risque.js : allocation, écarts et risque réel sur la démo
   }
   const v = M.vueRisque({ profil: "equilibre", score: 52, date: TODAY, reponses: {} }, d, "foyer", undefined, true);
   assert.equal(v.questionnaire_rempli, true); assert.equal(v.profil.libelle, "Équilibré");
-  assert.match(v.comparaison, /^Votre portefeuille se comporte comme un profil /);
+  assert.match(v.comparaison, /^Ton portefeuille se comporte comme un profil /, "texte du connecteur au tutoiement");
   assert.equal(M.vueRisque(null, d, "foyer", undefined, false).questionnaire_rempli, false);
 });
 
@@ -320,7 +342,7 @@ test("parité MCP / pratiques.js : bilan clairsemé — total null, couverture e
 function portEtat() {
   const debut = src.indexOf("/* État du bilan (port de web/src/bilan-etat.js"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
-  const js = strip(bloc, { mode: "strip" }) + "\n;({ BilanEtat, etatDepuisLignes, QUESTIONS_RISQUE });";
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ BilanEtat, etatDepuisLignes });";
   return vm.runInNewContext(js, { Date, Math, JSON, Number, String, Object, Array, Set, isFinite });
 }
 const BilanEtatWeb = require("../web/src/bilan-etat.js");
@@ -353,13 +375,17 @@ test("parité MCP / bilan-etat.js : mêmes sections, questions, ordre et pourcen
   assert.equal(aucun.sections.find(s => s.cle === "immobilier").statut, "complet");
 });
 
-test("parité MCP / risque.js : questions et valeurs permises de set_risk_answers", { skip: SANS_STRIP }, () => {
-  const { QUESTIONS_RISQUE } = portEtat();
-  assert.deepEqual(J(QUESTIONS_RISQUE.map(q => q.id)), Risque.QUESTIONS.map(q => q.id));
+test("parité MCP / risque.js : questions et valeurs permises de set_risk_answers (catalogue généré)", { skip: SANS_STRIP }, () => {
+  const t = readFileSync(path("supabase/functions/mcp/catalogue.gen.ts"), "utf8");
+  const CATALOGUE = vm.runInNewContext(strip(t, { mode: "strip" }).replace(/export const /g, "var ") + "\n;CATALOGUE");
+  const risque = CATALOGUE.filter(c => c.cible === "risque");
+  assert.deepEqual(J(risque.map(c => c.chemin)), Risque.QUESTIONS.map(q => q.id), "mêmes questions, même ordre");
+  assert.deepEqual(J(risque.map(c => c.champ)), Risque.QUESTIONS.map(q => "risque." + q.id));
   for (const q of Risque.QUESTIONS) {
-    const m = QUESTIONS_RISQUE.find(x => x.id === q.id);
-    assert.equal(m.type, q.type, q.id);
-    assert.deepEqual(J(m.valeurs), q.options.map(o => o.v), q.id);
+    const m = risque.find(x => x.chemin === q.id);
+    assert.equal(m.type, { choix: "choix", multi: "multi", nombre: "curseur" }[q.type], q.id);
+    if (q.type === "nombre") { assert.equal(m.min, 0); assert.equal(m.max, 80, "même borne que l'ancien schéma"); assert.equal(m.pas, 1); }
+    else assert.deepEqual(J(m.valeurs.map(o => o.v)), q.options.map(o => o.v), q.id);
   }
 });
 
@@ -611,7 +637,7 @@ test("AG1 : savoir.ts — consulter_savoir (slug, recherche, rien inventé), rep
   assert.match((await T.consulter_savoir.handler({})).erreur, /question, theme ou slug/);
   assert.match((await T.consulter_savoir.handler({ slug: "livret-a" })).erreur, /Fiche introuvable : livret-a/);
   let r = await T.consulter_savoir.handler({ question: "livret A" });
-  assert.equal(r.ok.nombre, 0); assert.match(r.ok.consigne, /n'inventez rien/);
+  assert.equal(r.ok.nombre, 0); assert.match(r.ok.consigne, /n'invente rien/);
   assert.deepEqual(J(db.appels.at(-1)), { rpc: "chercher_savoir", args: { p_question: "livret A", p_theme: null, p_limite: 5 }, ops: [] });
 
   db = fauxDb(() => ({ data: [
