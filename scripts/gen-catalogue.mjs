@@ -14,12 +14,11 @@
 //   - le schéma du profil (web/src/profil.js, web/src/store-supabase.js, schémas zod d'update_profile) pour foyer.*,
 //     personnes.p1|p2.*, autres.*, protection.* : codes et bornes recopiés ci-dessous, vérifiés par test/formulaire.test.mjs.
 //
-// Tutoiement : les textes de question et les aides tirés de l'app passent par tutoyer(). Règle : une table de remplacements
-// explicite (formes verbales au vouvoiement → tutoiement, « vos » → « tes », « votre » → « ton » ou « ta ») ; un texte déjà au
-// tutoiement passe inchangé ; le générateur échoue s'il reste un « vous », « votre » ou « vos » (texte nouveau dans l'app :
-// compléter la table). Les libellés des options restent ceux de l'app, tels quels. Les phrases « Prérempli depuis … » des
-// aides de risque.js sont retirées : le formulaire ne préremplit que des valeurs déjà validées du même champ, jamais une
-// valeur déduite d'une autre donnée.
+// Tutoiement : les textes de l'app (risque.js, bilan-etat.js) sont au tutoiement (spec 2026-10-11-saisie-par-agent) et sont
+// repris tels quels ; exigerTutoiement() fait échouer le générateur s'il y reste un « vous », « votre » ou « vos » (l'ancienne
+// table de conversion vous → tu est devenue sans objet). Les libellés des options restent ceux de l'app, tels quels. Les phrases
+// « Prérempli depuis … » des aides de risque.js sont retirées : le formulaire ne préremplit que des valeurs déjà validées du même
+// champ, jamais une valeur déduite d'une autre donnée.
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -31,45 +30,12 @@ export const SORTIE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.gen.ts"
 export const SOURCE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.js";
 
 /* ---------- tutoiement ---------- */
-/** Remplacements, dans l'ordre (sensibles à la casse : une majuscule initiale est traitée par sa propre entrée). */
-export const TUTOIEMENT = [
-  [/\baurez-vous\b/g, "auras-tu"],
-  [/\bQu'attendez-vous\b/g, "Qu'attends-tu"],
-  [/\bQue faites-vous\b/g, "Que fais-tu"],
-  [/\bpourriez-vous\b/g, "pourrais-tu"],
-  [/\bconnaissez-vous\b/g, "connais-tu"],
-  [/\binvestissez-vous\b/g, "investis-tu"],
-  [/\bdécririez-vous\b/g, "décrirais-tu"],
-  [/\bacceptez-vous\b/g, "acceptes-tu"],
-  [/\bVous aurez\b/g, "Tu auras"],
-  [/\bVous n'avez\b/g, "Tu n'as"],
-  [/\bVous acceptez\b/g, "Tu acceptes"],
-  [/\bAvez-vous\b/g, "As-tu"],
-  [/\bavez-vous\b/g, "as-tu"],
-  [/\bvous avez\b/g, "tu as"],
-  [/\bvous n'avez\b/g, "tu n'as"],
-  [/\bvous feriez\b/g, "tu ferais"],
-  [/\bvous pouvez\b/g, "tu peux"],
-  [/\bvous supporteriez\b/g, "tu supporterais"],
-  [/\bRépondez\b/g, "Réponds"],
-  [/\bIndiquez\b/g, "Indique"],
-  [/\bCochez\b/g, "Coche"],
-  [/\bVos\b/g, "Tes"],
-  [/\bvos\b/g, "tes"],
-];
-/** Noms féminins commençant par une consonne rencontrés après « votre » (devant une voyelle ou un h : « ton »). */
-const FEMININS = ["tranche", "situation", "réserve", "part", "famille", "banque", "retraite", "résidence", "pension", "carte", "date"];
 const RESTE_VOUS = /(^|[^\p{L}])(vous|votre|vos|vôtres?)(?![\p{L}])/iu;
 
-/** Texte de l'app au vouvoiement → tutoiement (règle ci-dessus). Lève si un vouvoiement subsiste. */
-export function tutoyer(texte) {
-  let t = String(texte);
-  for (const [re, par] of TUTOIEMENT) t = t.replace(re, par);
-  t = t.replace(/\b([Vv])otre (\p{L}+)/gu, (_, v, nom) => {
-    const ta = !/^[aeiouyhàâäéèêëîïôöûüœ]/i.test(nom) && FEMININS.includes(nom.toLowerCase());
-    return (v === "V" ? (ta ? "Ta" : "Ton") : (ta ? "ta" : "ton")) + " " + nom;
-  });
-  if (RESTE_VOUS.test(t)) throw new Error("tutoyer : vouvoiement non converti, compléter TUTOIEMENT dans scripts/gen-catalogue.mjs : « " + t + " »");
+/** Texte de l'app repris tel quel ; lève s'il est encore au vouvoiement (le texte est à reprendre dans l'app). */
+export function exigerTutoiement(texte) {
+  const t = String(texte);
+  if (RESTE_VOUS.test(t)) throw new Error("exigerTutoiement : texte de l'app au vouvoiement, à mettre au tutoiement à la source : « " + t + " »");
   return t;
 }
 /** Aide de risque.js sans la phrase « Prérempli depuis … » (aucun préremplissage déduit dans le formulaire). */
@@ -136,9 +102,9 @@ function champsProfil(Risque, pourquoi) {
 /* ---------- profil de risque (risque.js) ---------- */
 function champsRisque(Risque) {
   return Risque.QUESTIONS.map(q => {
-    const base = { champ: "risque." + q.id, theme: q.theme, libelle: tutoyer(q.texte) };
+    const base = { champ: "risque." + q.id, theme: q.theme, libelle: exigerTutoiement(q.texte) };
     const aide = sansPrerempli(q.aide);
-    if (aide) base.aide = tutoyer(aide);
+    if (aide) base.aide = exigerTutoiement(aide);
     if (q.type === "nombre") {
       return { ...base, type: "curseur", min: 0, max: EXPERIENCE_MAX, pas: 1, unite: "ans",
         reperes: q.options.map(o => ({ min: o.min, label: o.label })), cible: "risque", chemin: q.id };
@@ -153,14 +119,14 @@ function baremeRisque(Risque) {
     options: q.options.map(o => Object.fromEntries(Object.entries({ v: o.v, points: o.points, perte: o.perte, min: o.min, exclusif: o.exclusif }).filter(([, v]) => v !== undefined))) }));
 }
 
-/** « Pourquoi » de bilan-etat.js par champ (tutoyé), lu sur deux états vides (un et deux adultes, avec un crédit). */
+/** « Pourquoi » de bilan-etat.js par champ (au tutoiement), lu sur deux états vides (un et deux adultes, avec un crédit). */
 function pourquoiBilan(BilanEtat) {
   const m = {};
   const etats = [
     BilanEtat.etat({ profil: null, positions: [], objectifs: [] }, "2026-01-01"),
     BilanEtat.etat({ profil: { foyer: { adultes: 2 }, personnes: {}, credits: [{ crd: 1 }], protection: {} }, positions: [], objectifs: [] }, "2026-01-01"),
   ];
-  for (const e of etats) for (const s of e.sections) for (const q of s.manquants) if (/^(foyer|personnes|protection)\./.test(q.champ) && !m[q.champ]) m[q.champ] = tutoyer(q.pourquoi);
+  for (const e of etats) for (const s of e.sections) for (const q of s.manquants) if (/^(foyer|personnes|protection)\./.test(q.champ) && !m[q.champ]) m[q.champ] = exigerTutoiement(q.pourquoi);
   return champ => m[champ];
 }
 

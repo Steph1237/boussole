@@ -24,8 +24,8 @@ const sp = s => String(s).replace(/[\u00a0\u202f]/g, " ").replace(/&#39;/g, "'")
 const attendre = () => new Promise(r => setTimeout(r, 0));
 /* Questions des liens « … avec Claude » (href décodé). */
 const questions = h => [...String(h).matchAll(/href="https:\/\/claude\.ai\/new\?q=([^"]*)"/g)].map(m => sp(decodeURIComponent(m[1].replace(/&amp;/g, "&"))));
-/* Tutoiement : aucun « vous / votre / vos ». Exception : textes du moteur des règles (rules.js) affichés dans le panneau. */
-const EXCEPTIONS_MOTEUR = ["vérifiez votre ordre stop"];
+/* Tutoiement : aucun « vous / votre / vos », textes du moteur des règles (rules.js) compris : plus aucune exception. */
+const EXCEPTIONS_MOTEUR = [];
 const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
 const sansExceptions = t => EXCEPTIONS_MOTEUR.reduce((a, e) => a.split(e).join(""), String(t));
 

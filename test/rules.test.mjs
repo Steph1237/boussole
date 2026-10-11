@@ -47,7 +47,7 @@ test("min_bloc_pct : poche sous le plancher (info)", () => {
 test("price_floor : urgent sous le seuil, à traiter à moins de 10 %, rien au-delà", () => {
   const crit = Rules.evaluate([{ type: "price_floor", position_id: "lqq", price: 100 }], ctx());
   assert.equal(crit.length, 1); assert.equal(crit[0].level, "crit");
-  assert.match(crit[0].text, /seuil atteint : vérifiez votre ordre stop/i);
+  assert.match(crit[0].text, /seuil atteint : vérifie ton ordre stop/i);
   const warn = Rules.evaluate([{ type: "price_floor", position_id: "lqq", price: 95 }], ctx());
   assert.equal(warn[0].level, "warn");
   assert.equal(Rules.evaluate([{ type: "price_floor", position_id: "lqq", price: 80 }], ctx()).length, 0);
@@ -58,7 +58,7 @@ test("price_floor : urgent sous le seuil, à traiter à moins de 10 %, rien au-d
 test("envelope_cap : enveloppe au plafond", () => {
   const a = Rules.evaluate([{ type: "envelope_cap", envelope: "Livrets A", cap: 20000 }], ctx());
   assert.equal(a.length, 1); assert.equal(a[0].level, "warn");
-  assert.match(a[0].text, /dirigez les prochains versements ailleurs/);
+  assert.match(a[0].text, /dirige les prochains versements ailleurs/);
   assert.equal(Rules.evaluate([{ type: "envelope_cap", envelope: "Livrets A", cap: 22950 }], ctx()).length, 0);
 });
 

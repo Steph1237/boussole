@@ -100,14 +100,14 @@
     apport: { titre: "Apport pour le projet immobilier", cible: "l'apport visé (10 % du prix + frais de notaire)",
       regle: "Apport réuni ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
       source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)", lien: "patrimoine/objectifs" },
-    adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de votre profil",
-      regle: "Somme des écarts hors fourchette, par classe d'actifs, entre votre allocation et celle de votre profil ; repère 0 point",
+    adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de ton profil",
+      regle: "Somme des écarts hors fourchette, par classe d'actifs, entre ton allocation et celle de ton profil ; repère 0 point",
       source: "Questionnaire de profil inspiré de l'adéquation MiFID II ; allocations indicatives de Boussole", lien: "pilotage/risque" },
     geographie: { titre: "Diversification géographique", cible: "au moins la moitié des actions sur le monde entier",
       regle: "Part des actions investies sur le monde entier (indices Monde, ACWI) ; repère 50 % ou plus",
       source: "Principe de diversification ; biais domestique (French et Poterba, 1991)", lien: "patrimoine/placements" },
-    speculatif: { titre: "Part spéculative", cible: "sous le plafond de votre profil",
-      regle: "(Crypto + produits à levier) ÷ financier ; repère : sous le plafond de votre profil (5 % par défaut)",
+    speculatif: { titre: "Part spéculative", cible: "sous le plafond de ton profil",
+      regle: "(Crypto + produits à levier) ÷ financier ; repère : sous le plafond de ton profil (5 % par défaut)",
       source: "Plafonds indicatifs par profil de Boussole ; mises en garde de l'AMF sur les crypto-actifs et les produits à effet de levier", lien: "pilotage/risque" },
     devises: { titre: "Exposition hors euro", cible: "information, sans note",
       regle: "Part du financier exposée à une autre devise que l'euro (une zone hors Europe compte hors euro) ; information",
@@ -133,15 +133,15 @@
     const decl = pr.protection && pr.protection[scope] && typeof pr.protection[scope] === "object" ? pr.protection[scope] : pr.protection;
     const motif = credit && enfants ? "un crédit et des enfants" : credit ? "un crédit en cours" : "des enfants à charge";
     if (!decl || attendus.some(k => typeof decl[k] !== "boolean"))
-      return aCompleter("securite", "protection", B.protection, "Protection non renseignée, alors que vous avez " + motif + ".",
-        "Indiquez dans Compte › Données si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
+      return aCompleter("securite", "protection", B.protection, "Protection non renseignée, alors que tu as " + motif + ".",
+        "Dis à Claude si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
     const ok = attendus.filter(k => decl[k]).length;
     const libelle = { prevoyance: "prévoyance", emprunteur: "assurance emprunteur" };
     const manque = attendus.filter(k => !decl[k]).map(k => libelle[k]);
     return critere("securite", "protection", B.protection, { points: ok === attendus.length ? 20 : ok > 0 ? 8 : 0, valeur: ok / attendus.length,
-      texte: manque.length ? "Manque : " + manque.join(" et ") + " (vous avez " + motif + ")." : "Protection en place pour " + motif + ".",
-      piste: manque.length ? "Un décès ou une invalidité ne doit pas mettre le foyer en difficulté : vérifiez d'abord les garanties de votre employeur, puis comparez les contrats."
-        : "Relisez les garanties à chaque changement de situation (naissance, nouveau crédit)." });
+      texte: manque.length ? "Manque : " + manque.join(" et ") + " (tu as " + motif + ")." : "Protection en place pour " + motif + ".",
+      piste: manque.length ? "Un décès ou une invalidité ne doit pas mettre le foyer en difficulté : vérifie d'abord les garanties de ton employeur, puis compare les contrats."
+        : "Relis les garanties à chaque changement de situation (naissance, nouveau crédit)." });
   }
 
   function liquiditeObjectifs(positions, objectifs, deja, scope, today) {
@@ -151,11 +151,11 @@
     const liq = Calc.parLiquidite(positions, scope);
     const dispo = pos(liq.immediate) + pos(liq.jours);
     if (besoin <= 0) return critere("securite", "liquidite_objectifs", B.liquidite_objectifs, { points: 20,
-      texte: "Vos objectifs à moins de 2 ans sont déjà financés.", piste: "Gardez cet argent sur des supports disponibles jusqu'à l'échéance." });
+      texte: "Tes objectifs à moins de 2 ans sont déjà financés.", piste: "Garde cet argent sur des supports disponibles jusqu'à l'échéance." });
     const ratio = dispo / besoin;
     return critere("securite", "liquidite_objectifs", B.liquidite_objectifs, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
       texte: eur(dispo) + " disponibles sous quelques jours pour " + eur(besoin) + " encore à réunir d'ici 2 ans.",
-      piste: ratio >= 1 ? "L'argent de vos projets proches est accessible sans attendre ni vendre au mauvais moment."
+      piste: ratio >= 1 ? "L'argent de tes projets proches est accessible sans attendre ni vendre au mauvais moment."
         : "L'argent nécessaire à moins de 2 ans gagne à être disponible et peu risqué (livrets, compte courant) : une baisse des marchés juste avant l'échéance n'aurait pas le temps de se rattraper." });
   }
 
@@ -165,11 +165,11 @@
     if (!L.length) return null;
     const cible = sum(L, o => (pos(o.cible) > 0 ? pos(o.cible) : 0.18 * pos(o.prix)));
     const reuni = sum(L, o => pos(deja[o.id]));
-    if (cible <= 0) return aCompleter("effort", "apport", B.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport (Patrimoine › Objectifs).");
+    if (cible <= 0) return aCompleter("effort", "apport", B.apport, "Montant de l'apport non renseigné.", "Donne à Claude l'apport visé pour ton objectif Apport.");
     const ratio = reuni / cible;
     return critere("effort", "apport", B.apport, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
       texte: eur(reuni) + " réunis sur " + eur(cible) + " d'apport visé (" + pct(ratio) + ").",
-      piste: ratio >= 1 ? "Votre apport est réuni : les banques regarderont aussi votre endettement après l'achat."
+      piste: ratio >= 1 ? "Ton apport est réuni : les banques regarderont aussi ton endettement après l'achat."
         : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Objectifs indique l'effort mensuel pour y arriver." });
   }
 
@@ -209,20 +209,20 @@
   function adequation(ctx, positions, scope, R) {
     const id = idProfil(ctx.risque);
     if (!id) return aCompleter("allocation", "adequation", B.adequation, "Profil de risque non renseigné.",
-      "Répondez au questionnaire (une dizaine de questions) pour comparer votre allocation à celle de votre profil.");
+      "Fais ton profil de risque avec Claude (une dizaine de questions) pour comparer ton allocation à celle de ton profil.");
     const indispo = () => aCompleter("allocation", "adequation", B.adequation, "Calcul de l'écart au profil indisponible pour le moment.",
-      "Rouvrez Pilotage › Santé : l'écart à votre profil s'affichera dès que le calcul sera chargé.");
+      "Rouvre Pilotage › Santé : l'écart à ton profil s'affichera dès que le calcul sera chargé.");
     if (!R || typeof R.allocationReelle !== "function" || typeof R.ecarts !== "function") return indispo();
     if (Calc.financier(positions, scope) <= 0) return aCompleter("allocation", "adequation", B.adequation, "Aucun placement enregistré.",
-      "Ajoutez vos placements dans Patrimoine › Placements pour les comparer à votre profil.", "patrimoine/placements");
+      "Complète tes placements avec Claude pour les comparer à ton profil.", "patrimoine/placements");
     let hors;
     const fiche = ficheProfil(R, id);
     try { hors = pointsHors(R.ecarts(fiche && fiche.id || id, R.allocationReelle(positions, scope, { surcharge: ctx.classes }))); } catch (e) { return indispo(); }
     const nom = nomProfil(R, id);
     return critere("allocation", "adequation", B.adequation, { points: Math.round(interp(hors, [[0, 20], [40, 0]])), valeur: Math.round(hors * 10) / 10,
-      texte: hors <= 0 ? "Votre allocation est dans les fourchettes du profil " + nom + "." : fr(hors) + " points hors des fourchettes du profil " + nom + ".",
-      piste: hors <= 0 ? "Votre répartition correspond au risque que vous avez dit accepter."
-        : "Le détail par classe est dans Pilotage › Risque : rapprochez chaque classe de sa fourchette, de préférence avec vos versements à venir." });
+      texte: hors <= 0 ? "Ton allocation est dans les fourchettes du profil " + nom + "." : fr(hors) + " points hors des fourchettes du profil " + nom + ".",
+      piste: hors <= 0 ? "Ta répartition correspond au risque que tu as dit accepter."
+        : "Le détail par classe est dans Pilotage › Risque : rapproche chaque classe de sa fourchette, de préférence avec tes versements à venir." });
   }
 
   const RE_MONDE = /monde|world|acwi|all.?country|global|international/;
@@ -233,8 +233,8 @@
     if (total <= 0) return null;
     const part = sum(actions.filter(p => RE_MONDE.test(libelleGeo(p))), montant) / total;
     return critere("allocation", "geographie", B.geographie, { points: Math.round(part >= 0.5 ? 20 : interp(part, [[0, 8], [0.5, 20]])), valeur: part,
-      texte: pct(part) + " de vos actions couvrent le monde entier ; le reste vise une région, un pays ou des titres en direct.",
-      piste: part >= 0.5 ? "Un socle « monde » répartit le risque sur des milliers d'entreprises et plusieurs économies ; vos paris régionaux s'y ajoutent."
+      texte: pct(part) + " de tes actions couvrent le monde entier ; le reste vise une région, un pays ou des titres en direct.",
+      piste: part >= 0.5 ? "Un socle « monde » répartit le risque sur des milliers d'entreprises et plusieurs économies ; tes paris régionaux s'y ajoutent."
         : "Miser sur une région n'est pas une erreur, mais le risque est plus concentré. Le biais domestique (surpondérer son pays ou sa région) est fréquent : un socle « monde » diversifie davantage." });
   }
 
@@ -248,7 +248,7 @@
   function speculatif(ctx, positions, scope, R, M) {
     const F = Calc.financier(positions, scope);
     if (F <= 0) return aCompleter("allocation", "speculatif", B.speculatif, "Aucun placement enregistré.",
-      "Ajoutez vos placements dans Patrimoine › Placements pour mesurer leur part spéculative.", "patrimoine/placements");
+      "Complète tes placements avec Claude pour mesurer leur part spéculative.", "patrimoine/placements");
     const part = sum(positions.filter(p => estSpeculatif(p, ctx.classes, M)), montant) / F;
     const id = idProfil(ctx.risque);
     const prof = ficheProfil(R, id);
@@ -261,8 +261,8 @@
     return critere("allocation", "speculatif", B.speculatif, { points, valeur: part, cible: pct(plafond) + " au plus",
       lien: borne == null ? "pilotage/risque" : "patrimoine/placements",
       texte: "Crypto et produits à levier : " + pct(part, 1) + " du financier (" + de + ").",
-      piste: part <= plafond ? "Cette part reste dans ce que votre profil peut encaisser : elle pourrait perdre l'essentiel de sa valeur sans compromettre vos projets."
-        : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de votre patrimoine." });
+      piste: part <= plafond ? "Cette part reste dans ce que ton profil peut encaisser : elle pourrait perdre l'essentiel de sa valeur sans compromettre tes projets."
+        : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de ton patrimoine." });
   }
 
   const RE_EURO = /france|zone euro|eurozone|^eur$|^euro$/;
@@ -291,13 +291,13 @@
     if (total <= 0) return null;
     const avec = cotees.filter(p => connu(p.ter));
     const couvert = sum(avec, montant);
-    if (couvert / total < 0.5) return aCompleter("efficacite", "frais", B.frais, "Frais inconnus : votre assistant peut les renseigner.",
-      "Demandez à votre assistant de compléter les frais courants (TER) de vos fonds via le connecteur.", "agent/connexion");
+    if (couvert / total < 0.5) return aCompleter("efficacite", "frais", B.frais, "Frais inconnus : Claude peut les compléter.",
+      "Demande à Claude de compléter les frais courants (TER) de tes fonds.", "agent/connexion");
     const ter = sum(avec, p => montant(p) * +p.ter) / couvert;
     return critere("efficacite", "frais", B.frais, { points: Math.round(interp(ter, [[0.3, 20], [1, 10], [2, 0]])), valeur: ter,
       texte: "Frais moyens de " + fr(ter, 2) + " % par an" + (couvert < total ? " (sur " + pct(couvert / total) + " des lignes cotées)." : "."),
-      piste: ter <= 0.3 ? "Vos frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
-        : "1 % de frais par an coûte environ 18 % du capital sur 20 ans : regardez quelles lignes pèsent le plus ; des fonds indiciels équivalents existent souvent." });
+      piste: ter <= 0.3 ? "Tes frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
+        : "1 % de frais par an coûte environ 18 % du capital sur 20 ans : regarde quelles lignes pèsent le plus ; des fonds indiciels équivalents existent souvent." });
   }
 
   const RE_CTO = /\bcto\b|compte[- ]?titres?/, RE_PEA = /\bpea\b/, RE_PER = /\bper\b|\bperin\b|\bperco\b/, RE_AV = /assurance.?vie|\bav\b|capitalisation/;
@@ -344,7 +344,7 @@
       const avant = (ctx.objectifs || []).find(o => o && o.source === "poches" && dateCible(o) && isoJour(dateCible(o)) < isoJour(huit) && pos(deja[o.id]) > 0 &&
         ((o.enveloppes || []).includes(nom) || (o.poches || []).some(b => blocs.has(b))));
       if (avant) details.push({ cle: "av", statut: "probleme",
-        texte: nom + " aura 8 ans le " + frDate(huit) + ", après l'échéance de « " + (avant.nom || "votre objectif") + " » qu'elle finance : un retrait avant 8 ans ne profite pas de l'abattement." });
+        texte: nom + " aura 8 ans le " + frDate(huit) + ", après l'échéance de « " + (avant.nom || "ton objectif") + " » qu'elle finance : un retrait avant 8 ans ne profite pas de l'abattement." });
       else details.push({ cle: "av", statut: "note", texte: nom + " aura 8 ans le " + frDate(huit) + " : d'ici là, les gains retirés ne profitent pas de l'abattement annuel." });
     });
     /* 3. PER : la déduction à l'entrée vaut surtout à partir d'une tranche à 30 %. */
@@ -358,21 +358,21 @@
     if (!details.length) return null;
     const pb = details.filter(d => d.statut === "probleme");
     return critere("efficacite", "enveloppes", B.enveloppes, { points: Math.max(0, 20 - 6 * pb.length), valeur: pb.length, details,
-      texte: pb.length ? pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention sur le choix des enveloppes." : "Vos enveloppes sont utilisées dans le bon ordre.",
+      texte: pb.length ? pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention sur le choix des enveloppes." : "Tes enveloppes sont utilisées dans le bon ordre.",
       piste: pb.length ? pb.map(d => d.texte).join(" ") : "Rien à changer : chaque enveloppe joue son rôle fiscal." });
   }
 
   function dormant(ctx, positions, depenses, deja, today) {
     if (!(depenses > 0)) return aCompleter("efficacite", "dormant", B.dormant, "Dépenses mensuelles inconnues.",
-      "Renseignez vos dépenses dans le budget pour mesurer l'argent qui dort.");
+      "Donne tes dépenses à Claude pour mesurer l'argent qui dort.");
     const livrets = sum(positions.filter(p => classeDe(p, ctx.classes) === "monetaire"), montant);
     /* L'argent des projets à moins de 2 ans ne dort pas ; le matelas est déjà couvert par les 12 mois tolérés. */
     const reserve = sum(objectifsCourts(ctx.objectifs, deja, today).filter(x => x.o.type !== "matelas"), x => x.cible);
     const mois = Math.max(0, livrets - reserve) / depenses;
     return critere("efficacite", "dormant", B.dormant, { points: Math.round(mois <= 12 ? 20 : interp(mois, [[12, 20], [24, 10], [36, 5]])), valeur: mois,
       texte: fr(mois) + " mois de dépenses sur livrets et monétaire" + (reserve > 0 ? ", hors " + eur(reserve) + " réservés aux projets à moins de 2 ans." : "."),
-      piste: mois <= 12 ? "Votre argent disponible correspond à vos besoins : rien ne dort inutilement."
-        : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à votre profil." });
+      piste: mois <= 12 ? "Ton argent disponible correspond à tes besoins : rien ne dort inutilement."
+        : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à ton profil." });
   }
 
   /* ---------- agrégation ---------- */

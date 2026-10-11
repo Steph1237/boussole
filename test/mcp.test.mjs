@@ -1065,6 +1065,6 @@ test("connecteur : libellés « Patrimoine › Objectifs » identiques à plan.j
   assert.doesNotMatch(src, /Budget et objectifs/);
   const web = readFileSync(path("web/src/plan.js"), "utf8") + readFileSync(path("web/src/pratiques.js"), "utf8");
   const phrases = [...src.matchAll(/"([^"\n]*Patrimoine › Objectifs[^"\n]*)"/g)].map(m => m[1]);
-  assert.equal(phrases.length, 3, "patrimoine, apport à compléter, apport");
+  assert.equal(phrases.length, 2, "patrimoine, apport (l'apport à compléter se donne à Claude)");
   for (const p of phrases) assert.ok(web.includes('"' + p + '"'), p);
 });

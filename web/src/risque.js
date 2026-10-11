@@ -17,8 +17,8 @@
   /* Poids : fort 3, moyen 2, faible 1, garde-fou 0 (la question n'entre pas dans le score, elle ne fait que plafonner). */
   const QUESTIONS = [
     { id: "horizon", theme: "Horizon", poids: 3, type: "choix",
-      texte: "Dans combien de temps aurez-vous besoin de la majeure partie de cet argent ?",
-      aide: "Plus l'échéance est lointaine, plus vous avez le temps d'attendre qu'une baisse soit rattrapée.",
+      texte: "Dans combien de temps auras-tu besoin de la majeure partie de cet argent ?",
+      aide: "Plus l'échéance est lointaine, plus tu as le temps d'attendre qu'une baisse soit rattrapée.",
       options: [
         { v: "lt2", label: "Moins de 2 ans", points: 0 },
         { v: "2-5", label: "2 à 5 ans", points: 1 },
@@ -27,7 +27,7 @@
         { v: "gt15", label: "Plus de 15 ans", points: 4 },
       ] },
     { id: "objectif", theme: "Objectif", poids: 2, type: "choix",
-      texte: "Qu'attendez-vous d'abord de vos placements ?",
+      texte: "Qu'attends-tu d'abord de tes placements ?",
       options: [
         { v: "preserver", label: "Préserver ce que j'ai, sans perte", points: 0 },
         { v: "revenus", label: "Compléter mes revenus régulièrement", points: 1 },
@@ -35,8 +35,8 @@
         { v: "maximiser", label: "Obtenir le meilleur rendement à long terme, en acceptant de fortes variations", points: 3 },
       ] },
     { id: "reaction", theme: "Réaction à une baisse", poids: 3, type: "choix",
-      texte: "Vos placements perdent 20 % en trois mois. Que faites-vous ?",
-      aide: "Ce genre de baisse arrive en moyenne une fois tous les 5 à 10 ans sur les actions. Répondez selon ce que vous feriez vraiment.",
+      texte: "Tes placements perdent 20 % en trois mois. Que fais-tu ?",
+      aide: "Ce genre de baisse arrive en moyenne une fois tous les 5 à 10 ans sur les actions. Réponds selon ce que tu ferais vraiment.",
       options: [
         { v: "vendre_tout", label: "Je vends tout pour arrêter les pertes", points: 0 },
         { v: "vendre_partie", label: "J'en vends une partie", points: 1 },
@@ -44,8 +44,8 @@
         { v: "renforcer", label: "J'en profite pour investir davantage", points: 3 },
       ] },
     { id: "perte_max", theme: "Perte maximale", poids: 3, type: "choix",
-      texte: "Quelle baisse temporaire de vos placements, sur une année, pourriez-vous supporter sans changer vos plans ?",
-      aide: "Une baisse temporaire n'est une perte que si l'on vend au plus bas. Indiquez ce que vous supporteriez sans dormir moins bien.",
+      texte: "Quelle baisse temporaire de tes placements, sur une année, pourrais-tu supporter sans changer tes plans ?",
+      aide: "Une baisse temporaire n'est une perte que si l'on vend au plus bas. Indique ce que tu supporterais sans dormir moins bien.",
       options: [
         { v: "p5", label: "5 %", points: 0, perte: 5 },
         { v: "p10", label: "10 %", points: 1, perte: 10 },
@@ -54,8 +54,8 @@
         { v: "plus", label: "Plus de 35 %", points: 4, perte: null },
       ] },
     { id: "connaissances", theme: "Connaissances", poids: 2, type: "multi",
-      texte: "Quels placements connaissez-vous assez pour expliquer comment ils gagnent ou perdent de la valeur ?",
-      aide: "Cochez tout ce qui s'applique. Un ETF (ou « tracker ») est un fonds coté qui réplique un indice, par exemple les grandes entreprises mondiales. " +
+      texte: "Quels placements connais-tu assez pour expliquer comment ils gagnent ou perdent de la valeur ?",
+      aide: "Coche tout ce qui s'applique. Un ETF (ou « tracker ») est un fonds coté qui réplique un indice, par exemple les grandes entreprises mondiales. " +
         "Un produit à levier amplifie les hausses comme les baisses.",
       options: [
         { v: "livrets", label: "Livrets d'épargne", points: 0 },
@@ -68,8 +68,8 @@
         { v: "aucun", label: "Aucun de ces placements", points: 0, exclusif: true },
       ] },
     { id: "experience", theme: "Expérience", poids: 1, type: "nombre",
-      texte: "Depuis combien d'années investissez-vous en bourse (actions, ETF ou fonds) ?",
-      aide: "Indiquez 0 si vous n'avez jamais investi en bourse.",
+      texte: "Depuis combien d'années investis-tu en bourse (actions, ETF ou fonds) ?",
+      aide: "Indique 0 si tu n'as jamais investi en bourse.",
       options: [
         { v: "0", min: 0, label: "Jamais ou moins d'un an", points: 0 },
         { v: "1", min: 1, label: "1 à 2 ans", points: 1 },
@@ -78,7 +78,7 @@
         { v: "10", min: 10, label: "10 ans ou plus", points: 4 },
       ] },
     { id: "revenus", theme: "Stabilité des revenus", poids: 2, type: "choix",
-      texte: "Comment décririez-vous vos revenus ?",
+      texte: "Comment décrirais-tu tes revenus ?",
       aide: "Des revenus stables permettent de traverser une baisse des marchés sans devoir vendre.",
       options: [
         { v: "fonctionnaire", label: "Très stables (fonctionnaire, pension de retraite)", points: 4 },
@@ -88,14 +88,14 @@
         { v: "sans", label: "Sans revenu d'activité", points: 0 },
       ] },
     { id: "matelas", theme: "Épargne de précaution", poids: 0, type: "choix", prerempli: "matelas",
-      texte: "Avez-vous de côté au moins 3 mois de dépenses, disponibles tout de suite et en dehors de vos placements ?",
-      aide: "C'est le matelas de sécurité (livrets, compte courant). Sans lui, un imprévu peut obliger à vendre au mauvais moment. Prérempli depuis votre patrimoine.",
+      texte: "As-tu de côté au moins 3 mois de dépenses, disponibles tout de suite et en dehors de tes placements ?",
+      aide: "C'est le matelas de sécurité (livrets, compte courant). Sans lui, un imprévu peut obliger à vendre au mauvais moment. Prérempli depuis ton patrimoine.",
       options: [
         { v: "oui", label: "Oui", points: 1 },
         { v: "non", label: "Non", points: 0 },
       ] },
     { id: "part_investie", theme: "Part exposée", poids: 2, type: "choix",
-      texte: "Quelle part de votre épargne financière acceptez-vous d'exposer aux marchés (actions, obligations, immobilier coté…) ?",
+      texte: "Quelle part de ton épargne financière acceptes-tu d'exposer aux marchés (actions, obligations, immobilier coté…) ?",
       aide: "Le reste resterait sur des supports sans risque de perte : livrets, fonds euros.",
       options: [
         { v: "lt10", label: "Moins de 10 %", points: 0 },
@@ -105,8 +105,8 @@
         { v: "gt75", label: "Plus de 75 %", points: 4 },
       ] },
     { id: "age", theme: "Âge", poids: 1, type: "choix", prerempli: "age",
-      texte: "Quel est votre âge ?",
-      aide: "Prérempli depuis Compte › Données.",
+      texte: "Quel est ton âge ?",
+      aide: "Prérempli depuis ton profil.",
       options: [
         { v: "u30", label: "Moins de 30 ans", points: 4 },
         { v: "a30", label: "30 à 39 ans", points: 4 },
@@ -121,19 +121,19 @@
   /* Allocation cible indicative (%, bornes incluses) et perte maximale tolérée sur un an (%, en valeur absolue). */
   const PROFILS = [
     { id: "prudent", label: "Prudent", perteMax: 5,
-      description: "Vous privilégiez la sécurité : l'essentiel reste sur des supports sans risque de perte, une petite part cherche un peu de rendement.",
+      description: "Tu privilégies la sécurité : l'essentiel reste sur des supports sans risque de perte, une petite part cherche un peu de rendement.",
       cibles: { actions: [10, 20], obligations: [20, 30], securise: [50, 70], immobilier: [0, 10], speculatif: [0, 0] } },
     { id: "modere", label: "Modéré", perteMax: 12,
-      description: "Vous acceptez de petites variations pour un rendement un peu meilleur, avec une base sécurisée importante.",
+      description: "Tu acceptes de petites variations pour un rendement un peu meilleur, avec une base sécurisée importante.",
       cibles: { actions: [25, 40], obligations: [20, 30], securise: [30, 45], immobilier: [5, 15], speculatif: [0, 2] } },
     { id: "equilibre", label: "Équilibré", perteMax: 20,
-      description: "Vous cherchez un compromis : environ la moitié en actions pour la croissance, le reste pour amortir les baisses.",
+      description: "Tu cherches un compromis : environ la moitié en actions pour la croissance, le reste pour amortir les baisses.",
       cibles: { actions: [45, 60], obligations: [15, 25], securise: [15, 30], immobilier: [5, 15], speculatif: [0, 5] } },
     { id: "dynamique", label: "Dynamique", perteMax: 30,
-      description: "Vous visez la croissance à long terme et acceptez des baisses marquées, le temps qu'elles soient rattrapées.",
+      description: "Tu vises la croissance à long terme et acceptes des baisses marquées, le temps qu'elles soient rattrapées.",
       cibles: { actions: [60, 80], obligations: [5, 15], securise: [5, 15], immobilier: [5, 15], speculatif: [0, 7] } },
     { id: "offensif", label: "Offensif", perteMax: 40,
-      description: "Vous recherchez le rendement maximal sur un horizon long et supportez de fortes baisses sans vendre.",
+      description: "Tu recherches le rendement maximal sur un horizon long et supportes de fortes baisses sans vendre.",
       cibles: { actions: [75, 95], obligations: [0, 10], securise: [0, 10], immobilier: [0, 10], speculatif: [0, 10] } },
   ];
   const IDS = PROFILS.map(p => p.id);
@@ -199,21 +199,21 @@
     const candidats = [];
     if (lues.horizon && lues.horizon.valeur === "lt2")
       candidats.push({ cle: "horizon", plafond: "modere",
-        texte: "Vous aurez besoin de cet argent dans moins de 2 ans : l'argent nécessaire à court terme n'a pas sa place sur les marchés, qui peuvent baisser juste avant l'échéance. Profil plafonné à Modéré." });
+        texte: "Tu auras besoin de cet argent dans moins de 2 ans : l'argent nécessaire à court terme n'a pas sa place sur les marchés, qui peuvent baisser juste avant l'échéance. Profil plafonné à Modéré." });
     if (lues.matelas && lues.matelas.valeur === "non")
       candidats.push({ cle: "matelas", plafond: "modere",
-        texte: "Vous n'avez pas encore 3 mois de dépenses de côté : sans ce matelas, un imprévu peut obliger à vendre au plus bas. Profil plafonné à Modéré tant que le matelas n'est pas constitué." });
+        texte: "Tu n'as pas encore 3 mois de dépenses de côté : sans ce matelas, un imprévu peut obliger à vendre au plus bas. Profil plafonné à Modéré tant que le matelas n'est pas constitué." });
     if (lues.perte_max && lues.perte_max.option.perte != null) {
       const acceptee = lues.perte_max.option.perte;
       const ok = PROFILS.filter(p => p.perteMax <= acceptee);
       const plafond = ok.length ? ok[ok.length - 1] : PROFILS[0];
       candidats.push({ cle: "perte_max", plafond: plafond.id,
-        texte: "Vous acceptez une baisse de " + acceptee + " % au plus sur un an : un profil plus exposé peut perdre davantage (jusqu'à " +
+        texte: "Tu acceptes une baisse de " + acceptee + " % au plus sur un an : un profil plus exposé peut perdre davantage (jusqu'à " +
           PROFILS[Math.min(4, rang(plafond.id) + 1)].perteMax + " % pour le profil suivant). Profil plafonné à " + plafond.label + ", dont la baisse tolérée est de " + plafond.perteMax + " %." });
     }
     if (lues.connaissances && !lues.connaissances.valeur.some(v => v === "actions" || v === "etf"))
       candidats.push({ cle: "connaissances", plafond: "equilibre",
-        texte: "Vous n'avez pas indiqué connaître les actions ni les ETF : mieux vaut ne pas dépasser la moitié de son épargne sur des placements dont on ne maîtrise pas le fonctionnement. Profil plafonné à Équilibré." });
+        texte: "Tu n'as pas indiqué connaître les actions ni les ETF : mieux vaut ne pas dépasser la moitié de son épargne sur des placements dont on ne maîtrise pas le fonctionnement. Profil plafonné à Équilibré." });
     const gardeFous = candidats.filter(g => rang(g.plafond) < rang(avant));
     const final = gardeFous.reduce((p, g) => (rang(g.plafond) < rang(p) ? g.plafond : p), avant);
     return { ...base, score, profil: final, profilAvantGardeFous: avant, gardeFous };
@@ -305,10 +305,10 @@
     const ecartNiveaux = declare && equivalent ? rang(equivalent.id) - rang(declare.id) : null;
     let texte;
     if (!equivalent) texte = "Aucun placement à analyser pour le moment.";
-    else if (!declare) texte = "Votre portefeuille se comporte comme un profil " + equivalent.label + ". Répondez au questionnaire pour le comparer à votre profil.";
-    else if (ecartNiveaux === 0) texte = "Votre portefeuille se comporte comme un profil " + equivalent.label + ", conforme à votre profil.";
-    else texte = "Votre portefeuille se comporte comme un profil " + equivalent.label + ", alors que votre profil est " + declare.label + " : il prend " +
-      (ecartNiveaux > 0 ? "plus de risque que vous ne le souhaitez." : "moins de risque que votre profil ne le permet.");
+    else if (!declare) texte = "Ton portefeuille se comporte comme un profil " + equivalent.label + ". Fais ton profil de risque avec Claude pour le comparer.";
+    else if (ecartNiveaux === 0) texte = "Ton portefeuille se comporte comme un profil " + equivalent.label + ", conforme à ton profil.";
+    else texte = "Ton portefeuille se comporte comme un profil " + equivalent.label + ", alors que ton profil est " + declare.label + " : il prend " +
+      (ecartNiveaux > 0 ? "plus de risque que tu ne le souhaites." : "moins de risque que ton profil ne le permet.");
     return {
       evaluation, profil: declare, allocation, risque,
       ecarts: declare ? ecarts(declare.id, allocation) : [],

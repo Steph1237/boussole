@@ -293,7 +293,7 @@
 #view-simu dl.glo dd{margin:0;color:var(--muted)}
 #view-simu .foot{font-size:12px;color:var(--muted);max-width:80ch;margin:0}@media (max-width:520px){#view-simu .br{grid-template-columns:1fr 84px}#view-simu .br .t{grid-column:1/-1;grid-row:2}#view-simu .lever{grid-template-columns:1fr}#view-simu .lever .ar{grid-row:auto}}@media (prefers-reduced-motion:reduce){#view-simu *{transition:none!important}}
 
-/* Fusion : données réelles, pastilles de provenance, encadré « Repris de vos données » */
+/* Fusion : données réelles, pastilles de provenance, encadré « Repris de tes données » (suit le périmètre, « Compléter avec Claude ») */
 #view-simu .f label .lt,#view-simu .f .lbl .lt{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 #view-simu .f label,#view-simu .f .lbl{flex-wrap:wrap}
 #view-simu .from-profile .fp-t{font-weight:700}
@@ -304,5 +304,7 @@
 #view-simu .from-profile .fp-range b{font-family:var(--f-num);font-weight:600;min-width:3.5em}
 #view-simu .from-profile .fp-chk{display:flex;align-items:center;gap:6px;cursor:pointer}
 #view-simu .from-profile .fp-chk input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+#view-simu .from-profile .fp-msg{flex-basis:100%}
+#view-simu .from-profile .fp-claude{margin-left:auto}
 #view-simu .card,#view-simu details.acc,#view-simu .pills{scroll-margin-top:calc(var(--top) + 90px)}
 #view-simu .tabs{flex-wrap:wrap}

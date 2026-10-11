@@ -649,8 +649,8 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
 
 /* ------------------------------------------------ saisie par l'agent : tutoiement, revue, granularité ------------------------------------------------ */
 
-/* Tutoiement : aucun « vous / votre / vos » ; exceptions = textes des moteurs (rules.js, pratiques.js…) repris tels quels dans la boîte. */
-const EXCEPTIONS_MOTEUR = ["vérifiez votre ordre stop"];
+/* Tutoiement : aucun « vous / votre / vos », textes des moteurs (rules.js, pratiques.js…) repris dans la boîte compris : plus aucune exception. */
+const EXCEPTIONS_MOTEUR = [];
 const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
 const sansExceptions = t => EXCEPTIONS_MOTEUR.reduce((a, e) => a.split(e).join(""), String(t));
 const questions = h => [...String(h).matchAll(/href="https:\/\/claude\.ai\/new\?q=([^"]*)"/g)].map(m => decodeURIComponent(m[1].replace(/&amp;/g, "&")));

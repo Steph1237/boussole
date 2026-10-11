@@ -9,6 +9,68 @@ const REN={alerts:"simu-alerts",chart:"simu-chart",reset:"simu-reset",tip:"simu-
 const REAL=["apport","rev","credits","tmi","essai"];
 const TMI_OK=["0","11","30","41","45"];
 
+/* ---------- données réelles par périmètre (pur, testé sous Node : test/simu.test.mjs) ----------
+   Le bloc « Repris de tes données » suit le sélecteur de périmètre (S.scope), comme Pilotage › Rang : foyer = revenus, crédits,
+   apport et TMI du foyer ; p1 / p2 = revenus, part des crédits et apport de la personne (Calc via Reel.values). La TMI reste
+   celle du foyer (imposition commune), signalée comme telle en vue individuelle. Les données réelles se complètent dans Claude
+   (« Compléter avec Claude ») ; les paramètres du simulateur restent une exploration, non enregistrée. */
+const NOMS_DEFAUT=["moi","conjoint(e)","conjoint","conjointe","p1","p2",""];
+const scopeDe=S=>S&&(S.scope==="p1"||S.scope==="p2")?S.scope:"foyer";
+/* Noms des personnes : store (people), sinon profil. */
+function nomsDe(S){
+  const out={},pp=(S&&S.people)||[],ps=(S&&S.profil&&S.profil.personnes)||{};
+  ["p1","p2"].forEach(k=>{const p=pp.find(x=>x&&x.id===k);out[k]=(p&&p.nom)||(ps[k]&&ps[k].nom)||"";});
+  return out;
+}
+/** Périmètre affiché : { id, individuel, pour } ; p1 sans prénom = « toi », p2 sans prénom = « la personne 2 ». */
+function perimetre(scope,noms){
+  noms=noms||{};
+  if(scope!=="p1"&&scope!=="p2")return{id:"foyer",individuel:false,pour:"pour le foyer"};
+  const n=String(noms[scope]==null?"":noms[scope]).trim();
+  const nom=NOMS_DEFAUT.includes(n.toLowerCase())?(scope==="p1"?"toi":"la personne 2"):n;
+  return{id:scope,individuel:true,pour:"pour "+nom};
+}
+/** Valeurs réelles du périmètre courant (null sans store ou sans Reel). vals : apport, rev, credits, tmi, essai. */
+function valeursReelles(S,Reel){
+  if(!S||S.dbOk===false||!Reel)return null;
+  const sc=scopeDe(S);
+  let V;try{V=Reel.values(Object.assign({},S,{scope:sc}));}catch(e){console.error(e);return null;}
+  const ps=(S.profil&&S.profil.personnes)||{},who=sc==="foyer"?["p1","p2"]:[sc];
+  const tmi=V.foyer.tmi!=null&&TMI_OK.includes(String(V.foyer.tmi))?String(V.foyer.tmi):null;
+  return{V,scope:sc,per:perimetre(sc,nomsDe(S)),vals:{
+    apport:V.has.positions?Math.round(V.apport.total):null,
+    rev:V.has.revenus?Math.round(V.revenusSansLoyers+0.7*V.loyers):null, // les banques retiennent 70 % des loyers
+    credits:V.has.patrimoine?Math.round(V.mensualites):null,
+    tmi,
+    essai:V.has.salaire?who.some(p=>!!(ps[p]&&ps[p].essai)):null}};
+}
+const eur0=v=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0}).format(Math.round(v))+" €";
+const escH=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+/** Ligne « Repris de tes données pour … » (HTML) : apport détaillé, revenus, crédits et TMI du périmètre ; msg : message discret. */
+function repriseHtml(S,R,msg){
+  const V=R.V,A=V.apport,dash='<b class="muted">–</b>';
+  const parts=[];
+  if(A.libre>0)parts.push("épargne au-delà du matelas "+eur0(A.libre));
+  else if(A.matelas>0)parts.push("épargne sous le matelas de précaution ("+eur0(A.matelas)+")");
+  if(A.placements>0)parts.push("placements "+eur0(A.placements));
+  if(A.aRecevoir>0)parts.push("à recevoir "+eur0(A.aRecevoir));
+  const chipA='<span>Apport '+(V.has.positions?'<b>'+eur0(A.total)+'</b>'+(parts.length?' <small class="muted">'+parts.join(" · ")+'</small>':''):dash)+'</span>';
+  const note=msg?'<small class="muted fp-msg">'+escH(msg)+'</small>':'';
+  if(!S.profil)return '<span>'+(S.ready||S.profilLoaded?"Ton profil n'est pas encore rempli : revenus, crédits et TMI utilisent des valeurs d'exemple.":"Chargement de tes données…")+'</span>'+(V.has.positions?chipA:'')+note;
+  return '<span class="fp-t">Repris de tes données '+escH(R.per.pour)+'</span>'+chipA+
+    '<span>Revenus '+(R.vals.rev!=null?'<b>'+eur0(R.vals.rev)+'/mois</b>':dash)+'</span>'+
+    '<span>Crédits '+(R.vals.credits!=null?'<b>'+eur0(R.vals.credits)+'/mois</b>':dash)+'</span>'+
+    '<span>'+(R.per.individuel?'TMI du foyer ':'TMI ')+(R.vals.tmi!=null?'<b>'+R.vals.tmi+' %</b>':dash)+'</span>'+note;
+}
+/** Phrase « Compléter avec Claude » (claude-prompts.js), avec un repli si le module n'est pas chargé. */
+const CONTEXTE_CLAUDE="mes revenus, mes crédits, mon épargne et ma tranche d'imposition, utilisés par Pilotage › Scénarios";
+function phraseClaude(P){
+  if(P&&typeof P.phrase==="function")return P.phrase("bilan",CONTEXTE_CLAUDE);
+  return "Boussole : aide-moi à compléter mon bilan ("+CONTEXTE_CLAUDE+"). Commence par demarrer_session, puis utilise les formulaires interactifs Boussole.";
+}
+const PURE={scopeDe,nomsDe,perimetre,valeursReelles,repriseHtml,phraseClaude,REAL};
+if(typeof module==="object"&&module.exports){module.exports=PURE;return;}
+
 function engine(){
 const GBP=1.1727;
 /* Données de ville : p = prix €/m² (appartement), l = loyer €/m²/mois HC, tf = taxe foncière €/m²/an payée par le propriétaire occupant,
@@ -317,26 +379,23 @@ function ownMonthly(I,price){
 
 /* Rendu */
 function rank(R,H){return ST.map(s=>[s,R.out[s][H-1]]).sort((a,b)=>b[1]-a[1])}
-/* Données réelles : profil et positions du Pilotage, pour le périmètre choisi (Foyer = projet du foyer). */
+/* Données réelles : profil et positions du Pilotage, pour le périmètre choisi (sélecteur commun : Foyer · prénoms). */
 const realOv=id=>!!(window.Reel&&Reel.isOverridden("simu",id));
 const SRC_ID=Object.fromEntries(Object.entries(REN).map(([a,b])=>[b,a]));
-function markReal(id){id=SRC_ID[id]||id;if(REAL.includes(id)&&window.Reel)Reel.override("simu",id);}
-let realHas={};
+let realHas={},scopeVu=null,msgPerimetre="",sigL1="";
+function markReal(id){id=SRC_ID[id]||id;if(REAL.includes(id)&&window.Reel){Reel.override("simu",id);msgPerimetre="";}}
+/* Un changement de périmètre repart du réel du nouveau périmètre : les valeurs « scénario » des champs réels sont effacées. */
 function realData(){
-  const S=SNAP;if(!S||S.dbOk===false||!window.Reel)return null;
-  let V;try{V=Reel.values(S);}catch(e){console.error(e);return null;}
-  const ps=(S.profil&&S.profil.personnes)||{},who=S.scope==="foyer"?["p1","p2"]:[S.scope];
-  const tmi=V.foyer.tmi!=null&&TMI_OK.includes(String(V.foyer.tmi))?String(V.foyer.tmi):null;
-  return{V,vals:{
-    apport:V.has.positions?Math.round(V.apport.total):null,
-    rev:V.has.revenus?Math.round(V.revenusSansLoyers+0.7*V.loyers):null, // les banques retiennent 70 % des loyers
-    credits:V.has.patrimoine?Math.round(V.mensualites):null,
-    tmi,
-    essai:V.has.salaire?who.some(p=>!!(ps[p]&&ps[p].essai)):null}};
+  const R=valeursReelles(SNAP,window.Reel);
+  if(R&&scopeVu!==R.scope){
+    if(scopeVu!==null){REAL.forEach(id=>Reel.clear("simu",id));msgPerimetre="Périmètre changé : valeurs reprises de tes données "+R.per.pour+".";}
+    scopeVu=R.scope;
+  }
+  return R;
 }
 /* Avant fillAuto : chaque champ non modifié prend la valeur réelle, ou sa valeur d'exemple s'il n'y en a pas. */
-function applyReal(){
-  const R=realData(),act=document.activeElement;realHas={};
+function applyReal(R){
+  const act=document.activeElement;realHas={};
   REAL.forEach(id=>{
     const v=R?R.vals[id]:null;realHas[id]=v!=null;
     if(realOv(id))return;
@@ -347,25 +406,15 @@ function applyReal(){
   });
   $("apportR").max=String(Math.max(300000,Math.ceil(num("apport")/5000)*5000));
 }
-function renderReal(){
+function renderReal(R){
   root.querySelectorAll(".src-slot").forEach(s=>{const id=s.dataset.key;s.innerHTML=window.Reel?Reel.tag(Reel.kind("simu",id,!!realHas[id]),"simu",id):"";});
-  const box=$("simu-fp"),S=SNAP,R=realData();
+  const box=$("simu-fp"),S=SNAP;
   if(!S||!R){box.hidden=true;return;}
   box.hidden=false;
-  const V=R.V,A=V.apport,e0=v=>eur(Math.round(v))+" €",dash='<b class="muted">–</b>';
-  const parts=[];
-  if(A.libre>0)parts.push("épargne au-delà du matelas "+e0(A.libre));
-  else if(A.matelas>0)parts.push("épargne sous le matelas de précaution ("+e0(A.matelas)+")");
-  if(A.placements>0)parts.push("placements "+e0(A.placements));
-  if(A.aRecevoir>0)parts.push("à recevoir "+e0(A.aRecevoir));
-  const chipA='<span>Apport '+(V.has.positions?'<b>'+e0(A.total)+'</b>'+(parts.length?' <small class="muted">'+parts.join(" · ")+'</small>':''):dash)+'</span>';
-  let h;
-  if(!S.profil)h='<span>'+(S.ready||S.profilLoaded?"Votre profil n'est pas encore rempli : revenus, crédits et TMI utilisent des valeurs d'exemple.":"Chargement de vos données…")+'</span>'+(V.has.positions?chipA:'');
-  else h='<span class="fp-t">Repris de vos données</span>'+chipA+
-    '<span>Revenus '+(R.vals.rev!=null?'<b>'+e0(R.vals.rev)+'/mois</b>':dash)+'</span>'+
-    '<span>Crédits '+(R.vals.credits!=null?'<b>'+e0(R.vals.credits)+'/mois</b>':dash)+'</span>'+
-    '<span>TMI '+(R.vals.tmi!=null?'<b>'+R.vals.tmi+' %</b>':dash)+'</span>';
-  root.querySelector('[data-fp="l1"]').innerHTML=h;
+  const h=repriseHtml(S,R,msgPerimetre);
+  if(sigL1!==h){sigL1=h;root.querySelector('[data-fp="l1"]').innerHTML=h;}
+  const cl=root.querySelector('[data-fp="claude"]');
+  if(cl&&!cl.firstChild&&window.UI&&typeof UI.demanderAClaude==="function")cl.innerHTML=UI.demanderAClaude(phraseClaude(window.ClaudePrompts),"Compléter avec Claude");
   const pr=Reel.prefs(),rg=root.querySelector('[data-fp="part"]'),ck=root.querySelector('[data-fp="rec"]');
   if(document.activeElement!==rg)rg.value=String(+pr.partPlacements||0);
   root.querySelector('[data-fp="partV"]').textContent=rg.value+" %";
@@ -383,14 +432,14 @@ function syncRanges(){
   $("discV").textContent=eur(num("disc"))+" %";
 }
 function render(){
-  applyReal();fillAuto();syncRanges();
+  const R=realData();applyReal(R);fillAuto();syncRanges();
   const I=inputs(),SCN=scenarios();
   $("pret").value=eur(Math.round(I.L));
   $("pretL").value=eur(Math.round(I.LL));
   const runs=SCN.map(s=>simulate(I,s));
   last={I,runs,SCN};
   if(current>=SCN.length)current=0;
-  renderAll();renderReal();save();
+  renderAll();renderReal(R);save();
   if(window.App&&App.refreshHeadlines)App.refreshHeadlines();
 }
 function renderAll(){renderPrecision();renderFace();renderScen();renderVerdict();drawChart();renderMatrix();renderMonthly();renderCosts();renderRenta();renderBank();renderExplain();}

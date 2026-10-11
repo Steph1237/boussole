@@ -421,5 +421,5 @@ test("plan.js : libellé de navigation « Patrimoine › Objectifs » (plus de �
   const { readFileSync } = require("node:fs");
   const src = readFileSync("web/src/plan.js", "utf8");
   assert.doesNotMatch(src, /Budget et objectifs/);
-  assert.match(src, /vos objectifs \(Patrimoine › Objectifs\) en donnent le rythme/);
+  assert.match(src, /tes objectifs \(Patrimoine › Objectifs\) en donnent le rythme/);
 });

@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
 import { miniDom } from "./helpers/mini-dom.mjs";
-import { generer, tutoyer, sansPrerempli, SORTIE_CATALOGUE, SORTIE_LOGIQUE, EXPERIENCE_MAX } from "../scripts/gen-catalogue.mjs";
+import { generer, exigerTutoiement, sansPrerempli, SORTIE_CATALOGUE, SORTIE_LOGIQUE, EXPERIENCE_MAX } from "../scripts/gen-catalogue.mjs";
 
 const require = createRequire(import.meta.url);
 const path = rel => fileURLToPath(new URL("../" + rel, import.meta.url));
@@ -68,17 +68,11 @@ test("catalogue : fichiers générés à jour (npm run gen)", () => {
   assert.ok(read(SORTIE_LOGIQUE).includes(JSON.stringify(read(MCP + "formulaire-logique.js"))), "logique injectée telle quelle");
 });
 
-test("catalogue : règle de tutoiement du générateur (table explicite, échec si un vouvoiement subsiste, préremplissage retiré)", () => {
-  assert.equal(tutoyer("Dans combien de temps aurez-vous besoin de la majeure partie de cet argent ?"), "Dans combien de temps auras-tu besoin de la majeure partie de cet argent ?");
-  assert.equal(tutoyer("Vos placements perdent 20 % en trois mois. Que faites-vous ?"), "Tes placements perdent 20 % en trois mois. Que fais-tu ?");
-  assert.equal(tutoyer("Quelle part de votre épargne financière acceptez-vous d'exposer ?"), "Quelle part de ton épargne financière acceptes-tu d'exposer ?");
-  assert.equal(tutoyer("Quelle est votre tranche marginale ?"), "Quelle est ta tranche marginale ?", "« votre » + nom féminin → « ta »");
-  assert.equal(tutoyer("Quel est votre âge ?"), "Quel est ton âge ?", "devant une voyelle → « ton »");
-  assert.equal(tutoyer("Indiquez 0 si vous n'avez jamais investi en bourse."), "Indique 0 si tu n'as jamais investi en bourse.");
-  assert.equal(tutoyer("Quel est ton âge ?"), "Quel est ton âge ?", "texte déjà au tutoiement : inchangé");
-  assert.throws(() => tutoyer("Vous mangez quoi ?"), /vouvoiement non converti/);
-  assert.equal(sansPrerempli("Sans lui, un imprévu peut obliger à vendre. Prérempli depuis votre patrimoine."), "Sans lui, un imprévu peut obliger à vendre.");
-  assert.equal(sansPrerempli("Prérempli depuis Compte › Données."), undefined);
+test("catalogue : textes de l'app repris tels quels, au tutoiement (échec si un vouvoiement subsiste), préremplissage retiré", () => {
+  assert.equal(exigerTutoiement("Quel est ton âge ?"), "Quel est ton âge ?", "texte au tutoiement : inchangé");
+  for (const t of ["Vous mangez quoi ?", "Quel est votre âge ?", "Tes placements et vos crédits"]) assert.throws(() => exigerTutoiement(t), /vouvoiement/, t);
+  assert.equal(sansPrerempli("Sans lui, un imprévu peut obliger à vendre. Prérempli depuis ton patrimoine."), "Sans lui, un imprévu peut obliger à vendre.");
+  assert.equal(sansPrerempli("Prérempli depuis ton profil."), undefined);
 });
 
 test("catalogue : champs couverts (foyer, revenus, autres actifs, protection, 10 questions de risque), forme et cibles", { skip: SANS_STRIP }, () => {
@@ -100,7 +94,7 @@ test("catalogue : champs couverts (foyer, revenus, autres actifs, protection, 10
     const c = CATALOGUE.find(x => x.champ === "risque." + q.id);
     if (q.type === "nombre") { assert.equal(c.type, "curseur"); assert.equal(c.max, EXPERIENCE_MAX); assert.equal(c.unite, "ans"); assert.deepEqual(J(c.reperes), q.options.map(o => ({ min: o.min, label: o.label }))); continue; }
     assert.deepEqual(J(c.valeurs), q.options.map(o => (o.exclusif ? { v: o.v, label: o.label, exclusif: true } : { v: o.v, label: o.label })), q.id);
-    assert.equal(c.libelle, tutoyer(q.texte), q.id + " : texte de l'app tutoyé");
+    assert.equal(c.libelle, q.texte, q.id + " : texte de l'app repris tel quel");
   }
   assert.deepEqual(J(CATALOGUE.find(c => c.champ === "risque.connaissances").valeurs.filter(o => o.exclusif).map(o => o.v)), ["aucun"]);
   assert.ok(!CATALOGUE.some(c => /Prérempli/.test(c.aide || "")), "aucune aide « Prérempli » (pas de préremplissage déduit)");
@@ -371,7 +365,7 @@ test("profil estimé : port fidèle de Risque.evaluer (scores, profils, garde-fo
     for (const k of ["score", "profil", "profilAvantGardeFous", "complet"]) assert.equal(mcp[k], web[k], L + " : " + k);
     assert.deepEqual(J(mcp.manquantes), web.manquantes, L);
     assert.deepEqual(J(mcp.details), J(web.details), L + " : détails");
-    assert.deepEqual(J(mcp.gardeFous.map(g => [g.cle, g.plafond, g.texte])), web.gardeFous.map(g => [g.cle, g.plafond, tutoyer(g.texte)]), L + " : garde-fous");
+    assert.deepEqual(J(mcp.gardeFous.map(g => [g.cle, g.plafond, g.texte])), web.gardeFous.map(g => [g.cle, g.plafond, g.texte]), L + " : garde-fous");
   }
   assert.ok(jeux.some(rep => Risque.evaluer(rep, {}).gardeFous.length >= 2), "jeux avec plusieurs garde-fous couverts");
 });
@@ -559,24 +553,18 @@ test("page : refus du serveur affiché en ligne (réponses conservées), échec 
 });
 
 /* ====================================================== tutoiement ====================================================== */
-test("tutoiement : aucun « vous » / « votre » / « vos » dans les textes du connecteur, hors textes recopiés de l'app pour la parité", () => {
+test("tutoiement : aucun « vous » / « votre » / « vos » dans les textes du connecteur, ni dans les textes de l'app recopiés pour la parité", () => {
   const VOUS = /(^|[^\p{L}])(vous|votre|vos|vôtres?)(?![\p{L}])/iu;
-  const parite = Object.fromEntries(["plan", "pratiques", "risque", "bilan-etat"].map(f => [f, read(`web/src/${f}.js`)]));
-  const exceptions = {};
+  // Liste d'exceptions motivées : vide (les moteurs de l'app, plan, pratiques, risque et bilan-etat, sont au tutoiement).
+  const EXCEPTIONS = [];
   const fichiers = readdirSync(path(MCP)).filter(f => /\.(ts|js)$/.test(f));
-  assert.ok(fichiers.includes("formulaire.ts") && fichiers.includes("catalogue.gen.ts"));
-  for (const f of fichiers) {
-    const code = read(MCP + f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    const litteraux = [...code.matchAll(/"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`|'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1] ?? m[2] ?? m[3]);
-    for (const l of litteraux) {
-      if (!VOUS.test(l)) continue;
-      const source = Object.keys(parite).find(k => parite[k].includes(l));
-      assert.ok(source && f === "index.ts", `${f} : vouvoiement hors exceptions : « ${l.slice(0, 120)} »`);
-      exceptions[source] = (exceptions[source] || 0) + 1;
-    }
-  }
-  // Exceptions listées : textes identiques à l'app (ports testés par parité), mis au tutoiement des deux côtés par le chantier de l'app.
-  assert.deepEqual(Object.keys(exceptions).sort(), ["bilan-etat", "plan", "pratiques", "risque"]);
-  // Les textes propres au connecteur portés depuis l'app sont, eux, tutoyés (synthèse du risque).
+  assert.ok(fichiers.includes("formulaire.ts") && fichiers.includes("catalogue.gen.ts") && fichiers.includes("index.ts"));
+  const litterauxDe = code => [...code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+    .matchAll(/"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`|'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1] ?? m[2] ?? m[3]);
+  for (const f of fichiers) for (const l of litterauxDe(read(MCP + f)))
+    assert.ok(!VOUS.test(l) || EXCEPTIONS.includes(l), `${f} : vouvoiement : « ${l.slice(0, 120)} »`);
+  // Les moteurs de l'app dont le connecteur recopie les textes (tests de parité) sont eux aussi au tutoiement.
+  for (const m of ["plan", "pratiques", "risque", "bilan-etat", "rules", "reel"]) for (const l of litterauxDe(read(`web/src/${m}.js`)))
+    assert.ok(!VOUS.test(l), `web/src/${m}.js : vouvoiement : « ${l.slice(0, 120)} »`);
   assert.ok(read(MCP + "index.ts").includes('texte = "Ton portefeuille se comporte comme un profil "'));
 });

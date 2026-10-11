@@ -510,35 +510,35 @@ function itemMatelas(d: Donnees, scope: string, totaux: Totaux): Item {
   const depenses = totaux.depensesLignes > 0 ? totaux.depenses : m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
   const base = { cle: "matelas", titre: "Matelas de précaution", cible: "3 à 6 mois de dépenses" };
   if (depenses <= 0) return { ...base, valeur: null, aCompleter: true,
-    texte: "Dépenses mensuelles inconnues.", piste: "Renseignez vos dépenses dans le budget pour mesurer votre réserve." };
+    texte: "Dépenses mensuelles inconnues.", piste: "Donne tes dépenses à Claude pour mesurer ta réserve." };
   const mois = epargne / depenses;
   const points = mois < 1 ? 0 : mois < 3 ? interp(mois, [[1, 5], [3, 15]]) : mois <= 6 ? 20 : interp(mois, [[6, 20], [12, 15]]);
-  const piste = mois < 3 ? "Visez 3 à 6 mois de dépenses sur une épargne disponible à tout moment, pour absorber un imprévu sans vendre ni emprunter."
-    : mois <= 6 ? "Votre réserve couvre les imprévus courants : rien à changer de ce côté."
-    : mois <= 12 ? "Au-delà de 6 mois, une partie de cette réserve pourrait être affectée à l'un de vos objectifs."
-    : "Plus d'un an de dépenses dort sur des supports peu rémunérés : regardez si une partie peut servir vos objectifs.";
+  const piste = mois < 3 ? "Vise 3 à 6 mois de dépenses sur une épargne disponible à tout moment, pour absorber un imprévu sans vendre ni emprunter."
+    : mois <= 6 ? "Ta réserve couvre les imprévus courants : rien à changer de ce côté."
+    : mois <= 12 ? "Au-delà de 6 mois, une partie de cette réserve pourrait être affectée à l'un de tes objectifs."
+    : "Plus d'un an de dépenses dort sur des supports peu rémunérés : regarde si une partie peut servir tes objectifs.";
   return { ...base, valeur: mois, points, aCompleter: false, texte: fr(mois) + " mois de dépenses de côté.", piste };
 }
 
 function itemEpargne(totaux: Totaux): Item {
   const base = { cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus" };
   if (!(totaux.revenus > 0) || (totaux.depensesLignes <= 0 && totaux.epargne <= 0)) return { ...base, valeur: null, aCompleter: true,
-    texte: "Budget incomplet.", piste: "Renseignez vos revenus et vos dépenses dans le budget pour calculer votre taux d'épargne." };
+    texte: "Budget incomplet.", piste: "Donne tes revenus et tes dépenses à Claude pour calculer ton taux d'épargne." };
   const t = totaux.tauxEpargne as number;
   const points = interp(t * 100, [[0, 0], [5, 6], [10, 12], [15, 16], [20, 20]]);
-  const piste = t >= 0.15 ? "Vous êtes au-dessus du repère de 15 % : de quoi alimenter vos objectifs régulièrement."
+  const piste = t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."
     : "Le repère courant est de 15 % des revenus. Les postes les plus lourds du budget sont le premier endroit où regarder.";
-  return { ...base, valeur: t, points, aCompleter: false, texte: "Vous mettez de côté " + pctFr(t) + " de vos revenus.", piste };
+  return { ...base, valeur: t, points, aCompleter: false, texte: "Tu mets de côté " + pctFr(t) + " de tes revenus.", piste };
 }
 
 function itemEndettement(totaux: Totaux): Item {
   const base = { cle: "endettement", titre: "Taux d'endettement", cible: "35 % des revenus au plus" };
   if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
-    texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans Compte › Données ou dans le budget pour calculer votre taux d'endettement." };
+    texte: "Revenus inconnus.", piste: "Donne tes revenus à Claude pour calculer ton taux d'endettement." };
   const t = totaux.mensualites / totaux.revenus;
   const points = interp(t * 100, [[25, 20], [35, 12], [45, 0]]);
-  const texte = totaux.mensualites > 0 ? "Vos crédits représentent " + pctFr(t) + " de vos revenus." : "Aucune mensualité de crédit en cours.";
-  const piste = t <= 0.35 ? "Vous restez sous le plafond de 35 % appliqué par les banques (norme HCSF)."
+  const texte = totaux.mensualites > 0 ? "Tes crédits représentent " + pctFr(t) + " de tes revenus." : "Aucune mensualité de crédit en cours.";
+  const piste = t <= 0.35 ? "Tu restes sous le plafond de 35 % appliqué par les banques (norme HCSF)."
     : "Au-delà de 35 %, les banques prêtent difficilement (norme HCSF). Un remboursement anticipé ou une renégociation peuvent alléger la charge.";
   return { ...base, valeur: t, points, aCompleter: false, texte, piste };
 }
@@ -548,12 +548,12 @@ function itemConcentration(d: Donnees, scope: string): Item {
   const L = d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && val(p) > 0);
   const F = sum(L, val);
   if (F <= 0) return { ...base, valeur: null, aCompleter: true,
-    texte: "Aucun placement enregistré.", piste: "Ajoutez vos placements dans Patrimoine › Placements pour mesurer leur diversification." };
+    texte: "Aucun placement enregistré.", piste: "Complète tes placements avec Claude pour mesurer leur diversification." };
   const max = Math.max(...L.map(val)) / F;
   const nb = new Set(L.map((p) => p.bloc || "_autre")).size;
   const points = Math.max(0, interp(max * 100, [[10, 20], [20, 14], [40, 0]]) - (nb < 3 ? 5 : 0));
   const texte = "La plus grosse ligne pèse " + pctFr(max) + " du financier, réparti sur " + nb + (nb > 1 ? " poches." : " poche.");
-  const piste = max <= 0.2 && nb >= 3 ? "Votre financier est bien réparti : aucune ligne ne domine."
+  const piste = max <= 0.2 && nb >= 3 ? "Ton financier est bien réparti : aucune ligne ne domine."
     : "Repère : aucune ligne au-delà de 20 % du financier et au moins 3 poches, pour qu'un seul support ne pèse pas sur l'ensemble.";
   return { ...base, valeur: max, points, aCompleter: false, texte, piste };
 }
@@ -563,15 +563,15 @@ function itemPatrimoine(d: Donnees, scope: string, totaux: Totaux): Item {
   const repere = REPERES_AGE[age];
   const base = { cle: "patrimoine", titre: "Patrimoine net", cible: repere ? fr(repere) + " année" + (repere > 1 ? "s" : "") + " de revenus" : "selon l'âge" };
   if (!repere) return { ...base, valeur: null, aCompleter: true,
-    texte: "Âge non renseigné.", piste: "Indiquez votre tranche d'âge dans Compte › Données pour comparer votre patrimoine au repère." };
+    texte: "Âge non renseigné.", piste: "Donne ta tranche d'âge à Claude pour comparer ton patrimoine au repère." };
   if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
-    texte: "Revenus inconnus.", piste: "Renseignez vos revenus dans Compte › Données pour situer votre patrimoine." };
+    texte: "Revenus inconnus.", piste: "Donne tes revenus à Claude pour situer ton patrimoine." };
   const net = bilan(d, scope).net;
   const annees = net / (totaux.revenus * 12);
   const points = clamp(annees / repere, 0, 1) * 20;
-  const texte = "Patrimoine net : " + fr(Math.max(annees, 0)) + " année" + (annees >= 2 ? "s" : "") + " de revenus (repère à votre âge : " + fr(repere) + ").";
-  const piste = annees >= repere ? "Vous êtes au niveau du repère de votre tranche d'âge."
-    : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; vos objectifs (Patrimoine › Objectifs) en donnent le rythme.";
+  const texte = "Patrimoine net : " + fr(Math.max(annees, 0)) + " année" + (annees >= 2 ? "s" : "") + " de revenus (repère à ton âge : " + fr(repere) + ").";
+  const piste = annees >= repere ? "Tu es au niveau du repère de ta tranche d'âge."
+    : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; tes objectifs (Patrimoine › Objectifs) en donnent le rythme.";
   return { ...base, valeur: annees, points, aCompleter: false, texte, piste };
 }
 
@@ -695,19 +695,19 @@ function classeRisque(p: any, s: Surcharge): string {
 /** Profils (risque.js) : allocation cible indicative en % (bornes incluses) et perte maximale tolérée sur un an. */
 const PROFILS = [
   { id: "prudent", label: "Prudent", perteMax: 5,
-    description: "Vous privilégiez la sécurité : l'essentiel reste sur des supports sans risque de perte, une petite part cherche un peu de rendement.",
+    description: "Tu privilégies la sécurité : l'essentiel reste sur des supports sans risque de perte, une petite part cherche un peu de rendement.",
     cibles: { actions: [10, 20], obligations: [20, 30], securise: [50, 70], immobilier: [0, 10], speculatif: [0, 0] } },
   { id: "modere", label: "Modéré", perteMax: 12,
-    description: "Vous acceptez de petites variations pour un rendement un peu meilleur, avec une base sécurisée importante.",
+    description: "Tu acceptes de petites variations pour un rendement un peu meilleur, avec une base sécurisée importante.",
     cibles: { actions: [25, 40], obligations: [20, 30], securise: [30, 45], immobilier: [5, 15], speculatif: [0, 2] } },
   { id: "equilibre", label: "Équilibré", perteMax: 20,
-    description: "Vous cherchez un compromis : environ la moitié en actions pour la croissance, le reste pour amortir les baisses.",
+    description: "Tu cherches un compromis : environ la moitié en actions pour la croissance, le reste pour amortir les baisses.",
     cibles: { actions: [45, 60], obligations: [15, 25], securise: [15, 30], immobilier: [5, 15], speculatif: [0, 5] } },
   { id: "dynamique", label: "Dynamique", perteMax: 30,
-    description: "Vous visez la croissance à long terme et acceptez des baisses marquées, le temps qu'elles soient rattrapées.",
+    description: "Tu vises la croissance à long terme et acceptes des baisses marquées, le temps qu'elles soient rattrapées.",
     cibles: { actions: [60, 80], obligations: [5, 15], securise: [5, 15], immobilier: [5, 15], speculatif: [0, 7] } },
   { id: "offensif", label: "Offensif", perteMax: 40,
-    description: "Vous recherchez le rendement maximal sur un horizon long et supportez de fortes baisses sans vendre.",
+    description: "Tu recherches le rendement maximal sur un horizon long et supportes de fortes baisses sans vendre.",
     cibles: { actions: [75, 95], obligations: [0, 10], securise: [0, 10], immobilier: [0, 10], speculatif: [0, 10] } },
 ] as { id: string; label: string; perteMax: number; description: string; cibles: Record<string, number[]> }[];
 const rangProfil = (id: string) => PROFILS.findIndex((p) => p.id === id);
@@ -851,14 +851,14 @@ const BP: Record<string, Base> = {
   apport: { titre: "Apport pour le projet immobilier", cible: "l'apport visé (10 % du prix + frais de notaire)",
     regle: "Apport réuni ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
     source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)" },
-  adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de votre profil",
-    regle: "Somme des écarts hors fourchette, par classe d'actifs, entre votre allocation et celle de votre profil ; repère 0 point",
+  adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de ton profil",
+    regle: "Somme des écarts hors fourchette, par classe d'actifs, entre ton allocation et celle de ton profil ; repère 0 point",
     source: "Questionnaire de profil inspiré de l'adéquation MiFID II ; allocations indicatives de Boussole" },
   geographie: { titre: "Diversification géographique", cible: "au moins la moitié des actions sur le monde entier",
     regle: "Part des actions investies sur le monde entier (indices Monde, ACWI) ; repère 50 % ou plus",
     source: "Principe de diversification ; biais domestique (French et Poterba, 1991)" },
-  speculatif: { titre: "Part spéculative", cible: "sous le plafond de votre profil",
-    regle: "(Crypto + produits à levier) ÷ financier ; repère : sous le plafond de votre profil (5 % par défaut)",
+  speculatif: { titre: "Part spéculative", cible: "sous le plafond de ton profil",
+    regle: "(Crypto + produits à levier) ÷ financier ; repère : sous le plafond de ton profil (5 % par défaut)",
     source: "Plafonds indicatifs par profil de Boussole ; mises en garde de l'AMF sur les crypto-actifs et les produits à effet de levier" },
   devises: { titre: "Exposition hors euro", cible: "information, sans note",
     regle: "Part du financier exposée à une autre devise que l'euro (une zone hors Europe compte hors euro) ; information",
@@ -893,15 +893,15 @@ function bpProtection(c: ContexteBP): Critere | null {
   const decl = pr.protection && pr.protection[c.scope] && typeof pr.protection[c.scope] === "object" ? pr.protection[c.scope] : pr.protection;
   const motif = credit && enfants ? "un crédit et des enfants" : credit ? "un crédit en cours" : "des enfants à charge";
   if (!decl || attendus.some((k) => typeof decl[k] !== "boolean"))
-    return aCompleter("securite", "protection", BP.protection, "Protection non renseignée, alors que vous avez " + motif + ".",
-      "Indiquez dans Compte › Données si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
+    return aCompleter("securite", "protection", BP.protection, "Protection non renseignée, alors que tu as " + motif + ".",
+      "Dis à Claude si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
   const okN = attendus.filter((k) => decl[k]).length;
   const libelle: Record<string, string> = { prevoyance: "prévoyance", emprunteur: "assurance emprunteur" };
   const manque = attendus.filter((k) => !decl[k]).map((k) => libelle[k]);
   return critere("securite", "protection", BP.protection, { points: okN === attendus.length ? 20 : okN > 0 ? 8 : 0, valeur: okN / attendus.length,
-    texte: manque.length ? "Manque : " + manque.join(" et ") + " (vous avez " + motif + ")." : "Protection en place pour " + motif + ".",
-    piste: manque.length ? "Un décès ou une invalidité ne doit pas mettre le foyer en difficulté : vérifiez d'abord les garanties de votre employeur, puis comparez les contrats."
-      : "Relisez les garanties à chaque changement de situation (naissance, nouveau crédit)." });
+    texte: manque.length ? "Manque : " + manque.join(" et ") + " (tu as " + motif + ")." : "Protection en place pour " + motif + ".",
+    piste: manque.length ? "Un décès ou une invalidité ne doit pas mettre le foyer en difficulté : vérifie d'abord les garanties de ton employeur, puis compare les contrats."
+      : "Relis les garanties à chaque changement de situation (naissance, nouveau crédit)." });
 }
 
 function bpLiquidite(c: ContexteBP, deja: Record<string, number>): Critere | null {
@@ -910,11 +910,11 @@ function bpLiquidite(c: ContexteBP, deja: Record<string, number>): Critere | nul
   const besoin = sum(courts, (x) => Math.max(0, x.cible - x.deja));
   const dispo = sum(c.d.positions.filter((p) => inScope(p.owner, c.scope) && counted(p) && ["immediate", "jours"].includes(liquidite(p.envelope))), val);
   if (besoin <= 0) return critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: 20,
-    texte: "Vos objectifs à moins de 2 ans sont déjà financés.", piste: "Gardez cet argent sur des supports disponibles jusqu'à l'échéance." });
+    texte: "Tes objectifs à moins de 2 ans sont déjà financés.", piste: "Garde cet argent sur des supports disponibles jusqu'à l'échéance." });
   const ratio = dispo / besoin;
   return critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
     texte: eurP(dispo) + " disponibles sous quelques jours pour " + eurP(besoin) + " encore à réunir d'ici 2 ans.",
-    piste: ratio >= 1 ? "L'argent de vos projets proches est accessible sans attendre ni vendre au mauvais moment."
+    piste: ratio >= 1 ? "L'argent de tes projets proches est accessible sans attendre ni vendre au mauvais moment."
       : "L'argent nécessaire à moins de 2 ans gagne à être disponible et peu risqué (livrets, compte courant) : une baisse des marchés juste avant l'échéance n'aurait pas le temps de se rattraper." });
 }
 
@@ -923,25 +923,25 @@ function bpApport(c: ContexteBP, deja: Record<string, number>): Critere | null {
   if (!L.length) return null;
   const cible = sum(L, (o) => (pos(o.cible) > 0 ? pos(o.cible) : 0.18 * pos(o.prix)));
   const reuni = sum(L, (o) => pos(deja[o.id]));
-  if (cible <= 0) return aCompleter("effort", "apport", BP.apport, "Montant de l'apport non renseigné.", "Indiquez l'apport visé dans l'objectif Apport (Patrimoine › Objectifs).");
+  if (cible <= 0) return aCompleter("effort", "apport", BP.apport, "Montant de l'apport non renseigné.", "Donne à Claude l'apport visé pour ton objectif Apport.");
   const ratio = reuni / cible;
   return critere("effort", "apport", BP.apport, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
     texte: eurP(reuni) + " réunis sur " + eurP(cible) + " d'apport visé (" + pctP(ratio) + ").",
-    piste: ratio >= 1 ? "Votre apport est réuni : les banques regarderont aussi votre endettement après l'achat."
+    piste: ratio >= 1 ? "Ton apport est réuni : les banques regarderont aussi ton endettement après l'achat."
       : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Objectifs indique l'effort mensuel pour y arriver." });
 }
 
 function bpAdequation(c: ContexteBP, financier: number): Critere {
   const fiche = ficheProfil(c.risque);
   if (!fiche) return aCompleter("allocation", "adequation", BP.adequation, "Profil de risque non renseigné.",
-    "Répondez au questionnaire (une dizaine de questions) pour comparer votre allocation à celle de votre profil.");
+    "Fais ton profil de risque avec Claude (une dizaine de questions) pour comparer ton allocation à celle de ton profil.");
   if (financier <= 0) return aCompleter("allocation", "adequation", BP.adequation, "Aucun placement enregistré.",
-    "Ajoutez vos placements dans Patrimoine › Placements pour les comparer à votre profil.");
+    "Complète tes placements avec Claude pour les comparer à ton profil.");
   const hors = sum(ecarts(fiche.id, allocationReelle(c.d.positions, c.scope, c.classes).pct), (e) => Math.abs(e.ecartPts));
   return critere("allocation", "adequation", BP.adequation, { points: Math.round(interp(hors, BAREME_ADEQUATION)), valeur: Math.round(hors * 10) / 10,
-    texte: hors <= 0 ? "Votre allocation est dans les fourchettes du profil " + fiche.label + "." : frP(hors) + " points hors des fourchettes du profil " + fiche.label + ".",
-    piste: hors <= 0 ? "Votre répartition correspond au risque que vous avez dit accepter."
-      : "Le détail par classe est dans Pilotage › Risque : rapprochez chaque classe de sa fourchette, de préférence avec vos versements à venir." });
+    texte: hors <= 0 ? "Ton allocation est dans les fourchettes du profil " + fiche.label + "." : frP(hors) + " points hors des fourchettes du profil " + fiche.label + ".",
+    piste: hors <= 0 ? "Ta répartition correspond au risque que tu as dit accepter."
+      : "Le détail par classe est dans Pilotage › Risque : rapproche chaque classe de sa fourchette, de préférence avec tes versements à venir." });
 }
 
 const RE_MONDE = /monde|world|acwi|all.?country|global|international/;
@@ -952,14 +952,14 @@ function bpGeographie(vivantes: any[], classes: Surcharge): Critere | null {
   if (total <= 0) return null;
   const part = sum(actions.filter((p) => RE_MONDE.test(libelleGeo(p))), val) / total;
   return critere("allocation", "geographie", BP.geographie, { points: Math.round(part >= 0.5 ? 20 : interp(part, BAREME_GEOGRAPHIE)), valeur: part,
-    texte: pctP(part) + " de vos actions couvrent le monde entier ; le reste vise une région, un pays ou des titres en direct.",
-    piste: part >= 0.5 ? "Un socle « monde » répartit le risque sur des milliers d'entreprises et plusieurs économies ; vos paris régionaux s'y ajoutent."
+    texte: pctP(part) + " de tes actions couvrent le monde entier ; le reste vise une région, un pays ou des titres en direct.",
+    piste: part >= 0.5 ? "Un socle « monde » répartit le risque sur des milliers d'entreprises et plusieurs économies ; tes paris régionaux s'y ajoutent."
       : "Miser sur une région n'est pas une erreur, mais le risque est plus concentré. Le biais domestique (surpondérer son pays ou sa région) est fréquent : un socle « monde » diversifie davantage." });
 }
 
 function bpSpeculatif(c: ContexteBP, vivantes: any[], financier: number): Critere {
   if (financier <= 0) return aCompleter("allocation", "speculatif", BP.speculatif, "Aucun placement enregistré.",
-    "Ajoutez vos placements dans Patrimoine › Placements pour mesurer leur part spéculative.");
+    "Complète tes placements avec Claude pour mesurer leur part spéculative.");
   const part = sum(vivantes.filter((p) => ["crypto", "levier"].includes(classeRisque(p, c.classes))), val) / financier;
   const fiche = ficheProfil(c.risque);
   const s = fiche?.cibles.speculatif;
@@ -970,8 +970,8 @@ function bpSpeculatif(c: ContexteBP, vivantes: any[], financier: number): Criter
   const baremeSpeculatif = plafond > 0 ? [[plafond, 20], [2 * plafond, 0]] : BAREME_SPECULATIF_NUL;
   return critere("allocation", "speculatif", BP.speculatif, { points: Math.round(interp(part, baremeSpeculatif)), valeur: part, cible: pctP(plafond) + " au plus",
     texte: "Crypto et produits à levier : " + pctP(part, 1) + " du financier (" + de + ").",
-    piste: part <= plafond ? "Cette part reste dans ce que votre profil peut encaisser : elle pourrait perdre l'essentiel de sa valeur sans compromettre vos projets."
-      : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de votre patrimoine." });
+    piste: part <= plafond ? "Cette part reste dans ce que ton profil peut encaisser : elle pourrait perdre l'essentiel de sa valeur sans compromettre tes projets."
+      : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de ton patrimoine." });
 }
 
 const RE_EURO = /france|zone euro|eurozone|^eur$|^euro$/;
@@ -1000,13 +1000,13 @@ function bpFrais(vivantes: any[]): Critere | null {
   if (total <= 0) return null;
   const avec = cotees.filter((p) => connu(terDe(p)));
   const couvert = sum(avec, val);
-  if (couvert / total < 0.5) return aCompleter("efficacite", "frais", BP.frais, "Frais inconnus : votre assistant peut les renseigner.",
-    "Demandez à votre assistant de compléter les frais courants (TER) de vos fonds via le connecteur.");
+  if (couvert / total < 0.5) return aCompleter("efficacite", "frais", BP.frais, "Frais inconnus : Claude peut les compléter.",
+    "Demande à Claude de compléter les frais courants (TER) de tes fonds.");
   const ter = sum(avec, (p) => val(p) * Number(terDe(p))) / couvert;
   return critere("efficacite", "frais", BP.frais, { points: Math.round(interp(ter, BAREME_FRAIS)), valeur: ter,
     texte: "Frais moyens de " + frP(ter, 2) + " % par an" + (couvert < total ? " (sur " + pctP(couvert / total) + " des lignes cotées)." : "."),
-    piste: ter <= 0.3 ? "Vos frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
-      : "1 % de frais par an coûte environ 18 % du capital sur 20 ans : regardez quelles lignes pèsent le plus ; des fonds indiciels équivalents existent souvent." });
+    piste: ter <= 0.3 ? "Tes frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
+      : "1 % de frais par an coûte environ 18 % du capital sur 20 ans : regarde quelles lignes pèsent le plus ; des fonds indiciels équivalents existent souvent." });
 }
 
 const RE_CTO = /\bcto\b|compte[- ]?titres?/, RE_PEA = /\bpea\b/, RE_PER = /\bper\b|\bperin\b|\bperco\b/, RE_AV = /assurance.?vie|\bav\b|capitalisation/;
@@ -1048,7 +1048,7 @@ function bpEnveloppes(c: ContexteBP, vivantes: any[], deja: Record<string, numbe
     const avant = c.objectifs.find((o) => o && o.source === "poches" && dateCible(o) && isoJour(dateCible(o)!) < isoJour(huit) && pos(deja[o.id]) > 0 &&
       ((o.enveloppes || []).includes(nom) || (o.poches || []).some((b: string) => blocs.has(b))));
     if (avant) details.push({ cle: "av", statut: "probleme",
-      texte: nom + " aura 8 ans le " + frDate(huit) + ", après l'échéance de « " + (avant.nom || "votre objectif") + " » qu'elle finance : un retrait avant 8 ans ne profite pas de l'abattement." });
+      texte: nom + " aura 8 ans le " + frDate(huit) + ", après l'échéance de « " + (avant.nom || "ton objectif") + " » qu'elle finance : un retrait avant 8 ans ne profite pas de l'abattement." });
     else details.push({ cle: "av", statut: "note", texte: nom + " aura 8 ans le " + frDate(huit) + " : d'ici là, les gains retirés ne profitent pas de l'abattement annuel." });
   });
   if (vivantes.some((p) => RE_PER.test(env(p)))) {
@@ -1061,20 +1061,20 @@ function bpEnveloppes(c: ContexteBP, vivantes: any[], deja: Record<string, numbe
   if (!details.length) return null;
   const pb = details.filter((x) => x.statut === "probleme");
   return critere("efficacite", "enveloppes", BP.enveloppes, { points: Math.max(0, 20 - 6 * pb.length), valeur: pb.length, details,
-    texte: pb.length ? pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention sur le choix des enveloppes." : "Vos enveloppes sont utilisées dans le bon ordre.",
+    texte: pb.length ? pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention sur le choix des enveloppes." : "Tes enveloppes sont utilisées dans le bon ordre.",
     piste: pb.length ? pb.map((x) => x.texte).join(" ") : "Rien à changer : chaque enveloppe joue son rôle fiscal." });
 }
 
 function bpDormant(c: ContexteBP, vivantes: any[], depenses: number, deja: Record<string, number>): Critere {
   if (!(depenses > 0)) return aCompleter("efficacite", "dormant", BP.dormant, "Dépenses mensuelles inconnues.",
-    "Renseignez vos dépenses dans le budget pour mesurer l'argent qui dort.");
+    "Donne tes dépenses à Claude pour mesurer l'argent qui dort.");
   const livrets = sum(vivantes.filter((p) => classePoche(p.bloc, c.classes) === "monetaire"), val);
   const reserve = sum(objectifsCourts(c.objectifs, deja, c.ref).filter((x) => x.o.type !== "matelas"), (x) => x.cible);
   const mois = Math.max(0, livrets - reserve) / depenses;
   return critere("efficacite", "dormant", BP.dormant, { points: Math.round(mois <= 12 ? 20 : interp(mois, BAREME_DORMANT)), valeur: mois,
     texte: frP(mois) + " mois de dépenses sur livrets et monétaire" + (reserve > 0 ? ", hors " + eurP(reserve) + " réservés aux projets à moins de 2 ans." : "."),
-    piste: mois <= 12 ? "Votre argent disponible correspond à vos besoins : rien ne dort inutilement."
-      : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à votre profil." });
+    piste: mois <= 12 ? "Ton argent disponible correspond à tes besoins : rien ne dort inutilement."
+      : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à ton profil." });
 }
 
 const sansIndefini = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -1132,7 +1132,7 @@ function vueRisque(risque: any, d: Donnees, scope: string, classes: Surcharge, d
     ecart_niveaux: sy.ecartNiveaux,
     comparaison: sy.texte,
   };
-  if (!decl) base.message = "Profil de risque non renseigné : l'utilisateur peut répondre au questionnaire dans Pilotage › Risque.";
+  if (!decl) base.message = "Profil de risque non renseigné : propose à l'utilisateur de le remplir avec l'outil formulaire (champs risque.*).";
   if (!detail) return base;
   const a = sy.allocation, rp = sy.risque;
   return {
@@ -1192,22 +1192,24 @@ const BilanEtat = (() => {
   /* Identifiants des questions du profil de risque (identiques à web/src/risque.js). */
   const RISQUE_IDS = ["horizon", "objectif", "reaction", "perte_max", "connaissances", "experience", "revenus", "matelas", "part_investie", "age"];
   const RISQUE_LIBELLES: Record<string, string> = {
-    horizon: "Dans combien de temps aurez-vous besoin de la majeure partie de cet argent ?",
-    objectif: "Que cherchez-vous d'abord : préserver, compléter vos revenus, faire croître ?",
-    reaction: "Si votre portefeuille perdait 20 % en 3 mois, que feriez-vous ?",
-    perte_max: "Quelle baisse temporaire sur un an pourriez-vous supporter sans vendre ?",
-    connaissances: "Quels placements connaissez-vous bien (livrets, fonds euros, ETF, actions, obligations, crypto) ?",
-    experience: "Depuis combien d'années investissez-vous en bourse ?",
-    revenus: "Vos revenus sont-ils stables (fonctionnaire, CDI, indépendant, variables) ?",
-    matelas: "Avez-vous au moins 3 mois de dépenses disponibles hors placements ?",
-    part_investie: "Quelle part de votre épargne acceptez-vous d'exposer aux marchés ?",
-    age: "Quelle est votre tranche d'âge ?",
+    horizon: "Dans combien de temps auras-tu besoin de la majeure partie de cet argent ?",
+    objectif: "Que cherches-tu d'abord : préserver, compléter tes revenus, faire croître ?",
+    reaction: "Si ton portefeuille perdait 20 % en 3 mois, que ferais-tu ?",
+    perte_max: "Quelle baisse temporaire sur un an pourrais-tu supporter sans vendre ?",
+    connaissances: "Quels placements connais-tu bien (livrets, fonds euros, ETF, actions, obligations, crypto) ?",
+    experience: "Depuis combien d'années investis-tu en bourse ?",
+    revenus: "Tes revenus sont-ils stables (fonctionnaire, CDI, indépendant, variables) ?",
+    matelas: "As-tu au moins 3 mois de dépenses disponibles hors placements ?",
+    part_investie: "Quelle part de ton épargne acceptes-tu d'exposer aux marchés ?",
+    age: "Quelle est ta tranche d'âge ?",
   };
 
   type Q = { champ: string; question: string; pourquoi: string };
   type Section = { cle: string; titre: string; total: number; faits?: number; manquants: Q[]; statut?: string; pct?: number };
   const q = (champ: string, question: string, pourquoi: string): Q => ({ champ, question, pourquoi });
-  const nomDe = (pr: any, k: string) => (pr && pr.personnes && pr.personnes[k] && String(pr.personnes[k].nom || "").trim()) || (k === "p1" ? "vous" : "votre conjoint(e)");
+  /* Sans prénom : « toi » (première personne, tutoyée) ou « ton conjoint(e) ». */
+  const nomDe = (pr: any, k: string) => (pr && pr.personnes && pr.personnes[k] && String(pr.personnes[k].nom || "").trim()) || (k === "p1" ? "toi" : "ton conjoint(e)");
+  const majuscule = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
   function sections(S: any, today: string): Section[] {
     const pr = S.profil || null, f = (pr && pr.foyer) || {}, ps = (pr && pr.personnes) || {};
@@ -1216,39 +1218,39 @@ const BilanEtat = (() => {
 
     // 1. Foyer
     const foyer: Q[] = [];
-    if (!has(f.adultes)) foyer.push(q("foyer.adultes", "Combien d'adultes composent votre foyer ?", "Le niveau de vie et l'impôt dépendent de la taille du foyer."));
-    if (!has(f.enfants)) foyer.push(q("foyer.enfants", "Avez-vous des enfants à charge ?", "Ils comptent dans l'impôt, le budget et la protection à prévoir."));
+    if (!has(f.adultes)) foyer.push(q("foyer.adultes", "Combien d'adultes composent ton foyer ?", "Le niveau de vie et l'impôt dépendent de la taille du foyer."));
+    if (!has(f.enfants)) foyer.push(q("foyer.enfants", "As-tu des enfants à charge ?", "Ils comptent dans l'impôt, le budget et la protection à prévoir."));
     if (!has(f.age)) foyer.push(q("foyer.age", "Quelle est la tranche d'âge de la personne qui gagne le plus ?", "L'horizon de placement et les repères de patrimoine dépendent de l'âge."));
-    if (!has(f.tmi)) foyer.push(q("foyer.tmi", "Quelle est votre tranche marginale d'imposition (0, 11, 30, 41 ou 45 %) ?", "Elle détermine l'intérêt du PER et la fiscalité de vos placements."));
+    if (!has(f.tmi)) foyer.push(q("foyer.tmi", "Quelle est ta tranche marginale d'imposition (0, 11, 30, 41 ou 45 %) ?", "Elle détermine l'intérêt du PER et la fiscalité de tes placements."));
     out.push({ cle: "foyer", titre: "Foyer", total: 4, manquants: foyer });
 
     // 2. Revenus
     const rev: Q[] = [];
     ["p1"].concat(deux ? ["p2"] : []).forEach((k) => {
       const p = ps[k] || {};
-      if (!(num(p.salaire) > 0)) rev.push(q("personnes." + k + ".salaire", "Quel est le salaire de " + nomDe(pr, k) + " (net ou brut, par mois ou par an) ?", "C'est la base du taux d'épargne, de l'endettement et de la capacité d'emprunt."));
-      if (!has(p.statut)) rev.push(q("personnes." + k + ".statut", nomDe(pr, k) + " est-il cadre ou non-cadre ?", "Utile pour convertir un salaire brut en net."));
+      if (!(num(p.salaire) > 0)) rev.push(q("personnes." + k + ".salaire", (nomDe(pr, k) === "toi" ? "Quel est ton salaire" : "Quel est le salaire de " + nomDe(pr, k)) + " (net ou brut, par mois ou par an) ?", "C'est la base du taux d'épargne, de l'endettement et de la capacité d'emprunt."));
+      if (!has(p.statut)) rev.push(q("personnes." + k + ".statut", nomDe(pr, k) === "toi" ? "Es-tu cadre ou non-cadre ?" : majuscule(nomDe(pr, k)) + " est-il cadre ou non-cadre ?", "Utile pour convertir un salaire brut en net."));
     });
     out.push({ cle: "revenus", titre: "Revenus", total: deux ? 4 : 2, manquants: rev });
 
     // 3. Budget
     const lignes: any[] = (S.budget && Array.isArray(S.budget.lignes)) ? S.budget.lignes : [];
     const bud: Q[] = [];
-    if (!lignes.some((l) => l.type === "depense")) bud.push(q("budget.depenses", "Quelles sont vos principales dépenses mensuelles (logement, courses, transport, abonnements…) ? Un relevé bancaire collé suffit.", "Sans dépenses, impossible de mesurer votre matelas en mois et votre taux d'épargne."));
-    if (!lignes.some((l) => l.type === "epargne")) bud.push(q("budget.epargne", "Combien mettez-vous de côté chaque mois, et où ?", "L'épargne régulière alimente vos objectifs et vos projections."));
+    if (!lignes.some((l) => l.type === "depense")) bud.push(q("budget.depenses", "Quelles sont tes principales dépenses mensuelles (logement, courses, transport, abonnements…) ? Un relevé bancaire collé suffit.", "Sans dépenses, impossible de mesurer ton matelas en mois et ton taux d'épargne."));
+    if (!lignes.some((l) => l.type === "epargne")) bud.push(q("budget.epargne", "Combien mets-tu de côté chaque mois, et où ?", "L'épargne régulière alimente tes objectifs et tes projections."));
     out.push({ cle: "budget", titre: "Budget", total: 2, manquants: bud });
 
     // 4. Épargne et placements
     const pos: any[] = (S.positions || []).filter((p: any) => p.status !== "clôturé");
     const plac: Q[] = [];
-    if (!pos.length) plac.push(q("positions", "Quels sont vos comptes et placements (livrets, PEA, assurance-vie, PER, compte-titres, crypto) et leurs montants ?", "C'est le cœur du bilan : répartition, risque et diversification en découlent."));
+    if (!pos.length) plac.push(q("positions", "Quels sont tes comptes et placements (livrets, PEA, assurance-vie, PER, compte-titres, crypto) et leurs montants ?", "C'est le cœur du bilan : répartition, risque et diversification en découlent."));
     else {
       const vieux = pos.filter((p) => {
         const d = p.mode === "market" ? p.priceDate : p.valueDate;
         return p.status !== "à recevoir" && (!d || jours(d, today) > FRAICHEUR_JOURS);
       });
       const envs = [...new Set(vieux.map((p) => p.envelope || p.name))];
-      if (envs.length) plac.push(q("positions.fraicheur", "Pouvez-vous me donner le solde à jour de : " + envs.join(", ") + " ?", "Ces montants datent de plus de " + FRAICHEUR_JOURS + " jours."));
+      if (envs.length) plac.push(q("positions.fraicheur", "Peux-tu me donner le solde à jour de : " + envs.join(", ") + " ?", "Ces montants datent de plus de " + FRAICHEUR_JOURS + " jours."));
     }
     // Deux étapes : avoir déclaré ses placements, puis des montants à jour.
     out.push({ cle: "placements", titre: "Épargne et placements", total: 2, faits: !pos.length ? 0 : plac.length ? 1 : 2, manquants: plac });
@@ -1256,28 +1258,28 @@ const BilanEtat = (() => {
     // 5. Immobilier et crédits
     const immo: Q[] = [];
     const biens: any[] = (pr && Array.isArray(pr.biens)) ? pr.biens : [];
-    if (!biens.length && !(pr && pr.biensRenseignes)) immo.push(q("biens", "Êtes-vous propriétaire d'un ou plusieurs biens immobiliers ? Avez-vous des crédits en cours (immobilier, auto, conso) ?", "Patrimoine net, endettement et capacité d'emprunt en dépendent. « Aucun » est une réponse valable."));
+    if (!biens.length && !(pr && pr.biensRenseignes)) immo.push(q("biens", "Es-tu propriétaire d'un ou plusieurs biens immobiliers ? As-tu des crédits en cours (immobilier, auto, conso) ?", "Patrimoine net, endettement et capacité d'emprunt en dépendent. « Aucun » est une réponse valable."));
     out.push({ cle: "immobilier", titre: "Immobilier et crédits", total: 1, manquants: immo });
 
     // 6. Protection
     const prot = (pr && pr.protection) || {};
     const credits = (pr && Array.isArray(pr.credits) ? pr.credits : []).length + biens.filter((b) => num(b.crd) > 0).length;
     const protM: Q[] = [];
-    if (!has(prot.prevoyance)) protM.push(q("protection.prevoyance", "Avez-vous une prévoyance (décès, invalidité) au-delà de celle de votre employeur ?", "Protéger les revenus du foyer passe avant l'investissement."));
-    if (credits > 0 && !has(prot.emprunteur)) protM.push(q("protection.emprunteur", "Vos crédits sont-ils couverts par une assurance emprunteur, et à quelle quotité ?", "Elle protège le foyer si un emprunteur ne peut plus rembourser."));
+    if (!has(prot.prevoyance)) protM.push(q("protection.prevoyance", "As-tu une prévoyance (décès, invalidité) au-delà de celle de ton employeur ?", "Protéger les revenus du foyer passe avant l'investissement."));
+    if (credits > 0 && !has(prot.emprunteur)) protM.push(q("protection.emprunteur", "Tes crédits sont-ils couverts par une assurance emprunteur, et à quelle quotité ?", "Elle protège le foyer si un emprunteur ne peut plus rembourser."));
     out.push({ cle: "protection", titre: "Protection", total: credits > 0 ? 2 : 1, manquants: protM });
 
     // 7. Objectifs
     const objs: any[] = (S.objectifs || []);
     const objM: Q[] = [];
-    if (!objs.length) objM.push(q("objectifs", "Quels sont vos projets et leur échéance (achat immobilier, matelas, études, retraite…) ?", "Les projections et les recommandations se calent sur vos objectifs."));
-    else if (!objs.some((o) => o.dateCible || o.date_cible)) objM.push(q("objectifs.date", "Pour quand visez-vous vos objectifs ?", "Sans date, impossible de calculer l'effort mensuel."));
+    if (!objs.length) objM.push(q("objectifs", "Quels sont tes projets et leur échéance (achat immobilier, matelas, études, retraite…) ?", "Les projections et les recommandations se calent sur tes objectifs."));
+    else if (!objs.some((o) => o.dateCible || o.date_cible)) objM.push(q("objectifs.date", "Pour quand vises-tu tes objectifs ?", "Sans date, impossible de calculer l'effort mensuel."));
     out.push({ cle: "objectifs", titre: "Objectifs", total: 1, manquants: objM });
 
     // 8. Profil de risque
     const rep = (S.risque && S.risque.reponses) || {};
     const risqueM = RISQUE_IDS.filter((id) => !has(rep[id]) || (Array.isArray(rep[id]) && !rep[id].length))
-      .map((id) => q("risque." + id, RISQUE_LIBELLES[id], "Le profil de risque fixe l'allocation cible et la baisse que vous pouvez traverser."));
+      .map((id) => q("risque." + id, RISQUE_LIBELLES[id], "Le profil de risque fixe l'allocation cible et la baisse que tu peux traverser."));
     out.push({ cle: "risque", titre: "Profil de risque", total: RISQUE_IDS.length, manquants: risqueM });
 
     return out;

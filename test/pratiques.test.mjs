@@ -221,7 +221,7 @@ describe("Efficacité", () => {
   test("frais à compléter si moins de 50 % des montants cotés ont un TER", () => {
     const c = crit(ev({ positions: [M("Monde", 1000, { ter: 0.2 }), M("Europe", 1500)] }), "frais");
     assert.equal(c.aCompleter, true);
-    assert.match(c.texte, /Frais inconnus : votre assistant peut les renseigner/);
+    assert.match(c.texte, /Frais inconnus : Claude peut les compléter/);
     assert.equal(c.lien, "agent/connexion");
   });
   test("frais : TER pondéré, 0,3 % → 20, 1 % → 10, 2 % → 0", () => {
@@ -382,7 +382,9 @@ describe("liens et libellés vers Patrimoine › Objectifs", () => {
       objectifs: [{ id: "o", type: "apport", source: "saisi", deja: 0, cible: 0, dateCible: "2027-06-30" }] }, SANS);
     for (const cle of ["liquidite_objectifs", "apport"]) assert.equal(crit(r, cle).lien, "patrimoine/objectifs", cle);
     assert.equal(crit(r, "matelas").lien, "patrimoine/budget", "le matelas reste lié au budget");
-    assert.match(crit(r, "apport").piste, /Patrimoine › Objectifs\)/);
+    assert.match(crit(r, "apport").piste, /^Donne à Claude l'apport visé/, "à compléter : avec Claude, plus de saisie dans l'app");
+    assert.match(Pratiques.evaluer({ positions: [P("Épargne", 1000)], budget: lignes(2000), today: TODAY,
+      objectifs: [{ id: "o", type: "apport", source: "saisi", deja: 100, cible: 1000, dateCible: "2027-06-30" }] }, SANS).criteres.find(c => c.cle === "apport").piste, /Patrimoine › Objectifs indique l'effort mensuel/);
     assert.doesNotMatch(readFileSync("web/src/pratiques.js", "utf8"), /Budget et objectifs/);
   });
 });

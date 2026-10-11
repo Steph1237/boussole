@@ -53,8 +53,8 @@
     /* Pastille : "reel" | "scen" | "ex". Une pastille scénario est un bouton qui rétablit le réel. */
     tag(kind, mod, k) {
       if (kind === "scen") return '<button type="button" class="src-tag scen" data-reel-reset="' + mod + ":" + k + '" title="Revenir à la valeur réelle">scénario ↺</button>';
-      if (kind === "reel") return '<span class="src-tag reel" title="Repris de vos données">réel</span>';
-      return '<span class="src-tag ex" title="Valeur d\'exemple : complétez votre profil">exemple</span>';
+      if (kind === "reel") return '<span class="src-tag reel" title="Repris de tes données">réel</span>';
+      return '<span class="src-tag ex" title="Valeur d\'exemple : complète ton profil avec Claude">exemple</span>';
     },
     kind(mod, k, hasReal) { return Reel.isOverridden(mod, k) ? "scen" : hasReal ? "reel" : "ex"; },
   };

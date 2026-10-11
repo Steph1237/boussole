@@ -79,7 +79,7 @@
       const p = (ctx.positions || []).find(x => x.id === r.position_id);
       if (!p || !C().counted(p) || !C().inScope(p, scopeOf(ctx)) || p.price == null) return [];
       const price = +p.price, d = (price / floor - 1) * 100;
-      if (price <= floor) return [{ level: "crit", title: "Seuil de cours touché : " + p.name, text: "Seuil atteint : vérifiez votre ordre stop. Cours " + eur2(price) + " pour un seuil de " + eur2(floor) + "." }];
+      if (price <= floor) return [{ level: "crit", title: "Seuil de cours touché : " + p.name, text: "Seuil atteint : vérifie ton ordre stop. Cours " + eur2(price) + " pour un seuil de " + eur2(floor) + "." }];
       if (d < 10) return [{ level: "warn", title: p.name + " proche de son seuil", text: "Cours " + eur2(price) + ", à " + pct(d) + " du seuil de " + eur2(floor) + "." }];
       return [];
     },
@@ -88,7 +88,7 @@
       const all = (ctx.positions || []).filter(p => p.envelope === r.envelope && C().counted(p));
       if (!all.some(p => C().inScope(p, scopeOf(ctx)))) return [];
       const v = totalOf(all);
-      return v >= cap ? [{ level: "warn", title: r.envelope + " au plafond", text: eur(v) + " pour un plafond de " + eur(cap) + " : dirigez les prochains versements ailleurs." }] : [];
+      return v >= cap ? [{ level: "warn", title: r.envelope + " au plafond", text: eur(v) + " pour un plafond de " + eur(cap) + " : dirige les prochains versements ailleurs." }] : [];
     },
     stale_prices(r, ctx) {
       const days = num(r.days); if (days == null) return [];
@@ -178,11 +178,11 @@
     const out = { type: r.type };
     for (const f of TYPES[r.type].fields) {
       if (f === "bloc" || f === "envelope" || f === "position_id") {
-        const v = String(r[f] == null ? "" : r[f]).trim(); if (!v) return { error: "Choisissez " + ({ bloc: "une poche", envelope: "une enveloppe", position_id: "une ligne" }[f]) + "." };
+        const v = String(r[f] == null ? "" : r[f]).trim(); if (!v) return { error: "Choisis " + ({ bloc: "une poche", envelope: "une enveloppe", position_id: "une ligne" }[f]) + "." };
         out[f] = v;
       } else {
         const v = num(r[f]);
-        if (v == null || v <= 0) return { error: ({ pct: "Indiquez un pourcentage positif.", price: "Indiquez un cours positif.", cap: "Indiquez un plafond positif.", days: "Indiquez un nombre de jours positif." }[f]) };
+        if (v == null || v <= 0) return { error: ({ pct: "Indique un pourcentage positif.", price: "Indique un cours positif.", cap: "Indique un plafond positif.", days: "Indique un nombre de jours positif." }[f]) };
         if (f === "pct" && v > 100) return { error: "Le pourcentage ne peut pas dépasser 100." };
         out[f] = f === "days" ? Math.round(v) : v;
       }
