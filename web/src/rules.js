@@ -102,7 +102,8 @@
   function evaluate(rules, ctx) {
     const out = [];
     (Array.isArray(rules) ? rules : []).forEach(r => {
-      const f = r && EVAL[r.type]; if (!f) return;
+      // Une règle désactivée dans Compte › Règles (actif: false) ne déclenche aucune alerte.
+      const f = r && r.actif !== false && EVAL[r.type]; if (!f) return;
       try { f(r, ctx || {}).forEach(a => out.push(Object.assign(a, { rule: r }))); } catch (e) { if (typeof console !== "undefined") console.error("Règle invalide", r, e); }
     });
     return out;

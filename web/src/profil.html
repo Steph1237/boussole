@@ -7,32 +7,65 @@
       </div>
       <div class="pf-bar" aria-hidden="true"><i id="pfBar"></i></div>
       <p class="small muted" id="pfMissing"></p>
-      <button type="button" class="btn ghost" id="pfAssistBtn">Remplir avec mon assistant</button>
+      <div class="pf-aide">
+        <button type="button" class="btn ghost" id="pfAssistBtn">Remplir avec mon assistant</button>
+        <span id="pfClaude"></span>
+      </div>
     </div>
     <div class="pf-recap" id="pfRecap"></div>
   </section>
 
-  <section class="panel" aria-labelledby="pf-h-foyer">
-    <div class="panel-head"><h2 id="pf-h-foyer">Foyer</h2><span class="small muted">Sert au rang parmi les Français et au calcul de l'impôt</span></div>
-    <div class="pf-grid" id="pfFoyer"></div>
-  </section>
+  <div class="pf-secs">
+    <details class="ui-acc pf-sec" id="pf-sec-foyer" data-pf-sec="foyer">
+      <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-foyer">Foyer</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResFoyer"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps pf-sec-corps">
+        <p class="pf-sec-aide">Sert au rang parmi les Français et au calcul de l'impôt.</p>
+        <div class="pf-grid" id="pfFoyer"></div>
+      </div>
+    </details>
 
-  <section class="panel" aria-labelledby="pf-h-pers">
-    <div class="panel-head"><h2 id="pf-h-pers">Revenus</h2><span class="small muted">Salaires en équivalent temps plein, primes comprises</span></div>
-    <div class="pf-people" id="pfPeople"></div>
-  </section>
+    <details class="ui-acc pf-sec" id="pf-sec-revenus" data-pf-sec="revenus">
+      <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-pers">Revenus</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResRevenus"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps pf-sec-corps">
+        <p class="pf-sec-aide">Salaires en équivalent temps plein, primes comprises.</p>
+        <div class="pf-people" id="pfPeople"></div>
+      </div>
+    </details>
 
-  <section class="panel" aria-labelledby="pf-h-biens">
-    <div class="panel-head"><h2 id="pf-h-biens">Biens immobiliers</h2><span class="small muted" id="pfBiensNote">Valeur estimée aujourd'hui</span></div>
-    <div class="pf-rows" id="pfBiens"></div>
-    <button type="button" class="btn ghost" data-pf-add="biens">Ajouter un bien</button>
-  </section>
+    <details class="ui-acc pf-sec" id="pf-sec-biens" data-pf-sec="biens">
+      <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-biens">Biens immobiliers</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResBiens"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps pf-sec-corps">
+        <p class="pf-sec-aide" id="pfBiensNote">Valeur estimée aujourd'hui</p>
+        <div class="pf-rows" id="pfBiens"></div>
+        <button type="button" class="btn ghost" data-pf-add="biens">Ajouter un bien</button>
+      </div>
+    </details>
 
-  <section class="panel" aria-labelledby="pf-h-credits">
-    <div class="panel-head"><h2 id="pf-h-credits">Autres crédits</h2><span class="small muted">Auto, consommation, travaux… Les prêts immobiliers se saisissent sur la ligne du bien.</span></div>
-    <div class="pf-rows" id="pfCredits"></div>
-    <button type="button" class="btn ghost" data-pf-add="credits">Ajouter un crédit</button>
-  </section>
+    <details class="ui-acc pf-sec" id="pf-sec-credits" data-pf-sec="credits">
+      <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-credits">Crédits</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResCredits"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps pf-sec-corps">
+        <p class="pf-sec-aide">Auto, consommation, travaux… Les prêts immobiliers se saisissent sur la ligne du bien.</p>
+        <div class="pf-rows" id="pfCredits"></div>
+        <button type="button" class="btn ghost" data-pf-add="credits">Ajouter un crédit</button>
+      </div>
+    </details>
+
+    <details class="ui-acc pf-sec" id="pf-sec-protection" data-pf-sec="protection">
+      <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-protection">Protection</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResProtection"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps pf-sec-corps">
+        <p class="pf-sec-aide">Avec un crédit ou des enfants à charge, un décès ou une invalidité ne doit pas mettre le foyer en difficulté. Sert au critère « Protection de la famille » de Pilotage › Santé.</p>
+        <div class="pf-grid" id="pfProtection"></div>
+      </div>
+    </details>
+
+    <details class="ui-acc pf-sec" id="pf-sec-autres" data-pf-sec="autres">
+      <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-autres">Autres biens</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResAutres"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps pf-sec-corps">
+        <p class="pf-sec-aide">Voiture, meubles, parts d'entreprise : comptés dans le patrimoine net, hors placements suivis.</p>
+        <div class="pf-people" id="pfAutres"></div>
+      </div>
+    </details>
+  </div>
 
   <div class="pf-save" id="pfSave">
     <div class="pf-msgs" id="pfMsgs" aria-live="polite"></div>

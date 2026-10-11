@@ -142,3 +142,11 @@ test("contrôles intégrés : chaque alerte porte un kind (cible, matelas, noctu
   assert.ok(B.every(a => ["cible", "matelas", "nocturne", "agent", "jalon"].includes(a.kind)));
   assert.ok(Rules.evaluate(config.rules, ctx({ config })).every(a => a.kind === undefined));
 });
+
+test("evaluate : une règle désactivée (actif: false) ne déclenche aucune alerte", () => {
+  const R = require("../web/src/rules.js");
+  const regle = { type: "max_line_pct", pct: 1 };
+  const ctx = { positions: [{ id: "a", name: "A", mode: "manual", value: 100, owner: "p1", status: "actif" }, { id: "b", name: "B", mode: "manual", value: 100, owner: "p1", status: "actif" }], scope: "foyer" };
+  assert.ok(R.evaluate([regle], ctx).length > 0, "active : alerte");
+  assert.equal(R.evaluate([Object.assign({}, regle, { actif: false })], ctx).length, 0, "inactive : aucune alerte");
+});

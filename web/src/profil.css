@@ -1,4 +1,5 @@
-/* Profil : état de remplissage en tête, puis un panneau par bloc, barre d'enregistrement collée en bas. */
+/* Compte › Données : état de remplissage en tête, puis six sections en accordéons (résumé dans le titre), barre d'enregistrement
+   collée en bas. Tout est scopé #view-profil (les accordéons reprennent .ui-acc de ui.css). */
 #view-profil .profil{display:flex;flex-direction:column;gap:18px}
 #view-profil .pf-status{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px 28px;align-items:start}
 #view-profil .pf-score{display:flex;flex-direction:column;gap:8px}
@@ -10,8 +11,20 @@
 #view-profil .pf-kpi span{font-size:12px;color:var(--muted)}
 #view-profil .pf-kpi b{font:500 17px var(--f-num);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 #view-profil .pf-kpi em{font-style:normal;font-size:11.5px;color:var(--muted)}
+#view-profil .pf-aide{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:4px}
+#view-profil .pf-secs{display:flex;flex-direction:column;min-width:0}
+#view-profil .pf-sec{scroll-margin-top:84px;min-width:0}
+#view-profil .pf-sec > .ui-acc-titre{padding:12px 14px;align-items:center}
+#view-profil .pf-sec-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+#view-profil .pf-sec-nom{font:700 15px var(--f-display);color:var(--ink)}
+#view-profil .pf-sec-res{font:500 12.5px/1.4 var(--f-body);color:var(--muted);overflow-wrap:anywhere}
+#view-profil .pf-sec-res:empty{display:none}
+#view-profil .pf-sec-corps{display:flex;flex-direction:column;gap:14px;padding:4px 14px 16px}
+#view-profil .pf-sec-aide{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted);max-width:720px}
+#view-profil .pf-sec-corps .pf-rows{margin-bottom:0}
 #view-profil .pf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 24px}
 #view-profil .pf-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+#view-profil .pf-field>.seg{align-self:flex-start;max-width:100%}
 #view-profil .pf-field>.lbl{font-size:12px;color:var(--muted);font-weight:600}
 #view-profil .pf-people{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
 #view-profil .pf-person{display:flex;flex-direction:column;gap:14px;padding:14px;border:1px solid var(--line);border-radius:var(--radius);min-width:0}
@@ -26,8 +39,10 @@
 #view-profil .chk{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
 #view-profil .chk input{width:16px;height:16px;accent-color:var(--accent);margin:0}
 #view-profil .pf-rows{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
-#view-profil .pf-row{display:grid;grid-template-columns:minmax(150px,1.4fr) repeat(auto-fit,minmax(118px,1fr)) auto;gap:10px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+#view-profil .pf-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
 #view-profil .pf-row .pf-field>.lbl{font-size:11.5px}
+#view-profil .pf-row .pf-wide{grid-column:span 2}
+#view-profil .pf-row .del{justify-self:start}
 #view-profil .pf-row .del{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:var(--radius-sm);padding:8px 10px;cursor:pointer;font:600 12px var(--f-body)}
 #view-profil .pf-row .del:hover{color:var(--crit);border-color:var(--crit)}
 #view-profil .pf-row .pf-note{grid-column:1/-1;font-size:12px;color:var(--warn)}
@@ -45,7 +60,6 @@
 @media (max-width:420px){#view-profil .pf-2{grid-template-columns:minmax(0,1fr)}#view-profil .pf-people{grid-template-columns:minmax(0,1fr)}}
 
 /* Remplissage par assistant */
-#view-profil #pfAssistBtn{margin-top:4px}
 #view-profil .pf-dialog{border:1px solid var(--line);border-radius:var(--radius);padding:0;max-width:min(680px,calc(100vw - 32px));width:100%;background:var(--surface);color:var(--ink)}
 #view-profil .pf-dialog::backdrop{background:rgba(10,15,20,.45)}
 #view-profil .pf-dlg-in{display:flex;flex-direction:column;gap:14px;padding:18px;max-height:calc(100vh - 64px);overflow:auto}
