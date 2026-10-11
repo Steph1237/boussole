@@ -39,13 +39,14 @@ test("registre : 4 destinations primaires dans l'ordre, puis Compte hors barre",
 test("registre : sous-vues et modules de chaque destination selon le plan", () => {
   const subs = space => SPACES.find(s => s.space === space).subs.map(s => [s.id, s.module]);
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
-  assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["immobilier", "bilan"], ["budget", "plan"]]);
+  assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
   assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["projections", null], ["scenarios", "simu"]]);
   assert.deepEqual(subs("agent"), [["journal", "journal-view"], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["connexion", "claude-guide"]]);
   assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"]]);
   const lab = (space, id) => SPACES.find(s => s.space === space).subs.find(s => s.id === id).label;
   assert.equal(lab("patrimoine", "immobilier"), "Immobilier et crédits");
-  assert.equal(lab("patrimoine", "budget"), "Budget et objectifs");
+  assert.equal(lab("patrimoine", "budget"), "Budget");
+  assert.equal(lab("patrimoine", "objectifs"), "Objectifs");
   assert.equal(lab("pilotage", "scenarios"), "Scénarios");
   assert.equal(lab("agent", "journal"), "Journal");
   assert.equal(lab("agent", "memoire"), "Mémoire");
@@ -95,7 +96,7 @@ test("correspondance : anciens onglets (App.go, data-goto-tab) et anciens hash d
     "#pilotage": "patrimoine/placements",
     "#position": "pilotage/rang", "#foyer": "pilotage/rang", "#salaire": "pilotage/rang", "#patrimoine": "pilotage/rang", "#emprunt": "pilotage/rang",
     "#acheter": "pilotage/scenarios", "#simulateur": "pilotage/scenarios", "#theorie": "pilotage/scenarios", "#explication": "pilotage/scenarios",
-    "#plan": "patrimoine/budget", "#budget": "patrimoine/budget", "#objectifs": "patrimoine/budget",
+    "#plan": "patrimoine/budget", "#budget": "patrimoine/budget", "#objectifs": "patrimoine/objectifs",
     "#profil": "compte/donnees",
   };
   for (const [h, r] of Object.entries(spec)) {
@@ -165,7 +166,7 @@ test("coque : états « bientôt » orientés vers l'agent (Projections) ; le Jo
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "fiches-view", "journal-view", "memoire-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "fiches-view", "journal-view", "memoire-view", "objectifs-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   assert.equal(mods[0], "aujourdhui", "aujourdhui en tête de MODULES");
   assert.ok(mods.includes("actions"), "le module Actions reste chargé (window.Actions)");
@@ -173,7 +174,7 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
     assert.ok(mods.includes(m), `${m} absent de MODULES (build.mjs)`);
   }
-  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"]])
+  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"], ["objectifs-view", "patrimoine", "objectifs"]])
     assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
   assert.match(shell, /<section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" hidden>\s*<!--@aujourdhui-->\s*<\/section>/);
   const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];

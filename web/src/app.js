@@ -10,10 +10,11 @@
     { space: "aujourdhui", label: "Aujourd'hui", short: "Aujourd'hui", icon: "aujourdhui", primary: true, desc: "Ce qui demande mon attention", subs: [
       { id: "vue", label: "Aujourd'hui", module: "aujourdhui" },
     ] },
-    { space: "patrimoine", label: "Patrimoine", short: "Patrimoine", icon: "patrimoine", primary: true, desc: "Ce que je possède, ce que je dois, mon budget", subs: [
+    { space: "patrimoine", label: "Patrimoine", short: "Patrimoine", icon: "patrimoine", primary: true, desc: "Ce que je possède, ce que je dois, mon budget et mes projets", subs: [
       { id: "placements", label: "Placements", module: "pilotage" },
       { id: "immobilier", label: "Immobilier et crédits", module: "bilan" },
-      { id: "budget", label: "Budget et objectifs", module: "plan" },
+      { id: "budget", label: "Budget", module: "plan" },
+      { id: "objectifs", label: "Objectifs", module: "objectifs-view" },
     ] },
     { space: "pilotage", label: "Pilotage", short: "Pilotage", icon: "pilotage", primary: true, desc: "Ma situation est-elle saine ? Et si… ?", subs: [
       { id: "sante", label: "Santé", module: "sante" },
@@ -55,7 +56,7 @@
     "#pilotage": "patrimoine/placements",
     "#position": "pilotage/rang", "#foyer": "pilotage/rang", "#salaire": "pilotage/rang", "#patrimoine": "pilotage/rang", "#emprunt": "pilotage/rang",
     "#acheter": "pilotage/scenarios", "#simulateur": "pilotage/scenarios", "#theorie": "pilotage/scenarios", "#explication": "pilotage/scenarios",
-    "#budget": "patrimoine/budget", "#objectifs": "patrimoine/budget",
+    "#budget": "patrimoine/budget", "#objectifs": "patrimoine/objectifs",
   };
   const DEFAULT_ROUTE = "aujourdhui/vue";
   /* Destinations où le sélecteur de périmètre (Foyer · prénoms) a un sens. */
