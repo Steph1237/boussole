@@ -2,21 +2,23 @@
    Avancement par section (BilanEtat.etat), prochaines questions, ajout du connecteur (bloc partagé avec l'étape 3 de
    l'accueil : Accueil.connexion), « Revoir l'accueil » (App.accueil),
    parcours lançables (claude.ai/new?q=… ou copie de la demande), retour vers Propositions pour valider.
-   Compte anonyme (mode Supabase) : « Sécurisez d'abord votre compte » à la place de l'étape du connecteur. */
+   Compte anonyme (mode Supabase) : « Sécurise d'abord ton compte » à la place de l'étape du connecteur.
+   La saisie se fait avec Claude (formulaires interactifs, fichiers déposés dans la conversation) : la page l'explique, ainsi que la
+   veille (la ligne « Veille » de la barre latérale y mène). Textes au tutoiement. */
 (function () {
   "use strict";
   /* Demandes pré-remplies : courtes, en langage naturel, elles invoquent le connecteur et ses outils. */
   const PARCOURS = [
     { id: "bilan_complet", titre: "Bilan complet", desc: "Tout le bilan, section par section, dans l'ordre d'un entretien.",
-      prompt: "Utilise le connecteur Boussole pour faire mon bilan patrimonial complet : commence par etat_du_bilan, pose-moi une question à la fois, et dépose tes propositions dans Boussole." },
+      prompt: "Utilise le connecteur Boussole pour faire mon bilan patrimonial complet : commence par etat_du_bilan, pose-moi les questions avec les formulaires interactifs Boussole, et dépose tes propositions dans Boussole." },
     { id: "profil_de_risque", titre: "Profil de risque", desc: "Les dix questions, expliquées une par une.",
-      prompt: "Utilise le connecteur Boussole pour établir mon profil de risque : commence par etat_du_bilan, pose-moi les questions une à la fois en m'expliquant pourquoi, puis dépose mes réponses dans Boussole pour que je les valide." },
-    { id: "budget", titre: "Budget", desc: "Dépenses et épargne du mois ; un relevé bancaire collé suffit.",
-      prompt: "Utilise le connecteur Boussole pour compléter mon budget mensuel : commence par etat_du_bilan, demande-moi mes dépenses une catégorie à la fois (je peux coller un relevé bancaire), puis dépose tes propositions dans Boussole." },
-    { id: "placements", titre: "Placements", desc: "Comptes, enveloppes et soldes à jour, depuis vos relevés.",
-      prompt: "Utilise le connecteur Boussole pour mettre à jour mes placements : commence par etat_du_bilan, demande-moi les soldes à jour compte par compte (je peux coller mes relevés), puis dépose tes propositions dans Boussole." },
+      prompt: "Utilise le connecteur Boussole pour établir mon profil de risque : commence par etat_du_bilan, pose-moi les questions avec le formulaire interactif Boussole en m'expliquant pourquoi, puis dépose mes réponses dans Boussole pour que je les valide." },
+    { id: "budget", titre: "Budget", desc: "Dépenses et épargne du mois ; un relevé bancaire déposé dans la conversation suffit.",
+      prompt: "Utilise le connecteur Boussole pour compléter mon budget mensuel : commence par etat_du_bilan, demande-moi mes dépenses avec les formulaires interactifs Boussole (je peux te donner un relevé bancaire), puis dépose tes propositions dans Boussole." },
+    { id: "placements", titre: "Placements", desc: "Comptes, enveloppes et soldes à jour, depuis tes relevés.",
+      prompt: "Utilise le connecteur Boussole pour mettre à jour mes placements : commence par etat_du_bilan, demande-moi les soldes à jour compte par compte (je peux te donner mes relevés ou l'export de mon courtier), puis dépose tes propositions dans Boussole." },
     { id: "revue_mensuelle", titre: "Revue du mois", desc: "Ce qui a changé ce mois-ci : soldes, budget, objectifs.",
-      prompt: "Utilise le connecteur Boussole pour faire ma revue du mois : commence par etat_du_bilan, vérifie avec moi ce qui a changé (soldes, budget, objectifs), une question à la fois, et dépose tes propositions dans Boussole." },
+      prompt: "Utilise le connecteur Boussole pour faire ma revue du mois : commence par etat_du_bilan, vérifie avec moi ce qui a changé (soldes, budget, objectifs) avec les formulaires interactifs Boussole, et dépose tes propositions dans Boussole." },
   ];
   const lienClaude = prompt => "https://claude.ai/new?q=" + encodeURIComponent(prompt);
   if (typeof module === "object" && module.exports) module.exports = { PARCOURS, lienClaude };
@@ -56,8 +58,8 @@
       $("cgRing").innerHTML = ring(E.pourcentage);
       $("cgRing").setAttribute("aria-label", "Bilan complet à " + E.pourcentage + " %");
       const complets = E.sections.filter(s => s.statut === "complet").length;
-      $("cgHeroSub").textContent = E.pourcentage >= 100 ? "Votre bilan est complet. Revenez chaque mois pour le garder à jour." :
-        "Votre bilan est complet à " + E.pourcentage + " % : " + complets + " section" + (complets > 1 ? "s" : "") + " sur " + E.sections.length + " terminée" + (complets > 1 ? "s" : "") + ".";
+      $("cgHeroSub").textContent = E.pourcentage >= 100 ? "Ton bilan est complet. Reviens chaque mois pour le garder à jour." :
+        "Ton bilan est complet à " + E.pourcentage + " % : " + complets + " section" + (complets > 1 ? "s" : "") + " sur " + E.sections.length + " terminée" + (complets > 1 ? "s" : "") + ".";
       $("cgSecCount").textContent = complets + " sur " + E.sections.length;
       const sig = JSON.stringify(E.sections.map(s => [s.cle, s.statut, s.faits, s.total, s.manquants.map(m => m.champ)]));
       if (sig !== sigSec) {
@@ -123,7 +125,7 @@
       } else if (b.dataset.copyPrompt) {
         const p = PARCOURS.find(x => x.id === b.dataset.copyPrompt), ta = $("cgPrompt-" + p.id);
         const ok = await copier(p.prompt, ta);
-        dire(ok ? "Demande « " + p.titre + " » copiée : collez-la dans une nouvelle conversation avec Claude." : "Copie impossible : la demande est sélectionnée ci-dessus, copiez-la avec Ctrl+C ou ⌘C.", ok); flash(b, ok);
+        dire(ok ? "Demande « " + p.titre + " » copiée : colle-la dans une nouvelle conversation avec Claude." : "Copie impossible : la demande est sélectionnée ci-dessus, copie-la avec Ctrl+C ou ⌘C.", ok); flash(b, ok);
       }
     });
     root.addEventListener("toggle", e => { const d = e.target; if (d.dataset && d.dataset.sec) { if (d.open) ouverts.add(d.dataset.sec); else ouverts.delete(d.dataset.sec); } }, true);

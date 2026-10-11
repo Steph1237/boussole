@@ -4,10 +4,12 @@
    - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), entrées du journal à relire
      (CK2), alertes des règles (rules.js), points « à suivre » échus de la mémoire de l'agent, échéances à 30 jours, cours manquants /
      photo nocturne en retard.
-   - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an, au mois) ;
+   - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an ;
+     granularité automatique selon la période, sauf si l'utilisateur la choisit sur sa bascule : elle est alors mémorisée) ;
      repères verticaux aux dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
-   Fonctions pures exportées pour les tests (module.exports) : boite, echeances, indicateurs, frise, reperesJournal, urlClaude, delai, et les
-   rendus HTML cartes, detail, repereDetail, boiteHtml, friseSvg (qui reçoivent UI en paramètre quand ils en ont besoin ; aucune ne touche
+   Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
+   Fonctions pures exportées pour les tests (module.exports) : boite, echeances, indicateurs, frise, reperesJournal, urlClaude, delai,
+   lirePeriode, periodeAEnregistrer, phraseRevue, et les rendus HTML cartes, detail, repereDetail, boiteHtml, friseSvg (qui reçoivent UI en paramètre quand ils en ont besoin ; aucune ne touche
    au DOM).
    Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes } ; window.* par défaut. */
 (function () {
@@ -15,6 +17,9 @@
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const glob = k => (typeof window !== "undefined" && window[k]) || (typeof self !== "undefined" && self[k]) || null;
   const dep = (d, k) => (d && Object.prototype.hasOwnProperty.call(d, k) ? d[k] : glob(k));
+  /* Phrases « … avec Claude » (ClaudePrompts) : global du navigateur, sinon le module voisin sous Node (tests). */
+  const prompts = () => glob("ClaudePrompts") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
 
   /* ---------- dates (AAAA-MM-JJ, jours calendaires) ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -115,7 +120,7 @@
       const cibles = [...new Set(ps.map(p => CIBLES[p.cible] || plat(p.cible || "données")))];
       const date = ps.map(p => jj(p.creeLe)).filter(isoOk).sort().pop() || t;
       out.push({ type: "proposition", urgence: 1, date, titre: "Claude propose " + pluriel(ps.length, "changement"),
-        contexte: maj(liste(cibles)) + " : rien n'est enregistré sans votre accord.",
+        contexte: maj(liste(cibles)) + " : rien n'est enregistré sans ton accord.",
         action: { label: "Examiner", route: R.propositions } });
     });
 
@@ -128,7 +133,7 @@
       const titres = aRelire.slice(0, 2).map(e => "« " + extrait(e.titre, 60) + " »").join(", ") + (nRelire > 2 ? "…" : "");
       out.push({ type: "journal", urgence: 1, date: aRelire.map(e => jj(e.creeLe)).filter(isoOk).sort().pop() || t,
         titre: pluriel(nRelire, "entrée") + " du journal à relire",
-        contexte: (titres ? titres + " : c" : "C") + "onfirmez ou corrigez ce que l'agent a noté.",
+        contexte: (titres ? titres + " : c" : "C") + "onfirme ou corrige ce que l'agent a noté.",
         action: { label: "Relire", route: nRelire === 1 && aRelire.length === 1 ? lienEntree(aRelire[0].id) : R.journal } });
     }
 
@@ -260,11 +265,11 @@
     const tend = v == null || n.vide ? null : { sens: Math.round(v) > 0 ? "hausse" : Math.round(v) < 0 ? "baisse" : "stable", texte: eurS(v) };
     return [
       { id: "net", titre: "Patrimoine net", valeur: n.vide ? "—" : eur(n.valeur), tendance: tend,
-        sous: n.vide ? "Lancez votre bilan avec Claude" : v == null ? "Première photo cette nuit" : periodeTxt(periode) },
+        sous: n.vide ? "Lance ton bilan avec Claude" : v == null ? "Première photo cette nuit" : periodeTxt(periode) },
       { id: "pratiques", titre: "Bonnes pratiques", valeur: pr.total == null ? "—" : pr.total + " / 100", badge: pr.total != null && pr.provisoire ? "Provisoire" : null,
         sous: pr.total == null ? "Données à compléter" : pr.aCompleter ? pluriel(pr.aCompleter, "critère") + " à compléter" : "Tous les critères sont notés" },
       { id: "allocation", titre: "Écart au profil de risque", valeur: !al.profil ? "Profil à faire" : al.points == null ? "—" : fpts(al.points),
-        sous: !al.profil ? "Répondez au questionnaire" : !al.placements ? "Aucun placement à comparer" : al.points ? "Hors des fourchettes du profil " + al.profil : "Dans les fourchettes du profil " + al.profil },
+        sous: !al.profil ? "Réponds au questionnaire avec Claude" : !al.placements ? "Aucun placement à comparer" : al.points ? "Hors des fourchettes du profil " + al.profil : "Dans les fourchettes du profil " + al.profil },
       { id: "echeance", titre: "Prochaine échéance", valeur: ec.prochaine ? quand(ec.prochaine) : "Aucune",
         sous: ec.prochaine ? extrait(ec.prochaine.titre, 60) + " · " + dateFr(ec.prochaine.date) : "Aucune date à venir" },
     ].map(o => U.carte(o)).join("");
@@ -304,20 +309,21 @@
       question = "Explique-moi ma note de bonnes pratiques dans Boussole, famille par famille, et ce que mesure chaque critère.";
       lignes = pr.familles.slice(0, 4).map(f => [f.titre, f.total == null ? "à compléter" : f.total + " / 100"]);
       if (lignes.length < 2) lignes = [["Note globale", pr.total == null ? "—" : pr.total + " / 100"], ["Critères à compléter", String(pr.aCompleter)]];
-      note = pr.total == null ? "Complétez vos données, seul ou avec Claude, pour obtenir une note."
-        : pr.provisoire ? "Note provisoire : moins de la moitié des critères peuvent être notés avec vos données actuelles."
+      note = pr.total == null ? "Complète tes données avec Claude pour obtenir une note."
+        : pr.provisoire ? "Note provisoire : moins de la moitié des critères peuvent être notés avec tes données actuelles."
         : "Une note pédagogique, pas un conseil : chaque critère explique sa règle et sa source.";
     } else if (id === "allocation") {
-      titre = "Écart au profil de risque"; route = R.risque; label = al.profil ? "Voir le profil de risque" : "Faire le questionnaire";
+      titre = "Écart au profil de risque"; route = R.risque; label = al.profil ? "Voir le profil de risque" : "Voir Pilotage › Risque";
+      const P = prompts();
       question = al.profil ? "Explique-moi l'écart entre ma répartition réelle et les fourchettes de mon profil de risque dans Boussole."
-        : "Aide-moi à remplir le questionnaire de profil de risque de Boussole, question par question.";
+        : P ? P.phrase("risque") : "Boussole : aide-moi à remplir mon profil de risque.";
       if (!al.profil) {
         lignes = [["Profil de risque", "non renseigné"], ["Questionnaire", "une dizaine de questions"]];
-        note = "Le questionnaire situe le risque que vous acceptez ; Boussole compare ensuite votre répartition réelle aux fourchettes de ce profil.";
+        note = "Le questionnaire situe le risque que tu acceptes ; Boussole compare ensuite ta répartition réelle aux fourchettes de ce profil.";
       } else {
         lignes = [["Profil", al.profil], ["Points hors fourchette", al.points == null ? "—" : fpts(al.points)]];
         al.hors.slice(0, 2).forEach(e => lignes.push([e.label, fpct(e.reel) + " (fourchette " + e.min + " à " + e.max + " %)"]));
-        note = al.points ? "Chaque point mesure l'écart d'une classe d'actifs à la borne la plus proche de sa fourchette." : "Chaque classe d'actifs est dans la fourchette de votre profil.";
+        note = al.points ? "Chaque point mesure l'écart d'une classe d'actifs à la borne la plus proche de sa fourchette." : "Chaque classe d'actifs est dans la fourchette de ton profil.";
       }
     } else {
       titre = "Prochaines échéances"; route = R.objectifs; label = "Voir les objectifs";
@@ -325,7 +331,7 @@
       lignes = ec.liste.slice(0, 4).map(e => [extrait(e.titre, 70), dateFr(e.date) + " · " + quand(e).toLowerCase()]);
       if (!lignes.length) lignes.push(["Échéances à venir", "aucune"]);
       if (lignes.length < 2) lignes.push(["Objectifs datés", "dans Objectifs"]);
-      note = "Dates tirées de vos objectifs, des échéances enregistrées et des points que l'agent doit reprendre avec vous.";
+      note = "Dates tirées de tes objectifs, des échéances enregistrées et des points que l'agent doit reprendre avec toi.";
     }
     return { titre, contenu: (id === "net" ? compositionHtml(n) : '<ul class="aj-det">' + lignes.slice(0, 4).map(l => ligne(l[0], l[1])).join("") + "</ul>") +
       '<p class="aj-det-note">' + esc(note) + "</p>", lien: { label, href: "#" + route }, question };
@@ -366,20 +372,26 @@
       (x.contexte ? '<p class="aj-c">' + esc(x.contexte) + "</p>" : "") + "</div>" +
       actionHtml(x.action) + "</li>";
   }
-  /** Liste de la boîte de réception (<ul>/<li>) : 5 éléments puis « Voir plus » (UI.voirPlus) ; vide : « Rien à traiter. » et « Faire le point avec Claude ». */
+  /** Phrase prête de « Faire le point avec Claude » : la revue du mois de l'agent (ClaudePrompts.phrase("revue")). */
+  function phraseRevue() {
+    const P = prompts();
+    return P ? P.phrase("revue") : "Boussole : faisons ma revue du mois. Commence par demarrer_session.";
+  }
+  /** Liste de la boîte de réception (<ul>/<li>) : 5 éléments puis « Voir plus » (UI.voirPlus, clé fixe : un bloc déplié le reste
+      quand la liste change) ; vide : « Rien à traiter. » et « Faire le point avec Claude » (revue du mois). */
   function boiteHtml(items, U) {
     if (!items || !items.length) return '<div class="aj-vide"><p class="aj-vide-t">Rien à traiter.</p>' +
-      '<p class="aj-vide-x">Aucune proposition, alerte ni échéance proche. Pour un regard d\'ensemble, faites le point avec votre assistant.</p>' +
-      U.demanderAClaude("Fais le point sur ma situation avec Boussole", "Faire le point avec Claude") + "</div>";
-    return U.voirPlus(items, 5, itemHtml, "Voir plus", "ul");
+      '<p class="aj-vide-x">Aucune proposition, alerte ni échéance proche. Pour un regard d\'ensemble, fais le point avec Claude.</p>' +
+      U.demanderAClaude(phraseRevue(), "Faire le point avec Claude") + "</div>";
+    return U.voirPlus(items, 5, itemHtml, "Voir plus", "ul", "aj-boite");
   }
 
   /** Courbe SVG du patrimoine net agrégé (f = frise()) ; texte d'état vide si moins de deux points. */
   function friseSvg(f, o) {
     const opt = o || {}, rows = (f && f.points) || [];
     if (rows.length < 2) return '<p class="aj-frise-vide">' + (f && f.historique
-      ? "Pas assez de points sur cette période : élargissez-la ou choisissez un pas plus fin."
-      : "Pas encore d'historique : Boussole prend chaque nuit une photo de votre patrimoine, la courbe se dessine au fil des jours.") + "</p>";
+      ? "Pas assez de points sur cette période : élargis-la ou choisis un pas plus fin."
+      : "Pas encore d'historique : Boussole prend chaque nuit une photo de ton patrimoine, la courbe se dessine au fil des jours.") + "</p>";
     const W = Math.max(300, Math.min(1000, Math.round(+opt.largeur) || 720)), H = W < 480 ? 200 : 220, L = 62, Rt = 14, T = 14, B = 28;
     const ts = rows.map(p => utc(p.date)), x0 = ts[0], x1 = ts[ts.length - 1];
     const vals = rows.map(p => p.valeur);
@@ -394,13 +406,15 @@
       const v = lo + (hi - lo) * k / 3, y = Y(v);
       g += '<line class="aj-grid" x1="' + L + '" x2="' + (W - Rt) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"/><text class="aj-ax" x="' + (L - 8) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end">' + esc(axe(v)) + "</text>";
     }
-    // libellés de période : le premier calé à gauche, le dernier à droite, les autres centrés s'ils ne se chevauchent pas
+    // libellés de période : le premier calé à gauche, le dernier à droite, les autres centrés s'ils ne se chevauchent pas (largeur
+    // estimée d'après le texte : « sem. du 28 sept. » est bien plus long que « oct. 2026 »)
     let droite = -Infinity;
-    const xFin = X(x1);
+    const xFin = X(x1), largeurTxt = t => Math.max(40, Math.ceil(String(t ?? "").length * 6.8)); // 11 px, chiffres à chasse fixe
+    const wFin = largeurTxt(rows[rows.length - 1].label);
     rows.forEach((p, i) => {
-      const x = X(ts[i]), last = i === rows.length - 1, w = 64;
+      const x = X(ts[i]), last = i === rows.length - 1, w = largeurTxt(p.label);
       const a = i === 0 ? x : last ? x - w : x - w / 2, b = i === 0 ? x + w : last ? x : x + w / 2;
-      if (!last && (a < droite + 6 || b > xFin - w - 6)) return;
+      if (!last && (a < droite + 6 || b > xFin - wFin - 6)) return;
       droite = b;
       g += '<text class="aj-ax" x="' + x.toFixed(1) + '" y="' + (H - 7) + '" text-anchor="' + (i === 0 ? "start" : last ? "end" : "middle") + '">' + esc(p.label) + "</text>";
     });
@@ -428,7 +442,32 @@
       '<path class="aj-aire" d="' + aire + '"/><path class="aj-ligne" d="' + d + '"/>' + repSvg + pts + "</svg>";
   }
 
-  const H = { boite, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, friseSvg, jour, delai, premiereDate };
+  /* ---------- période de la frise : mémorisée, granularité seulement si l'utilisateur l'a choisie ---------- */
+  /** Période relue du stockage local (JSON ou objet) → { periode: { id, du?, au?, granularite? }, gChoisie }. La granularité n'est
+      reprise que si l'utilisateur l'avait choisie lui-même (gChoisie) ; sinon elle reste automatique (Periodes.auto selon la
+      période). Les anciennes valeurs sans gChoisie (granularité « mois » enregistrée d'office) repassent donc en automatique. */
+  function lirePeriode(brut) {
+    let p = brut;
+    if (typeof brut === "string") { try { p = JSON.parse(brut); } catch (e) { p = null; } }
+    if (!p || typeof p !== "object" || typeof p.id !== "string" || !p.id) return { periode: { id: "1a" }, gChoisie: false };
+    const gChoisie = p.gChoisie === true && typeof p.granularite === "string" && !!p.granularite;
+    const periode = { id: p.id };
+    if (isoOk(p.du)) periode.du = p.du;
+    if (isoOk(p.au)) periode.au = p.au;
+    if (gChoisie) periode.granularite = p.granularite;
+    return { periode, gChoisie };
+  }
+  /** Ce qui s'enregistre : la période (et ses dates si elle est personnalisée) ; la granularité et gChoisie seulement après un choix
+      de l'utilisateur. */
+  function periodeAEnregistrer(periode, gChoisie) {
+    const p = periode || {}, out = { id: String(p.id || "1a") };
+    if (/^perso/.test(out.id) && isoOk(p.du) && isoOk(p.au)) { out.du = p.du; out.au = p.au; }
+    if (gChoisie && p.granularite) { out.granularite = String(p.granularite); out.gChoisie = true; }
+    return out;
+  }
+
+  const H = { boite, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, friseSvg, jour, delai, premiereDate,
+    lirePeriode, periodeAEnregistrer };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -438,8 +477,11 @@
      ne l'est qu'au rendu, quand la vue est visible. sigX : dernier HTML écrit ; rien n'est réécrit (ni le focus perdu,
      ni un « Voir plus » replié) quand il n'a pas changé. */
   let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, sigBoite = "", sigCartes = "", sigFrise = "", ctlPeriode = null; // largeur : celle du dernier dessin de la frise
-  let periode = { id: "1a", granularite: "mois" };
-  try { const p = JSON.parse(localStorage.getItem(CLE) || "null"); if (p && typeof p.id === "string") periode = { id: p.id, granularite: String(p.granularite || "mois"), du: p.du, au: p.au }; } catch (e) {}
+  /* periode.granularite : celle du dessin (choisie, ou automatique selon la période) ; gChoisie : l'utilisateur l'a choisie lui-même
+     (seul cas où elle est passée à UI.periode et enregistrée) ; gClic : vrai pendant le traitement d'un clic ou d'une touche sur la
+     bascule de granularité (posé à la capture, effacé au retour de l'événement). */
+  let periode = { id: "1a" }, gChoisie = false, gClic = false;
+  try { const l = lirePeriode(localStorage.getItem(CLE)); periode = l.periode; gChoisie = l.gChoisie; } catch (e) {}
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
   const scopeLabel = () => {
@@ -478,8 +520,9 @@
   /* Période ou granularité changée (UI.periode) : la frise et la variation de la carte « Patrimoine net » suivent. */
   function surPeriode(o) {
     const x = o && typeof o === "object" ? o : { periode: o };
-    periode = { id: String(x.periode || x.id || periode.id), granularite: String(x.granularite || periode.granularite || "mois"), du: x.du || undefined, au: x.au || undefined };
-    try { localStorage.setItem(CLE, JSON.stringify(periode)); } catch (e) {}
+    if (gClic) gChoisie = true; // la granularité vient d'être choisie sur sa bascule : elle ne suit plus la période
+    periode = { id: String(x.periode || x.id || periode.id), granularite: x.granularite ? String(x.granularite) : periode.granularite, du: x.du || undefined, au: x.au || undefined };
+    try { localStorage.setItem(CLE, JSON.stringify(periodeAEnregistrer(periode, gChoisie))); } catch (e) {}
     if (!S || !U() || !root) return;
     ind = indicateurs(S, jour(), periode);
     renderCartes();
@@ -515,8 +558,15 @@
       const el = e.target && e.target.closest ? e.target.closest("[data-journal]") : null;
       if (el) { e.preventDefault(); ouvrirRepere(el); }
     });
-    if (u && u.periode) ctlPeriode = u.periode($("ajPeriode"), { periode: periode.id, granularite: periode.granularite, du: periode.du, au: periode.au,
-      premiere: S ? premiereDate(S.snapshots) : undefined, surChange: surPeriode });
+    const zone = $("ajPeriode");
+    const marquer = e => { gClic = !!(e.target && e.target.closest && e.target.closest(".ui-periode-g")); };
+    const effacer = () => { gClic = false; };
+    ["click", "keydown"].forEach(t => { zone.addEventListener(t, marquer, true); zone.addEventListener(t, effacer); });
+    if (u && u.periode) {
+      const o = { periode: periode.id, du: periode.du, au: periode.au, premiere: S ? premiereDate(S.snapshots) : undefined, surChange: surPeriode };
+      if (gChoisie && periode.granularite) o.granularite = periode.granularite; // sinon UI.periode la règle selon la période
+      ctlPeriode = u.periode(zone, o);
+    }
     $("ajClaude").innerHTML = u && u.demanderAClaude
       ? u.demanderAClaude("Explique-moi simplement l'évolution de mon patrimoine net dans Boussole sur la dernière année : qu'est-ce qui l'a fait bouger ?", "Commenter avec Claude") : "";
     if (u && u.brancher) u.brancher(root, { surCarte: ouvrirCarte }); // cartes et « Voir plus » de la boîte de réception

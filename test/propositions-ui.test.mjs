@@ -39,7 +39,8 @@ test("propositions.html : identifiants utilisés par le script, phrase d'en-têt
   const ids = [...js.matchAll(/\$\("(pp[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length > 5);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  assert.ok(html.includes("Claude a proposé ces changements. Rien n'est enregistré tant que vous ne les validez pas."));
+  assert.ok(html.includes("Claude a proposé ces changements. Rien n'est enregistré tant que tu ne les valides pas."));
+  assert.match(html, /formulaires interactifs/, "l'état vide décrit la saisie avec Claude");
   assert.match(html, /data-goto="agent\/connexion"/);
 });
 
@@ -120,4 +121,15 @@ test("profil de risque recalculé après validation de réponses proposées par 
   assert.match(js, /window\.Risque/);
   assert.match(js, /\.evaluer\(rq\.reponses/);
   assert.match(js, /update\(\{ risque:/);
+});
+
+/* Tutoiement (spec 2026-10-11-saisie-par-agent) : aucun « vous / votre / vos » ni impératif au vouvoiement dans les textes du module. */
+test("propositions : tutoiement — aucun « vous / votre / vos » dans les textes du module", () => {
+  const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+  const IMPERATIFS = /\b(Réessayez|réessayez|Commencez|Confirmez|Relisez|relisez|Corrigez|corrigez|Choisissez|choisissez|Utilisez|utilisez|Consultez|consultez|Copiez|copiez|Collez|collez|Revenez|Faites|faites|Sécurisez|Ajoutez|ajoutez|Validez|validez|Refusez|refusez)\b/;
+  for (const [nomFichier, src] of [["propositions.js", js], ["propositions.html", html]]) {
+    const texte = src.replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(texte, VOUVOIEMENT, nomFichier);
+    assert.doesNotMatch(texte, IMPERATIFS, nomFichier);
+  }
 });

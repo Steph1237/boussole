@@ -456,3 +456,18 @@ test("vue (DOM) : lien profond — App.parametres().entree ouvre l'entrée au sh
   v.api.update(Object.assign(J(v.S()), { journalARelire: 0 }), true);
   assert.equal(v.api.headline(), "");
 });
+
+/* Tutoiement (spec 2026-10-11-saisie-par-agent) : aucun « vous / votre / vos » ni impératif au vouvoiement dans les textes du module. */
+test("journal-view : tutoiement — aucun « vous / votre / vos » dans les textes du module", () => {
+  const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+  const IMPERATIFS = /\b(Réessayez|réessayez|Commencez|Confirmez|Relisez|relisez|Corrigez|corrigez|Choisissez|choisissez|Utilisez|utilisez|Consultez|consultez|Copiez|copiez|Collez|collez|Revenez|Faites|faites|Sécurisez|Ajoutez|ajoutez|Validez|validez|Refusez|refusez)\b/;
+  for (const [nomFichier, src] of [["journal-view.js", js], ["journal-view.html", html]]) {
+    const texte = src.replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(texte, VOUVOIEMENT, nomFichier);
+    assert.doesNotMatch(texte, IMPERATIFS, nomFichier);
+  }
+});
+
+test("journal-view : « Voir plus » à clé fixe par mois (l'état déplié survit aux émissions du store)", () => {
+  assert.match(js, /U\.voirPlus\(g\.entrees, 5, e => carteHtml\(e, U\), "Voir plus", "ul", "jv-" \+ g\.cle\)/);
+});

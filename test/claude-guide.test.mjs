@@ -1,4 +1,6 @@
 // Agent › Connexion (web/src/claude-guide.*) ; la carte « Faire mon bilan avec Claude » de l'ancien Bilan est couverte par l'accueil et cette page.
+// Saisie par l'agent (spec 2026-10-11) : plus de « Je préfère remplir moi-même » ; la page explique la saisie avec Claude (formulaires
+// interactifs, fichiers déposés dans la conversation) et la veille ; tutoiement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -43,7 +45,7 @@ test("claude-guide.js : parcours ouverts sur claude.ai/new?q= (encodé, nouvel o
   }
 });
 
-test("claude-guide : connecteur (adresse, Claude Code), compte anonyme, démo, alternative manuelle", () => {
+test("claude-guide : connecteur (adresse, Claude Code), compte anonyme, démo, liens vers les pages", () => {
   assert.match(js, /"\/functions\/v1\/mcp"/);
   assert.match(js, /Accueil\.connexion\(\$\("cgConnexion"\)\)/, "bloc de connexion partagé avec l'accueil (étapes, identifiant client, Claude Code)");
   assert.match(js, /App\.accueil\(\{ etape: 1 \}\)/, "« Revoir l'accueil »");
@@ -73,6 +75,39 @@ test("Faire mon bilan avec Claude : plus dans Patrimoine › Immobilier et créd
   assert.doesNotMatch(bilanJs, /BilanEtat/);
   assert.match(readFileSync("web/src/accueil.js", "utf8"), /BilanEtat\.etat\(S\)/);
   assert.match(js, /window\.BilanEtat\.etat\(S\)/);
-  assert.match(html, /Je préfère remplir moi-même/);
+
   assert.deepEqual(unscoped(bilanCss, "#view-bilan").filter(x => !x.startsWith(".ui-panneau .bl-")), []);
+});
+
+test("claude-guide : plus de saisie dans l'app — la saisie se fait avec Claude (formulaires interactifs, fichiers déposés), Boussole affiche et fait valider", () => {
+  const texte = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.doesNotMatch(html, /Je préfère remplir moi-même|remplir moi-même|à la main/);
+  assert.doesNotMatch(html, /lignes, mouvements et versements programmés|revenus, dépenses, épargne<\/span>/, "plus de liste de formulaires à remplir");
+  assert.match(texte, /La saisie se fait avec Claude/);
+  assert.match(texte, /formulaires interactifs/);
+  assert.match(texte, /fichiers que tu y déposes/);
+  assert.match(texte, /Boussole affiche/);
+  assert.match(texte, /valider chaque changement/);
+  assert.match(html, /data-goto="agent\/propositions"/);
+  for (const p of G.PARCOURS) assert.doesNotMatch(p.prompt, /coller|une question à la fois/, p.id + " : formulaires interactifs plutôt que questions en texte");
+  assert.ok(G.PARCOURS.some(p => /formulaires? interactifs? Boussole/.test(p.prompt)));
+});
+
+test("claude-guide : la veille est expliquée ; la ligne « Veille » de la barre latérale mène ici", () => {
+  const texte = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(html, /id="cgVeille"/);
+  assert.match(texte, /La veille/);
+  assert.match(texte, /ligne « Veille » de la barre latérale/);
+  assert.match(texte, /8 jours/);
+  assert.match(readFileSync("web/src/shell.html", "utf8"), /id="veilleLine" href="#agent\/connexion" data-goto="agent\/connexion"/);
+});
+
+test("claude-guide : tutoiement — aucun « vous / votre / vos » ni impératif au vouvoiement", () => {
+  const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+  for (const [n, src] of [["claude-guide.js", js], ["claude-guide.html", html]]) {
+    const t = src.replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(t, VOUVOIEMENT, n);
+    assert.doesNotMatch(t, /\b(Faites|Sécurisez|ajoutez|Revenez|copiez|collez|Copiez|Collez)\b/, n);
+  }
+  for (const p of G.PARCOURS) assert.doesNotMatch(p.desc + p.prompt, VOUVOIEMENT, p.id);
 });

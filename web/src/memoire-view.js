@@ -184,7 +184,7 @@
     const m = toutes().find(x => x.id === id), ed = edition.get(id);
     if (!m || !ed) return fermer(id);
     const contenu = ed.contenu.trim();
-    if (!contenu) { dire("Le souvenir ne peut pas être vide : utilisez « Supprimer » pour l'effacer."); return; }
+    if (!contenu) { dire("Le souvenir ne peut pas être vide : utilise « Supprimer » pour l'effacer."); return; }
     const patch = {};
     if (contenu !== String(m.contenu || "")) patch.contenu = contenu;
     const avant = m.echeance ? String(m.echeance).slice(0, 10) : "";

@@ -26,11 +26,11 @@
   const TON_STATUT = { a_relire: "attention", actif: "info", realise: "bon", abandonne: "neutre", archive: "neutre" };
   const CONSENTEMENTS = [
     { id: "demander", label: "Me demander",
-      texte: "Avant d'enregistrer quoi que ce soit, l'agent vous demande votre accord dans la conversation. Chaque entrée arrive ici « à relire »." },
+      texte: "Avant d'enregistrer quoi que ce soit, l'agent te demande ton accord dans la conversation. Chaque entrée arrive ici « à relire »." },
     { id: "prevenir", label: "Enregistrer et me prévenir",
-      texte: "L'agent enregistre ses avis et vos décisions sans vous interrompre, puis vous le dit. Chaque entrée arrive ici « à relire »." },
+      texte: "L'agent enregistre ses avis et tes décisions sans t'interrompre, puis te le dit. Chaque entrée arrive ici « à relire »." },
     { id: "jamais", label: "Jamais",
-      texte: "L'agent n'enregistre plus rien dans votre journal. Les entrées déjà écrites restent ici, consultables et modifiables." },
+      texte: "L'agent n'enregistre plus rien dans ton journal. Les entrées déjà écrites restent ici, consultables et modifiables." },
   ];
   const CHAMPS = { type: "Type", titre: "Titre", synthese: "Synthèse", raisonnement: "Raisonnement", statut: "Statut",
     date_decision: "Date de décision", revue_le: "Date de revue", options: "Options", liens: "Liens" };
@@ -228,7 +228,7 @@
   function listeHtml(groupes, U) {
     return (groupes || []).map(g => '<section class="jv-mois" aria-labelledby="jv-m-' + esc(g.cle) + '">' +
       '<h3 class="jv-mois-t" id="jv-m-' + esc(g.cle) + '">' + esc(g.titre) + "</h3>" +
-      U.voirPlus(g.entrees, 5, e => carteHtml(e, U), "Voir plus", "ul") + "</section>").join("");
+      U.voirPlus(g.entrees, 5, e => carteHtml(e, U), "Voir plus", "ul", "jv-" + g.cle) + "</section>").join("");
   }
 
   const ACTIONS = {
@@ -317,7 +317,7 @@
     const meta = [typeTxt(e), quandTxt(e), e.source ? "par " + plat(e.source) : "", e.revueLe ? "revue prévue le " + dateFr(e.revueLe) : ""].filter(Boolean).join(" · ");
     const b = badgeStatut(e.statut);
     let h = '<div class="jv-d-meta"><span class="ui-badge ' + esc(b.ton) + '">' + esc(b.texte) + '</span><span>' + esc(meta) + "</span></div>";
-    if (e.statut === "a_relire") h += '<p class="jv-relire">Écrite par ' + esc(plat(e.source) || "l'agent") + " : relisez-la. Confirmez-la si elle reflète bien ce qui a été dit, corrigez-la sinon.</p>";
+    if (e.statut === "a_relire") h += '<p class="jv-relire">Écrite par ' + esc(plat(e.source) || "l'agent") + " : relis-la. Confirme-la si elle reflète bien ce qui a été dit, corrige-la sinon.</p>";
     h += '<p class="jv-synthese">' + esc(e.synthese) + "</p>";
     if (opt.message && opt.message.texte) h += '<p class="jv-msg ' + (opt.message.ok ? "ok" : "err") + '" data-jv-msg tabindex="-1" role="' + (opt.message.ok ? "status" : "alert") + '">' + esc(opt.message.texte) + "</p>";
     h += opt.edition ? formHtml(opt.edition, e.statut, U) : actionsHtml(e, opt.busy);
@@ -341,8 +341,8 @@
     if (titre.length < 3 || titre.length > 120) return { erreur: "Le titre doit compter de 3 à 120 caractères." };
     if (!synthese) return { erreur: "La synthèse ne peut pas être vide." };
     if (synthese.length > 600) return { erreur: "La synthèse ne peut pas dépasser 600 caractères." };
-    if (!STATUTS[ed.statut] || (ed.statut === "a_relire" && e.statut !== "a_relire")) return { erreur: "Statut inconnu : choisissez-en un dans la liste." };
-    if (revue && !isoOk(revue)) return { erreur: "Date de revue illisible : utilisez le format jour/mois/année." };
+    if (!STATUTS[ed.statut] || (ed.statut === "a_relire" && e.statut !== "a_relire")) return { erreur: "Statut inconnu : choisis-en un dans la liste." };
+    if (revue && !isoOk(revue)) return { erreur: "Date de revue illisible : utilise le format jour/mois/année." };
     const patch = {};
     if (titre !== plat(e.titre)) patch.titre = titre;
     if (synthese !== String(e.synthese ?? "").trim()) patch.synthese = synthese;

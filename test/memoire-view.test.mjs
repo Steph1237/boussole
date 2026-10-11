@@ -31,11 +31,11 @@ test("memoire-view.html : identifiants utilisés par le script, en-tête rassura
   const ids = [...js.matchAll(/\$\("(mv[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 5);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  assert.ok(html.includes("Ce que l'agent retient de vous"));
+  assert.ok(html.includes("Ce que l'agent retient de toi"));
   assert.ok(html.includes("Ils ne contiennent jamais d'identifiants bancaires ni de mots de passe."));
-  assert.ok(html.includes("stockés dans votre compte Boussole"));
+  assert.ok(html.includes("stockés dans ton compte Boussole"));
   assert.ok(html.includes("L'agent n'a encore rien retenu"));
-  assert.ok(html.includes("Commencez par votre bilan avec Claude."));
+  assert.ok(html.includes("Commence par ton bilan avec Claude."));
   assert.match(html, /data-goto="agent\/connexion"/);
   assert.match(html, /id="mvMsg"[^>]*role="status"/);
 });
@@ -123,4 +123,15 @@ test("meta : « retenu par Claude le … », échéance et libellé « à repren
   assert.match(sp(m4.texte), /^retenu par l'agent le /);
   const m5 = H.meta(M("s", "contexte", { majLe: "2026-10-08T09:00:00.000Z" }), "2026-10-10");
   assert.match(sp(m5.texte), /modifié le 8 oct\. 2026/);
+});
+
+/* Tutoiement (spec 2026-10-11-saisie-par-agent) : aucun « vous / votre / vos » ni impératif au vouvoiement dans les textes du module. */
+test("memoire-view : tutoiement — aucun « vous / votre / vos » dans les textes du module", () => {
+  const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+  const IMPERATIFS = /\b(Réessayez|réessayez|Commencez|Confirmez|Relisez|relisez|Corrigez|corrigez|Choisissez|choisissez|Utilisez|utilisez|Consultez|consultez|Copiez|copiez|Collez|collez|Revenez|Faites|faites|Sécurisez|Ajoutez|ajoutez|Validez|validez|Refusez|refusez)\b/;
+  for (const [nomFichier, src] of [["memoire-view.js", js], ["memoire-view.html", html]]) {
+    const texte = src.replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(texte, VOUVOIEMENT, nomFichier);
+    assert.doesNotMatch(texte, IMPERATIFS, nomFichier);
+  }
 });

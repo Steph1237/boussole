@@ -169,3 +169,14 @@ test("THEMES : libellés français des neuf thèmes", () => {
     protection: "Protection", marches: "Marchés", comportement: "Comportement", credit: "Crédit" });
   assert.deepEqual(F.themesPresents(FICHES), ["epargne", "enveloppes", "credit"]);
 });
+
+/* Tutoiement (spec 2026-10-11-saisie-par-agent) : aucun « vous / votre / vos » ni impératif au vouvoiement dans les textes du module. */
+test("fiches-view : tutoiement — aucun « vous / votre / vos » dans les textes du module", () => {
+  const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+  const IMPERATIFS = /\b(Réessayez|réessayez|Commencez|Confirmez|Relisez|relisez|Corrigez|corrigez|Choisissez|choisissez|Utilisez|utilisez|Consultez|consultez|Copiez|copiez|Collez|collez|Revenez|Faites|faites|Sécurisez|Ajoutez|ajoutez|Validez|validez|Refusez|refusez)\b/;
+  for (const [nomFichier, src] of [["fiches-view.js", js], ["fiches-view.html", html]]) {
+    const texte = src.replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(texte, VOUVOIEMENT, nomFichier);
+    assert.doesNotMatch(texte, IMPERATIFS, nomFichier);
+  }
+});

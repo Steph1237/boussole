@@ -160,7 +160,7 @@
         '<span class="fv-c-resume">' + esc(f.resume) + "</span>" +
         (f.misAJourLe ? '<span class="fv-c-date">Mise à jour le ' + esc(dateFr(f.misAJourLe)) + "</span>" : "") +
       "</button></li>").join("")
-      : '<li class="fv-aucune">Aucune fiche ne correspond à votre recherche. <button type="button" class="fv-lnk" data-raz>Tout afficher</button></li>';
+      : '<li class="fv-aucune">Aucune fiche ne correspond à ta recherche. <button type="button" class="fv-lnk" data-raz>Tout afficher</button></li>';
     if (focusTheme != null) { const b = root.querySelector('.fv-puce[data-theme="' + CSS.escape(focusTheme) + '"]'); if (b) b.focus(); }
   }
 
@@ -203,7 +203,7 @@
     const titre = resume.titre || (d && d.titre) || "Fiche";
     if (!d || !d.contenu) {
       remplir(Object.assign({}, resume, { contenu: "" }));
-      $("fvDContenu").innerHTML = '<p class="fv-erreur">Le contenu de cette fiche n\'est pas disponible pour le moment. Réessayez dans quelques instants.</p>' +
+      $("fvDContenu").innerHTML = '<p class="fv-erreur">Le contenu de cette fiche n\'est pas disponible pour le moment. Réessaie dans quelques instants.</p>' +
         (resume.resume ? "<p>" + esc(resume.resume) + "</p>" : "");
       $("fvDStatut").textContent = "Fiche indisponible : " + titre;
       return;

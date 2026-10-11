@@ -1,10 +1,12 @@
 // Aujourd'hui (web/src/aujourdhui.*) : page d'accueil du cockpit. Indicateurs en cartes, boîte de réception unique
-// (propositions de Claude, alertes, points à reprendre, échéances, cours), frise du patrimoine net.
+// (propositions de Claude, alertes, points à reprendre, échéances, cours), frise du patrimoine net. Tutoiement ; « Faire le point
+// avec Claude » = revue du mois (ClaudePrompts) ; granularité de la frise automatique sauf choix de l'utilisateur (seul enregistré).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
+import { miniDom } from "./helpers/mini-dom.mjs";
 
 const require = createRequire(import.meta.url);
 const js = readFileSync("web/src/aujourdhui.js", "utf8");
@@ -19,6 +21,7 @@ const Pratiques = require("../web/src/pratiques.js");
 const Risque = require("../web/src/risque.js");
 const Periodes = require("../web/src/periodes.js");
 const DEMO = require("../web/src/demo-data.js");
+const ClaudePrompts = require("../web/src/claude-prompts.js");
 const HAS_UI = existsSync("web/src/ui.js");
 const UI = HAS_UI ? require("../web/src/ui.js") : null;
 
@@ -276,7 +279,7 @@ test("boite : entrées du journal à relire → un élément « N entrées du jo
   assert.deepEqual(J(exact[0].action), { label: "Relire", route: "agent/journal" });
   const horsLecture = A.boite(vide({ journal: [], journalARelire: 1 }), TODAY, { Rules: fauxRules([], []) });
   assert.equal(horsLecture[0].titre, "1 entrée du journal à relire");
-  assert.equal(horsLecture[0].contexte, "Confirmez ou corrigez ce que l'agent a noté.");
+  assert.equal(horsLecture[0].contexte, "Confirme ou corrige ce que l'agent a noté.");
   assert.equal(horsLecture[0].action.route, "agent/journal", "entrée non lue : la liste");
   assert.deepEqual(A.boite(vide({ journal: [E("a", "avis", "a_relire")], journalARelire: 0 }), TODAY, { Rules: fauxRules([], []) }), [], "compte exact à 0 : rien");
   assert.deepEqual(A.boite(vide({ journal: [E("c", "decision", "actif")] }), TODAY, { Rules: fauxRules([], []) }), [], "rien à relire");
@@ -642,4 +645,125 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
   api.update(S3, true);
   assert.equal(ecritures.ajFrise, 1, "repère renommé : frise redessinée");
   assert.equal(ecritures.ajBoite, 2);
+});
+
+/* ------------------------------------------------ saisie par l'agent : tutoiement, revue, granularité ------------------------------------------------ */
+
+/* Tutoiement : aucun « vous / votre / vos » ; exceptions = textes des moteurs (rules.js, pratiques.js…) repris tels quels dans la boîte. */
+const EXCEPTIONS_MOTEUR = ["vérifiez votre ordre stop"];
+const VOUVOIEMENT = /\b(vous|votre|vos)\b/i;
+const sansExceptions = t => EXCEPTIONS_MOTEUR.reduce((a, e) => a.split(e).join(""), String(t));
+const questions = h => [...String(h).matchAll(/href="https:\/\/claude\.ai\/new\?q=([^"]*)"/g)].map(m => decodeURIComponent(m[1].replace(/&amp;/g, "&")));
+
+test("tutoiement : aucun « vous / votre / vos » ni impératif au vouvoiement dans les textes du module et ses rendus", () => {
+  assert.doesNotMatch(sansExceptions(js), VOUVOIEMENT);
+  assert.doesNotMatch(sansExceptions(html), VOUVOIEMENT);
+  assert.doesNotMatch(js, /Lancez|Répondez|Complétez|Confirmez|faites le point|élargissez|choisissez/);
+  const S = demoS(), t = jourLocal(), per = { id: "1a" };
+  const ind = A.indicateurs(S, t, per, DEPS);
+  const vides = A.indicateurs(vide(), TODAY, per, DEPS);
+  const rendus = [A.cartes(ind, UI, per), A.cartes(vides, UI, per), A.boiteHtml(A.boite(S, t, DEPS), UI), A.boiteHtml([], UI),
+    A.friseSvg(A.frise(vide(), TODAY, per, DEPS), {})]
+    .concat(["net", "pratiques", "allocation", "echeance"].flatMap(id => [A.detail(id, ind, per), A.detail(id, vides, per)].map(d => d.contenu + d.lien.label)));
+  for (const r of rendus) assert.doesNotMatch(sansExceptions(r).replace(/&#39;/g, "'"), VOUVOIEMENT);
+  assert.equal(A.boite(vide({ propositions: [P("p", "l", "budget")] }), TODAY, { Rules: fauxRules([], []) })[0].contexte, "Budget : rien n'est enregistré sans ton accord.");
+  assert.match(A.cartes(vides, UI, per), /Lance ton bilan avec Claude/);
+});
+
+test("« Faire le point avec Claude » : revue du mois de l'agent (ClaudePrompts.phrase(\"revue\"))", () => {
+  assert.equal(A.phraseRevue(), ClaudePrompts.phrase("revue"));
+  const v = A.boiteHtml([], UI);
+  assert.match(v, /<span>Faire le point avec Claude<\/span>/);
+  assert.deepEqual(questions(v), [ClaudePrompts.phrase("revue")]);
+  assert.match(v, /fais le point avec Claude/);
+  // sans profil de risque : la carte oriente vers Claude (plus de questionnaire dans l'app)
+  const d = A.detail("allocation", A.indicateurs(vide(), TODAY, { id: "1a" }, DEPS), { id: "1a" });
+  assert.equal(d.question, ClaudePrompts.phrase("risque"));
+  assert.doesNotMatch(d.lien.label, /questionnaire/i);
+});
+
+test("boîte : « Voir plus » à clé fixe — même identifiant quand la liste change (le bloc déplié le reste)", () => {
+  const S = demoS(), t = jourLocal();
+  const b = A.boite(S, t, DEPS);
+  const id = h => (h.match(/id="(ui-reste-[^"]+)"/) || [])[1];
+  const h1 = A.boiteHtml(b, UI), h2 = A.boiteHtml(b.slice(1).concat(b.slice(0, 1)), UI);
+  assert.ok(id(h1));
+  assert.equal(id(h1), id(h2), "identifiant indépendant du contenu");
+  assert.equal(A.boiteHtml(b, UI), h1, "deux rendus identiques : même HTML (signature fiable)");
+});
+
+test("période : la granularité n'est relue et enregistrée que si l'utilisateur l'a choisie (sinon automatique)", () => {
+  assert.deepEqual(A.lirePeriode(null), { periode: { id: "1a" }, gChoisie: false });
+  assert.deepEqual(A.lirePeriode("pas du json"), { periode: { id: "1a" }, gChoisie: false });
+  assert.deepEqual(A.lirePeriode(JSON.stringify({ id: "3m", granularite: "mois" })), { periode: { id: "3m" }, gChoisie: false }, "ancienne valeur enregistrée d'office : automatique");
+  assert.deepEqual(A.lirePeriode({ id: "tout", granularite: "trimestre", gChoisie: true }), { periode: { id: "tout", granularite: "trimestre" }, gChoisie: true });
+  assert.deepEqual(A.lirePeriode({ id: "perso", du: "2026-01-01", au: "2026-03-31", gChoisie: true }), { periode: { id: "perso", du: "2026-01-01", au: "2026-03-31" }, gChoisie: false });
+  assert.deepEqual(A.periodeAEnregistrer({ id: "1a", granularite: "semaine" }, false), { id: "1a" });
+  assert.deepEqual(A.periodeAEnregistrer({ id: "1a", granularite: "mois" }, true), { id: "1a", granularite: "mois", gChoisie: true });
+  assert.deepEqual(A.periodeAEnregistrer({ id: "perso", du: "2026-01-01", au: "2026-02-01", granularite: "jour" }, false), { id: "perso", du: "2026-01-01", au: "2026-02-01" });
+});
+
+/* Module complet dans un mini-DOM, avec le vrai UI.periode et un stockage local espion. */
+function vueDom(stock) {
+  const src = f => readFileSync("web/src/" + f, "utf8");
+  const dom = miniDom(), { doc } = dom, reg = {}, ls = new Map(Object.entries(stock || {}));
+  const ctx = { document: doc, console, setTimeout, clearTimeout, Intl, Date, Math, JSON, encodeURIComponent, decodeURIComponent,
+    localStorage: { getItem: k => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => ls.set(k, String(v)), removeItem: k => ls.delete(k) },
+    App: { register: (n, a) => { reg[n] = a; } } };
+  ctx.window = ctx; ctx.self = ctx;
+  vm.createContext(ctx);
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js"])
+    vm.runInContext(src(f), ctx, { filename: f });
+  vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
+  const root = doc.body.appendChild(doc.createElement("section"));
+  root.innerHTML = html;
+  reg.aujourdhui.mount(root);
+  reg.aujourdhui.update(demoS(), true);
+  const radios = sel => root.querySelector("#ajPeriode").querySelector(sel).querySelectorAll('[role="radio"]');
+  const radio = (sel, id) => radios(sel).find(r => r.getAttribute("data-ui-id") === id);
+  const coche = sel => (radios(sel).find(r => r.getAttribute("aria-checked") === "true") || {}).getAttribute?.("data-ui-id");
+  const lu = () => JSON.parse(ls.get("aujourdhui-periode") || "null");
+  return { dom, doc, root, api: reg.aujourdhui, ls, radio, coche, lu };
+}
+
+test("vue (DOM) : granularité automatique selon la période tant que l'utilisateur ne la choisit pas ; choisie : passée à UI.periode et enregistrée", () => {
+  const Pe = Periodes, t = jourLocal();
+  const auto = id => Pe.auto(Pe.bornes(id, t, A.premiereDate(DEMO.snapshots)));
+  let v = vueDom();
+  assert.equal(v.coche(".ui-periode-g"), auto("1a"), "défaut : 1 an, granularité automatique (plus de « mois » imposé)");
+  v.radio(".ui-periode-p", "3m").click();
+  assert.equal(v.coche(".ui-periode-g"), auto("3m"), "la granularité suit la période");
+  assert.deepEqual(v.lu(), { id: "3m" }, "granularité non enregistrée sans choix de l'utilisateur");
+  // une touche sans effet sur la bascule de granularité (Tab) ne compte pas comme un choix
+  v.dom.touche(v.radio(".ui-periode-g", v.coche(".ui-periode-g")), "Tab");
+  v.radio(".ui-periode-p", "1a").click();
+  assert.deepEqual(v.lu(), { id: "1a" });
+  assert.equal(v.coche(".ui-periode-g"), auto("1a"));
+  // choix de l'utilisateur (clic) : enregistré, et ne suit plus la période
+  v.radio(".ui-periode-g", "trimestre").click();
+  assert.deepEqual(v.lu(), { id: "1a", granularite: "trimestre", gChoisie: true });
+  v.radio(".ui-periode-p", "1m").click();
+  assert.equal(v.coche(".ui-periode-g"), "trimestre", "choisie : ne suit plus la période");
+  assert.deepEqual(v.lu(), { id: "1m", granularite: "trimestre", gChoisie: true });
+  // au prochain montage, la granularité choisie est passée à UI.periode
+  v = vueDom({ "aujourdhui-periode": JSON.stringify(v.lu()) });
+  assert.equal(v.coche(".ui-periode-p"), "1m");
+  assert.equal(v.coche(".ui-periode-g"), "trimestre");
+  // ancienne valeur (granularité enregistrée d'office) : automatique
+  v = vueDom({ "aujourdhui-periode": JSON.stringify({ id: "3m", granularite: "annee" }) });
+  assert.equal(v.coche(".ui-periode-g"), auto("3m"));
+  // choix au clavier (flèche) : compte comme un choix
+  const g0 = v.coche(".ui-periode-g");
+  v.dom.touche(v.radio(".ui-periode-g", g0), "ArrowRight");
+  assert.notEqual(v.coche(".ui-periode-g"), g0);
+  assert.deepEqual(v.lu(), { id: "3m", granularite: v.coche(".ui-periode-g"), gChoisie: true });
+  assert.doesNotMatch(sansExceptions(v.root.textContent), VOUVOIEMENT);
+});
+
+test("friseSvg : libellés de période longs (semaines) sans chevauchement — largeur estimée d'après le texte", () => {
+  const pts = [["2025-10-13", "sem. du 13 oct."], ["2026-03-02", "sem. du 2 mars"], ["2026-09-28", "sem. du 28 sept."], ["2026-10-05", "sem. du 5 oct."]]
+    .map(([date, label], i) => ({ date, label, valeur: 1000 + i }));
+  const h = A.friseSvg({ points: pts, resume: {}, reperes: [], historique: true }, { largeur: 720 });
+  const libelles = [...h.matchAll(/<text class="aj-ax"[^>]*text-anchor="(?:start|middle|end)">([^<]+)<\/text>/g)].map(m => m[1]).filter(t => /^sem\./.test(t));
+  assert.deepEqual(libelles, ["sem. du 13 oct.", "sem. du 2 mars", "sem. du 5 oct."], "l'avant-dernier, trop proche du dernier, est omis");
 });

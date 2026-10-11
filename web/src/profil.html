@@ -7,10 +7,8 @@
       </div>
       <div class="pf-bar" aria-hidden="true"><i id="pfBar"></i></div>
       <p class="small muted" id="pfMissing"></p>
-      <div class="pf-aide">
-        <button type="button" class="btn ghost" id="pfAssistBtn">Remplir avec mon assistant</button>
-        <span id="pfClaude"></span>
-      </div>
+      <p class="pf-lecture">Ces données se complètent avec Claude : il te pose les questions dans des formulaires interactifs ou lit les documents que tu lui donnes, puis dépose des propositions que tu valides dans <a href="#agent/propositions" data-goto="agent/propositions">Agent › Propositions</a>.</p>
+      <div class="pf-aide" id="pfClaude"></div>
     </div>
     <div class="pf-recap" id="pfRecap"></div>
   </section>
@@ -20,7 +18,8 @@
       <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-foyer">Foyer</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResFoyer"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
       <div class="ui-acc-corps pf-sec-corps">
         <p class="pf-sec-aide">Sert au rang parmi les Français et au calcul de l'impôt.</p>
-        <div class="pf-grid" id="pfFoyer"></div>
+        <div class="pf-lu" id="pfLuFoyer"></div>
+        <div class="pf-sec-claude" id="pfClaudeFoyer"></div>
       </div>
     </details>
 
@@ -28,25 +27,26 @@
       <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-pers">Revenus</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResRevenus"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
       <div class="ui-acc-corps pf-sec-corps">
         <p class="pf-sec-aide">Salaires en équivalent temps plein, primes comprises.</p>
-        <div class="pf-people" id="pfPeople"></div>
+        <div class="pf-lu" id="pfLuRevenus"></div>
+        <div class="pf-sec-claude" id="pfClaudeRevenus"></div>
       </div>
     </details>
 
     <details class="ui-acc pf-sec" id="pf-sec-biens" data-pf-sec="biens">
       <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-biens">Biens immobiliers</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResBiens"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
       <div class="ui-acc-corps pf-sec-corps">
-        <p class="pf-sec-aide" id="pfBiensNote">Valeur estimée aujourd'hui</p>
-        <div class="pf-rows" id="pfBiens"></div>
-        <button type="button" class="btn ghost" data-pf-add="biens">Ajouter un bien</button>
+        <p class="pf-sec-aide">Valeur estimée aujourd'hui, prêt immobilier compris.</p>
+        <div class="pf-lu" id="pfLuBiens"></div>
+        <div class="pf-sec-claude" id="pfClaudeBiens"></div>
       </div>
     </details>
 
     <details class="ui-acc pf-sec" id="pf-sec-credits" data-pf-sec="credits">
       <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-credits">Crédits</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResCredits"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
       <div class="ui-acc-corps pf-sec-corps">
-        <p class="pf-sec-aide">Auto, consommation, travaux… Les prêts immobiliers se saisissent sur la ligne du bien.</p>
-        <div class="pf-rows" id="pfCredits"></div>
-        <button type="button" class="btn ghost" data-pf-add="credits">Ajouter un crédit</button>
+        <p class="pf-sec-aide">Auto, consommation, travaux… Les prêts immobiliers sont rattachés à leur bien.</p>
+        <div class="pf-lu" id="pfLuCredits"></div>
+        <div class="pf-sec-claude" id="pfClaudeCredits"></div>
       </div>
     </details>
 
@@ -54,7 +54,8 @@
       <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-protection">Protection</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResProtection"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
       <div class="ui-acc-corps pf-sec-corps">
         <p class="pf-sec-aide">Avec un crédit ou des enfants à charge, un décès ou une invalidité ne doit pas mettre le foyer en difficulté. Sert au critère « Protection de la famille » de Pilotage › Santé.</p>
-        <div class="pf-grid" id="pfProtection"></div>
+        <div class="pf-lu" id="pfLuProtection"></div>
+        <div class="pf-sec-claude" id="pfClaudeProtection"></div>
       </div>
     </details>
 
@@ -62,39 +63,9 @@
       <summary class="ui-acc-titre"><span class="pf-sec-t"><span class="pf-sec-nom" id="pf-h-autres">Autres biens</span><span class="ui-sr"> : </span><span class="pf-sec-res" id="pfResAutres"></span></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
       <div class="ui-acc-corps pf-sec-corps">
         <p class="pf-sec-aide">Voiture, meubles, parts d'entreprise : comptés dans le patrimoine net, hors placements suivis.</p>
-        <div class="pf-people" id="pfAutres"></div>
+        <div class="pf-lu" id="pfLuAutres"></div>
+        <div class="pf-sec-claude" id="pfClaudeAutres"></div>
       </div>
     </details>
   </div>
-
-  <div class="pf-save" id="pfSave">
-    <div class="pf-msgs" id="pfMsgs" aria-live="polite"></div>
-    <div class="pf-actions">
-      <button type="button" class="btn ghost" id="pfCancel">Annuler les modifications</button>
-      <button type="button" class="btn" id="pfSubmit">Enregistrer le profil</button>
-    </div>
-  </div>
-
-  <dialog class="pf-dialog" id="pfAssist" aria-labelledby="pfAssistTitle">
-    <form method="dialog" class="pf-dlg-in">
-      <div class="pf-dlg-head"><h2 id="pfAssistTitle">Remplir avec mon assistant</h2><button class="pf-x" value="close" aria-label="Fermer">×</button></div>
-      <ol class="pf-steps">
-        <li>
-          <p><b>Copiez ce message</b> dans Claude, ChatGPT ou l'assistant de votre choix. Il vous posera les questions qui manquent, puis répondra avec un bloc de données.</p>
-          <textarea id="pfPrompt" class="plain" rows="6" readonly></textarea>
-          <button type="button" class="btn ghost" id="pfCopy">Copier le message</button>
-        </li>
-        <li>
-          <p><b>Collez sa réponse</b> ici :</p>
-          <textarea id="pfPaste" class="plain" rows="6" placeholder="Collez toute la réponse, texte compris : le bloc de données est retrouvé automatiquement."></textarea>
-          <button type="button" class="btn ghost" id="pfRead">Lire la réponse</button>
-        </li>
-      </ol>
-      <div class="pf-preview" id="pfPreview" aria-live="polite"></div>
-      <div class="pf-dlg-foot">
-        <span class="small muted">Rien n'est enregistré tant que vous n'avez pas cliqué sur « Enregistrer le profil ».</span>
-        <button type="button" class="btn" id="pfApply" disabled>Appliquer au profil</button>
-      </div>
-    </form>
-  </dialog>
 </div>

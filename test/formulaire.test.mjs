@@ -113,7 +113,7 @@ test("catalogue : codes du profil identiques à l'app (profil.js) et aux schéma
   const { CATALOGUE } = charges.C, V = c => J(CATALOGUE.find(x => x.champ === c).valeurs.map(o => o.v));
   const profilJs = read("web/src/profil.js"), index = read(MCP + "index.ts");
   assert.deepEqual(V("foyer.tmi"), [0, 11, 30, 41, 45]); assert.ok(index.includes("const TMI = [0, 11, 30, 41, 45] as const;"));
-  assert.match(profilJs, /seg\("foyer\.tmi", \[\[0, "0 %"\], \[11, "11 %"\], \[30, "30 %"\], \[41, "41 %"\], \[45, "45 %"\]\]/);
+  assert.match(profilJs, /const TMI = \[\[0, "0 %"\], \[11, "11 %"\], \[30, "30 %"\], \[41, "41 %"\], \[45, "45 %"\]\];/);
   assert.deepEqual(V("foyer.age"), ["u30", "a30", "a40", "a50", "a60", "a70"]); assert.ok(index.includes('age: z.enum(["u30", "a30", "a40", "a50", "a60", "a70"])'));
   assert.deepEqual(V("foyer.adultes"), [1, 2, 3]); assert.match(index, /adultes: z\.number\(\)\.int\(\)\.min\(1[^\n]*\.max\(3/);
   assert.deepEqual(V("foyer.enfants"), [0, 1, 2, 3, 4]);

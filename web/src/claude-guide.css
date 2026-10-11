@@ -72,11 +72,12 @@
 #view-claude-guide .cg-msg.ok{color:var(--good)}
 #view-claude-guide .cg-msg.err{color:var(--crit)}
 
-/* alternative */
-#view-claude-guide .cg-alt{padding:4px 2px}
-#view-claude-guide .cg-alt h2{font-size:14px}
-#view-claude-guide .cg-alt ul{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
-#view-claude-guide .cg-alt .muted{font-size:12.5px}
+/* comment se remplit Boussole (saisie avec Claude), veille */
+#view-claude-guide .cg-alt{display:flex;flex-direction:column;gap:8px}
+#view-claude-guide .cg-alt h2{font-size:15px;margin:0}
+#view-claude-guide .cg-alt h3{font-size:13.5px;margin:6px 0 0}
+#view-claude-guide .cg-alt p{margin:0;font-size:13.5px;line-height:1.55;max-width:760px}
+#view-claude-guide .cg-alt a{color:var(--accent);font-weight:600}
 
 @media (min-width:900px){#view-claude-guide .cg-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);align-items:start}}
 @media (max-width:480px){#view-claude-guide .cg-hero{grid-template-columns:minmax(0,1fr)}#view-claude-guide .cg-step{padding-left:36px}}
