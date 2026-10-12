@@ -22,7 +22,8 @@
    Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
-   positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues) ;
+   positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues),
+   symbol (symbole Yahoo de l'instrument ou null) ; config.frais_enveloppes = frais des contrats (0026, {} par défaut) ;
    sourceAuto ("powens" | "binance" | null) et sourceAutoLe (horodatage | null) : ligne alimentée par une synchronisation (0021, 0023).
    Store.cours(isins, depuis) → Promise<{ <isin>: [{ date, cloture }] }> : cours de clôture quotidiens de la table publique cours (CP1 § 4,
    migration 0023), du plus ancien au plus récent, à partir de `depuis` (AAAA-MM-JJ) ; lus à la demande (ouverture d'une fiche de
@@ -203,13 +204,18 @@
       // Annotations de l'instrument (outil annotate_instrument du connecteur) : frais courants, zone, devise d'exposition.
       ter: ins && ins.ter != null ? +ins.ter : null, zone: (ins && ins.zone) || null, devise: (ins && ins.devise) || null,
       annoteSource: (ins && ins.annote_source) || null, annoteLe: (ins && ins.annote_le) || null,
+      // Symbole Yahoo de l'instrument (ticker d'action, code de fonds…) : aide à reconnaître une action en direct (frais des supports).
+      symbol: (ins && ins.symbol) || null,
       // Synchronisation (Powens, Binance) : la ligne est alimentée automatiquement, à cette date.
       sourceAuto: r.source_auto || null, sourceAutoLe: r.source_auto_le || null,
     };
   };
   const txView = r => ({ id: r.id, positionId: r.position_id, date: r.date, type: r.type, qty: num(r.qty), price: num(r.price), amount: num(r.amount), note: r.note || "", source: r.source, createdAt: r.created_at });
   const snapView = r => ({ date: r.date, foyer: num(r.total), p1: num(r.p1), p2: num(r.p2), byBloc: r.by_bloc || {}, byEnvelope: r.by_envelope || {}, source: r.source });
-  const cfgView = r => ({ targets: r.targets || {}, rules: r.rules || [], cushion: r.cushion || null, recurring: r.recurring || [], todo: r.todo || [], milestones: r.milestones || [], hypotheses: r.hypotheses || [] });
+  // frais_enveloppes (0026) : frais des contrats { "<enveloppe>": { gestion_uc_pct?, gestion_euro_pct?, garde_pct?, source, le } }, {} par défaut.
+  const objetOu = v => (v != null && typeof v === "object" && !Array.isArray(v) ? v : {});
+  const cfgView = r => ({ targets: r.targets || {}, rules: r.rules || [], cushion: r.cushion || null, recurring: r.recurring || [], todo: r.todo || [], milestones: r.milestones || [], hypotheses: r.hypotheses || [],
+    frais_enveloppes: objetOu(r.frais_enveloppes) });
   const stView = r => ({ lastRun: r.last_run, summary: r.summary || "", alerts: r.alerts || [], missingPrices: r.missing_prices || 0 });
   const profView = (p, biens, credits) => ({
     foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {}, protection: p.protection || {},

@@ -605,6 +605,27 @@ test("frais des fonds : un TER d'une autre source (DIC renseigné par Claude) n'
     JSON.stringify(ecriture.filtres));
 });
 
+test("frais des fonds : un TER de DIC de plus de 365 jours est remplacé par Yahoo si l'écart dépasse 50 % ; sinon le DIC est gardé", { skip: SANS_STRIP }, async () => {
+  const init = donneesFrais();
+  init.instruments.push(
+    { isin: "IE00B3RBWM25", symbol: "EIMI.L", currency: "EUR", price: 30, ter: 0.12, ter_source: "dic", ter_le: "2025-09-01", ter_par: "u-annot" },
+    { isin: "IE00BK5BQT80", symbol: "VWCE.DE", currency: "EUR", price: 120, ter: 0.2, ter_source: "dic", ter_le: "2025-09-01", ter_par: "u-annot" });
+  const aFrais = [{ isin: "IE00B3RBWM25", symbol: "EIMI.L", ter: 0.12, ter_source: "dic", ter_le: "2025-09-01" },
+    { isin: "IE00BK5BQT80", symbol: "VWCE.DE", ter: 0.2, ter_source: "dic", ter_le: "2025-09-01" }];
+  const m = montageFrais({ init, aFrais, net: reseau({ yahoo: YAHOO, frais: { "EIMI.L": QS(0.0025, "0.25%"), "VWCE.DE": QS(0.0022, "0.22%") } }) });
+  const corps = await (await m.appeler()).json();
+  const ins = instr(m);
+  assert.deepEqual([ins.IE00B3RBWM25.ter, ins.IE00B3RBWM25.ter_source, ins.IE00B3RBWM25.ter_le, ins.IE00B3RBWM25.ter_par], [0.25, "yahoo", "2026-10-12", null],
+    "DIC de 406 jours, écart de 108 % : remplacé par Yahoo (annotateur effacé)");
+  assert.deepEqual([ins.IE00BK5BQT80.ter, ins.IE00BK5BQT80.ter_source, ins.IE00BK5BQT80.ter_le, ins.IE00BK5BQT80.ter_par], [0.2, "dic", "2025-09-01", "u-annot"], "écart de 10 % : DIC gardé");
+  assert.equal(ins.IE00BK5BQT80.ter_essai_le, MAINTENANT.toISOString(), "essai noté");
+  const ecriture = m.db.journal.find(j => j.table === "instruments" && j.op === "update" && j.val && "ter" in j.val);
+  assert.deepEqual(JSON.parse(JSON.stringify(ecriture.filtres.filter(([k]) => ["isin", "ter_source", "ter_le"].includes(k)))), [["isin", "eq", "IE00B3RBWM25"], ["ter_source", "eq", "dic"], ["ter_le", "eq", "2025-09-01"]],
+    "remplacement gardé contre une annotation faite entre-temps");
+  assert.ok(corps.avertissements.some(a => /IE00BK5BQT80/.test(a) && /DIC gardé/.test(a)), JSON.stringify(corps.avertissements));
+  assert.ok(!corps.errors.some(e => /frais/.test(e.error)));
+});
+
 test("frais des fonds : au plus 10 ISIN par nuit ; ISIN de test X-… et sans symbole ignorés", { skip: SANS_STRIP }, async () => {
   const liste = [{ isin: "X-BTC", symbol: "BTC-EUR" }, { isin: "FR0000000001", symbol: null },
     ...Array.from({ length: 12 }, (_, i) => ({ isin: `IE00000000${String(i).padStart(2, "0")}`, symbol: `F${i}.PA` }))];

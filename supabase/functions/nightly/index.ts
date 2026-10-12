@@ -19,10 +19,12 @@
 //    5 ans quotidiens (Yahoo range=5y&interval=1d sur le symbole déjà résolu, sinon CSV historique Euronext), upsert par
 //    paquets ; instruments.cours_rattrapage_le marque chaque tentative (nouvel essai au plus tôt 7 jours après) ; aucun
 //    nouveau rattrapage après 110 s écoulées (le reste est reporté à la nuit suivante) ;
-// 5. frais des fonds (frais.ts, spec CP4 § 2) : au plus 10 ISIN par nuit (RPC frais_a_chercher : fonds détenus sans TER, ou
-//    TER Yahoo de plus de 180 jours ; dernier essai il y a plus de 30 jours), Yahoo quoteSummary (fundProfile,
-//    defaultKeyStatistics) avec la session et le crumb ; TER écrit en % par an avec ter_source = yahoo et ter_le, jamais par-dessus
-//    un TER d'une autre source (DIC renseigné par Claude) ; ter_essai_le marque chaque tentative, même en échec ; aucun nouvel
+// 5. frais des fonds (frais.ts, spec CP4 § 2) : au plus 10 ISIN par nuit (RPC frais_a_chercher : fonds détenus sans TER, TER
+//    Yahoo de plus de 180 jours, ou TER tiré d'un DIC de plus de 365 jours (0027) ; dernier essai il y a plus de 30 jours), Yahoo
+//    quoteSummary (fundProfile, defaultKeyStatistics) avec la session et le crumb ; TER écrit en % par an avec ter_source = yahoo et
+//    ter_le ; un TER tiré d'un DIC (renseigné par Claude) n'est remplacé que si l'écart dépasse 50 % ET que le DIC a plus de 365 jours
+//    (remplaceTerDic ; écriture gardée par ter_source = dic et la même date ter_le, annotateur ter_par effacé), sinon il est gardé
+//    (avertissement) ; ter_essai_le marque chaque tentative, même en échec ; aucun nouvel
 //    ISIN après 120 s écoulées, appels coupés à 125 s ; tout échec est un avertissement ;
 // 6. finish_nightly() (status + job_runs) : toujours exécuté (finally), même si une étape lève.
 // Chaque appel Yahoo, Euronext ou Binance est abandonné au bout de 10 s, et au plus tard à 120 s écoulées (80 s pendant
@@ -37,7 +39,7 @@ import {
 } from "./cours.ts";
 import type { LigneCours, Point } from "./cours.ts";
 import { actifDeIsin, agreger, BinanceErreur, client as clientBinance, ENVELOPPE_BINANCE, memeEnveloppe, nomActif, planBinance } from "./binance.ts";
-import { fraisYahoo, urlFrais } from "./frais.ts";
+import { fraisYahoo, remplaceTerDic, urlFrais } from "./frais.ts";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -603,7 +605,8 @@ Deno.serve(async (req) => {
     }
 
     // 6. Frais des fonds (au plus 10 ISIN) ; aucun nouvel ISIN après ~120 s, appels coupés à 125 s. Non bloquant : tout échec
-    // est un avertissement. Le TER n'est écrit que s'il est absent ou de source Yahoo (un TER tiré d'un DIC passe avant).
+    // est un avertissement. Le TER n'est écrit que s'il est absent ou de source Yahoo ; un TER tiré d'un DIC passe avant, sauf s'il a
+    // plus de 365 jours et s'écarte de plus de 50 % du chiffre Yahoo (remplaceTerDic).
     try {
       if (ecoule() > FRAIS_FIN_MS) {
         avertissements.push("frais des fonds : temps écoulé, reportés à la prochaine nuit.");
@@ -630,11 +633,15 @@ Deno.serve(async (req) => {
             } catch (e) {
               avertissements.push(`frais des fonds : ${isin} (${symbol}) : ${message(e)}`);
             }
-            if (ter != null) {
-              const { error } = await admin.from("instruments")
-                .update({ ter, ter_source: "yahoo", ter_le: aujourdhui() })
-                .eq("isin", isin)
-                .or("ter.is.null,ter_source.eq.yahoo");
+            const dic = liste[k].ter_source === "dic" ? { ter: liste[k].ter == null ? null : Number(liste[k].ter), le: liste[k].ter_le ?? null } : null;
+            if (ter != null && dic && !remplaceTerDic(dic.ter, dic.le, ter, aujourdhui())) {
+              frais.trouves++;
+              avertissements.push(`frais des fonds : ${isin} (${symbol}) : TER du DIC gardé (${dic.ter} % par an, Yahoo : ${ter} %), écart de 50 % au plus ou DIC de moins d'un an.`);
+            } else if (ter != null) {
+              const ecriture = admin.from("instruments").update(dic ? { ter, ter_source: "yahoo", ter_le: aujourdhui(), ter_par: null } : { ter, ter_source: "yahoo", ter_le: aujourdhui() })
+                .eq("isin", isin);
+              /* DIC ancien et très différent : remplacé, sauf annotation faite entre-temps (ter_source et ter_le inchangés). */
+              const { error } = dic ? await ecriture.eq("ter_source", "dic").eq("ter_le", String(dic.le)) : await ecriture.or("ter.is.null,ter_source.eq.yahoo");
               if (error) avertissements.push(`frais des fonds : ${isin} : ${error.message}`);
               else frais.trouves++;
             }

@@ -7,7 +7,9 @@
    complète), et clé classes du profil ({ <poche>: <classe> | null }) ; décrits en phrases (« Matelas de précaution : 6 mois de
    dépenses… », « Versement programmé de 200 € le 5 du mois sur PEA · ETF Monde », « Classe de la poche Asie : actions
    émergentes ») et corrigeables avant validation comme les autres cibles (cible du matelas, montant et jour de chaque versement
-   ajouté ou modifié, classe). */
+   ajouté ou modifié, classe). Frais des contrats (0026, outil regler_frais_enveloppe) : apres { frais_enveloppes: { <enveloppe>: { gestion_uc_pct?,
+   gestion_euro_pct?, garde_pct?, source, le? } | null } }, décrits en phrase (« Frais du contrat « Assurance-vie » : gestion des unités de
+   compte 0,6 % → 0,5 % par an (source : …) ») et corrigeables pourcentage par pourcentage (sauf nom d'enveloppe contenant un point). */
 (function () {
   "use strict";
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
@@ -50,6 +52,8 @@
     months: { l: "nombre de mois", k: "num" }, depenses: { l: "dépenses mensuelles", f: true, k: "eur" },
   };
   const F_VERSEMENT = { amount: { l: "montant", k: "eur" }, day: { l: "jour du mois", k: "num" } };
+  const F_FRAIS_ENV = { gestion_uc_pct: { l: "gestion des unités de compte", k: "pct" }, gestion_euro_pct: { l: "gestion du fonds en euros", k: "pct" },
+    garde_pct: { l: "droits de garde", k: "pct" } };
   const F = {
     qty: { l: "parts", f: true, k: "qty" }, value: { l: "valeur", f: true, k: "eur" }, valeur: { l: "valeur", f: true, k: "eur" },
     price: { l: "cours", k: "eur" }, pru: { l: "prix de revient", k: "eur" }, crd: { l: "reste à rembourser", k: "eur" },
@@ -198,6 +202,14 @@
       ["mode", "min", "max", "months", "depenses"].filter(k => k in a.cushion && (p.operation === "creer" || !egal(bc[k], a.cushion[k])))
         .forEach(k => out.push(ch_("cushion." + k, F_MATELAS[k], bc[k], a.cushion[k])));
     }
+    if (isObj(a.frais_enveloppes)) {
+      const bf = isObj(b.frais_enveloppes) ? b.frais_enveloppes : {};
+      Object.keys(a.frais_enveloppes).filter(env => isObj(a.frais_enveloppes[env]) && env.indexOf(".") < 0).forEach(env => {
+        const n = a.frais_enveloppes[env], o = isObj(bf[env]) ? bf[env] : {};
+        Object.keys(F_FRAIS_ENV).filter(k => k in n && (p.operation === "creer" || !egal(o[k], n[k])))
+          .forEach(k => out.push(ch_("frais_enveloppes." + env + "." + k, { l: F_FRAIS_ENV[k].l + " de « " + env + " »", k: "pct" }, o[k] ?? null, n[k])));
+      });
+    }
     if (Array.isArray(a.recurring)) {
       const av = parId(b.recurring);
       a.recurring.forEach((r, i) => {
@@ -241,10 +253,23 @@
     avant.forEach((o, id) => { if (!ids.has(id)) parts.push("Fin du versement programmé de " + versementTxt(o, ctx)); });
     return parts.length ? parts.join(" ; ") : "Versements programmés : aucun changement";
   }
+  /** Frais des contrats : une phrase par enveloppe (pourcentages, avant → après, source citée), « retirés » pour null. */
+  function decrireFrais(av, ap) {
+    const avant = isObj(av) ? av : {}, apres = isObj(ap) ? ap : {}, txt = v => nf.format(+v) + " %";
+    const parts = Object.keys(apres).map(env => {
+      const n = apres[env], o = isObj(avant[env]) ? avant[env] : {};
+      if (!isObj(n)) return "Frais du contrat « " + env + " » : retirés";
+      const champs = Object.keys(F_FRAIS_ENV).filter(k => n[k] != null).map(k =>
+        F_FRAIS_ENV[k].l + " " + (o[k] != null && !egal(+o[k], +n[k]) ? txt(o[k]) + " → " : "") + txt(n[k]) + " par an");
+      return "Frais du contrat « " + env + " » : " + (champs.join(", ") || "aucun pourcentage") + (n.source ? " (source : " + n.source + ")" : "");
+    });
+    return parts.length ? parts.join(" ; ") : "Frais des contrats : aucun changement";
+  }
   function decrireConfig(p, ctx) {
     const a = commeObjet(p.apres), b = commeObjet(p.avant), parts = [];
     if ("cushion" in a) parts.push("Matelas de précaution : " + (matelasRegle(b.cushion) && !egal(b.cushion, a.cushion) ? texteMatelas(b.cushion) + " → " : "") + texteMatelas(a.cushion));
     if ("recurring" in a) parts.push(decrireVersements(b.recurring, a.recurring, ctx));
+    if ("frais_enveloppes" in a) parts.push(decrireFrais(b.frais_enveloppes, a.frais_enveloppes));
     return parts.length ? parts.join(" ; ") : "Réglages : aucun changement";
   }
 

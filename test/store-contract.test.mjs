@@ -75,14 +75,15 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.equal(S.positions.length, 12);
   S.positions.forEach(p => assert.ok(["p1", "p2"].includes(p.owner), `owner canonique pour ${p.id} : ${p.owner}`));
   const POS_KEYS = ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "valueDate", "status", "hypothesis", "qtyEstimated", "note",
-    "ter", "zone", "devise", "annoteSource", "annoteLe", "sourceAuto", "sourceAutoLe"];
+    "ter", "zone", "devise", "annoteSource", "annoteLe", "sourceAuto", "sourceAutoLe", "symbol"];
   S.positions.forEach(p => assert.deepEqual(Object.keys(p).sort(), [...POS_KEYS].sort(), `forme de la position ${p.id}`));
   assert.ok(S.positions.some(p => p.status === "à recevoir"), "une ligne à recevoir");
   // snapshots / config / profil / status aux clés attendues par pilotage.js, reel.js, profil.js
   assert.equal(S.snapshots.length, 3);
   S.snapshots.forEach(s => assert.deepEqual(Object.keys(s).sort(), ["byBloc", "byEnvelope", "date", "foyer", "p1", "p2", "source"]));
   S.snapshots.forEach(s => near(s.p1 + s.p2, s.foyer, "photo : p1 + p2 = foyer"));
-  assert.deepEqual(Object.keys(S.config).sort(), ["cushion", "hypotheses", "milestones", "recurring", "rules", "targets", "todo"]);
+  assert.deepEqual(Object.keys(S.config).sort(), ["cushion", "frais_enveloppes", "hypotheses", "milestones", "recurring", "rules", "targets", "todo"]);
+  assert.deepEqual(J(S.config.frais_enveloppes), {}, "frais des contrats : objet vide par défaut (comme config.frais_enveloppes, 0026)");
   assert.deepEqual(Object.keys(S.config.targets).sort(), ["p1", "p2", "tolerancePts"], "cibles par personne");
   assert.equal(S.config.targets.tolerancePts, 3);
   assert.deepEqual(J(S.config.cushion), { mode: "amount", min: 15000, max: 20000 });
@@ -1026,4 +1027,64 @@ test("store-supabase.js (exécuté, faux client) : Store.cours — une requête 
   const sup = src("store-supabase.js");
   assert.match(sup, /Contrat : window\.Store = \{[^\n]*cours\(isins, depuis\)/, "en-tête du contrat");
   assert.match(sup, /sourceAuto: r\.source_auto \|\| null, sourceAutoLe: r\.source_auto_le \|\| null/, "positions : source de synchronisation");
+});
+
+test("démo : proposition frais_enveloppes (0026) — fusion par enveloppe, null retire, mêmes validations, date pas dans le futur", async () => {
+  const add = (id, apres) => ({ id, lot: "l4", cible: "config", operation: "modifier", ref: null, avant: null, apres, source: "test", justification: null,
+    statut: "en_attente", creeLe: "2026-10-11T10:00:0" + id.slice(-1) + ".000Z", decideLe: null });
+  const futur = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  const ctx = browser({ prep: D => D.propositions.push(
+    add("f1", { frais_enveloppes: { " Assurance-vie Camille ": { gestion_uc_pct: 0.5, gestion_euro_pct: "0.6", source: " CG 2026 ", le: "2026-09-30" } } }),
+    add("f2", { frais_enveloppes: { "PEA Camille": { garde_pct: 0, source: "Grille 2026" }, "Assurance-vie Camille": { gestion_uc_pct: 0.6, source: "Avenant" } } }),
+    add("f3", { frais_enveloppes: { "PEA Camille": null } }),
+    add("f4", { frais_enveloppes: { "AV": { gestion_uc_pct: 5.01, source: "CG" } } }),
+    add("f5", { frais_enveloppes: { "AV": { gestion_uc_pct: 0.5 } } }),
+    add("f6", { frais_enveloppes: { "AV": { gestion_uc_pct: 0.5, source: "CG", le: futur } } }),
+    add("f7", { frais_enveloppes: { "AV": { source: "CG" } } }),
+    add("f8", { frais_enveloppes: { "AV": { gestion_uc_pct: 0.5, source: "CG", frais_entree_pct: 2 } } })) });
+  await whenReady(ctx);
+  const P = ctx.Store.propositions;
+  assert.deepEqual(J(await P.appliquer(["f1"])), { appliquees: 1 });
+  const auj = new Date().toISOString().slice(0, 10);
+  assert.deepEqual(J(ctx.Store.get().config.frais_enveloppes), { "Assurance-vie Camille": { gestion_uc_pct: 0.5, gestion_euro_pct: 0.6, source: "CG 2026", le: "2026-09-30" } });
+  assert.deepEqual(J(await P.appliquer(["f2"])), { appliquees: 1 });
+  const fe = ctx.Store.get().config.frais_enveloppes;
+  assert.deepEqual(J(fe["Assurance-vie Camille"]), { gestion_uc_pct: 0.6, source: "Avenant", le: auj }, "une enveloppe fournie remplace l'existante en entier ; date du jour par défaut");
+  assert.deepEqual(J(fe["PEA Camille"]), { garde_pct: 0, source: "Grille 2026", le: auj });
+  assert.deepEqual(J(await P.appliquer(["f3"])), { appliquees: 1 });
+  assert.deepEqual(Object.keys(ctx.Store.get().config.frais_enveloppes), ["Assurance-vie Camille"], "null retire l'enveloppe");
+  for (const [id, motif] of [["f4", /gestion_uc_pct invalide/], ["f5", /source obligatoire/], ["f6", /date \(le\) dans le futur/], ["f7", /au moins un pourcentage/], ["f8", /champ « frais_entree_pct » inconnu/]]) {
+    await assert.rejects(P.appliquer([id]), e => e.code === "invalid_argument" && /^Proposition non appliquée \(réglages, modifier\) : frais_enveloppes/.test(e.message) && motif.test(e.message), id);
+    assert.equal(ctx.Store.get().propositions.find(p => p.id === id).statut, "en_attente", id);
+  }
+});
+
+test("store-supabase.js (exécuté, session factice) : config.frais_enveloppes lue (cfgView, {} par défaut) et symbole de l'instrument sur les lignes", async () => {
+  const run = async reponses => {
+    const ctx = {
+      console: { log() {}, error() {}, warn() {} }, setTimeout, clearTimeout,
+      location: { href: "https://x/app.html", search: "", hash: "", pathname: "/app.html" },
+      document: { readyState: "complete", visibilityState: "visible", addEventListener() {} },
+      localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+      BOUSSOLE: { supabaseUrl: "https://x.supabase.co", supabaseKey: "k" },
+    };
+    const requete = table => {
+      const b = new Proxy({}, { get: (_, k) => (k === "then" ? (ok, ko) => Promise.resolve(reponses[table] || { data: null, error: null }).then(ok, ko) : () => b) });
+      return b;
+    };
+    ctx.supabase = { createClient: () => ({ from: requete, rpc: async () => ({ data: null, error: null }), auth: { getSession: async () => ({ data: { session: { access_token: "t", user: { id: "u" } } } }) } }) };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    for (const f of ["sensible.js", "routine-etat.js", "banque-etat.js", "store-supabase.js"]) vm.runInContext(src(f), ctx, { filename: f });
+    await wait(30);
+    return ctx.Store.get();
+  };
+  const FE = { "Assurance-vie Linxea": { gestion_uc_pct: 0.5, source: "CG 2026", le: "2026-09-30" } };
+  let S = await run({ config: { data: { targets: {}, rules: [], cushion: null, recurring: [], todo: [], milestones: [], hypotheses: [], frais_enveloppes: FE }, error: null },
+    positions: { data: [{ id: "p", name: "ASML", envelope: "CTO", owner: "p1", bloc: "Convictions", mode: "market", isin: "NL0010273215", qty: 1, status: "actif",
+      instruments: { price: 600, price_date: "2026-10-11", symbol: "ASML.AS", ter: null } }], error: null } });
+  assert.deepEqual(J(S.config.frais_enveloppes), FE);
+  assert.equal(S.positions[0].symbol, "ASML.AS");
+  S = await run({ config: { data: { targets: {}, rules: [] }, error: null } });
+  assert.deepEqual(J(S.config.frais_enveloppes), {}, "colonne absente ou vide : objet vide");
 });

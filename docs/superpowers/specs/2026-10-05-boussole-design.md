@@ -4,7 +4,7 @@ Date : 2026-10-05 · Statut : validé par Stéph (sections 1 à 4 + remplissage 
 
 ## Objectif
 
-Transformer l'outil fusionné (Pilotage + Toise + Simulateur + Profil, publié sur un artefact Claude personnel, code dans ~/Finance) en une application web gratuite, ouverte à tous, où chaque personne a un espace privé. Les données de Stéph y sont migrées.
+Transformer l'outil fusionné (Pilotage + Toise + Simulateur + Profil, publié en artefact Claude personnel, code dans ~/Finance) en une application web gratuite, ouverte à tous, où chaque personne a un espace privé. Les données de Stéph y sont migrées.
 
 Décisions prises : outil gratuit sans paiement · front statique + Supabase (projet `boussole`, ref `oapcewpqsbbjdlcdeizi`, région eu-west-3) · code public sur github.com/Steph1237/boussole, hébergé sur GitHub Pages (https://steph1237.github.io/boussole/) · nom de travail « Boussole » · remplissage par assistant : copier-coller universel **et** connecteur MCP, tous deux dans ce chantier.
 

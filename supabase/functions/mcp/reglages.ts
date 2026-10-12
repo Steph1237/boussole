@@ -1,13 +1,16 @@
 // Réglages par propositions (spec docs/superpowers/specs/2026-10-11-saisie-par-agent.md : l'app est en lecture seule, toute saisie
-// passe par l'assistant, les montants par des propositions validées dans Boussole › Agent › Propositions). Trois outils
+// passe par l'assistant, les montants par des propositions validées dans Boussole › Agent › Propositions). Quatre outils
 // d'écriture, qui déposent des propositions (source obligatoire, comme set_protection) et n'écrivent rien directement :
 //   regler_matelas    → cible config, apres { cushion } : { mode: "amount", min, max } ou { mode: "months", months, depenses }
 //                       (forme de Calc.matelas, web/src/calc.js) ;
 //   regler_versements → cible config, apres { recurring } : liste complète des versements programmés, appliqués chaque nuit
 //                       par apply_recurring (0003) ; champs inconnus d'un versement existant conservés ; lastApplied tenu par
 //                       la base (jamais proposé) ;
-//   corriger_classe   → cible profil, apres { classes: { <poche>: <classe> | null } } (surcharge de profiles.classes).
-// Application par public.appliquer_propositions (migration 0019_propositions_reglages.sql), qui revalide tout.
+//   corriger_classe   → cible profil, apres { classes: { <poche>: <classe> | null } } (surcharge de profiles.classes) ;
+//   regler_frais_enveloppe → cible config, apres { frais_enveloppes: { <enveloppe>: { gestion_uc_pct?, gestion_euro_pct?, garde_pct?,
+//                       source, le } } } : frais d'un contrat (assurance-vie, PER, PEA, compte-titres) relevés par Claude dans les
+//                       documents du contrat (spec CP4 § 2) ; fusion par enveloppe en base (les autres enveloppes restent).
+// Application par public.appliquer_propositions (migrations 0019, 0026 et 0027 pour frais_enveloppes), qui revalide tout.
 // Ce module ne dépend pas d'index.ts : utilitaires (wrap, must, UserError…), champs DEPOT, fonction deposer et dépenses
 // mensuelles du budget sont passés en paramètre. Les fonctions de validation sont pures et exportées pour les tests.
 import { z } from "zod";
@@ -120,6 +123,44 @@ export function texteVersement(r: any, positions: any[] = []): string {
   const ligne = p ? [p.envelope, p.name].filter(Boolean).join(" · ") : "ligne " + (r?.positionId ?? "?");
   return `${r?.label || "Versement"} : ${eur(+r?.amount || 0)} le ${+r?.day === 1 ? "1er" : r?.day} du mois sur ${ligne}`;
 }
+/* ---------- frais d'un contrat (frais_enveloppes, mêmes règles que appliquer_propositions de 0026 / 0027) ---------- */
+export const FRAIS_CHAMPS = ["gestion_uc_pct", "gestion_euro_pct", "garde_pct"] as const;
+export const FRAIS_LIBELLES: Record<string, string> = { gestion_uc_pct: "gestion des unités de compte", gestion_euro_pct: "gestion du fonds en euros", garde_pct: "droits de garde" };
+export const FRAIS_PCT_MAX = 5;
+export const FRAIS_SOURCE_MAX = 300;
+const sansAccent = (s: unknown) => String(s ?? "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const nombreFr = (v: unknown) => (typeof v === "string" ? nombre(v.replace(",", ".")) : nombre(v));
+/** Frais d'un contrat proposés → { enveloppe, frais: { <pourcentages>, source, le } } ou { erreurs }. aujourdhui : AAAA-MM-JJ (Europe/Paris) ;
+    le absent = aujourdhui ; jamais dans le futur (date du document consulté). */
+export function fraisEnveloppeDe(a: any, aujourdhui: string): { enveloppe?: string; frais?: Record<string, unknown>; erreurs: string[] } {
+  const erreurs: string[] = [];
+  const enveloppe = String(a?.enveloppe ?? "").trim();
+  if (!enveloppe || enveloppe.length > 80) erreurs.push("enveloppe : nom de 1 à 80 caractères (champ envelope des lignes de list_positions).");
+  const frais: Record<string, unknown> = {};
+  for (const k of FRAIS_CHAMPS) {
+    if (a?.[k] == null) continue;
+    const x = nombreFr(a[k]);
+    if (!(x >= 0 && x <= FRAIS_PCT_MAX)) erreurs.push(`${k} : pourcentage par an entre 0 et ${FRAIS_PCT_MAX} (0.5 pour 0,50 % par an).`);
+    else frais[k] = x;
+  }
+  if (!FRAIS_CHAMPS.some((k) => a?.[k] != null)) erreurs.push("au moins un pourcentage : gestion_uc_pct, gestion_euro_pct ou garde_pct.");
+  const source = String(a?.source ?? "").trim();
+  if (!source) erreurs.push("source : document du contrat consulté (obligatoire).");
+  else if (source.length > FRAIS_SOURCE_MAX) erreurs.push(`source : ${FRAIS_SOURCE_MAX} caractères au plus (référence du document).`);
+  let le = aujourdhui;
+  if (a?.le != null) {
+    if (!dateReelle(a.le)) erreurs.push("le : date AAAA-MM-JJ du document consulté.");
+    else if (a.le > aujourdhui) erreurs.push("le : date du document consulté, pas dans le futur.");
+    else le = a.le;
+  }
+  return erreurs.length ? { erreurs } : { enveloppe, frais: { ...frais, source, le }, erreurs };
+}
+/** Phrase lisible des frais d'un contrat : « gestion des unités de compte 0,5 % par an, droits de garde 0 % par an ». */
+export function texteFrais(f: any): string {
+  if (!isObj(f)) return "aucun frais renseigné";
+  const pc = (v: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(v) + " % par an";
+  return FRAIS_CHAMPS.filter((k) => f[k] != null).map((k) => `${FRAIS_LIBELLES[k]} ${pc(+f[k])}`).join(", ") || "aucun pourcentage";
+}
 const sansLastApplied = (l: any[]) => (Array.isArray(l) ? l : []).map((r) => { if (!isObj(r)) return r; const { lastApplied: _l, ...x } = r; return x; });
 
 export type Reglages = {
@@ -128,11 +169,14 @@ export type Reglages = {
   deposer: (items: any[], d: { source: string; justification?: string; lot?: string }, extra?: Record<string, unknown>) => Promise<unknown>;
   depensesMensuelles: () => Promise<number>;
   nouvelId?: () => string;
+  /** Date du jour (AAAA-MM-JJ, Europe/Paris) ; par défaut, l'horloge. */
+  today?: () => string;
 };
 
 export function registerReglages(server: any, h: Reglages) {
   const { db, wrap, must, UserError, RW, DEPOT, deposer } = h;
   const nouvelId = h.nouvelId ?? (() => "rec-" + crypto.randomUUID().slice(0, 8));
+  const aujourdhui = h.today ?? (() => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(new Date()));
   const PROPOSE = "Rien n'est écrit directement : dépose une proposition (avant / après, source) que l'utilisateur valide dans Boussole › Agent › Propositions.";
   const lireConfig = async (cols: string) => (must("config", await db.from("config").select(cols).maybeSingle()) as any) ?? {};
 
@@ -210,5 +254,32 @@ export function registerReglages(server: any, h: Reglages) {
     const avertissements = blocs.has(poche) ? [] : [`Aucune ligne dans la poche « ${poche} » : vérifie son nom exact (list_positions, champ bloc).`];
     const items = actuelle === a.classe ? [] : [{ cible: "profil", operation: "modifier", avant: { classes: { [poche]: actuelle } }, apres: { classes: { [poche]: a.classe } } }];
     return deposer(items, a, { avertissements, classe_proposee: a.classe === null ? "classe déduite du nom de la poche" : LIBELLES_CLASSES[a.classe] });
+  }));
+
+  const Pct = (k: string) => z.union([z.number(), z.string()]).optional()
+    .describe(`${FRAIS_LIBELLES[k]}, en % par an (0.5 pour 0,50 %), entre 0 et ${FRAIS_PCT_MAX}, tel qu'écrit dans le document du contrat.`);
+  server.registerTool("regler_frais_enveloppe", {
+    title: "Proposer les frais d'un contrat (enveloppe)",
+    description: "Propose les frais d'une enveloppe (assurance-vie, PER, PEA, compte-titres) : frais de gestion sur les unités de compte (gestion_uc_pct), sur le fonds en euros (gestion_euro_pct) et droits de garde (garde_pct), en % par an. Ils servent au critère « Frais des supports » de Pilotage › Santé. Relève-les dans les documents du contrat que l'utilisateur te donne ou que tu consultes : conditions générales, annexe de frais, relevé annuel ; cite le document et sa date dans source (et le : date du document, AAAA-MM-JJ, jamais dans le futur). N'invente jamais un pourcentage : sans document, ne propose rien et dis ce qui manque. Une proposition remplace les frais de cette enveloppe en entier (lis-les avec get_config, frais_enveloppes) ; les autres enveloppes ne changent pas. " + PROPOSE,
+    inputSchema: z.strictObject({
+      enveloppe: z.string().trim().min(1).max(80).describe("Nom de l'enveloppe, tel que dans le champ envelope des lignes de list_positions (ex. « Assurance-vie Linxea »)."),
+      gestion_uc_pct: Pct("gestion_uc_pct"), gestion_euro_pct: Pct("gestion_euro_pct"), garde_pct: Pct("garde_pct"),
+      le: z.string().regex(DATE_RE, { error: "le : date AAAA-MM-JJ du document consulté." }).optional().describe("Date du document consulté (AAAA-MM-JJ) ; absente : aujourd'hui."),
+      ...DEPOT,
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const r = fraisEnveloppeDe(a, aujourdhui());
+    if (r.erreurs.length) throw new UserError("Aucune proposition déposée :\n- " + r.erreurs.join("\n- "));
+    const [cfg, po] = await Promise.all([lireConfig("frais_enveloppes"), db.from("positions").select("envelope, status")]);
+    const actuels = isObj(cfg.frais_enveloppes) ? cfg.frais_enveloppes : {};
+    const enveloppes = [...new Set(((must("positions", po) as any[]) ?? []).filter((p: any) => p.status !== "clôturé").map((p: any) => String(p.envelope ?? "")).filter(Boolean))];
+    /* Nom aligné sur une enveloppe connue (lignes, puis frais déjà enregistrés), à la casse et aux accents près. */
+    const nom = enveloppes.find((e) => sansAccent(e) === sansAccent(r.enveloppe)) ?? Object.keys(actuels).find((e) => sansAccent(e) === sansAccent(r.enveloppe)) ?? r.enveloppe!;
+    const cleActuelle = Object.keys(actuels).find((e) => sansAccent(e) === sansAccent(nom));
+    const cur = cleActuelle != null && isObj(actuels[cleActuelle]) ? actuels[cleActuelle] : null;
+    const avertissements = enveloppes.includes(nom) ? [] : [`Aucune ligne dans l'enveloppe « ${nom} » : vérifie son nom exact (list_positions, champ envelope).`];
+    const items = pareil(cur, r.frais) ? [] : [{ cible: "config", operation: "modifier", avant: { frais_enveloppes: { [nom]: cur } }, apres: { frais_enveloppes: { [nom]: r.frais } } }];
+    return deposer(items, a, { avertissements, enveloppe: nom, frais_proposes: texteFrais(r.frais), frais_actuels: texteFrais(cur) });
   }));
 }

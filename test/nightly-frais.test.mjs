@@ -65,3 +65,18 @@ test("frais Yahoo : adresse quoteSummary (query2, modules fundProfile et default
   assert.equal(F.urlFrais("0P0000X^Y"),
     "https://query2.finance.yahoo.com/v10/finance/quoteSummary/0P0000X%5EY?modules=fundProfile,defaultKeyStatistics");
 });
+
+test("TER d'un DIC remplacé par Yahoo seulement si l'écart dépasse 50 % ET que le DIC a plus de 365 jours", { skip: SANS_STRIP }, () => {
+  const F = charger();
+  const AUJ = "2026-10-12";
+  assert.equal(F.remplaceTerDic(0.12, "2025-09-01", 0.45, AUJ), true, "406 jours, écart de 275 %");
+  assert.equal(F.remplaceTerDic(0.12, "2025-09-01", 0.168, AUJ), false, "écart de 40 % : le DIC passe avant");
+  assert.equal(F.remplaceTerDic(0.12, "2025-09-01", 0.18, AUJ), false, "écart de 50 % pile : ne dépasse pas");
+  assert.equal(F.remplaceTerDic(0.12, "2025-09-01", 0.05, AUJ), true, "écart de 58 % à la baisse");
+  assert.equal(F.remplaceTerDic(0.12, "2025-11-01", 0.45, AUJ), false, "DIC de 345 jours");
+  assert.equal(F.remplaceTerDic(0.12, "2025-10-12", 0.45, AUJ), false, "365 jours pile : pas plus de 365");
+  assert.equal(F.remplaceTerDic(0, "2025-01-01", 0.2, AUJ), true, "DIC à 0 %, Yahoo positif");
+  assert.equal(F.remplaceTerDic(0.12, null, 0.45, AUJ), false, "date du DIC inconnue : le DIC passe avant");
+  assert.equal(F.remplaceTerDic(0.12, "2025-01-01", null, AUJ), false);
+  assert.equal(F.remplaceTerDic(null, "2025-01-01", 0.45, AUJ), false);
+});

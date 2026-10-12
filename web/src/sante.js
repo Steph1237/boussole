@@ -3,8 +3,9 @@
 /* Pilotage › Santé — « Ma situation est-elle saine ? » : bonnes pratiques notées (Pratiques.evaluer, pratiques.js), spec
    docs/superpowers/specs/2026-10-12-cp4-sante-design.md § 3-4.
    En-tête : note globale dans un anneau (role="img"), phrase de synthèse, couverture (« calculée sur 7 critères sur 11 »,
-   « provisoire » sous 60 %), date, « Demander à Claude », puis « Ce qui te coûte le plus » : les 3 plus gros points perdus, en
-   lignes cliquables qui ouvrent le critère. Familles en onglets ARIA (Sécurité, Effort, Allocation, Efficacité) : note, couverture,
+   « provisoire » sous 60 %), date des données (dernière photo ou dernière synchronisation, dateDonnees), « Demander à Claude », puis
+   « Ce qui te coûte le plus » : les 3 plus gros points perdus (« N points de ta note globale »), en lignes cliquables qui ouvrent le
+   critère. Familles en onglets ARIA (Sécurité, Effort, Allocation, Efficacité) : note, couverture,
    cartes de critère ; poids rappelés une seule fois au-dessus des onglets. Carte : nom, état en mots (bon · à surveiller · à
    travailler · à compléter), jauge horizontale à zones (repere.zones) avec la position de l'utilisateur, mesure en clair, note /20,
    « pourquoi » ; carte « à compléter » grise : ce qui manque et « Compléter avec Claude ». Panneau (UI.panneau), dans l'ordre :
@@ -17,7 +18,7 @@
    regle, source, details, aCompleter, informatif). Lecture seule, au tutoiement, tout texte des données échappé.
    Fonctions pures exportées (module.exports) : normaliser, ETATS, geometrieJauge, texteJauge, jaugeSvg, carteHtml, couvertureDe,
    verdict, resumeFamille, coutsPrincipaux, enteteHtml, ongletsHtml, panneauHtml, expertiseDe, questionCritere, questionClaude,
-   questionPage, phraseCompleter, sectionDe, lienPanneau, hashSante, cibleLien. */
+   questionPage, phraseCompleter, sectionDe, lienPanneau, hashSante, cibleLien, dateDonnees. */
 
 /* ---------- outils ---------- */
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -35,7 +36,8 @@ function fr(x,dec){
 }
 const MOIS=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 function dateFr(d){
-  const x=d instanceof Date?d:d?new Date(d):null;
+  const j=typeof d==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(d)?d.split("-").map(Number):null; // jour seul : date locale, sans fuseau
+  const x=j?new Date(j[0],j[1]-1,j[2]):d instanceof Date?d:d?new Date(d):null;
   return x&&!isNaN(x)?x.getDate()+(x.getDate()===1?"er":"")+" "+MOIS[x.getMonth()]+" "+x.getFullYear():"";
 }
 const CHEVRON='<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg>';
@@ -259,6 +261,21 @@ function coutsPrincipaux(r,P,nb){
 }
 
 /* ---------- en-tête ---------- */
+/** Date des données (AAAA-MM-JJ) : la plus récente entre la dernière photo du patrimoine (snapshots[].date) et la dernière
+    synchronisation bancaire (banque.connexions[].derniereSynchro) ; null si aucune. C'est elle que l'en-tête affiche, pas l'heure du
+    calcul (refait à chaque émission du store). */
+function dateDonnees(S){
+  const jour=v=>{
+    if(typeof v!=="string"||!/^\d{4}-\d{2}-\d{2}/.test(v)) return null;
+    if(v.length===10) return v;
+    const x=new Date(v);
+    if(isNaN(x)) return v.slice(0,10);
+    return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");
+  };
+  const L=[...((S&&Array.isArray(S.snapshots))?S.snapshots:[]).map(x=>jour(x&&x.date)),
+    ...((S&&S.banque&&Array.isArray(S.banque.connexions))?S.banque.connexions:[]).map(c=>jour(c&&c.derniereSynchro))].filter(Boolean).sort();
+  return L.length?L[L.length-1]:null;
+}
 function anneauHtml(v){
   const R=52,C=2*Math.PI*R, pct=v.note==="—"?0:Math.max(0,Math.min(100,+v.note)), ton=v.ton||"na";
   const label=v.note==="—"?"Note globale : pas encore calculée":"Note globale : "+v.note+" sur 100"+(v.label?", "+v.label.toLowerCase():"");
@@ -268,20 +285,21 @@ function anneauHtml(v){
     `</svg><span class="st-anneau-val" aria-hidden="true"><span><span class="st-big num">${esc(v.note)}</span>${v.note==="—"?"":'<span class="st-sur">/100</span>'}</span></span></div>`;
 }
 const TON_BADGE={good:"bon",warn:"attention",crit:"critique"};
-/** En-tête : anneau, verdict, couverture (provisoire), date, Claude, puis « Ce qui te coûte le plus » (3 lignes → panneau).
-    o = { date, P (module Pratiques ; null : calcul local des pertes) }. */
+/** En-tête : anneau, verdict, couverture (provisoire), date des données (« données du … »), Claude, puis « Ce qui te coûte le plus »
+    (3 lignes → panneau, chacune avec les points de la note globale en jeu). o = { date (dateDonnees), P (module Pratiques ; null : calcul
+    local des pertes) }. */
 function enteteHtml(r,U,o){
   o=o||{};
   const v=verdict(r), cov=couvertureDe(r), date=dateFr(r&&(r.calcule_le||r.date)||o.date);
   const badge=v.label&&!v.provisoire?`<span class="ui-badge ${TON_BADGE[v.ton]||"neutre"}">${esc(v.label)}</span>`:"";
-  const couv=aNote(r)?`<p class="st-couv">${esc(cov.texte.charAt(0).toUpperCase()+cov.texte.slice(1))}${v.provisoire?' <span class="ui-badge attention">provisoire</span>':""}${date?'<span class="st-date"> · le '+esc(date)+"</span>":""}</p>`:"";
+  const couv=aNote(r)?`<p class="st-couv">${esc(cov.texte.charAt(0).toUpperCase()+cov.texte.slice(1))}${v.provisoire?' <span class="ui-badge attention">provisoire</span>':""}${date?'<span class="st-date"> · données du '+esc(date)+"</span>":""}</p>`:"";
   const claude=r&&U?`<div class="st-claude">${U.demanderAClaude(questionPage(r))}</div>`:"";
   const tete=`<div class="st-tete">${anneauHtml(v)}<div class="st-tete-txt"><p class="st-question">Ma situation est-elle saine ? ${badge}</p>`+
     `<p class="st-verdict ${v.ton}" id="santeVerdict" tabindex="-1">${esc(v.phrase)}</p>${couv}${claude}</div></div>`;
   if(!aNote(r)) return tete;
   const cs=coutsPrincipaux(r,o.P);
   const corps=cs.length?'<ol class="st-couts-liste">'+cs.map(x=>`<li><button type="button" class="st-cout" data-ui-carte="${esc(x.cle)}" data-st-cout="${esc(x.cle)}" aria-haspopup="dialog">`+
-      `<span class="st-cout-haut"><span class="st-cout-nom">${esc(x.nom)}</span><span class="st-cout-pts num">${esc(fr(x.points,x.points>=10?0:1))} pts en jeu</span></span>`+
+      `<span class="st-cout-haut"><span class="st-cout-nom">${esc(x.nom)}</span><span class="st-cout-pts num">${esc(fr(x.points,x.points>=10?0:1))} point${x.points>=2?"s":""} de ta note globale</span></span>`+
       (x.action?`<span class="st-cout-action">${esc(x.action)}</span>`:"")+`<span class="st-cout-ouvrir">${CHEVRON}</span></button></li>`).join("")+"</ol>"
     :'<p class="st-vide">Rien ne te coûte de points pour le moment : tes critères calculés sont tous au maximum.</p>';
   return tete+`<div class="st-couts"><h3 class="st-h3" id="santeCoutsT">Ce qui te coûte le plus</h3>${corps}</div>`;
@@ -426,13 +444,13 @@ function cibleLien(r,p){
 }
 
 const PURE={normaliser,ETATS,geometrieJauge,texteJauge,jaugeSvg,carteHtml,couvertureDe,verdict,resumeFamille,coutsPrincipaux,enteteHtml,ongletsHtml,
-  panneauHtml,expertiseDe,questionCritere,questionClaude,questionPage,phraseCompleter,sectionDe,lienPanneau,hashSante,cibleLien};
+  panneauHtml,expertiseDe,questionCritere,questionClaude,questionPage,phraseCompleter,sectionDe,lienPanneau,hashSante,cibleLien,dateDonnees};
 if(typeof module==="object"&&module.exports){ module.exports=PURE; }
 if(typeof document==="undefined") return;
 
 /* ---------- vue ---------- */
 let S={scope:"foyer",people:[],positions:[],config:null,profil:null,budget:null,objectifs:[],risque:null,classes:{}};
-let root=null,dirty=true,recu=false,last=null,calculeLe=null,actif="securite",lien=null,ouvertId=null,retourEl=null,sigPanneau="",sigLien="",corpsPanneau=null;
+let root=null,dirty=true,recu=false,last=null,dateDonneesS=null,actif="securite",lien=null,ouvertId=null,retourEl=null,sigPanneau="",sigLien="",corpsPanneau=null;
 const sig={tete:"",fam:""};
 const $=id=>root.querySelector("#"+id);
 const U=()=>window.UI||null;
@@ -461,8 +479,8 @@ function render(){
   const r=last, u=U();
   $("santeTitle").textContent="Bonnes pratiques "+scopeDe();
   if(r&&r.familles&&r.familles.length&&!r.familles.some(f=>f.cle===actif)) actif=r.familles[0].cle;
-  /* La date de calcul n'entre pas dans la signature au-delà du jour : pas de réécriture à chaque émission du store. */
-  ecrire("santeEntete","tete",enteteHtml(r,u,{date:calculeLe}));
+  /* Date des données (dernière photo, dernière synchronisation) : pas l'heure du calcul, refait à chaque émission du store. */
+  ecrire("santeEntete","tete",enteteHtml(r,u,{date:dateDonneesS}));
   $("santeFamSec").hidden=!(r&&u);
   ecrire("santeFamilles","fam",r&&u?ongletsHtml(r,actif,u):"");
   rafraichirPanneau();
@@ -566,7 +584,7 @@ function update(snap,visible){
   snap=snap||{};
   S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions||[],config:snap.config,profil:snap.profil||null,budget:snap.budget||null,
     objectifs:snap.objectifs||[],risque:snap.risque||null,classes:snap.classes||{},banque:snap.banque||null};
-  last=calcule(); calculeLe=new Date(); dirty=true; recu=true;
+  last=calcule(); dateDonneesS=dateDonnees(snap); dirty=true; recu=true;
   if(visible){ render(); dirty=false; appliquerLien(); } else lien=null;
 }
 function show(){

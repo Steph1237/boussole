@@ -286,14 +286,15 @@ test("enteteHtml : anneau accessible, synthèse, couverture, provisoire, date, �
   assert.match(h, /id="santeVerdict" tabindex="-1"/);
   assert.match(h, /Calculée sur 4 critères sur 5/);
   assert.doesNotMatch(h, /provisoire/i, "80 % de couverture");
-  assert.match(h, /le 12 octobre 2026/);
+  assert.match(h, /données du 12 octobre 2026/);
   assert.match(h, /claude\.ai\/new\?q=/);
   assert.match(h, /<h3 class="st-h3" id="santeCoutsT">Ce qui te coûte le plus<\/h3>/);
   assert.deepEqual([...h.matchAll(/data-st-cout="([^"]+)"/g)].map(m => m[1]), ["epargne", "matelas", "frais"]);
   assert.match(h, /<button type="button" class="st-cout" data-ui-carte="epargne" data-st-cout="epargne" aria-haspopup="dialog">/);
   assert.match(h, /<span class="st-cout-nom">Taux d&#39;épargne<\/span>/);
-  assert.match(h, /15 pts en jeu/);
-  assert.match(h, /7,5 pts en jeu/);
+  assert.match(h, /15 points de ta note globale/);
+  assert.match(h, /7,5 points de ta note globale/);
+  assert.doesNotMatch(h, /pts en jeu/);
   assert.match(h, /Épargne 200 € de plus par mois/);
   const p = SV.enteteHtml(R([N("a"), A("b"), A("c")]), UIm, { date: new Date("2026-10-12T09:00:00"), P: null });
   assert.match(p, /Calculée sur 1 critère sur 3/);
@@ -695,4 +696,19 @@ test("score sur la démo : complet, cinq critères sur 20, total cohérent", () 
     assert.ok(r.total >= 0 && r.total <= 100);
     if (scope === "foyer") { assert.equal(r.complet, true); assert.ok(r.total >= 80, `démo foyer : ${r.total}`); }
   }
+});
+
+test("dateDonnees : date des données (dernière photo, dernière synchronisation bancaire), pas l'heure du calcul", () => {
+  assert.equal(typeof SV.dateDonnees, "function");
+  const S = { snapshots: [{ date: "2026-10-09" }, { date: "2026-10-11" }, { date: "2026-10-10" }],
+    banque: { connexions: [{ derniereSynchro: "2026-10-12T05:31:00Z" }, { derniereSynchro: null }, { derniereSynchro: "2026-10-01T05:31:00Z" }] } };
+  assert.equal(SV.dateDonnees(S), "2026-10-12");
+  assert.equal(SV.dateDonnees({ snapshots: [{ date: "2026-10-11" }], banque: { connexions: [] } }), "2026-10-11");
+  assert.equal(SV.dateDonnees({ snapshots: [], banque: null }), null);
+  assert.equal(SV.dateDonnees(null), null);
+  assert.equal(SV.dateDonnees({ snapshots: [{ date: "pas une date" }] }), null);
+  const h = SV.enteteHtml(R([N("a"), N("b"), A("c")]), UIm, { date: "2026-10-11", P: null });
+  assert.match(h, /données du 11 octobre 2026/);
+  const js = readFileSync(new URL("../web/src/sante.js", import.meta.url), "utf8");
+  assert.match(js, /dateDonnees\(snap\)/, "la vue passe la date des données à l'en-tête");
 });

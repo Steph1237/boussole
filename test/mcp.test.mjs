@@ -49,7 +49,7 @@ const TOOLS = [
   "demarrer_session", "consulter_savoir", "reperes", "memoriser", "se_souvenir", "oublier",
   "journaliser", "lire_journal", "completer_journal", "cloturer_session",
   "formulaire", "soumettre_formulaire",
-  "regler_matelas", "regler_versements", "corriger_classe",
+  "regler_matelas", "regler_versements", "corriger_classe", "regler_frais_enveloppe",
   "activer_routine", "demarrer_routine", "cloturer_routine", "questions_routine",
   "consulter_expertise", "analyser",
   "lire_banque", "operations_recentes",
@@ -57,7 +57,7 @@ const TOOLS = [
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
   "update_budget", "upsert_objectifs", "delete_objectif", "set_risk_answers", "set_protection",
-  "regler_matelas", "regler_versements", "corriger_classe"];
+  "regler_matelas", "regler_versements", "corriger_classe", "regler_frais_enveloppe"];
 const PROMPTS = ["bilan_complet", "profil_de_risque", "budget", "placements", "revue_mensuelle"];
 /** Section du code d'un outil (de son registerTool au suivant). delete_bien / delete_credit partagent une boucle. */
 function outil(nom) {
@@ -495,7 +495,7 @@ test("parité MCP / pratiques.js : bilan clairsemé — total null, couverture e
     assert.equal(mcp.total, web.total, nom + " : total"); assert.equal(mcp.provisoire, web.provisoire, nom + " : provisoire");
     proche(mcp.couverture, Math.round(web.couverture * 1000) / 1000, nom + " : couverture");
     provisoires.push(mcp.provisoire);
-    if (nom === "vide") { assert.equal(mcp.total, null, "aucune famille notée : pas de note"); assert.equal(mcp.couverture, 0); assert.equal(mcp.provisoire, true); }
+    if (nom === "vide") { assert.equal(mcp.total, null, "aucune famille notée : pas de note"); assert.equal(mcp.couverture, 0); assert.equal(mcp.provisoire, false, "sans note : pas « provisoire »"); }
   }
   assert.ok(provisoires.includes(true));
 });
@@ -1177,7 +1177,7 @@ test("réglages : outils enregistrés par index.ts avec DEPOT et deposer ; texte
   const instr = src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE"));
   for (const k of ["regler_matelas", "regler_versements", "corriger_classe", "mode remplacer", "après l'accord de l'utilisateur dans la conversation"]) assert.ok(instr.includes(k), "instructions : " + k);
   assert.match(outil("update_config"), /propose-les avec regler_matelas et regler_versements/);
-  for (const nom of ["regler_matelas", "regler_versements", "corriger_classe"]) {
+  for (const nom of ["regler_matelas", "regler_versements", "corriger_classe", "regler_frais_enveloppe"]) {
     const sec = outil(nom);
     assert.match(sec, /annotations: RW/, nom); assert.match(sec, /\.\.\.DEPOT/, nom); assert.match(sec, /deposer\(items, a/, nom);
     assert.doesNotMatch(sec, /from\("(config|profiles)"\)\.(insert|update|upsert|delete)/, nom + " : aucune écriture directe");
@@ -1196,9 +1196,9 @@ const P1 = "aaaaaaaa-0000-4000-8000-000000000001", P2 = "aaaaaaaa-0000-4000-8000
 const POSITIONS_R = [{ id: P1, name: "ETF Monde", envelope: "PEA", status: "actif", bloc: "Monde" }, { id: P2, name: "Livret A", envelope: "Livrets", status: "actif", bloc: "Épargne" },
   { id: P3, name: "Ancien CTO", envelope: "CTO", status: "clôturé", bloc: "Asie" }];
 const REC = [{ id: "rec-pea", label: "Versement PEA", positionId: P1, amount: 300, day: 5, start: "2026-01-01", lastApplied: "2026-10", hypothesis: "prime" }];
-function reglagesSrv({ cushion = { mode: "amount", min: 15000, max: 20000 }, recurring = REC, classes = { Protection: "or" }, depenses = 2500 } = {}) {
+function reglagesSrv({ cushion = { mode: "amount", min: 15000, max: 20000 }, recurring = REC, classes = { Protection: "or" }, depenses = 2500, frais_enveloppes = {} } = {}) {
   const depots = [];
-  const db = fauxDb(r => r.table === "config" ? { data: { cushion, recurring }, error: null } : r.table === "positions" ? { data: POSITIONS_R, error: null }
+  const db = fauxDb(r => r.table === "config" ? { data: { cushion, recurring, frais_enveloppes }, error: null } : r.table === "positions" ? { data: POSITIONS_R, error: null }
     : r.table === "profiles" ? { data: { classes }, error: null } : { data: null, error: null });
   let n = 0;
   const R = chargerModule(srcReglages, { Intl, Map });
@@ -1210,7 +1210,7 @@ const SRC = { source: "Dit par l'utilisateur" };
 
 test("réglages : regler_matelas — proposition config { cushion } en mois (dépenses du budget ou fournies) ou en montant ; valeurs contrôlées", { skip: SANS_STRIP }, async () => {
   let { T, depots } = reglagesSrv();
-  assert.deepEqual(Object.keys(T).sort(), ["corriger_classe", "regler_matelas", "regler_versements"]);
+  assert.deepEqual(Object.keys(T).sort(), ["corriger_classe", "regler_frais_enveloppe", "regler_matelas", "regler_versements"]);
   let r = await T.regler_matelas.handler({ mode: "mois", mois: 6, ...SRC });
   assert.deepEqual(r.ok.items, [{ cible: "config", operation: "modifier", avant: { cushion: { mode: "amount", min: 15000, max: 20000 } },
     apres: { cushion: { mode: "months", months: 6, depenses: 2500 } } }]);
@@ -1283,6 +1283,52 @@ test("réglages : corriger_classe — proposition profil { classes }, null retir
   assert.match(r.ok.extra.avertissements[0], /Aucune ligne dans la poche « Inconnue »/);
   r = await T.corriger_classe.handler({ poche: "Asie", classe: "actions_emergentes", ...SRC });
   assert.match(r.erreur, /^classe : actions, small_caps, emergents/);
+});
+
+test("réglages : regler_frais_enveloppe — proposition config { frais_enveloppes: { <enveloppe>: … } }, fusion par enveloppe, mêmes validations que 0026", { skip: SANS_STRIP }, async () => {
+  const CG = { source: "Conditions générales PEA 2026, grille tarifaire" };
+  let { T, depots } = reglagesSrv({ frais_enveloppes: { PEA: { garde_pct: 0.2, source: "Grille 2024", le: "2024-01-01" }, "AV Linxea": { gestion_uc_pct: 0.5, source: "CG", le: "2026-01-01" } } });
+  let r = await T.regler_frais_enveloppe.handler({ enveloppe: " pea ", garde_pct: 0, ...CG });
+  assert.deepEqual(r.ok.items, [{ cible: "config", operation: "modifier",
+    avant: { frais_enveloppes: { PEA: { garde_pct: 0.2, source: "Grille 2024", le: "2024-01-01" } } },
+    apres: { frais_enveloppes: { PEA: { garde_pct: 0, source: "Conditions générales PEA 2026, grille tarifaire", le: TODAY } } } }],
+    "nom d'enveloppe aligné sur la ligne existante ; une enveloppe remplacée en entier, les autres intactes (fusion en base)");
+  assert.equal(depots[0].d.source, CG.source);
+  assert.deepEqual(r.ok.extra.avertissements, []);
+  assert.match(r.ok.extra.frais_proposes, /droits de garde 0 % par an/);
+  r = await T.regler_frais_enveloppe.handler({ enveloppe: "Assurance-vie Sam", gestion_uc_pct: 0.6, gestion_euro_pct: 0.75, le: "2026-09-30", ...CG });
+  assert.deepEqual(r.ok.items[0].avant, { frais_enveloppes: { "Assurance-vie Sam": null } });
+  assert.deepEqual(r.ok.items[0].apres, { frais_enveloppes: { "Assurance-vie Sam": { gestion_uc_pct: 0.6, gestion_euro_pct: 0.75, source: CG.source, le: "2026-09-30" } } });
+  assert.match(r.ok.extra.avertissements[0], /Aucune ligne dans l'enveloppe « Assurance-vie Sam »/);
+  r = await T.regler_frais_enveloppe.handler({ enveloppe: "AV Linxea", gestion_uc_pct: 0.5, source: "CG", le: "2026-01-01" });
+  assert.deepEqual(r.ok.items, [], "déjà enregistré : rien à proposer");
+  const n = depots.length;
+  const futur = "2099-01-01";
+  for (const [a, motif] of [[{ enveloppe: "PEA" }, /au moins un pourcentage/], [{ enveloppe: "PEA", garde_pct: 5.01 }, /garde_pct : pourcentage par an entre 0 et 5/],
+    [{ enveloppe: "PEA", gestion_uc_pct: -1 }, /gestion_uc_pct : pourcentage par an entre 0 et 5/], [{ enveloppe: "PEA", garde_pct: 0.1, le: "30/09/2026" }, /le : date AAAA-MM-JJ/],
+    [{ enveloppe: "PEA", garde_pct: 0.1, le: futur }, /le : date du document consulté, pas dans le futur/], [{ enveloppe: "", garde_pct: 0.1 }, /enveloppe : nom de 1 à 80 caractères/],
+    [{ enveloppe: "PEA", garde_pct: 0.1, source: "x".repeat(301) }, /source : 300 caractères au plus/]]) {
+    r = await T.regler_frais_enveloppe.handler({ ...CG, ...a });
+    assert.match(r.erreur, /^Aucune proposition déposée :/, JSON.stringify(a)); assert.match(r.erreur, motif, JSON.stringify(a));
+  }
+  assert.equal(depots.length, n, "aucun dépôt après un refus");
+  // description : documents du contrat, source citée, jamais inventer
+  const def = T.regler_frais_enveloppe.def;
+  assert.match(def.description, /conditions générales/); assert.match(def.description, /annexe de frais/); assert.match(def.description, /relevé annuel/);
+  assert.match(def.description, /N'invente jamais/);
+  assert.doesNotMatch(def.description, /conseill/i);
+  const R = chargerModule(srcReglages, { Intl, Map });
+  assert.deepEqual(J(R.fraisEnveloppeDe({ enveloppe: "PER", gestion_uc_pct: "0,7", source: "Notice" }, "2026-10-12")), { enveloppe: "PER", frais: { gestion_uc_pct: 0.7, source: "Notice", le: "2026-10-12" }, erreurs: [] });
+});
+
+test("réglages : instructions et conduite — frais des contrats relevés dans les documents du contrat, source citée, jamais inventés", () => {
+  const instr = src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE ="));
+  assert.match(instr, /regler_frais_enveloppe/);
+  assert.match(instr, /conditions générales, annexe de frais, relevé annuel/);
+  const conduite = src.slice(src.indexOf("const CONDUITE ="), src.indexOf("const PARCOURS"));
+  assert.match(conduite, /regler_frais_enveloppe/);
+  assert.match(conduite, /n'invente jamais/i);
+  assert.doesNotMatch(instr + conduite, /conseiller/i);
 });
 
 test("mcp : aucune clé de service", () => {

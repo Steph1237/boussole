@@ -154,8 +154,9 @@
     return out;
   }
 
-  /** Personne d'un objectif (titulaire, owner ou personne : p1 / p2), ou null pour le foyer (spec cp4 § 1 : l'apport de Camille
-      ne compte que les lignes de Camille). Même règle dans le connecteur (titulaireObjectif, index.ts). */
+  /** Personne d'un objectif (titulaire, owner ou personne : p1 / p2), ou null pour le foyer. La table objectifs n'a pas de colonne
+      titulaire : aujourd'hui tout objectif est celui du foyer ; la lecture reste tolérante si un champ de ce nom apparaît. Même règle
+      dans le connecteur (titulaireObjectif, index.ts). */
   const titulaireObjectif = o => { const v = o && (o.titulaire || o.owner || o.personne); return v === "p1" || v === "p2" ? v : null; };
 
   /* Date cible d'un objectif : forme du store (dateCible) ou colonne SQL (date_cible). */
@@ -369,27 +370,36 @@
         : "Ta réserve couvre " + frc(mois) + " mois de dépenses : au-delà de 6 mois, une partie pourrait servir un objectif." };
   }
 
-  /** Taux d'épargne. o = { taux (fraction ou null), revenus, epargne (mensuelle), reste (prévu), source, periode, points, manque? }. */
+  /** Taux d'épargne. o = { taux (fraction ou null), revenus, epargne (mensuelle : prévue, ou versée pour le réel), reste (prévu),
+      depenses (réel), source, periode, points, manque? }. Réel (spec cp4 § 1.2) : taux = capacité d'épargne (revenus − dépenses) ÷ revenus,
+      l'épargne versée étant affichée à part (elle en est une partie ; le reste demeure sur les comptes courants). */
   function expliqueEpargne(o) {
     const f = BAREMES.epargne, repere = { texte: REPERES.epargne, zones: zones(f, 0, 30) };
     if (o.taux == null) return { repere, confiance: "absente",
       pourquoi: "Pas de note : il faut tes revenus et tes dépenses (ou ton épargne) pour calculer ton taux d'épargne.",
       manque: o.manque || ["Tes revenus et tes dépenses mensuels (budget, ou banque connectée)"],
       ameliorer: [{ action: "Donne tes revenus et tes dépenses à Claude (ou connecte ta banque) pour calculer ton taux d'épargne.", gain_points: null }] };
-    const t = o.taux, pts = o.points, src = sourceBudget(o.source, o.periode);
-    const calcul = o.source === "reel"
+    const t = o.taux, pts = o.points, src = sourceBudget(o.source, o.periode), reel = o.source === "reel";
+    const capacite = reel ? o.revenus - o.depenses : 0, reste = capacite - o.epargne;
+    const calcul = reel
       ? ["Revenus moyens (" + src + ") : " + eurc(o.revenus) + " par mois",
-        "Épargne versée (virements vers l'épargne et les placements) : " + eurc(o.epargne) + " par mois",
-        eurc(o.epargne) + " ÷ " + eurc(o.revenus) + " = " + pctc(t, 1)]
+        "Dépenses moyennes (hors épargne et virements internes) : " + eurc(o.depenses) + " par mois",
+        "Capacité d'épargne : " + eurc(o.revenus) + " − " + eurc(o.depenses) + " = " + eurc(capacite) + " par mois",
+        eurc(capacite) + " ÷ " + eurc(o.revenus) + " = " + pctc(t, 1),
+        "Dont épargne versée (virements vers l'épargne et les placements) : " + eurc(o.epargne) + " par mois ; " +
+          (reste >= 0 ? "le reste (" + eurc(reste) + ") reste sur tes comptes courants" : "c'est " + eurc(-reste) + " de plus que ta capacité : la différence a été prise sur tes comptes courants")]
       : ["Revenus du budget : " + eurc(o.revenus) + " par mois", "Épargne prévue : " + eurc(o.epargne) + " par mois",
         "Reste du mois (revenus − dépenses − épargne), compté s'il est positif : " + eurc(Math.max(0, o.reste || 0)),
         "(" + eurc(o.epargne) + " + " + eurc(Math.max(0, o.reste || 0)) + ") ÷ " + eurc(o.revenus) + " = " + pctc(t, 1)];
     calcul.push("Barème : " + pctc(t, 1) + " → " + pts + "/20");
     const ameliorer = [15, 20].filter(c => t * 100 < c).map(c => ({
-      action: "Mets de côté " + eurc((c / 100 - t) * o.revenus) + " de plus par mois pour atteindre " + c + " % de tes revenus.", gain_points: gain(f, c, pts) }));
+      action: (reel ? "Dégage " + eurc((c / 100 - t) * o.revenus) + " de plus par mois (dépenses en moins ou revenus en plus) pour atteindre "
+        : "Mets de côté " + eurc((c / 100 - t) * o.revenus) + " de plus par mois pour atteindre ") + c + " % de tes revenus.", gain_points: gain(f, c, pts) }));
     return { repere, calcul, ameliorer: ameliorer.slice(0, 2), donnees: o.donnees || [], source_donnees: src, confiance: "complete",
       mesure: { valeur: r1(t * 100), unite: "%", texte: pctc(t, 1) + " des revenus" },
-      pourquoi: "Tu mets de côté " + pctc(t, 1) + " de tes revenus (" + src + "), " + (t >= 0.15 ? "au-dessus du" : "sous le") + " repère de 15 %." };
+      pourquoi: reel ? (t < 0 ? "Tes dépenses dépassent tes revenus (" + src + ") : ta capacité d'épargne est négative."
+          : "Tu dégages " + pctc(t, 1) + " de tes revenus (" + src + "), " + (t >= 0.15 ? "au-dessus du" : "sous le") + " repère de 15 %.")
+        : "Tu mets de côté " + pctc(t, 1) + " de tes revenus (" + src + "), " + (t >= 0.15 ? "au-dessus du" : "sous le") + " repère de 15 %." };
   }
 
   /** Endettement. o = { taux (ou null), revenus, mensualites, donnees, points }. */
@@ -431,7 +441,8 @@
 
   /** Patrimoine net (Plan.score seulement). o = { annees, repere, net, revenus, points, manque? }. */
   function expliquePatrimoine(o) {
-    const f = r => BAREMES.patrimoine(r), repere = { texte: REPERES.patrimoine, zones: zones(f, 0, 1.5) };
+    /* Jauge dans l'unité de mesure.valeur (% du repère) : le barème est rejoué sur x ÷ 100. */
+    const f = r => BAREMES.patrimoine(r), repere = { texte: REPERES.patrimoine, zones: zones(x => f(x / 100), 0, 150) };
     if (o.annees == null) return { repere, confiance: "absente", pourquoi: "Pas de note : il faut ta tranche d'âge et tes revenus pour situer ton patrimoine.",
       manque: o.manque || [], ameliorer: [{ action: "Donne ta tranche d'âge et tes revenus à Claude pour situer ton patrimoine.", gain_points: null }] };
     const ratio = o.annees / o.repere, pts = o.points;

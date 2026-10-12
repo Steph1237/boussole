@@ -13,7 +13,8 @@
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
-   positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
+   positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument) et symbol (null en démo) ;
+   config.frais_enveloppes = frais des contrats (0026 ; {} par défaut), réglés par proposition (cible config, mêmes règles qu'en base).
    propositions = [{ id, lot, cible, operation, ref, avant, apres, source, justification, statut, creeLe, decideLe }] (toutes, les plus
    récentes d'abord) ; Store.propositions.appliquer(ids, modifications) / refuser(ids) les décident en mémoire (même effet que la
    fonction SQL appliquer_propositions, voir l'en-tête de store-supabase.js), réglages compris (0019 : cible config, matelas et
@@ -58,8 +59,8 @@
   const D = clone(window.DEMO || {});
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
   const C = {
-    ready: false, dbOk: null, positions: D.positions || [], snapshots: D.snapshots || [], tx: D.tx || [],
-    config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
+    ready: false, dbOk: null, positions: (D.positions || []).map(p => Object.assign({}, p, { symbol: p.symbol || null })), snapshots: D.snapshots || [], tx: D.tx || [],
+    config: D.config ? Object.assign({}, D.config, { frais_enveloppes: D.config.frais_enveloppes || {} }) : null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
     memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander",
@@ -253,6 +254,43 @@
     }
     throw bad("cushion.mode « " + (c.mode ?? "") + " » inconnu (amount ou months).");
   }
+  /* Frais des contrats (0026 + 0027) : fusion par enveloppe (une enveloppe fournie remplace l'existante en entier, null la retire),
+     pourcentages par an de 0 à 5 (au moins un), source obligatoire (1 à 300 caractères), le en AAAA-MM-JJ (date du jour par défaut,
+     jamais dans le futur), 30 enveloppes au plus, avant comme après la fusion. */
+  const CHAMPS_FRAIS = ["gestion_uc_pct", "gestion_euro_pct", "garde_pct"];
+  const jourIso = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  function fusionFraisEnveloppes(v, existants) {
+    if (!objet(v)) throw bad("frais_enveloppes : objet { enveloppe: frais } attendu.");
+    if (Object.keys(v).length > 30) throw bad("frais_enveloppes : 30 enveloppes au plus.");
+    const out = Object.assign({}, objet(existants) ? existants : {});
+    Object.keys(v).forEach(k => {
+      const env = k.trim(), f = v[k];
+      if (!env || env.length > 80) throw bad("frais_enveloppes : nom d'enveloppe invalide (1 à 80 caractères).");
+      if (f === null) { delete out[env]; return; }
+      if (!objet(f)) throw bad("frais_enveloppes « " + env + " » : objet ou null attendu.");
+      const inconnu = Object.keys(f).find(x => ![...CHAMPS_FRAIS, "source", "le"].includes(x));
+      if (inconnu) throw bad("frais_enveloppes « " + env + " » : champ « " + inconnu + " » inconnu (gestion_uc_pct, gestion_euro_pct, garde_pct, source, le).");
+      const ligne = {};
+      CHAMPS_FRAIS.forEach(c => {
+        if (f[c] == null) return;
+        const x = typeof f[c] === "number" || typeof f[c] === "string" ? num(f[c]) : NaN;
+        if (!(x >= 0 && x <= 5)) throw bad("frais_enveloppes « " + env + " » : " + c + " invalide (pourcentage par an entre 0 et 5 attendu).");
+        ligne[c] = x;
+      });
+      if (!Object.keys(ligne).length) throw bad("frais_enveloppes « " + env + " » : au moins un pourcentage attendu (gestion_uc_pct, gestion_euro_pct ou garde_pct).");
+      const source = typeof f.source === "string" ? f.source.trim() : "";
+      if (!source || source.length > 300) throw bad("frais_enveloppes « " + env + " » : source obligatoire (1 à 300 caractères).");
+      let le = jourIso();
+      if (f.le != null) {
+        if (typeof f.le !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(f.le) || isNaN(Date.parse(f.le))) throw bad("frais_enveloppes « " + env + " » : date (le) invalide (AAAA-MM-JJ).");
+        if (f.le > jourIso()) throw bad("frais_enveloppes « " + env + " » : date (le) dans le futur (la date du document consulté est attendue).");
+        le = f.le;
+      }
+      out[env] = Object.assign(ligne, { source, le });
+    });
+    if (Object.keys(out).length > 30) throw bad("frais_enveloppes : 30 enveloppes au plus (" + Object.keys(out).length + " après fusion).");
+    return out;
+  }
   function normVersements(liste, existants) {
     if (!Array.isArray(liste)) throw bad("recurring : liste de versements attendue.");
     if (liste.length > 50) throw bad("recurring : 50 versements au plus.");
@@ -324,7 +362,7 @@
           id = newId("pos");
           C.positions.push(Object.assign({ id, name: "Sans nom", envelope: "", owner: "p1", bloc: "", mode: vue.isin && vue.qty != null ? "market" : "manual", isin: null, qty: null, pru: null,
             price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null,
-            ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null }, vue));
+            ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null, symbol: null }, vue));
         } else {
           const vue = versVuePosition(v);
           if (vue.owner && !["p1", "p2"].includes(vue.owner)) throw bad("titulaire « " + vue.owner + " » inconnu (p1 ou p2).");
@@ -368,12 +406,13 @@
         break;
       case "config": {
         if (p.operation !== "modifier") throw bad("réglages : seule la modification est possible.");
-        const autre = Object.keys(v).find(k => !["cushion", "recurring"].includes(k));
-        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion ou recurring seulement).");
-        if (!("cushion" in v) && !("recurring" in v)) throw bad("réglages : cushion ou recurring attendu.");
+        const autre = Object.keys(v).find(k => !["cushion", "recurring", "frais_enveloppes"].includes(k));
+        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring ou frais_enveloppes seulement).");
+        if (!("cushion" in v) && !("recurring" in v) && !("frais_enveloppes" in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes).");
         const cfg = Object.assign({}, C.config || {});
         if ("cushion" in v) cfg.cushion = normMatelas(v.cushion);
         if ("recurring" in v) cfg.recurring = normVersements(v.recurring, cfg.recurring);
+        if ("frais_enveloppes" in v) cfg.frais_enveloppes = fusionFraisEnveloppes(v.frais_enveloppes, cfg.frais_enveloppes);
         C.config = cfg;
         break;
       }

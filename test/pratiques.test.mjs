@@ -85,7 +85,7 @@ describe("Sécurité", () => {
     assert.equal(c(true).aCompleter, false);
     assert.equal(c(false).points, 0);
   });
-  test("liquidité des objectifs omise sans objectif à moins de 2 ans", () => {
+  test("liquidité des objectifs omise sans objectif à moins de 3 ans", () => {
     const r = ev({ positions: [P("Épargne", 1000, { envelope: "Livret A" })],
       objectifs: [{ id: "o", type: "voyage", source: "saisi", deja: 0, cible: 5000, dateCible: "2030-01-01" }] });
     assert.equal(crit(r, "liquidite_objectifs"), undefined);
@@ -294,7 +294,7 @@ describe("Efficacité", () => {
     assert.equal(d(200000).points, 5);
     assert.equal(d(48000).valeur, 24);
   });
-  test("argent dormant : les objectifs à moins de 2 ans (hors matelas) réservent leur part", () => {
+  test("argent dormant : les objectifs à moins de 3 ans (hors matelas) réservent leur part", () => {
     const d = type => crit(ev({ positions: [P("Épargne", 48000)], budget: lignes(2000),
       objectifs: [{ id: "o", type, source: "saisi", deja: 0, cible: 24000, dateCible: "2027-06-30" }] }), "dormant");
     assert.equal(d("voyage").points, 20);
@@ -363,7 +363,9 @@ describe("données de démonstration", () => {
     assert.equal(s.points, 20); // bitcoin 2,7 % < 5 %
     assert.equal(crit(r, "protection").aCompleter, true); // crédit + enfant, rien de déclaré
     assert.equal(crit(r, "apport").points, 1);           // 2 900 € réunis sur 60 000 € (le compte courant n'est plus dans la poche Épargne)
-    assert.equal(crit(r, "liquidite_objectifs").points, 20);
+    // projets à moins de 3 ans hors matelas : « Apport maison » (60 000 €, juin 2029) ; 45 600 € sûrs − 15 000 € de matelas visé = 51 %
+    assert.equal(crit(r, "liquidite_objectifs").points, 10);
+    assert.ok(crit(r, "liquidite_objectifs").calcul.some(l => /Ton matelas visé \(15 000 €\) reste pour les imprévus/.test(l)));
     assert.equal(crit(r, "geographie").points, 20);
     assert.equal(crit(r, "frais").aCompleter, true);
     assert.equal(crit(r, "enveloppes").points, 20);

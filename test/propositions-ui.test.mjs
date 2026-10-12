@@ -163,6 +163,33 @@ test("réglages : corrigeables avant validation (cible du matelas, montant et jo
   assert.match(js, /p\.cible !== "config" && ch\.length > 1/, "réglages : une phrase, pas une liste champ par champ");
 });
 
+/* ---------- frais des contrats (0026, regler_frais_enveloppe) ---------- */
+const FRAIS = { cible: "config", operation: "modifier",
+  avant: { frais_enveloppes: { "Assurance-vie Linxea": { gestion_uc_pct: 0.6, source: "CG 2024", le: "2024-01-15" } } },
+  apres: { frais_enveloppes: { "Assurance-vie Linxea": { gestion_uc_pct: 0.5, gestion_euro_pct: 0.6, source: "Conditions générales 2026, annexe de frais", le: "2026-09-30" } } } };
+
+test("réglages : frais d'un contrat décrits en phrase (avant → après, source citée) et corrigeables avant validation", () => {
+  assert.equal(d({ ...FRAIS, avant: { frais_enveloppes: { "Assurance-vie Linxea": null } } }, CTX_R),
+    "Frais du contrat « Assurance-vie Linxea » : gestion des unités de compte 0,5 % par an, gestion du fonds en euros 0,6 % par an (source : Conditions générales 2026, annexe de frais)");
+  assert.equal(d(FRAIS, CTX_R),
+    "Frais du contrat « Assurance-vie Linxea » : gestion des unités de compte 0,6 % → 0,5 % par an, gestion du fonds en euros 0,6 % par an (source : Conditions générales 2026, annexe de frais)");
+  assert.equal(d({ cible: "config", operation: "modifier", avant: { frais_enveloppes: { PEA: { garde_pct: 0, source: "x", le: "2026-01-01" } } }, apres: { frais_enveloppes: { PEA: null } } }, CTX_R),
+    "Frais du contrat « PEA » : retirés");
+  assert.equal(d({ cible: "config", operation: "modifier", avant: {}, apres: { cushion: { mode: "amount", min: 10000, max: null }, frais_enveloppes: { PER: { garde_pct: 0.1, source: "Notice" } } } }, CTX_R),
+    "Matelas de précaution : au moins 10 000 € ; Frais du contrat « PER » : droits de garde 0,1 % par an (source : Notice)");
+  const ch = H.changements(FRAIS, CTX_R);
+  assert.deepEqual(ch.map(c => [c.path, c.kind]), [["frais_enveloppes.Assurance-vie Linxea.gestion_uc_pct", "pct"], ["frais_enveloppes.Assurance-vie Linxea.gestion_euro_pct", "pct"]]);
+  assert.equal(ch[0].label, "gestion des unités de compte de « Assurance-vie Linxea »");
+  assert.match(ch[0].avantTxt, /^0,6\s%$/); assert.match(ch[0].apresTxt, /^0,5\s%$/);
+  const r = H.appliquerSaisies(FRAIS, { "frais_enveloppes.Assurance-vie Linxea.gestion_uc_pct": "0,45" }, CTX_R).apres;
+  assert.deepEqual(r.frais_enveloppes["Assurance-vie Linxea"], { gestion_uc_pct: 0.45, gestion_euro_pct: 0.6, source: "Conditions générales 2026, annexe de frais", le: "2026-09-30" });
+  assert.match(H.appliquerSaisies(FRAIS, { "frais_enveloppes.Assurance-vie Linxea.gestion_uc_pct": "beaucoup" }, CTX_R).erreur, /n'est pas un nombre/);
+  // nom d'enveloppe avec un point : décrit, mais pas corrigeable champ par champ (chemin ambigu)
+  const point = { cible: "config", operation: "modifier", avant: {}, apres: { frais_enveloppes: { "A.V. Spirit": { gestion_uc_pct: 0.5, source: "CG" } } } };
+  assert.deepEqual(H.changements(point, CTX_R), []);
+  assert.match(d(point, CTX_R), /^Frais du contrat « A\.V\. Spirit » : gestion des unités de compte 0,5 % par an/);
+});
+
 test("profil de risque recalculé après validation de réponses proposées par Claude", () => {
   const js = readFileSync("web/src/propositions.js", "utf8");
   assert.match(js, /cible === "risque"/);

@@ -129,19 +129,26 @@ describe("contrat de critère (spec § 3)", () => {
     assert.match(m.ameliorer[0].action, /3 mois de dépenses \(≈ \+/);
     assert.equal(m.ameliorer[0].gain_points, Math.round(Plan.BAREMES.matelas(3)) - m.points);
     assert.equal(e.ameliorer[0].gain_points, Math.round(Plan.BAREMES.epargne(15)) - e.points);
-    assert.match(e.ameliorer[0].action, /^Mets de côté \d[\d ]* € de plus par mois pour atteindre 15 % de tes revenus\.$/);
+    assert.match(e.ameliorer[0].action, /^Dégage \d[\d ]* € de plus par mois \(dépenses en moins ou revenus en plus\) pour atteindre 15 % de tes revenus\.$/);
+    assert.match(crit(evalP1({ banque: null }), "epargne").ameliorer.concat([{ action: "Mets de côté 1 € de plus par mois pour atteindre 20 % de tes revenus." }])[0].action,
+      /^Mets de côté \d[\d ]* € de plus par mois pour atteindre (15|20) % de tes revenus\.$/, "budget prévu : formulation inchangée");
   });
 });
 
 describe("jeu p1 : corrections de justesse (spec § 1)", () => {
-  test("taux d'épargne réel prioritaire (≈ 10 %), source affichée", () => {
+  test("taux d'épargne réel prioritaire : capacité réelle (revenus − dépenses) ÷ revenus ≈ 13,4 %, épargne versée affichée à part", () => {
     const e = crit(evalP1(), "epargne");
-    proche(e.valeur, 600 / 5800, "taux réel");
-    assert.equal(e.mesure.valeur, 10.3);
-    assert.equal(e.points, Math.round(Plan.BAREMES.epargne(600 / 5800 * 100)));
+    proche(e.valeur, (5800 - 5020) / 5800, "capacité réelle");
+    assert.equal(e.mesure.valeur, 13.4);
+    assert.equal(e.points, Math.round(Plan.BAREMES.epargne((5800 - 5020) / 5800 * 100)));
     assert.equal(e.source_donnees, "réel, juillet à septembre 2026");
-    assert.match(e.texte, /^Tu mets de côté 10 % de tes revenus, d'après tes comptes \(juillet à septembre 2026\)\.$/);
-    assert.ok(e.calcul.includes("600 € ÷ 5 800 € = 10,3 %"), e.calcul.join(" | "));
+    assert.match(e.texte, /^Tu dégages 13 % de tes revenus \(revenus − dépenses\), d'après tes comptes \(juillet à septembre 2026\), dont 600 € par mois versés sur ton épargne\.$/);
+    assert.ok(e.calcul.includes("Capacité d'épargne : 5 800 € − 5 020 € = 780 € par mois"), e.calcul.join(" | "));
+    assert.ok(e.calcul.includes("780 € ÷ 5 800 € = 13,4 %"), e.calcul.join(" | "));
+    assert.ok(e.calcul.some(l => /^Dont épargne versée \(virements vers l'épargne et les placements\) : 600 € par mois ; le reste \(180 €\) reste sur tes comptes courants$/.test(l)), e.calcul.join(" | "));
+    assert.deepEqual(e.donnees.map(d => [d.libelle, d.valeur]), [["Revenus moyens", 5800], ["Dépenses moyennes", 5020], ["Capacité d'épargne", 780], ["Épargne versée", 600]]);
+    assert.match(e.regle, /\(revenus − dépenses\) ÷ revenus/);
+    assert.ok(e.ameliorer.every(a => /^Dégage /.test(a.action)), "réel : dégager une capacité, pas seulement verser");
     const prevu = crit(evalP1({ banque: null }), "epargne");
     assert.equal(prevu.source_donnees, "budget prévu");
     assert.ok(prevu.valeur > 0.3, "sans banque : budget prévu");
@@ -153,7 +160,7 @@ describe("jeu p1 : corrections de justesse (spec § 1)", () => {
     const sur = 7640 + 25 + 55 + 65 + 80 + 420; // livrets, compte courant, liquidités du CTO et du PEA, fonds euros
     proche(c.valeur, sur / 50000, "ratio");
     assert.equal(c.points, Math.round(sur / 50000 * 20));
-    assert.match(c.texte, /^71 695 € disponibles, dont 8 285 € sans risque de baisse, pour 50 000 € à réunir d'ici 2 ans\.$/);
+    assert.match(c.texte, /^71 695 € disponibles, dont 8 285 € sans risque de baisse, pour 50 000 € à réunir d'ici 3 ans\.$/);
     const lignes = c.donnees.map(d => d.lien && d.lien.ligne);
     assert.ok(!lignes.includes(id("ETF Nasdaq-100 levier ×2", "PEA")) && !lignes.includes(id("Bitcoin et cryptos", "Crypto (Binance)")), "pas de PEA ni de crypto");
     assert.ok(lignes.includes(id("Livret A", "Livret A")) && lignes.includes(id("Fonds euros", "AV Linxea p1")));
@@ -350,6 +357,133 @@ describe("note globale (spec § 1.1 et § 3)", () => {
   });
 });
 
+/* ---------- relecture CP4 : nature des lignes, projection, projets proches, capacité d'épargne, mineurs ---------- */
+const COMGEST = V("CTO", "Comgest Renaissance Europe C", "Europe", 50000, { isin: "FR0000295230" });
+const ASML_CTO = L("CTO", "ASML", "Convictions", 10000, { isin: "NL0010273215", symbol: "ASML.AS" });
+/* Cas I2 : 100 000 € à 1 % (compte-titres, frais connus) + unité de compte 40 000 € à 2 % sans frais de contrat renseignés. */
+const CAS_I2 = [L("CTO", "ETF Monde", "Monde", 100000, { isin: "IE00000000A1", ter: 1 }), V("Assurance-vie Test", "Fonds actions Europe", "Europe", 40000, { isin: "LU00000000B2", ter: 2 })];
+const RE_CONSEILLER = /conseill/i;
+
+describe("relecture CP4 : frais (nature des lignes, projection, SCPI)", () => {
+  test("I1 : « direct » seulement pour une action reconnue ; ligne manuelle avec ISIN = fonds ; ISIN non reconnu = fonds au TER inconnu", () => {
+    const nat = p => Pratiques.natureFrais(p, {}, p.ter);
+    assert.equal(nat(COMGEST), "fonds", "manuelle avec ISIN");
+    assert.equal(nat({ ...COMGEST, mode: "market", qty: 10, price: 5000, value: null, symbol: "0P00000AYR.F" }), "fonds", "cotée, symbole de fonds");
+    assert.equal(nat(ASML_CTO), "direct", "action : classe actions, nom sans motif de fonds, cotée, symbole d'action");
+    assert.equal(nat({ ...ASML_CTO, symbol: null }), "direct", "symbole inconnu : la classe et le nom suffisent");
+    assert.equal(nat(L("CTO", "Trésorerie plus", "Divers", 1000, { isin: "FR0000000999" })), "fonds", "ISIN hors classe actions");
+    assert.equal(nat(L("CTO", "Lyxor CAC 40", "Europe", 1000, { isin: "FR0007052782" })), "fonds", "nom de fonds");
+    assert.equal(nat(L("CTO", "Air Liquide", "Convictions", 1000, { isin: "IE0000000777" })), "fonds", "ISIN IE / LU : fonds");
+    assert.equal(nat(V("PEA", "Espèces PEA", "Liquidités", 60)), "liquidites", "espèces sans ISIN hors contrat");
+  });
+
+  test("I1 : « Comgest Renaissance Europe C » 50 000 € → à compléter, plus 20/20", () => {
+    const f = crit(evalP1({ positions: [ASML_CTO, COMGEST] }), "frais");
+    assert.equal(f.statut, "a_completer");
+    assert.equal(f.points, null);
+    assert.deepEqual(f.frais.fondsSansFrais.map(x => x.nom), ["Comgest Renaissance Europe C"]);
+    proche(f.frais.couverture, 10000 / 60000, "seule l'action est couverte", 1e-3);
+    const avant = crit(evalP1({ positions: [ASML_CTO, { ...COMGEST, ter: 1.8 }] }), "frais");
+    assert.equal(avant.points, Pratiques.BAREME_FRAIS(1.8 * 50000 / 60000), "TER connu : noté");
+    assert.notEqual(avant.points, 20);
+  });
+
+  test("UC monétaire d'un contrat → fonds (frais d'enveloppe appliqués)", () => {
+    const uc = V("Assurance-vie Test", "Support monétaire", "Monétaire", 10000);
+    assert.equal(Pratiques.natureFrais(uc, {}, null), "fonds");
+    const f = crit(evalP1({ positions: [{ ...uc, ter: 0.1 }], config: { frais_enveloppes: { "Assurance-vie Test": { gestion_uc_pct: 0.5, source: "CG", le: "2026-10-01" } } } }), "frais");
+    proche(f.valeur, 0.6, "TER + gestion du contrat", 1e-9);
+  });
+
+  test("I2 : surcoût, coût « après » et projection calculés sur les seules lignes au coût total connu ; jamais négatif", () => {
+    const f = crit(evalP1({ positions: CAS_I2, config: {} }), "frais");
+    proche(f.frais.couverture, 100000 / 140000, "couverture 71 %", 1e-3);
+    assert.equal(f.points, 10, "1 % sur la part connue");
+    assert.deepEqual(f.frais.auDessusRepere.map(x => x.nom), ["ETF Monde"], "l'unité de compte sans frais de contrat n'entre pas dans le surcoût");
+    assert.equal(f.frais.projection.ecart.annuel, 700);
+    const a = f.ameliorer[0];
+    assert.match(a.action, /ton coût passerait à 0,3 % par an \(≈ −700 € par an\)/, a.action);
+    assert.equal(a.gain_points, 10);
+    assert.doesNotMatch(JSON.stringify(f), /passerait à −/);
+    assert.ok(f.frais.projection.ecart.ans10 > 0 && f.frais.projection.ecart.ans20 > f.frais.projection.ecart.ans10);
+  });
+
+  test("portefeuille 100 % SCPI : l'information SCPI reste visible (critère informatif, sans note)", () => {
+    const r = evalP1({ positions: [V("AV Test", "SCPI Rendement", "SCPI", 20000)], config: {} });
+    const f = crit(r, "frais");
+    assert.ok(f, "critère présent");
+    assert.equal(f.statut, "information");
+    assert.equal(f.points, null);
+    assert.deepEqual(f.frais.scpi.map(x => x.valeur), [20000]);
+    assert.ok(f.calcul.some(l => /SCPI \(20 000 €\) à part/.test(l)), f.calcul.join(" | "));
+    assert.ok(!r.familles.find(x => x.cle === "efficacite").criteres.filter(c => c.cle === "frais").some(c => c.points_perdus != null));
+  });
+});
+
+describe("relecture CP4 : projets proches, capacité d'épargne, couverture, textes", () => {
+  test("horizon des projets proches : 36 mois (spec : moins de 3 ans)", () => {
+    const o = (date, extra = {}) => [{ id: "v", nom: "Voyage", type: "projet", cible: 10000, dateCible: date, source: "saisi", deja: 0, priorite: 2, ...extra }];
+    assert.ok(crit(evalP1({ objectifs: o("2029-09-30") }), "liquidite_objectifs"), "35 mois");
+    assert.equal(crit(evalP1({ objectifs: o("2029-11-30") }), "liquidite_objectifs"), undefined, "37 mois");
+    assert.match(B_LIQ().cible, /moins de 3 ans/);
+  });
+
+  test("I2 bis : objectif court sans montant → à compléter ; objectif matelas exclu du besoin", () => {
+    const voyage = { id: "v", nom: "Voyage", type: "projet", cible: null, dateCible: "2027-06-30", source: "saisi", priorite: 2 };
+    const c = crit(evalP1({ objectifs: [...OBJECTIFS, voyage] }), "liquidite_objectifs");
+    assert.equal(c.statut, "a_completer");
+    assert.equal(c.points, null);
+    assert.match(c.texte, /montant de « Voyage » manquant/i);
+    assert.ok(c.manque.some(m => /« Voyage »/.test(m)));
+    const matelas = { id: "m", nom: "Matelas", type: "matelas", cible: 20000, dateCible: "2027-01-01", source: "saisi", priorite: 0 };
+    const avec = crit(evalP1({ objectifs: [...OBJECTIFS, matelas] }), "liquidite_objectifs");
+    proche(avec.valeur, crit(evalP1(), "liquidite_objectifs").valeur, "le matelas n'entre pas dans le besoin");
+    assert.equal(crit(evalP1({ objectifs: [matelas] }), "liquidite_objectifs"), undefined, "seul un matelas : sans objet");
+  });
+
+  test("I3 : projets proches = argent sûr MOINS le matelas visé, écrit dans le calcul", () => {
+    const sur = 7640 + 25 + 55 + 65 + 80 + 420;
+    const c = crit(evalP1({ config: { cushion: { mode: "amount", min: 5000, max: null } } }), "liquidite_objectifs");
+    proche(c.valeur, (sur - 5000) / 50000, "matelas visé retiré");
+    assert.ok(c.calcul.some(l => /matelas visé \(5 000 €\)/.test(l)), c.calcul.join(" | "));
+    const tout = crit(evalP1({ config: { cushion: { mode: "months", months: 6, depenses: 5000 } } }), "liquidite_objectifs");
+    assert.equal(tout.valeur, 0, "matelas visé au-delà de l'argent sûr : rien pour les projets");
+    assert.ok(crit(evalP1(), "liquidite_objectifs").calcul.some(l => /aucun matelas visé/i.test(l)));
+  });
+
+  test("I4 : capacité réelle négative (dépenses > revenus) : note 0, texte honnête", () => {
+    const b = { ...BANQUE, mois: BANQUE.mois.map(m => (m.categorie === "logement" ? { ...m, sorties: 4000 } : m)) };
+    const e = crit(evalP1({ banque: b }), "epargne");
+    assert.ok(e.valeur < 0);
+    assert.equal(e.points, 0);
+    assert.match(e.texte, /^Tes dépenses dépassent tes revenus de /);
+  });
+
+  test("provisoire faux quand la note globale est absente ; jauge du patrimoine dans l'unité de sa mesure (% du repère)", () => {
+    const r = Pratiques.agreger([{ famille: "securite", points: null, sur: 20, aCompleter: true, ameliorer: [] }]);
+    assert.equal(r.total, null);
+    assert.equal(r.provisoire, false);
+    const s = Plan.score({ positions: [{ id: "a", owner: "p1", bloc: "Monde", mode: "manual", value: 90000, status: "actif" }],
+      profil: { foyer: { age: "a40" }, personnes: { p1: { salaire: 4000, salaireUnite: "nm" } } }, budget: [{ type: "depense", montant: 3000 }], scope: "foyer" });
+    const p = s.items.find(i => i.cle === "patrimoine");
+    assert.equal(p.mesure.unite, "% du repère");
+    const z = p.repere.zones;
+    assert.equal(z[z.length - 1].statut, "bon");
+    assert.equal(z[z.length - 2].jusqua, 77.5, "bon à partir de 77,5 % du repère (16/20), dans l'unité de mesure.valeur");
+  });
+
+  test("textes : « repère courant en gestion de patrimoine », jamais « conseiller » ; plus de promesse « personne de l'objectif »", () => {
+    const r = evalP1();
+    for (const c of r.criteres) {
+      assert.doesNotMatch(c.source || "", RE_CONSEILLER, c.cle);
+      assert.doesNotMatch(c.regle || "", /personne de l'objectif/, c.cle);
+    }
+    assert.match(crit(r, "matelas").source, /^Repère courant en gestion de patrimoine/);
+    assert.doesNotMatch(readFileSync(new URL("../web/src/pratiques.js", import.meta.url), "utf8"), RE_CONSEILLER);
+  });
+});
+const B_LIQ = () => crit(evalP1({ objectifs: [{ id: "v", nom: "Voyage", type: "projet", cible: 10000, dateCible: "2027-06-30", source: "saisi", deja: 0, priorite: 2 }] }), "liquidite_objectifs");
+
 /* ---------- parité app / connecteur sur le jeu p1 (bloc de calcul pur d'index.ts) ---------- */
 const strip = nodeModule.stripTypeScriptTypes;
 const SANS_STRIP = typeof strip !== "function" && "module.stripTypeScriptTypes indisponible (Node trop ancien)";
@@ -452,4 +586,37 @@ test("parité analyser (angle frais) ↔ pratiques.js : mêmes chiffres que le c
   assert.deepEqual(J(r.details.plus_cheres.map(l => l.nom)), f.frais.plusCouteuses.map(l => l.nom));
   assert.deepEqual(J(r.details.au_dessus_du_repere.map(l => l.nom)), f.frais.auDessusRepere.map(l => l.nom));
   assert.ok(r.hypotheses.some(h => /5 % par an/.test(h)), "hypothèse de rendement affichée");
+});
+
+test("parité app / connecteur : relecture CP4 (nature des lignes, projection, projets proches, matelas visé, SCPI seule, capacité réelle)", { skip: SANS_STRIP }, () => {
+  const M = portMcp();
+  const enSqlSym = P => enSql(P).map((r, i) => (P[i].symbol ? { ...r, instrument: { ...(r.instrument || {}), symbol: P[i].symbol } } : r));
+  const voyage = { id: "v", nom: "Voyage", type: "projet", cible: null, dateCible: "2027-06-30", source: "saisi", priorite: 2 };
+  const matelas = { id: "m", nom: "Matelas", type: "matelas", cible: 20000, dateCible: "2027-01-01", source: "saisi", priorite: 0 };
+  const scenarios = [
+    { nom: "Comgest", positions: [ASML_CTO, COMGEST, { ...COMGEST, id: "cg2", mode: "market", qty: 1, price: 2000, value: null, symbol: "0P00000AYR.F" }] },
+    { nom: "I2", positions: CAS_I2, config: {} },
+    { nom: "objectif sans montant", objectifs: [...OBJECTIFS, voyage] },
+    { nom: "objectif matelas", objectifs: [...OBJECTIFS, matelas] },
+    { nom: "matelas visé", config: { cushion: { mode: "amount", min: 5000, max: null } } },
+    { nom: "SCPI seule", positions: [V("AV Test", "SCPI Rendement", "SCPI", 20000)], config: {} },
+    { nom: "UC monétaire", positions: [V("Assurance-vie Test", "Support monétaire", "Monétaire", 10000, { ter: 0.1 })], config: { frais_enveloppes: { "Assurance-vie Test": { gestion_uc_pct: 0.5, source: "CG", le: "2026-10-01" } } } },
+  ];
+  for (const sc of scenarios) for (const scope of ["foyer", "p1"]) {
+    const ctx = { ...CTX, ...sc, scope };
+    const web = Pratiques.evaluer(ctx);
+    const mcp = M.bonnesPratiques({ d: { profil: ctx.profil, biens: [], credits: [], positions: enSqlSym(ctx.positions), config: ctx.config, lignes: ctx.budget.lignes, banque: banqueSql(ctx.banque) },
+      scope, objectifs: objSql(ctx.objectifs), risque: ctx.risque, classes: ctx.classes, ref: TODAY });
+    comparer(web, mcp, `${sc.nom} / ${scope}`);
+  }
+  // provisoire faux sans note globale (connecteur aussi)
+  const vide = M.bonnesPratiques({ d: { profil: {}, biens: [], credits: [], positions: [], config: {}, lignes: [] }, scope: "foyer", objectifs: [], risque: null, classes: {}, ref: TODAY });
+  const videW = Pratiques.evaluer({ positions: [], profil: {}, config: {}, budget: [], objectifs: [], scope: "foyer", risque: null, today: TODAY });
+  assert.equal(vide.total, videW.total);
+  assert.equal(vide.provisoire, videW.provisoire);
+  if (videW.total == null) assert.equal(vide.provisoire, false);
+  // capacité réelle : même budget réel
+  assert.deepEqual(J(M.bonnesPratiques({ d: { profil: PROFIL, biens: [], credits: [], positions: enSql(P1), config: {}, lignes: BUDGET.lignes, banque: banqueSql(BANQUE) }, scope: "foyer",
+    objectifs: objSql(OBJECTIFS), risque: null, classes: {}, ref: TODAY }).criteres.find(c => c.cle === "epargne").donnees), J(crit(evalP1(), "epargne").donnees));
+  assert.doesNotMatch(src, /conseillers en gestion|Repère usuel des conseillers/);
 });

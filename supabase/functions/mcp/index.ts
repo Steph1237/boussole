@@ -116,7 +116,7 @@ const INSTRUCTIONS = [
   "Point d'entrée d'un nouvel utilisateur : quand il veut commencer ou reprendre son onboarding (« Lance l'onboarding Boussole », « je débute »), appelle d'abord demarrer_onboarding et suis à la lettre la conduite qu'il renvoie (prompt MCP équivalent : onboarding).",
   "Tous les montants sont en euros. Les dates sont au format AAAA-MM-JJ.",
   "p1 et p2 désignent les personnes du foyer dont les prénoms figurent dans le profil (get_profile, champ personnes) ; « foyer » est leur ensemble. Utilise leurs prénoms quand tu parles à l'utilisateur.",
-  "Claude propose, l'utilisateur dispose : les outils d'écriture (update_profile, upsert_biens, upsert_credits, delete_bien, delete_credit, upsert_positions, record_transaction, update_budget, upsert_objectifs, delete_objectif, set_risk_answers, set_protection, regler_matelas, regler_versements, corriger_classe) n'écrivent rien directement. Ils déposent des propositions (avant / après, source, justification) que l'utilisateur valide, modifie ou refuse dans Boussole › Agent › Propositions. Dis-le à l'utilisateur après chaque dépôt.",
+  "Claude propose, l'utilisateur dispose : les outils d'écriture (update_profile, upsert_biens, upsert_credits, delete_bien, delete_credit, upsert_positions, record_transaction, update_budget, upsert_objectifs, delete_objectif, set_risk_answers, set_protection, regler_matelas, regler_versements, corriger_classe, regler_frais_enveloppe) n'écrivent rien directement. Ils déposent des propositions (avant / après, source, justification) que l'utilisateur valide, modifie ou refuse dans Boussole › Agent › Propositions. Dis-le à l'utilisateur après chaque dépôt.",
   "Chaque dépôt exige source : d'où vient le chiffre (« Relevé PEA du 30/09 collé par l'utilisateur », « Dit par l'utilisateur », « Avis d'imposition 2026 »…). Ajoute une justification d'une phrase si elle aide. Regroupe un entretien dans un seul lot : réutilise l'identifiant lot renvoyé par le premier dépôt.",
   "Entretien : commence par etat_du_bilan (ce qui manque, dans l'ordre, avec le pourquoi) et list_propositions (ce qui attend déjà une validation). Ne repose jamais une question déjà répondue ; en texte, une question à la fois, en français simple, avec son pourquoi en une phrase. Des parcours prêts à l'emploi existent (prompts bilan_complet, profil_de_risque, budget, placements, revue_mensuelle, completer_profil).",
   "Formulaires (formulaire) : dès que tu dois poser plusieurs questions (formulaire, questionnaire, données manquantes), utilise l'outil formulaire plutôt que des questions en texte. Ne réponds jamais à la place de l'utilisateur. Les aides informent, elles ne recommandent pas. Après l'envoi, résume ce qui a été proposé ; pour le profil de risque, résume le profil estimé et signale tout écart avec le risque réel du portefeuille. Les réponses arrivent en propositions (un seul lot, source « Saisi par l'utilisateur dans le formulaire interactif ») ; si le formulaire ne s'affiche pas, pose ses questions en texte et dépose les réponses avec les outils d'écriture.",
@@ -129,6 +129,7 @@ const INSTRUCTIONS = [
   "Profil de risque (get_risk_profile, set_risk_answers) : questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, profil équivalent du portefeuille réel. Pose les questions avec l'outil formulaire (champs risque.*), ou en texte à défaut, et enregistre les seules réponses choisies par l'utilisateur (set_risk_answers en texte), jamais une réponse déduite ; le profil définitif est calculé par l'application après validation. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
   "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
   "Frais, zone et devise des fonds (annotate_instrument, écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
+  "Frais des contrats (regler_frais_enveloppe, par proposition) : frais de gestion d'une assurance-vie ou d'un PER sur les unités de compte et sur le fonds en euros, droits de garde d'un PEA ou d'un compte-titres, en % par an. Relève-les dans les documents du contrat (conditions générales, annexe de frais, relevé annuel) que l'utilisateur te donne ou que tu consultes, cite le document et sa date dans source (le : date du document) ; n'invente jamais un pourcentage : sans document, ne propose rien et dis ce qui manque. Le critère « Frais des supports » de Santé reste « à compléter » tant que les frais des contrats qui portent des unités de compte manquent (bonnes_pratiques, critère frais : manque, frais.enveloppes_a_completer).",
 ].join("\n");
 
 /* Parcours d'entretien (prompts MCP) : une conduite commune et un objectif par parcours. */
@@ -139,6 +140,7 @@ const CONDUITE = [
   "3. J'ai le droit de déposer ou coller un relevé (banque, export de courtier, PEA, assurance-vie, PER, tableau d'amortissement, avis d'imposition) : extrais-en les chiffres et agrège-les (budget : totaux mensuels par catégorie, jamais les lignes brutes ; placements : soldes, positions, opérations sur titres), retire tout identifiant (IBAN, numéros de compte ou de carte), cite le document et sa date, et signale ce qui est illisible ou ambigu (le formulaire peut servir à le confirmer).",
   "4. N'invente jamais un chiffre : si une valeur manque, demande-la ; ne présente jamais une estimation comme un fait.",
   "5. Avant de proposer, récapitule ce que tu as compris (valeurs, dates, titulaires) et attends ma confirmation.",
+  "5 bis. Frais d'un contrat (assurance-vie, PER, PEA, compte-titres) : relève-les dans les documents du contrat (conditions générales, annexe de frais, relevé annuel) et propose-les avec regler_frais_enveloppe, en citant le document et sa date dans source ; n'invente jamais un pourcentage : sans document, dis ce qui manque.",
   "6. Enregistre avec les outils d'écriture en renseignant toujours source (« Relevé PEA du 30/09 collé par l'utilisateur », « Dit par l'utilisateur »…) et, si utile, une justification d'une phrase. Tout l'entretien forme un seul lot : garde l'identifiant lot renvoyé par le premier dépôt et passe-le aux appels suivants.",
   "7. Rappelle-moi que rien n'est appliqué tant que je n'ai pas validé les propositions dans Boussole › Agent › Propositions (je peux y corriger une valeur avant de valider).",
   "8. Reste pédagogique : explique les notions (tranche d'imposition, matelas de précaution, PER, profil de risque…) sans jargon ; aucune recommandation de produit, ni d'achat ou de vente ; ce n'est pas un conseil en investissement.",
@@ -157,7 +159,7 @@ const PARCOURS = [
     objectif: "Je veux établir mon budget mensuel. Lis d'abord get_budget. Demande mes dépenses par grande catégorie (logement, alimentation, transport, enfants, santé, loisirs, abonnements, impôts, divers), puis ce que je mets de côté chaque mois et où. Si je colle un relevé bancaire, regroupe les opérations récurrentes par catégorie et montre-moi le regroupement avant de proposer. N'ajoute ni salaire ni mensualités de crédit (ils viennent du profil). Dépose avec update_budget (mode fusionner)." },
   { nom: "placements", titre: "Mettre à jour mes placements",
     description: "Recenser comptes et placements avec des montants datés de moins de 90 jours.",
-    objectif: "Je veux recenser et mettre à jour mes placements. Lis list_positions. Pour chaque enveloppe (livrets, PEA, assurance-vie, PER, compte-titres, crypto…), demande le relevé ou le solde avec sa date ; pour un titre coté, l'ISIN et la quantité suffisent. Dépose avec upsert_positions (ou record_transaction pour un achat, une vente, un versement). Signale les montants de plus de 90 jours. Pour les frais d'un fonds, n'utilise annotate_instrument qu'avec une source consultée." },
+    objectif: "Je veux recenser et mettre à jour mes placements. Lis list_positions. Pour chaque enveloppe (livrets, PEA, assurance-vie, PER, compte-titres, crypto…), demande le relevé ou le solde avec sa date ; pour un titre coté, l'ISIN et la quantité suffisent. Dépose avec upsert_positions (ou record_transaction pour un achat, une vente, un versement). Signale les montants de plus de 90 jours. Pour les frais d'un fonds, n'utilise annotate_instrument qu'avec une source consultée ; pour les frais d'un contrat (assurance-vie, PER, garde), regler_frais_enveloppe à partir de ses documents (conditions générales, annexe de frais, relevé annuel)." },
   { nom: "revue_mensuelle", titre: "Faire ma revue mensuelle",
     description: "Ce qui a changé depuis la dernière revue, la synthèse et les questions du mois (demarrer_routine).",
     objectif: "Je veux faire ma revue mensuelle maintenant. Appelle demarrer_routine avec le type revue_mensuelle et suis sa conduite ; je suis là, tu peux me poser les questions du mois ensuite." },
@@ -479,7 +481,8 @@ const prioriteDe = (o: any) => (o.priorite ?? Infinity) as number;
 /** Personne d'un objectif (titulaire, owner ou personne : p1 / p2), ou null pour le foyer (Plan.titulaireObjectif). */
 const titulaireObjectif = (o: any): string | null => { const v = o && (o.titulaire || o.owner || o.personne); return v === "p1" || v === "p2" ? v : null; };
 
-/** Répartit l'argent des poches entre objectifs, en cascade par priorité (port de Plan.affecterDeja ; personne de l'objectif respectée). */
+/** Répartit l'argent des poches entre objectifs, en cascade par priorité (port de Plan.affecterDeja ; titulaire éventuel respecté, la table
+    objectifs n'en ayant pas aujourd'hui). */
 function affecterDeja(objectifs: any[], positions: any[], scope = "foyer"): Record<string, number> {
   const reste = positions.filter((p) => inScope(p.owner, scope) && counted(p)).map((p) => ({ p, v: val(p) }));
   const ordre = objectifs.slice().sort((a, b) =>
@@ -655,20 +658,27 @@ function expliqueEpargne(o: any): Explication {
     pourquoi: "Pas de note : il faut tes revenus et tes dépenses (ou ton épargne) pour calculer ton taux d'épargne.",
     manque: o.manque || ["Tes revenus et tes dépenses mensuels (budget, ou banque connectée)"],
     ameliorer: [{ action: "Donne tes revenus et tes dépenses à Claude (ou connecte ta banque) pour calculer ton taux d'épargne.", gain_points: null }] };
-  const t = o.taux, pts = o.points, src = sourceBudget(o.source, o.periode);
-  const calcul = o.source === "reel"
+  const t = o.taux, pts = o.points, src = sourceBudget(o.source, o.periode), reel = o.source === "reel";
+  const capacite = reel ? o.revenus - o.depenses : 0, reste = capacite - o.epargne;
+  const calcul = reel
     ? ["Revenus moyens (" + src + ") : " + eurP(o.revenus) + " par mois",
-      "Épargne versée (virements vers l'épargne et les placements) : " + eurP(o.epargne) + " par mois",
-      eurP(o.epargne) + " ÷ " + eurP(o.revenus) + " = " + pctP(t, 1)]
+      "Dépenses moyennes (hors épargne et virements internes) : " + eurP(o.depenses) + " par mois",
+      "Capacité d'épargne : " + eurP(o.revenus) + " − " + eurP(o.depenses) + " = " + eurP(capacite) + " par mois",
+      eurP(capacite) + " ÷ " + eurP(o.revenus) + " = " + pctP(t, 1),
+      "Dont épargne versée (virements vers l'épargne et les placements) : " + eurP(o.epargne) + " par mois ; " +
+        (reste >= 0 ? "le reste (" + eurP(reste) + ") reste sur tes comptes courants" : "c'est " + eurP(-reste) + " de plus que ta capacité : la différence a été prise sur tes comptes courants")]
     : ["Revenus du budget : " + eurP(o.revenus) + " par mois", "Épargne prévue : " + eurP(o.epargne) + " par mois",
       "Reste du mois (revenus − dépenses − épargne), compté s'il est positif : " + eurP(Math.max(0, o.reste || 0)),
       "(" + eurP(o.epargne) + " + " + eurP(Math.max(0, o.reste || 0)) + ") ÷ " + eurP(o.revenus) + " = " + pctP(t, 1)];
   calcul.push("Barème : " + pctP(t, 1) + " → " + pts + "/20");
   const ameliorer = [15, 20].filter((c) => t * 100 < c).map((c) => ({
-    action: "Mets de côté " + eurP((c / 100 - t) * o.revenus) + " de plus par mois pour atteindre " + c + " % de tes revenus.", gain_points: gainPts(f, c, pts) }));
+    action: (reel ? "Dégage " + eurP((c / 100 - t) * o.revenus) + " de plus par mois (dépenses en moins ou revenus en plus) pour atteindre "
+      : "Mets de côté " + eurP((c / 100 - t) * o.revenus) + " de plus par mois pour atteindre ") + c + " % de tes revenus.", gain_points: gainPts(f, c, pts) }));
   return { repere, calcul, ameliorer: ameliorer.slice(0, 2), donnees: o.donnees || [], source_donnees: src, confiance: "complete",
     mesure: { valeur: r1c(t * 100), unite: "%", texte: pctP(t, 1) + " des revenus" },
-    pourquoi: "Tu mets de côté " + pctP(t, 1) + " de tes revenus (" + src + "), " + (t >= 0.15 ? "au-dessus du" : "sous le") + " repère de 15 %." };
+    pourquoi: reel ? (t < 0 ? "Tes dépenses dépassent tes revenus (" + src + ") : ta capacité d'épargne est négative."
+        : "Tu dégages " + pctP(t, 1) + " de tes revenus (" + src + "), " + (t >= 0.15 ? "au-dessus du" : "sous le") + " repère de 15 %.")
+      : "Tu mets de côté " + pctP(t, 1) + " de tes revenus (" + src + "), " + (t >= 0.15 ? "au-dessus du" : "sous le") + " repère de 15 %." };
 }
 function expliqueEndettement(o: any): Explication {
   const f = BAREMES.endettement, repere = { texte: REPERES.endettement, zones: zones(f, 0, 60) };
@@ -704,7 +714,8 @@ function expliqueConcentration(o: any): Explication {
       (nb < 3 ? ", réparti sur seulement " + nb + " poche" + (nb > 1 ? "s" : "") + "." : ".") };
 }
 function expliquePatrimoine(o: any): Explication {
-  const f = (r: number) => BAREMES.patrimoine(r), repere = { texte: REPERES.patrimoine, zones: zones(f, 0, 1.5) };
+  /* Jauge dans l'unité de mesure.valeur (% du repère) : le barème est rejoué sur x ÷ 100 (Plan.expliquePatrimoine). */
+  const f = (r: number) => BAREMES.patrimoine(r), repere = { texte: REPERES.patrimoine, zones: zones((x) => f(x / 100), 0, 150) };
   if (o.annees == null) return { repere, confiance: "absente", pourquoi: "Pas de note : il faut ta tranche d'âge et tes revenus pour situer ton patrimoine.",
     manque: o.manque || [], ameliorer: [{ action: "Donne ta tranche d'âge et tes revenus à Claude pour situer ton patrimoine.", gain_points: null }] };
   const ratio = o.annees / o.repere, pts = o.points;
@@ -952,8 +963,9 @@ function moisCourants(banque: any): any[] {
 }
 const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
 /** Moyenne des nb (3) derniers mois complets : revenus, dépenses (toutes catégories hors revenus, épargne et virements internes),
-    épargne, taux d'épargne réel = épargne ÷ revenus ; parCompte : chaque mois retenu détaillé par compte (sinon totaux de tous les
-    comptes connectés) ; null sans mois complet. */
+    épargne versée, tauxEpargne = épargne versée ÷ revenus, capacité d'épargne réelle (capacite = revenus − dépenses, tauxCapacite =
+    capacite ÷ revenus : taux d'épargne de Santé, spec cp4 § 1.2) ; parCompte : chaque mois retenu détaillé par compte (sinon totaux de
+    tous les comptes connectés) ; null sans mois complet. Parité testée avec Calc.budgetReel. */
 function budgetReel(banque: any, auj: string, nb = 3) {
   if (!banque || banque.actif === false) return null;
   const k = Number.isInteger(nb) && nb > 0 ? nb : 3;
@@ -969,7 +981,7 @@ function budgetReel(banque: any, auj: string, nb = 3) {
   const det = moisDetailles(banque);
   const m = retenus.length, revenus = pos(rev) / m, depenses = pos(dep) / m, epargne = pos(ep) / m;
   return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
-    parCompte: retenus.every((x) => det.has(x)) };
+    capacite: revenus - depenses, tauxCapacite: revenus > 0 ? (revenus - depenses) / revenus : null, parCompte: retenus.every((x) => det.has(x)) };
 }
 /** Réserve laissée sur les comptes courants, en mois de dépenses : config.cushion.reserve_mois (facultatif), 1 par défaut. */
 function reserveMois(config: any): number {
@@ -1156,7 +1168,7 @@ const FAMILLES = [
 ];
 const PLAFOND_SPECULATIF_DEFAUT = 0.05;
 const PLAFOND_PEA_DEFAUT = 150000;
-const HORIZON_COURT = 24; // mois
+const HORIZON_COURT = 36; // mois : projets à moins de 3 ans (Pratiques)
 const SEUIL_FRAIS = 0.7; // couverture minimale des frais connus pour noter (Pratiques.SEUIL_FRAIS)
 const RENDEMENT_PROJECTION = 5; // % par an, hypothèse affichée de la projection des frais
 /* Barèmes (points sur 20) en fonction de la mesure dans son unité d'affichage : nommés pour ne pas être confondus avec ceux du
@@ -1202,21 +1214,21 @@ const aCompleter = (famille: string, cle: string, b: Base, texte: string, piste:
     { pourquoi: "Pas de note : " + texte.charAt(0).toLowerCase() + texte.slice(1), ameliorer: [{ action: piste, gain_points: null }], confiance: "absente", ...ex });
 
 const DE_PLAN: Record<string, { famille: string; regle: string; source: string }> = {
-  matelas: { famille: "securite", regle: "Matelas = (épargne disponible + comptes courants au-delà de la réserve) ÷ dépenses mensuelles ; réserve = 1 mois de dépenses par défaut (réglable) ; dépenses réelles des comptes courants si connues, sinon budget prévu ; repère 3 à 6 mois", source: "Repère usuel des conseillers en gestion de patrimoine" },
-  epargne: { famille: "effort", regle: "Taux d'épargne = épargne versée ÷ revenus, d'après les comptes courants (3 derniers mois complets) si la banque est connectée, sinon (épargne prévue + reste du mois) ÷ revenus du budget ; repère 15 % ou plus", source: "Repère usuel des conseillers en gestion de patrimoine" },
+  matelas: { famille: "securite", regle: "Matelas = (épargne disponible + comptes courants au-delà de la réserve) ÷ dépenses mensuelles ; réserve = 1 mois de dépenses par défaut (réglable) ; dépenses réelles des comptes courants si connues, sinon budget prévu ; repère 3 à 6 mois", source: "Repère courant en gestion de patrimoine" },
+  epargne: { famille: "effort", regle: "Taux d'épargne = capacité d'épargne ÷ revenus : (revenus − dépenses) ÷ revenus d'après les comptes courants (3 derniers mois complets) si la banque est connectée, l'épargne versée étant affichée à part ; sinon (épargne prévue + reste du mois) ÷ revenus du budget ; repère 15 % ou plus", source: "Repère courant en gestion de patrimoine" },
   endettement: { famille: "effort", regle: "Endettement = mensualités de crédit ÷ revenus ; plafond 35 %", source: "HCSF, décision D-HCSF-2021-7" },
   concentration: { famille: "allocation", regle: "Poids de la plus grosse ligne dans le financier ; repère 20 % au plus et au moins 3 poches",
-    source: "Principe de diversification ; repère usuel des conseillers en gestion de patrimoine" },
+    source: "Principe de diversification ; repère courant en gestion de patrimoine" },
 };
 const BP: Record<string, Base> = {
   protection: { titre: "Protection de la famille", cible: "prévoyance et assurance emprunteur en place",
     regle: "Avec un crédit ou des enfants à charge : prévoyance (décès, invalidité) et assurance emprunteur souscrites",
-    source: "Repère usuel des conseillers en gestion de patrimoine ; assurance emprunteur demandée par les banques pour un crédit immobilier" },
-  liquidite_objectifs: { titre: "Argent disponible pour les projets proches", cible: "100 % du besoin des objectifs à moins de 2 ans",
-    regle: "Argent disponible et peu risqué (épargne disponible, monétaire, fonds en euros, obligations courtes) ÷ montant des objectifs à moins de 2 ans ; actions, levier, crypto et SCPI exclus ; repère 100 %",
-    source: "Repère usuel des conseillers : l'argent nécessaire à moins de 2 ans reste disponible et peu risqué" },
+    source: "Repère courant en gestion de patrimoine ; assurance emprunteur demandée par les banques pour un crédit immobilier" },
+  liquidite_objectifs: { titre: "Argent disponible pour les projets proches", cible: "100 % du besoin des objectifs à moins de 3 ans",
+    regle: "(Argent disponible et peu risqué − matelas visé) ÷ montant des objectifs à moins de 3 ans (hors matelas) ; argent peu risqué : épargne disponible, monétaire, fonds en euros, obligations courtes ; actions, levier, crypto et SCPI exclus ; repère 100 %",
+    source: "Repère courant en gestion de patrimoine : l'argent nécessaire à moins de 3 ans reste disponible et peu risqué" },
   apport: { titre: "Apport pour le projet immobilier", cible: "l'apport visé (10 % du prix + frais de notaire)",
-    regle: "Apport réuni (poches rattachées à l'objectif, de la personne de l'objectif ; « à recevoir » exclu) ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
+    regle: "Apport réuni (poches et enveloppes rattachées à l'objectif ; « à recevoir » exclu) ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
     source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)" },
   adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de ton profil",
     regle: "Somme des écarts hors fourchette, par classe d'actifs, entre ton allocation et celle de ton profil (comptes courants exclus) ; 0 point → 20, 40 points ou plus → 0 ; repère 0 point",
@@ -1237,8 +1249,8 @@ const BP: Record<string, Base> = {
     regle: "PEA avant compte-titres pour les actions européennes · assurance-vie de plus de 8 ans pour l'abattement · PER surtout à partir de 30 % d'imposition",
     source: "Code général des impôts : art. 163 quinquies D (PEA), art. 125-0 A et 990 I (assurance-vie), art. 163 quatervicies (PER)" },
   dormant: { titre: "Argent dormant", cible: "12 mois de dépenses au plus sur livrets",
-    regle: "Livrets et monétaire au-delà de 12 mois de dépenses, hors objectifs à moins de 2 ans ; repère 12 mois au plus",
-    source: "Repère usuel des conseillers en gestion de patrimoine" },
+    regle: "Livrets et monétaire au-delà de 12 mois de dépenses, hors objectifs à moins de 3 ans ; repère 12 mois au plus",
+    source: "Repère courant en gestion de patrimoine" },
 };
 const terDe = (p: any) => p.instrument?.ter ?? null;
 const zoneDe = (p: any) => p.instrument?.zone ?? null;
@@ -1313,40 +1325,55 @@ function sansRisque(p: any, classes: Surcharge): boolean {
   return cl === "monetaire" || cl === "fonds_euros" || RE_FONDS_EUROS.test(nom) || (cl === "obligations" && RE_OBLIG_COURTES.test(nom));
 }
 
+/** Matelas visé (Calc.matelas(config).min) : config.cushion en montant (min) ou en mois (months × depenses) ; 0 sans cible. */
+function matelasVise(config: any): number {
+  const c = config?.cushion;
+  if (!c || typeof c !== "object") return 0;
+  return c.mode === "months" ? pos(c.months) * pos(c.depenses) : pos(c.min);
+}
+/* Projets proches (Pratiques.liquiditeObjectifs) : objectifs à moins de 3 ans hors type matelas ; sans montant → à compléter ;
+   argent sûr moins le matelas visé. */
 function bpLiquidite(c: ContexteBP, deja: Record<string, number>): Critere | null {
-  const courts = objectifsCourts(c.objectifs, deja, c.ref);
+  const courts = objectifsCourts(c.objectifs, deja, c.ref).filter((x) => x.o.type !== "matelas");
   if (!courts.length) return null;
+  const f = (x: number) => Math.min(1, x / 100) * 20;
+  const repere = { texte: "Argent disponible et peu risqué, matelas visé mis à part, ≥ montant des objectifs à moins de 3 ans : 20 ; proportionnel en dessous. Actions, levier, crypto et SCPI ne comptent pas : une baisse juste avant l'échéance n'aurait pas le temps de se rattraper.", zones: zones(f, 0, 150) };
+  const sansMontant = courts.filter((x) => !(x.cible > 0)).map((x) => x.o.nom || "objectif");
+  if (sansMontant.length) return aCompleter("securite", "liquidite_objectifs", BP.liquidite_objectifs,
+    (sansMontant.length > 1 ? "Montants de " + listeNoms(sansMontant) + " manquants." : "Montant de « " + sansMontant[0] + " » manquant."),
+    "Donne à Claude le montant visé de " + listeNoms(sansMontant) + " pour mesurer l'argent prêt pour tes projets proches.",
+    { repere, manque: sansMontant.map((nom) => "Le montant de « " + nom + " » (objectif à moins de 3 ans)") });
   const besoin = sum(courts, (x) => x.cible);
   const L = c.d.positions.filter((p) => inScope(p.owner, c.scope) && counted(p) && val(p) > 0);
   const surs = L.filter((p) => sansRisque(p, c.classes)).sort((a, b) => val(b) - val(a));
   const sur = sum(surs, val);
   const dispo = sum(L.filter((p) => ["immediate", "jours"].includes(liquidite(p.envelope)) || sansRisque(p, c.classes)), val);
-  const f = (x: number) => Math.min(1, x / 100) * 20;
-  const repere = { texte: "Argent disponible et peu risqué ≥ montant des objectifs à moins de 2 ans : 20 ; proportionnel en dessous. Actions, levier, crypto et SCPI ne comptent pas : une baisse juste avant l'échéance n'aurait pas le temps de se rattraper.", zones: zones(f, 0, 150) };
+  const vise = matelasVise(c.d.config), pourProjets = Math.max(0, sur - vise);
   const objs = courts.map((x) => "« " + (x.o.nom || "objectif") + " » " + eurP(x.cible) + " (échéance " + frDate(dateCible(x.o)!) + ")");
-  if (besoin <= 0) return contrat(critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: 20,
-    texte: "Tes objectifs à moins de 2 ans sont déjà financés.", piste: "Garde cet argent sur des supports disponibles jusqu'à l'échéance." }), {
-    repere, confiance: "complete", source_donnees: "objectifs et placements", calcul: ["Objectifs à moins de 2 ans : " + objs.join(", "), "Montant à réunir : 0 €"],
-    pourquoi: "Tes objectifs à moins de 2 ans n'ont plus rien à réunir.", mesure: { valeur: 100, unite: "%", texte: "besoin couvert" } });
-  const ratio = sur / besoin;
+  const ratio = pourProjets / besoin;
   const points = Math.round(Math.min(1, ratio) * 20);
   return contrat(critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points, valeur: ratio,
-    texte: eurP(dispo) + " disponibles, dont " + eurP(sur) + " sans risque de baisse, pour " + eurP(besoin) + " à réunir d'ici 2 ans.",
+    texte: eurP(dispo) + " disponibles, dont " + eurP(sur) + " sans risque de baisse" + (vise > 0 ? " (" + eurP(pourProjets) + " une fois ton matelas visé de " + eurP(vise) + " mis à part)" : "") +
+      ", pour " + eurP(besoin) + " à réunir d'ici 3 ans.",
     piste: ratio >= 1 ? "L'argent de tes projets proches est accessible sans attendre ni vendre au mauvais moment."
-      : "L'argent nécessaire à moins de 2 ans gagne à être disponible et peu risqué (livrets, compte courant) : une baisse des marchés juste avant l'échéance n'aurait pas le temps de se rattraper." }), {
-    repere, source_donnees: "objectifs et placements", confiance: "complete",
+      : "L'argent nécessaire à moins de 3 ans gagne à être disponible et peu risqué (livrets, compte courant) : une baisse des marchés juste avant l'échéance n'aurait pas le temps de se rattraper." }), {
+    repere, source_donnees: "objectifs, placements et matelas visé", confiance: "complete",
     mesure: { valeur: r1c(ratio * 100), unite: "%", texte: pctP(Math.min(ratio, 9.99)) + " du besoin couvert sans risque de baisse" },
-    calcul: ["Objectifs à moins de 2 ans : " + objs.join(", "), "Montant à réunir : " + eurP(besoin),
+    calcul: ["Objectifs à moins de 3 ans (hors matelas) : " + objs.join(", "), "Montant à réunir : " + eurP(besoin),
       "Disponible sous quelques jours ou semaines : " + eurP(dispo) + ", dont " + eurP(sur) + " sans risque de baisse (épargne disponible, monétaire, fonds en euros)",
-      "Le reste (" + eurP(Math.max(0, dispo - sur)) + " : actions, levier, crypto) ne compte pas pour un projet à moins de 2 ans",
-      eurP(sur) + " ÷ " + eurP(besoin) + " = " + pctP(ratio, 1), "Barème : " + pctP(Math.min(ratio, 1)) + " du besoin → " + points + "/20"],
+      "Le reste (" + eurP(Math.max(0, dispo - sur)) + " : actions, levier, crypto) ne compte pas pour un projet à moins de 3 ans",
+      vise > 0 ? "Ton matelas visé (" + eurP(vise) + ") reste pour les imprévus : " + eurP(sur) + " − " + eurP(vise) + " = " + eurP(pourProjets) + " pour tes projets"
+        : "Aucun matelas visé réglé : tout l'argent sans risque de baisse est compté pour tes projets (une cible de matelas, réglée avec Claude, en serait retirée)",
+      eurP(pourProjets) + " ÷ " + eurP(besoin) + " = " + pctP(ratio, 1), "Barème : " + pctP(Math.min(ratio, 1)) + " du besoin → " + points + "/20"],
     donnees: surs.map((p) => donneeLigne(p)),
-    ameliorer: ratio < 1 ? [{ action: "Place " + eurP(besoin - sur) + " de plus sur un support disponible et peu risqué (livret, fonds en euros) d'ici l'échéance.", gain_points: 20 - points }] : [],
-    pourquoi: ratio >= 1 ? "L'argent sans risque de baisse couvre tes projets à moins de 2 ans."
-      : "Seuls " + eurP(sur) + " sont à la fois disponibles et sans risque de baisse, pour " + eurP(besoin) + " de projets à moins de 2 ans." });
+    ameliorer: ratio < 1 ? [{ action: "Place " + eurP(besoin - pourProjets) + " de plus sur un support disponible et peu risqué (livret, fonds en euros) d'ici l'échéance" +
+      (vise > 0 ? ", en plus de ton matelas." : "."), gain_points: 20 - points }] : [],
+    pourquoi: ratio >= 1 ? "L'argent sans risque de baisse" + (vise > 0 ? ", matelas visé mis à part," : "") + " couvre tes projets à moins de 3 ans."
+      : "Seuls " + eurP(pourProjets) + " sont à la fois disponibles et sans risque de baisse" + (vise > 0 ? " une fois ton matelas visé mis à part" : "") +
+        ", pour " + eurP(besoin) + " de projets à moins de 3 ans." });
 }
 
-/* Apport : déjà réuni (affecterDeja : poches rattachées, personne de l'objectif, « à recevoir » exclu) ; « à recevoir » rattaché à part. */
+/* Apport : déjà réuni (affecterDeja : poches rattachées, « à recevoir » exclu) ; « à recevoir » rattaché à part. */
 function bpApport(c: ContexteBP, deja: Record<string, number>): Critere | null {
   const L = c.objectifs.filter((o) => o && o.type === "apport");
   if (!L.length) return null;
@@ -1390,15 +1417,19 @@ function bpApport(c: ContexteBP, deja: Record<string, number>): Critere | null {
     pourquoi: eurP(reuni) + " réunis sur " + eurP(cible) + " visés" + (attendus > 0 ? " ; les " + eurP(attendus) + " à recevoir ne comptent pas encore." : ".") });
 }
 
-/** Taux d'épargne réel (Pratiques.epargneReelle) : épargne versée ÷ revenus des comptes courants ; barème du score de santé. */
+/** Taux d'épargne réel (Pratiques.epargneReelle) : capacité d'épargne (revenus − dépenses) ÷ revenus des comptes courants
+    (tauxCapacite), épargne versée affichée à part ; barème du score de santé. */
 function bpEpargneReelle(reel: any, periode: string): Critere {
-  const t = reel.tauxEpargne as number, points = Math.round(BAREMES.epargne(t * 100));
+  const t = reel.tauxCapacite as number, points = Math.round(BAREMES.epargne(t * 100));
   return contrat({ cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus", valeur: t, points, sur: 20, aCompleter: false,
-    texte: "Tu mets de côté " + pctP(t) + " de tes revenus, d'après tes comptes (" + periode + ").",
+    texte: t < 0 ? "Tes dépenses dépassent tes revenus de " + eurP(-reel.capacite) + " par mois, d'après tes comptes (" + periode + ")."
+      : "Tu dégages " + pctP(t) + " de tes revenus (revenus − dépenses), d'après tes comptes (" + periode + "), dont " + eurP(reel.epargne) + " par mois versés sur ton épargne.",
     piste: t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."
+      : t < 0 ? "Tes dépenses dépassent tes revenus : les postes les plus lourds du budget sont le premier endroit où regarder."
       : "Le repère courant est de 15 % des revenus. Les postes les plus lourds du budget sont le premier endroit où regarder.", ...DE_PLAN.epargne } as Critere,
-  expliqueEpargne({ taux: t, revenus: reel.revenus, epargne: reel.epargne, source: "reel", periode, points,
-    donnees: [{ libelle: "Revenus moyens", valeur: r2c(reel.revenus) }, { libelle: "Dépenses moyennes", valeur: r2c(reel.depenses) }, { libelle: "Épargne versée", valeur: r2c(reel.epargne) }] }));
+  expliqueEpargne({ taux: t, revenus: reel.revenus, depenses: reel.depenses, epargne: reel.epargne, source: "reel", periode, points,
+    donnees: [{ libelle: "Revenus moyens", valeur: r2c(reel.revenus) }, { libelle: "Dépenses moyennes", valeur: r2c(reel.depenses) },
+      { libelle: "Capacité d'épargne", valeur: r2c(reel.capacite) }, { libelle: "Épargne versée", valeur: r2c(reel.epargne) }] }));
 }
 
 /* Écarts par classe (Pratiques.tableauEcarts) : [{ groupe, libelle, pct, min, max, ecart (signé), hors }]. */
@@ -1530,15 +1561,30 @@ function bpDevises(vivantes: any[]): Critere | null {
 const RE_CONTRAT = /assurance.?vie|\bav\b|capitalisation|\bper\b|\bperin\b|\bperp\b|\bperco\b|\bpercol\b|\bpereco\b|\bmadelin\b|retraite/;
 const RE_FONDS = /\betf\b|\betc\b|ucits|\bfonds\b|\bfund\b|sicav|\bfcp\b|opcvm|tracker|indiciel|\bindex\b|\bmsci\b|s&p|stoxx|nasdaq|ftse|russell|amundi|lyxor|ishares|xtrackers|\bspdr\b|vanguard|invesco|wisdomtree/;
 const RE_SCPI = /\bscpi\b|\bopci\b/;
-/** Nature d'une ligne pour les frais : scpi (à part), fonds_euros, crypto, liquidites, fonds (ETF, OPCVM, unités de compte), direct. */
+const RE_SYMBOLE_ACTION = /^[A-Z][A-Z0-9&]{0,9}(?:[.-][A-Z]{1,4})?$/; // ticker (ASML.AS, AI.PA, BRK-B), pas un code de fonds (0P…)
+const CLASSES_ACTION = ["actions", "small_caps", "emergents"];
+const symboleDe = (p: any): string | null => { const s = p && (p.symbol || p.instrument?.symbol); return s ? String(s).trim().toUpperCase() : null; };
+/** Action reconnue (Pratiques.estAction) : classe actions, nom sans motif de fonds, ligne cotée, ISIN hors IE / LU et, si le symbole
+    est connu, symbole de type action. */
+function estAction(p: any, classes: Surcharge): boolean {
+  if (!CLASSES_ACTION.includes(classePoche(p.bloc, classes)) || p.mode !== "market") return false;
+  if (RE_FONDS.test(sansAccent(p.name)) || /^(ie|lu)/.test(sansAccent(p.isin))) return false;
+  const s = symboleDe(p);
+  return !s || RE_SYMBOLE_ACTION.test(s);
+}
+/** Nature d'une ligne pour les frais (Pratiques.natureFrais) : scpi (à part), fonds_euros, crypto, liquidites (espèces sans ISIN hors
+    contrat), fonds (ETF, OPCVM, unités de compte dont monétaire ; ligne manuelle avec ISIN ; ISIN non reconnu comme action : TER
+    inconnu), direct (action reconnue ; sans ISIN, ligne qui n'a rien d'un fonds). */
 function natureFrais(p: any, classes: Surcharge, ter: unknown): string {
   const nom = sansAccent(p.name), env = sansAccent(p.envelope), cl = classePoche(p.bloc, classes);
+  const isin = ISIN_RE.test(String(p.isin || "").trim().toUpperCase()), contratEnv = RE_CONTRAT.test(env);
   if (cl === "immobilier" || RE_SCPI.test(nom) || RE_SCPI.test(sansAccent(p.bloc))) return "scpi";
   if (cl === "fonds_euros" || RE_FONDS_EUROS.test(nom)) return "fonds_euros";
   if (cl === "crypto" || /crypto|binance/.test(env)) return "crypto";
-  if (cl === "monetaire" && !RE_FONDS.test(nom) && !connu(ter)) return "liquidites";
-  if (RE_CONTRAT.test(env) || connu(ter) || RE_FONDS.test(nom) || /^(ie|lu)/.test(sansAccent(p.isin))) return "fonds";
-  return "direct";
+  if (cl === "monetaire" && !contratEnv && !isin && !RE_FONDS.test(nom) && !connu(ter)) return "liquidites";
+  if (contratEnv || connu(ter) || RE_FONDS.test(nom)) return "fonds";
+  if (estAction(p, classes)) return "direct";
+  return isin ? "fonds" : "direct";
 }
 /** Frais d'une enveloppe : config.frais_enveloppes[nom] (nom exact, ou sans accents ni casse). */
 function fraisEnveloppe(config: any, env: string) {
@@ -1586,7 +1632,8 @@ function fraisSupports(vivantes: any[], o: { classes: Surcharge; config: any }) 
   const encours = sum(lignes, (l) => l.valeur), connues = lignes.filter((l) => l.connu), encoursConnu = sum(connues, (l) => l.valeur);
   const cout = sum(connues, (l) => l.cout), coutFonds = sum(connues, (l) => l.valeur * (l.ter || 0) / 100);
   const r = RENDEMENT_PROJECTION;
-  const auDessus = lignes.filter((l) => l.ter != null && l.ter > 0.5 && REPERES_FRAIS[l.classe] && l.ter > REPERES_FRAIS[l.classe].haut)
+  /* Surcoût, coût « après » et projection : seules les lignes dont le coût total (frais du fonds et de l'enveloppe) est connu. */
+  const auDessus = lignes.filter((l) => l.connu && l.ter != null && l.ter > 0.5 && REPERES_FRAIS[l.classe] && l.ter > REPERES_FRAIS[l.classe].haut)
     .map((l) => ({ id: l.id, nom: l.nom, enveloppe: l.enveloppe, valeur: r2c(l.valeur), ter: l.ter, classe: l.classe, repere: REPERES_FRAIS[l.classe],
       ecartPct: r2c(l.ter - REPERES_FRAIS[l.classe].haut), surcout: r2c(l.valeur * (l.ter - REPERES_FRAIS[l.classe].haut) / 100) }))
     .sort((a, b) => b.surcout - a.surcout);
@@ -1612,9 +1659,24 @@ const vueFrais = (fs: ReturnType<typeof fraisSupports>) => ({
   projection: { rendement_pct: fs.projection.rendementPct, frais: fs.projection.frais, ecart: fs.projection.ecart },
 });
 
+const texteScpi = (total: number) => "SCPI (" + eurP(total) + ") à part : frais de souscription (souvent 8 à 12 % à l'entrée) et de gestion (prélevés sur les loyers), non comparables à des frais courants, hors note";
+/* Placements investis uniquement en SCPI (Pratiques.fraisScpiSeules) : critère informatif, l'information sur leurs frais reste visible. */
+function fraisScpiSeules(fs: ReturnType<typeof fraisSupports>): Critere {
+  const total = sum(fs.scpi, (x) => x.valeur);
+  return contrat(critere("efficacite", "frais", BP.frais, { informatif: true, points: null, sur: 0, valeur: null, frais: vueFrais(fs),
+    texte: "Tes placements investis sont des SCPI (" + eurP(total) + ") : leurs frais ne se comparent pas à des frais courants, ils sont donnés à titre d'information.",
+    piste: "Les frais d'une SCPI se regardent à l'entrée (souscription) et sur les loyers (gestion) : relis-les dans sa documentation avant tout nouveau versement." }), {
+    repere: { texte: "Information, sans note : les frais des SCPI (souscription, gestion) ne sont pas des frais courants.", zones: [] },
+    source_donnees: "placements (SCPI)", confiance: "complete",
+    mesure: { valeur: null, unite: "€", texte: eurP(total) + " de SCPI" },
+    calcul: [texteScpi(total)],
+    donnees: fs.scpi.map((x) => ({ libelle: x.nom, valeur: x.valeur, ...(x.id ? { lien: { ligne: x.id } } : x.enveloppe ? { lien: { enveloppe: x.enveloppe } } : {}) })),
+    pourquoi: "Information : tes placements investis sont des SCPI, dont les frais ne se notent pas comme des frais courants." });
+}
+
 function bpFrais(c: ContexteBP, vivantes: any[]): Critere | null {
   const fs = fraisSupports(vivantes, { classes: c.classes, config: c.d.config });
-  if (fs.encours <= 0) return null;
+  if (fs.encours <= 0) return fs.scpi.length ? fraisScpiSeules(fs) : null;
   const repere = { texte: "0,40 % par an ou moins : 20 ; jusqu'à 0,75 % : 15 ; jusqu'à 1,20 % : 10 ; jusqu'à 1,80 % : 5 ; au-delà : 0 (repères de Boussole, fiche frais-et-ter). Repère de classe : " + REPERES_FRAIS.actions.texte + ".",
     zones: zones(BAREME_FRAIS, 0, 2.5) };
   const pc = fs.pct, cv = fs.couverture;
@@ -1622,7 +1684,7 @@ function bpFrais(c: ContexteBP, vivantes: any[]): Critere | null {
     "Dont frais connus : " + eurP(fs.encoursConnu) + " (" + pctP(cv) + ") ; titres en direct, crypto et liquidités comptent pour 0 %",
     "Frais des fonds : " + eurP(fs.coutFonds) + " par an ; frais d'enveloppe : " + eurP(fs.coutEnveloppes) + " par an",
     "Coût total : " + eurP(fs.cout) + (pc == null ? "" : " ÷ " + eurP(fs.encoursConnu) + " = " + frP(pc, 2) + " % par an")];
-  if (fs.scpi.length) calcul.push("SCPI (" + eurP(sum(fs.scpi, (x) => x.valeur)) + ") à part : frais de souscription (souvent 8 à 12 % à l'entrée) et de gestion (prélevés sur les loyers), non comparables à des frais courants, hors note");
+  if (fs.scpi.length) calcul.push(texteScpi(sum(fs.scpi, (x) => x.valeur)));
   const manque = [...(fs.fondsSansFrais.length ? ["Frais courants de " + fs.fondsSansFrais.length + " fonds : " + listeNoms(fs.fondsSansFrais.map((x) => x.nom), 5)] : []),
     ...fs.enveloppesACompleter.map((e) => "Frais de gestion du contrat « " + e + " » (unités de compte, fonds en euros)")];
   const donnees = [...fs.plusCouteuses.map((l) => ({ libelle: l.nom + " (" + frP(l.fraisPct, 2) + " % par an)", valeur: l.coutAnnuel, unite: "€ par an", lien: l.id ? { ligne: l.id } : { enveloppe: l.enveloppe } })),
@@ -1645,7 +1707,7 @@ function bpFrais(c: ContexteBP, vivantes: any[]): Critere | null {
   calcul.push("Barème : " + frP(pc as number, 2) + " % → " + points + "/20");
   if (fs.auDessusRepere.length) calcul.push("Projection de l'écart au repère de classe, à rendement brut égal de " + frP(RENDEMENT_PROJECTION, 0) + " % par an (hypothèse) : ≈ " +
     eurP(fs.projection.ecart.ans10) + " sur 10 ans, " + eurP(fs.projection.ecart.ans20) + " sur 20 ans");
-  const apres = fs.encoursConnu > 0 ? (fs.cout - fs.projection.ecart.annuel) / fs.encoursConnu * 100 : (pc as number);
+  const apres = Math.max(0, fs.encoursConnu > 0 ? (fs.cout - fs.projection.ecart.annuel) / fs.encoursConnu * 100 : (pc as number));
   return contrat(critere("efficacite", "frais", BP.frais, { points, valeur: pc, frais: vueFrais(fs),
     texte: "Coût estimé de " + frP(pc as number, 2) + " % par an, soit " + eurP(fs.cout) + " par an" + (cv < 0.999 ? " (sur les " + pctP(cv) + " de tes placements dont les frais sont connus)." : "."),
     piste: (pc as number) <= 0.4 ? "Tes frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
@@ -1754,13 +1816,13 @@ function bpDormant(c: ContexteBP, vivantes: any[], depRef: DepRef, deja: Record<
   const points = Math.round(BAREME_DORMANT(mois));
   const src = depRef!.source === "reel" ? "réel" + (depRef!.periode ? ", " + depRef!.periode : "") : "budget prévu";
   return contrat(critere("efficacite", "dormant", BP.dormant, { points, valeur: mois,
-    texte: frP(mois) + " mois de dépenses sur livrets et monétaire" + (reserve > 0 ? ", hors " + eurP(reserve) + " réservés aux projets à moins de 2 ans." : "."),
+    texte: frP(mois) + " mois de dépenses sur livrets et monétaire" + (reserve > 0 ? ", hors " + eurP(reserve) + " réservés aux projets à moins de 3 ans." : "."),
     piste: mois <= 12 ? "Ton argent disponible correspond à tes besoins : rien ne dort inutilement."
       : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à ton profil." }), {
     repere: { texte: "12 mois de dépenses ou moins sur livrets et monétaire : 20 ; 24 mois : 10 ; 36 mois ou plus : 5.", zones: zones(BAREME_DORMANT, 0, 48) },
     source_donnees: src, confiance: "complete",
     mesure: { valeur: r1c(mois), unite: "mois", texte: frP(mois) + " mois de dépenses" },
-    calcul: ["Livrets, monétaire et comptes courants : " + eurP(livrets), ...(reserve > 0 ? ["Réservé aux projets à moins de 2 ans (hors matelas) : " + eurP(reserve)] : []),
+    calcul: ["Livrets, monétaire et comptes courants : " + eurP(livrets), ...(reserve > 0 ? ["Réservé aux projets à moins de 3 ans (hors matelas) : " + eurP(reserve)] : []),
       "Dépenses mensuelles (" + src + ") : " + eurP(depenses), eurP(Math.max(0, livrets - reserve)) + " ÷ " + eurP(depenses) + " = " + frP(mois) + " mois",
       "Barème : " + frP(mois) + " mois → " + points + "/20"],
     donnees: L.filter((p) => val(p) > 0).sort((a, b) => val(b) - val(a)).map((p) => donneeLigne(p)),
@@ -1788,7 +1850,7 @@ function bonnesPratiques(c: ContexteBP) {
   const financierPlacements = sum(placements, val);
   const plan = (i: Item): Critere => ({ ...i, cle: i.cle, titre: i.titre, cible: i.cible, valeur: i.valeur, texte: i.texte, piste: i.piste, aCompleter: i.aCompleter,
     points: i.points ?? null, sur: 20, ...DE_PLAN[i.cle] } as Critere);
-  const epargne = reel && reel.revenus > 0 && reel.tauxEpargne != null ? bpEpargneReelle(reel, periode) : plan(itemEpargne(totaux));
+  const epargne = reel && reel.revenus > 0 && reel.tauxCapacite != null ? bpEpargneReelle(reel, periode) : plan(itemEpargne(totaux));
   const criteres = [
     bpMatelas(c, totaux, depRef), bpProtection(c), bpLiquidite(c, deja),
     epargne, plan(itemEndettement(totaux, d, scope)), bpApport(c, deja),
@@ -1813,20 +1875,22 @@ function bonnesPratiques(c: ContexteBP) {
     (Array.isArray(x.ameliorer) ? x.ameliorer : []).forEach((a: Ameliorer) => { a.gain_note = k == null || a.gain_points == null ? null : r1c(a.gain_points * k); });
   });
   const attendus = criteres.filter((x) => !x.informatif).length, nbNotes = criteres.filter(estNote).length;
-  // Couverture = critères notés ÷ critères attendus (hors informatifs) ; sous 60 %, la note est provisoire (identique à Pratiques.agreger).
+  // Couverture = critères notés ÷ critères attendus (hors informatifs) ; sous 60 %, une note globale est provisoire, sans note : non
+  // (identique à Pratiques.agreger).
   const couverture = attendus ? nbNotes / attendus : 0;
+  const total = W > 0 ? Math.round(sum(notees, (f) => (f.total as number) * f.poids) / W) : null;
   return {
-    total: W > 0 ? Math.round(sum(notees, (f) => (f.total as number) * f.poids) / W) : null,
+    total,
     couverture: Math.round(couverture * 1000) / 1000,
     criteres_notes: nbNotes, criteres_attendus: attendus, couverture_texte: texteCouverture(nbNotes, attendus),
-    provisoire: couverture < SEUIL_PROVISOIRE,
+    provisoire: total != null && couverture < SEUIL_PROVISOIRE,
     complet: attendus > 0 && criteres.filter((x) => !x.informatif).every((x) => !x.aCompleter),
     familles,
     criteres: criteres.map((x) => sansIndefini({ cle: x.cle, famille: x.famille, titre: x.titre, points: x.points, sur: x.sur, a_completer: x.aCompleter, informatif: x.informatif || undefined,
       valeur: x.valeur == null ? null : Math.round(x.valeur * 1000) / 1000, cible: x.cible, texte: x.texte, piste: x.piste, regle: x.regle, source: x.source, details: x.details,
       tableau: x.tableau, frais: x.frais, ...champsContrat(x) })),
     couts_principaux: coutsPrincipaux(criteres),
-    calcul: "Critère sur 20 ; famille = somme des points ÷ (20 × critères notés) × 100 ; total = moyenne des familles notées pondérée 30 / 25 / 30 / 15 (Sécurité, Effort, Allocation, Efficacité), null si aucune famille n'est notée. Couverture = critères notés ÷ critères attendus (hors informatifs) ; sous 60 %, la note est provisoire (à présenter comme telle). Critère à compléter : points null, exclu des totaux ; informatif exclu ; sans objet omis. Points perdus d'un critère = (20 − points) ÷ (20 × notés de sa famille) × poids de la famille ÷ poids des familles notées × 100 ; couts_principaux = les 3 plus gros, avec l'action correspondante. Explique une note par son calcul et ses actions (pourquoi, calcul, ameliorer), jamais par une recommandation de produit.",
+    calcul: "Critère sur 20 ; famille = somme des points ÷ (20 × critères notés) × 100 ; total = moyenne des familles notées pondérée 30 / 25 / 30 / 15 (Sécurité, Effort, Allocation, Efficacité), null si aucune famille n'est notée. Couverture = critères notés ÷ critères attendus (hors informatifs) ; sous 60 %, une note globale est provisoire (à présenter comme telle). Critère à compléter : points null, exclu des totaux ; informatif exclu ; sans objet omis. Points perdus d'un critère = (20 − points) ÷ (20 × notés de sa famille) × poids de la famille ÷ poids des familles notées × 100 ; couts_principaux = les 3 plus gros, avec l'action correspondante. Explique une note par son calcul et ses actions (pourquoi, calcul, ameliorer), jamais par une recommandation de produit.",
     mention: "Indicateur pédagogique, pas un conseil en investissement.",
   };
 }
@@ -2618,10 +2682,10 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
   }));
 
   /* ---------- config ---------- */
-  const CONFIG_FIELDS = "targets, rules, cushion, recurring, todo, milestones, hypotheses, updated_at";
+  const CONFIG_FIELDS = "targets, rules, cushion, recurring, todo, milestones, hypotheses, frais_enveloppes, updated_at";
   server.registerTool("get_config", {
     title: "Réglages",
-    description: "Réglages de pilotage : cibles d'allocation par poche (targets), règles d'alerte (rules), matelas de sécurité (cushion), versements programmés (recurring), ordres à passer (todo), échéances (milestones), hypothèses.",
+    description: "Réglages de pilotage : cibles d'allocation par poche (targets), règles d'alerte (rules), matelas de sécurité (cushion), versements programmés (recurring), ordres à passer (todo), échéances (milestones), hypothèses, frais des contrats par enveloppe (frais_enveloppes, réglés par regler_frais_enveloppe).",
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => ({ config: must("config", await db.from("config").select(CONFIG_FIELDS).maybeSingle()) ?? null })));
@@ -3055,7 +3119,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
   }));
 
   /* ---------- Matelas, versements programmés et classe d'une poche (reglages.ts) : par propositions ---------- */
-  registerReglages(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer,
+  registerReglages(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer, today,
     depensesMensuelles: async () => { const t = budgetTotaux((await loadPlan(false)).d, "foyer"); return t.depensesLignes > 0 ? r2(t.depenses) : 0; } });
 
   /* ---------- Formulaires dynamiques (formulaire.ts) : mêmes fonctions de dépôt, un seul lot ---------- */

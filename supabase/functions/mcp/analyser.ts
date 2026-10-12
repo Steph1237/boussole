@@ -119,12 +119,12 @@ function frais(c: CtxAnalyse): Resultat {
     cout_annuel_eur: eur(fs.cout), cout_pct: fs.pct == null ? null : t2(fs.pct), frais_des_fonds_eur: eur(fs.coutFonds), frais_enveloppes_eur: eur(fs.coutEnveloppes),
     scpi_hors_note_eur: eur(somme(fs.scpi, (x: any) => x.valeur)), note_possible: cv >= 0.7 };
   const hyp = ["Coût annuel estimé = frais courants des fonds (ETF, OPCVM, unités de compte, lus sur la fiche de chaque instrument) + frais de l'enveloppe (gestion de l'assurance-vie ou du PER, garde), en % de l'encours investi dont les frais sont connus (même règle que tes bonnes pratiques).",
-    "Encours investi : PEA, compte-titres, assurance-vie, PER, crypto ; livrets et comptes courants exclus. Titres détenus en direct, crypto et liquidités comptent pour 0 % de frais courants (frais de courtage non comptés).",
+    "Encours investi : PEA, compte-titres, assurance-vie, PER, crypto ; livrets et comptes courants exclus. Actions détenues en direct (reconnues : classe actions, ligne cotée, nom et symbole d'action), crypto et liquidités comptent pour 0 % de frais courants (frais de courtage non comptés) ; toute autre ligne avec ISIN (ligne saisie à la main, fonds non reconnu) est un fonds dont les frais sont à compléter.",
     "SCPI à part : frais de souscription et de gestion non comparables à des frais courants, hors note.",
     "Sous 70 % de l'encours dont les frais sont connus, la note reste à compléter et le coût affiché est partiel.",
-    "Repères de classe (jamais un produit nommé) : lignes à plus de 0,50 % par an au-dessus du haut du repère de leur classe ; projection de l'écart sur 10 et 20 ans à rendement brut égal de " + fr(fs.projection.rendementPct) + " % par an (hypothèse, intérêts composés)."];
+    "Repères de classe (jamais un produit nommé) : lignes à plus de 0,50 % par an au-dessus du haut du repère de leur classe, parmi celles dont le coût total (fonds et contrat) est connu ; projection de l'écart sur 10 et 20 ans à rendement brut égal de " + fr(fs.projection.rendementPct) + " % par an (hypothèse, intérêts composés)."];
   if (fs.fondsSansFrais.length) hyp.push(fs.fondsSansFrais.length + " fonds sans frais courants connus : Claude peut les compléter (annotate_instrument) à partir du document d'informations clés.");
-  if (fs.enveloppesACompleter.length) hyp.push("Frais de contrat à compléter (config.frais_enveloppes) : " + fs.enveloppesACompleter.join(", ") + ".");
+  if (fs.enveloppesACompleter.length) hyp.push("Frais de contrat à compléter (regler_frais_enveloppe, à partir des documents du contrat) : " + fs.enveloppesACompleter.join(", ") + ".");
   const details = {
     plus_cheres: fs.plusCouteuses.map((l: any) => ({ nom: l.nom, enveloppe: l.enveloppe, montant: eur(l.valeur), ter_pct: t2(l.fraisPct), cout_annuel_eur: eur(l.coutAnnuel) })),
     au_dessus_du_repere: fs.auDessusRepere.map((x: any) => ({ nom: x.nom, enveloppe: x.enveloppe, montant: eur(x.valeur), ter_pct: t2(x.ter), repere: x.repere.texte, ter_ecart_pct: t2(x.ecartPct), surcout_annuel_eur: eur(x.surcout) })),
@@ -134,7 +134,9 @@ function frais(c: CtxAnalyse): Resultat {
     sans_frais_connus: fs.fondsSansFrais.slice(0, 20).map((x: any) => ({ nom: x.nom, enveloppe: x.enveloppe, montant: eur(x.valeur) })),
     enveloppes_a_completer: fs.enveloppesACompleter,
   };
-  if (!(fs.encours > 0)) return resultat("frais", chiffres, { resume: "Aucun placement investi pour ce périmètre : pas de frais de supports à calculer.", ...details }, hyp);
+  if (!(fs.encours > 0)) return resultat("frais", chiffres, { resume: fs.scpi.length
+    ? "Tes placements investis sont des SCPI (" + frE(somme(fs.scpi, (x: any) => x.valeur)) + ") : leurs frais (souscription, gestion) sont donnés à part, sans note."
+    : "Aucun placement investi pour ce périmètre : pas de frais de supports à calculer.", ...details }, hyp);
   const resume = fs.pct == null ? "Les frais de tes placements ne sont pas encore connus : demande à Claude de compléter les frais courants de tes fonds et ceux de tes contrats."
     : (cv < 0.7 ? "Coût partiel : " : "Tes placements coûtent environ ") + frPc(fs.pct, 2) + " par an, soit " + frE(fs.cout) + " par an" +
       (cv < 0.999 ? " (sur " + frPc(cv * 100) + " de l'encours investi dont les frais sont connus)." : ".");
