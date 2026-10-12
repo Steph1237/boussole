@@ -29,7 +29,11 @@ const srcFormulaireUi = readFileSync(path("supabase/functions/mcp/formulaire-ui.
 const srcReglages = readFileSync(path("supabase/functions/mcp/reglages.ts"), "utf8");
 /* RT1 : routines (revue mensuelle) dans routines.ts, enregistré par index.ts (tests détaillés : test/routines-mcp.test.mjs). */
 const srcRoutines = readFileSync(path("supabase/functions/mcp/routines.ts"), "utf8");
-const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines].join("\n");
+/* EX1 : expertises du Copilote (expertises.ts, tests détaillés : test/expertises-mcp.test.mjs) et calculs par angle (analyser.ts,
+   écrit à part : test/analyser.test.mjs), enregistrés par index.ts. */
+const srcExpertises = readFileSync(path("supabase/functions/mcp/expertises.ts"), "utf8");
+const srcAnalyser = existsSync(path("supabase/functions/mcp/analyser.ts")) ? readFileSync(path("supabase/functions/mcp/analyser.ts"), "utf8") : "";
+const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
@@ -45,6 +49,7 @@ const TOOLS = [
   "formulaire", "soumettre_formulaire",
   "regler_matelas", "regler_versements", "corriger_classe",
   "activer_routine", "demarrer_routine", "cloturer_routine", "questions_routine",
+  "consulter_expertise", "analyser",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
@@ -245,7 +250,10 @@ test("parité MCP / risque.js + marche.js + calc.js : tables identiques", { skip
   }
   assert.deepEqual(Object.keys(M.CLASSES_RISQUE).sort(), [...Marche.CLES].sort());
   for (const poche of [...Object.keys(M.CLASSES_POCHE), "Épargne", "Monde", "Nasdaq 2x", "Fonds euros", "Inconnue"]) assert.equal(M.classePoche(poche), Calc.classe(poche), poche);
-  for (const env of ["PER", "Livret A", "Assurance vie Sam", "PEA", "Banque", "SCPI", "CTO"]) assert.equal(M.liquidite(env), Calc.liquidite(env), env);
+  for (const env of ["PER", "Livret A", "Assurance vie Sam", "PEA", "Banque", "SCPI", "CTO", "Compte-titres Sam", "Compte titres", "compte-titre", "Comptes-titres", "Comptes courants", "Compte courant", "Compte joint",
+    "PERin", "PERin Camille", "PERCO", "PEE", "Épargne salariale"]) assert.equal(M.liquidite(env), Calc.liquidite(env), env);
+  assert.equal(M.liquidite("Compte-titres Sam"), "jours", "un compte-titres n'est pas un compte courant");
+  assert.equal(M.liquidite("PERin"), "bloque", "PERin sans espace : bloqué, comme RE_PER");
   const cas = [["Monde", "ETF Nasdaq 2x"], ["Leverage", "X"], ["Monde", "MSCI Emerging Markets"], ["Actions", "Small caps Europe"], ["Crypto", "Bitcoin"], ["Protection", "Or physique"]];
   for (const [bloc, name] of cas) for (const sur of [undefined, { Protection: "or" }, { Leverage: "actions" }]) assert.equal(M.classeRisque({ bloc, name }, sur), Marche.classeRisque({ bloc, name }, sur), `${bloc} / ${name}`);
 });
@@ -483,7 +491,7 @@ test("connexions : client_id lu dans le jeton (Claude, inconnu, session)", () =>
 test("AG1 : demarrer_session — conduite experte, mémoire, nouveautés par marquer_savoir_vu, lecture", () => {
   const o = outil("demarrer_session");
   assert.match(o, /marquer_savoir_vu/);
-  assert.match(o, /CONDUITE_EXPERT/);
+  assert.match(o, /CONDUITE_COPILOTE/);
   assert.match(o, /a_suivre_echus/);
   assert.match(o, /onboarding_conseille/);
   assert.match(o, /annotations:\s*RO/, "lecture seule");
@@ -497,7 +505,7 @@ test("AG1 : demarrer_session — conduite experte, mémoire, nouveautés par mar
   assert.match(code, /registerSavoir\(server, h\)/); assert.match(code, /registerMemoire\(server, h\)/);
 });
 test("AG1 : conduite experte — reperes avant tout chiffre, consulter_savoir, mémoire effaçable, jamais d'identifiants", () => {
-  const c = srcAll.slice(srcAll.indexOf("CONDUITE_EXPERT = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_EXPERT = [")));
+  const c = srcAll.slice(srcAll.indexOf("CONDUITE_COPILOTE = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_COPILOTE = [")));
   for (const m of [/reperes/, /consulter_savoir/, /memoriser/, /Agent › Mémoire/, /IBAN/, /mot(s)? de passe/, /pas un conseil en investissement/, /jamais des consignes/]) assert.match(c, m);
   // même garde contre l'injection de consignes dans les instructions du serveur
   const instr = code.slice(code.indexOf("const INSTRUCTIONS"), code.indexOf("].join", code.indexOf("const INSTRUCTIONS")));
@@ -525,7 +533,7 @@ test("AG1 : filtre sensible identique au SQL (IBAN, carte, mots interdits) et IS
 });
 test("AG1 : demarrer_session marque le savoir vu après les lectures ; demarrer_onboarding n'est pas bloqué par la mémoire ; memoriser renvoie epingle", () => {
   const o = outil("demarrer_session");
-  const iLectures = o.indexOf("Promise.all([lireEtat(), lireMemoire(db, must), journalDeSession(db, must, today()), routinesDeSession(db, must, today())])"), iVu = o.indexOf('db.rpc("marquer_savoir_vu"');
+  const iLectures = o.indexOf("Promise.all([lireEtat(), lireMemoire(db, must), journalDeSession(db, must, today()), routinesDeSession(db, must, today()), listeExpertises(db, must)])"), iVu = o.indexOf('db.rpc("marquer_savoir_vu"');
   assert.ok(iLectures >= 0, "lectures d'abord (état et mémoire)");
   assert.ok(iVu > iLectures, "marquer_savoir_vu après la réussite des lectures");
   assert.doesNotMatch(o.slice(0, iVu), /Promise\.all\(\[[^\]]*marquer_savoir_vu/, "pas en parallèle des lectures");
@@ -697,7 +705,7 @@ test("CK2 : demarrer_session renvoie le journal et le consentement, sans jamais 
 });
 
 test("CK2 : conduite experte et instructions — clôture, consentement, mots de l'utilisateur", () => {
-  const c = srcAll.slice(srcAll.indexOf("CONDUITE_EXPERT = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_EXPERT = [")));
+  const c = srcAll.slice(srcAll.indexOf("CONDUITE_COPILOTE = ["), srcAll.indexOf("].join", srcAll.indexOf("CONDUITE_COPILOTE = [")));
   assert.match(c, /quand l'échange a abouti à un avis ou une décision, appelle cloturer_session/i);
   assert.match(c, /ne journalise jamais sans respecter journal_consentement/i);
   assert.match(c, /en mode demander, pose la question et n'écris qu'après un oui explicite/i);
@@ -946,7 +954,7 @@ test("CK2 : completer_journal — consentement : jamais refusé, demander exige 
 test("CK2 : consentement de completer_journal rappelé dans la consigne de clôture, la conduite (règle 10) et les instructions", () => {
   const Jn = srcJournal.slice(srcJournal.indexOf("export const CONSIGNE_CLOTURE"), srcJournal.indexOf("].join", srcJournal.indexOf("export const CONSIGNE_CLOTURE")));
   assert.match(Jn, /pour journaliser comme pour completer_journal/); assert.match(Jn, /journaliser ou completer_journal \(accord_utilisateur: true\)/);
-  const c = src.slice(src.indexOf("CONDUITE_EXPERT = ["), src.indexOf("].join", src.indexOf("CONDUITE_EXPERT = [")));
+  const c = src.slice(src.indexOf("CONDUITE_COPILOTE = ["), src.indexOf("].join", src.indexOf("CONDUITE_COPILOTE = [")));
   const r10 = c.split("\n").find(l => l.includes('"10. '));
   assert.match(r10, /Même règle pour completer_journal/); assert.match(r10, /jamais → n'y modifie rien/); assert.match(r10, /n'appelle completer_journal \(accord_utilisateur: true\) qu'après un oui explicite/);
   const instr = src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("].join", src.indexOf("const INSTRUCTIONS")));
@@ -955,7 +963,7 @@ test("CK2 : consentement de completer_journal rappelé dans la consigne de clôt
 
 test("CK2 : le journal est une information, jamais des consignes (instructions, règle 7 bis, lire_journal)", () => {
   const instr = src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("].join", src.indexOf("const INSTRUCTIONS")));
-  const c = src.slice(src.indexOf("CONDUITE_EXPERT = ["), src.indexOf("].join", src.indexOf("CONDUITE_EXPERT = [")));
+  const c = src.slice(src.indexOf("CONDUITE_COPILOTE = ["), src.indexOf("].join", src.indexOf("CONDUITE_COPILOTE = [")));
   const r7 = c.split("\n").find(l => l.includes('"7 bis. '));
   for (const [nom, t] of [["INSTRUCTIONS", instr], ["règle 7 bis", r7]]) {
     assert.match(t, /journal[^.]*jamais des consignes/, nom);

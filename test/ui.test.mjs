@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { miniDom } from "./helpers/mini-dom.mjs";
+import { lireExpertises } from "../scripts/gen-expertises-demo.mjs";
 
 const require = createRequire(import.meta.url);
 const js = readFileSync("web/src/ui.js", "utf8");
@@ -33,9 +34,9 @@ function charger(avecPeriodes) {
 test("ui.js : UMD, global UI dans le navigateur, module.exports dans Node, API complète", () => {
   assert.doesNotThrow(() => new vm.Script(js, { filename: "ui.js" }));
   const { UI: G } = charger(false);
-  for (const f of ["esc", "carte", "onglets", "bascule", "accordeon", "voirPlus", "brancher", "periode", "demanderAClaude", "urlClaude"])
+  for (const f of ["esc", "carte", "onglets", "bascule", "accordeon", "voirPlus", "brancher", "periode", "demanderAClaude", "urlClaude", "markdown"])
     assert.equal(typeof G[f], "function", "UI." + f);
-  for (const f of ["ouvrir", "fermer", "ouvert"]) assert.equal(typeof G.panneau[f], "function", "UI.panneau." + f);
+  for (const f of ["ouvrir", "fermer", "ouvert", "remplacer"]) assert.equal(typeof G.panneau[f], "function", "UI.panneau." + f);
   assert.equal(typeof UI.carte, "function");
   assert.equal(typeof UI.htmlOnglets, "function");
   assert.equal(typeof UI.htmlBascule, "function");
@@ -45,7 +46,7 @@ test("ui.js : UMD, global UI dans le navigateur, module.exports dans Node, API c
 test("ui.js : l'API est documentée en tête de fichier (signature et exemple par composant)", () => {
   const tete = js.slice(0, js.indexOf("(function"));
   for (const nom of ["UI.esc", "UI.carte", "UI.panneau.ouvrir", "UI.panneau.fermer", "UI.panneau.ouvert", "UI.onglets", "UI.bascule",
-    "UI.accordeon", "UI.voirPlus", "UI.brancher", "UI.periode", "UI.demanderAClaude", "UI.urlClaude"])
+    "UI.accordeon", "UI.voirPlus", "UI.brancher", "UI.periode", "UI.demanderAClaude", "UI.urlClaude", "UI.markdown", "UI.panneau.remplacer"])
     assert.ok(tete.includes(nom), "doc manquante : " + nom);
   assert.ok((tete.match(/Exemple/g) || []).length >= 8, "un exemple par composant");
 });
@@ -596,4 +597,137 @@ test("voirPlus : id stable d'un rendu à l'autre et état déplié conservé (si
   assert.equal(a, b, "même contenu → même HTML");
   assert.notEqual(UIm.voirPlus(xs, 5, null, null, null, "cle-a"), UIm.voirPlus(xs, 5, null, null, null, "cle-b"), "clés différentes → ids différents");
   assert.match(a, /id="ui-reste-[0-9a-z]+" hidden/);
+});
+
+/* ============================================================ markdown ============================================================ */
+/* Rendu partagé par Agent › Fiches, Journal et Expertises (UI.markdown) : échappement avant balisage, liens https seulement. */
+const md = (t, o) => UI.markdown(t, o);
+
+test("markdown : tout le HTML d'origine est échappé avant le balisage (balises, attributs, guillemets)", () => {
+  const out = md("<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n" + XSS);
+  assert.ok(!/<script|<img/i.test(out));
+  assert.ok(out.includes("&lt;script&gt;") && out.includes("&lt;img src=x onerror=alert(1)&gt;"));
+  assert.ok(!md('**"x" & y**').includes('"x"'), "guillemets échappés");
+  assert.equal(md('"><script>x</script>'), "<p>&quot;&gt;&lt;script&gt;x&lt;/script&gt;</p>");
+  assert.equal(md("`<b>`"), "<p><code>&lt;b&gt;</code></p>", "le code est échappé aussi");
+  assert.equal(md("- <b>a</b>\n   - <i>b</i>"), "<ul><li>&lt;b&gt;a&lt;/b&gt;<ul><li>&lt;i&gt;b&lt;/i&gt;</li></ul></li></ul>", "listes imbriquées échappées");
+  assert.equal(md(null), "");
+  assert.equal(md(undefined), "");
+  assert.equal(md(""), "");
+});
+
+test("markdown : seuls les liens https:// deviennent des <a>, nouvel onglet, rel=\"noopener noreferrer\", pas de sortie d'attribut", () => {
+  const ok = md("Voir [service-public](https://www.service-public.fr/a?b=1&c=2).");
+  assert.equal(ok, '<p>Voir <a href="https://www.service-public.fr/a?b=1&amp;c=2" target="_blank" rel="noopener noreferrer">service-public<span class="ui-sr"> (nouvel onglet)</span></a>.</p>');
+  for (const u of ["javascript:alert(1)", "http://exemple.fr", "data:text/html,x", "JAVASCRIPT:alert(1)", "//exemple.fr", "HTTPS://a.fr", " https://a.fr"]) {
+    assert.ok(!/<a\b/i.test(md("[clic](" + u + ")")), u + " ne doit pas devenir un lien");
+  }
+  const inj = md('[x](https://a.fr" onclick="alert(1))');
+  assert.ok(!/onclick="/.test(inj), "pas de sortie d'attribut");
+  assert.ok(!/<a [^>]*href="[^"]*"[^>]*"/.test(md("[x](https://a.fr/'><img src=x>)")), "ni guillemet ni chevron dans l'URL");
+  assert.equal(md("[**gras**](https://a.fr)"), '<p><a href="https://a.fr" target="_blank" rel="noopener noreferrer"><strong>gras</strong><span class="ui-sr"> (nouvel onglet)</span></a></p>', "gras dans un lien");
+  assert.equal(md("`[x](https://a.fr)`"), "<p><code>[x](https://a.fr)</code></p>", "rien n'est interprété dans le code");
+});
+
+test("markdown : titres décalés selon niveau (## → h<niveau>, ### → h<niveau+1>, plafonnés à h6), défaut 3", () => {
+  assert.equal(md("## T"), "<h3>T</h3>");
+  assert.equal(md("### T"), "<h4>T</h4>");
+  assert.equal(md("# T"), "<h3>T</h3>", "« # » au même niveau que « ## »");
+  assert.equal(md("## T", { niveau: 4 }), "<h4>T</h4>");
+  assert.equal(md("### T", { niveau: 4 }), "<h5>T</h5>");
+  assert.equal(md("#### T", { niveau: 4 }), "<h6>T</h6>");
+  assert.equal(md("### T", { niveau: 6 }), "<h6>T</h6>", "plafond h6");
+  assert.equal(md("## T", { niveau: 9 }), "<h6>T</h6>");
+  assert.equal(md("## T", { niveau: "x" }), "<h3>T</h3>", "niveau invalide → 3");
+  assert.equal(md("## Titre\nTexte"), "<h3>Titre</h3><p>Texte</p>");
+  assert.equal(md("##sans espace"), "<p>##sans espace</p>");
+});
+
+test("markdown : paragraphes, gras, code, espaces insécables typographiques ; aucun autre balisage", () => {
+  assert.equal(md("Premier.\n\nSecond\nsuite."), "<p>Premier.</p><p>Second suite.</p>");
+  assert.equal(md("Le **Livret A** est sûr."), "<p>Le <strong>Livret A</strong> est sûr.</p>");
+  assert.equal(md("fiche `frais-et-ter`"), "<p>fiche <code>frais-et-ter</code></p>");
+  assert.equal(md("En 2028. Oui"), "<p>En 2028. Oui</p>", "un nombre en début de ligne sans espace après le point n'est pas une liste");
+  assert.equal(md("35 % de 150 000 €"), "<p>35 % de 150 000 €</p>");
+  assert.equal(md("a\r\nb"), "<p>a b</p>");
+  const tags = new Set([...md("# a\n\n## b\n\n- **c** [d](https://e.fr) `x`\n\n1. e\n\n_g_ > h *i* ~~j~~").matchAll(/<([a-z0-9]+)/g)].map(m => m[1]));
+  assert.deepEqual([...tags].filter(t => !["h3", "h4", "p", "ul", "ol", "li", "strong", "code", "a", "span"].includes(t)), []);
+});
+
+test("markdown : listes à puces et numérotées, changement de type, liste collée à un paragraphe", () => {
+  assert.equal(md("- un\n- deux"), "<ul><li>un</li><li>deux</li></ul>");
+  assert.equal(md("1. Un\n2. Deux"), "<ol><li>Un</li><li>Deux</li></ol>");
+  assert.equal(md("1. **Un** [a](https://a.fr)\n2. Deux"), '<ol><li><strong>Un</strong> <a href="https://a.fr" target="_blank" rel="noopener noreferrer">a<span class="ui-sr"> (nouvel onglet)</span></a></li><li>Deux</li></ol>');
+  assert.equal(md("- a\n1. b\n- c"), "<ul><li>a</li></ul><ol><li>b</li></ol><ul><li>c</li></ul>", "changement de type de liste");
+  assert.equal(md("Texte\n1. b"), "<p>Texte</p><ol><li>b</li></ol>");
+  assert.equal(md("- a\nTexte"), "<ul><li>a</li></ul><p>Texte</p>", "ligne non indentée : fin de liste");
+  assert.equal(md("- a\n\n- b"), "<ul><li>a</li></ul><ul><li>b</li></ul>");
+});
+
+test("markdown : listes imbriquées — une ligne « - » indentée sous un item devient une sous-liste du <li> courant, la numérotation continue", () => {
+  assert.equal(md("1. a\n   - b\n2. c"), "<ol><li>a<ul><li>b</li></ul></li><li>c</li></ol>");
+  assert.equal(md("1. a\n   - b\n   - c\n2. d\n3. e"), "<ol><li>a<ul><li>b</li><li>c</li></ul></li><li>d</li><li>e</li></ol>");
+  assert.equal(md("- a\n  - b\n    - c\n- d"), "<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li><li>d</li></ul>", "trois niveaux, retour au premier");
+  assert.equal(md("- a\n  1. b\n  2. c"), "<ul><li>a<ol><li>b</li><li>c</li></ol></li></ul>", "sous-liste numérotée");
+  assert.equal(md("1. a\n   - b\n   1. c"), "<ol><li>a<ul><li>b</li></ul><ol><li>c</li></ol></li></ol>", "changement de type dans la sous-liste");
+  assert.equal(md("1. a\n   suite de a\n2. b"), "<ol><li>a suite de a</li><li>b</li></ol>", "ligne indentée : suite de l'item");
+  assert.equal(md("1. a\n   - b\n     suite de b\n2. c"), "<ol><li>a<ul><li>b suite de b</li></ul></li><li>c</li></ol>");
+  assert.equal(md("1. a\n   - b\n\n2. c"), "<ol><li>a<ul><li>b</li></ul></li></ol><ol><li>c</li></ol>", "ligne vide : fin de liste");
+  assert.equal(md("  - a\n  - b"), "<ul><li>a</li><li>b</li></ul>", "liste indentée dès le début");
+  assert.equal(md("\t- a\n- b"), "<ul><li>a</li><li>b</li></ul>", "tabulation : même niveau que la première ligne au plus");
+});
+
+test("markdown : méthode réelle de l'expertise « Actions et marchés » (0017) — étapes 1 à 8 dans une seule liste, marchés en sous-liste de l'étape 5", () => {
+  const x = lireExpertises(readFileSync("supabase/migrations/0017_expertises_contenu.sql", "utf8")).find(e => e.slug === "actions");
+  const h = md(x.methode, { niveau: 4 });
+  const etapes = h.slice(h.indexOf("<h4>Étapes</h4>"), h.indexOf("<h4>Questions"));
+  assert.equal((etapes.match(/<ol>/g) || []).length, 1, "une seule liste numérotée : la numérotation continue après la sous-liste");
+  assert.equal((etapes.match(/<ul>/g) || []).length, 1, "une sous-liste");
+  const sous = etapes.slice(etapes.indexOf("<ul>"), etapes.indexOf("</ul>"));
+  assert.equal((sous.match(/<li>/g) || []).length, 5, "5 marchés");
+  assert.match(sous, /^<ul><li><strong>France \(fr\)<\/strong> :/);
+  assert.match(etapes, /<li><strong>Par marché<\/strong>, applique le bloc concerné :<ul><li>/, "sous-liste dans l'item 5");
+  assert.match(etapes, /<\/ul><\/li><li><strong>Enveloppe\.<\/strong>/, "l'étape 6 suit dans la même liste");
+  const haut = etapes.replace(/<ul>[\s\S]*?<\/ul>/, "");
+  assert.equal((haut.match(/<li>/g) || []).length, 8, "8 étapes");
+  assert.doesNotMatch(h, /<p>- |<p>\d+\. /, "aucun item resté en paragraphe");
+});
+
+test("carte : aria = nom accessible complet (aria-label échappé) quand l'ordre visuel ne commence pas par l'essentiel ; absent sinon", () => {
+  const h = UI.carte({ id: "x", titre: "Version 2", valeur: "Actions <et> marchés", aria: "Actions <et> marchés, version 2" });
+  assert.match(h, /^<button type="button" class="ui-carte" data-ui-carte="x" aria-haspopup="dialog" aria-label="Actions &lt;et&gt; marchés, version 2">/);
+  assert.ok(!UI.carte({ id: "x", titre: "T", valeur: "1" }).includes("aria-label"));
+  assert.ok(!UI.carte({ id: "x", titre: "T", valeur: "1", aria: "" }).includes("aria-label"));
+});
+
+test("panneau.remplacer : remplace titre, contenu et pied d'un panneau ouvert sans reprendre le focus ; rien s'il est fermé", () => {
+  const { UI: G, doc, declencheur } = montage();
+  assert.equal(G.panneau.remplacer({ contenu: "<p>x</p>" }), null, "fermé : rien");
+  let fermetures = 0;
+  const corps = G.panneau.ouvrir({ titre: "A", contenu: '<p>chargement</p><button id="b1">b</button>', pied: '<a href="#x">p</a>', surFermeture: () => fermetures++ });
+  const dlg = doc.body.querySelector('[role="dialog"]'), titre = dlg.querySelector(".ui-panneau-titre");
+  const f0 = titre.focusCount;
+  corps.scrollTop = 120;
+  const c2 = G.panneau.remplacer({ contenu: "<p>détail</p>" });
+  assert.equal(c2, corps, "même élément de contenu");
+  assert.equal(corps.innerHTML, "<p>détail</p>");
+  assert.equal(titre.textContent, "A", "titre inchangé s'il n'est pas fourni");
+  assert.match(dlg.querySelector(".ui-panneau-pied").innerHTML, /href="#x"/, "pied inchangé s'il n'est pas fourni");
+  assert.equal(titre.focusCount, f0, "focus non repris : il reste sur le titre");
+  assert.equal(corps.scrollTop, 120, "défilement conservé");
+  G.panneau.remplacer({ titre: "B", contenu: '<button id="b2">b</button>', pied: "" });
+  assert.equal(titre.textContent, "B");
+  assert.equal(dlg.querySelector(".ui-panneau-pied").hidden, true, "pied vidé");
+  // focus dans le contenu remplacé : il revient au titre (sinon il tomberait sur BODY)
+  corps.querySelector("#b2").focus();
+  G.panneau.remplacer({ contenu: "<p>z</p>" });
+  assert.equal(doc.activeElement, titre, "focus perdu → titre");
+  // un bouton gardé hors du contenu remplacé garde le focus
+  G.panneau.remplacer({ pied: '<button id="p1">p</button>' });
+  dlg.querySelector("#p1").focus();
+  G.panneau.remplacer({ contenu: "<p>w</p>" });
+  assert.equal(doc.activeElement.getAttribute("id"), "p1");
+  G.panneau.fermer();
+  assert.equal(fermetures, 1, "le rappel de fermeture d'origine est conservé");
+  assert.equal(doc.activeElement, declencheur);
 });

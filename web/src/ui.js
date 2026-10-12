@@ -10,8 +10,10 @@
      Échappe & < > " ' ; null/undefined → "".
      Exemple : UI.esc(position.nom)
 
-   UI.carte({ id, titre, valeur, sous?, tendance?, badge? }) → HTML
+   UI.carte({ id, titre, valeur, sous?, tendance?, badge?, aria? }) → HTML
      Carte repliée : <button class="ui-carte" data-ui-carte="<id>">, à ouvrir en panneau (voir UI.brancher).
+     aria = nom accessible complet (aria-label), quand le texte lu dans l'ordre (titre, badge, valeur, pied) ne commence pas par
+     l'essentiel : il remplace tout le texte de la carte pour les lecteurs d'écran, il doit donc le reprendre.
      tendance = { sens: "hausse" | "baisse" | "stable", texte?, ton?: "pos" | "neg" | "neutre" } : ▲ / ▼ / – ; le ton par défaut
      suit le sens (hausse → pos), à forcer pour une dette (baisse → pos). Le sens est lu en clair aux lecteurs d'écran.
      badge = "Provisoire" | { texte, ton: "neutre" | "info" | "bon" | "attention" | "critique" }. Valeur absente → « — ».
@@ -21,6 +23,7 @@
 
    UI.panneau.ouvrir({ titre, contenu, lien?, pied?, retour?, surFermeture? }) → élément de contenu (.ui-panneau-corps)
    UI.panneau.fermer({ focus? }?)   UI.panneau.ouvert() → booléen
+   UI.panneau.remplacer({ titre?, contenu?, lien?, pied? }) → élément de contenu, ou null si le panneau est fermé
      Panneau de détail unique (role="dialog", aria-modal="true", aria-labelledby sur le titre), créé dans document.body à la
      première ouverture : volet latéral droit de 420 px à partir de 900 px, feuille du bas (85 vh max) en dessous. Fond voilé,
      reste de la page inerte, focus piégé (Tab / Maj+Tab), fermeture par Échap, clic sur le voile, bouton « Fermer » ou lien
@@ -37,6 +40,10 @@
      été fermé sans reprise du focus (fermer({ focus: false }), retour arrière, lien interne).
      Exemple : const corps = UI.panneau.ouvrir({ titre: "Patrimoine net", contenu: "<p>" + UI.esc(detail) + "</p>",
                                                  lien: { label: "Voir les placements", href: "#patrimoine/placements" } });
+     remplacer : mise à jour d'un panneau ouvert (détail arrivé après l'ouverture, rafraîchissement) sans toucher au focus ni au
+     défilement, ni au retour et au rappel de fermeture ; seuls les champs fournis changent (lien et pied vont ensemble). Si
+     l'élément qui avait le focus disparaît avec l'ancien contenu, le focus revient au titre du panneau.
+     Exemple : UI.panneau.remplacer({ contenu: "<p>" + UI.esc(detailComplet) + "</p>" })
 
    UI.onglets(racine, { onglets: [{ id, label, controle? }], actif, surChange?(id), label? }) → { actif(), choisir(id) }
      Rend un role="tablist" dans `racine` (aria-selected, tabindex itinérant, aria-controls = controle). Clic ou ←/→ (avec
@@ -79,6 +86,15 @@
      Défaut : 1 an.
      Exemple : UI.periode($("frisePeriode"), { periode: "1a", granularite: "mois", premiere: snaps[0].date,
                                                surChange: e => dessiner(Periodes.agreger(snaps, e, e.granularite, s => s.net)) })
+
+   UI.markdown(md, { niveau = 3 }?) → HTML
+     Markdown limité et sûr, pour les textes écrits par l'agent ou publiés (fiches, journal, expertises) : tout le HTML d'origine
+     est échappé AVANT de reconnaître le balisage. « # » et « ## » → h<niveau>, « ### » → h<niveau+1>… (plafond h6) ; « - » et
+     « 1. » → listes, une ligne de liste indentée (2 espaces ou plus) sous un item → sous-liste dans cet item, la numérotation
+     continuant ensuite ; ligne indentée sans marque → suite de l'item ; **gras**, `code`, [texte](https://…) (seul https://, nouvel
+     onglet, rel="noopener noreferrer") ; paragraphes séparés par une ligne vide ; espaces insécables avant % et € et dans les
+     milliers. Aucun autre balisage n'est produit.
+     Exemple : corps.innerHTML = UI.markdown(fiche.contenu, { niveau: 4 })
 
    UI.demanderAClaude(question, libelle = "Demander à Claude") → HTML
    UI.urlClaude(question) → "https://claude.ai/new?q=<question encodée>"
@@ -135,7 +151,8 @@
   function carte(o) {
     o = o || {};
     const pied = htmlTendance(o.tendance) + (vide(o.sous) ? "" : '<span class="ui-carte-sous">' + esc(o.sous) + "</span>");
-    return '<button type="button" class="ui-carte" data-ui-carte="' + esc(o.id) + '" aria-haspopup="dialog">' +
+    return '<button type="button" class="ui-carte" data-ui-carte="' + esc(o.id) + '" aria-haspopup="dialog"' +
+      (vide(o.aria) ? "" : ' aria-label="' + esc(o.aria) + '"') + ">" +
       '<span class="ui-carte-tete"><span class="ui-carte-titre">' + esc(o.titre) + "</span>" + htmlBadge(o.badge) + "</span>" +
       '<span class="ui-carte-valeur">' + (vide(o.valeur) ? "—" : esc(o.valeur)) + "</span>" +
       (pied ? '<span class="ui-carte-pied">' + pied + "</span>" : "") +
@@ -370,6 +387,65 @@
     return { valeur, premiere };
   }
 
+  /* ============================================================ markdown ============================================================ */
+  /* Le texte est échappé d'abord (esc) : les captures ci-dessous (URL, code) ne contiennent ni guillemet ni chevron. */
+  const typo = t => t.replace(/(\d) (?=[%€]|\d{3}\b)/g, "$1\u00a0");
+  const gras = t => typo(t).replace(/\*\*(?=\S)([^*\n]+?)\*\*/g, "<strong>$1</strong>");
+  function liens(t) {
+    const re = /\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g;
+    let out = "", last = 0, m;
+    while ((m = re.exec(t))) {
+      out += gras(t.slice(last, m.index)) + '<a href="' + m[2] + '" target="_blank" rel="noopener noreferrer">' + gras(m[1]) + sr(" (nouvel onglet)") + "</a>";
+      last = re.lastIndex;
+    }
+    return out + gras(t.slice(last));
+  }
+  /* En ligne : `code` d'abord (rien n'est interprété dedans), puis liens et gras dans le reste. */
+  const enLigne = t => t.split(/(`[^`\n]+`)/).map((x, i) => (i % 2 ? "<code>" + x.slice(1, -1) + "</code>" : liens(x))).join("");
+  const retrait = l => { let n = 0; for (const c of l) { if (c === " ") n++; else if (c === "\t") n += 4; else break; } return n; };
+
+  function markdown(md, o) {
+    if (md == null) return "";
+    const v = o && Number(o.niveau), base = Number.isInteger(v) && v >= 1 ? Math.min(v, 6) : 3;
+    const lignes = esc(String(md)).replace(/\r\n?/g, "\n").split("\n");
+    let out = "", para = [];
+    /* Pile des listes ouvertes : { type: "ul" | "ol", retrait, texte (texte de l'item courant pas encore écrit, ou null) }. */
+    const pile = [];
+    const haut = () => pile[pile.length - 1];
+    const finPara = () => { if (para.length) out += "<p>" + enLigne(para.join(" ")) + "</p>"; para = []; };
+    const ecrire = niv => { if (niv.texte != null) { out += enLigne(niv.texte); niv.texte = null; } };
+    const ouvrirListe = (type, r, texte) => { if (pile.length) ecrire(haut()); out += "<" + type + "><li>"; pile.push({ type, retrait: r, texte }); };
+    const fermerListe = () => { const n = pile.pop(); ecrire(n); out += "</li></" + n.type + ">"; };
+    const fermerListes = () => { while (pile.length) fermerListe(); };
+    function item(type, r, texte) {
+      finPara();
+      if (!pile.length || r >= haut().retrait + 2) { ouvrirListe(type, r, texte); return; } // première liste, ou sous-liste de l'item courant
+      while (pile.length > 1 && r <= pile[pile.length - 2].retrait) fermerListe(); // remonte au niveau de cet item
+      const n = haut();
+      if (n.type === type) { ecrire(n); out += "</li><li>"; n.texte = texte; return; }
+      const r0 = n.retrait;
+      fermerListe(); // autre type au même niveau : nouvelle liste (dans l'item parent s'il y en a un)
+      ouvrirListe(type, r0, texte);
+    }
+    for (const brute of lignes) {
+      const l = brute.trim(), r = retrait(brute);
+      let m;
+      if (!l) { finPara(); fermerListes(); continue; }
+      if ((m = /^(#{1,6})\s+(.+)$/.exec(l))) {
+        finPara(); fermerListes();
+        const h = "h" + Math.min(6, base + Math.max(0, m[1].length - 2));
+        out += "<" + h + ">" + enLigne(m[2]) + "</" + h + ">";
+        continue;
+      }
+      if ((m = /^-\s+(.+)$/.exec(l))) { item("ul", r, m[1]); continue; }
+      if ((m = /^\d+\.\s+(.+)$/.exec(l))) { item("ol", r, m[1]); continue; }
+      if (pile.length && r > 0) { const n = haut(); if (n.texte != null) n.texte += " " + l; else out += " " + enLigne(l); continue; } // suite de l'item
+      fermerListes(); para.push(l);
+    }
+    finPara(); fermerListes();
+    return out;
+  }
+
   /* ============================================================ Demander à Claude ============================================================ */
   const urlClaude = question => "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? ""));
   function demanderAClaude(question, libelle) {
@@ -472,6 +548,23 @@
       titreEl.focus();
       return corps;
     }
+    /* Mise à jour d'un panneau ouvert sans reprise du focus (sauf s'il disparaît avec l'ancien contenu) ni remise à zéro du défilement. */
+    function remplacer(o) {
+      if (!estOuvert) return null;
+      o = o || {};
+      const d = leDocument(), actif = d.activeElement;
+      if (o.titre !== undefined) titreEl.textContent = o.titre == null ? "" : String(o.titre);
+      if (o.contenu !== undefined) {
+        if (o.contenu && typeof o.contenu === "object" && o.contenu.nodeType) { corps.textContent = ""; corps.appendChild(o.contenu); }
+        else { const contenuHtml = o.contenu == null ? "" : String(o.contenu); corps.innerHTML = contenuHtml; }
+      }
+      if (o.lien !== undefined || o.pied !== undefined) {
+        piedEl.innerHTML = htmlPied(o.lien, o.pied);
+        piedEl.hidden = !piedEl.querySelector("a,button") && !o.pied;
+      }
+      if (actif && actif !== d.body && !actif.isConnected) titreEl.focus();
+      return corps;
+    }
     function fermer(opts) {
       if (!estOuvert) return;
       const d = leDocument();
@@ -490,11 +583,11 @@
       if (focus && r && r !== d.body && typeof r.focus === "function") r.focus();
       if (f) f({ focus });
     }
-    return { ouvrir, fermer: o => fermer(o && o.focus === false ? { focus: false } : null), ouvert: () => estOuvert };
+    return { ouvrir, remplacer, fermer: o => fermer(o && o.focus === false ? { focus: false } : null), ouvert: () => estOuvert };
   })();
 
   return {
-    esc, carte, panneau, onglets, bascule, accordeon, voirPlus, brancher, periode, demanderAClaude, urlClaude,
+    esc, carte, panneau, onglets, bascule, accordeon, voirPlus, brancher, periode, demanderAClaude, urlClaude, markdown,
     htmlOnglets, htmlBascule, cibleClavier, PERIODES, GRANULARITES,
   };
 });

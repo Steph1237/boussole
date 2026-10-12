@@ -43,12 +43,13 @@
     if (surcharge && bloc in surcharge) return surcharge[bloc];
     return CLASSES[sansAccent(bloc)] || "autres";
   }
-  /* Enveloppe → délai pour récupérer l'argent : immediate, jours (titres cotés), semaines (assurance-vie), bloque (PER, immobilier). */
+  /* Enveloppe → délai pour récupérer l'argent : immediate, jours (titres cotés), semaines (assurance-vie), bloque (PER, immobilier).
+     « compte » non suivi de « titres » (un compte-titres se vend en quelques jours) ; « PERin » bloqué. Même règle que liquidite() du connecteur. */
   const LIQUIDITE_LABELS = { immediate: "Disponible tout de suite", jours: "Sous quelques jours", semaines: "Sous quelques semaines", bloque: "Bloqué ou peu liquide" };
   function liquidite(envelope) {
     const e = sansAccent(envelope);
-    if (/\bper\b|perco|pee|retraite|scpi|immobilier/.test(e)) return "bloque";
-    if (/livret|ldds|lep|compte|cash|especes|courant/.test(e)) return "immediate";
+    if (/\bper\b|\bperin\b|perco|pee|retraite|scpi|immobilier/.test(e)) return "bloque";
+    if (/livret|ldds|lep|\bcomptes?\b(?![- ]?titres?)|cash|especes|courant/.test(e)) return "immediate";
     if (/\bav\b|assurance|vie|capitalisation/.test(e)) return "semaines";
     return "jours";
   }

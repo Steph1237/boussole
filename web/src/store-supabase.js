@@ -19,9 +19,9 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, routines, surveillerConnexions(on), markOnboarded() }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded() }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
@@ -54,6 +54,12 @@
    reperes: [{ cle, libelle, valeur, unite, dateEffet, sourceTitre, sourceUrl, verifieLe, mode }] } : savoir commun (tables publiques
    savoir_fiches, reperes). Les fiches sont chargées sans leur contenu ; Store.savoir.fiche(slug) → la fiche avec `contenu` (markdown)
    ou null. Ces trois lectures rejoignent loadAll : une table absente (migration non appliquée) laisse la valeur précédente.
+   expertises = [{ slug, nom, quandConsulter, perimetre, version, misAJourLe, marches, angles }] : expertises du Copilote patrimonial
+   (table publique expertises, 0016 ; seules les lignes au statut « publie » sont lisibles), triées par nom, sans leur détail ; lues
+   par loadAll (table absente ou lecture en échec → valeur précédente). Store.expertises.detail(slug) → { …, methode (markdown),
+   controles (phrases), garde_fous (markdown), format (markdown), themesSavoir, reperes (clés), changelog: [{ version, le, resume }],
+   versions: [{ version, le, resume }] } ou null (inconnue, non publiée ou lecture en échec) : détail lu à l'ouverture ; versions =
+   historique public expertises_versions (copies publiées, la plus récente d'abord), à défaut le journal des versions (changelog).
    journal = [{ id, type: avis|decision|scenario|revue|hypothese|evenement, titre, synthese, raisonnement (markdown | null),
    options: [{ titre, retenue, pourquoi }], statut: a_relire|actif|realise|abandonne|archive, dateDecision, revueLe (AAAA-MM-JJ | null),
    liens: { objectifs?, positions?, biens?, credits? } (identifiants), etat (état figé par le connecteur), source, historique:
@@ -83,7 +89,7 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -117,6 +123,7 @@
       connexions: clone(C.connexions),
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
+      expertises: clone(C.expertises),
       journal: clone(C.journal),
       journalARelire: C.journalARelire,
       journalConsentement: C.journalConsentement,
@@ -189,6 +196,10 @@
   // Repères : module pur reperes.js s'il est chargé, sinon la même correspondance.
   const repView = rows => (window.Reperes && window.Reperes.depuisLignes ? window.Reperes.depuisLignes(rows) : (rows || []).map(x => ({
     cle: x.cle, libelle: x.libelle, valeur: +x.valeur, unite: x.unite, dateEffet: x.date_effet, sourceTitre: x.source_titre, sourceUrl: x.source_url, verifieLe: x.verifie_le, mode: x.mode })));
+  const tableau = v => (Array.isArray(v) ? v : []);
+  const expView = r => ({ slug: r.slug, nom: r.nom, quandConsulter: r.quand_consulter, perimetre: r.perimetre, version: r.version == null ? 1 : +r.version,
+    misAJourLe: r.mis_a_jour_le, marches: tableau(r.marches), angles: tableau(r.angles) });
+  const versionView = v => ({ version: +v.version, le: v.le ?? v.mis_a_jour_le ?? null, resume: v.resume ?? null });
   const objOu = (v, d) => (v != null && typeof v === "object" && !Array.isArray(v) ? v : d);
   const journalView = r => ({
     id: r.id, type: r.type, titre: r.titre, synthese: r.synthese, raisonnement: r.raisonnement ?? null, options: Array.isArray(r.options) ? r.options : [],
@@ -227,11 +238,12 @@
       q(sb.from("memoire_agent").select("id, categorie, contenu, echeance, epingle, source, cree_le, maj_le").order("cree_le", { ascending: false })),
       q(sb.from("savoir_fiches").select("slug, theme, titre, resume, mots_cles, sources, version, mis_a_jour_le").order("mis_a_jour_le", { ascending: false }).order("titre")),
       q(sb.from("reperes").select("cle, libelle, valeur, unite, date_effet, source_titre, source_url, verifie_le, mode").order("cle")),
+      q(sb.from("expertises").select("slug, nom, quand_consulter, perimetre, version, mis_a_jour_le, marches, angles").eq("statut", "publie").order("nom")),
       q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
       qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire")),
       q(sb.from("routines").select(ROUTINE_SELECT).order("type")),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, journal, nARelire, routines] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, expertises, journal, nARelire, routines] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter(r => r.status === "rejected");
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -247,6 +259,7 @@
     if (memoire !== undefined) C.memoire = (memoire || []).map(memView);
     if (fiches !== undefined) C.savoir = Object.assign({}, C.savoir, { fiches: (fiches || []).map(ficheView) });
     if (reperes !== undefined) C.savoir = Object.assign({}, C.savoir, { reperes: repView(reperes || []) });
+    if (expertises !== undefined) C.expertises = (expertises || []).map(expView);
     if (journal !== undefined) C.journal = (journal || []).map(journalView);
     // Pastille « à relire » : compte exact ; à défaut, compte fait sur les entrées lues.
     C.journalARelire = nARelire !== undefined ? nARelire : C.journal.filter(e => e && e.statut === "a_relire").length;
@@ -478,6 +491,28 @@
     },
   };
 
+  const expertises = {
+    /* Détail d'une expertise publiée, lu à l'ouverture ; historique des versions lu en parallèle (en échec : journal des versions).
+       null si elle n'existe pas, n'est pas publiée ou si la lecture échoue. */
+    async detail(slug) {
+      if (!sb) return null;
+      try {
+        const [r, h] = await Promise.allSettled([
+          q(sb.from("expertises").select("slug, nom, quand_consulter, perimetre, methode, controles, garde_fous, format, themes_savoir, reperes, angles, marches, version, changelog, mis_a_jour_le").eq("slug", slug).eq("statut", "publie").maybeSingle()),
+          q(sb.from("expertises_versions").select("version, resume, mis_a_jour_le").eq("slug", slug).eq("statut", "publie").order("version", { ascending: false })),
+        ]);
+        if (r.status !== "fulfilled") throw r.reason;
+        const e = r.value;
+        if (!e) return null;
+        const changelog = tableau(e.changelog).filter(v => v && typeof v === "object").map(versionView);
+        const versions = h.status === "fulfilled" && tableau(h.value).length ? tableau(h.value).map(versionView)
+          : changelog.slice().sort((a, b) => b.version - a.version);
+        return Object.assign(expView(e), { methode: e.methode ?? null, controles: tableau(e.controles).filter(c => typeof c === "string"),
+          garde_fous: e.garde_fous ?? null, format: e.format ?? null, themesSavoir: tableau(e.themes_savoir), reperes: tableau(e.reperes), changelog, versions });
+      } catch (x) { console.warn("Boussole : lecture de l'expertise impossible", x); return null; }
+    },
+  };
+
   /* ---------- connexions de l'assistant : surveillance à la demande (onboarding) ---------- */
   const CONN_INTERVALLE = 5000;
   let connTimer = null, connEnCours = false;
@@ -509,6 +544,7 @@
     propositions,
     memoire,
     savoir,
+    expertises,
     journal,
     routines,
     get: () => S,

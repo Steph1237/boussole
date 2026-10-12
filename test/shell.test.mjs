@@ -41,7 +41,7 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
   assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
   assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["projections", null], ["scenarios", "simu"]]);
-  assert.deepEqual(subs("agent"), [["journal", "journal-view"], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["connexion", "claude-guide"]]);
+  assert.deepEqual(subs("agent"), [["journal", "journal-view"], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["expertises", "expertises-view"], ["connexion", "claude-guide"]]);
   assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"]]);
   const lab = (space, id) => SPACES.find(s => s.space === space).subs.find(s => s.id === id).label;
   assert.equal(lab("patrimoine", "immobilier"), "Immobilier et crédits");
@@ -50,6 +50,7 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   assert.equal(lab("pilotage", "scenarios"), "Scénarios");
   assert.equal(lab("agent", "journal"), "Journal");
   assert.equal(lab("agent", "memoire"), "Mémoire");
+  assert.equal(lab("agent", "expertises"), "Expertises");
   assert.equal(lab("agent", "connexion"), "Connexion");
   assert.equal(lab("compte", "donnees"), "Données");
   assert.equal(lab("compte", "regles"), "Règles");
@@ -166,7 +167,7 @@ test("coque : états « bientôt » orientés vers l'agent (Projections) ; le Jo
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "fiches-view", "journal-view", "memoire-view", "objectifs-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "expertises-view", "fiches-view", "journal-view", "memoire-view", "objectifs-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   assert.equal(mods[0], "aujourdhui", "aujourdhui en tête de MODULES");
   assert.ok(mods.includes("actions"), "le module Actions reste chargé (window.Actions)");
@@ -174,7 +175,7 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
     assert.ok(mods.includes(m), `${m} absent de MODULES (build.mjs)`);
   }
-  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"], ["objectifs-view", "patrimoine", "objectifs"]])
+  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["expertises-view", "agent", "expertises"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"], ["objectifs-view", "patrimoine", "objectifs"]])
     assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
   assert.match(shell, /<section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" hidden>\s*<!--@aujourdhui-->\s*<\/section>/);
   const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
@@ -256,7 +257,7 @@ test("focus après navigation : titre de page (tabindex -1, preventScroll) si la
   assert.match(app, /a\.closest\("\[hidden\]"\)/, "élément actif dans un bloc masqué = focus perdu");
   assert.match(app, /navigate\(route, \{ focus: false \}\);/, "chargement initial : pas de vol de focus");
   assert.match(app, /\.ui-panneau a\[href\^="#"\]/, "lien interne du panneau vers la vue courante : focus sur le titre");
-  assert.match(app, /function onHash\(\) \{[\s\S]{0,400}UI\.panneau\.fermer\(\{ focus: false \}\)[\s\S]{0,200}resolveHash/, "retour arrière : panneau fermé avant la navigation");
+  assert.match(app, /function onHash\(e\) \{[\s\S]{0,600}UI\.panneau\.fermer\(\{ focus: false \}\)[\s\S]{0,200}resolveHash/, "retour arrière : panneau fermé avant la navigation");
 });
 
 test("accessibilité : role=\"tabpanel\" seulement pour les destinations à plusieurs sous-vues ; pastilles lues via .ui-sr", () => {
@@ -315,4 +316,75 @@ test("theme.css : les règles de la barre latérale visent .app>.side (pas les c
   const css = readFileSync("web/src/theme.css", "utf8");
   assert.doesNotMatch(css, /(^|[}\s])\.side\s*\{/m, "aucune règle nue .side { … }");
   assert.match(css, /\.app>\.side\{display:flex/);
+});
+
+/* Hash changé à la main (#agent/expertises?expertise=…) dans un onglet ouvert : le navigateur émet popstate PUIS hashchange pour la même
+   navigation. La coque traite le premier (la vue rouvre le panneau du lien profond) et ignore le second, qui sinon refermerait le panneau. */
+test("lien profond : popstate puis hashchange de la même navigation → traité une fois, le panneau ouvert par la vue reste ouvert", async () => {
+  const { doublonNavigation } = require("../web/src/app.js");
+  const vm = await import("node:vm");
+  const { miniDom } = await import("./helpers/mini-dom.mjs");
+  const URL0 = "https://x/app.html#agent/expertises?expertise=etf-fonds";
+  /* Modèle de la coque : écouteur posé au démarrage (avant ceux du panneau) ; ferme le panneau, réécrit l'URL sans paramètres
+     (replaceState) et, s'il y a un lien profond, navigue : show() de la vue rouvre le panneau. */
+  function monter(garde, arreter = true) {
+    const dom = miniDom();
+    const ls = {};
+    const ctx = { document: dom.doc, console };
+    ctx.window = ctx; ctx.self = ctx;
+    // comme un navigateur : liste figée au début de l'envoi ; un écouteur ajouté pendant l'envoi n'est pas appelé, un écouteur retiré
+    // ne l'est plus (même s'il est ajouté de nouveau : c'est une autre inscription) ; stopImmediatePropagation arrête les suivants
+    ctx.addEventListener = (t, f) => { (ls[t] ||= []).push({ f }); };
+    ctx.removeEventListener = (t, f) => { ls[t] = (ls[t] || []).filter(x => { if (x.f !== f) return true; x.retire = true; return false; }); };
+    const envoyer = e => {
+      let stop = false; e.stopImmediatePropagation = () => { stop = true; };
+      for (const x of (ls[e.type] || []).slice()) { if (stop) break; if (!x.retire) x.f(e); }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(readFileSync("web/src/ui.js", "utf8"), ctx, { filename: "ui.js" });
+    const U = ctx.UI;
+    let href = "https://x/app.html#agent/expertises", traitees = 0;
+    ctx.addEventListener("hashchange", onHash); ctx.addEventListener("popstate", onHash);
+    function onHash(e) {
+      if (garde(e, href)) { if (arreter) e.stopImmediatePropagation(); return; }
+      traitees++;
+      if (U.panneau.ouvert()) U.panneau.fermer({ focus: false });
+      const lien = href.includes("?");
+      href = href.split("?")[0]; // replaceState : forme canonique, paramètres retenus pour la vue
+      if (lien) U.panneau.ouvrir({ titre: "ETF et fonds", contenu: "<p>x</p>" });
+    }
+    U.panneau.ouvrir({ titre: "Allocation et risque", contenu: "" }); // un autre panneau était ouvert
+    // le hash est changé à la main : popstate puis hashchange (newURL = URL atteinte, avec ses paramètres)
+    const naviguer = url => { href = url; envoyer({ type: "popstate" }); envoyer({ type: "hashchange", newURL: url }); };
+    return { U, naviguer, envoyer, n: () => traitees };
+  }
+  const a = monter(doublonNavigation());
+  a.naviguer(URL0);
+  assert.equal(a.U.panneau.ouvert(), true, "le panneau du lien profond reste ouvert");
+  assert.equal(a.n(), 1, "navigation traitée une fois");
+  a.naviguer(URL0.replace("etf-fonds", "actions"));
+  assert.equal(a.U.panneau.ouvert(), true, "deuxième lien profond tapé à la main : idem");
+  assert.equal(a.n(), 2);
+  a.envoyer({ type: "hashchange", newURL: "https://x/app.html#agent/journal" });
+  assert.equal(a.n(), 3, "un hashchange seul (sans popstate) est traité");
+  // témoins : sans la garde, la coque referme le panneau ; sans stopImmediatePropagation, l'écouteur du panneau le referme
+  const b = monter(() => false);
+  b.naviguer(URL0);
+  assert.equal(b.U.panneau.ouvert(), false, "témoin : le bogue se reproduit sans la garde");
+  const c = monter(doublonNavigation(), false);
+  c.naviguer(URL0);
+  assert.equal(c.U.panneau.ouvert(), false, "témoin : l'écouteur du panneau doit aussi être arrêté");
+  // garde pure
+  const g = doublonNavigation();
+  assert.equal(g({ type: "popstate" }, URL0), false);
+  assert.equal(g({ type: "hashchange", newURL: URL0 + "x" }, URL0), false, "autre URL : traité");
+  assert.equal(g({ type: "hashchange", newURL: URL0 }, URL0), false, "plus de popstate en attente : traité");
+  assert.equal(g({ type: "popstate" }, URL0), false);
+  assert.equal(g({ type: "hashchange", newURL: URL0 }, URL0), true, "même navigation : ignoré");
+  assert.equal(g({ type: "hashchange", newURL: URL0 }, URL0), false, "une seule fois");
+  assert.equal(g(undefined, URL0), false);
+  // la coque : garde avant tout (URL lue avant le replaceState), écouteurs posés au démarrage
+  assert.match(app, /function onHash\(e\) \{\s*(\/\*[\s\S]*?\*\/\s*)?if \(doublon\(e, location\.href\)\) \{ e\.stopImmediatePropagation\(\); return; \}/);
+  assert.ok(app.indexOf("doublon(e, location.href)") < app.indexOf("if (r.legacy) history.replaceState"), "URL retenue avant le replaceState");
+  assert.match(app, /window\.addEventListener\("hashchange", onHash\);\s*window\.addEventListener\("popstate", onHash\);/);
 });

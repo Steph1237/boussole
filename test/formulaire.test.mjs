@@ -64,7 +64,7 @@ test("catalogue : fichiers générés à jour (npm run gen)", () => {
   const f = generer();
   assert.deepEqual(Object.keys(f).sort(), [SORTIE_CATALOGUE, SORTIE_LOGIQUE].sort());
   for (const [rel, txt] of Object.entries(f)) assert.equal(read(rel), txt, `${rel} n'est plus à jour : lancer npm run gen`);
-  assert.match(read("package.json"), /"gen": "node scripts\/gen-catalogue\.mjs"/);
+  assert.match(read("package.json"), /"gen": "node scripts\/gen-catalogue\.mjs( && [^"]*)?"/);
   assert.ok(read(SORTIE_LOGIQUE).includes(JSON.stringify(read(MCP + "formulaire-logique.js"))), "logique injectée telle quelle");
 });
 
@@ -399,10 +399,10 @@ test("index.ts : formulaires branchés sur les mêmes fonctions de dépôt, dire
   const directive = "Dès que tu dois poser plusieurs questions (formulaire, questionnaire, données manquantes), utilise l'outil formulaire plutôt que des questions en texte. Ne réponds jamais à la place de l'utilisateur. Les aides informent, elles ne recommandent pas. Après l'envoi, résume ce qui a été proposé ; pour le profil de risque, résume le profil estimé et signale tout écart avec le risque réel du portefeuille.";
   const bloc = nom => src.slice(src.indexOf(nom), src.indexOf("].join", src.indexOf(nom)));
   assert.ok(bloc("const INSTRUCTIONS").toLowerCase().includes(directive.toLowerCase()), "INSTRUCTIONS");
-  assert.ok(bloc("const CONDUITE_EXPERT").includes(directive), "CONDUITE_EXPERT");
+  assert.ok(bloc("const CONDUITE_COPILOTE").includes(directive), "CONDUITE_COPILOTE");
   assert.match(bloc("const CONDUITE_ONBOARDING"), /utilise l'outil formulaire/); assert.match(bloc("const CONDUITE_ONBOARDING"), /Tutoiement, phrases courtes/);
   assert.match(bloc("const CONDUITE = ["), /utilise l'outil formulaire plutôt que des questions en texte/);
-  for (const b of [bloc("const INSTRUCTIONS"), bloc("const CONDUITE_EXPERT")]) {
+  for (const b of [bloc("const INSTRUCTIONS"), bloc("const CONDUITE_COPILOTE")]) {
     for (const m of [/agrège/, /jamais les lignes brutes/, /soldes, positions, opérations sur titres/, /retire tout identifiant \(IBAN/, /« Relevé … du … déposé par l'utilisateur »/, /confirmer ou compléter ce qui est ambigu/]) assert.match(b, m);
   }
   assert.match(bloc('nom: "profil_de_risque"'), /outil formulaire \(champs risque\.\*\)/);

@@ -91,3 +91,6 @@
   #view-fiches-view .fv-tab .fv-r-val{text-align:right}
   #view-fiches-view .fv-tab .fv-r-date,#view-fiches-view .fv-tab .fv-r-src{grid-column:1/-1;font-size:12px;white-space:normal}
 }
+/* Rendu UI.markdown commun : sous-listes et code en ligne (mêmes styles qu'Agent › Expertises). */
+#view-fiches-view .fv-md li>ul,#view-fiches-view .fv-md li>ol{margin:4px 0 2px}
+#view-fiches-view .fv-md code{font:500 12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--sunk);border:1px solid var(--line);border-radius:4px;padding:0 4px;overflow-wrap:anywhere}

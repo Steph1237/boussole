@@ -245,13 +245,15 @@ test("detailLigne : cours et date, quantité, PRU, plus-value latente, poids, fr
   const F = Object.fromEntries(d.faits);
   assert.equal(d.titre, "ETF Stoxx Europe 600");
   assert.equal(d.meta, "PEA Camille · Europe · Camille");
-  assert.match(sp(F["Cours"]), /^248,30 € · 10 oct\. 2026$/);
+  // Le cours de démo est daté de la veille du jour réel (demo-data.js) : la date attendue suit p.priceDate.
+  const jourCours = Number(String(p.priceDate).slice(8, 10));
+  assert.match(sp(F["Cours"]), new RegExp("^248,30 € · " + jourCours + " [a-zéû]+\\.? \\d{4}$"));
   assert.equal(F["Quantité"], "36");
   assert.equal(sp(F["Prix de revient unitaire (PRU)"]), "215,10 €");
   assert.match(sp(F["Plus-value latente"]), /^\+1 1\d\d € \(\+15,4 %\)$/);
   assert.equal(sp(F["Frais courants"]), "0,07 % par an");
   assert.equal(F["Zone"], "Europe");
-  assert.match(d.source, /frais courants 0,07 %, relevé le 2 oct\. 2026$/);
+  assert.match(d.source, /frais courants 0,07 %, relevé le \d{1,2} [a-zéû]+\.? \d{4}$/);
   const total = Calc.financier(S.positions, "foyer");
   assert.ok(Math.abs(d.poids - Calc.val(p) / total * 100) < 1e-9);
   assert.equal(F["Statut"], "Actif");

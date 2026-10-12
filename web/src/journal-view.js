@@ -1,16 +1,19 @@
 /* Agent › Journal : l'historique des décisions du foyer (« le board lit, l'agent écrit »).
    S.journal = [{ id, type: avis|decision|scenario|revue|hypothese|evenement, titre, synthese, raisonnement (markdown),
      options: [{ titre, retenue, pourquoi }], statut: a_relire|actif|realise|abandonne|archive, dateDecision, revueLe,
-     liens: { objectifs, positions, biens, credits }, etat (état du patrimoine figé à l'écriture, ou { date, indisponible: true }),
+     liens: { objectifs, positions, biens, credits, expertises: [{ slug, version }] }, etat (état du patrimoine figé à l'écriture, ou { date, indisponible: true }),
      source, historique: [{ le, champ, avant, apres } | { le, champ: "raisonnement", ajout }], creeLe, majLe }] (plus récentes d'abord) ;
    S.journalConsentement = demander | prevenir | jamais ; S.journalARelire = nombre exact d'entrées à relire (pastille).
-   Lien profond : #agent/journal?entree=<id> (la coque retient le paramètre, App.parametres()) ouvre l'entrée au show().
+   Lien profond : #agent/journal?entree=<id> (la coque retient le paramètre, App.parametres()) ouvre l'entrée au show() ou dès que le
+   journal est chargé ; oublié si la vue est quittée entre-temps.
    Actions : Store.journal.confirmer(ids), .modifier(id, patch), .supprimer(ids), .consentement(mode) → { ok: true } ou { erreur }.
    Page : consentement (bascule + phrase), filtres (statut, type), liste groupée par mois en cartes UI.carte (5 par mois puis
    « Voir plus »), panneau de détail UI.panneau (synthèse, raisonnement, options, « au moment / aujourd'hui », liens, historique,
    actions selon le statut, « Reprendre avec Claude »).
+   Expertises consultées (EX1, liens.expertises écrit par journaliser) : « Expertises consultées : Nom (v3), … » dans le panneau, nom
+   repris de S.expertises (lien vers Agent › Expertises), slug en repli.
    Fonctions pures exportées pour les tests : filtrer, grouperParMois, comparaison, libelleHistorique, rendreMarkdown, listeHtml,
-   detailHtml, actionsPour, questionClaude, patchCorrection, nARelire, statutParDefaut, typesPresents, optionsStatut, CONSENTEMENTS.
+   detailHtml, expertisesDe, actionsPour, questionClaude, patchCorrection, nARelire, statutParDefaut, typesPresents, optionsStatut, CONSENTEMENTS.
    Dépendances de calcul injectées (deps) : { Calc, Pratiques, Risque } ; window.* par défaut. */
 (function () {
   "use strict";
@@ -179,38 +182,9 @@
   }
 
   /* =============================================================== markdown limité, sûr =============================================================== */
-  /* Même balisage que Fiches (fiches-view.js, non exposé globalement) : tout le HTML est échappé AVANT de reconnaître
-     « ## », « ### », listes « - » et « 1. », **gras**, [texte](https://…) ; aucun autre balisage n'est produit. */
-  const gras = t => t.replace(/\*\*(?=\S)([^*\n]+?)\*\*/g, "<strong>$1</strong>");
-  function enLigne(t) { // t est déjà échappé : l'URL capturée ne contient ni guillemet ni chevron
-    const re = /\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g;
-    let out = "", last = 0, m;
-    while ((m = re.exec(t))) {
-      out += gras(t.slice(last, m.index)) + '<a href="' + m[2] + '" target="_blank" rel="noopener noreferrer">' + gras(m[1]) + '<span class="ui-sr"> (nouvel onglet)</span></a>';
-      last = re.lastIndex;
-    }
-    return out + gras(t.slice(last));
-  }
-  function rendreMarkdown(md) {
-    if (md == null) return "";
-    const lignes = esc(String(md)).replace(/\r\n?/g, "\n").split("\n");
-    let out = "", para = [], liste = [], typeListe = "ul";
-    const finPara = () => { if (para.length) out += "<p>" + enLigne(para.join(" ")) + "</p>"; para = []; };
-    const finListe = () => { if (liste.length) out += "<" + typeListe + ">" + liste.map(x => "<li>" + enLigne(x) + "</li>").join("") + "</" + typeListe + ">"; liste = []; };
-    const item = (type, texte) => { finPara(); if (typeListe !== type) { finListe(); typeListe = type; } liste.push(texte); };
-    for (const brute of lignes) {
-      const l = brute.trim();
-      let m;
-      if (!l) { finPara(); finListe(); continue; }
-      if ((m = /^###\s+(.+)$/.exec(l))) { finPara(); finListe(); out += "<h4>" + enLigne(m[1]) + "</h4>"; continue; }
-      if ((m = /^##\s+(.+)$/.exec(l))) { finPara(); finListe(); out += "<h3>" + enLigne(m[1]) + "</h3>"; continue; }
-      if ((m = /^-\s+(.+)$/.exec(l))) { item("ul", m[1]); continue; }
-      if ((m = /^\d+\.\s+(.+)$/.exec(l))) { item("ol", m[1]); continue; }
-      finListe(); para.push(l);
-    }
-    finPara(); finListe();
-    return out;
-  }
+  /* Rendu partagé UI.markdown (ui.js, comme Fiches et Expertises) : tout le HTML est échappé AVANT de reconnaître le balisage. */
+  const leUI = () => glob("UI") || (typeof require === "function" ? require("./ui.js") : null);
+  const rendreMarkdown = md => { const u = leUI(); return u ? u.markdown(md, { niveau: 3 }) : ""; };
 
   /* =============================================================== rendus HTML =============================================================== */
   const typeTxt = e => TYPES[e && e.type] || "Entrée";
@@ -261,6 +235,25 @@
       });
     });
     return out;
+  }
+
+  /** Expertises consultées pour l'entrée (liens.expertises = [{ slug, version }]) : [{ slug, nom, version | null, connue }] ; le nom
+      vient de S.expertises (connue = true), sinon le slug sert de repli. Éléments sans slug ignorés. */
+  function expertisesDe(e, S) {
+    const l = objet(e && e.liens) && Array.isArray(e.liens.expertises) ? e.liens.expertises : [];
+    const liste = S && Array.isArray(S.expertises) ? S.expertises : [];
+    return l.filter(x => objet(x) && plat(x.slug)).map(x => {
+      const slug = plat(x.slug), ex = liste.find(y => y && y.slug === slug);
+      const v = Number.isInteger(x.version) && x.version >= 1 ? x.version : null;
+      return { slug, nom: (ex && plat(ex.nom)) || slug, version: v, connue: !!ex };
+    });
+  }
+  function expertisesHtml(xs) {
+    return '<section class="jv-d"><p class="jv-exp"><span class="jv-exp-l">Expertises consultées :</span> ' + xs.map(x => {
+      const r = "agent/expertises?expertise=" + encodeURIComponent(x.slug);
+      const nom = x.connue ? '<a href="#' + esc(r) + '" data-goto="' + esc(r) + '">' + esc(x.nom) + "</a>" : esc(x.nom);
+      return '<span class="jv-exp-x">' + nom + (x.version ? " (v" + x.version + ")" : "") + "</span>";
+    }).join(", ") + "</p></section>";
   }
 
   const blocTitre = t => '<h3 class="jv-d-t">' + esc(t) + "</h3>";
@@ -329,6 +322,8 @@
     h += comparaisonHtml(comparaison(e.etat, S, opt.deps));
     if (liens.length) h += '<section class="jv-d">' + blocTitre("Lié à") + '<ul class="jv-liens">' + liens.map(l =>
       "<li><span class=\"jv-lien-l\">" + esc(l.label) + "</span>" + (l.route ? '<a href="#' + esc(l.route) + '" data-goto="' + esc(l.route) + '">' + esc(l.nom) + "</a>" : '<span class="jv-muet">' + esc(l.nom) + "</span>") + "</li>").join("") + "</ul></section>";
+    const exps = expertisesDe(e, S);
+    if (exps.length) h += expertisesHtml(exps);
     if (hist.length) h += U.accordeon({ titre: "Historique des modifications",
       contenu: '<ol class="jv-hist">' + hist.slice().reverse().map(x => { const l = libelleHistorique(x);
         return "<li>" + (l.date ? '<span class="jv-hist-d">' + esc(l.date) + "</span>" : "") + '<span class="jv-hist-t">' + esc(l.texte) + "</span></li>"; }).join("") + "</ol>" });
@@ -363,7 +358,7 @@
     return S.error ? "erreur" : "vide";
   }
 
-  const H = { filtrer, grouperParMois, comparaison, libelleHistorique, rendreMarkdown, listeHtml, detailHtml, actionsPour, questionClaude,
+  const H = { filtrer, grouperParMois, comparaison, libelleHistorique, rendreMarkdown, listeHtml, detailHtml, expertisesDe, actionsPour, questionClaude,
     patchCorrection, liensDe, nARelire, statutParDefaut, typesPresents, optionsStatut, etatVide, CONSENTEMENTS, TYPES, STATUTS };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
@@ -504,7 +499,8 @@
     brancherPanneau(corpsPanneau);
     brancherStatut(e);
   }
-  /* Rafraîchit le panneau ouvert si son contenu a changé (action, émission du store) ; garde le défilement ; `cible` reçoit le focus. */
+  /* Rafraîchit le panneau ouvert si son contenu a changé (action, émission du store) : titre, contenu et pied remplacés
+     (UI.panneau.remplacer), sans reprendre le focus ni remettre le défilement à zéro ; `cible` reçoit le focus. */
   function renderPanneau(cible) {
     const u = U();
     if (!ouvertId || !u || !u.panneau.ouvert()) return;
@@ -513,9 +509,8 @@
     const h = contenuPanneau(e), sig = h + "|" + e.titre;
     if (sig === sigPanneau && !cible) return;
     sigPanneau = sig;
-    const y = corpsPanneau ? corpsPanneau.scrollTop : 0;
-    corpsPanneau = u.panneau.ouvrir(optionsPanneau(e, h));
-    corpsPanneau.scrollTop = y;
+    const o = optionsPanneau(e, h);
+    corpsPanneau = u.panneau.remplacer({ titre: o.titre, contenu: o.contenu, pied: o.pied }) || corpsPanneau;
     brancherStatut(e);
     const f = cible && corpsPanneau.querySelector(cible);
     if (f) f.focus();
@@ -619,7 +614,8 @@
       u.brancher($("jvListe"), { surCarte: (id, el) => { dire($("jvMsg"), ""); ouvrir(id, el); } });
     }
   }
-  function update(snap, visible) { S = snap; dirty = true; if (visible) { render(); dirty = false; } }
+  /* Vue masquée : un lien profond encore en attente (journal pas chargé) est oublié, il ne s'ouvrira pas plus tard. */
+  function update(snap, visible) { S = snap; dirty = true; if (visible) { render(); dirty = false; } else lienEntree = null; }
   function show() {
     const p = window.App && typeof App.parametres === "function" ? App.parametres() : {};
     if (p && p.entree) lienEntree = String(p.entree);

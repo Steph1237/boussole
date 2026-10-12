@@ -2,6 +2,8 @@
    docs/superpowers/specs/2026-10-11-saisie-par-agent.md). Chaque bouton de l'app ouvre Claude avec une phrase prête qui active
    l'agent Boussole sur la bonne section et lui demande d'utiliser les formulaires interactifs. Pur, sans DOM, au tutoiement.
    ClaudePrompts.phrase(section, contexte?) → texte ; ClaudePrompts.SECTIONS → sections connues.
+   Section « expertise » (EX1) : le contexte est le nom de l'expertise, intégré à la demande (« consulte l'expertise <nom> sur ma
+   situation. ») au lieu d'être ajouté en « Concerne : … ».
    ClaudePrompts.PROMPT_TACHE = { revue_mensuelle } : prompt exact de la tâche planifiée de Claude (« Tâches planifiées »), le même
    que PROMPT_TACHE dans supabase/functions/mcp/routines.ts (test d'égalité côté connecteur). */
 (function (root, factory) {
@@ -28,6 +30,11 @@
     versements: "aide-moi à régler mes versements programmés (montant, jour du mois, ligne qui les reçoit).",
     revue: "faisons ma revue du mois (demarrer_routine, type revue_mensuelle).",
     routine: "réponds avec moi aux questions de ma revue mensuelle (demarrer_routine, puis le formulaire, puis questions_routine).",
+    expertise: "consulte l'expertise adaptée à ma question sur ma situation.",
+  };
+  /* Sections dont le contexte fait partie de la demande elle-même (plutôt qu'un « Concerne : … » ajouté). */
+  const AVEC_CONTEXTE = {
+    expertise: nom => "consulte l'expertise " + nom + " sur ma situation.",
   };
   /* Prompt des tâches planifiées, par type de routine (contrat RT1, docs/superpowers/plans/2026-10-11-rt1-routines.md). */
   const PROMPT_TACHE = Object.freeze({
@@ -45,6 +52,7 @@
   function phrase(section, contexte) {
     const objet = SECTIONS[section] || SECTIONS.bilan;
     const t = contexte == null ? "" : String(contexte).replace(/\s+/g, " ").trim();
+    if (t && AVEC_CONTEXTE[section]) return DEBUT + AVEC_CONTEXTE[section](borner(t).replace(/[.?!]$/, "")) + FIN;
     return DEBUT + objet + (t ? " Concerne : " + borner(t) : "") + FIN;
   }
   return { phrase, SECTIONS, PROMPT_TACHE };

@@ -2,8 +2,8 @@
    S.savoir = { fiches: [{ slug, theme, titre, resume, motsCles, sources: [{ titre, url, consulte_le }], version, misAJourLe }],
    reperes: [{ cle, libelle, valeur, unite, dateEffet, sourceTitre, sourceUrl, verifieLe, mode }] } : les fiches arrivent sans
    leur contenu ; Store.savoir.fiche(slug) → la fiche avec `contenu` (markdown) ou null, appelé à l'ouverture.
-   Sécurité : rendreMarkdown échappe tout le HTML AVANT de reconnaître le balisage limité (titres, listes, gras, liens https://) ;
-   toute autre donnée passe par esc, et seules les URL https:// deviennent des liens (lienSur).
+   Sécurité : rendreMarkdown délègue à UI.markdown (ui.js), qui échappe tout le HTML AVANT de reconnaître le balisage limité
+   (titres, listes, gras, code, liens https://) ; toute autre donnée passe par esc, et seules les URL https:// deviennent des liens (lienSur).
    Fonctions pures exportées pour les tests : rendreMarkdown, filtrer, normaliser, lienSur, themesPresents, THEMES. */
 (function () {
   "use strict";
@@ -40,41 +40,10 @@
   /** L'URL si elle est en https://, sinon null (jamais de javascript:, data:, http:…). */
   const lienSur = u => (typeof u === "string" && /^https:\/\/[^\s]+$/.test(u) ? u : null);
 
-  /* ---------- markdown limité, sûr ---------- */
-  const gras = t => t.replace(/\*\*(?=\S)([^*\n]+?)\*\*/g, "<strong>$1</strong>");
-  /* `t` est déjà échappé : l'URL capturée ne contient ni guillemet ni chevron. */
-  function enLigne(t) {
-    const re = /\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g;
-    let out = "", last = 0, m;
-    while ((m = re.exec(t))) {
-      out += gras(t.slice(last, m.index)) + '<a href="' + m[2] + '" target="_blank" rel="noopener noreferrer">' + gras(m[1]) + '<span class="fv-sr"> (nouvel onglet)</span></a>';
-      last = re.lastIndex;
-    }
-    return out + gras(t.slice(last));
-  }
-  /** Markdown limité → HTML : « ## » → h3, « ### » → h4, « - » → liste à puces, « 1. » → liste numérotée, **gras**,
-      [texte](https://…), paragraphes séparés par une ligne vide. Tout le HTML d'origine est échappé d'abord ; aucun autre
-      balisage n'est produit. */
-  function rendreMarkdown(md) {
-    if (md == null) return "";
-    const lignes = esc(String(md)).replace(/\r\n?/g, "\n").split("\n");
-    let out = "", para = [], liste = [], typeListe = "ul";
-    const finPara = () => { if (para.length) out += "<p>" + enLigne(para.join(" ")) + "</p>"; para = []; };
-    const finListe = () => { if (liste.length) out += "<" + typeListe + ">" + liste.map(x => "<li>" + enLigne(x) + "</li>").join("") + "</" + typeListe + ">"; liste = []; };
-    const item = (type, texte) => { finPara(); if (typeListe !== type) { finListe(); typeListe = type; } liste.push(texte); };
-    for (const brute of lignes) {
-      const l = brute.trim();
-      let m;
-      if (!l) { finPara(); finListe(); continue; }
-      if ((m = /^###\s+(.+)$/.exec(l))) { finPara(); finListe(); out += "<h4>" + enLigne(m[1]) + "</h4>"; continue; }
-      if ((m = /^##\s+(.+)$/.exec(l))) { finPara(); finListe(); out += "<h3>" + enLigne(m[1]) + "</h3>"; continue; }
-      if ((m = /^-\s+(.+)$/.exec(l))) { item("ul", m[1]); continue; }
-      if ((m = /^\d+\.\s+(.+)$/.exec(l))) { item("ol", m[1]); continue; }
-      finListe(); para.push(l);
-    }
-    finPara(); finListe();
-    return out;
-  }
+  /* ---------- markdown limité, sûr : rendu partagé UI.markdown (ui.js), « ## » → h3 ---------- */
+  const leUI = () => (typeof window !== "undefined" && window.UI) || (typeof require === "function" ? require("./ui.js") : null);
+  /** Markdown limité → HTML sûr (UI.markdown, niveau 3) ; "" sans bibliothèque UI. */
+  const rendreMarkdown = md => { const u = leUI(); return u ? u.markdown(md, { niveau: 3 }) : ""; };
 
   /** État à afficher quand la liste est vide : "chargement" (store pas prêt), "erreur" (lecture impossible) ou "vide" ; null si la liste n'est pas vide. */
   function etatVide(S, n) {

@@ -28,6 +28,7 @@
       { id: "propositions", label: "Propositions", module: "propositions" },
       { id: "memoire", label: "Mémoire", module: "memoire-view" },
       { id: "fiches", label: "Fiches", module: "fiches-view" },
+      { id: "expertises", label: "Expertises", module: "expertises-view" },
       { id: "connexion", label: "Connexion", module: "claude-guide" },
     ] },
     { space: "compte", label: "Compte", short: "Compte", icon: "compte", primary: false, desc: "Tes données, tes règles et ton compte", subs: [
@@ -110,6 +111,18 @@
     const prop = k => k + " proposition" + (k > 1 ? "s" : "") + " de Claude à examiner", jour = k => k + " entrée" + (k > 1 ? "s" : "") + " du journal à relire";
     if (P && Jr) return " éléments à traiter : " + prop(P) + ", " + jour(Jr);
     return " " + (Jr ? jour(Jr) : prop(P)).replace(/^\d+ /, "");
+  }
+  /* Hash changé dans un onglet ouvert (à la main, précédent / suivant) : le navigateur émet popstate PUIS hashchange pour la même
+     navigation. Sans garde, le second retraitement fermerait le panneau que la vue vient d'ouvrir (lien profond ?expertise=,
+     ?entree=). doublonNavigation() → garde(e, href) : vrai pour le hashchange dont l'URL (newURL) est celle du popstate qui
+     vient d'être traité (href lu avant tout replaceState) ; la garde s'efface alors, une navigation suivante est traitée. */
+  function doublonNavigation() {
+    let dejaVu = null; // URL d'un popstate déjà traité
+    return (e, href) => {
+      if (e && e.type === "hashchange" && dejaVu != null && e.newURL === dejaVu) { dejaVu = null; return true; }
+      dejaVu = e && e.type === "popstate" ? href : null;
+      return false;
+    };
   }
   const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name) return { space: sp.space, sub: s.id }; return null; };
 
@@ -316,7 +329,10 @@
     }
 
     /* Précédent / suivant, hash saisi à la main ou lien <a href="#…"> : on suit le hash (forme ancienne réécrite). */
-    function onHash() {
+    const doublon = doublonNavigation();
+    function onHash(e) {
+      /* hashchange d'une navigation déjà traitée au popstate : ignoré, et caché à l'écouteur du panneau (posé après celui-ci). */
+      if (doublon(e, location.href)) { e.stopImmediatePropagation(); return; }
       /* Retour arrière avec le panneau de détail ouvert : il se ferme d'abord (sans reprendre le focus), sinon le reste de la
          page est encore inerte quand navigate() pose le focus sur le titre (window appelle cet écouteur avant celui du panneau). */
       if (window.UI && UI.panneau && UI.panneau.ouvert()) UI.panneau.fermer({ focus: false });
@@ -435,5 +451,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation };
 })();

@@ -5,7 +5,8 @@
 //
 // Exceptions, explicites et commentées (toute autre occurrence fait échouer le test) :
 //   - libellés d'interfaces tierces cités tels quels : l'option « Utiliser votre propre client OAuth » du formulaire
-//     « Ajouter un connecteur personnalisé » de Claude (accueil.js, bloc « Connecter Claude » réutilisé dans Agent › Connexion).
+//     « Ajouter un connecteur personnalisé » de Claude (accueil.js, bloc « Connecter Claude » réutilisé dans Agent › Connexion) ;
+//   - le nom commun « rendez-vous » (ni vouvoiement ni verbe), dans le texte d'une expertise repris tel quel pour la démo (demo-data.js).
 // Les exceptions prévues au départ pour les textes des moteurs (plan.js, pratiques.js, risque.js, bilan-etat.js, rules.js), le
 // bloc moteur de toise.js et le simulateur (simu.*) ne sont plus nécessaires : ces fichiers sont passés au tutoiement
 // (commit « Moteurs au tutoiement… ») ; ils restent donc couverts par ce test.
@@ -19,6 +20,7 @@ const FICHIERS = [...dans("web/src", /\.(js|html)$/), ...dans("web", /\.html$/),
 /* Libellés tiers cités tels quels : { fichier: [texte exact autorisé, …] }. Chaque texte est retiré avant la recherche. */
 const EXCEPTIONS = {
   "web/src/accueil.js": ["Utiliser votre propre client OAuth"], // option de l'interface de Claude (connecteur personnalisé)
+  "web/src/demo-data.js": ["rendez-vous"], // nom commun (« un rendez-vous annuel »), texte de l'expertise allocation-risque repris de 0017
 };
 /* Mots en « -ez » qui ne sont pas des verbes à la 2e personne du pluriel. */
 const MOTS_EN_EZ = new Set(["assez", "chez", "nez", "rez"]);

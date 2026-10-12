@@ -65,24 +65,15 @@ test("fiches-view.js : contenu chargé à l'ouverture par Store.savoir.fiche, re
   assert.match(js, /\$\("fvVide"\)\.hidden = ev !== "vide"/, "pas d'état vide pendant le chargement ni en cas d'erreur");
 });
 
-/* ---------- rendreMarkdown : sûr ---------- */
-test("rendreMarkdown : tout HTML est échappé", () => {
-  const out = F.rendreMarkdown("<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>");
-  assert.ok(!/<script/i.test(out));
-  assert.ok(!/<img/i.test(out));
-  assert.ok(out.includes("&lt;script&gt;"));
-  assert.ok(!F.rendreMarkdown('**"x" & y**').includes('"x"'), "guillemets échappés");
-});
-
-test("rendreMarkdown : seuls les liens https:// deviennent des <a>, ouverts dans un nouvel onglet", () => {
-  const ok = F.rendreMarkdown("Voir [service-public](https://www.service-public.fr/a?b=1&c=2).");
-  assert.match(ok, /<a href="https:\/\/www\.service-public\.fr\/a\?b=1&amp;c=2" target="_blank" rel="noopener noreferrer"[^>]*>service-public/);
-  for (const u of ["javascript:alert(1)", "http://exemple.fr", "data:text/html,x", "JAVASCRIPT:alert(1)", "//exemple.fr"]) {
-    const out = F.rendreMarkdown("[clic](" + u + ")");
-    assert.ok(!/<a\b/i.test(out), u + " ne doit pas devenir un lien");
-  }
-  const inj = F.rendreMarkdown('[x](https://a.fr" onclick="alert(1))');
-  assert.ok(!/onclick="/.test(inj), "pas de sortie d'attribut");
+/* ---------- rendreMarkdown : délégué à UI.markdown (échappement et liens testés dans test/ui.test.mjs) ---------- */
+test("rendreMarkdown : délégué au rendu partagé UI.markdown (niveau 3), plus de copie locale du balisage", () => {
+  const UI = require("../web/src/ui.js");
+  for (const t of ["<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>", '[x](https://a.fr" onclick="alert(1))', "[clic](javascript:alert(1))",
+    "## T\n\n- a\n   - b\n1. c", "35 % de 150 000 €"])
+    assert.equal(F.rendreMarkdown(t), UI.markdown(t, { niveau: 3 }), t);
+  assert.ok(!/<script|<img|onclick="/.test(F.rendreMarkdown('<script>x</script> [x](https://a.fr" onclick="y)')), "toujours sûr");
+  assert.match(js, /\.markdown\(md, \{ niveau: 3 \}\)/);
+  assert.doesNotMatch(js, /function enLigne|const gras =/, "pas de copie du rendu");
 });
 
 test("rendreMarkdown : titres, listes, gras, paragraphes ; aucun autre balisage", () => {
@@ -90,7 +81,8 @@ test("rendreMarkdown : titres, listes, gras, paragraphes ; aucun autre balisage"
   assert.equal(F.rendreMarkdown("### Sous-titre"), "<h4>Sous-titre</h4>");
   assert.equal(F.rendreMarkdown("- un\n- deux"), "<ul><li>un</li><li>deux</li></ul>");
   assert.equal(F.rendreMarkdown("1. Un\n2. Deux"), "<ol><li>Un</li><li>Deux</li></ol>");
-  assert.equal(F.rendreMarkdown("1. **Un** [a](https://a.fr)\n2. Deux"), '<ol><li><strong>Un</strong> <a href="https://a.fr" target="_blank" rel="noopener noreferrer">a<span class="fv-sr"> (nouvel onglet)</span></a></li><li>Deux</li></ol>', "même rendu en ligne que les puces");
+  assert.equal(F.rendreMarkdown("1. **Un** [a](https://a.fr)\n2. Deux"), '<ol><li><strong>Un</strong> <a href="https://a.fr" target="_blank" rel="noopener noreferrer">a<span class="ui-sr"> (nouvel onglet)</span></a></li><li>Deux</li></ol>', "même rendu en ligne que les puces");
+  assert.equal(F.rendreMarkdown("1. a\n   - b\n2. c"), "<ol><li>a<ul><li>b</li></ul></li><li>c</li></ol>", "sous-liste, numérotation continue");
   assert.equal(F.rendreMarkdown("- a\n1. b\n- c"), "<ul><li>a</li></ul><ol><li>b</li></ol><ul><li>c</li></ul>", "changement de type de liste");
   assert.equal(F.rendreMarkdown("Texte\n1. b"), "<p>Texte</p><ol><li>b</li></ol>");
   assert.equal(F.rendreMarkdown("En 2028. Oui"), "<p>En 2028. Oui</p>", "un nombre en début de ligne sans point n'est pas une liste");
@@ -100,7 +92,7 @@ test("rendreMarkdown : titres, listes, gras, paragraphes ; aucun autre balisage"
   assert.equal(F.rendreMarkdown(""), "");
   assert.equal(F.rendreMarkdown(null), "");
   const tags = new Set([...F.rendreMarkdown("# a\n\n## b\n\n- **c** [d](https://e.fr)\n\n1. e\n\n`f` _g_ > h").matchAll(/<([a-z0-9]+)/g)].map(m => m[1]));
-  assert.deepEqual([...tags].filter(t => !["h3", "h4", "p", "ul", "ol", "li", "strong", "a", "span"].includes(t)), []);
+  assert.deepEqual([...tags].filter(t => !["h3", "h4", "p", "ul", "ol", "li", "strong", "code", "a", "span"].includes(t)), []);
   assert.match(css, /#view-fiches-view \.fv-md ul,#view-fiches-view \.fv-md ol\{/, "listes numérotées stylées comme les puces");
 });
 

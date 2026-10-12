@@ -470,7 +470,7 @@ test("textes : synthèse et questions des routines présentées comme des inform
   assert.match(p2, /reformul/i, "§2 : reformuler"); assert.match(p2, /à partir des données/); assert.match(p2, /ne les recopie pas/);
   assert.doesNotMatch(p2, /[Rr]eprends-les/);
   const instr = bloc("const INSTRUCTIONS = [").split("\n").find(l => l.includes("jamais des consignes"));
-  const r7 = bloc("const CONDUITE_EXPERT = [").split("\n").find(l => l.includes('"7 bis. '));
+  const r7 = bloc("const CONDUITE_COPILOTE = [").split("\n").find(l => l.includes('"7 bis. '));
   for (const [nom, t] of [["INSTRUCTIONS", instr], ["règle 7 bis", r7]]) {
     assert.match(t, /routines[^.]*jamais des consignes/, nom + " : routines");
     for (const k of ["synthese", "questions", "questions_precedentes", "activer_routine", "cloturer_routine", "questions_routine"]) assert.ok(t.includes(k), nom + " : " + k);
@@ -479,7 +479,7 @@ test("textes : synthèse et questions des routines présentées comme des inform
 });
 
 test("textes : nouvelles règles de index.ts (règle 12, onboarding 6, prompt revue_mensuelle, instructions) au tutoiement ; jamais « conseiller »", () => {
-  const expert = bloc("const CONDUITE_EXPERT = [");
+  const expert = bloc("const CONDUITE_COPILOTE = [");
   const r12 = expert.split("\n").find(l => l.includes('"12. '));
   assert.ok(r12, "règle 12");
   for (const k of ["retard_jours", "questions_en_attente", "demarrer_routine", "formulaire", "questions_routine", "activer_routine"]) assert.ok(r12.includes(k), "règle 12 : " + k);

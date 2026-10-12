@@ -28,6 +28,7 @@ const API_AUTORISEE = {
   memoire: ["modifier", "supprimer", "toutEffacer"],
   routines: ["pause"], // bascule active / en pause de la revue mensuelle (claude-guide.js)
   savoir: ["fiche"], // lecture
+  expertises: ["detail"], // lecture (méthode d'une expertise, Agent › Expertises)
 };
 const STORE_AUTORISE = ["get", "on", "emit", "reload", "mode", "setScope", "surveillerConnexions", "markOnboarded", "db", ...Object.keys(API_AUTORISEE)];
 
@@ -65,7 +66,7 @@ test("lecture seule : aucune écriture au store hors liste blanche (simulateurs 
     assert.doesNotMatch(s, /\bsb\.from\(|\.from\(\s*["'](positions|profiles|config|budgets|objectifs|biens|credits|transactions)["']\)|\.rpc\(/, f + " : requête directe à la base");
     // API du store : seules les entrées connues, et pour les API dédiées seulement les méthodes de contrôle.
     for (const m of s.matchAll(/\bStore\s*\.\s*(\w+)/g)) assert.ok(STORE_AUTORISE.includes(m[1]), `${f} : Store.${m[1]} inconnu`);
-    for (const m of s.matchAll(/\bStore\s*\.\s*(propositions|journal|memoire|savoir|routines)\s*\.\s*(\w+)/g))
+    for (const m of s.matchAll(/\bStore\s*\.\s*(propositions|journal|memoire|savoir|expertises|routines)\s*\.\s*(\w+)/g))
       assert.ok(API_AUTORISEE[m[1]].includes(m[2]), `${f} : Store.${m[1]}.${m[2]} hors liste blanche`);
   }
 });
@@ -77,6 +78,7 @@ test("lecture seule : les vues de contrôle appellent bien les API dédiées (le
   assert.match(lire("propositions.js"), /window\.Store\.propositions/);
   assert.match(lire("journal-view.js"), /window\.Store\.journal/);
   assert.match(lire("memoire-view.js"), /window\.Store\.memoire/);
+  assert.match(lire("expertises-view.js"), /window\.Store\.expertises\.detail\(slug\)/, "expertises : lecture du détail seulement");
   assert.match(lire("accueil.js"), /St\.markOnboarded\(\)/);
   assert.match(lire("claude-guide.js"), /window\.Store\.routines\.pause\(type, active\)/, "Agent › Connexion : bascule de la revue mensuelle");
 });

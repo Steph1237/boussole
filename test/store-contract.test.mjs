@@ -55,7 +55,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -494,6 +494,140 @@ test("store-supabase.js : mémoire de l'agent et savoir commun (lecture au déma
   assert.match(demo, /D\.memoire/); assert.match(demo, /D\.savoir/);
 });
 
+/* ------------------------------------------------ expertises du Copilote (EX1) ------------------------------------------------ */
+
+const EXP_KEYS = ["angles", "marches", "misAJourLe", "nom", "perimetre", "quandConsulter", "slug", "version"];
+const EXP_DETAIL_KEYS = [...EXP_KEYS, "changelog", "controles", "format", "garde_fous", "methode", "reperes", "themesSavoir", "versions"].sort();
+const SLUGS_EXP = ["actions", "allocation-risque", "budget-epargne", "crypto", "etf-fonds", "fiscalite-enveloppes", "immobilier-credit", "taux-obligations"];
+
+test("démo : expertises au contrat (8 publiées, sans leur détail, triées par nom)", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  assert.deepEqual(J(S.expertises.map(e => e.slug)).sort(), SLUGS_EXP);
+  S.expertises.forEach(e => {
+    assert.deepEqual(Object.keys(e).sort(), EXP_KEYS, `forme de l'expertise ${e.slug} (sans détail)`);
+    assert.ok(e.nom.length >= 3 && e.nom.length <= 80);
+    assert.ok(e.quandConsulter.length >= 20 && e.quandConsulter.length <= 300);
+    assert.ok(e.perimetre.length >= 20 && e.perimetre.length <= 600);
+    assert.ok(Number.isInteger(e.version) && e.version >= 1);
+    assert.match(e.misAJourLe, ISO);
+    assert.ok(Array.isArray(e.marches) && Array.isArray(e.angles));
+  });
+  const noms = J(S.expertises.map(e => e.nom));
+  assert.deepEqual(noms, [...noms].sort((a, b) => a.localeCompare(b, "fr")), "triées par nom");
+  assert.equal(typeof ctx.Store.expertises.detail, "function");
+});
+
+test("démo : Store.expertises.detail(slug) → détail complet (allocation-risque, etf-fonds), court pour les autres, null si inconnu", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  for (const slug of ["allocation-risque", "etf-fonds"]) {
+    const d = await ctx.Store.expertises.detail(slug);
+    assert.deepEqual(Object.keys(d).sort(), EXP_DETAIL_KEYS, slug);
+    assert.ok(d.methode.length > 1000 && d.garde_fous.length > 500 && d.format.length > 100, slug + " : méthode, garde-fous et forme complets");
+    assert.ok(d.controles.length >= 3 && d.controles.every(c => typeof c === "string"));
+    assert.deepEqual(J(d.versions), [{ version: 1, le: "2026-10-11", resume: d.changelog[0].resume }], slug + " : historique des versions");
+    assert.equal(d.nom, S.expertises.find(e => e.slug === slug).nom);
+  }
+  const c = await ctx.Store.expertises.detail("crypto");
+  assert.deepEqual(Object.keys(c).sort(), EXP_DETAIL_KEYS);
+  assert.equal(c.methode, null); assert.equal(c.garde_fous, null); assert.equal(c.format, null);
+  assert.ok(c.controles.length >= 3, "détail court : points de contrôle");
+  assert.equal(await ctx.Store.expertises.detail("inconnue"), null);
+  assert.ok(!("methode" in ctx.Store.get().expertises[0]), "S reste sans détail");
+  (await ctx.Store.expertises.detail("etf-fonds")).controles.push("modifié");
+  assert.ok(!(await ctx.Store.expertises.detail("etf-fonds")).controles.includes("modifié"), "copie : le détail de la démo n'est pas modifiable");
+});
+
+test("store-supabase.js : expertises publiées lues dans loadAll (sans détail), détail et historique lus à l'ouverture", () => {
+  const sup = src("store-supabase.js"), demo = src("store-demo.js");
+  for (const s of [sup, demo]) {
+    assert.match(s, /S = \{[^\n]*savoir, expertises, journal,/, "en-tête : S documente expertises");
+    assert.match(s, /Contrat : window\.Store = \{[^\n]*savoir, expertises, journal,/, "en-tête : Store.expertises");
+    for (const k of ["expertises: clone(C.expertises)", "expertises,"]) assert.ok(s.includes(k), k);
+  }
+  const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
+  assert.ok(load.includes('from("expertises").select("slug, nom, quand_consulter, perimetre, version, mis_a_jour_le, marches, angles").eq("statut", "publie").order("nom")'), "liste des expertises publiées");
+  assert.doesNotMatch(load, /from\("expertises"\)\.select\("[^"]*methode/, "la liste ne contient pas le détail");
+  assert.ok(load.includes("if (expertises !== undefined)"), "table absente ou lecture en échec : valeur précédente");
+  assert.ok(sup.includes('from("expertises").select("slug, nom, quand_consulter, perimetre, methode, controles, garde_fous, format, themes_savoir, reperes, angles, marches, version, changelog, mis_a_jour_le").eq("slug", slug).eq("statut", "publie").maybeSingle()'), "détail");
+  assert.ok(sup.includes('from("expertises_versions").select("version, resume, mis_a_jour_le").eq("slug", slug).eq("statut", "publie").order("version", { ascending: false })'), "historique des versions");
+  assert.match(demo, /D\.expertises/);
+});
+
+/* store-supabase.js exécuté avec un faux client Supabase (sans session : seul Store.expertises.detail est appelé). reponses : table →
+   { data, error } ou fonction(filtres) → { data, error } ; une réponse absente vaut { data: null, error: null }. */
+function storeSupabase(reponses) {
+  const appels = [];
+  const requete = table => {
+    const f = { table, eq: [], select: null, order: null, unique: false };
+    const b = {
+      select: c => { f.select = c; return b; },
+      eq: (k, v) => { f.eq.push([k, v]); return b; },
+      order: (k, o) => { f.order = [k, o]; return b; },
+      maybeSingle: () => { f.unique = true; return b; },
+      then: (ok, ko) => { appels.push(f); const r = reponses[table]; return Promise.resolve(typeof r === "function" ? r(f) : r || { data: null, error: null }).then(ok, ko); },
+    };
+    return b;
+  };
+  const avertissements = [];
+  const ctx = {
+    console: { log() {}, error() {}, warn: (...a) => avertissements.push(a.join(" ")) }, setTimeout, clearTimeout,
+    location: { href: "https://x/app.html", search: "", hash: "", pathname: "/app.html" },
+    document: { readyState: "complete", visibilityState: "visible", addEventListener() {} },
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    BOUSSOLE: { supabaseUrl: "https://x.supabase.co", supabaseKey: "k" },
+    supabase: { createClient: () => ({ from: requete, auth: { getSession: async () => ({ data: { session: null } }) } }) },
+  };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(src("sensible.js"), ctx, { filename: "sensible.js" });
+  vm.runInContext(src("routine-etat.js"), ctx, { filename: "routine-etat.js" });
+  vm.runInContext(src("store-supabase.js"), ctx, { filename: "store-supabase.js" });
+  return { ctx, appels, avertissements };
+}
+const LIGNE_EXP = { slug: "etf-fonds", nom: "ETF et fonds", quand_consulter: "Q", perimetre: "P", methode: "## M", controles: ["Un", 3, null, { x: 1 }, "Deux"],
+  garde_fous: "G", format: "F", themes_savoir: ["marches"], reperes: ["pfu_taux"], angles: ["frais"], marches: ["fr"], version: 2,
+  changelog: [{ version: 1, le: "2026-10-01", resume: "v1" }, "pas un objet", null, { version: 2, le: "2026-10-11", resume: "v2" }], mis_a_jour_le: "2026-10-11" };
+
+test("store-supabase.js (exécuté, faux client) : expertises.detail — historique vide → journal des versions ; contrôles non textuels filtrés", async () => {
+  const { ctx, appels } = storeSupabase({ expertises: { data: LIGNE_EXP, error: null }, expertises_versions: { data: [], error: null } });
+  await wait(0);
+  const d = J(await ctx.Store.expertises.detail("etf-fonds"));
+  assert.deepEqual(d.controles, ["Un", "Deux"], "contrôles non textuels filtrés");
+  assert.deepEqual(d.changelog, [{ version: 1, le: "2026-10-01", resume: "v1" }, { version: 2, le: "2026-10-11", resume: "v2" }], "entrées non objets du journal ignorées");
+  assert.deepEqual(d.versions.map(v => v.version), [2, 1], "historique vide → journal des versions, le plus récent d'abord");
+  assert.equal(d.methode, "## M");
+  assert.deepEqual(d.themesSavoir, ["marches"]);
+  assert.equal(d.nom, "ETF et fonds");
+  const [e, h] = [appels.find(a => a.table === "expertises"), appels.find(a => a.table === "expertises_versions")];
+  assert.deepEqual(J(e.eq), [["slug", "etf-fonds"], ["statut", "publie"]]);
+  assert.equal(e.unique, true);
+  assert.deepEqual(J(h.order), ["version", { ascending: false }]);
+  // historique publié présent : il prime
+  const b = storeSupabase({ expertises: { data: LIGNE_EXP, error: null },
+    expertises_versions: { data: [{ version: 2, resume: "copie v2", mis_a_jour_le: "2026-10-11" }], error: null } });
+  await wait(0);
+  assert.deepEqual(J((await b.ctx.Store.expertises.detail("etf-fonds")).versions), [{ version: 2, le: "2026-10-11", resume: "copie v2" }]);
+  // historique en échec : journal des versions aussi
+  const c = storeSupabase({ expertises: { data: LIGNE_EXP, error: null }, expertises_versions: { data: null, error: { code: "42P01", message: "relation absente" } } });
+  await wait(0);
+  assert.deepEqual(J((await c.ctx.Store.expertises.detail("etf-fonds")).versions).map(v => v.version), [2, 1]);
+});
+
+test("store-supabase.js (exécuté, faux client) : expertises.detail — échec de lecture ou expertise absente → null", async () => {
+  const a = storeSupabase({ expertises: { data: null, error: { code: "500", message: "panne" } }, expertises_versions: { data: [], error: null } });
+  await wait(0);
+  assert.equal(await a.ctx.Store.expertises.detail("etf-fonds"), null, "échec → null");
+  assert.ok(a.avertissements.some(m => /expertise impossible/.test(m)), "échec signalé en console");
+  const b = storeSupabase({ expertises: { data: null, error: null }, expertises_versions: { data: [], error: null } });
+  await wait(0);
+  assert.equal(await b.ctx.Store.expertises.detail("inconnue"), null, "absente ou non publiée → null");
+  const c = storeSupabase({ expertises: () => { throw new Error("réseau"); } });
+  await wait(0);
+  assert.equal(await c.ctx.Store.expertises.detail("etf-fonds"), null, "exception du client → null");
+});
+
 /* ------------------------------------------------ journal des décisions (CK2) ------------------------------------------------ */
 
 const JOURNAL_KEYS = ["creeLe", "dateDecision", "etat", "historique", "id", "liens", "majLe", "options", "raisonnement", "revueLe", "source", "statut", "synthese", "titre", "type"];
@@ -548,7 +682,15 @@ test("démo : journal au contrat (5 entrées cohérentes avec le foyer, plus ré
   assert.equal(S.journal.filter(e => e.statut === "a_relire").length, 1, "un seul avis à relire");
   // liens vers des objets qui existent dans la démo
   const ids = { objectifs: S.objectifs.map(o => o.id), positions: S.positions.map(p => p.id), biens: S.profil.biens.map(b => b.id), credits: S.profil.credits.map(c => c.id) };
-  S.journal.forEach(e => Object.entries(e.liens).forEach(([k, v]) => v.forEach(id => assert.ok(ids[k] && ids[k].includes(id), `${e.id} : lien ${k}/${id}`))));
+  S.journal.forEach(e => Object.entries(e.liens).filter(([k]) => k !== "expertises").forEach(([k, v]) => v.forEach(id => assert.ok(ids[k] && ids[k].includes(id), `${e.id} : lien ${k}/${id}`))));
+  // expertises consultées (EX1, liens.expertises = [{ slug, version }]) : des expertises de la démo, à leur version
+  const exps = S.journal.filter(e => e.liens.expertises);
+  assert.ok(exps.length >= 1, "au moins une entrée trace les expertises consultées");
+  exps.forEach(e => e.liens.expertises.forEach(x => {
+    const ex = S.expertises.find(y => y.slug === x.slug);
+    assert.ok(ex, `${e.id} : expertise ${x.slug}`);
+    assert.equal(x.version, ex.version, `${e.id} : version de ${x.slug}`);
+  }));
   for (const k of ["confirmer", "modifier", "supprimer", "consentement"]) assert.equal(typeof ctx.Store.journal[k], "function", "Store.journal." + k);
 });
 

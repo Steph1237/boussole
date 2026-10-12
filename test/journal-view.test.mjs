@@ -222,18 +222,16 @@ test("libelleHistorique : forme { le, champ: 'raisonnement', ajout } → note aj
 });
 
 /* ------------------------------------------------------------------ markdown sûr ------------------------------------------------------------------ */
-test("rendreMarkdown : échappe tout le HTML, titres, listes, gras, liens https seulement", () => {
-  const h = JV.rendreMarkdown("## Pourquoi\n\nTexte **important** <img src=x onerror=alert(1)>\n\n- un\n- deux\n\n1. a\n2. b\n\n[source](https://www.service-public.fr) [mal](javascript:alert(1))");
+test("rendreMarkdown : délégué au rendu partagé UI.markdown (niveau 3 : ## → h3) ; échappement et liens testés dans test/ui.test.mjs", () => {
+  const t = "## Pourquoi\n\nTexte **important** <img src=x onerror=alert(1)>\n\n- un\n- deux\n\n1. a\n   - a1\n2. b\n\n[source](https://www.service-public.fr) [mal](javascript:alert(1))";
+  const h = JV.rendreMarkdown(t);
+  assert.equal(h, UI.markdown(t, { niveau: 3 }));
   assert.ok(h.includes("<h3>Pourquoi</h3>"));
-  assert.ok(h.includes("<strong>important</strong>"));
-  assert.ok(h.includes("&lt;img src=x onerror=alert(1)&gt;"));
-  assert.ok(!/<img/.test(h));
-  assert.ok(h.includes("<ul><li>un</li><li>deux</li></ul>"));
-  assert.ok(h.includes("<ol><li>a</li><li>b</li></ol>"));
-  assert.ok(h.includes('<a href="https://www.service-public.fr" target="_blank" rel="noopener noreferrer">source'));
-  assert.ok(!h.includes('href="javascript'));
+  assert.ok(h.includes("<ol><li>a<ul><li>a1</li></ul></li><li>b</li></ol>"), "sous-liste, numérotation continue");
+  assert.ok(!/<img/.test(h) && !h.includes('href="javascript'), "toujours sûr");
   assert.equal(JV.rendreMarkdown(null), "");
-  assert.equal(JV.rendreMarkdown('"><script>x</script>'), "<p>&quot;&gt;&lt;script&gt;x&lt;/script&gt;</p>");
+  assert.match(js, /\.markdown\(md, \{ niveau: 3 \}\)/);
+  assert.doesNotMatch(js, /function enLigne|const gras =/, "pas de copie du rendu");
 });
 
 /* ------------------------------------------------------------------ rendus HTML ------------------------------------------------------------------ */
@@ -283,6 +281,26 @@ test("detailHtml : synthèse, raisonnement rendu, options (retenue en évidence)
   for (const a of ["realise", "abandonner", "corriger", "archiver", "supprimer"]) assert.ok(h.includes('data-jv-act="' + a + '"'), a);
   assert.ok(!h.includes('data-jv-act="confirmer"'));
   assert.ok(!/<script>|<img/.test(h));
+});
+
+test("expertisesDe et detailHtml : « Expertises consultées : Nom (v3), … », nom repris de S.expertises, slug en repli, tout échappé (EX1)", () => {
+  const S = Object.assign(demoS(), { expertises: [{ slug: "allocation-risque", nom: "Allocation et risque", version: 3 }, { slug: "etf-fonds", nom: "ETF <et> fonds", version: 1 }] });
+  const e = E("x9", { liens: { expertises: [{ slug: "allocation-risque", version: 3 }, { slug: "etf-fonds", version: 1 }, { slug: "retiree-<x>", version: 2 }, { slug: "sans-version" }, null, { version: 4 }] } });
+  assert.deepEqual(J(JV.expertisesDe(e, S)), [
+    { slug: "allocation-risque", nom: "Allocation et risque", version: 3, connue: true },
+    { slug: "etf-fonds", nom: "ETF <et> fonds", version: 1, connue: true },
+    { slug: "retiree-<x>", nom: "retiree-<x>", version: 2, connue: false },
+    { slug: "sans-version", nom: "sans-version", version: null, connue: false },
+  ]);
+  assert.deepEqual(J(JV.expertisesDe(E("x0"), S)), []);
+  assert.deepEqual(J(JV.expertisesDe(E("x0", { liens: { expertises: "x" } }), {})), []);
+  const h = JV.detailHtml(e, S, UI, { deps: DEPS });
+  const t = sp(h.replace(/<[^>]+>/g, ""));
+  assert.ok(t.includes("Expertises consultées : Allocation et risque (v3), ETF &lt;et&gt; fonds (v1), retiree-&lt;x&gt; (v2), sans-version"), t);
+  assert.ok(h.includes('href="#agent/expertises?expertise=allocation-risque" data-goto="agent/expertises?expertise=allocation-risque"'), "lien vers l'expertise");
+  assert.ok(!h.includes("expertise=retiree"), "pas de lien pour une expertise inconnue");
+  assert.ok(!/<et>|<x>/.test(h));
+  assert.doesNotMatch(JV.detailHtml(E("x0"), S, UI, { deps: DEPS }), /Expertises consultées/);
 });
 
 test("actionsPour : selon le statut (confirmer seulement à relire, supprimer toujours)", () => {
@@ -470,4 +488,37 @@ test("journal-view : tutoiement — aucun « vous / votre / vos » dans les text
 
 test("journal-view : « Voir plus » à clé fixe par mois (l'état déplié survit aux émissions du store)", () => {
   assert.match(js, /U\.voirPlus\(g\.entrees, 5, e => carteHtml\(e, U\), "Voir plus", "ul", "jv-" \+ g\.cle\)/);
+});
+
+test("vue (DOM) : rafraîchi par le store, le panneau ouvert remplace son contenu sans ramener le focus sur son titre", () => {
+  const v = vueDom(SV());
+  carte(v.root, "j2").click();
+  const dlg = v.doc.body.querySelector('[role="dialog"]'), titre = dlg.querySelector(".ui-panneau-titre");
+  const fermer = dlg.querySelector(".ui-panneau-fermer");
+  fermer.focus();
+  const f0 = titre.focusCount;
+  const S2 = J(v.S()); S2.journal.find(e => e.id === "j2").synthese = "Synthèse mise à jour par Claude";
+  v.api.update(S2, true);
+  assert.match(dlg.querySelector(".ui-panneau-corps").textContent, /mise à jour par Claude/);
+  assert.equal(titre.focusCount, f0, "pas de focus sur le titre");
+  assert.equal(v.doc.activeElement, fermer, "le focus reste où il était");
+  assert.match(js, /u\.panneau\.remplacer\(/);
+});
+
+test("vue (DOM) : lien profond en attente oublié quand la vue est masquée (quittée avant le chargement)", () => {
+  const S0 = SV();
+  const v = vueDom(Object.assign(J(S0), { ready: false, journal: [] }));
+  v.lien({ entree: "j1" });
+  v.api.show();
+  const dlg = () => v.doc.body.querySelector('[role="dialog"]');
+  assert.equal(dlg(), null);
+  v.api.update(J(S0), false); // la vue a été quittée : mise à jour masquée
+  v.api.update(J(S0), true);
+  v.api.show();
+  assert.ok(!dlg() || dlg().hidden, "pas d'ouverture différée");
+  const w = vueDom(Object.assign(J(S0), { ready: false, journal: [] }));
+  w.lien({ entree: "j1" });
+  w.api.show();
+  w.api.update(J(S0), true);
+  assert.equal(w.doc.body.querySelector('[role="dialog"]').hidden, false, "contrôle : vue restée affichée → ouverte au chargement");
 });

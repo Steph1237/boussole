@@ -64,3 +64,13 @@ test("phrase(\"revue\") : la revue du mois passe par demarrer_routine (type revu
   assert.equal(P.SECTIONS.revue, "faisons ma revue du mois (demarrer_routine, type revue_mensuelle).");
   assert.match(P.phrase("revue"), /^Boussole : faisons ma revue du mois \(demarrer_routine, type revue_mensuelle\)\. Commence par demarrer_session/);
 });
+
+test("phrase(\"expertise\", nom) : active l'expertise nommée sur la situation de l'utilisateur (EX1)", () => {
+  assert.equal(P.phrase("expertise", "Allocation et risque"),
+    "Boussole : consulte l'expertise Allocation et risque sur ma situation. Commence par demarrer_session, puis utilise les formulaires interactifs Boussole plutôt que des questions en texte.");
+  assert.doesNotMatch(P.phrase("expertise", "ETF et fonds"), /Concerne :/, "le nom fait partie de la demande, pas d'un contexte ajouté");
+  assert.match(P.phrase("expertise", "  ETF\n et   fonds "), /consulte l'expertise ETF et fonds sur ma situation\./, "espaces ramenés à un");
+  assert.match(P.phrase("expertise"), /^Boussole : consulte l'expertise adaptée à ma question sur ma situation\./, "sans nom : l'expertise adaptée");
+  assert.ok(P.phrase("expertise", "x".repeat(500)).length < 400, "nom borné");
+  assert.doesNotMatch(P.phrase("expertise", "Crypto-actifs"), /\b(vous|votre|vos)\b|conseiller/i);
+});

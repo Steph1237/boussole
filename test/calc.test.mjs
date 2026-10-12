@@ -155,6 +155,13 @@ test("liquidité par enveloppe", () => {
   assert.equal(Calc.liquidite("Assurance-vie"), "semaines");
   assert.equal(Calc.liquidite("PER"), "bloque");
   assert.equal(Calc.liquidite("Truc"), "jours");
+  // « compte » non suivi de « titres » : un compte-titres se vend en quelques jours ; « PERin » sans espace reste bloqué
+  assert.equal(Calc.liquidite("Compte-titres Sam"), "jours");
+  assert.equal(Calc.liquidite("Compte titres"), "jours");
+  assert.equal(Calc.liquidite("Comptes-titres"), "jours");
+  assert.equal(Calc.liquidite("Compte joint"), "immediate");
+  assert.equal(Calc.liquidite("PERin"), "bloque");
+  assert.equal(Calc.liquidite("PERin Camille"), "bloque");
 });
 
 test("répartition par classe et par liquidité, périmètre respecté", () => {

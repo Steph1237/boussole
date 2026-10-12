@@ -8,9 +8,9 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    sensible, routine-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, journal, routines, surveillerConnexions(on), markOnboarded() }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded() }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
@@ -25,6 +25,11 @@
    memoire = [{ id, categorie, contenu, echeance, epingle, source, creeLe, majLe }] (DEMO.memoire) ; Store.memoire.modifier(id, patch) /
    supprimer(ids) / toutEffacer() → { ok: true } ou { erreur }, en mémoire. savoir = { fiches (sans contenu), reperes } (DEMO.savoir,
    repères d'exemple) ; Store.savoir.fiche(slug) → la fiche d'exemple avec son contenu, ou null.
+   expertises = [{ slug, nom, quandConsulter, perimetre, version, misAJourLe, marches, angles }] (D.expertises : les 8 expertises v1
+   publiées, triées par nom, sans leur détail) ; Store.expertises.detail(slug) → { …, methode, controles, garde_fous, format,
+   themesSavoir, reperes, changelog, versions: [{ version, le, resume }] } (copie), ou null : détail complet pour allocation-risque
+   et etf-fonds, détail court (methode, garde_fous et format à null) pour les autres ; versions = journal des versions (changelog),
+   le plus récent d'abord, comme l'historique public expertises_versions.
    journal = [{ id, type, titre, synthese, raisonnement, options, statut, dateDecision, revueLe, liens, etat, source, historique, creeLe, majLe }]
    (D.journal, plus récentes d'abord), journalARelire (nombre d'entrées « à relire », calculé comme le count de store-supabase.js)
    et journalConsentement = "demander" ; Store.journal.confirmer(ids) / modifier(id, patch) / supprimer(ids) /
@@ -49,7 +54,7 @@
     config: D.config || null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
-    memoire: [], savoir: { fiches: [], reperes: [] }, journal: [], journalARelire: 0, journalConsentement: "demander",
+    memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander",
     routines: D.routines || [], routinesLues: false,
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
@@ -58,6 +63,10 @@
   C.memoire = D.memoire || [];
   C.journal = (D.journal || []).slice().sort((a, b) => String(b.creeLe).localeCompare(String(a.creeLe))).slice(0, 500);
   C.savoir = { fiches: FICHES.map(f => { const o = Object.assign({}, f); delete o.contenu; return o; }), reperes: (D.savoir && D.savoir.reperes) || [] };
+  // Expertises : S n'expose que la liste (comme store-supabase.js) ; le détail reste ici pour Store.expertises.detail(slug).
+  const EXPERTISES = Array.isArray(D.expertises) ? D.expertises : [];
+  const EXP_LISTE = ["slug", "nom", "quandConsulter", "perimetre", "version", "misAJourLe", "marches", "angles"];
+  C.expertises = EXPERTISES.map(e => Object.fromEntries(EXP_LISTE.map(k => [k, e[k]]))).sort((a, b) => String(a.nom).localeCompare(String(b.nom), "fr"));
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -94,6 +103,7 @@
       connexions: clone(C.connexions),
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
+      expertises: clone(C.expertises),
       journal: clone(C.journal),
       journalARelire: C.journal.filter(e => e && e.statut === "a_relire").length,
       journalConsentement: C.journalConsentement,
@@ -546,6 +556,18 @@
     },
   };
 
+  const expertises = {
+    /* Détail d'une expertise (copie) ; versions reprises du journal des versions, la plus récente d'abord. */
+    async detail(slug) {
+      await tick();
+      const e = EXPERTISES.find(x => x.slug === slug);
+      if (!e) return null;
+      const d = clone(e);
+      d.versions = (Array.isArray(d.changelog) ? d.changelog : []).map(v => ({ version: v.version, le: v.le, resume: v.resume })).sort((a, b) => b.version - a.version);
+      return d;
+    },
+  };
+
   /* ---------- connexions : simulation de la connexion de Claude (onboarding en démo) ---------- */
   const CLAUDE_ID = (window.BOUSSOLE && window.BOUSSOLE.claude && window.BOUSSOLE.claude.clientId) || "30351516-1e76-4884-8fb2-ae856799a723";
   const DELAI_CONNEXION_DEMO = 4000;
@@ -567,6 +589,7 @@
     propositions,
     memoire,
     savoir,
+    expertises,
     journal,
     routines,
     get: () => S,
