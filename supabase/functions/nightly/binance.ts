@@ -20,7 +20,7 @@ export const SEUIL_CREATION_EUR = 10;
 const RECV_WINDOW = "10000";
 const TAILLE_PAGE = 100;
 const PAGES_MAX = 10;
-const DELAI_MS = 15_000;
+const DELAI_MS = 10_000; // délai maximal de chaque appel (la nuit entière doit tenir en 150 s)
 // Jetons réels dont le nom commence par « LD » (les autres « LD<ACTIF> » sont des parts Simple Earn flexible).
 const LD_REELS = new Set(["LDO"]);
 
@@ -58,8 +58,12 @@ type Solde = { asset: string; free: string | number; locked: string | number };
 type Ligne = { asset: string; totalAmount?: string | number; amount?: string | number };
 export type LectureBinance = { compte: Solde[]; flexible: Ligne[]; verrouille: Ligne[] };
 
-/** Client Binance en lecture seule. `f` : fetch ; `horloge` : millisecondes locales. */
-export function client(cle: string, secret: string, f: typeof fetch, horloge: () => number = () => Date.now()) {
+/** Client Binance en lecture seule. `f` : fetch ; `horloge` : millisecondes locales ; `signal` : signal d'abandon d'un appel
+ *  (par défaut 10 s ; la fonction nocturne le plafonne aussi au temps qui lui reste). */
+export function client(
+  cle: string, secret: string, f: typeof fetch, horloge: () => number = () => Date.now(),
+  signal: (ms: number) => AbortSignal = (ms) => AbortSignal.timeout(ms),
+) {
   let decalage = 0;
 
   async function appeler(chemin: string, params: Record<string, string>, signe: boolean): Promise<any> {
@@ -72,7 +76,7 @@ export function client(cle: string, secret: string, f: typeof fetch, horloge: ()
     try {
       res = await f(`${BINANCE}${chemin}${qs ? "?" + qs : ""}`, {
         headers: { ...(signe ? { "X-MBX-APIKEY": cle } : {}), Accept: "application/json" },
-        signal: AbortSignal.timeout(DELAI_MS),
+        signal: signal(DELAI_MS),
       });
     } catch {
       throw new BinanceErreur("Binance est injoignable (réseau ou délai dépassé).");

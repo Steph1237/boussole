@@ -179,8 +179,13 @@ const SOLDES = {
   flexible: [], verrouille: [],
 };
 
-function monter({ env = { BINANCE_API_KEY: CLE, BINANCE_API_SECRET: SECRET }, init = donnees(), net = reseau({ binance: SOLDES, yahoo: YAHOO }), aRattraper } = {}) {
+// horloge : temps écoulé simulé (ms) ; avance(appel, t) → nouveau temps (appelé à chaque requête réseau) ;
+// delais : durées demandées pour les signaux d'abandon ; chrono : requêtes réseau et RPC dans l'ordre.
+function monter({ env = { BINANCE_API_KEY: CLE, BINANCE_API_SECRET: SECRET }, init = donnees(), net = reseau({ binance: SOLDES, yahoo: YAHOO }), aRattraper,
+  avance = null, signal = null, rpcs = {}, casse = null } = {}) {
   const journaux = [];
+  const chrono = [], delais = [], signaux = [];
+  let t = 0;
   const { I, handler } = charger(journaux);
   const rpc = {
     check_nightly_token: async ({ p }) => ({ data: p === JETON_NUIT, error: null }),
@@ -192,17 +197,30 @@ function monter({ env = { BINANCE_API_KEY: CLE, BINANCE_API_SECRET: SECRET }, in
     take_snapshots: async () => ({ data: 2, error: null }),
     apply_recurring: async () => ({ data: 0, error: null }),
     finish_nightly: async () => ({ data: null, error: null }),
+    ...rpcs,
   };
   const db = fausseBase(init, rpc);
+  const rpcBrut = db.rpc, fromBrut = db.from;
+  db.rpc = async (nom, args) => { chrono.push(`rpc:${nom}`); return rpcBrut(nom, args); };
+  db.from = table => { if (casse && casse(table)) throw new Error(`panne inattendue ${table}`); return fromBrut(table); };
   const ENV = { ...ENV_BASE, ...env };
   I.deps.createClient = () => db;
-  I.deps.fetch = net.fetch;
+  I.deps.fetch = async (url, init = {}) => {
+    const u = new URL(String(url));
+    chrono.push(`net:${u.hostname}${u.pathname}${u.searchParams.get("range") ? "|" + u.searchParams.get("range") : ""}${u.searchParams.get("startdate") ? "|" + u.searchParams.get("startdate") : ""}`);
+    signaux.push(init.signal);
+    if (avance) t = avance(String(url), t) ?? t;
+    return net.fetch(url, init);
+  };
   I.deps.env = k => ENV[k];
   I.deps.maintenant = () => MAINTENANT;
+  I.deps.horloge = () => t;
+  I.deps.signal = ms => { delais.push(ms); return signal ? signal(ms) : new AbortController().signal; };
   I.deps.attendre = async () => {};
   const appeler = (jeton = JETON_NUIT) => handler(new Request("https://projet-factice.supabase.co/functions/v1/nightly", { method: "POST", headers: { Authorization: `Bearer ${jeton}` } }));
-  return { db, net, journaux, appeler };
+  return { db, net, journaux, appeler, chrono, delais, signaux };
 }
+const nomsRpc = m => m.db.journal.filter(j => j.rpc).map(j => j.rpc);
 const sansSecret = (m, textes) => {
   for (const t of textes) for (const s of [CLE, SECRET, "signature="]) assert.ok(!t.includes(s), `secret « ${s} » trouvé dans : ${t.slice(0, 200)}`);
 };
@@ -273,7 +291,7 @@ test("nuit complète : clôtures du jour dans cours, Binance appliqué, rattrapa
 
   // 4. suite de la nuit et aucun secret
   const rpcs = journal.filter(j => j.rpc).map(j => j.rpc);
-  assert.deepEqual(rpcs, ["check_nightly_token", "cours_a_rattraper", "take_snapshots", "apply_recurring", "take_snapshots", "finish_nightly"]);
+  assert.deepEqual(rpcs, ["check_nightly_token", "take_snapshots", "apply_recurring", "take_snapshots", "cours_a_rattraper", "finish_nightly"]);
   assert.equal(journal.find(j => j.rpc === "cours_a_rattraper").args.p_limite, 10);
   const binance = m.net.appels.filter(a => a.hote === "api.binance.com");
   assert.deepEqual(binance.map(a => a.chemin), ["/api/v3/time", "/api/v3/account", "/sapi/v1/simple-earn/flexible/position", "/sapi/v1/simple-earn/locked/position"]);
@@ -293,7 +311,7 @@ test("Binance en erreur (clé refusée) : message traduit, lignes intactes, le r
   assert.equal(pos["u-btc"].qty, 0.01);
   assert.equal(pos["u-ada"].status, "actif");
   assert.equal(corps.rattrapages.tentes, 3, "rattrapage effectué malgré l'erreur Binance");
-  assert.deepEqual(m.db.journal.filter(j => j.rpc).map(j => j.rpc).slice(-3), ["apply_recurring", "take_snapshots", "finish_nightly"]);
+  assert.deepEqual(nomsRpc(m).slice(-4), ["apply_recurring", "take_snapshots", "cours_a_rattraper", "finish_nightly"]);
   sansSecret(m, [...m.journaux, JSON.stringify(corps)]);
 });
 
@@ -320,7 +338,8 @@ test("Binance : portefeuille vide → aucune clôture (prudence), avertissement 
   const vide = monter({ net: reseau({ binance: { soldes: [] }, yahoo: YAHOO }) });
   const corps = await (await vide.appeler()).json();
   assert.equal(corps.binance.cloturees, 0);
-  assert.ok(corps.errors.some(e => /portefeuille vide/.test(e.error)));
+  assert.ok(corps.avertissements.some(a => /portefeuille vide/.test(a)), "avertissement, pas une erreur");
+  assert.ok(!corps.errors.some(e => /portefeuille vide/.test(e.error)));
   assert.equal(vide.db.tables.positions.find(p => p.id === "u-ada").status, "actif");
   const earn = monter({ net: reseau({ binance: { soldes: [{ asset: "LDBTC", free: "0.2", locked: "0" }], flexible: [{ asset: "BTC", totalAmount: "0.2" }],
     verrouille: [{ asset: "BTC", amount: "0.3" }, { asset: "ADA", amount: "50" }] }, yahoo: YAHOO }) });
@@ -342,4 +361,151 @@ test("rattrapage : au plus 10 ISIN par nuit, Yahoo range=5y&interval=1d sur le s
   assert.ok(appels.every(a => a.chemin.endsWith("/v8/finance/chart/BTC-EUR") && a.query.interval === "1d"));
   assert.equal(m.db.tables.cours.filter(c => c.isin === "X-T0").length, 1300);
   assert.equal(m.db.tables.cours.find(c => c.isin === "X-T0" && c.date === D5Y[0]).cloture, 20000);
+});
+
+/* ================== ordre, délais, budget de temps, avertissements ================== */
+// Phase d'une entrée du chrono : cours du jour, Binance (y compris les cours des actifs à créer), rattrapage (5 ans), RPC.
+const RATTRAPAGE_DEBUT = "2021-10-11";
+function phases(chrono) {
+  const out = [];
+  for (const c of chrono) {
+    let p;
+    if (c === "rpc:check_nightly_token") continue;
+    if (c.startsWith("rpc:")) p = c;
+    else if (c.includes("api.binance.com") || /\/(ETH|SHIB)-EUR\|5d$/.test(c)) p = "binance";
+    else if (c.includes("|5y") || c.includes(`|${RATTRAPAGE_DEBUT}`)) p = "rattrapage";
+    else p = "cours";
+    if (out[out.length - 1] !== p) out.push(p);
+  }
+  return out;
+}
+
+test("ordre : cours du jour → photo → versements → photo → Binance → rattrapage → finish_nightly", { skip: SANS_STRIP }, async () => {
+  const m = monter();
+  const corps = await (await m.appeler()).json();
+  assert.equal(corps.binance.etat, "ok");
+  assert.equal(corps.rattrapages.tentes, 3);
+  assert.deepEqual(phases(m.chrono), ["cours", "rpc:take_snapshots", "rpc:apply_recurring", "rpc:take_snapshots", "binance",
+    "rpc:cours_a_rattraper", "rattrapage", "rpc:finish_nightly"]);
+});
+
+test("finish_nightly toujours exécuté : Binance lève une erreur inattendue", { skip: SANS_STRIP }, async () => {
+  const m = monter({ casse: t => t === "fonctionnalites" });
+  const r = await m.appeler();
+  assert.equal(r.status, 200);
+  const corps = await r.json();
+  assert.equal(corps.binance.etat, "erreur");
+  assert.ok(corps.errors.some(e => /^binance : erreur inattendue/.test(e.error)));
+  assert.equal(corps.rattrapages.tentes, 3, "le rattrapage suit");
+  assert.deepEqual(nomsRpc(m).slice(1), ["take_snapshots", "apply_recurring", "take_snapshots", "cours_a_rattraper", "finish_nightly"]);
+});
+
+test("finish_nightly toujours exécuté : le rattrapage lève (RPC en panne, upsert qui lève)", { skip: SANS_STRIP }, async () => {
+  const m = monter({ rpcs: { cours_a_rattraper: async () => { throw new Error("connexion perdue"); } } });
+  const corps = await (await m.appeler()).json();
+  assert.ok(corps.errors.some(e => /rattrapage/.test(e.error) && /connexion perdue/.test(e.error)));
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+  const fin = m.db.journal.find(j => j.rpc === "finish_nightly").args;
+  assert.ok(fin.p_errors.some(e => /connexion perdue/.test(e.error)), "l'erreur figure dans job_runs");
+
+  // l'écriture des cours rattrapés lève : finish_nightly quand même
+  let upserts = 0;
+  const m2 = monter({ env: {}, casse: t => t === "cours" && ++upserts > 1 });
+  const c2 = await (await m2.appeler()).json();
+  assert.equal(nomsRpc(m2).at(-1), "finish_nightly");
+  assert.ok(c2.errors.length > 0);
+});
+
+test("finish_nightly toujours exécuté : la photo lève", { skip: SANS_STRIP }, async () => {
+  const m = monter({ rpcs: { take_snapshots: async () => { throw new Error("photo impossible"); } } });
+  const corps = await (await m.appeler()).json();
+  assert.ok(corps.errors.some(e => /take_snapshots/.test(e.error) && /photo impossible/.test(e.error)));
+  assert.ok(nomsRpc(m).includes("apply_recurring"), "les versements passent malgré la photo en échec");
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+});
+
+test("délais : chaque appel Yahoo, Euronext et Binance porte un signal de 10 s au plus ; un appel bloqué est coupé, la nuit continue", { skip: SANS_STRIP }, async () => {
+  const base = reseau({ binance: SOLDES, yahoo: YAHOO });
+  const bloque = init => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(init.signal.reason)));
+  let premier429 = true;
+  const net = { appels: base.appels, fetch: async (url, init = {}) => {
+    const u = new URL(String(url));
+    if (u.pathname.endsWith("/CW8.PA") || u.pathname === "/api/v3/account") return bloque(init); // Yahoo et Binance muets
+    if (u.pathname.endsWith("/AAPL") && u.searchParams.get("range") === "5d" && premier429) { premier429 = false; return rep({}, 429); }
+    if (u.hostname === "fc.yahoo.com") return new Response("", { status: 404 });
+    return base.fetch(url, init);
+  } };
+  const m = monter({ net, signal: ms => AbortSignal.timeout(Math.min(ms, 20)) });
+  const corps = await (await m.appeler()).json();
+  assert.ok(m.signaux.length > 10);
+  assert.ok(m.signaux.every(s => s instanceof AbortSignal), "un signal sur chaque appel");
+  assert.ok(m.delais.length >= m.signaux.length && m.delais.every(ms => ms > 0 && ms <= 10_000), JSON.stringify(m.delais));
+  assert.ok(m.delais.includes(10_000));
+  assert.ok(m.chrono.some(c => c.includes("fc.yahoo.com")), "session Yahoo ouverte sous délai");
+  const ins = Object.fromEntries(m.db.tables.instruments.map(i => [i.isin, i]));
+  assert.equal(ins.FR0010315770.source, "euronext", "Yahoo coupé → repli Euronext");
+  assert.equal(corps.binance.etat, "erreur");
+  assert.ok(corps.errors.some(e => /binance : Binance est injoignable/.test(e.error)));
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+});
+
+test("budget : la boucle des cours du jour s'arrête vers 70 s, les cours restants sont reportés", { skip: SANS_STRIP }, async () => {
+  const m = monter({ avance: (url, t) => (url.includes("/CW8.PA?") ? 75_000 : t) });
+  const corps = await (await m.appeler()).json();
+  const ins = Object.fromEntries(m.db.tables.instruments.map(i => [i.isin, i]));
+  assert.equal(ins.FR0010315770.price, 504, "cours commencé avant la limite : appliqué");
+  assert.equal(ins.FR0000120271.price, 55, "cours reporté");
+  for (const isin of ["FR0000120271", "US0378331005", "X-BTC-EUR", "X-ADA"])
+    assert.ok(corps.errors.some(e => e.isin === isin && /temps dépassé/.test(e.error)), isin);
+  const avantPhoto = m.chrono.slice(0, m.chrono.indexOf("rpc:take_snapshots"));
+  assert.deepEqual(avantPhoto.filter(c => c.startsWith("net:")), ["net:query1.finance.yahoo.com/v8/finance/chart/CW8.PA|5d"]);
+  assert.deepEqual(nomsRpc(m).slice(1, 4), ["take_snapshots", "apply_recurring", "take_snapshots"]);
+  assert.equal(corps.binance.etat, "ok", "75 s : Binance a encore le temps");
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+});
+
+test("budget : Binance reporté et noté quand le temps restant ne suffit pas", { skip: SANS_STRIP }, async () => {
+  const m = monter({ avance: (url, t) => (url.includes("/CW8.PA?") ? 95_000 : t) });
+  const corps = await (await m.appeler()).json();
+  assert.equal(corps.binance.etat, "reporté");
+  assert.equal(m.net.appels.filter(a => a.hote === "api.binance.com").length, 0);
+  assert.ok(corps.avertissements.some(a => /binance/i.test(a) && /report/.test(a)));
+  assert.ok(!corps.errors.some(e => /binance/i.test(e.error)), "report noté en avertissement, pas en erreur");
+  assert.equal(m.db.tables.positions.find(p => p.id === "u-ada").status, "actif");
+  assert.deepEqual(nomsRpc(m).slice(1, 4), ["take_snapshots", "apply_recurring", "take_snapshots"]);
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+});
+
+test("budget : rattrapage arrêté vers 110 s (aucun nouveau au-delà), appels plafonnés, reste reporté", { skip: SANS_STRIP }, async () => {
+  const aRattraper = [
+    { isin: "US0378331005", symbol: "AAPL", currency: "USD", nb_cours: 5 },
+    { isin: "FR0000120271", symbol: null, currency: "EUR", nb_cours: 0 },
+  ];
+  const m = monter({ env: {}, aRattraper, avance: (url, t) => (url.includes("/AAPL?range=5y") ? 113_000 : t) });
+  const corps = await (await m.appeler()).json();
+  assert.deepEqual(corps.rattrapages, { tentes: 1, reussis: 1, lignes: 1300 });
+  assert.ok(!m.chrono.some(c => c.includes(`|${RATTRAPAGE_DEBUT}`)), "aucun rattrapage commencé après 110 s");
+  const ins = Object.fromEntries(m.db.tables.instruments.map(i => [i.isin, i]));
+  assert.equal(ins.FR0000120271.cours_rattrapage_le, undefined, "non tenté : reste à rattraper");
+  assert.ok(corps.avertissements.some(a => /rattrapage/.test(a) && /1 ISIN/.test(a)));
+  assert.ok(!corps.errors.some(e => /rattrapage/.test(e.error)));
+  // la série de taux USD→EUR est demandée à 113 s : délai ramené à ce qui reste avant la limite des appels (120 s)
+  assert.equal(m.delais.at(-1), 7_000);
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+});
+
+test("avertissements Binance non bloquants : séparés des erreurs, job_runs.ok reste vrai", { skip: SANS_STRIP }, async () => {
+  const init = donnees();
+  init.instruments = init.instruments.filter(i => ["FR0010315770", "X-BTC-EUR", "X-ADA"].includes(i.isin));
+  init.instruments.find(i => i.isin === "X-ADA").symbol = null; // pas de cours à chercher
+  init.positions.push({ id: "u-btc2", user_id: U, name: "Bitcoin bis", envelope: "Crypto (Binance)", owner: "p1", bloc: "Crypto", mode: "market",
+    isin: "X-BTC", qty: 0.2, status: "actif", source_auto: null, created_at: "2026-02-01" });
+  const net = reseau({ binance: { soldes: [{ asset: "BTC", free: "0.5", locked: "0" }, { asset: "ADA", free: "10", locked: "0" }] }, yahoo: YAHOO });
+  const m = monter({ init, net, aRattraper: [] });
+  const corps = await (await m.appeler()).json();
+  assert.deepEqual(corps.errors, []);
+  assert.ok(corps.avertissements.some(a => /plusieurs lignes BTC/.test(a)));
+  assert.equal(corps.ok, true);
+  const fin = m.db.journal.find(j => j.rpc === "finish_nightly").args;
+  assert.equal(fin.p_errors.length, 0, "job_runs.ok = (aucune erreur)");
 });

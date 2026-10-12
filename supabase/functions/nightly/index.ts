@@ -5,17 +5,24 @@
 // Déployée avec verify_jwt = false : l'authentification est faite ici, par
 // public.check_nightly_token() (exécutable par le rôle service uniquement).
 //
-// Étapes :
+// Étapes, de la plus importante à la moins urgente (la plateforme coupe la fonction à 150 s) :
 // 1. cours Yahoo, repli Euronext → instruments (en EUR, source yahoo | euronext) ; les clôtures lues (5 derniers jours Yahoo,
-//    14 derniers jours Euronext) sont enregistrées dans `cours` (upsert sur (isin, date), par paquets de 500) ;
-// 2. Binance en lecture seule (binance.ts, spec CP1 § 7) : seulement si BINANCE_API_KEY et BINANCE_API_SECRET existent et
-//    qu'un seul utilisateur a fonctionnalites(binance) active ; quantités des lignes de l'enveloppe « Crypto (Binance) » ;
+//    14 derniers jours Euronext) sont enregistrées dans `cours` (upsert sur (isin, date), par paquets de 500) ; boucle bornée :
+//    aucun nouveau cours après 70 s écoulées (les cours restants sont reportés et signalés) ;
+// 2. take_snapshots() ; apply_recurring() ; take_snapshots() (la photo du jour inclut les versements, appliqués seulement
+//    le jour exact : ils ne doivent jamais être perdus) ;
+// 3. Binance en lecture seule (binance.ts, spec CP1 § 7) : seulement si BINANCE_API_KEY et BINANCE_API_SECRET existent et
+//    qu'un seul utilisateur a fonctionnalites(binance) active, et s'il reste assez de temps (sinon reporté et noté) ;
+//    quantités des lignes de l'enveloppe « Crypto (Binance) » (reprises par la photo de la nuit suivante) ;
 //    une erreur Binance est journalisée (message traduit, jamais de secret) et n'arrête pas la nuit ;
-// 3. rattrapage de l'historique (spec CP1 § 4) : au plus 10 ISIN par nuit (RPC cours_a_rattraper : détenus, moins de 30 cours),
+// 4. rattrapage de l'historique (spec CP1 § 4) : au plus 10 ISIN par nuit (RPC cours_a_rattraper : détenus, moins de 30 cours),
 //    5 ans quotidiens (Yahoo range=5y&interval=1d sur le symbole déjà résolu, sinon CSV historique Euronext), upsert par
-//    paquets ; instruments.cours_rattrapage_le marque chaque tentative (nouvel essai au plus tôt 7 jours après) ;
-// 4. take_snapshots() ; apply_recurring() ; take_snapshots() (la photo du jour inclut les versements) ;
-//    finish_nightly() (status + job_runs).
+//    paquets ; instruments.cours_rattrapage_le marque chaque tentative (nouvel essai au plus tôt 7 jours après) ; aucun
+//    nouveau rattrapage après 110 s écoulées (le reste est reporté à la nuit suivante) ;
+// 5. finish_nightly() (status + job_runs) : toujours exécuté (finally), même si une étape lève.
+// Chaque appel Yahoo, Euronext ou Binance est abandonné au bout de 10 s, et au plus tard à 120 s écoulées (80 s pendant
+// les cours du jour). Le compte rendu sépare les erreurs (job_runs.errors, job_runs.ok faux) des avertissements
+// (réponse et journaux seulement : ils ne rendent pas la nuit fautive).
 // Variables d'environnement : SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY (fournies par la plateforme) ; BINANCE_API_KEY et
 // BINANCE_API_SECRET (facultatives, secrets du projet, jamais journalisées).
 // Le client Supabase a la clé de service : toute lecture ou écriture de données personnelles filtre user_id.
@@ -29,20 +36,49 @@ import { actifDeIsin, agreger, BinanceErreur, client as clientBinance, ENVELOPPE
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 const DELAY_MS = 150;
-const BUDGET_MS = 100_000;
-const RATTRAPAGE_FIN_MS = 125_000; // aucun nouveau rattrapage au-delà (limite d'exécution de la plateforme : 150 s)
+// Budget de temps (ms écoulées depuis le début du passage ; limite d'exécution de la plateforme : 150 s).
+const DELAI_APPEL_MS = 10_000; // délai maximal d'un appel Yahoo, Euronext ou Binance
+const COURS_FIN_MS = 70_000; // aucun nouveau cours du jour au-delà (cours restants reportés)
+const COURS_APPELS_FIN_MS = 80_000; // appels des cours du jour coupés au-delà
+const BINANCE_DEBUT_MAX_MS = 90_000; // Binance reporté s'il n'a pas commencé avant
+const RATTRAPAGE_FIN_MS = 110_000; // aucun nouveau rattrapage au-delà
+const APPELS_FIN_MS = 120_000; // tout appel réseau coupé au-delà (photos et versements déjà faits, finish_nightly ensuite)
 const RATTRAPAGES_MAX = 10;
 const PAQUET = 500;
 const JOURS_5_ANS = 1827;
 
-// Points d'injection pour les tests (client Supabase, fetch, environnement, horloge, attente) ; inchangés en production.
+// Points d'injection pour les tests (client Supabase, fetch, environnement, date, horloge du budget, signal d'abandon,
+// attente) ; inchangés en production.
 export const deps = {
   createClient: createClient as (...a: any[]) => any,
   fetch: ((...a: any[]) => (fetch as any)(...a)) as any,
   env: (k: string): string | undefined => Deno.env.get(k),
   maintenant: () => new Date(),
+  horloge: (): number => Date.now(),
+  signal: (ms: number): AbortSignal => AbortSignal.timeout(ms),
   attendre: (ms: number) => new Promise((r) => setTimeout(r, ms)),
 };
+
+// Budget du passage en cours : début (horloge) et limite des appels réseau (ms écoulées).
+let debut = 0;
+let finAppels = APPELS_FIN_MS;
+const ecoule = () => deps.horloge() - debut;
+
+/** Signal d'abandon d'un appel : `ms` au plus (10 s), et jamais au-delà de la limite des appels de la phase en cours. */
+function signalAppel(ms = DELAI_APPEL_MS): AbortSignal {
+  return deps.signal(Math.max(1, Math.min(ms, DELAI_APPEL_MS, finAppels - ecoule())));
+}
+
+/** fetch sous délai ; un abandon devient « délai dépassé ». */
+async function appel(url: string, init: Record<string, unknown> = {}): Promise<Response> {
+  try {
+    return await deps.fetch(url, { ...init, signal: signalAppel() });
+  } catch (e) {
+    const nom = (e as any)?.name;
+    if (nom === "TimeoutError" || nom === "AbortError") throw new Error("délai dépassé");
+    throw e;
+  }
+}
 
 // Yahoo renvoie souvent 429 aux requêtes sans cookie : en cas de 401/403/429, on ouvre une
 // session (cookie A3 via fc.yahoo.com + crumb) une fois, puis on réessaie avec cookie et crumb.
@@ -51,11 +87,11 @@ let yahooSession: Promise<YahooSession | null> | null = null;
 
 async function openYahooSession(): Promise<YahooSession | null> {
   try {
-    const r1 = await deps.fetch("https://fc.yahoo.com/", { headers: { "User-Agent": UA }, redirect: "manual" });
+    const r1 = await appel("https://fc.yahoo.com/", { headers: { "User-Agent": UA }, redirect: "manual" });
     const cookie = r1.headers.getSetCookie().map((c: string) => c.split(";")[0]).filter(Boolean).join("; ");
     await r1.body?.cancel();
     if (!cookie) return null;
-    const r2 = await deps.fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+    const r2 = await appel("https://query2.finance.yahoo.com/v1/test/getcrumb", {
       headers: { "User-Agent": UA, Cookie: cookie },
     });
     const crumb = (await r2.text()).trim();
@@ -68,7 +104,7 @@ async function openYahooSession(): Promise<YahooSession | null> {
 
 async function yahooGet(url: string): Promise<Response> {
   const headers = { "User-Agent": UA, Accept: "application/json" };
-  const res = await deps.fetch(url, { headers });
+  const res = await appel(url, { headers });
   if (![401, 403, 429].includes(res.status)) return res;
   await res.body?.cancel();
   yahooSession ??= openYahooSession();
@@ -78,7 +114,7 @@ async function yahooGet(url: string): Promise<Response> {
     return new Response(null, { status: res.status });
   }
   const sep = url.includes("?") ? "&" : "?";
-  const retry = await deps.fetch(`${url}${sep}crumb=${encodeURIComponent(s.crumb)}`, { headers: { ...headers, Cookie: s.cookie } });
+  const retry = await appel(`${url}${sep}crumb=${encodeURIComponent(s.crumb)}`, { headers: { ...headers, Cookie: s.cookie } });
   if ([401, 403].includes(retry.status)) yahooSession = null; // crumb expiré : nouvelle session au prochain appel
   return retry;
 }
@@ -161,16 +197,14 @@ function fxSerie5ans(cur: string): Promise<Point[]> {
 // Le CSV ne donne pas la devise : le repli n'est tenté que pour les instruments en EUR.
 const EURONEXT = "https://live.euronext.com/en";
 const MIC_PREF = ["XPAR", "XAMS", "XBRU", "XLIS", "XMIL", "ETFP"];
-const EURONEXT_TIMEOUT_MS = 15_000;
 const REAL_ISIN = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
 
 const micCache = new Map<string, Promise<string>>();
 function euronextMic(isin: string): Promise<string> {
   if (!micCache.has(isin)) {
     const p = (async () => {
-      const res = await deps.fetch(`${EURONEXT}/instrumentSearch/searchJSON?q=${encodeURIComponent(isin)}`, {
+      const res = await appel(`${EURONEXT}/instrumentSearch/searchJSON?q=${encodeURIComponent(isin)}`, {
         headers: { "User-Agent": UA, Accept: "application/json" },
-        signal: AbortSignal.timeout(EURONEXT_TIMEOUT_MS),
       });
       if (!res.ok) {
         await res.body?.cancel();
@@ -194,9 +228,8 @@ async function fetchEuronext(isin: string, jours: number): Promise<{ points: Poi
   const end = aujourdhui();
   const start = decalerDate(end, -jours);
   const qs = `format=csv&decimal_separator=.&date_form=d/m/Y&startdate=${start}&enddate=${end}`;
-  const res = await deps.fetch(`${EURONEXT}/ajax/AwlHistoricalPrice/getFullDownloadAjax/${isin}-${mic}?${qs}`, {
+  const res = await appel(`${EURONEXT}/ajax/AwlHistoricalPrice/getFullDownloadAjax/${isin}-${mic}?${qs}`, {
     headers: { "User-Agent": UA, Accept: "text/csv,*/*" },
-    signal: AbortSignal.timeout(EURONEXT_TIMEOUT_MS),
   });
   if (!res.ok) {
     await res.body?.cancel();
@@ -246,7 +279,7 @@ async function coursActif(admin: any, actif: string): Promise<{ isin: string; pr
   }
 }
 
-async function synchroniserBinance(admin: any, errors: RunError[]): Promise<BilanBinance> {
+async function synchroniserBinance(admin: any, errors: RunError[], avertissements: string[]): Promise<BilanBinance> {
   const cle = deps.env("BINANCE_API_KEY")?.trim(), secret = deps.env("BINANCE_API_SECRET")?.trim();
   if (!cle || !secret) return { etat: "non configuré" };
   const f = await admin.from("fonctionnalites").select("user_id").eq("cle", "binance").eq("active", true);
@@ -261,9 +294,13 @@ async function synchroniserBinance(admin: any, errors: RunError[]): Promise<Bila
     return { etat: "suspendu" };
   }
   const uid = users[0];
+  if (ecoule() > BINANCE_DEBUT_MAX_MS) {
+    avertissements.push("binance : temps insuffisant, synchronisation reportée à la prochaine nuit.");
+    return { etat: "reporté" };
+  }
   let actifs: Record<string, number>;
   try {
-    actifs = agreger(await clientBinance(cle, secret, deps.fetch, () => deps.maintenant().getTime()).lire());
+    actifs = agreger(await clientBinance(cle, secret, deps.fetch, () => deps.maintenant().getTime(), signalAppel).lire());
   } catch (e) {
     const msg = e instanceof BinanceErreur ? e.message : "Binance : lecture impossible.";
     errors.push({ error: `binance : ${msg}` });
@@ -288,7 +325,7 @@ async function synchroniserBinance(admin: any, errors: RunError[]): Promise<Bila
     instrumentDe[a] = { isin: c.isin, existe: c.existe };
   }
   const plan = planBinance({ actifs, lignes, cours });
-  for (const w of plan.avertissements) errors.push({ error: w });
+  avertissements.push(...plan.avertissements); // non bloquants : job_runs.ok n'en dépend pas
   const le = deps.maintenant().toISOString();
   let majOk = 0, creees = 0, cloturees = 0;
 
@@ -387,141 +424,181 @@ Deno.serve(async (req) => {
 
   fxCache.clear(); fxSerieCache.clear(); micCache.clear(); yahooSession = null;
   const started = deps.maintenant();
-  const t0 = Date.now();
+  debut = deps.horloge();
   const errors: RunError[] = [];
-  let updated = 0;
-  const coursDuJour: LigneCours[] = [];
-
-  // 2. Cours : Yahoo d'abord ; en cas d'échec (ou sans symbole Yahoo), repli Euronext pour les
-  // instruments en EUR identifiés par un vrai ISIN (les ISIN de test `X-…` sont ignorés). X-EUR (euros détenus chez Binance) :
-  // cours fixe de 1.
-  const { data: instruments, error: instErr } = await admin
-    .from("instruments")
-    .select("isin, symbol, currency")
-    .order("isin");
-  if (instErr) {
-    errors.push({ error: `lecture des instruments : ${instErr.message}` });
-  } else {
-    for (const ins of instruments || []) {
-      const isin = String(ins.isin);
-      const symbol = String(ins.symbol || "").trim();
-      if (isin === "X-EUR") {
-        const row = { price: 1, price_date: aujourdhui(), source: "fixe" };
-        const { error } = await admin.from("instruments").update(row).eq("isin", isin);
-        if (error) errors.push({ isin, error: `mise à jour : ${error.message}` });
-        else { updated++; coursDuJour.push({ isin, date: row.price_date, cloture: 1, source: "fixe" }); }
-        continue;
-      }
-      const canFallback = REAL_ISIN.test(isin) && String(ins.currency || "EUR").toUpperCase() === "EUR";
-      if (!symbol && !canFallback) continue;
-      if (Date.now() - t0 > BUDGET_MS) {
-        errors.push({ isin, symbol: symbol || undefined, error: "temps dépassé, cours non récupéré" });
-        continue;
-      }
-      let row: { price: number; price_date: string; source: string } | null = null;
-      let yahooErr = "sans symbole";
-      if (symbol) {
-        try {
-          const q = await fetchQuote(symbol);
-          const { taux } = await tauxEur(q.currency);
-          row = { price: q.price * taux, price_date: parisDate(q.time, deps.maintenant()), source: "yahoo" };
-          const points = new Map(convertir(q.points, taux).map((p) => [p.date, p.close]));
-          points.set(row.price_date, row.price); // le cours du jour (meta) fait foi pour sa date
-          coursDuJour.push(...lignesCours(isin, [...points].map(([date, close]) => ({ date, close })), "yahoo"));
-        } catch (e) {
-          yahooErr = (e as Error).message;
-        }
-      }
-      if (!row && canFallback && Date.now() - t0 <= BUDGET_MS) {
-        if (symbol) await deps.attendre(DELAY_MS);
-        try {
-          const f = await fetchEuronext(isin, 14);
-          const last = f.points[f.points.length - 1];
-          row = { price: last.close, price_date: last.date, source: "euronext" };
-          coursDuJour.push(...lignesCours(isin, f.points, "euronext"));
-          console.log(`nightly: ${isin} via Euronext ${f.mic} (yahoo : ${yahooErr})`);
-        } catch (e) {
-          errors.push({ isin, symbol: symbol || undefined, error: `yahoo: ${yahooErr} ; euronext: ${(e as Error).message}` });
-        }
-      } else if (!row) {
-        errors.push({ isin, symbol: symbol || undefined, error: canFallback ? `yahoo: ${yahooErr} ; euronext: temps dépassé` : yahooErr });
-      }
-      if (row) {
-        const { error } = await admin
-          .from("instruments")
-          .update({ ...row, price: arrondi6(row.price) })
-          .eq("isin", isin);
-        if (error) errors.push({ isin, symbol: symbol || undefined, error: `mise à jour : ${error.message}` });
-        else updated++;
-      }
-      await deps.attendre(DELAY_MS);
-    }
-  }
-  const coursEnregistres = await enregistrerCours(admin, coursDuJour, errors);
-  console.log(`nightly: ${updated}/${instruments?.length ?? 0} cours mis à jour, ${coursEnregistres} clôture(s) enregistrée(s), ${errors.length} erreur(s)`);
-
-  // 3. Binance (lecture seule) : une erreur n'arrête pas la nuit.
-  let binance: BilanBinance;
-  try {
-    binance = await synchroniserBinance(admin, errors);
-  } catch {
-    errors.push({ error: "binance : erreur inattendue, synchronisation interrompue." });
-    binance = { etat: "erreur" };
-  }
-
-  // 4. Rattrapage de l'historique (au plus 10 ISIN, dans le temps restant).
+  const avertissements: string[] = [];
+  const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+  let updated = 0, coursEnregistres = 0, nbInstruments = 0, recurring = 0, users = 0;
+  let binance: BilanBinance = { etat: "non tenté" };
   const rattrapages = { tentes: 0, reussis: 0, lignes: 0 };
-  const aRattraper = await admin.rpc("cours_a_rattraper", { p_limite: RATTRAPAGES_MAX });
-  if (aRattraper.error) {
-    errors.push({ error: `cours_a_rattraper : ${aRattraper.error.message}` });
-  } else {
-    for (const ins of (aRattraper.data || []).slice(0, RATTRAPAGES_MAX)) {
-      if (Date.now() - t0 > RATTRAPAGE_FIN_MS) break;
-      const isin = String(ins.isin);
-      rattrapages.tentes++;
-      try {
-        const r = await rattraper(ins);
-        if (!r.lignes.length) throw new Error("historique vide");
-        const n = await enregistrerCours(admin, r.lignes, errors, isin);
-        rattrapages.lignes += n;
-        if (n) rattrapages.reussis++;
-        console.log(`nightly: historique ${isin} via ${r.source} : ${n} cours`);
-      } catch (e) {
-        errors.push({ isin, symbol: ins.symbol || undefined, error: `rattrapage : ${(e as Error).message}` });
-      }
-      const { error } = await admin.from("instruments").update({ cours_rattrapage_le: deps.maintenant().toISOString() }).eq("isin", isin);
-      if (error) errors.push({ isin, error: `rattrapage : ${error.message}` });
-      await deps.attendre(DELAY_MS);
-    }
-  }
+  let fin: { error: { message: string } | null } = { error: { message: "non exécuté" } };
 
-  // 5. Photos, versements, photo finale, compte rendu.
+  /** RPC d'une étape : une erreur (renvoyée ou levée) est notée et n'arrête pas la nuit. */
   const step = async (name: string, args: Record<string, unknown> = {}) => {
-    const { data, error } = await admin.rpc(name, args);
-    if (error) {
-      errors.push({ error: `${name} : ${error.message}` });
-      console.error(`nightly: ${name} en échec`, error.message);
+    try {
+      const { data, error } = await admin.rpc(name, args);
+      if (error) throw new Error(error.message);
+      return data;
+    } catch (e) {
+      errors.push({ error: `${name} : ${message(e)}` });
+      console.error(`nightly: ${name} en échec`, message(e));
       return null;
     }
-    return data;
   };
 
-  await step("take_snapshots");
-  const recurring = (await step("apply_recurring")) ?? 0;
-  const users = (await step("take_snapshots")) ?? 0;
-  const fin = await admin.rpc("finish_nightly", {
-    p_started: started.toISOString(),
-    p_instruments: updated,
-    p_errors: errors,
-  });
-  if (fin.error) {
-    console.error("nightly: finish_nightly en échec", fin.error.message);
-    errors.push({ error: `finish_nightly : ${fin.error.message}` });
+  try {
+    // 2. Cours du jour (bornés à ~70 s) : Yahoo d'abord ; en cas d'échec (ou sans symbole Yahoo), repli Euronext pour les
+    // instruments en EUR identifiés par un vrai ISIN (les ISIN de test `X-…` sont ignorés). X-EUR (euros détenus chez
+    // Binance) : cours fixe de 1.
+    try {
+      finAppels = COURS_APPELS_FIN_MS;
+      const coursDuJour: LigneCours[] = [];
+      const { data: instruments, error: instErr } = await admin
+        .from("instruments")
+        .select("isin, symbol, currency")
+        .order("isin");
+      nbInstruments = instruments?.length ?? 0;
+      if (instErr) {
+        errors.push({ error: `lecture des instruments : ${instErr.message}` });
+      } else {
+        let reportes = 0;
+        for (const ins of instruments || []) {
+          const isin = String(ins.isin);
+          const symbol = String(ins.symbol || "").trim();
+          if (isin === "X-EUR") {
+            const row = { price: 1, price_date: aujourdhui(), source: "fixe" };
+            const { error } = await admin.from("instruments").update(row).eq("isin", isin);
+            if (error) errors.push({ isin, error: `mise à jour : ${error.message}` });
+            else { updated++; coursDuJour.push({ isin, date: row.price_date, cloture: 1, source: "fixe" }); }
+            continue;
+          }
+          const canFallback = REAL_ISIN.test(isin) && String(ins.currency || "EUR").toUpperCase() === "EUR";
+          if (!symbol && !canFallback) continue;
+          if (ecoule() > COURS_FIN_MS) {
+            reportes++;
+            errors.push({ isin, symbol: symbol || undefined, error: "temps dépassé, cours reporté à la prochaine nuit" });
+            continue;
+          }
+          let row: { price: number; price_date: string; source: string } | null = null;
+          let yahooErr = "sans symbole";
+          if (symbol) {
+            try {
+              const q = await fetchQuote(symbol);
+              const { taux } = await tauxEur(q.currency);
+              row = { price: q.price * taux, price_date: parisDate(q.time, deps.maintenant()), source: "yahoo" };
+              const points = new Map(convertir(q.points, taux).map((p) => [p.date, p.close]));
+              points.set(row.price_date, row.price); // le cours du jour (meta) fait foi pour sa date
+              coursDuJour.push(...lignesCours(isin, [...points].map(([date, close]) => ({ date, close })), "yahoo"));
+            } catch (e) {
+              yahooErr = message(e);
+            }
+          }
+          if (!row && canFallback && ecoule() <= COURS_FIN_MS) {
+            if (symbol) await deps.attendre(DELAY_MS);
+            try {
+              const f = await fetchEuronext(isin, 14);
+              const last = f.points[f.points.length - 1];
+              row = { price: last.close, price_date: last.date, source: "euronext" };
+              coursDuJour.push(...lignesCours(isin, f.points, "euronext"));
+              console.log(`nightly: ${isin} via Euronext ${f.mic} (yahoo : ${yahooErr})`);
+            } catch (e) {
+              errors.push({ isin, symbol: symbol || undefined, error: `yahoo: ${yahooErr} ; euronext: ${message(e)}` });
+            }
+          } else if (!row) {
+            errors.push({ isin, symbol: symbol || undefined, error: canFallback ? `yahoo: ${yahooErr} ; euronext: temps dépassé` : yahooErr });
+          }
+          if (row) {
+            const { error } = await admin
+              .from("instruments")
+              .update({ ...row, price: arrondi6(row.price) })
+              .eq("isin", isin);
+            if (error) errors.push({ isin, symbol: symbol || undefined, error: `mise à jour : ${error.message}` });
+            else updated++;
+          }
+          await deps.attendre(DELAY_MS);
+        }
+        if (reportes) console.warn(`nightly: temps dépassé, ${reportes} cours reporté(s) à la prochaine nuit`);
+      }
+      coursEnregistres = await enregistrerCours(admin, coursDuJour, errors);
+    } catch (e) {
+      errors.push({ error: `cours du jour : erreur inattendue (${message(e)}).` });
+    }
+    console.log(`nightly: ${updated}/${nbInstruments} cours mis à jour, ${coursEnregistres} clôture(s) enregistrée(s), ${ecoule()} ms`);
+
+    // 3. Photo, versements programmés (seulement le jour exact), photo finale (elle inclut les versements).
+    await step("take_snapshots");
+    recurring = (await step("apply_recurring")) ?? 0;
+    users = (await step("take_snapshots")) ?? 0;
+
+    // 4. Binance (lecture seule), si le temps restant le permet : une erreur n'arrête pas la nuit.
+    finAppels = APPELS_FIN_MS;
+    try {
+      binance = await synchroniserBinance(admin, errors, avertissements);
+    } catch {
+      errors.push({ error: "binance : erreur inattendue, synchronisation interrompue." });
+      binance = { etat: "erreur" };
+    }
+
+    // 5. Rattrapage de l'historique (au plus 10 ISIN) ; aucun nouveau rattrapage après ~110 s.
+    try {
+      if (ecoule() > RATTRAPAGE_FIN_MS) {
+        avertissements.push("rattrapage : temps écoulé, reporté à la prochaine nuit.");
+      } else {
+        const aRattraper = await admin.rpc("cours_a_rattraper", { p_limite: RATTRAPAGES_MAX });
+        if (aRattraper.error) {
+          errors.push({ error: `cours_a_rattraper : ${aRattraper.error.message}` });
+        } else {
+          const liste = (aRattraper.data || []).slice(0, RATTRAPAGES_MAX);
+          for (let k = 0; k < liste.length; k++) {
+            const ins = liste[k];
+            if (ecoule() > RATTRAPAGE_FIN_MS) {
+              avertissements.push(`rattrapage interrompu (temps écoulé) : ${liste.length - k} ISIN reporté(s) à la prochaine nuit.`);
+              break;
+            }
+            const isin = String(ins.isin);
+            rattrapages.tentes++;
+            try {
+              const r = await rattraper(ins);
+              if (!r.lignes.length) throw new Error("historique vide");
+              const n = await enregistrerCours(admin, r.lignes, errors, isin);
+              rattrapages.lignes += n;
+              if (n) rattrapages.reussis++;
+              console.log(`nightly: historique ${isin} via ${r.source} : ${n} cours`);
+            } catch (e) {
+              errors.push({ isin, symbol: ins.symbol || undefined, error: `rattrapage : ${message(e)}` });
+            }
+            const { error } = await admin.from("instruments").update({ cours_rattrapage_le: deps.maintenant().toISOString() }).eq("isin", isin);
+            if (error) errors.push({ isin, error: `rattrapage : ${error.message}` });
+            await deps.attendre(DELAY_MS);
+          }
+        }
+      }
+    } catch (e) {
+      errors.push({ error: `rattrapage : erreur inattendue (${message(e)}).` });
+    }
+  } catch (e) {
+    errors.push({ error: `erreur inattendue (${message(e)}).` });
+  } finally {
+    // 6. Compte rendu : toujours (status + job_runs). Les avertissements n'y figurent pas (job_runs.ok n'en dépend pas).
+    try {
+      fin = await admin.rpc("finish_nightly", {
+        p_started: started.toISOString(),
+        p_instruments: updated,
+        p_errors: errors,
+      });
+    } catch (e) {
+      fin = { error: { message: message(e) } };
+    }
+    if (fin.error) {
+      console.error("nightly: finish_nightly en échec", fin.error.message);
+      errors.push({ error: `finish_nightly : ${fin.error.message}` });
+    }
   }
 
-  console.log(`nightly: ${users} utilisateur(s), ${recurring} versement(s), ${Date.now() - t0} ms`);
+  for (const a of avertissements) console.warn(`nightly: avertissement : ${a}`);
+  console.log(`nightly: ${users} utilisateur(s), ${recurring} versement(s), ${errors.length} erreur(s), ${avertissements.length} avertissement(s), ${ecoule()} ms`);
   return json({
     ok: !fin.error, instruments_updated: updated, cours_enregistres: coursEnregistres, rattrapages, binance,
-    users, recurring_applied: recurring, errors,
+    users, recurring_applied: recurring, errors, avertissements,
   });
 });
