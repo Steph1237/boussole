@@ -102,7 +102,8 @@ function admin() {
 
 /** Configuration Powens complète, ou null (domaine absent ou invalide, client_id ou secret absent). */
 function configPowens(): { nom: string; base: string; clientId: string; secret: string } | null {
-  const clientId = deps.env("POWENS_CLIENT_ID"), secret = deps.env("POWENS_CLIENT_SECRET");
+  // Espaces et retours à la ligne retirés : une valeur collée depuis la console Powens en garde souvent (sinon invalid_client).
+  const clientId = deps.env("POWENS_CLIENT_ID")?.trim(), secret = deps.env("POWENS_CLIENT_SECRET")?.trim();
   if (!clientId || !secret) return null;
   try {
     return { ...domaine({ POWENS_DOMAIN: deps.env("POWENS_DOMAIN") }), clientId, secret };
@@ -207,7 +208,11 @@ async function creerUtilisateur(db: any, cfg: { base: string; clientId: string; 
 
 /** Réponse d'échec : message Powens traduit (502) ou erreur interne (500), jamais de jeton ni de secret. */
 function echec(e: unknown, prefixe = "") {
-  if (e instanceof PowensErreur) return erreur(502, `${prefixe}${e.message}`);
+  if (e instanceof PowensErreur) {
+    // Statut et code Powens seulement (ex. 400 invalid_client) : jamais de jeton, de secret ni de contenu de requête.
+    console.warn(`powens: refus Powens ${e.status}${e.code ? ` ${e.code}` : ""}`);
+    return erreur(502, `${prefixe}${e.message}`);
+  }
   console.error("powens:", msg(e));
   return erreur(500, `${prefixe}Erreur interne : réessaie dans un moment.`);
 }
