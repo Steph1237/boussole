@@ -40,7 +40,7 @@ function chargerModule(source, globaux = {}) {
 function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
-  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, bonnesPratiques, syntheseRisque, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants });";
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, bonnesPratiques, syntheseRisque, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants, fraisSupports });";
   return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
 }
 
@@ -84,8 +84,8 @@ function forme(r, angle) {
     if (typeof o !== "number") return;
     assert.ok(Number.isFinite(o), `${angle}.${cle} fini`);
     assert.ok(!Object.is(o, -0), `${angle}.${cle} : pas de −0`);
-    if (/_pct$|^pct$/.test(cle) && !/^ter/.test(cle)) assert.equal(Math.round(o * 10) / 10, o, `${angle}.${cle} arrondi à 0,1 : ${o}`);
-    else if (/^ter/.test(cle)) assert.equal(Math.round(o * 100) / 100, o, `${angle}.${cle} arrondi à 0,01 : ${o}`);
+    if (/_pct$|^pct$/.test(cle) && !/^ter|^cout_pct$/.test(cle)) assert.equal(Math.round(o * 10) / 10, o, `${angle}.${cle} arrondi à 0,1 : ${o}`);
+    else if (/^ter|^cout_pct$/.test(cle)) assert.equal(Math.round(o * 100) / 100, o, `${angle}.${cle} arrondi à 0,01 : ${o}`);
     else if (/montant|_eur$|^financier$|^encours|^cout|immobilier_physique|a_recevoir/.test(cle)) assert.equal(Math.round(o), o, `${angle}.${cle} arrondi à l'euro : ${o}`);
   };
   parcours(r.chiffres); parcours(r.details);
@@ -130,7 +130,7 @@ test("analyse : cas vides (aucune ligne) pour chaque angle, sans erreur ni NaN",
   }
   assert.equal(A.analyse("allocation", ctxDe(VIDE)).chiffres.financier, 0);
   assert.equal(A.analyse("crise", ctxDe(VIDE)).chiffres.perte_totale_eur, 0);
-  assert.equal(A.analyse("frais", ctxDe(VIDE)).chiffres.ter_moyen_pct, null);
+  assert.equal(A.analyse("frais", ctxDe(VIDE)).chiffres.cout_pct, null);
   // Données minimales (forme brute possible de chargerDonnees : config null, pas de biens).
   const brut = { donnees: { profil: {}, biens: [], credits: [], positions: [], config: null, lignes: [] }, objectifs: [], risque: null, classes: null, scope: "foyer", auj: TODAY, calcul: charger().M };
   for (const angle of A.ANGLES) forme(A.analyse(angle, brut), angle);
@@ -196,33 +196,33 @@ test("parité crise ↔ risque.js + marche.js (pire baisse historique pondérée
   }
 });
 
-test("parité frais ↔ pratiques.js (frais moyens pondérés des lignes cotées)", { skip: SANS_STRIP }, () => {
+test("parité frais ↔ pratiques.js (frais des supports : fonds + contrats, couverture, lignes coûteuses, repères de classe)", { skip: SANS_STRIP }, () => {
   const { A } = charger();
-  // Démo brute : ETF Monde sans TER (plus de la moitié des encours cotés sans frais connus).
+  // Démo brute : ETF Monde sans frais courants, contrats sans frais d'enveloppe : coût partiel.
   const r0 = A.analyse("frais", ctxDe(DEMO));
-  assert.ok(r0.chiffres.part_sans_frais_connus_pct > 0);
+  assert.equal(r0.chiffres.note_possible, false);
   assert.ok(r0.details.sans_frais_connus.some(l => l.nom === "ETF MSCI World"));
-  // ETF Monde annoté : frais calculés par pratiques.js.
-  const D = { ...DEMO, positions: DEMO.positions.map(p => (p.id === "pea-etf-monde" ? { ...p, ter: 0.2, zone: "Monde", devise: "USD" } : p)) };
+  assert.deepEqual(J(r0.details.enveloppes_a_completer), ["Assurance vie Sam", "PER"]);
+  // ETF Monde et PER annotés, frais des contrats renseignés : mêmes chiffres que le critère « frais » de pratiques.js.
+  const D = { ...DEMO, positions: DEMO.positions.map(p => (p.id === "pea-etf-monde" ? { ...p, ter: 0.2, zone: "Monde", devise: "USD" } : p.id === "per-camille" ? { ...p, ter: 0.9 } : p)),
+    config: { ...DEMO.config, frais_enveloppes: { "Assurance vie Sam": { gestion_uc_pct: 0.6, gestion_euro_pct: 0.7, source: "CG", le: "2026-10-01" }, PER: { gestion_uc_pct: 0.5, source: "DIC", le: "2026-10-01" } } } };
+  const enLignesP = () => { const e = enLignes(D); e.donnees.positions = e.donnees.positions.map(p => (p.id === "per-camille" ? { ...p, instrument: { ter: 0.9 } } : p)); return e; };
   for (const scope of ["foyer", "p1"]) {
-    const r = A.analyse("frais", ctxDe(D, { scope }));
+    const { donnees, objectifs } = enLignesP();
+    const r = A.analyse("frais", { donnees, objectifs, risque: null, classes: undefined, scope, auj: TODAY, calcul: charger().M });
+    forme(r, "frais");
     const web = Pratiques.evaluer({ positions: D.positions, profil: D.profil, config: D.config, budget: D.budget, objectifs: D.objectifs, scope, risque: null, today: TODAY });
     const f = web.criteres.find(c => c.cle === "frais");
-    assert.equal(f.aCompleter, false, scope);
-    proche(r.chiffres.ter_moyen_pct, Math.round(f.valeur * 100) / 100, scope + " : TER moyen", 1e-9);
-    const cotees = D.positions.filter(p => Calc.inScope(p, scope) && Calc.counted(p) && p.mode === "market" && Calc.val(p) > 0);
-    const avec = cotees.filter(p => p.ter != null);
-    assert.equal(r.chiffres.cout_annuel_eur, Math.round(avec.reduce((a, p) => a + Calc.val(p) * p.ter / 100, 0)), scope + " : coût annuel");
-    assert.equal(r.chiffres.encours_cotes, Math.round(cotees.reduce((a, p) => a + Calc.val(p), 0)));
-    assert.ok(r.details.plus_cheres.length <= 5);
+    assert.equal(r.chiffres.cout_annuel_eur, Math.round(f.frais.cout), scope + " : coût annuel");
+    assert.equal(r.chiffres.encours_investi, Math.round(f.frais.encours), scope);
+    assert.equal(r.chiffres.cout_pct, Math.round(f.frais.pct * 100) / 100, scope);
+    assert.equal(r.chiffres.note_possible, f.aCompleter === false, scope);
     const couts = r.details.plus_cheres.map(l => l.cout_annuel_eur);
+    assert.ok(couts.length <= 5);
     assert.deepEqual(J(couts), J([...couts].sort((a, b) => b - a)), "triées par coût annuel");
-    assert.equal(r.details.plus_cheres[0].nom, "ETF MSCI World");
-    // aussi les 5 lignes au TER le plus élevé (une petite ligne chère n'apparaît pas toujours dans le coût annuel)
-    assert.ok(r.details.ter_les_plus_eleves.length <= 5);
-    const ters = J(r.details.ter_les_plus_eleves).map(l => l.ter_pct);
-    assert.deepEqual(ters, [...ters].sort((a, b) => b - a));
-    assert.ok(r.hypotheses.some(h => /plus_cheres/.test(h) && /ter_les_plus_eleves/.test(h)), "hypothèse : deux classements");
+    assert.deepEqual(J(r.details.au_dessus_du_repere.map(l => l.nom)), f.frais.auDessusRepere.map(l => l.nom));
+    assert.ok(r.hypotheses.some(h => /rendement brut égal de 5 % par an/.test(h)), "hypothèse de projection");
+    assert.ok(r.hypotheses.some(h => /SCPI à part/.test(h)));
   }
 });
 

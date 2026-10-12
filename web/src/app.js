@@ -61,9 +61,10 @@
     "#budget": "patrimoine/budget", "#objectifs": "patrimoine/objectifs",
   };
   const DEFAULT_ROUTE = "aujourdhui/vue";
-  /* Sous-vues dont les paramètres de lien profond restent dans l'URL (fiches en pleine page de Patrimoine › Comptes : recharger la
-     page, précédent / suivant et partager le lien rouvrent la même fiche). Ailleurs, l'URL est réécrite sans paramètres. */
-  const PARAMS_DANS_URL = ["patrimoine/comptes"];
+  /* Sous-vues dont les paramètres de lien profond restent dans l'URL (fiches en pleine page de Patrimoine › Comptes ; onglet et
+     critère de Pilotage › Santé, #pilotage/sante?famille=<clé>&critere=<clé> : recharger la page, précédent / suivant et partager le
+     lien rouvrent la même fiche ou le même critère). Ailleurs, l'URL est réécrite sans paramètres. */
+  const PARAMS_DANS_URL = ["patrimoine/comptes", "pilotage/sante"];
   /* Destinations où le sélecteur de périmètre (Foyer · prénoms) a un sens. */
   const SCOPED = ["aujourdhui", "patrimoine", "pilotage"];
 

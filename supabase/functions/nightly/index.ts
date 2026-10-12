@@ -19,10 +19,15 @@
 //    5 ans quotidiens (Yahoo range=5y&interval=1d sur le symbole déjà résolu, sinon CSV historique Euronext), upsert par
 //    paquets ; instruments.cours_rattrapage_le marque chaque tentative (nouvel essai au plus tôt 7 jours après) ; aucun
 //    nouveau rattrapage après 110 s écoulées (le reste est reporté à la nuit suivante) ;
-// 5. finish_nightly() (status + job_runs) : toujours exécuté (finally), même si une étape lève.
+// 5. frais des fonds (frais.ts, spec CP4 § 2) : au plus 10 ISIN par nuit (RPC frais_a_chercher : fonds détenus sans TER, ou
+//    TER Yahoo de plus de 180 jours ; dernier essai il y a plus de 30 jours), Yahoo quoteSummary (fundProfile,
+//    defaultKeyStatistics) avec la session et le crumb ; TER écrit en % par an avec ter_source = yahoo et ter_le, jamais par-dessus
+//    un TER d'une autre source (DIC renseigné par Claude) ; ter_essai_le marque chaque tentative, même en échec ; aucun nouvel
+//    ISIN après 120 s écoulées, appels coupés à 125 s ; tout échec est un avertissement ;
+// 6. finish_nightly() (status + job_runs) : toujours exécuté (finally), même si une étape lève.
 // Chaque appel Yahoo, Euronext ou Binance est abandonné au bout de 10 s, et au plus tard à 120 s écoulées (80 s pendant
-// les cours du jour). Le compte rendu sépare les erreurs (job_runs.errors, job_runs.ok faux) des avertissements
-// (réponse et journaux seulement : ils ne rendent pas la nuit fautive).
+// les cours du jour, 125 s pendant les frais des fonds). Le compte rendu sépare les erreurs (job_runs.errors, job_runs.ok faux)
+// des avertissements (réponse et journaux seulement : ils ne rendent pas la nuit fautive).
 // Variables d'environnement : SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY (fournies par la plateforme) ; BINANCE_API_KEY et
 // BINANCE_API_SECRET (facultatives, secrets du projet, jamais journalisées).
 // Le client Supabase a la clé de service : toute lecture ou écriture de données personnelles filtre user_id.
@@ -32,6 +37,7 @@ import {
 } from "./cours.ts";
 import type { LigneCours, Point } from "./cours.ts";
 import { actifDeIsin, agreger, BinanceErreur, client as clientBinance, ENVELOPPE_BINANCE, memeEnveloppe, nomActif, planBinance } from "./binance.ts";
+import { fraisYahoo, urlFrais } from "./frais.ts";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -43,7 +49,10 @@ const COURS_APPELS_FIN_MS = 80_000; // appels des cours du jour coupés au-delà
 const BINANCE_DEBUT_MAX_MS = 90_000; // Binance reporté s'il n'a pas commencé avant
 const RATTRAPAGE_FIN_MS = 110_000; // aucun nouveau rattrapage au-delà
 const APPELS_FIN_MS = 120_000; // tout appel réseau coupé au-delà (photos et versements déjà faits, finish_nightly ensuite)
+const FRAIS_FIN_MS = 120_000; // aucun nouvel ISIN (frais des fonds) au-delà
+const FRAIS_APPELS_FIN_MS = 125_000; // appels des frais des fonds coupés au-delà
 const RATTRAPAGES_MAX = 10;
+const FRAIS_MAX = 10;
 const PAQUET = 500;
 const JOURS_5_ANS = 1827;
 
@@ -403,6 +412,21 @@ async function rattraper(ins: { isin: string; symbol: string | null; currency: s
   }
 }
 
+/* ---------- Frais des fonds ---------- */
+/** Frais courants publiés par Yahoo (% par an) ; null si le symbole est introuvable ou sans frais ; lève sur une autre erreur. */
+async function lireFrais(symbol: string): Promise<number | null> {
+  const res = await yahooGet(urlFrais(symbol));
+  if (res.status === 404) {
+    await res.body?.cancel();
+    return null;
+  }
+  if (!res.ok) {
+    await res.body?.cancel();
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return fraisYahoo(await res.json());
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: "méthode non autorisée" }, 405);
 
@@ -431,6 +455,7 @@ Deno.serve(async (req) => {
   let updated = 0, coursEnregistres = 0, nbInstruments = 0, recurring = 0, users = 0;
   let binance: BilanBinance = { etat: "non tenté" };
   const rattrapages = { tentes: 0, reussis: 0, lignes: 0 };
+  const frais = { tentes: 0, trouves: 0 };
   let fin: { error: { message: string } | null } = { error: { message: "non exécuté" } };
 
   /** RPC d'une étape : une erreur (renvoyée ou levée) est notée et n'arrête pas la nuit. */
@@ -576,10 +601,56 @@ Deno.serve(async (req) => {
     } catch (e) {
       errors.push({ error: `rattrapage : erreur inattendue (${message(e)}).` });
     }
+
+    // 6. Frais des fonds (au plus 10 ISIN) ; aucun nouvel ISIN après ~120 s, appels coupés à 125 s. Non bloquant : tout échec
+    // est un avertissement. Le TER n'est écrit que s'il est absent ou de source Yahoo (un TER tiré d'un DIC passe avant).
+    try {
+      if (ecoule() > FRAIS_FIN_MS) {
+        avertissements.push("frais des fonds : temps écoulé, reportés à la prochaine nuit.");
+      } else {
+        finAppels = FRAIS_APPELS_FIN_MS;
+        const aChercher = await admin.rpc("frais_a_chercher", { p_limite: FRAIS_MAX });
+        if (aChercher.error) {
+          avertissements.push(`frais des fonds : frais_a_chercher : ${aChercher.error.message}`);
+        } else {
+          const liste = (aChercher.data || [])
+            .filter((x: any) => REAL_ISIN.test(String(x?.isin)) && String(x?.symbol || "").trim())
+            .slice(0, FRAIS_MAX);
+          for (let k = 0; k < liste.length; k++) {
+            if (ecoule() > FRAIS_FIN_MS) {
+              avertissements.push(`frais des fonds interrompus (temps écoulé) : ${liste.length - k} ISIN reporté(s) à la prochaine nuit.`);
+              break;
+            }
+            const isin = String(liste[k].isin), symbol = String(liste[k].symbol).trim();
+            frais.tentes++;
+            let ter: number | null = null;
+            try {
+              ter = await lireFrais(symbol);
+              if (ter == null) avertissements.push(`frais des fonds : ${isin} (${symbol}) : frais non publiés par Yahoo, nouvel essai dans 30 jours.`);
+            } catch (e) {
+              avertissements.push(`frais des fonds : ${isin} (${symbol}) : ${message(e)}`);
+            }
+            if (ter != null) {
+              const { error } = await admin.from("instruments")
+                .update({ ter, ter_source: "yahoo", ter_le: aujourdhui() })
+                .eq("isin", isin)
+                .or("ter.is.null,ter_source.eq.yahoo");
+              if (error) avertissements.push(`frais des fonds : ${isin} : ${error.message}`);
+              else frais.trouves++;
+            }
+            const { error } = await admin.from("instruments").update({ ter_essai_le: deps.maintenant().toISOString() }).eq("isin", isin);
+            if (error) avertissements.push(`frais des fonds : ${isin} : ${error.message}`);
+            await deps.attendre(DELAY_MS);
+          }
+        }
+      }
+    } catch (e) {
+      avertissements.push(`frais des fonds : erreur inattendue (${message(e)}).`);
+    }
   } catch (e) {
     errors.push({ error: `erreur inattendue (${message(e)}).` });
   } finally {
-    // 6. Compte rendu : toujours (status + job_runs). Les avertissements n'y figurent pas (job_runs.ok n'en dépend pas).
+    // 7. Compte rendu : toujours (status + job_runs). Les avertissements n'y figurent pas (job_runs.ok n'en dépend pas).
     try {
       fin = await admin.rpc("finish_nightly", {
         p_started: started.toISOString(),
@@ -598,7 +669,7 @@ Deno.serve(async (req) => {
   for (const a of avertissements) console.warn(`nightly: avertissement : ${a}`);
   console.log(`nightly: ${users} utilisateur(s), ${recurring} versement(s), ${errors.length} erreur(s), ${avertissements.length} avertissement(s), ${ecoule()} ms`);
   return json({
-    ok: !fin.error, instruments_updated: updated, cours_enregistres: coursEnregistres, rattrapages, binance,
+    ok: !fin.error, instruments_updated: updated, cours_enregistres: coursEnregistres, rattrapages, frais, binance,
     users, recurring_applied: recurring, errors, avertissements,
   });
 });

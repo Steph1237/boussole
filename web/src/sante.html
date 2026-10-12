@@ -1,46 +1,23 @@
 <div class="st">
   <section class="panel st-hero" aria-labelledby="santeTitle">
-    <div class="st-score">
-      <h2 class="label" id="santeTitle">Bonnes pratiques</h2>
-      <div class="st-big num"><span id="santeTotal">—</span><span class="st-sur" id="santeSur">/100</span></div>
-      <span class="st-jauge" id="santeJauge" aria-hidden="true"></span>
-    </div>
-    <div class="st-txt">
-      <p class="st-question">Ma situation est-elle saine ? <span class="ui-badge" id="santeBadge" hidden></span></p>
-      <p class="st-verdict" id="santeVerdict" tabindex="-1">Chargement…</p>
-      <p class="st-partiel" id="santePartiel" hidden></p>
-      <div class="st-claude" id="santeClaude"></div>
-    </div>
+    <h2 class="label" id="santeTitle">Bonnes pratiques</h2>
+    <div class="st-entete" id="santeEntete"><p class="st-verdict" id="santeVerdict" tabindex="-1">Chargement…</p></div>
   </section>
 
   <section class="st-bloc" id="santeFamSec" aria-labelledby="santeFamT" hidden>
-    <h2 class="st-h2" id="santeFamT">Le détail, en quatre familles</h2>
-    <p class="st-intro">Ta sécurité (réserve, protection, argent des projets proches), ton effort (épargne, crédits, apport), ton allocation (profil de risque, diversification, part spéculative) et l'efficacité de tes placements (frais, enveloppes, argent qui dort). Ouvre une famille, puis un critère pour son détail.</p>
+    <h2 class="st-h2" id="santeFamT">Le détail, par famille</h2>
+    <p class="st-intro">Ta sécurité (réserve, protection, argent des projets proches), ton effort (épargne, crédits, apport), ton allocation (profil de risque, diversification, part spéculative) et l'efficacité de tes placements (frais, enveloppes, argent qui dort). Ouvre un critère pour voir son calcul avec tes chiffres et comment progresser.</p>
     <div class="st-familles" id="santeFamilles"></div>
-  </section>
-
-  <section class="panel st-acompl" id="santeACompleter" aria-labelledby="santeACT" hidden>
-    <h2 class="st-h2" id="santeACT">À compléter</h2>
-    <p class="st-intro">Ces critères ne comptent pas encore dans la note : il manque une donnée. Complète-la avec Claude : il te pose les questions dans un formulaire, puis tu valides ses propositions dans Agent › Propositions.</p>
-    <div id="santeACList"></div>
   </section>
 
   <details class="ui-acc st-how">
     <summary class="ui-acc-titre"><span>Comment cette note est calculée</span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
     <div class="ui-acc-corps st-how-corps">
-      <p>Chaque critère vaut 20 points. La note d'une famille est la somme de ses points ramenée sur 100 ; la note globale est la moyenne des familles pondérée : Sécurité 30 %, Effort 25 %, Allocation 30 %, Efficacité 15 %. Un critère « à compléter » (donnée manquante) ou sans objet (pas de crédit, pas de projet immobilier…) ne compte pas ; l'exposition hors euro est une information, sans note. Tant que moins de la moitié du poids des familles est notée, la note est provisoire. Au-dessus de 80 : solide ; de 60 à 79 : correct ; sous 60 : à consolider. Jauge verte à partir de 16 points sur 20, orange de 10 à 15, rouge en dessous.</p>
-      <p>Chaque critère affiche sa règle et sa source. Quatre d'entre eux reprennent les barèmes historiques du score de santé :</p>
-      <dl>
-        <dt>Matelas de précaution</dt>
-        <dd>Épargne disponible (poche « Épargne ») divisée par tes dépenses mensuelles. Moins d'un mois : 0 point ; de 1 à 3 mois : de 5 à 15 points ; de 3 à 6 mois : 20 points. Au-delà de 6 mois la note redescend doucement, jusqu'à 15 points à 12 mois, car cet argent dort sur des supports peu rémunérés.</dd>
-        <dt>Taux d'épargne</dt>
-        <dd>Part des revenus mise de côté chaque mois (épargne prévue et reste du budget). 0 % : 0 point ; 5 % : 6 ; 10 % : 12 ; 15 % : 16 ; 20 % ou plus : 20.</dd>
-        <dt>Taux d'endettement</dt>
-        <dd>Mensualités de crédit divisées par les revenus. 25 % ou moins : 20 points ; 35 % (plafond des banques, norme HCSF) : 12 ; 45 % ou plus : 0.</dd>
-        <dt>Diversification</dt>
-        <dd>Poids de la plus grosse ligne dans tes placements. 10 % ou moins : 20 points ; 20 % : 14 ; 40 % ou plus : 0. Moins de 3 poches différentes : 5 points de moins.</dd>
-      </dl>
-      <p class="muted">Entre deux paliers, la note progresse en ligne droite. Le patrimoine comparé à celui des Français de ton âge est dans Pilotage › Rang.</p>
+      <p>Chaque critère vaut 20 points. La note d'une famille est la somme de ses points ramenée sur 100 ; la note globale est la moyenne des familles, pondérée par les poids rappelés au-dessus des onglets.</p>
+      <p>Un critère dont une donnée manque n'a pas de note : il est « à compléter » (carte grise) et ne compte pas. L'exposition hors euro est une information, sans note. La couverture dit sur combien de critères la note est calculée ; en dessous de 60 %, la note est provisoire.</p>
+      <p>Chaque critère est placé sur une jauge à zones, d'après son repère : zone verte (bon), orange (à surveiller) ou rouge (à travailler). Les points perdus d'un critère sont ce qu'il retire à la note globale, compte tenu du poids de sa famille : « Ce qui te coûte le plus » montre les trois plus gros.</p>
+      <p>Au-dessus de 80 : solide ; de 60 à 79 : correct ; sous 60 : à consolider. Le détail d'un critère donne son barème, son calcul avec tes chiffres, les données utilisées et sa source.</p>
+      <p class="muted">Le patrimoine comparé à celui des Français de ton âge est dans Pilotage › Rang.</p>
     </div>
   </details>
 

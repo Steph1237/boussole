@@ -309,7 +309,9 @@ test("parité MCP / pratiques.js : mêmes critères, points, valeurs et textes s
     proche(mcp.couverture, Math.round(web.couverture * 1000) / 1000, L + " : couverture"); assert.equal(mcp.provisoire, web.provisoire, L + " : provisoire");
     assert.deepEqual(J(mcp.familles.map(f => f.total)), web.familles.map(f => f.total), L + " : familles");
     if (sc.D && scope === "foyer") {
-      assert.equal(mcp.criteres.find(c => c.cle === "frais").a_completer, false, "frais calculés une fois l'ETF Monde annoté");
+      // spec cp4 § 2 : l'ETF Monde annoté ne suffit pas, les frais des contrats (assurance-vie, PER) restent à compléter (couverture < 70 %)
+      assert.equal(mcp.criteres.find(c => c.cle === "frais").a_completer, true, "frais des contrats à compléter");
+      assert.deepEqual(J(mcp.criteres.find(c => c.cle === "frais").frais.enveloppes_a_completer), ["Assurance vie Sam", "PER"]);
       assert.ok(mcp.criteres.find(c => c.cle === "enveloppes").points < 20, "enveloppes : points d'attention");
     }
   }
@@ -1345,6 +1347,6 @@ test("connecteur : libellés « Patrimoine › Objectifs » identiques à plan.j
   assert.doesNotMatch(src, /Budget et objectifs/);
   const web = readFileSync(path("web/src/plan.js"), "utf8") + readFileSync(path("web/src/pratiques.js"), "utf8");
   const phrases = [...src.matchAll(/"([^"\n]*Patrimoine › Objectifs[^"\n]*)"/g)].map(m => m[1]);
-  assert.equal(phrases.length, 2, "patrimoine, apport (l'apport à compléter se donne à Claude)");
+  assert.equal(phrases.length, 3, "patrimoine, apport (piste et action chiffrée ; l'apport à compléter se donne à Claude)");
   for (const p of phrases) assert.ok(web.includes('"' + p + '"'), p);
 });

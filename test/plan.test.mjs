@@ -314,7 +314,8 @@ describe("score", () => {
   test("matelas : budget sans dépense → à compléter, sauf dépenses déclarées dans le matelas en mois", () => {
     const a = item({ budget: [], positions: [pos("Épargne", 8000)] }, "matelas");
     assert.equal(a.aCompleter, true);
-    assert.equal(a.points, 0);
+    assert.equal(a.points, null, "spec cp4 § 1 : pas de note sans données");
+    assert.equal(a.statut, "a_completer");
     const b = item({ budget: [], positions: [pos("Épargne", 8000)], config: { cushion: { mode: "months", months: 4, depenses: 2000 } } }, "matelas");
     assert.equal(b.aCompleter, false);
     assert.equal(b.valeur, 4);

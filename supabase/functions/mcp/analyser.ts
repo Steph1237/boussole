@@ -34,6 +34,8 @@ export type CalculAnalyse = {
   inScope: (owner: string, scope: string) => boolean;
   /** Lignes hors comptes courants (CP1 : les comptes courants ne comptent ni dans la concentration ni dans les devises). */
   horsCourants?: (positions: any[]) => any[];
+  /** fraisSupports(vivantes, { classes, config }) : frais des supports (critère « frais » des bonnes pratiques, spec cp4 § 2). */
+  fraisSupports: (vivantes: any[], o: { classes: Surcharge; config: any }) => any;
   /** Facultatif : chargerDonnees (repli de registerAnalyser quand h.charger est absent). */
   charger?: () => Promise<Omit<CtxAnalyse, "scope" | "auj" | "calcul">>;
 };
@@ -108,34 +110,35 @@ function allocation(c: CtxAnalyse): Resultat {
     (declare ? (hors.length ? " " + hors.length + " groupe" + (hors.length > 1 ? "s" : "") + " hors de la fourchette du profil " + declare.label + " (" + fr(horsPts as number, 1).replace(/,0$/, "") + ((horsPts as number) < 2 ? " point" : " points") + " au total)." : " Chaque groupe est dans la fourchette du profil " + declare.label + ".") : "");
   return resultat("allocation", chiffres, { resume, par_classe: parClasse }, hyp);
 }
-/* ---------- frais : TER moyen pondéré, coût annuel, lignes les plus chères ---------- */
-const terDe = (p: any) => p.instrument?.ter ?? null;
+/* ---------- frais des supports (spec cp4 § 2) : même calcul que le critère « frais » des bonnes pratiques (fraisSupports injecté) ---------- */
 function frais(c: CtxAnalyse): Resultat {
   const K = c.calcul;
-  const cotees = vivantes(c).filter((p) => p.mode === "market" && K.val(p) > 0);
-  const total = somme(cotees, K.val);
-  const avec = cotees.filter((p) => connu(terDe(p)));
-  const couvert = somme(avec, K.val);
-  const cout = somme(avec, (p) => (K.val(p) * Number(terDe(p))) / 100);
-  const ter = couvert > 0 ? somme(avec, (p) => K.val(p) * Number(terDe(p))) / couvert : null;
-  const lignes = avec.map((p) => ({ nom: p.name, enveloppe: p.envelope ?? null, montant: eur(K.val(p)), ter_pct: t2(Number(terDe(p))), cout_annuel_eur: eur((K.val(p) * Number(terDe(p))) / 100) }))
-    .sort((a, b) => b.cout_annuel_eur - a.cout_annuel_eur || b.ter_pct - a.ter_pct || b.montant - a.montant);
-  const parTer = [...lignes].sort((a, b) => b.ter_pct - a.ter_pct || b.montant - a.montant).slice(0, 5);
-  const sans = cotees.filter((p) => !connu(terDe(p))).sort((a, b) => K.val(b) - K.val(a))
-    .map((p) => ({ nom: p.name, enveloppe: p.envelope ?? null, montant: eur(K.val(p)) }));
-  const chiffres = { perimetre: c.scope, encours_cotes: eur(total), encours_frais_connus: eur(couvert), ter_moyen_pct: ter == null ? null : t2(ter),
-    cout_annuel_eur: eur(cout), part_sans_frais_connus_pct: part(total - couvert, total) };
-  const hyp = ["Frais courants (TER) annuels des fonds, ETF et titres cotés, lus sur la fiche de chaque instrument ; moyenne pondérée par les montants des seules lignes dont les frais sont connus (même règle que tes bonnes pratiques).",
-    "Lignes cotées seulement : les frais de contrat (assurance-vie, PER), du fonds euros, des SCPI, de courtage et de garde ne sont pas comptés.",
-    "Coût annuel = montant du jour × TER ; il varie avec la valeur des lignes.",
-    "Deux classements : plus_cheres = les 5 lignes au coût annuel en euros le plus élevé ; ter_les_plus_eleves = les 5 lignes au TER le plus élevé, même petites."];
-  if (avec.some((p) => Number(terDe(p)) === 0)) hyp.push("Les titres détenus en direct (actions, cryptoactifs) n'ont pas de frais courants : leur TER de 0 % abaisse la moyenne.");
-  if (total - couvert > 0) hyp.push(frPc(part(total - couvert, total)) + " des encours cotés n'ont pas de frais connus : Claude peut les compléter (annotate_instrument) pour affiner le calcul.");
-  if (!(total > 0)) return resultat("frais", chiffres, { resume: "Aucune ligne cotée pour ce périmètre : pas de frais de fonds à calculer.", plus_cheres: [], ter_les_plus_eleves: [], sans_frais_connus: [] }, hyp);
-  const resume = ter == null ? "Les frais de tes lignes cotées ne sont pas encore connus : demande à Claude de les compléter."
-    : "Tes lignes cotées coûtent en moyenne " + frPc(ter, 2) + " par an, soit environ " + frE(cout) + " par an" +
-      (couvert < total ? " (sur " + frPc(part(couvert, total)) + " des encours cotés dont les frais sont connus)." : ".");
-  return resultat("frais", chiffres, { resume, plus_cheres: lignes.slice(0, 5), ter_les_plus_eleves: parTer, sans_frais_connus: sans.slice(0, 20) }, hyp);
+  const fs = K.fraisSupports(vivantes(c), { classes: c.classes, config: c.donnees?.config });
+  const cv = fs.couverture;
+  const chiffres = { perimetre: c.scope, encours_investi: eur(fs.encours), encours_frais_connus: eur(fs.encoursConnu), couverture_pct: pc(cv * 100),
+    cout_annuel_eur: eur(fs.cout), cout_pct: fs.pct == null ? null : t2(fs.pct), frais_des_fonds_eur: eur(fs.coutFonds), frais_enveloppes_eur: eur(fs.coutEnveloppes),
+    scpi_hors_note_eur: eur(somme(fs.scpi, (x: any) => x.valeur)), note_possible: cv >= 0.7 };
+  const hyp = ["Coût annuel estimé = frais courants des fonds (ETF, OPCVM, unités de compte, lus sur la fiche de chaque instrument) + frais de l'enveloppe (gestion de l'assurance-vie ou du PER, garde), en % de l'encours investi dont les frais sont connus (même règle que tes bonnes pratiques).",
+    "Encours investi : PEA, compte-titres, assurance-vie, PER, crypto ; livrets et comptes courants exclus. Titres détenus en direct, crypto et liquidités comptent pour 0 % de frais courants (frais de courtage non comptés).",
+    "SCPI à part : frais de souscription et de gestion non comparables à des frais courants, hors note.",
+    "Sous 70 % de l'encours dont les frais sont connus, la note reste à compléter et le coût affiché est partiel.",
+    "Repères de classe (jamais un produit nommé) : lignes à plus de 0,50 % par an au-dessus du haut du repère de leur classe ; projection de l'écart sur 10 et 20 ans à rendement brut égal de " + fr(fs.projection.rendementPct) + " % par an (hypothèse, intérêts composés)."];
+  if (fs.fondsSansFrais.length) hyp.push(fs.fondsSansFrais.length + " fonds sans frais courants connus : Claude peut les compléter (annotate_instrument) à partir du document d'informations clés.");
+  if (fs.enveloppesACompleter.length) hyp.push("Frais de contrat à compléter (config.frais_enveloppes) : " + fs.enveloppesACompleter.join(", ") + ".");
+  const details = {
+    plus_cheres: fs.plusCouteuses.map((l: any) => ({ nom: l.nom, enveloppe: l.enveloppe, montant: eur(l.valeur), ter_pct: t2(l.fraisPct), cout_annuel_eur: eur(l.coutAnnuel) })),
+    au_dessus_du_repere: fs.auDessusRepere.map((x: any) => ({ nom: x.nom, enveloppe: x.enveloppe, montant: eur(x.valeur), ter_pct: t2(x.ter), repere: x.repere.texte, ter_ecart_pct: t2(x.ecartPct), surcout_annuel_eur: eur(x.surcout) })),
+    projection: { rendement_hypothese_pct: pc(fs.projection.rendementPct), frais_10_ans_eur: eur(fs.projection.frais.ans10), frais_20_ans_eur: eur(fs.projection.frais.ans20),
+      ecart_au_repere_10_ans_eur: eur(fs.projection.ecart.ans10), ecart_au_repere_20_ans_eur: eur(fs.projection.ecart.ans20) },
+    scpi: fs.scpi.map((x: any) => ({ nom: x.nom, enveloppe: x.enveloppe, montant: eur(x.valeur) })),
+    sans_frais_connus: fs.fondsSansFrais.slice(0, 20).map((x: any) => ({ nom: x.nom, enveloppe: x.enveloppe, montant: eur(x.valeur) })),
+    enveloppes_a_completer: fs.enveloppesACompleter,
+  };
+  if (!(fs.encours > 0)) return resultat("frais", chiffres, { resume: "Aucun placement investi pour ce périmètre : pas de frais de supports à calculer.", ...details }, hyp);
+  const resume = fs.pct == null ? "Les frais de tes placements ne sont pas encore connus : demande à Claude de compléter les frais courants de tes fonds et ceux de tes contrats."
+    : (cv < 0.7 ? "Coût partiel : " : "Tes placements coûtent environ ") + frPc(fs.pct, 2) + " par an, soit " + frE(fs.cout) + " par an" +
+      (cv < 0.999 ? " (sur " + frPc(cv * 100) + " de l'encours investi dont les frais sont connus)." : ".");
+  return resultat("frais", chiffres, { resume, ...details }, hyp);
 }
 
 /* ---------- concentration : plus grosses lignes, poches, enveloppes ---------- */
@@ -327,7 +330,7 @@ export function registerAnalyser(server: any, h: { wrap: any; RO: any; UserError
   server.registerTool("analyser", {
     title: "Analyser",
     description: "Calculs exacts sur les données Boussole de l'utilisateur, en lecture seule, selon un angle : allocation (montant et % par classe, comparés aux fourchettes du profil de risque), " +
-      "frais (TER moyen pondéré, coût annuel en euros, 5 lignes au coût annuel le plus élevé et 5 au TER le plus élevé, part sans frais connus), concentration (5 plus grosses lignes, poches, plus forte enveloppe), " +
+      "frais (frais des supports : frais courants des fonds + frais des contrats, coût annuel en euros et en % de l'encours investi, couverture, 5 lignes les plus coûteuses, lignes au-dessus du repère de leur classe, projection de l'écart sur 10 et 20 ans, SCPI à part), concentration (5 plus grosses lignes, poches, plus forte enveloppe), " +
       "devises (exposition hors euro et part inconnue), crise (perte par classe et au total sous les pires baisses historiques simultanées), enveloppes (points d'attention fiscaux : PEA, assurance-vie, PER), " +
       "liquidite (montants par disponibilité). Périmètre : foyer (défaut), p1 ou p2. Renvoie { angle, chiffres, details, hypotheses, mention } : euros à l'unité, % à 0,1. " +
       "Cite ces chiffres tels quels avec leurs hypothèses plutôt que de les recalculer, et présente-les comme un calcul pédagogique, jamais comme une recommandation de produit. " +

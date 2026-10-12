@@ -535,7 +535,7 @@ test("index.ts : expertises.ts et analyser.ts importés et enregistrés avec les
   assert.match(src, /import \{ registerExpertises, listeExpertises \} from "\.\/expertises\.ts";/);
   assert.match(src, /import \{ registerAnalyser \} from "\.\/analyser\.ts";/);
   assert.match(code, /registerExpertises\(server, \{ \.\.\.h, charger: chargerDonnees, calcul: moteurs \}\);/);
-  assert.ok(code.includes("registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants } });"), "intégration d'analyser (noms réels d'index.ts)");
+  assert.ok(code.includes("registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants, fraisSupports } });"), "intégration d'analyser (noms réels d'index.ts)");
   const mo = code.slice(code.indexOf("const moteurs = {") + "const moteurs = {".length, code.indexOf("};", code.indexOf("const moteurs = {")));
   const injectes = mo.split(",").map(x => x.trim()).filter(Boolean);
   assert.deepEqual(injectes.sort(), ["bilan", "budgetTotaux", "syntheseRisque", "bonnesPratiques", "situationObjectifs", "classeRisque", "liquidite", "typeEnveloppe", "datesAV", "val", "counted",

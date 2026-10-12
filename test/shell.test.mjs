@@ -394,7 +394,8 @@ test("lien profond : popstate puis hashchange de la même navigation → traité
 
 test("Comptes : première sous-vue de Patrimoine ; ses liens profonds gardent leurs paramètres dans l'URL (fiches en pleine page)", () => {
   const { PARAMS_DANS_URL, hashCanonique } = require("../web/src/app.js");
-  assert.deepEqual(PARAMS_DANS_URL, ["patrimoine/comptes"]);
+  assert.deepEqual(PARAMS_DANS_URL, ["patrimoine/comptes", "pilotage/sante"], "fiches de Comptes ; onglet et critère de Santé (CP4)");
+  assert.deepEqual(resolveHash("#pilotage/sante?famille=effort&critere=epargne"), { space: "pilotage", sub: "sante", legacy: false, query: "famille=effort&critere=epargne" });
   assert.deepEqual(resolveHash("#patrimoine/comptes?ligne=pea-etf-monde"), { space: "patrimoine", sub: "comptes", legacy: false, query: "ligne=pea-etf-monde" },
     "forme canonique : l'URL n'est pas réécrite (recharger, précédent / suivant, partager le lien)");
   assert.deepEqual(resolveHash("#patrimoine/comptes?enveloppe=PEA%20Camille&titulaire=p1").query, "enveloppe=PEA%20Camille&titulaire=p1");

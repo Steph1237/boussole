@@ -1,8 +1,9 @@
-// Fonction nocturne supabase/functions/nightly (index.ts + cours.ts + binance.ts) exécutée dans un contexte vm (types retirés),
+// Fonction nocturne supabase/functions/nightly (index.ts + cours.ts + binance.ts + frais.ts) exécutée dans un contexte vm (types retirés),
 // avec une base en mémoire (client Supabase factice, clé de service simulée) et un `fetch` factice (Yahoo, Euronext, Binance).
 // Couvre : clôtures du jour dans cours, rattrapage de 5 ans (Yahoo avec conversion par série de taux, repli Euronext), paquets,
 // Binance (conditions d'activation, mise à jour, création, clôture, filtre user_id, erreurs traduites qui n'arrêtent pas la
-// nuit, aucun secret dans les journaux ni la réponse). Aucun appel réseau, aucun secret réel.
+// nuit, aucun secret dans les journaux ni la réponse), frais des fonds (Yahoo quoteSummary avec session et crumb, au plus 10 ISIN,
+// budget de temps, jamais d'écrasement d'un TER non Yahoo, échecs en avertissements). Aucun appel réseau, aucun secret réel.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -37,10 +38,11 @@ function charger(journaux) {
     decodeURIComponent, URL, URLSearchParams, Request, Response, Headers, AbortSignal, setTimeout, Uint8Array };
   const C = chargerModule(lire("cours.ts"), { ...G });
   const B = chargerModule(lire("binance.ts"), { ...G });
+  const F = chargerModule(lire("frais.ts"), { ...G });
   const servis = [];
   const Deno = { env: { get: () => undefined }, serve: f => servis.push(f) };
   const client = B.client;
-  const I = chargerModule(lire("index.ts"), { ...G, ...C, ...B, clientBinance: client, Deno, createClient: () => { throw new Error("client réel interdit en test"); } });
+  const I = chargerModule(lire("index.ts"), { ...G, ...C, ...B, ...F, clientBinance: client, Deno, createClient: () => { throw new Error("client réel interdit en test"); } });
   return { I, handler: servis[0] };
 }
 
@@ -52,7 +54,9 @@ function fausseBase(init, rpc) {
   const lignes = t => (tables[t] ??= []);
   function from(table) {
     const q = { op: "select", filtres: [], val: null, opts: {} };
-    const ok = r => q.filtres.every(([k, op, v]) => op === "eq" ? String(r[k]) === String(v) : op === "in" ? v.map(String).includes(String(r[k])) : true);
+    const un = (r, [k, op, v]) => op === "eq" ? String(r[k]) === String(v) : op === "in" ? v.map(String).includes(String(r[k]))
+      : op === "is" ? (v === "null" ? r[k] == null : String(r[k]) === v) : op === "or" ? v.some(f => un(r, f)) : true;
+    const ok = r => q.filtres.every(f => un(r, f));
     const exec = () => {
       journal.push({ table, op: q.op, filtres: q.filtres, val: q.val });
       let data = null;
@@ -80,6 +84,7 @@ function fausseBase(init, rpc) {
     const b = {
       select: () => b, order: () => b,
       eq: (k, v) => { q.filtres.push([k, "eq", v]); return b; }, in: (k, v) => { q.filtres.push([k, "in", v]); return b; },
+      or: expr => { q.filtres.push(["", "or", expr.split(",").map(x => { const [k, op, ...v] = x.split("."); return [k, op, v.join(".")]; })]); return b; },
       insert: v => { q.op = "insert"; q.val = v; return b; }, upsert: (v, o = {}) => { q.op = "upsert"; q.val = v; q.opts = o; return b; },
       update: v => { q.op = "update"; q.val = v; return b; },
       then: (res, rej) => Promise.resolve().then(exec).then(res, rej),
@@ -101,11 +106,27 @@ const chart = (currency, dates, prix, price = null) => ({ chart: { result: [{
 }] } });
 const rep = (c, s = 200) => new Response(typeof c === "string" ? c : JSON.stringify(c), { status: s, headers: { "Content-Type": "application/json" } });
 
-function reseau({ binance = {}, yahoo = {} } = {}) {
+// frais : symbole → réponse quoteSummary (objet) ou code HTTP (nombre) ; symbole absent → 404 « Not Found ». quoteSummary exige
+// le cookie de session (fc.yahoo.com) et le crumb (v1/test/getcrumb) : sans eux, 401 « Invalid Crumb », comme Yahoo.
+const COOKIE = "A3=cookie-factice", CRUMB = "crumb-factice";
+function reseau({ binance = {}, yahoo = {}, frais = {} } = {}) {
   const appels = [];
   const f = async (url, init = {}) => {
     const u = new URL(String(url));
     appels.push({ url: String(url), hote: u.hostname, chemin: u.pathname, query: Object.fromEntries(u.searchParams), entetes: new Headers(init.headers || {}) });
+    const cookie = new Headers(init.headers || {}).get("Cookie") || "";
+    if (u.hostname === "fc.yahoo.com") return new Response("", { status: 404, headers: { "Set-Cookie": `${COOKIE}; Path=/; Domain=.yahoo.com` } });
+    if (u.hostname === "query2.finance.yahoo.com" && u.pathname === "/v1/test/getcrumb") {
+      return cookie.includes(COOKIE) ? new Response(CRUMB, { status: 200 }) : new Response("", { status: 401 });
+    }
+    if (u.hostname === "query2.finance.yahoo.com" && u.pathname.startsWith("/v10/finance/quoteSummary/")) {
+      if (u.searchParams.get("crumb") !== CRUMB || !cookie.includes(COOKIE)) {
+        return rep({ finance: { result: null, error: { code: "Unauthorized", description: "Invalid Crumb" } } }, 401);
+      }
+      const sym = decodeURIComponent(u.pathname.split("/").pop());
+      if (frais[sym] === undefined) return rep({ quoteSummary: { result: null, error: { code: "Not Found", description: `Quote not found for symbol: ${sym}` } } }, 404);
+      return typeof frais[sym] === "number" ? rep({}, frais[sym]) : rep(frais[sym]);
+    }
     if (u.hostname === "query1.finance.yahoo.com") {
       const sym = decodeURIComponent(u.pathname.split("/").pop()), range = u.searchParams.get("range");
       const k = `${sym}|${range}`;
@@ -182,7 +203,7 @@ const SOLDES = {
 // horloge : temps écoulé simulé (ms) ; avance(appel, t) → nouveau temps (appelé à chaque requête réseau) ;
 // delais : durées demandées pour les signaux d'abandon ; chrono : requêtes réseau et RPC dans l'ordre.
 function monter({ env = { BINANCE_API_KEY: CLE, BINANCE_API_SECRET: SECRET }, init = donnees(), net = reseau({ binance: SOLDES, yahoo: YAHOO }), aRattraper,
-  avance = null, signal = null, rpcs = {}, casse = null } = {}) {
+  aFrais = [], avance = null, signal = null, rpcs = {}, casse = null } = {}) {
   const journaux = [];
   const chrono = [], delais = [], signaux = [];
   let t = 0;
@@ -194,6 +215,7 @@ function monter({ env = { BINANCE_API_KEY: CLE, BINANCE_API_SECRET: SECRET }, in
       { isin: "US0378331005", symbol: "AAPL", currency: "USD", nb_cours: 5 },
       { isin: "X-SANS", symbol: null, currency: "EUR", nb_cours: 0 },
     ]).slice(0, p_limite), error: null }),
+    frais_a_chercher: async ({ p_limite }) => ({ data: aFrais.slice(0, p_limite), error: null }),
     take_snapshots: async () => ({ data: 2, error: null }),
     apply_recurring: async () => ({ data: 0, error: null }),
     finish_nightly: async () => ({ data: null, error: null }),
@@ -291,7 +313,7 @@ test("nuit complète : clôtures du jour dans cours, Binance appliqué, rattrapa
 
   // 4. suite de la nuit et aucun secret
   const rpcs = journal.filter(j => j.rpc).map(j => j.rpc);
-  assert.deepEqual(rpcs, ["check_nightly_token", "take_snapshots", "apply_recurring", "take_snapshots", "cours_a_rattraper", "finish_nightly"]);
+  assert.deepEqual(rpcs, ["check_nightly_token", "take_snapshots", "apply_recurring", "take_snapshots", "cours_a_rattraper", "frais_a_chercher", "finish_nightly"]);
   assert.equal(journal.find(j => j.rpc === "cours_a_rattraper").args.p_limite, 10);
   const binance = m.net.appels.filter(a => a.hote === "api.binance.com");
   assert.deepEqual(binance.map(a => a.chemin), ["/api/v3/time", "/api/v3/account", "/sapi/v1/simple-earn/flexible/position", "/sapi/v1/simple-earn/locked/position"]);
@@ -311,7 +333,7 @@ test("Binance en erreur (clé refusée) : message traduit, lignes intactes, le r
   assert.equal(pos["u-btc"].qty, 0.01);
   assert.equal(pos["u-ada"].status, "actif");
   assert.equal(corps.rattrapages.tentes, 3, "rattrapage effectué malgré l'erreur Binance");
-  assert.deepEqual(nomsRpc(m).slice(-4), ["apply_recurring", "take_snapshots", "cours_a_rattraper", "finish_nightly"]);
+  assert.deepEqual(nomsRpc(m).slice(-5), ["apply_recurring", "take_snapshots", "cours_a_rattraper", "frais_a_chercher", "finish_nightly"]);
   sansSecret(m, [...m.journaux, JSON.stringify(corps)]);
 });
 
@@ -380,13 +402,13 @@ function phases(chrono) {
   return out;
 }
 
-test("ordre : cours du jour → photo → versements → photo → Binance → rattrapage → finish_nightly", { skip: SANS_STRIP }, async () => {
+test("ordre : cours du jour → photo → versements → photo → Binance → rattrapage → frais des fonds → finish_nightly", { skip: SANS_STRIP }, async () => {
   const m = monter();
   const corps = await (await m.appeler()).json();
   assert.equal(corps.binance.etat, "ok");
   assert.equal(corps.rattrapages.tentes, 3);
   assert.deepEqual(phases(m.chrono), ["cours", "rpc:take_snapshots", "rpc:apply_recurring", "rpc:take_snapshots", "binance",
-    "rpc:cours_a_rattraper", "rattrapage", "rpc:finish_nightly"]);
+    "rpc:cours_a_rattraper", "rattrapage", "rpc:frais_a_chercher", "rpc:finish_nightly"]);
 });
 
 test("finish_nightly toujours exécuté : Binance lève une erreur inattendue", { skip: SANS_STRIP }, async () => {
@@ -397,7 +419,7 @@ test("finish_nightly toujours exécuté : Binance lève une erreur inattendue", 
   assert.equal(corps.binance.etat, "erreur");
   assert.ok(corps.errors.some(e => /^binance : erreur inattendue/.test(e.error)));
   assert.equal(corps.rattrapages.tentes, 3, "le rattrapage suit");
-  assert.deepEqual(nomsRpc(m).slice(1), ["take_snapshots", "apply_recurring", "take_snapshots", "cours_a_rattraper", "finish_nightly"]);
+  assert.deepEqual(nomsRpc(m).slice(1), ["take_snapshots", "apply_recurring", "take_snapshots", "cours_a_rattraper", "frais_a_chercher", "finish_nightly"]);
 });
 
 test("finish_nightly toujours exécuté : le rattrapage lève (RPC en panne, upsert qui lève)", { skip: SANS_STRIP }, async () => {
@@ -511,4 +533,149 @@ test("avertissements Binance non bloquants : séparés des erreurs, job_runs.ok 
   assert.equal(corps.ok, true);
   const fin = m.db.journal.find(j => j.rpc === "finish_nightly").args;
   assert.equal(fin.p_errors.length, 0, "job_runs.ok = (aucune erreur)");
+});
+
+/* ================== frais des fonds (CP4 § 2) ================== */
+const QS = (raw, fmt) => ({ quoteSummary: { result: [{ fundProfile: { feesExpensesInvestment: { annualReportExpenseRatio: fmt ? { raw, fmt } : { raw } } },
+  defaultKeyStatistics: { annualReportExpenseRatio: {} } }], error: null } });
+const FRAIS = { "CW8.PA": QS(0.0038, "0.38%"), "IWDA.AS": QS(0.002, "0.20%"), "MEUD.PA": QS(0.0007, "0.07%") }; // PSP5.PA : introuvable
+function donneesFrais() {
+  return {
+    instruments: [
+      { isin: "FR0010315770", symbol: "CW8.PA", currency: "EUR", price: 490, ter: null, ter_source: null },
+      { isin: "IE00B4L5Y983", symbol: "IWDA.AS", currency: "EUR", price: 100, ter: null, ter_source: null },
+      { isin: "LU0908500753", symbol: "MEUD.PA", currency: "EUR", price: 250, ter: 0.2, ter_source: "yahoo", ter_le: "2026-01-01", ter_essai_le: "2026-01-01T20:31:00Z" },
+      { isin: "FR0011871128", symbol: "PSP5.PA", currency: "EUR", price: 40, ter: null, ter_source: null },
+      { isin: "LU1681043599", symbol: "CW8D.PA", currency: "EUR", price: 400, ter: 0.12, ter_source: "dic", ter_le: "2026-10-12" },
+    ],
+    positions: [], cours: [], fonctionnalites: [],
+  };
+}
+const A_FRAIS = [{ isin: "FR0010315770", symbol: "CW8.PA" }, { isin: "IE00B4L5Y983", symbol: "IWDA.AS" }, { isin: "LU0908500753", symbol: "MEUD.PA" },
+  { isin: "FR0011871128", symbol: "PSP5.PA" }];
+const montageFrais = (o = {}) => monter({ env: {}, init: donneesFrais(), net: reseau({ yahoo: YAHOO, frais: FRAIS }), aRattraper: [], aFrais: A_FRAIS, ...o });
+const quoteSummary = m => m.net.appels.filter(a => a.chemin.startsWith("/v10/finance/quoteSummary/"));
+const instr = m => Object.fromEntries(m.db.tables.instruments.map(i => [i.isin, i]));
+
+test("frais des fonds : quoteSummary (session et crumb), TER écrit en % par an, ter_source yahoo, ter_le, ter_essai_le", { skip: SANS_STRIP }, async () => {
+  const m = montageFrais();
+  const corps = await (await m.appeler()).json();
+  assert.deepEqual(corps.frais, { tentes: 4, trouves: 3 });
+  const ins = instr(m);
+  const essai = MAINTENANT.toISOString();
+  assert.deepEqual([ins.FR0010315770.ter, ins.FR0010315770.ter_source, ins.FR0010315770.ter_le, ins.FR0010315770.ter_essai_le], [0.38, "yahoo", "2026-10-12", essai]);
+  assert.deepEqual([ins.IE00B4L5Y983.ter, ins.IE00B4L5Y983.ter_source, ins.IE00B4L5Y983.ter_le], [0.2, "yahoo", "2026-10-12"]);
+  assert.deepEqual([ins.LU0908500753.ter, ins.LU0908500753.ter_le, ins.LU0908500753.ter_essai_le], [0.07, "2026-10-12", essai], "TER Yahoo ancien rafraîchi");
+  assert.deepEqual([ins.FR0011871128.ter, ins.FR0011871128.ter_source, ins.FR0011871128.ter_le, ins.FR0011871128.ter_essai_le], [null, null, undefined, essai],
+    "introuvable : essai noté (nouvel essai dans 30 jours), rien d'autre");
+  assert.deepEqual([ins.LU1681043599.ter, ins.LU1681043599.ter_source, ins.LU1681043599.ter_essai_le], [0.12, "dic", undefined], "hors liste : intact");
+
+  // appels : query2 quoteSummary, modules fundProfile et defaultKeyStatistics ; session ouverte une fois, crumb et cookie ensuite
+  const qs = quoteSummary(m);
+  assert.ok(qs.every(a => a.hote === "query2.finance.yahoo.com" && a.query.modules === "fundProfile,defaultKeyStatistics"));
+  const avecCrumb = qs.filter(a => a.query.crumb === CRUMB);
+  assert.deepEqual(avecCrumb.map(a => a.chemin.split("/").pop()), ["CW8.PA", "IWDA.AS", "MEUD.PA", "PSP5.PA"]);
+  assert.ok(avecCrumb.every(a => a.entetes.get("Cookie") === COOKIE));
+  assert.equal(m.net.appels.filter(a => a.hote === "fc.yahoo.com").length, 1, "une seule session");
+  assert.equal(m.net.appels.filter(a => a.chemin === "/v1/test/getcrumb").length, 1);
+
+  // échec : avertissement (non bloquant), jamais une erreur de la nuit
+  assert.ok(corps.avertissements.some(a => /frais/.test(a) && /FR0011871128/.test(a)), JSON.stringify(corps.avertissements));
+  assert.ok(!corps.errors.some(e => /frais/.test(e.error)), JSON.stringify(corps.errors));
+  assert.equal(corps.ok, true);
+  const fin = m.db.journal.find(j => j.rpc === "finish_nightly").args;
+  assert.ok(!fin.p_errors.some(e => /frais/.test(e.error)));
+  // ordre : après le rattrapage, avant finish_nightly ; p_limite = 10
+  assert.deepEqual(nomsRpc(m).slice(-3), ["cours_a_rattraper", "frais_a_chercher", "finish_nightly"]);
+  assert.equal(m.db.journal.find(j => j.rpc === "frais_a_chercher").args.p_limite, 10);
+  const premierFrais = m.chrono.findIndex(c => c.includes("quoteSummary"));
+  assert.ok(premierFrais > m.chrono.indexOf("rpc:frais_a_chercher") && premierFrais < m.chrono.indexOf("rpc:finish_nightly"));
+});
+
+test("frais des fonds : un TER d'une autre source (DIC renseigné par Claude) n'est jamais écrasé", { skip: SANS_STRIP }, async () => {
+  // l'instrument a été annoté depuis la sélection (course) : l'écriture filtre ter nul ou ter_source = yahoo
+  const m = montageFrais({ aFrais: [{ isin: "LU1681043599", symbol: "CW8D.PA" }], net: reseau({ yahoo: YAHOO, frais: { "CW8D.PA": QS(0.0045, "0.45%") } }) });
+  const corps = await (await m.appeler()).json();
+  const ins = instr(m).LU1681043599;
+  assert.deepEqual([ins.ter, ins.ter_source, ins.ter_le], [0.12, "dic", "2026-10-12"]);
+  assert.equal(ins.ter_essai_le, MAINTENANT.toISOString(), "essai noté quand même");
+  assert.deepEqual(corps.frais, { tentes: 1, trouves: 1 });
+  const ecriture = m.db.journal.find(j => j.table === "instruments" && j.op === "update" && j.val && "ter" in j.val);
+  assert.ok(ecriture.filtres.some(([, op, v]) => op === "or" && JSON.stringify(v) === JSON.stringify([["ter", "is", "null"], ["ter_source", "eq", "yahoo"]])),
+    JSON.stringify(ecriture.filtres));
+});
+
+test("frais des fonds : au plus 10 ISIN par nuit ; ISIN de test X-… et sans symbole ignorés", { skip: SANS_STRIP }, async () => {
+  const liste = [{ isin: "X-BTC", symbol: "BTC-EUR" }, { isin: "FR0000000001", symbol: null },
+    ...Array.from({ length: 12 }, (_, i) => ({ isin: `IE00000000${String(i).padStart(2, "0")}`, symbol: `F${i}.PA` }))];
+  const frais = Object.fromEntries(liste.map(x => [x.symbol, QS(0.001, "0.10%")]));
+  const init = donneesFrais();
+  init.instruments.push(...liste.map(x => ({ isin: x.isin, symbol: null, currency: "USD", price: 1 })));
+  const m = montageFrais({ init, net: reseau({ yahoo: YAHOO, frais }), rpcs: { frais_a_chercher: async () => ({ data: liste, error: null }) } });
+  const corps = await (await m.appeler()).json();
+  assert.equal(corps.frais.tentes, 10);
+  const syms = [...new Set(quoteSummary(m).map(a => a.chemin.split("/").pop()))];
+  assert.equal(syms.length, 10);
+  assert.ok(!syms.includes("BTC-EUR"));
+  assert.equal(instr(m)["X-BTC"].ter_essai_le, undefined);
+});
+
+test("frais des fonds : budget — rien après ~120 s, appels plafonnés à 125 s, reste reporté (avertissement)", { skip: SANS_STRIP }, async () => {
+  // rattrapage terminé à 121 s : étape reportée, sans appel ni RPC
+  const tard = montageFrais({ aRattraper: [{ isin: "US0378331005", symbol: "AAPL", currency: "USD", nb_cours: 0 }],
+    avance: (url, t) => (url.includes("/AAPL?range=5y") ? 121_000 : t) });
+  const c1 = await (await tard.appeler()).json();
+  assert.equal(quoteSummary(tard).length, 0);
+  assert.ok(!nomsRpc(tard).includes("frais_a_chercher"));
+  assert.ok(c1.avertissements.some(a => /frais des fonds/.test(a) && /report/.test(a)));
+  assert.deepEqual(c1.frais, { tentes: 0, trouves: 0 });
+  assert.equal(nomsRpc(tard).at(-1), "finish_nightly");
+
+  // 117 s au premier appel, 121 s au deuxième ISIN : délais ramenés à ce qui reste avant 125 s, puis arrêt
+  const m = montageFrais({ avance: (url, t) => (url.includes("quoteSummary/CW8.PA") && !url.includes("crumb") ? 117_000 : url.includes("quoteSummary/IWDA.AS") ? 121_000 : t) });
+  const corps = await (await m.appeler()).json();
+  assert.equal(corps.frais.tentes, 2);
+  assert.ok(m.delais.every(ms => ms > 0 && ms <= 10_000));
+  assert.ok(m.delais.includes(8_000), JSON.stringify(m.delais));
+  assert.ok(m.delais.includes(4_000), JSON.stringify(m.delais));
+  assert.ok(!quoteSummary(m).some(a => /MEUD|PSP5/.test(a.chemin)), "aucun nouvel ISIN après 120 s");
+  assert.ok(corps.avertissements.some(a => /frais des fonds/.test(a) && /2 ISIN/.test(a)), JSON.stringify(corps.avertissements));
+  assert.equal(instr(m).LU0908500753.ter_essai_le, "2026-01-01T20:31:00Z", "non tenté : inchangé");
+  assert.ok(!corps.errors.some(e => /frais/.test(e.error)));
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+});
+
+test("frais des fonds : appel bloqué coupé (signal injecté), HTTP 500, RPC en panne → avertissements, la nuit continue", { skip: SANS_STRIP }, async () => {
+  const base = reseau({ yahoo: YAHOO, frais: { ...FRAIS, "MEUD.PA": 500 } });
+  const net = { appels: base.appels, fetch: async (url, init = {}) => {
+    if (String(url).includes("quoteSummary/CW8.PA") && String(url).includes("crumb=")) {
+      return new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(init.signal.reason)));
+    }
+    return base.fetch(url, init);
+  } };
+  // minuterie tenue (pas AbortSignal.timeout : sous Node 22, sa minuterie ne retient pas la boucle d'événements)
+  const signal = ms => { const c = new AbortController(); setTimeout(() => c.abort(new DOMException("délai", "TimeoutError")), Math.min(ms, 20)); return c.signal; };
+  const m = montageFrais({ net, signal });
+  const corps = await (await m.appeler()).json();
+  const ins = instr(m);
+  assert.equal(ins.FR0010315770.ter, null);
+  assert.equal(ins.FR0010315770.ter_essai_le, MAINTENANT.toISOString(), "échec : essai noté");
+  assert.equal(ins.IE00B4L5Y983.ter, 0.2, "l'ISIN suivant passe");
+  assert.equal(ins.LU0908500753.ter, 0.2, "HTTP 500 : TER Yahoo existant gardé");
+  assert.equal(ins.LU0908500753.ter_essai_le, MAINTENANT.toISOString());
+  assert.ok(corps.avertissements.some(a => /FR0010315770/.test(a) && /délai dépassé/.test(a)), JSON.stringify(corps.avertissements));
+  assert.ok(corps.avertissements.some(a => /LU0908500753/.test(a) && /HTTP 500/.test(a)));
+  assert.deepEqual(corps.frais, { tentes: 4, trouves: 1 });
+  assert.ok(!corps.errors.some(e => /frais/.test(e.error)));
+  assert.equal(nomsRpc(m).at(-1), "finish_nightly");
+
+  const panne = montageFrais({ rpcs: { frais_a_chercher: async () => ({ data: null, error: { message: "relation absente" } }) } });
+  const c2 = await (await panne.appeler()).json();
+  assert.ok(c2.avertissements.some(a => /frais des fonds/.test(a) && /relation absente/.test(a)));
+  assert.ok(!c2.errors.some(e => /frais/.test(e.error)));
+  const leve = montageFrais({ rpcs: { frais_a_chercher: async () => { throw new Error("connexion perdue"); } } });
+  const c3 = await (await leve.appeler()).json();
+  assert.ok(c3.avertissements.some(a => /frais des fonds/.test(a) && /connexion perdue/.test(a)));
+  assert.equal(nomsRpc(leve).at(-1), "finish_nightly");
+  assert.equal(c3.ok, true);
 });

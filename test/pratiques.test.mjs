@@ -68,7 +68,8 @@ describe("Sécurité", () => {
   test("protection à compléter avec un crédit et aucune déclaration", () => {
     const c = crit(ev({ profil: { credits: [{ owner: "commun", crd: 5000, mensualite: 200 }] } }), "protection");
     assert.equal(c.aCompleter, true);
-    assert.equal(c.points, 0);
+    assert.equal(c.points, null, "spec cp4 § 1 : pas de note sans données");
+    assert.equal(c.statut, "a_completer");
     assert.equal(c.lien, "compte/donnees");
   });
   test("protection avec crédit : 20 si couvert, 8 si partiel, 0 sinon", () => {
@@ -89,19 +90,22 @@ describe("Sécurité", () => {
       objectifs: [{ id: "o", type: "voyage", source: "saisi", deja: 0, cible: 5000, dateCible: "2030-01-01" }] });
     assert.equal(crit(r, "liquidite_objectifs"), undefined);
   });
-  test("liquidité des objectifs : immédiat + jours face au besoin restant, linéaire jusqu'à 0", () => {
+  test("liquidité des objectifs : seul l'argent disponible et peu risqué compte (spec cp4 § 1.3), linéaire jusqu'à 0", () => {
     const positions = [P("Épargne", 5000, { envelope: "Livret A" }), M("Monde", 3000, { envelope: "PEA" }), P("Obligations", 10000, { envelope: "Assurance vie" })];
     const c = cible => crit(ev({ positions, objectifs: [{ id: "o", type: "voyage", source: "saisi", deja: 0, cible, dateCible: "2027-06-30" }] }), "liquidite_objectifs");
-    assert.equal(c(8000).points, 20);
-    assert.equal(c(16000).points, 10);   // 8 000 disponibles pour 16 000 (l'assurance-vie ne compte pas)
-    assert.equal(c(16000).valeur, 0.5);
+    assert.equal(c(5000).points, 20);
+    assert.equal(c(10000).points, 10);   // 5 000 sans risque pour 10 000 : ni le PEA ni les obligations longues de l'assurance-vie
+    assert.equal(c(10000).valeur, 0.5);
+    assert.match(c(10000).texte, /^8 000 € disponibles, dont 5 000 € sans risque de baisse, pour 10 000 €/);
     assert.equal(crit(ev({ positions: [P("Obligations", 10000, { envelope: "Assurance vie" })],
       objectifs: [{ id: "o", source: "saisi", deja: 0, cible: 5000, dateCible: "2027-01-01" }] }), "liquidite_objectifs").points, 0);
   });
-  test("liquidité des objectifs : le déjà réuni réduit le besoin (affectation en cascade)", () => {
+  test("liquidité des objectifs : l'argent déjà réuni sur un support risqué ne compte pas", () => {
     const positions = [P("Épargne", 2000, { envelope: "Livret A" }), P("AV", 10000, { envelope: "Assurance vie" })];
     const c = crit(ev({ positions, objectifs: [{ id: "o", source: "poches", poches: ["AV"], cible: 12000, dateCible: "2027-06-30" }] }), "liquidite_objectifs");
-    assert.equal(c.points, 20); // besoin restant 2 000, disponible 2 000
+    assert.equal(c.points, Math.round(2000 / 12000 * 20));
+    const f = crit(ev({ positions: [P("Fonds euros", 12000, { envelope: "Assurance vie" })], objectifs: [{ id: "o", source: "poches", poches: ["Fonds euros"], cible: 12000, dateCible: "2027-06-30" }] }), "liquidite_objectifs");
+    assert.equal(f.points, 20, "fonds en euros d'une assurance-vie : disponible et sans risque de baisse");
   });
 });
 
@@ -219,23 +223,26 @@ describe("Allocation", () => {
 });
 
 describe("Efficacité", () => {
-  test("frais à compléter si moins de 50 % des montants cotés ont un TER", () => {
-    const c = crit(ev({ positions: [M("Monde", 1000, { ter: 0.2 }), M("Europe", 1500)] }), "frais");
+  test("frais à compléter si moins de 70 % de l'encours investi a des frais connus (spec cp4 § 2)", () => {
+    const c = crit(ev({ positions: [M("Monde", 1000, { ter: 0.2, envelope: "PEA" }), M("Europe", 1500, { name: "ETF Europe", envelope: "PEA" })] }), "frais");
     assert.equal(c.aCompleter, true);
-    assert.match(c.texte, /Frais inconnus : Claude peut les compléter/);
+    assert.equal(c.points, null);
+    assert.match(c.texte, /^Frais connus sur 40 % de tes placements : coût partiel de 2 € par an \(0,2 %\)\.$/);
     assert.equal(c.lien, "agent/connexion");
   });
-  test("frais : TER pondéré, 0,3 % → 20, 1 % → 10, 2 % → 0", () => {
-    const f = (...ters) => crit(ev({ positions: ters.map(t => M("Monde", 1000, { ter: t })) }), "frais");
+  test("frais : coût total en % de l'encours, barème 0,40 / 0,75 / 1,20 / 1,80", () => {
+    const f = (...ters) => crit(ev({ positions: ters.map(t => M("Monde", 1000, { ter: t, envelope: "PEA" })) }), "frais");
     assert.equal(f(0.3).points, 20);
-    assert.equal(f(0.1).points, 20);
+    assert.equal(f(0.4).points, 20);
     assert.equal(f(0.2, 1.8).points, 10);
     assert.equal(f(0.2, 1.8).valeur, 1);
     assert.equal(f(0.65).points, 15);
+    assert.equal(f(1.5).points, 5);
     assert.equal(f(2).points, 0);
-    assert.equal(f(3).points, 0);
+    // titres en direct : 0 % mais comptés dans l'encours
+    assert.equal(crit(ev({ positions: [M("Monde", 1000, { ter: 1, envelope: "PEA" }), M("Convictions", 1000, { name: "Air Liquide", isin: "FR0000120073", envelope: "PEA" })] }), "frais").valeur, 0.5);
   });
-  test("frais omis sans ligne cotée", () => {
+  test("frais omis sans ligne investie", () => {
     assert.equal(crit(ev({ positions: [P("Épargne", 1000)] }), "frais"), undefined);
   });
   test("enveloppes omises quand rien n'est à vérifier", () => {

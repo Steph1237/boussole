@@ -125,7 +125,7 @@ const INSTRUCTIONS = [
   "Objectifs datés (list_objectifs, upsert_objectifs, delete_objectif) : apport, matelas, retraite ou projet, avec cible, échéance, montant déjà réuni (saisi ou poches rattachées), rendement attendu et priorité ; list_objectifs calcule l'effort mensuel requis et le statut.",
   "Réglages (get_config, update_config) : update_config modifie directement, après l'accord de l'utilisateur dans la conversation, les seules préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte, ordres à passer, échéances, hypothèses) ; l'utilisateur peut mettre une règle en pause dans Boussole.",
   "Matelas, versements programmés et classes (regler_matelas, regler_versements, corriger_classe) : ces réglages passent par des propositions, comme le bilan. regler_matelas propose la cible du matelas de précaution, en montant (minimum, maximum facultatif) ou en mois de dépenses. regler_versements propose la liste complète des versements programmés (mode remplacer : lis get_config et renvoie tous les versements à garder avec leur id ; un versement absent est supprimé), appliqués chaque nuit par Boussole sur la ligne visée. corriger_classe propose la classe d'actifs d'une poche quand celle déduite de son nom ne correspond pas à son contenu (null : retour à la classe automatique). Demande toujours la valeur à l'utilisateur et récapitule avant de déposer.",
-  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels. Scores honnêtes : sante.total vaut null sous 3 critères calculés (sante.calcules) et bonnes_pratiques.provisoire est vrai quand moins de la moitié du poids des familles est notée (bonnes_pratiques.couverture) : dis-le plutôt que d'annoncer une note.",
+  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels. Scores honnêtes : sante.total vaut null sous 3 critères calculés (sante.calcules) et bonnes_pratiques.provisoire est vrai quand moins de 60 % des critères sont notés (bonnes_pratiques.couverture, couverture_texte) : dis-le plutôt que d'annoncer une note. Un critère « a_completer » n'a pas de note (points null) : dis ce qui manque (manque). Explique une note par son calcul (pourquoi, calcul, avec les chiffres de l'utilisateur) et ses actions chiffrées (ameliorer, couts_principaux), jamais par une recommandation de produit.",
   "Profil de risque (get_risk_profile, set_risk_answers) : questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, profil équivalent du portefeuille réel. Pose les questions avec l'outil formulaire (champs risque.*), ou en texte à défaut, et enregistre les seules réponses choisies par l'utilisateur (set_risk_answers en texte), jamais une réponse déduite ; le profil définitif est calculé par l'application après validation. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
   "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
   "Frais, zone et devise des fonds (annotate_instrument, écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
@@ -476,7 +476,10 @@ function dateAtteinte(cible: number, deja: number, versement: number, tauxAnnuel
 const dateCible = (o: any): string | null => o.date_cible || o.dateCible || null;
 const prioriteDe = (o: any) => (o.priorite ?? Infinity) as number;
 
-/** Répartit l'argent des poches entre objectifs, en cascade par priorité (port de Plan.affecterDeja). */
+/** Personne d'un objectif (titulaire, owner ou personne : p1 / p2), ou null pour le foyer (Plan.titulaireObjectif). */
+const titulaireObjectif = (o: any): string | null => { const v = o && (o.titulaire || o.owner || o.personne); return v === "p1" || v === "p2" ? v : null; };
+
+/** Répartit l'argent des poches entre objectifs, en cascade par priorité (port de Plan.affecterDeja ; personne de l'objectif respectée). */
 function affecterDeja(objectifs: any[], positions: any[], scope = "foyer"): Record<string, number> {
   const reste = positions.filter((p) => inScope(p.owner, scope) && counted(p)).map((p) => ({ p, v: val(p) }));
   const ordre = objectifs.slice().sort((a, b) =>
@@ -484,10 +487,10 @@ function affecterDeja(objectifs: any[], positions: any[], scope = "foyer"): Reco
   const out: Record<string, number> = {};
   ordre.forEach((o) => {
     if (o.source !== "poches") { out[o.id] = pos(o.deja); return; }
-    const poches = Array.isArray(o.poches) ? o.poches : [], env = Array.isArray(o.enveloppes) ? o.enveloppes : [];
+    const poches = Array.isArray(o.poches) ? o.poches : [], env = Array.isArray(o.enveloppes) ? o.enveloppes : [], qui = titulaireObjectif(o);
     let besoin = pos(o.cible), pris = 0;
     reste.forEach((r) => {
-      if (besoin <= 0 || r.v <= 0 || !(poches.includes(r.p.bloc) || env.includes(r.p.envelope))) return;
+      if (besoin <= 0 || r.v <= 0 || !(poches.includes(r.p.bloc) || env.includes(r.p.envelope)) || (qui && r.p.owner !== qui)) return;
       const t = Math.min(r.v, besoin); r.v -= t; besoin -= t; pris += t;
     });
     out[o.id] = Math.round(pris * 100) / 100;
@@ -558,106 +561,292 @@ function interp(x: number, pts: number[][]): number {
 }
 function fr(x: number, dec = 1): string {
   const s = Math.abs(x).toFixed(dec).replace(/\.0+$/, "").replace(".", ",");
-  return (x < 0 ? "\u2212" : "") + s.replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+  return (x < 0 ? "−" : "") + s.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
 const pctFr = (x: number) => fr(x * 100, 0) + " %";
 
-type Item = { cle: string; titre: string; cible: string; valeur: number | null; points?: number; aCompleter: boolean; texte: string; piste: string };
+/* ---------- contrat de critère (spec cp4 § 3, port de Plan.contrat et des explications de plan.js) ----------
+   libelle, max, statut (bon · surveiller · travailler · a_completer · information), points null si à compléter, mesure, repere
+   { texte, zones }, pourquoi, calcul, donnees [{ libelle, valeur, lien? ({ ligne } | { enveloppe }) }], ameliorer [{ action,
+   gain_points }], manque, source_donnees, confiance. Textes au format de pratiques.js (frP, pctP, eurP) : parité exacte testée
+   (test/sante-calc.test.mjs). */
+const r1c = (x: number) => Math.round(x * 10) / 10;
+const r2c = (x: number) => Math.round(x * 100) / 100;
+type Zone = { jusqua: number | null; statut: string };
+type Ameliorer = { action: string; gain_points: number | null; gain_note?: number | null };
+type Explication = { mesure?: any; repere?: { texte: string; zones: Zone[] }; pourquoi?: string; calcul?: string[]; donnees?: any[]; ameliorer?: Ameliorer[];
+  manque?: string[]; source_donnees?: string | null; confiance?: string };
+/** Statut d'une note sur 20 : 16 et plus bon, 10 et plus à surveiller, en dessous à travailler ; null : à compléter. */
+function statutDe(points: number | null | undefined): string {
+  if (points == null || !isFinite(Number(points))) return "a_completer";
+  return points >= 16 ? "bon" : points >= 10 ? "surveiller" : "travailler";
+}
+/** Zones d'une jauge (Plan.zones) : statut de la note arrondie le long de la mesure, frontières à 0,01 près. */
+function zones(f: (x: number) => number, min: number, max: number): Zone[] {
+  const st = (x: number) => statutDe(Math.round(f(x))), N = 600, out: Zone[] = [];
+  let prev = st(min), xa = min;
+  for (let i = 1; i <= N; i++) {
+    const x = min + (max - min) * i / N, s = st(x);
+    if (s !== prev) {
+      let a = xa, b = x;
+      for (let k = 0; k < 40; k++) { const m = (a + b) / 2; if (st(m) === prev) a = m; else b = m; }
+      out.push({ jusqua: r2c(a), statut: prev });
+      prev = s;
+    }
+    xa = x;
+  }
+  out.push({ jusqua: null, statut: prev });
+  return out;
+}
+const gainPts = (f: (x: number) => number, x: number, points: number | null) => Math.max(0, Math.round(f(x)) - (points || 0));
+const BAREMES = {
+  matelas: (mois: number) => (mois < 1 ? 0 : mois < 3 ? interp(mois, [[1, 5], [3, 15]]) : mois <= 6 ? 20 : interp(mois, [[6, 20], [12, 15]])),
+  epargne: (tauxPct: number) => interp(tauxPct, [[0, 0], [5, 6], [10, 12], [15, 16], [20, 20]]),
+  endettement: (tauxPct: number) => interp(tauxPct, [[25, 20], [35, 12], [45, 0]]),
+  concentration: (maxPct: number, nb: number) => Math.max(0, interp(maxPct, [[10, 20], [20, 14], [40, 0]]) - (nb < 3 ? 5 : 0)),
+  patrimoine: (ratio: number) => clamp(ratio, 0, 1) * 20,
+};
+const REPERES: Record<string, string> = {
+  matelas: "3 à 6 mois de dépenses : 20/20 ; de 1 à 3 mois : de 5 à 15 ; moins d'un mois : 0 ; au-delà de 6 mois, la note redescend jusqu'à 15 à 12 mois.",
+  epargne: "0 % des revenus : 0 ; 5 % : 6 ; 10 % : 12 ; 15 % : 16 ; 20 % ou plus : 20 (linéaire entre ces repères).",
+  endettement: "25 % des revenus ou moins : 20 ; 35 % (plafond appliqué par les banques) : 12 ; 45 % ou plus : 0 (linéaire entre ces repères).",
+  concentration: "plus grosse ligne à 10 % du financier ou moins : 20 ; 20 % : 14 ; 40 % ou plus : 0 ; 5 points de moins sous 3 poches.",
+  patrimoine: "au niveau du repère de ta tranche d'âge (en années de revenus) : 20 ; proportionnel en dessous.",
+};
+/** Ajoute les champs du contrat à un critère (Plan.contrat). */
+function contrat<T extends Record<string, any>>(c: T, e: Explication = {}): T & Record<string, any> {
+  const ac = !!c.aCompleter, info = !!c.informatif;
+  const points = ac || info || c.points == null ? null : c.points;
+  return Object.assign(c, {
+    libelle: c.titre, max: info ? null : 20, points,
+    statut: info ? "information" : ac ? "a_completer" : statutDe(points),
+    mesure: e.mesure || null, repere: e.repere || null, pourquoi: e.pourquoi || "", calcul: e.calcul || [], donnees: e.donnees || [],
+    ameliorer: e.ameliorer || [], manque: e.manque || [], source_donnees: e.source_donnees || null,
+    confiance: e.confiance || (ac ? "absente" : "complete"),
+  });
+}
+const sourceBudget = (source: string | undefined, periode?: string) => (source === "reel" ? "réel" + (periode ? ", " + periode : "") : "budget prévu");
+
+function expliqueMatelas(o: any): Explication {
+  const f = BAREMES.matelas, repere = { texte: REPERES.matelas, zones: zones(f, 0, 15) };
+  if (o.mois == null) return { repere, donnees: o.donnees || [], confiance: "absente",
+    pourquoi: "Pas de note : il faut tes dépenses mensuelles pour savoir combien de mois ta réserve couvre.",
+    manque: ["Tes dépenses mensuelles (budget, ou banque connectée)"],
+    ameliorer: [{ action: "Donne tes dépenses mensuelles à Claude (ou connecte ta banque) pour mesurer ta réserve.", gain_points: null }] };
+  const mois = o.mois, pts = o.points, dep = o.depenses;
+  const calcul = [o.avecCourants ? "Épargne disponible (livrets, comptes d'épargne) : " + eurP(o.epargne) : "Poche Épargne : " + eurP(o.epargne)];
+  if (o.avecCourants) calcul.push("Comptes courants : " + eurP(o.courants) + " ; une réserve de fonctionnement de " + frP(o.reserveMois) +
+    " mois de dépenses (" + eurP(o.reserve) + ") y reste pour les dépenses courantes, seul l'excédent compte : " + eurP(o.courantsAuDela));
+  calcul.push("Matelas : " + eurP(o.total), "Dépenses mensuelles (" + sourceBudget(o.source, o.periode) + ") : " + eurP(dep),
+    eurP(o.total) + " ÷ " + eurP(dep) + " = " + frP(mois) + " mois", "Barème : " + frP(mois) + " mois → " + pts + "/20");
+  const ameliorer: Ameliorer[] = [];
+  if (mois < 3) ameliorer.push({ action: "Porte ton matelas à 3 mois de dépenses (≈ +" + eurP((3 - mois) * dep) + ") sur une épargne disponible à tout moment.", gain_points: gainPts(f, 3, pts) });
+  else if (mois > 6) ameliorer.push({ action: "Garde 6 mois de dépenses de côté et affecte l'excédent (≈ " + eurP((mois - 6) * dep) + ") à l'un de tes objectifs.", gain_points: gainPts(f, 6, pts) });
+  return { repere, calcul, ameliorer, donnees: o.donnees || [], source_donnees: sourceBudget(o.source, o.periode), confiance: "complete",
+    mesure: { valeur: r1c(mois), unite: "mois", texte: frP(mois) + " mois de dépenses" },
+    pourquoi: mois < 1 ? "Ta réserve couvre moins d'un mois de dépenses : un imprévu t'obligerait à vendre ou à emprunter."
+      : mois < 3 ? "Ta réserve couvre " + frP(mois) + " mois de dépenses, sous le repère de 3 mois."
+      : mois <= 6 ? "Ta réserve couvre " + frP(mois) + " mois de dépenses, dans le repère de 3 à 6 mois."
+      : "Ta réserve couvre " + frP(mois) + " mois de dépenses : au-delà de 6 mois, une partie pourrait servir un objectif." };
+}
+function expliqueEpargne(o: any): Explication {
+  const f = BAREMES.epargne, repere = { texte: REPERES.epargne, zones: zones(f, 0, 30) };
+  if (o.taux == null) return { repere, confiance: "absente",
+    pourquoi: "Pas de note : il faut tes revenus et tes dépenses (ou ton épargne) pour calculer ton taux d'épargne.",
+    manque: o.manque || ["Tes revenus et tes dépenses mensuels (budget, ou banque connectée)"],
+    ameliorer: [{ action: "Donne tes revenus et tes dépenses à Claude (ou connecte ta banque) pour calculer ton taux d'épargne.", gain_points: null }] };
+  const t = o.taux, pts = o.points, src = sourceBudget(o.source, o.periode);
+  const calcul = o.source === "reel"
+    ? ["Revenus moyens (" + src + ") : " + eurP(o.revenus) + " par mois",
+      "Épargne versée (virements vers l'épargne et les placements) : " + eurP(o.epargne) + " par mois",
+      eurP(o.epargne) + " ÷ " + eurP(o.revenus) + " = " + pctP(t, 1)]
+    : ["Revenus du budget : " + eurP(o.revenus) + " par mois", "Épargne prévue : " + eurP(o.epargne) + " par mois",
+      "Reste du mois (revenus − dépenses − épargne), compté s'il est positif : " + eurP(Math.max(0, o.reste || 0)),
+      "(" + eurP(o.epargne) + " + " + eurP(Math.max(0, o.reste || 0)) + ") ÷ " + eurP(o.revenus) + " = " + pctP(t, 1)];
+  calcul.push("Barème : " + pctP(t, 1) + " → " + pts + "/20");
+  const ameliorer = [15, 20].filter((c) => t * 100 < c).map((c) => ({
+    action: "Mets de côté " + eurP((c / 100 - t) * o.revenus) + " de plus par mois pour atteindre " + c + " % de tes revenus.", gain_points: gainPts(f, c, pts) }));
+  return { repere, calcul, ameliorer: ameliorer.slice(0, 2), donnees: o.donnees || [], source_donnees: src, confiance: "complete",
+    mesure: { valeur: r1c(t * 100), unite: "%", texte: pctP(t, 1) + " des revenus" },
+    pourquoi: "Tu mets de côté " + pctP(t, 1) + " de tes revenus (" + src + "), " + (t >= 0.15 ? "au-dessus du" : "sous le") + " repère de 15 %." };
+}
+function expliqueEndettement(o: any): Explication {
+  const f = BAREMES.endettement, repere = { texte: REPERES.endettement, zones: zones(f, 0, 60) };
+  if (o.taux == null) return { repere, confiance: "absente", pourquoi: "Pas de note : il faut tes revenus pour calculer ton taux d'endettement.",
+    manque: ["Tes revenus mensuels"], ameliorer: [{ action: "Donne tes revenus à Claude pour calculer ton taux d'endettement.", gain_points: null }] };
+  const t = o.taux, pts = o.points;
+  const ameliorer = t > 0.35 ? [{ action: "Ramène tes mensualités à 35 % de tes revenus (≈ −" + eurP((t - 0.35) * o.revenus) + " par mois, par remboursement anticipé ou renégociation).",
+    gain_points: gainPts(f, 35, pts) }] : t > 0.25 ? [{ action: "Sous 25 % de tes revenus (≈ −" + eurP((t - 0.25) * o.revenus) + " de mensualités), la note est pleine.", gain_points: gainPts(f, 25, pts) }] : [];
+  return { repere, ameliorer, donnees: o.donnees || [], source_donnees: "profil (crédits et biens)", confiance: "complete",
+    calcul: ["Mensualités de crédit : " + eurP(o.mensualites) + " par mois", "Revenus : " + eurP(o.revenus) + " par mois",
+      eurP(o.mensualites) + " ÷ " + eurP(o.revenus) + " = " + pctP(t, 1), "Barème : " + pctP(t, 1) + " → " + pts + "/20"],
+    mesure: { valeur: r1c(t * 100), unite: "%", texte: pctP(t, 1) + " des revenus" },
+    pourquoi: o.mensualites > 0 ? "Tes crédits prennent " + pctP(t, 1) + " de tes revenus, " + (t <= 0.35 ? "sous le" : "au-dessus du") + " plafond de 35 %."
+      : "Tu n'as aucune mensualité de crédit en cours." };
+}
+function expliqueConcentration(o: any): Explication {
+  const nb = o.nb || 0, f = (x: number) => BAREMES.concentration(x, nb), repere = { texte: REPERES.concentration, zones: zones(f, 0, 60) };
+  if (!(o.total > 0)) return { repere, confiance: "absente", pourquoi: "Pas de note : aucun placement enregistré.",
+    manque: ["Tes placements (lignes et montants)"], ameliorer: [{ action: "Complète tes placements avec Claude pour mesurer leur diversification.", gain_points: null }] };
+  const L = o.lignes || [], top = L[0], max = top.valeur / o.total, pts = o.points;
+  const ameliorer: Ameliorer[] = [];
+  const second = L[1] ? L[1].valeur / o.total : 0, cibleMax = max > 0.2 ? 0.2 : 0.1;
+  if (max > 0.1) ameliorer.push({ action: "Ramène « " + top.nom + " » à " + (cibleMax * 100) + " % du financier (≈ " + eurP(top.valeur - cibleMax * o.total) + " à répartir sur d'autres lignes).",
+    gain_points: gainPts(f, Math.max(cibleMax, second) * 100, pts) });
+  if (nb < 3) ameliorer.push({ action: "Répartis ton financier sur au moins 3 poches (tu en as " + nb + ").", gain_points: gainPts((x) => BAREMES.concentration(x, 3), max * 100, pts) });
+  return { repere, ameliorer, source_donnees: "placements", confiance: "complete",
+    donnees: L.slice(0, 5).map((l: any) => ({ libelle: l.nom, valeur: r2c(l.valeur), poids_pct: r1c(l.valeur / o.total * 100), lien: { ligne: l.id } })),
+    calcul: ["Financier compté : " + eurP(o.total), "Plus grosse ligne : « " + top.nom + " », " + eurP(top.valeur),
+      eurP(top.valeur) + " ÷ " + eurP(o.total) + " = " + pctP(max, 1), "Poches différentes : " + nb + (nb < 3 ? " (moins de 3 : 5 points de moins)" : ""),
+      "Barème : " + pctP(max, 1) + (nb < 3 ? ", " + nb + " poche" + (nb > 1 ? "s" : "") : "") + " → " + pts + "/20"],
+    mesure: { valeur: r1c(max * 100), unite: "%", texte: "plus grosse ligne : " + pctP(max, 1) + " du financier" },
+    pourquoi: "« " + top.nom + " » pèse " + pctP(max, 1) + " du financier" + (max <= 0.2 ? ", sous le repère de 20 %" : ", au-dessus du repère de 20 %") +
+      (nb < 3 ? ", réparti sur seulement " + nb + " poche" + (nb > 1 ? "s" : "") + "." : ".") };
+}
+function expliquePatrimoine(o: any): Explication {
+  const f = (r: number) => BAREMES.patrimoine(r), repere = { texte: REPERES.patrimoine, zones: zones(f, 0, 1.5) };
+  if (o.annees == null) return { repere, confiance: "absente", pourquoi: "Pas de note : il faut ta tranche d'âge et tes revenus pour situer ton patrimoine.",
+    manque: o.manque || [], ameliorer: [{ action: "Donne ta tranche d'âge et tes revenus à Claude pour situer ton patrimoine.", gain_points: null }] };
+  const ratio = o.annees / o.repere, pts = o.points;
+  return { repere: { texte: REPERES.patrimoine + " Repère à ton âge : " + frP(o.repere) + " année" + (o.repere > 1 ? "s" : "") + " de revenus.", zones: repere.zones },
+    source_donnees: "bilan et profil", confiance: "complete",
+    calcul: ["Patrimoine net : " + eurP(o.net), "Revenus annuels : " + eurP(o.revenus * 12), eurP(o.net) + " ÷ " + eurP(o.revenus * 12) + " = " + frP(Math.max(0, o.annees)) + " année(s) de revenus",
+      "Repère à ton âge : " + frP(o.repere) + " ; " + frP(Math.max(0, o.annees)) + " ÷ " + frP(o.repere) + " = " + pctP(clamp(ratio, 0, 1)) + " du repère → " + pts + "/20"],
+    ameliorer: ratio < 1 ? [{ action: "Atteindre le repère de ton âge : patrimoine net de " + eurP(o.repere * o.revenus * 12) + " (≈ +" + eurP(o.repere * o.revenus * 12 - o.net) + "), par l'épargne régulière et le remboursement des crédits.",
+      gain_points: gainPts(f, 1, pts) }] : [],
+    mesure: { valeur: r1c(ratio * 100), unite: "% du repère", texte: frP(Math.max(0, o.annees)) + " année(s) de revenus" },
+    pourquoi: ratio >= 1 ? "Ton patrimoine net atteint le repère de ta tranche d'âge." : "Ton patrimoine net représente " + pctP(clamp(ratio, 0, 1)) + " du repère de ta tranche d'âge." };
+}
+
+type Item = { cle: string; titre: string; cible: string; valeur: number | null; points?: number | null; aCompleter: boolean; texte: string; piste: string; [k: string]: any };
 
 function itemMatelas(d: Donnees, scope: string, totaux: Totaux): Item {
-  const epargne = sum(d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && p.bloc === "Épargne"), val);
+  const L = d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && p.bloc === "Épargne");
+  const epargne = sum(L, val);
   const c = d.config?.cushion;
   const m = c && typeof c === "object" && c.mode === "months" ? { mode: "months", depenses: pos(c.depenses) } : null;
   const depenses = totaux.depensesLignes > 0 ? totaux.depenses : m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
   const base = { cle: "matelas", titre: "Matelas de précaution", cible: "3 à 6 mois de dépenses" };
-  if (depenses <= 0) return { ...base, valeur: null, aCompleter: true,
-    texte: "Dépenses mensuelles inconnues.", piste: "Donne tes dépenses à Claude pour mesurer ta réserve." };
+  const donnees = L.map((p) => ({ libelle: p.name || p.envelope || "Épargne", valeur: r2c(val(p)), lien: p.id ? { ligne: p.id } : { enveloppe: p.envelope } }));
+  if (depenses <= 0) return contrat({ ...base, valeur: null, aCompleter: true,
+    texte: "Dépenses mensuelles inconnues.", piste: "Donne tes dépenses à Claude pour mesurer ta réserve." } as Item, expliqueMatelas({ mois: null, donnees }));
   const mois = epargne / depenses;
-  const points = mois < 1 ? 0 : mois < 3 ? interp(mois, [[1, 5], [3, 15]]) : mois <= 6 ? 20 : interp(mois, [[6, 20], [12, 15]]);
+  const points = Math.round(BAREMES.matelas(mois));
   const piste = mois < 3 ? "Vise 3 à 6 mois de dépenses sur une épargne disponible à tout moment, pour absorber un imprévu sans vendre ni emprunter."
     : mois <= 6 ? "Ta réserve couvre les imprévus courants : rien à changer de ce côté."
     : mois <= 12 ? "Au-delà de 6 mois, une partie de cette réserve pourrait être affectée à l'un de tes objectifs."
     : "Plus d'un an de dépenses dort sur des supports peu rémunérés : regarde si une partie peut servir tes objectifs.";
-  return { ...base, valeur: mois, points, aCompleter: false, texte: fr(mois) + " mois de dépenses de côté.", piste };
+  return contrat({ ...base, valeur: mois, points, aCompleter: false, texte: fr(mois) + " mois de dépenses de côté.", piste } as Item,
+    expliqueMatelas({ mois, total: epargne, epargne, depenses, source: "prevu", avecCourants: false, donnees, points }));
 }
 
 function itemEpargne(totaux: Totaux): Item {
   const base = { cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus" };
-  if (!(totaux.revenus > 0) || (totaux.depensesLignes <= 0 && totaux.epargne <= 0)) return { ...base, valeur: null, aCompleter: true,
-    texte: "Budget incomplet.", piste: "Donne tes revenus et tes dépenses à Claude pour calculer ton taux d'épargne." };
+  if (!(totaux.revenus > 0) || (totaux.depensesLignes <= 0 && totaux.epargne <= 0)) return contrat({ ...base, valeur: null, aCompleter: true,
+    texte: "Budget incomplet.", piste: "Donne tes revenus et tes dépenses à Claude pour calculer ton taux d'épargne." } as Item, expliqueEpargne({ taux: null }));
   const t = totaux.tauxEpargne as number;
-  const points = interp(t * 100, [[0, 0], [5, 6], [10, 12], [15, 16], [20, 20]]);
+  const points = Math.round(BAREMES.epargne(t * 100));
   const piste = t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."
     : "Le repère courant est de 15 % des revenus. Les postes les plus lourds du budget sont le premier endroit où regarder.";
-  return { ...base, valeur: t, points, aCompleter: false, texte: "Tu mets de côté " + pctFr(t) + " de tes revenus.", piste };
+  return contrat({ ...base, valeur: t, points, aCompleter: false, texte: "Tu mets de côté " + pctFr(t) + " de tes revenus.", piste } as Item,
+    expliqueEpargne({ taux: t, revenus: totaux.revenus, epargne: totaux.epargne, reste: totaux.reste, source: "prevu", points,
+      donnees: [{ libelle: "Revenus mensuels", valeur: r2c(totaux.revenus) }, { libelle: "Dépenses mensuelles", valeur: r2c(totaux.depenses) }, { libelle: "Épargne prévue", valeur: r2c(totaux.epargne) }] }));
 }
 
-function itemEndettement(totaux: Totaux): Item {
+/* Crédits et biens à mensualité du périmètre : données de l'endettement (Plan.lignesCredits). */
+function lignesCredits(d: Donnees, scope: string) {
+  return [...(d.biens || []).filter((b) => pos(b.mensualite) > 0).map((b) => ({ libelle: (b.nom || "Bien") + " (mensualité)", valeur: r2c(pos(b.mensualite) * partBien(scope, b.part_p1)) })),
+    ...(d.credits || []).filter((c) => pos(c.mensualite) > 0).map((c) => ({ libelle: (c.nom || "Crédit") + " (mensualité)", valeur: r2c(pos(c.mensualite) * partCredit(scope, c.owner)) }))]
+    .filter((x) => x.valeur > 0);
+}
+
+function itemEndettement(totaux: Totaux, d?: Donnees, scope = "foyer"): Item {
   const base = { cle: "endettement", titre: "Taux d'endettement", cible: "35 % des revenus au plus" };
-  if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
-    texte: "Revenus inconnus.", piste: "Donne tes revenus à Claude pour calculer ton taux d'endettement." };
+  if (!(totaux.revenus > 0)) return contrat({ ...base, valeur: null, aCompleter: true,
+    texte: "Revenus inconnus.", piste: "Donne tes revenus à Claude pour calculer ton taux d'endettement." } as Item, expliqueEndettement({ taux: null }));
   const t = totaux.mensualites / totaux.revenus;
-  const points = interp(t * 100, [[25, 20], [35, 12], [45, 0]]);
+  const points = Math.round(BAREMES.endettement(t * 100));
   const texte = totaux.mensualites > 0 ? "Tes crédits représentent " + pctFr(t) + " de tes revenus." : "Aucune mensualité de crédit en cours.";
   const piste = t <= 0.35 ? "Tu restes sous le plafond de 35 % appliqué par les banques (norme HCSF)."
     : "Au-delà de 35 %, les banques prêtent difficilement (norme HCSF). Un remboursement anticipé ou une renégociation peuvent alléger la charge.";
-  return { ...base, valeur: t, points, aCompleter: false, texte, piste };
+  return contrat({ ...base, valeur: t, points, aCompleter: false, texte, piste } as Item,
+    expliqueEndettement({ taux: t, revenus: totaux.revenus, mensualites: totaux.mensualites, points, donnees: d ? lignesCredits(d, scope) : [] }));
 }
 
 function itemConcentration(d: Donnees, scope: string): Item {
   const base = { cle: "concentration", titre: "Diversification", cible: "aucune ligne au-delà de 20 %, au moins 3 poches" };
   const L = d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && val(p) > 0);
   const F = sum(L, val);
-  if (F <= 0) return { ...base, valeur: null, aCompleter: true,
-    texte: "Aucun placement enregistré.", piste: "Complète tes placements avec Claude pour mesurer leur diversification." };
+  if (F <= 0) return contrat({ ...base, valeur: null, aCompleter: true,
+    texte: "Aucun placement enregistré.", piste: "Complète tes placements avec Claude pour mesurer leur diversification." } as Item, expliqueConcentration({ total: 0 }));
   const max = Math.max(...L.map(val)) / F;
   const nb = new Set(L.map((p) => p.bloc || "_autre")).size;
-  const points = Math.max(0, interp(max * 100, [[10, 20], [20, 14], [40, 0]]) - (nb < 3 ? 5 : 0));
+  const points = Math.round(BAREMES.concentration(max * 100, nb));
   const texte = "La plus grosse ligne pèse " + pctFr(max) + " du financier, réparti sur " + nb + (nb > 1 ? " poches." : " poche.");
   const piste = max <= 0.2 && nb >= 3 ? "Ton financier est bien réparti : aucune ligne ne domine."
     : "Repère : aucune ligne au-delà de 20 % du financier et au moins 3 poches, pour qu'un seul support ne pèse pas sur l'ensemble.";
-  return { ...base, valeur: max, points, aCompleter: false, texte, piste };
+  const lignes = L.map((p) => ({ id: p.id, nom: p.name || p.bloc || "Ligne", valeur: val(p) })).sort((a, b) => b.valeur - a.valeur);
+  return contrat({ ...base, valeur: max, points, aCompleter: false, texte, piste } as Item, expliqueConcentration({ lignes, total: F, nb, points }));
 }
 
 function itemPatrimoine(d: Donnees, scope: string, totaux: Totaux): Item {
   const age = d.profil?.foyer?.age;
   const repere = REPERES_AGE[age];
   const base = { cle: "patrimoine", titre: "Patrimoine net", cible: repere ? fr(repere) + " année" + (repere > 1 ? "s" : "") + " de revenus" : "selon l'âge" };
-  if (!repere) return { ...base, valeur: null, aCompleter: true,
-    texte: "Âge non renseigné.", piste: "Donne ta tranche d'âge à Claude pour comparer ton patrimoine au repère." };
-  if (!(totaux.revenus > 0)) return { ...base, valeur: null, aCompleter: true,
-    texte: "Revenus inconnus.", piste: "Donne tes revenus à Claude pour situer ton patrimoine." };
+  if (!repere) return contrat({ ...base, valeur: null, aCompleter: true,
+    texte: "Âge non renseigné.", piste: "Donne ta tranche d'âge à Claude pour comparer ton patrimoine au repère." } as Item, expliquePatrimoine({ annees: null, manque: ["Ta tranche d'âge"] }));
+  if (!(totaux.revenus > 0)) return contrat({ ...base, valeur: null, aCompleter: true,
+    texte: "Revenus inconnus.", piste: "Donne tes revenus à Claude pour situer ton patrimoine." } as Item, expliquePatrimoine({ annees: null, manque: ["Tes revenus mensuels"] }));
   const net = bilan(d, scope).net;
   const annees = net / (totaux.revenus * 12);
-  const points = clamp(annees / repere, 0, 1) * 20;
+  const points = Math.round(clamp(annees / repere, 0, 1) * 20); // BAREMES.patrimoine
   const texte = "Patrimoine net : " + fr(Math.max(annees, 0)) + " année" + (annees >= 2 ? "s" : "") + " de revenus (repère à ton âge : " + fr(repere) + ").";
   const piste = annees >= repere ? "Tu es au niveau du repère de ta tranche d'âge."
     : "Le patrimoine se construit surtout par l'épargne régulière et le remboursement des crédits ; tes objectifs (Patrimoine › Objectifs) en donnent le rythme.";
-  return { ...base, valeur: annees, points, aCompleter: false, texte, piste };
+  return contrat({ ...base, valeur: annees, points, aCompleter: false, texte, piste } as Item, expliquePatrimoine({ annees, repere, net, revenus: totaux.revenus, points }));
 }
 
 /** Pas de note globale sur moins de 3 critères calculés (identique à Plan.SCORE_MIN_CRITERES) : un 100/100 calculé
     sur un seul critère serait trompeur. */
 const SCORE_MIN_CRITERES = 3;
+/** Couverture sous laquelle une note est « provisoire » (Plan.SEUIL_PROVISOIRE, spec cp4 § 1). */
+const SEUIL_PROVISOIRE = 0.6;
+const texteCouverture = (k: number, n: number) => "calculée sur " + k + " critère" + (k > 1 ? "s" : "") + " sur " + n;
+/** Champs du contrat d'un critère, pour la sortie du connecteur. */
+const champsContrat = (x: any) => ({ libelle: x.libelle, statut: x.statut, max: x.max, mesure: x.mesure, repere: x.repere, pourquoi: x.pourquoi, calcul: x.calcul,
+  donnees: x.donnees, ameliorer: x.ameliorer, manque: x.manque, source_donnees: x.source_donnees, confiance: x.confiance, points_perdus: x.points_perdus ?? null });
+/** « Ce qui te coûte le plus » (Plan.coutsPrincipaux) : les nb (3) critères notés aux points perdus les plus élevés, avec la première action chiffrée. */
+function coutsPrincipaux(L: any[], nb = 3) {
+  return (L || []).filter((x) => x && x.points_perdus != null && x.points_perdus > 0)
+    .sort((a, b) => b.points_perdus - a.points_perdus || (a.points || 0) - (b.points || 0)).slice(0, nb).map((x) => {
+      const a = (x.ameliorer || []).find((y: any) => y && y.gain_points) || (x.ameliorer || [])[0] || null;
+      return { cle: x.cle, famille: x.famille || null, libelle: x.libelle || x.titre, points: x.points, points_perdus: x.points_perdus,
+        action: a ? a.action : x.piste || "", gain_points: a ? a.gain_points : null, gain_note: a && a.gain_note != null ? a.gain_note : null };
+    });
+}
 
-/** Score de santé sur 100 : cinq critères sur 20 ; les critères à compléter sont exclus et le total ramené sur 100 ;
-    total null sous SCORE_MIN_CRITERES critères calculés. */
+/** Score de santé sur 100 : cinq critères sur 20 ; les critères à compléter (points null) sont exclus et le total ramené sur 100 ;
+    total null sous SCORE_MIN_CRITERES critères calculés ; couverture, provisoire sous 60 %, points perdus et contrat de chaque critère. */
 function scoreSante(d: Donnees, scope: string) {
   const totaux = budgetTotaux(d, scope);
   const items = [
     itemMatelas(d, scope, totaux),
     itemEpargne(totaux),
-    itemEndettement(totaux),
+    itemEndettement(totaux, d, scope),
     itemConcentration(d, scope),
     itemPatrimoine(d, scope, totaux),
-  ].map((i) => ({ ...i, points: i.aCompleter ? 0 : Math.round(i.points ?? 0), sur: 20 }));
-  const complets = items.filter((i) => !i.aCompleter);
-  const total = complets.length >= SCORE_MIN_CRITERES ? Math.round(sum(complets, (i) => i.points) / (20 * complets.length) * 100) : null;
+  ].map((i) => ({ ...i, sur: 20 }));
+  const complets = items.filter((i) => !i.aCompleter && i.points != null);
+  const total = complets.length >= SCORE_MIN_CRITERES ? Math.round(sum(complets, (i) => i.points as number) / (20 * complets.length) * 100) : null;
+  items.forEach((i) => { i.points_perdus = i.points == null || total == null ? null : r1c((20 - (i.points as number)) / (20 * complets.length) * 100); });
+  const couverture = complets.length / items.length;
   return {
     total, complet: complets.length === items.length, calcules: complets.length, minimum_criteres: SCORE_MIN_CRITERES,
+    couverture: Math.round(couverture * 1000) / 1000, couverture_texte: texteCouverture(complets.length, items.length), provisoire: total != null && couverture < SEUIL_PROVISOIRE,
     ...(total == null ? { message: `Pas de note globale : ${complets.length} critère${complets.length > 1 ? "s" : ""} calculé${complets.length > 1 ? "s" : ""} sur 5 (il en faut au moins ${SCORE_MIN_CRITERES}). Complète le bilan pour l'obtenir.` } : {}),
     items: items.map((i) => ({ cle: i.cle, titre: i.titre, points: i.points, sur: i.sur, a_completer: i.aCompleter,
-      valeur: i.valeur == null ? null : Math.round(i.valeur * 1000) / 1000, cible: i.cible, texte: i.texte, piste: i.piste })),
+      valeur: i.valeur == null ? null : Math.round(i.valeur * 1000) / 1000, cible: i.cible, texte: i.texte, piste: i.piste, ...champsContrat(i) })),
+    couts_principaux: coutsPrincipaux(items),
     mention: "Indicateur pédagogique, pas un conseil en investissement.",
   };
 }
@@ -968,17 +1157,20 @@ const FAMILLES = [
 const PLAFOND_SPECULATIF_DEFAUT = 0.05;
 const PLAFOND_PEA_DEFAUT = 150000;
 const HORIZON_COURT = 24; // mois
-/* Barèmes (points sur 20) : nommés pour ne pas être confondus avec ceux du score de santé (test de parité plan.js / MCP). */
-const BAREME_ADEQUATION = [[0, 20], [40, 0]];
-const BAREME_GEOGRAPHIE = [[0, 8], [0.5, 20]];
-const BAREME_SPECULATIF_NUL = [[0, 20], [0.01, 0]];
-const BAREME_FRAIS = [[0.3, 20], [1, 10], [2, 0]];
-const BAREME_DORMANT = [[12, 20], [24, 10], [36, 5]];
+const SEUIL_FRAIS = 0.7; // couverture minimale des frais connus pour noter (Pratiques.SEUIL_FRAIS)
+const RENDEMENT_PROJECTION = 5; // % par an, hypothèse affichée de la projection des frais
+/* Barèmes (points sur 20) en fonction de la mesure dans son unité d'affichage : nommés pour ne pas être confondus avec ceux du
+   score de santé (test de parité plan.js / MCP). */
+const PTS_ADEQUATION = [[0, 20], [40, 0]], PTS_GEOGRAPHIE = [[0, 8], [0.5, 20]], PTS_DORMANT = [[12, 20], [24, 10], [36, 5]], PTS_SPECULATIF_NUL = [[0, 20], [0.01, 0]];
+const BAREME_ADEQUATION = (x: number) => interp(x, PTS_ADEQUATION);
+const BAREME_GEOGRAPHIE = (x: number) => (x >= 50 ? 20 : interp(x / 100, PTS_GEOGRAPHIE));
+const BAREME_FRAIS = (x: number) => (x <= 0.4 ? 20 : x <= 0.75 ? 15 : x <= 1.2 ? 10 : x <= 1.8 ? 5 : 0);
+const BAREME_DORMANT = (m: number) => (m <= 12 ? 20 : interp(m, PTS_DORMANT));
 
 /* Formats de pratiques.js (zéros finaux retirés, milliers séparés par une espace). */
 function frP(x: number, dec = 1): string {
   const s = Math.abs(x).toFixed(dec).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1").replace(".", ",");
-  return (x < 0 ? "\u2212" : "") + s.replace(/^(\d+)/, (m) => m.replace(/\B(?=(\d{3})+(?!\d))/g, " "));
+  return (x < 0 ? "−" : "") + s.replace(/^(\d+)/, (m) => m.replace(/\B(?=(\d{3})+(?!\d))/g, " "));
 }
 const pctP = (x: number, dec = 0) => frP(x * 100, dec) + " %";
 const eurP = (x: number) => frP(Math.round(x), 0) + " €";
@@ -986,17 +1178,32 @@ const isoJour = (d: string) => String(d).slice(0, 10);
 const plusAns = (date: string, ans: number) => { const s = isoJour(date).split("-").map(Number); return String(s[0] + ans).padStart(4, "0") + "-" + String(s[1] || 1).padStart(2, "0") + "-" + String(s[2] || 1).padStart(2, "0"); };
 const frDate = (d: string) => isoJour(d).split("-").reverse().join("/");
 const connu = (v: unknown) => v !== null && v !== undefined && v !== "" && isFinite(Number(v));
+const listeNoms = (noms: string[], max = 3) => { const L = noms.slice(0, max).map((x) => "« " + x + " »"); return L.join(", ") + (noms.length > max ? " et " + (noms.length - max) + " autre" + (noms.length - max > 1 ? "s" : "") : ""); };
+const lienLigne = (p: any) => (p.id ? { ligne: p.id } : p.envelope ? { enveloppe: p.envelope } : undefined);
+const donneeLigne = (p: any, extra: Record<string, unknown> = {}) => ({ libelle: p.name || p.bloc || "Ligne", valeur: r2c(val(p)), ...(lienLigne(p) ? { lien: lienLigne(p) } : {}), ...extra });
+/** Période d'un budget réel en clair (Calc.periodeReel) : « juillet à septembre 2026 ». */
+const MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+function periodeReel(r: any): string {
+  const a = r && moisIso(r.du), b = r && moisIso(r.au);
+  if (!a || !b) return "";
+  const nom = (m: string) => MOIS_FR[Number(m.slice(5, 7)) - 1], an = (m: string) => m.slice(0, 4);
+  if (a === b) return nom(b) + " " + an(b);
+  return an(a) === an(b) ? nom(a) + " à " + nom(b) + " " + an(b) : nom(a) + " " + an(a) + " à " + nom(b) + " " + an(b);
+}
 
 type Critere = { cle: string; famille: string; titre: string; points: number | null; sur: number; valeur: number | null; cible: string; texte: string; piste: string;
-  regle: string; source: string; aCompleter: boolean; informatif?: boolean; details?: any[] };
+  regle: string; source: string; aCompleter: boolean; informatif?: boolean; details?: any[]; [k: string]: any };
 type Base = { titre: string; cible: string; regle: string; source: string };
 const critere = (famille: string, cle: string, b: Base, champs: Partial<Critere>): Critere =>
   ({ cle, famille, titre: b.titre, points: 0, sur: 20, valeur: null, cible: b.cible, texte: "", piste: "", regle: b.regle, source: b.source, aCompleter: false, ...champs });
-const aCompleter = (famille: string, cle: string, b: Base, texte: string, piste: string) => critere(famille, cle, b, { aCompleter: true, texte, piste });
+/** Critère à compléter (points null) avec ses explications (Pratiques : aCompleter). */
+const aCompleter = (famille: string, cle: string, b: Base, texte: string, piste: string, ex: Explication = {}): Critere =>
+  contrat(critere(famille, cle, b, { aCompleter: true, points: null, texte, piste }),
+    { pourquoi: "Pas de note : " + texte.charAt(0).toLowerCase() + texte.slice(1), ameliorer: [{ action: piste, gain_points: null }], confiance: "absente", ...ex });
 
 const DE_PLAN: Record<string, { famille: string; regle: string; source: string }> = {
   matelas: { famille: "securite", regle: "Matelas = (épargne disponible + comptes courants au-delà de la réserve) ÷ dépenses mensuelles ; réserve = 1 mois de dépenses par défaut (réglable) ; dépenses réelles des comptes courants si connues, sinon budget prévu ; repère 3 à 6 mois", source: "Repère usuel des conseillers en gestion de patrimoine" },
-  epargne: { famille: "effort", regle: "Taux d'épargne = (épargne prévue + reste du mois) ÷ revenus ; repère 15 % ou plus", source: "Repère usuel des conseillers en gestion de patrimoine" },
+  epargne: { famille: "effort", regle: "Taux d'épargne = épargne versée ÷ revenus, d'après les comptes courants (3 derniers mois complets) si la banque est connectée, sinon (épargne prévue + reste du mois) ÷ revenus du budget ; repère 15 % ou plus", source: "Repère usuel des conseillers en gestion de patrimoine" },
   endettement: { famille: "effort", regle: "Endettement = mensualités de crédit ÷ revenus ; plafond 35 %", source: "HCSF, décision D-HCSF-2021-7" },
   concentration: { famille: "allocation", regle: "Poids de la plus grosse ligne dans le financier ; repère 20 % au plus et au moins 3 poches",
     source: "Principe de diversification ; repère usuel des conseillers en gestion de patrimoine" },
@@ -1006,13 +1213,13 @@ const BP: Record<string, Base> = {
     regle: "Avec un crédit ou des enfants à charge : prévoyance (décès, invalidité) et assurance emprunteur souscrites",
     source: "Repère usuel des conseillers en gestion de patrimoine ; assurance emprunteur demandée par les banques pour un crédit immobilier" },
   liquidite_objectifs: { titre: "Argent disponible pour les projets proches", cible: "100 % du besoin des objectifs à moins de 2 ans",
-    regle: "Argent disponible sous quelques jours ÷ montant restant à réunir pour les objectifs à moins de 2 ans ; repère 100 %",
+    regle: "Argent disponible et peu risqué (épargne disponible, monétaire, fonds en euros, obligations courtes) ÷ montant des objectifs à moins de 2 ans ; actions, levier, crypto et SCPI exclus ; repère 100 %",
     source: "Repère usuel des conseillers : l'argent nécessaire à moins de 2 ans reste disponible et peu risqué" },
   apport: { titre: "Apport pour le projet immobilier", cible: "l'apport visé (10 % du prix + frais de notaire)",
-    regle: "Apport réuni ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
+    regle: "Apport réuni (poches rattachées à l'objectif, de la personne de l'objectif ; « à recevoir » exclu) ÷ apport visé ; repère : 10 % du prix + frais de notaire (≈ 8 % dans l'ancien)",
     source: "Pratique des banques ; frais d'acquisition dans l'ancien de 7 à 8 % (Notaires de France)" },
   adequation: { titre: "Adéquation au profil de risque", cible: "chaque classe dans la fourchette de ton profil",
-    regle: "Somme des écarts hors fourchette, par classe d'actifs, entre ton allocation et celle de ton profil ; repère 0 point",
+    regle: "Somme des écarts hors fourchette, par classe d'actifs, entre ton allocation et celle de ton profil (comptes courants exclus) ; 0 point → 20, 40 points ou plus → 0 ; repère 0 point",
     source: "Questionnaire de profil inspiré de l'adéquation MiFID II ; allocations indicatives de Boussole" },
   geographie: { titre: "Diversification géographique", cible: "au moins la moitié des actions sur le monde entier",
     regle: "Part des actions investies sur le monde entier (indices Monde, ACWI) ; repère 50 % ou plus",
@@ -1023,9 +1230,9 @@ const BP: Record<string, Base> = {
   devises: { titre: "Exposition hors euro", cible: "information, sans note",
     regle: "Part du financier exposée à une autre devise que l'euro (une zone hors Europe compte hors euro) ; information",
     source: "Risque de change : information, pas un défaut" },
-  frais: { titre: "Frais des fonds", cible: "0,3 % par an ou moins",
-    regle: "Frais courants (TER) moyens, pondérés par les montants, des lignes cotées ; repère 0,3 % ou moins",
-    source: "Documents d'informations clés des fonds ; ETF indiciels ≈ 0,1 à 0,3 %, fonds gérés ≈ 1,5 à 2 %" },
+  frais: { titre: "Frais des supports", cible: "0,40 % par an ou moins",
+    regle: "Coût annuel estimé = frais courants des fonds + frais de l'enveloppe (assurance-vie, PER, garde), en % de l'encours investi dont les frais sont connus ; titres en direct, crypto et liquidités à 0 ; SCPI à part ; à compléter sous 70 % de couverture ; repère 0,40 % ou moins",
+    source: "Documents d'informations clés des fonds et conditions des contrats ; repères de Boussole (fiche frais-et-ter)" },
   enveloppes: { titre: "Choix des enveloppes", cible: "aucun point d'attention",
     regle: "PEA avant compte-titres pour les actions européennes · assurance-vie de plus de 8 ans pour l'abattement · PER surtout à partir de 30 % d'imposition",
     source: "Code général des impôts : art. 163 quinquies D (PEA), art. 125-0 A et 990 I (assurance-vie), art. 163 quatervicies (PER)" },
@@ -1037,13 +1244,31 @@ const terDe = (p: any) => p.instrument?.ter ?? null;
 const zoneDe = (p: any) => p.instrument?.zone ?? null;
 const deviseDe = (p: any) => p.instrument?.devise ?? null;
 
-/** banque (facultatif) : { comptes, mois } de banque_comptes / banque_mois, pour le budget réel des comptes courants (matelas, argent dormant) ;
-    absente : celle des données chargées (d.banque, chargerDonnees). */
+/** banque (facultatif) : { comptes, mois } de banque_comptes / banque_mois, pour le budget réel des comptes courants (matelas, argent
+    dormant, taux d'épargne) ; absente : celle des données chargées (d.banque, chargerDonnees). */
 type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string; banque?: any };
+type DepRef = { montant: number; source: string; periode?: string } | null;
 
 function objectifsCourts(objectifs: any[], deja: Record<string, number>, ref: string) {
   return objectifs.filter((o) => o && dateCible(o) && moisEntre(ref, dateCible(o)!) <= HORIZON_COURT)
     .map((o) => ({ o, cible: pos(o.cible), deja: pos(deja[o.id]) }));
+}
+
+/* Matelas (Pratiques : barème et textes d'itemMatelas appliqués au matelas disponible et aux dépenses de référence). */
+function bpMatelas(c: ContexteBP, totaux: Totaux, depRef: DepRef): Critere {
+  const { d, scope } = c, depenses = depRef ? depRef.montant : 0;
+  const mat = matelasDisponible(d.positions, scope, { config: d.config, depenses });
+  const itemMat = itemMatelas({ ...d, config: null, positions: [{ id: "matelas", owner: "p1", bloc: "Épargne", mode: "manual", value: mat.total, status: "actif" }] }, "foyer",
+    { ...totaux, depensesLignes: depenses, depenses });
+  const out: Critere = { ...itemMat, cle: itemMat.cle, titre: itemMat.titre, cible: itemMat.cible, valeur: itemMat.valeur, texte: itemMat.texte, piste: itemMat.piste, aCompleter: itemMat.aCompleter,
+    points: itemMat.points ?? null, sur: 20, ...DE_PLAN.matelas } as Critere;
+  const donnees = d.positions.filter((p) => inScope(p.owner, scope) && counted(p) && ["epargne", "courant"].includes(famille(p)) && val(p) !== 0)
+    .sort((a, b) => val(b) - val(a)).map((p) => donneeLigne(p, famille(p) === "courant" ? { note: "compte courant : seul l'excédent au-delà de la réserve compte" } : {}));
+  if (!itemMat.aCompleter && depRef) out.texte = itemMat.texte.replace(/\.$/, "") +
+    (mat.courants > 0 ? " (dont " + eurP(mat.courantsAuDela) + " sur tes comptes courants au-delà d'une réserve de " + frP(mat.reserveMois) + " mois)" : "") +
+    (depRef.source === "reel" ? ", d'après tes dépenses réelles." : ".");
+  return contrat(out, expliqueMatelas(itemMat.aCompleter ? { mois: null, donnees } : { mois: itemMat.valeur, total: mat.total, epargne: mat.epargne, courants: mat.courants,
+    courantsAuDela: mat.courantsAuDela, reserveMois: mat.reserveMois, reserve: mat.reserve, depenses, source: depRef!.source, periode: depRef!.periode, avecCourants: true, donnees, points: itemMat.points }));
 }
 
 function bpProtection(c: ContexteBP): Critere | null {
@@ -1054,56 +1279,172 @@ function bpProtection(c: ContexteBP): Critere | null {
   const attendus = credit ? ["prevoyance", "emprunteur"] : ["prevoyance"];
   const decl = pr.protection && pr.protection[c.scope] && typeof pr.protection[c.scope] === "object" ? pr.protection[c.scope] : pr.protection;
   const motif = credit && enfants ? "un crédit et des enfants" : credit ? "un crédit en cours" : "des enfants à charge";
+  const libelle: Record<string, string> = { prevoyance: "prévoyance", emprunteur: "assurance emprunteur" };
+  const f20 = (x: number) => (x >= 100 ? 20 : x > 0 ? 8 : 0);
+  const repere = { texte: "Toutes les garanties attendues en place : 20 ; une partie : 8 ; aucune : 0.", zones: zones(f20, 0, 100) };
   if (!decl || attendus.some((k) => typeof decl[k] !== "boolean"))
     return aCompleter("securite", "protection", BP.protection, "Protection non renseignée, alors que tu as " + motif + ".",
-      "Dis à Claude si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.");
+      "Dis à Claude si une prévoyance" + (credit ? " et une assurance emprunteur couvrent" : " couvre") + " le foyer.",
+      { repere, manque: attendus.filter((k) => !decl || typeof decl[k] !== "boolean").map((k) => "Ta " + libelle[k] + " : en place ou non") });
   const okN = attendus.filter((k) => decl[k]).length;
-  const libelle: Record<string, string> = { prevoyance: "prévoyance", emprunteur: "assurance emprunteur" };
   const manque = attendus.filter((k) => !decl[k]).map((k) => libelle[k]);
-  return critere("securite", "protection", BP.protection, { points: okN === attendus.length ? 20 : okN > 0 ? 8 : 0, valeur: okN / attendus.length,
+  const points = okN === attendus.length ? 20 : okN > 0 ? 8 : 0;
+  return contrat(critere("securite", "protection", BP.protection, { points, valeur: okN / attendus.length,
     texte: manque.length ? "Manque : " + manque.join(" et ") + " (tu as " + motif + ")." : "Protection en place pour " + motif + ".",
     piste: manque.length ? "Un décès ou une invalidité ne doit pas mettre le foyer en difficulté : vérifie d'abord les garanties de ton employeur, puis compare les contrats."
-      : "Relis les garanties à chaque changement de situation (naissance, nouveau crédit)." });
+      : "Relis les garanties à chaque changement de situation (naissance, nouveau crédit)." }), {
+    repere, source_donnees: "déclaration (profil)", confiance: "complete",
+    mesure: { valeur: r1c(okN / attendus.length * 100), unite: "%", texte: okN + " garantie" + (okN > 1 ? "s" : "") + " sur " + attendus.length + " en place" },
+    calcul: ["Tu as " + motif + " : garanties attendues : " + attendus.map((k) => libelle[k]).join(" et "),
+      "En place : " + attendus.map((k) => libelle[k] + " (" + (decl[k] ? "oui" : "non") + ")").join(", "),
+      "Barème : toutes → 20 ; une partie → 8 ; aucune → 0 → " + points + "/20"],
+    donnees: attendus.map((k) => ({ libelle: libelle[k].charAt(0).toUpperCase() + libelle[k].slice(1), valeur: decl[k] ? "oui" : "non" })),
+    ameliorer: manque.length ? [{ action: "Mets en place : " + manque.join(" et ") + " (vérifie d'abord les garanties de ton employeur).", gain_points: 20 - points }] : [],
+    pourquoi: manque.length ? "Il manque : " + manque.join(" et ") + ", alors que tu as " + motif + "." : "Les garanties attendues pour " + motif + " sont en place." });
+}
+
+/* Argent sans risque de baisse et disponible (Pratiques.sansRisque) : épargne disponible, monétaire et comptes courants, fonds en euros,
+   obligations courtes identifiées par leur nom ; hors enveloppes bloquées. */
+const RE_FONDS_EUROS = /fonds (en )?euros?\b/;
+const RE_OBLIG_COURTES = /court|short|ultra|\b0 ?[-à] ?[1-3] ?ans?\b|\b1 ?[-à] ?3 ?ans?\b|\b0-[1-3]\b|\b1-3\b/;
+function sansRisque(p: any, classes: Surcharge): boolean {
+  if (liquidite(p.envelope) === "bloque") return false;
+  const cl = classePoche(p.bloc, classes), nom = sansAccent(p.name);
+  return cl === "monetaire" || cl === "fonds_euros" || RE_FONDS_EUROS.test(nom) || (cl === "obligations" && RE_OBLIG_COURTES.test(nom));
 }
 
 function bpLiquidite(c: ContexteBP, deja: Record<string, number>): Critere | null {
   const courts = objectifsCourts(c.objectifs, deja, c.ref);
   if (!courts.length) return null;
-  const besoin = sum(courts, (x) => Math.max(0, x.cible - x.deja));
-  const dispo = sum(c.d.positions.filter((p) => inScope(p.owner, c.scope) && counted(p) && ["immediate", "jours"].includes(liquidite(p.envelope))), val);
-  if (besoin <= 0) return critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: 20,
-    texte: "Tes objectifs à moins de 2 ans sont déjà financés.", piste: "Garde cet argent sur des supports disponibles jusqu'à l'échéance." });
-  const ratio = dispo / besoin;
-  return critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
-    texte: eurP(dispo) + " disponibles sous quelques jours pour " + eurP(besoin) + " encore à réunir d'ici 2 ans.",
+  const besoin = sum(courts, (x) => x.cible);
+  const L = c.d.positions.filter((p) => inScope(p.owner, c.scope) && counted(p) && val(p) > 0);
+  const surs = L.filter((p) => sansRisque(p, c.classes)).sort((a, b) => val(b) - val(a));
+  const sur = sum(surs, val);
+  const dispo = sum(L.filter((p) => ["immediate", "jours"].includes(liquidite(p.envelope)) || sansRisque(p, c.classes)), val);
+  const f = (x: number) => Math.min(1, x / 100) * 20;
+  const repere = { texte: "Argent disponible et peu risqué ≥ montant des objectifs à moins de 2 ans : 20 ; proportionnel en dessous. Actions, levier, crypto et SCPI ne comptent pas : une baisse juste avant l'échéance n'aurait pas le temps de se rattraper.", zones: zones(f, 0, 150) };
+  const objs = courts.map((x) => "« " + (x.o.nom || "objectif") + " » " + eurP(x.cible) + " (échéance " + frDate(dateCible(x.o)!) + ")");
+  if (besoin <= 0) return contrat(critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points: 20,
+    texte: "Tes objectifs à moins de 2 ans sont déjà financés.", piste: "Garde cet argent sur des supports disponibles jusqu'à l'échéance." }), {
+    repere, confiance: "complete", source_donnees: "objectifs et placements", calcul: ["Objectifs à moins de 2 ans : " + objs.join(", "), "Montant à réunir : 0 €"],
+    pourquoi: "Tes objectifs à moins de 2 ans n'ont plus rien à réunir.", mesure: { valeur: 100, unite: "%", texte: "besoin couvert" } });
+  const ratio = sur / besoin;
+  const points = Math.round(Math.min(1, ratio) * 20);
+  return contrat(critere("securite", "liquidite_objectifs", BP.liquidite_objectifs, { points, valeur: ratio,
+    texte: eurP(dispo) + " disponibles, dont " + eurP(sur) + " sans risque de baisse, pour " + eurP(besoin) + " à réunir d'ici 2 ans.",
     piste: ratio >= 1 ? "L'argent de tes projets proches est accessible sans attendre ni vendre au mauvais moment."
-      : "L'argent nécessaire à moins de 2 ans gagne à être disponible et peu risqué (livrets, compte courant) : une baisse des marchés juste avant l'échéance n'aurait pas le temps de se rattraper." });
+      : "L'argent nécessaire à moins de 2 ans gagne à être disponible et peu risqué (livrets, compte courant) : une baisse des marchés juste avant l'échéance n'aurait pas le temps de se rattraper." }), {
+    repere, source_donnees: "objectifs et placements", confiance: "complete",
+    mesure: { valeur: r1c(ratio * 100), unite: "%", texte: pctP(Math.min(ratio, 9.99)) + " du besoin couvert sans risque de baisse" },
+    calcul: ["Objectifs à moins de 2 ans : " + objs.join(", "), "Montant à réunir : " + eurP(besoin),
+      "Disponible sous quelques jours ou semaines : " + eurP(dispo) + ", dont " + eurP(sur) + " sans risque de baisse (épargne disponible, monétaire, fonds en euros)",
+      "Le reste (" + eurP(Math.max(0, dispo - sur)) + " : actions, levier, crypto) ne compte pas pour un projet à moins de 2 ans",
+      eurP(sur) + " ÷ " + eurP(besoin) + " = " + pctP(ratio, 1), "Barème : " + pctP(Math.min(ratio, 1)) + " du besoin → " + points + "/20"],
+    donnees: surs.map((p) => donneeLigne(p)),
+    ameliorer: ratio < 1 ? [{ action: "Place " + eurP(besoin - sur) + " de plus sur un support disponible et peu risqué (livret, fonds en euros) d'ici l'échéance.", gain_points: 20 - points }] : [],
+    pourquoi: ratio >= 1 ? "L'argent sans risque de baisse couvre tes projets à moins de 2 ans."
+      : "Seuls " + eurP(sur) + " sont à la fois disponibles et sans risque de baisse, pour " + eurP(besoin) + " de projets à moins de 2 ans." });
 }
 
+/* Apport : déjà réuni (affecterDeja : poches rattachées, personne de l'objectif, « à recevoir » exclu) ; « à recevoir » rattaché à part. */
 function bpApport(c: ContexteBP, deja: Record<string, number>): Critere | null {
   const L = c.objectifs.filter((o) => o && o.type === "apport");
   if (!L.length) return null;
   const cible = sum(L, (o) => (pos(o.cible) > 0 ? pos(o.cible) : 0.18 * pos(o.prix)));
-  const reuni = sum(L, (o) => pos(deja[o.id]));
-  if (cible <= 0) return aCompleter("effort", "apport", BP.apport, "Montant de l'apport non renseigné.", "Donne à Claude l'apport visé pour ton objectif Apport.");
+  const rattachees = (o: any) => {
+    const poches = Array.isArray(o.poches) ? o.poches : [], env = Array.isArray(o.enveloppes) ? o.enveloppes : [], qui = titulaireObjectif(o);
+    return c.d.positions.filter((p) => p && inScope(p.owner, c.scope) && (!qui || p.owner === qui) && (poches.includes(p.bloc) || env.includes(p.envelope)));
+  };
+  const inclure = (o: any) => o.inclureARecevoir === true || o.inclure_a_recevoir === true;
+  const aRecevoirDe = (o: any) => (o.source === "poches" ? rattachees(o).filter((p) => p.status === "à recevoir") : []);
+  const recus = sum(L.filter(inclure), (o) => sum(aRecevoirDe(o), val));
+  const attendus = sum(L.filter((o) => !inclure(o)), (o) => sum(aRecevoirDe(o), val));
+  const reuni = sum(L, (o) => pos(deja[o.id])) + recus;
+  const f = (x: number) => Math.min(1, x / 100) * 20;
+  const repere = { texte: "Apport réuni ≥ apport visé : 20 ; proportionnel en dessous. Repère des banques : au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien).", zones: zones(f, 0, 150) };
+  if (cible <= 0) return aCompleter("effort", "apport", BP.apport, "Montant de l'apport non renseigné.", "Donne à Claude l'apport visé pour ton objectif Apport.",
+    { repere, manque: ["Le montant de l'apport visé (ou le prix du projet)"] });
   const ratio = reuni / cible;
-  return critere("effort", "apport", BP.apport, { points: Math.round(Math.min(1, ratio) * 20), valeur: ratio,
-    texte: eurP(reuni) + " réunis sur " + eurP(cible) + " d'apport visé (" + pctP(ratio) + ").",
+  const points = Math.round(Math.min(1, ratio) * 20);
+  const donnees: any[] = [];
+  L.forEach((o) => {
+    if (o.source !== "poches") { donnees.push({ libelle: (o.nom || "Apport") + " : montant saisi", valeur: r2c(pos(o.deja)) }); return; }
+    rattachees(o).filter((p) => counted(p) && val(p) > 0).sort((a, b) => val(b) - val(a)).forEach((p) => donnees.push(donneeLigne(p)));
+    aRecevoirDe(o).forEach((p) => donnees.push(donneeLigne(p, { note: inclure(o) ? "à recevoir, compté" : "à recevoir, non compté" })));
+  });
+  const qui = L.map(titulaireObjectif).filter(Boolean);
+  return contrat(critere("effort", "apport", BP.apport, { points, valeur: ratio,
+    texte: eurP(reuni) + " réunis sur " + eurP(cible) + " d'apport visé (" + pctP(ratio) + ")" + (attendus > 0 ? ", + " + eurP(attendus) + " attendus (à recevoir, non comptés)." : "."),
     piste: ratio >= 1 ? "Ton apport est réuni : les banques regarderont aussi ton endettement après l'achat."
-      : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Objectifs indique l'effort mensuel pour y arriver." });
+      : "Les banques attendent en général au moins 10 % du prix plus les frais de notaire (≈ 8 % dans l'ancien) ; Patrimoine › Objectifs indique l'effort mensuel pour y arriver." }), {
+    repere, donnees, source_donnees: "objectifs et placements", confiance: "complete",
+    mesure: { valeur: r1c(ratio * 100), unite: "%", texte: pctP(ratio) + " de l'apport visé" },
+    calcul: ["Apport visé : " + eurP(cible),
+      "Réuni sur les poches et enveloppes rattachées à l'objectif" + (qui.length ? " (lignes de la personne de l'objectif seulement)" : "") + ", réparties en cascade avec tes autres objectifs : " + eurP(reuni - recus),
+      ...(recus > 0 ? ["« À recevoir » compté à ta demande : " + eurP(recus)] : []),
+      ...(attendus > 0 ? ["« À recevoir » non compté tant qu'il n'est pas reçu : " + eurP(attendus)] : []),
+      eurP(reuni) + " ÷ " + eurP(cible) + " = " + pctP(ratio, 1), "Barème : " + pctP(Math.min(ratio, 1)) + " de l'apport → " + points + "/20"],
+    ameliorer: ratio < 1 ? [
+      { action: "Réunis encore " + eurP(cible - reuni) + " sur les poches de l'objectif (Patrimoine › Objectifs indique l'effort mensuel).", gain_points: 20 - points },
+      ...(attendus > 0 ? [{ action: "Quand les " + eurP(attendus) + " attendus seront reçus sur une poche de l'objectif, ton apport passera à " + pctP(Math.min(1, (reuni + attendus) / cible)) + ".", gain_points: gainPts(f, (reuni + attendus) / cible * 100, points) }] : [])] : [],
+    pourquoi: eurP(reuni) + " réunis sur " + eurP(cible) + " visés" + (attendus > 0 ? " ; les " + eurP(attendus) + " à recevoir ne comptent pas encore." : ".") });
+}
+
+/** Taux d'épargne réel (Pratiques.epargneReelle) : épargne versée ÷ revenus des comptes courants ; barème du score de santé. */
+function bpEpargneReelle(reel: any, periode: string): Critere {
+  const t = reel.tauxEpargne as number, points = Math.round(BAREMES.epargne(t * 100));
+  return contrat({ cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus", valeur: t, points, sur: 20, aCompleter: false,
+    texte: "Tu mets de côté " + pctP(t) + " de tes revenus, d'après tes comptes (" + periode + ").",
+    piste: t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."
+      : "Le repère courant est de 15 % des revenus. Les postes les plus lourds du budget sont le premier endroit où regarder.", ...DE_PLAN.epargne } as Critere,
+  expliqueEpargne({ taux: t, revenus: reel.revenus, epargne: reel.epargne, source: "reel", periode, points,
+    donnees: [{ libelle: "Revenus moyens", valeur: r2c(reel.revenus) }, { libelle: "Dépenses moyennes", valeur: r2c(reel.depenses) }, { libelle: "Épargne versée", valeur: r2c(reel.epargne) }] }));
+}
+
+/* Écarts par classe (Pratiques.tableauEcarts) : [{ groupe, libelle, pct, min, max, ecart (signé), hors }]. */
+function tableauEcarts(L: any[]) {
+  const bornes = L.map((e) => (connu(e.reel) && connu(e.min) && connu(e.max) ? { reel: Number(e.reel), min: Number(e.min), max: Number(e.max) } : null));
+  const avec = bornes.filter(Boolean) as { reel: number; min: number; max: number }[];
+  const f = avec.length && avec.every((b) => b.reel <= 1 && b.max <= 1) ? 100 : 1;
+  return L.map((e, i) => {
+    const b = bornes[i], g = e.groupe || "classe", libelle = e.label || g;
+    if (b) {
+      const ecart = (b.reel < b.min ? b.reel - b.min : b.reel > b.max ? b.reel - b.max : 0) * f;
+      return { groupe: g, libelle, pct: r1c(b.reel * f), min: b.min * f, max: b.max * f, ecart: r1c(ecart), hors: Math.abs(ecart) };
+    }
+    return { groupe: g, libelle, pct: null, min: null, max: null, ecart: 0, hors: 0 };
+  });
 }
 
 function bpAdequation(c: ContexteBP, financier: number): Critere {
   const fiche = ficheProfil(c.risque);
+  const repere = { texte: "0 point hors des fourchettes de ton profil : 20 ; 40 points ou plus : 0 (linéaire). Un point = 1 % du financier au-delà de la borne la plus proche.", zones: zones(BAREME_ADEQUATION, 0, 60) };
   if (!fiche) return aCompleter("allocation", "adequation", BP.adequation, "Profil de risque non renseigné.",
-    "Fais ton profil de risque avec Claude (une dizaine de questions) pour comparer ton allocation à celle de ton profil.");
+    "Fais ton profil de risque avec Claude (une dizaine de questions) pour comparer ton allocation à celle de ton profil.", { repere, manque: ["Ton profil de risque (questionnaire)"] });
   if (financier <= 0) return aCompleter("allocation", "adequation", BP.adequation, "Aucun placement enregistré.",
-    "Complète tes placements avec Claude pour les comparer à ton profil.");
-  const hors = sum(ecarts(fiche.id, allocationReelle(c.d.positions, c.scope, c.classes).pct), (e) => Math.abs(e.ecartPts));
-  return critere("allocation", "adequation", BP.adequation, { points: Math.round(interp(hors, BAREME_ADEQUATION)), valeur: Math.round(hors * 10) / 10,
+    "Complète tes placements avec Claude pour les comparer à ton profil.", { repere, manque: ["Tes placements (lignes et montants)"] });
+  const alloc = allocationReelle(c.d.positions, c.scope, c.classes);
+  const tableau = tableauEcarts(ecarts(fiche.id, alloc.pct));
+  const hors = sum(tableau, (e) => e.hors);
+  const points = Math.round(BAREME_ADEQUATION(hors));
+  const total = alloc.total;
+  const decrit = (e: any) => e.libelle + " : " + (e.pct == null ? "?" : frP(e.pct, 1) + " %") + (e.min == null ? "" : " pour une fourchette de " + frP(e.min, 0) + " à " + frP(e.max, 0) + " %") +
+    (e.hors > 0 ? " → " + frP(e.hors, 1) + " point" + (e.hors >= 2 ? "s" : "") + (e.ecart > 0 ? " au-dessus" : " en dessous") : " → dans la fourchette");
+  return contrat(critere("allocation", "adequation", BP.adequation, { points, valeur: Math.round(hors * 10) / 10,
+    tableau: tableau.map((e) => ({ groupe: e.groupe, libelle: e.libelle, pct: e.pct, min: e.min, max: e.max, ecart: e.ecart })),
     texte: hors <= 0 ? "Ton allocation est dans les fourchettes du profil " + fiche.label + "." : frP(hors) + " points hors des fourchettes du profil " + fiche.label + ".",
     piste: hors <= 0 ? "Ta répartition correspond au risque que tu as dit accepter."
-      : "Le détail par classe est dans Pilotage › Risque : rapproche chaque classe de sa fourchette, de préférence avec tes versements à venir." });
+      : "Le détail par classe est dans Pilotage › Risque : rapproche chaque classe de sa fourchette, de préférence avec tes versements à venir." }), {
+    repere, source_donnees: "placements (hors comptes courants) et profil de risque", confiance: "complete",
+    mesure: { valeur: r1c(hors), unite: "points", texte: frP(hors) + " point" + (hors >= 2 ? "s" : "") + " hors des fourchettes" },
+    calcul: ["Profil " + fiche.label + " ; financier comparé (hors comptes courants) : " + eurP(total), ...tableau.map(decrit),
+      "Somme des écarts : " + frP(hors) + " point" + (hors >= 2 ? "s" : ""), "Barème : " + frP(hors) + " → " + points + "/20"],
+    donnees: tableau.map((e) => ({ libelle: e.libelle, valeur: e.pct, unite: "%" })),
+    ameliorer: tableau.filter((e) => e.hors > 0).sort((a, b) => b.hors - a.hors).map((e) => ({
+      action: "Rapproche « " + e.libelle + " » de sa fourchette (" + frP(e.hors, 1) + " point" + (e.hors >= 2 ? "s" : "") + (total ? ", ≈ " + eurP(e.hors / 100 * total) : "") + "), de préférence avec tes versements à venir.",
+      gain_points: gainPts(BAREME_ADEQUATION, hors - e.hors, points) })),
+    pourquoi: hors <= 0 ? "Chaque classe d'actifs est dans la fourchette du profil " + fiche.label + "."
+      : "Ton allocation s'écarte de " + frP(hors) + " point" + (hors >= 2 ? "s" : "") + " des fourchettes du profil " + fiche.label + "." });
 }
 
 const RE_MONDE = /monde|world|acwi|all.?country|global|international/;
@@ -1112,28 +1453,51 @@ function bpGeographie(vivantes: any[], classes: Surcharge): Critere | null {
   const actions = vivantes.filter((p) => classePoche(p.bloc, classes) === "actions" && val(p) > 0);
   const total = sum(actions, val);
   if (total <= 0) return null;
-  const part = sum(actions.filter((p) => RE_MONDE.test(libelleGeo(p))), val) / total;
-  return critere("allocation", "geographie", BP.geographie, { points: Math.round(part >= 0.5 ? 20 : interp(part, BAREME_GEOGRAPHIE)), valeur: part,
+  const monde = actions.filter((p) => RE_MONDE.test(libelleGeo(p)));
+  const part = sum(monde, val) / total;
+  const points = Math.round(BAREME_GEOGRAPHIE(part * 100));
+  return contrat(critere("allocation", "geographie", BP.geographie, { points, valeur: part,
     texte: pctP(part) + " de tes actions couvrent le monde entier ; le reste vise une région, un pays ou des titres en direct.",
     piste: part >= 0.5 ? "Un socle « monde » répartit le risque sur des milliers d'entreprises et plusieurs économies ; tes paris régionaux s'y ajoutent."
-      : "Miser sur une région n'est pas une erreur, mais le risque est plus concentré. Le biais domestique (surpondérer son pays ou sa région) est fréquent : un socle « monde » diversifie davantage." });
+      : "Miser sur une région n'est pas une erreur, mais le risque est plus concentré. Le biais domestique (surpondérer son pays ou sa région) est fréquent : un socle « monde » diversifie davantage." }), {
+    repere: { texte: "50 % des actions ou plus sur le monde entier : 20 ; 0 % : 8 (linéaire entre les deux).", zones: zones(BAREME_GEOGRAPHIE, 0, 100) },
+    source_donnees: "placements (zone de l'instrument, sinon poche et nom)", confiance: "complete",
+    mesure: { valeur: r1c(part * 100), unite: "%", texte: pctP(part) + " des actions sur le monde entier" },
+    calcul: ["Actions (hors comptes courants) : " + eurP(total), "Dont couvrant le monde entier : " + eurP(sum(monde, val)) + (monde.length ? " (" + listeNoms(monde.map((p) => p.name || p.bloc), 4) + ")" : ""),
+      eurP(sum(monde, val)) + " ÷ " + eurP(total) + " = " + pctP(part, 1), "Barème : " + pctP(part, 1) + " → " + points + "/20"],
+    donnees: actions.slice().sort((a, b) => val(b) - val(a)).slice(0, 8).map((p) => donneeLigne(p, { note: RE_MONDE.test(libelleGeo(p)) ? "monde entier" : "région, pays ou titre" })),
+    ameliorer: part < 0.5 ? [{ action: "Oriente ≈ " + eurP((0.5 - part) * total) + " de tes actions (ou tes prochains versements) vers un socle couvrant le monde entier.", gain_points: 20 - points }] : [],
+    pourquoi: pctP(part) + " de tes actions couvrent le monde entier" + (part >= 0.5 ? ", au-dessus du repère de 50 %." : ", sous le repère de 50 %.") });
 }
 
 function bpSpeculatif(c: ContexteBP, vivantes: any[], financier: number): Critere {
   if (financier <= 0) return aCompleter("allocation", "speculatif", BP.speculatif, "Aucun placement enregistré.",
-    "Complète tes placements avec Claude pour mesurer leur part spéculative.");
-  const part = sum(vivantes.filter((p) => ["crypto", "levier"].includes(classeRisque(p, c.classes))), val) / financier;
+    "Complète tes placements avec Claude pour mesurer leur part spéculative.", { manque: ["Tes placements (lignes et montants)"] });
+  const lignes = vivantes.filter((p) => ["crypto", "levier"].includes(classeRisque(p, c.classes)) && val(p) !== 0).sort((a, b) => val(b) - val(a));
+  const spec = sum(lignes, val), part = spec / financier;
   const fiche = ficheProfil(c.risque);
   const s = fiche?.cibles.speculatif;
   const borne = Array.isArray(s) && connu(s[1]) ? (s[1] >= 1 ? s[1] / 100 : s[1]) : null;
   const plafond = borne == null ? PLAFOND_SPECULATIF_DEFAUT : borne;
   const de = borne == null ? "plafond par défaut de " + pctP(plafond) + (fiche ? "" : ", profil de risque non renseigné")
     : "plafond du profil " + fiche!.label + " : " + pctP(plafond);
-  const baremeSpeculatif = plafond > 0 ? [[plafond, 20], [2 * plafond, 0]] : BAREME_SPECULATIF_NUL;
-  return critere("allocation", "speculatif", BP.speculatif, { points: Math.round(interp(part, baremeSpeculatif)), valeur: part, cible: pctP(plafond) + " au plus",
+  const ptsPlafond = [[plafond, 20], [2 * plafond, 0]];
+  const bar = (x: number) => interp(x / 100, plafond > 0 ? ptsPlafond : PTS_SPECULATIF_NUL);
+  const points = Math.round(bar(part * 100));
+  return contrat(critere("allocation", "speculatif", BP.speculatif, { points, valeur: part, cible: pctP(plafond) + " au plus",
     texte: "Crypto et produits à levier : " + pctP(part, 1) + " du financier (" + de + ").",
     piste: part <= plafond ? "Cette part reste dans ce que ton profil peut encaisser : elle pourrait perdre l'essentiel de sa valeur sans compromettre tes projets."
-      : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de ton patrimoine." });
+      : "Ces supports peuvent perdre 80 % ou plus en quelques mois : au-delà du plafond, une telle baisse pèserait sur l'ensemble de ton patrimoine." }), {
+    repere: { texte: "Jusqu'au plafond (" + pctP(plafond) + ") : 20 ; 0 au double du plafond" + (plafond > 0 ? " (" + pctP(2 * plafond) + ")" : " (1 %)") + ", linéaire entre les deux.",
+      zones: zones(bar, 0, Math.max(10, plafond * 300)) },
+    source_donnees: "placements (hors comptes courants)" + (borne == null ? "" : " et profil de risque"), confiance: "complete",
+    mesure: { valeur: r1c(part * 100), unite: "%", texte: pctP(part, 1) + " du financier" },
+    calcul: ["Lignes spéculatives (crypto, produits à levier) : " + (lignes.length ? lignes.map((p) => (p.name || p.bloc) + " " + eurP(val(p))).join(", ") : "aucune"),
+      "Total : " + eurP(spec) + " sur un financier de " + eurP(financier) + " (hors comptes courants)", eurP(spec) + " ÷ " + eurP(financier) + " = " + pctP(part, 1),
+      "Plafond : " + de, "Barème : " + pctP(part, 1) + " → " + points + "/20"],
+    donnees: lignes.map((p) => donneeLigne(p, { poids_pct: r1c(val(p) / financier * 100) })),
+    ameliorer: part > plafond ? [{ action: "Ramène la part spéculative à " + pctP(plafond) + " du financier (≈ " + eurP((part - plafond) * financier) + " de moins sur la crypto et le levier).", gain_points: 20 - points }] : [],
+    pourquoi: "Crypto et levier pèsent " + pctP(part, 1) + " du financier, " + (part <= plafond ? "sous le " : "au-dessus du ") + de + "." });
 }
 
 const RE_EURO = /france|zone euro|eurozone|^eur$|^euro$/;
@@ -1146,29 +1510,153 @@ function bpDevises(vivantes: any[]): Critere | null {
     const z = sansAccent(zone);
     return RE_EURO.test(z) ? 0 : /europe/.test(z) ? null : 1;
   };
-  const connues = vivantes.map((p) => ({ e: exposition(p), v: val(p) })).filter((x) => x.e != null && x.v > 0);
+  const connues = vivantes.map((p) => ({ p, e: exposition(p), v: val(p) })).filter((x) => x.e != null && x.v > 0);
   const total = sum(connues, (x) => x.v);
   if (total <= 0) return null;
-  const part = sum(connues, (x) => x.v * (x.e as number)) / total;
+  const hors = sum(connues, (x) => x.v * (x.e as number)), part = hors / total;
   const couverture = total / Math.max(total, sum(vivantes, val));
-  return critere("allocation", "devises", BP.devises, { informatif: true, points: null, sur: 0, valeur: part,
+  return contrat(critere("allocation", "devises", BP.devises, { informatif: true, points: null, sur: 0, valeur: part,
     texte: pctP(part) + " exposés à une autre devise que l'euro" + (couverture < 0.999 ? " (sur les " + pctP(couverture) + " du financier dont la devise est connue)." : "."),
-    piste: "Ce n'est pas un défaut : une exposition hors euro diversifie, mais les variations de change s'ajoutent à celles des marchés." });
+    piste: "Ce n'est pas un défaut : une exposition hors euro diversifie, mais les variations de change s'ajoutent à celles des marchés." }), {
+    repere: { texte: "Information, sans note : une exposition hors euro diversifie, mais ajoute le risque de change.", zones: [] },
+    source_donnees: "devise et zone des instruments", confiance: couverture < 0.999 ? "partielle" : "complete",
+    mesure: { valeur: r1c(part * 100), unite: "%", texte: pctP(part) + " hors euro" },
+    calcul: ["Financier dont l'exposition est connue : " + eurP(total) + " (" + pctP(couverture) + " du financier)", "Exposé hors euro : " + eurP(hors), eurP(hors) + " ÷ " + eurP(total) + " = " + pctP(part, 1)],
+    donnees: connues.filter((x) => x.e === 1).sort((a, b) => b.v - a.v).slice(0, 8).map((x) => donneeLigne(x.p)),
+    pourquoi: "Information : " + pctP(part) + " de ton financier (dont l'exposition est connue) dépend d'une autre devise que l'euro." });
 }
 
-function bpFrais(vivantes: any[]): Critere | null {
-  const cotees = vivantes.filter((p) => p.mode === "market" && val(p) > 0);
-  const total = sum(cotees, val);
-  if (total <= 0) return null;
-  const avec = cotees.filter((p) => connu(terDe(p)));
-  const couvert = sum(avec, val);
-  if (couvert / total < 0.5) return aCompleter("efficacite", "frais", BP.frais, "Frais inconnus : Claude peut les compléter.",
-    "Demande à Claude de compléter les frais courants (TER) de tes fonds.");
-  const ter = sum(avec, (p) => val(p) * Number(terDe(p))) / couvert;
-  return critere("efficacite", "frais", BP.frais, { points: Math.round(interp(ter, BAREME_FRAIS)), valeur: ter,
-    texte: "Frais moyens de " + frP(ter, 2) + " % par an" + (couvert < total ? " (sur " + pctP(couvert / total) + " des lignes cotées)." : "."),
-    piste: ter <= 0.3 ? "Tes frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
-      : "1 % de frais par an coûte environ 18 % du capital sur 20 ans : regarde quelles lignes pèsent le plus ; des fonds indiciels équivalents existent souvent." });
+/* ---------- frais des supports (Pratiques.fraisSupports, spec cp4 § 2) ---------- */
+const RE_CONTRAT = /assurance.?vie|\bav\b|capitalisation|\bper\b|\bperin\b|\bperp\b|\bperco\b|\bpercol\b|\bpereco\b|\bmadelin\b|retraite/;
+const RE_FONDS = /\betf\b|\betc\b|ucits|\bfonds\b|\bfund\b|sicav|\bfcp\b|opcvm|tracker|indiciel|\bindex\b|\bmsci\b|s&p|stoxx|nasdaq|ftse|russell|amundi|lyxor|ishares|xtrackers|\bspdr\b|vanguard|invesco|wisdomtree/;
+const RE_SCPI = /\bscpi\b|\bopci\b/;
+/** Nature d'une ligne pour les frais : scpi (à part), fonds_euros, crypto, liquidites, fonds (ETF, OPCVM, unités de compte), direct. */
+function natureFrais(p: any, classes: Surcharge, ter: unknown): string {
+  const nom = sansAccent(p.name), env = sansAccent(p.envelope), cl = classePoche(p.bloc, classes);
+  if (cl === "immobilier" || RE_SCPI.test(nom) || RE_SCPI.test(sansAccent(p.bloc))) return "scpi";
+  if (cl === "fonds_euros" || RE_FONDS_EUROS.test(nom)) return "fonds_euros";
+  if (cl === "crypto" || /crypto|binance/.test(env)) return "crypto";
+  if (cl === "monetaire" && !RE_FONDS.test(nom) && !connu(ter)) return "liquidites";
+  if (RE_CONTRAT.test(env) || connu(ter) || RE_FONDS.test(nom) || /^(ie|lu)/.test(sansAccent(p.isin))) return "fonds";
+  return "direct";
+}
+/** Frais d'une enveloppe : config.frais_enveloppes[nom] (nom exact, ou sans accents ni casse). */
+function fraisEnveloppe(config: any, env: string) {
+  const F = config && config.frais_enveloppes;
+  if (!F || typeof F !== "object" || !env) return null;
+  if (F[env] && typeof F[env] === "object") return F[env];
+  const k = Object.keys(F).find((x) => sansAccent(x) === sansAccent(env));
+  return k && F[k] && typeof F[k] === "object" ? F[k] : null;
+}
+/** Repères de classe (jamais un produit nommé) : frais courants habituels d'un fonds indiciel de la classe. */
+const REPERES_FRAIS: Record<string, { bas: number; haut: number; texte: string }> = {
+  actions: { bas: 0.1, haut: 0.3, texte: "un fonds indiciel actions (monde, Europe, États-Unis) coûte souvent 0,10 à 0,30 % par an" },
+  emergents: { bas: 0.15, haut: 0.4, texte: "un fonds indiciel actions émergentes coûte souvent 0,15 à 0,40 % par an" },
+  small_caps: { bas: 0.2, haut: 0.45, texte: "un fonds indiciel petites capitalisations coûte souvent 0,20 à 0,45 % par an" },
+  obligations: { bas: 0.1, haut: 0.3, texte: "un fonds indiciel obligataire coûte souvent 0,10 à 0,30 % par an" },
+  or: { bas: 0.12, haut: 0.3, texte: "un support or coté (ETC) coûte souvent 0,12 à 0,30 % par an" },
+  levier: { bas: 0.3, haut: 0.6, texte: "un ETF à effet de levier coûte souvent 0,30 à 0,60 % par an" },
+  monetaire: { bas: 0.05, haut: 0.2, texte: "un fonds monétaire coûte souvent 0,05 à 0,20 % par an" },
+};
+const projete = (capital: number, f: number, ans: number, r: number) => capital * (Math.pow(1 + r / 100, ans) - Math.pow(1 + (r - f) / 100, ans));
+
+/** Frais des supports des lignes comptées du périmètre (Pratiques.fraisSupports) : encours investi (famille investissement, hors SCPI),
+    frais connus (frais courants des fonds + frais d'enveloppe), couverture, coût en € et en %, lignes les plus coûteuses, lignes au-dessus
+    du repère de leur classe, SCPI à part, projection à rendement égal (5 % par an). Injecté dans analyser (angle frais). */
+function fraisSupports(vivantes: any[], o: { classes: Surcharge; config: any }) {
+  const L = (vivantes || []).filter((p) => famille(p) === "investissement" && val(p) > 0);
+  const scpi: any[] = [], lignes: any[] = [], fondsSansFrais: any[] = [], aCompleterEnv = new Set<string>();
+  L.forEach((p) => {
+    const ter = terDe(p), nature = natureFrais(p, o.classes, ter), v = val(p);
+    if (nature === "scpi") { scpi.push({ id: p.id, nom: p.name || "SCPI", enveloppe: p.envelope || null, valeur: r2c(v) }); return; }
+    const contratEnv = RE_CONTRAT.test(sansAccent(p.envelope)), fe = fraisEnveloppe(o.config, p.envelope);
+    const garde = fe && connu(fe.garde_pct) ? Number(fe.garde_pct) : 0;
+    let fonds = 0, env = garde, terConnu = true, envConnu = true;
+    if (nature === "fonds") {
+      if (connu(ter)) fonds = Number(ter); else terConnu = false;
+      if (contratEnv) { if (fe && connu(fe.gestion_uc_pct)) env += Number(fe.gestion_uc_pct); else envConnu = false; }
+    } else if (nature === "fonds_euros" && contratEnv) { if (fe && connu(fe.gestion_euro_pct)) env += Number(fe.gestion_euro_pct); else envConnu = false; }
+    if (!terConnu) fondsSansFrais.push({ id: p.id, nom: p.name || p.bloc || "Fonds", enveloppe: p.envelope || null, valeur: r2c(v) });
+    if (!envConnu) aCompleterEnv.add(String(p.envelope || ""));
+    const estConnu = terConnu && envConnu, total = fonds + env;
+    lignes.push({ id: p.id, nom: p.name || p.bloc || "Ligne", enveloppe: p.envelope || null, nature, classe: classeRisque(p, o.classes), valeur: v,
+      ter: nature === "fonds" && terConnu ? fonds : null, enveloppePct: envConnu ? env : null, totalPct: estConnu ? total : null, connu: estConnu,
+      cout: estConnu ? v * total / 100 : null });
+  });
+  const encours = sum(lignes, (l) => l.valeur), connues = lignes.filter((l) => l.connu), encoursConnu = sum(connues, (l) => l.valeur);
+  const cout = sum(connues, (l) => l.cout), coutFonds = sum(connues, (l) => l.valeur * (l.ter || 0) / 100);
+  const r = RENDEMENT_PROJECTION;
+  const auDessus = lignes.filter((l) => l.ter != null && l.ter > 0.5 && REPERES_FRAIS[l.classe] && l.ter > REPERES_FRAIS[l.classe].haut)
+    .map((l) => ({ id: l.id, nom: l.nom, enveloppe: l.enveloppe, valeur: r2c(l.valeur), ter: l.ter, classe: l.classe, repere: REPERES_FRAIS[l.classe],
+      ecartPct: r2c(l.ter - REPERES_FRAIS[l.classe].haut), surcout: r2c(l.valeur * (l.ter - REPERES_FRAIS[l.classe].haut) / 100) }))
+    .sort((a, b) => b.surcout - a.surcout);
+  const surcout = sum(auDessus, (x) => x.surcout);
+  return {
+    encours: r2c(encours), encoursConnu: r2c(encoursConnu), couverture: encours > 0 ? encoursConnu / encours : 0,
+    cout: r2c(cout), coutFonds: r2c(coutFonds), coutEnveloppes: r2c(cout - coutFonds), pct: encoursConnu > 0 ? cout / encoursConnu * 100 : null,
+    lignes, scpi: scpi.sort((a, b) => b.valeur - a.valeur), fondsSansFrais: fondsSansFrais.sort((a, b) => b.valeur - a.valeur), enveloppesACompleter: [...aCompleterEnv].filter(Boolean).sort(),
+    plusCouteuses: connues.filter((l) => l.cout > 0).sort((a, b) => b.cout - a.cout || String(a.nom).localeCompare(String(b.nom))).slice(0, 5)
+      .map((l) => ({ id: l.id, nom: l.nom, enveloppe: l.enveloppe, valeur: r2c(l.valeur), fraisPct: r2c(l.totalPct), coutAnnuel: r2c(l.cout) })),
+    auDessusRepere: auDessus,
+    projection: { rendementPct: r,
+      frais: { ans10: Math.round(sum(connues, (l) => projete(l.valeur, l.totalPct, 10, r))), ans20: Math.round(sum(connues, (l) => projete(l.valeur, l.totalPct, 20, r))) },
+      ecart: { annuel: r2c(surcout), ans10: Math.round(sum(auDessus, (x) => projete(x.valeur, x.ecartPct, 10, r))), ans20: Math.round(sum(auDessus, (x) => projete(x.valeur, x.ecartPct, 20, r))) } },
+  };
+}
+/** Détail des frais pour la sortie du connecteur (snake_case). */
+const vueFrais = (fs: ReturnType<typeof fraisSupports>) => ({
+  encours: fs.encours, encours_connu: fs.encoursConnu, couverture: Math.round(fs.couverture * 1000) / 1000, cout: fs.cout, pct: fs.pct == null ? null : r2c(fs.pct),
+  plus_couteuses: fs.plusCouteuses.map((l) => ({ id: l.id, nom: l.nom, enveloppe: l.enveloppe, valeur: l.valeur, frais_pct: l.fraisPct, cout_annuel: l.coutAnnuel })),
+  au_dessus_repere: fs.auDessusRepere.map((x) => ({ id: x.id, nom: x.nom, enveloppe: x.enveloppe, valeur: x.valeur, ter: x.ter, classe: x.classe, repere: x.repere, ecart_pct: x.ecartPct, surcout: x.surcout })),
+  scpi: fs.scpi, fonds_sans_frais: fs.fondsSansFrais, enveloppes_a_completer: fs.enveloppesACompleter,
+  projection: { rendement_pct: fs.projection.rendementPct, frais: fs.projection.frais, ecart: fs.projection.ecart },
+});
+
+function bpFrais(c: ContexteBP, vivantes: any[]): Critere | null {
+  const fs = fraisSupports(vivantes, { classes: c.classes, config: c.d.config });
+  if (fs.encours <= 0) return null;
+  const repere = { texte: "0,40 % par an ou moins : 20 ; jusqu'à 0,75 % : 15 ; jusqu'à 1,20 % : 10 ; jusqu'à 1,80 % : 5 ; au-delà : 0 (repères de Boussole, fiche frais-et-ter). Repère de classe : " + REPERES_FRAIS.actions.texte + ".",
+    zones: zones(BAREME_FRAIS, 0, 2.5) };
+  const pc = fs.pct, cv = fs.couverture;
+  const calcul = ["Encours investi (hors SCPI, livrets et comptes courants) : " + eurP(fs.encours),
+    "Dont frais connus : " + eurP(fs.encoursConnu) + " (" + pctP(cv) + ") ; titres en direct, crypto et liquidités comptent pour 0 %",
+    "Frais des fonds : " + eurP(fs.coutFonds) + " par an ; frais d'enveloppe : " + eurP(fs.coutEnveloppes) + " par an",
+    "Coût total : " + eurP(fs.cout) + (pc == null ? "" : " ÷ " + eurP(fs.encoursConnu) + " = " + frP(pc, 2) + " % par an")];
+  if (fs.scpi.length) calcul.push("SCPI (" + eurP(sum(fs.scpi, (x) => x.valeur)) + ") à part : frais de souscription (souvent 8 à 12 % à l'entrée) et de gestion (prélevés sur les loyers), non comparables à des frais courants, hors note");
+  const manque = [...(fs.fondsSansFrais.length ? ["Frais courants de " + fs.fondsSansFrais.length + " fonds : " + listeNoms(fs.fondsSansFrais.map((x) => x.nom), 5)] : []),
+    ...fs.enveloppesACompleter.map((e) => "Frais de gestion du contrat « " + e + " » (unités de compte, fonds en euros)")];
+  const donnees = [...fs.plusCouteuses.map((l) => ({ libelle: l.nom + " (" + frP(l.fraisPct, 2) + " % par an)", valeur: l.coutAnnuel, unite: "€ par an", lien: l.id ? { ligne: l.id } : { enveloppe: l.enveloppe } })),
+    ...fs.fondsSansFrais.slice(0, 8).map((x) => ({ libelle: x.nom + " (frais inconnus)", valeur: x.valeur, lien: x.id ? { ligne: x.id } : { enveloppe: x.enveloppe } })),
+    ...fs.enveloppesACompleter.map((e) => ({ libelle: e + " (frais du contrat à compléter)", valeur: null, lien: { enveloppe: e } }))];
+  const completer = (fs.fondsSansFrais.length ? fs.fondsSansFrais.length + " fonds (dont " + listeNoms(fs.fondsSansFrais.map((x) => x.nom), 2) + ")" : "") +
+    (fs.fondsSansFrais.length && fs.enveloppesACompleter.length ? " et " : "") + (fs.enveloppesACompleter.length ? "les frais de " + listeNoms(fs.enveloppesACompleter, 2) : "");
+  if (cv < SEUIL_FRAIS) {
+    calcul.push("Couverture de " + pctP(cv) + ", sous le seuil de 70 % : pas de note");
+    return Object.assign(aCompleter("efficacite", "frais", BP.frais,
+      "Frais connus sur " + pctP(cv) + " de tes placements : coût partiel de " + eurP(fs.cout) + " par an" + (pc == null ? "." : " (" + frP(pc, 2) + " %)."),
+      "Demande à Claude de compléter les frais courants de tes fonds et les frais de tes contrats (assurance-vie, PER).", {
+        repere, calcul, donnees, manque, confiance: cv > 0 ? "partielle" : "absente", source_donnees: "frais des fonds et des contrats renseignés",
+        mesure: { valeur: pc == null ? null : r2c(pc), unite: "% par an", texte: "coût partiel : " + eurP(fs.cout) + " par an sur " + pctP(cv) + " de tes placements" },
+        pourquoi: "Pas encore de note : les frais ne sont connus que pour " + pctP(cv) + " de tes placements (il en faut 70 %).",
+        ameliorer: [{ action: "Fais compléter par Claude " + (completer || "les frais manquants") + " : la note sera calculée au-delà de 70 % de couverture.", gain_points: null }] }),
+      { valeur: pc, frais: vueFrais(fs) });
+  }
+  const points = BAREME_FRAIS(pc as number);
+  calcul.push("Barème : " + frP(pc as number, 2) + " % → " + points + "/20");
+  if (fs.auDessusRepere.length) calcul.push("Projection de l'écart au repère de classe, à rendement brut égal de " + frP(RENDEMENT_PROJECTION, 0) + " % par an (hypothèse) : ≈ " +
+    eurP(fs.projection.ecart.ans10) + " sur 10 ans, " + eurP(fs.projection.ecart.ans20) + " sur 20 ans");
+  const apres = fs.encoursConnu > 0 ? (fs.cout - fs.projection.ecart.annuel) / fs.encoursConnu * 100 : (pc as number);
+  return contrat(critere("efficacite", "frais", BP.frais, { points, valeur: pc, frais: vueFrais(fs),
+    texte: "Coût estimé de " + frP(pc as number, 2) + " % par an, soit " + eurP(fs.cout) + " par an" + (cv < 0.999 ? " (sur les " + pctP(cv) + " de tes placements dont les frais sont connus)." : "."),
+    piste: (pc as number) <= 0.4 ? "Tes frais sont bas : sur 20 ans, chaque 0,1 % économisé compte."
+      : "Un écart de frais se compose : regarde d'abord les lignes qui coûtent le plus en euros et le repère de leur classe d'actifs." }), {
+    repere, calcul, donnees, manque, source_donnees: "frais des fonds et des contrats renseignés", confiance: cv >= 0.999 ? "complete" : "partielle",
+    mesure: { valeur: r2c(pc as number), unite: "% par an", texte: frP(pc as number, 2) + " % par an, soit " + eurP(fs.cout) + " par an" },
+    ameliorer: [
+      ...(fs.auDessusRepere.length ? [{ action: "Si " + (fs.auDessusRepere.length > 1 ? "les " + fs.auDessusRepere.length + " lignes au-dessus du repère de leur classe coûtaient" : "« " + fs.auDessusRepere[0].nom + " » coûtait") +
+        " le haut de ce repère, ton coût passerait à " + frP(apres, 2) + " % par an (≈ −" + eurP(fs.projection.ecart.annuel) + " par an).", gain_points: gainPts(BAREME_FRAIS, apres, points) }] : []),
+      ...(cv < 0.999 && completer ? [{ action: "Fais compléter par Claude " + completer + " pour une note sur tous tes placements.", gain_points: null }] : [])],
+    pourquoi: "Tes placements coûtent environ " + frP(pc as number, 2) + " % par an (" + eurP(fs.cout) + "), " + ((pc as number) <= 0.4 ? "dans le repère de 0,40 %." : "au-dessus du repère de 0,40 %.") });
 }
 
 const RE_CTO = /\bcto\b|compte[- ]?titres?/, RE_PEA = /\bpea\b/, RE_PER = /\bper\b|\bperin\b|\bperco\b/, RE_AV = /assurance.?vie|\bav\b|capitalisation/;
@@ -1197,6 +1685,11 @@ function datesAV(env: string, profil: any, config: any): { ouverture?: string; h
   const ms = (config && Array.isArray(config.milestones) ? config.milestones : []).find((m: any) => m && m.date && RE_AV.test(titre(m)) && /8 ans/.test(titre(m)));
   return ms ? { huitAns: ms.date } : null;
 }
+const ACTIONS_ENVELOPPES: Record<string, string> = {
+  pea: "Les actions européennes de ton compte-titres seraient éligibles au PEA, qui a encore de la place.",
+  av: "Prévois l'argent de cet objectif ailleurs, ou une échéance après les 8 ans du contrat.",
+  per: "Vérifie l'intérêt de tes versements sur le PER au regard de ta tranche d'imposition.",
+};
 function bpEnveloppes(c: ContexteBP, vivantes: any[], deja: Record<string, number>): Critere | null {
   const classes = c.classes, details: { cle: string; statut: string; texte: string }[] = [], env = (p: any) => sansAccent(p.envelope);
   const alerts = c.d.config && c.d.config.alerts;
@@ -1235,76 +1728,105 @@ function bpEnveloppes(c: ContexteBP, vivantes: any[], deja: Record<string, numbe
   }
   if (!details.length) return null;
   const pb = details.filter((x) => x.statut === "probleme");
-  return critere("efficacite", "enveloppes", BP.enveloppes, { points: Math.max(0, 20 - 6 * pb.length), valeur: pb.length, details,
+  const f = (k: number) => Math.max(0, 20 - 6 * k), points = f(pb.length);
+  const envs = [...new Set(vivantes.filter((p) => RE_CTO.test(env(p)) || RE_PEA.test(env(p)) || RE_AV.test(env(p)) || RE_PER.test(env(p))).map((p) => p.envelope).filter(Boolean))].sort() as string[];
+  return contrat(critere("efficacite", "enveloppes", BP.enveloppes, { points, valeur: pb.length, details,
     texte: pb.length ? pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention sur le choix des enveloppes." : "Tes enveloppes sont utilisées dans le bon ordre.",
-    piste: pb.length ? pb.map((x) => x.texte).join(" ") : "Rien à changer : chaque enveloppe joue son rôle fiscal." });
+    piste: pb.length ? pb.map((x) => x.texte).join(" ") : "Rien à changer : chaque enveloppe joue son rôle fiscal." }), {
+    repere: { texte: "Aucun point d'attention : 20 ; 6 points de moins par point d'attention (plancher 0).", zones: zones(f, 0, 4) },
+    source_donnees: "placements, profil (tranche d'imposition, ouverture des contrats) et objectifs", confiance: details.some((x) => x.statut === "neutre") ? "partielle" : "complete",
+    mesure: { valeur: pb.length, unite: "points d'attention", texte: pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention" },
+    calcul: [...details.map((x) => (({ probleme: "À revoir : ", ok: "Bon : ", note: "À noter : ", neutre: "Inconnu : " } as Record<string, string>)[x.statut] || "") + x.texte), "Barème : 20 − 6 × " + pb.length + " → " + points + "/20"],
+    donnees: envs.map((e) => ({ libelle: e, valeur: r2c(sum(vivantes.filter((p) => p.envelope === e), val)), lien: { enveloppe: e } })),
+    manque: details.filter((x) => x.statut === "neutre").map((x) => x.texte),
+    ameliorer: pb.map((x) => ({ action: ACTIONS_ENVELOPPES[x.cle] || x.texte, gain_points: Math.min(6, 20 - points) })),
+    pourquoi: pb.length ? pb.length + " point" + (pb.length > 1 ? "s" : "") + " d'attention : " + pb.map((x) => x.texte).join(" ") : "Chaque enveloppe joue son rôle fiscal." });
 }
 
-function bpDormant(c: ContexteBP, vivantes: any[], depenses: number, deja: Record<string, number>): Critere {
+function bpDormant(c: ContexteBP, vivantes: any[], depRef: DepRef, deja: Record<string, number>): Critere {
+  const depenses = depRef ? depRef.montant : 0;
   if (!(depenses > 0)) return aCompleter("efficacite", "dormant", BP.dormant, "Dépenses mensuelles inconnues.",
-    "Donne tes dépenses à Claude pour mesurer l'argent qui dort.");
-  const livrets = sum(vivantes.filter((p) => classePoche(p.bloc, c.classes) === "monetaire"), val);
+    "Donne tes dépenses à Claude pour mesurer l'argent qui dort.", { manque: ["Tes dépenses mensuelles (budget, ou banque connectée)"] });
+  const L = vivantes.filter((p) => classePoche(p.bloc, c.classes) === "monetaire");
+  const livrets = sum(L, val);
   const reserve = sum(objectifsCourts(c.objectifs, deja, c.ref).filter((x) => x.o.type !== "matelas"), (x) => x.cible);
   const mois = Math.max(0, livrets - reserve) / depenses;
-  return critere("efficacite", "dormant", BP.dormant, { points: Math.round(mois <= 12 ? 20 : interp(mois, BAREME_DORMANT)), valeur: mois,
+  const points = Math.round(BAREME_DORMANT(mois));
+  const src = depRef!.source === "reel" ? "réel" + (depRef!.periode ? ", " + depRef!.periode : "") : "budget prévu";
+  return contrat(critere("efficacite", "dormant", BP.dormant, { points, valeur: mois,
     texte: frP(mois) + " mois de dépenses sur livrets et monétaire" + (reserve > 0 ? ", hors " + eurP(reserve) + " réservés aux projets à moins de 2 ans." : "."),
     piste: mois <= 12 ? "Ton argent disponible correspond à tes besoins : rien ne dort inutilement."
-      : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à ton profil." });
+      : "Au-delà d'un an de dépenses, l'argent des livrets perd souvent face à l'inflation : une partie pourrait servir un objectif de long terme, sur un support adapté à ton profil." }), {
+    repere: { texte: "12 mois de dépenses ou moins sur livrets et monétaire : 20 ; 24 mois : 10 ; 36 mois ou plus : 5.", zones: zones(BAREME_DORMANT, 0, 48) },
+    source_donnees: src, confiance: "complete",
+    mesure: { valeur: r1c(mois), unite: "mois", texte: frP(mois) + " mois de dépenses" },
+    calcul: ["Livrets, monétaire et comptes courants : " + eurP(livrets), ...(reserve > 0 ? ["Réservé aux projets à moins de 2 ans (hors matelas) : " + eurP(reserve)] : []),
+      "Dépenses mensuelles (" + src + ") : " + eurP(depenses), eurP(Math.max(0, livrets - reserve)) + " ÷ " + eurP(depenses) + " = " + frP(mois) + " mois",
+      "Barème : " + frP(mois) + " mois → " + points + "/20"],
+    donnees: L.filter((p) => val(p) > 0).sort((a, b) => val(b) - val(a)).map((p) => donneeLigne(p)),
+    ameliorer: mois > 12 ? [{ action: "Affecte ≈ " + eurP((mois - 12) * depenses) + " (au-delà de 12 mois de dépenses) à un objectif de long terme, sur un support adapté à ton profil.", gain_points: 20 - points }] : [],
+    pourquoi: frP(mois) + " mois de dépenses dorment sur livrets et monétaire" + (mois <= 12 ? ", dans le repère de 12 mois." : ", au-delà du repère de 12 mois.") });
 }
 
 const sansIndefini = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
-/** Bonnes pratiques (Pratiques.evaluer) : critères, totaux par famille (somme ÷ (20 × critères notés) × 100) et total pondéré. */
+const estNote = (x: Critere) => !x.aCompleter && !x.informatif && x.points != null;
+/** Bonnes pratiques (Pratiques.evaluer) : critères au contrat cp4, totaux par famille (somme ÷ (20 × critères notés) × 100), total pondéré,
+    couverture (critères notés ÷ attendus, provisoire sous 60 %), points perdus et « ce qui te coûte le plus ». */
 function bonnesPratiques(c: ContexteBP) {
   const { d, scope } = c;
   const totaux = budgetTotaux(d, scope);
   const cu = d.config?.cushion;
   const prevu = totaux.depensesLignes > 0 ? totaux.depenses : cu && typeof cu === "object" && cu.mode === "months" && pos(cu.depenses) > 0 ? pos(cu.depenses) : 0;
-  /* Dépenses de référence (matelas, argent dormant) : budget réel des comptes courants (foyer seulement), sinon budget prévu. */
+  /* Dépenses de référence (matelas, argent dormant) et taux d'épargne : budget réel des comptes courants (foyer seulement), sinon budget prévu. */
   const reel = scope === "foyer" ? budgetReel(c.banque ?? c.d.banque, c.ref) : null;
-  const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel" } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
-  const depenses = depRef ? depRef.montant : 0;
+  const periode = reel ? periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
+  const depRef: DepRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
   const deja = affecterDeja(c.objectifs, d.positions, scope);
   const vivantes = d.positions.filter((p) => inScope(p.owner, scope) && counted(p));
   /* Famille Allocation (adéquation, diversification, géographie, spéculatif, devises) : sans les comptes courants. */
   const placements = horsCourants(vivantes);
   const financierPlacements = sum(placements, val);
-  const plan = (i: Item): Critere => ({ cle: i.cle, titre: i.titre, cible: i.cible, valeur: i.valeur, texte: i.texte, piste: i.piste, aCompleter: i.aCompleter,
-    points: i.aCompleter ? 0 : Math.round(i.points ?? 0), sur: 20, ...DE_PLAN[i.cle] });
-  /* Matelas (Pratiques : barème et textes d'itemMatelas appliqués au matelas disponible et aux dépenses de référence). */
-  const mat = matelasDisponible(d.positions, scope, { config: d.config, depenses });
-  const itemMat = itemMatelas({ ...d, config: null, positions: [{ owner: "p1", bloc: "Épargne", mode: "manual", value: mat.total, status: "actif" }] }, "foyer",
-    { ...totaux, depensesLignes: depenses, depenses });
-  const critMatelas = plan(itemMat);
-  if (!itemMat.aCompleter && depRef) critMatelas.texte = itemMat.texte.replace(/\.$/, "") +
-    (mat.courants > 0 ? " (dont " + eurP(mat.courantsAuDela) + " sur tes comptes courants au-delà d'une réserve de " + frP(mat.reserveMois) + " mois)" : "") +
-    (depRef.source === "reel" ? ", d'après tes dépenses réelles." : ".");
+  const plan = (i: Item): Critere => ({ ...i, cle: i.cle, titre: i.titre, cible: i.cible, valeur: i.valeur, texte: i.texte, piste: i.piste, aCompleter: i.aCompleter,
+    points: i.points ?? null, sur: 20, ...DE_PLAN[i.cle] } as Critere);
+  const epargne = reel && reel.revenus > 0 && reel.tauxEpargne != null ? bpEpargneReelle(reel, periode) : plan(itemEpargne(totaux));
   const criteres = [
-    critMatelas, bpProtection(c), bpLiquidite(c, deja),
-    plan(itemEpargne(totaux)), plan(itemEndettement(totaux)), bpApport(c, deja),
+    bpMatelas(c, totaux, depRef), bpProtection(c), bpLiquidite(c, deja),
+    epargne, plan(itemEndettement(totaux, d, scope)), bpApport(c, deja),
     bpAdequation(c, financierPlacements), plan(itemConcentration({ ...d, positions: horsCourants(d.positions) }, scope)), bpGeographie(placements, c.classes),
     bpSpeculatif(c, placements, financierPlacements), bpDevises(placements),
-    bpFrais(vivantes), bpEnveloppes(c, vivantes, deja), bpDormant(c, vivantes, depenses, deja),
+    bpFrais(c, vivantes), bpEnveloppes(c, vivantes, deja), bpDormant(c, vivantes, depRef, deja),
   ].filter(Boolean) as Critere[];
   const familles = FAMILLES.map((f) => {
     const cs = criteres.filter((x) => x.famille === f.cle);
-    const notes = cs.filter((x) => !x.aCompleter && !x.informatif);
+    const notes = cs.filter(estNote), attendus = cs.filter((x) => !x.informatif).length;
     return { cle: f.cle, titre: f.titre, poids: f.poids, criteres: cs.map((x) => x.cle),
-      total: notes.length ? Math.round(sum(notes, (x) => num(x.points)) / (20 * notes.length) * 100) : null };
+      total: notes.length ? Math.round(sum(notes, (x) => num(x.points)) / (20 * notes.length) * 100) : null,
+      notes: notes.length, attendus, couverture: attendus ? Math.round(notes.length / attendus * 1000) / 1000 : 0, couverture_texte: texteCouverture(notes.length, attendus) };
   });
   const notees = familles.filter((f) => f.total != null);
-  const poids = sum(notees, (f) => f.poids);
-  const comptes = criteres.filter((x) => !x.informatif);
-  // Couverture = part du poids des familles réellement notées ; sous 50 %, la note est provisoire (identique à Pratiques.agreger).
-  const couverture = poids / sum(FAMILLES, (f) => f.poids);
+  const W = sum(notees, (f) => f.poids);
+  /* Points perdus et gains rapportés à la note globale (sur 100), comme Pratiques.agreger. */
+  criteres.forEach((x) => {
+    const f = familles.find((y) => y.cle === x.famille);
+    const k = f && estNote(x) && W > 0 ? f.poids / W * 100 / (20 * f.notes) : null;
+    x.points_perdus = k == null ? null : r1c((20 - num(x.points)) * k);
+    (Array.isArray(x.ameliorer) ? x.ameliorer : []).forEach((a: Ameliorer) => { a.gain_note = k == null || a.gain_points == null ? null : r1c(a.gain_points * k); });
+  });
+  const attendus = criteres.filter((x) => !x.informatif).length, nbNotes = criteres.filter(estNote).length;
+  // Couverture = critères notés ÷ critères attendus (hors informatifs) ; sous 60 %, la note est provisoire (identique à Pratiques.agreger).
+  const couverture = attendus ? nbNotes / attendus : 0;
   return {
-    total: poids > 0 ? Math.round(sum(notees, (f) => (f.total as number) * f.poids) / poids) : null,
+    total: W > 0 ? Math.round(sum(notees, (f) => (f.total as number) * f.poids) / W) : null,
     couverture: Math.round(couverture * 1000) / 1000,
-    provisoire: couverture < 0.5,
-    complet: comptes.length > 0 && comptes.every((x) => !x.aCompleter),
+    criteres_notes: nbNotes, criteres_attendus: attendus, couverture_texte: texteCouverture(nbNotes, attendus),
+    provisoire: couverture < SEUIL_PROVISOIRE,
+    complet: attendus > 0 && criteres.filter((x) => !x.informatif).every((x) => !x.aCompleter),
     familles,
     criteres: criteres.map((x) => sansIndefini({ cle: x.cle, famille: x.famille, titre: x.titre, points: x.points, sur: x.sur, a_completer: x.aCompleter, informatif: x.informatif || undefined,
-      valeur: x.valeur == null ? null : Math.round(x.valeur * 1000) / 1000, cible: x.cible, texte: x.texte, piste: x.piste, regle: x.regle, source: x.source, details: x.details })),
-    calcul: "Critère sur 20 ; famille = somme des points ÷ (20 × critères notés) × 100 ; total = moyenne des familles notées pondérée 30 / 25 / 30 / 15 (Sécurité, Effort, Allocation, Efficacité), null si aucune famille n'est notée. Couverture = poids des familles notées ÷ 100 ; sous 50 %, la note est provisoire (à présenter comme telle). Critères à compléter et informatifs exclus des totaux ; critères sans objet omis.",
+      valeur: x.valeur == null ? null : Math.round(x.valeur * 1000) / 1000, cible: x.cible, texte: x.texte, piste: x.piste, regle: x.regle, source: x.source, details: x.details,
+      tableau: x.tableau, frais: x.frais, ...champsContrat(x) })),
+    couts_principaux: coutsPrincipaux(criteres),
+    calcul: "Critère sur 20 ; famille = somme des points ÷ (20 × critères notés) × 100 ; total = moyenne des familles notées pondérée 30 / 25 / 30 / 15 (Sécurité, Effort, Allocation, Efficacité), null si aucune famille n'est notée. Couverture = critères notés ÷ critères attendus (hors informatifs) ; sous 60 %, la note est provisoire (à présenter comme telle). Critère à compléter : points null, exclu des totaux ; informatif exclu ; sans objet omis. Points perdus d'un critère = (20 − points) ÷ (20 × notés de sa famille) × poids de la famille ÷ poids des familles notées × 100 ; couts_principaux = les 3 plus gros, avec l'action correspondante. Explique une note par son calcul et ses actions (pourquoi, calcul, ameliorer), jamais par une recommandation de produit.",
     mention: "Indicateur pédagogique, pas un conseil en investissement.",
   };
 }
@@ -1699,6 +2221,12 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
       return null;
     }
   }
+  /* Config des calculs : matelas, échéances et frais des contrats (config.frais_enveloppes, migration 0026) ; colonne absente
+     (migration pas encore appliquée, code 42703) → relecture sans elle. */
+  async function lireConfigCalcul() {
+    const r = await db.from("config").select("cushion, milestones, frais_enveloppes").maybeSingle();
+    return r?.error && r.error.code === "42703" ? db.from("config").select("cushion, milestones").maybeSingle() : r;
+  }
   async function chargerDonnees() {
     const banqueP = lireBanqueCalcul(); // en parallèle des lectures du bilan ; ne lève jamais
     const [pr, bi, cr, po, cf, bu, ob] = await Promise.all([
@@ -1706,7 +2234,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
       db.from("biens").select("*"),
       db.from("credits").select("*"),
       db.from("positions").select(POS_SELECT),
-      db.from("config").select("cushion, milestones").maybeSingle(),
+      lireConfigCalcul(),
       db.from("budgets").select("lignes").maybeSingle(),
       db.from("objectifs").select("*").order("priorite").order("created_at"),
     ]);
@@ -1730,7 +2258,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
   const moteurs = { bilan, budgetTotaux, syntheseRisque, bonnesPratiques, situationObjectifs, classeRisque, liquidite, typeEnveloppe, datesAV,
     val, counted, terDe, zoneDe, deviseDe, CLASSES_RISQUE, GROUPE_DE };
   registerExpertises(server, { ...h, charger: chargerDonnees, calcul: moteurs });
-  registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants } });
+  registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants, fraisSupports } });
 
   /* ---------- Banque connectée (banque.ts) : lecture seule, budget comparé avec budgetTotaux ---------- */
   registerBanque(server, { ...h, charger: chargerDonnees, budgetTotaux });
@@ -1738,7 +2266,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
   /* ---------- get_overview ---------- */
   server.registerTool("get_overview", {
     title: "Vue d'ensemble",
-    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes ; totaux mensuels du budget ; score de santé financière sur 100 (cinq critères sur 20, détail pour le foyer, total par personne ; total null tant que moins de 3 critères sont calculés, nombre dans calcules) ; profil_risque (profil déclaré, profil équivalent du portefeuille) ; bonnes_pratiques du foyer (total sur 100 ou null, couverture = part du poids des familles notées, provisoire si couverture < 50 %, quatre familles, critères avec points, texte, piste, règle et source).",
+    description: "Synthèse du patrimoine : financier, immobilier, dettes et patrimoine net (foyer, p1, p2), revenus mensuels nets, mensualités, dernière photo, lignes sans cours récent, dernière mise à jour nocturne et alertes ; totaux mensuels du budget ; score de santé financière sur 100 (cinq critères sur 20, détail pour le foyer, total par personne ; total null tant que moins de 3 critères sont calculés, nombre dans calcules) ; profil_risque (profil déclaré, profil équivalent du portefeuille) ; bonnes_pratiques du foyer (total sur 100 ou null, couverture = critères notés ÷ critères attendus avec couverture_texte, provisoire si couverture < 60 %, quatre familles avec leur couverture, couts_principaux = les 3 critères qui coûtent le plus de points avec l'action correspondante ; chaque critère au contrat : statut bon · surveiller · travailler · a_completer, points null s'il est à compléter, mesure, repere (barème et zones), pourquoi, calcul, donnees, ameliorer (action et gain_points), manque, source_donnees, confiance, points_perdus ; plus texte, piste, règle et source ; critère frais : frais des supports, détail dans frais).",
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => {
