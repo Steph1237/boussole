@@ -42,7 +42,7 @@ function fausseBase(init = {}, { rpc = {}, echec = () => null, utilisateurs = {}
     const q = { table, op: "select", filtres: [], val: null, opts: {}, unique: null, limite: null };
     const correspond = r => q.filtres.every(([k, op, v]) => op === "eq" ? String(r[k]) === String(v)
       : op === "in" ? v.map(String).includes(String(r[k])) : op === "lt" ? r[k] < v : op === "gte" ? r[k] >= v
-      : op === "is" ? (r[k] ?? null) === v : true);
+      : op === "is" ? (r[k] ?? null) === v : op === "neq" ? (r[k] ?? null) !== v : op === "not_is" ? (r[k] ?? null) !== v : true);
     const executer = () => {
       journal.push({ table, op: q.op, filtres: q.filtres, val: q.val, opts: q.opts });
       const err = echec(table, q.op, q);
@@ -81,7 +81,8 @@ function fausseBase(init = {}, { rpc = {}, echec = () => null, utilisateurs = {}
       select: () => b, order: () => b, limit: n => { q.limite = n; return b; },
       eq: (k, v) => { q.filtres.push([k, "eq", v]); return b; }, in: (k, v) => { q.filtres.push([k, "in", v]); return b; },
       lt: (k, v) => { q.filtres.push([k, "lt", v]); return b; }, gte: (k, v) => { q.filtres.push([k, "gte", v]); return b; },
-      is: (k, v) => { q.filtres.push([k, "is", v]); return b; },
+      is: (k, v) => { q.filtres.push([k, "is", v]); return b; }, neq: (k, v) => { q.filtres.push([k, "neq", v]); return b; },
+      not: (k, op, v) => { q.filtres.push([k, "not_" + op, v]); return b; },
       insert: v => { q.op = "insert"; q.val = v; return b; }, upsert: (v, o = {}) => { q.op = "upsert"; q.val = v; q.opts = o; return b; },
       update: v => { q.op = "update"; q.val = v; return b; }, delete: () => { q.op = "delete"; return b; },
       maybeSingle: () => { q.unique = "maybe"; return b; }, single: () => { q.unique = "single"; return b; },
@@ -114,6 +115,8 @@ const COMPTES = [
   { id: 103, id_connection: 7, name: "PEA", balance: 25000, currency: { id: "EUR" }, type: "pea", disabled: null, deleted: null, last_update: "2026-10-12 07:55:00" },
   { id: 104, id_connection: 7, name: "Prêt immo", balance: -150000.25, currency: { id: "EUR" }, type: "loan", disabled: null, deleted: null, last_update: "2026-10-12 07:55:00" },
 ];
+/** Compte de type « autre » (seul type qui reçoit encore une proposition « créer une ligne »). */
+const COMPTE_AUTRE = { id: 105, id_connection: 7, name: "Compte à terme", balance: 500, currency: { id: "EUR" }, type: "unknown", disabled: null, deleted: null, last_update: "2026-10-12 07:55:00" };
 const PLACEMENTS = {
   103: [
     { id: 501, id_account: 103, code: "FR0010315770", code_type: "ISIN", label: "Amundi MSCI World", quantity: 120, unitprice: 20.1, unitvalue: 25, valuation: 3000, deleted: null },
@@ -170,6 +173,7 @@ const RATTACHES = [
   { user_id: U, id: 103, connexion_id: 7, position_id: null, enveloppe: "PEA", titulaire: "p2", credit_id: null },
   { user_id: U, id: 104, connexion_id: 7, position_id: null, enveloppe: null, titulaire: null, credit_id: "cred-1" },
 ];
+const AVEC_AUTRE = () => apiFactice({ comptes: [...COMPTES, COMPTE_AUTRE] });
 let n = 0;
 const OPTS = () => ({ maintenant: MAINTENANT, uuid: () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}` });
 
@@ -266,7 +270,7 @@ test("planifier : connexion, comptes (sans colonnes de rattachement), états et 
     maintenant: MAINTENANT.toISOString(), aujourdhui: AUJ, minDate: "2026-07-14", lots: {}, uuid: OPTS().uuid,
   });
   assert.deepEqual(J(plan.connexion), { user_id: U, id: 7, etablissement: "Banque Test", etat: "SCARequired", message: "Valide dans ton appli bancaire",
-    derniere_synchro: "2026-10-12T05:55:00Z", maj_le: MAINTENANT.toISOString() });
+    derniere_synchro: "2026-10-12T05:55:00Z", maj_le: MAINTENANT.toISOString(), connecteur: 59 });
   assert.equal(plan.comptes.length, 1);
   const c = plan.comptes[0];
   const carte = S.planifier({ comptes: [], placements: [], lotsExistants: [] }, {
@@ -294,14 +298,14 @@ test("planifier : connexion, comptes (sans colonnes de rattachement), états et 
 test("synchroniser : les 4 cas d'application aux lignes (ligne, enveloppe, crédit, non rattaché → proposition)", { skip: SANS_STRIP }, async () => {
   const { S } = charger();
   const db = fausseBase(baseInitiale(J(RATTACHES)), { rpc: RPC });
-  const api = apiFactice();
+  const api = apiFactice({ comptes: [...COMPTES, COMPTE_AUTRE] });
   const r = await S.synchroniser(db, api, U, 7, OPTS());
   assert.equal(r.ok, true, JSON.stringify(r.erreurs));
   const T = db.tables;
   // Connexion et comptes.
   assert.equal(T.banque_connexions.length, 1);
   assert.equal(T.banque_connexions[0].user_id, U);
-  assert.equal(T.banque_comptes.length, 4);
+  assert.equal(T.banque_comptes.length, 5);
   const c103 = T.banque_comptes.find(c => c.id === 103);
   assert.equal(c103.enveloppe, "PEA", "rattachement conservé par l'upsert");
   assert.equal(c103.titulaire, "p2");
@@ -324,14 +328,23 @@ test("synchroniser : les 4 cas d'application aux lignes (ligne, enveloppe, créd
   assert.equal(T.banque_placements.find(p => p.id === 501).prix_revient, 20.1);
   // 3. Crédit : capital restant dû = |solde|.
   assert.equal(T.credits.find(c => c.id === "cred-1").crd, 150000.25);
-  // 4. Compte non rattaché : proposition de création de ligne.
+  // 4. Compte courant non rattaché, sans ligne correspondante : ligne « Compte courant <établissement> » créée et rattachée.
+  const idCc = await S.uuidDeterministe(`powens-cc-${U}-101`);
+  const cc = T.positions.find(x => x.id === idCc);
+  assert.deepEqual({ name: cc.name, envelope: cc.envelope, bloc: cc.bloc, owner: cc.owner, mode: cc.mode, value: cc.value, value_date: cc.value_date, source_auto: cc.source_auto, status: cc.status, user_id: cc.user_id },
+    { name: "Compte courant Banque Test", envelope: "Comptes courants", bloc: "Comptes courants", owner: "p1", mode: "manual", value: 1520.5, value_date: AUJ, source_auto: "powens", status: "actif", user_id: U });
+  const c101 = T.banque_comptes.find(c => c.id === 101);
+  assert.deepEqual([c101.position_id, c101.rattache_auto, c101.cree_auto, c101.suggestion, c101.propose_le ?? null], [idCc, MAINTENANT.toISOString(), true, null, null]);
+  assert.equal(r.rattaches_auto, 1);
+  assert.equal(r.crees_auto, 1);
+  // 5. Compte « autre » non rattaché : proposition de création de ligne.
   assert.equal(T.propositions.length, 1);
   const p = T.propositions[0];
   assert.deepEqual({ user_id: p.user_id, cible: p.cible, operation: p.operation, source: p.source, lot: p.lot },
-    { user_id: U, cible: "position", operation: "creer", source: "Powens — Banque Test", lot: await S.lotProposition(U, 101) });
-  assert.deepEqual(J(p.apres), { name: "Compte chèque ••••", envelope: "Compte courant", mode: "manual", value: 1520.5, value_date: AUJ, owner: "p1" });
-  assert.equal(p.id, await S.uuidDeterministe(`powens-prop-${U}-101`), "identifiant de proposition déterministe (par compte)");
-  assert.equal(T.banque_comptes.find(c => c.id === 101).propose_le, MAINTENANT.toISOString(), "trace de la proposition sur le compte");
+    { user_id: U, cible: "position", operation: "creer", source: "Powens — Banque Test", lot: await S.lotProposition(U, 105) });
+  assert.deepEqual(J(p.apres), { name: "Compte à terme", envelope: "", mode: "manual", value: 500, value_date: AUJ, owner: "p1" });
+  assert.equal(p.id, await S.uuidDeterministe(`powens-prop-${U}-105`), "identifiant de proposition déterministe (par compte)");
+  assert.equal(T.banque_comptes.find(c => c.id === 105).propose_le, MAINTENANT.toISOString(), "trace de la proposition sur le compte");
   // Identifiants de lignes déterministes (deux synchronisations concurrentes ne créent pas deux lignes).
   assert.equal(msci.id, await S.uuidDeterministe(`powens-pos-${U}-501`));
   const upPos = db.journal.find(e => e.table === "positions" && e.op === "upsert");
@@ -437,7 +450,7 @@ test("synchroniser : erreur d'écriture sur une étape → les suivantes continu
   assert.equal(r.ok, false);
   assert.ok(r.erreurs.some(e => /crédit/.test(e.erreur)));
   assert.equal(db.tables.banque_operations.length, 4, "opérations écrites malgré l'échec du crédit");
-  assert.equal(db.tables.propositions.length, 1);
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 101).position_id, await S.uuidDeterministe(`powens-cc-${U}-101`), "rattachement automatique posé malgré l'échec du crédit");
 });
 
 test("synchroniser : compte disparu chez Powens → inactif ; enveloppe vide traitée comme absente", { skip: SANS_STRIP }, async () => {
@@ -448,8 +461,8 @@ test("synchroniser : compte disparu chez Powens → inactif ; enveloppe vide tra
   await S.synchroniser(db, apiFactice(), U, 7, OPTS());
   assert.equal(db.tables.banque_comptes.find(c => c.id === 199).actif, false);
   assert.equal(db.tables.positions.filter(p => p.mode === "market").length, 0, "enveloppe vide : pas de ligne marché");
-  assert.equal(db.tables.propositions.length, 1, "le PEA sans rattachement ne donne pas lieu à une proposition (il se rattache à une enveloppe)");
-  assert.ok(!db.tables.propositions.some(p => p.apres.envelope === "PEA"));
+  assert.equal(db.tables.propositions.length, 0, "ni le PEA sans rattachement (il se rattache à une enveloppe) ni le courant (ligne créée) ne donnent lieu à une proposition");
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 103).enveloppe || null, null, "PEA sans enveloppe correspondante : pas de rattachement automatique");
 });
 
 test("oublierConnexion : lignes repassées en saisie manuelle, connexion supprimée (cascade), filtré par user_id", { skip: SANS_STRIP }, async () => {
@@ -535,44 +548,44 @@ test("synchroniser : capital restant dû mis à jour seulement depuis un compte 
 
 test("synchroniser : compte ignoré → ni proposition ni rattachement ; proposition déjà faite (propose_le) → pas de nouvelle", { skip: SANS_STRIP }, async () => {
   const { S } = charger();
-  const comptes = [...J(RATTACHES), { user_id: U, id: 101, connexion_id: 7, position_id: null, enveloppe: null, titulaire: null, credit_id: null, ignore: true }];
+  const comptes = [...J(RATTACHES), { user_id: U, id: 105, connexion_id: 7, position_id: null, enveloppe: null, titulaire: null, credit_id: null, ignore: true }];
   const db = fausseBase(baseInitiale(comptes), { rpc: RPC });
-  const r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
+  const r = await S.synchroniser(db, AVEC_AUTRE(), U, 7, OPTS());
   assert.equal(r.ok, true, JSON.stringify(r.erreurs));
   assert.equal(db.tables.propositions.length, 0, "compte ignoré : aucune proposition");
   // Proposition supprimée (purge) mais déjà faite : jamais redéposée.
-  const comptes2 = [...J(RATTACHES), { user_id: U, id: 101, connexion_id: 7, position_id: null, enveloppe: null, titulaire: null, credit_id: null, propose_le: "2026-09-01T00:00:00Z" }];
+  const comptes2 = [...J(RATTACHES), { user_id: U, id: 105, connexion_id: 7, position_id: null, enveloppe: null, titulaire: null, credit_id: null, propose_le: "2026-09-01T00:00:00Z" }];
   const db2 = fausseBase(baseInitiale(comptes2), { rpc: RPC });
-  await S.synchroniser(db2, apiFactice(), U, 7, OPTS());
+  await S.synchroniser(db2, AVEC_AUTRE(), U, 7, OPTS());
   assert.equal(db2.tables.propositions.length, 0);
   // Proposition refusée : ne revient pas.
   const db3 = fausseBase(baseInitiale(J(RATTACHES)), { rpc: RPC });
-  await S.synchroniser(db3, apiFactice(), U, 7, OPTS());
+  await S.synchroniser(db3, AVEC_AUTRE(), U, 7, OPTS());
   db3.tables.propositions[0].statut = "refusee";
-  db3.tables.banque_comptes.find(c => c.id === 101).propose_le = null;
-  await S.synchroniser(db3, apiFactice(), U, 7, OPTS());
+  db3.tables.banque_comptes.find(c => c.id === 105).propose_le = null;
+  await S.synchroniser(db3, AVEC_AUTRE(), U, 7, OPTS());
   assert.equal(db3.tables.propositions.length, 1);
-  assert.equal(db3.tables.banque_comptes.find(c => c.id === 101).position_id ?? null, null);
+  assert.equal(db3.tables.banque_comptes.find(c => c.id === 105).position_id ?? null, null);
 });
 
 test("synchroniser : proposition acceptée → compte rattaché à la ligne créée (une seule correspondance), sinon rien et noté", { skip: SANS_STRIP }, async () => {
   const { S } = charger();
   const db = fausseBase(baseInitiale(J(RATTACHES)), { rpc: RPC });
-  await S.synchroniser(db, apiFactice(), U, 7, OPTS());
+  await S.synchroniser(db, AVEC_AUTRE(), U, 7, OPTS());
   const prop = db.tables.propositions[0];
   Object.assign(prop, { statut: "acceptee", decide_le: "2026-10-12T08:10:00Z" });
-  const ligne = { id: "pos-cree", user_id: U, name: prop.apres.name, envelope: prop.apres.envelope, mode: "manual", value: 1520.5, status: "actif", created_at: "2026-10-12T08:09:30Z" };
+  const ligne = { id: "pos-cree", user_id: U, name: prop.apres.name, envelope: prop.apres.envelope, mode: "manual", value: 500, status: "actif", created_at: "2026-10-12T08:09:30Z" };
   // Ambigu : deux lignes identiques → rien.
   db.tables.positions.push(ligne, { ...ligne, id: "pos-double", created_at: "2026-10-12T08:10:01Z" });
-  let r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
-  assert.equal(db.tables.banque_comptes.find(c => c.id === 101).position_id ?? null, null, "ambigu : non rattaché");
-  assert.ok(r.notes.some(n => /101/.test(n) && /ligne/.test(n)), JSON.stringify(r.notes));
+  let r = await S.synchroniser(db, AVEC_AUTRE(), U, 7, OPTS());
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 105).position_id ?? null, null, "ambigu : non rattaché");
+  assert.ok(r.notes.some(n => /105/.test(n) && /ligne/.test(n)), JSON.stringify(r.notes));
   // Une seule correspondance (l'autre est trop ancienne ou d'un autre utilisateur) → rattachée, solde appliqué.
   db.tables.positions.find(p => p.id === "pos-double").created_at = "2026-10-11T00:00:00Z";
   db.tables.positions.push({ ...ligne, id: "pos-autre-user", user_id: AUTRE });
-  r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
+  r = await S.synchroniser(db, AVEC_AUTRE(), U, 7, OPTS());
   assert.equal(r.ok, true, JSON.stringify(r.erreurs));
-  assert.equal(db.tables.banque_comptes.find(c => c.id === 101).position_id, "pos-cree");
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 105).position_id, "pos-cree");
   assert.equal(db.tables.positions.find(p => p.id === "pos-cree").source_auto, "powens", "ligne alimentée dès ce passage");
   assert.equal(db.tables.propositions.length, 1, "aucune nouvelle proposition");
 });
@@ -613,7 +626,7 @@ test("adoption par ISIN : lignes existantes reprises (ISIN et enveloppe sans cas
   const r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
   assert.equal(r.ok, true, JSON.stringify(r.erreurs));
   const T = db.tables;
-  assert.equal(T.positions.length, nAvant, "aucune nouvelle ligne");
+  assert.equal(T.positions.length, nAvant + 1, "aucune nouvelle ligne de placement (seule la ligne « Compte courant » du compte 101)");
   assert.equal(r.positions_creees, 0);
   const msci = T.positions.find(p => p.id === "m-msci");
   assert.deepEqual({ name: msci.name, mode: msci.mode, value: msci.value, envelope: msci.envelope, qty: msci.qty, isin: msci.isin, source_auto: msci.source_auto, source_auto_le: msci.source_auto_le },
@@ -655,7 +668,7 @@ test("adoption par ISIN : cas type, 14 lignes PEA saisies (13 avec ISIN) → auc
     assert.equal(r.ok, true, JSON.stringify(r.erreurs));
     assert.equal(r.positions_creees, 0, `passage ${i + 1}`);
   }
-  assert.equal(db.tables.positions.length, nAvant, "aucun doublon");
+  assert.equal(db.tables.positions.length, nAvant + 1, "aucun doublon (seule la ligne « Compte courant » du compte 101 est créée)");
   assert.ok(lignes.every(l => db.tables.positions.find(p => p.id === l.id).source_auto === "powens"));
   assert.equal(db.tables.positions.find(p => p.id === "pea-3").qty, 5);
   assert.equal(db.tables.positions.find(p => p.id === "pea-liq").value, 321.5);
@@ -737,15 +750,289 @@ test("liquidités : sans ligne existante → ligne manuelle « Liquidités <enve
   assert.equal(db2.tables.positions.find(p => p.id === idLiq).value, 9);
 });
 
-test("propositions : aucune pour un compte pea, compte_titres, assurance_vie ou per ; gardées pour courant et livret", { skip: SANS_STRIP }, async () => {
+test("propositions : aucune pour un compte courant, livret, pea, compte_titres, assurance_vie ou per ; gardée pour un compte « autre »", { skip: SANS_STRIP }, async () => {
   const { S } = charger();
-  const types = { 201: "checking", 202: "livret_a", 203: "pea", 204: "market", 205: "lifeinsurance", 206: "per" };
+  const types = { 201: "checking", 202: "livret_a", 203: "pea", 204: "market", 205: "lifeinsurance", 206: "per", 207: "unknown" };
   const comptes = Object.entries(types).map(([id, type]) => ({ id: Number(id), id_connection: 7, name: `Compte ${type}`, balance: 100, currency: { id: "EUR" }, type, disabled: null, deleted: null }));
   const db = fausseBase(baseInitiale([]), { rpc: rpcBanque() });
   const r = await S.synchroniser(db, apiFactice({ comptes, placements: {}, operations: {} }), U, 7, OPTS());
   assert.equal(r.ok, true, JSON.stringify(r.erreurs));
-  assert.deepEqual(db.tables.propositions.map(p => p.apres.envelope).sort(), ["Compte courant", "Livret"]);
-  assert.deepEqual(db.tables.banque_comptes.filter(c => c.propose_le).map(c => c.id).sort(), [201, 202]);
-  // Toujours « à rattacher » côté app (sans ligne, enveloppe ni crédit) tant que l'utilisateur n'a pas choisi.
-  assert.equal(db.tables.banque_comptes.filter(c => !c.position_id && !c.enveloppe && !c.credit_id && !c.ignore).length, 6);
+  assert.deepEqual(db.tables.propositions.map(p => p.apres.name), ["Compte unknown"]);
+  assert.deepEqual(db.tables.banque_comptes.filter(c => c.propose_le).map(c => c.id).sort(), [207]);
+  // Courant et livret : lignes créées et rattachées ; compte-titres sans enveloppe : « Compte-titres <établissement> » (foyer d'une
+  // personne) ; pea (sans PME), assurance-vie, PER : rien d'évident, « à rattacher » côté app tant que l'utilisateur n'a pas choisi.
+  const k = id => db.tables.banque_comptes.find(c => c.id === id);
+  assert.equal(k(201).position_id, await S.uuidDeterministe(`powens-cc-${U}-201`));
+  assert.equal(k(202).position_id, "pos-livret", "Livret A : la ligne « Livret A » existante");
+  assert.deepEqual([k(204).enveloppe, k(204).titulaire, k(204).cree_auto], ["Compte-titres Banque Test", "p1", true]);
+  assert.deepEqual([203, 205, 206, 207].filter(id => !k(id).position_id && !k(id).enveloppe && !k(id).credit_id), [203, 205, 206, 207]);
+});
+
+/* ---------- rapprochement automatique et doublons (migration 0022) ---------- */
+/** Client Powens factice à plusieurs connexions : { <id connexion>: { connexion, comptes, placements } }. */
+function apiMulti(cxs) {
+  return {
+    connexion: async id => J(cxs[id].connexion),
+    comptes: async id => J(cxs[id].comptes),
+    placements: async id => { for (const c of Object.values(cxs)) if (c.placements?.[id]) return J(c.placements[id]); return []; },
+    operations: async () => [],
+  };
+}
+const cpt = (id, cx, name, type, balance, extra = {}) => ({ id, id_connection: cx, name, balance, currency: { id: "EUR" }, type, disabled: null, deleted: null, last_update: "2026-10-12 07:55:00", ...extra });
+const ISINS_PEA = ["FR0010315770", "IE00B4L5Y983", "LU1681043599", "FR0011550185", "FR0013412285", "IE00BK5BQT80", "LU0392494562",
+  "FR0010296061", "IE00B5BMR087", "FR0011871128", "LU1829221024", "IE00B3RBWM25", "FR0007052782"];
+const liq = (id, compte, v) => ({ id, id_account: compte, code: null, code_type: null, label: "Liquidités", quantity: null, valuation: v, deleted: null });
+/** Cas type (montants fictifs) : deux connexions LCL (la première ne contient que le courant), une BoursoBank. */
+function casType() {
+  const cxs = {
+    11: { connexion: { id: 11, id_connector: 40, state: null, last_update: "2026-10-12 07:55:00", connector: { id: 40, name: "LCL" } },
+      comptes: [cpt(1101, 11, "COMPTE COURANT", "checking", 41.2)] },
+    12: { connexion: { id: 12, id_connector: 40, state: null, last_update: "2026-10-12 07:55:00", connector: { id: 40, name: "LCL" } },
+      comptes: [cpt(1201, 12, "COMPTE COURANT", "checking", 41.2), cpt(1202, 12, "LIVRET A", "livret_a", 7412.5),
+        cpt(1203, 12, "PRET ETUDIANT", "loan", -3264.18, { loan: { remaining_capital: 3264.18 } })] },
+    13: { connexion: { id: 13, id_connector: 41, state: null, last_update: "2026-10-12 07:55:00", connector: { id: 41, name: "BoursoBank" } },
+      comptes: [cpt(1301, 13, "BoursoBank Compte", "checking", 1.35), cpt(1302, 13, "LDDS", "ldds", 12), cpt(1303, 13, "Compte-titres", "market", 52.4),
+        cpt(1304, 13, "PEA-PME", "pea", 1500), cpt(1305, 13, "PEA", "pea", 51230.5)],
+      placements: { 1303: [liq(9301, 1303, 52.4)], 1304: [liq(9401, 1304, 1500)],
+        1305: [...ISINS_PEA.map((isin, i) => ({ id: 9500 + i, id_account: 1305, code: isin, code_type: "ISIN", label: `Fonds ${i}`, quantity: i + 1, valuation: 5000, deleted: null })), liq(9599, 1305, 38.15)] } },
+  };
+  const positions = [
+    { id: "l-livret-a", user_id: U, name: "Livret A", envelope: "Livrets", owner: "p1", bloc: "Livrets", mode: "manual", value: 15000, status: "actif" },
+    { id: "l-indemnite", user_id: U, name: "Épargne en attente", envelope: "Livrets", owner: "p1", bloc: "Livrets", mode: "manual", value: 20000, status: "actif" },
+    ...ISINS_PEA.map((isin, i) => ({ id: `l-pea-${i}`, user_id: U, name: `Ligne PEA ${i}`, envelope: "PEA", owner: "p1", bloc: "Monde", mode: "market", isin, qty: i + 1, status: "actif" })),
+    { id: "l-pea-liq", user_id: U, name: "Liquidités PEA", envelope: "PEA", owner: "p1", bloc: "Liquidités", mode: "manual", value: 40, status: "actif" },
+  ];
+  const base = { banque_connexions: [11, 12, 13].map((id, i) => ({ user_id: U, id, cree_le: `2026-10-0${i + 1}T10:00:00Z` })), banque_comptes: [], banque_placements: [],
+    banque_operations: [], positions, instruments: [], credits: [{ id: "k-etudiant", user_id: U, nom: "Prêt étudiant", crd: 3264.18 }], propositions: [] };
+  return { cxs, base };
+}
+
+test("cas type : LCL A en double de LCL B, Livret A, prêt, PEA par ISIN, créations (courants, LDDS, PEA-PME, compte-titres), aucune proposition, aucun doublon", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const { cxs, base } = casType();
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  const api = apiMulti(cxs);
+  // Ordre défavorable : la connexion en double (A) est synchronisée d'abord, avant de connaître B ; puis tout, deux fois.
+  for (const cx of [11, 12, 13, 11, 12, 13, 11]) {
+    const r = await S.synchroniser(db, api, U, cx, OPTS());
+    assert.equal(r.ok, true, `${cx} : ${JSON.stringify(r.erreurs)}`);
+  }
+  const T = db.tables, k = id => T.banque_comptes.find(c => c.id === id), ligne = id => T.positions.find(p => p.id === id);
+  // Doublon de connexion : LCL A ne contient que le courant, déjà présent dans LCL B.
+  assert.equal(T.banque_connexions.find(c => c.id === 11).doublon_de, 12, "LCL A en double de LCL B");
+  assert.equal(T.banque_connexions.find(c => c.id === 12).doublon_de, null);
+  assert.deepEqual(T.banque_connexions.map(c => c.connecteur), [40, 40, 41]);
+  assert.equal(k(1101).doublon_de, 1201, "courant de LCL A : en double");
+  assert.deepEqual([k(1101).position_id ?? null, k(1101).rattache_auto ?? null], [null, null], "le compte en double n'est pas rattaché (son rattachement automatique est passé au jumeau)");
+  // LCL B : courant → ligne créée (reprise de celle créée pour LCL A au premier passage), livret A → ligne existante, prêt → crédit.
+  const idCcLcl = await S.uuidDeterministe(`powens-cc-${U}-1101`);
+  assert.equal(k(1201).position_id, idCcLcl, "le courant de LCL B reprend la ligne créée pour LCL A");
+  assert.deepEqual([k(1201).cree_auto, !!k(1201).rattache_auto], [true, true]);
+  assert.deepEqual({ name: ligne(idCcLcl).name, envelope: ligne(idCcLcl).envelope, bloc: ligne(idCcLcl).bloc, value: ligne(idCcLcl).value, status: ligne(idCcLcl).status },
+    { name: "Compte courant LCL", envelope: "Comptes courants", bloc: "Comptes courants", value: 41.2, status: "actif" });
+  assert.equal(k(1202).position_id, "l-livret-a");
+  assert.equal(ligne("l-livret-a").value, 7412.5, "solde du livret appliqué");
+  assert.equal(k(1203).credit_id, "k-etudiant");
+  assert.equal(T.credits[0].crd, 3264.18);
+  // BoursoBank.
+  const idCcBourso = await S.uuidDeterministe(`powens-cc-${U}-1301`), idLdds = await S.uuidDeterministe(`powens-lv-${U}-1302`);
+  assert.equal(k(1301).position_id, idCcBourso);
+  assert.deepEqual([ligne(idCcBourso).name, ligne(idCcBourso).value], ["Compte courant BoursoBank", 1.35]);
+  assert.equal(k(1302).position_id, idLdds);
+  assert.deepEqual([ligne(idLdds).name, ligne(idLdds).envelope, ligne(idLdds).bloc, ligne(idLdds).value], ["LDDS", "Livrets", "Livrets", 12]);
+  assert.deepEqual([k(1303).enveloppe, k(1303).titulaire, k(1303).cree_auto], ["Compte-titres BoursoBank", "p1", true]);
+  assert.deepEqual([k(1304).enveloppe, k(1304).titulaire, k(1304).cree_auto], ["PEA-PME", "p1", true]);
+  assert.deepEqual([k(1305).enveloppe, k(1305).titulaire, k(1305).cree_auto], ["PEA", "p1", false]);
+  const liqDe = env => T.positions.filter(p => p.envelope === env && /^Liquidités/.test(p.name));
+  assert.deepEqual(liqDe("PEA-PME").map(p => [p.name, p.value]), [["Liquidités PEA-PME", 1500]]);
+  assert.deepEqual(liqDe("Compte-titres BoursoBank").map(p => [p.name, p.value]), [["Liquidités Compte-titres BoursoBank", 52.4]]);
+  assert.deepEqual(liqDe("PEA").map(p => [p.id, p.value]), [["l-pea-liq", 38.15]], "liquidités du PEA : ligne existante reprise");
+  assert.ok(ISINS_PEA.every((_, i) => ligne(`l-pea-${i}`).source_auto === "powens"), "13 lignes PEA reprises par ISIN");
+  // Aucune proposition Powens, aucune ligne en double, aucune ligne ou crédit rattaché deux fois.
+  assert.deepEqual(T.propositions, []);
+  assert.equal(T.positions.filter(p => p.mode === "market").length, 13, "aucune ligne de marché créée");
+  const noms = T.positions.filter(p => p.status !== "clôturé").map(p => `${p.envelope}|${p.name}`);
+  assert.equal(new Set(noms).size, noms.length, "aucune ligne en double : " + noms.join(", "));
+  const rattachees = T.banque_comptes.map(c => c.position_id).filter(Boolean);
+  assert.equal(new Set(rattachees).size, rattachees.length);
+  assert.equal(T.positions.length, base.positions.length + 5, "5 lignes créées : 2 courants, LDDS, 2 liquidités (PEA-PME, compte-titres) — et rien d'autre");
+});
+
+test("cas type, ordre favorable (LCL B avant LCL A) : le courant de LCL A n'est jamais rattaché ni proposé", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const { cxs, base } = casType();
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  for (const cx of [12, 11]) assert.equal((await S.synchroniser(db, apiMulti(cxs), U, cx, OPTS())).ok, true);
+  const k = id => db.tables.banque_comptes.find(c => c.id === id);
+  assert.equal(k(1101).doublon_de, 1201);
+  assert.equal(k(1101).position_id ?? null, null);
+  assert.equal(k(1201).position_id, await S.uuidDeterministe(`powens-cc-${U}-1201`));
+  assert.equal(db.tables.banque_connexions.find(c => c.id === 11).doublon_de, 12);
+  assert.equal(db.tables.positions.filter(p => p.name === "Compte courant LCL").length, 1);
+});
+
+test("rapprochement : jamais d'écrasement — compte rattaché par l'utilisateur, ignoré, rattachement automatique retiré, ligne créée puis supprimée", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const { cxs, base } = casType();
+  base.banque_comptes = [
+    { user_id: U, id: 1202, connexion_id: 12, position_id: "l-indemnite", enveloppe: null, credit_id: null }, // choix de l'utilisateur
+    { user_id: U, id: 1203, connexion_id: 12, ignore: true },
+    { user_id: U, id: 1201, connexion_id: 12, auto_retire_le: "2026-10-11T00:00:00Z" },
+  ];
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  assert.equal((await S.synchroniser(db, apiMulti(cxs), U, 12, OPTS())).ok, true);
+  const k = id => db.tables.banque_comptes.find(c => c.id === id);
+  assert.equal(k(1202).position_id, "l-indemnite", "choix de l'utilisateur gardé");
+  assert.equal(k(1203).credit_id ?? null, null, "compte ignoré : jamais rattaché");
+  assert.equal(k(1201).position_id ?? null, null, "rattachement automatique retiré par l'utilisateur : jamais refait");
+  assert.equal(db.tables.positions.filter(p => p.name === "Compte courant LCL").length, 0, "rien créé");
+  assert.deepEqual(db.tables.propositions, [], "ni proposition");
+  // Ligne créée automatiquement puis supprimée par l'utilisateur (la clé étrangère a vidé position_id, rattache_auto reste) : pas recréée.
+  const db2 = fausseBase(casType().base, { rpc: rpcBanque() });
+  await S.synchroniser(db2, apiMulti(cxs), U, 13, OPTS());
+  const id = await S.uuidDeterministe(`powens-cc-${U}-1301`);
+  db2.tables.positions = db2.tables.positions.filter(p => p.id !== id);
+  db2.tables.banque_comptes.find(c => c.id === 1301).position_id = null;
+  await S.synchroniser(db2, apiMulti(cxs), U, 13, OPTS());
+  assert.ok(!db2.tables.positions.some(p => p.id === id), "ligne supprimée par l'utilisateur jamais recréée");
+});
+
+test("rapprochement : plusieurs candidats → aucune création ni rattachement, une suggestion (la plus proche) ; rattachement concurrent → suggestion, ligne retirée", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const { cxs, base } = casType();
+  base.positions.push({ id: "l-livret-a-2", user_id: U, name: "Livret A Sam", envelope: "Livrets", owner: "p2", mode: "manual", value: 9000, status: "actif" });
+  base.credits.push({ id: "k-etudiant-2", user_id: U, nom: "Prêt étudiant 2", crd: 3264 });
+  base.positions.push({ id: "l-cc-1", user_id: U, name: "Compte courant LCL perso", envelope: "Comptes courants", mode: "manual", value: 1, status: "actif" },
+    { id: "l-cc-2", user_id: U, name: "LCL compte courant joint", envelope: "Comptes courants", mode: "manual", value: 30, status: "actif" });
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiMulti(cxs), U, 12, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  const k = id => db.tables.banque_comptes.find(c => c.id === id);
+  assert.deepEqual(J(k(1202).suggestion), { type: "ligne", id: "l-livret-a-2", libelle: "Livret A Sam · Livrets", raison: "2 lignes possibles pour ce Livret A : la plus proche du solde est proposée." });
+  assert.equal(k(1202).position_id ?? null, null);
+  assert.equal(k(1203).suggestion.type, "credit");
+  assert.equal(k(1203).suggestion.id, "k-etudiant", "montant le plus proche");
+  assert.equal(k(1201).suggestion.id, "l-cc-2", "solde le plus proche");
+  assert.equal(db.tables.positions.filter(p => /^Compte courant LCL$/.test(p.name)).length, 0, "aucune création");
+  assert.equal(r.suggestions, 3);
+  // Rattachement posé par l'utilisateur pendant la synchronisation : la mise à jour conditionnelle ne trouve rien, la ligne créée est retirée.
+  const { cxs: c2, base: b2 } = casType();
+  const db2 = fausseBase(b2, { rpc: rpcBanque() });
+  // L'utilisateur rattache le courant juste avant l'écriture du rattachement automatique.
+  const from = db2.from;
+  db2.from = t => {
+    const b = from(t);
+    if (t !== "banque_comptes") return b;
+    const update = b.update;
+    b.update = v => { if (v && v.rattache_auto && v.position_id) db2.tables.banque_comptes.find(c => c.id === 1301).position_id = "l-indemnite"; return update(v); };
+    return b;
+  };
+  const r2 = await S.synchroniser(db2, apiMulti(c2), U, 13, OPTS());
+  const idCc = await S.uuidDeterministe(`powens-cc-${U}-1301`);
+  assert.ok(!db2.tables.positions.some(p => p.id === idCc), "ligne créée pour l'occasion retirée");
+  assert.equal(db2.tables.banque_comptes.find(c => c.id === 1301).position_id, "l-indemnite", "choix concurrent gardé");
+  assert.ok(r2.notes.some(n => /1301/.test(n)), JSON.stringify(r2.notes));
+});
+
+test("rapprochement : enveloppes — PEA-PME jamais dans « PEA » (et inversement), part d'ISIN ≥ 50 %, foyer de deux personnes → suggestion du titulaire", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const base = () => ({ comptes: [], lignes: [], credits: [], connexions: [], etatComptes: [], liees: [], idsCourant: {}, idsLivret: {} });
+  const E = (comptes, lignes, extra = {}) => ({ ...base(), userId: U, aujourdhui: AUJ, maintenant: MAINTENANT.toISOString(), deuxPersonnes: false,
+    connexion: { id: 7, etablissement: "Bourse Test", connecteur: 1 }, comptes, lignes, ...extra });
+  const pea = (id, nom, isins) => ({ id, type: "pea", typePowens: "pea", nom, solde: 100, crd: null, actif: true, isins });
+  const L = (id, envelope, isin, owner = "p1") => ({ id, user_id: U, name: id, envelope, owner, mode: "market", isin, status: "actif" });
+  // PEA-PME avec les ISIN de l'enveloppe « PEA » : jamais dedans ; enveloppe « PEA PME » acceptée.
+  let r = S.rapprocher(E([pea(1, "PEA-PME", ["FR0010315770"])], [L("a", "PEA", "FR0010315770")]));
+  assert.deepEqual(J(r.comptes[1].auto.patch), { enveloppe: "PEA-PME", titulaire: "p1" }, "nouvelle enveloppe « PEA-PME »");
+  assert.equal(r.comptes[1].auto.cree, true);
+  r = S.rapprocher(E([pea(1, "PEA PME", ["FR0010315770"])], [L("a", "PEA", "FR0010315770"), L("b", "Pea Pme Sam", "FR0010315770")]));
+  assert.deepEqual(J(r.comptes[1].auto.patch), { enveloppe: "Pea Pme Sam", titulaire: "p1" });
+  r = S.rapprocher(E([pea(1, "PEA", ["FR0010315770"])], [L("b", "PEA-PME", "FR0010315770")]));
+  assert.equal(r.comptes[1].auto, null, "PEA jamais dans « PEA-PME »");
+  // Part d'ISIN : 1 sur 3 → non ; 2 sur 3 → oui ; deux enveloppes → suggestion de la meilleure.
+  const isins = ["FR0010315770", "IE00B4L5Y983", "LU1681043599"];
+  r = S.rapprocher(E([pea(1, "PEA", isins)], [L("a", "PEA", isins[0])]));
+  assert.equal(r.comptes[1].auto, null, "1 ISIN sur 3 : moins de 50 %");
+  r = S.rapprocher(E([pea(1, "PEA", isins)], [L("a", "PEA", isins[0]), L("b", "PEA", isins[1])]));
+  assert.deepEqual(J(r.comptes[1].auto.patch), { enveloppe: "PEA", titulaire: "p1" });
+  r = S.rapprocher(E([pea(1, "PEA", isins)], [L("a", "PEA", isins[0]), L("b", "PEA", isins[1]), L("c", "PEA", isins[0], "p2"), L("d", "PEA", isins[1], "p2"), L("e", "PEA", isins[2], "p2")]));
+  assert.equal(r.comptes[1].auto, null);
+  assert.deepEqual([r.comptes[1].suggestion.type, r.comptes[1].suggestion.enveloppe, r.comptes[1].suggestion.titulaire], ["enveloppe", "PEA", "p2"]);
+  // Enveloppe déjà rattachée à un autre compte : exclue.
+  r = S.rapprocher(E([pea(1, "PEA", isins)], [L("a", "PEA", isins[0]), L("b", "PEA", isins[1])], { etatComptes: [{ id: 9, connexion_id: 8, enveloppe: "pea", titulaire: "p1" }] }));
+  assert.equal(r.comptes[1].auto, null, "enveloppe prise");
+  // Foyer de deux personnes (ou inconnu) : pas de création, suggestion du titulaire.
+  for (const deux of [true, null]) {
+    r = S.rapprocher(E([{ ...pea(1, "Compte titres", []), type: "compte_titres", typePowens: "market" }], [], { deuxPersonnes: deux }));
+    assert.equal(r.comptes[1].auto, null);
+    assert.deepEqual([r.comptes[1].suggestion.enveloppe, r.comptes[1].suggestion.titulaire], ["Compte-titres Bourse Test", "p1"]);
+  }
+  // Placements non lus : rien.
+  r = S.rapprocher(E([pea(1, "PEA-PME", null)], []));
+  assert.equal(r.comptes[1].auto, null);
+});
+
+test("rapprochement : livrets (produit par type ou nom, générique), crédits (montant prioritaire, mots significatifs), courants", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const E = (comptes, lignes, extra = {}) => ({ userId: U, aujourdhui: AUJ, maintenant: MAINTENANT.toISOString(), deuxPersonnes: false, connexion: { id: 7, etablissement: "Crédit Mutuel", connecteur: 1 },
+    comptes, lignes, credits: [], connexions: [], etatComptes: [], liees: [], idsCourant: { 1: "id-cc" }, idsLivret: { 1: "id-lv" }, ...extra });
+  const C = (type, typePowens, nom, solde = 100, crd = null) => ({ id: 1, type, typePowens, nom, solde, crd, actif: true, isins: null });
+  const M = (id, name, envelope = "Livrets", value = 1) => ({ id, user_id: U, name, envelope, mode: "manual", value, status: "actif" });
+  assert.equal(S.produitLivret("savings", "Livret Développement Durable et Solidaire").nom, "LDDS");
+  assert.equal(S.produitLivret("livret_a", "Mon épargne").nom, "Livret A");
+  assert.equal(S.produitLivret("savings", "Livret Avenir"), null, "« Livret Avenir » n'est pas un Livret A");
+  let r = S.rapprocher(E([C("livret", "savings", "LDD solidaire")], [M("a", "Livret A"), M("b", "LDDS Sam")]));
+  assert.equal(r.comptes[1].auto.patch.position_id, "b");
+  // Générique : seul candidat d'une enveloppe livret* (hors lignes d'un produit précis) → rattaché ; aucun → ligne créée au nom du compte.
+  r = S.rapprocher(E([C("livret", "savings", "Livret Bourso+")], [M("a", "Livret A"), M("b", "Épargne de précaution")]));
+  assert.equal(r.comptes[1].auto.patch.position_id, "b");
+  r = S.rapprocher(E([C("livret", "savings", "Livret Bourso+")], [M("a", "Livret A")]));
+  assert.deepEqual([r.comptes[1].auto.cree, r.comptes[1].auto.ligne.name, r.comptes[1].auto.ligne.envelope, r.comptes[1].auto.ligne.id], [true, "Livret Bourso+", "Livrets", "id-lv"]);
+  r = S.rapprocher(E([C("livret", "lep", "LEP")], [M("a", "Livret A", "Épargne réglementée")]));
+  assert.deepEqual([r.comptes[1].auto.ligne.name, r.comptes[1].auto.ligne.envelope], ["LEP", "Livrets"], "aucune enveloppe livret* : « Livrets »");
+  r = S.rapprocher(E([C("livret", "lep", "LEP")], [M("a", "Livret A", "Livrets Camille")]));
+  assert.equal(r.comptes[1].auto.ligne.envelope, "Livrets Camille", "enveloppe livret unique de l'utilisateur");
+  // Ligne déjà rattachée à un autre compte ou liée à un placement : jamais visée.
+  r = S.rapprocher(E([C("livret", "livret_a", "LIVRET A")], [M("a", "Livret A")], { etatComptes: [{ id: 2, connexion_id: 8, position_id: "a" }] }));
+  assert.equal(r.comptes[1].auto.cree, true, "Livret A pris : nouvelle ligne");
+  r = S.rapprocher(E([C("livret", "livret_a", "LIVRET A")], [M("a", "Livret A")], { liees: ["a"] }));
+  assert.equal(r.comptes[1].auto.cree, true);
+  // Crédits.
+  const K = (id, nom, crd) => ({ id, nom, crd });
+  r = S.rapprocher(E([C("credit", "loan", "PRET", -3264.18, 3264.18)], [], { credits: [K("x", "Prêt immo", 90000), K("y", "Prêt étudiant", 3270)] }));
+  assert.equal(r.comptes[1].auto.patch.credit_id, "y", "montant à 1 % près");
+  r = S.rapprocher(E([C("credit", "loan", "PRET AUTO", -5000)], [], { credits: [K("x", "Prêt immo", 90000), K("y", "Crédit voiture", 7000)] }));
+  assert.equal(r.comptes[1].auto.patch.credit_id, "y", "mot significatif (auto ↔ voiture), « prêt » seul ne suffit pas");
+  r = S.rapprocher(E([C("credit", "loan", "PRET", -5000)], [], { credits: [K("x", "Prêt immo", 90000), K("y", "Prêt auto", 7000)] }));
+  assert.equal(r.comptes[1].auto, null, "« prêt » seul : deux candidats");
+  assert.equal(r.comptes[1].suggestion.id, "y");
+  r = S.rapprocher(E([C("credit", "loan", "PRET ETUDIANT", -3264.18)], [], { credits: [K("y", "Prêt étudiant", 3264.18)], etatComptes: [{ id: 2, connexion_id: 8, credit_id: "y" }] }));
+  assert.equal(r.comptes[1].auto, null, "crédit déjà rattaché : jamais visé");
+  // Courants : ligne existante (établissement + « courant »), sinon création ; jamais une ligne d'un autre établissement.
+  r = S.rapprocher(E([C("courant", "checking", "CCP")], [M("a", "Compte courant Crédit Mutuel", "Comptes courants"), M("b", "Compte courant LCL", "Comptes courants")]));
+  assert.equal(r.comptes[1].auto.patch.position_id, "a");
+  r = S.rapprocher(E([C("courant", "checking", "CCP")], [M("b", "Compte courant LCL", "Comptes courants")]));
+  assert.deepEqual([r.comptes[1].auto.ligne.name, r.comptes[1].auto.ligne.envelope, r.comptes[1].auto.ligne.bloc, r.comptes[1].auto.ligne.owner, r.comptes[1].auto.ligne.source_auto],
+    ["Compte courant Crédit Mutuel", "Comptes courants", "Comptes courants", "p1", "powens"]);
+  // Compte inactif, ignoré, déjà rattaché : rien.
+  r = S.rapprocher(E([{ ...C("courant", "checking", "CCP"), actif: false }], []));
+  assert.equal(r.comptes[1].auto, null);
+  r = S.rapprocher(E([C("courant", "checking", "CCP")], [], { etatComptes: [{ id: 1, connexion_id: 7, ignore: true }] }));
+  assert.equal(r.comptes[1].auto, null);
+});
+
+test("rapprochement : proposition « créer une ligne » encore en attente d'un compte rattaché automatiquement ou en double → retirée ; décidée → gardée", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const { cxs, base } = casType();
+  const lot = async id => S.lotProposition(U, id);
+  base.propositions = [
+    { id: "prop-1201", user_id: U, lot: await lot(1201), cible: "position", operation: "creer", statut: "en_attente", apres: { name: "COMPTE COURANT" } },
+    { id: "prop-1101", user_id: U, lot: await lot(1101), cible: "position", operation: "creer", statut: "en_attente", apres: { name: "COMPTE COURANT" } },
+    { id: "prop-1202", user_id: U, lot: await lot(1202), cible: "position", operation: "creer", statut: "refusee", decide_le: "2026-10-01T00:00:00Z", apres: { name: "LIVRET A" } },
+  ];
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  for (const cx of [11, 12]) assert.equal((await S.synchroniser(db, apiMulti(cxs), U, cx, OPTS())).ok, true);
+  assert.deepEqual(db.tables.propositions.map(p => p.id), ["prop-1202"], "en attente : retirées (courant rattaché automatiquement, courant en double) ; refusée : gardée");
+  for (const e of db.journal.filter(e => e.table === "propositions" && e.op === "delete"))
+    assert.ok(e.filtres.some(([k, op, v]) => k === "statut" && v === "en_attente") && e.filtres.some(([k, , v]) => k === "user_id" && v === U));
 });

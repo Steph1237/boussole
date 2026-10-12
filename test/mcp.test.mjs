@@ -252,10 +252,11 @@ test("parité MCP / risque.js + marche.js + calc.js : tables identiques", { skip
     for (const l of Marche.CLES) assert.equal(M.correlation(k, l), Marche.correlation(k, l), `${k}|${l}`);
   }
   assert.deepEqual(Object.keys(M.CLASSES_RISQUE).sort(), [...Marche.CLES].sort());
-  for (const poche of [...Object.keys(M.CLASSES_POCHE), "Épargne", "Monde", "Nasdaq 2x", "Fonds euros", "Inconnue"]) assert.equal(M.classePoche(poche), Calc.classe(poche), poche);
+  for (const poche of [...Object.keys(M.CLASSES_POCHE), "Épargne", "Monde", "Nasdaq 2x", "Fonds euros", "Comptes courants", "Compte courant", "Inconnue"]) assert.equal(M.classePoche(poche), Calc.classe(poche), poche);
   for (const env of ["PER", "Livret A", "Assurance vie Sam", "PEA", "Banque", "SCPI", "CTO", "Compte-titres Sam", "Compte titres", "compte-titre", "Comptes-titres", "Comptes courants", "Compte courant", "Compte joint",
     "PERin", "PERin Camille", "PERCO", "PEE", "Épargne salariale"]) assert.equal(M.liquidite(env), Calc.liquidite(env), env);
   assert.equal(M.liquidite("Compte-titres Sam"), "jours", "un compte-titres n'est pas un compte courant");
+  assert.equal(M.classePoche("Comptes courants"), "monetaire", "bloc des comptes courants créés par la synchronisation bancaire");
   assert.equal(M.liquidite("PERin"), "bloque", "PERin sans espace : bloqué, comme RE_PER");
   const cas = [["Monde", "ETF Nasdaq 2x"], ["Leverage", "X"], ["Monde", "MSCI Emerging Markets"], ["Actions", "Small caps Europe"], ["Crypto", "Bitcoin"], ["Protection", "Or physique"]];
   for (const [bloc, name] of cas) for (const sur of [undefined, { Protection: "or" }, { Leverage: "actions" }]) assert.equal(M.classeRisque({ bloc, name }, sur), Marche.classeRisque({ bloc, name }, sur), `${bloc} / ${name}`);

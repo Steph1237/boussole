@@ -5,7 +5,13 @@
    - ETATS : états Powens d'une connexion → { libelle (ETATS_LIBELLES du connecteur), action (ETATS_RECONNEXION : l'utilisateur doit
      refaire la connexion), urgence (Aujourd'hui : 1 pour SCARequired, wrongpass, webauthRequired, passwordExpired ; 2 pour les autres
      états à reconnecter ; null pour les incidents passagers) } ; etat(code) ; null = à jour.
-   - comptesARattacher(banque) : comptes actifs, suivis (ignore faux), sans ligne, enveloppe ni crédit (interrupteur éteint : aucun).
+   - comptesARattacher(banque) : comptes actifs, suivis (ignore faux), pas en double (doublonDe nul), sans ligne, enveloppe ni crédit
+     (interrupteur éteint : aucun).
+   - connexionsEnDouble(banque) → [{ connexion, autre }] : connexions dont tous les comptes sont déjà dans une autre connexion du même
+     établissement (doublonDe, posé par la synchronisation, migration 0022) ; autre = la connexion qu'elle double (ou null).
+   - cibleSuggestion(suggestion) : suggestion de rattachement (banque_comptes.suggestion { type: ligne|enveloppe|credit, id?, enveloppe?,
+     titulaire?, libelle, raison }) → cible de Store.banque.rattacher ({ positionId } | { enveloppe, titulaire } | { creditId }), null si
+     sa forme est inconnue. suggestionOk(s) : forme valide (lue par les stores).
    - reelMoyen(mois, auj, n = 3) : moyenne mensuelle par catégorie des n derniers mois complets de banque_mois (mois en cours exclu),
      en montant positif : dépenses = sorties − entrées (remboursements déduits), revenus = entrées − sorties, épargne = sorties − entrées.
    - categoriePourTitre(titre) : catégorie Boussole d'un titre de catégorie du budget (accents et casse ignorés, « Autres » → divers).
@@ -52,10 +58,26 @@
   const actif = b => !!(b && b.actif);
   const rattache = c => !!(c && (c.positionId || c.enveloppe || c.creditId));
   const ignore = c => !!(c && c.ignore === true);
+  const enDouble = c => !!(c && c.doublonDe != null);
   function comptesARattacher(banque) {
     if (!actif(banque)) return [];
-    return (Array.isArray(banque.comptes) ? banque.comptes : []).filter(c => c && c.actif !== false && !ignore(c) && !rattache(c));
+    return (Array.isArray(banque.comptes) ? banque.comptes : []).filter(c => c && c.actif !== false && !ignore(c) && !enDouble(c) && !rattache(c));
   }
+  function connexionsEnDouble(banque) {
+    if (!actif(banque)) return [];
+    const cxs = Array.isArray(banque.connexions) ? banque.connexions : [];
+    return cxs.filter(c => c && c.doublonDe != null).map(c => ({ connexion: c, autre: cxs.find(x => x && String(x.id) === String(c.doublonDe)) || null }));
+  }
+  /* ---------- suggestion de rattachement (synchronisation, 0022) ---------- */
+  const texteOk = v => typeof v === "string" && v.trim() !== "";
+  function cibleSuggestion(s) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+    if (s.type === "ligne" && texteOk(s.id)) return { positionId: s.id };
+    if (s.type === "credit" && texteOk(s.id)) return { creditId: s.id };
+    if (s.type === "enveloppe" && texteOk(s.enveloppe) && ["p1", "p2"].includes(s.titulaire)) return { enveloppe: s.enveloppe, titulaire: s.titulaire };
+    return null;
+  }
+  const suggestionOk = s => !!cibleSuggestion(s) && texteOk(s.libelle);
 
   /* ---------- catégories (supabase/functions/powens/categories.ts) et réel moyen ---------- */
   const CATEGORIES = [
@@ -177,7 +199,7 @@
     return { ok: true, message: "Connexion enregistrée, synchronisation en cours.", recherche };
   }
 
-  const BanqueEtat = { ETATS, etat, heureParis, TYPES, typeLibelle, comptesARattacher, rattache, ignore, CATEGORIES, categoriePourTitre, reelMoyen, normRattachement, urlPowensOk, messageErreur, MSG_RESEAU, retourPowens };
+  const BanqueEtat = { ETATS, etat, heureParis, TYPES, typeLibelle, comptesARattacher, rattache, ignore, enDouble, connexionsEnDouble, cibleSuggestion, suggestionOk, CATEGORIES, categoriePourTitre, reelMoyen, normRattachement, urlPowensOk, messageErreur, MSG_RESEAU, retourPowens };
   root.BanqueEtat = BanqueEtat;
   if (typeof module === "object" && module.exports) module.exports = BanqueEtat;
 })(typeof window !== "undefined" ? window : globalThis);

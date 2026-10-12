@@ -39,7 +39,7 @@
    Store.routines.pause(type, enPause) → { ok: true } ou { erreur }, en mémoire ; la réactivation recalcule le prochain passage
    comme le déclencheur routines_maj (premier jour `jour` d'un mois au plus tôt dans 7 jours, date de Paris).
    banque = { actif, lu, connexions, comptes, mois } (D.banque : interrupteur actif, 2 connexions dont une SCARequired, 6 comptes dont un
-   non rattaché et un ignoré, 6 mois de totaux). Store.banque.connecter() → { erreur: « Indisponible en démonstration… » } (aucune page Powens en
+   non rattaché et un ignoré, 6 mois de totaux). Store.banque.synchroniser(id) → { ok: true, rapport } (date de synchronisation mise à jour en mémoire). Store.banque.connecter() → { erreur: « Indisponible en démonstration… » } (aucune page Powens en
    démo), de même pour gerer(id) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
    de store-supabase.js (BanqueEtat.normRattachement).
    (formes détaillées dans l'en-tête de store-supabase.js).
@@ -565,6 +565,18 @@
     async gerer() {
       await tick();
       return { erreur: "Indisponible en démonstration : la gestion des comptes bancaires fonctionne avec ton propre compte." };
+    },
+    /* « Synchroniser maintenant » : en démo, seule la date de synchronisation change. */
+    async synchroniser(connectionId) {
+      await tick();
+      const id = String(connectionId);
+      const cx = C.banque.connexions.find(c => String(c.id) === id);
+      if (!cx) return { erreur: "Connexion introuvable." };
+      C.banque = Object.assign({}, C.banque, { connexions: C.banque.connexions.map(c => (c === cx ? Object.assign({}, c, { derniereSynchro: new Date().toISOString() }) : c)) });
+      publish();
+      const comptes = C.banque.comptes.filter(c => String(c.connexionId) === id).length;
+      return { ok: true, rapport: { ok: true, sautee: false, relance: true, etat: cx.etat ?? null, comptes, operations: 0, rattaches_auto: 0, crees_auto: 0, suggestions: 0,
+        comptes_en_double: 0, doublon_de: null, positions_creees: 0, lignes_adoptees: 0, propositions: 0, erreurs: 0 } };
     },
     async deconnecter(connectionId) {
       await tick();

@@ -139,6 +139,10 @@ test("classe d'actifs : poches connues, accents et casse ignorés, inconnu → a
   assert.equal(Calc.classe("Obligations"), "obligations");
   assert.equal(Calc.classe("Épargne"), "monetaire");
   assert.equal(Calc.classe("epargne"), "monetaire");
+  // bloc des comptes courants créés par la synchronisation bancaire (Powens) : monétaire, disponible tout de suite
+  assert.equal(Calc.classe("Comptes courants"), "monetaire");
+  assert.equal(Calc.classe("Compte courant"), "monetaire");
+  assert.equal(Calc.liquidite("Comptes courants"), "immediate");
   assert.equal(Calc.classe("Protection"), "fonds_euros");
   assert.equal(Calc.classe("Or"), "or");
   assert.equal(Calc.classe("Crypto"), "crypto");

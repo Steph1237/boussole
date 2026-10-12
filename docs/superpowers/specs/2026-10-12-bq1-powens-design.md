@@ -157,3 +157,14 @@ La catégorie Powens est ramenée aux catégories du budget Boussole (logement, 
    - facultatif : crée le fournisseur HMAC et enregistre son secret.
 2. Test complet avec le connecteur de test en sandbox.
 3. Production : contrat Powens, mentions légales à jour, domaine de production, puis les vrais comptes de Stéph.
+
+## 8. Rapprochement automatique et anti-doublons (migration 0022, non appliquée)
+Boussole établit les rattachements lui-même à chaque synchronisation (`rapprocher`, supabase/functions/powens/synchro.ts) :
+- **Crédit** : capital restant dû à max(1 €, 1 %) près (prioritaire), sinon mot significatif partagé (« prêt » seul ne suffit que si le nom n'a rien de plus précis).
+- **Livret** : produit (Livret A, LDDS, LEP, CEL, PEL) reconnu par le type Powens ou le nom ; livret générique : seule ligne d'une enveloppe « livret* ». Aucune ligne : ligne créée au nom du produit dans « Livrets » (ou l'enveloppe livret unique de l'utilisateur).
+- **Courant** : ligne existante dont le nom contient l'établissement et « courant » ; sinon ligne « Compte courant <établissement> » créée (enveloppe et bloc « Comptes courants », classe monétaire, disponible tout de suite).
+- **PEA, compte-titres, assurance-vie, PER** : enveloppe dont les lignes partagent au moins un ISIN et au moins 50 % des ISIN Powens ; PEA-PME jamais dans « PEA », et inversement. Sans enveloppe : PEA-PME → « PEA-PME », compte-titres → « Compte-titres <établissement> » (titulaire p1 si le foyer compte une personne, sinon suggestion).
+- Plusieurs candidats : suggestion (`banque_comptes.suggestion`), confirmée par « Rattacher » dans Agent › Connexion. Plus aucune proposition « créer une ligne », sauf pour un compte « autre ».
+- Jamais : écraser un rattachement choisi, rattacher un compte ignoré ou en double, viser une ligne ou un crédit déjà rattaché (index uniques partiels), refaire un rattachement automatique retiré par l'utilisateur (`auto_retire_le`). Quitter une ligne ou une enveloppe créée automatiquement la passe en « clôturé ».
+- **Connexion en double** : deux connexions du même établissement (connecteur Powens) ; celle qui a le moins de comptes, tous identiques à des comptes de l'autre, est marquée `doublon_de` (alerte « Déconnecte-la » dans Agent › Connexion et Aujourd'hui).
+- **« Synchroniser maintenant »** : `POST /powens/synchroniser { connection_id }` (relance Powens en tâche de fond, puis synchronisation immédiate des données disponibles).

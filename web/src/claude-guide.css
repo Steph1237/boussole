@@ -142,6 +142,14 @@
 #view-claude-guide .cg-bq-tag.a-faire{background:var(--accent-soft);color:var(--accent)}
 #view-claude-guide .cg-bq-cpt.ignore .cg-bq-cpt-t,#view-claude-guide .cg-bq-cpt.ignore .cg-bq-cpt-s{color:var(--muted)}
 #view-claude-guide .cg-bq-cpt.ignore .cg-bq-cpt-t b{font-weight:500}
+/* Rapprochement automatique (0022) : connexion et comptes en double, rattachement automatique, suggestion */
+#view-claude-guide .cg-bq-doublon{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:8px 0;padding:10px 12px;border-radius:var(--radius-sm);background:var(--warn-soft);color:var(--ink);font-size:13px;line-height:1.45}
+#view-claude-guide .cg-bq-doublon p{margin:0;flex:1 1 240px}
+#view-claude-guide .cg-bq-cpt.doublon .cg-bq-cpt-t,#view-claude-guide .cg-bq-cpt.doublon .cg-bq-cpt-s,#view-claude-guide .cg-bq-note{color:var(--muted)}
+#view-claude-guide .cg-bq-cpt.doublon .cg-bq-cpt-t b{font-weight:500}
+#view-claude-guide .cg-bq-note,#view-claude-guide .cg-bq-auto{margin:4px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+#view-claude-guide .cg-bq-sugg{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0;padding:8px 10px;border-radius:var(--radius-sm);background:var(--accent-soft);font-size:13px;line-height:1.45}
+#view-claude-guide .cg-bq-sugg p{margin:0;flex:1 1 220px;overflow-wrap:anywhere}
 #view-claude-guide .cg-bq-ratt{display:flex;flex-direction:column;gap:3px;min-width:0}
 #view-claude-guide .cg-bq-ratt label{font-size:12px;color:var(--muted)}
 #view-claude-guide .cg-bq-ratt select{max-width:100%;min-width:min(240px,100%);font:13px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--radius-sm);padding:6px 8px}

@@ -179,6 +179,22 @@ test("lire_banque : connexions (à reconnecter), comptes et rattachement, 6 dern
   const ig = (await banqueSrv(dbBanque({ comptes: [...COMPTES, { ...COMPTES[3], id: 106, ignore: true }] })).T.lire_banque.handler({})).ok;
   const c106 = ig.comptes.find(x => x.id === 106);
   assert.equal(c106.ignore, true); assert.equal(c106.rattache_a, null);
+  // 0022 : doublons, rattachement automatique, suggestion
+  for (const k of ["doublon_de", "rattache_auto", "cree_auto", "suggestion"]) assert.ok(k in c[101], "compte : " + k);
+  assert.deepEqual([c[101].doublon_de, c[101].rattache_auto, c[101].cree_auto, c[101].suggestion], [null, null, false, null]);
+  assert.equal(r.connexions[0].doublon_de, null);
+  const SUGG = { type: "ligne", id: "pos-cc", libelle: "Compte courant joint", raison: "Nom" };
+  const d = (await banqueSrv(dbBanque({
+    connexions: [...CONNEXIONS, { id: 14, etablissement: "Banque Test", etat: null, doublon_de: 11 }],
+    comptes: [...COMPTES, { ...COMPTES[0], id: 141, connexion_id: 14, position_id: null, doublon_de: 101 },
+      { ...COMPTES[0], id: 142, position_id: "pos-cc", rattache_auto: "2026-10-12T08:00:00Z", cree_auto: true }, { ...COMPTES[3], id: 143, suggestion: SUGG }],
+  })).T.lire_banque.handler({})).ok;
+  assert.deepEqual(J(d.connexions.find(x => x.id === 14)), { id: 14, etablissement: "Banque Test", etat: null, etat_libelle: "à jour", a_reconnecter: false, derniere_synchro: null,
+    doublon_de: 11, en_double_de: "Banque Test" });
+  const cd = Object.fromEntries(d.comptes.map(x => [x.id, x]));
+  assert.equal(cd[141].doublon_de, 101);
+  assert.deepEqual([cd[142].rattache_auto, cd[142].cree_auto], ["2026-10-12T08:00:00Z", true]);
+  assert.deepEqual(J(cd[143].suggestion), SUGG);
   // mois : 6 derniers mois (depuis le 1er mai), plus récent d'abord, mois en cours signalé
   const m = db.appels.find(a => a.table === "banque_mois");
   assert.deepEqual(J(m.ops.find(o => o[0] === "gte")), ["gte", "mois", "2026-05-01"]);
@@ -240,9 +256,13 @@ test("operations_recentes : 50 par défaut, 200 au plus, plus récentes d'abord,
 test("banqueDeSession : connexions à reconnecter, comptes à rattacher ; éteint ; null en cas d'échec (ne lève jamais)", { skip: SANS_STRIP }, async () => {
   const B = chargerBanque();
   const s = await B.banqueDeSession(dbBanque(), must);
-  assert.deepEqual(J(s), { actif: true, connexions_a_reconnecter: [{ id: 12, etablissement: "Assureur Test", etat: "SCARequired", etat_libelle: B.ETATS_LIBELLES.SCARequired }], comptes_a_rattacher: 1 },
-    "compte inactif et comptes rattachés exclus");
-  assert.deepEqual(J(await B.banqueDeSession(dbBanque({ actif: false }), must)), { actif: false, connexions_a_reconnecter: [], comptes_a_rattacher: 0 });
+  assert.deepEqual(J(s), { actif: true, connexions_a_reconnecter: [{ id: 12, etablissement: "Assureur Test", etat: "SCARequired", etat_libelle: B.ETATS_LIBELLES.SCARequired }], comptes_a_rattacher: 1,
+    connexions_en_double: 0 }, "compte inactif et comptes rattachés exclus");
+  assert.deepEqual(J(await B.banqueDeSession(dbBanque({ actif: false }), must)), { actif: false, connexions_a_reconnecter: [], comptes_a_rattacher: 0, connexions_en_double: 0 });
+  const dbl = await B.banqueDeSession(dbBanque({ connexions: [...CONNEXIONS, { id: 14, etablissement: "Banque Test", etat: null, doublon_de: 11 }],
+    comptes: [...COMPTES, { ...COMPTES[3], id: 141, connexion_id: 14, doublon_de: 101 }] }), must);
+  assert.equal(dbl.connexions_en_double, 1);
+  assert.equal(dbl.comptes_a_rattacher, 1, "compte en double : pas à rattacher (la connexion est à déconnecter)");
   const avert = [];
   const Bw = chargerBanque({ console: { warn: (...a) => avert.push(a.join(" ")), error() {}, log() {} } });
   for (const panne of [["fonctionnalites"], ["banque_connexions"], ["banque_comptes"]]) assert.equal(await Bw.banqueDeSession(dbBanque({ panne }), must), null, "panne : " + panne);

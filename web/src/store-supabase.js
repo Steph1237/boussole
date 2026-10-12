@@ -79,8 +79,10 @@
    « Active ta revue mensuelle » qu'à cette condition). Store.routines.pause(type, enPause) → { ok: true } ou { erreur } : seule
    écriture, update routines set active = !enPause where type = … (le déclencheur routines_maj recalcule le prochain passage à la
    réactivation) ; rechargement puis émission.
-   banque = { actif, lu, connexions: [{ id, etablissement, etat, message, derniereSynchro }], comptes: [{ id, connexionId, nom, type, solde,
-   devise, soldeLe, actif, positionId, enveloppe, titulaire, creditId, ignore }], mois: [{ mois, categorie, entrees, sorties, nombre }] } : banques
+   banque = { actif, lu, connexions: [{ id, etablissement, etat, message, derniereSynchro, doublonDe }], comptes: [{ id, connexionId, nom, type, solde,
+   devise, soldeLe, actif, positionId, enveloppe, titulaire, creditId, ignore, doublonDe, rattacheAuto, creeAuto, suggestion }], mois: [{ mois,
+   categorie, entrees, sorties, nombre }] } (doublonDe, rattacheAuto, creeAuto, suggestion : migration 0022, écrits par la synchronisation ;
+   suggestion de forme inconnue → null) : banques
    connectées par Powens (BQ1, migration 0021, tables écrites par la fonction powens). L'interrupteur (fonctionnalites, cle « banque »)
    est lu avec le reste par loadAll ; éteint (ou table absente) : { actif: false } et rien d'autre n'est lu. Allumé : connexions, comptes
    et les 6 derniers mois de banque_mois (mois en cours compris), lus ensuite ; lu = true quand ces lectures ont réussi (en échec : valeurs
@@ -89,7 +91,8 @@
    de la session (corps { connection_id } pour une reconnexion) ; l'URL renvoyée n'est acceptée qu'en https chez Powens
    (BanqueEtat.urlPowensOk) ; la vue redirige. Store.banque.gerer(connectionId) → { ok: true, url } | { erreur } : même appel avec
    { connection_id, mode: "gerer" } (page de gestion Powens de cette connexion : activer un autre compte de la même banque, sans
-   seconde connexion), même vérification de l'URL. Store.banque.deconnecter(connectionId) → { ok: true } | { erreur } : POST /powens/deconnecter
+   seconde connexion), même vérification de l'URL. Store.banque.synchroniser(connectionId) → { ok: true, rapport } | { erreur } : POST
+   /powens/synchroniser { connection_id } (relance Powens et synchronisation côté serveur), puis rechargement. Store.banque.deconnecter(connectionId) → { ok: true } | { erreur } : POST /powens/deconnecter
    puis rechargement. Store.banque.rattacher(compteId, { positionId } | { enveloppe, titulaire } | { creditId } | { aucun: true } |
    { ignorer: true }) → { ok: true } | { erreur } : update banque_comptes des 5 colonnes de rattachement (position_id, enveloppe,
    titulaire, credit_id, ignore ; seule écriture permise par 0021 ; ignorer → ignore = true et les 4 autres à null), validée d'abord
@@ -232,12 +235,14 @@
   });
   /* Banques connectées (BQ1) : colonnes lues et vues canoniques ; BanqueEtat (banque-etat.js) chargé avant ce fichier par build.mjs. */
   const BE = () => window.BanqueEtat;
-  const BQ_CX = "id, etablissement, etat, message, derniere_synchro";
-  const BQ_CPT = "id, connexion_id, nom, type, solde, devise, solde_le, actif, position_id, enveloppe, titulaire, credit_id, ignore";
+  const BQ_CX = "id, etablissement, etat, message, derniere_synchro, doublon_de";
+  const BQ_CPT = "id, connexion_id, nom, type, solde, devise, solde_le, actif, position_id, enveloppe, titulaire, credit_id, ignore, doublon_de, rattache_auto, cree_auto, suggestion";
   const BQ_MOIS = "mois, categorie, entrees, sorties, nombre";
-  const bqCxView = r => ({ id: r.id, etablissement: r.etablissement || "", etat: r.etat ?? null, message: r.message ?? null, derniereSynchro: r.derniere_synchro ?? null });
+  const bqCxView = r => ({ id: r.id, etablissement: r.etablissement || "", etat: r.etat ?? null, message: r.message ?? null, derniereSynchro: r.derniere_synchro ?? null,
+    doublonDe: r.doublon_de ?? null });
   const bqCptView = r => ({ id: r.id, connexionId: r.connexion_id, nom: r.nom || "", type: r.type || "autre", solde: num(r.solde), devise: r.devise || "EUR",
-    soldeLe: r.solde_le ?? null, actif: r.actif !== false, positionId: r.position_id ?? null, enveloppe: r.enveloppe ?? null, titulaire: r.titulaire ?? null, creditId: r.credit_id ?? null, ignore: r.ignore === true });
+    soldeLe: r.solde_le ?? null, actif: r.actif !== false, positionId: r.position_id ?? null, enveloppe: r.enveloppe ?? null, titulaire: r.titulaire ?? null, creditId: r.credit_id ?? null, ignore: r.ignore === true,
+    doublonDe: r.doublon_de ?? null, rattacheAuto: r.rattache_auto ?? null, creeAuto: r.cree_auto === true, suggestion: BE().suggestionOk(r.suggestion) ? r.suggestion : null });
   const bqMoisView = r => ({ mois: String(r.mois).slice(0, 10), categorie: r.categorie, entrees: num(r.entrees) || 0, sorties: num(r.sorties) || 0, nombre: r.nombre == null ? 0 : +r.nombre });
   const BANQUE_ETEINTE = () => ({ actif: false, lu: true, connexions: [], comptes: [], mois: [] });
   /* 1er du mois, 5 mois avant le mois en cours : 6 mois de totaux (le mois en cours compris). */
@@ -564,6 +569,15 @@
       const id = idPowens(connectionId);
       if (id == null || !C.banque.connexions.some(c => String(c.id) === String(id))) return { erreur: "Connexion introuvable." };
       return pagePowens({ connection_id: id, mode: "gerer" });
+    },
+    /* « Synchroniser maintenant » : relance chez Powens et synchronisation côté serveur, puis rechargement → { ok: true, rapport }. */
+    async synchroniser(connectionId) {
+      const id = idPowens(connectionId);
+      if (id == null || !C.banque.connexions.some(c => String(c.id) === String(id))) return { erreur: "Connexion introuvable." };
+      const r = await appelPowens("synchroniser", { connection_id: id });
+      if (r.erreur) return r;
+      await reload();
+      return { ok: true, rapport: r.data.rapport && typeof r.data.rapport === "object" ? r.data.rapport : {} };
     },
     async deconnecter(connectionId) {
       const id = idPowens(connectionId);

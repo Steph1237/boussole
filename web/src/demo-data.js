@@ -642,8 +642,8 @@
   const banque = {
     actif: true, lu: true,
     connexions: [
-      { id: 101, etablissement: "Banque des Canuts", etat: null, message: null, derniereSynchro: at(0, "04:12") },
-      { id: 102, etablissement: "Néo Courtage", etat: "SCARequired", message: "Ta banque demande de confirmer ton identité tous les 180 jours.", derniereSynchro: at(3, "04:10") },
+      { id: 101, etablissement: "Banque des Canuts", etat: null, message: null, derniereSynchro: at(0, "04:12"), doublonDe: null },
+      { id: 102, etablissement: "Néo Courtage", etat: "SCARequired", message: "Ta banque demande de confirmer ton identité tous les 180 jours.", derniereSynchro: at(3, "04:10"), doublonDe: null },
     ],
     comptes: [
       { id: 1001, connexionId: 101, nom: "Compte joint", type: "courant", solde: 3400, devise: "EUR", soldeLe: ago(0), actif: true, positionId: "compte-commun", enveloppe: null, titulaire: null, creditId: null, ignore: false },
@@ -652,7 +652,9 @@
       { id: 1004, connexionId: 101, nom: "Prêt auto", type: "credit", solde: -6500, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: "credit-auto", ignore: false },
       { id: 1005, connexionId: 101, nom: "Compte pro Camille", type: "courant", solde: 842.15, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: true },
       { id: 2001, connexionId: 102, nom: "PEA", type: "pea", solde: 25871.6, devise: "EUR", soldeLe: ago(3), actif: true, positionId: null, enveloppe: "PEA Camille", titulaire: "p1", creditId: null, ignore: false },
-    ],
+    ].map(c => Object.assign({ doublonDe: null, rattacheAuto: null, creeAuto: false, suggestion: null }, c,
+      // rattachement posé automatiquement par la synchronisation (0022) : le livret A, retrouvé par son nom
+      c.id === 1002 ? { rattacheAuto: at(0, "04:12") } : {})),
     mois: bqMois,
   };
 

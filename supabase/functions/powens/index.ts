@@ -2,7 +2,7 @@
 // docs/superpowers/plans/2026-10-12-bq1-powens.md › Fonction serveur).
 //
 // Déploiement : verify_jwt = false. Chaque route contrôle elle-même l'appelant :
-// - /connecter, /deconnecter, /supprimer : JWT Supabase de l'utilisateur (auth.getUser) ;
+// - /connecter, /deconnecter, /synchroniser, /supprimer : JWT Supabase de l'utilisateur (auth.getUser) ;
 // - /webhook : jeton Powens de l'utilisateur (Authorization: Bearer), reconnu par son empreinte SHA-256
 //   (RPC powens_utilisateur_par_empreinte), et, si POWENS_WEBHOOK_SECRET est défini, signature BI-Signature datée de moins de
 //   5 minutes (BI-Signature-Date) ; sans ce secret, accepté seulement sur un domaine de bac à sable (suffixe -sandbox). Corps
@@ -327,6 +327,55 @@ app.post("/deconnecter", async (c: any) => {
     return erreur(500, "La banque est déconnectée chez Powens, mais pas encore dans Boussole : réessaie.");
   }
   return json({ ok: true });
+});
+
+/* POST /powens/synchroniser { connection_id } → { ok: true, rapport } : bouton « Synchroniser maintenant ». Relance chez Powens
+   (PUT users/me/connections/{id}?psu_requested=false&background=true : la référence Powens consultée le 2026-10-12 ne documente
+   pas de mode synchrone pour ce PUT, background n'y est décrit que pour POST ; la relance est donc demandée en tâche de fond, comme
+   la nuit), puis synchronisation immédiate côté serveur des données déjà disponibles, sous le bail habituel ; Powens notifie
+   ensuite CONNECTION_SYNCED à la fin de sa relance, et le webhook synchronise de nouveau. Une relance refusée par Powens
+   n'empêche pas la synchronisation (rapport.relance = false, relance_erreur). Bail déjà pris → 409. */
+app.post("/synchroniser", async (c: any) => {
+  const req: Request = c.req.raw;
+  const db = admin();
+  if (!db) return erreur(500, "Configuration serveur manquante.");
+  const user = await utilisateur(db, req);
+  if (!user) return erreur(401, MSG_NON_CONNECTE);
+  const corps = await lireCorps(req);
+  const id = idPowens(corps?.connection_id);
+  if (id == null) return erreur(400, "connection_id manquant ou invalide.");
+  const f = await db.from("fonctionnalites").select("active").eq("user_id", user.id).eq("cle", "banque").maybeSingle();
+  if (f.error) return erreur(500, "Erreur interne : réessaie dans un moment.");
+  if (f.data?.active !== true) return erreur(403, MSG_FERME);
+  const cfg = configPowens();
+  if (!cfg) return erreur(503, MSG_CONFIG);
+  try {
+    if (!(await connexionAppartient(db, user.id, id))) return erreur(404, "Connexion introuvable.");
+    const jeton = await jetonDe(db, user.id);
+    if (!jeton) return erreur(409, "Ton accès Powens est introuvable : connecte de nouveau ta banque.");
+    const client = api(cfg.base, jeton, deps.fetch);
+    let relance = true, relanceErreur: string | null = null;
+    try {
+      await client.relancer(id);
+    } catch (e) {
+      if (!(e instanceof PowensErreur)) throw e;
+      console.warn(`powens: relance refusée ${e.status}${e.code ? ` ${e.code}` : ""}`);
+      relance = false;
+      relanceErreur = e.message;
+    }
+    const r = await synchroniser(db, client, user.id, id, { maintenant: deps.maintenant() });
+    if (r.sautee) return erreur(409, "Synchronisation déjà en cours pour cette banque : réessaie dans un instant.");
+    return json({
+      ok: true,
+      rapport: {
+        ok: r.ok, sautee: false, relance, ...(relanceErreur ? { relance_erreur: relanceErreur } : {}), etat: r.etat, comptes: r.comptes, operations: r.operations,
+        rattaches_auto: r.rattaches_auto, crees_auto: r.crees_auto, suggestions: r.suggestions, comptes_en_double: r.comptes_en_double, doublon_de: r.doublon_de,
+        positions_creees: r.positions_creees, lignes_adoptees: r.lignes_adoptees, propositions: r.propositions, erreurs: r.erreurs.length,
+      },
+    });
+  } catch (err) {
+    return echec(err);
+  }
 });
 
 /* POST /powens/supprimer → { ok: true } : suppression de l'utilisateur Powens, avant delete_me(). 401, 403 ou 404 chez Powens :

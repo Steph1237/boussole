@@ -35,6 +35,7 @@
     obligations: "obligations", oblig: "obligations",
     scpi: "immobilier", immobilier: "immobilier", sci: "immobilier", opci: "immobilier",
     epargne: "monetaire", livrets: "monetaire", monetaire: "monetaire", cash: "monetaire", liquidites: "monetaire",
+    "comptes courants": "monetaire", "compte courant": "monetaire",
     protection: "fonds_euros", "fonds euros": "fonds_euros", "fonds euro": "fonds_euros",
     or: "or", "metaux precieux": "or", crypto: "crypto", cryptos: "crypto",
   };

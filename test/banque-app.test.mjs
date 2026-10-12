@@ -190,6 +190,7 @@ test("banqueHtml : comptes avec solde, type, et sélecteur de rattachement (lign
     cpt(12, 1, { nom: "Prêt auto", type: "credit", solde: -6500, creditId: "c-auto" }),
     cpt(13, 1, { nom: "Compte Sam", type: "courant", solde: 1180.4 }),
     cpt(14, 1, { nom: "Ancien livret", type: "livret", actif: false }),
+    cpt(15, 1, { nom: "Compte à terme", type: "autre" }),
   ] }) });
   const h = sp(G.banqueHtml(S, AUJ)), t = texteDe(h);
   assert.match(t, /Livret A Livret · 12 000,00 € au 12\/10/);
@@ -212,7 +213,8 @@ test("banqueHtml : comptes avec solde, type, et sélecteur de rattachement (lign
   assert.equal(opts(12)[0].l, "Aucun crédit");
   // non rattaché : « aucune » sélectionnée, et le compte est signalé
   assert.equal(opts(13).find(o => o.sel).v, "");
-  assert.match(opts(13)[0].l, /nouvelle ligne proposée/);
+  assert.equal(opts(13)[0].l, "Aucune", "compte courant : plus de proposition de ligne (0022 : ligne créée par la synchronisation)");
+  assert.match(opts(15)[0].l, /nouvelle ligne proposée/, "compte « autre » : proposition de ligne");
   assert.match(t, /Compte Sam .*À rattacher/);
   // rattachement vers une ligne disparue : option conservée et signalée
   const S2 = S0({ banque: banque({ connexions: [cx(1, null)], comptes: [cpt(15, 1, { positionId: "disparue" })] }) });
@@ -240,7 +242,7 @@ test("banqueHtml : compte ignoré affiché discrètement (« Non suivi »), opti
   assert.match(t, /Compte libre À rattacher/);
   const sel40 = h.match(/<select id="cgBq-40"[^>]*>([\s\S]*?)<\/select>/)[1];
   assert.match(sel40, /<option value="ign" selected>Ne pas suivre ce compte<\/option>/);
-  assert.match(sel40, /<option value="">Aucune \(nouvelle ligne proposée\)<\/option>/, "retour en arrière possible");
+  assert.match(sel40, /<option value="">Aucune<\/option>/, "retour en arrière possible");
   assert.deepEqual(J(G.cibleDe("ign")), { ignorer: true });
   assert.deepEqual(J(G.cibleDe("")), { aucun: true });
 });
@@ -327,7 +329,8 @@ function guideVm(reponses, S) {
     setTimeout: () => 0, clearTimeout() {}, location: { assign: u => assigns.push(u) },
     App: { register: (n, a) => { reg[n] = a; } },
     Store: { mode: "supabase", routines: { pause: async () => ({ ok: true }) }, banque: {
-      connecter: (...a) => repondre("connecter", a), gerer: (...a) => repondre("gerer", a), deconnecter: (...a) => repondre("deconnecter", a), rattacher: (...a) => repondre("rattacher", a) } } };
+      connecter: (...a) => repondre("connecter", a), gerer: (...a) => repondre("gerer", a), deconnecter: (...a) => repondre("deconnecter", a), rattacher: (...a) => repondre("rattacher", a),
+      synchroniser: (...a) => repondre("synchroniser", a) } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
   for (const f of ["claude-prompts.js", "routine-etat.js", "banque-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
@@ -663,8 +666,8 @@ const pret = ctx => new Promise((res, rej) => {
   ctx.Store.on(ok); ok(ctx.Store.get());
 });
 const BQ_KEYS = ["actif", "comptes", "connexions", "lu", "mois"];
-const CX_KEYS = ["derniereSynchro", "etablissement", "etat", "id", "message"];
-const CPT_KEYS = ["actif", "connexionId", "creditId", "devise", "enveloppe", "id", "ignore", "nom", "positionId", "solde", "soldeLe", "titulaire", "type"];
+const CX_KEYS = ["derniereSynchro", "doublonDe", "etablissement", "etat", "id", "message"];
+const CPT_KEYS = ["actif", "connexionId", "creditId", "creeAuto", "devise", "doublonDe", "enveloppe", "id", "ignore", "nom", "positionId", "rattacheAuto", "solde", "soldeLe", "suggestion", "titulaire", "type"];
 const MOIS_KEYS = ["categorie", "entrees", "mois", "nombre", "sorties"];
 
 test("démo : S.banque au contrat — 2 connexions (une à jour, une SCARequired), 6 comptes dont un non rattaché et un ignoré, 6 mois de totaux cohérents", async () => {
@@ -795,8 +798,9 @@ test("store-supabase (exécuté) : interrupteur actif → connexions, comptes et
   const { ctx, appels } = storeSup({ tables: tablesBq });
   const S = await pret(ctx);
   assert.deepEqual(J(S.banque), { actif: true, lu: true,
-    connexions: [{ id: 7, etablissement: "Banque test", etat: "SCARequired", message: "Validation requise", derniereSynchro: "2026-10-12T05:00:00Z" }],
-    comptes: [{ id: 70, connexionId: 7, nom: "Compte joint", type: "courant", solde: 1234.56, devise: "EUR", soldeLe: "2026-10-12", actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: false }],
+    connexions: [{ id: 7, etablissement: "Banque test", etat: "SCARequired", message: "Validation requise", derniereSynchro: "2026-10-12T05:00:00Z", doublonDe: null }],
+    comptes: [{ id: 70, connexionId: 7, nom: "Compte joint", type: "courant", solde: 1234.56, devise: "EUR", soldeLe: "2026-10-12", actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: false,
+      doublonDe: null, rattacheAuto: null, creeAuto: false, suggestion: null }],
     mois: [{ mois: "2026-09-01", categorie: "alimentation", entrees: 0, sorties: 812.3, nombre: 14 }] });
   assert.match(appels.find(a => a.table === "banque_comptes").cols, /\bignore\b/, "colonne ignore lue");
   const ig = storeSup({ tables: Object.assign({}, tablesBq, { banque_comptes: { data: [CPT_ROW, CPT_IGN], error: null } }) });
@@ -890,4 +894,122 @@ test("store-supabase (exécuté) : rattacher → update banque_comptes des 5 col
   assert.match((await ctx.Store.banque.rattacher(70, { positionId: "inconnue" })).erreur, /Ligne introuvable/);
   assert.match((await ctx.Store.banque.rattacher(71, { aucun: true })).erreur, /Compte introuvable/);
   assert.equal(maj.length, 1, "rien n'est envoyé si la validation échoue");
+});
+
+/* =================================================================== rapprochement automatique, doublons, synchronisation (0022) =================================================================== */
+test("BanqueEtat (0022) : comptes en double exclus des comptes à rattacher ; connexions en double ; cible d'une suggestion", () => {
+  const b = banque({ connexions: [cx(1, null, { etablissement: "LCL", doublonDe: 2 }), cx(2, null, { etablissement: "LCL" })],
+    comptes: [cpt(10, 1, { doublonDe: 20 }), cpt(20, 2), cpt(21, 2, { positionId: "p-livret" })] });
+  assert.deepEqual(J(BE.comptesARattacher(b).map(c => c.id)), [20]);
+  assert.deepEqual(J(BE.connexionsEnDouble(b).map(x => [x.connexion.id, x.autre.id])), [[1, 2]]);
+  assert.deepEqual(J(BE.connexionsEnDouble(banque({ actif: false, connexions: b.connexions }))), []);
+  assert.deepEqual(J(BE.cibleSuggestion({ type: "ligne", id: "p-livret", libelle: "x" })), { positionId: "p-livret" });
+  assert.deepEqual(J(BE.cibleSuggestion({ type: "enveloppe", enveloppe: "PEA", titulaire: "p2", libelle: "x" })), { enveloppe: "PEA", titulaire: "p2" });
+  assert.deepEqual(J(BE.cibleSuggestion({ type: "credit", id: "c-auto", libelle: "x" })), { creditId: "c-auto" });
+  for (const s of [null, "x", {}, { type: "ligne" }, { type: "autre", id: "x" }, { type: "enveloppe", enveloppe: "PEA", titulaire: "p3" }]) assert.equal(BE.cibleSuggestion(s), null, JSON.stringify(s));
+});
+
+const B22 = () => banque({
+  connexions: [cx(1, null, { etablissement: "LCL", doublonDe: 2 }), cx(2, null, { etablissement: "LCL" })],
+  comptes: [
+    cpt(10, 1, { nom: "Compte courant", doublonDe: 20 }),
+    cpt(20, 2, { nom: "Compte courant", positionId: "p-livret", rattacheAuto: "2026-10-12T08:00:00Z", creeAuto: true }),
+    cpt(21, 2, { nom: "PEA", type: "pea", enveloppe: "PEA Camille", titulaire: "p1", rattacheAuto: "2026-10-12T08:00:00Z" }),
+    cpt(22, 2, { nom: "Livret <b>", type: "livret", suggestion: { type: "ligne", id: "p-livret", libelle: "Livret A · <i>Livrets</i>", raison: "2 lignes possibles : la plus proche du solde est proposée." } }),
+  ],
+});
+
+test("banqueHtml (0022) : connexion en double — alerte et « Déconnecter » mis en avant ; comptes en double grisés « En double », sans sélecteur", () => {
+  const h = sp(G.banqueHtml(S0({ banque: B22() }), AUJ)), t = texteDe(h);
+  assert.match(t, /Connexion LCL en double : elle ne contient que des comptes déjà présents dans l'autre connexion LCL\. Déconnecte-la\./);
+  assert.match(h, /<div class="cg-bq-doublon" role="note">[\s\S]*?<button type="button" class="cg-btn danger" data-cg-banque-deconnecter="1">Déconnecter<span class="cg-sr"> LCL<\/span><\/button>/);
+  assert.equal([...h.matchAll(/data-cg-banque-deconnecter="1"/g)].length, 1, "un seul bouton Déconnecter pour cette connexion");
+  assert.match(h, /<button type="button" class="cg-btn ghost" data-cg-banque-deconnecter="2">/, "l'autre connexion garde le bouton ordinaire");
+  assert.match(h, /<li class="cg-bq-cpt doublon">[\s\S]*?<span class="cg-bq-tag">En double<\/span>/);
+  assert.doesNotMatch(h, /data-cg-banque-compte="10"/, "pas de rattachement pour un compte en double");
+  assert.match(t, /Déjà suivi par l'autre connexion LCL/);
+});
+
+test("banqueHtml (0022) : « Rattaché automatiquement à … », « Créé automatiquement », suggestion avec « Rattacher » ; échappement", () => {
+  const h = sp(G.banqueHtml(S0({ banque: B22() }), AUJ)), t = texteDe(h);
+  assert.match(t, /Créé automatiquement : Livret A · Livrets Camille\. Tu peux changer ou ne pas suivre ce compte\./);
+  assert.match(t, /Rattaché automatiquement à PEA Camille · Camille\. Tu peux changer ci-dessous\./);
+  assert.match(h, /data-cg-banque-compte="20"/, "rattachement automatique : sélecteur pour changer");
+  assert.match(t, /Suggestion : Livret A · &lt;i&gt;Livrets&lt;\/i&gt; — 2 lignes possibles : la plus proche du solde est proposée\./);
+  assert.match(h, /<button type="button" class="cg-btn" data-cg-banque-suggestion="22">Rattacher<span class="cg-sr"> Livret &lt;b&gt;<\/span><\/button>/);
+  assert.doesNotMatch(h, /<i>Livrets|Livret <b>/, "texte venu des données échappé");
+  assert.doesNotMatch(t, VOUVOIEMENT);
+  // suggestion invalide : rien
+  const b = B22(); b.comptes[3].suggestion = { type: "inconnu", libelle: "x" };
+  assert.doesNotMatch(G.banqueHtml(S0({ banque: b }), AUJ), /data-cg-banque-suggestion/);
+});
+
+test("banqueHtml (0022) : « Synchroniser maintenant » sur chaque connexion", () => {
+  const h = G.banqueHtml(S0(), AUJ);
+  assert.deepEqual([...h.matchAll(/data-cg-banque-synchroniser="(\d+)"/g)].map(m => m[1]), ["1", "2"]);
+  assert.match(h, /<button type="button" class="cg-btn ghost" data-cg-banque-synchroniser="1">Synchroniser maintenant<span class="cg-sr"> Banque 1<\/span><\/button>/);
+});
+
+test("Banques (vm, 0022) : « Rattacher » une suggestion → Store.banque.rattacher(id, cible suggérée) ; « Synchroniser maintenant » → Store.banque.synchroniser(id)", async () => {
+  const v = guideVm([{ ok: true }, { ok: true, rapport: { comptes: 3, rattaches_auto: 1, erreurs: 0 } }, { erreur: "Synchronisation déjà en cours pour cette banque : réessaie dans un instant." }], S0({ banque: B22() }));
+  v.$('[data-cg-banque-suggestion="22"]').click();
+  await v.fin();
+  assert.deepEqual(J(v.appels[0]), ["rattacher", 22, { positionId: "p-livret" }]);
+  assert.match(v.msg(), /rattaché à Livret A/);
+  const b = v.$('[data-cg-banque-synchroniser="2"]');
+  b.click(); b.click();
+  await v.fin();
+  assert.deepEqual(J(v.appels[1]), ["synchroniser", 2]);
+  assert.equal(v.appels.length, 2, "un seul appel (bouton occupé)");
+  assert.match(v.msg(), /LCL synchronisée : 3 comptes lus, 1 rattaché automatiquement\./);
+  v.$('[data-cg-banque-synchroniser="2"]').click();
+  await v.fin();
+  const err = v.$("#cgBanquesCorps").querySelector(".cg-rt-err");
+  assert.equal(err.textContent, "Synchronisation déjà en cours pour cette banque : réessaie dans un instant.");
+  assert.equal(v.doc.activeElement, v.$('[data-cg-banque-synchroniser="2"]'), "focus rendu au bouton");
+});
+
+test("Aujourd'hui (0022) : connexion en double (urgence 2, « Déconnecter ») ; comptes en double jamais « à rattacher »", () => {
+  const b = A.boite(vide({ banque: B22() }), AUJ, sansRegles).filter(x => x.type === "banque");
+  const d = b.find(x => x.titre === "Connexion LCL en double");
+  assert.ok(d, JSON.stringify(b.map(x => x.titre)));
+  assert.equal(d.urgence, 2);
+  assert.equal(d.contexte, "Elle ne contient que des comptes déjà présents dans l'autre connexion LCL : déconnecte-la.");
+  assert.deepEqual(J(d.action), { label: "Déconnecter", route: "agent/connexion" });
+  assert.equal(b.find(x => /à rattacher/.test(x.titre)).titre, "1 compte à rattacher", "le compte en double n'est pas compté");
+});
+
+test("store-supabase (exécuté, 0022) : doublons, rattachement automatique et suggestion lus ; synchroniser → POST /powens/synchroniser puis rechargement", async () => {
+  const SUGG = { type: "enveloppe", enveloppe: "PEA", titulaire: "p1", libelle: "PEA (p1)", raison: "r" };
+  const tables = { ...tablesBq, banque_connexions: { data: [{ ...CX_ROW, doublon_de: 8 }], error: null },
+    banque_comptes: { data: [{ ...CPT_ROW, doublon_de: 80, rattache_auto: "2026-10-12T08:00:00Z", cree_auto: true, suggestion: SUGG }, { ...CPT_IGN, suggestion: { type: "pirate" } }], error: null } };
+  const a = storeSup({ tables, fetchRep: { status: 200, body: { ok: true, rapport: { ok: true, comptes: 1 } } } });
+  const S = await pret(a.ctx);
+  assert.equal(S.banque.connexions[0].doublonDe, 8);
+  assert.deepEqual(J([S.banque.comptes[0].doublonDe, S.banque.comptes[0].rattacheAuto, S.banque.comptes[0].creeAuto, S.banque.comptes[0].suggestion]), [80, "2026-10-12T08:00:00Z", true, SUGG]);
+  assert.equal(S.banque.comptes[1].suggestion, null, "suggestion de forme inconnue : ignorée");
+  assert.match(a.appels.find(x => x.table === "banque_comptes").cols, /doublon_de, rattache_auto, cree_auto, suggestion/);
+  assert.match(a.appels.find(x => x.table === "banque_connexions").cols, /doublon_de/);
+  const avant = a.appels.length;
+  assert.deepEqual(J(await a.ctx.Store.banque.synchroniser(7)), { ok: true, rapport: { ok: true, comptes: 1 } });
+  assert.equal(a.fetchs[0].url, "https://projet.supabase.co/functions/v1/powens/synchroniser");
+  assert.equal(a.fetchs[0].init.body, '{"connection_id":7}');
+  assert.equal(a.fetchs[0].init.headers.Authorization, "Bearer jeton-utilisateur-factice");
+  assert.ok(a.appels.length > avant, "rechargé après la synchronisation");
+  for (const v of [undefined, "7; drop", 99]) assert.match((await a.ctx.Store.banque.synchroniser(v)).erreur, /Connexion introuvable/);
+  assert.equal(a.fetchs.length, 1);
+  const c = storeSup({ tables, fetchRep: { status: 409, body: { erreur: "Synchronisation déjà en cours pour cette banque : réessaie dans un instant." } } });
+  await pret(c.ctx);
+  assert.deepEqual(J(await c.ctx.Store.banque.synchroniser(7)), { erreur: "Synchronisation déjà en cours pour cette banque : réessaie dans un instant." });
+});
+
+test("démo (0022) : Store.banque.synchroniser en mémoire (date de synchronisation mise à jour) ; connexion inconnue refusée", async () => {
+  const ctx = demoStore();
+  const S = await pret(ctx);
+  const id = S.banque.connexions[0].id;
+  const r = await ctx.Store.banque.synchroniser(id);
+  assert.equal(r.ok, true);
+  assert.equal(typeof r.rapport.comptes, "number");
+  assert.ok(Date.parse(ctx.Store.get().banque.connexions[0].derniereSynchro) > Date.now() - 60000);
+  assert.match((await ctx.Store.banque.synchroniser(999)).erreur, /Connexion introuvable/);
 });

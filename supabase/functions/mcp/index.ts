@@ -237,7 +237,7 @@ const CONDUITE_COPILOTE = [
   "14. Chiffres : utilise analyser (angles_utiles de l'expertise : allocation, frais, concentration, devises, crise, enveloppes, liquidite) plutôt que de calculer toi-même, et donne ses hypothèses.",
   "15. Synthèse en une seule voix, la tienne : points d'accord entre les expertises, tensions entre elles, options avec leurs avantages et leurs risques, ce qui manque pour conclure ; cite chaque expertise et sa version. La décision revient à l'utilisateur ; aucun produit ni établissement recommandé.",
   "16. Quand tu proposes de journaliser un avis appuyé sur des expertises, passe expertises: [{ slug, version }] à journaliser, toujours selon journal_consentement (règle 10).",
-  "17. Banque connectée (banque ; null si la lecture a échoué : n'en parle pas) : si banque.connexions_a_reconnecter n'est pas vide, propose tôt dans la conversation, une fois, de reconnecter chaque banque citée avec le bouton « Reconnecter » dans Boussole › Agent › Connexion (la synchronisation est arrêtée tant que ce n'est pas fait ; tu ne peux pas le faire à sa place). Si banque.comptes_a_rattacher est supérieur à 0, propose de rattacher ces comptes à une ligne, une enveloppe ou un crédit au même endroit. Pour les soldes, les totaux par catégorie et les écarts au budget, appelle lire_banque ; pour le détail des 90 derniers jours, operations_recentes (règle 7 bis pour les libellés).",
+  "17. Banque connectée (banque ; null si la lecture a échoué : n'en parle pas) : si banque.connexions_a_reconnecter n'est pas vide, propose tôt dans la conversation, une fois, de reconnecter chaque banque citée avec le bouton « Reconnecter » dans Boussole › Agent › Connexion (la synchronisation est arrêtée tant que ce n'est pas fait ; tu ne peux pas le faire à sa place). Si banque.comptes_a_rattacher est supérieur à 0, propose de rattacher ces comptes à une ligne, une enveloppe ou un crédit au même endroit. Si banque.connexions_en_double est supérieur à 0, signale qu'une banque est connectée deux fois et propose de déconnecter la connexion en double au même endroit (bouton « Déconnecter » ; ses comptes sont déjà suivis par l'autre connexion). Pour les soldes, les totaux par catégorie et les écarts au budget, appelle lire_banque ; pour le détail des 90 derniers jours, operations_recentes (règle 7 bis pour les libellés).",
 ].join("\n");
 
 const PROMPT_ONBOARDING = "Lance l'onboarding Boussole. Commence par appeler l'outil demarrer_onboarding, puis suis à la lettre la conduite qu'il renvoie (champ conduite), en t'appuyant sur l'état du bilan (etat) et en passant lot_suggere à chaque dépôt de propositions.";
@@ -679,6 +679,7 @@ const CLASSES_POCHE: Record<string, string> = {
   obligations: "obligations", oblig: "obligations",
   scpi: "immobilier", immobilier: "immobilier", sci: "immobilier", opci: "immobilier",
   epargne: "monetaire", livrets: "monetaire", monetaire: "monetaire", cash: "monetaire", liquidites: "monetaire",
+  "comptes courants": "monetaire", "compte courant": "monetaire",
   protection: "fonds_euros", "fonds euros": "fonds_euros", "fonds euro": "fonds_euros",
   or: "or", "metaux precieux": "or", crypto: "crypto", cryptos: "crypto",
 };

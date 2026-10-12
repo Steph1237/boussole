@@ -8,7 +8,7 @@
 //     risque recalculé après application de propositions (profil/main ← { risque }), compte (markOnboarded), routines (bascule
 //     active / en pause de la revue mensuelle dans Agent › Connexion : Store.routines.pause, spec RT1 — même nature que la bascule
 //     des règles : un contrôle, pas une saisie), banque (BQ1, Agent › Connexion : connecter ou reconnecter une banque par la page
-//     Powens, déconnecter, rattacher un compte à une ligne, une enveloppe ou un crédit — seules colonnes que 0021 laisse écrire) ;
+//     Powens, déconnecter, synchroniser maintenant, rattacher un compte à une ligne, une enveloppe ou un crédit — seules colonnes que 0021 laisse écrire) ;
 //   - aucune requête directe à la base (sb.from, .rpc) ni façade d'écriture retirée (collection, addMany, upsert, set, delete).
 // Les simulateurs ne sont pas dispensés de la règle d'écriture : ils n'écrivent rien non plus.
 import { test } from "node:test";
@@ -30,7 +30,7 @@ const API_AUTORISEE = {
   routines: ["pause"], // bascule active / en pause de la revue mensuelle (claude-guide.js)
   savoir: ["fiche"], // lecture
   expertises: ["detail"], // lecture (méthode d'une expertise, Agent › Expertises)
-  banque: ["connecter", "gerer", "deconnecter", "rattacher"], // banques connectées (claude-guide.js) : contrôle, pas saisie
+  banque: ["connecter", "gerer", "deconnecter", "rattacher", "synchroniser"], // banques connectées (claude-guide.js) : contrôle, pas saisie
 };
 const STORE_AUTORISE = ["get", "on", "emit", "reload", "mode", "setScope", "surveillerConnexions", "markOnboarded", "db", ...Object.keys(API_AUTORISEE)];
 
@@ -87,4 +87,5 @@ test("lecture seule : les vues de contrôle appellent bien les API dédiées (le
   assert.match(lire("claude-guide.js"), /window\.Store\.banque\.gerer\(cx\.id\)/, "Agent › Connexion : gérer les comptes d'une banque connectée");
   assert.match(lire("claude-guide.js"), /window\.Store\.banque\.deconnecter\(cx\.id\)/, "Agent › Connexion : déconnecter une banque");
   assert.match(lire("claude-guide.js"), /window\.Store\.banque\.rattacher\(cpt\.id, cible\)/, "Agent › Connexion : rattacher un compte");
+  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.synchroniser\(cx\.id\)/, "Agent › Connexion : synchroniser une banque maintenant");
 });

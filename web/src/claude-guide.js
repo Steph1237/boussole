@@ -16,7 +16,11 @@
    « Déconnecter » confirmé dans la page (pas de confirm()). « Gérer les comptes » sur chaque connexion (page de gestion Powens :
    activer un livret, un PEA… de la même banque) ; dès qu'une banque est connectée, « Connecter une banque » passe sous la liste avec
    le rappel AIDE_GERER (une seconde connexion à la même banque serait un doublon, facturé). Écritures de contrôle :
-   Store.banque.connecter et gerer (puis redirection vers la page Powens), deconnecter, rattacher. */
+   Store.banque.connecter et gerer (puis redirection vers la page Powens), deconnecter, rattacher, synchroniser.
+   Rapprochement automatique (migration 0022) : « Synchroniser maintenant » sur chaque connexion ; connexion en double (doublonDe) :
+   alerte « Connexion X en double … Déconnecte-la. » avec « Déconnecter » mis en avant ; compte en double grisé « En double », sans
+   sélecteur ; rattachement posé par la synchronisation dit « Rattaché automatiquement à … » (ou « Créé automatiquement : … ») et reste
+   modifiable ; suggestion (plusieurs cibles possibles) avec « Rattacher », qui appelle Store.banque.rattacher avec la cible suggérée. */
 (function () {
   "use strict";
   /* Demandes pré-remplies : courtes, en langage naturel, elles invoquent le connecteur et ses outils. */
@@ -118,7 +122,9 @@
   /** Options du sélecteur de rattachement d'un compte, selon son type : [{ valeur, libelle, groupe }]. Valeurs : "" (aucun),
       "pos:<id>", "env:<p1|p2>:<enveloppe encodée>", "cre:<id>" (compte de crédit seulement), "ign" (ne pas suivre ce compte). */
   function optionsRattachement(c, S) {
-    const s = S || {}, credit = c.type === "credit", out = [{ valeur: "", libelle: credit ? "Aucun crédit" : "Aucune (nouvelle ligne proposée)", groupe: null }];
+    const s = S || {}, credit = c.type === "credit", out = [{ valeur: "", groupe: null,
+      // seul un compte « autre » reçoit encore une proposition de ligne (courant et livret : ligne créée par la synchronisation)
+      libelle: credit ? "Aucun crédit" : c.type === "autre" ? "Aucune (nouvelle ligne proposée)" : "Aucune" }];
     const ignorer = { valeur: "ign", libelle: "Ne pas suivre ce compte", groupe: null };
     if (credit) {
       (((s.profil && s.profil.credits) || [])).forEach(k => out.push({ valeur: "cre:" + k.id, libelle: String(k.nom || "Crédit"), groupe: "Crédits" }));
@@ -165,12 +171,35 @@
       (err ? ' aria-describedby="cgBqErr-' + id + '"' : "") + ">" + html + "</select></div>" +
       (err ? '<p class="cg-rt-err" role="alert" id="cgBqErr-' + id + '">' + esc(err) + "</p>" : "");
   }
+  /** Libellé de ce à quoi un compte est rattaché (ligne · enveloppe, enveloppe · titulaire, crédit). */
+  function libelleCible(c, S) {
+    const s = S || {};
+    if (c.positionId) { const p = (s.positions || []).find(x => x && String(x.id) === String(c.positionId)); return p ? String(p.name || "Ligne") + (p.envelope ? " · " + p.envelope : "") : "une ligne"; }
+    if (c.creditId) { const k = ((s.profil && s.profil.credits) || []).find(x => x && String(x.id) === String(c.creditId)); return k ? String(k.nom || "Crédit") : "un crédit"; }
+    if (c.enveloppe) return c.enveloppe + " · " + nomPersonne(s, c.titulaire);
+    return "";
+  }
   function compteHtml(c, S, err) {
     const B = BE(), fait = B.rattache(c), ign = c.ignore === true, sl = /^\d{4}-\d{2}-\d{2}/.test(String(c.soldeLe || "")) ? " au " + String(c.soldeLe).slice(8, 10) + "/" + String(c.soldeLe).slice(5, 7) : "";
+    const tete = cls => '<li class="cg-bq-cpt' + cls + '"><div class="cg-bq-cpt-t"><b>' + esc(c.nom || "Compte") + "</b> ";
+    const sous = '<span class="cg-bq-cpt-s">' + esc(B.typeLibelle(c.type)) + ' · <span class="cg-bq-num">' + esc(montant(c.solde, c.devise)) + "</span>" + esc(sl) + "</span></div>";
+    // Compte en double d'un compte d'une autre connexion du même établissement (0022) : grisé, sans rattachement.
+    if (B.enDouble(c) && !ign && c.actif !== false) {
+      const b = (S && S.banque) || {}, jumeau = (b.comptes || []).find(k => k && String(k.id) === String(c.doublonDe));
+      const autre = jumeau ? (b.connexions || []).find(x => x && String(x.id) === String(jumeau.connexionId)) : null;
+      return tete(" doublon") + '<span class="cg-bq-tag">En double</span>' + sous +
+        '<p class="cg-bq-note">Déjà suivi par l\'autre connexion' + (autre && autre.etablissement ? " " + esc(autre.etablissement) : "") + " : rien à rattacher ici.</p></li>";
+    }
     const etiquette = c.actif === false ? '<span class="cg-bq-tag">Compte fermé</span>' : ign ? '<span class="cg-bq-tag">Non suivi</span>' : !fait ? '<span class="cg-bq-tag a-faire">À rattacher</span>' : "";
-    return '<li class="cg-bq-cpt' + (ign ? " ignore" : "") + '"><div class="cg-bq-cpt-t"><b>' + esc(c.nom || "Compte") + "</b> " + etiquette +
-      '<span class="cg-bq-cpt-s">' + esc(B.typeLibelle(c.type)) + ' · <span class="cg-bq-num">' + esc(montant(c.solde, c.devise)) + "</span>" + esc(sl) + "</span></div>" +
-      selecteurHtml(c, S, err) + "</li>";
+    // Rattachement posé par la synchronisation : dit tel quel, et modifiable (sélecteur, « Ne pas suivre ce compte »).
+    const auto = fait && !ign && c.rattacheAuto ? '<p class="cg-bq-auto">' + (c.creeAuto
+      ? "Créé automatiquement : " + esc(libelleCible(c, S)) + ". Tu peux changer ou ne pas suivre ce compte."
+      : "Rattaché automatiquement à " + esc(libelleCible(c, S)) + ". Tu peux changer ci-dessous.") + "</p>" : "";
+    // Suggestion (plusieurs cibles possibles) : confirmée d'un clic.
+    const sugg = !fait && !ign && c.actif !== false && B.suggestionOk(c.suggestion) ? '<div class="cg-bq-sugg"><p>Suggestion : <b>' + esc(c.suggestion.libelle) + "</b>" +
+      (c.suggestion.raison ? " — " + esc(c.suggestion.raison) : "") + "</p>" +
+      '<button type="button" class="cg-btn" data-cg-banque-suggestion="' + esc(c.id) + '">Rattacher<span class="cg-sr"> ' + esc(c.nom || "Compte") + "</span></button></div>" : "";
+    return tete(ign ? " ignore" : "") + etiquette + sous + auto + sugg + selecteurHtml(c, S, err) + "</li>";
   }
   function synchroTxt(ts, auj) {
     const p = BE().heureParis(ts);
@@ -201,12 +230,18 @@
       const pastille = e.aJour ? '<span class="cg-bq-pastille ok">À jour</span>' : e.action ? '<span class="cg-bq-pastille alerte">À reconnecter</span>' : '<span class="cg-bq-pastille attente">Incident passager</span>';
       const cpts = comptes.filter(k => k && String(k.connexionId) === String(c.id));
       const conf = String(opt.confirmer) === String(c.id) && opt.confirmer != null;
+      // Connexion en double (0022) : alerte, et « Déconnecter » mis en avant à la place du bouton ordinaire.
+      const dbl = c.doublonDe != null ? (cxs.find(x => x && String(x.id) === String(c.doublonDe)) || null) : null;
+      const deconnecter = '<button type="button" class="cg-btn ' + (c.doublonDe != null ? "danger" : "ghost") + '" data-cg-banque-deconnecter="' + id + '">Déconnecter<span class="cg-sr"> ' + esc(nom) + "</span></button>";
+      const alerte = c.doublonDe != null ? '<div class="cg-bq-doublon" role="note"><p>Connexion <b>' + esc(nom) + "</b> en double : elle ne contient que des comptes déjà présents dans l'autre connexion " +
+        esc((dbl && dbl.etablissement) || nom) + ". Déconnecte-la.</p>" + deconnecter + "</div>" : "";
       return '<li class="cg-bq-c"><div class="cg-bq-c-tete"><h3>' + esc(nom) + "</h3>" + pastille + "</div>" +
         '<p class="cg-bq-etat">' + (e.aJour ? "" : esc(e.libelle) + ". ") + esc(synchroTxt(c.derniereSynchro, auj)) + "</p>" +
-        (c.message && !e.aJour ? '<p class="cg-bq-msg">' + esc(c.message) + "</p>" : "") +
+        (c.message && !e.aJour ? '<p class="cg-bq-msg">' + esc(c.message) + "</p>" : "") + alerte +
         '<div class="cg-rt-act">' + (e.action ? '<button type="button" class="cg-btn" data-cg-banque-reconnecter="' + id + '">' + svg("ext") + 'Reconnecter<span class="cg-sr"> ' + esc(nom) + "</span></button>" : "") +
+        '<button type="button" class="cg-btn ghost" data-cg-banque-synchroniser="' + id + '">Synchroniser maintenant<span class="cg-sr"> ' + esc(nom) + "</span></button>" +
         '<button type="button" class="cg-btn ghost" data-cg-banque-gerer="' + id + '">' + svg("ext") + 'Gérer les comptes<span class="cg-sr"> ' + esc(nom) + "</span></button>" +
-        '<button type="button" class="cg-btn ghost" data-cg-banque-deconnecter="' + id + '">Déconnecter<span class="cg-sr"> ' + esc(nom) + "</span></button></div>" +
+        (c.doublonDe != null ? "" : deconnecter) + "</div>" +
         (conf ? '<div class="cg-bq-conf" role="group" aria-labelledby="cgBqConf-' + id + '"><p id="cgBqConf-' + id + '">Déconnecter <b>' + esc(nom) + "</b> ? Ses comptes et ses opérations sont retirés de Boussole ; tes lignes rattachées restent, en saisie manuelle.</p>" +
           '<div class="cg-rt-act"><button type="button" class="cg-btn danger" data-cg-banque-confirmer="' + id + '">Déconnecter</button>' +
           '<button type="button" class="cg-btn ghost" data-cg-banque-annuler="' + id + '">Annuler</button></div></div>' : "") +
@@ -357,6 +392,50 @@
       banques('[data-cg-banque-deconnecter="' + String(cx.id).replace(/"/g, "") + '"]');
     }
   }
+  /* « Synchroniser maintenant » : Store.banque.synchroniser(id) (relance Powens et synchronisation côté serveur ; le store recharge). */
+  async function synchroniserBq(b, cx) {
+    const focus = '[data-cg-banque-synchroniser="' + String(cx.id).replace(/"/g, "") + '"]', nom = cx.etablissement || "Banque";
+    occupe(b, true);
+    direBq("");
+    let res;
+    try { res = await window.Store.banque.synchroniser(cx.id); }
+    catch (e) { res = { erreur: "Synchronisation impossible pour le moment. Réessaie." }; }
+    occupe(b, false);
+    if (res && res.ok) {
+      etatBq.erreur = "";
+      const r = res.rapport || {}, n = +r.comptes || 0, a = +r.rattaches_auto || 0;
+      banques(focus);
+      direBq(nom + " synchronisée : " + n + " compte" + (n > 1 ? "s" : "") + " lu" + (n > 1 ? "s" : "") +
+        (a ? ", " + a + " rattaché" + (a > 1 ? "s" : "") + " automatiquement" : "") + "." +
+        (r.relance === false ? " Ta banque n'a pas pu être relancée : ce sont les données de son dernier passage." : ""));
+    } else {
+      etatBq.erreur = String((res && res.erreur) || "Synchronisation impossible pour le moment. Réessaie.").trim();
+      sigBq = "";
+      banques(focus);
+    }
+  }
+  /* « Rattacher » une suggestion de la synchronisation : même écriture que le sélecteur (Store.banque.rattacher). */
+  async function rattacherSuggestion(b, cpt) {
+    const cible = BE().cibleSuggestion(cpt.suggestion), libelle = String((cpt.suggestion && cpt.suggestion.libelle) || "la suggestion");
+    if (!cible) return;
+    const focus = '[data-cg-banque-compte="' + String(cpt.id).replace(/"/g, "") + '"]';
+    occupe(b, true);
+    let res;
+    try { res = await window.Store.banque.rattacher(cpt.id, cible); }
+    catch (e) { res = { erreur: "Rattachement impossible pour le moment. Réessaie." }; }
+    occupe(b, false);
+    if (res && res.ok) {
+      delete etatBq.erreurs[cpt.id];
+      const maj = { positionId: cible.positionId || null, enveloppe: cible.enveloppe || null, titulaire: cible.titulaire || null, creditId: cible.creditId || null, ignore: false, suggestion: null };
+      S = Object.assign({}, S, { banque: Object.assign({}, S.banque, { comptes: S.banque.comptes.map(k => (k === cpt ? Object.assign({}, k, maj) : k)) }) });
+      banques(focus);
+      direBq("« " + (cpt.nom || "Compte") + " » rattaché à " + libelle + ".");
+    } else {
+      etatBq.erreurs[cpt.id] = String((res && res.erreur) || "Rattachement impossible pour le moment. Réessaie.").trim();
+      sigBq = "";
+      banques('[data-cg-banque-suggestion="' + String(cpt.id).replace(/"/g, "") + '"]');
+    }
+  }
   async function rattacherBq(sel) {
     const cpt = trouver("comptes", sel.dataset.cgBanqueCompte), cible = cibleDe(sel.value);
     if (!cpt || !cible) return;
@@ -424,6 +503,8 @@
       if (b.dataset.cgRoutine) { if (!b.disabled) basculerRoutine(b); return; }
       if (b.hasAttribute("data-cg-banque-connecter")) { if (!b.disabled) connecterBq(b, null); return; }
       if (b.dataset.cgBanqueReconnecter) { const cx = trouver("connexions", b.dataset.cgBanqueReconnecter); if (cx && !b.disabled) connecterBq(b, cx); return; }
+      if (b.dataset.cgBanqueSynchroniser) { const cx = trouver("connexions", b.dataset.cgBanqueSynchroniser); if (cx && !b.disabled) synchroniserBq(b, cx); return; }
+      if (b.dataset.cgBanqueSuggestion) { const k = trouver("comptes", b.dataset.cgBanqueSuggestion); if (k && !b.disabled) rattacherSuggestion(b, k); return; }
       if (b.dataset.cgBanqueGerer) { const cx = trouver("connexions", b.dataset.cgBanqueGerer); if (cx && !b.disabled) connecterBq(b, cx, true); return; }
       if (b.dataset.cgBanqueDeconnecter) {
         const cx = trouver("connexions", b.dataset.cgBanqueDeconnecter); if (!cx) return;

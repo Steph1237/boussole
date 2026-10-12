@@ -5,7 +5,7 @@
      (CK2), revue mensuelle (routine de l'agent, RT1 : en retard, prête ou à activer), alertes des règles (rules.js), points « à suivre »
      échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard, banques connectées (BQ1 : connexion
      à refaire, urgence 1 pour SCARequired, wrongpass, webauthRequired, passwordExpired, 2 pour les autres états qui demandent une action,
-     rien pour un incident passager ; « N comptes à rattacher », urgence 2 ; règles de BanqueEtat, banque-etat.js).
+     rien pour un incident passager ; « N comptes à rattacher », urgence 2 ; « Connexion X en double », urgence 2, vers « Déconnecter » ; règles de BanqueEtat, banque-etat.js).
    - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an ;
      granularité automatique selon la période, sauf si l'utilisateur la choisit sur sa bascule : elle est alors mémorisée) ;
      repères verticaux aux dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
@@ -153,6 +153,13 @@
       out.push({ type: "banque", urgence: e.urgence || 2, date: isoOk(d) ? d : t, titre: "Ta banque " + etab + " demande une reconnexion",
         contexte: e.libelle + "." + (isoOk(d) ? " Dernière synchronisation le " + dateFr(d) + " : soldes et dépenses ne sont plus à jour." : ""),
         action: { label: "Reconnecter", route: R.connexion } });
+    });
+    // Connexion en double (migration 0022) : tous ses comptes sont déjà dans l'autre connexion du même établissement.
+    (typeof B.connexionsEnDouble === "function" ? B.connexionsEnDouble(b) : []).forEach(({ connexion, autre }) => {
+      const etab = plat(connexion.etablissement) || "sans nom", etabAutre = plat(autre && autre.etablissement) || etab;
+      out.push({ type: "banque", urgence: 2, date: t, titre: "Connexion " + etab + " en double",
+        contexte: "Elle ne contient que des comptes déjà présents dans l'autre connexion " + etabAutre + " : déconnecte-la.",
+        action: { label: "Déconnecter", route: R.connexion } });
     });
     const libres = B.comptesARattacher(b);
     if (libres.length) out.push({ type: "banque", urgence: 2, date: t, titre: pluriel(libres.length, "compte") + " à rattacher",

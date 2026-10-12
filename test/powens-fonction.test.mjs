@@ -90,7 +90,7 @@ function fausseBase(init = {}, { rpc = {}, utilisateurs = {} } = {}) {
     const q = { table, op: "select", filtres: [], val: null, opts: {}, unique: null };
     const correspond = r => q.filtres.every(([k, op, v]) => op === "eq" ? String(r[k]) === String(v)
       : op === "in" ? v.map(String).includes(String(r[k])) : op === "lt" ? r[k] < v : op === "gte" ? r[k] >= v
-      : op === "is" ? (r[k] ?? null) === v : true);
+      : op === "is" ? (r[k] ?? null) === v : op === "neq" || op === "not_is" ? (r[k] ?? null) !== v : true);
     const executer = () => {
       journal.push({ table, op: q.op, filtres: q.filtres, val: q.val });
       let data = null;
@@ -117,7 +117,8 @@ function fausseBase(init = {}, { rpc = {}, utilisateurs = {} } = {}) {
       select: () => b, order: () => b, limit: () => b,
       eq: (k, v) => { q.filtres.push([k, "eq", v]); return b; }, in: (k, v) => { q.filtres.push([k, "in", v]); return b; },
       lt: (k, v) => { q.filtres.push([k, "lt", v]); return b; }, gte: (k, v) => { q.filtres.push([k, "gte", v]); return b; },
-      is: (k, v) => { q.filtres.push([k, "is", v]); return b; },
+      is: (k, v) => { q.filtres.push([k, "is", v]); return b; }, neq: (k, v) => { q.filtres.push([k, "neq", v]); return b; },
+      not: (k, op, v) => { q.filtres.push([k, "not_" + op, v]); return b; },
       insert: v => { q.op = "insert"; q.val = v; return b; }, upsert: (v, o = {}) => { q.op = "upsert"; q.val = v; q.opts = o; return b; },
       update: v => { q.op = "update"; q.val = v; return b; }, delete: () => { q.op = "delete"; return b; },
       maybeSingle: () => { q.unique = "maybe"; return b; }, single: () => { q.unique = "single"; return b; },
@@ -470,7 +471,9 @@ test("webhook CONNECTION_SYNCED : jeton bon → 200, synchronisation avec le jet
   assert.equal(T.banque_connexions[0].user_id, U);
   assert.equal(T.banque_comptes.length, 2);
   assert.equal(T.banque_operations.length, 2);
-  assert.equal(T.propositions.length, 2);
+  assert.equal(T.propositions.length, 0, "courant et livret : lignes créées et rattachées automatiquement, aucune proposition");
+  assert.deepEqual(T.positions.map(p => p.name).sort(), ["Compte courant Banque Test", "Livret A"]);
+  assert.ok(T.banque_comptes.every(c => c.position_id && c.rattache_auto && c.cree_auto === true));
   assert.ok(m.powens.appels.every(a => a.auth === `Bearer ${JETON}`));
   const avant = J(T);
   const r2 = await m.appeler("/powens/webhook", { jeton: JETON, corps: PAYLOAD });
@@ -675,4 +678,39 @@ test("aucun secret dans le code ; jeton jamais journalisé ; deno.json épinglé
   for (const [k, v] of Object.entries(deno.imports)) assert.match(v, /^npm:[@\w/.-]+@\d+\.\d+\.\d+/, `${k} épinglé`);
   const mcp = JSON.parse(lire("supabase/functions/mcp/deno.json")).imports;
   for (const [k, v] of Object.entries(deno.imports)) assert.equal(v, mcp[k], `${k} : même version que mcp`);
+});
+
+test("synchroniser : JWT, interrupteur, appartenance, identifiant ; relance Powens (PUT, sans l'utilisateur) puis synchronisation ; rapport résumé", { skip: SANS_STRIP }, async () => {
+  const init = { banque_connexions: [{ user_id: U, id: 7 }, { user_id: AUTRE, id: 8 }] };
+  const m = monter({ coffre: coffreU(), init });
+  assert.equal((await m.appeler("/powens/synchroniser", { corps: { connection_id: 7 } })).status, 401, "sans JWT");
+  assert.equal((await m.appeler("/powens/synchroniser", { jeton: JWT, corps: {} })).status, 400, "sans connection_id");
+  assert.equal((await m.appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: "7; drop" } })).status, 400);
+  assert.equal((await m.appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 8 } })).status, 404, "connexion d'un autre");
+  assert.equal((await m.appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 99 } })).status, 404);
+  assert.equal(m.powens.appels.length, 0, "aucun appel à Powens avant les contrôles");
+  const r = await m.appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 7 } });
+  assert.equal(r.status, 200);
+  const b = await corps(r);
+  assert.equal(b.ok, true);
+  assert.deepEqual(J(b.rapport), { ok: true, sautee: false, relance: true, etat: null, comptes: 2, operations: 2, rattaches_auto: 2, crees_auto: 2, suggestions: 0,
+    comptes_en_double: 0, doublon_de: null, positions_creees: 0, lignes_adoptees: 0, propositions: 0, erreurs: 0 });
+  const put = m.powens.appels.find(a => a.methode === "PUT");
+  assert.deepEqual([put.chemin, put.query], ["users/me/connections/7", { psu_requested: "false", background: "true" }]);
+  assert.ok(m.powens.appels.indexOf(put) < m.powens.appels.findIndex(a => a.methode === "GET" && a.chemin === "users/me/connections/7"), "relance avant la lecture");
+  assert.equal(m.db.tables.banque_comptes.length, 2, "synchronisée côté serveur");
+  assert.ok(!JSON.stringify(b).includes(JETON), "jamais de jeton dans la réponse");
+  // Relance refusée par Powens : la synchronisation des données déjà lues a lieu quand même.
+  const m2 = monter({ coffre: coffreU(), init, powens: powensSimule({ pannes: { "PUT users/me/connections/7": 429 } }) });
+  const r2 = await corps(await m2.appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 7 } }));
+  assert.equal(r2.rapport.relance, false);
+  assert.match(r2.rapport.relance_erreur, /limite les appels/);
+  assert.equal(r2.rapport.comptes, 2);
+  // Interrupteur éteint → 403 ; accès Powens absent → 409 ; synchronisation déjà en cours → 409.
+  assert.equal((await monter({ coffre: coffreU(), init, banque: false }).appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 7 } })).status, 403);
+  assert.equal((await monter({ init }).appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 7 } })).status, 409);
+  const m3 = monter({ coffre: coffreU(), init, rpc: { banque_verrouiller: async () => ({ data: false, error: null }) } });
+  const r3 = await m3.appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 7 } });
+  assert.equal(r3.status, 409);
+  assert.match((await corps(r3)).erreur, /déjà en cours/);
 });
