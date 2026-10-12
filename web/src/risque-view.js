@@ -7,7 +7,8 @@
    Trois cartes (UI.carte) → panneau (UI.panneau) : profil déclaré (description, score, garde-fous, réponses validées en
    lecture), comportement du portefeuille et perte plausible (volatilité, baisse plausible, pire baisse, méthode).
    Barres d'allocation par classe avec la fourchette du profil ; accordéons fermés (état gardé d'un rendu à l'autre) : d'où vient
-   le risque (5 classes puis « Voir plus »), méthode ; classement des poches en lecture avec « Corriger avec Claude ».
+   le risque (5 classes puis « Voir plus »), méthode ; classement des poches en lecture avec « Corriger avec Claude », chaque ligne
+   d'une poche menant à sa fiche de Patrimoine › Comptes (adresse d'App.ouvrir({ ligne }) : App.lienCompte / ComptesView.lien).
    Calculs : Risque (risque.js : evaluer, synthese, ecarts), Marche (marche.js : classeRisque, CLASSES), Calc, Plan (budget).
    Aucune écriture au store (spec 2026-10-11-saisie-par-agent).
    Fonctions pures exportées pour les tests (module.exports) : prerempli, valeurPreremplie, valide, geometrie, fpct, ecartNiveaux,
@@ -283,6 +284,19 @@ function accordeonsHtml(E){
 /* Rattachement poche → classe, en lecture : blocs présents dans le périmètre, classe détectée et correction enregistrée
    (profiles.classes). La correction se fait avec Claude. */
 function classeLabel(k){ const M_=M(); return window.Calc.CLASSES_LABELS[k]||(M_&&M_.CLASSES[k]&&M_.CLASSES[k].label)||k; }
+/* Fiche d'une ligne dans Patrimoine › Comptes : même adresse qu'App.ouvrir({ ligne }) (App.lienCompte → ComptesView.lien). */
+function lienLigne(id){
+  const A=window.App, CV=window.ComptesView;
+  if(A&&typeof A.lienCompte==="function") return A.lienCompte({ligne:id});
+  if(CV&&typeof CV.lien==="function") return CV.lien({ligne:id});
+  return "patrimoine/comptes?ligne="+encodeURIComponent(String(id));
+}
+const MAX_LIGNES_POCHE=6;
+/** Lignes d'une poche en liens vers leur fiche (les plus grosses d'abord, MAX_LIGNES_POCHE au plus). */
+function lignesPocheHtml(L){
+  const tri=L.slice().sort((a,b)=>window.Calc.val(b)-window.Calc.val(a)), vus=tri.slice(0,MAX_LIGNES_POCHE);
+  return `<ul class="rv-plignes">${vus.map(p=>{const r=lienLigne(p.id);return `<li><a href="#${esc(r)}" data-goto="${esc(r)}">${esc(p.name||"Ligne sans nom")}</a></li>`;}).join("")}${tri.length>vus.length?`<li class="muted">et ${tri.length-vus.length} autre${tri.length-vus.length>1?"s":""}</li>`:""}</ul>`;
+}
 function renderClasses(){
   const box=$("rvClassesBody"), M_=M(), sur=S.classes||{}, u=U();
   const vivantes=(S.positions||[]).filter(p=>window.Calc.inScope(p,S.scope)&&window.Calc.counted(p));
@@ -298,6 +312,7 @@ function renderClasses(){
       return `<li class="rv-prow">
         <div class="rv-pn"><b>${esc(b)}</b><span class="muted">${L.length} ligne${L.length>1?"s":""} · <span class="num">${eur(montant)}</span></span></div>
         <div class="rv-pc"><span>${esc(effectif.map(classeLabel).join(" + "))}</span><span class="rv-pt">${corrige?"corrigée":"automatique"}</span></div>
+        ${lignesPocheHtml(L)}
       </li>`;
     }).join("");
     h=`<p class="muted">La classe de chaque poche est déduite de son nom. Si elle ne correspond pas à son contenu (par exemple une poche « Protection » qui mélange fonds euros et or), corrige-la avec Claude. Le rattachement vaut pour tout le foyer ; seules les poches ${esc(scopeDe())} sont listées.</p>

@@ -491,8 +491,8 @@ test("indicateurs : patrimoine net et variation sur la période, bonnes pratique
   assert.ok(Math.abs(ind.net.valeur - net) < 1e-6);
   assert.equal(typeof ind.net.variation, "number");
   assert.ok(ind.net.variation > 0, "le patrimoine de la démo progresse sur les photos");
-  const pr = Pratiques.evaluer({ positions: S.positions, profil: S.profil, config: S.config, budget: S.budget, objectifs: S.objectifs, scope: "foyer", risque: S.risque, classes: S.classes, today: new Date() });
-  assert.equal(ind.pratiques.total, pr.total);
+  const pr = Pratiques.evaluer({ positions: S.positions, profil: S.profil, config: S.config, budget: S.budget, objectifs: S.objectifs, scope: "foyer", risque: S.risque, classes: S.classes, banque: S.banque, today: new Date() });
+  assert.equal(ind.pratiques.total, pr.total, "même note qu'avec la banque (budget réel des comptes courants)");
   assert.equal(ind.pratiques.provisoire, pr.provisoire);
   assert.equal(ind.allocation.profil, null, "profil de risque de la démo jamais rempli");
   assert.equal(ind.echeance.prochaine.source, "jalon");
@@ -929,4 +929,21 @@ test("Patrimoine net → Patrimoine › Comptes : chaque enveloppe du détail ou
   const S2 = demoS(); S2.positions[0].envelope = PIEGE;
   assert.doesNotMatch(A.detail("net", A.indicateurs(S2, jourLocal(), { id: "1a" }, DEPS), { id: "1a" }).contenu, /<img/);
   assert.match(html, /<a class="aj-comptes" href="#patrimoine\/comptes" data-goto="patrimoine\/comptes">Voir le détail par compte<\/a>/);
+});
+
+/* ---------- doublons probables (cas type : ligne « PEA DUPONT » qui recopie le total du PEA) ---------- */
+test("boite : doublon probable (Calc.doublonsProbables) → élément urgent vers la fiche de l'enveloppe ; rien pour une ligne d'espèces de 60 €", () => {
+  const titres = [7200, 6100, 5500, 5100, 4500, 4200, 3800, 3500, 3000, 2700, 2300, 1900, 1650].map((v, i) =>
+    ({ id: "t" + i, name: "Titre " + i, envelope: "PEA", owner: "p1", bloc: "Monde", mode: "market", isin: "FR000000000" + i, qty: 1, price: v, status: "actif" }));
+  const esp = { id: "esp", name: "Espèces PEA", envelope: "PEA", owner: "p1", bloc: "Liquidités", mode: "manual", isin: null, value: 60, status: "actif" };
+  const dupont = { id: "dupont", name: "PEA DUPONT", envelope: "PEA", owner: "p1", bloc: "Monde", mode: "manual", isin: null, value: 51230.5, status: "actif" };
+  const S = Object.assign(demoS(), { positions: [...titres, esp, dupont] });
+  const d = A.boite(S, jourLocal(), DEPS).filter(x => x.type === "doublon");
+  assert.equal(d.length, 1);
+  assert.equal(d[0].urgence, 1);
+  assert.match(d[0].titre, /PEA DUPONT/);
+  assert.match(d[0].contexte, /compté deux fois/);
+  assert.equal(d[0].action.route, "patrimoine/comptes?enveloppe=PEA&titulaire=p1");
+  assert.deepEqual(A.boite(Object.assign(demoS(), { positions: [...titres, esp] }), jourLocal(), DEPS).filter(x => x.type === "doublon"), []);
+  assert.deepEqual(A.boite(demoS(), jourLocal(), DEPS).filter(x => x.type === "doublon"), [], "démo : aucun doublon");
 });

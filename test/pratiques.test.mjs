@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const Pratiques = require("../web/src/pratiques.js");
 const Plan = require("../web/src/plan.js");
+const Calc = require("../web/src/calc.js");
 const DEMO = require("../web/src/demo-data.js");
 
 const TODAY = "2026-10-10";
@@ -332,13 +333,17 @@ describe("données de démonstration", () => {
       assert.deepEqual(r.familles.map(f => f.cle), ["securite", "effort", "allocation", "efficacite"]);
       assert.equal(r.complet, false);
       assert.equal(crit(r, "adequation").aCompleter, true);
-      const ref = Plan.score(ctxDemo(scope)).items;
-      ["matelas", "epargne", "endettement", "concentration"].forEach(k => {
+      // Plan.score sur les lignes hors comptes courants (la démo a un compte courant, hors allocation et diversification)
+      const ref = Plan.score(Object.assign(ctxDemo(scope), { positions: Calc.horsCourants(DEMO.positions) })).items;
+      ["epargne", "endettement", "concentration"].forEach(k => {
         const c = crit(r, k), i = ref.find(x => x.cle === k);
         assert.equal(c.points, i.points, k);
         assert.equal(c.valeur, i.valeur, k);
         assert.equal(c.aCompleter, i.aCompleter, k);
       });
+      // matelas : épargne disponible + comptes courants au-delà de la réserve (Calc.matelasDisponible) ÷ dépenses prévues
+      const dep = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, scope).depenses;
+      assert.ok(Math.abs(crit(r, "matelas").valeur - Calc.matelasDisponible(DEMO.positions, scope, { config: DEMO.config, depenses: dep }).total / dep) < 1e-9, "matelas");
       assert.equal(crit(r, "patrimoine"), undefined); // reste dans « Rang parmi les Français »
       assert.ok(Number.isInteger(r.total) && r.total > 0 && r.total <= 100);
     });
@@ -350,7 +355,7 @@ describe("données de démonstration", () => {
     assert.equal(s.aCompleter, false);
     assert.equal(s.points, 20); // bitcoin 2,7 % < 5 %
     assert.equal(crit(r, "protection").aCompleter, true); // crédit + enfant, rien de déclaré
-    assert.equal(crit(r, "apport").points, 2);           // 6 300 € réunis sur 60 000 €
+    assert.equal(crit(r, "apport").points, 1);           // 2 900 € réunis sur 60 000 € (le compte courant n'est plus dans la poche Épargne)
     assert.equal(crit(r, "liquidite_objectifs").points, 20);
     assert.equal(crit(r, "geographie").points, 20);
     assert.equal(crit(r, "frais").aCompleter, true);
@@ -424,4 +429,21 @@ describe("comptes courants (spec cp1 § 1)", () => {
     assert.equal(crit(seul, "speculatif").aCompleter, true);
     assert.equal(crit(seul, "concentration").aCompleter, true);
   });
+});
+
+/* ---------- revue CP1 (I2) : toutes les vues passent la banque (budget réel des comptes courants) à Pratiques.evaluer ---------- */
+test("appels de Pratiques.evaluer : banque transmise partout (Santé, Aujourd'hui, Actions, Journal), comme le connecteur", async () => {
+  const { readFileSync } = await import("node:fs");
+  const appels = [];
+  for (const f of ["sante.js", "aujourdhui.js", "actions.js", "journal-view.js", "pilotage.js", "accueil.js", "bilan.js", "plan-view.js", "objectifs-view.js", "risque-view.js"]) {
+    const src = readFileSync("web/src/" + f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of src.matchAll(/\.evaluer\(\{/g)) appels.push([f, src.slice(m.index, src.indexOf("})", m.index))]);
+  }
+  assert.ok(appels.length >= 4, "au moins les quatre appels connus");
+  for (const [f, a] of appels) assert.match(a, /\bbanque\s*:/, f + " : banque transmise");
+  // Actions et Santé gardent S.banque à la mise à jour ; Actions la reprend de l'état courant pour les autres appelants (Bilan)
+  const src = readFileSync("web/src/actions.js", "utf8");
+  assert.match(src, /banque:snap\.banque\|\|null/, "update garde S.banque");
+  assert.match(readFileSync("web/src/sante.js", "utf8"), /classes:snap\.classes\|\|\{\},banque:snap\.banque\|\|null\}/, "Santé garde S.banque");
+  assert.match(src, /\["objectifs","risque","classes","banque"\]/, "completer : banque de l'état courant pour les autres appelants");
 });

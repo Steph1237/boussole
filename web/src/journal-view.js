@@ -39,10 +39,18 @@
     date_decision: "Date de décision", revue_le: "Date de revue", options: "Options", liens: "Liens" };
   const LIENS = [
     { cle: "objectifs", label: "Objectif", route: "patrimoine/objectifs", liste: S => S.objectifs, nom: x => x.nom },
-    { cle: "positions", label: "Placement", route: "patrimoine/placements", liste: S => S.positions, nom: x => x.name || x.nom },
+    { cle: "positions", label: "Placement", route: x => lienCompte({ ligne: x.id }), liste: S => S.positions, nom: x => x.name || x.nom },
     { cle: "biens", label: "Bien", route: "patrimoine/immobilier", liste: S => S.profil && S.profil.biens, nom: x => x.nom },
     { cle: "credits", label: "Crédit", route: "patrimoine/immobilier", liste: S => S.profil && S.profil.credits, nom: x => x.nom },
   ];
+  /* Fiche de Patrimoine › Comptes d'un élément lié (ligne) : même adresse qu'App.ouvrir (App.lienCompte, sinon ComptesView.lien). */
+  function lienCompte(cible) {
+    const g = k => (typeof window !== "undefined" && window[k]) || null, A = g("App"), CV = g("ComptesView") ||
+      (typeof module === "object" && module.exports && typeof require === "function" ? require("./comptes-view.js") : null);
+    if (A && typeof A.lienCompte === "function") return A.lienCompte(cible);
+    if (CV && typeof CV.lien === "function") return CV.lien(cible);
+    return "patrimoine/comptes?ligne=" + encodeURIComponent(String(cible.ligne));
+  }
   const REPERES = { livret_a_taux: "Taux du Livret A", pfu_taux: "Prélèvement forfaitaire unique" };
   const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
@@ -128,7 +136,7 @@
     let bp = null;
     if (Pr && typeof Pr.evaluer === "function") {
       try { bp = Pr.evaluer({ positions, profil: s.profil || null, config: s.config || null, budget: s.budget || null, objectifs: s.objectifs || [], scope: "foyer",
-        risque: s.risque || null, classes: s.classes || {}, today: new Date(aujourdhui() + "T12:00:00") }); } catch (e) { bp = null; }
+        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, today: new Date(aujourdhui() + "T12:00:00") }); } catch (e) { bp = null; }
     }
     const bpM = disponible ? fPratiques(m.bonnes_pratiques) : null;
     const bpA = bp ? fPratiques(bp) : null;
@@ -231,7 +239,7 @@
       const liste = d.liste(s);
       ids.forEach(id => {
         const x = Array.isArray(liste) ? liste.find(o => o && String(o.id) === String(id)) : null;
-        out.push(x ? { label: d.label, nom: plat(d.nom(x)) || "sans nom", route: d.route } : { label: d.label, nom: "élément supprimé", route: null });
+        out.push(x ? { label: d.label, nom: plat(d.nom(x)) || "sans nom", route: typeof d.route === "function" ? d.route(x) : d.route } : { label: d.label, nom: "élément supprimé", route: null });
       });
     });
     return out;

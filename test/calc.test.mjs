@@ -192,6 +192,12 @@ const FAMILLES_ATTENDUES = [
   ["AV Linxea Spirit 2", "Épargne", "investissement"], ["PER", "Monde", "investissement"], ["PERin Camille", "Monde", "investissement"],
   ["Crypto (Binance)", "Crypto", "investissement"], ["Ledger", "Crypto", "investissement"], ["SCPI", "SCPI", "investissement"],
   ["Épargne salariale", "Monde", "investissement"], ["", "Vins", "investissement"], [null, null, "investissement"],
+  // libellés longs et variantes (revue CP1, I4) : plans d'épargne → investissement, compte joint → courant
+  ["Plan d'épargne en actions", "Monde", "investissement"], ["Plan d’épargne en actions Camille", "Épargne", "investissement"],
+  ["Plan d'épargne retraite", "Monde", "investissement"], ["Plan épargne retraite individuel", "Épargne", "investissement"],
+  ["Plan d'épargne entreprise", "Monétaire", "investissement"], ["Plan d'épargne avenir climat", "Épargne", "investissement"],
+  ["PERCOL", "Monde", "investissement"], ["PERECO Sam", "Épargne", "investissement"], ["Contrat Madelin", "Épargne", "investissement"],
+  ["Compte joint", "Épargne", "courant"], ["Comptes joints", "", "courant"], ["Banque des Canuts", "Compte joint", "courant"],
 ];
 
 test("famille : courant (bloc ou enveloppe « comptes courants »), épargne disponible, investissement ; repli sur la classe de la poche", () => {
@@ -240,6 +246,20 @@ test("budget réel : 3 derniers mois complets, revenus / dépenses / épargne, v
   assert.equal(Calc.budgetReel({ mois: [mois("2026-09-01", "divers", 0, 10)] }, AUJ).depenses, 10, "forme du connecteur (sans actif)");
 });
 
+test("budget réel : parCompte = vrai seulement si chaque mois retenu est détaillé par compte ; mois mixtes lus mois par mois", () => {
+  const b = { actif: true, comptes: COMPTES, mois: [
+    mois("2026-07-01", "divers", 0, 2000),                                                    // totaux par utilisateur (compte 0 → compteId nul)
+    mois("2026-08-01", "divers", 0, 1000, { compteId: 1 }), mois("2026-08-01", "divers", 0, 400, { compteId: 2 }),
+    mois("2026-09-01", "divers", 0, 999, { compteId: null }), mois("2026-09-01", "divers", 0, 500, { compteId: 1 }), // mois détaillé : la ligne agrégée est ignorée
+  ] };
+  const r = Calc.budgetReel(b, AUJ);
+  assert.equal(r.depenses, (2000 + 1000 + 500) / 3, "juillet agrégé, août et septembre : compte courant 1 seulement");
+  assert.equal(r.parCompte, false, "juillet n'est pas détaillé par compte : libellé « tous comptes connectés »");
+  assert.equal(Calc.budgetReel(b, AUJ, 2).parCompte, true, "août et septembre seuls : comptes courants");
+  assert.equal(Calc.budgetReel({ actif: true, mois: [mois("2026-09-01", "divers", 0, 10)] }, AUJ).parCompte, false);
+  assert.deepEqual(Calc.moisCourants(b).map(m => m.sorties), [2000, 1000, 500]);
+});
+
 test("budget réel : mois agrégés par compte → comptes courants seulement ; sans compte → totaux tels quels", () => {
   const b = { actif: true, comptes: COMPTES, mois: [
     mois("2026-09-01", "divers", 0, 1000, { compteId: 1 }), mois("2026-09-01", "divers", 0, 500, { compteId: 2 }),
@@ -280,7 +300,7 @@ test("matelas : épargne disponible + comptes courants au-delà d'une réserve (
 test("argent qui dort : comptes courants au-delà de 1,5 mois de dépenses deux mois de suite (photos, sinon solde actuel)", () => {
   const budget = { lignes: [{ type: "depense", montant: 2000 }] };   // seuil 3 000 €
   const positions = [L("Banque", "Comptes courants", 6000), L("Livret A", "Épargne", 9000)];
-  const photo = (date, banque) => ({ date, byEnvelope: { Banque: banque, "Livret A": 9000 } });
+  const photo = (date, banque) => ({ date, byBloc: { "Comptes courants": banque, "Épargne": 9000 }, byEnvelope: { Banque: banque + 50000, "Livret A": 9000 } });
   const S = { positions, budget, profil: {}, config: {}, snapshots: [photo("2026-08-31", 5000), photo("2026-09-15", 9000), photo("2026-09-30", 4500), photo("2026-10-11", 100)] };
   assert.deepEqual(Calc.argentQuiDort(S, AUJ), { montant: 1500, mois: 2, solde: 4500, seuil: 3000, depenses: 2000, source: "prevu" });
   assert.equal(Calc.argentQuiDort(Object.assign({}, S, { snapshots: [photo("2026-08-31", 2000), photo("2026-09-30", 4500)] }), AUJ), null, "un seul mois au-dessus");
@@ -296,4 +316,41 @@ test("argent qui dort : comptes courants au-delà de 1,5 mois de dépenses deux 
   // trois mois de suite
   const trois = Calc.argentQuiDort(Object.assign({}, S, { snapshots: [photo("2026-07-31", 8000), ...S.snapshots] }), AUJ);
   assert.deepEqual([trois.mois, trois.montant], [3, 1500]);
+});
+
+test("argent qui dort : mesuré sur les seules lignes des comptes courants (poche, sinon enveloppe « compte courant »), pas sur toute l'enveloppe", () => {
+  const budget = { lignes: [{ type: "depense", montant: 2000 }] };   // seuil 3 000 €
+  // l'enveloppe « Boursorama » mêle un compte courant et un PEA : byEnvelope.Boursorama compterait le PEA
+  const positions = [L("Boursorama", "Comptes courants", 2000), L("Boursorama", "Monde", 40000), L("Compte joint", "Épargne", 1500)];
+  const photo = (date, cc, joint) => ({ date, byBloc: { "Comptes courants": cc, Monde: 40000, "Épargne": joint }, byEnvelope: { Boursorama: cc + 40000, "Compte joint": joint } });
+  const S = { positions, budget, profil: {}, config: {}, snapshots: [photo("2026-08-31", 2000, 1500), photo("2026-09-30", 2100, 1600)] };
+  const r = Calc.argentQuiDort(S, AUJ);
+  assert.deepEqual([r.mois, r.solde, r.montant], [2, 3700, 500], "poche « Comptes courants » + enveloppe « Compte joint » (toute courante)");
+  assert.equal(Calc.argentQuiDort(Object.assign({}, S, { snapshots: [photo("2026-08-31", 500, 1500), photo("2026-09-30", 500, 1600)] }), AUJ), null,
+    "sous le seuil : le PEA de la même enveloppe n'est pas compté");
+  assert.equal(Calc.argentQuiDort(Object.assign({}, S, { snapshots: [{ date: "2026-08-31", byEnvelope: { Boursorama: 50000 } }, { date: "2026-09-30", byEnvelope: { Boursorama: 50000 } }] }), AUJ), null,
+    "photos sans poche ni enveloppe courante : rien de mesurable");
+});
+
+/* ---------- doublons probables (cas type : ligne « PEA DUPONT » qui recopie le total du PEA) ---------- */
+/** Cas type (montants fictifs) : 13 lignes de titres + « Espèces PEA » (≈ 51 500 € en tout) et une ligne manuelle « PEA DUPONT » de 51 230,50 €. */
+function peaType() {
+  const titres = [7200, 6100, 5500, 5100, 4500, 4200, 3800, 3500, 3000, 2700, 2300, 1900, 1650].map((v, i) =>
+    ({ id: "t" + i, name: "Titre " + i, envelope: "PEA", owner: "p1", bloc: "Monde", mode: "market", isin: "FR000000000" + i, qty: 1, price: v, status: "actif" }));
+  return [...titres,
+    { id: "esp", name: "Espèces PEA", envelope: "PEA", owner: "p1", bloc: "Liquidités", mode: "manual", isin: null, value: 60, status: "actif" },
+    { id: "dupont", name: "PEA DUPONT", envelope: "PEA", owner: "p1", bloc: "Monde", mode: "manual", isin: null, value: 51230.5, status: "actif" }];
+}
+test("doublonsProbables : ligne manuelle sans ISIN à ±3 % de la somme des autres lignes actives de la même enveloppe et du même titulaire", () => {
+  const P = peaType(), somme = P.filter(p => p.id !== "dupont").reduce((a, p) => a + Calc.val(p), 0);
+  assert.ok(Math.abs(somme - 51500) < 100, "≈ 51 500 € hors doublon");
+  assert.deepEqual(Calc.doublonsProbables(P), [{ ligne: "dupont", nom: "PEA DUPONT", enveloppe: "PEA", titulaire: "p1", valeur: 51230.5, sommeAutres: somme }]);
+  // cas négatifs
+  assert.deepEqual(Calc.doublonsProbables(P.filter(p => p.id !== "dupont")), [], "une ligne d'espèces de 60 € ne déclenche rien");
+  assert.deepEqual(Calc.doublonsProbables(P.map(p => (p.id === "dupont" ? { ...p, value: 60000 } : p))), [], "au-delà de ±3 %");
+  assert.deepEqual(Calc.doublonsProbables(P.map(p => (p.id === "dupont" ? { ...p, isin: "FR0000000999" } : p))), [], "ligne avec ISIN");
+  assert.deepEqual(Calc.doublonsProbables(P.map(p => (p.id === "dupont" ? { ...p, owner: "p2" } : p))), [], "autre titulaire");
+  assert.deepEqual(Calc.doublonsProbables(P.map(p => (p.id === "dupont" ? { ...p, status: "clôturé" } : p))), [], "ligne clôturée");
+  assert.deepEqual(Calc.doublonsProbables([P[0], { ...P[14], value: P[0].price }]), [], "au moins deux autres lignes");
+  assert.deepEqual(Calc.doublonsProbables(null), []);
 });

@@ -389,7 +389,7 @@ test("demarrer_routine : banque (BQ1) — dépenses du mois écoulé contre le b
     if (r.table === "fonctionnalites") return { data: { active: true }, error: null };
     if (r.table === "banque_connexions") return { data: [{ id: 7, etablissement: "Banque Test", etat: "wrongpass", derniere_synchro: null }], error: null };
     if (r.table === "banque_mois") return { data: [{ mois: "2026-09-01", categorie: "logement", entrees: 0, sorties: 1300, nombre: 2 }], error: null };
-    if (r.table === "banque_operations") return { data: ops, error: null };
+    if (r.table === "banque_operations") { const rg = r.ops.find(o => o[0] === "range"); return { data: rg ? ops.slice(rg[1], rg[2] + 1) : ops, error: null }; }
     return { data: [], error: null };
   });
   let vu = null;
@@ -664,4 +664,87 @@ test("textes : nouvelles règles de index.ts (règle 12, onboarding 6, prompt re
   const ligne = instr.split("\n").find(l => l.includes("Routines (activer_routine, demarrer_routine, cloturer_routine, questions_routine)"));
   assert.ok(ligne, "instructions : ligne Routines");
   for (const t of [r12, onb, revue, ligne]) assert.doesNotMatch(t, VOUS);
+});
+
+/* ---------- argent qui dort dans la revue (I8 : port de Calc.argentQuiDort, web/src/calc.js) ---------- */
+const Lc = (name, envelope, value, extra = {}) => ({ id: name + envelope, name, envelope, bloc: "", owner: "p1", mode: "manual", value, status: "actif", ...extra });
+const PHOTOS_DORT = [
+  { date: "2026-08-31", by_bloc: { "Comptes courants": 5000, Livrets: 9000 }, by_envelope: { Banque: 5000, "Compte joint": 800 } },
+  { date: "2026-09-15", by_bloc: { "Comptes courants": 9000 }, by_envelope: { Banque: 9000 } },
+  { date: "2026-09-30", by_bloc: { "Comptes courants": 4500, Livrets: 9000 }, by_envelope: { Banque: 4500, "Compte joint": 700 } },
+  { date: "2026-10-11", by_bloc: { "Comptes courants": 100 }, by_envelope: { Banque: 100 } },
+];
+const POS_DORT = [Lc("Banque", "Banque", 6000, { bloc: "Comptes courants" }), Lc("Livret A", "Livret A", 9000, { bloc: "Livrets" })];
+
+test("argentQuiDort : même calcul que Calc.argentQuiDort (poches et enveloppes courantes, photos, sinon solde actuel), dépenses fournies", { skip: SANS_STRIP }, () => {
+  const Calc = require("../web/src/calc.js");
+  const R = chargerRoutines();
+  const AUJ = "2026-10-12";
+  const budget = { lignes: [{ type: "depense", montant: 2000 }] }, dep = { montant: 2000, source: "prevu" };
+  const cas = [
+    { positions: POS_DORT, snapshots: PHOTOS_DORT },
+    { positions: POS_DORT, snapshots: PHOTOS_DORT.filter(p => p.date !== "2026-08-31") },              // solde actuel + fin du mois précédent
+    { positions: POS_DORT, snapshots: [{ date: "2026-08-31", by_bloc: { "Comptes courants": 2000 } }, PHOTOS_DORT[2]] }, // un seul mois au-dessus
+    { positions: POS_DORT, snapshots: [{ date: "2026-07-31", by_bloc: { "Comptes courants": 8000 } }, ...PHOTOS_DORT] }, // trois mois
+    { positions: [...POS_DORT, Lc("Joint", "Compte joint", 3000)], snapshots: PHOTOS_DORT },             // enveloppe courante hors poche
+    { positions: [Lc("CC", "Boursorama", 7000, { bloc: "Comptes courants" }), Lc("PEA", "Boursorama", 20000, { bloc: "Monde" })], snapshots: [
+      { date: "2026-08-31", by_bloc: { "Comptes courants": 7000, Monde: 20000 }, by_envelope: { Boursorama: 27000 } },
+      { date: "2026-09-30", by_bloc: { "Comptes courants": 6500, Monde: 21000 }, by_envelope: { Boursorama: 27500 } }] }, // enveloppe mixte : poche seulement
+    { positions: [Lc("Livret A", "Livret A", 9000)], snapshots: PHOTOS_DORT },                           // pas de compte courant
+    { positions: POS_DORT, snapshots: [] },
+  ];
+  for (const [i, S] of cas.entries()) {
+    const c = Calc.argentQuiDort({ ...S, snapshots: S.snapshots.map(p => ({ date: p.date, byBloc: p.by_bloc, byEnvelope: p.by_envelope })), budget, profil: {}, config: {} }, AUJ);
+    assert.deepEqual(J(R.argentQuiDort(S, AUJ, dep)), J(c), "cas " + i);
+  }
+  assert.deepEqual(J(R.argentQuiDort(cas[0], AUJ, dep)), { montant: 1500, mois: 2, solde: 4500, seuil: 3000, depenses: 2000, source: "prevu" });
+  assert.equal(R.argentQuiDort(cas[0], AUJ, null), null, "dépenses inconnues");
+  // ligne de marché : valeur au cours (prix forcé, sinon cours de l'instrument)
+  const marche = [{ ...POS_DORT[0], mode: "market", qty: 10, value: null, instrument: { price: 600 } }, POS_DORT[1]];
+  assert.equal(R.argentQuiDort({ positions: marche, snapshots: cas[1].snapshots }, AUJ, dep).solde, 6000);
+});
+
+test("depensesReference : dépenses réelles (budget_reel) d'abord, sinon budget prévu (lignes + mensualités), sinon matelas en mois", { skip: SANS_STRIP }, () => {
+  const R = chargerRoutines();
+  assert.deepEqual(J(R.depensesReference({ moyenne: { depenses: 2500 } }, { depensesLignes: 1800, depenses: 2100 }, null)), { montant: 2500, source: "reel" });
+  assert.deepEqual(J(R.depensesReference({ moyenne: { depenses: 0 } }, { depensesLignes: 1800, depenses: 2100 }, null)), { montant: 2100, source: "prevu" });
+  assert.deepEqual(J(R.depensesReference(null, { depensesLignes: 0, depenses: 400 }, { cushion: { mode: "months", months: 3, depenses: 1900 } })), { montant: 1900, source: "prevu" });
+  assert.equal(R.depensesReference(null, null, { cushion: { min: 5000 } }), null);
+});
+
+test("demarrer_routine : argent_qui_dort (comptes courants au-delà de 1,5 mois de dépenses deux mois de suite) et sa question du mois, sans produit", { skip: SANS_STRIP }, async () => {
+  const R = chargerRoutines({ console: { warn() {}, error() {}, log() {} } });
+  const calcul = calculFaux({
+    charger: async () => ({ donnees: { positions: POS_DORT, lignes: [{ type: "depense", montant: 2000 }], config: {} }, objectifs: [], risque: null, classes: null }),
+    budgetTotaux: () => ({ revenus: 5000, depenses: 2000, depensesLignes: 2000, epargne: 0, reste: 3000, parCategorie: {} }),
+  });
+  const base = photos => fauxDb(r => {
+    if (r.table === "routines") return { data: ROUTINE, error: null };
+    if (r.table === "snapshots") return r.ops.some(o => o[0] === "gte") ? (photos === "panne" ? { data: null, error: { message: "panne" } } : { data: photos, error: null })
+      : { data: [], error: null };
+    return { data: [], error: null };
+  });
+  const db = base(PHOTOS_DORT);
+  const r = (await serveur(R.registerRoutines, db, { calcul, today: () => "2026-10-12" }).demarrer_routine.handler({ type: "revue_mensuelle" })).ok;
+  const a = r.argent_qui_dort;
+  assert.deepEqual(J({ ...a, question: undefined }), { montant: 1500, mois: 2, solde: 4500, seuil: 3000, depenses: 2000, source: "prevu" });
+  assert.match(a.question.question, /1 500 €/); assert.match(a.question.question, /livret/i); assert.match(a.question.question, /\?$/);
+  assert.ok(a.question.question.length <= 300 && a.question.pourquoi.length <= 300);
+  for (const t of [a.question.question, a.question.pourquoi]) { assert.doesNotMatch(t, VOUS); assert.doesNotMatch(t, /livret a\b|ldds|lep|boursorama|fortuneo|conseill/i, "aucun produit ni établissement"); }
+  const q = db.appels.filter(x => x.table === "snapshots").find(x => x.ops.some(o => o[0] === "gte"));
+  assert.deepEqual(J(q.ops.find(o => o[0] === "gte")), ["gte", "date", "2025-10-01"]);
+  assert.match(q.ops.find(o => o[0] === "select")[1], /by_bloc/);
+  assert.ok(!db.appels.some(x => x.rpc || x.ops.some(o => ["insert", "update", "delete", "upsert"].includes(o[0]))), "lecture seule");
+  // rien ne dort, ou photos illisibles : null, la revue continue
+  for (const photos of [[{ date: "2026-09-30", by_bloc: { "Comptes courants": 100 } }], "panne"]) {
+    const r2 = (await serveur(R.registerRoutines, base(photos), { calcul, today: () => "2026-10-12" }).demarrer_routine.handler({ type: "revue_mensuelle" })).ok;
+    assert.equal(r2.argent_qui_dort, null); assert.ok(r2.patrimoine);
+  }
+  // conduite : une question du mois quand il est présent, sans recommandation de produit
+  const l = R.CONDUITE_REVUE.split("\n").find(x => x.includes("argent_qui_dort"));
+  assert.ok(l, "conduite : argent_qui_dort");
+  for (const k of ["question du mois", "livret", "aucun produit"]) assert.ok(l.toLowerCase().includes(k), "conduite : " + k);
+  assert.match(R.CONDUITE_REVUE.split("\n").find(x => x.startsWith("3. ")), /aucune recommandation de produit/i);
+  const dr = serveur(R.registerRoutines, base([]), { calcul }).demarrer_routine.def.description;
+  assert.match(dr, /argent_qui_dort/);
 });

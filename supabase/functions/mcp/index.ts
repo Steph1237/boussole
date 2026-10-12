@@ -238,6 +238,7 @@ const CONDUITE_COPILOTE = [
   "15. Synthèse en une seule voix, la tienne : points d'accord entre les expertises, tensions entre elles, options avec leurs avantages et leurs risques, ce qui manque pour conclure ; cite chaque expertise et sa version. La décision revient à l'utilisateur ; aucun produit ni établissement recommandé.",
   "16. Quand tu proposes de journaliser un avis appuyé sur des expertises, passe expertises: [{ slug, version }] à journaliser, toujours selon journal_consentement (règle 10).",
   "17. Banque connectée (banque ; null si la lecture a échoué : n'en parle pas) : si banque.connexions_a_reconnecter n'est pas vide, propose tôt dans la conversation, une fois, de reconnecter chaque banque citée avec le bouton « Reconnecter » dans Boussole › Agent › Connexion (la synchronisation est arrêtée tant que ce n'est pas fait ; tu ne peux pas le faire à sa place). Si banque.comptes_a_rattacher est supérieur à 0, propose de rattacher ces comptes à une ligne, une enveloppe ou un crédit au même endroit. Si banque.connexions_en_double est supérieur à 0, signale qu'une banque est connectée deux fois et propose de déconnecter la connexion en double au même endroit (bouton « Déconnecter » ; ses comptes sont déjà suivis par l'autre connexion). Pour les soldes, les totaux par catégorie et les écarts au budget, appelle lire_banque ; pour le détail des 90 derniers jours, operations_recentes (règle 7 bis pour les libellés).",
+  "18. Doublons probables (doublons_probables ; null si la lecture a échoué) : chaque élément est une ligne manuelle sans ISIN dont la valeur recopie, à 3 % près, le total des autres lignes de la même enveloppe (souvent créée en validant une ancienne proposition « créer une ligne ») ; le patrimoine est alors compté deux fois. Signale-le tôt, une fois, avec le nom de la ligne et de l'enveloppe, et propose de la clôturer : upsert_positions avec son id et status « clôturé », en citant la source (la vérification de Boussole) ; l'utilisateur valide dans Agent › Propositions. Ne la clôture jamais sans son accord ; s'il confirme que la ligne est réelle, n'insiste pas.",
 ].join("\n");
 
 const PROMPT_ONBOARDING = "Lance l'onboarding Boussole. Commence par appeler l'outil demarrer_onboarding, puis suis à la lettre la conduite qu'il renvoie (champ conduite), en t'appuyant sur l'état du bilan (etat) et en passant lot_suggere à chaque dépôt de propositions.";
@@ -365,7 +366,8 @@ function viewPosition(p: any) {
 /* vérifie que les barèmes du score sont identiques des deux côtés.     */
 /* ------------------------------------------------------------------ */
 
-type Donnees = { profil: any; biens: any[]; credits: any[]; positions: any[]; config: any; lignes: any[] };
+/* banque (facultatif) : { comptes, mois } lus par chargerDonnees quand l'interrupteur banque est actif (budget réel des bonnes pratiques). */
+type Donnees = { profil: any; biens: any[]; credits: any[]; positions: any[]; config: any; lignes: any[]; banque?: any };
 
 const EPS = 1e-9;
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
@@ -699,12 +701,13 @@ function liquidite(envelope: unknown): string {
   return "jours";
 }
 
-/** Famille d'une ligne (Calc.famille, spec cp1 § 1) : courant (bloc ou enveloppe « compte(s) courant(s) »), investissement
-    (enveloppe PEA, PEA-PME, compte-titres, assurance-vie, capitalisation, PER, PEE / épargne salariale, crypto, SCPI / OPCI / SCI :
+/** Famille d'une ligne (Calc.famille, spec cp1 § 1) : courant (bloc ou enveloppe « compte(s) courant(s) » ou « compte joint »),
+    investissement (enveloppe PEA, PEA-PME, compte-titres, assurance-vie, capitalisation, PER, PERCOL, PERECO, Madelin, PEE / épargne
+    salariale, « plan d'épargne en actions / retraite / entreprise / avenir » en toutes lettres, crypto, SCPI / OPCI / SCI :
     l'enveloppe prime sur la poche), epargne (livrets, compte à terme, compte épargne, monétaire, cash) ; repli : classe de la poche,
     monétaire → epargne, sinon investissement. Les dettes viennent des biens et des crédits. Parité testée (test/mcp.test.mjs). */
-const RE_COURANT = /\bcomptes? courants?\b/;
-const RE_INVEST = /\bpea\b|\bcto\b|\bcomptes?[- ]?titres?\b|assurance.?vie|\bav\b|capitalisation|\bper\b|\bperin\b|\bperp\b|\bperco\b|\bpee\b|epargne salariale|crypto|binance|\bscpi\b|\bopci\b|\bsci\b/;
+const RE_COURANT = /\bcomptes? courants?\b|\bcomptes? joints?\b/;
+const RE_INVEST = /\bpea\b|\bcto\b|\bcomptes?[- ]?titres?\b|assurance.?vie|\bav\b|capitalisation|\bper\b|\bperin\b|\bperp\b|\bperco\b|\bpercol\b|\bpereco\b|\bpee\b|\bmadelin\b|plans? (d.)?epargne (en actions|(pour la )?retraite|(d.)?entreprise|avenir)|epargne salariale|crypto|binance|\bscpi\b|\bopci\b|\bsci\b/;
 const RE_EPARGNE = /livret|\bldds\b|\blep\b|\bcel\b|\bpel\b|\bcsl\b|compte a terme|epargne|monetaire|\bcash\b|especes/;
 function famille(p: any, s?: Surcharge): string {
   const x = p || {}, env = sansAccent(x.envelope), bloc = sansAccent(x.bloc);
@@ -717,6 +720,27 @@ const estCourant = (p: any) => famille(p) === "courant";
 /** Lignes hors comptes courants : base de l'allocation, du risque et de la diversification (le patrimoine net garde tout). */
 const horsCourants = (positions: any[]) => (positions || []).filter((p) => p && !estCourant(p));
 
+/** Doublons probables (Calc.doublonsProbables, parité testée) : dans une même enveloppe et un même titulaire, une ligne manuelle sans
+    ISIN, comptée, dont la valeur est à ±3 % de la somme des autres lignes comptées (au moins 2 autres) recopie probablement le total
+    de l'enveloppe (ex. « PEA DUPONT » créée par une ancienne proposition « créer une ligne ») : le patrimoine est compté deux fois. */
+function doublonsProbables(positions: any[]) {
+  const L = (positions || []).filter((p) => p && counted(p) && String(p.envelope ?? "").trim());
+  const groupes = new Map<string, any[]>();
+  for (const p of L) { const k = String(p.envelope).trim() + "|" + (p.owner ?? ""); if (!groupes.has(k)) groupes.set(k, []); groupes.get(k)!.push(p); }
+  const out: any[] = [];
+  for (const g of groupes.values()) {
+    if (g.length < 3) continue;
+    const total = sum(g, val);
+    for (const p of g) {
+      if (p.mode === "market" || String(p.isin ?? "").trim()) continue;
+      const v = val(p), autres = total - v;
+      if (v > 0 && autres > 0 && Math.abs(v - autres) <= 0.03 * autres)
+        out.push({ ligne: p.id, nom: p.name ?? "", enveloppe: String(p.envelope).trim(), titulaire: p.owner ?? null, valeur: v, somme_autres: autres });
+    }
+  }
+  return out;
+}
+
 /* Budget réel des comptes courants (Calc.budgetReel) : banque = { comptes, mois } lus en SQL (banque_comptes, banque_mois ;
    compte_id facultatif : mois agrégés par compte). Comptes courants suivis : type courant, non ignorés, pas en double, actifs. */
 const doublonCompte = (c: any) => (c.doublonDe !== undefined ? c.doublonDe : c.doublon_de);
@@ -724,17 +748,23 @@ function comptesCourants(banque: any): any[] {
   const L = banque && Array.isArray(banque.comptes) ? banque.comptes : [];
   return L.filter((c: any) => c && c.type === "courant" && c.ignore !== true && doublonCompte(c) == null && c.actif !== false);
 }
-const idCompte = (r: any) => (r.compteId != null ? r.compteId : r.compte_id != null ? r.compte_id : null);
-function moisCourants(banque: any): any[] {
-  const L = (banque && Array.isArray(banque.mois) ? banque.mois : []).filter(Boolean);
-  if (!L.some((r: any) => idCompte(r) != null)) return L;
-  const ids = new Set(comptesCourants(banque).map((c) => String(c.id)));
-  return L.filter((r: any) => idCompte(r) != null && ids.has(String(idCompte(r))));
-}
+/* Compte d'une ligne de banque_mois (compte_id, migration 0025) : 0 (valeur par défaut) = totaux par utilisateur, comme sans compte. */
+const idCompte = (r: any) => { const v = r.compteId != null ? r.compteId : r.compte_id; return v == null || v === "" || Number(v) === 0 ? null : v; };
 const moisIso = (d: unknown) => { const s = String(d ?? ""); return /^\d{4}-\d{2}/.test(s) ? s.slice(0, 7) : null; };
+const lignesMois = (banque: any): any[] => (banque && Array.isArray(banque.mois) ? banque.mois : []).filter(Boolean);
+const moisDetailles = (banque: any) => new Set(lignesMois(banque).filter((r: any) => idCompte(r) != null).map((r: any) => moisIso(r.mois)));
+/** Lignes des comptes courants, mois par mois : un mois détaillé par compte garde les lignes des comptes courants suivis (ses totaux
+    agrégés écartés) ; un mois sans détail garde ses lignes telles quelles (Calc.moisCourants). */
+function moisCourants(banque: any): any[] {
+  const L = lignesMois(banque), det = moisDetailles(banque);
+  if (!det.size) return L;
+  const ids = new Set(comptesCourants(banque).map((c) => String(c.id)));
+  return L.filter((r: any) => (det.has(moisIso(r.mois)) ? idCompte(r) != null && ids.has(String(idCompte(r))) : true));
+}
 const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
 /** Moyenne des nb (3) derniers mois complets : revenus, dépenses (toutes catégories hors revenus, épargne et virements internes),
-    épargne, taux d'épargne réel = épargne ÷ revenus ; null sans mois complet. */
+    épargne, taux d'épargne réel = épargne ÷ revenus ; parCompte : chaque mois retenu détaillé par compte (sinon totaux de tous les
+    comptes connectés) ; null sans mois complet. */
 function budgetReel(banque: any, auj: string, nb = 3) {
   if (!banque || banque.actif === false) return null;
   const k = Number.isInteger(nb) && nb > 0 ? nb : 3;
@@ -747,8 +777,10 @@ function budgetReel(banque: any, auj: string, nb = 3) {
     const e = num(r.entrees), so = num(r.sorties), c = sansAccent(r.categorie);
     if (c === "revenus") rev += e - so; else if (c === "epargne") ep += so - e; else dep += so - e;
   });
+  const det = moisDetailles(banque);
   const m = retenus.length, revenus = pos(rev) / m, depenses = pos(dep) / m, epargne = pos(ep) / m;
-  return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null };
+  return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
+    parCompte: retenus.every((x) => det.has(x)) };
 }
 /** Réserve laissée sur les comptes courants, en mois de dépenses : config.cushion.reserve_mois (facultatif), 1 par défaut. */
 function reserveMois(config: any): number {
@@ -1005,7 +1037,8 @@ const terDe = (p: any) => p.instrument?.ter ?? null;
 const zoneDe = (p: any) => p.instrument?.zone ?? null;
 const deviseDe = (p: any) => p.instrument?.devise ?? null;
 
-/** banque (facultatif) : { comptes, mois } de banque_comptes / banque_mois, pour le budget réel des comptes courants (matelas, argent dormant). */
+/** banque (facultatif) : { comptes, mois } de banque_comptes / banque_mois, pour le budget réel des comptes courants (matelas, argent dormant) ;
+    absente : celle des données chargées (d.banque, chargerDonnees). */
 type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string; banque?: any };
 
 function objectifsCourts(objectifs: any[], deja: Record<string, number>, ref: string) {
@@ -1227,7 +1260,7 @@ function bonnesPratiques(c: ContexteBP) {
   const cu = d.config?.cushion;
   const prevu = totaux.depensesLignes > 0 ? totaux.depenses : cu && typeof cu === "object" && cu.mode === "months" && pos(cu.depenses) > 0 ? pos(cu.depenses) : 0;
   /* Dépenses de référence (matelas, argent dormant) : budget réel des comptes courants (foyer seulement), sinon budget prévu. */
-  const reel = scope === "foyer" ? budgetReel(c.banque, c.ref) : null;
+  const reel = scope === "foyer" ? budgetReel(c.banque ?? c.d.banque, c.ref) : null;
   const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel" } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
   const depenses = depRef ? depRef.montant : 0;
   const deja = affecterDeja(c.objectifs, d.positions, scope);
@@ -1650,7 +1683,24 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
 
   /** Bilan complet du foyer pour les calculs (get_overview et état figé du journal) : profil, biens, crédits, positions,
       config, lignes du budget et objectifs. */
+  /* Banque pour le budget réel des bonnes pratiques (get_overview, journal, expertises, analyser) : interrupteur actif → comptes et
+     6 mois de banque_mois (compte_id, migration 0025 ; colonne absente → relecture sans elle) ; éteint ou en échec → null (budget prévu). */
+  async function lireBanqueCalcul() {
+    try {
+      const f = must("fonctionnalites", await db.from("fonctionnalites").select("active").eq("cle", "banque").maybeSingle()) as any;
+      if (!f || f.active !== true) return null;
+      const d = new Date(), depuis = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 5, 1)).toISOString().slice(0, 10);
+      const mois = async (avecCompte: boolean) => db.from("banque_mois").select(
+        avecCompte ? "mois, categorie, entrees, sorties, compte_id" : "mois, categorie, entrees, sorties").gte("mois", depuis);
+      const [cp, m0] = await Promise.all([db.from("banque_comptes").select("id, type, ignore, doublon_de, actif"), mois(true)]);
+      const mo = m0.error && m0.error.code === "42703" ? await mois(false) : m0;
+      return { comptes: (must("banque_comptes", cp) as any[]) ?? [], mois: (must("banque_mois", mo) as any[]) ?? [] };
+    } catch (_e) {
+      return null;
+    }
+  }
   async function chargerDonnees() {
+    const banqueP = lireBanqueCalcul(); // en parallèle des lectures du bilan ; ne lève jamais
     const [pr, bi, cr, po, cf, bu, ob] = await Promise.all([
       db.from("profiles").select("*").maybeSingle(),
       db.from("biens").select("*"),
@@ -1664,7 +1714,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
     const budget = must("budgets", bu) as any;
     const donnees: Donnees = {
       profil, biens: (must("biens", bi) as any[]) ?? [], credits: (must("credits", cr) as any[]) ?? [], positions: (must("positions", po) as any[]) ?? [],
-      config: must("config", cf) as any, lignes: Array.isArray(budget?.lignes) ? budget.lignes : [],
+      config: must("config", cf) as any, lignes: Array.isArray(budget?.lignes) ? budget.lignes : [], banque: await banqueP,
     };
     return { donnees, objectifs: (must("objectifs", ob) as any[]) ?? [], risque: profil.risque ?? null, classes: profil.classes };
   }
@@ -1680,7 +1730,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
   const moteurs = { bilan, budgetTotaux, syntheseRisque, bonnesPratiques, situationObjectifs, classeRisque, liquidite, typeEnveloppe, datesAV,
     val, counted, terDe, zoneDe, deviseDe, CLASSES_RISQUE, GROUPE_DE };
   registerExpertises(server, { ...h, charger: chargerDonnees, calcul: moteurs });
-  registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope } });
+  registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants } });
 
   /* ---------- Banque connectée (banque.ts) : lecture seule, budget comparé avec budgetTotaux ---------- */
   registerBanque(server, { ...h, charger: chargerDonnees, budgetTotaux });
@@ -1735,7 +1785,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
       budget: donnees.lignes.length ? { nombre_lignes: donnees.lignes.length, totaux_mensuels_foyer: viewTotaux(budgetTotaux(donnees, "foyer")) } : null,
       sante: scoreSante(donnees, "foyer"),
       profil_risque: vueRisque(profil.risque ?? null, donnees, "foyer", profil.classes, false),
-      bonnes_pratiques: bonnesPratiques({ d: donnees, scope: "foyer", objectifs, risque: profil.risque ?? null, classes: profil.classes, ref }),
+      bonnes_pratiques: bonnesPratiques({ d: donnees, scope: "foyer", objectifs, risque: profil.risque ?? null, classes: profil.classes, ref, banque: donnees.banque }),
     });
     return result;
   }));
@@ -2372,9 +2422,19 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
   }
 
   /* ---------- Session : point d'entrée de toute conversation (Copilote patrimonial, mémoire, savoir, expertises) ---------- */
+  /* Doublons probables pour demarrer_session : ne lève jamais (null en cas d'échec de lecture). */
+  async function doublonsDeSession() {
+    try {
+      const r = await db.from("positions").select(POS_SELECT);
+      if (r.error) return null;
+      return doublonsProbables(r.data ?? []).map((x) => ({ ...x, valeur: r2(x.valeur), somme_autres: r2(x.somme_autres) }));
+    } catch (_e) {
+      return null;
+    }
+  }
   server.registerTool("demarrer_session", {
     title: "Démarrer la session",
-    description: "À appeler au début de chaque conversation : conduite du Copilote patrimonial, mémoire de l'utilisateur (épinglés puis 30 plus récents), points à suivre échus, état du bilan (pourcentage, prochaines questions), propositions en attente, nouveautés du savoir Boussole depuis la session précédente de cet assistant, journal des décisions (nombre à relire, décisions en cours, revues dues), consentement au journal (journal_consentement : demander, prevenir ou jamais) et routines (revue mensuelle : active, jour, prochain passage, retard_jours si elle est due, nombre de questions du mois en attente ; [] si aucune n'est activée, null si la lecture a échoué) et expertises publiées (slug, nom, quand consulter, version ; null si la lecture a échoué) et banque (connexion bancaire : actif, connexions à reconnecter, nombre de comptes à rattacher ; null si la lecture a échoué).",
+    description: "À appeler au début de chaque conversation : conduite du Copilote patrimonial, mémoire de l'utilisateur (épinglés puis 30 plus récents), points à suivre échus, état du bilan (pourcentage, prochaines questions), propositions en attente, nouveautés du savoir Boussole depuis la session précédente de cet assistant, journal des décisions (nombre à relire, décisions en cours, revues dues), consentement au journal (journal_consentement : demander, prevenir ou jamais) et routines (revue mensuelle : active, jour, prochain passage, retard_jours si elle est due, nombre de questions du mois en attente ; [] si aucune n'est activée, null si la lecture a échoué) et expertises publiées (slug, nom, quand consulter, version ; null si la lecture a échoué) et banque (connexion bancaire : actif, connexions à reconnecter, nombre de comptes à rattacher ; null si la lecture a échoué) et doublons_probables (lignes manuelles qui recopient le total de leur enveloppe : ligne, nom, enveloppe, titulaire, valeur, somme_autres ; null si la lecture a échoué).",
     inputSchema: z.strictObject({}),
     // readOnlyHint bien que l'outil tienne la date de dernière session (marquer_savoir_vu) : écriture de pure tenue de
     // compte, non bloquante, qui ne touche à aucune donnée de l'utilisateur.
@@ -2384,8 +2444,9 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
     // expertises : null) : ni le journal, ni les routines, ni les expertises ne bloquent la session. banqueDeSession non plus (null),
     // lancée en même temps que les autres lectures.
     const banqueLue = banqueDeSession(db, must);
+    const doublonsLus = doublonsDeSession();
     const [{ vue }, memoire, journal, routines, expertises] = await Promise.all([lireEtat(), lireMemoire(db, must), journalDeSession(db, must, today()), routinesDeSession(db, must, today()), listeExpertises(db, must)]);
-    const banque = await banqueLue;
+    const banque = await banqueLue, doublons_probables = await doublonsLus;
     // marquer_savoir_vu renvoie la date de la session précédente de ce client (null la première fois) et la remplace par
     // maintenant. Appelé APRÈS la réussite des lectures : si l'une échoue, la date n'avance pas et les nouveautés restent dues
     // à la prochaine session. Un échec de l'appel lui-même n'empêche pas la session.
@@ -2405,6 +2466,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
       routines,
       expertises,
       banque,
+      doublons_probables,
     };
   }));
 

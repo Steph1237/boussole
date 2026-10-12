@@ -223,7 +223,7 @@
     if (!B || !b || !b.actif || (S.scope || "foyer") !== "foyer") return null;
     return B.reelMoyen(C && typeof C.moisCourants === "function" ? C.moisCourants(b) : b.mois, today);
   }
-  /** Budget réel des comptes courants (Calc.budgetReel) → { n, du, au, revenus, depenses, epargne, tauxEpargne } ou null
+  /** Budget réel des comptes courants (Calc.budgetReel) → { n, du, au, revenus, depenses, epargne, tauxEpargne, parCompte } ou null
       (interrupteur éteint, vue d'une personne, aucun mois complet). */
   function budgetReelDe(S, today) {
     const C = CA(), b = S && S.banque;
@@ -244,11 +244,13 @@
     return "« Réel » : " + periodeReel(r) + ", d'après tes comptes connectés.";
   }
   const MENTION_VIREMENTS = "Virements entre tes comptes exclus.";
-  /** Ligne « Taux d'épargne réel » (épargne ÷ revenus des comptes courants, 3 derniers mois complets) ; vide sans taux. */
+  /** Ligne « Taux d'épargne réel » (épargne ÷ revenus, 3 derniers mois complets) : « sur tes comptes courants » si chaque mois est
+      détaillé par compte (br.parCompte), sinon « sur tous tes comptes connectés » ; vide sans taux. */
   function tauxReelHtml(br) {
     if (!br || br.tauxEpargne == null || !isFinite(br.tauxEpargne) || !br.du || !br.au) return "";
     return '<p class="pv-reel-taux"><span class="pv-reel-taux-l">Taux d\'épargne réel</span> <b class="pv-num">' + esc(pct(br.tauxEpargne)) + "</b> " +
-      '<span class="pv-muet">épargne ÷ revenus, ' + esc(periodeReel(br)) + ", sur tes comptes courants. " + MENTION_VIREMENTS + "</span></p>";
+      '<span class="pv-muet">épargne ÷ revenus, ' + esc(periodeReel(br)) + (br.parCompte ? ", sur tes comptes courants. " : ", sur tous tes comptes connectés (le détail par compte n'est pas encore disponible). ") +
+      MENTION_VIREMENTS + "</span></p>";
   }
   /** Réel mensuel d'un groupe du budget (catégorie reconnue et de même sens), ou null. */
   function reelGroupe(g, reel) {

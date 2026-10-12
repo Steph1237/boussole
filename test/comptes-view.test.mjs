@@ -63,30 +63,15 @@ test("comptes-view.html : identifiants utilisés par le script ; comptes-view.cs
 
 /* ------------------------------------------------ familles ------------------------------------------------ */
 
-test("familleLocale (repli provisoire, même contrat que Calc.famille) : courant | epargne | investissement", () => {
-  const f = (envelope, bloc, name) => CV.familleLocale({ envelope, bloc, name });
-  assert.equal(f("Comptes courants", "Comptes courants"), "courant");
-  assert.equal(f("BNP", "Comptes courants"), "courant", "bloc des comptes courants créés par la synchronisation");
-  assert.equal(f("Compte joint", "Épargne"), "courant");
-  assert.equal(f("Compte-titres Sam", "Monde"), "investissement", "un compte-titres n'est pas un compte courant");
-  assert.equal(f("CTO", "Monétaire"), "investissement");
-  for (const e of ["Livret A", "LDDS", "LEP", "Livrets Camille"]) assert.equal(f(e, "Épargne"), "epargne", e);
-  for (const e of ["PEA Camille", "PEA-PME", "Assurance vie Sam", "PER", "PERin", "Crypto (Binance)"]) assert.equal(f(e, "Monde"), "investissement", e);
-  assert.equal(f("Divers", "Monétaire"), "epargne", "fonds monétaire hors enveloppe d'investissement");
-  assert.equal(CV.familleLocale(null), "investissement");
+test("famille : Calc.famille (calc.js, même règle que le connecteur) ; plus de repli local (familleLocale supprimée)", () => {
+  assert.equal(CV.familleLocale, undefined);
+  assert.doesNotMatch(js, /familleLocale/);
+  for (const x of DEMO.positions) assert.equal(CV.famille(x, { Calc }), Calc.famille(x), x.id);
+  assert.equal(CV.famille({ envelope: "Compte joint", bloc: "Épargne" }, { Calc }), "courant", "compte joint (revue CP1)");
+  assert.equal(CV.famille({ envelope: "Plan d'épargne en actions", bloc: "Épargne" }, { Calc }), "investissement");
+  assert.equal(CV.famille({ envelope: "x" }, { Calc: {} }), "investissement", "Calc sans famille : investissement");
+  assert.equal(CV.famille({ envelope: "x" }, { Calc: { famille: () => { throw new Error("x"); } } }), "investissement");
 });
-
-test("famille : Calc.famille quand elle existe (calc.js), repli local sinon ou si sa réponse est inattendue", () => {
-  const p = { envelope: "Banque", bloc: "Épargne" };
-  assert.equal(CV.famille(p, { Calc: { famille: () => "courant" } }), "courant");
-  assert.equal(CV.famille(p, { Calc: { famille: () => "autre" } }), CV.familleLocale(p), "réponse hors contrat → repli");
-  assert.equal(CV.famille(p, { Calc: { famille: () => { throw new Error("x"); } } }), CV.familleLocale(p));
-  assert.equal(CV.famille(p, { Calc: {} }), CV.familleLocale(p), "Calc sans famille → repli");
-  if (typeof Calc.famille === "function") for (const x of DEMO.positions) assert.equal(CV.famille(x, { Calc }), Calc.famille(x), x.id + " : Calc.famille utilisée");
-});
-
-/* ------------------------------------------------ liens ------------------------------------------------ */
-
 test("lien / lireCible : adresses profondes des fiches, aller-retour, paramètres inconnus → la liste", () => {
   const cas = [{ enveloppe: "PEA Camille", titulaire: "p1" }, { enveloppe: "Assurance vie & co" }, { ligne: "pea-etf-monde" }, { courant: "compte commun" }];
   for (const c of cas) {
@@ -154,7 +139,8 @@ test("comptes (démo) : quatre familles dans l'ordre, comptes groupés par étab
     const noms = F.etablissements.map(E => E.nom);
     if (noms.includes("Saisi à la main")) assert.equal(noms[noms.length - 1], "Saisi à la main", F.id);
     for (const E of F.etablissements) for (const c of E.comptes) {
-      assert.deepEqual(Object.keys(c).sort(), ["cle", "cout", "etablissement", "href", "nb", "nom", "part", "plusValue", "solde", "source", "sous", "titulaire", "type"]);
+      assert.deepEqual(Object.keys(c).sort(), ["cle", "cout", "doublons", "etablissement", "href", "nb", "nom", "part", "plusValue", "solde", "source", "sous", "titulaire", "type"]);
+      assert.deepEqual(c.doublons, [], "démo : aucun doublon");
       assert.match(c.href, /^#patrimoine\/(comptes\?(enveloppe|courant)=|immobilier$)/);
     }
   }
@@ -177,9 +163,8 @@ test("comptes (démo) : quatre familles dans l'ordre, comptes groupés par étab
   assert.equal(pret.nom, "Prêt auto"); assert.equal(pret.solde, -6500); assert.equal(pret.href, "#patrimoine/immobilier");
   assert.match(pret.source.texte, /^Synchronisé le/);
   assert.equal(dettes.etablissements.find(E => E.nom === "Saisi à la main").comptes[0].nom, "Prêt · Appartement (résidence principale)");
-  // un compte courant (bloc « Comptes courants ») : une carte par ligne, vers la fiche compte courant
-  const C2 = demoS(); C2.positions.find(p => p.id === "compte-commun").bloc = "Comptes courants";
-  const cc = CV.comptes(C2, TODAY, { Calc }).familles[0];
+  // le compte courant de la démo (enveloppe et poche « Comptes courants ») : une carte par ligne, vers la fiche compte courant
+  const cc = CV.comptes(S, TODAY, { Calc }).familles[0];
   assert.equal(cc.nb, 1);
   const carte = cc.etablissements[0].comptes[0];
   assert.equal(carte.nom, "Compte courant commun"); assert.equal(carte.href, "#patrimoine/comptes?courant=compte-commun"); assert.equal(cc.etablissements[0].nom, "Banque des Canuts");
@@ -250,7 +235,9 @@ test("serieEnveloppe : Σ quantité actuelle × cours historique (dernier connu,
   assert.equal(avant.points[0].valeur, 100);
   assert.deepEqual(J(CV.serieEnveloppe([POS("c", { mode: "manual", value: 5 })], {}, "2026-01-01", "2026-10-12", { Calc }).points), [], "sans ligne cotée historisée : pas de courbe");
   const multi = CV.serieEnveloppe([POS("a", { isin: "A", qty: 1 }), POS("b", { isin: "B", qty: 1 })], { A: [{ date: "2026-10-01", cloture: 10 }], B: [{ date: "2026-10-03", cloture: 20 }] }, "2026-09-01", "2026-10-12", { Calc });
-  assert.deepEqual(J(multi.points.slice(0, 2)), [{ date: "2026-10-01", valeur: 30 }, { date: "2026-10-03", valeur: 30 }], "avant son premier cours, une ligne vaut ce premier cours");
+  assert.deepEqual(J(multi.points.slice(0, 1)), [{ date: "2026-10-03", valeur: 30 }], "pas de remplissage avant le premier cours connu d'une ligne : la courbe commence quand toutes ont un cours");
+  assert.equal(multi.historiqueDepuis, "2026-10-03"); assert.equal(multi.partiel, true, "historique plus court que la période");
+  assert.equal(r.partiel, false, "historique qui couvre la période (à une semaine près)");
 });
 
 test("perfDepuis : cours au début de la période (dernier connu, sinon premier de la période) → prix du jour ; null sans historique", () => {
@@ -269,21 +256,37 @@ test("vraiePerformance : en construction (moins de 90 jours de photos, disponibl
   const lignes = [POS("a", { envelope: "PEA" })];
   assert.deepEqual(J(CV.vraiePerformance(S0({ snapshots: [{ date: "2026-08-01", byEnvelope: { PEA: 1000 } }] }), "PEA", lignes, "2026-10-12")), { etat: "construction", dispoLe: "2026-10-30" });
   assert.deepEqual(J(CV.vraiePerformance(S0(), "PEA", lignes, "2026-10-12")), { etat: "construction", dispoLe: "2027-01-10" }, "aucune photo : 90 jours à partir d'aujourd'hui");
+  // avec une ligne de liquidités : les achats et ventes restent dans l'enveloppe, seuls les versements et retraits sont des flux
+  const avecCash = [POS("a", { envelope: "PEA" }), POS("cash", { envelope: "PEA", name: "Espèces PEA", bloc: "Liquidités", mode: "manual", value: 50 })];
   const S = S0({ snapshots: [{ date: "2026-01-01", byEnvelope: { PEA: 1000 } }, { date: "2026-04-11", byEnvelope: { PEA: 1600 } }],
     tx: [{ positionId: "a", type: "versement", date: "2026-02-20", amount: 500 }, { positionId: "a", type: "achat", date: "2026-02-21", amount: 500 }, { positionId: "zz", type: "versement", date: "2026-03-01", amount: 9999 }] });
-  const v = CV.vraiePerformance(S, "PEA", lignes, "2026-10-12");
+  const v = CV.vraiePerformance(S, "PEA", avecCash, "2026-10-12", { Calc });
   assert.equal(v.etat, "ok");
   assert.equal(v.gain, 100, "1 600 − 1 000 − 500 versés (un achat n'est pas un versement)");
   assert.equal(v.flux, 500);
   const poids = (Date.UTC(2026, 3, 11) - Date.UTC(2026, 1, 20)) / (Date.UTC(2026, 3, 11) - Date.UTC(2026, 0, 1));
   assert.ok(Math.abs(v.pct - 100 / (1000 + 500 * poids) * 100) < 1e-9);
   assert.equal(CV.vraiePerformance(S0({ snapshots: [{ date: "2026-01-01" }, { date: "2026-05-01" }] }), "PEA", lignes, "2026-10-12").etat, "indisponible");
+  // sans ligne de liquidités : création, achat et vente sont aussi des flux (l'argent ne transite par aucune ligne suivie)
+  const S2 = S0({ snapshots: S.snapshots, tx: [{ positionId: "a", type: "creation", date: "2026-01-15", qty: 2, price: 100 }, { positionId: "a", type: "achat", date: "2026-02-21", amount: 500 },
+    { positionId: "a", type: "vente", date: "2026-03-01", amount: 300 }] });
+  const v2 = CV.vraiePerformance(S2, "PEA", lignes, "2026-10-12", { Calc });
+  assert.equal(v2.flux, 200 + 500 - 300); assert.equal(v2.gain, 600 - 400);
+  // enveloppe synchronisée : versements non suivis
+  assert.deepEqual(J(CV.vraiePerformance(S, "PEA", [POS("a", { envelope: "PEA", sourceAuto: "powens" })], "2026-10-12", { Calc })), { etat: "non_suivi" });
+  // plusieurs titulaires sous le même nom d'enveloppe : by_envelope les mélange
+  const S3 = S0({ snapshots: S.snapshots, positions: [POS("a", { envelope: "PEA" }), POS("b", { envelope: "PEA", owner: "p2" })] });
+  assert.deepEqual(J(CV.vraiePerformance(S3, "PEA", [S3.positions[0]], "2026-10-12", { Calc })), { etat: "titulaires" });
+  const hv = sp(CV.ficheEnveloppeHtml(Object.assign(CV.ficheEnveloppe(demoS(), { enveloppe: "PEA Camille", titulaire: "p1" }, TODAY, { Calc }), {}), UI));
+  assert.match(hv, /Indisponible : les versements de ce compte ne sont pas suivis/, "PEA de la démo synchronisé");
   const f = CV.ficheEnveloppe(demoS(), { enveloppe: "PEA Camille", titulaire: "p1" }, TODAY, { Calc });
   const prem = DEMO.snapshots.map(x => x.date).sort()[0];
   const dispo = new Date(Date.parse(prem + "T00:00:00Z") + 90 * 864e5).toISOString().slice(0, 10);
+  assert.deepEqual(J(f.vraie), { etat: "non_suivi" }, "lignes synchronisées (Néo Courtage)");
+  const fav = CV.ficheEnveloppe(demoS(), { enveloppe: "Assurance vie Sam", titulaire: "p2" }, TODAY, { Calc });
   if (TODAY < dispo) {
-    assert.deepEqual(J(f.vraie), { etat: "construction", dispoLe: dispo });
-    assert.match(sp(CV.ficheEnveloppeHtml(f, UI)), /En construction :<\/strong> disponible à partir du \d{1,2} \S+ \d{4}\./);
+    assert.deepEqual(J(fav.vraie), { etat: "construction", dispoLe: dispo });
+    assert.match(sp(CV.ficheEnveloppeHtml(fav, UI)), /En construction :<\/strong> disponible à partir du \d{1,2} \S+ \d{4}\./);
   }
 });
 
@@ -377,28 +380,74 @@ test("ficheLigne / ficheLigneHtml : cours + PRU, quantité, valeur, plus-value, 
   assert.doesNotMatch(CV.ficheLigneHtml(CV.ficheLigne(x, x.positions[0].id, TODAY, { Calc }), UI), /<img/);
 });
 
-test("ficheCourant / ficheCourantHtml : solde, flux du mois et moyenne (tous comptes connectés), plus bas solde 90 j non disponible, graphique entrées / sorties", () => {
-  const S = demoS(), f = CV.ficheCourant(S, "compte-commun", TODAY, { Calc });
-  assert.equal(f.trouvee, true); assert.equal(f.solde, 3400); assert.equal(f.connecte, true); assert.equal(f.plusBas, null);
+test("ficheCourant / ficheCourantHtml : flux du compte (banque_mois par compte), plus bas solde sur 90 jours et prélèvements récurrents d'après les opérations", () => {
+  const S = demoS();
+  const ops = DEMO.operationsBancaires;
+  const f = CV.ficheCourant(S, "compte-commun", TODAY, { Calc }, ops);
+  assert.equal(f.trouvee, true); assert.equal(f.solde, 3400); assert.equal(f.connecte, true);
+  assert.deepEqual(f.compteIds, ["1001"]); assert.equal(f.portee, "compte", "démo : banque_mois détaillé par compte");
   assert.equal(f.etablissement.nom, "Banque des Canuts");
   assert.equal(f.flux.mois.length, 6);
   assert.equal(f.flux.enCours.mois.slice(0, 7), TODAY.slice(0, 7));
   assert.equal(f.flux.moyenne.n, 5, "mois complets seulement");
-  const mois = CV.fluxMois(S);
-  const complets = mois.filter(m => m.mois.slice(0, 7) < TODAY.slice(0, 7));
-  assert.ok(Math.abs(f.flux.moyenne.sorties - complets.reduce((a, m) => a + m.sorties, 0) / complets.length) < 1e-9);
+  // plus bas solde : reconstitué à rebours depuis le solde du compte bancaire
+  assert.equal(f.operations, "ok");
+  assert.ok(f.plusBas && f.plusBas.montant < 3400 && f.plusBas.montant > 0, "plus bas solde positif, sous le solde actuel");
+  assert.equal(f.plusBas.complet, true);
+  // prélèvements : libellés nettoyés, au moins deux mois ; jamais les paiements par carte répétés
+  const libs = f.prelevements.map(x => x.libelle);
+  for (const l of ["echeance pret immo", "prlv sepa credit auto", "prlv free mobile", "prlv netflix com", "prlv creche les petits loups"]) assert.ok(libs.includes(l), l);
+  assert.ok(!libs.some(l => /^cb /.test(l)), "paiements par carte exclus");
+  assert.ok(!libs.some(l => /salaire/.test(l)), "crédits exclus");
+  const pret = f.prelevements.find(x => x.libelle === "echeance pret immo");
+  assert.deepEqual([pret.montant, pret.jour], [820, 2]);
   const h = sp(CV.ficheCourantHtml(f, UI, { largeur: 600 }));
-  assert.match(h, /Plus bas solde sur 90 jours<\/span><span class="cv-det-v">pas encore disponible/);
-  assert.match(h, /tous tes comptes connectés confondus/);
+  assert.match(h, /Plus bas solde sur 90 jours<\/span><span class="cv-det-v">[\d  ]+ € le \d{1,2} \S+ \d{4}</);
+  assert.match(h, /Totaux de ce compte/);
   assert.match(h, /<svg class="cv-svg"[^>]*role="img" aria-labelledby="cvBarresFlux-t" aria-describedby="cvBarresFlux-d"/);
   assert.equal((h.match(/<rect class="cv-b-ent"/g) || []).length, 6);
   assert.match(h, /<th scope="col">Mois<\/th><th scope="col" class="cv-num">Entrées<\/th><th scope="col" class="cv-num">Sorties<\/th>/);
-  assert.match(h, /Aucun prélèvement récurrent détecté/);
-  const avec = demoS(); avec.banque.prelevements = [{ libelle: "Assurance " + XSS, montant: 42, jour: 5 }];
-  const ha = CV.ficheCourantHtml(CV.ficheCourant(avec, "compte-commun", TODAY, { Calc }), UI);
-  assert.match(sp(ha), /Assurance &lt;img[^<]*<span class="cv-m-s">vers le 5 du mois<\/span><\/span><span class="cv-m-v">42 €/); assert.doesNotMatch(ha, /<img/);
+  assert.match(h, /echeance pret immo<span class="cv-m-s">vers le 2 du mois/);
+  assert.doesNotMatch(h, /Aucun prélèvement/);
+  // flux du seul compte concerné : les lignes d'un autre compte sont ignorées
+  const autre = demoS(); autre.banque.mois.push({ mois: TODAY.slice(0, 7) + "-01", compteId: 1003, categorie: "divers", entrees: 0, sorties: 99999, nombre: 1 });
+  assert.equal(CV.ficheCourant(autre, "compte-commun", TODAY, { Calc }, ops).flux.enCours.sorties, f.flux.enCours.sorties);
+  // totaux par utilisateur (avant 0025) : libellé honnête
+  const agr = demoS(); agr.banque.mois.forEach(m => { m.compteId = null; });
+  const fa = CV.ficheCourant(agr, "compte-commun", TODAY, { Calc }, ops);
+  assert.equal(fa.portee, "tous"); assert.match(sp(CV.ficheCourantHtml(fa, UI)), /tous tes comptes connectés confondus/);
+  // opérations pas encore lues, en échec, historique trop court : jamais « Aucun prélèvement » à tort
+  assert.match(sp(CV.ficheCourantHtml(CV.ficheCourant(S, "compte-commun", TODAY, { Calc }), UI)), /Chargement des opérations…/);
+  const ind = sp(CV.ficheCourantHtml(CV.ficheCourant(S, "compte-commun", TODAY, { Calc }, "indisponible"), UI));
+  assert.match(ind, /Opérations indisponibles/); assert.doesNotMatch(ind, /Aucun prélèvement/);
+  const court = ops.filter(o => o.date >= CV.debutPeriode("1m", TODAY));
+  const hc = sp(CV.ficheCourantHtml(CV.ficheCourant(S, "compte-commun", TODAY, { Calc }, court), UI));
+  assert.match(hc, /Pas encore assez d'opérations/); assert.doesNotMatch(hc, /Aucun prélèvement/);
+  assert.match(hc, /d(&#39;|')après les opérations depuis le/, "plus bas solde sur un historique incomplet : signalé");
+  const sansPrel = ops.filter(o => o.montant > 0 || /^CB /.test(o.libelle));
+  assert.match(sp(CV.ficheCourantHtml(CV.ficheCourant(S, "compte-commun", TODAY, { Calc }, sansPrel), UI)), /Aucun prélèvement récurrent détecté sur les 90 derniers jours/);
+  // compte non rattaché à un compte bancaire, banque éteinte
+  const nr = demoS(); nr.banque.comptes.forEach(c => { if (c.positionId === "compte-commun") c.positionId = null; });
+  const fnr = CV.ficheCourant(nr, "compte-commun", TODAY, { Calc });
+  assert.deepEqual([fnr.connecte, fnr.portee, fnr.operations], [false, "aucun", "aucune"]);
+  assert.match(sp(CV.ficheCourantHtml(fnr, UI)), /Rattache ce compte à un compte bancaire synchronisé/);
   const off = demoS(); off.banque = { actif: false, connexions: [], comptes: [], mois: [] };
   assert.match(sp(CV.ficheCourantHtml(CV.ficheCourant(off, "compte-commun", TODAY, { Calc }), UI)), /Connecte ta banque dans Agent › Connexion/);
+  // libellés échappés
+  const x = CV.ficheCourant(S, "compte-commun", TODAY, { Calc }, [
+    { compteId: 1001, date: CV.debutPeriode("1m", TODAY), montant: -42, libelle: "PRLV <b>X</b>" }, { compteId: 1001, date: CV.debutPeriode("3m", TODAY).replace(/-\d{2}$/, "-25"), montant: -42, libelle: "PRLV <b>X</b>" }]);
+  assert.doesNotMatch(CV.ficheCourantHtml(x, UI), /<b>X/);
+});
+
+test("plusBasSolde / prelevementsRecurrents : calculs purs", () => {
+  const ops = [{ date: "2026-10-10", montant: -500 }, { date: "2026-10-05", montant: 1000 }, { date: "2026-10-01", montant: -200 }];
+  // fin du 10 : 1 000 ; fin du 9 → du 5 : 1 500 ; fin du 4 → du 1 : 500 ; fin du 30/09 : 700
+  assert.deepEqual(J(CV.plusBasSolde(1000, ops, "2026-10-12")), { montant: 500, date: "2026-10-04", depuis: "2026-09-30", complet: false });
+  assert.equal(CV.plusBasSolde(1000, [], "2026-10-12"), null);
+  const P = (date, montant, libelle) => ({ date, montant, libelle });
+  const r = CV.prelevementsRecurrents([P("2026-08-03", -10, "PRLV A 123"), P("2026-09-03", -10.5, "PRLV A 456"), P("2026-10-03", -11, "PRLV A"),
+    P("2026-09-04", -20, "PRLV B"), P("2026-09-05", -20, "PRLV B"), P("2026-08-10", -10, "PRLV C"), P("2026-09-10", -30, "PRLV C"), P("2026-08-15", 50, "VIR D"), P("2026-09-15", 50, "VIR D")], "2026-10-12");
+  assert.deepEqual(J(r), [{ libelle: "prlv a", montant: 10.5, jour: 3, mois: 3 }], "B : un seul mois ; C : montants trop différents ; D : crédits");
 });
 
 test("courbeSvg / barresSvg : moins de deux points → null ; titre et description reliés ; points au survol", () => {
@@ -496,8 +545,89 @@ test("vue : une fiche demandée avant la fin du chargement s'ouvre quand les don
   assert.match(sp($("cvGraphe").innerHTML), /Historique du cours pas encore disponible/);
 });
 
-test("tutoiement et lecture seule : aucun « vous » ; aucune écriture au store, seule lecture Store.cours", () => {
+test("tutoiement et lecture seule : aucun « vous » ; aucune écriture au store, seules lectures Store.cours et Store.banque.operations", () => {
   const txt = js.replace(/\/\*[\s\S]*?\*\//g, "") + html;
   assert.doesNotMatch(txt, /(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu);
-  assert.deepEqual([...new Set([...js.matchAll(/\bStore\s*\.\s*(\w+)/g)].map(m => m[1]))], ["cours"]);
+  assert.deepEqual([...new Set([...js.matchAll(/\bStore\s*\.\s*(\w+)/g)].map(m => m[1]))].sort(), ["banque", "cours"]);
+  assert.match(js, /st\.cours\(manquants, d0\)/); assert.match(js, /B\.operations\(ids, /, "seules lectures : cours et opérations");
+  assert.doesNotMatch(js, /B\.(rattacher|connecter|deconnecter|synchroniser|gerer)\(/);
+});
+
+/* ------------------------------------------------ revue CP1 ------------------------------------------------ */
+
+test("cartes sans enveloppe : une ligne → lien ?ligne=, plusieurs → carte sans lien (jamais de fiche « Sans enveloppe »)", () => {
+  const un = CV.comptes(S0({ positions: [POS("a", { envelope: "" })] }), TODAY, { Calc });
+  const c1 = un.familles.flatMap(F => F.etablissements.flatMap(E => E.comptes))[0];
+  assert.equal(c1.href, "#patrimoine/comptes?ligne=a");
+  const deux = CV.comptes(S0({ positions: [POS("a", { envelope: null }), POS("b", { envelope: "" })] }), TODAY, { Calc });
+  const c2 = deux.familles.flatMap(F => F.etablissements.flatMap(E => E.comptes))[0];
+  assert.equal(c2.href, null); assert.equal(c2.nom, "Sans enveloppe");
+  const h = CV.carteHtml(c2);
+  assert.doesNotMatch(h, /<a |href=|data-goto|Sans%20enveloppe/); assert.match(h, /<div class="cv-carte fixe" role="group" aria-label="Sans enveloppe, 2 lignes/);
+});
+
+test("doublon probable (cas type « PEA DUPONT ») : alerte sur la carte et en tête de la fiche enveloppe, « Demander à Claude » de la clôturer", () => {
+  const titres = [7200, 6100, 5500, 5100, 4500, 4200, 3800, 3500, 3000, 2700, 2300, 1900, 1650].map((v, i) =>
+    POS("t" + i, { name: "Titre " + i, envelope: "PEA", isin: "FR000000000" + i, qty: 1, price: v, pru: v }));
+  const esp = POS("esp", { name: "Espèces PEA", bloc: "Liquidités", mode: "manual", isin: null, value: 60, qty: null, price: null, pru: null });
+  const dupont = POS("dupont", { name: "PEA DUPONT", mode: "manual", isin: null, value: 51230.5, qty: null, price: null, pru: null });
+  const S = S0({ positions: [...titres, esp, dupont] });
+  const carte = CV.comptes(S, TODAY, { Calc }).familles.flatMap(F => F.etablissements.flatMap(E => E.comptes)).find(c => c.nom === "PEA");
+  assert.deepEqual(J(carte.doublons), [{ ligne: "dupont", nom: "PEA DUPONT", enveloppe: "PEA" }]);
+  const h = sp(CV.famillesHtml(CV.comptes(S, TODAY, { Calc }), new Set(), UI));
+  assert.match(h, /<p class="cv-alerte" role="note"><span>La ligne « PEA DUPONT » semble recopier le total de ton enveloppe : ton patrimoine est peut-être compté deux fois\. Demande à Claude de la clôturer\.<\/span>/);
+  assert.ok(decodeURIComponent(((h.match(/href="https:\/\/claude\.ai\/new\?q=([^"]+)"/) || [])[1] || "").replace(/&#39;/g, "'").replace(/&amp;/g, "&")).includes(ClaudePrompts.phrase("placements", "clôturer la ligne « PEA DUPONT » de mon enveloppe PEA, qui semble recopier son total")),
+    "phrase ClaudePrompts vers la clôture");
+  assert.match(h, /aria-label="PEA, [^"]*doublon probable/);
+  const f = CV.ficheEnveloppe(S, { enveloppe: "PEA", titulaire: "p1" }, TODAY, { Calc });
+  assert.equal(f.doublons.length, 1);
+  const hf = sp(CV.ficheEnveloppeHtml(f, UI));
+  assert.ok(hf.indexOf("cv-alerte") < hf.indexOf("cvGrapheTitre"), "alerte en tête de la fiche");
+  // cas négatif : la ligne d'espèces de 60 € ne déclenche rien
+  const sans = S0({ positions: [...titres, esp] });
+  assert.ok(CV.comptes(sans, TODAY, { Calc }).familles.every(F => F.etablissements.every(E => E.comptes.every(c => !c.doublons.length))));
+  assert.doesNotMatch(CV.ficheEnveloppeHtml(CV.ficheEnveloppe(sans, { enveloppe: "PEA", titulaire: "p1" }, TODAY, { Calc }), UI), /cv-alerte/);
+});
+
+test("graphes : historique plus court que la période et plafond signalés ; échec de lecture → « Réessayer »", () => {
+  const f = CV.ficheLigne(S0({ positions: [POS("a", { isin: "A", price: 12 })] }), "a", TODAY, { Calc });
+  const cours = { A: [{ date: CV.debutPeriode("1m", TODAY), cloture: 10 }, { date: CV.debutPeriode("1m", TODAY).replace(/\d{2}$/, "28"), cloture: 11 }] };
+  const h = sp(CV.grapheLigneHtml(f, { cours, charge: "pret", periode: "1a", today: TODAY, plafond: ["A"] }, UI));
+  assert.match(h, /Historique des cours disponible depuis le .* seulement : la courbe commence à cette date, pas au début de la période \(sur 1 an\)/);
+  assert.match(h, /Historique tronqué/);
+  assert.match(CV.grapheLigneHtml(f, { charge: "echec", periode: "1a", today: TODAY }, UI), /data-cv-reessayer/);
+});
+
+test("vue : cours de la période choisie d'abord, période plus longue relue ; échec non mémorisé (« Réessayer ») ; opérations lues pour la fiche compte courant", async () => {
+  const S = demoS(), isin = "IE00B4L5Y983";
+  let echoue = true;
+  const m = monter({ cours: { [isin]: [{ date: CV.debutPeriode("1a", TODAY), cloture: 90 }, { date: CV.debutPeriode("1m", TODAY), cloture: 100 }] } });
+  const appelsOps = [];
+  const coursOk = m.ctx.Store.cours;
+  m.ctx.Store.cours = async (isins, depuis) => { if (echoue) { m.appels.push([isins.slice(), depuis]); throw new Error("panne"); } return coursOk(isins, depuis); };
+  m.ctx.Store.banque = { operations: async (ids, depuis) => { appelsOps.push([ids.slice(), depuis]); return DEMO.operationsBancaires; } };
+  const $ = id => m.root.querySelector("#" + id);
+  m.api.update(S, true);
+  m.ouvrir({ ligne: "pea-etf-monde" });
+  await attendre();
+  assert.equal(m.appels[0][1], CV.debutPeriode("1a", TODAY), "période choisie (1 an par défaut)");
+  assert.match($("cvGraphe").innerHTML, /data-cv-reessayer/, "échec : bouton Réessayer");
+  echoue = false;
+  $("cvGraphe").querySelector("[data-cv-reessayer]").click();
+  await attendre();
+  assert.match($("cvGraphe").innerHTML, /<svg class="cv-svg"/, "réessai réussi");
+  const n = m.appels.length;
+  $("cvPeriode").querySelector('[data-ui-id="1m"]').click();
+  await attendre();
+  assert.equal(m.appels.length, n, "période plus courte : déjà couverte");
+  $("cvPeriode").querySelector('[data-ui-id="5a"]').click();
+  await attendre();
+  assert.equal(m.appels[m.appels.length - 1][1], CV.debutPeriode("5a", TODAY), "période plus longue : relue depuis son début");
+  // fiche compte courant : opérations du compte bancaire rattaché, puis plus bas solde et prélèvements
+  m.ouvrir({ courant: "compte-commun" });
+  assert.match($("cvFiche").innerHTML, /Chargement des opérations…/);
+  await attendre();
+  assert.deepEqual(J(appelsOps.map(a => a[0])), [["1001"]]);
+  assert.match(sp($("cvFiche").innerHTML), /echeance pret immo/);
+  assert.doesNotMatch($("cvFiche").innerHTML, /Chargement des opérations/);
 });

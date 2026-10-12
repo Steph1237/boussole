@@ -2,30 +2,35 @@
    tous les comptes du foyer en un coup d'œil, puis une fiche en pleine page par compte. Lecture seule : le board lit, l'agent écrit.
    - En-tête : patrimoine net, financier, immobilier, dettes (Calc.patrimoine, périmètre S.scope) et variation sur 1 mois tirée des photos
      quotidiennes (S.snapshots : dernière photo vieille d'au moins 30 jours, comparée à la valeur du jour).
-   - Quatre familles en blocs repliables (Comptes courants, Épargne disponible, Investissement, Dettes) : Calc.famille(position) si elle
-     existe (calc.js), sinon familleLocale, même contrat (courant | epargne | investissement) — PROVISOIRE, à retirer quand Calc.famille est
-     livrée. Dans chaque bloc, les comptes sont groupés par établissement : compte bancaire rattaché (S.banque.comptes → connexion
+   - Quatre familles en blocs repliables (Comptes courants, Épargne disponible, Investissement, Dettes) : Calc.famille(position)
+     (calc.js, même règle que le connecteur). Dans chaque bloc, les comptes sont groupés par établissement : compte bancaire rattaché (S.banque.comptes → connexion
      Powens), sinon mot-clé de l'enveloppe (Linxea, Binance…), sinon « Saisi à la main ». Une carte par enveloppe (épargne,
      investissement), par ligne (comptes courants) ou par crédit (dettes) : nom, solde, part du financier (ou des dettes), plus-value
      latente (qty × cours − qty × PRU) et pastille de source (« Synchronisé le JJ/MM » : position.sourceAuto powens / binance et
-     sourceAutoLe, ou compte bancaire rattaché ; sinon « Saisi le JJ/MM » d'après valueDate). Chaque carte est un lien.
+     sourceAutoLe, ou compte bancaire rattaché ; sinon « Saisi le JJ/MM » d'après valueDate). Chaque carte est un lien (lignes sans
+     enveloppe : une seule → sa fiche ligne, plusieurs → carte sans lien). Doublon probable (Calc.doublonsProbables : ligne saisie qui
+     recopie le total de son enveloppe) : alerte sous la carte et en tête de la fiche enveloppe, « Demander à Claude » de la clôturer.
    - Fiches en pleine page dans la même vue, avec fil d'Ariane et adresse profonde (la coque garde les paramètres dans l'URL,
      PARAMS_DANS_URL d'app.js) : #patrimoine/comptes?enveloppe=<nom>&titulaire=<p1|p2>, ?ligne=<id>, ?courant=<id de ligne>.
      · enveloppe : courbe « valeur de tes lignes actuelles » (quantités actuelles × cours historiques, liquidités et lignes saisies à
-       valeur constante) sur 1 M · 3 M · 1 A · 3 A · 5 A, plus-value latente et prix de revient totaux, répartition par classe, lignes
-       triées par poids avec leur performance sur la période, et « Vraie performance » (corrigée des versements) : en construction tant
-       qu'il y a moins de 90 jours de photos (disponible le jour de la première photo + 90 jours).
+       valeur constante ; jamais remplie avant le premier cours connu, historique plus court que la période signalé) sur 1 M · 3 M ·
+       1 A · 3 A · 5 A, plus-value latente et prix de revient totaux, répartition par classe, lignes triées par poids avec leur
+       performance sur la période, et « Vraie performance » (corrigée des versements ; création, achat et vente comptés comme flux sans
+       ligne de liquidités) : indisponible pour une enveloppe synchronisée (versements non suivis) ou partagée entre titulaires, en
+       construction tant qu'il y a moins de 90 jours de photos (disponible le jour de la première photo + 90 jours).
      · ligne : courbe du cours avec le prix de revient en ligne horizontale, quantité, valeur, plus-value, frais / zone / devise,
        mouvements connus (S.tx), source et date, « Demander à Claude » vers l'expertise adaptée (actions, ETF et fonds, crypto).
-     · compte courant : solde, entrées et sorties du mois et moyenne sur 6 mois (S.banque.mois, tous comptes connectés confondus :
-       banque_mois n'est pas détaillé par compte), plus bas solde sur 90 jours (pas encore d'historique des soldes : signalé),
-       prélèvements récurrents (S.banque.prelevements s'ils sont fournis) et graphique des entrées et sorties par mois.
-   - Cours historiques : Store.cours(isins, depuis) → { <isin>: [{ date, cloture }] }, lus à l'ouverture d'une fiche seulement (5 ans
-     d'un coup, gardés en mémoire) ; absents (table pas encore créée, démo sans série) → courbe remplacée par une phrase.
+     · compte courant : solde, entrées et sorties du mois et moyenne sur 6 mois du compte (S.banque.mois par compteId ; sans détail par
+       compte : tous comptes connectés confondus, signalé), plus bas solde sur 90 jours reconstitué depuis le solde actuel et les
+       opérations (Store.banque.operations, lues à l'ouverture), prélèvements récurrents détectés dans ces opérations (même libellé
+       nettoyé, au moins deux mois) — « aucun » seulement avec au moins deux mois d'opérations — et graphique des entrées et sorties.
+   - Cours historiques : Store.cours(isins, depuis) → { <isin>: [{ date, cloture }] }, lus à l'ouverture d'une fiche pour la période
+     choisie d'abord (une période plus longue relit depuis son début) ; échec → phrase et « Réessayer » (rien de mémorisé) ; plafond
+     du store → « historique tronqué » ; absents (table pas encore créée, démo sans série) → courbe remplacée par une phrase.
    Graphiques en SVG maison (style de pilotage.js et aujourdhui.js) : role="img", <title> et <desc> reliés par aria-labelledby /
    aria-describedby, et tableau des données dans un accordéon fermé.
    Fonctions pures exportées (module.exports, et window.ComptesView dans le navigateur pour app.js, pilotage.js et aujourdhui.js) :
-   FAMILLES, PERIODES, familleLocale, famille, lien, lireCible, etablissement, sourceDe, comptes, entete, debutPeriode, serieEnveloppe,
+   FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, etablissement, sourceDe, comptes, entete, debutPeriode, serieEnveloppe,
    perfDepuis, vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, et les rendus HTML enteteHtml,
    famillesHtml, arianeHtml, ficheEnveloppeHtml, grapheEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg,
    barresSvg, donneesHtml (UI reçu en paramètre quand il en faut ; aucune ne touche au DOM). Dépendances injectées (deps) :
@@ -113,28 +118,12 @@
     { id: "investissement", label: "Investissement", vide: "Aucun placement d'investissement." },
     { id: "dettes", label: "Dettes", vide: "Aucun crédit en cours." },
   ];
-  const RE_CTO = /\bcto\b|compte[- ]?titres?/, RE_INVEST = /\bpea\b|\bper\b|\bperin\b|perco|\bpee\b|assurance.?vie|\bav\b|capitalisation|crypto|binance|bourse|courtage/;
-  const RE_COURANT = /comptes? courants?|compte joint|compte de depot|\bbanque\b|\bcash\b|especes/;
-  const RE_EPARGNE = /livret|\bldds\b|\blep\b|\bcel\b|\bpel\b|monetaire|compte a terme|\bcat\b/;
-  /** PROVISOIRE (à remplacer par Calc.famille, calc.js) : famille d'une position d'après son enveloppe et son bloc →
-      courant | epargne | investissement. Comptes courants : bloc ou enveloppe « Comptes courants » (et « compte joint », « banque »,
-      hors compte-titres) ; épargne : livrets et fonds monétaires ; le reste est de l'investissement. */
-  function familleLocale(p) {
-    const e = sansAccent(p && p.envelope), b = sansAccent(p && p.bloc), n = sansAccent(p && p.name);
-    if (RE_CTO.test(e)) return "investissement";
-    if (/comptes? courants?/.test(b) || RE_COURANT.test(e)) return "courant";
-    if (RE_EPARGNE.test(e)) return "epargne";
-    if (RE_INVEST.test(e)) return "investissement";
-    if (/monetaire|livret/.test(b) || /fonds monetaire|livret/.test(n)) return "epargne";
-    return "investissement";
-  }
-  /** Famille d'une position : Calc.famille (calc.js) si elle existe, sinon familleLocale (même contrat). */
+  /** Famille d'une position : Calc.famille (calc.js, même règle que le connecteur) → courant | epargne | investissement. */
   function famille(p, deps) {
     const C = calcDe(deps);
-    if (C && typeof C.famille === "function") {
-      try { const f = C.famille(p); if (f === "courant" || f === "epargne" || f === "investissement") return f; } catch (e) { /* repli local */ }
-    }
-    return familleLocale(p);
+    let f = null;
+    try { f = C && typeof C.famille === "function" ? C.famille(p) : null; } catch (e) { f = null; }
+    return f === "courant" || f === "epargne" ? f : "investissement";
   }
 
   /* ============================================================ liens ============================================================ */
@@ -212,6 +201,19 @@
     return { texte: d ? "Saisi le " + jjmm(d) : MANUEL, ton: "neutre", date: d, origine: "manuel" };
   }
 
+  /* ============================================================ doublons probables ============================================================ */
+  /** Lignes qui recopient probablement le total de leur enveloppe (Calc.doublonsProbables, toutes les lignes du foyer) ; [] sans Calc. */
+  function doublonsDe(S, deps) {
+    const C = calcDe(deps);
+    try { return C && typeof C.doublonsProbables === "function" ? liste(C.doublonsProbables(liste(S && S.positions))) : []; } catch (e) { return []; }
+  }
+  /** Phrase « Demander à Claude » pour clôturer une ligne en doublon (ClaudePrompts, section placements). */
+  function phraseDoublon(d) {
+    const P = promptsDe(), ctx = "clôturer la ligne « " + d.nom + " » de mon enveloppe " + d.enveloppe + ", qui semble recopier son total";
+    return P && typeof P.phrase === "function" ? P.phrase("placements", ctx) : "Boussole : aide-moi à " + ctx + ".";
+  }
+  const texteDoublon = d => "La ligne « " + d.nom + " » semble recopier le total de ton enveloppe : ton patrimoine est peut-être compté deux fois. Demande à Claude de la clôturer.";
+
   /* ============================================================ comptes (liste) ============================================================ */
   /** Comptes du périmètre, par famille puis par établissement.
       → { familles: [{ id, label, vide, total, part, etablissements: [{ nom, origine, comptes: [carte] }], nb }], financier, dettes }
@@ -230,15 +232,18 @@
       groupes.get(k).lignes.push(p);
     });
     const avecNom = deuxPersonnes(s) && sc === "foyer";
+    const dbl = doublonsDe(s, deps);
     const carte = g => {
       const p0 = g.lignes[0], solde = sum(g.lignes, p => valeur(p, C)), lat = g.lignes.map(latente).filter(v => v != null);
-      const env = plat(p0.envelope) || "Sans enveloppe";
+      const sansEnv = !plat(p0.envelope), env = plat(p0.envelope) || "Sans enveloppe";
       const nom = g.type === "courant" ? plat(p0.name) || env : env;
       const sous = [g.type === "courant" && env !== nom ? env : g.type === "enveloppe" ? pluriel(g.lignes.length, "ligne") : "", avecNom ? nomDe(s, p0.owner) : ""].filter(Boolean).join(" · ");
-      const cible = g.type === "courant" ? { courant: p0.id } : { enveloppe: env, titulaire: p0.owner };
+      // Lignes sans enveloppe : pas de fiche « Sans enveloppe » (elle n'existe pas) ; une seule ligne → sa fiche, plusieurs → pas de lien.
+      const cible = g.type === "courant" ? { courant: p0.id } : sansEnv ? (g.lignes.length === 1 ? { ligne: p0.id } : null) : { enveloppe: env, titulaire: p0.owner };
+      const doublons = sansEnv ? [] : dbl.filter(d => g.lignes.some(p => String(p.id) === String(d.ligne))).map(d => ({ ligne: d.ligne, nom: plat(d.nom) || "sans nom", enveloppe: d.enveloppe }));
       return { cle: g.type === "courant" ? "courant:" + p0.id : "enveloppe:" + env + ":" + (p0.owner || ""), type: g.type, nom, sous, solde,
         part: financier ? solde / financier * 100 : 0, plusValue: lat.length ? sum(lat, v => v) : null, cout: lat.length ? sum(g.lignes.map(coutDe).filter(v => v != null), v => v) : null,
-        source: sourceDe(g.lignes, s), href: "#" + lien(cible), nb: g.lignes.length, titulaire: p0.owner || null, etablissement: etablissement(g.lignes, s) };
+        source: sourceDe(g.lignes, s), href: cible ? "#" + lien(cible) : null, nb: g.lignes.length, titulaire: p0.owner || null, etablissement: etablissement(g.lignes, s), doublons };
     };
     // Dettes : crédits immobiliers (capital restant dû des biens) et autres crédits du profil, à la quote-part du périmètre.
     const pr = s.profil || {}, part = (sc2, x) => (C && typeof C.part === "function" ? C.part(sc2, x) : 1), partCr = (sc2, o) => (C && typeof C.partCredit === "function" ? C.partCredit(sc2, o) : 1);
@@ -253,7 +258,7 @@
       return { cle: "dette:" + d.id, type: "dette", nom: d.nom, sous: d.credit && avecNom ? (d.credit.owner === "commun" ? "Commun" : nomDe(s, d.credit.owner)) : "",
         solde: -d.montant, part: totalDettes ? d.montant / totalDettes * 100 : 0, plusValue: null, cout: null,
         source: cx ? { texte: "Synchronisé" + (jjmm(dt) ? " le " + jjmm(dt) : ""), ton: "bon", date: jourDe(dt), origine: "powens" } : { texte: MANUEL, ton: "neutre", date: "", origine: "manuel" },
-        href: "#patrimoine/immobilier", nb: 1, titulaire: null, etablissement: cx && plat(cx.etablissement) ? { nom: plat(cx.etablissement), origine: "banque" } : { nom: MANUEL, origine: "manuel" } };
+        href: "#patrimoine/immobilier", nb: 1, titulaire: null, etablissement: cx && plat(cx.etablissement) ? { nom: plat(cx.etablissement), origine: "banque" } : { nom: MANUEL, origine: "manuel" }, doublons: [] };
     };
     const familles = FAMILLES.map(F => {
       const cs = F.id === "dettes" ? dettes.map(carteDette) : cartes[F.id].map(carte);
@@ -300,19 +305,24 @@
     for (let i = 0; i < n; i++) out.push(pts[Math.round(i * pas)]);
     return out;
   }
-  /** Valeur des lignes actuelles d'une enveloppe dans le passé : Σ quantité actuelle × cours historique (dernier cours connu à la date ;
-      avant le premier cours connu d'une ligne, ce premier cours) + lignes saisies et lignes cotées sans historique à leur valeur du jour
-      (constante). Un point par jour de cotation dans [debut, today], plus le point du jour (valeurs du jour).
-      → { points: [{ date, valeur }], constantes: montant à valeur constante, sansHistorique: [noms des lignes cotées sans cours] } */
+  /** Valeur des lignes actuelles d'une enveloppe dans le passé : Σ quantité actuelle × cours historique (dernier cours connu à la date)
+      + lignes saisies et lignes cotées sans historique à leur valeur du jour (constante). Un point par jour de cotation dans
+      [debut, today], à partir du jour où toutes les lignes historisées ont un cours (jamais de remplissage avant le premier cours
+      connu d'une ligne), plus le point du jour (valeurs du jour). partiel : l'historique commence plus d'une semaine après le début
+      de la période (à signaler : la courbe est plus courte que la période).
+      → { points: [{ date, valeur }], constantes, sansHistorique: [noms], historiqueDepuis (AAAA-MM-JJ | null), partiel } */
   function serieEnveloppe(lignes, cours, debut, today, deps) {
     const C = calcDe(deps), t = jour(today), d0 = jj(debut);
     const ls = liste(lignes).filter(compte);
     const cotees = ls.filter(p => p.mode === "market" && fini(p.qty) && p.isin).map(p => ({ p, h: coutsFiltres(coursDe(cours, p.isin), t) }));
     const avec = cotees.filter(x => x.h.length), sans = cotees.filter(x => !x.h.length);
     const constantes = sum(ls.filter(p => !avec.some(x => x.p === p)), p => valeur(p, C));
-    const out = { points: [], constantes, sansHistorique: sans.map(x => plat(x.p.name)) };
+    const out = { points: [], constantes, sansHistorique: sans.map(x => plat(x.p.name)), historiqueDepuis: null, partiel: false };
     if (!avec.length) return out;
-    const dates = [...new Set(avec.flatMap(x => x.h.map(c => c.date)).filter(d => d >= d0 && d < t))].sort();
+    const connu = avec.map(x => x.h[0].date).sort().pop(); // premier jour où toutes les lignes historisées ont un cours
+    out.historiqueDepuis = connu;
+    out.partiel = isoOk(d0) && connu > plusJours(d0, 7);
+    const dates = [...new Set(avec.flatMap(x => x.h.map(c => c.date)).filter(d => d >= d0 && d >= connu && d < t))].sort();
     const idx = avec.map(() => 0);
     dates.forEach(d => {
       let v = constantes;
@@ -336,10 +346,18 @@
   }
 
   /** « Vraie performance » d'une enveloppe, corrigée des versements (Dietz modifié sur les photos quotidiennes by_envelope et les
-      mouvements S.tx : versements et versements programmés entrent, retraits sortent). Moins de 90 jours de photos → en construction.
-      → { etat: construction, dispoLe } | { etat: indisponible } | { etat: ok, gain, pct, depuis, flux } */
-  function vraiePerformance(S, nomEnv, lignes, today) {
-    const s = S || {}, t = jour(today), env = plat(nomEnv);
+      mouvements S.tx). Flux : versements et versements programmés entrent, retraits sortent ; si l'enveloppe n'a pas de ligne de
+      liquidités (poche monétaire, ou ligne « Espèces » / « Liquidités » / « Cash »), les créations de ligne et les achats entrent aussi
+      et les ventes sortent (l'argent ne transite par aucune ligne suivie).
+      Indisponible : enveloppe synchronisée (une ligne source_auto : ses versements ne sont pas des mouvements Boussole) → non_suivi ;
+      plusieurs titulaires pour ce nom d'enveloppe (by_envelope mélange leurs lignes) → titulaires. Moins de 90 jours de photos →
+      en construction.
+      → { etat: non_suivi } | { etat: titulaires } | { etat: construction, dispoLe } | { etat: indisponible } | { etat: ok, gain, pct, depuis, jusquA, flux } */
+  function vraiePerformance(S, nomEnv, lignes, today, deps) {
+    const s = S || {}, t = jour(today), env = plat(nomEnv), C = calcDe(deps), ls = liste(lignes).filter(Boolean);
+    if (ls.some(p => SOURCES_AUTO[p.sourceAuto])) return { etat: "non_suivi" };
+    const titulaires = new Set(liste(s.positions).filter(p => p && plat(p.envelope) === env).map(p => p.owner || ""));
+    if (titulaires.size > 1) return { etat: "titulaires" };
     const snaps = liste(s.snapshots).filter(x => x && isoOk(jj(x.date))).sort((a, b) => (jj(a.date) < jj(b.date) ? -1 : 1));
     if (!snaps.length) return { etat: "construction", dispoLe: plusJours(t, 90) };
     const dispoLe = plusJours(jj(snaps[0].date), 90);
@@ -348,10 +366,13 @@
     if (avecEnv.length < 2) return { etat: "indisponible" };
     const a = avecEnv[0], z = avecEnv[avecEnv.length - 1], d0 = jj(a.date), d1 = jj(z.date), duree = joursEntre(d0, d1);
     if (duree <= 0) return { etat: "indisponible" };
-    const ids = new Set(liste(lignes).map(p => String(p.id)));
-    const SIGNE = { versement: 1, programme: 1, retrait: -1 };
-    const flux = liste(s.tx).filter(x => x && ids.has(String(x.positionId)) && SIGNE[x.type] && fini(x.amount) && jj(x.date) > d0 && jj(x.date) <= d1)
-      .map(x => ({ montant: SIGNE[x.type] * Math.abs(+x.amount), poids: joursEntre(jj(x.date), d1) / duree }));
+    const ids = new Set(ls.map(p => String(p.id)));
+    const estLiquidite = p => p.status !== "clôturé" && ((C && typeof C.classe === "function" && C.classe(p.bloc, s.classes || undefined) === "monetaire") ||
+      /liquidites?|especes|\bcash\b/.test(sansAccent(p.name)));
+    const SIGNE = ls.some(estLiquidite) ? { versement: 1, programme: 1, retrait: -1 } : { versement: 1, programme: 1, retrait: -1, creation: 1, achat: 1, vente: -1 };
+    const montant = x => (fini(x.amount) && +x.amount ? Math.abs(+x.amount) : fini(x.qty) && fini(x.price) ? Math.abs(x.qty * x.price) : null);
+    const flux = liste(s.tx).filter(x => x && ids.has(String(x.positionId)) && SIGNE[x.type] && montant(x) != null && jj(x.date) > d0 && jj(x.date) <= d1)
+      .map(x => ({ montant: SIGNE[x.type] * montant(x), poids: joursEntre(jj(x.date), d1) / duree }));
     const v0 = +a.byEnvelope[env], v1 = +z.byEnvelope[env], net = sum(flux, f => f.montant);
     const gain = v1 - v0 - net, base = v0 + sum(flux, f => f.montant * f.poids);
     return { etat: "ok", gain, pct: base > 0 ? gain / base * 100 : null, depuis: d0, jusquA: d1, flux: net };
@@ -395,7 +416,8 @@
       lignes, total, plusValue: lat.length ? sum(lat, v => v) : null, cout: lat.length ? sum(ls.map(coutDe).filter(v => v != null), v => v) : null,
       repartition: repartition(ls, s, deps), source: sourceDe(toutes, s), etablissement: etablissement(toutes, s),
       isins: [...new Set(ls.filter(p => p.mode === "market" && p.isin).map(p => String(p.isin)))], aRecevoir: toutes.filter(p => p.status === "à recevoir").map(p => plat(p.name)),
-      vraie: vraiePerformance(s, c.enveloppe, toutes, t) };
+      vraie: vraiePerformance(s, c.enveloppe, toutes, t, deps),
+      doublons: doublonsDe(s, deps).filter(d => toutes.some(p => String(p.id) === String(d.ligne))).map(d => ({ ligne: d.ligne, nom: plat(d.nom) || "sans nom", enveloppe: d.enveloppe })) };
   }
   const famLabel = id => (FAMILLES.find(f => f.id === id) || {}).label || "";
 
@@ -431,32 +453,87 @@
       enveloppeHref: "#" + lien({ enveloppe: env, titulaire: p.owner }), isin: p.mode === "market" && p.isin ? String(p.isin) : null, statut: p.status };
   }
 
-  /** Flux par mois (S.banque.mois, toutes catégories et tous comptes connectés) → [{ mois: AAAA-MM-01, entrees, sorties }], du plus ancien. */
-  function fluxMois(S) {
-    const b = banqueDe(S), by = new Map();
+  /* Compte d'une ligne de banque_mois (compteId ; 0 = totaux par utilisateur, comme sans compte). */
+  const idMois = m => (m && m.compteId != null && +m.compteId !== 0 ? String(m.compteId) : null);
+  /** Flux par mois (S.banque.mois, toutes catégories) → [{ mois: AAAA-MM-01, entrees, sorties }], du plus ancien. compteIds (facultatif) :
+      seules les lignes de ces comptes (banque_mois détaillé par compte) ; absent : toutes les lignes. */
+  function fluxMois(S, compteIds) {
+    const b = banqueDe(S), by = new Map(), ids = Array.isArray(compteIds) ? new Set(compteIds.map(String)) : null;
     liste(b && b.mois).forEach(m => {
       const k = jj(m && m.mois).slice(0, 7);
-      if (!/^\d{4}-\d{2}$/.test(k)) return;
+      if (!/^\d{4}-\d{2}$/.test(k) || (ids && !ids.has(idMois(m)))) return;
       const x = by.get(k) || { mois: k + "-01", entrees: 0, sorties: 0 };
       x.entrees += +m.entrees || 0; x.sorties += +m.sorties || 0;
       by.set(k, x);
     });
     return [...by.values()].sort((a, c) => (a.mois < c.mois ? -1 : 1));
   }
-  /** Fiche compte courant : { trouvee, p, nom, sous, solde, source, etablissement, flux: { mois, enCours, moyenne: { entrees, sorties, n } },
-      connecte, prelevements, plusBas: null } */
-  function ficheCourant(S, id, today, deps) {
+
+  /** Libellé nettoyé d'une opération (même règle que cleLibelle du connecteur, banque.ts) : minuscules, sans accents, sans chiffres
+      ni ponctuation, espaces réduits. */
+  const cleLibelle = t => sansAccent(t).replace(/[^a-z]+/g, " ").trim();
+  const JOURS_HISTO = 90, LIBELLE_MAX = 40;
+  /** Plus bas solde de fin de journée sur les 90 derniers jours, reconstitué à rebours depuis le solde actuel et les opérations
+      (solde de la veille = solde du jour − opérations du jour). → { montant, date, depuis, complet } ; complet : les opérations couvrent
+      la fenêtre (première opération dans les 10 premiers jours) ; null sans opération. */
+  function plusBasSolde(solde, ops, today) {
+    const t = jour(today), debut = plusJours(t, -JOURS_HISTO);
+    const L = liste(ops).filter(o => o && isoOk(jj(o.date)) && fini(o.montant) && jj(o.date) <= t);
+    if (!L.length || !fini(solde)) return null;
+    const parJour = new Map();
+    L.forEach(o => { const d = jj(o.date); parJour.set(d, (parJour.get(d) || 0) + +o.montant); });
+    const premiere = L.map(o => jj(o.date)).sort()[0], depuis = premiere > debut ? plusJours(premiere, -1) : debut;
+    let b = +solde, min = { montant: b, date: t };
+    for (let d = t; d > depuis; d = plusJours(d, -1)) {
+      b -= parJour.get(d) || 0; // solde à la fin de la veille
+      if (b < min.montant - 1e-9) min = { montant: b, date: plusJours(d, -1) };
+    }
+    return { montant: Math.round(min.montant * 100) / 100, date: min.date, depuis, complet: premiere <= plusJours(debut, 10) };
+  }
+  /** Prélèvements récurrents détectés dans les opérations (90 jours) : débits de même libellé nettoyé, présents au moins 2 mois
+      distincts, au plus 2 fois par mois en moyenne et de montants proches (le plus fort ≤ 1,5 × le plus faible) — les paiements par carte
+      répétés chez un même commerçant ne sont pas des prélèvements. → [{ libelle, montant (moyen, positif), jour (du dernier), mois }] triés
+      par montant décroissant. */
+  function prelevementsRecurrents(ops, today) {
+    const t = jour(today), debut = plusJours(t, -JOURS_HISTO), g = new Map();
+    liste(ops).filter(o => o && isoOk(jj(o.date)) && jj(o.date) > debut && jj(o.date) <= t && fini(o.montant) && +o.montant < 0 && cleLibelle(o.libelle))
+      .forEach(o => { const k = cleLibelle(o.libelle); if (!g.has(k)) g.set(k, []); g.get(k).push(o); });
+    const out = [];
+    g.forEach((L, k) => {
+      const mois = new Set(L.map(o => jj(o.date).slice(0, 7))).size, m = L.map(o => Math.abs(+o.montant));
+      if (mois < 2 || L.length > 2 * mois || Math.max(...m) > 1.5 * Math.min(...m)) return;
+      const dernier = L.map(o => jj(o.date)).sort().pop();
+      out.push({ libelle: k.slice(0, LIBELLE_MAX).trim(), montant: sum(m, v => v) / m.length, jour: +dernier.slice(8, 10), mois });
+    });
+    return out.sort((a, b) => b.montant - a.montant || a.libelle.localeCompare(b.libelle, "fr"));
+  }
+  /** Fiche compte courant. ops : opérations des comptes bancaires rattachés (Store.banque.operations) — tableau une fois lues, "chargement"
+      pendant la lecture, "indisponible" en échec, undefined si rien n'est demandé.
+      → { trouvee, p, nom, sous, solde, source, etablissement, connecte, banqueActive, compteIds, portee: compte | tous | aucun,
+          flux: { mois, enCours, moyenne: { entrees, sorties, n } }, operations: ok | chargement | indisponible | aucune,
+          plusBas: { montant, date, depuis, complet } | null, prelevements: [...], historiqueCourt } */
+  function ficheCourant(S, id, today, deps, ops) {
     const C = calcDe(deps), s = S || {}, p = liste(s.positions).find(x => x && String(x.id) === String(id));
     if (!p) return { trouvee: false };
-    const t = jour(today), mm = t.slice(0, 7), fs = fluxMois(s);
+    const t = jour(today), mm = t.slice(0, 7), b = banqueDe(s), cpts = comptesBanque(p, s), compteIds = cpts.map(c => String(c.id));
+    // banque_mois détaillé par compte (0025) : flux de ce compte seulement ; sinon totaux de tous les comptes connectés (signalé).
+    const parCompte = liste(b && b.mois).some(m => idMois(m) != null);
+    const portee = !parCompte ? "tous" : cpts.length ? "compte" : "aucun";
+    const fs = portee === "tous" ? fluxMois(s) : fluxMois(s, portee === "compte" ? compteIds : []);
     const enCours = fs.find(f => f.mois.slice(0, 7) === mm) || null;
     const complets = fs.filter(f => f.mois.slice(0, 7) < mm).slice(-6);
     const moyenne = complets.length ? { entrees: sum(complets, f => f.entrees) / complets.length, sorties: sum(complets, f => f.sorties) / complets.length, n: complets.length } : null;
-    const b = banqueDe(s), cpts = comptesBanque(p, s);
-    const prel = liste(b && b.prelevements).filter(x => x && plat(x.libelle) && (x.compteId == null || cpts.some(c => String(c.id) === String(x.compteId))));
+    const soldes = cpts.map(c => c.solde), solde = valeur(p, C);
+    const soldeBanque = soldes.length && soldes.every(fini) ? sum(soldes, v => +v) : solde;
+    const etatOps = !cpts.length ? "aucune" : Array.isArray(ops) ? "ok" : ops === "indisponible" ? "indisponible" : "chargement";
+    const L = Array.isArray(ops) ? ops.filter(o => o && compteIds.includes(String(o.compteId))) : [];
+    const premiere = L.map(o => jj(o.date)).filter(isoOk).sort()[0] || null;
+    const court = etatOps === "ok" && (!premiere || premiere > plusJours(t, -55)); // moins de deux mois d'opérations : rien de fiable
     return { trouvee: true, p, nom: plat(p.name) || "Compte courant", sous: [plat(p.envelope), deuxPersonnes(s) ? nomDe(s, p.owner) : ""].filter(Boolean).join(" · "),
-      solde: valeur(p, C), source: sourceDe([p], s), etablissement: etablissement(p, s), connecte: !!(b && b.actif && cpts.length), banqueActive: !!(b && b.actif),
-      flux: { mois: fs.slice(-6), enCours, moyenne }, prelevements: prel.map(x => ({ libelle: plat(x.libelle), montant: +x.montant || 0, jour: x.jour || null })), plusBas: null };
+      solde, source: sourceDe([p], s), etablissement: etablissement(p, s), connecte: !!(b && b.actif && cpts.length), banqueActive: !!(b && b.actif), compteIds, portee,
+      flux: { mois: fs.slice(-6), enCours, moyenne }, operations: etatOps,
+      plusBas: etatOps === "ok" ? plusBasSolde(soldeBanque, L, t) : null,
+      prelevements: etatOps === "ok" && !court ? prelevementsRecurrents(L, t) : [], historiqueCourt: court };
   }
 
   /* ============================================================ graphiques SVG ============================================================ */
@@ -546,20 +623,27 @@
       fait("Dettes", eur(-e.dettes), "capital restant dû", e.dettes ? "neg" : "") + "</ul>";
   }
 
-  /** Carte d'un compte : lien vers sa fiche (ou vers Immobilier et crédits pour une dette). */
-  function carteHtml(c) {
-    const fiche = c.type !== "dette", route = c.href.replace(/^#/, "");
+  /** Alerte « doublon probable » (texte, puis « Demander à Claude » de clôturer la ligne si U est fourni). */
+  const alerteDoublonHtml = (d, U) => '<p class="cv-alerte" role="note"><span>' + esc(texteDoublon(d)) + "</span>" + lienClaude(U, phraseDoublon(d), "Demander à Claude") + "</p>";
+  /** Carte d'un compte : lien vers sa fiche (ou vers Immobilier et crédits pour une dette) ; sans fiche (plusieurs lignes sans
+      enveloppe) : carte non cliquable. Doublon probable : alerte sous la carte (U : bouton « Demander à Claude »). */
+  function carteHtml(c, U) {
+    const fiche = c.type !== "dette", lienOk = !!c.href, route = lienOk ? c.href.replace(/^#/, "") : "";
     const lu = [c.nom, c.sous, (c.type === "dette" ? "reste dû " + eur(-c.solde) : "solde " + eur(c.solde)), pct0(c.part) + (c.type === "dette" ? " des dettes" : " du financier"),
       c.plusValue != null ? (c.plusValue >= 0 ? "plus-value latente " : "moins-value latente ") + eurS(c.plusValue) : "", c.source.texte,
-      fiche ? "ouvrir la fiche" : "voir Immobilier et crédits"].filter(Boolean).join(", ");
-    return '<li class="cv-li"><a class="cv-carte' + (c.type === "dette" ? " dette" : "") + '" href="' + esc(c.href) + '" data-goto="' + esc(route) + '" data-cv-cle="' + esc(c.cle) + '" aria-label="' + esc(lu) + '">' +
-      '<span class="cv-c-haut"><span class="cv-c-nom">' + esc(c.nom) + "</span>" + '<span class="cv-c-solde">' + esc(eur(c.solde)) + "</span></span>" +
+      liste(c.doublons).length ? "doublon probable" : "", !lienOk ? "" : fiche ? "ouvrir la fiche" : "voir Immobilier et crédits"].filter(Boolean).join(", ");
+    const corps = '<span class="cv-c-haut"><span class="cv-c-nom">' + esc(c.nom) + "</span>" + '<span class="cv-c-solde">' + esc(eur(c.solde)) + "</span></span>" +
       '<span class="cv-c-bas"><span class="cv-c-sous">' + esc([c.sous, pct0(c.part) + (c.type === "dette" ? " des dettes" : " du financier")].filter(Boolean).join(" · ")) + "</span>" +
       (c.plusValue != null ? tendance(c.plusValue, "latents") : "") + "</span>" +
-      '<span class="cv-c-pied">' + chip(c.source) + '<span class="cv-c-ouvrir" aria-hidden="true">›</span></span></a></li>';
+      '<span class="cv-c-pied">' + chip(c.source) + (lienOk ? '<span class="cv-c-ouvrir" aria-hidden="true">›</span>' : "") + "</span>";
+    const cls = "cv-carte" + (c.type === "dette" ? " dette" : "") + (liste(c.doublons).length ? " doublon" : "");
+    return '<li class="cv-li">' + (lienOk
+      ? '<a class="' + cls + '" href="' + esc(c.href) + '" data-goto="' + esc(route) + '" data-cv-cle="' + esc(c.cle) + '" aria-label="' + esc(lu) + '">' + corps + "</a>"
+      : '<div class="' + cls + ' fixe" role="group" aria-label="' + esc(lu) + '">' + corps + "</div>") +
+      liste(c.doublons).map(d => alerteDoublonHtml(d, U)).join("") + "</li>";
   }
-  /** Blocs repliables des quatre familles (fermes = Set des familles repliées). */
-  function famillesHtml(L, fermes) {
+  /** Blocs repliables des quatre familles (fermes = Set des familles repliées ; U facultatif : boutons « Demander à Claude »). */
+  function famillesHtml(L, fermes, U) {
     const f = fermes || new Set();
     return L.familles.map(F => {
       const ouvert = !f.has(F.id), corps = "cv-fam-" + F.id;
@@ -571,7 +655,7 @@
         '<span class="cv-fam-chev" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span>' +
         "</button></h3>" +
         '<div class="cv-fam-corps" id="' + corps + '"' + (ouvert ? "" : " hidden") + ">" +
-        (F.nb ? F.etablissements.map(E => '<div class="cv-etab"><h4 class="cv-etab-h">' + esc(E.nom) + '</h4><ul class="cv-cartes">' + E.comptes.map(carteHtml).join("") + "</ul></div>").join("")
+        (F.nb ? F.etablissements.map(E => '<div class="cv-etab"><h4 class="cv-etab-h">' + esc(E.nom) + '</h4><ul class="cv-cartes">' + E.comptes.map(c => carteHtml(c, U)).join("") + "</ul></div>").join("")
           : '<p class="cv-muet">' + esc(F.vide) + "</p>") +
         "</div></section>";
     }).join("");
@@ -599,11 +683,14 @@
     const resume = [["Valeur", eur(f.total)], ["Plus-value latente", f.plusValue != null ? eurS(f.plusValue) + (f.cout ? " (" + pctS(f.plusValue / f.cout * 100) + ")" : "") : "non calculable sans prix de revient", f.plusValue != null ? (f.plusValue >= 0 ? "pos" : "neg") : ""],
       ["Prix de revient total", f.cout != null ? eur(f.cout) : "—"], ["Établissement", f.etablissement.nom], ["Source", f.source.texte]];
     const rep = f.repartition.length ? '<ul class="cv-rep">' + f.repartition.map(r => '<li><span class="cv-rep-l">' + esc(r.label) + '</span><span class="cv-rep-barre" aria-hidden="true"><span style="width:' + Math.max(1, Math.min(100, r.pct)).toFixed(1) + '%"></span></span><span class="cv-rep-v">' + esc(pct(r.pct)) + " · " + esc(eur(r.montant)) + "</span></li>").join("") + "</ul>" : '<p class="cv-muet">Aucune ligne comptée.</p>';
-    const vp = f.vraie, vraie = vp.etat === "construction" ? '<p class="cv-construction"><strong>En construction :</strong> disponible à partir du ' + esc(dateFr(vp.dispoLe)) + ". Boussole a besoin de 90 jours de photos quotidiennes pour corriger la performance de tes versements.</p>"
+    const vp = f.vraie, vraie = vp.etat === "non_suivi" ? '<p class="cv-muet">Indisponible : les versements de ce compte ne sont pas suivis. Il est synchronisé avec ta banque : Boussole voit sa valeur, pas l\'argent que tu y verses ou en retires.</p>'
+      : vp.etat === "titulaires" ? '<p class="cv-muet">Indisponible : plusieurs titulaires ont une enveloppe de ce nom, et les photos quotidiennes ne les distinguent pas.</p>'
+      : vp.etat === "construction" ? '<p class="cv-construction"><strong>En construction :</strong> disponible à partir du ' + esc(dateFr(vp.dispoLe)) + ". Boussole a besoin de 90 jours de photos quotidiennes pour corriger la performance de tes versements.</p>"
       : vp.etat === "ok" ? faitsHtml([["Gain hors versements", eurS(vp.gain), vp.gain >= 0 ? "pos" : "neg"], ["Performance", vp.pct != null ? pctS(vp.pct) : "—"], ["Période", "du " + dateFr(vp.depuis) + " au " + dateFr(vp.jusquA)], ["Versements nets", eurS(vp.flux)]]) +
         '<p class="cv-note">Calcul : variation de valeur moins les versements et retraits enregistrés, rapportée au capital moyen engagé.</p>'
       : '<p class="cv-muet">Pas encore assez de photos de cette enveloppe pour la calculer.</p>';
     return arianeHtml([RETOUR, { label: f.nom }]) + titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.total)) + "</p>") +
+      liste(f.doublons).map(d => alerteDoublonHtml(d, U)).join("") +
       '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Valeur de tes lignes actuelles</h3><div class="cv-periode" id="cvPeriode"></div></div>' +
       '<div id="cvGraphe" aria-live="polite"></div></section>' +
       '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(resume) +
@@ -618,6 +705,7 @@
     const e = etat || {}, t = jour(e.today), per = periodeDe(e.periode), d0 = debutPeriode(per.id, t), cours = e.cours || {};
     let graphe;
     if (!f.isins.length) graphe = '<p class="cv-muet">Toutes les lignes de ce compte sont saisies à la main : leur valeur ne suit pas de cours, il n\'y a donc pas de courbe. Elle apparaîtra pour les lignes cotées.</p>';
+    else if (e.charge === "echec") graphe = echecCoursHtml();
     else if (e.charge !== "pret") graphe = '<p class="cv-muet" role="status">Chargement des cours…</p>';
     else {
       const sr = serieEnveloppe(f.lignes.map(l => l.p), cours, d0, t, deps), pts = echantillon(sr.points, 260);
@@ -625,6 +713,7 @@
         desc: pts.length > 1 ? "De " + eur(pts[0].valeur) + " le " + dateFr(pts[0].date) + " à " + eur(pts[pts.length - 1].valeur) + " aujourd'hui (" + eurS(pts[pts.length - 1].valeur - pts[0].valeur) + ")." : "" });
       graphe = svg ? svg + '<p class="cv-note">Quantités d\'aujourd\'hui × cours passés' + (sr.constantes ? " ; " + esc(eur(sr.constantes)) + " de liquidités et de lignes saisies comptés à valeur constante" : "") +
         (sr.sansHistorique.length ? " ; sans historique de cours : " + esc(sr.sansHistorique.join(", ")) : "") + ". Ce n'est pas ta performance réelle : elle ignore tes achats, ventes et versements.</p>" +
+        (sr.partiel ? partielHtml(sr.historiqueDepuis, per) : "") + plafondHtml(e.plafond, f.isins) +
         donneesHtml(U, "Valeur de tes lignes actuelles, " + per.txt, ["Date", "Valeur"], echantillon(pts, 40).map(p => [dateFr(p.date), eur(p.valeur)]))
         : '<p class="cv-muet">Historique des cours pas encore disponible pour ces lignes : Boussole le récupère la nuit, la courbe apparaîtra bientôt.</p>';
     }
@@ -659,11 +748,17 @@
       '<section class="panel cv-f-bloc" aria-labelledby="cvMvtsTitre"><h3 id="cvMvtsTitre">Mouvements connus</h3>' + mvts + "</section>" +
       '<div class="cv-acts">' + lienClaude(U, q, "Demander à Claude") + '<span class="cv-note">Active l\'expertise ' + esc(f.expertise.nom) + ".</span></div>";
   }
+  /* Historique plus court que la période, plafond de lecture atteint, lecture en échec (bouton « Réessayer », data-cv-reessayer). */
+  const partielHtml = (depuis, per) => '<p class="cv-note">Historique des cours disponible depuis le ' + esc(dateFr(depuis)) + " seulement : la courbe commence à cette date, pas au début de la période (" + esc(per.txt) + ").</p>";
+  const plafondHtml = (plafond, isins) => (liste(plafond).some(i => liste(isins).includes(i)) ? '<p class="cv-note">Historique tronqué : seuls les cours les plus récents ont été chargés.</p>' : "");
+  const echecCoursHtml = () => '<p class="cv-muet" role="status">Les cours n\'ont pas pu être chargés. <button type="button" class="cv-lien-btn" data-cv-reessayer>Réessayer</button></p>';
   /** Courbe du cours d'une ligne avec son prix de revient. */
   function grapheLigneHtml(f, etat, U) {
     const e = etat || {}, t = jour(e.today), per = periodeDe(e.periode), d0 = debutPeriode(per.id, t);
+    if (e.charge === "echec") return echecCoursHtml();
     if (e.charge !== "pret") return '<p class="cv-muet" role="status">Chargement des cours…</p>';
     const h = coursDe(e.cours, f.isin).filter(c => c.date >= d0 && c.date < t).map(c => ({ date: c.date, valeur: c.cloture }));
+    const partiel = h.length && h[0].date > plusJours(d0, 7) ? partielHtml(h[0].date, per) : "";
     if (fini(f.p.price)) h.push({ date: t, valeur: +f.p.price, live: true });
     const pts = echantillon(h, 260), pru = fini(f.p.pru) && +f.p.pru > 0 ? +f.p.pru : null;
     const svg = courbeSvg(pts, { id: "cvCourbeLigne", largeur: e.largeur, format: v => (Math.abs(v) >= 1e4 ? kEur(v) : eur2(v)), formatPoint: eur2,
@@ -672,7 +767,7 @@
     if (!svg) return '<p class="cv-muet">Historique du cours pas encore disponible : Boussole le récupère la nuit, la courbe apparaîtra bientôt.</p>';
     const perf = pts.length > 1 ? (pts[pts.length - 1].valeur / pts[0].valeur - 1) * 100 : null;
     return '<p class="cv-perf">' + esc(per.txt.charAt(0).toUpperCase() + per.txt.slice(1)) + " : " + (perf != null ? '<span class="' + (perf >= 0 ? "pos" : "neg") + '">' + esc(pctS(perf)) + "</span>" : "—") + "</p>" + svg +
-      (pru ? '<p class="cv-note">Trait pointillé : ton prix de revient unitaire (' + esc(eur2(pru)) + ").</p>" : "") +
+      (pru ? '<p class="cv-note">Trait pointillé : ton prix de revient unitaire (' + esc(eur2(pru)) + ").</p>" : "") + partiel + plafondHtml(e.plafond, [f.isin]) +
       donneesHtml(U, "Cours de " + f.nom + ", " + per.txt, ["Date", "Cours"], echantillon(pts, 40).map(p => [dateFr(p.date), eur2(p.valeur)]));
   }
 
@@ -680,18 +775,30 @@
   function ficheCourantHtml(f, U, o) {
     if (!f.trouvee) return introuvable("Compte courant", U);
     const opt = o || {}, fl = f.flux, ec = fl.enCours, moy = fl.moyenne;
-    const portee = "tous tes comptes connectés confondus";
+    const portee = f.portee === "compte" ? "de ce compte" : "de tous tes comptes connectés confondus";
+    const pb = f.plusBas;
+    const plusBas = !f.connecte ? (f.banqueActive ? "rattache ce compte à un compte bancaire synchronisé pour le calculer" : "connecte ta banque pour le calculer")
+      : f.operations === "chargement" ? "chargement des opérations…" : f.operations === "indisponible" ? "opérations indisponibles pour le moment"
+      : !pb ? "pas encore d'opérations synchronisées"
+      : eur(pb.montant) + " le " + dateFr(pb.date) + (pb.complet ? "" : " (d'après les opérations depuis le " + dateFr(pb.depuis) + ")");
     const chiffres = [["Solde", eur(f.solde)], ["Établissement", f.etablissement.nom], ["Source", f.source.texte],
-      ["Plus bas solde sur 90 jours", "pas encore disponible : Boussole ne garde pas encore l'historique des soldes"]];
+      ["Plus bas solde sur 90 jours", plusBas, pb && pb.montant < 0 ? "neg" : ""]];
     const flux = !f.banqueActive || !fl.mois.length
-      ? '<p class="cv-muet">' + esc(f.banqueActive ? "Pas encore d'opérations synchronisées." : "Connecte ta banque dans Agent › Connexion pour suivre les entrées et sorties de ce compte.") + "</p>"
+      ? '<p class="cv-muet">' + esc(!f.banqueActive ? "Connecte ta banque dans Agent › Connexion pour suivre les entrées et sorties de ce compte."
+        : f.portee === "aucun" ? "Rattache ce compte à un compte bancaire synchronisé (Agent › Connexion) pour suivre ses entrées et sorties."
+        : "Pas encore d'opérations synchronisées.") + "</p>"
       : faitsHtml([["Entrées du mois en cours", ec ? eur(ec.entrees) : "—", "pos"], ["Sorties du mois en cours", ec ? eur(ec.sorties) : "—", "neg"],
         ["Entrées par mois (moyenne)", moy ? eur(moy.entrees) + " sur " + pluriel(moy.n, "mois", "mois") : "—"], ["Sorties par mois (moyenne)", moy ? eur(moy.sorties) + " sur " + pluriel(moy.n, "mois", "mois") : "—"]]) +
-        '<p class="cv-note">Totaux de ' + esc(portee) + " : le détail par compte n'est pas encore disponible.</p>";
+        '<p class="cv-note">' + esc(f.portee === "compte" ? "Totaux de ce compte, virements entre tes comptes compris." : "Totaux de tous tes comptes connectés confondus : le détail par compte n'est pas encore disponible.") + "</p>";
     const svg = f.banqueActive && fl.mois.length ? barresSvg(fl.mois, { id: "cvBarresFlux", largeur: opt.largeur, titre: "Entrées et sorties par mois, " + portee,
       desc: fl.mois.map(m => moisLabel(m.mois) + " : entrées " + eur(m.entrees) + ", sorties " + eur(m.sorties)).join(" ; ") + "." }) : null;
-    const prel = f.prelevements.length ? '<ul class="cv-mvts">' + f.prelevements.map(x => '<li><span class="cv-m-t">' + esc(x.libelle) + (x.jour ? '<span class="cv-m-s">vers le ' + esc(String(x.jour)) + " du mois</span>" : "") + '</span><span class="cv-m-v">' + esc(eur(x.montant)) + "</span></li>").join("") + "</ul>"
-      : '<p class="cv-muet">Aucun prélèvement récurrent détecté pour le moment.</p>';
+    const prel = !f.connecte ? '<p class="cv-muet">' + esc(f.banqueActive ? "Rattache ce compte à un compte bancaire synchronisé pour repérer ses prélèvements récurrents." : "Connecte ta banque pour repérer les prélèvements récurrents de ce compte.") + "</p>"
+      : f.operations === "chargement" ? '<p class="cv-muet" role="status">Chargement des opérations…</p>'
+      : f.operations === "indisponible" ? '<p class="cv-muet">Opérations indisponibles pour le moment : les prélèvements récurrents s\'afficheront au prochain chargement.</p>'
+      : f.historiqueCourt ? '<p class="cv-muet">Pas encore assez d\'opérations (moins de deux mois) pour repérer les prélèvements récurrents.</p>'
+      : f.prelevements.length ? '<ul class="cv-mvts">' + f.prelevements.map(x => '<li><span class="cv-m-t">' + esc(x.libelle) + (x.jour ? '<span class="cv-m-s">vers le ' + esc(x.jour === 1 ? "1er" : String(x.jour)) + " du mois · " + esc(pluriel(x.mois, "mois", "mois")) + "</span>" : "") + '</span><span class="cv-m-v">' + esc(eur(x.montant)) + "</span></li>").join("") + "</ul>" +
+        '<p class="cv-note">Débits de même libellé au moins deux mois sur les 90 derniers jours, de montants proches.</p>'
+      : '<p class="cv-muet">Aucun prélèvement récurrent détecté sur les 90 derniers jours.</p>';
     return arianeHtml([RETOUR, { label: f.nom }]) + titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.solde)) + "</p>") +
       '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" +
       '<section class="panel cv-f-bloc" aria-labelledby="cvFluxTitre"><h3 id="cvFluxTitre">Entrées et sorties</h3>' + flux +
@@ -701,7 +808,7 @@
       '<div class="cv-acts">' + lienClaude(U, "Regarde avec moi les entrées et sorties de mon compte courant dans Boussole : y a-t-il de l'argent qui dort ou des dépenses qui dérapent ?", "Demander à Claude") + "</div>";
   }
 
-  const H = { FAMILLES, PERIODES, familleLocale, famille, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
+  const H = { FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
     vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, echantillon, enteteHtml, famillesHtml, carteHtml, arianeHtml, ficheEnveloppeHtml,
     grapheEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg, barresSvg, donneesHtml, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
@@ -709,11 +816,16 @@
   if (typeof document === "undefined") return;
 
   /* ============================================================ vue ============================================================ */
-  const CLE_PERIODE = "comptes-periode", CLE_FERMES = "comptes-fermes", CINQ_ANS = 60;
+  const CLE_PERIODE = "comptes-periode", CLE_FERMES = "comptes-fermes";
   let S = null, root = null, dirty = true, vue = { type: "liste" }, largeur = 0;
   let periode = "1a", ctlPeriode = null, sigListe = "", sigFiche = "", origine = null; // origine : clé de la carte qui a ouvert la fiche
   const fermes = new Set();
-  const coursCache = {}, demandes = new Set(), lus = new Set(); // cours par ISIN (5 ans) ; ISIN demandés ; ISIN lus
+  /* Cours par ISIN : coursCache[isin] = série lue ; couverts[isin] = première date demandée (la série couvre [couverts, aujourd'hui]) ;
+     enCours[isin] = date demandée par la lecture en cours ; echecs = ISIN dont la dernière lecture a échoué (rien de mémorisé :
+     « Réessayer ») ; plafonds = ISIN dont l'historique a été tronqué par le store. */
+  const coursCache = {}, couverts = {}, enCours = {}, echecs = new Set(), plafonds = new Set();
+  /* Opérations des comptes bancaires d'une fiche compte courant : ops[clé des comptes] = tableau | "chargement" | "indisponible". */
+  const ops = {};
   let bootFini = false;
   try { const p = localStorage.getItem(CLE_PERIODE); if (PERIODES.some(x => x.id === p)) periode = p; } catch (e) { /* défaut */ }
   try { JSON.parse(localStorage.getItem(CLE_FERMES) || "[]").forEach(k => { if (FAMILLES.some(f => f.id === k)) fermes.add(k); }); } catch (e) { /* tout ouvert */ }
@@ -735,7 +847,7 @@
     const vide = !L.familles.some(F => F.nb);
     $("cvVide").hidden = !vide;
     $("cvTitre").textContent = "Patrimoine net " + (scopeDe(S) === "foyer" ? "du foyer" : (window.Calc && window.Calc.deNom ? window.Calc.deNom(nomDe(S, S.scope), S.scope === "p2" ? 2 : 1) : ""));
-    const h = enteteHtml(e) + "\u0000" + (vide ? "" : famillesHtml(L, fermes));
+    const h = enteteHtml(e) + "\u0000" + (vide ? "" : famillesHtml(L, fermes, u));
     if (h === sigListe) return;
     sigListe = h;
     const [tete, fams] = h.split("\u0000");
@@ -743,8 +855,12 @@
     $("cvFamilles").innerHTML = fams;
   }
 
+  const debutVoulu = () => debutPeriode(periode, jour());
+  const couvert = i => couverts[i] != null && couverts[i] <= debutVoulu();
   function etatGraphe() {
-    return { cours: coursCache, charge: liste(vue.isins).every(i => lus.has(i)) ? "pret" : "chargement", periode, today: jour(), largeur };
+    const is = liste(vue.isins);
+    const charge = is.every(couvert) ? "pret" : is.some(i => echecs.has(i) && !enCours[i]) ? "echec" : "chargement";
+    return { cours: coursCache, charge, periode, today: jour(), largeur, plafond: [...plafonds] };
   }
   function renderFiche(u) {
     const zone = $("cvFiche");
@@ -752,7 +868,12 @@
     let html, f = null;
     if (vue.type === "enveloppe") { f = ficheEnveloppe(S, vue, jour()); html = ficheEnveloppeHtml(f, u); vue.isins = f.trouvee ? f.isins : []; }
     else if (vue.type === "ligne") { f = ficheLigne(S, vue.id, jour()); html = ficheLigneHtml(f, u); vue.isins = f.trouvee && f.isin ? [f.isin] : []; }
-    else { f = ficheCourant(S, vue.id, jour()); largeur = zone.clientWidth || largeur; html = ficheCourantHtml(f, u, { largeur: largeur - 34 }); vue.isins = []; }
+    else {
+      const f0 = ficheCourant(S, vue.id, jour());
+      f = f0.trouvee && f0.compteIds.length ? ficheCourant(S, vue.id, jour(), undefined, ops[f0.compteIds.join(",")]) : f0;
+      largeur = zone.clientWidth || largeur; html = ficheCourantHtml(f, u, { largeur: largeur - 34 }); vue.isins = [];
+      if (f.trouvee && f.connecte) chargerOperations(f.compteIds);
+    }
     vue.fiche = f;
     if (html !== sigFiche) {
       sigFiche = html;
@@ -760,7 +881,7 @@
       ctlPeriode = null;
       const zp = $("cvPeriode");
       if (zp && u && typeof u.bascule === "function") ctlPeriode = u.bascule(zp, { label: "Période", options: PERIODES.map(p => ({ id: p.id, label: p.label, aria: p.aria })), actif: periode,
-        surChange: id => { periode = id; try { localStorage.setItem(CLE_PERIODE, id); } catch (e) { /* rien */ } rendreGraphe(); } });
+        surChange: id => { periode = id; try { localStorage.setItem(CLE_PERIODE, id); } catch (e) { /* rien */ } rendreGraphe(); chargerCours(vue.isins); } });
     }
     rendreGraphe();
     chargerCours(vue.isins);
@@ -781,18 +902,41 @@
       if (g.dataset.sig !== h) { g.dataset.sig = h; g.innerHTML = h; }
     }
   }
-  /* Cours historiques (5 ans) des ISIN de la fiche, lus une fois par ISIN (Store.cours) ; absents ou en échec : courbe remplacée par une phrase. */
+  /* Cours historiques des ISIN de la fiche pour la période choisie (Store.cours(isins, début de la période)) : la période affichée
+     d'abord, une période plus longue relit depuis son début. Lecture en échec : rien n'est mémorisé, phrase et « Réessayer » ;
+     plafond du store (historique tronqué) : signalé sous la courbe. */
   async function chargerCours(isins) {
-    const manquants = liste(isins).filter(i => !demandes.has(i));
+    const d0 = debutVoulu();
+    const manquants = liste(isins).filter(i => !couvert(i) && !(enCours[i] && enCours[i] <= d0) && !echecs.has(i));
     if (!manquants.length) return;
-    manquants.forEach(i => demandes.add(i));
-    let r = {};
+    manquants.forEach(i => { enCours[i] = d0; });
+    let r = null;
     try {
       const st = window.Store;
-      r = st && typeof st.cours === "function" ? (await window.Store.cours(manquants, moinsMois(jour(), CINQ_ANS))) || {} : {};
-    } catch (e) { r = {}; }
-    manquants.forEach(i => { coursCache[i] = liste(r[i]); lus.add(i); });
+      r = st && typeof st.cours === "function" ? (await st.cours(manquants, d0)) || {} : {};
+    } catch (e) { r = null; }
+    manquants.forEach(i => {
+      if (enCours[i] !== d0) return; // une lecture plus longue a pris le relais
+      delete enCours[i];
+      if (!r) { echecs.add(i); return; }
+      echecs.delete(i);
+      coursCache[i] = liste(r[i]); couverts[i] = d0;
+      if (liste(r.plafond).includes(i)) plafonds.add(i); else plafonds.delete(i);
+    });
     if (root && vue.type !== "liste") rendreGraphe();
+  }
+  /* Opérations des 90 derniers jours des comptes bancaires d'une fiche compte courant (Store.banque.operations), lues une fois par
+     ouverture ; en échec : « indisponible », relues à la prochaine ouverture. */
+  async function chargerOperations(ids) {
+    const cle = liste(ids).join(",");
+    if (!cle || ops[cle] !== undefined) return;
+    ops[cle] = "chargement";
+    await Promise.resolve(); // jamais pendant le rendu en cours
+    const st = window.Store, B = st && st.banque;
+    let r;
+    try { r = B && typeof B.operations === "function" ? await B.operations(ids, plusJours(jour(), -JOURS_HISTO)) : "indisponible"; } catch (e) { r = "indisponible"; }
+    ops[cle] = Array.isArray(r) ? r : "indisponible";
+    if (root && vue.type === "courant") { sigFiche = ""; renderFiche(U()); }
   }
 
   /* Vue demandée par le lien profond (App.parametres(), lus au show()) : la fiche s'ouvre, le focus va sur son titre (sauf au premier
@@ -846,6 +990,7 @@
     root.addEventListener("click", e => {
       const t = e.target; if (!t || !t.closest) return;
       const b = t.closest("[data-cv-fam-btn]"); if (b) { basculerFamille(b); return; }
+      if (t.closest("[data-cv-reessayer]")) { liste(vue.isins).forEach(i => echecs.delete(i)); rendreGraphe(); chargerCours(vue.isins); return; }
       const c = t.closest("[data-cv-cle]"); if (c) origine = c.getAttribute("data-cv-cle"); // carte qui retrouvera le focus au retour
     });
     if (typeof ResizeObserver === "function") new ResizeObserver(() => {
@@ -857,6 +1002,7 @@
   function show() {
     const p = window.App && typeof App.parametres === "function" ? App.parametres() : {};
     const v = lireCible(p), change = changerVue(v);
+    if (change) { echecs.clear(); Object.keys(ops).forEach(k => { if (ops[k] === "indisponible") delete ops[k]; }); }
     render(); dirty = false;
     if (change) focusApres(v);
   }

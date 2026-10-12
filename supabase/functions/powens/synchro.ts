@@ -26,14 +26,19 @@
 // PEA-PME → enveloppe « PEA-PME » ; compte-titres → « Compte-titres <établissement> », titulaire p1 si le foyer compte une personne,
 // sinon suggestion), cree_auto. Jamais une ligne, un crédit ou une enveloppe déjà rattaché ; plus de proposition que pour un compte
 // « autre ». Rattachement écrit seulement si le compte est encore libre (sinon la ligne créée pour l'occasion est retirée).
-// Budget réel (CP1, docs/superpowers/specs/2026-10-12-cp1-comptes-performance-design.md § 5) : après la lecture d'une connexion, les
-// opérations des 90 jours de l'utilisateur (toutes connexions) sont relues (par pages de 1000) et fusionnées avec celles du passage ;
-// `rapprocherVirements` (pur) classe les virements entre comptes suivis (montant opposé à 0,01 €, ≤ 3 jours, un pour un, le plus
-// proche) en « virement_interne », ou « epargne » pour la sortie d'un courant vers l'épargne ; `epargneSansContrepartie` classe en
-// « epargne » les versements vers des placements non synchronisés (libellé, versement programmé, virement vers soi) ; ces deux
-// catégories ne sont jamais remplacées par la catégorie Powens ; les autres comptes modifiés sont mis à jour et leurs mois
-// recalculés. `revenusDetectes` / `propositionRevenus` (purs) déposent au plus une proposition profil (salaire net de la personne 1,
-// source « Powens — revenus détectés », jamais appliquée).
+// Budget réel (CP1, docs/superpowers/specs/2026-10-12-cp1-comptes-performance-design.md § 5, corrigé après relecture : migration
+// 0025) : après la lecture d'une connexion, les opérations des 90 jours de l'utilisateur (toutes connexions) sont relues (par pages,
+// jusqu'à une page vide) et fusionnées avec celles du passage ; le rapprochement est recalculé de zéro à chaque passage à partir de
+// la catégorie Powens de chaque opération (banque_operations.categorie_powens) : `rapprocherVirements` (pur) classe les virements
+// entre comptes suivis (montant opposé à 0,01 €, ≤ 3 jours, un pour un, le plus proche ; indice de virement d'un côté au moins ;
+// jamais une carte, un prélèvement, un revenu ou une dépense catégorisée par Powens) en « virement_interne », ou « epargne » côté
+// courant d'un virement avec l'épargne (versement, ou retour d'épargne en entrée), et trace la contrepartie (contrepartie_id) ;
+// `epargneSansContrepartie` classe en « epargne » les versements vers des placements non synchronisés (mot de placement, nom
+// entier d'une enveloppe, établissement d'investissement, versement programmé, virement vers soi ; jamais un nom du foyer seul,
+// jamais une carte). Un appariement qui n'est plus trouvé est défait (catégorie Powens rendue) ; les opérations d'autres comptes
+// qui changent sont mises à jour et leurs mois recalculés (banque_mois, un total par compte). `revenusDetectes` /
+// `propositionRevenus` (purs) déposent au plus une proposition profil (salaire net de la personne la plus proche, p1 ou p2 ;
+// abstention si ambigu ; source « Powens — revenus détectés », jamais appliquée).
 // Robustesse : une lecture en échec n'efface rien (placements, opérations, comptes) ; une erreur sur un compte ou sur une étape
 // d'écriture n'arrête pas les autres ; le dernier échec est résumé dans banque_connexions.message.
 //
@@ -47,7 +52,7 @@
 // - placement (https://docs.powens.com/api-reference/products/data-aggregation/investments) : id, code, code_type (ISIN | AMF),
 //   label, quantity, unitprice (prix de revient unitaire), valuation, deleted ;
 // - opération (https://docs.powens.com/api-reference/products/data-aggregation/bank-transactions) : id, date, value,
-//   simplified_wording, wording, original_wording, categories, coming, deleted.
+//   simplified_wording, wording, original_wording, categories, type (transfer, card, deferred_card, order…), coming, deleted.
 import { categorieBoussole } from "./categories.ts";
 
 export const ETATS_POWENS = [
@@ -527,13 +532,23 @@ export function rapprocher(e: EntreeRapprochement): ResultatRapprochement {
 }
 
 /* ---------- virements internes et revenus détectés (CP1, docs/superpowers/specs/2026-10-12-cp1-comptes-performance-design.md § 5) ---------- */
-/** Catégories posées par le rapprochement des virements : jamais écrasées par la catégorie Powens d'une synchronisation suivante. */
+/** Catégories posées par le rapprochement (virements entre comptes connectés, versements d'épargne sans contrepartie). Elles sont
+    recalculées à chaque synchronisation à partir de la catégorie Powens (banque_operations.categorie_powens, migration 0025) :
+    un appariement qui n'est plus valide (contrepartie disparue, règle plus stricte) rend sa catégorie Powens à l'opération. */
 export const CATEGORIES_INTERNES = ["epargne", "virement_interne"];
-/** Comptes d'épargne ou d'investissement : un virement du courant vers l'un d'eux est de l'épargne. */
+/** Comptes d'épargne ou d'investissement : un virement du courant vers l'un d'eux est de l'épargne ; un virement de l'un d'eux
+    vers le courant, un retour d'épargne (épargne nette, I9). */
 export const TYPES_EPARGNE = ["livret", "pea", "compte_titres", "assurance_vie", "per"];
 /** Écart maximal de dates (jours) et de montant (centimes) entre les deux côtés d'un virement interne. */
 export const VIREMENT_JOURS = 3;
 export const VIREMENT_CENTIMES = 1;
+/** Indices d'un virement (suites de mots du libellé nettoyé, ou type Powens « transfer ») : exigés d'un côté au moins (I1). */
+export const MARQUES_VIREMENT = [["vir"], ["virt"], ["virement"], ["virements"], ["transfert"], ["transferts"], ["transfer"]];
+/** Types Powens (https://docs.powens.com/api-reference/products/data-aggregation/bank-transactions, champ type). */
+const TYPES_POWENS_VIREMENT = ["transfer"];
+const TYPES_POWENS_CARTE = ["card", "deferred_card", "summary_card"];
+/** Catégories Powens qui permettent l'appariement : tout le reste (revenus, dépenses catégorisées) n'est jamais un virement interne. */
+const CATEGORIES_APPARIABLES = ["divers", "epargne"];
 /** Revenus détectés : 2 des 3 derniers mois complets au moins, montant mensuel stable à ±15 %, écart au profil > 10 %. Une
     entrée récurrente sous REVENU_MIN € par mois (remboursement, petite allocation) n'est jamais prise pour un salaire. */
 export const REVENU_MOIS = 3;
@@ -551,10 +566,16 @@ function moisDecale(date: string, n: number): string {
   const [a, m] = date.split("-").map(Number);
   return new Date(Date.UTC(a, m - 1 + n, 1)).toISOString().slice(0, 10);
 }
+/** Noms de mois (complets et abrégés, sans accents) retirés des libellés : « SALAIRE AOÛT » et « SALAIRE SEPT » sont le même flux.
+    Même liste que MOIS_LIBELLES de mcp/banque.ts (parité testée). */
+export const MOIS_LIBELLES = ["janvier", "janv", "jan", "fevrier", "fevr", "fev", "mars", "mar", "avril", "avr", "mai", "juin", "juillet", "juil",
+  "juill", "aout", "septembre", "sept", "sep", "octobre", "oct", "novembre", "nov", "decembre", "dec"];
 /** Libellé nettoyé pour repérer une récurrence : même règle que cleLibelle de mcp/banque.ts (minuscules, sans accents, sans
-    chiffres ni ponctuation, espaces réduits). Dupliquée ici : la fonction powens ne charge pas le module du connecteur. */
+    chiffres ni ponctuation, sans noms de mois, espaces réduits). Dupliquée ici : la fonction powens ne charge pas le module du
+    connecteur ; parité testée (test/banque-mcp.test.mjs). */
 export function cleLibelle(t: unknown): string {
-  return String(t ?? "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z]+/g, " ").trim();
+  return String(t ?? "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z]+/g, " ").trim()
+    .split(" ").filter((m) => m && !MOIS_LIBELLES.includes(m)).join(" ");
 }
 /** Salaire net mensuel d'une personne du profil : même calcul que web/src/calc.js (brut → net : 0,75 cadre, 0,78 sinon). */
 export function salaireNetMensuel(p: any): number {
@@ -571,16 +592,40 @@ export function salaireNetMensuel(p: any): number {
     courant, croiserait le remboursement de la carte et effacerait des dépenses réelles). */
 const comptesSuivis = (comptes: any[]) => new Map((comptes ?? []).filter((k) => k && k.id != null && k.ignore !== true && k.doublon_de == null
   && k.debit_differe !== true).map((k) => [String(k.id), k]));
-
+const jetons = (t: unknown) => cleLibelle(t).split(" ").filter(Boolean);
+const typePowens = (o: any) => String(o?.type_powens ?? "").trim().toLowerCase();
+/** Paiement par carte : type Powens card / deferred_card / summary_card, ou libellé « CB … », « CARTE … », « PAIEMENT PAR CARTE ». */
+export function estCarte(o: any): boolean {
+  if (TYPES_POWENS_CARTE.includes(typePowens(o))) return true;
+  const ts = jetons(o?.libelle);
+  return ts[0] === "cb" || ts[0] === "carte" || ts.includes("cb") || contient(ts, ["par", "carte"]) || contient(ts, ["paiement", "carte"]);
+}
+/** Prélèvement (type Powens order, libellé « PRLV … » ou « PRELEVEMENT … ») : jamais un virement entre ses propres comptes. */
+const estPrelevement = (o: any) => typePowens(o) === "order" || ((ts) => ts.includes("prlv") || ts[0] === "prelevement" || ts[0] === "prelevements")(jetons(o?.libelle));
+/** Indice d'un virement : type Powens transfer, ou VIR / VIREMENT / TRANSFERT… dans le libellé (VIR INST, VIR SEPA, VIR.PERMANENT). */
+const indiceVirement = (o: any) => TYPES_POWENS_VIREMENT.includes(typePowens(o)) || MARQUES_VIREMENT.some((m) => contient(jetons(o?.libelle), m));
+const VIREMENT_INTERNE = "virement_interne";
+/** Catégorie de départ d'une opération (avant rapprochement) : sa catégorie Powens (categorie_powens) ; à défaut (opération
+    écrite avant la migration 0025), sa catégorie, sauf « virement_interne » (posée par un ancien rapprochement) → « divers ». */
+export function categorieDeBase(o: any): string {
+  const p = texte(o?.categorie_powens);
+  if (p) return p;
+  const c = texte(o?.categorie);
+  return !c || c === VIREMENT_INTERNE ? "divers" : c;
+}
 /** Virements internes (pur) : sur les opérations de tous les comptes suivis de l'utilisateur, une sortie et une entrée de montant
-    opposé (à VIREMENT_CENTIMES près), sur deux comptes différents, à VIREMENT_JOURS jours au plus, forment un virement. Appariement
-    un pour un, le plus proche en date d'abord (puis le montant le plus proche, puis les identifiants : déterministe). Catégorie
-    « virement_interne » des deux côtés, sauf une sortie d'un compte courant vers un compte d'épargne ou d'investissement :
-    « epargne » côté courant (l'entrée depuis l'épargne reste « virement_interne »). Renvoie les catégories qui changent
-    (identifiant → catégorie) et les paires (sortie, entrée). */
+    opposé (à VIREMENT_CENTIMES près), sur deux comptes différents, à VIREMENT_JOURS jours au plus, forment un virement, si (I1)
+    l'un des deux côtés au moins porte un indice de virement (indiceVirement), qu'aucun n'est un paiement par carte ni un
+    prélèvement, et que leur catégorie de départ (o.categorie, catégorie Powens) est « divers » ou « epargne » (un revenu ou une
+    dépense catégorisée par Powens n'est jamais un virement interne). Appariement un pour un, le plus proche en date d'abord (puis
+    le montant le plus proche, puis les identifiants : déterministe). Catégorie « virement_interne » des deux côtés, sauf côté
+    courant d'un virement avec un compte d'épargne ou d'investissement : « epargne » (sortie : versement ; entrée : retour
+    d'épargne, I9). Renvoie, pour les opérations appariées, la catégorie (identifiant → catégorie) et la contrepartie
+    (identifiant → identifiant), et les paires (sortie, entrée). Recalcul idempotent : mêmes opérations → même résultat. */
 export function rapprocherVirements(operations: any[], comptes: any[]) {
   const suivis = comptesSuivis(comptes);
-  const ops = (operations ?? []).filter((o) => o && o.id != null && suivis.has(String(o.compte_id)) && jour(o.date) && centimes(o.montant));
+  const appariable = (o: any) => CATEGORIES_APPARIABLES.includes(texte(o.categorie) ?? "divers") && !estCarte(o) && !estPrelevement(o);
+  const ops = (operations ?? []).filter((o) => o && o.id != null && suivis.has(String(o.compte_id)) && jour(o.date) && centimes(o.montant) && appariable(o));
   const entrees = new Map<number, any[]>();
   for (const o of ops) {
     const c = centimes(o.montant)!;
@@ -592,35 +637,37 @@ export function rapprocherVirements(operations: any[], comptes: any[]) {
     if (c > 0) continue;
     for (let k = -c - VIREMENT_CENTIMES; k <= -c + VIREMENT_CENTIMES; k++) {
       for (const e of entrees.get(k) ?? []) {
-        if (String(e.compte_id) === String(d.compte_id)) continue;
+        if (String(e.compte_id) === String(d.compte_id) || !(indiceVirement(d) || indiceVirement(e))) continue;
         const jours = ecartJours(jour(d.date)!, jour(e.date)!);
         if (jours <= VIREMENT_JOURS) candidats.push({ d, e, jours, ecart: Math.abs(k + c) });
       }
     }
   }
   candidats.sort((a, b) => a.jours - b.jours || a.ecart - b.ecart || compareIds(a.d.id, b.d.id) || compareIds(a.e.id, b.e.id));
-  const pris = new Set<string>(), categories: Record<string, string> = {}, paires: [unknown, unknown][] = [];
-  const poser = (o: any, cat: string) => { if ((o.categorie ?? null) !== cat) categories[String(o.id)] = cat; };
+  const pris = new Set<string>(), categories: Record<string, string> = {}, contreparties: Record<string, number> = {}, paires: [unknown, unknown][] = [];
   for (const { d, e } of candidats) {
     if (pris.has(String(d.id)) || pris.has(String(e.id))) continue;
     pris.add(String(d.id)); pris.add(String(e.id));
     paires.push([d.id, e.id]);
-    const versEpargne = suivis.get(String(d.compte_id)).type === "courant" && TYPES_EPARGNE.includes(suivis.get(String(e.compte_id)).type);
-    poser(d, versEpargne ? "epargne" : "virement_interne");
-    poser(e, "virement_interne");
+    const td = suivis.get(String(d.compte_id)).type, te = suivis.get(String(e.compte_id)).type;
+    categories[String(d.id)] = td === "courant" && TYPES_EPARGNE.includes(te) ? "epargne" : VIREMENT_INTERNE;
+    categories[String(e.id)] = te === "courant" && TYPES_EPARGNE.includes(td) ? "epargne" : VIREMENT_INTERNE;
+    contreparties[String(d.id)] = Number(e.id);
+    contreparties[String(e.id)] = Number(d.id);
   }
-  return { categories, paires };
+  return { categories, contreparties, paires };
 }
 
 /* Versements vers les placements de l'utilisateur sans contrepartie synchronisée (Powens ne lit pas les opérations d'un PEA, d'un
    PER ou d'une assurance-vie) : sortie d'un compte courant classée « epargne » plutôt qu'en dépense, d'après
-   (1) son libellé nettoyé : mot de placement (MOTS_PLACEMENT), nom d'une enveloppe d'investissement de l'utilisateur ou d'un
-       établissement où il a un compte d'investissement connecté (sans compte courant chez lui) ;
+   (1) son libellé nettoyé : mot de placement (MOTS_PLACEMENT), nom entier d'une enveloppe d'investissement de l'utilisateur, ou
+       nom (entier ou mot significatif) d'un établissement où il a un compte d'investissement connecté (sans compte courant chez
+       lui) ; les prénoms et noms du foyer ne sont jamais des termes (I5 : « PEA Camille » ne fait pas de « VIR CAMILLE » une épargne) ;
    (2) un versement programmé de config.recurring : montant à ±VERSEMENT_EUROS €, jour du mois à ±VERSEMENT_JOURS jours, opération
-       sans catégorie précise (divers) et pas un paiement par carte ;
+       sans catégorie précise (divers) ;
    (3) un virement vers soi-même (« vir permanent », ou « vir » suivi du nom d'une personne du foyer) dont le montant est celui
        d'un versement programmé (±VERSEMENT_EUROS €), quel que soit le jour.
-   Jamais une opération rapprochée d'une contrepartie (virement interne) ; jamais une entrée. */
+   Jamais un paiement par carte ; jamais une opération rapprochée d'une contrepartie (virement interne) ; jamais une entrée. */
 export const MOTS_PLACEMENT = [["pea"], ["per"], ["perin"], ["perp"], ["assurance", "vie"], ["linxea"], ["spirica"], ["versement", "programme"], ["compte", "titres"]];
 export const MARQUES_VIREMENT_SOI = [["vir", "permanent"], ["virement", "permanent"], ["vir", "perm"]];
 export const VERSEMENT_EUROS = 1;
@@ -629,24 +676,41 @@ export const VERSEMENT_JOURS = 5;
 const MOTS_GENERIQUES = new Set(["banque", "bank", "banco", "credit", "caisse", "epargne", "assurance", "assurances", "societe", "generale",
   "compte", "comptes", "france", "groupe", "mutuel", "mutuelle", "populaire", "agricole", "postale", "titres", "titre", "retraite", "plan",
   "avenir", "placement", "placements", "enveloppe", "livret", "livrets", "courant", "courants", "bourse", "investissement", "invest", "moi"]);
+/** Noms par défaut d'une personne du profil (calc.js, NOMS_PAR_DEFAUT) : jamais un nom. */
+const NOMS_PAR_DEFAUT = new Set(["moi", "conjoint", "conjointe"]);
 const TYPES_INVESTISSEMENT = ["pea", "compte_titres", "assurance_vie", "per"];
-const jetons = (t: unknown) => cleLibelle(t).split(" ").filter(Boolean);
-/** Termes d'un nom (enveloppe, établissement, prénom) : le nom entier (suite de mots), plus chaque mot d'au moins 5 lettres non générique. */
-function termes(nom: unknown): string[][] {
+/** Prénoms et noms des personnes du foyer (profiles.personnes.p1 / p2 : prenom, nom, nomFamille, nom_famille), en mots nettoyés
+    d'au moins 3 lettres, sans les noms par défaut (« Moi », « Conjoint ») ni les mots génériques. */
+export function nomsFoyer(personnes: any): string[][] {
+  const out: string[][] = [], vus = new Set<string>();
+  for (const k of ["p1", "p2"]) {
+    const p = personnes?.[k];
+    for (const v of [p?.prenom, p?.nom, p?.nomFamille, p?.nom_famille]) {
+      const ts = jetons(v).filter((m) => m.length >= 3 && !MOTS_GENERIQUES.has(m) && !NOMS_PAR_DEFAUT.has(m));
+      if (ts.length && !vus.has(ts.join(" "))) { vus.add(ts.join(" ")); out.push(ts); }
+    }
+  }
+  return out;
+}
+/** Termes d'un nom (enveloppe, établissement) : le nom entier (suite de mots), sauf s'il n'est fait que de noms du foyer et de mots
+    génériques ; plus, si `mots`, chaque mot d'au moins 5 lettres ni générique ni nom du foyer. */
+function termes(nom: unknown, foyer: Set<string>, mots: boolean): string[][] {
   const ts = jetons(nom);
-  if (!ts.length) return [];
+  if (!ts.length || ts.every((m) => MOTS_GENERIQUES.has(m) || foyer.has(m))) return [];
   const out = [ts];
-  for (const m of ts) if (m.length >= 5 && !MOTS_GENERIQUES.has(m) && ts.length > 1) out.push([m]);
-  return ts.length === 1 && MOTS_GENERIQUES.has(ts[0]) ? [] : out;
+  if (mots && ts.length > 1) for (const m of ts) if (m.length >= 5 && !MOTS_GENERIQUES.has(m) && !foyer.has(m)) out.push([m]);
+  return out;
 }
 export type ContexteEpargne = { termes: string[][]; versements: { montant: number; jour: number; debut: string | null }[]; noms: string[][] };
 /** Contexte de l'épargne sans contrepartie (pur) : lignes de l'utilisateur (enveloppes d'investissement : type d'enveloppe ou ligne
-    de marché), comptes et connexions Powens (établissements d'investissement sans compte courant), config.recurring, personnes du foyer. */
+    de marché ; nom entier seulement), comptes et connexions Powens (établissements d'investissement sans compte courant),
+    config.recurring, personnes du foyer (noms, retirés des termes). */
 export function contexteEpargne(e: { lignes?: any[]; comptes?: any[]; connexions?: any[]; recurring?: any; personnes?: any }): ContexteEpargne {
+  const noms = nomsFoyer(e.personnes), foyer = new Set(noms.flat());
   const t: string[][] = [...MOTS_PLACEMENT];
   for (const p of e.lignes ?? []) {
     if (!p || p.status === "clôturé" || !texte(p.envelope)) continue;
-    if (TYPES_INVESTISSEMENT.includes(typeEnveloppe(p.envelope).type ?? "") || p.mode === "market") t.push(...termes(p.envelope));
+    if (TYPES_INVESTISSEMENT.includes(typeEnveloppe(p.envelope).type ?? "") || p.mode === "market") t.push(...termes(p.envelope, foyer, false));
   }
   const parCx = new Map<string, Set<string>>();
   for (const k of e.comptes ?? []) {
@@ -656,39 +720,30 @@ export function contexteEpargne(e: { lignes?: any[]; comptes?: any[]; connexions
   }
   for (const c of e.connexions ?? []) {
     const types = parCx.get(String(c?.id)) ?? new Set();
-    if ([...types].some((x) => TYPES_INVESTISSEMENT.includes(x)) && !types.has("courant")) t.push(...termes(c.etablissement));
+    if ([...types].some((x) => TYPES_INVESTISSEMENT.includes(x)) && !types.has("courant")) t.push(...termes(c.etablissement, foyer, true));
   }
   const vus = new Set<string>(), uniques = t.filter((x) => { const k = x.join(" "); if (vus.has(k)) return false; vus.add(k); return true; });
   const versements = (Array.isArray(e.recurring) ? e.recurring : []).filter((r: any) => r && Number(r.amount) > 0 && Number(r.day) >= 1)
     .map((r: any) => ({ montant: Number(r.amount), jour: Math.min(31, Math.trunc(Number(r.day))), debut: jour(r.start) }));
-  const noms: string[][] = [];
-  for (const k of ["p1", "p2"]) {
-    const p = e.personnes?.[k];
-    for (const v of [p?.nom, p?.nomFamille, p?.nom_famille]) {
-      const ts = jetons(v);
-      if (ts.length && ts.join("").length >= 3 && !(ts.length === 1 && MOTS_GENERIQUES.has(ts[0]))) noms.push(ts);
-    }
-  }
   return { termes: uniques, versements, noms };
 }
 /** Sorties des comptes courants suivis à classer « epargne » faute de contrepartie (pur) : identifiants → « epargne ».
-    `exclues` : opérations rapprochées d'une contrepartie (jamais requalifiées). */
+    `exclues` : opérations rapprochées d'une contrepartie (jamais requalifiées). Les catégories lues sont les catégories de départ. */
 export function epargneSansContrepartie(operations: any[], comptes: any[], ctx: ContexteEpargne | null | undefined, exclues: Set<string> = new Set()) {
   const out: Record<string, string> = {};
   if (!ctx) return out;
   const suivis = comptesSuivis(comptes);
   for (const o of operations ?? []) {
     if (!o || o.id == null || exclues.has(String(o.id)) || suivis.get(String(o.compte_id))?.type !== "courant") continue;
-    if (CATEGORIES_INTERNES.includes(o.categorie)) continue;
+    if (CATEGORIES_INTERNES.includes(o.categorie) || estCarte(o)) continue;
     const m = nombre(o.montant), d = jour(o.date);
     if (m == null || m >= 0 || !d) continue;
     const ts = jetons(o.libelle), montant = -m;
     const memeMontant = (v: { montant: number; debut: string | null }) => Math.abs(v.montant - montant) <= VERSEMENT_EUROS + 1e-9 && (!v.debut || v.debut <= d);
     const jourOp = Number(d.slice(8, 10)), nbJours = new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate();
     const procheJour = (j: number) => { const x = Math.abs(Math.min(j, nbJours) - jourOp); return Math.min(x, nbJours - x) <= VERSEMENT_JOURS; };
-    const carte = ts[0] === "cb" || ts[0] === "carte";
     const libelle = ctx.termes.some((t) => contient(ts, t));
-    const programme = !carte && (o.categorie == null || o.categorie === "divers") && ctx.versements.some((v) => memeMontant(v) && procheJour(v.jour));
+    const programme = (o.categorie == null || o.categorie === "divers") && ctx.versements.some((v) => memeMontant(v) && procheJour(v.jour));
     const versSoi = (MARQUES_VIREMENT_SOI.some((t) => contient(ts, t)) || ((ts.includes("vir") || ts.includes("virement")) && ctx.noms.some((n) => contient(ts, n))))
       && ctx.versements.some(memeMontant);
     if (libelle || programme || versSoi) out[String(o.id)] = "epargne";
@@ -696,52 +751,68 @@ export function epargneSansContrepartie(operations: any[], comptes: any[], ctx: 
   return out;
 }
 
-/** Opérations d'une synchronisation fusionnées avec celles déjà en base (90 jours, toutes connexions), puis virements internes
-    rapprochés et versements vers les placements sans contrepartie classés en épargne (pur). Une catégorie « epargne » ou
-    « virement_interne » déjà en base n'est jamais remplacée par la catégorie Powens.
-    Renvoie les opérations à écrire (catégories finales), les opérations d'autres comptes dont la catégorie change (catégorie →
-    identifiants) et la plus ancienne de leurs dates, l'ensemble fusionné (catégories finales), le nombre de virements rapprochés
-    qui changent quelque chose et le nombre de versements classés en épargne sans contrepartie. */
+const memeId = (a: unknown, b: unknown) => (a == null || a === "" ? null : Number(a)) === (b == null || b === "" ? null : Number(b));
+/** Opérations d'une synchronisation fusionnées avec celles déjà en base (90 jours, toutes connexions), puis rapprochement recalculé
+    de zéro (pur, idempotent) : chaque opération repart de sa catégorie Powens (categorieDeBase), puis virements internes
+    (rapprocherVirements, avec leur contrepartie) et versements vers les placements sans contrepartie (epargneSansContrepartie).
+    Un appariement qui n'est plus trouvé (contrepartie retirée ou purgée, règle plus stricte) est donc défait : catégorie Powens
+    rendue, contrepartie effacée.
+    Renvoie les opérations à écrire (catégorie finale, catégorie Powens, contrepartie), les opérations déjà en base hors de ce
+    passage dont la catégorie ou la contrepartie change (groupes { categorie, contrepartie_id, ids }) et la plus ancienne de leurs
+    dates, l'ensemble fusionné (catégories finales), le nombre de virements rapprochés qui changent quelque chose et le nombre de
+    versements classés en épargne sans contrepartie. */
 export function preparerOperations(planOps: any[], supprimees: unknown[], existantes: any[], comptes: any[], ctx?: ContexteEpargne | null) {
   const ex = new Map((existantes ?? []).filter((o) => o && o.id != null).map((o) => [String(o.id), o]));
-  const ecrites = (planOps ?? []).map((o) => {
-    const e = ex.get(String(o.id));
-    return e && CATEGORIES_INTERNES.includes(e.categorie) ? { ...o, categorie: e.categorie } : o;
-  });
+  const ecrites = (planOps ?? []).map((o) => ({ ...o, categorie_powens: texte(o.categorie_powens) ?? categorieDeBase(o) }));
   const vus = new Set(ecrites.map((o) => String(o.id))), retirees = new Set((supprimees ?? []).map(String));
-  const fusion = [...[...ex.values()].filter((o) => !vus.has(String(o.id)) && !retirees.has(String(o.id))), ...ecrites];
-  const { categories: virements, paires } = rapprocherVirements(fusion, comptes);
+  const fusion = [...[...ex.values()].filter((o) => !vus.has(String(o.id)) && !retirees.has(String(o.id))), ...ecrites]
+    .map((o) => ({ ...o, categorie: categorieDeBase(o) }));
+  const { categories: virements, contreparties, paires } = rapprocherVirements(fusion, comptes);
   const apparies = new Set(paires.flat().map(String));
   const epargne = epargneSansContrepartie(fusion, comptes, ctx, apparies);
-  const categories = { ...epargne, ...virements };
-  const finale = (o: any) => (categories[String(o.id)] ? { ...o, categorie: categories[String(o.id)] } : o);
-  const autres: Record<string, number[]> = {};
+  const finale = (o: any) => ({ ...o, categorie: virements[String(o.id)] ?? epargne[String(o.id)] ?? o.categorie, contrepartie_id: contreparties[String(o.id)] ?? null });
+  const change = (o: any) => { const avant = ex.get(String(o.id)); return !avant || (avant.categorie ?? null) !== o.categorie || !memeId(avant.contrepartie_id, o.contrepartie_id); };
+  const toutes = fusion.map(finale), parId = new Map(toutes.map((o) => [String(o.id), o]));
+  const groupes = new Map<string, { categorie: string; contrepartie_id: number | null; ids: number[] }>();
   let depuis: string | null = null;
-  for (const o of fusion) {
-    const cat = categories[String(o.id)];
-    if (!cat || vus.has(String(o.id))) continue;
-    (autres[cat] ??= []).push(Number(o.id));
+  for (const o of toutes) {
+    if (vus.has(String(o.id)) || !change(o)) continue;
+    const k = o.categorie + "|" + (o.contrepartie_id ?? "");
+    if (!groupes.has(k)) groupes.set(k, { categorie: o.categorie, contrepartie_id: o.contrepartie_id, ids: [] });
+    groupes.get(k)!.ids.push(Number(o.id));
     const d = jour(o.date)!;
     if (!depuis || d < depuis) depuis = d;
   }
   return {
-    operations: ecrites.map(finale), autres, depuis, toutes: fusion.map(finale),
-    virements: paires.filter(([d, e]) => virements[String(d)] || virements[String(e)]).length, epargne: Object.keys(epargne).length,
+    operations: ecrites.map((o) => parId.get(String(o.id))!), autres: [...groupes.values()], depuis, toutes,
+    virements: paires.filter(([d, e]) => change(parId.get(String(d))) || change(parId.get(String(e)))).length, epargne: Object.keys(epargne).length,
   };
 }
 
-/** Revenus détectés (pur) : entrées des comptes courants suivis (hors épargne et virements internes), groupées par libellé
-    nettoyé et par mois sur les REVENU_MOIS derniers mois complets ; un groupe présent au moins REVENU_MOIS_MIN mois, dont chaque
-    total mensuel reste à ±REVENU_STABILITE de la moyenne et dont la moyenne atteint REVENU_MIN €, est un salaire probable. Le plus
-    élevé est retenu : { cle, moyenne, mois: [{ mois, montant }] } ; null s'il n'y en a aucun. */
-export function revenusDetectes(operations: any[], comptes: any[], aujourdhui: string) {
+/** Compte de titulaire commun (I6) : titulaire « commun » (CP2), drapeau commun (ligne rattachée commune, posé par la
+    synchronisation), ou nom contenant « joint » ou « commun ». Ses entrées ne sont jamais prises pour le salaire d'une personne. */
+export function estCompteCommun(k: any): boolean {
+  if (!k) return false;
+  if (k.commun === true || k.titulaire === "commun") return true;
+  const ts = mots(k.nom);
+  return ts.includes("joint") || ts.includes("commun") || ts.includes("communs");
+}
+/** Revenus détectés (pur) : entrées des comptes courants suivis, hors comptes communs (estCompteCommun), hors épargne et virements
+    internes (et toute opération appariée), hors virements reçus d'une personne du foyer (« VIR » + nom de `opts.noms`), groupées
+    par libellé nettoyé (cleLibelle : sans noms de mois) et par mois sur les REVENU_MOIS derniers mois complets ; un groupe présent
+    au moins REVENU_MOIS_MIN mois, dont chaque total mensuel reste à ±REVENU_STABILITE de la moyenne et dont la moyenne atteint
+    REVENU_MIN €, est un salaire probable. Le plus élevé est retenu : { cle, moyenne, mois: [{ mois, montant }] } ; null sinon. */
+export function revenusDetectes(operations: any[], comptes: any[], aujourdhui: string, opts: { noms?: string[][] } = {}) {
   const suivis = comptesSuivis(comptes);
   const mois = Array.from({ length: REVENU_MOIS }, (_, i) => moisDecale(aujourdhui, i - REVENU_MOIS));
   const groupes = new Map<string, Map<string, number>>();
+  const noms = opts.noms ?? [];
   for (const o of operations ?? []) {
-    if (!o || suivis.get(String(o.compte_id))?.type !== "courant" || CATEGORIES_INTERNES.includes(o.categorie)) continue;
-    const m = nombre(o.montant), d = jour(o.date), k = cleLibelle(o.libelle);
+    const k0 = suivis.get(String(o?.compte_id));
+    if (!o || k0?.type !== "courant" || estCompteCommun(k0) || CATEGORIES_INTERNES.includes(o.categorie) || o.contrepartie_id != null) continue;
+    const m = nombre(o.montant), d = jour(o.date), k = cleLibelle(o.libelle), ts = k.split(" ");
     if (m == null || m <= 0 || !d || !k || !mois.includes(premierDuMois(d))) continue;
+    if (MARQUES_VIREMENT.some((v) => contient(ts, v)) && noms.some((n) => contient(ts, n))) continue;
     if (!groupes.has(k)) groupes.set(k, new Map());
     const g = groupes.get(k)!;
     g.set(premierDuMois(d), (g.get(premierDuMois(d)) ?? 0) + m);
@@ -770,27 +841,49 @@ export function lotRevenus(userId: string, cle: string, mois: string): Promise<s
 export function idRevenus(lot: string): Promise<string> {
   return uuidDeterministe(`powens-revenus-prop-${lot}`);
 }
-/** Proposition profil (pur) : salaire net mensuel de la personne 1 = moyenne détectée, arrondie à l'euro, si elle s'écarte de
-    plus de REVENU_ECART du salaire net mensuel du profil (ou si le profil n'en a pas) ; null sinon. L'unité passe à « nm » (net
-    mensuel) si le profil en déclarait une autre. Jamais appliquée par la synchronisation : l'utilisateur la valide dans Boussole.
-    La justification donne les mois et les montants, jamais le libellé bancaire. */
+/** Personne concernée par une détection (pur, I6) : la moyenne est comparée au salaire net mensuel de p1 et, dans un foyer de deux
+    personnes (foyer.adultes ≥ 2, à défaut une personne 2 renseignée), de p2. À REVENU_ECART près du salaire d'une personne : rien
+    à proposer (null). Sinon la personne la plus proche (écart relatif), si l'autre est nettement plus loin (au moins REVENU_ECART
+    de plus) ; ambigu (null) si les deux écarts sont proches ou si l'une des deux personnes n'a pas de salaire. Foyer d'une
+    personne : p1. → { personne, actuel } ou null. */
+export function personneRevenus(moyenne: number, profil: any): { personne: "p1" | "p2"; actuel: number } | null {
+  const ps = profil?.personnes ?? {}, adultes = profil?.foyer?.adultes;
+  const p2 = ps.p2 && typeof ps.p2 === "object" && Object.keys(ps.p2).length > 0;
+  const deux = adultes != null && adultes !== "" ? Number(adultes) >= 2 : !!p2;
+  const cles: ("p1" | "p2")[] = deux ? ["p1", "p2"] : ["p1"];
+  const ecarts = cles.map((k) => { const actuel = salaireNetMensuel(ps[k]); return { personne: k, actuel, ecart: actuel > 0 ? Math.abs(moyenne - actuel) / actuel : Infinity }; });
+  if (ecarts.some((x) => x.ecart <= REVENU_ECART)) return null;
+  if (!deux) return { personne: "p1", actuel: ecarts[0].actuel };
+  if (ecarts.some((x) => x.actuel <= 0)) return null;
+  const [a, b] = [...ecarts].sort((x, y) => x.ecart - y.ecart);
+  return b.ecart - a.ecart >= REVENU_ECART ? { personne: a.personne, actuel: a.actuel } : null;
+}
+/** Proposition profil (pur) : salaire net mensuel de la personne concernée (personneRevenus) = moyenne détectée, arrondie à
+    l'euro ; null s'il n'y a rien à proposer ou si la personne est ambiguë. L'unité passe à « nm » (net mensuel) si le profil en
+    déclarait une autre. Jamais appliquée par la synchronisation : l'utilisateur la valide dans Boussole. La justification donne
+    les mois et les montants, jamais le libellé bancaire. */
 export function propositionRevenus(det: any, profil: any, ids: { userId: string; id: string; lot: string }) {
   if (!det || !(Number(det.moyenne) > 0)) return null;
-  const p1 = profil?.personnes?.p1 ?? {};
-  const actuel = salaireNetMensuel(p1), moyenne = Number(det.moyenne), nouveau = Math.round(moyenne);
-  if (actuel > 0 && Math.abs(moyenne - actuel) / actuel <= REVENU_ECART) return null;
+  const moyenne = Number(det.moyenne), nouveau = Math.round(moyenne);
+  const qui = personneRevenus(moyenne, profil);
+  if (!qui) return null;
+  const k = qui.personne, p = profil?.personnes?.[k] ?? {}, actuel = qui.actuel;
   // unité absente : net mensuel par défaut (calc.js), sauf profil sans salaire où elle est posée explicitement
-  const changeUnite = p1.salaireUnite != null ? p1.salaireUnite !== "nm" : p1.salaire == null;
-  const avant = { salaire: p1.salaire ?? null, ...(changeUnite ? { salaireUnite: p1.salaireUnite ?? null } : {}) };
+  const changeUnite = p.salaireUnite != null ? p.salaireUnite !== "nm" : p.salaire == null;
+  const avant = { salaire: p.salaire ?? null, ...(changeUnite ? { salaireUnite: p.salaireUnite ?? null } : {}) };
   const apres = { salaire: nouveau, ...(changeUnite ? { salaireUnite: "nm" } : {}) };
   const detail = (det.mois ?? []).map((m: any) => `${MOIS_FR[Number(String(m.mois).slice(5, 7)) - 1]} ${String(m.mois).slice(0, 4)} : ${euros(Number(m.montant))}`).join(" ; ");
+  const prenom = String(p.prenom ?? p.nom ?? "").trim();
+  const nomDe = prenom && !NOMS_PAR_DEFAUT.has(plat(prenom)) ? prenom : "la personne 2";
+  const de = k === "p1" ? "ton salaire" : `le salaire de ${nomDe}`;
+  const profilDe = k === "p1" ? "ton profil" : `ton profil pour ${nomDe}`;
   const compare = actuel > 0
-    ? `contre ${euros(Math.round(actuel), 0)} net par mois dans ton profil (écart ${moyenne >= actuel ? "+" : "-"}${Math.round((Math.abs(moyenne - actuel) / actuel) * 100)} %)`
-    : "alors que ton profil n'indique aucun salaire";
+    ? `contre ${euros(Math.round(actuel), 0)} net par mois dans ${profilDe} (écart ${moyenne >= actuel ? "+" : "-"}${Math.round((Math.abs(moyenne - actuel) / actuel) * 100)} %)`
+    : `alors que ${profilDe} n'indique aucun salaire`;
   return {
     id: ids.id, user_id: ids.userId, lot: ids.lot, cible: "profil", operation: "modifier",
-    avant: { personnes: { p1: avant } }, apres: { personnes: { p1: apres } }, source: SOURCE_REVENUS,
-    justification: (`Entrée récurrente sur ton compte courant, probablement ton salaire : ${detail}. Moyenne : ${euros(nouveau, 0)} net par mois, ${compare}. `
+    avant: { personnes: { [k]: avant } }, apres: { personnes: { [k]: apres } }, source: SOURCE_REVENUS,
+    justification: (`Entrée récurrente sur ton compte courant, probablement ${de} : ${detail}. Moyenne : ${euros(nouveau, 0)} net par mois, ${compare}. `
       + "Rien n'est modifié sans ta validation.").slice(0, 1000),
   };
 }
@@ -1011,9 +1104,13 @@ export function planifier(etat: Etat, d: Donnees) {
         }
         const montant = nombre(o.value);
         if (o.coming || !date || date < d.minDate || montant == null) continue;
+        const categorie = categorieBoussole(o.categories);
         plan.operations.push({
           user_id, id: Number(o.id), compte_id: id, date, montant,
-          libelle: nettoyerLibelle(o.simplified_wording ?? o.wording ?? o.original_wording), categorie: categorieBoussole(o.categories),
+          libelle: nettoyerLibelle(o.simplified_wording ?? o.wording ?? o.original_wording), categorie,
+          // migration 0025 : catégorie Powens gardée (restaurée si un rapprochement est défait), trace de l'appariement (posée par
+          // preparerOperations), type Powens (indice d'un virement ou d'un paiement par carte)
+          categorie_powens: categorie, contrepartie_id: null, type_powens: texte(o.type)?.toLowerCase().slice(0, 40) ?? null,
         });
         touche(date);
       }
@@ -1357,8 +1454,8 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
   for (const c of plan.creditsMaj) {
     await etape("mise à jour du crédit", () => db.from("credits").update({ crd: c.crd }).eq("user_id", userId).eq("id", c.id));
   }
-  // Opérations : celles des 90 jours déjà en base (toutes connexions) sont relues d'abord, pour ne jamais remplacer une catégorie
-  // « epargne » / « virement_interne » par la catégorie Powens et pour rapprocher les virements internes sur tous les comptes.
+  // Opérations : celles des 90 jours déjà en base (toutes connexions) sont relues d'abord : le rapprochement (virements internes,
+  // épargne sans contrepartie) est recalculé sur tous les comptes à partir des catégories Powens, et seules les différences sont écrites.
   // Lecture en échec : aucune opération écrite (nouvel essai au prochain passage), les retraits et le recalcul restent faits.
   let existantes: any[] | null = null;
   try {
@@ -1367,7 +1464,7 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
     rapport.erreurs.push({ erreur: `${msg(e)} ; opérations non écrites, nouvel essai au prochain passage` });
   }
   let moisDepuis = plan.moisDepuis;
-  const comptesFusion = fusionComptes(tousComptes, plan.comptes);
+  const comptesFusion = fusionComptes(tousComptes, plan.comptes, lignes);
   // Versements programmés (config.recurring) : lecture tolérante (en échec, seules les règles de libellé s'appliquent).
   let recurring: any[] = [];
   try {
@@ -1386,10 +1483,12 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
     for (const paquet of parPaquets(prep.operations)) {
       if (await etape("opérations", () => db.from("banque_operations").upsert(paquet, { onConflict: "user_id,id" }))) rapport.operations += paquet.length;
     }
-    // Autres opérations requalifiées (contrepartie d'un virement sur un autre compte, versement d'épargne) : mises à jour, mois recalculés.
-    for (const [categorie, ids] of Object.entries(prep.autres)) {
-      for (const paquet of parPaquets(ids)) {
-        await etape("virements internes", () => db.from("banque_operations").update({ categorie }).eq("user_id", userId).in("id", paquet));
+    // Autres opérations dont la catégorie ou la contrepartie change (virement rapproché ou défait sur un autre compte, versement
+    // d'épargne) : mises à jour, mois recalculés.
+    for (const g of prep.autres) {
+      for (const paquet of parPaquets(g.ids)) {
+        await etape("virements internes", () => db.from("banque_operations").update({ categorie: g.categorie, contrepartie_id: g.contrepartie_id })
+          .eq("user_id", userId).in("id", paquet));
       }
     }
     rapport.virements_internes = prep.virements;
@@ -1405,8 +1504,8 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
   if (moisDepuis) {
     await etape("totaux mensuels", () => db.rpc("banque_recalculer_mois", { p_user: userId, p_depuis: moisDepuis }));
   }
-  // Revenus détectés : proposition profil (salaire net mensuel de la personne 1), jamais appliquée ici.
-  if (toutes) await proposerRevenus(db, userId, toutes, comptesFusion, aujourdhui, profil, rapport, etape);
+  // Revenus détectés : proposition profil (salaire net mensuel de la personne la plus proche, p1 ou p2), jamais appliquée ici.
+  if (toutes) await proposerRevenus(db, userId, toutes, comptesFusion, aujourdhui, profil, rapport, etape, ctxEpargne.noms);
   if (plan.propositions.length && await etape("propositions",
     () => db.from("propositions").upsert(plan.propositions, { onConflict: "id", ignoreDuplicates: true }))) {
     rapport.propositions = plan.propositions.length;
@@ -1415,41 +1514,47 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
   }
 }
 
-/** Opérations de l'utilisateur depuis `depuis` (toutes connexions), par pages de 1000 (limite de l'API de données), dans l'ordre
-    des identifiants (entiers Powens) : page suivante = identifiants au-delà du dernier lu. Lève en cas d'échec. */
+/** Opérations de l'utilisateur depuis `depuis` (toutes connexions), par pages de 1000 au plus, dans l'ordre des identifiants
+    (entiers Powens) : page suivante = identifiants au-delà du dernier lu, jusqu'à une page vide (l'API de données peut plafonner
+    une requête sous la limite demandée : une page courte ne veut pas dire la dernière). Lève en cas d'échec. */
 async function lireOperations(db: any, userId: string, depuis: string): Promise<any[]> {
   const PAGE = 1000, tout: any[] = [];
   for (let apres: number | null = null; ;) {
-    let q = db.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie").eq("user_id", userId).gte("date", depuis);
+    let q = db.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie, categorie_powens, contrepartie_id, type_powens")
+      .eq("user_id", userId).gte("date", depuis);
     if (apres != null) q = q.gte("id", apres + 1);
     const { data, error } = await q.order("id").limit(PAGE);
     if (error) throw new Error(`lecture des opérations : ${error.message}`);
     const l = data ?? [];
+    if (!l.length) return tout;
     tout.push(...l);
-    if (l.length < PAGE) return tout;
     const dernier = Math.max(...l.map((o: any) => Number(o.id)));
     if (!Number.isSafeInteger(dernier) || (apres != null && dernier < apres + 1)) return tout;
     apres = dernier;
   }
 }
-/** Comptes vus par le rapprochement des virements : ceux en base (ignore, doublon_de), complétés par ceux de ce passage (type,
-    carte à débit différé, compte en double). */
-function fusionComptes(enBase: any[], frais: any[]): any[] {
+/** Comptes vus par le rapprochement des virements et les revenus détectés : ceux en base (ignore, doublon_de, titulaire,
+    rattachement), complétés par ceux de ce passage (nom, type, carte à débit différé, compte en double) ; commun : compte
+    rattaché à une ligne de titulaire commun (positions.owner = 'commun'). */
+function fusionComptes(enBase: any[], frais: any[], lignes: any[] = []): any[] {
   const parId = new Map((enBase ?? []).map((k) => [String(k.id), { ...k }]));
   for (const c of frais ?? []) {
     const k = parId.get(String(c.id)) ?? { id: c.id, connexion_id: c.connexion_id };
     k.type = c.type; k.debit_differe = c.debit_differe;
+    if (c.nom != null) k.nom = c.nom;
     if ("doublon_de" in c) k.doublon_de = c.doublon_de;
     parId.set(String(c.id), k);
   }
+  const communes = new Set((lignes ?? []).filter((p) => p && p.owner === "commun").map((p) => String(p.id)));
+  for (const k of parId.values()) if (texte(k.position_id) && communes.has(String(k.position_id))) k.commun = true;
   return [...parId.values()];
 }
 /** Revenus détectés → proposition profil : une par lot (libellé nettoyé, dernier mois complet) ; une détection précédente encore en
     attente est remplacée (jamais deux en attente) ; rien si une proposition de même source a été refusée pour un salaire à 10 %
     près. Ne lève pas (erreurs dans le rapport). */
 async function proposerRevenus(db: any, userId: string, toutes: any[], comptes: any[], aujourdhui: string, profil: any, rapport: any,
-  etape: (quoi: string, f: () => Promise<any>) => Promise<boolean>) {
-  const det = revenusDetectes(toutes, comptes, aujourdhui);
+  etape: (quoi: string, f: () => Promise<any>) => Promise<boolean>, noms: string[][] = []) {
+  const det = revenusDetectes(toutes, comptes, aujourdhui, { noms });
   if (!det) return;
   const lot = await lotRevenus(userId, det.cle, moisDecale(aujourdhui, -1));
   const prop = propositionRevenus(det, profil, { userId, id: await idRevenus(lot), lot });
@@ -1461,9 +1566,10 @@ async function proposerRevenus(db: any, userId: string, toutes: any[], comptes: 
     return r;
   });
   if (!lu) return;
-  const salaire = prop.apres.personnes.p1.salaire;
+  const [k, apres] = Object.entries(prop.apres.personnes)[0] as [string, any];
+  const salaire = apres.salaire;
   const refuse = (p: any) => {
-    const s = Number(p?.apres?.personnes?.p1?.salaire);
+    const s = Number(p?.apres?.personnes?.[k]?.salaire);
     return p.statut === "refusee" && s > 0 && Math.abs(salaire - s) / s <= REVENU_ECART;
   };
   if (deja.some((p) => String(p.lot) === lot) || deja.some(refuse)) return;

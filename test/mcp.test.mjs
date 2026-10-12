@@ -222,7 +222,7 @@ const SANS_STRIP = typeof strip !== "function" && "module.stripTypeScriptTypes i
 function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
-  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE, famille, budgetReel, matelasDisponible });";
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE, famille, budgetReel, matelasDisponible, doublonsProbables });";
   return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
 }
 const TODAY = "2026-10-10";
@@ -321,8 +321,11 @@ test("parité MCP / calc.js : famille d'une ligne (courant, épargne, investisse
   const envs = ["Banque", "Boursorama", "Compte courant Camille", "Comptes courants", "Compte joint", "Livret A", "Livrets Sam", "LDDS", "LEP", "PEL", "CEL",
     "Compte à terme", "Compte épargne Revolut", "PEA Camille", "PEA-PME", "CTO Sam", "Compte-titres", "Comptes titres", "Assurance vie Sam", "Assurance-vie",
     "AV Linxea Spirit 2", "Contrat de capitalisation", "PER", "PERin Camille", "PERCO", "PEE", "Épargne salariale", "Crypto (Binance)", "Binance", "Ledger",
-    "SCPI", "OPCI", "À recevoir", "", null];
-  const blocs = ["Comptes courants", "Compte courant", "Épargne", "Livrets", "Monétaire", "Cash", "Liquidités", "Monde", "Convictions", "Obligations", "SCPI",
+    "SCPI", "OPCI", "À recevoir", "", null,
+    // revue CP1 (I4) : plans d'épargne en toutes lettres, PERCOL, PERECO, Madelin → investissement ; compte joint → courant
+    "Plan d'épargne en actions", "Plan d’épargne en actions Camille", "Plan d'épargne retraite", "Plan épargne retraite individuel", "Plan d'épargne entreprise",
+    "Plan d'épargne avenir climat", "PERCOL", "PERECO Sam", "Contrat Madelin", "Compte joint Sam", "Comptes joints"];
+  const blocs = ["Comptes courants", "Compte courant", "Compte joint", "Épargne", "Livrets", "Monétaire", "Cash", "Liquidités", "Monde", "Convictions", "Obligations", "SCPI",
     "Crypto", "Protection", "Vins", "", null];
   const vus = new Set();
   for (const envelope of envs) for (const bloc of blocs) {
@@ -331,6 +334,8 @@ test("parité MCP / calc.js : famille d'une ligne (courant, épargne, investisse
     vus.add(f);
   }
   assert.deepEqual([...vus].sort(), ["courant", "epargne", "investissement"]);
+  for (const e of ["Plan d'épargne en actions", "PERCOL", "PERECO Sam", "Contrat Madelin", "Plan d'épargne avenir climat"]) assert.equal(M.famille({ envelope: e, bloc: "Épargne" }), "investissement", e);
+  assert.equal(M.famille({ envelope: "Compte joint Sam", bloc: "Épargne" }), "courant");
   for (const sur of [{ "Trésorerie": "monetaire" }, { "Épargne": "actions" }]) for (const bloc of ["Trésorerie", "Épargne"])
     assert.equal(M.famille({ envelope: "Banque", bloc }, sur), Calc.famille({ envelope: "Banque", bloc }, sur), `surcharge ${bloc}`);
 });
@@ -341,6 +346,40 @@ const BANQUE = { actif: true, comptes: [{ id: 1, type: "courant", ignore: false,
   { mois: "2026-08-01", categorie: "revenus", entrees: 5200, sorties: 0 }, { mois: "2026-08-01", categorie: "logement", entrees: 0, sorties: 2900 },
   { mois: "2026-09-01", categorie: "revenus", entrees: 5200, sorties: 0 }, { mois: "2026-09-01", categorie: "divers", entrees: 100, sorties: 3100 },
   { mois: "2026-09-01", categorie: "epargne", entrees: 0, sorties: 800 }, { mois: "2026-09-01", categorie: "virement_interne", entrees: 4000, sorties: 4000 }] };
+
+/* ---------- doublons probables (cas type : « PEA DUPONT » recopie le total du PEA) ---------- */
+test("parité MCP / calc.js : doublonsProbables (cas type PEA DUPONT, cas négatif espèces 60 €)", { skip: SANS_STRIP }, () => {
+  const M = portMcp();
+  const titres = [7200, 6100, 5500, 5100, 4500, 4200, 3800, 3500, 3000, 2700, 2300, 1900, 1650].map((v, i) =>
+    ({ id: "t" + i, name: "Titre " + i, envelope: "PEA", owner: "p1", bloc: "Monde", mode: "market", isin: "FR000000000" + i, qty: 1, price: v, status: "actif" }));
+  const app = [...titres, { id: "esp", name: "Espèces PEA", envelope: "PEA", owner: "p1", bloc: "Liquidités", mode: "manual", isin: null, value: 60, status: "actif" },
+    { id: "dupont", name: "PEA DUPONT", envelope: "PEA", owner: "p1", bloc: "Monde", mode: "manual", isin: null, value: 51230.5, status: "actif" }];
+  const sql = L => L.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, value: p.value, status: p.status,
+    price_override: null, instrument: p.mode === "market" ? { price: p.price } : null }));
+  const m = M.doublonsProbables(sql(app)), w = Calc.doublonsProbables(app);
+  assert.deepEqual(J(m), J(w.map(x => ({ ligne: x.ligne, nom: x.nom, enveloppe: x.enveloppe, titulaire: x.titulaire, valeur: x.valeur, somme_autres: x.sommeAutres }))));
+  assert.equal(m.length, 1); assert.equal(m[0].nom, "PEA DUPONT");
+  assert.deepEqual(J(M.doublonsProbables(sql(app.filter(p => p.id !== "dupont")))), [], "espèces de 60 € : rien");
+  // demarrer_session expose doublons_probables ; la conduite propose la clôture par proposition
+  const ds = outil("demarrer_session");
+  assert.match(ds, /doublons_probables: doublonsDeSession\(\)|doublons_probables/);
+  assert.match(code, /async function doublonsDeSession\(\)/);
+  const c = src.slice(src.indexOf("CONDUITE_COPILOTE = ["), src.indexOf("].join", src.indexOf("CONDUITE_COPILOTE = [")));
+  assert.match(c, /doublons_probables/); assert.match(c, /clôtur/); assert.match(c, /upsert_positions/);
+});
+
+test("mcp : chargerDonnees lit la banque (interrupteur, comptes, banque_mois par compte_id) pour les bonnes pratiques ; get_overview la passe", () => {
+  const ch = code.slice(code.indexOf("async function chargerDonnees"), code.indexOf("const calcul = {"));
+  assert.match(ch, /const banqueP = lireBanqueCalcul\(\);[\s\S]*banque: await banqueP/, "Donnees.banque, lue en parallèle");
+  const lb = code.slice(code.indexOf("async function lireBanqueCalcul"), code.indexOf("async function chargerDonnees"));
+  assert.match(lb, /from\("fonctionnalites"\)\.select\("active"\)\.eq\("cle", "banque"\)/, "interrupteur fonctionnalites.banque");
+  assert.match(lb, /from\("banque_comptes"\)\.select\("id, type, ignore, doublon_de, actif"\)/);
+  assert.match(lb, /from\("banque_mois"\)\.select\(\s*avecCompte \? "mois, categorie, entrees, sorties, compte_id" : "mois, categorie, entrees, sorties"/);
+  assert.match(lb, /42703/, "colonne compte_id absente (migration 0025 non appliquée) : relecture sans elle");
+  assert.match(code, /type Donnees = \{[^}]*banque\?: any/);
+  assert.match(code, /budgetReel\(c\.banque \?\? c\.d\.banque, c\.ref\)/, "bonnesPratiques : banque explicite, sinon celle des données chargées");
+  assert.match(outil("get_overview"), /bonnes_pratiques: bonnesPratiques\(\{ d: donnees, scope: "foyer", objectifs, risque: profil\.risque \?\? null, classes: profil\.classes, ref, banque: donnees\.banque \}\)/);
+});
 
 test("parité MCP / risque.js : comptes courants hors de l'allocation et du risque réel", { skip: SANS_STRIP }, () => {
   const M = portMcp(), D = { ...DEMO, positions: [...DEMO.positions, COURANT] }, { d } = enLignes(D), { d: d0 } = enLignes(DEMO);
@@ -359,7 +398,17 @@ test("parité MCP / calc.js + pratiques.js : budget réel, matelas avec réserve
   assert.deepEqual(J(M.budgetReel(banqueSql, TODAY)), J(Calc.budgetReel(BANQUE, TODAY)));
   proche(Calc.budgetReel(BANQUE, TODAY).depenses, (2600 + 2900 + 3000) / 3, "dépenses réelles"); assert.equal(Calc.budgetReel(BANQUE, TODAY).revenus, 5200);
   const parCompte = { ...banqueSql, mois: [...BANQUE.mois.map(m => ({ ...m, compte_id: 1 })), { mois: "2026-09-01", categorie: "divers", entrees: 0, sorties: 9000, compte_id: 2 }] };
-  assert.deepEqual(J(M.budgetReel(parCompte, TODAY)), J(Calc.budgetReel(BANQUE, TODAY)), "mois par compte : comptes courants seulement");
+  assert.deepEqual(J(M.budgetReel(parCompte, TODAY)), J({ ...Calc.budgetReel(BANQUE, TODAY), parCompte: true }), "mois par compte : comptes courants seulement");
+  assert.equal(M.budgetReel(banqueSql, TODAY).parCompte, false, "totaux par utilisateur : libellé « tous comptes connectés »");
+  // migration 0025 : compte_id 0 = totaux par utilisateur ; mois mixtes lus mois par mois (un mois détaillé écarte ses totaux agrégés)
+  const mixte = { comptes: banqueSql.comptes, mois: [
+    ...BANQUE.mois.filter(m => m.mois !== "2026-09-01").map(m => ({ ...m, compte_id: 0 })),
+    ...BANQUE.mois.filter(m => m.mois === "2026-09-01").map(m => ({ ...m, compte_id: 1 })),
+    { mois: "2026-09-01", categorie: "divers", entrees: 0, sorties: 7777, compte_id: 0 }, { mois: "2026-09-01", categorie: "divers", entrees: 0, sorties: 500, compte_id: 2 }] };
+  const mixteApp = { actif: true, comptes: BANQUE.comptes, mois: mixte.mois.map(({ compte_id, ...m }) => ({ ...m, compteId: compte_id || null })) };
+  assert.deepEqual(J(M.budgetReel(mixte, TODAY)), J(Calc.budgetReel(mixteApp, TODAY)), "mois mixtes : parité");
+  assert.deepEqual([M.budgetReel(mixte, TODAY).depenses, M.budgetReel(mixte, TODAY).parCompte], [(2600 + 2900 + 3000) / 3, false]);
+  assert.equal(M.budgetReel(mixte, TODAY, 1).parCompte, true);
   for (const cfg of [{ cushion: { min: 10000 } }, { cushion: { mode: "months", months: 6, depenses: 2500, reserve_mois: 2 } }]) {
     const P = [...DEMO.positions, COURANT];
     const { d } = enLignes({ ...DEMO, positions: P });
@@ -386,6 +435,15 @@ test("parité MCP / calc.js + pratiques.js : budget réel, matelas avec réserve
     });
     assert.equal(mcp.total, web.total, L + " : total");
   }
+  // banque lue par chargerDonnees (d.banque) : mêmes chiffres que la banque passée explicitement (get_overview, journal, expertises, analyser)
+  { const D = { ...DEMO, positions: [...DEMO.positions, COURANT] }, { d, objectifs } = enLignes(D);
+    const explicite = M.bonnesPratiques({ d, scope: "foyer", objectifs, risque: null, classes: undefined, ref: TODAY, banque: banqueSql });
+    const parD = M.bonnesPratiques({ d: { ...d, banque: banqueSql }, scope: "foyer", objectifs, risque: null, classes: undefined, ref: TODAY });
+    const sans = M.bonnesPratiques({ d, scope: "foyer", objectifs, risque: null, classes: undefined, ref: TODAY });
+    assert.deepEqual(J(parD), J(explicite), "d.banque utilisée à défaut de c.banque");
+    assert.notDeepEqual(J(parD.criteres.find(c => c.cle === "matelas")), J(sans.criteres.find(c => c.cle === "matelas")), "le matelas suit les dépenses réelles");
+    const web = Pratiques.evaluer({ positions: D.positions, profil: D.profil, config: D.config, budget: D.budget, objectifs: D.objectifs, scope: "foyer", risque: null, today: TODAY, banque: BANQUE });
+    assert.equal(parD.total, web.total, "parité app / connecteur sur le même jeu (banque comprise)"); }
   const gros = M.bonnesPratiques({ d: enLignes({ ...DEMO, positions: [...DEMO.positions, { ...COURANT, value: 400000 }] }).d, scope: "foyer", objectifs: [], risque: null, classes: undefined, ref: TODAY });
   const ref = M.bonnesPratiques({ d: enLignes(DEMO).d, scope: "foyer", objectifs: [], risque: null, classes: undefined, ref: TODAY });
   const v = (r, k) => r.criteres.find(c => c.cle === k).valeur;

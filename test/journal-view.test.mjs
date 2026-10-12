@@ -272,7 +272,9 @@ test("detailHtml : synthèse, raisonnement rendu, options (retenue en évidence)
   assert.ok(h.includes(UI.esc(obj.nom)));
   assert.ok(h.includes('href="#patrimoine/objectifs"'), "lien Objectif → Patrimoine › Objectifs");
   assert.ok(!h.includes('href="#patrimoine/budget"'));
-  assert.ok(h.includes('href="#patrimoine/placements"'));
+  assert.ok(h.includes('href="#patrimoine/comptes?ligne=' + encodeURIComponent(pos.id) + '" data-goto="patrimoine/comptes?ligne=' + encodeURIComponent(pos.id) + '"'),
+    "lien Placement → fiche de la ligne dans Patrimoine › Comptes (adresse d'App.ouvrir)");
+  assert.equal(JV.liensDe(e, S).find(l => l.label === "Placement").route, require("../web/src/comptes-view.js").lien({ ligne: pos.id }));
   assert.ok(h.includes("élément supprimé"));
   assert.match(h, /<details class="ui-acc"/);
   assert.ok(h.includes("Statut : À relire → En cours"));

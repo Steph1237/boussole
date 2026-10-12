@@ -32,6 +32,8 @@ export type CalculAnalyse = {
   val: (p: any) => number;
   counted: (p: any) => boolean;
   inScope: (owner: string, scope: string) => boolean;
+  /** Lignes hors comptes courants (CP1 : les comptes courants ne comptent ni dans la concentration ni dans les devises). */
+  horsCourants?: (positions: any[]) => any[];
   /** Facultatif : chargerDonnees (repli de registerAnalyser quand h.charger est absent). */
   charger?: () => Promise<Omit<CtxAnalyse, "scope" | "auj" | "calcul">>;
 };
@@ -139,7 +141,7 @@ function frais(c: CtxAnalyse): Resultat {
 /* ---------- concentration : plus grosses lignes, poches, enveloppes ---------- */
 function concentration(c: CtxAnalyse): Resultat {
   const K = c.calcul;
-  const L = vivantes(c).filter((p) => K.val(p) > 0);
+  const L = (K.horsCourants ? K.horsCourants(vivantes(c)) : vivantes(c)).filter((p) => K.val(p) > 0);
   const F = somme(L, K.val);
   const tries = [...L].sort((a, b) => K.val(b) - K.val(a));
   const top = tries.slice(0, 5);
@@ -183,7 +185,7 @@ function exposition(p: any, K: CalculAnalyse, classes: Surcharge): { cle: string
 }
 function devises(c: CtxAnalyse): Resultat {
   const K = c.calcul;
-  const L = vivantes(c).filter((p) => K.val(p) > 0);
+  const L = (K.horsCourants ? K.horsCourants(vivantes(c)) : vivantes(c)).filter((p) => K.val(p) > 0);
   const F = somme(L, K.val);
   const avecExpo = L.map((p) => ({ p, e: exposition(p, K, c.classes), v: K.val(p) }));
   const euro = somme(avecExpo.filter((x) => x.e?.euro), (x) => x.v);

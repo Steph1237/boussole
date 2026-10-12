@@ -439,3 +439,17 @@ test("vue (DOM) : aucun objectif → état vide orienté vers Claude ; tutoiemen
   }
   assert.deepEqual(w.acces, []);
 });
+
+test("detailHtml : une enveloppe rattachée mène à sa fiche de Patrimoine › Comptes (adresse d'App.ouvrir) ; une poche reste du texte", () => {
+  const S = demoS();
+  const a = OV.analyser(S, DEPS, TODAY);
+  const ap = a.liste.find(x => x.o.id === "obj-apport");
+  const x = Object.assign({}, ap, { o: Object.assign({}, ap.o, { enveloppes: ["PEA Camille", "Livrets <Sam>"] }) });
+  const ctx = { positions: S.positions, scope: "foyer", Calc, Plan, today: TODAY, n: 3, duScope: "du foyer", U: UI };
+  const h = OV.detailHtml(x, ctx);
+  const CV = require("../web/src/comptes-view.js");
+  const r = CV.lien({ enveloppe: "PEA Camille", titulaire: "p1" });
+  assert.ok(h.includes('<a href="#' + r.replace(/&/g, "&amp;") + '" data-goto="' + r.replace(/&/g, "&amp;") + '">PEA Camille</a>'), "titulaire unique de l'enveloppe");
+  assert.match(h, /data-goto="patrimoine\/comptes\?enveloppe=Livrets%20%3CSam%3E">Livrets &lt;Sam&gt;<\/a>/, "échappé, encodé ; titulaire inconnu → sans titulaire");
+  assert.doesNotMatch(h, /data-goto="[^"]*bloc|>Épargne<\/a>/, "les poches ne sont pas des fiches");
+});

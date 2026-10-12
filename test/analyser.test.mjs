@@ -40,7 +40,7 @@ function chargerModule(source, globaux = {}) {
 function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
-  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, bonnesPratiques, syntheseRisque, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope });";
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, bonnesPratiques, syntheseRisque, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants });";
   return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
 }
 
@@ -233,7 +233,7 @@ test("parité concentration ↔ plan.js (plus grosse ligne, nombre de poches)", 
     const r = A.analyse("concentration", c);
     const bp = M.bonnesPratiques({ d: c.donnees, scope, objectifs: c.objectifs, risque: null, classes: undefined, ref: TODAY }).criteres.find(x => x.cle === "concentration");
     proche(r.chiffres.plus_grosse_ligne_pct, Math.round(bp.valeur * 1000) / 10, scope + " : plus grosse ligne", 0.051);
-    const vivantes = DEMO.positions.filter(p => Calc.inScope(p, scope) && Calc.counted(p) && Calc.val(p) > 0);
+    const vivantes = DEMO.positions.filter(p => Calc.inScope(p, scope) && Calc.counted(p) && Calc.val(p) > 0 && Calc.famille(p) !== "courant"); // CP1 : hors comptes courants
     assert.equal(r.chiffres.nombre_poches, new Set(vivantes.map(p => p.bloc || "_autre")).size);
     assert.equal(r.chiffres.nombre_lignes, vivantes.length);
     assert.ok(r.details.plus_grosses_lignes.length <= 5);

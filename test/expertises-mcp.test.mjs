@@ -79,6 +79,7 @@ function moteursIndex() {
     { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
 }
 const DEMO = require("../web/src/demo-data.js");
+const Calc = require("../web/src/calc.js");
 /** Données de la démo à la forme lue par le connecteur (lignes SQL, instrument joint), comme test/mcp.test.mjs. */
 function enLignes(D, extra = {}) {
   const positions = D.positions.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, pru: p.pru,
@@ -305,7 +306,7 @@ test("contexte fiscalite-enveloppes : enveloppes typées, montants, ouverture de
   const c = ctx("fiscalite-enveloppes");
   const types = Object.fromEntries(c.enveloppes.map(e => [e.enveloppe, e.type]));
   assert.deepEqual(types, { "PEA Camille": "pea", "Assurance vie Sam": "assurance_vie", PER: "per", "CTO Sam": "compte_titres", "Livrets Camille": "livret",
-    "Livrets Sam": "livret", Crypto: "crypto", Banque: "compte_courant" });
+    "Livrets Sam": "livret", Crypto: "crypto", "Comptes courants": "compte_courant" });
   assert.ok(!("À recevoir" in types), "prime à recevoir non comptée");
   assert.equal(c.enveloppes.reduce((a, e) => a + e.montant, 0), Math.round(c.enveloppes.reduce((a, e) => a + e.montant, 0)));
   const av = c.enveloppes.find(e => e.type === "assurance_vie");
@@ -335,16 +336,16 @@ test("contexte budget-epargne : budget, matelas, taux d'épargne et objectifs (m
   assert.equal(c.matelas.mois_de_depenses.valeur_mois, Math.round(bp.criteres.find(x => x.cle === "matelas").valeur * 10) / 10);
   assert.ok(!("valeur" in c.matelas.mois_de_depenses));
   assert.deepEqual(c.matelas.cible, DEMO.config.cushion);
-  // disponibilité selon liquidite() d'index.ts : livrets immédiats (« Banque » compte en quelques jours, comme dans l'app)
-  assert.deepEqual(c.livrets_et_disponible.map(l => l.nom).sort(), ["LDDS", "Livret A"]);
-  assert.equal(c.livrets_et_disponible_nombre, 2); assert.ok(!c.livrets_et_disponible_autres);
-  assert.equal(c.matelas.epargne_disponible_immediatement, 24000);
+  // disponibilité selon liquidite() d'index.ts : livrets et compte courant (enveloppe « Comptes courants » de la démo) immédiats
+  assert.deepEqual(c.livrets_et_disponible.map(l => l.nom).sort(), ["Compte courant commun", "LDDS", "Livret A"]);
+  assert.equal(c.livrets_et_disponible_nombre, 3); assert.ok(!c.livrets_et_disponible_autres);
+  assert.equal(c.matelas.epargne_disponible_immediatement, 27400);
   // « Compte-titres » n'est pas un compte courant ; un « PERin » est bloqué
   const pos = (id, name, envelope, value) => ({ id, name, envelope, owner: "p2", bloc: "Épargne", mode: "manual", value, valueDate: TODAY, status: "actif" });
   const ch = enLignes({ ...DEMO, positions: [...DEMO.positions, pos("ct", "Liquidités CTO", "Compte-titres Sam", 1000), pos("pi", "Monétaire PER", "PERin", 2000)] });
   const c2 = ctx("budget-epargne", null, ch);
-  assert.deepEqual(c2.livrets_et_disponible.map(l => l.nom).sort(), ["LDDS", "Livret A"], "ni le compte-titres ni le PERin");
-  assert.equal(c2.matelas.epargne_disponible_immediatement, 24000);
+  assert.deepEqual(c2.livrets_et_disponible.map(l => l.nom).sort(), ["Compte courant commun", "LDDS", "Livret A"], "ni le compte-titres ni le PERin");
+  assert.equal(c2.matelas.epargne_disponible_immediatement, 27400);
   const tx = ctx("taux-obligations", null, ch);
   assert.equal(tx.lignes.find(l => l.nom === "Liquidités CTO").disponibilite, "jours");
   assert.equal(tx.lignes.find(l => l.nom === "Monétaire PER").disponibilite, "bloque");
@@ -360,7 +361,9 @@ test("contexte allocation-risque : allocation par classe et profil de risque (sy
   assert.equal(c.profil_equivalent.id, sy.equivalent.id); assert.equal(c.lecture, sy.texte);
   for (const k of Object.keys(sy.allocation.pct)) assert.equal(c.allocation[k].pct, Math.round(sy.allocation.pct[k] * 10) / 10, k);
   assert.equal(c.ecarts.length, 5);
-  assert.ok(Math.abs(c.par_classe.reduce((a, x) => a + x.montant, 0) - c.financier) <= c.par_classe.length, "par classe ≈ financier");
+  const courants = DEMO.positions.filter(p => Calc.counted(p) && Calc.famille(p) === "courant").reduce((a, p) => a + Calc.val(p), 0);
+  assert.equal(courants, 3400, "compte courant de la démo");
+  assert.ok(Math.abs(c.par_classe.reduce((a, x) => a + x.montant, 0) - (c.financier - courants)) <= c.par_classe.length, "par classe ≈ financier hors comptes courants (hors allocation)");
   assert.ok(c.par_classe.every(x => x.libelle));
   assert.equal(c.risque_reel.volatilite_pct, Math.round(sy.risque.volatilite * 10) / 10);
   assert.ok(!c.a_completer, "profil renseigné");
@@ -532,7 +535,7 @@ test("index.ts : expertises.ts et analyser.ts importés et enregistrés avec les
   assert.match(src, /import \{ registerExpertises, listeExpertises \} from "\.\/expertises\.ts";/);
   assert.match(src, /import \{ registerAnalyser \} from "\.\/analyser\.ts";/);
   assert.match(code, /registerExpertises\(server, \{ \.\.\.h, charger: chargerDonnees, calcul: moteurs \}\);/);
-  assert.ok(code.includes("registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope } });"), "intégration d'analyser (noms réels d'index.ts)");
+  assert.ok(code.includes("registerAnalyser(server, { ...h, charger: chargerDonnees, today, calcul: { ...calcul, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants } });"), "intégration d'analyser (noms réels d'index.ts)");
   const mo = code.slice(code.indexOf("const moteurs = {") + "const moteurs = {".length, code.indexOf("};", code.indexOf("const moteurs = {")));
   const injectes = mo.split(",").map(x => x.trim()).filter(Boolean);
   assert.deepEqual(injectes.sort(), ["bilan", "budgetTotaux", "syntheseRisque", "bonnesPratiques", "situationObjectifs", "classeRisque", "liquidite", "typeEnveloppe", "datesAV", "val", "counted",

@@ -5,7 +5,7 @@
    - Une carte par objectif (ordre des priorités) : nom, échéance, cible, progression (barre), statut (atteint, en avance,
      dans les temps, en retard, hors de portée), effort mensuel requis ; 5 puis « Voir plus ».
    - Panneau (UI.panneau, lecture) : détail chiffré, rendement attendu (repère Livret A), poches rattachées (valeur, cascade
-     entre objectifs), projection de l'objectif (rythme actuel et effort requis jusqu'à l'échéance), « Corriger avec Claude ».
+     entre objectifs ; une enveloppe rattachée mène à sa fiche de Patrimoine › Comptes, adresse d'App.ouvrir), projection de l'objectif (rythme actuel et effort requis jusqu'à l'échéance), « Corriger avec Claude ».
    - Projection du patrimoine financier : accordéon fermé (dessinée à l'ouverture, redessinée seulement si ses données
      changent), horizon en bascule, versement « réel » ou « scénario » : paramètre d'exploration local, jamais enregistré
      (simulateur). CK4 la déplacera dans Pilotage › Projections.
@@ -127,6 +127,17 @@
     return (positions || []).filter(p => Calc.counted(p) && Calc.inScope(p, scope || "foyer") && p[key] === nom).reduce((a, p) => a + Calc.val(p), 0);
   }
 
+  /** Fiche d'une enveloppe dans Patrimoine › Comptes, même adresse qu'App.ouvrir({ enveloppe, titulaire }) (App.lienCompte, sinon
+      ComptesView.lien) ; titulaire : celui de la vue personnelle, sinon le seul titulaire des lignes de l'enveloppe. */
+  function lienEnveloppe(positions, scope, nom) {
+    const own = scope === "p1" || scope === "p2" ? scope : (() => { const o = [...new Set((positions || []).filter(p => p && p.envelope === nom).map(p => p.owner).filter(Boolean))]; return o.length === 1 ? o[0] : null; })();
+    const cible = { enveloppe: nom, titulaire: own }, A = glob("App"), CV = glob("ComptesView") ||
+      (typeof module === "object" && module.exports && typeof require === "function" ? require("./comptes-view.js") : null);
+    if (A && typeof A.lienCompte === "function") return A.lienCompte(cible);
+    if (CV && typeof CV.lien === "function") return CV.lien(cible);
+    return "patrimoine/comptes?enveloppe=" + encodeURIComponent(nom) + (own ? "&titulaire=" + own : "");
+  }
+
   /** Points de la projection d'un objectif, mois 0 → échéance (ou date d'atteinte, ou 10 ans) : valeur au rythme actuel
       (versement alloué) et avec l'effort requis. → { points: [{ mois, actuel, requis | null }], cible, mois }. */
   function serieObjectif(o, st, today, Plan) {
@@ -182,8 +193,10 @@
     const ctxClaude = "l'objectif « " + nom + " » (" + eur(o.cible) + (dateCible(o) ? " d'ici " + moisAn(dateCible(o)) : "") + ", priorité " + r + " sur " + n + ")";
     let pochesHtml;
     if (o.source === "poches") {
-      const items = poches.map(p => ["Poche", p, valeurPoche(c.positions, scope, "bloc", p, C)]).concat(envs.map(e => ["Enveloppe", e, valeurPoche(c.positions, scope, "envelope", e, C)]));
-      pochesHtml = (items.length ? '<ul class="ov-poches">' + items.map(([k, nm, v]) => '<li><span><span class="ov-poche-k">' + esc(k) + "</span> " + esc(nm) + '</span><b class="ov-num">' + esc(eur(v)) + "</b></li>").join("") + "</ul>"
+      const items = poches.map(p => ["Poche", p, valeurPoche(c.positions, scope, "bloc", p, C), null])
+        .concat(envs.map(e => ["Enveloppe", e, valeurPoche(c.positions, scope, "envelope", e, C), lienEnveloppe(c.positions, scope, e)]));
+      pochesHtml = (items.length ? '<ul class="ov-poches">' + items.map(([k, nm, v, r]) => '<li><span><span class="ov-poche-k">' + esc(k) + "</span> " +
+        (r ? '<a href="#' + esc(r) + '" data-goto="' + esc(r) + '">' + esc(nm) + "</a>" : esc(nm)) + '</span><b class="ov-num">' + esc(eur(v)) + "</b></li>").join("") + "</ul>"
         : '<p class="ov-note">Aucune poche rattachée : demande à Claude d\'en rattacher une.</p>') +
         (x.brut > st.deja + 0.5 && !done ? '<p class="ov-note">Ces poches contiennent ' + esc(eur(x.brut)) + " " + esc(c.duScope || "du foyer") + " ; " + esc(eur(x.brut - st.deja)) + " servent d'abord un objectif prioritaire.</p>" : "") +
         '<p class="ov-note">L\'argent d\'une poche sert d\'abord l\'objectif prioritaire ; le reste passe au suivant.</p>';

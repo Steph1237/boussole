@@ -10,9 +10,11 @@
 // from_own_account / to_own_account (taxonomie espagnole, présents si le domaine l'utilise) sont rangés en « epargne », jamais
 // comparée au budget des dépenses : un virement du courant vers le livret n'est pas compté comme une dépense. Les cartes à
 // débit différé sont traitées à part (banque_comptes.debit_differe, banque_recalculer_mois). Le vrai rapprochement des virements
-// entre comptes connectés (montant opposé, autre compte, 3 jours au plus) est fait après coup par synchro.ts (rapprocherVirements) :
-// « virement_interne » des deux côtés, ou « epargne » pour une sortie du courant vers l'épargne ; ces deux catégories ne sont
-// jamais remplacées par la catégorie Powens lors d'une synchronisation suivante.
+// entre comptes connectés (montant opposé, autre compte, 3 jours au plus, indice de virement d'un côté au moins, jamais une carte
+// ni un revenu ou une dépense catégorisée ici) est fait après coup par synchro.ts (rapprocherVirements) : « virement_interne »
+// des deux côtés, ou « epargne » côté courant d'un virement avec l'épargne. La catégorie tirée de cette table est gardée dans
+// banque_operations.categorie_powens (migration 0025) : le rapprochement est recalculé à partir d'elle à chaque synchronisation,
+// et elle est rendue à l'opération quand l'appariement n'est plus valide.
 // Table versionnée : changer une correspondance → changer VERSION_CATEGORIES (test/powens-synchro.test.mjs).
 
 export const VERSION_CATEGORIES = "2026-10-12";
@@ -20,7 +22,7 @@ export const VERSION_CATEGORIES = "2026-10-12";
 export const CATEGORIES_BOUSSOLE = [
   "logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne",
   // jamais issue d'un code Powens : posée par le rapprochement des virements entre comptes connectés (synchro.ts, CP1 § 5),
-  // exclue des entrées et des sorties de banque_mois (migration 0024) et du budget réel (mcp/banque.ts)
+  // exclue des entrées et des sorties de banque_mois (migrations 0024, 0025) et du budget réel (mcp/banque.ts)
   "virement_interne",
 ];
 

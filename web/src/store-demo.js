@@ -41,7 +41,8 @@
    banque = { actif, lu, connexions, comptes, mois } (D.banque : interrupteur actif, 2 connexions dont une SCARequired, 6 comptes dont un
    non rattaché et un ignoré, 6 mois de totaux). Store.banque.synchroniser(id) → { ok: true, rapport } (date de synchronisation mise à jour en mémoire). Store.banque.connecter() → { erreur: « Indisponible en démonstration… » } (aucune page Powens en
    démo), de même pour gerer(id) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
-   de store-supabase.js (BanqueEtat.normRattachement).
+   de store-supabase.js (BanqueEtat.normRattachement). Store.banque.operations(compteIds, depuis) → Promise<[{ id, compteId, date, montant,
+   libelle, categorie }]> : opérations de démonstration (D.operationsBancaires), les plus récentes d'abord.
    Store.cours(isins, depuis) → Promise<{ <isin>: [{ date, cloture }] }> : cours de clôture quotidiens (jours ouvrés, du plus ancien au plus
    récent, depuis `depuis` jusqu'à la veille du cours du jour), générés de façon déterministe à partir du prix courant de la ligne de démo
    (marche aléatoire reproductible propre à chaque ISIN, qui finit au cours du jour), 5 ans au plus ; ISIN inconnu ou sans cours : absent.
@@ -588,6 +589,12 @@
       C.banque = Object.assign({}, C.banque, { connexions: C.banque.connexions.filter(c => String(c.id) !== id), comptes: C.banque.comptes.filter(c => String(c.connexionId) !== id) });
       publish();
       return { ok: true };
+    },
+    /* Opérations des comptes demandés depuis `depuis` (D.operationsBancaires : 100 jours du compte joint), les plus récentes d'abord. */
+    async operations(compteIds, depuis) {
+      await tick();
+      const ids = new Set((Array.isArray(compteIds) ? compteIds : []).map(String)), d0 = String(depuis || "").slice(0, 10);
+      return clone((D.operationsBancaires || []).filter(o => ids.has(String(o.compteId)) && (!d0 || o.date >= d0)).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)));
     },
     async rattacher(compteId, cible) {
       await tick();

@@ -26,8 +26,11 @@
    sourceAuto ("powens" | "binance" | null) et sourceAutoLe (horodatage | null) : ligne alimentée par une synchronisation (0021, 0023).
    Store.cours(isins, depuis) → Promise<{ <isin>: [{ date, cloture }] }> : cours de clôture quotidiens de la table publique cours (CP1 § 4,
    migration 0023), du plus ancien au plus récent, à partir de `depuis` (AAAA-MM-JJ) ; lus à la demande (ouverture d'une fiche de
-   Patrimoine › Comptes), par pages de 1 000 lignes ; ISIN sans cours : absent. Table absente (migration non appliquée) ou lecture en
-   échec : {} sans erreur (avertissement en console) ; table absente : plus aucune lecture jusqu'au rechargement de la page.
+   Patrimoine › Comptes, période choisie d'abord), une requête par ISIN, au plus 6 en parallèle, par pages de 1 000 lignes des plus
+   récentes aux plus anciennes, 3 pages au plus par ISIN : un ISIN qui atteint ce plafond est listé dans la propriété non énumérable
+   `plafond` du résultat (historique tronqué côté ancien). ISIN sans cours : absent. Table absente (migration non appliquée) : {} sans
+   erreur (avertissement en console) et plus aucune lecture jusqu'au rechargement de la page ; toute autre erreur : la promesse est
+   rejetée (rien à mémoriser : la vue peut réessayer).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
    profil.protection = { prevoyance, emprunteur } (booléens) ou le même objet par personne — profiles.protection.
@@ -86,7 +89,8 @@
    réactivation) ; rechargement puis émission.
    banque = { actif, lu, connexions: [{ id, etablissement, etat, message, derniereSynchro, doublonDe }], comptes: [{ id, connexionId, nom, type, solde,
    devise, soldeLe, actif, positionId, enveloppe, titulaire, creditId, ignore, doublonDe, rattacheAuto, creeAuto, suggestion }], mois: [{ mois,
-   categorie, entrees, sorties, nombre }] } (doublonDe, rattacheAuto, creeAuto, suggestion : migration 0022, écrits par la synchronisation ;
+   compteId, categorie, entrees, sorties, nombre }] } (compteId : banque_mois.compte_id, migration 0025 ; 0 ou colonne absente → null,
+   totaux par utilisateur ; colonne absente : relecture sans elle) (doublonDe, rattacheAuto, creeAuto, suggestion : migration 0022, écrits par la synchronisation ;
    suggestion de forme inconnue → null) : banques
    connectées par Powens (BQ1, migration 0021, tables écrites par la fonction powens). L'interrupteur (fonctionnalites, cle « banque »)
    est lu avec le reste par loadAll ; éteint (ou table absente) : { actif: false } et rien d'autre n'est lu. Allumé : connexions, comptes
@@ -101,7 +105,10 @@
    puis rechargement. Store.banque.rattacher(compteId, { positionId } | { enveloppe, titulaire } | { creditId } | { aucun: true } |
    { ignorer: true }) → { ok: true } | { erreur } : update banque_comptes des 5 colonnes de rattachement (position_id, enveloppe,
    titulaire, credit_id, ignore ; seule écriture permise par 0021 ; ignorer → ignore = true et les 4 autres à null), validée d'abord
-   par BanqueEtat.normRattachement (même règle que store-demo.js) ; rechargement puis émission. */
+   par BanqueEtat.normRattachement (même règle que store-demo.js) ; rechargement puis émission.
+   Store.banque.operations(compteIds, depuis) → Promise<[{ id, compteId, date, montant, libelle, categorie }]> : opérations des comptes
+   demandés depuis `depuis` (table banque_operations, lisible par l'utilisateur), les plus récentes d'abord, 5 000 au plus ; lue à la
+   demande (fiche d'un compte courant : plus bas solde, prélèvements récurrents) ; erreur → promesse rejetée. */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -250,15 +257,20 @@
   const bqCptView = r => ({ id: r.id, connexionId: r.connexion_id, nom: r.nom || "", type: r.type || "autre", solde: num(r.solde), devise: r.devise || "EUR",
     soldeLe: r.solde_le ?? null, actif: r.actif !== false, positionId: r.position_id ?? null, enveloppe: r.enveloppe ?? null, titulaire: r.titulaire ?? null, creditId: r.credit_id ?? null, ignore: r.ignore === true,
     doublonDe: r.doublon_de ?? null, rattacheAuto: r.rattache_auto ?? null, creeAuto: r.cree_auto === true, suggestion: BE().suggestionOk(r.suggestion) ? r.suggestion : null });
-  const bqMoisView = r => ({ mois: String(r.mois).slice(0, 10), categorie: r.categorie, entrees: num(r.entrees) || 0, sorties: num(r.sorties) || 0, nombre: r.nombre == null ? 0 : +r.nombre });
+  const bqMoisView = r => ({ mois: String(r.mois).slice(0, 10), compteId: r.compte_id == null || +r.compte_id === 0 ? null : r.compte_id, categorie: r.categorie, entrees: num(r.entrees) || 0, sorties: num(r.sorties) || 0, nombre: r.nombre == null ? 0 : +r.nombre });
   const BANQUE_ETEINTE = () => ({ actif: false, lu: true, connexions: [], comptes: [], mois: [] });
   /* 1er du mois, 5 mois avant le mois en cours : 6 mois de totaux (le mois en cours compris). */
   const debutSixMois = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth() - 5, 1)).toISOString().slice(0, 10); };
+  /* banque_mois avec compte_id (0025) ; colonne absente (42703, migration pas encore appliquée) : relecture sans elle. */
+  async function lireMoisBanque() {
+    const lire = cols => q(sb.from("banque_mois").select(cols).gte("mois", debutSixMois()).order("mois"));
+    try { return await lire(BQ_MOIS + ", compte_id"); } catch (e) { if (e && e.code === "42703") return lire(BQ_MOIS); throw e; }
+  }
   async function lireBanque() {
     const res = await Promise.allSettled([
       q(sb.from("banque_connexions").select(BQ_CX).order("etablissement")),
       q(sb.from("banque_comptes").select(BQ_CPT).order("nom")),
-      q(sb.from("banque_mois").select(BQ_MOIS).gte("mois", debutSixMois()).order("mois")),
+      lireMoisBanque(),
     ]);
     if (res.some(r => r.status === "rejected")) {
       console.warn("Boussole : lecture des banques partielle", res.filter(r => r.status === "rejected").map(r => r.reason));
@@ -594,6 +606,16 @@
       await reload();
       return { ok: true };
     },
+    async operations(compteIds, depuis) {
+      const ids = [...new Set((Array.isArray(compteIds) ? compteIds : []).map(idPowens).filter(v => v != null))];
+      const d0 = String(depuis == null ? "" : depuis).slice(0, 10);
+      if (!ids.length || !sb) return [];
+      let rq = sb.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie").in("compte_id", ids);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d0)) rq = rq.gte("date", d0);
+      const rows = await q(rq.order("date", { ascending: false }).range(0, 4999));
+      return (Array.isArray(rows) ? rows : []).map(r => ({ id: r.id, compteId: r.compte_id, date: String(r.date).slice(0, 10), montant: num(r.montant) || 0,
+        libelle: r.libelle || "", categorie: r.categorie ?? null }));
+    },
     async rattacher(compteId, cible) {
       try {
         const cpt = C.banque.comptes.find(c => String(c.id) === String(compteId));
@@ -665,30 +687,46 @@
   }
 
   /* ---------- cours historiques (CP1 § 4 : table publique cours, migration 0023) ---------- */
-  const COURS_PAGE = 1000, COURS_PAGES_MAX = 40;
+  const COURS_PAGE = 1000, COURS_PAGES_MAX = 3, COURS_PARALLELE = 6;
   let coursAbsents = false; // table pas encore créée : plus de requête jusqu'au rechargement
+  /* Cours d'un ISIN depuis d0, des plus récents aux plus anciens, COURS_PAGES_MAX pages au plus → { serie (triée), plafond }. */
+  async function coursIsin(isin, d0) {
+    const serie = [];
+    for (let page = 0; page < COURS_PAGES_MAX; page++) {
+      let rq = sb.from("cours").select("isin, date, cloture").eq("isin", isin);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d0)) rq = rq.gte("date", d0);
+      const rows = await q(rq.order("date", { ascending: false }).range(page * COURS_PAGE, (page + 1) * COURS_PAGE - 1));
+      (Array.isArray(rows) ? rows : []).forEach(r => {
+        const c = num(r && r.cloture);
+        if (!r || !r.date || !(c > 0)) return;
+        serie.push({ date: String(r.date).slice(0, 10), cloture: c });
+      });
+      if (!Array.isArray(rows) || rows.length < COURS_PAGE) return { serie: serie.reverse(), plafond: false };
+    }
+    return { serie: serie.reverse(), plafond: true };
+  }
   async function cours(isins, depuis) {
     const ids = [...new Set((Array.isArray(isins) ? isins : []).map(x => String(x == null ? "" : x).trim()).filter(Boolean))];
-    const d0 = String(depuis == null ? "" : depuis).slice(0, 10), out = {};
+    const d0 = String(depuis == null ? "" : depuis).slice(0, 10), out = {}, plafond = [];
     if (!ids.length || !sb || coursAbsents) return out;
-    try {
-      for (let page = 0; page < COURS_PAGES_MAX; page++) {
-        let rq = sb.from("cours").select("isin, date, cloture").in("isin", ids);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(d0)) rq = rq.gte("date", d0);
-        const rows = await q(rq.order("isin").order("date").range(page * COURS_PAGE, (page + 1) * COURS_PAGE - 1));
-        (Array.isArray(rows) ? rows : []).forEach(r => {
-          const c = num(r && r.cloture);
-          if (!r || !r.isin || !r.date || !(c > 0)) return;
-          (out[r.isin] = out[r.isin] || []).push({ date: String(r.date).slice(0, 10), cloture: c });
-        });
-        if (!Array.isArray(rows) || rows.length < COURS_PAGE) break;
+    let i = 0, echec = null;
+    const ouvrier = async () => {
+      while (i < ids.length && !echec) {
+        const isin = ids[i++];
+        try {
+          const r = await coursIsin(isin, d0);
+          if (r.serie.length) out[isin] = r.serie.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+          if (r.plafond) plafond.push(isin);
+        } catch (e) { echec = echec || e; }
       }
-    } catch (e) {
-      if (e && ["42P01", "PGRST205", "PGRST200"].includes(e.code)) coursAbsents = true;
-      console.warn("Boussole : lecture des cours historiques impossible", e && e.code);
-      return {};
+    };
+    await Promise.all(Array.from({ length: Math.min(COURS_PARALLELE, ids.length) }, ouvrier));
+    if (echec) {
+      console.warn("Boussole : lecture des cours historiques impossible", echec && echec.code);
+      if (["42P01", "PGRST205", "PGRST200"].includes(echec.code)) { coursAbsents = true; return {}; }
+      throw echec;
     }
-    Object.keys(out).forEach(k => out[k].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)));
+    Object.defineProperty(out, "plafond", { value: plafond, enumerable: false });
     return out;
   }
 

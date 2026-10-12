@@ -974,26 +974,42 @@ test("démo : Store.cours(isins, depuis) → séries déterministes qui finissen
   assert.match(src("store-demo.js"), /Contrat : window\.Store = \{[^\n]*cours\(isins, depuis\)/, "en-tête du contrat");
 });
 
-test("store-supabase.js (exécuté, faux client) : Store.cours lit la table cours (ISIN, depuis, pages de 1 000) ; table absente → {} sans erreur", async () => {
+test("store-supabase.js (exécuté, faux client) : Store.cours — une requête par ISIN (6 en parallèle au plus), depuis, pages de 1 000 des plus récentes, plafond signalé, échec rejeté ; table absente → {}", async () => {
   const lignes = [];
   for (let i = 0; i < 1500; i++) lignes.push({ isin: "FR0000120073", date: new Date(Date.UTC(2022, 0, 3) + i * 864e5).toISOString().slice(0, 10), cloture: String(100 + i / 10) });
   lignes.push({ isin: "IE00B4L5Y983", date: "2026-10-09", cloture: 104.2 }, { isin: "IE00B4L5Y983", date: "2026-10-08", cloture: "103.9" }, { isin: "IE00B4L5Y983", date: "2026-10-07", cloture: null });
-  const { ctx, appels } = storeSupabase({ cours: f => ({ data: lignes.filter(l => f.in[1].includes(l.isin)).slice(f.range[0], f.range[1] + 1), error: null }) });
+  const desc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  let enCours = 0, max = 0;
+  const rep = f => { enCours++; max = Math.max(max, enCours); const isin = f.eq.find(e => e[0] === "isin")[1];
+    return new Promise(r => setTimeout(() => { enCours--; r({ data: lignes.filter(l => l.isin === isin).sort(desc).slice(f.range[0], f.range[1] + 1), error: null }); }, 2)); };
+  const { ctx, appels } = storeSupabase({ cours: rep });
   await wait(0);
-  const r = J(await ctx.Store.cours(["FR0000120073", "IE00B4L5Y983", "FR0000120073", "", null], "2022-01-01"));
+  const res = await ctx.Store.cours(["FR0000120073", "IE00B4L5Y983", "FR0000120073", "", null], "2022-01-01"), r = J(res);
   assert.equal(r.FR0000120073.length, 1500, "deux pages lues");
-  assert.deepEqual(r.FR0000120073[0], { date: "2022-01-03", cloture: 100 }, "clôture numérique");
-  assert.deepEqual(r.IE00B4L5Y983, [{ date: "2026-10-08", cloture: 103.9 }, { date: "2026-10-09", cloture: 104.2 }], "triés ; clôture absente ignorée");
+  assert.deepEqual(r.FR0000120073[0], { date: "2022-01-03", cloture: 100 }, "triés du plus ancien au plus récent ; clôture numérique");
+  assert.deepEqual(r.IE00B4L5Y983, [{ date: "2026-10-08", cloture: 103.9 }, { date: "2026-10-09", cloture: 104.2 }], "clôture absente ignorée");
+  assert.deepEqual(J(res.plafond), [], "aucun plafond atteint");
   const lus = appels.filter(a => a.table === "cours");
-  assert.equal(lus.length, 2);
-  assert.deepEqual(J(lus[0].in), ["isin", ["FR0000120073", "IE00B4L5Y983"]], "ISIN dédoublonnés, vides retirés");
+  assert.equal(lus.length, 3, "FR : 2 pages, IE : 1 page ; ISIN dédoublonnés, vides retirés");
   assert.deepEqual(J(lus[0].gte), ["date", "2022-01-01"]);
   assert.equal(lus[0].select, "isin, date, cloture");
-  assert.deepEqual(J(lus.map(a => a.range)), [[0, 999], [1000, 1999]]);
-  assert.deepEqual(J(lus[0].ordres), ["isin", "date"]);
+  assert.deepEqual(J(lus.filter(a => a.eq[0][1] === "FR0000120073").map(a => a.range)), [[0, 999], [1000, 1999]]);
+  assert.deepEqual(J(lus[0].ordres), ["date"], "des plus récentes aux plus anciennes");
+  assert.equal(max, 2, "les ISIN sont lus en parallèle");
+  // 6 requêtes à la fois au plus
+  enCours = 0; max = 0;
+  const huit = Array.from({ length: 8 }, (_, k) => "XS000000000" + k);
+  await ctx.Store.cours(huit, "2026-01-01");
+  assert.equal(max, 6, "au plus 6 en parallèle");
+  // plafond : 3 pages pleines → ISIN signalé (historique tronqué côté ancien)
+  const long = storeSupabase({ cours: f => ({ data: Array.from({ length: f.range[1] - f.range[0] + 1 }, (_, k) => ({ isin: "LONG", date: new Date(Date.UTC(2026, 0, 1) - (f.range[0] + k) * 864e5).toISOString().slice(0, 10), cloture: 1 })), error: null }) });
+  await wait(0);
+  const rl = await long.ctx.Store.cours(["LONG"], "2000-01-01");
+  assert.equal(rl.LONG.length, 3000); assert.deepEqual(J(rl.plafond), ["LONG"]);
   // sans ISIN : aucune requête
+  const n0 = appels.filter(a => a.table === "cours").length;
   assert.deepEqual(J(await ctx.Store.cours([], "2022-01-01")), {});
-  assert.equal(appels.filter(a => a.table === "cours").length, 2);
+  assert.equal(appels.filter(a => a.table === "cours").length, n0);
   // table absente (migration 0023 pas encore appliquée) : {} et avertissement, puis plus aucune requête
   const b = storeSupabase({ cours: { data: null, error: { code: "42P01", message: "relation \"public.cours\" does not exist" } } });
   await wait(0);
@@ -1001,10 +1017,12 @@ test("store-supabase.js (exécuté, faux client) : Store.cours lit la table cour
   assert.deepEqual(J(await b.ctx.Store.cours(["FR0000120073"], "2022-01-01")), {});
   assert.equal(b.appels.filter(a => a.table === "cours").length, 1, "table absente : on n'insiste pas");
   assert.ok(b.avertissements.some(m => /cours historiques/.test(m)));
-  // autre échec (réseau) : {} sans bloquer, nouvelle tentative possible
-  const c = storeSupabase({ cours: () => { throw new Error("réseau"); } });
+  // autre échec (réseau) : promesse rejetée (la vue ne mémorise rien et peut réessayer), nouvelle tentative possible
+  let k = 0;
+  const c = storeSupabase({ cours: () => (k++ === 0 ? { data: null, error: { code: "500", message: "panne" } } : { data: [{ isin: "FR0000120073", date: "2026-10-01", cloture: 1 }], error: null }) });
   await wait(0);
-  assert.deepEqual(J(await c.ctx.Store.cours(["FR0000120073"], "2022-01-01")), {});
+  await assert.rejects(c.ctx.Store.cours(["FR0000120073"], "2022-01-01"));
+  assert.equal(J(await c.ctx.Store.cours(["FR0000120073"], "2022-01-01")).FR0000120073.length, 1, "réessai possible");
   const sup = src("store-supabase.js");
   assert.match(sup, /Contrat : window\.Store = \{[^\n]*cours\(isins, depuis\)/, "en-tête du contrat");
   assert.match(sup, /sourceAuto: r\.source_auto \|\| null, sourceAutoLe: r\.source_auto_le \|\| null/, "positions : source de synchronisation");

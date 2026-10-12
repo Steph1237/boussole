@@ -301,3 +301,16 @@ test("vue (DOM) : plus de 5 contributions → 5 puis Voir plus (le reste caché)
   assert.ok(reste && reste.hidden, "au-delà de 5 : bloc caché");
   assert.equal(bloc.querySelector("[data-ui-voirplus]").textContent, "Voir plus (" + (n - 5) + ")");
 });
+
+test("vue (DOM) : classement des poches — chaque ligne mène à sa fiche de Patrimoine › Comptes (même adresse qu'App.ouvrir)", () => {
+  const v = vueRisque(Object.assign(demoS(), { risque: profilEnregistre() }));
+  const classes = v.root.querySelector("#rvClassesBody");
+  const liens = [...classes.querySelectorAll("a[data-goto]")].filter(a => /^patrimoine\/comptes\?ligne=/.test(a.getAttribute("data-goto")));
+  assert.ok(liens.length >= 5, "lignes en lien");
+  const a = liens.find(x => x.textContent === "ETF MSCI World");
+  assert.ok(a);
+  assert.equal(a.getAttribute("href"), "#patrimoine/comptes?ligne=pea-etf-monde");
+  assert.equal(a.getAttribute("data-goto"), "patrimoine/comptes?ligne=pea-etf-monde");
+  const CV = require("../web/src/comptes-view.js");
+  assert.equal(a.getAttribute("data-goto"), CV.lien({ ligne: "pea-etf-monde" }));
+});

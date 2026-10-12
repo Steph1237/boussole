@@ -63,6 +63,8 @@
 #view-risque-view .rv-prow{display:flex;justify-content:space-between;align-items:center;gap:8px 14px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line)}
 #view-risque-view .rv-pn{display:flex;flex-direction:column;gap:2px;min-width:0}
 #view-risque-view .rv-pc{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:14px;text-align:right}
+#view-risque-view .rv-plignes{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;padding:0;list-style:none;font-size:13px}
+#view-risque-view .rv-plignes a{color:var(--accent)}
 #view-risque-view .rv-pt{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 #view-risque-view .rv-pacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 #view-risque-view .rv-caption{margin:0;font-size:11px;color:var(--muted)}

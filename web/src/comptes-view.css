@@ -149,3 +149,12 @@
   #view-comptes-view .cv-f-total{font-size:20px}
 }
 @media (prefers-reduced-motion:reduce){#view-comptes-view .cv-fam-chev{transition:none}}
+/* Revue CP1 : carte sans fiche, alerte « doublon probable », bouton « Réessayer » */
+#view-comptes-view .cv-carte.fixe{cursor:default}
+#view-comptes-view .cv-carte.fixe:hover{border-color:var(--line);background:var(--surface)}
+#view-comptes-view .cv-carte.doublon{border-color:var(--crit)}
+#view-comptes-view .cv-alerte{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:8px 0 0;padding:10px 12px;border-radius:8px;border-left:3px solid var(--crit);background:var(--crit-soft);font-size:13px;line-height:1.5;color:var(--ink)}
+#view-comptes-view .cv-alerte > span{flex:1 1 220px}
+#view-comptes-view .cv-f-tete + .cv-alerte{margin:0 0 12px}
+#view-comptes-view .cv-lien-btn{padding:0;border:0;background:none;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
+#view-comptes-view .cv-lien-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

@@ -91,15 +91,16 @@ test("PGlite : structure — colonnes, clés primaires, clés étrangères, colo
     "position_id", "enveloppe", "titulaire", "credit_id", "ignore", "propose_le", "maj_le", "doublon_de", "rattache_auto", "cree_auto", "auto_retire_le", "suggestion"]); // + 0022
   assert.deepEqual(await cols("public.banque_placements"), ["id", "user_id", "compte_id", "isin", "libelle", "quantite", "valeur", "prix_revient", "position_id",
     "ligne_creee_le", "maj_le"]);
-  assert.deepEqual(await cols("public.banque_operations"), ["id", "user_id", "compte_id", "date", "montant", "libelle", "categorie"]);
-  assert.deepEqual(await cols("public.banque_mois"), ["user_id", "mois", "categorie", "entrees", "sorties", "nombre"]);
+  assert.deepEqual(await cols("public.banque_operations"), ["id", "user_id", "compte_id", "date", "montant", "libelle", "categorie",
+    "categorie_powens", "contrepartie_id", "type_powens"]); // + 0025
+  assert.deepEqual(await cols("public.banque_mois"), ["user_id", "mois", "categorie", "entrees", "sorties", "nombre", "compte_id"]); // + 0025
   const pos = await cols("public.positions");
   assert.ok(pos.includes("source_auto") && pos.includes("source_auto_le"), "positions : source_auto, source_auto_le");
   const pk = async t => (await un(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = $1::regclass and contype = 'p'`, [t])).d;
   assert.equal(await pk("public.fonctionnalites"), "PRIMARY KEY (user_id, cle)");
   assert.equal(await pk("prive.powens_utilisateurs"), "PRIMARY KEY (user_id)");
   for (const t of ["banque_connexions", "banque_comptes", "banque_placements", "banque_operations"]) assert.equal(await pk("public." + t), "PRIMARY KEY (user_id, id)", t);
-  assert.equal(await pk("public.banque_mois"), "PRIMARY KEY (user_id, mois, categorie)");
+  assert.equal(await pk("public.banque_mois"), "PRIMARY KEY (user_id, mois, compte_id, categorie)"); // 0025
   const fks = async t => (await q(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = $1::regclass and contype = 'f'`, [t])).map(r => r.d);
   assert.ok((await fks("public.banque_comptes")).includes("FOREIGN KEY (user_id, connexion_id) REFERENCES banque_connexions(user_id, id) ON DELETE CASCADE"));
   assert.ok((await fks("public.banque_comptes")).includes("FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE SET NULL"));
@@ -514,7 +515,8 @@ test("PGlite : banque_recalculer_mois — comptes carte à débit différé excl
   await service();
   await q(`select public.banque_recalculer_mois($1, ${AUJ})`, [B]);
   await superu();
-  const l = await un(`select entrees, sorties, nombre from public.banque_mois where user_id = '${B}' and mois = date_trunc('month', ${AUJ})::date and categorie = 'loisirs'`);
+  // un total par compte depuis 0025 : sommés ici
+  const l = await un(`select sum(entrees) entrees, sum(sorties) sorties, sum(nombre)::int nombre from public.banque_mois where user_id = '${B}' and mois = date_trunc('month', ${AUJ})::date and categorie = 'loisirs'`);
   assert.deepEqual([num(l.entrees), num(l.sorties), l.nombre], [0, 127, 2], "carte de la connexion 30 exclue (relevé déjà débité sur le courant) ; carte seule (31) comptée");
   await q(`delete from public.banque_connexions where user_id = '${B}' and id in (30, 31)`);
   await service();

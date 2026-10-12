@@ -45,7 +45,7 @@ function pistes(score){
   return ((score&&score.items)||[]).filter(i=>!i.aCompleter&&i.points<i.sur).map(i=>({
     level:"piste",title:i.titre+" : "+i.points+"/"+i.sur,text:i.texte+" "+i.piste,cle:i.cle,ordre:i.points,lien:lienPiste(i.cle),lien2:null}));
 }
-/* ctx = { positions, config, scope, people, today, status, profil, budget, objectifs, risque, classes } ;
+/* ctx = { positions, config, scope, people, today, status, profil, budget, objectifs, risque, classes, banque } (banque : S.banque, budget réel) ;
    Rules, Plan et Pratiques injectés (window ou require). Pratiques omis (undefined) : window.Pratiques dans le navigateur ;
    null ou absent : repli sur Plan.score. */
 function construire(ctx,Rules,Plan,Pratiques){
@@ -59,7 +59,7 @@ function construire(ctx,Rules,Plan,Pratiques){
   let faites=false;
   if(Pr&&typeof Pr.evaluer==="function"){
     try{ out.push(...pistesPratiques(Pr.evaluer({positions:ctx.positions,profil:ctx.profil,config:ctx.config,budget:ctx.budget,objectifs:ctx.objectifs||[],scope:ctx.scope,
-      risque:ctx.risque||null,classes:ctx.classes||{},today:new Date()}))); faites=true; }
+      risque:ctx.risque||null,classes:ctx.classes||{},banque:ctx.banque||null,today:new Date()}))); faites=true; }
     catch(e){ if(typeof console!=="undefined") console.error("bonnes pratiques",e); }
   }
   if(!faites&&Plan&&typeof Plan.score==="function"){
@@ -86,7 +86,7 @@ const VIDE={tout:"Rien à signaler pour le moment : tes règles d'alerte ne rel�
 
 function calcule(){
   items=construire({positions:S.positions,config:S.config||{},scope:S.scope,people:S.people,today:today(),status:S.status,profil:S.profil,budget:S.budget,
-    objectifs:S.objectifs,risque:S.risque,classes:S.classes},window.Rules,window.Plan,window.Pratiques);
+    objectifs:S.objectifs,risque:S.risque,classes:S.classes,banque:S.banque},window.Rules,window.Plan,window.Pratiques);
 }
 const lienHtml=(l,cls)=>l?`<a class="${cls}" href="#${esc(l.route)}" data-goto="${esc(l.route)}">${esc(l.label)}</a>`:"";
 function render(){
@@ -110,7 +110,7 @@ function mount(r){
 }
 function update(snap,visible){
   S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions||[],config:snap.config,status:snap.status,profil:snap.profil||null,budget:snap.budget||null,
-    objectifs:snap.objectifs||[],risque:snap.risque||null,classes:snap.classes||{}};
+    objectifs:snap.objectifs||[],risque:snap.risque||null,classes:snap.classes||{},banque:snap.banque||null};
   calcule(); dirty=true; if(visible){render();dirty=false;}
 }
 function show(){ if(dirty){render();dirty=false;} }
@@ -120,7 +120,7 @@ function headline(){ const u=urgents(items); return u?String(u):""; }
    pour que les pistes soient les mêmes que dans cette vue. */
 function completer(ctx){
   const c=Object.assign({},ctx), st=window.Store&&typeof window.Store.get==="function"?window.Store.get():null;
-  if(st) ["objectifs","risque","classes"].forEach(k=>{ if(c[k]===undefined) c[k]=st[k]; });
+  if(st) ["objectifs","risque","classes","banque"].forEach(k=>{ if(c[k]===undefined) c[k]=st[k]; });
   return c;
 }
 window.Actions={items:()=>items.slice(),...PURE,construire:(ctx,Rules,Plan,Pratiques)=>construire(completer(ctx||{}),Rules,Plan,Pratiques)};

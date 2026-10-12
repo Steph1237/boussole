@@ -62,9 +62,10 @@
 
   /* ---------- familles de comptes (spec 2026-10-12-cp1, § 1) ---------- */
   /* Chaque ligne appartient à une famille, déduite de son enveloppe et de son bloc :
-     - courant : bloc ou enveloppe « Compte(s) courant(s) » (bloc créé par la synchronisation bancaire) ;
-     - investissement : enveloppe PEA, PEA-PME, compte-titres (CTO), assurance-vie (AV), capitalisation, PER (PERin, PERP, PERCO),
-       PEE / épargne salariale, crypto (Binance), SCPI / OPCI / SCI — l'enveloppe d'investissement prime sur la poche (un fonds
+     - courant : bloc ou enveloppe « Compte(s) courant(s) » (bloc créé par la synchronisation bancaire) ou « Compte joint » ;
+     - investissement : enveloppe PEA, PEA-PME, compte-titres (CTO), assurance-vie (AV), capitalisation, PER (PERin, PERP, PERCO,
+       PERCOL, PERECO), Madelin, PEE / épargne salariale, « Plan d'épargne en actions / retraite / entreprise / avenir » en toutes
+       lettres, crypto (Binance), SCPI / OPCI / SCI — l'enveloppe d'investissement prime sur la poche (un fonds
        monétaire dans un compte-titres reste de l'investissement) ;
      - epargne : enveloppe livret (Livret A, LDDS, LEP, CEL, PEL, CSL), compte à terme, compte épargne, monétaire, cash, espèces ;
      - repli (enveloppe muette, ex. « Banque ») : la classe de la poche (Calc.classe, surcharge comprise) ; monétaire → epargne,
@@ -72,8 +73,8 @@
      Les dettes ne sont pas des lignes : elles viennent des biens (capital restant dû) et des crédits du profil (Calc.dettes).
      Même fonction dans le connecteur (supabase/functions/mcp/index.ts, famille), parité testée sur une liste de libellés. */
   const FAMILLES_LABELS = { courant: "Comptes courants", epargne: "Épargne disponible", investissement: "Investissement", dettes: "Dettes" };
-  const RE_COURANT = /\bcomptes? courants?\b/;
-  const RE_INVEST = /\bpea\b|\bcto\b|\bcomptes?[- ]?titres?\b|assurance.?vie|\bav\b|capitalisation|\bper\b|\bperin\b|\bperp\b|\bperco\b|\bpee\b|epargne salariale|crypto|binance|\bscpi\b|\bopci\b|\bsci\b/;
+  const RE_COURANT = /\bcomptes? courants?\b|\bcomptes? joints?\b/;
+  const RE_INVEST = /\bpea\b|\bcto\b|\bcomptes?[- ]?titres?\b|assurance.?vie|\bav\b|capitalisation|\bper\b|\bperin\b|\bperp\b|\bperco\b|\bpercol\b|\bpereco\b|\bpee\b|\bmadelin\b|plans? (d.)?epargne (en actions|(pour la )?retraite|(d.)?entreprise|avenir)|epargne salariale|crypto|binance|\bscpi\b|\bopci\b|\bsci\b/;
   const RE_EPARGNE = /livret|\bldds\b|\blep\b|\bcel\b|\bpel\b|\bcsl\b|compte a terme|epargne|monetaire|\bcash\b|especes/;
   function famille(position, surcharge) {
     const p = position || {}, env = sansAccent(p.envelope), bloc = sansAccent(p.bloc);
@@ -164,22 +165,29 @@
     const L = banque && Array.isArray(banque.comptes) ? banque.comptes : [];
     return L.filter(c => c && c.type === "courant" && c.ignore !== true && doublonDe(c) == null && c.actif !== false);
   }
-  const idCompte = r => (r.compteId != null ? r.compteId : r.compte_id != null ? r.compte_id : null);
-  /** Lignes de banque_mois des comptes courants : si les mois sont agrégés par compte (compteId / compte_id), seules celles des
-      comptes courants suivis ; sinon (totaux par utilisateur, BQ1) les lignes telles quelles. */
-  function moisCourants(banque) {
-    const L = (banque && Array.isArray(banque.mois) ? banque.mois : []).filter(Boolean);
-    if (!L.some(r => idCompte(r) != null)) return L;
-    const ids = new Set(comptesCourants(banque).map(c => String(c.id)));
-    return L.filter(r => idCompte(r) != null && ids.has(String(idCompte(r))));
-  }
+  /* Compte d'une ligne de banque_mois : compteId (store) ou compte_id (SQL) ; 0 (valeur par défaut de la migration 0025) = totaux par
+     utilisateur, comme une ligne sans compte. */
+  const idCompte = r => { const v = r.compteId != null ? r.compteId : r.compte_id; return v == null || v === "" || +v === 0 ? null : v; };
   const moisIso = d => { const s = d instanceof Date ? d.toISOString() : String(d == null ? "" : d); return /^\d{4}-\d{2}/.test(s) ? s.slice(0, 7) : null; };
+  const lignesMois = banque => (banque && Array.isArray(banque.mois) ? banque.mois : []).filter(Boolean);
+  /** Mois (AAAA-MM) détaillés par compte : au moins une ligne porte un compte. */
+  const moisDetailles = banque => new Set(lignesMois(banque).filter(r => idCompte(r) != null).map(r => moisIso(r.mois)));
+  /** Lignes de banque_mois des comptes courants, mois par mois : un mois détaillé par compte (compteId / compte_id) ne garde que les
+      lignes des comptes courants suivis (ses éventuels totaux agrégés sont écartés) ; un mois sans détail (totaux par utilisateur, BQ1)
+      garde ses lignes telles quelles. */
+  function moisCourants(banque) {
+    const L = lignesMois(banque), det = moisDetailles(banque);
+    if (!det.size) return L;
+    const ids = new Set(comptesCourants(banque).map(c => String(c.id)));
+    return L.filter(r => (det.has(moisIso(r.mois)) ? idCompte(r) != null && ids.has(String(idCompte(r))) : true));
+  }
   const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
   /** Budget réel moyen des nb (3) derniers mois complets (mois en cours exclu), comptes courants seulement :
       revenus = entrées − sorties de « revenus » ; épargne = sorties − entrées de « epargne » (virements vers l'épargne et
       l'investissement) ; dépenses = sorties − entrées de toutes les autres catégories ; virements internes exclus.
-      Taux d'épargne réel = épargne ÷ revenus (moyennes de la période). → { n, du, au, revenus, depenses, epargne, tauxEpargne } ou null
-      (interrupteur éteint, aucun mois complet). */
+      Taux d'épargne réel = épargne ÷ revenus (moyennes de la période). parCompte : vrai si chaque mois retenu est détaillé par compte
+      (chiffres des seuls comptes courants) ; faux sinon (totaux de tous les comptes connectés : libellé « tous comptes connectés »).
+      → { n, du, au, revenus, depenses, epargne, tauxEpargne, parCompte } ou null (interrupteur éteint, aucun mois complet). */
   function budgetReel(banque, auj, nb) {
     if (!banque || banque.actif === false) return null;
     const k = Number.isInteger(nb) && nb > 0 ? nb : 3;
@@ -192,8 +200,10 @@
       const e = n(r.entrees), s = n(r.sorties), c = sansAccent(r.categorie);
       if (c === "revenus") rev += e - s; else if (c === "epargne") ep += s - e; else dep += s - e;
     });
+    const det = moisDetailles(banque);
     const m = retenus.length, revenus = pos(rev) / m, depenses = pos(dep) / m, epargne = pos(ep) / m;
-    return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null };
+    return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
+      parCompte: retenus.every(x => det.has(x)) };
   }
   /** Dépenses mensuelles du budget prévu (mêmes règles que Plan.budgetTotaux : lignes de dépense × part du périmètre + mensualités
       de crédit, si au moins une ligne de dépense ; sinon les dépenses saisies du matelas en mois ; sinon 0). */
@@ -239,9 +249,12 @@
   const SEUIL_DORT = 1.5;
   const moisAvant = (m, k) => { const [y, mo] = m.split("-").map(Number), t = y * 12 + (mo - 1) - k; return Math.floor(t / 12) + "-" + String(t % 12 + 1).padStart(2, "0"); };
   /** Soldes des comptes courants supérieurs à 1,5 mois de dépenses deux mois de suite (foyer).
-      Points mesurés, du plus récent au plus ancien : fins des mois complets d'après les photos (snapshots byEnvelope : enveloppes des
-      lignes courantes ; dernière photo de chaque mois) ; à défaut de photo deux mois en arrière : solde actuel puis fin du mois
-      précédent. Dépenses : Calc.depensesMensuelles (réel, sinon prévu).
+      Points mesurés, du plus récent au plus ancien : fins des mois complets d'après les photos (dernière photo de chaque mois), sur les
+      seules lignes des comptes courants : poches courantes (byBloc : une poche « Comptes courants » ne contient que des comptes courants)
+      et enveloppes courantes (byEnvelope, pour les comptes courants reconnus à leur enveloppe, « Compte joint » par exemple, quand
+      aucune de leurs lignes n'est dans une poche courante — sans quoi l'enveloppe est laissée de côté plutôt que comptée deux fois) ;
+      jamais une enveloppe mixte (« Boursorama » avec un compte courant et un PEA). À défaut de photo deux mois en arrière : solde
+      actuel de ces mêmes lignes puis fin du mois précédent. Dépenses : Calc.depensesMensuelles (réel, sinon prévu).
       → { montant (dépassement le plus faible des deux derniers points, arrondi), mois (mois de suite au-dessus du seuil, ≥ 2), solde
       (point le plus récent), seuil, depenses, source } ou null. Pour Aujourd'hui et la revue mensuelle. */
   function argentQuiDort(S, auj) {
@@ -251,23 +264,53 @@
     const d = depensesMensuelles({ banque: s.banque, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
     if (!d) return null;
     const seuil = SEUIL_DORT * d.montant, m0 = moisIso(jour);
-    const envs = [...new Set(courants.map(p => p.envelope).filter(Boolean))];
-    const parEnv = x => x && (x.byEnvelope || x.by_envelope);
+    const blocCourant = p => RE_COURANT.test(sansAccent(p.bloc));
+    const blocs = [...new Set(courants.filter(blocCourant).map(p => p.bloc))];
+    const envsMelees = new Set(courants.filter(blocCourant).map(p => p.envelope));
+    const envs = [...new Set(courants.filter(p => !blocCourant(p) && p.envelope && !envsMelees.has(p.envelope)).map(p => p.envelope))];
+    const mesurees = courants.filter(p => blocs.includes(p.bloc) || envs.includes(p.envelope));
+    if (!mesurees.length) return null;
+    const parBloc = x => x && (x.byBloc || x.by_bloc), parEnv = x => x && (x.byEnvelope || x.by_envelope);
+    const a = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
     const photos = {};
     (Array.isArray(s.snapshots) ? s.snapshots : []).forEach(x => {
-      const m = x && moisIso(x.date), be = parEnv(x);
-      if (!m || m >= m0 || !be || !envs.some(e => Object.prototype.hasOwnProperty.call(be, e))) return;
+      const m = x && moisIso(x.date);
+      if (!m || m >= m0 || !(blocs.some(b => a(parBloc(x), b)) || envs.some(e => a(parEnv(x), e)))) return;
       if (!photos[m] || String(x.date) > String(photos[m].date)) photos[m] = x;
     });
-    const solde = x => sum(envs, e => n(parEnv(x)[e]));
+    const solde = x => sum(blocs, b => n((parBloc(x) || {})[b])) + sum(envs, e => n((parEnv(x) || {})[e]));
     const points = [];
     if (photos[moisAvant(m0, 1)] && photos[moisAvant(m0, 2)]) {
       for (let k = 1; photos[moisAvant(m0, k)]; k++) points.push(solde(photos[moisAvant(m0, k)]));
-    } else if (photos[moisAvant(m0, 1)]) points.push(sum(courants, val), solde(photos[moisAvant(m0, 1)]));
+    } else if (photos[moisAvant(m0, 1)]) points.push(sum(mesurees, val), solde(photos[moisAvant(m0, 1)]));
     let mois = 0;
     while (mois < points.length && points[mois] > seuil) mois++;
     if (mois < 2) return null;
     return { montant: Math.round(Math.min(points[0], points[1]) - seuil), mois, solde: points[0], seuil, depenses: d.montant, source: d.source };
+  }
+
+  /* ---------- doublons probables (revue CP1) ---------- */
+  const TOLERANCE_DOUBLON = 0.03;
+  /** Lignes qui recopient probablement le total de leur enveloppe (ex. ligne « PEA DUPONT » créée en validant une proposition « créer
+      une ligne » alors que les titres du PEA sont déjà suivis : le PEA compte deux fois). Dans une même enveloppe et un même titulaire,
+      une ligne manuelle sans ISIN, comptée, dont la valeur est à ±3 % de la somme des autres lignes comptées (au moins 2 autres).
+      → [{ ligne (id), nom, enveloppe, titulaire, valeur, sommeAutres }]. Même règle dans le connecteur (doublonsProbables, index.ts). */
+  function doublonsProbables(positions) {
+    const L = (positions || []).filter(p => p && counted(p) && String(p.envelope || "").trim());
+    const groupes = new Map();
+    L.forEach(p => { const k = String(p.envelope).trim() + "|" + (p.owner || ""); if (!groupes.has(k)) groupes.set(k, []); groupes.get(k).push(p); });
+    const out = [];
+    groupes.forEach(g => {
+      if (g.length < 3) return;
+      const total = sum(g, val);
+      g.forEach(p => {
+        if (p.mode === "market" || String(p.isin || "").trim()) return;
+        const v = val(p), autres = total - v;
+        if (v > 0 && autres > 0 && Math.abs(v - autres) <= TOLERANCE_DOUBLON * autres)
+          out.push({ ligne: p.id, nom: p.name || "", enveloppe: String(p.envelope).trim(), titulaire: p.owner || null, valeur: v, sommeAutres: autres });
+      });
+    });
+    return out;
   }
 
   /* Apport : épargne au-delà du matelas (porté par la personne 1 et le foyer), + part des placements, + « à recevoir » en option. */
@@ -330,7 +373,7 @@
   }
 
   return { CLASSES_LABELS, LIQUIDITE_LABELS, FAMILLES_LABELS, classe, liquidite, famille, horsCourants, parClasse, parLiquidite,
-    comptesCourants, moisCourants, budgetReel, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort,
+    comptesCourants, moisCourants, budgetReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort,
     val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites,
     autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, completude, manquants, valider };
 });

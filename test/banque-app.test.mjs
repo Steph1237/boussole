@@ -668,7 +668,7 @@ const pret = ctx => new Promise((res, rej) => {
 const BQ_KEYS = ["actif", "comptes", "connexions", "lu", "mois"];
 const CX_KEYS = ["derniereSynchro", "doublonDe", "etablissement", "etat", "id", "message"];
 const CPT_KEYS = ["actif", "connexionId", "creditId", "creeAuto", "devise", "doublonDe", "enveloppe", "id", "ignore", "nom", "positionId", "rattacheAuto", "solde", "soldeLe", "suggestion", "titulaire", "type"];
-const MOIS_KEYS = ["categorie", "entrees", "mois", "nombre", "sorties"];
+const MOIS_KEYS = ["categorie", "compteId", "entrees", "mois", "nombre", "sorties"];
 
 test("démo : S.banque au contrat — 2 connexions (une à jour, une SCARequired), 6 comptes dont un non rattaché et un ignoré, 6 mois de totaux cohérents", async () => {
   const ctx = demoStore();
@@ -693,6 +693,7 @@ test("démo : S.banque au contrat — 2 connexions (une à jour, une SCARequired
   }
   b.mois.forEach(m => { assert.deepEqual(Object.keys(m).sort(), MOIS_KEYS); assert.match(m.mois, /^\d{4}-\d{2}-01$/); assert.ok(BE.CATEGORIES.some(c => c.cle === m.categorie), m.categorie); });
   assert.equal(new Set(b.mois.map(m => m.mois)).size, 6, "6 mois de totaux");
+  assert.ok(b.mois.every(m => m.compteId === 1001), "démo : totaux détaillés par compte (compte joint)");
   const r = BE.reelMoyen(b.mois, new Date().toISOString().slice(0, 10));
   assert.equal(r.n, 3);
   assert.ok(r.parCategorie.alimentation > 700 && r.parCategorie.alimentation < 900, "proche du budget de la démo (750 €)");
@@ -738,7 +739,7 @@ function storeSup({ banqueActive = true, tables = {}, fetchRep, erreurFonct } = 
   const requete = table => {
     const f = { table, op: "select", cols: null, filtres: [], valeurs: null };
     const b = {};
-    for (const m of ["eq", "gte", "in", "order", "limit"]) b[m] = (...a) => { f.filtres.push([m, ...a]); return b; };
+    for (const m of ["eq", "gte", "in", "order", "limit", "range"]) b[m] = (...a) => { f.filtres.push([m, ...a]); return b; };
     b.select = (c, o) => { if (f.op === "select") f.cols = c; f.head = !!(o && o.head); return b; };
     b.update = v => { f.op = "update"; f.valeurs = v; return b; };
     b.maybeSingle = () => { f.unique = true; return b; };
@@ -801,8 +802,9 @@ test("store-supabase (exécuté) : interrupteur actif → connexions, comptes et
     connexions: [{ id: 7, etablissement: "Banque test", etat: "SCARequired", message: "Validation requise", derniereSynchro: "2026-10-12T05:00:00Z", doublonDe: null }],
     comptes: [{ id: 70, connexionId: 7, nom: "Compte joint", type: "courant", solde: 1234.56, devise: "EUR", soldeLe: "2026-10-12", actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: false,
       doublonDe: null, rattacheAuto: null, creeAuto: false, suggestion: null }],
-    mois: [{ mois: "2026-09-01", categorie: "alimentation", entrees: 0, sorties: 812.3, nombre: 14 }] });
+    mois: [{ mois: "2026-09-01", compteId: null, categorie: "alimentation", entrees: 0, sorties: 812.3, nombre: 14 }] });
   assert.match(appels.find(a => a.table === "banque_comptes").cols, /\bignore\b/, "colonne ignore lue");
+  assert.match(appels.find(a => a.table === "banque_mois").cols, /\bcompte_id\b/, "compte_id lu (migration 0025)");
   const ig = storeSup({ tables: Object.assign({}, tablesBq, { banque_comptes: { data: [CPT_ROW, CPT_IGN], error: null } }) });
   const S2 = await pret(ig.ctx);
   assert.deepEqual(J(S2.banque.comptes.map(c => c.ignore)), [false, true]);
@@ -1012,4 +1014,31 @@ test("démo (0022) : Store.banque.synchroniser en mémoire (date de synchronisat
   assert.equal(typeof r.rapport.comptes, "number");
   assert.ok(Date.parse(ctx.Store.get().banque.connexions[0].derniereSynchro) > Date.now() - 60000);
   assert.match((await ctx.Store.banque.synchroniser(999)).erreur, /Connexion introuvable/);
+});
+
+test("store-supabase (exécuté) : banque_mois.compte_id → compteId (0 → null) ; colonne absente (42703) → relecture sans elle", async () => {
+  const a = storeSup({ tables: Object.assign({}, tablesBq, { banque_mois: { data: [Object.assign({}, MOIS_ROW, { compte_id: 70 }), Object.assign({}, MOIS_ROW, { compte_id: 0 })], error: null } }) });
+  const S = await pret(a.ctx);
+  assert.deepEqual(J(S.banque.mois.map(m => m.compteId)), [70, null]);
+  let n = 0;
+  const b = storeSup({ tables: Object.assign({}, tablesBq, { banque_mois: f => (n++ === 0 ? { data: null, error: { code: "42703", message: "column banque_mois.compte_id does not exist" } } : { data: [MOIS_ROW], error: null }) }) });
+  const S2 = await pret(b.ctx);
+  assert.equal(S2.banque.lu, true);
+  assert.deepEqual(J(S2.banque.mois.map(m => m.compteId)), [null]);
+  const lus = b.appels.filter(x => x.table === "banque_mois");
+  assert.equal(lus.length, 2); assert.match(lus[0].cols, /compte_id/); assert.doesNotMatch(lus[1].cols, /compte_id/);
+});
+
+test("Store.banque.operations : supabase lit banque_operations (comptes, depuis, plus récentes d'abord) ; démo : opérations du compte joint", async () => {
+  const OPS = [{ id: 5, compte_id: 70, date: "2026-10-02", montant: "-19.99", libelle: "PRLV FREE", categorie: "abonnements" }];
+  const a = storeSup({ tables: Object.assign({}, tablesBq, { banque_operations: { data: OPS, error: null } }) });
+  await pret(a.ctx);
+  assert.deepEqual(J(await a.ctx.Store.banque.operations([70, "x", 70], "2026-07-01")), [{ id: 5, compteId: 70, date: "2026-10-02", montant: -19.99, libelle: "PRLV FREE", categorie: "abonnements" }]);
+  const f = a.appels.find(x => x.table === "banque_operations");
+  assert.match(f.cols, /^id, compte_id, date, montant, libelle, categorie$/);
+  assert.deepEqual(J(await a.ctx.Store.banque.operations([], "2026-07-01")), [], "sans compte : aucune requête");
+  assert.equal(a.appels.filter(x => x.table === "banque_operations").length, 1);
+  const k = storeSup({ tables: Object.assign({}, tablesBq, { banque_operations: { data: null, error: { code: "500", message: "panne" } } }) });
+  await pret(k.ctx);
+  await assert.rejects(k.ctx.Store.banque.operations([70], "2026-07-01"), "échec : promesse rejetée (la vue réessaie)");
 });

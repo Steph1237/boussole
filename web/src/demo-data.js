@@ -42,20 +42,20 @@
     P({ id: "per-camille", name: "PER Camille", envelope: "PER", owner: "p1", bloc: "Monde", mode: "manual", value: 11800, valueDate: monthEnd(1) }),                                                            // 11 800,00
     P({ id: "crypto-btc", name: "Bitcoin", envelope: "Crypto", owner: "p1", bloc: "Crypto", mode: "market", isin: "X-BTC", qty: 0.042, pru: 58000, price: 61250, priceDate: ago(6), qtyEstimated: true,
       ...A(0, null, null, "Détention directe : pas de frais courants de fonds (frais de plateforme non compris)") }),      //  2 572,50 (cours ancien)
-    P({ id: "compte-commun", name: "Compte courant commun", envelope: "Banque", owner: "p2", bloc: "Épargne", mode: "manual", value: 3400, valueDate: ago(1), ...CANUTS }),                                                 //  3 400,00
+    P({ id: "compte-commun", name: "Compte courant commun", envelope: "Comptes courants", owner: "p2", bloc: "Comptes courants", mode: "manual", value: 3400, valueDate: ago(1), ...CANUTS }), //  3 400,00
     P({ id: "prime-camille", name: "Prime annuelle", envelope: "À recevoir", owner: "p1", bloc: "Épargne", mode: "manual", value: 2500, valueDate: ago(0), status: "à recevoir", note: "Versée avec la paie de décembre." }), // non compté
   ];
 
   const snapshots = [
     { date: monthEnd(3), foyer: 90120, p1: 48900, p2: 41220, source: "nightly",
-      byBloc: { Monde: 23000, Europe: 8400, Convictions: 7800, Obligations: 18000, SCPI: 5300, "Épargne": 25300, Crypto: 2320 },
-      byEnvelope: { "PEA Camille": 24100, "CTO Sam": 3900, "Assurance vie Sam": 23300, "Livrets Camille": 10800, "Livrets Sam": 11500, PER: 11200, Crypto: 2320, Banque: 3000 } },
+      byBloc: { Monde: 23000, Europe: 8400, Convictions: 7800, Obligations: 18000, SCPI: 5300, "Épargne": 22300, "Comptes courants": 3000, Crypto: 2320 },
+      byEnvelope: { "PEA Camille": 24100, "CTO Sam": 3900, "Assurance vie Sam": 23300, "Livrets Camille": 10800, "Livrets Sam": 11500, PER: 11200, Crypto: 2320, "Comptes courants": 3000 } },
     { date: monthEnd(2), foyer: 92340, p1: 50310, p2: 42030, source: "nightly",
-      byBloc: { Monde: 23600, Europe: 8700, Convictions: 8050, Obligations: 18100, SCPI: 5300, "Épargne": 26100, Crypto: 2490 },
-      byEnvelope: { "PEA Camille": 24700, "CTO Sam": 4150, "Assurance vie Sam": 23400, "Livrets Camille": 11300, "Livrets Sam": 11700, PER: 11400, Crypto: 2490, Banque: 3200 } },
+      byBloc: { Monde: 23600, Europe: 8700, Convictions: 8050, Obligations: 18100, SCPI: 5300, "Épargne": 22900, "Comptes courants": 3200, Crypto: 2490 },
+      byEnvelope: { "PEA Camille": 24700, "CTO Sam": 4150, "Assurance vie Sam": 23400, "Livrets Camille": 11300, "Livrets Sam": 11700, PER: 11400, Crypto: 2490, "Comptes courants": 3200 } },
     { date: monthEnd(1), foyer: 94210, p1: 51380, p2: 42830, source: "nightly",
-      byBloc: { Monde: 24100, Europe: 8900, Convictions: 8200, Obligations: 18200, SCPI: 5300, "Épargne": 26950, Crypto: 2560 },
-      byEnvelope: { "PEA Camille": 25200, "CTO Sam": 4300, "Assurance vie Sam": 23500, "Livrets Camille": 11800, "Livrets Sam": 11900, PER: 11700, Crypto: 2560, Banque: 3250 } },
+      byBloc: { Monde: 24100, Europe: 8900, Convictions: 8200, Obligations: 18200, SCPI: 5300, "Épargne": 23700, "Comptes courants": 3250, Crypto: 2560 },
+      byEnvelope: { "PEA Camille": 25200, "CTO Sam": 4300, "Assurance vie Sam": 23500, "Livrets Camille": 11800, "Livrets Sam": 11900, PER: 11700, Crypto: 2560, "Comptes courants": 3250 } },
   ];
 
   const tx = [
@@ -638,9 +638,28 @@
     const f = k === 0 ? 0.4 : BQ_VAR[k - 1];
     Object.keys(BQ_BASE).forEach(cat => {
       const v = Math.round(BQ_BASE[cat] * (cat === "revenus" || cat === "epargne" || cat === "impots" ? (k === 0 ? 0.4 : 1) : f) * 100) / 100;
-      bqMois.push({ mois: moisDebut(k), categorie: cat, entrees: cat === "revenus" ? v : cat === "alimentation" && k === 2 ? 24.9 : 0, sorties: cat === "revenus" ? 0 : v,
+      bqMois.push({ mois: moisDebut(k), compteId: 1001, categorie: cat, entrees: cat === "revenus" ? v : cat === "alimentation" && k === 2 ? 24.9 : 0, sorties: cat === "revenus" ? 0 : v,
         nombre: cat === "revenus" ? 2 : cat === "alimentation" ? 18 : 4 });
     });
+  }
+  /* Opérations des 100 derniers jours du compte joint (1001), pour sa fiche (Store.banque.operations : plus bas solde sur 90 jours,
+     prélèvements récurrents détectés par l'app) : salaires le 28, prélèvements mensuels (prêts, énergie, assurance, téléphone,
+     vidéo à la demande), virements d'épargne le 1er, paiements par carte quasi quotidiens (montants variables, plusieurs par mois :
+     jamais pris pour des prélèvements). Montants fixes, dates relatives à aujourd'hui ; le solde reste positif. */
+  const operationsBancaires = [];
+  {
+    const MENSUELS = [[2, "ECHEANCE PRET IMMO 0412", -820, "logement"], [3, "PRLV SEPA CREDIT AUTO", -210, "transport"], [5, "PRLV SEPA EDF CLIENTS PARTICULIERS", -78.4, "logement"],
+      [10, "PRLV ASSURANCE HABITATION MAIF", -32.15, "logement"], [15, "PRLV FREE MOBILE", -19.99, "abonnements"], [20, "PRLV NETFLIX.COM", -13.49, "abonnements"],
+      [1, "VIR PERMANENT LIVRET A", -200, "epargne"], [1, "VIR PERMANENT ASSURANCE VIE", -150, "epargne"],
+      [6, "PRLV CRECHE LES PETITS LOUPS", -300, "enfants"], [12, "PRLV DGFIP IMPOT", -280, "impots"], [29, "VIR INTERNE VERS COMPTE SAM", -500, "virement_interne"], [1, "VIR PERMANENT PEA", -300, "epargne"], [28, "VIR SALAIRE CAMILLE", 2800, "revenus"], [28, "VIR SALAIRE SAM", 2300, "revenus"]];
+    const CARTE = [["CB CARREFOUR LYON", "alimentation"], ["CB MONOPRIX", "alimentation"], ["CB BOULANGERIE DU PARC", "alimentation"], ["CB SNCF", "transport"],
+      ["CB PHARMACIE CENTRALE", "sante"], ["CB FNAC", "loisirs"], ["CB TOTAL ENERGIES", "transport"], ["CB PICARD", "alimentation"]];
+    let id = 900000;
+    for (let k = 100; k >= 0; k--) {
+      const d = new Date(now - k * DAY), j = d.getUTCDate(), date = iso(d);
+      MENSUELS.filter(m => m[0] === j).forEach(m => operationsBancaires.push({ id: id++, compteId: 1001, date, montant: m[2], libelle: m[1], categorie: m[3] }));
+      if (j % 4 !== 0) { const c = CARTE[(j * 7 + d.getUTCMonth()) % CARTE.length]; operationsBancaires.push({ id: id++, compteId: 1001, date, montant: -(38 + ((j * 37 + d.getUTCMonth() * 11) % 85)), libelle: c[0], categorie: c[1] }); }
+    }
   }
   const banque = {
     actif: true, lu: true,
@@ -661,7 +680,7 @@
     mois: bqMois,
   };
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines, banque };
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines, banque, operationsBancaires };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);

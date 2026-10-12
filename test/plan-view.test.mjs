@@ -539,7 +539,11 @@ test("budget réel : taux d'épargne réel (épargne ÷ revenus, 3 mois complets
   assert.equal(PV.budgetReelDe({ scope: "foyer", banque: Object.assign({}, b, { actif: false }) }, AUJ_R), null);
   const h = sp(PV.tauxReelHtml(br));
   assert.match(texteDeR(h), /^Taux d'épargne réel 20 %/);
-  assert.match(texteDeR(h), /épargne ÷ revenus, moyenne de juillet à septembre 2026, sur tes comptes courants\. Virements entre tes comptes exclus\./);
+  assert.equal(br.parCompte, false, "totaux par utilisateur (sans compte)");
+  assert.match(texteDeR(h), /épargne ÷ revenus, moyenne de juillet à septembre 2026, sur tous tes comptes connectés \(le détail par compte n'est pas encore disponible\)\. Virements entre tes comptes exclus\./,
+    "libellé honnête sans détail par compte");
+  const hc = sp(PV.tauxReelHtml(Object.assign({}, br, { parCompte: true })));
+  assert.match(texteDeR(hc), /moyenne de juillet à septembre 2026, sur tes comptes courants\. Virements entre tes comptes exclus\./, "détail par compte : comptes courants");
   assert.equal(PV.tauxReelHtml(null), "");
   assert.equal(PV.tauxReelHtml(Object.assign({}, br, { tauxEpargne: null })), "", "revenus inconnus : pas de taux");
   const lignes = [{ id: "e", type: "epargne", categorie: "Épargne", libelle: "Livret", montant: 200, frequence: "mois" }];

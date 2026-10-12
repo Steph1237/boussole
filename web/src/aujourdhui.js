@@ -8,6 +8,8 @@
      rien pour un incident passager ; « N comptes à rattacher », urgence 2 ; « Connexion X en double », urgence 2, vers « Déconnecter » ; règles de BanqueEtat, banque-etat.js).
    - Argent qui dort (CP1 § 1) : Calc.argentQuiDort(S, auj) (calc.js) s'il existe → élément « Argent qui dort sur tes comptes courants »
      (urgence 3, vers Patrimoine › Comptes) ; fonction absente ou en échec : rien.
+   - Doublons probables (revue CP1) : Calc.doublonsProbables(positions) → un élément urgent (1) par ligne saisie qui recopie le total
+     de son enveloppe (patrimoine compté deux fois), vers la fiche de l'enveloppe.
    - Fiches de Patrimoine › Comptes (CP1 § 3) : la carte « Patrimoine net » mène à Comptes et chaque enveloppe de son détail ouvre sa
      fiche ; sous la frise, « Voir le détail par compte ».
    - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an ;
@@ -194,8 +196,21 @@
       action: { label: "Voir mes comptes", route: R.comptes } };
   }
 
+  /** Doublons probables (Calc.doublonsProbables) : une ligne saisie qui recopie le total de son enveloppe, patrimoine compté deux
+      fois → un élément urgent par ligne, vers la fiche de l'enveloppe (où « Demander à Claude » propose la clôture). */
+  function elementsDoublons(S, t, deps) {
+    const C = dep(deps, "Calc");
+    if (!C || typeof C.doublonsProbables !== "function") return [];
+    let L = [];
+    try { L = C.doublonsProbables(S.positions || []); } catch (e) { return []; }
+    return (Array.isArray(L) ? L : []).map(x => ({ type: "doublon", urgence: 1, date: t, titre: "Ligne « " + extrait(x.nom || "sans nom", 60) + " » comptée deux fois ?",
+      contexte: "Elle semble recopier le total de ton enveloppe " + plat(x.enveloppe) + " (" + eur(+x.valeur) + " pour " + eur(+x.sommeAutres) +
+        " de lignes) : ton patrimoine est peut-être compté deux fois. Demande à Claude de la clôturer.",
+      action: { label: "Voir l'enveloppe", route: lienFiche({ enveloppe: x.enveloppe, titulaire: x.titulaire }) } }));
+  }
+
   /** Tout ce qui demande une action, trié par urgence (1 haute … 3) puis date (la plus ancienne d'abord).
-      → [{ type: proposition|journal|routine|banque|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
+      → [{ type: proposition|journal|routine|banque|doublon|argent|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
       Textes bruts : l'échappement se fait au rendu. deps = { Rules } (window.Rules par défaut). */
   function boite(S, today, deps) {
     if (!S || S.ready === false) return [];
@@ -238,6 +253,9 @@
     // 1 quater. Banques connectées (BQ1) : connexion à refaire (seulement les états qui demandent une action de l'utilisateur) et
     // comptes à rattacher. Rien si l'interrupteur est éteint.
     out.push(...elementsBanque(S, t));
+
+    // 1 quater bis. Doublons probables (ligne qui recopie le total de son enveloppe), urgence 1.
+    out.push(...elementsDoublons(S, t, deps));
 
     // 1 quinquies. Argent qui dort sur les comptes courants (Calc.argentQuiDort, si elle existe), urgence 3.
     const dort = elementArgentQuiDort(S, t, deps);
@@ -331,7 +349,7 @@
     let r = null;
     if (Pr && typeof Pr.evaluer === "function") {
       try { r = Pr.evaluer({ positions, profil: s.profil || null, config: s.config || null, budget: s.budget || null, objectifs: s.objectifs || [], scope,
-        risque: s.risque || null, classes: s.classes || {}, today: new Date(t + "T12:00:00") }); } catch (e) { r = null; }
+        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, today: new Date(t + "T12:00:00") }); } catch (e) { r = null; }
     }
     const crit = r && Array.isArray(r.criteres) ? r.criteres : [];
     const pratiques = { total: r && r.total != null ? r.total : null, provisoire: !!(r && r.provisoire),
@@ -462,6 +480,7 @@
     journal: '<path d="M6 3.5h11a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H6z"/><path d="M6 3.5v17M9.5 8h5.5M9.5 11.5h5.5"/>',
     proposition: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
     alerte: '<path d="M12 3.5l9 16H3z"/><path d="M12 10v4.5M12 17.2v.3"/>',
+    doublon: '<rect x="3.5" y="3.5" width="11" height="11" rx="1.5"/><rect x="9.5" y="9.5" width="11" height="11" rx="1.5"/>',
     a_suivre: '<path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/><path d="M12 8v4.5l3 1.8"/>',
     echeance: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     cours: '<path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/>',
@@ -469,7 +488,7 @@
     banque: '<path d="M3.5 9.5L12 4l8.5 5.5"/><path d="M5 20h14M6 10.5v7M10 10.5v7M14 10.5v7M18 10.5v7"/>',
     argent: '<path d="M4 7.5h16v11H4z"/><path d="M4 11h16"/><path d="M8 4.5h8"/><path d="M15.5 15h1.5"/>',
   };
-  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", argent: "Argent qui dort", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
+  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", argent: "Argent qui dort", doublon: "Doublon probable", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 
