@@ -42,6 +42,8 @@
 #view-aujourdhui .aj-pt.fin{fill:var(--accent)}
 #view-aujourdhui .aj-frise-vide{margin:8px 0;font-size:13.5px;line-height:1.5;color:var(--muted);max-width:620px}
 #view-aujourdhui .aj-pied{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-top:8px}
+#view-aujourdhui .aj-pied-acts{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px}
+#view-aujourdhui .aj-comptes{color:var(--accent);font-weight:600;font-size:13.5px}
 #view-aujourdhui .aj-note{margin:0;font-size:12px;line-height:1.45;color:var(--muted);max-width:560px}
 
 /* panneau de détail d'une carte (UI.panneau, hors de la vue) */
@@ -57,3 +59,4 @@
   #view-aujourdhui .aj-pic{width:28px;height:28px}
   #view-aujourdhui .aj-act{grid-column:2;justify-self:start;margin-top:6px}
 }
+.ui-panneau .aj-det-fiche{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}

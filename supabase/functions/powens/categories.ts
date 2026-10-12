@@ -9,13 +9,19 @@
 // virements, y compris vers des tiers : il reste en « divers ») ; savings (versement vers un compte d'épargne) et les codes
 // from_own_account / to_own_account (taxonomie espagnole, présents si le domaine l'utilise) sont rangés en « epargne », jamais
 // comparée au budget des dépenses : un virement du courant vers le livret n'est pas compté comme une dépense. Les cartes à
-// débit différé sont traitées à part (banque_comptes.debit_differe, banque_recalculer_mois).
+// débit différé sont traitées à part (banque_comptes.debit_differe, banque_recalculer_mois). Le vrai rapprochement des virements
+// entre comptes connectés (montant opposé, autre compte, 3 jours au plus) est fait après coup par synchro.ts (rapprocherVirements) :
+// « virement_interne » des deux côtés, ou « epargne » pour une sortie du courant vers l'épargne ; ces deux catégories ne sont
+// jamais remplacées par la catégorie Powens lors d'une synchronisation suivante.
 // Table versionnée : changer une correspondance → changer VERSION_CATEGORIES (test/powens-synchro.test.mjs).
 
 export const VERSION_CATEGORIES = "2026-10-12";
 
 export const CATEGORIES_BOUSSOLE = [
   "logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne",
+  // jamais issue d'un code Powens : posée par le rapprochement des virements entre comptes connectés (synchro.ts, CP1 § 5),
+  // exclue des entrées et des sorties de banque_mois (migration 0024) et du budget réel (mcp/banque.ts)
+  "virement_interne",
 ];
 
 export const CORRESPONDANCE: Record<string, string> = {

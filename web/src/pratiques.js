@@ -2,7 +2,8 @@
 
    Pratiques.evaluer(ctx, deps?) → { total (0-100), familles: [{ cle, titre, poids, total, criteres }], criteres: [...], complet }
      ctx  = { positions, profil, config, budget, objectifs, scope, risque (Risque.evaluer : { profil: id } ou null), today,
-              classes? (surcharges poche → classe, transmises à Risque.allocationReelle et Marche.classeRisque) }
+              classes? (surcharges poche → classe, transmises à Risque.allocationReelle et Marche.classeRisque),
+              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel) }
      deps = { Risque?, Marche? } : modules injectés (null = absent) ; par défaut risque.js / marche.js s'ils sont chargés.
      Sans Risque : adéquation « à compléter » (calcul indisponible), spéculatif au plafond par défaut de 5 %.
      Sans Marche : crypto et levier repérés par la classe de la poche et le libellé (« 2x », « levier »).
@@ -11,7 +12,11 @@
      - à compléter : donnée manquante, 0 point, exclu des totaux ;
      - informatif (devises) : affiché, sans note (points null, sur 0), exclu des totaux.
    Famille = somme des points ÷ (20 × critères notés) × 100 ; global = moyenne pondérée (30 / 25 / 30 / 15) des familles notées.
-   Reprend Plan.score pour matelas, épargne, endettement et concentration (mêmes valeurs et points). */
+   Reprend Plan.score pour matelas, épargne, endettement et concentration (mêmes barèmes et points).
+   Comptes courants (Calc.famille « courant », spec cp1 § 1) : comptés dans le patrimoine net et dans le matelas au-delà d'une
+   réserve (Calc.matelasDisponible), mais exclus de la famille Allocation (adéquation, diversification, géographie, spéculatif,
+   devises). Dépenses de référence (matelas, argent dormant) : budget réel des comptes courants (ctx.banque, foyer seulement) s'il
+   existe, sinon budget prévu. Même règles dans le connecteur (bonnesPratiques, supabase/functions/mcp/index.ts). */
 (function (root, factory) {
   const isNode = typeof module === "object" && module.exports;
   const facultatif = nom => { try { return require(nom); } catch (e) { return null; } };
@@ -79,7 +84,7 @@
 
   /* Critères repris de Plan.score : titre, cible, texte et piste viennent de Plan ; on ajoute famille, règle, source et lien. */
   const DE_PLAN = {
-    matelas: { famille: "securite", regle: "Matelas = épargne disponible ÷ dépenses mensuelles ; repère 3 à 6 mois",
+    matelas: { famille: "securite", regle: "Matelas = (épargne disponible + comptes courants au-delà de la réserve) ÷ dépenses mensuelles ; réserve = 1 mois de dépenses par défaut (réglable) ; dépenses réelles des comptes courants si connues, sinon budget prévu ; repère 3 à 6 mois",
       source: "Repère usuel des conseillers en gestion de patrimoine", lien: "patrimoine/budget" },
     epargne: { famille: "effort", regle: "Taux d'épargne = (épargne prévue + reste du mois) ÷ revenus ; repère 15 % ou plus",
       source: "Repère usuel des conseillers en gestion de patrimoine", lien: "patrimoine/budget" },
@@ -124,6 +129,23 @@
   };
 
   /* ---------- Sécurité ---------- */
+  /* Matelas (spec cp1 § 1) : barème et textes de Plan.score (itemMatelas), appliqués au matelas disponible
+     (Calc.matelasDisponible : épargne disponible + comptes courants au-delà de la réserve) et aux dépenses de référence dep
+     ({ montant, source: "reel" | "prevu" } ou null). Plan.score reçoit une ligne « Épargne » de ce montant et des totaux de budget
+     réduits à ces dépenses : une seule copie du barème. */
+  function matelas(c, positions, scope, dep) {
+    const d = dep ? dep.montant : 0;
+    const m = Calc.matelasDisponible(positions, scope, { config: c.config, depenses: d });
+    const totaux = { revenusProfil: 0, revenusLignes: 0, revenus: 0, depensesLignes: d, mensualites: 0, depenses: d, epargne: 0, reste: 0, tauxEpargne: null, parCategorie: {} };
+    const ligne = { id: "matelas", owner: "p1", bloc: "Épargne", mode: "manual", value: m.total, status: "actif" };
+    const item = Plan.score({ positions: [ligne], budget: totaux, scope: "foyer" }).items.find(i => i.cle === "matelas");
+    const out = depuisPlan(item);
+    if (!item.aCompleter) out.texte = item.texte.replace(/\.$/, "") +
+      (m.courants > 0 ? " (dont " + eur(m.courantsAuDela) + " sur tes comptes courants au-delà d'une réserve de " + fr(m.reserveMois) + " mois)" : "") +
+      (dep.source === "reel" ? ", d'après tes dépenses réelles." : ".");
+    return out;
+  }
+
   function protection(profil, scope) {
     const pr = profil || {}, f = pr.foyer || {};
     const credit = Calc.dettes(pr, scope) > 0 || Calc.mensualites(pr, scope) > 0;
@@ -206,14 +228,14 @@
     });
   }
 
-  function adequation(ctx, positions, scope, R) {
+  function adequation(ctx, positions, scope, R) { // positions : toutes (Risque.allocationReelle écarte lui-même les comptes courants)
     const id = idProfil(ctx.risque);
     if (!id) return aCompleter("allocation", "adequation", B.adequation, "Profil de risque non renseigné.",
       "Fais ton profil de risque avec Claude (une dizaine de questions) pour comparer ton allocation à celle de ton profil.");
     const indispo = () => aCompleter("allocation", "adequation", B.adequation, "Calcul de l'écart au profil indisponible pour le moment.",
       "Rouvre Pilotage › Santé : l'écart à ton profil s'affichera dès que le calcul sera chargé.");
     if (!R || typeof R.allocationReelle !== "function" || typeof R.ecarts !== "function") return indispo();
-    if (Calc.financier(positions, scope) <= 0) return aCompleter("allocation", "adequation", B.adequation, "Aucun placement enregistré.",
+    if (Calc.financier(Calc.horsCourants(positions), scope) <= 0) return aCompleter("allocation", "adequation", B.adequation, "Aucun placement enregistré.",
       "Complète tes placements avec Claude pour les comparer à ton profil.", "patrimoine/placements");
     let hors;
     const fiche = ficheProfil(R, id);
@@ -399,19 +421,23 @@
     const d = deps || {}, dep = (k, auto) => (Object.prototype.hasOwnProperty.call(d, k) ? d[k] : auto());
     const R = dep("Risque", risqueAuto), M = dep("Marche", marcheAuto);
     const toutes = c.positions || [], positions = vivantes(toutes, scope);
+    const placements = Calc.horsCourants(positions); // famille Allocation : sans les comptes courants
     const b = c.budget;
     const lignes = Array.isArray(b) ? b : b && Array.isArray(b.lignes) ? b.lignes : [];
     const totaux = b && !Array.isArray(b) && typeof b.depenses === "number" ? b : Plan.budgetTotaux(lignes, c.profil, scope);
     const mat = Calc.matelas(c.config);
-    const depenses = totaux.depensesLignes > 0 ? totaux.depenses : mat && mat.mode === "months" && mat.depenses > 0 ? mat.depenses : 0;
+    const prevu = totaux.depensesLignes > 0 ? totaux.depenses : mat && mat.mode === "months" && mat.depenses > 0 ? mat.depenses : 0;
+    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today)) : null;
+    const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel" } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
+    const depenses = depRef ? depRef.montant : 0;
     const deja = Plan.affecterDeja(c.objectifs || [], toutes, scope);
     const plan = {};
-    Plan.score({ positions: toutes, profil: c.profil, config: c.config, budget: b, scope }).items.forEach(i => { if (DE_PLAN[i.cle]) plan[i.cle] = depuisPlan(i); });
+    Plan.score({ positions: Calc.horsCourants(toutes), profil: c.profil, config: c.config, budget: b, scope }).items.forEach(i => { if (DE_PLAN[i.cle]) plan[i.cle] = depuisPlan(i); });
 
     const criteres = [
-      plan.matelas, protection(c.profil, scope), liquiditeObjectifs(toutes, c.objectifs, deja, scope, today),
+      matelas(c, toutes, scope, depRef), protection(c.profil, scope), liquiditeObjectifs(toutes, c.objectifs, deja, scope, today),
       plan.epargne, plan.endettement, apport(c.objectifs, deja),
-      adequation(c, toutes, scope, R), plan.concentration, geographie(positions, c.classes), speculatif(c, positions, scope, R, M), devises(positions),
+      adequation(c, toutes, scope, R), plan.concentration, geographie(placements, c.classes), speculatif(c, placements, scope, R, M), devises(placements),
       frais(positions), enveloppes(c, positions, deja, today), dormant(c, positions, depenses, deja, today),
     ].filter(Boolean);
     return Object.assign(agreger(criteres), { criteres });

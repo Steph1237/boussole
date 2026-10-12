@@ -430,6 +430,7 @@ function vueDom(S0, stockage) {
   for (const f of ["calc.js", "periodes.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
   vm.runInContext(uiJs, ctx, { filename: "ui.js" });
   vm.runInContext(readFileSync("web/src/claude-prompts.js", "utf8"), ctx, { filename: "claude-prompts.js" });
+  vm.runInContext(readFileSync("web/src/comptes-view.js", "utf8"), ctx, { filename: "comptes-view.js" }); // window.ComptesView (adresses des fiches)
   vm.runInContext(js, ctx, { filename: "pilotage.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.setAttribute("id", "view-pilotage");
@@ -624,4 +625,28 @@ test("vue (DOM) : état vide orienté (Compléter avec Claude), chargement, pér
   const p = vueDom(demoS({ scope: "p2" }));
   assert.equal($(p.root, "plTitre").textContent, "Placements de Sam");
   assert.ok(p.root.querySelectorAll("[data-pl-ligne]").every(b => DEMO.positions.find(x => x.id === b.getAttribute("data-pl-ligne")).owner === "p2"));
+});
+
+/* ------------------------------------------------ CP1 : fiches de Patrimoine › Comptes ------------------------------------------------ */
+
+test("fiches : groupe « Par enveloppe » → « Ouvrir la fiche du compte » ; panneau d'une ligne → « Voir la fiche de la ligne » (liens, clavier et lecteur d'écran)", () => {
+  assert.equal(PL.lienFiche({ ligne: "a b" }), "patrimoine/comptes?ligne=a%20b");
+  const S = demoS();
+  const gs = PL.grouper(S.positions, "enveloppe", S, DEPS);
+  const h = PL.groupesHtml(gs, "enveloppe", S, UI, { today: TODAY, deps: DEPS });
+  assert.match(h, /<p class="pl-g-fiche"><a href="#patrimoine\/comptes\?enveloppe=PEA%20Camille&amp;titulaire=p1" data-goto="patrimoine\/comptes\?enveloppe=PEA%20Camille&amp;titulaire=p1">Ouvrir la fiche du compte<span class="ui-sr"> PEA Camille<\/span><\/a><\/p>/);
+  assert.doesNotMatch(PL.groupesHtml(PL.grouper(S.positions, "poche", S, DEPS), "poche", S, UI, { today: TODAY, deps: DEPS }), /pl-g-fiche/, "pas de fiche pour une poche");
+  const mixte = [POS("a", { envelope: "PEA " + XSS, owner: "p1" }), POS("b", { envelope: "PEA " + XSS, owner: "p2" })];
+  const hm = PL.groupesHtml(PL.grouper(mixte, "enveloppe", { scope: "foyer" }, DEPS), "enveloppe", { scope: "foyer" }, UI, { today: TODAY, deps: DEPS });
+  assert.match(hm, /href="#patrimoine\/comptes\?enveloppe=PEA%20%3Cimg[^"&]*"/, "deux titulaires : sans titulaire ; nom encodé");
+  assert.doesNotMatch(hm, /<img/);
+  // panneau d'une ligne (vue montée)
+  const { root, dlg } = vueDom(demoS());
+  root.querySelector('[data-pl-groupe-btn="PEA Camille"]').click();
+  assert.ok(root.querySelectorAll("a[data-goto]").some(x => x.getAttribute("data-goto") === "patrimoine/comptes?enveloppe=PEA%20Camille&titulaire=p1" && x.closest(".pl-g-fiche")), "lien du groupe déplié");
+  root.querySelector('[data-pl-ligne="pea-etf-europe"]').click();
+  const a = dlg().querySelector(".ui-panneau-lien");
+  assert.ok(a, "lien en pied du panneau");
+  assert.equal(a.getAttribute("href"), "#patrimoine/comptes?ligne=pea-etf-europe");
+  assert.match(a.textContent, /Voir la fiche de la ligne/);
 });

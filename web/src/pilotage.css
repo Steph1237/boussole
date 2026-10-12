@@ -88,6 +88,8 @@
 #view-pilotage .pl-l-part{font:500 11.5px var(--f-num);color:var(--muted);white-space:nowrap}
 #view-pilotage .pl-l-ouvrir{flex:none;color:var(--muted);font-size:18px;line-height:1}
 #view-pilotage .pl-g-corps .ui-voirplus-btn{margin:6px 6px 2px}
+#view-pilotage .pl-g-fiche{margin:8px 6px 2px;font-size:13px}
+#view-pilotage .pl-g-fiche a{color:var(--accent);font-weight:600}
 
 /* pastilles */
 #view-pilotage .pl-chip{display:inline-block;font:600 11px var(--f-body);padding:1px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap;vertical-align:1px}

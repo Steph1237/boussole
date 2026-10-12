@@ -11,6 +11,7 @@
       { id: "vue", label: "Aujourd'hui", module: "aujourdhui" },
     ] },
     { space: "patrimoine", label: "Patrimoine", short: "Patrimoine", icon: "patrimoine", primary: true, desc: "Ce que tu possèdes, ce que tu dois, ton budget et tes projets", subs: [
+      { id: "comptes", label: "Comptes", module: "comptes-view" },
       { id: "placements", label: "Placements", module: "pilotage" },
       { id: "immobilier", label: "Immobilier et crédits", module: "bilan" },
       { id: "budget", label: "Budget", module: "plan" },
@@ -60,6 +61,9 @@
     "#budget": "patrimoine/budget", "#objectifs": "patrimoine/objectifs",
   };
   const DEFAULT_ROUTE = "aujourdhui/vue";
+  /* Sous-vues dont les paramètres de lien profond restent dans l'URL (fiches en pleine page de Patrimoine › Comptes : recharger la
+     page, précédent / suivant et partager le lien rouvrent la même fiche). Ailleurs, l'URL est réécrite sans paramètres. */
+  const PARAMS_DANS_URL = ["patrimoine/comptes"];
   /* Destinations où le sélecteur de périmètre (Foyer · prénoms) a un sens. */
   const SCOPED = ["aujourdhui", "patrimoine", "pilotage"];
 
@@ -99,7 +103,20 @@
     const avec = r => (query ? Object.assign(r, { query }) : r);
     if (LEGACY_HASHES[h]) return avec(Object.assign(resolve(LEGACY_HASHES[h]), { legacy: true }));
     const r = resolve(h, null, lastSubs) || resolve(DEFAULT_ROUTE);
-    return avec(Object.assign(r, { legacy: hash !== "#" + r.space + "/" + r.sub }));
+    return avec(Object.assign(r, { legacy: hash !== hashCanonique(r, query) }));
+  }
+  /* Hash canonique d'une route : « #espace/sous-vue », suivi de « ?paramètres » pour les sous-vues de PARAMS_DANS_URL. */
+  function hashCanonique(r, query) {
+    const k = r.space + "/" + r.sub;
+    return "#" + k + (query && PARAMS_DANS_URL.includes(k) ? "?" + query : "");
+  }
+  /* Fiche de Patrimoine › Comptes (spec CP1 § 2-3) : { enveloppe, titulaire? } | { ligne } | { courant } → route avec ses paramètres
+     (« patrimoine/comptes?ligne=<id> ») ; règle unique dans comptes-view.js (ComptesView.lien). */
+  const ComptesMod = () => (typeof window !== "undefined" && window.ComptesView) ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./comptes-view.js") : null);
+  function lienCompte(cible) {
+    const CV = ComptesMod();
+    return CV && typeof CV.lien === "function" ? CV.lien(cible) : "patrimoine/comptes";
   }
   /* Focus après navigation (navigate) : sur le titre de page quand la destination change (pas pour un simple changement de
      sous-onglet, le focus reste sur l'onglet) ou quand l'élément actif a disparu (dans une vue ou un panneau masqués, ou BODY). */
@@ -187,8 +204,12 @@
         const r = resolve(target, sub, lastSubs);
         if (!r) return;
         if (!sub) retenirLien(r, separerParametres(target)[1]);
-        navigate(r, { push: true, scroll: true });
+        navigate(r, { push: true, scroll: true, query: sub ? "" : separerParametres(target)[1] });
       },
+      /* Ouvre une fiche de Patrimoine › Comptes : App.ouvrir({ enveloppe, titulaire }), App.ouvrir({ ligne }), App.ouvrir({ courant }).
+         App.lienCompte(cible) → « patrimoine/comptes?… » pour un href « #… » ou un data-goto. */
+      ouvrir(cible) { App.go(lienCompte(cible)); },
+      lienCompte,
       /* Paramètres du lien profond qui a mené à la vue active ({ entree: "<id>" }…) ; {} sinon. Lus une seule fois. */
       parametres() {
         if (!lien || lien.cle !== key(route)) return {};
@@ -211,7 +232,9 @@
       if (lien && lien.cle !== key(r)) lien = null; // paramètres d'une autre vue : oubliés
       lastSubs[r.space] = r.sub;
       try { localStorage.setItem("app-route", key(r)); } catch (e) {}
-      if (o.push && changed && location.hash !== "#" + key(r)) history.pushState(null, "", "#" + key(r));
+      /* Fiches de Comptes : chaque fiche (et le retour à la liste) est une entrée d'historique, même sans changer de sous-vue. */
+      const h = hashCanonique(r, o.query);
+      if (o.push && (changed || PARAMS_DANS_URL.includes(key(r))) && location.hash !== h) history.pushState(null, "", h);
       document.querySelectorAll("section.view[data-space]").forEach(v => { v.hidden = !(v.dataset.space === r.space && v.dataset.sub === r.sub); });
       renderChrome();
       const s = subOf(r.space, r.sub); const m = s && s.module && mounted.has(s.module) ? mods[s.module] : null;
@@ -353,6 +376,7 @@
       retenirLien(r, r.query);
       /* Lien profond vers la vue déjà affichée : navigate() rappelle show(), qui lit les paramètres. */
       if (key(r) !== key(route) || r.query) navigate({ space: r.space, sub: r.sub }, {});
+      else if (PARAMS_DANS_URL.includes(key(r))) navigate({ space: r.space, sub: r.sub }, {}); // retour d'une fiche à la liste
     }
 
     const ANON_KEY = "boussole.anonBanner.masque";
@@ -466,7 +490,8 @@
       }
       navigate(route, { focus: false });
       /* Après le montage : l'URL prend la forme canonique, sans entrée d'historique supplémentaire. */
-      if (location.hash !== "#" + key(route)) history.replaceState(null, "", "#" + key(route));
+      const canon = hashCanonique(route, fromHash && key(fromHash) === key(route) ? fromHash.query : "");
+      if (location.hash !== canon) history.replaceState(null, "", canon);
       window.addEventListener("hashchange", onHash);
       window.addEventListener("popstate", onHash);
       header(Store.get());
@@ -478,5 +503,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation, retourBanque };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, PARAMS_DANS_URL, hashCanonique, lienCompte, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation, retourBanque };
 })();

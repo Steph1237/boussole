@@ -8,7 +8,7 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    sensible, routine-etat, banque-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
@@ -42,6 +42,9 @@
    non rattaché et un ignoré, 6 mois de totaux). Store.banque.synchroniser(id) → { ok: true, rapport } (date de synchronisation mise à jour en mémoire). Store.banque.connecter() → { erreur: « Indisponible en démonstration… » } (aucune page Powens en
    démo), de même pour gerer(id) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
    de store-supabase.js (BanqueEtat.normRattachement).
+   Store.cours(isins, depuis) → Promise<{ <isin>: [{ date, cloture }] }> : cours de clôture quotidiens (jours ouvrés, du plus ancien au plus
+   récent, depuis `depuis` jusqu'à la veille du cours du jour), générés de façon déterministe à partir du prix courant de la ligne de démo
+   (marche aléatoire reproductible propre à chaque ISIN, qui finit au cours du jour), 5 ans au plus ; ISIN inconnu ou sans cours : absent.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
    byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
@@ -634,6 +637,42 @@
     }, DELAI_CONNEXION_DEMO);
   }
 
+  /* ---------- cours historiques (CP1 § 4) : séries de démonstration, déterministes ---------- */
+  const SERIES = {};
+  /* Graine 32 bits d'un texte, puis générateur mulberry32 : la même série à chaque chargement. */
+  const graine = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const mulberry = a => () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const DAY_MS = 864e5;
+  /* 5 ans de jours ouvrés avant le cours du jour (exclu), en remontant le temps depuis le prix courant : volatilité et tendance selon
+     la ligne (crypto, action, fonds), arrondi au centime. */
+  function serieDemo(p) {
+    const fin = String(p.priceDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const crypto = /^X-/.test(p.isin) || p.bloc === "Crypto", fonds = /ETF|fonds/i.test(p.name || "") || /^(IE|LU)/.test(p.isin);
+    const vol = crypto ? 0.032 : fonds ? 0.009 : 0.014, tendance = crypto ? 0.0009 : fonds ? 0.00035 : 0.0003;
+    const alea = mulberry(graine(String(p.isin))), normale = () => Math.sqrt(-2 * Math.log(alea() || 1e-9)) * Math.cos(2 * Math.PI * alea());
+    const out = []; let prix = +p.price, t = Date.parse(fin + "T12:00:00Z");
+    for (let n = 0; n < 1305; ) {
+      t -= DAY_MS;
+      const j = new Date(t).getUTCDay();
+      if (j === 0 || j === 6) continue;
+      prix = prix / Math.exp(tendance + vol * normale());
+      out.push({ date: new Date(t).toISOString().slice(0, 10), cloture: Math.round(prix * 100) / 100 });
+      n++;
+    }
+    return out.reverse();
+  }
+  async function cours(isins, depuis) {
+    await tick();
+    const d0 = String(depuis || "").slice(0, 10), out = {};
+    (Array.isArray(isins) ? isins : []).forEach(i => {
+      const isin = String(i || ""), p = C.positions.find(x => x && x.isin === isin && x.mode === "market" && x.price != null);
+      if (!p) return;
+      if (!SERIES[isin]) SERIES[isin] = serieDemo(p);
+      out[isin] = clone(SERIES[isin].filter(c => !d0 || c.date >= d0));
+    });
+    return out;
+  }
+
   const Store = {
     mode: "demo",
     db,
@@ -655,6 +694,7 @@
     reload() { publish(); return Promise.resolve(); },
     markOnboarded() { return Promise.resolve(); },
     surveillerConnexions,
+    cours,
     banque,
   };
   window.Store = Store;

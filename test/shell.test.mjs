@@ -39,11 +39,12 @@ test("registre : 4 destinations primaires dans l'ordre, puis Compte hors barre",
 test("registre : sous-vues et modules de chaque destination selon le plan", () => {
   const subs = space => SPACES.find(s => s.space === space).subs.map(s => [s.id, s.module]);
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
-  assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
+  assert.deepEqual(subs("patrimoine"), [["comptes", "comptes-view"], ["placements", "pilotage"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
   assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["projections", null], ["scenarios", "simu"]]);
   assert.deepEqual(subs("agent"), [["journal", "journal-view"], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["expertises", "expertises-view"], ["connexion", "claude-guide"]]);
   assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"]]);
   const lab = (space, id) => SPACES.find(s => s.space === space).subs.find(s => s.id === id).label;
+  assert.equal(lab("patrimoine", "comptes"), "Comptes", "Comptes en premier (spec CP1 § 2)");
   assert.equal(lab("patrimoine", "immobilier"), "Immobilier et crédits");
   assert.equal(lab("patrimoine", "budget"), "Budget");
   assert.equal(lab("patrimoine", "objectifs"), "Objectifs");
@@ -108,7 +109,7 @@ test("correspondance : anciens onglets (App.go, data-goto-tab) et anciens hash d
   for (const [h, r] of Object.entries(LEGACY_HASHES)) assert.ok(routes.includes(r), h + " → " + r);
   // « pilotage » et « patrimoine » seuls (App.go) désignent les nouvelles destinations ; seul le hash nu garde l'ancien sens.
   assert.deepEqual(resolve("pilotage"), { space: "pilotage", sub: "sante" });
-  assert.deepEqual(resolve("patrimoine"), { space: "patrimoine", sub: "placements" });
+  assert.deepEqual(resolve("patrimoine"), { space: "patrimoine", sub: "comptes" }, "Comptes, première sous-vue de Patrimoine");
 });
 
 test("routage : forme canonique, sous-vue par défaut, route inconnue → Aujourd'hui", () => {
@@ -167,7 +168,7 @@ test("coque : états « bientôt » orientés vers l'agent (Projections) ; le Jo
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "expertises-view", "fiches-view", "journal-view", "memoire-view", "objectifs-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "comptes-view", "expertises-view", "fiches-view", "journal-view", "memoire-view", "objectifs-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   assert.equal(mods[0], "aujourdhui", "aujourdhui en tête de MODULES");
   assert.ok(mods.includes("actions"), "le module Actions reste chargé (window.Actions)");
@@ -175,7 +176,7 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
     assert.ok(mods.includes(m), `${m} absent de MODULES (build.mjs)`);
   }
-  for (const [m, space, sub] of [["fiches-view", "agent", "fiches"], ["expertises-view", "agent", "expertises"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"], ["objectifs-view", "patrimoine", "objectifs"]])
+  for (const [m, space, sub] of [["comptes-view", "patrimoine", "comptes"], ["fiches-view", "agent", "fiches"], ["expertises-view", "agent", "expertises"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"], ["objectifs-view", "patrimoine", "objectifs"]])
     assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
   assert.match(shell, /<section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" hidden>\s*<!--@aujourdhui-->\s*<\/section>/);
   const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
@@ -387,4 +388,42 @@ test("lien profond : popstate puis hashchange de la même navigation → traité
   assert.match(app, /function onHash\(e\) \{\s*(\/\*[\s\S]*?\*\/\s*)?if \(doublon\(e, location\.href\)\) \{ e\.stopImmediatePropagation\(\); return; \}/);
   assert.ok(app.indexOf("doublon(e, location.href)") < app.indexOf("if (r.legacy) history.replaceState"), "URL retenue avant le replaceState");
   assert.match(app, /window\.addEventListener\("hashchange", onHash\);\s*window\.addEventListener\("popstate", onHash\);/);
+});
+
+/* ------------------------------------------------ CP1 : Patrimoine › Comptes ------------------------------------------------ */
+
+test("Comptes : première sous-vue de Patrimoine ; ses liens profonds gardent leurs paramètres dans l'URL (fiches en pleine page)", () => {
+  const { PARAMS_DANS_URL, hashCanonique } = require("../web/src/app.js");
+  assert.deepEqual(PARAMS_DANS_URL, ["patrimoine/comptes"]);
+  assert.deepEqual(resolveHash("#patrimoine/comptes?ligne=pea-etf-monde"), { space: "patrimoine", sub: "comptes", legacy: false, query: "ligne=pea-etf-monde" },
+    "forme canonique : l'URL n'est pas réécrite (recharger, précédent / suivant, partager le lien)");
+  assert.deepEqual(resolveHash("#patrimoine/comptes?enveloppe=PEA%20Camille&titulaire=p1").query, "enveloppe=PEA%20Camille&titulaire=p1");
+  assert.equal(resolveHash("#patrimoine/comptes").legacy, false);
+  assert.equal(resolveHash("#patrimoine").legacy, true, "#patrimoine nu garde son ancien sens (Rang)");
+  assert.deepEqual(resolveHash("#agent/journal?entree=abc"), { space: "agent", sub: "journal", legacy: true, query: "entree=abc" }, "ailleurs, URL réécrite sans paramètres");
+  assert.equal(hashCanonique({ space: "patrimoine", sub: "comptes" }, "ligne=x"), "#patrimoine/comptes?ligne=x");
+  assert.equal(hashCanonique({ space: "agent", sub: "journal" }, "entree=x"), "#agent/journal");
+  assert.equal(hashCanonique({ space: "patrimoine", sub: "comptes" }, ""), "#patrimoine/comptes");
+  // la coque : App.go garde la requête, chaque fiche est une entrée d'historique, le retour à la liste rappelle show(), le démarrage garde le lien
+  assert.match(app, /navigate\(r, \{ push: true, scroll: true, query: sub \? "" : separerParametres\(target\)\[1\] \}\)/);
+  assert.match(app, /if \(o\.push && \(changed \|\| PARAMS_DANS_URL\.includes\(key\(r\)\)\) && location\.hash !== h\) history\.pushState\(null, "", h\);/);
+  assert.match(app, /else if \(PARAMS_DANS_URL\.includes\(key\(r\)\)\) navigate\(\{ space: r\.space, sub: r\.sub \}, \{\}\);/);
+  assert.match(app, /const canon = hashCanonique\(route, fromHash && key\(fromHash\) === key\(route\) \? fromHash\.query : ""\);/);
+});
+
+test("App.ouvrir / App.lienCompte : { enveloppe, titulaire } | { ligne } | { courant } → patrimoine/comptes?…", () => {
+  const { lienCompte } = require("../web/src/app.js");
+  assert.equal(lienCompte({ enveloppe: "PEA Camille", titulaire: "p1" }), "patrimoine/comptes?enveloppe=PEA%20Camille&titulaire=p1");
+  assert.equal(lienCompte({ enveloppe: "Assurance vie & co" }), "patrimoine/comptes?enveloppe=Assurance%20vie%20%26%20co");
+  assert.equal(lienCompte({ enveloppe: "PEA", titulaire: "p3" }), "patrimoine/comptes?enveloppe=PEA", "titulaire inconnu : ignoré");
+  assert.equal(lienCompte({ ligne: "pea-etf-monde" }), "patrimoine/comptes?ligne=pea-etf-monde");
+  assert.equal(lienCompte({ courant: "compte-commun" }), "patrimoine/comptes?courant=compte-commun");
+  assert.equal(lienCompte({}), "patrimoine/comptes");
+  assert.equal(lienCompte(null), "patrimoine/comptes");
+  for (const c of [{ ligne: "a b" }, { courant: "x/y" }, { enveloppe: "PEA Camille", titulaire: "p2" }]) {
+    const [route, query] = lienCompte(c).split("?");
+    assert.deepEqual(resolve(route), { space: "patrimoine", sub: "comptes" });
+    assert.equal(resolveHash("#" + route + "?" + query).legacy, false);
+  }
+  assert.match(app, /ouvrir\(cible\) \{ App\.go\(lienCompte\(cible\)\); \},/);
 });

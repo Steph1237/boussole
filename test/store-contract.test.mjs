@@ -75,7 +75,7 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.equal(S.positions.length, 12);
   S.positions.forEach(p => assert.ok(["p1", "p2"].includes(p.owner), `owner canonique pour ${p.id} : ${p.owner}`));
   const POS_KEYS = ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "valueDate", "status", "hypothesis", "qtyEstimated", "note",
-    "ter", "zone", "devise", "annoteSource", "annoteLe"];
+    "ter", "zone", "devise", "annoteSource", "annoteLe", "sourceAuto", "sourceAutoLe"];
   S.positions.forEach(p => assert.deepEqual(Object.keys(p).sort(), [...POS_KEYS].sort(), `forme de la position ${p.id}`));
   assert.ok(S.positions.some(p => p.status === "à recevoir"), "une ligne à recevoir");
   // snapshots / config / profil / status aux clés attendues par pilotage.js, reel.js, profil.js
@@ -565,7 +565,10 @@ function storeSupabase(reponses) {
     const b = {
       select: c => { f.select = c; return b; },
       eq: (k, v) => { f.eq.push([k, v]); return b; },
-      order: (k, o) => { f.order = [k, o]; return b; },
+      order: (k, o) => { f.order = [k, o]; (f.ordres = f.ordres || []).push(k); return b; },
+      in: (k, v) => { f.in = [k, v]; return b; },
+      gte: (k, v) => { f.gte = [k, v]; return b; },
+      range: (de, a) => { f.range = [de, a]; return b; },
       maybeSingle: () => { f.unique = true; return b; },
       then: (ok, ko) => { appels.push(f); const r = reponses[table]; return Promise.resolve(typeof r === "function" ? r(f) : r || { data: null, error: null }).then(ok, ko); },
     };
@@ -937,4 +940,72 @@ test("lecture seule : les deux stores n'écrivent plus que les données de contr
   assert.match(src("banque-etat.js"), /const vide = \{ position_id: null, enveloppe: null, titulaire: null, credit_id: null, ignore: false \};/);
   assert.doesNotMatch(sup, /rpc\("request_instrument"/, "plus de demande d'instrument (ajout de placement)");
   assert.deepEqual([...sup.matchAll(/rpc\("(\w+)"/g)].map(m => m[1]).sort(), ["appliquer_propositions", "refuser_propositions"]);
+});
+
+/* ------------------------------------------------ cours historiques (CP1 § 4) ------------------------------------------------ */
+
+test("démo : Store.cours(isins, depuis) → séries déterministes qui finissent au cours du jour, jours ouvrés, depuis la date demandée", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  assert.equal(typeof ctx.Store.cours, "function");
+  const cotees = S.positions.filter(p => p.mode === "market" && p.isin && p.price != null);
+  const isins = cotees.map(p => p.isin);
+  const depuis = new Date(Date.now() - 5 * 365.25 * 864e5).toISOString().slice(0, 10);
+  const r = J(await ctx.Store.cours(isins.concat(["INCONNU", null]), depuis));
+  assert.deepEqual(Object.keys(r).sort(), [...isins].sort(), "un ISIN inconnu ou vide est absent");
+  for (const p of cotees) {
+    const h = r[p.isin];
+    assert.ok(h.length > 1200 && h.length <= 1305, p.isin + " : environ 5 ans de jours ouvrés (" + h.length + ")");
+    assert.ok(h.every((c, i) => /^\d{4}-\d{2}-\d{2}$/.test(c.date) && c.cloture > 0 && (!i || h[i - 1].date < c.date)), p.isin + " : triées, clôtures positives");
+    assert.ok(h.every(c => c.date >= depuis && c.date < p.priceDate), p.isin + " : depuis la date demandée, avant le cours du jour");
+    assert.ok(h.every(c => ![0, 6].includes(new Date(c.date + "T12:00:00Z").getUTCDay())), p.isin + " : jours ouvrés");
+    const fin = h[h.length - 1].cloture;
+    assert.ok(Math.abs(fin / p.price - 1) < 0.2, p.isin + " : la série rejoint le cours du jour (" + fin + " / " + p.price + ")");
+  }
+  const encore = J(await ctx.Store.cours([isins[0]], depuis));
+  assert.deepEqual(encore[isins[0]], r[isins[0]], "déterministe");
+  const autre = browser(); await whenReady(autre);
+  assert.deepEqual(J(await autre.Store.cours([isins[0]], depuis))[isins[0]], r[isins[0]], "même série à chaque chargement");
+  const mois = new Date(Date.now() - 31 * 864e5).toISOString().slice(0, 10);
+  const court = J(await ctx.Store.cours([isins[0]], mois))[isins[0]];
+  assert.ok(court.length >= 19 && court.length <= 23 && court[0].date >= mois, "depuis 1 mois : une vingtaine de jours");
+  assert.deepEqual(J(await ctx.Store.cours([], depuis)), {});
+  assert.deepEqual(J(await ctx.Store.cours(undefined, depuis)), {});
+  assert.match(src("store-demo.js"), /Contrat : window\.Store = \{[^\n]*cours\(isins, depuis\)/, "en-tête du contrat");
+});
+
+test("store-supabase.js (exécuté, faux client) : Store.cours lit la table cours (ISIN, depuis, pages de 1 000) ; table absente → {} sans erreur", async () => {
+  const lignes = [];
+  for (let i = 0; i < 1500; i++) lignes.push({ isin: "FR0000120073", date: new Date(Date.UTC(2022, 0, 3) + i * 864e5).toISOString().slice(0, 10), cloture: String(100 + i / 10) });
+  lignes.push({ isin: "IE00B4L5Y983", date: "2026-10-09", cloture: 104.2 }, { isin: "IE00B4L5Y983", date: "2026-10-08", cloture: "103.9" }, { isin: "IE00B4L5Y983", date: "2026-10-07", cloture: null });
+  const { ctx, appels } = storeSupabase({ cours: f => ({ data: lignes.filter(l => f.in[1].includes(l.isin)).slice(f.range[0], f.range[1] + 1), error: null }) });
+  await wait(0);
+  const r = J(await ctx.Store.cours(["FR0000120073", "IE00B4L5Y983", "FR0000120073", "", null], "2022-01-01"));
+  assert.equal(r.FR0000120073.length, 1500, "deux pages lues");
+  assert.deepEqual(r.FR0000120073[0], { date: "2022-01-03", cloture: 100 }, "clôture numérique");
+  assert.deepEqual(r.IE00B4L5Y983, [{ date: "2026-10-08", cloture: 103.9 }, { date: "2026-10-09", cloture: 104.2 }], "triés ; clôture absente ignorée");
+  const lus = appels.filter(a => a.table === "cours");
+  assert.equal(lus.length, 2);
+  assert.deepEqual(J(lus[0].in), ["isin", ["FR0000120073", "IE00B4L5Y983"]], "ISIN dédoublonnés, vides retirés");
+  assert.deepEqual(J(lus[0].gte), ["date", "2022-01-01"]);
+  assert.equal(lus[0].select, "isin, date, cloture");
+  assert.deepEqual(J(lus.map(a => a.range)), [[0, 999], [1000, 1999]]);
+  assert.deepEqual(J(lus[0].ordres), ["isin", "date"]);
+  // sans ISIN : aucune requête
+  assert.deepEqual(J(await ctx.Store.cours([], "2022-01-01")), {});
+  assert.equal(appels.filter(a => a.table === "cours").length, 2);
+  // table absente (migration 0023 pas encore appliquée) : {} et avertissement, puis plus aucune requête
+  const b = storeSupabase({ cours: { data: null, error: { code: "42P01", message: "relation \"public.cours\" does not exist" } } });
+  await wait(0);
+  assert.deepEqual(J(await b.ctx.Store.cours(["FR0000120073"], "2022-01-01")), {});
+  assert.deepEqual(J(await b.ctx.Store.cours(["FR0000120073"], "2022-01-01")), {});
+  assert.equal(b.appels.filter(a => a.table === "cours").length, 1, "table absente : on n'insiste pas");
+  assert.ok(b.avertissements.some(m => /cours historiques/.test(m)));
+  // autre échec (réseau) : {} sans bloquer, nouvelle tentative possible
+  const c = storeSupabase({ cours: () => { throw new Error("réseau"); } });
+  await wait(0);
+  assert.deepEqual(J(await c.ctx.Store.cours(["FR0000120073"], "2022-01-01")), {});
+  const sup = src("store-supabase.js");
+  assert.match(sup, /Contrat : window\.Store = \{[^\n]*cours\(isins, depuis\)/, "en-tête du contrat");
+  assert.match(sup, /sourceAuto: r\.source_auto \|\| null, sourceAutoLe: r\.source_auto_le \|\| null/, "positions : source de synchronisation");
 });

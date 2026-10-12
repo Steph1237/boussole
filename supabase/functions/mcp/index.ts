@@ -699,6 +699,72 @@ function liquidite(envelope: unknown): string {
   return "jours";
 }
 
+/** Famille d'une ligne (Calc.famille, spec cp1 § 1) : courant (bloc ou enveloppe « compte(s) courant(s) »), investissement
+    (enveloppe PEA, PEA-PME, compte-titres, assurance-vie, capitalisation, PER, PEE / épargne salariale, crypto, SCPI / OPCI / SCI :
+    l'enveloppe prime sur la poche), epargne (livrets, compte à terme, compte épargne, monétaire, cash) ; repli : classe de la poche,
+    monétaire → epargne, sinon investissement. Les dettes viennent des biens et des crédits. Parité testée (test/mcp.test.mjs). */
+const RE_COURANT = /\bcomptes? courants?\b/;
+const RE_INVEST = /\bpea\b|\bcto\b|\bcomptes?[- ]?titres?\b|assurance.?vie|\bav\b|capitalisation|\bper\b|\bperin\b|\bperp\b|\bperco\b|\bpee\b|epargne salariale|crypto|binance|\bscpi\b|\bopci\b|\bsci\b/;
+const RE_EPARGNE = /livret|\bldds\b|\blep\b|\bcel\b|\bpel\b|\bcsl\b|compte a terme|epargne|monetaire|\bcash\b|especes/;
+function famille(p: any, s?: Surcharge): string {
+  const x = p || {}, env = sansAccent(x.envelope), bloc = sansAccent(x.bloc);
+  if (RE_COURANT.test(bloc) || RE_COURANT.test(env)) return "courant";
+  if (RE_INVEST.test(env)) return "investissement";
+  if (RE_EPARGNE.test(env)) return "epargne";
+  return classePoche(x.bloc, s) === "monetaire" ? "epargne" : "investissement";
+}
+const estCourant = (p: any) => famille(p) === "courant";
+/** Lignes hors comptes courants : base de l'allocation, du risque et de la diversification (le patrimoine net garde tout). */
+const horsCourants = (positions: any[]) => (positions || []).filter((p) => p && !estCourant(p));
+
+/* Budget réel des comptes courants (Calc.budgetReel) : banque = { comptes, mois } lus en SQL (banque_comptes, banque_mois ;
+   compte_id facultatif : mois agrégés par compte). Comptes courants suivis : type courant, non ignorés, pas en double, actifs. */
+const doublonCompte = (c: any) => (c.doublonDe !== undefined ? c.doublonDe : c.doublon_de);
+function comptesCourants(banque: any): any[] {
+  const L = banque && Array.isArray(banque.comptes) ? banque.comptes : [];
+  return L.filter((c: any) => c && c.type === "courant" && c.ignore !== true && doublonCompte(c) == null && c.actif !== false);
+}
+const idCompte = (r: any) => (r.compteId != null ? r.compteId : r.compte_id != null ? r.compte_id : null);
+function moisCourants(banque: any): any[] {
+  const L = (banque && Array.isArray(banque.mois) ? banque.mois : []).filter(Boolean);
+  if (!L.some((r: any) => idCompte(r) != null)) return L;
+  const ids = new Set(comptesCourants(banque).map((c) => String(c.id)));
+  return L.filter((r: any) => idCompte(r) != null && ids.has(String(idCompte(r))));
+}
+const moisIso = (d: unknown) => { const s = String(d ?? ""); return /^\d{4}-\d{2}/.test(s) ? s.slice(0, 7) : null; };
+const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
+/** Moyenne des nb (3) derniers mois complets : revenus, dépenses (toutes catégories hors revenus, épargne et virements internes),
+    épargne, taux d'épargne réel = épargne ÷ revenus ; null sans mois complet. */
+function budgetReel(banque: any, auj: string, nb = 3) {
+  if (!banque || banque.actif === false) return null;
+  const k = Number.isInteger(nb) && nb > 0 ? nb : 3;
+  const courant = moisIso(auj) as string;
+  const L = moisCourants(banque).filter((r: any) => moisIso(r.mois) && (moisIso(r.mois) as string) < courant && !RE_INTERNE.test(sansAccent(r.categorie)));
+  const retenus = [...new Set(L.map((r: any) => moisIso(r.mois) as string))].sort().slice(-k);
+  if (!retenus.length) return null;
+  let rev = 0, dep = 0, ep = 0;
+  L.filter((r: any) => retenus.includes(moisIso(r.mois) as string)).forEach((r: any) => {
+    const e = num(r.entrees), so = num(r.sorties), c = sansAccent(r.categorie);
+    if (c === "revenus") rev += e - so; else if (c === "epargne") ep += so - e; else dep += so - e;
+  });
+  const m = retenus.length, revenus = pos(rev) / m, depenses = pos(dep) / m, epargne = pos(ep) / m;
+  return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null };
+}
+/** Réserve laissée sur les comptes courants, en mois de dépenses : config.cushion.reserve_mois (facultatif), 1 par défaut. */
+function reserveMois(config: any): number {
+  const c = config?.cushion, v = c && typeof c === "object" ? c.reserve_mois : undefined;
+  return v !== null && v !== undefined && v !== "" && isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 1;
+}
+/** Matelas = épargne disponible + max(0, soldes courants − réserve), réserve = reserveMois × dépenses mensuelles (Calc.matelasDisponible). */
+function matelasDisponible(positions: any[], scope: string, o: { config?: any; depenses?: number }) {
+  const L = (positions || []).filter((p) => p && inScope(p.owner, scope) && counted(p));
+  const epargne = sum(L.filter((p) => famille(p) === "epargne"), val);
+  const courants = sum(L.filter(estCourant), val);
+  const rm = reserveMois(o.config), depenses = pos(o.depenses), reserve = rm * depenses;
+  const courantsAuDela = Math.max(0, courants - reserve);
+  return { epargne, courants, reserveMois: rm, depenses, reserve, courantsAuDela, total: epargne + courantsAuDela };
+}
+
 /** Statistiques par classe (marche.js) : volatilité annuelle et pire baisse historique, en %. */
 const CLASSES_RISQUE: Record<string, { label: string; volatilite: number; pireBaisse: number }> = {
   actions: { label: "Actions (monde développé)", volatilite: 15, pireBaisse: -55 },
@@ -784,10 +850,11 @@ const GROUPES_LABELS: Record<string, string> = { actions: "Actions", obligations
 const GROUPE_DE: Record<string, string> = { actions: "actions", small_caps: "actions", emergents: "actions", obligations: "obligations", monetaire: "securise",
   fonds_euros: "securise", immobilier: "immobilier", crypto: "speculatif", levier: "speculatif", or: "diversifiants", autres: "diversifiants" };
 
-/** Montants par classe de risque, lignes comptées du périmètre (financier seul : sans résidence ni biens physiques). */
+/** Montants par classe de risque, lignes comptées du périmètre (financier seul : sans résidence ni biens physiques), hors comptes
+    courants (spec cp1 § 1 : ils comptent dans le patrimoine net, pas dans l'allocation ni le risque). */
 function montantsParClasse(positions: any[], scope: string, s: Surcharge): Record<string, number> {
   const out: Record<string, number> = {};
-  positions.filter((p) => inScope(p.owner, scope) && counted(p)).forEach((p) => {
+  horsCourants(positions).filter((p) => inScope(p.owner, scope) && counted(p)).forEach((p) => {
     const k = classeRisque(p, s);
     out[k] = (out[k] || 0) + val(p);
   });
@@ -896,7 +963,7 @@ const critere = (famille: string, cle: string, b: Base, champs: Partial<Critere>
 const aCompleter = (famille: string, cle: string, b: Base, texte: string, piste: string) => critere(famille, cle, b, { aCompleter: true, texte, piste });
 
 const DE_PLAN: Record<string, { famille: string; regle: string; source: string }> = {
-  matelas: { famille: "securite", regle: "Matelas = épargne disponible ÷ dépenses mensuelles ; repère 3 à 6 mois", source: "Repère usuel des conseillers en gestion de patrimoine" },
+  matelas: { famille: "securite", regle: "Matelas = (épargne disponible + comptes courants au-delà de la réserve) ÷ dépenses mensuelles ; réserve = 1 mois de dépenses par défaut (réglable) ; dépenses réelles des comptes courants si connues, sinon budget prévu ; repère 3 à 6 mois", source: "Repère usuel des conseillers en gestion de patrimoine" },
   epargne: { famille: "effort", regle: "Taux d'épargne = (épargne prévue + reste du mois) ÷ revenus ; repère 15 % ou plus", source: "Repère usuel des conseillers en gestion de patrimoine" },
   endettement: { famille: "effort", regle: "Endettement = mensualités de crédit ÷ revenus ; plafond 35 %", source: "HCSF, décision D-HCSF-2021-7" },
   concentration: { famille: "allocation", regle: "Poids de la plus grosse ligne dans le financier ; repère 20 % au plus et au moins 3 poches",
@@ -938,7 +1005,8 @@ const terDe = (p: any) => p.instrument?.ter ?? null;
 const zoneDe = (p: any) => p.instrument?.zone ?? null;
 const deviseDe = (p: any) => p.instrument?.devise ?? null;
 
-type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string };
+/** banque (facultatif) : { comptes, mois } de banque_comptes / banque_mois, pour le budget réel des comptes courants (matelas, argent dormant). */
+type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string; banque?: any };
 
 function objectifsCourts(objectifs: any[], deja: Record<string, number>, ref: string) {
   return objectifs.filter((o) => o && dateCible(o) && moisEntre(ref, dateCible(o)!) <= HORIZON_COURT)
@@ -1157,16 +1225,31 @@ function bonnesPratiques(c: ContexteBP) {
   const { d, scope } = c;
   const totaux = budgetTotaux(d, scope);
   const cu = d.config?.cushion;
-  const depenses = totaux.depensesLignes > 0 ? totaux.depenses : cu && typeof cu === "object" && cu.mode === "months" && pos(cu.depenses) > 0 ? pos(cu.depenses) : 0;
+  const prevu = totaux.depensesLignes > 0 ? totaux.depenses : cu && typeof cu === "object" && cu.mode === "months" && pos(cu.depenses) > 0 ? pos(cu.depenses) : 0;
+  /* Dépenses de référence (matelas, argent dormant) : budget réel des comptes courants (foyer seulement), sinon budget prévu. */
+  const reel = scope === "foyer" ? budgetReel(c.banque, c.ref) : null;
+  const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel" } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
+  const depenses = depRef ? depRef.montant : 0;
   const deja = affecterDeja(c.objectifs, d.positions, scope);
   const vivantes = d.positions.filter((p) => inScope(p.owner, scope) && counted(p));
-  const financier = sum(vivantes, val);
+  /* Famille Allocation (adéquation, diversification, géographie, spéculatif, devises) : sans les comptes courants. */
+  const placements = horsCourants(vivantes);
+  const financierPlacements = sum(placements, val);
   const plan = (i: Item): Critere => ({ cle: i.cle, titre: i.titre, cible: i.cible, valeur: i.valeur, texte: i.texte, piste: i.piste, aCompleter: i.aCompleter,
     points: i.aCompleter ? 0 : Math.round(i.points ?? 0), sur: 20, ...DE_PLAN[i.cle] });
+  /* Matelas (Pratiques : barème et textes d'itemMatelas appliqués au matelas disponible et aux dépenses de référence). */
+  const mat = matelasDisponible(d.positions, scope, { config: d.config, depenses });
+  const itemMat = itemMatelas({ ...d, config: null, positions: [{ owner: "p1", bloc: "Épargne", mode: "manual", value: mat.total, status: "actif" }] }, "foyer",
+    { ...totaux, depensesLignes: depenses, depenses });
+  const critMatelas = plan(itemMat);
+  if (!itemMat.aCompleter && depRef) critMatelas.texte = itemMat.texte.replace(/\.$/, "") +
+    (mat.courants > 0 ? " (dont " + eurP(mat.courantsAuDela) + " sur tes comptes courants au-delà d'une réserve de " + frP(mat.reserveMois) + " mois)" : "") +
+    (depRef.source === "reel" ? ", d'après tes dépenses réelles." : ".");
   const criteres = [
-    plan(itemMatelas(d, scope, totaux)), bpProtection(c), bpLiquidite(c, deja),
+    critMatelas, bpProtection(c), bpLiquidite(c, deja),
     plan(itemEpargne(totaux)), plan(itemEndettement(totaux)), bpApport(c, deja),
-    bpAdequation(c, financier), plan(itemConcentration(d, scope)), bpGeographie(vivantes, c.classes), bpSpeculatif(c, vivantes, financier), bpDevises(vivantes),
+    bpAdequation(c, financierPlacements), plan(itemConcentration({ ...d, positions: horsCourants(d.positions) }, scope)), bpGeographie(placements, c.classes),
+    bpSpeculatif(c, placements, financierPlacements), bpDevises(placements),
     bpFrais(vivantes), bpEnveloppes(c, vivantes, deja), bpDormant(c, vivantes, depenses, deja),
   ].filter(Boolean) as Critere[];
   const familles = FAMILLES.map((f) => {

@@ -388,3 +388,40 @@ describe("liens et libellés vers Patrimoine › Objectifs", () => {
     assert.doesNotMatch(readFileSync("web/src/pratiques.js", "utf8"), /Budget et objectifs/);
   });
 });
+
+describe("comptes courants (spec cp1 § 1)", () => {
+  const C = (value, extra) => P("Comptes courants", value, { envelope: "Banque", name: "Compte courant", ...extra });
+  test("matelas = épargne disponible + comptes courants au-delà d'une réserve d'un mois de dépenses", () => {
+    const c = crit(ev({ positions: [P("Épargne", 6000), C(5000), M("Monde", 20000, { envelope: "PEA" })], budget: lignes(2000) }), "matelas");
+    assert.equal(c.valeur, 4.5);                                       // (6 000 + 5 000 − 2 000) ÷ 2 000
+    assert.equal(c.points, 20);
+    assert.match(c.texte, /^4,5 mois de dépenses de côté/);
+    assert.match(c.texte, /3 000 € sur tes comptes courants au-delà d'une réserve de 1 mois/);
+    assert.match(c.regle, /comptes courants au-delà de la réserve/);
+    const r2 = crit(ev({ positions: [P("Épargne", 6000), C(5000)], budget: lignes(2000), config: { cushion: { min: 1000, reserve_mois: 2 } } }), "matelas");
+    assert.equal(r2.valeur, 3.5, "réserve réglable : config.cushion.reserve_mois");
+    assert.equal(crit(ev({ positions: [P("Épargne", 6000), C(1500)], budget: lignes(2000) }), "matelas").valeur, 3, "courants sous la réserve : rien en plus");
+  });
+  test("matelas : dépenses du budget réel (comptes connectés) prioritaires sur le budget prévu, foyer seulement", () => {
+    const banque = { actif: true, comptes: [], mois: [
+      { mois: "2026-07-01", categorie: "divers", entrees: 0, sorties: 3000 }, { mois: "2026-08-01", categorie: "divers", entrees: 0, sorties: 3000 },
+      { mois: "2026-09-01", categorie: "divers", entrees: 0, sorties: 3000 }, { mois: "2026-09-01", categorie: "virement_interne", entrees: 0, sorties: 9000 }] };
+    const ctx = { positions: [P("Épargne", 12000)], budget: lignes(2000), banque };
+    const c = crit(ev(ctx), "matelas");
+    assert.equal(c.valeur, 4);
+    assert.match(c.texte, /d'après tes dépenses réelles/);
+    assert.equal(crit(ev({ ...ctx, scope: "p1" }), "matelas").valeur, 12, "vue d'une personne : budget prévu (ligne commune comptée pour moitié)");
+    assert.equal(crit(ev({ positions: [P("Épargne", 12000)], banque }), "matelas").aCompleter, false, "budget vide mais réel connu");
+    assert.equal(crit(ev(ctx), "dormant").valeur, 4, "argent dormant : mêmes dépenses de référence");
+  });
+  test("diversification, spéculatif, devises et adéquation sans les comptes courants", () => {
+    const positions = [M("Monde", 3000, { envelope: "PEA" }), M("Europe", 3000, { envelope: "PEA" }), M("Crypto", 400, { envelope: "Crypto" }), C(50000)];
+    const r = ev({ positions, budget: lignes(2000) });
+    assert.equal(Math.round(crit(r, "concentration").valeur * 1000) / 1000, Math.round(3000 / 6400 * 1000) / 1000, "le compte courant n'est pas « la plus grosse ligne »");
+    assert.equal(crit(r, "speculatif").valeur, 400 / 6400);
+    const seul = ev({ positions: [C(5000)], risque: { profil: "equilibre" } }, { Risque: require("../web/src/risque.js"), Marche: null });
+    assert.equal(crit(seul, "adequation").aCompleter, true);
+    assert.equal(crit(seul, "speculatif").aCompleter, true);
+    assert.equal(crit(seul, "concentration").aCompleter, true);
+  });
+});

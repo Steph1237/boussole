@@ -135,7 +135,7 @@ test("banque.ts : 2 outils en lecture seule, catégories du contrat, états à r
   const { T } = banqueSrv(dbBanque());
   assert.deepEqual(Object.keys(T).sort(), ["lire_banque", "operations_recentes"]);
   for (const n of Object.keys(T)) assert.equal(T[n].def.annotations.readOnlyHint, true, n + " en lecture seule");
-  assert.deepEqual(J(B.CATEGORIES_BANQUE), ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne"]);
+  assert.deepEqual(J(B.CATEGORIES_BANQUE), ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne", "virement_interne"]);
   assert.deepEqual(J(B.CATEGORIES_DEPENSE), ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers"]);
   for (const e of ["SCARequired", "webauthRequired", "additionalInformationNeeded", "wrongpass", "decoupled", "actionNeeded", "passwordExpired"]) assert.ok(B.ETATS_RECONNEXION.includes(e), e);
   for (const e of ["validating", "rateLimiting", "websiteUnavailable", "bug"]) assert.ok(!B.ETATS_RECONNEXION.includes(e), e + " : incident passager, pas une reconnexion");
@@ -379,4 +379,85 @@ test("textes : INSTRUCTIONS, règle 7 bis et règle 17 (reconnexion) ; banque.ts
   const textes = sansCommentaires(srcBanque);
   assert.doesNotMatch(textes, VOUS, "banque.ts au tutoiement"); assert.doesNotMatch(textes, /conseiller/i, "jamais « conseiller »");
   assert.ok(srcBanque.includes('.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")'), "même écriture des diacritiques qu'index.ts");
+});
+
+/* ---------- budget réel (CP1 § 5) ---------- */
+const COMPTES_BUDGET = [
+  ...COMPTES,
+  { id: 106, connexion_id: 11, nom: "Carte différée", type: "courant", debit_differe: true, actif: true },
+  { id: 107, connexion_id: 13, nom: "Courant ignoré", type: "courant", ignore: true, actif: true },
+  { id: 108, connexion_id: 14, nom: "Courant en double", type: "courant", doublon_de: 101, actif: true },
+];
+const OPS_BUDGET = [
+  { id: 1, compte_id: 101, date: "2026-07-20", montant: 9999, libelle: "MOIS PARTIEL", categorie: "revenus" },
+  { id: 2, compte_id: 101, date: "2026-08-28", montant: 3000, libelle: "VIR SALAIRE", categorie: "revenus" },
+  { id: 3, compte_id: 101, date: "2026-08-05", montant: -1200, libelle: "LOYER", categorie: "logement" },
+  { id: 4, compte_id: 101, date: "2026-08-06", montant: -500, libelle: "VIR LIVRET", categorie: "epargne" },
+  { id: 5, compte_id: 101, date: "2026-08-07", montant: -1000, libelle: "VIR JOINT", categorie: "virement_interne" },
+  { id: 6, compte_id: 101, date: "2026-08-08", montant: 200, libelle: "VIR DU JOINT", categorie: "virement_interne" },
+  { id: 7, compte_id: 106, date: "2026-08-09", montant: -80, libelle: "CB RESTO", categorie: "loisirs" },
+  { id: 8, compte_id: 102, date: "2026-08-10", montant: 500, libelle: "VERSEMENT", categorie: "virement_interne" },
+  { id: 9, compte_id: 101, date: "2026-08-11", montant: 100, libelle: "RETRAIT LIVRET", categorie: "epargne" },
+  { id: 10, compte_id: 107, date: "2026-08-12", montant: -700, libelle: "IGNORE", categorie: "divers" },
+  { id: 11, compte_id: 108, date: "2026-08-12", montant: -1200, libelle: "LOYER", categorie: "logement" },
+  { id: 12, compte_id: 101, date: "2026-09-28", montant: 3200, libelle: "VIR SALAIRE", categorie: "revenus" },
+  { id: 13, compte_id: 101, date: "2026-09-15", montant: -1300, libelle: "COURSES", categorie: "alimentation" },
+  { id: 14, compte_id: 101, date: "2026-09-06", montant: -300, libelle: "VIR LIVRET", categorie: "epargne" },
+  { id: 15, compte_id: 101, date: "2026-10-02", montant: -50, libelle: "MOIS EN COURS", categorie: "divers" },
+];
+const BUDGET_REEL = {
+  comptes_courants: 1,
+  mois_compares: ["2026-08-01", "2026-09-01"],
+  par_mois: [{ mois: "2026-08-01", revenus: 3000, depenses: 1200, epargne: 500 }, { mois: "2026-09-01", revenus: 3200, depenses: 1300, epargne: 300 }],
+  moyenne: { revenus: 3100, depenses: 1250, epargne: 400 },
+  taux_epargne_reel_pct: 12.9,
+};
+
+test("budgetReel : comptes courants seulement, hors virements internes et cartes à débit différé déjà comptées, épargne, taux réel", { skip: SANS_STRIP }, () => {
+  const B = chargerBanque();
+  const r = B.budgetReel(OPS_BUDGET, COMPTES_BUDGET, TODAY);
+  const { note, ...rest } = r;
+  assert.deepEqual(J(rest), BUDGET_REEL, "juillet partiel (détail de 90 jours) et octobre en cours écartés");
+  assert.match(note, /courants/); assert.match(note, /virements internes/); assert.match(note, /débit différé/); assert.match(note, /90 jours/);
+  // carte seule de sa connexion : comptée (aucun relevé débité ailleurs)
+  const seule = B.budgetReel([{ id: 1, compte_id: 106, date: "2026-09-09", montant: -80, categorie: "loisirs" }], [{ id: 106, connexion_id: 11, type: "courant", debit_differe: true }], TODAY);
+  assert.equal(seule.moyenne.depenses, 40, "80 € sur septembre, moyenne sur 2 mois");
+  // aucun compte courant, ou aucun mois complet couvert : null ; revenus nuls : taux null
+  assert.equal(B.budgetReel(OPS_BUDGET, COMPTES.filter(c => c.type !== "courant"), TODAY), null);
+  assert.equal(B.budgetReel([], COMPTES, "2026-10-11").taux_epargne_reel_pct, null);
+  assert.equal(B.budgetReel([], COMPTES, "2026-10-11").moyenne.revenus, 0);
+  // montants en texte (numeric) tolérés
+  assert.deepEqual(J(B.budgetReel(OPS_BUDGET.map(o => ({ ...o, montant: String(o.montant) })), COMPTES_BUDGET, TODAY).moyenne), BUDGET_REEL.moyenne);
+});
+
+test("lire_banque : budget_reel (comptes courants, 90 jours lus par pages) ; virements internes hors des totaux mensuels ; écarts inchangés", { skip: SANS_STRIP }, async () => {
+  const mois = [...MOIS, { mois: "2026-09-01", categorie: "virement_interne", entrees: 999, sorties: 999, nombre: 2 }];
+  const db = dbBanque({ comptes: COMPTES_BUDGET, operations: OPS_BUDGET, mois });
+  const r = (await banqueSrv(db).T.lire_banque.handler({})).ok;
+  const { note, ...rest } = r.budget_reel;
+  assert.deepEqual(J(rest), BUDGET_REEL);
+  const q = db.appels.find(a => a.table === "banque_operations");
+  assert.deepEqual(J(q.ops.find(o => o[0] === "gte")), ["gte", "date", "2026-07-13"]);
+  assert.deepEqual(J(q.ops.find(o => o[0] === "range")), ["range", 0, 999]);
+  const sep = r.mois.find(m => m.mois === "2026-09-01");
+  assert.equal(sep.entrees, 4000); assert.equal(sep.sorties, 2000, "virements internes hors des totaux (avant comme après la migration 0024)");
+  assert.ok(!sep.par_categorie.some(c => c.categorie === "virement_interne"));
+  assert.equal(r.ecarts_budget.lignes.find(l => l.categorie === "logement").reel, 1100, "écarts au budget inchangés");
+  assert.deepEqual(ecritures(db), [], "lecture seule");
+  // détail illisible : budget_reel null, le reste est renvoyé
+  const p = (await banqueSrv(dbBanque({ panne: ["banque_operations"] })).T.lire_banque.handler({})).ok;
+  assert.equal(p.budget_reel, null); assert.equal(p.comptes.length, 5);
+  assert.match(B0().T.lire_banque.def.description, /budget_reel/);
+});
+const B0 = () => banqueSrv(dbBanque());
+
+test("banqueDeRoutine : budget_reel (comptes courants, taux d'épargne réel) à côté des écarts au budget", { skip: SANS_STRIP }, async () => {
+  const B = chargerBanque();
+  const db = dbBanque({ comptes: COMPTES_BUDGET, operations: OPS_BUDGET });
+  const r = await B.banqueDeRoutine(db, must, TODAY, totauxFaux());
+  const { note, ...rest } = r.budget_reel;
+  assert.deepEqual(J(rest), BUDGET_REEL);
+  assert.equal(r.depenses_vs_budget.lignes.find(l => l.categorie === "logement").reel, 1200, "écarts inchangés");
+  assert.deepEqual(ecritures(db), [], "lecture seule");
+  assert.equal(await chargerBanque(silencieux).banqueDeRoutine(dbBanque({ panne: ["banque_comptes"] }), must, TODAY, totauxFaux()), null);
 });

@@ -179,3 +179,121 @@ test("répartition par classe et par liquidité, périmètre respecté", () => {
   assert.deepEqual(Calc.parClasse(P, "p1"), { actions: 6000, monetaire: 3000 });
   assert.deepEqual(Calc.parLiquidite(P, "foyer"), { jours: 6000, immediate: 3000, semaines: 1000 });
 });
+
+/* ---------- CP1 : familles de comptes, budget réel, matelas avec réserve, argent qui dort ---------- */
+const L = (envelope, bloc, value, extra) => ({ owner: "p1", envelope, bloc, name: bloc, mode: "manual", value, status: "actif", ...extra });
+/* Libellés de référence (partagés avec le test de parité du connecteur, test/mcp.test.mjs). */
+const FAMILLES_ATTENDUES = [
+  ["Banque", "Comptes courants", "courant"], ["Boursorama", "Compte courant", "courant"], ["Compte courant Camille", "Épargne", "courant"],
+  ["Comptes courants", "Liquidités", "courant"], ["Livret A", "Épargne", "epargne"], ["Livrets Sam", "Épargne", "epargne"], ["LDDS", "Livrets", "epargne"],
+  ["LEP", "", "epargne"], ["PEL", "Épargne", "epargne"], ["Compte à terme", "Épargne", "epargne"], ["Compte épargne Revolut", "Cash", "epargne"],
+  ["Banque", "Épargne", "epargne"], ["", "Monétaire", "epargne"], ["PEA Camille", "Monde", "investissement"], ["PEA-PME", "Convictions", "investissement"],
+  ["CTO Sam", "Convictions", "investissement"], ["Compte-titres", "Monétaire", "investissement"], ["Assurance vie Sam", "Obligations", "investissement"],
+  ["AV Linxea Spirit 2", "Épargne", "investissement"], ["PER", "Monde", "investissement"], ["PERin Camille", "Monde", "investissement"],
+  ["Crypto (Binance)", "Crypto", "investissement"], ["Ledger", "Crypto", "investissement"], ["SCPI", "SCPI", "investissement"],
+  ["Épargne salariale", "Monde", "investissement"], ["", "Vins", "investissement"], [null, null, "investissement"],
+];
+
+test("famille : courant (bloc ou enveloppe « comptes courants »), épargne disponible, investissement ; repli sur la classe de la poche", () => {
+  for (const [envelope, bloc, f] of FAMILLES_ATTENDUES) assert.equal(Calc.famille({ envelope, bloc }), f, `${envelope} / ${bloc}`);
+  assert.equal(Calc.famille(null), "investissement");
+  assert.equal(Calc.famille({ envelope: "Banque", bloc: "Trésorerie" }, { "Trésorerie": "monetaire" }), "epargne", "surcharge de la classe utilisée dans le repli");
+  assert.deepEqual(Object.keys(Calc.FAMILLES_LABELS), ["courant", "epargne", "investissement", "dettes"]);
+});
+
+test("répartition par classe : sans les comptes courants (le patrimoine net les garde)", () => {
+  const P = [L("PEA", "Monde", 6000), L("Compte courant", "Comptes courants", 4000), L("Livret A", "Épargne", 3000)];
+  assert.deepEqual(Calc.parClasse(P, "foyer"), { actions: 6000, monetaire: 3000 });
+  assert.equal(Calc.financier(P, "foyer"), 13000);
+  assert.equal(Calc.patrimoine(P, {}, "foyer").net, 13000);
+  assert.deepEqual(Calc.parLiquidite(P, "foyer"), { jours: 6000, immediate: 7000 }, "la liquidité garde les comptes courants");
+});
+
+const AUJ = "2026-10-12";
+const mois = (m, categorie, entrees, sorties, extra) => ({ mois: m, categorie, entrees, sorties, nombre: 1, ...extra });
+const COMPTES = [
+  { id: 1, type: "courant", ignore: false, doublonDe: null, actif: true }, { id: 2, type: "livret", ignore: false, doublonDe: null },
+  { id: 3, type: "courant", ignore: true }, { id: 4, type: "courant", doublonDe: 1 }, { id: 5, type: "courant", actif: false },
+];
+
+test("comptes courants suivis : type courant, ni ignorés, ni en double, ni inactifs (formes camelCase et SQL)", () => {
+  assert.deepEqual(Calc.comptesCourants({ comptes: COMPTES }).map(c => c.id), [1]);
+  assert.deepEqual(Calc.comptesCourants({ comptes: [{ id: 9, type: "courant", doublon_de: 1 }, { id: 8, type: "courant", doublon_de: null }] }).map(c => c.id), [8]);
+  assert.deepEqual(Calc.comptesCourants(null), []);
+});
+
+test("budget réel : 3 derniers mois complets, revenus / dépenses / épargne, virements internes exclus, taux d'épargne", () => {
+  const b = { actif: true, comptes: COMPTES, mois: [
+    mois("2026-06-01", "alimentation", 0, 9999),                                   // trop ancien (4e mois)
+    mois("2026-07-01", "revenus", 5000, 0), mois("2026-07-01", "alimentation", 50, 1050), mois("2026-07-01", "epargne", 0, 500),
+    mois("2026-08-01", "revenus", 5000, 0), mois("2026-08-01", "logement", 0, 1000), mois("2026-08-01", "epargne", 0, 1000),
+    mois("2026-09-01", "revenus", 5000, 0), mois("2026-09-01", "divers", 0, 1000), mois("2026-09-01", "epargne", 100, 1600),
+    mois("2026-09-01", "virement_interne", 3000, 3000), mois("2026-10-01", "alimentation", 0, 800), // mois en cours exclu
+  ] };
+  const r = Calc.budgetReel(b, AUJ);
+  assert.deepEqual([r.n, r.du, r.au], [3, "2026-07-01", "2026-09-01"]);
+  assert.equal(r.revenus, 5000); assert.equal(r.depenses, 1000); assert.equal(r.epargne, 1000);
+  assert.equal(r.tauxEpargne, 0.2);
+  assert.equal(Calc.budgetReel(Object.assign({}, b, { actif: false }), AUJ), null, "interrupteur éteint");
+  assert.equal(Calc.budgetReel({ actif: true, mois: [mois("2026-10-01", "divers", 0, 10)] }, AUJ), null, "seulement le mois en cours");
+  assert.equal(Calc.budgetReel(null, AUJ), null);
+  assert.equal(Calc.budgetReel({ mois: [mois("2026-09-01", "divers", 0, 10)] }, AUJ).depenses, 10, "forme du connecteur (sans actif)");
+});
+
+test("budget réel : mois agrégés par compte → comptes courants seulement ; sans compte → totaux tels quels", () => {
+  const b = { actif: true, comptes: COMPTES, mois: [
+    mois("2026-09-01", "divers", 0, 1000, { compteId: 1 }), mois("2026-09-01", "divers", 0, 500, { compteId: 2 }),
+    mois("2026-09-01", "divers", 0, 700, { compteId: 3 }), mois("2026-09-01", "divers", 0, 300, { compte_id: 1 }),
+  ] };
+  assert.equal(Calc.budgetReel(b, AUJ).depenses, 1300, "compte 1 seulement (livret, ignoré exclus)");
+  assert.equal(Calc.moisCourants(b).length, 2);
+  const sans = { actif: true, comptes: COMPTES, mois: [mois("2026-09-01", "divers", 0, 1000), mois("2026-09-01", "loisirs", 0, 500)] };
+  assert.equal(Calc.moisCourants(sans).length, 2);
+  assert.equal(Calc.budgetReel(sans, AUJ).depenses, 1500);
+});
+
+test("dépenses prévues : mêmes règles que Plan.budgetTotaux (lignes + mensualités, sinon dépenses du matelas en mois)", () => {
+  const Plan = require("../web/src/plan.js");
+  const budget = { lignes: [{ type: "depense", montant: 1200 }, { type: "depense", montant: 2400, frequence: "an", owner: "p2" }, { type: "revenu", montant: 4000 }] };
+  for (const scope of ["foyer", "p1", "p2"]) assert.equal(Calc.depensesPrevues(budget, PROFIL, null, scope), Plan.budgetTotaux(budget.lignes, PROFIL, scope).depenses, scope);
+  assert.equal(Calc.depensesPrevues({ lignes: [] }, PROFIL, { cushion: { mode: "months", months: 3, depenses: 2100 } }), 2100);
+  assert.equal(Calc.depensesPrevues(null, null, null), 0);
+  const d = Calc.depensesMensuelles({ banque: { actif: true, mois: [mois("2026-09-01", "divers", 0, 1800)] }, budget, profil: PROFIL, scope: "foyer", auj: AUJ });
+  assert.deepEqual([d.montant, d.source], [1800, "reel"]);
+  assert.equal(Calc.depensesMensuelles({ banque: { actif: true, mois: [mois("2026-09-01", "divers", 0, 1800)] }, budget, profil: PROFIL, scope: "p1", auj: AUJ }).source, "prevu",
+    "les comptes ne sont pas répartis par personne");
+  assert.equal(Calc.depensesMensuelles({ budget: { lignes: [] }, profil: {}, scope: "foyer", auj: AUJ }), null);
+});
+
+test("matelas : épargne disponible + comptes courants au-delà d'une réserve (reserve_mois, 1 mois par défaut)", () => {
+  const P = [L("Livret A", "Épargne", 9000), L("Banque", "Comptes courants", 5000), L("PEA", "Monde", 20000), L("Banque", "Comptes courants", 1000, { status: "à recevoir" })];
+  const m = Calc.matelasDisponible(P, "foyer", { config: { cushion: { min: 10000 } }, depenses: 2000 });
+  assert.deepEqual([m.epargne, m.courants, m.reserveMois, m.reserve, m.courantsAuDela, m.total], [9000, 5000, 1, 2000, 3000, 12000]);
+  const m2 = Calc.matelasDisponible(P, "foyer", { config: { cushion: { mode: "months", months: 6, depenses: 2000, reserve_mois: 2 } }, depenses: 2000 });
+  assert.deepEqual([m2.reserveMois, m2.courantsAuDela, m2.total], [2, 1000, 10000]);
+  assert.equal(Calc.matelasDisponible(P, "foyer", { config: { cushion: { reserve_mois: 3 } }, depenses: 2000 }).total, 9000, "courants sous la réserve : rien en plus");
+  assert.equal(Calc.reserveMois(null), 1); assert.equal(Calc.reserveMois({ cushion: { reserve_mois: 0 } }), 0); assert.equal(Calc.reserveMois({ cushion: { reserve_mois: "x" } }), 1);
+  // les formes existantes de config.cushion restent lues à l'identique
+  assert.deepEqual(Calc.matelas({ cushion: { mode: "amount", min: 15000, max: 20000, reserve_mois: 2 } }), { mode: "amount", min: 15000, max: 20000 });
+});
+
+test("argent qui dort : comptes courants au-delà de 1,5 mois de dépenses deux mois de suite (photos, sinon solde actuel)", () => {
+  const budget = { lignes: [{ type: "depense", montant: 2000 }] };   // seuil 3 000 €
+  const positions = [L("Banque", "Comptes courants", 6000), L("Livret A", "Épargne", 9000)];
+  const photo = (date, banque) => ({ date, byEnvelope: { Banque: banque, "Livret A": 9000 } });
+  const S = { positions, budget, profil: {}, config: {}, snapshots: [photo("2026-08-31", 5000), photo("2026-09-15", 9000), photo("2026-09-30", 4500), photo("2026-10-11", 100)] };
+  assert.deepEqual(Calc.argentQuiDort(S, AUJ), { montant: 1500, mois: 2, solde: 4500, seuil: 3000, depenses: 2000, source: "prevu" });
+  assert.equal(Calc.argentQuiDort(Object.assign({}, S, { snapshots: [photo("2026-08-31", 2000), photo("2026-09-30", 4500)] }), AUJ), null, "un seul mois au-dessus");
+  // à défaut de deux photos : solde actuel et fin du mois précédent
+  const r = Calc.argentQuiDort(Object.assign({}, S, { snapshots: [photo("2026-09-30", 4500)] }), AUJ);
+  assert.deepEqual([r.montant, r.mois, r.solde], [1500, 2, 6000]);
+  assert.equal(Calc.argentQuiDort(Object.assign({}, S, { snapshots: [] }), AUJ), null, "aucune photo");
+  assert.equal(Calc.argentQuiDort(Object.assign({}, S, { budget: { lignes: [] } }), AUJ), null, "dépenses inconnues");
+  assert.equal(Calc.argentQuiDort(Object.assign({}, S, { positions: [L("Livret A", "Épargne", 9000)] }), AUJ), null, "pas de compte courant");
+  // dépenses réelles prioritaires : 4 000 €/mois → seuil 6 000 €, plus rien ne dort
+  const banque = { actif: true, mois: [mois("2026-09-01", "divers", 0, 4000)] };
+  assert.equal(Calc.argentQuiDort(Object.assign({}, S, { banque }), AUJ), null);
+  // trois mois de suite
+  const trois = Calc.argentQuiDort(Object.assign({}, S, { snapshots: [photo("2026-07-31", 8000), ...S.snapshots] }), AUJ);
+  assert.deepEqual([trois.mois, trois.montant], [3, 1500]);
+});

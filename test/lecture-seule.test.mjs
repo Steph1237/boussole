@@ -32,7 +32,8 @@ const API_AUTORISEE = {
   expertises: ["detail"], // lecture (méthode d'une expertise, Agent › Expertises)
   banque: ["connecter", "gerer", "deconnecter", "rattacher", "synchroniser"], // banques connectées (claude-guide.js) : contrôle, pas saisie
 };
-const STORE_AUTORISE = ["get", "on", "emit", "reload", "mode", "setScope", "surveillerConnexions", "markOnboarded", "db", ...Object.keys(API_AUTORISEE)];
+// cours : lecture des cours historiques à l'ouverture d'une fiche de Patrimoine › Comptes (comptes-view.js, CP1 § 4).
+const STORE_AUTORISE = ["get", "on", "emit", "reload", "mode", "setScope", "surveillerConnexions", "markOnboarded", "db", "cours", ...Object.keys(API_AUTORISEE)];
 
 test("lecture seule : la liste des modules est bien lue dans build.mjs", () => {
   assert.ok(MODULES.length >= 15, "MODULES introuvable dans build.mjs");

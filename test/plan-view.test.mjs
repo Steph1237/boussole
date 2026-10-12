@@ -335,6 +335,7 @@ test("tutoiement des rendus : cartes, barre, sections, panneaux, dans tous les �
 const uiJs = readFileSync("web/src/ui.js", "utf8");
 const planJs = readFileSync("web/src/plan.js", "utf8");
 const calcJs = readFileSync("web/src/calc.js", "utf8");
+const banqueJs = readFileSync("web/src/banque-etat.js", "utf8");
 const promptsJs = readFileSync("web/src/claude-prompts.js", "utf8");
 function vueDom(S0) {
   const dom = miniDom(), { doc } = dom;
@@ -348,6 +349,7 @@ function vueDom(S0) {
   c.Store = new Proxy({ get: () => S }, { get: (o, k) => { if (k !== "get") acces.push(String(k)); return o[k]; } });
   vm.createContext(c);
   vm.runInContext(calcJs, c, { filename: "calc.js" });
+  vm.runInContext(banqueJs, c, { filename: "banque-etat.js" });
   vm.runInContext(planJs, c, { filename: "plan.js" });
   vm.runInContext(uiJs, c, { filename: "ui.js" });
   vm.runInContext(promptsJs, c, { filename: "claude-prompts.js" });
@@ -489,7 +491,7 @@ test("app.js : « plan » sur patrimoine/budget, « objectifs-view » sur patrim
   const { SPACES, LEGACY, resolve, resolveHash } = require("../web/src/app.js");
   const patrimoine = SPACES.find(s => s.space === "patrimoine");
   assert.deepEqual(patrimoine.subs.map(s => [s.id, s.label, s.module]), [
-    ["placements", "Placements", "pilotage"], ["immobilier", "Immobilier et crédits", "bilan"],
+    ["comptes", "Comptes", "comptes-view"], ["placements", "Placements", "pilotage"], ["immobilier", "Immobilier et crédits", "bilan"],
     ["budget", "Budget", "plan"], ["objectifs", "Objectifs", "objectifs-view"]]);
   assert.equal(LEGACY.plan, "patrimoine/budget");
   assert.equal(LEGACY["avenir/plan"], "patrimoine/budget");
@@ -507,3 +509,59 @@ test("build.mjs : modules plan-view et objectifs-view assemblés, moteur plan, r
   assert.match(build, /const SCRIPTS = \[[^\]]*"reperes"[^\]]*"plan"[^\]]*\.\.\.MODULES/);
   assert.match(build, /const SCRIPTS = \[[^\]]*"claude-prompts"[^\]]*\.\.\.MODULES/);
 });
+
+/* ------------------------------------------------------------------ budget réel (spec cp1 § 5) ------------------------------------------------------------------ */
+const AUJ_R = "2026-10-12";
+const MOIS_R = (m, categorie, entrees, sorties, extra) => ({ mois: m, categorie, entrees, sorties, nombre: 1, ...extra });
+const COMPTES_R = [{ id: 1, nom: "Compte joint", type: "courant", ignore: false, doublonDe: null, actif: true },
+  { id: 2, nom: "Livret A", type: "livret", ignore: false, doublonDe: null, actif: true },
+  { id: 3, nom: "Ancien compte", type: "courant", ignore: true, doublonDe: null, actif: true },
+  { id: 4, nom: "Compte joint (doublon)", type: "courant", ignore: false, doublonDe: 1, actif: true }];
+const banqueR = mois => ({ actif: true, lu: true, connexions: [], comptes: COMPTES_R, mois });
+
+test("budget réel : colonne « réel » sur les comptes courants seulement (mois agrégés par compte), sinon totaux tels quels", () => {
+  const parCompte = banqueR([MOIS_R("2026-09-01", "loisirs", 0, 90, { compteId: 1 }), MOIS_R("2026-09-01", "loisirs", 0, 500, { compteId: 2 }),
+    MOIS_R("2026-09-01", "loisirs", 0, 70, { compteId: 3 }), MOIS_R("2026-09-01", "loisirs", 0, 90, { compteId: 4 })]);
+  assert.equal(PV.reelDe({ scope: "foyer", banque: parCompte }, AUJ_R).parCategorie.loisirs, 90, "livret, compte ignoré et doublon exclus");
+  const totaux = banqueR([MOIS_R("2026-09-01", "loisirs", 0, 90), MOIS_R("2026-09-01", "alimentation", 0, 400)]);
+  assert.deepEqual(J(PV.reelDe({ scope: "foyer", banque: totaux }, AUJ_R).parCategorie), { loisirs: 90, alimentation: 400 }, "sans détail par compte : inchangé");
+  assert.equal(PV.reelDe({ scope: "p1", banque: parCompte }, AUJ_R), null);
+});
+
+test("budget réel : taux d'épargne réel (épargne ÷ revenus, 3 mois complets) et mention des virements internes exclus", () => {
+  const b = banqueR([
+    MOIS_R("2026-07-01", "revenus", 5000, 0), MOIS_R("2026-07-01", "epargne", 0, 500), MOIS_R("2026-08-01", "revenus", 5000, 0), MOIS_R("2026-08-01", "epargne", 0, 1000),
+    MOIS_R("2026-09-01", "revenus", 5000, 0), MOIS_R("2026-09-01", "epargne", 0, 1500), MOIS_R("2026-09-01", "virement_interne", 2000, 2000),
+    MOIS_R("2026-09-01", "alimentation", 0, 700)]);
+  const br = PV.budgetReelDe({ scope: "foyer", banque: b }, AUJ_R);
+  assert.equal(br.tauxEpargne, 0.2);
+  assert.equal(PV.budgetReelDe({ scope: "p2", banque: b }, AUJ_R), null, "les comptes ne sont pas répartis par personne");
+  assert.equal(PV.budgetReelDe({ scope: "foyer", banque: Object.assign({}, b, { actif: false }) }, AUJ_R), null);
+  const h = sp(PV.tauxReelHtml(br));
+  assert.match(texteDeR(h), /^Taux d'épargne réel 20 %/);
+  assert.match(texteDeR(h), /épargne ÷ revenus, moyenne de juillet à septembre 2026, sur tes comptes courants\. Virements entre tes comptes exclus\./);
+  assert.equal(PV.tauxReelHtml(null), "");
+  assert.equal(PV.tauxReelHtml(Object.assign({}, br, { tauxEpargne: null })), "", "revenus inconnus : pas de taux");
+  const lignes = [{ id: "e", type: "epargne", categorie: "Épargne", libelle: "Livret", montant: 200, frequence: "mois" }];
+  const { groupes, totaux } = PV.regrouper(lignes, { profil: null, scope: "foyer", people: PEOPLE, Plan, Calc });
+  const g = sp(PV.groupesHtml(groupes, { mode: "mois", totaux, U: UI, budgetReel: br }));
+  const epargne = g.slice(g.indexOf('id="pv-sec-epargne"'));
+  assert.match(epargne, /pv-reel-taux/, "ligne « Taux d'épargne réel » dans la section Épargne");
+  assert.doesNotMatch(g.slice(0, g.indexOf('id="pv-sec-epargne"')), /pv-reel-taux/);
+  assert.match(sp(PV.groupesHtml(groupes, { mode: "an", totaux, U: UI, budgetReel: br })), /Taux d'épargne réel<\/span> <b class="pv-num">20 %/, "taux identique par an");
+  assert.doesNotMatch(sp(PV.groupesHtml(groupes, { mode: "mois", totaux, U: UI })), /pv-reel-taux/, "sans banque : rendu inchangé");
+});
+
+test("vue (DOM) : banque connectée → colonne réel, taux d'épargne réel et note « virements entre tes comptes exclus »", () => {
+  const d = new Date(), iso = k => { const x = new Date(Date.UTC(d.getFullYear(), d.getMonth() - k, 1)); return x.toISOString().slice(0, 10); };
+  const mois = [1, 2, 3].flatMap(k => [MOIS_R(iso(k), "revenus", 5000, 0, { compteId: 1 }), MOIS_R(iso(k), "epargne", 0, 750, { compteId: 1 }),
+    MOIS_R(iso(k), "alimentation", 0, 800, { compteId: 1 }), MOIS_R(iso(k), "alimentation", 0, 300, { compteId: 2 })]);
+  const v = vueDom(Object.assign(demoS(), { banque: banqueR(mois) }));
+  assert.match(sp(v.root.querySelector("#pvBudgetNote").textContent), /« Réel » : moyenne d[e'][^,]+, d'après tes comptes connectés\. Virements entre tes comptes exclus\./);
+  assert.match(sp(v.root.querySelector('[data-pv-cat="depense:Alimentation"]').textContent), /réel 800 €\/mois/, "comptes courants seulement");
+  assert.match(sp(v.root.querySelector("#pvBudget").textContent), /Taux d'épargne réel 15 %/);
+  const sans = vueDom(Object.assign(demoS(), { banque: { actif: false, lu: true, connexions: [], comptes: [], mois: [] } }));
+  assert.doesNotMatch(sp(sans.root.querySelector("#pvBudgetNote").textContent), /Virements/);
+  assert.equal(sans.root.querySelector(".pv-reel-taux"), null);
+});
+const texteDeR = h => String(h).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();

@@ -197,7 +197,8 @@ test("categorieBoussole : codes enfants et parents de la taxonomie française Po
   for (const v of [null, undefined, [], 12, {}, ""]) assert.equal(C.categorieBoussole(v), "divers");
   const toutes = new Set(Object.values(C.CORRESPONDANCE));
   for (const c of toutes) assert.ok(C.CATEGORIES_BOUSSOLE.includes(c), c);
-  assert.deepEqual(J(C.CATEGORIES_BOUSSOLE), ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne"]);
+  assert.deepEqual(J(C.CATEGORIES_BOUSSOLE), ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne", "virement_interne"]);
+  assert.ok(!toutes.has("virement_interne"), "virement_interne n'est jamais une catégorie Powens : posée par le rapprochement des virements");
   assert.match(C.VERSION_CATEGORIES, /^\d{4}-\d{2}-\d{2}$/);
 });
 
@@ -1035,4 +1036,284 @@ test("rapprochement : proposition « créer une ligne » encore en attente d'un 
   assert.deepEqual(db.tables.propositions.map(p => p.id), ["prop-1202"], "en attente : retirées (courant rattaché automatiquement, courant en double) ; refusée : gardée");
   for (const e of db.journal.filter(e => e.table === "propositions" && e.op === "delete"))
     assert.ok(e.filtres.some(([k, op, v]) => k === "statut" && v === "en_attente") && e.filtres.some(([k, , v]) => k === "user_id" && v === U));
+});
+
+/* ---------- virements internes (CP1 § 5) ---------- */
+const KV = [
+  { id: 1, connexion_id: 7, type: "courant" }, { id: 2, connexion_id: 7, type: "livret" }, { id: 3, connexion_id: 8, type: "courant" },
+  { id: 4, connexion_id: 7, type: "courant", debit_differe: true }, { id: 5, connexion_id: 8, type: "courant", ignore: true },
+  { id: 6, connexion_id: 9, type: "courant", doublon_de: 1 }, { id: 7, connexion_id: 8, type: "pea" }, { id: 8, connexion_id: 8, type: "autre" },
+];
+const opv = (id, compte_id, date, montant, categorie = "divers") => ({ id, compte_id, date, montant, categorie, libelle: "VIR" });
+
+test("rapprocherVirements : montant opposé à 0,01 €, comptes différents, ≤ 3 jours, un pour un (le plus proche), épargne côté courant", { skip: SANS_STRIP }, () => {
+  const { S } = charger();
+  const ops = [
+    opv(10, 1, "2026-09-10", -500), opv(11, 2, "2026-09-11", 500, "epargne"),       // courant → livret : épargne / virement interne
+    opv(12, 2, "2026-09-15", -200), opv(13, 1, "2026-09-15", 200, "revenus"),       // livret → courant : virement interne des deux côtés
+    opv(14, 1, "2026-09-01", -100), opv(15, 3, "2026-09-03", 100), opv(16, 3, "2026-09-04", 100), // un pour un : le plus proche
+    opv(17, 1, "2026-08-01", -50), opv(18, 3, "2026-08-05", 50),                    // 4 jours : non
+    opv(19, 1, "2026-08-10", -70), opv(20, 3, "2026-08-10", 70.02),                 // 0,02 € : non
+    opv(21, 1, "2026-08-12", -80), opv(22, 3, "2026-08-12", 80.01),                 // 0,01 € : oui
+    opv(23, 1, "2026-08-20", -300), opv(24, 1, "2026-08-20", 300),                  // même compte : non
+    opv(25, 1, "2026-08-25", -1500), opv(26, 4, "2026-08-25", 1500),                // carte à débit différé : non
+    opv(27, 1, "2026-07-20", -40), opv(28, 5, "2026-07-20", 40),                    // compte ignoré : non
+    opv(29, 1, "2026-07-21", -60), opv(30, 6, "2026-07-21", 60),                    // compte en double : non
+    opv(31, 1, "2026-07-25", -1000), opv(32, 7, "2026-07-26", 1000),                // courant → PEA : épargne
+    opv(33, 8, "2026-07-27", -90), opv(34, 1, "2026-07-27", 90),                    // autre → courant : virement interne
+    opv(35, 3, "2026-07-28", -12, "virement_interne"),                              // déjà classé, sans contrepartie : gardé
+  ];
+  const r = S.rapprocherVirements(ops, KV);
+  assert.deepEqual(J(r.categories), {
+    10: "epargne", 11: "virement_interne", 12: "virement_interne", 13: "virement_interne", 14: "virement_interne", 15: "virement_interne",
+    21: "virement_interne", 22: "virement_interne", 31: "epargne", 32: "virement_interne", 33: "virement_interne", 34: "virement_interne",
+  });
+  assert.deepEqual(J(r.paires).map(p => p.join("-")).sort(), ["10-11", "12-13", "14-15", "21-22", "31-32", "33-34"].sort());
+  // idempotent : appliqué puis relancé → plus rien à changer
+  const apres = ops.map(o => ({ ...o, categorie: r.categories[o.id] ?? o.categorie }));
+  assert.deepEqual(J(S.rapprocherVirements(apres, KV).categories), {});
+  // ordre des opérations sans effet ; montants en texte (numeric) tolérés
+  const r2 = S.rapprocherVirements([...ops].reverse().map(o => ({ ...o, montant: String(o.montant) })), KV);
+  assert.deepEqual(J(r2.categories), J(r.categories));
+  // compte inconnu : écarté
+  assert.deepEqual(J(S.rapprocherVirements([opv(1, 1, "2026-09-01", -5), opv(2, 99, "2026-09-01", 5)], KV).categories), {});
+});
+
+test("synchroniser : virements internes rapprochés sur toutes les connexions, autres comptes mis à jour, mois recalculés", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const base = baseInitiale(J(RATTACHES));
+  base.banque_connexions = [{ user_id: U, id: 8, etablissement: "Autre Banque", connecteur: 99 }];
+  base.banque_comptes.push({ user_id: U, id: 201, connexion_id: 8, nom: "Compte joint", type: "courant", actif: true });
+  base.banque_operations = [
+    { user_id: U, id: 7001, compte_id: 201, date: "2026-09-29", montant: 250, libelle: "VIR DE M", categorie: "divers" },
+    { user_id: U, id: 7002, compte_id: 201, date: "2026-06-01", montant: -10, libelle: "ANCIENNE", categorie: "divers" },
+  ];
+  const operations = {
+    101: [
+      { id: 9101, date: "2026-10-01", value: -250, simplified_wording: "VIR VERS JOINT", categories: [{ code: "transfers" }], coming: false, deleted: null },
+      { id: 9102, date: "2026-10-05", value: -400, simplified_wording: "VIR LIVRET A", categories: [{ code: "transfers" }], coming: false, deleted: null },
+    ],
+    102: [{ id: 9201, date: "2026-10-06", value: 400, simplified_wording: "VIR DU COMPTE", categories: [{ code: "savings" }], coming: false, deleted: null }],
+  };
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  const cat = id => db.tables.banque_operations.find(o => o.id === id).categorie;
+  assert.equal(cat(9101), "virement_interne"); assert.equal(cat(7001), "virement_interne", "autre connexion : mise à jour");
+  assert.equal(cat(9102), "epargne", "courant → livret : épargne côté courant"); assert.equal(cat(9201), "virement_interne");
+  assert.equal(cat(7002), "divers", "hors 90 jours : jamais lue");
+  assert.equal(r.virements_internes, 2);
+  const lecture = db.journal.find(e => e.table === "banque_operations" && e.op === "select");
+  assert.ok(lecture.filtres.some(([k, , v]) => k === "user_id" && v === U) && lecture.filtres.some(([k, op, v]) => k === "date" && op === "gte" && v === "2026-07-14"));
+  for (const e of db.journal.filter(e => e.table === "banque_operations" && e.op === "update")) assert.ok(e.filtres.some(([k, , v]) => k === "user_id" && v === U));
+  const rec = db.journal.filter(e => e.rpc === "banque_recalculer_mois");
+  assert.deepEqual(J(rec.map(e => e.args)), [{ p_user: U, p_depuis: "2026-09-01" }], "mois de l'opération de l'autre compte compris, un seul recalcul");
+  // idempotent ; jamais d'écrasement d'une catégorie « epargne » / « virement_interne » par la catégorie Powens
+  const avant = J(db.tables.banque_operations);
+  const r2 = await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(r2.ok, true);
+  assert.deepEqual(J(db.tables.banque_operations).sort((a, b) => a.id - b.id), avant.sort((a, b) => a.id - b.id));
+  assert.equal(r2.virements_internes, 0, "rien à changer au second passage");
+  db.tables.banque_operations = db.tables.banque_operations.filter(o => o.id !== 7001); // contrepartie purgée
+  await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(cat(9101), "virement_interne", "contrepartie disparue : catégorie gardée, pas de retour à « divers »");
+});
+
+test("synchroniser : lecture des opérations existantes en échec → opérations non écrites (catégories préservées), noté", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const db = fausseBase(baseInitiale(J(RATTACHES)), { rpc: RPC, echec: (t, op) => (t === "banque_operations" && op === "select" ? "panne" : null) });
+  const r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
+  assert.equal(r.ok, false);
+  assert.ok(r.erreurs.some(e => /opérations/.test(e.erreur) && /panne/.test(e.erreur)), JSON.stringify(r.erreurs));
+  assert.equal(db.tables.banque_operations.length, 0);
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 102).position_id, "pos-livret", "le reste est appliqué");
+});
+
+test("synchroniser : opérations existantes lues par pages de 1000 (limite de l'API de données), page suivante au-delà du dernier identifiant", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const base = baseInitiale(J(RATTACHES));
+  base.banque_operations = Array.from({ length: 2300 }, (_, i) => ({ user_id: U, id: 100000 + i, compte_id: 101, date: "2026-09-02", montant: -1, libelle: "X", categorie: "divers" }));
+  base.banque_operations.push({ user_id: U, id: 200000, compte_id: 101, date: "2026-09-30", montant: -77, libelle: "VIR", categorie: "divers" });
+  const operations = { 101: [], 102: [{ id: 9201, date: "2026-10-01", value: 77, simplified_wording: "VIR", coming: false, deleted: null }] };
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(db.tables.banque_operations.find(o => o.id === 200000).categorie, "epargne", "opération de la 3e page rapprochée");
+  const pages = db.journal.filter(e => e.table === "banque_operations" && e.op === "select");
+  assert.equal(pages.length, 3);
+  assert.deepEqual(J(pages.map(p => p.filtres.find(([k]) => k === "id")?.[2] ?? null)), [null, 101000, 102000]);
+});
+
+/* ---------- revenus détectés (CP1 § 5) ---------- */
+const sal = (id, date, montant, compte_id = 1, libelle = "VIR SALAIRE ACME " + date.slice(5, 7), categorie = "revenus") => ({ id, compte_id, date, montant, libelle, categorie });
+
+test("revenusDetectes : entrée récurrente du courant, 2 mois sur 3 au moins, ±15 % ; salaireNetMensuel comme l'app", { skip: SANS_STRIP }, () => {
+  const { S } = charger();
+  const AUJ_R = "2026-10-12";
+  let d = S.revenusDetectes([sal(1, "2026-07-28", 3000), sal(2, "2026-08-28", 3100), sal(3, "2026-09-28", 2950), sal(4, "2026-10-01", 9999)], KV, AUJ_R);
+  assert.deepEqual(J(d), { cle: "vir salaire acme", moyenne: 3016.67, mois: [{ mois: "2026-07-01", montant: 3000 }, { mois: "2026-08-01", montant: 3100 }, { mois: "2026-09-01", montant: 2950 }] },
+    "mois en cours écarté");
+  d = S.revenusDetectes([sal(1, "2026-08-28", 3000), sal(3, "2026-09-28", 3300)], KV, AUJ_R);
+  assert.equal(d.moyenne, 3150, "2 mois sur 3 suffisent");
+  assert.equal(S.revenusDetectes([sal(1, "2026-08-28", 3000), sal(3, "2026-09-28", 2000)], KV, AUJ_R), null, "montant instable");
+  assert.equal(S.revenusDetectes([sal(1, "2026-09-28", 3000)], KV, AUJ_R), null, "un seul mois");
+  assert.equal(S.revenusDetectes([sal(1, "2026-08-28", 3000, 2), sal(3, "2026-09-28", 3000, 2)], KV, AUJ_R), null, "livret : pas un compte courant");
+  assert.equal(S.revenusDetectes([sal(1, "2026-08-28", 3000, 6), sal(3, "2026-09-28", 3000, 6)], KV, AUJ_R), null, "compte en double");
+  assert.equal(S.revenusDetectes([sal(1, "2026-08-28", 3000, 1, "VIR", "virement_interne"), sal(3, "2026-09-28", 3000, 1, "VIR", "virement_interne")], KV, AUJ_R), null, "virement interne");
+  assert.equal(S.revenusDetectes([sal(1, "2026-08-28", -3000), sal(3, "2026-09-28", -3000)], KV, AUJ_R), null, "sorties");
+  // plusieurs entrées récurrentes : la plus grande ; libellés identiques une fois nettoyés (chiffres, casse, accents)
+  d = S.revenusDetectes([sal(1, "2026-08-05", 120, 1, "CAF 08"), sal(2, "2026-09-05", 120, 1, "Caf 09"), sal(3, "2026-08-28", 2500, 1, "VIR Salaire Nova 0826"), sal(4, "2026-09-28", 2500, 1, "vir salaire nova 0926")], KV, AUJ_R);
+  assert.equal(d.cle, "vir salaire nova");
+  assert.equal(S.cleLibelle("VIR Salaire Nová 0826"), "vir salaire nova");
+  assert.equal(S.salaireNetMensuel({ salaire: 2500 }), 2500);
+  assert.equal(S.salaireNetMensuel({ salaire: 36000, salaireUnite: "na" }), 3000);
+  assert.equal(S.salaireNetMensuel({ salaire: 4000, salaireUnite: "bm", statut: "cadre" }), 3000);
+  assert.equal(S.salaireNetMensuel({ salaire: 48000, salaireUnite: "ba" }), 3120);
+  assert.equal(S.salaireNetMensuel(null), 0);
+});
+
+test("propositionRevenus : écart > 10 % → proposition profil (salaire net mensuel arrondi), sinon rien ; jamais appliquée", { skip: SANS_STRIP }, () => {
+  const { S } = charger();
+  const det = { cle: "vir salaire acme", moyenne: 3016.67, mois: [{ mois: "2026-08-01", montant: 3100 }, { mois: "2026-09-01", montant: 2933.33 }] };
+  const ids = { userId: U, id: "id-r", lot: "lot-r" };
+  const p = S.propositionRevenus(det, { personnes: { p1: { nom: "Moi", salaire: 2500, salaireUnite: "nm" } } }, ids);
+  assert.deepEqual(J({ ...p, justification: undefined }), {
+    id: "id-r", user_id: U, lot: "lot-r", cible: "profil", operation: "modifier",
+    avant: { personnes: { p1: { salaire: 2500 } } }, apres: { personnes: { p1: { salaire: 3017 } } }, source: "Powens — revenus détectés",
+  });
+  assert.equal(S.SOURCE_REVENUS, "Powens — revenus détectés");
+  assert.match(p.justification, /août 2026 : 3 100,00 €/); assert.match(p.justification, /septembre 2026 : 2 933,33 €/);
+  assert.match(p.justification, /3 017 €/); assert.match(p.justification, /2 500 €/); assert.match(p.justification, /\+21 %/);
+  assert.doesNotMatch(p.justification, /acme/i, "jamais le libellé bancaire");
+  assert.doesNotMatch(p.justification, /(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu);
+  assert.ok(p.justification.length <= 1000);
+  // unité convertie : salaire brut annuel → net mensuel déclaré
+  const q = S.propositionRevenus(det, { personnes: { p1: { salaire: 30000, salaireUnite: "ba", statut: "cadre" } } }, ids);
+  assert.deepEqual(J(q.avant), { personnes: { p1: { salaire: 30000, salaireUnite: "ba" } } });
+  assert.deepEqual(J(q.apres), { personnes: { p1: { salaire: 3017, salaireUnite: "nm" } } });
+  // profil vide : proposé ; écart ≤ 10 % : rien
+  assert.deepEqual(J(S.propositionRevenus(det, null, ids).apres), { personnes: { p1: { salaire: 3017, salaireUnite: "nm" } } });
+  assert.equal(S.propositionRevenus(det, { personnes: { p1: { salaire: 2800 } } }, ids), null, "écart de 7,7 %");
+  assert.equal(S.propositionRevenus(det, { personnes: { p1: { salaire: 36000, salaireUnite: "na" } } }, ids), null);
+  assert.equal(S.propositionRevenus(null, { personnes: {} }, ids), null);
+});
+
+test("synchroniser : revenus détectés → une proposition profil, lot déterministe, jamais deux en attente, jamais appliquée", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const base = baseInitiale(J(RATTACHES));
+  base.profiles = [{ user_id: U, foyer: { adultes: 1 }, personnes: { p1: { nom: "Moi", salaire: 2500, salaireUnite: "nm" } } }];
+  base.banque_operations = [
+    { user_id: U, id: 8001, compte_id: 101, date: "2026-07-28", montant: 3000, libelle: "VIR SALAIRE ACME 07", categorie: "revenus" },
+    { user_id: U, id: 8002, compte_id: 101, date: "2026-08-28", montant: 3100, libelle: "VIR SALAIRE ACME 08", categorie: "revenus" },
+  ];
+  const operations = { 101: [{ id: 9301, date: "2026-09-28", value: 2950, simplified_wording: "VIR SALAIRE ACME 09", categories: [{ code: "salary" }], coming: false, deleted: null }] };
+  const lot = await S.lotRevenus(U, "vir salaire acme", "2026-09-01");
+  base.propositions = [
+    { id: "ancienne", user_id: U, lot: "lot-ancien", cible: "profil", operation: "modifier", statut: "en_attente", source: "Powens — revenus détectés", apres: { personnes: { p1: { salaire: 2900 } } } },
+    { id: "autre-source", user_id: U, lot: "lot-x", cible: "profil", operation: "modifier", statut: "en_attente", source: "Claude", apres: { foyer: { adultes: 1 } } },
+  ];
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  const props = db.tables.propositions.filter(p => p.source === "Powens — revenus détectés");
+  assert.equal(props.length, 1, "l'ancienne détection en attente est remplacée");
+  assert.equal(props[0].lot, lot); assert.equal(props[0].id, await S.idRevenus(lot));
+  assert.deepEqual(J(props[0].apres), { personnes: { p1: { salaire: 3017 } } });
+  assert.equal(props[0].statut ?? "en_attente", "en_attente");
+  assert.ok(db.tables.propositions.some(p => p.id === "autre-source"), "autre source intacte");
+  assert.equal(db.tables.profiles[0].personnes.p1.salaire, 2500, "jamais appliquée automatiquement");
+  assert.equal(r.revenus_proposes, 1);
+  for (const e of db.journal.filter(e => e.table === "propositions" && e.op === "delete"))
+    assert.ok(e.filtres.some(([k, , v]) => k === "statut" && v === "en_attente") && e.filtres.some(([k, , v]) => k === "user_id" && v === U));
+  // second passage : rien de nouveau
+  const r2 = await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(db.tables.propositions.filter(p => p.source === "Powens — revenus détectés").length, 1);
+  assert.equal(r2.revenus_proposes, 0);
+  // refusée : pas reproposée (même lot), ni le mois suivant pour un montant à 10 % près de celui refusé
+  props[0].statut = "refusee"; props[0].decide_le = "2026-10-12T09:00:00Z";
+  await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(db.tables.propositions.filter(p => p.source === "Powens — revenus détectés").length, 1);
+  const novembre = { 101: [...operations[101], { id: 9302, date: "2026-10-28", value: 3000, simplified_wording: "VIR SALAIRE ACME 10", coming: false, deleted: null }] };
+  await S.synchroniser(db, apiFactice({ operations: novembre }), U, 7, { maintenant: new Date("2026-11-03T08:00:00Z") });
+  assert.equal(db.tables.propositions.filter(p => p.source === "Powens — revenus détectés").length, 1, "refus respecté");
+});
+
+/* ---------- versements vers les placements sans contrepartie synchronisée (cas type : LCL → PEA Bourso, PER, assurance-vie) ---------- */
+const RECURRING = [
+  { id: "r1", label: "ETF Monde", positionId: "pos-etf", amount: 400, day: 5 },
+  { id: "r2", label: "PER", positionId: "pos-per", amount: 150, day: 10 },
+  { id: "r3", label: "Assurance-vie", positionId: "pos-av", amount: 150, day: 20, start: "2026-09-01" },
+];
+const LIGNES_INV = [
+  { id: "pos-etf", name: "ETF Monde", envelope: "PEA Bourso", mode: "market", status: "actif" },
+  { id: "pos-av", name: "Fonds euros", envelope: "Assurance-vie Linxea", mode: "manual", status: "actif" },
+  { id: "pos-cc", name: "Compte courant LCL", envelope: "Comptes courants", mode: "manual", status: "actif" },
+];
+
+test("contexteEpargne / epargneSansContrepartie : libellé de placement, versement programmé, virement vers soi ; jamais un virement interne", { skip: SANS_STRIP }, () => {
+  const { S } = charger();
+  const comptes = [...KV, { id: 40, connexion_id: 40, type: "pea" }, { id: 41, connexion_id: 41, type: "pea" }, { id: 42, connexion_id: 41, type: "courant" }];
+  const ctx = S.contexteEpargne({ lignes: LIGNES_INV, comptes, recurring: RECURRING, personnes: { p1: { nom: "Moi" }, p2: { nom: "Camille" } },
+    connexions: [{ id: 40, etablissement: "Fortuneo Placements" }, { id: 41, etablissement: "Boursorama Banque" }] });
+  const t = ctx.termes.map(x => x.join(" "));
+  for (const k of ["pea", "per", "assurance vie", "linxea", "spirica", "versement programme", "pea bourso", "assurance vie linxea", "fortuneo placements", "fortuneo"]) assert.ok(t.includes(k), k);
+  assert.ok(!t.includes("boursorama banque") && !t.includes("boursorama"), "établissement où l'utilisateur a aussi un compte courant : pas un indice");
+  assert.ok(!t.includes("comptes courants"), "enveloppe de compte courant : pas un placement");
+  assert.deepEqual(J(ctx.noms), [["camille"]], "« Moi » n'est pas un nom");
+  assert.deepEqual(J(ctx.versements), [{ montant: 400, jour: 5, debut: null }, { montant: 150, jour: 10, debut: null }, { montant: 150, jour: 20, debut: "2026-09-01" }]);
+  const o = (id, date, montant, libelle, categorie = "divers", compte_id = 1) => ({ id, compte_id, date, montant, libelle, categorie });
+  const ops = [
+    o(1, "2026-09-05", -400, "VIR.PERMANENT DUPONT"),              // virement vers soi + versement programmé
+    o(2, "2026-09-12", -150, "PRLV SPIRICA 0912", "abonnements"),  // libellé de placement, quelle que soit la catégorie
+    o(3, "2026-09-07", -400.8, "VIR SEPA 123"),                   // versement programmé : montant ±1 €, jour ±5
+    o(4, "2026-09-11", -150, "CB FNAC"),                          // paiement par carte : jamais un versement programmé
+    o(5, "2026-09-11", -150, "PRLV EDF", "logement"),             // dépense catégorisée : pas un versement programmé
+    o(6, "2026-09-25", -400, "VIR SEPA 123"),                     // jour trop loin (20 jours)
+    o(7, "2026-09-25", -400, "VIR PERMANENT DUPONT"),              // virement vers soi, montant d'un versement : quel que soit le jour
+    o(8, "2026-09-25", -42, "VIR PERMANENT DUPONT"),               // virement vers soi sans versement de ce montant : gardé
+    o(9, "2026-09-02", -150, "VIR CAMILLE"),                      // vir + nom d'une personne du foyer + montant d'un versement
+    o(10, "2026-09-05", 400, "VIR.PERMANENT DUPONT"),              // entrée : jamais
+    o(11, "2026-09-05", -400, "VIR.PERMANENT DUPONT", "divers", 2), // livret : seulement les comptes courants
+    o(12, "2026-09-12", -150, "VERSEMENT PEA BOURSO"),
+    o(13, "2026-08-18", -150, "VIR SEPA ABC"),                    // versement r3 pas encore commencé ; r2 (jour 10) à 8 jours
+    o(14, "2026-09-05", -400, "VIR.PERMANENT DUPONT", "virement_interne"), // déjà virement interne : jamais requalifié
+    o(15, "2026-09-30", -400, "VIR SEPA X"),                      // jour 30 contre 5 : 5 jours en passant le mois
+  ];
+  assert.deepEqual(Object.keys(S.epargneSansContrepartie(ops, comptes, ctx)).map(Number).sort((a, b) => a - b), [1, 2, 3, 7, 9, 12, 15]);
+  assert.deepEqual(J(S.epargneSansContrepartie(ops, comptes, ctx, new Set(["1"]))).hasOwnProperty("1"), false, "opération rapprochée : exclue");
+  assert.deepEqual(J(S.epargneSansContrepartie(ops, comptes, null)), {});
+  // dans preparerOperations : la sortie appariée à une contrepartie reste virement interne
+  const prep = S.preparerOperations([o(20, "2026-10-05", -400, "VIR.PERMANENT DUPONT")], [], [o(21, "2026-10-05", 400, "VIR DE DUPONT", "divers", 3)], comptes, ctx);
+  assert.equal(prep.operations[0].categorie, "virement_interne");
+  assert.equal(prep.epargne, 0);
+});
+
+test("synchroniser : cas type — 400 € « VIR.PERMANENT DUPONT » le 5 vers le PEA, « PRLV SPIRICA » 150 € → épargne, pas dépense", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const base = baseInitiale(J(RATTACHES));
+  base.positions.push(...LIGNES_INV.map(p => ({ ...p, user_id: U })));
+  base.config = [{ user_id: U, recurring: RECURRING }];
+  base.profiles = [{ user_id: U, foyer: { adultes: 1 }, personnes: { p1: { nom: "Moi" } } }];
+  const operations = {
+    101: [
+      { id: 9401, date: "2026-10-05", value: -400, simplified_wording: "VIR.PERMANENT DUPONT", categories: [{ code: "transfers" }], coming: false, deleted: null },
+      { id: 9402, date: "2026-09-12", value: -150, simplified_wording: "PRLV SPIRICA", coming: false, deleted: null },
+      { id: 9403, date: "2026-10-03", value: -85.4, simplified_wording: "CB CARREFOUR", categories: [{ code: "supermarket_and_groceries" }], coming: false, deleted: null },
+    ],
+  };
+  const db = fausseBase(base, { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  const cat = id => db.tables.banque_operations.find(o => o.id === id).categorie;
+  assert.deepEqual([cat(9401), cat(9402), cat(9403)], ["epargne", "epargne", "alimentation"]);
+  assert.equal(r.versements_epargne, 2);
+  assert.ok(db.journal.some(e => e.table === "config" && e.op === "select" && e.filtres.some(([k, , v]) => k === "user_id" && v === U)));
+  // idempotent ; config illisible → règles de libellé seulement, noté, sans échec
+  await S.synchroniser(db, apiFactice({ operations }), U, 7, OPTS());
+  assert.deepEqual([cat(9401), cat(9402)], ["epargne", "epargne"]);
+  const db2 = fausseBase({ ...base, banque_operations: [] }, { rpc: rpcBanque(), echec: (t) => (t === "config" ? "panne" : null) });
+  const r2 = await S.synchroniser(db2, apiFactice({ operations }), U, 7, OPTS());
+  assert.equal(r2.ok, true);
+  assert.ok(r2.notes.some(n => /versements programmés illisibles/.test(n)));
+  const cat2 = id => db2.tables.banque_operations.find(o => o.id === id).categorie;
+  assert.deepEqual([cat2(9401), cat2(9402)], ["divers", "epargne"], "sans versements programmés : « DUPONT » seul n'est pas un indice");
 });

@@ -13,9 +13,13 @@
    - Banques connectées (BQ1) : à côté du prévu, chaque catégorie affiche son « réel » (moyenne des 3 derniers mois complets de
      S.banque.mois, BanqueEtat.reelMoyen), et les dépenses réelles d'une catégorie absente du budget sont listées sous les dépenses.
      Seulement pour le foyer (les comptes ne sont pas répartis par personne) et quand l'interrupteur banque est actif.
+   - Budget réel sur les comptes courants (spec cp1 § 5) : si S.banque.mois est détaillé par compte (compteId), seules les lignes
+     des comptes courants suivis comptent (Calc.moisCourants : type courant, ni ignorés ni en double) ; sinon les totaux tels quels.
+     Ligne « Taux d'épargne réel » dans la section Épargne (Calc.budgetReel : épargne ÷ revenus, 3 derniers mois complets) et
+     mention « Virements entre tes comptes exclus » à côté de la note du réel.
    Fonctions pures exportées pour les tests : lignesProfil, regrouper, resume, barre, segments, cartesHtml, barreHtml,
-   groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, reelDe, noteReel. Dépendances injectées (ctx) : { Plan, Calc } ; window.* par
-   défaut (ClaudePrompts compris). */
+   groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, reelDe, noteReel, budgetReelDe, tauxReelHtml. Dépendances injectées
+   (ctx) : { Plan, Calc } ; window.* par défaut (ClaudePrompts compris). */
 (function () {
   "use strict";
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -28,6 +32,9 @@
   /* Banques connectées (banque-etat.js) : absent → pas de colonne « réel ». */
   const BE = () => glob("BanqueEtat") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./banque-etat.js") : null);
+  /* Calculs (calc.js) : comptes courants et budget réel. */
+  const CA = () => glob("Calc") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./calc.js") : null);
 
   /* ---------- formats ---------- */
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
@@ -212,19 +219,36 @@
   /** Réel moyen des 3 derniers mois complets (BanqueEtat.reelMoyen sur S.banque.mois) → { n, du, au, parCategorie } ou null
       (interrupteur éteint, vue d'une personne, aucun mois complet). */
   function reelDe(S, today) {
-    const B = BE(), b = S && S.banque;
+    const B = BE(), C = CA(), b = S && S.banque;
     if (!B || !b || !b.actif || (S.scope || "foyer") !== "foyer") return null;
-    return B.reelMoyen(b.mois, today);
+    return B.reelMoyen(C && typeof C.moisCourants === "function" ? C.moisCourants(b) : b.mois, today);
+  }
+  /** Budget réel des comptes courants (Calc.budgetReel) → { n, du, au, revenus, depenses, epargne, tauxEpargne } ou null
+      (interrupteur éteint, vue d'une personne, aucun mois complet). */
+  function budgetReelDe(S, today) {
+    const C = CA(), b = S && S.banque;
+    if (!C || typeof C.budgetReel !== "function" || !b || !b.actif || (S.scope || "foyer") !== "foyer") return null;
+    return C.budgetReel(b, today);
   }
   const MOIS_NOMS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
   const moisNom = (iso, an) => MOIS_NOMS[+iso.slice(5, 7) - 1] + (an ? " " + iso.slice(0, 4) : "");
+  /** Période couverte : « septembre 2026 » ou « moyenne de juillet à septembre 2026 ». */
+  function periodeReel(r) {
+    if (r.du === r.au) return moisNom(r.du, true);
+    const de = /^[aeiouyéè]/.test(moisNom(r.du)) ? "d'" : "de ";
+    return "moyenne " + de + moisNom(r.du, r.du.slice(0, 4) !== r.au.slice(0, 4)) + " à " + moisNom(r.au, true);
+  }
   /** Phrase d'explication de la colonne « réel » (période couverte). */
   function noteReel(r) {
     if (!r || !r.du || !r.au) return "";
-    if (r.du === r.au) return "« Réel » : " + moisNom(r.du, true) + ", d'après tes comptes connectés.";
-    const de = /^[aeiouyéè]/.test(moisNom(r.du)) ? "d'" : "de ";
-    const memeAn = r.du.slice(0, 4) === r.au.slice(0, 4);
-    return "« Réel » : moyenne " + de + moisNom(r.du, !memeAn) + " à " + moisNom(r.au, true) + ", d'après tes comptes connectés.";
+    return "« Réel » : " + periodeReel(r) + ", d'après tes comptes connectés.";
+  }
+  const MENTION_VIREMENTS = "Virements entre tes comptes exclus.";
+  /** Ligne « Taux d'épargne réel » (épargne ÷ revenus des comptes courants, 3 derniers mois complets) ; vide sans taux. */
+  function tauxReelHtml(br) {
+    if (!br || br.tauxEpargne == null || !isFinite(br.tauxEpargne) || !br.du || !br.au) return "";
+    return '<p class="pv-reel-taux"><span class="pv-reel-taux-l">Taux d\'épargne réel</span> <b class="pv-num">' + esc(pct(br.tauxEpargne)) + "</b> " +
+      '<span class="pv-muet">épargne ÷ revenus, ' + esc(periodeReel(br)) + ", sur tes comptes courants. " + MENTION_VIREMENTS + "</span></p>";
   }
   /** Réel mensuel d'un groupe du budget (catégorie reconnue et de même sens), ou null. */
   function reelGroupe(g, reel) {
@@ -274,7 +298,8 @@
       ". " + boutonClaude(glob("UI"), "budget", "les dépenses réelles hors budget (" + hors.map(c => c.libelle).join(", ") + ")", "Ajouter avec Claude") + "</p>";
   }
   /** Les trois sections (Revenus, Dépenses, Épargne) et leurs catégories ; total de section = totaux de Plan.budgetTotaux
-      (le même que les cartes). o = { mode, ouverts: Set de clés, totaux, U, reel (reelDe, facultatif) }. */
+      (le même que les cartes). o = { mode, ouverts: Set de clés, totaux, U, reel (reelDe, facultatif), budgetReel (budgetReelDe,
+      facultatif : ligne « Taux d'épargne réel » en fin de section Épargne) }. */
   function groupesHtml(groupes, o) {
     const opt = o || {}, m = mode0(opt.mode), U = opt.U || glob("UI"), reel = opt.reel || null;
     return SECTIONS.map(s => {
@@ -287,7 +312,7 @@
           boutonClaude(U, s.type === "revenu" ? "revenus" : "budget", s.type === "revenu" ? "" : "les " + NOM_TYPE[s.type] + " du budget", "Compléter avec Claude") + "</div>";
       return '<section class="pv-sec" aria-labelledby="pv-sec-' + s.type + '"><div class="pv-sec-h"><h3 id="pv-sec-' + s.type + '">' + esc(s.titre) + "</h3>" +
         '<span class="pv-num pv-sec-t">' + esc(eur(total * m.facteur) + m.suffixe) + "</span></div>" + corps +
-        (s.type === "depense" ? horsBudgetHtml(gs, reel, m) : "") + "</section>";
+        (s.type === "depense" ? horsBudgetHtml(gs, reel, m) : "") + (s.type === "epargne" ? tauxReelHtml(opt.budgetReel) : "") + "</section>";
     }).join("");
   }
 
@@ -332,7 +357,8 @@
       acts("budget", "");
   }
 
-  const H = { lignesProfil, regrouper, resume, barre, segments, cartesHtml, barreHtml, groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, reelDe, noteReel, MODES, PALETTE };
+  const H = { lignesProfil, regrouper, resume, barre, segments, cartesHtml, barreHtml, groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, reelDe, noteReel,
+    budgetReelDe, tauxReelHtml, MODES, PALETTE };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -394,15 +420,15 @@
     const g = regrouper(L, ctxCalc()), t = g.totaux;
     const r = resume(t, mode, has);
     $("pvTitre").textContent = "Où va mon argent " + (mode === "an" ? "chaque année" : "chaque mois") + " ?";
-    const reel = has ? reelDe(S, jourLocal()) : null;
+    const reel = has ? reelDe(S, jourLocal()) : null, budgetReel = has ? budgetReelDe(S, jourLocal()) : null;
     $("pvBudgetNote").textContent = (scope() === "foyer" ? "Montants du foyer, " + MODES[mode].unite + "." : "Vue " + duScope() + " : ses lignes, et la moitié des lignes communes.") +
-      (reel ? " " + noteReel(reel) : "");
+      (reel ? " " + noteReel(reel) + " " + MENTION_VIREMENTS : "");
     const hc = cartesHtml(r, u, { duScope: duScope() });
     if (hc !== sigCartes) { sigCartes = hc; ecrire($("pvCartes"), hc); }
     const hb = has ? barreHtml(barre(t), mode, u) : "";
     $("pvBarBloc").hidden = !has;
     if (hb !== sigBar) { sigBar = hb; ecrire($("pvBar"), hb); }
-    const hg = has ? groupesHtml(g.groupes, { mode, ouverts, totaux: t, U: u, reel }) : videHtml();
+    const hg = has ? groupesHtml(g.groupes, { mode, ouverts, totaux: t, U: u, reel, budgetReel }) : videHtml();
     if (hg !== sigBudget) { sigBudget = hg; ecrire($("pvBudget"), hg); }
     renderPanneau(g, r);
   }

@@ -9,6 +9,9 @@
      une carte par groupe (nom, montant, part, plus-value latente) qui se déplie en lignes compactes (5 puis « Voir plus ») ;
      une ligne ouvre UI.panneau (lecture) : cours et date, quantité, PRU, plus-value latente, poids, frais / zone / devise (avec
      source), statut, note, liens Claude. Le panneau se met à jour quand le store émet et se ferme si la ligne disparaît.
+   - Fiches de Patrimoine › Comptes (spec CP1 § 3) : chaque groupe « Par enveloppe » a un lien « Ouvrir la fiche du compte »
+     (#patrimoine/comptes?enveloppe=…) et le panneau d'une ligne un lien « Voir la fiche de la ligne » (?ligne=…), adresses de
+     ComptesView.lien (comptes-view.js), comme App.ouvrir.
    - Accordéons fermés en bas : Allocation par poche, Ordres à passer, Versements programmés, Hypothèses à confirmer, Journal des
      mouvements (listes en 5 puis « Voir plus », dans le périmètre S.scope).
    Le score de santé est dans Pilotage › Santé, les alertes dans Aujourd'hui, les règles et la cible du matelas dans Compte › Règles.
@@ -21,6 +24,9 @@
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const glob = k => (typeof window !== "undefined" && window[k]) || (typeof self !== "undefined" && self[k]) || null;
   const dep = (d, k) => (d && Object.prototype.hasOwnProperty.call(d, k) ? d[k] : glob(k));
+  /* Adresse d'une fiche de Patrimoine › Comptes (ComptesView.lien, comptes-view.js : global du navigateur, sinon le module voisin). */
+  const comptesView = () => glob("ComptesView") || (typeof module === "object" && module.exports && typeof require === "function" ? require("./comptes-view.js") : null);
+  const lienFiche = cible => { const CV = comptesView(); return CV && typeof CV.lien === "function" ? CV.lien(cible) : "patrimoine/comptes"; };
 
   /* ---------- dates (AAAA-MM-JJ) ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -346,6 +352,13 @@
       '<span class="pl-l-ouvrir" aria-hidden="true">›</span></button></li>';
   }
 
+  /** Lien vers la fiche du compte d'un groupe « Par enveloppe » (titulaire précisé quand toutes ses lignes ont le même). */
+  function ficheGroupe(g, mode) {
+    if (mode !== "enveloppe" || !g || !g.lignes.length || g.cle === "Sans enveloppe") return "";
+    const owners = [...new Set(g.lignes.map(p => p.owner).filter(Boolean))];
+    const r = lienFiche({ enveloppe: g.cle, titulaire: owners.length === 1 ? owners[0] : null });
+    return '<p class="pl-g-fiche"><a href="#' + esc(r) + '" data-goto="' + esc(r) + '">Ouvrir la fiche du compte<span class="ui-sr"> ' + esc(g.label) + "</span></a></p>";
+  }
   /** Cartes de groupes dépliables (ouverts = Set des clés dépliées) : 5 groupes puis « Voir plus », et dans chaque groupe 5 lignes
       puis « Voir plus ». Un groupe sans ligne comptée (« à recevoir » seulement) affiche la somme attendue, marquée non comptée. */
   function groupesHtml(groupes, mode, S, U, o) {
@@ -364,7 +377,7 @@
         '<span class="pl-g-chiffres"><span class="pl-g-val">' + esc(eur(attente ? g.aRecevoir : g.montant)) + "</span>" + tend + "</span>" +
         '<span class="pl-g-chev" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span>' +
         '<span class="pl-g-barre" aria-hidden="true"><span style="width:' + Math.min(100, total ? g.montant / total * 100 : 0).toFixed(1) + '%"></span></span></button></h3>' +
-        '<div class="pl-g-corps" id="' + id + '"' + (ouvert ? "" : " hidden") + ' data-pl-vp="' + esc(mode + ":" + g.cle) + '">' +
+        '<div class="pl-g-corps" id="' + id + '"' + (ouvert ? "" : " hidden") + ' data-pl-vp="' + esc(mode + ":" + g.cle) + '">' + ficheGroupe(g, mode) +
         U.voirPlus(g.lignes, 5, p => ligneHtml(p, S, total, mode, today, opt.deps), "Voir plus de lignes", "ul", "pl-lignes:" + mode + ":" + g.cle) + "</div></li>";
     };
     return '<div class="pl-groupes-vp" data-pl-vp="' + esc("groupes:" + mode) + '">' + U.voirPlus(groupes, 5, carte, "Voir plus de groupes", "ul", "pl-groupes:" + mode) + "</div>";
@@ -437,7 +450,7 @@
       "Voir plus de mouvements", "ul", "pl-journal") + signaler;
   }
 
-  const H = { MODES, grouper, totaux, matelas, evolution, courbeSvg, etatDonnee, detailLigne, detailHtml, hypotheses, versements, ordres, journalMouvements, allocation,
+  const H = { MODES, lienFiche, ficheGroupe, grouper, totaux, matelas, evolution, courbeSvg, etatDonnee, detailLigne, detailHtml, hypotheses, versements, ordres, journalMouvements, allocation,
     titresSuivi, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, periodeTxt, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
@@ -559,7 +572,7 @@
   function optionsLigne(p, u) {
     const d = detailLigne(p, S, jour());
     const contenu = '<div class="pl-p">' + detailHtml(d, u) + "</div>";
-    return { titre: d.titre, contenu, sig: d.titre + "|" + contenu,
+    return { titre: d.titre, contenu, sig: d.titre + "|" + contenu, lien: { label: "Voir la fiche de la ligne", href: "#" + lienFiche({ ligne: p.id }) },
       pied: u.demanderAClaude("Explique-moi ma ligne « " + d.titre + " »" + (d.meta ? " (" + d.meta + ")" : "") + " dans Boussole : ce qu'elle contient, ses frais et son poids dans mes placements.") };
   }
   /* Fermeture : focus rendu à la ligne d'origine, ou à la ligne du même id si un rendu l'a remplacée, sinon au titre de la page. */
@@ -574,7 +587,7 @@
     if (!u || !p) return;
     const o = optionsLigne(p, u);
     ouverte = id; sigPanneau = o.sig;
-    u.panneau.ouvrir({ titre: o.titre, contenu: o.contenu, pied: o.pied, retour: el || null, surFermeture: fermeture(el, id) });
+    u.panneau.ouvrir({ titre: o.titre, contenu: o.contenu, lien: o.lien, pied: o.pied, retour: el || null, surFermeture: fermeture(el, id) });
   }
   /* Le store a émis pendant l'ouverture : contenu mis à jour s'il a changé ; panneau fermé si la ligne a disparu du périmètre. */
   function rafraichirPanneau() {
@@ -585,7 +598,7 @@
     const o = optionsLigne(p, u);
     if (o.sig === sigPanneau) return;
     sigPanneau = o.sig;
-    u.panneau.ouvrir({ titre: o.titre, contenu: o.contenu, pied: o.pied }); // sans retour ni surFermeture : ceux de l'ouverture sont gardés
+    u.panneau.ouvrir({ titre: o.titre, contenu: o.contenu, lien: o.lien, pied: o.pied }); // sans retour ni surFermeture : ceux de l'ouverture sont gardés
   }
 
   function basculerGroupe(b) {

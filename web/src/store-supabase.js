@@ -19,10 +19,15 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
-   positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
+   positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues) ;
+   sourceAuto ("powens" | "binance" | null) et sourceAutoLe (horodatage | null) : ligne alimentée par une synchronisation (0021, 0023).
+   Store.cours(isins, depuis) → Promise<{ <isin>: [{ date, cloture }] }> : cours de clôture quotidiens de la table publique cours (CP1 § 4,
+   migration 0023), du plus ancien au plus récent, à partir de `depuis` (AAAA-MM-JJ) ; lus à la demande (ouverture d'une fiche de
+   Patrimoine › Comptes), par pages de 1 000 lignes ; ISIN sans cours : absent. Table absente (migration non appliquée) ou lecture en
+   échec : {} sans erreur (avertissement en console) ; table absente : plus aucune lecture jusqu'au rechargement de la page.
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
    profil.protection = { prevoyance, emprunteur } (booléens) ou le même objet par personne — profiles.protection.
@@ -191,6 +196,8 @@
       // Annotations de l'instrument (outil annotate_instrument du connecteur) : frais courants, zone, devise d'exposition.
       ter: ins && ins.ter != null ? +ins.ter : null, zone: (ins && ins.zone) || null, devise: (ins && ins.devise) || null,
       annoteSource: (ins && ins.annote_source) || null, annoteLe: (ins && ins.annote_le) || null,
+      // Synchronisation (Powens, Binance) : la ligne est alimentée automatiquement, à cette date.
+      sourceAuto: r.source_auto || null, sourceAutoLe: r.source_auto_le || null,
     };
   };
   const txView = r => ({ id: r.id, positionId: r.position_id, date: r.date, type: r.type, qty: num(r.qty), price: num(r.price), amount: num(r.amount), note: r.note || "", source: r.source, createdAt: r.created_at });
@@ -657,6 +664,34 @@
     }
   }
 
+  /* ---------- cours historiques (CP1 § 4 : table publique cours, migration 0023) ---------- */
+  const COURS_PAGE = 1000, COURS_PAGES_MAX = 40;
+  let coursAbsents = false; // table pas encore créée : plus de requête jusqu'au rechargement
+  async function cours(isins, depuis) {
+    const ids = [...new Set((Array.isArray(isins) ? isins : []).map(x => String(x == null ? "" : x).trim()).filter(Boolean))];
+    const d0 = String(depuis == null ? "" : depuis).slice(0, 10), out = {};
+    if (!ids.length || !sb || coursAbsents) return out;
+    try {
+      for (let page = 0; page < COURS_PAGES_MAX; page++) {
+        let rq = sb.from("cours").select("isin, date, cloture").in("isin", ids);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d0)) rq = rq.gte("date", d0);
+        const rows = await q(rq.order("isin").order("date").range(page * COURS_PAGE, (page + 1) * COURS_PAGE - 1));
+        (Array.isArray(rows) ? rows : []).forEach(r => {
+          const c = num(r && r.cloture);
+          if (!r || !r.isin || !r.date || !(c > 0)) return;
+          (out[r.isin] = out[r.isin] || []).push({ date: String(r.date).slice(0, 10), cloture: c });
+        });
+        if (!Array.isArray(rows) || rows.length < COURS_PAGE) break;
+      }
+    } catch (e) {
+      if (e && ["42P01", "PGRST205", "PGRST200"].includes(e.code)) coursAbsents = true;
+      console.warn("Boussole : lecture des cours historiques impossible", e && e.code);
+      return {};
+    }
+    Object.keys(out).forEach(k => out[k].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)));
+    return out;
+  }
+
   const Store = {
     mode: "supabase",
     db,
@@ -678,6 +713,7 @@
     reload,
     markOnboarded() { return write(uid => q(sb.from("profiles").update({ onboarding_done: true }).eq("user_id", uid))); },
     surveillerConnexions,
+    cours,
     banque: banqueApi,
   };
   window.Store = Store;

@@ -1,0 +1,20 @@
+<div class="cv">
+  <div id="cvListeVue">
+    <section class="panel cv-tete" aria-labelledby="cvTitre">
+      <h2 class="cv-label" id="cvTitre">Patrimoine net du foyer</h2>
+      <div id="cvTete" aria-live="polite"></div>
+    </section>
+
+    <p class="cv-chargement" id="cvChargement" role="status">Chargement de tes comptes…</p>
+
+    <section class="panel cv-vide" id="cvVide" aria-labelledby="cvVideTitre" hidden>
+      <h2 id="cvVideTitre">Aucun compte enregistré</h2>
+      <p>Dis à Claude ce que tu détiens (comptes courants, livrets, PEA, assurance vie…), donne-lui tes relevés, ou connecte ta banque dans Agent › Connexion : tes comptes apparaîtront ici, rangés par famille et par établissement.</p>
+      <div class="cv-acts"><span id="cvVideClaude"></span></div>
+    </section>
+
+    <div class="cv-familles" id="cvFamilles"></div>
+  </div>
+
+  <div class="cv-fiche" id="cvFiche" hidden></div>
+</div>

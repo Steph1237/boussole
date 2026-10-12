@@ -6,6 +6,10 @@
      échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard, banques connectées (BQ1 : connexion
      à refaire, urgence 1 pour SCARequired, wrongpass, webauthRequired, passwordExpired, 2 pour les autres états qui demandent une action,
      rien pour un incident passager ; « N comptes à rattacher », urgence 2 ; « Connexion X en double », urgence 2, vers « Déconnecter » ; règles de BanqueEtat, banque-etat.js).
+   - Argent qui dort (CP1 § 1) : Calc.argentQuiDort(S, auj) (calc.js) s'il existe → élément « Argent qui dort sur tes comptes courants »
+     (urgence 3, vers Patrimoine › Comptes) ; fonction absente ou en échec : rien.
+   - Fiches de Patrimoine › Comptes (CP1 § 3) : la carte « Patrimoine net » mène à Comptes et chaque enveloppe de son détail ouvre sa
+     fiche ; sous la frise, « Voir le détail par compte ».
    - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an ;
      granularité automatique selon la période, sauf si l'utilisateur la choisit sur sa bascule : elle est alors mémorisée) ;
      repères verticaux aux dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
@@ -27,6 +31,10 @@
      voisin sous Node (tests). */
   const RE = () => glob("RoutineEtat") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./routine-etat.js") : null);
+  /* Adresse d'une fiche de Patrimoine › Comptes (ComptesView.lien, comptes-view.js). */
+  const comptesView = () => glob("ComptesView") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./comptes-view.js") : null);
+  const lienFiche = cible => { const CV = comptesView(); return CV && typeof CV.lien === "function" ? CV.lien(cible) : "patrimoine/comptes"; };
   /* Banques connectées (BanqueEtat, banque-etat.js) : absent → aucun élément bancaire. */
   const BE = () => glob("BanqueEtat") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./banque-etat.js") : null);
@@ -73,7 +81,7 @@
   /* ---------- liens ---------- */
   /* Lien profond vers une entrée du journal : la coque retient le paramètre et Agent › Journal ouvre l'entrée (app.js, journal-view.js). */
   const lienEntree = id => "agent/journal?entree=" + encodeURIComponent(String(id));
-  const R = { propositions: "agent/propositions", journal: "agent/journal", connexion: "agent/connexion", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque" };
+  const R = { comptes: "patrimoine/comptes", propositions: "agent/propositions", journal: "agent/journal", connexion: "agent/connexion", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque" };
   /** Lien vers une nouvelle conversation Claude, question préremplie (même forme que UI.demanderAClaude). */
   function urlClaude(question) { return "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? "")); }
   const httpsOk = u => /^https:\/\//.test(String(u || ""));
@@ -169,6 +177,23 @@
     return out;
   }
 
+  /** « Argent qui dort » (spec CP1 § 1) : soldes des comptes courants au-dessus de 1,5 mois de dépenses deux mois de suite, d'après
+      Calc.argentQuiDort(S, auj) → { montant, mois, solde, seuil, depenses, source } | null. Fonction absente, en échec ou réponse
+      inattendue : null. */
+  function elementArgentQuiDort(S, t, deps) {
+    const C = dep(deps, "Calc");
+    if (!C || typeof C.argentQuiDort !== "function") return null;
+    let r = null;
+    try { r = C.argentQuiDort(S, t); } catch (e) { return null; }
+    if (!r || typeof r !== "object" || !(+r.montant > 0)) return null;
+    const mois = Number.isFinite(+r.mois) && +r.mois >= 2 ? +r.mois : 2;
+    return { type: "argent", urgence: 3, date: t, titre: "Argent qui dort sur tes comptes courants",
+      contexte: eur(+r.montant) + " au-delà de 1,5 mois de dépenses depuis " + mois + " mois" +
+        (Number.isFinite(+r.solde) && Number.isFinite(+r.seuil) ? " (solde " + eur(+r.solde) + ", seuil " + eur(+r.seuil) + ")" : "") +
+        " : cet argent ne te rapporte rien.",
+      action: { label: "Voir mes comptes", route: R.comptes } };
+  }
+
   /** Tout ce qui demande une action, trié par urgence (1 haute … 3) puis date (la plus ancienne d'abord).
       → [{ type: proposition|journal|routine|banque|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
       Textes bruts : l'échappement se fait au rendu. deps = { Rules } (window.Rules par défaut). */
@@ -213,6 +238,10 @@
     // 1 quater. Banques connectées (BQ1) : connexion à refaire (seulement les états qui demandent une action de l'utilisateur) et
     // comptes à rattacher. Rien si l'interrupteur est éteint.
     out.push(...elementsBanque(S, t));
+
+    // 1 quinquies. Argent qui dort sur les comptes courants (Calc.argentQuiDort, si elle existe), urgence 3.
+    const dort = elementArgentQuiDort(S, t, deps);
+    if (dort) out.push(dort);
 
     // 2. Alertes des règles de l'utilisateur et des contrôles intégrés (même contexte que Recommandations › Actions).
     if (Rules) {
@@ -353,6 +382,11 @@
   }
 
   const ligne = (label, valeur) => '<li><span class="aj-det-l">' + esc(label) + '</span><span class="aj-det-v">' + esc(valeur) + "</span></li>";
+  /** Ligne d'une enveloppe : son nom ouvre sa fiche de Patrimoine › Comptes (le panneau se ferme, la coque suit le lien). */
+  const ligneFiche = (enveloppe, valeur) => {
+    const r = lienFiche({ enveloppe });
+    return '<li><a class="aj-det-l aj-det-fiche" href="#' + esc(r) + '" data-goto="' + esc(r) + '">' + esc(enveloppe) + '</a><span class="aj-det-v">' + esc(valeur) + "</span></li>";
+  };
   const CHEVRON_BAS = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
   /** Accordéon fermé (même balisage que UI.accordeon) ; contenu déjà échappé. */
   const accordeon = (titre, contenu) => '<details class="ui-acc"><summary class="ui-acc-titre"><span>' + esc(titre) + '</span><span class="ui-acc-chevron">' + CHEVRON_BAS +
@@ -365,8 +399,8 @@
     if (n.entreprise > 0) lignes.push(["Parts d'entreprise", eur(n.entreprise)]);
     lignes.push(["Dettes", eur(-n.dettes)], ["Patrimoine net", eur(n.valeur)]);
     const c = n.composition;
-    const groupe = (label, ls) => '<p class="aj-det-note">' + esc(label) + '</p><ul class="aj-det">' + ls.map(l => ligne(l.label, eur(l.montant))).join("") + "</ul>";
-    const det = c ? c.actifs.filter(b => b.lignes.length).map(b => groupe(b.label + " · " + eur(b.total), b.lignes)).join("") +
+    const groupe = (label, ls, fiche) => '<p class="aj-det-note">' + esc(label) + '</p><ul class="aj-det">' + ls.map(l => fiche ? ligneFiche(l.label, eur(l.montant)) : ligne(l.label, eur(l.montant))).join("") + "</ul>";
+    const det = c ? c.actifs.filter(b => b.lignes.length).map(b => groupe(b.label + " · " + eur(b.total), b.lignes, b.cle === "financier")).join("") +
       (c.dettes.lignes.length ? groupe("Dettes · " + eur(-c.dettes.total), c.dettes.lignes.map(l => ({ label: l.label, montant: -l.montant }))) : "") : "";
     return '<p class="aj-det-note">Ce que je possède, ce que je dois</p><ul class="aj-det">' + lignes.map(l => ligne(l[0], l[1])).join("") + "</ul>" +
       (det ? accordeon("Le détail, ligne par ligne", det) : "");
@@ -377,7 +411,7 @@
     const n = ind.net, pr = ind.pratiques, al = ind.allocation, ec = ind.echeance;
     let titre, lignes = [], note = "", route, label, question;
     if (id === "net") {
-      titre = "Patrimoine net"; route = R.placements; label = "Voir les placements";
+      titre = "Patrimoine net"; route = R.comptes; label = "Voir mes comptes";
       question = "Explique-moi la composition de mon patrimoine net dans Boussole et ce qui l'a fait varier récemment.";
       note = n.variation == null ? "La variation apparaîtra après la première photo nocturne du patrimoine."
         : "Variation " + periodeTxt(periode) + " : " + eurS(n.variation) + ". Estimation : placements de chaque photo, immobilier, autres biens et dettes d'aujourd'hui.";
@@ -433,8 +467,9 @@
     cours: '<path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/>',
     routine: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/><path d="M8.5 12.2l2.4 2.4 4.6-4.6"/>',
     banque: '<path d="M3.5 9.5L12 4l8.5 5.5"/><path d="M5 20h14M6 10.5v7M10 10.5v7M14 10.5v7M18 10.5v7"/>',
+    argent: '<path d="M4 7.5h16v11H4z"/><path d="M4 11h16"/><path d="M8 4.5h8"/><path d="M15.5 15h1.5"/>',
   };
-  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
+  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", argent: "Argent qui dort", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 
@@ -542,7 +577,7 @@
     return out;
   }
 
-  const H = { boite, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, friseSvg, jour, delai, premiereDate,
+  const H = { boite, elementArgentQuiDort, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, friseSvg, jour, delai, premiereDate,
     lirePeriode, periodeAEnregistrer };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;

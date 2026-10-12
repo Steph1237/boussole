@@ -226,10 +226,12 @@
   const GROUPE_DE = { actions: "actions", small_caps: "actions", emergents: "actions", obligations: "obligations", monetaire: "securise",
     fonds_euros: "securise", immobilier: "immobilier", crypto: "speculatif", levier: "speculatif", or: "diversifiants", autres: "diversifiants" };
 
-  /* Montants par classe de risque (Marche.classeRisque), immobilier physique optionnel ajouté à l'immobilier. */
+  /* Montants par classe de risque (Marche.classeRisque), immobilier physique optionnel ajouté à l'immobilier.
+     Les comptes courants (Calc.famille « courant ») sont exclus : ils comptent dans le patrimoine net, pas dans l'allocation ni
+     le risque (spec cp1 § 1) ; même règle dans le connecteur (montantsParClasse de supabase/functions/mcp/index.ts). */
   function montantsParClasse(positions, scope, opts) {
     const o = opts || {}, sc = scope || "foyer", out = {};
-    (positions || []).filter(p => Calc.inScope(p, sc) && Calc.counted(p)).forEach(p => {
+    Calc.horsCourants(positions).filter(p => Calc.inScope(p, sc) && Calc.counted(p)).forEach(p => {
       const k = Marche.classeRisque(p, o.surcharge);
       out[k] = (out[k] || 0) + Calc.val(p);
     });
@@ -238,7 +240,8 @@
     return out;
   }
 
-  /** Répartition en % par grand groupe (actions, obligations, sécurisé, immobilier, spéculatif) + « diversifiants » (or, autres).
+  /** Répartition en % par grand groupe (actions, obligations, sécurisé, immobilier, spéculatif) + « diversifiants » (or, autres),
+      hors comptes courants.
       opts : { surcharge, immobilierPhysique } — la valeur du bien physique est fournie par l'appelant (ex. Calc.immobilier). */
   function allocationReelle(positions, scope, opts) {
     const parClasse = montantsParClasse(positions, scope, opts);

@@ -222,7 +222,7 @@ const SANS_STRIP = typeof strip !== "function" && "module.stripTypeScriptTypes i
 function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
-  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE });";
+  const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE, famille, budgetReel, matelasDisponible });";
   return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
 }
 const TODAY = "2026-10-10";
@@ -313,6 +313,84 @@ test("parité MCP / pratiques.js : mêmes critères, points, valeurs et textes s
       assert.ok(mcp.criteres.find(c => c.cle === "enveloppes").points < 20, "enveloppes : points d'attention");
     }
   }
+});
+
+/* ---------- CP1 : familles de comptes, comptes courants hors allocation, matelas avec réserve, budget réel ---------- */
+test("parité MCP / calc.js : famille d'une ligne (courant, épargne, investissement) sur une liste de libellés", { skip: SANS_STRIP }, () => {
+  const M = portMcp();
+  const envs = ["Banque", "Boursorama", "Compte courant Camille", "Comptes courants", "Compte joint", "Livret A", "Livrets Sam", "LDDS", "LEP", "PEL", "CEL",
+    "Compte à terme", "Compte épargne Revolut", "PEA Camille", "PEA-PME", "CTO Sam", "Compte-titres", "Comptes titres", "Assurance vie Sam", "Assurance-vie",
+    "AV Linxea Spirit 2", "Contrat de capitalisation", "PER", "PERin Camille", "PERCO", "PEE", "Épargne salariale", "Crypto (Binance)", "Binance", "Ledger",
+    "SCPI", "OPCI", "À recevoir", "", null];
+  const blocs = ["Comptes courants", "Compte courant", "Épargne", "Livrets", "Monétaire", "Cash", "Liquidités", "Monde", "Convictions", "Obligations", "SCPI",
+    "Crypto", "Protection", "Vins", "", null];
+  const vus = new Set();
+  for (const envelope of envs) for (const bloc of blocs) {
+    const f = Calc.famille({ envelope, bloc });
+    assert.equal(M.famille({ envelope, bloc }), f, `${envelope} / ${bloc}`);
+    vus.add(f);
+  }
+  assert.deepEqual([...vus].sort(), ["courant", "epargne", "investissement"]);
+  for (const sur of [{ "Trésorerie": "monetaire" }, { "Épargne": "actions" }]) for (const bloc of ["Trésorerie", "Épargne"])
+    assert.equal(M.famille({ envelope: "Banque", bloc }, sur), Calc.famille({ envelope: "Banque", bloc }, sur), `surcharge ${bloc}`);
+});
+
+const COURANT = { id: "cc", name: "Compte courant", envelope: "Boursorama", owner: "p1", bloc: "Comptes courants", mode: "manual", value: 9000, valueDate: TODAY, status: "actif" };
+const BANQUE = { actif: true, comptes: [{ id: 1, type: "courant", ignore: false, doublonDe: null }], mois: [
+  { mois: "2026-07-01", categorie: "revenus", entrees: 5200, sorties: 0 }, { mois: "2026-07-01", categorie: "alimentation", entrees: 0, sorties: 2600 },
+  { mois: "2026-08-01", categorie: "revenus", entrees: 5200, sorties: 0 }, { mois: "2026-08-01", categorie: "logement", entrees: 0, sorties: 2900 },
+  { mois: "2026-09-01", categorie: "revenus", entrees: 5200, sorties: 0 }, { mois: "2026-09-01", categorie: "divers", entrees: 100, sorties: 3100 },
+  { mois: "2026-09-01", categorie: "epargne", entrees: 0, sorties: 800 }, { mois: "2026-09-01", categorie: "virement_interne", entrees: 4000, sorties: 4000 }] };
+
+test("parité MCP / risque.js : comptes courants hors de l'allocation et du risque réel", { skip: SANS_STRIP }, () => {
+  const M = portMcp(), D = { ...DEMO, positions: [...DEMO.positions, COURANT] }, { d } = enLignes(D), { d: d0 } = enLignes(DEMO);
+  for (const scope of ["foyer", "p1"]) {
+    const a = M.allocationReelle(d.positions, scope, undefined), b = Risque.allocationReelle(D.positions, scope, {});
+    proche(a.total, b.total, scope + " total"); proche(a.total, M.allocationReelle(d0.positions, scope, undefined).total, scope + " : le courant n'y est pas");
+    for (const g of Object.keys(b.pct)) proche(a.pct[g], b.pct[g], `${scope} ${g}`);
+    proche(M.risquePortefeuille(d.positions, scope, undefined).volatilite, Risque.risquePortefeuille(D.positions, scope, {}).volatilite, scope + " volatilité");
+  }
+  assert.equal(M.bilan(d, "foyer").net - M.bilan(d0, "foyer").net, 9000, "le patrimoine net garde les comptes courants");
+});
+
+test("parité MCP / calc.js + pratiques.js : budget réel, matelas avec réserve et bonnes pratiques avec comptes courants", { skip: SANS_STRIP }, () => {
+  const M = portMcp();
+  const banqueSql = { comptes: BANQUE.comptes.map(({ doublonDe, ...c }) => ({ ...c, doublon_de: doublonDe })), mois: BANQUE.mois };
+  assert.deepEqual(J(M.budgetReel(banqueSql, TODAY)), J(Calc.budgetReel(BANQUE, TODAY)));
+  proche(Calc.budgetReel(BANQUE, TODAY).depenses, (2600 + 2900 + 3000) / 3, "dépenses réelles"); assert.equal(Calc.budgetReel(BANQUE, TODAY).revenus, 5200);
+  const parCompte = { ...banqueSql, mois: [...BANQUE.mois.map(m => ({ ...m, compte_id: 1 })), { mois: "2026-09-01", categorie: "divers", entrees: 0, sorties: 9000, compte_id: 2 }] };
+  assert.deepEqual(J(M.budgetReel(parCompte, TODAY)), J(Calc.budgetReel(BANQUE, TODAY)), "mois par compte : comptes courants seulement");
+  for (const cfg of [{ cushion: { min: 10000 } }, { cushion: { mode: "months", months: 6, depenses: 2500, reserve_mois: 2 } }]) {
+    const P = [...DEMO.positions, COURANT];
+    const { d } = enLignes({ ...DEMO, positions: P });
+    assert.deepEqual(J(M.matelasDisponible(d.positions, "foyer", { config: cfg, depenses: 2900 })), J(Calc.matelasDisponible(P, "foyer", { config: cfg, depenses: 2900 })));
+  }
+  const scenarios = [
+    { nom: "courant + banque", P: [...DEMO.positions, COURANT], banque: BANQUE },
+    { nom: "courant sans banque, réserve 2 mois", P: [...DEMO.positions, COURANT], config: { ...DEMO.config, cushion: { ...DEMO.config.cushion, reserve_mois: 2 } } },
+    { nom: "gros compte courant", P: [...DEMO.positions, { ...COURANT, value: 400000 }], banque: BANQUE },
+  ];
+  for (const sc of scenarios) for (const scope of ["foyer", "p1", "p2"]) {
+    const D = { ...DEMO, positions: sc.P, config: sc.config || DEMO.config };
+    const { d, objectifs } = enLignes(D);
+    const mcp = M.bonnesPratiques({ d, scope, objectifs, risque: { profil: "equilibre" }, classes: undefined, ref: TODAY, banque: sc.banque && banqueSql });
+    const web = Pratiques.evaluer({ positions: D.positions, profil: D.profil, config: D.config, budget: D.budget, objectifs: D.objectifs, scope,
+      risque: { profil: "equilibre" }, today: TODAY, banque: sc.banque });
+    const L = `${sc.nom} / ${scope}`;
+    assert.deepEqual(J(mcp.criteres.map(c => c.cle)), web.criteres.map(c => c.cle), L);
+    web.criteres.forEach((w, i) => {
+      const m = mcp.criteres[i], C = `${L} / ${w.cle}`;
+      assert.equal(m.points, w.points, C + " : points"); assert.equal(m.a_completer, w.aCompleter, C); assert.equal(m.regle, w.regle, C);
+      if (w.valeur != null) proche(m.valeur, Math.round(w.valeur * 1000) / 1000, C + " : valeur");
+      if (!["epargne", "endettement", "concentration"].includes(w.cle)) { assert.equal(m.texte, w.texte, C); assert.equal(m.piste, w.piste, C); }
+    });
+    assert.equal(mcp.total, web.total, L + " : total");
+  }
+  const gros = M.bonnesPratiques({ d: enLignes({ ...DEMO, positions: [...DEMO.positions, { ...COURANT, value: 400000 }] }).d, scope: "foyer", objectifs: [], risque: null, classes: undefined, ref: TODAY });
+  const ref = M.bonnesPratiques({ d: enLignes(DEMO).d, scope: "foyer", objectifs: [], risque: null, classes: undefined, ref: TODAY });
+  const v = (r, k) => r.criteres.find(c => c.cle === k).valeur;
+  for (const k of ["concentration", "speculatif"]) assert.equal(v(gros, k), v(ref, k), k + " : sans le compte courant");
+  assert.ok(v(gros, "matelas") > v(ref, "matelas"), "le matelas compte le courant au-delà de la réserve");
 });
 
 /* Scénarios clairsemés (scores honnêtes) : bilan vide, deux critères calculables, trois critères calculables. */

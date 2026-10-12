@@ -566,7 +566,7 @@ test("rendu : 4 cartes, boîte de réception (5 puis « Voir plus »), état vid
 test("detail : 2 à 4 lignes et un lien vers la page complète pour chaque carte, texte échappé", () => {
   const S = demoS(), t = jourLocal();
   const ind = A.indicateurs(S, t, { id: "1a", granularite: "mois" }, DEPS);
-  const routes = { net: "patrimoine/placements", pratiques: "pilotage/sante", allocation: "pilotage/risque", echeance: "patrimoine/objectifs" };
+  const routes = { net: "patrimoine/comptes", pratiques: "pilotage/sante", allocation: "pilotage/risque", echeance: "patrimoine/objectifs" };
   for (const [id, r] of Object.entries(routes)) {
     const d = A.detail(id, ind, { id: "1a", granularite: "mois" });
     assert.ok(d.titre, id);
@@ -894,4 +894,39 @@ test("friseSvg : libellés de période longs (semaines) sans chevauchement — l
   const h = A.friseSvg({ points: pts, resume: {}, reperes: [], historique: true }, { largeur: 720 });
   const libelles = [...h.matchAll(/<text class="aj-ax"[^>]*text-anchor="(?:start|middle|end)">([^<]+)<\/text>/g)].map(m => m[1]).filter(t => /^sem\./.test(t));
   assert.deepEqual(libelles, ["sem. du 13 oct.", "sem. du 2 mars", "sem. du 5 oct."], "l'avant-dernier, trop proche du dernier, est omis");
+});
+
+/* ------------------------------------------------ CP1 : argent qui dort, fiches de Patrimoine › Comptes ------------------------------------------------ */
+
+test("boite : « Argent qui dort » (Calc.argentQuiDort) → urgence 3, vers Patrimoine › Comptes ; fonction absente, en échec ou sans dépassement → rien", () => {
+  const S = vide();
+  const avec = r => Object.assign({}, DEPS, { Calc: Object.assign({}, Calc, { argentQuiDort: (s, t) => (typeof r === "function" ? r(s, t) : r) }) });
+  let vu = null;
+  const b = A.boite(S, TODAY, avec((s, t) => { vu = [s, t]; return { montant: 2140.4, mois: 3, solde: 7400, seuil: 5260, depenses: 3506, source: "reel" }; }));
+  assert.equal(vu[0], S); assert.equal(vu[1], TODAY, "appelée avec S et le jour");
+  const x = b.find(i => i.type === "argent");
+  assert.ok(x);
+  assert.equal(x.urgence, 3);
+  assert.equal(x.titre, "Argent qui dort sur tes comptes courants");
+  assert.equal(x.contexte.replace(/[\u00a0\u202f]/g, " "), "2 140 € au-delà de 1,5 mois de dépenses depuis 3 mois (solde 7 400 €, seuil 5 260 €) : cet argent ne te rapporte rien.");
+  assert.deepEqual(x.action, { label: "Voir mes comptes", route: "patrimoine/comptes" });
+  for (const r of [null, false, {}, { montant: 0 }, { montant: "x" }, () => { throw new Error("panne"); }]) assert.equal(A.boite(S, TODAY, avec(r)).filter(i => i.type === "argent").length, 0, JSON.stringify(r));
+  const sans = Object.assign({}, DEPS, { Calc: Object.assign({}, Calc, { argentQuiDort: undefined }) });
+  assert.equal(A.boite(S, TODAY, sans).filter(i => i.type === "argent").length, 0, "fonction absente : rien, sans erreur");
+  if (HAS_UI) {
+    const h = A.boiteHtml([x], UI);
+    assert.match(h, /data-type="argent"/); assert.match(h, /<span class="ui-sr">Argent qui dort, à surveiller : <\/span>/);
+    assert.match(h, /<a class="aj-act" href="#patrimoine\/comptes" data-goto="patrimoine\/comptes">Voir mes comptes<\/a>/);
+  }
+});
+
+test("Patrimoine net → Patrimoine › Comptes : chaque enveloppe du détail ouvre sa fiche ; « Voir le détail par compte » sous la frise", () => {
+  const ind = A.indicateurs(demoS(), jourLocal(), { id: "1a" }, DEPS);
+  const d = A.detail("net", ind, { id: "1a" });
+  assert.deepEqual(d.lien, { label: "Voir mes comptes", href: "#patrimoine/comptes" });
+  assert.match(d.contenu, /<a class="aj-det-l aj-det-fiche" href="#patrimoine\/comptes\?enveloppe=PEA%20Camille" data-goto="patrimoine\/comptes\?enveloppe=PEA%20Camille">PEA Camille<\/a>/);
+  assert.doesNotMatch(d.contenu, /aj-det-fiche[^>]*>Appartement/, "les biens n'ont pas de fiche");
+  const S2 = demoS(); S2.positions[0].envelope = PIEGE;
+  assert.doesNotMatch(A.detail("net", A.indicateurs(S2, jourLocal(), { id: "1a" }, DEPS), { id: "1a" }).contenu, /<img/);
+  assert.match(html, /<a class="aj-comptes" href="#patrimoine\/comptes" data-goto="patrimoine\/comptes">Voir le détail par compte<\/a>/);
 });

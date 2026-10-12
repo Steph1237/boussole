@@ -252,3 +252,18 @@ describe("synthese", () => {
     assert.equal(s.comparaison.ecartNiveaux, null);
   });
 });
+
+describe("comptes courants (spec cp1 § 1)", () => {
+  const courant = (v, extra) => P("Comptes courants", v, "Compte courant", { envelope: "Banque", ...extra });
+  test("hors de l'allocation et du risque réel : la famille courant ne pèse pas dans le sécurisé", () => {
+    const base = [P("Monde", 6000, "ETF Monde", { envelope: "PEA" }), P("Épargne", 4000, "Livret A", { envelope: "Livret A" })];
+    const a = Risque.allocationReelle([...base, courant(90000), P("Épargne", 5000, "Compte", { envelope: "Compte courant joint" })], "foyer");
+    assert.equal(a.total, 10000);
+    assert.deepEqual(a.pct, Risque.allocationReelle(base, "foyer").pct);
+    assert.equal(a.pct.securise, 40);
+    const r = Risque.risquePortefeuille([...base, courant(90000)], "foyer"), r0 = Risque.risquePortefeuille(base, "foyer");
+    near(r.volatilite, r0.volatilite); assert.equal(r.profilEquivalent, r0.profilEquivalent);
+    assert.equal(Risque.risquePortefeuille([courant(5000)], "foyer").profilEquivalent, null, "seulement des comptes courants : rien à analyser");
+    assert.equal(Risque.synthese({}, { positions: [courant(5000)] }).comparaison.texte, "Aucun placement à analyser pour le moment.");
+  });
+});
