@@ -30,7 +30,7 @@ const API_AUTORISEE = {
   routines: ["pause"], // bascule active / en pause de la revue mensuelle (claude-guide.js)
   savoir: ["fiche"], // lecture
   expertises: ["detail"], // lecture (méthode d'une expertise, Agent › Expertises)
-  banque: ["connecter", "deconnecter", "rattacher"], // banques connectées (claude-guide.js) : contrôle, pas saisie
+  banque: ["connecter", "gerer", "deconnecter", "rattacher"], // banques connectées (claude-guide.js) : contrôle, pas saisie
 };
 const STORE_AUTORISE = ["get", "on", "emit", "reload", "mode", "setScope", "surveillerConnexions", "markOnboarded", "db", ...Object.keys(API_AUTORISEE)];
 
@@ -84,6 +84,7 @@ test("lecture seule : les vues de contrôle appellent bien les API dédiées (le
   assert.match(lire("accueil.js"), /St\.markOnboarded\(\)/);
   assert.match(lire("claude-guide.js"), /window\.Store\.routines\.pause\(type, active\)/, "Agent › Connexion : bascule de la revue mensuelle");
   assert.match(lire("claude-guide.js"), /window\.Store\.banque\.connecter\(/, "Agent › Connexion : connecter une banque");
+  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.gerer\(cx\.id\)/, "Agent › Connexion : gérer les comptes d'une banque connectée");
   assert.match(lire("claude-guide.js"), /window\.Store\.banque\.deconnecter\(cx\.id\)/, "Agent › Connexion : déconnecter une banque");
   assert.match(lire("claude-guide.js"), /window\.Store\.banque\.rattacher\(cpt\.id, cible\)/, "Agent › Connexion : rattacher un compte");
 });

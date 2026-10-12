@@ -13,8 +13,10 @@
    banqueHtml(S, auj, U, o). Connexions avec leur état en français (BanqueEtat, mêmes libellés que le connecteur), « Reconnecter » pour
    les états qui demandent une action, comptes avec solde et sélecteur de rattachement (ligne, enveloppe et titulaire, crédit pour un
    compte de crédit seulement, aucun, ou « Ne pas suivre ce compte » : compte ignoré, affiché discrètement « Non suivi », réversible),
-   « Déconnecter » confirmé dans la page (pas de confirm()). Écritures de contrôle : Store.banque.connecter (puis redirection vers la
-   page Powens), deconnecter, rattacher. */
+   « Déconnecter » confirmé dans la page (pas de confirm()). « Gérer les comptes » sur chaque connexion (page de gestion Powens :
+   activer un livret, un PEA… de la même banque) ; dès qu'une banque est connectée, « Connecter une banque » passe sous la liste avec
+   le rappel AIDE_GERER (une seconde connexion à la même banque serait un doublon, facturé). Écritures de contrôle :
+   Store.banque.connecter et gerer (puis redirection vers la page Powens), deconnecter, rattacher. */
 (function () {
   "use strict";
   /* Demandes pré-remplies : courtes, en langage naturel, elles invoquent le connecteur et ses outils. */
@@ -178,16 +180,22 @@
   /** Section « Banques connectées » (HTML, pur). S : instantané du store (S.banque, S.positions, S.profil.credits, S.people) ;
       auj : AAAA-MM-JJ (jour de Paris) ; U : bibliothèque UI (facultative) ; o = { confirmer: id de la connexion à confirmer,
       erreur: erreur générale, erreurs: { <compteId>: erreur du rattachement } }. "" si l'interrupteur banque est éteint. */
+  const AIDE_GERER = "Pour ajouter un compte d'une banque déjà connectée (livret, PEA…), utilise « Gérer les comptes » : ne connecte pas la même banque une deuxième fois.";
   function banqueHtml(S, auj, U, o) {
     const b = S && S.banque, B = BE(), opt = o || {};
     if (!b || !b.actif || !B) return "";
-    let html = '<div class="cg-bq-tete"><p class="cg-rt-p">Boussole lit tes comptes par Powens, prestataire agréé : tes identifiants bancaires se saisissent sur la page de Powens, jamais dans Boussole. ' +
-      "Une fois un compte rattaché à une ligne, son solde se met à jour tout seul.</p>" +
-      '<button type="button" class="cg-btn" data-cg-banque-connecter>' + svg("ext") + "Connecter une banque</button></div>" +
-      (opt.erreur ? '<p class="cg-rt-err" role="alert">' + esc(opt.erreur) + "</p>" : "");
-    if (!b.lu) return html + '<p class="cg-rt-voyant attente"><span class="cg-rt-pt" aria-hidden="true"></span><b>Lecture de tes banques…</b></p>';
-    const cxs = Array.isArray(b.connexions) ? b.connexions : [], comptes = Array.isArray(b.comptes) ? b.comptes : [], errs = opt.erreurs || {};
-    if (!cxs.length) return html + '<p class="cg-rt-p muted">Aucune banque connectée pour le moment.</p>';
+    const bouton = '<button type="button" class="cg-btn" data-cg-banque-connecter>' + svg("ext") + "Connecter une banque</button>";
+    const err = opt.erreur ? '<p class="cg-rt-err" role="alert">' + esc(opt.erreur) + "</p>" : "";
+    const intro = '<p class="cg-rt-p">Boussole lit tes comptes par Powens, prestataire agréé : tes identifiants bancaires se saisissent sur la page de Powens, jamais dans Boussole. ' +
+      "Une fois un compte rattaché à une ligne, son solde se met à jour tout seul.</p>";
+    const cxs = b.lu && Array.isArray(b.connexions) ? b.connexions : [], comptes = Array.isArray(b.comptes) ? b.comptes : [], errs = opt.erreurs || {};
+    // Aucune banque (ou lecture en cours) : bouton en tête. Sinon il passe sous la liste, avec le rappel contre les doublons.
+    if (!cxs.length) {
+      const html = '<div class="cg-bq-tete">' + intro + bouton + "</div>" + err;
+      if (!b.lu) return html + '<p class="cg-rt-voyant attente"><span class="cg-rt-pt" aria-hidden="true"></span><b>Lecture de tes banques…</b></p>';
+      return html + '<p class="cg-rt-p muted">Aucune banque connectée pour le moment.</p>';
+    }
+    let html = '<div class="cg-bq-tete">' + intro + "</div>";
     html += '<ul class="cg-bq-cx">' + cxs.map(c => {
       const e = B.etat(c.etat), id = esc(c.id), nom = String(c.etablissement || "Banque");
       const pastille = e.aJour ? '<span class="cg-bq-pastille ok">À jour</span>' : e.action ? '<span class="cg-bq-pastille alerte">À reconnecter</span>' : '<span class="cg-bq-pastille attente">Incident passager</span>';
@@ -197,6 +205,7 @@
         '<p class="cg-bq-etat">' + (e.aJour ? "" : esc(e.libelle) + ". ") + esc(synchroTxt(c.derniereSynchro, auj)) + "</p>" +
         (c.message && !e.aJour ? '<p class="cg-bq-msg">' + esc(c.message) + "</p>" : "") +
         '<div class="cg-rt-act">' + (e.action ? '<button type="button" class="cg-btn" data-cg-banque-reconnecter="' + id + '">' + svg("ext") + 'Reconnecter<span class="cg-sr"> ' + esc(nom) + "</span></button>" : "") +
+        '<button type="button" class="cg-btn ghost" data-cg-banque-gerer="' + id + '">' + svg("ext") + 'Gérer les comptes<span class="cg-sr"> ' + esc(nom) + "</span></button>" +
         '<button type="button" class="cg-btn ghost" data-cg-banque-deconnecter="' + id + '">Déconnecter<span class="cg-sr"> ' + esc(nom) + "</span></button></div>" +
         (conf ? '<div class="cg-bq-conf" role="group" aria-labelledby="cgBqConf-' + id + '"><p id="cgBqConf-' + id + '">Déconnecter <b>' + esc(nom) + "</b> ? Ses comptes et ses opérations sont retirés de Boussole ; tes lignes rattachées restent, en saisie manuelle.</p>" +
           '<div class="cg-rt-act"><button type="button" class="cg-btn danger" data-cg-banque-confirmer="' + id + '">Déconnecter</button>' +
@@ -204,7 +213,7 @@
         (cpts.length ? '<ul class="cg-bq-comptes">' + cpts.map(k => compteHtml(k, S, errs[k.id])).join("") + "</ul>" : '<p class="cg-rt-p muted">Aucun compte lu pour le moment.</p>') +
         "</li>";
     }).join("") + "</ul>";
-    return html;
+    return html + '<div class="cg-bq-pied">' + bouton + '<p class="cg-rt-p cg-bq-aide">' + esc(AIDE_GERER) + "</p></div>" + err;
   }
 
   if (typeof module === "object" && module.exports) module.exports = { PARCOURS, lienClaude, routinesHtml, ETAPES_TACHE, PHRASE_ACTIVER, PROMPT_TACHE_REPLI, banqueHtml, cibleDe, optionsRattachement };
@@ -311,23 +320,25 @@
   const occupe = (b, on) => { b.disabled = on; if (on) b.setAttribute("aria-busy", "true"); else b.removeAttribute("aria-busy"); };
   const ECHEC_BQ = "Connexion bancaire impossible pour le moment. Réessaie.";
   const trouver = (liste, id) => ((S && S.banque && S.banque[liste]) || []).find(x => x && String(x.id) === String(id)) || null;
-  /* Connecter (sans identifiant) ou reconnecter une connexion : Store.banque.connecter → redirection vers la page Powens. */
-  async function connecterBq(b, cx) {
+  /* Connecter (sans identifiant), reconnecter une connexion ou gérer ses comptes (gerer = true) : Store.banque.connecter ou gerer →
+     redirection vers la page Powens. */
+  async function connecterBq(b, cx, gerer) {
     occupe(b, true);
     direBq("");
     let res;
-    try { res = await window.Store.banque.connecter(...(cx ? [cx.id] : [])); }
+    try { res = gerer ? await window.Store.banque.gerer(cx.id) : await window.Store.banque.connecter(...(cx ? [cx.id] : [])); }
     catch (e) { res = { erreur: ECHEC_BQ }; }
     occupe(b, false);
     if (res && res.ok && res.url) {
       etatBq.erreur = "";
-      direBq("Ouverture de la page de connexion de Powens…");
+      direBq(gerer ? "Ouverture de la page de gestion de Powens…" : "Ouverture de la page de connexion de Powens…");
       window.location.assign(res.url);
       return;
     }
     etatBq.erreur = String((res && res.erreur) || ECHEC_BQ).trim();
     sigBq = ""; // zone d'alerte reposée : une même erreur est réannoncée
-    banques(cx ? '[data-cg-banque-reconnecter="' + String(cx.id).replace(/"/g, "") + '"]' : "[data-cg-banque-connecter]");
+    const idSel = cx ? String(cx.id).replace(/"/g, "") : "";
+    banques(!cx ? "[data-cg-banque-connecter]" : gerer ? '[data-cg-banque-gerer="' + idSel + '"]' : '[data-cg-banque-reconnecter="' + idSel + '"]');
   }
   async function deconnecterBq(b, cx) {
     occupe(b, true);
@@ -413,6 +424,7 @@
       if (b.dataset.cgRoutine) { if (!b.disabled) basculerRoutine(b); return; }
       if (b.hasAttribute("data-cg-banque-connecter")) { if (!b.disabled) connecterBq(b, null); return; }
       if (b.dataset.cgBanqueReconnecter) { const cx = trouver("connexions", b.dataset.cgBanqueReconnecter); if (cx && !b.disabled) connecterBq(b, cx); return; }
+      if (b.dataset.cgBanqueGerer) { const cx = trouver("connexions", b.dataset.cgBanqueGerer); if (cx && !b.disabled) connecterBq(b, cx, true); return; }
       if (b.dataset.cgBanqueDeconnecter) {
         const cx = trouver("connexions", b.dataset.cgBanqueDeconnecter); if (!cx) return;
         etatBq.confirmer = cx.id;

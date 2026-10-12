@@ -11,7 +11,10 @@
 // Ce qui appartient à l'utilisateur n'est jamais écrasé : quantité et clôture seulement sur une ligne encore alimentée
 // (source_auto = 'powens') ; une ligne de placement supprimée n'est pas recréée (banque_placements.ligne_creee_le) ; un compte
 // ignoré (banque_comptes.ignore) n'est ni rattaché ni proposé ; une proposition n'est déposée qu'une fois par compte
-// (banque_comptes.propose_le) ; le capital restant dû d'un crédit ne vient que d'un compte de type credit.
+// (banque_comptes.propose_le), et jamais pour un compte enveloppe (pea, compte_titres, assurance_vie, per) ; le capital
+// restant dû d'un crédit ne vient que d'un compte de type credit. Compte enveloppe : un placement encore sans lien adopte
+// d'abord une ligne existante de l'utilisateur (même ISIN, même enveloppe, même titulaire ; liquidités : ligne manuelle
+// « liquid… »/« espèces ») dont seuls qty/isin (ou value) passent à Powens ; une ligne n'est créée qu'à défaut (aucun doublon).
 // Robustesse : une lecture en échec n'efface rien (placements, opérations, comptes) ; une erreur sur un compte ou sur une étape
 // d'écriture n'arrête pas les autres ; le dernier échec est résumé dans banque_connexions.message.
 //
@@ -35,6 +38,8 @@ export const ETATS_POWENS = [
 export const JOURS_DETAIL = 90;
 const TYPES_PLACEMENTS = ["pea", "compte_titres", "assurance_vie", "per"];
 const TYPES_OPERATIONS = ["courant", "livret", "autre"];
+/** Comptes qui se rattachent à une enveloppe (une ligne par placement) : jamais de proposition « créer une ligne ». */
+const TYPES_ENVELOPPE = TYPES_PLACEMENTS;
 const ENVELOPPE_PROPOSEE: Record<string, string> = {
   courant: "Compte courant", livret: "Livret", pea: "PEA", compte_titres: "Compte-titres", assurance_vie: "Assurance-vie", per: "PER", autre: "",
 };
@@ -97,12 +102,24 @@ function moinsJours(date: string, jours: number): string {
   d.setUTCDate(d.getUTCDate() - jours);
   return d.toISOString().slice(0, 10);
 }
-/** Horodatage Powens (UTC sans fuseau, « AAAA-MM-JJ HH:MM:SS ») → ISO 8601 ; null si illisible. */
+/** Décalage de Paris par rapport à UTC (en ms) à l'instant `t`. */
+function decalageParis(t: number): number {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Paris", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    .formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(t / 1000) * 1000;
+}
+/** Horodatage Powens → ISO 8601 UTC ; null si illisible. Sans fuseau (« AAAA-MM-JJ HH:MM:SS »), Powens donne l'heure de
+    Paris (constaté en sandbox le 2026-10-12 : last_update 11:13 pour une synchronisation à 09:13 UTC) : elle est convertie. */
 export function datePowens(v: unknown): string | null {
   if (typeof v !== "string") return null;
-  const m = v.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{2}:?\d{2})?$/);
+  const m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/);
   if (!m) return null;
-  return `${m[1]}T${m[2]}${m[3] ?? "Z"}`;
+  if (m[8]) return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${m[7] ?? ""}${m[8]}`;
+  const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  let t = local - decalageParis(local);
+  t = local - decalageParis(t); // second passage : juste autour des changements d'heure
+  return new Date(t).toISOString().replace(".000Z", "Z");
 }
 const jour = (v: unknown): string | null => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
 const nombre = (v: unknown): number | null => {
@@ -132,22 +149,33 @@ export function idProposition(userId: string, compteId: number | string): Promis
 export function idLigne(userId: string, placementId: number | string): Promise<string> {
   return uuidDeterministe(`powens-pos-${userId}-${placementId}`);
 }
+/** Identifiant de la ligne de liquidités d'un compte enveloppe. */
+export function idLiquidites(userId: string, compteId: number | string): Promise<string> {
+  return uuidDeterministe(`powens-liq-${userId}-${compteId}`);
+}
 
 function isinDe(inv: any): string | null {
   if (inv?.code_type != null && String(inv.code_type).toUpperCase() !== "ISIN") return null;
   const c = String(inv?.code ?? "").toUpperCase().replace(/\s+/g, "");
   return ISIN.test(c) ? c : null;
 }
+/** Minuscules, sans accents. */
+const plat = (v: unknown): string => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+/** Enveloppe comparable : sans casse ni espaces (« PEA » = « pea » = « P E A »). */
+const enveloppeCle = (v: unknown): string => String(v ?? "").toLowerCase().replace(/\s+/g, "");
+/** Placement de liquidités : sans ISIN, libellé contenant « liquidit » (accents et casse ignorés). */
+const estLiquidites = (inv: any): boolean => !isinDe(inv) && plat(inv?.label).includes("liquidit");
 
 /* ---------- plan ---------- */
 type LectureCompte = { compte: any; placements: any[] | null; operations: any[] | null; erreur?: string };
-/** État local : comptes (rattachements, ignore, propose_le), placements (liens, ligne_creee_le), lots des propositions déjà
-    déposées, et comptes à rattacher à la ligne créée par une proposition acceptée (id du compte → id de la ligne). */
-export type Etat = { comptes: any[]; placements: any[]; lotsExistants: string[]; acceptes?: Record<string, string> };
+/** État local : comptes (rattachements, ignore, propose_le), placements (liens, ligne_creee_le ; tous ceux de l'utilisateur),
+    lots des propositions déjà déposées, comptes à rattacher à la ligne créée par une proposition acceptée (id du compte → id de
+    la ligne), et lignes de l'utilisateur candidates à l'adoption (id, user_id, name, envelope, owner, mode, isin, qty, status). */
+export type Etat = { comptes: any[]; placements: any[]; lotsExistants: string[]; acceptes?: Record<string, string>; lignes?: any[] };
 export type Donnees = {
   userId: string; connexion: any; comptes: LectureCompte[]; lectureComptesOk: boolean; maintenant: string; aujourdhui: string;
   minDate: string; lots: Record<string, string>; idsPropositions?: Record<string, string>; idsLignes?: Record<string, string>;
-  erreurComptes?: string;
+  idsLiquidites?: Record<string, string>; erreurComptes?: string;
 };
 
 /** Calcule les écritures d'une synchronisation, sans accès à la base ni à Powens. */
@@ -156,14 +184,18 @@ export function planifier(etat: Etat, d: Donnees) {
   const auto = { source_auto: "powens", source_auto_le: maintenant };
   const plan = {
     connexion: null as any, comptes: [] as any[], comptesInactifs: [] as any[], instruments: [] as any[], positionsCreer: [] as any[],
-    // auto : ligne de marché tenue par la synchronisation, écrite seulement si source_auto = 'powens'
-    positionsMaj: [] as { id: string; patch: Record<string, unknown>; auto?: boolean }[], placements: [] as any[], placementsSupprimer: [] as any[],
+    // auto : ligne de marché tenue par la synchronisation, écrite seulement si source_auto = 'powens' ;
+    // adoption : ligne existante de l'utilisateur reprise par la synchronisation (écrite sans ce filtre, une fois)
+    positionsMaj: [] as { id: string; patch: Record<string, unknown>; auto?: boolean; adoption?: boolean }[], placements: [] as any[], placementsSupprimer: [] as any[],
     creditsMaj: [] as { id: string; crd: number }[], operations: [] as any[], operationsSupprimer: [] as any[], propositions: [] as any[],
     rattachements: [] as { id: number; position_id: string }[], comptesProposes: [] as number[],
-    moisDepuis: null as string | null, erreurs: [] as { compte_id?: number; erreur: string }[],
+    moisDepuis: null as string | null, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[],
   };
   const existants = new Map(etat.comptes.map((c) => [String(c.id), c]));
   const etablissement = texte(d.connexion?.connector?.name);
+  // Lignes déjà liées (à un placement ou à un compte) : jamais adoptées une seconde fois.
+  const prises = new Set<string>([...etat.placements, ...etat.comptes].map((x) => texte(x?.position_id)).filter(Boolean) as string[]);
+  const lignes = (etat.lignes ?? []).filter((p) => p && texte(p.id) && (p.user_id == null || p.user_id === user_id) && p.status !== "clôturé");
 
   for (const l of d.comptes) if (l.erreur) plan.erreurs.push({ compte_id: Number(l.compte?.id), erreur: l.erreur });
   if (d.erreurComptes) plan.erreurs.push({ erreur: d.erreurComptes });
@@ -207,26 +239,85 @@ export function planifier(etat: Etat, d: Donnees) {
     // Placements (lus seulement pour les comptes titres) : lien conservé, ligne de marché pour une enveloppe rattachée.
     if (l.placements) {
       const anciens = etat.placements.filter((p) => String(p.compte_id) === String(id));
+      const ancienDe = (inv: any) => anciens.find((p) => String(p.id) === String(inv.id));
       const presents = new Set<string>();
+      // Lignes adoptables pour ce compte : même enveloppe (sans casse ni espaces), même titulaire s'il est connu, non clôturées,
+      // non déjà liées. Plusieurs : la plus grande quantité (puis valeur), et c'est noté.
+      const adopter = (filtre: (p: any) => boolean, rang: (p: any) => number, quoi: string) => {
+        const cands = lignes.filter((p) => enveloppeCle(p.envelope) === enveloppeCle(enveloppe) && (!r.titulaire || p.owner === r.titulaire)
+          && !prises.has(String(p.id)) && filtre(p));
+        if (!cands.length) return null;
+        cands.sort((a, b) => (rang(b) - rang(a)) || String(a.id).localeCompare(String(b.id)));
+        if (cands.length > 1) plan.notes.push(`compte ${id} : ${cands.length} lignes « ${enveloppe} » pour ${quoi} ; adoptée : ligne ${cands[0].id} (la plus grande)`);
+        prises.add(String(cands[0].id));
+        return cands[0];
+      };
+      const rangQte = (p: any) => nombre(p.qty) ?? -1;
+
+      // Liquidités (placements sans ISIN dont le libellé contient « liquidit ») : une ligne manuelle par compte enveloppe, adoptée
+      // (manuelle, sans ISIN, nom contenant « liquid » ou « espèces ») ou créée (« Liquidités <enveloppe> », uuid déterministe).
+      let liqLien: string | null = null;
+      const liqs = enveloppe && actif ? l.placements.filter((inv) => inv?.id != null && !inv.deleted && estLiquidites(inv)) : [];
+      if (liqs.length) {
+        const valeurs = liqs.map((inv) => nombre(inv.valuation)).filter((v) => v != null) as number[];
+        const valeur = valeurs.length ? Math.round(valeurs.reduce((a, b) => a + b, 0) * 100) / 100 : null;
+        const valeurPatch = valeur == null ? {} : { value: valeur, value_date: aujourdhui };
+        const dejaLiee = liqs.map((inv) => texte(ancienDe(inv)?.position_id)).find(Boolean) ?? null;
+        if (dejaLiee) {
+          liqLien = dejaLiee;
+          if (valeur != null) plan.positionsMaj.push({ id: liqLien, patch: { ...valeurPatch, ...auto }, auto: true });
+        } else if (liqs.some((inv) => texte(ancienDe(inv)?.ligne_creee_le))) {
+          plan.notes.push(`compte ${id} : ligne de liquidités supprimée par l'utilisateur, non recréée`);
+        } else if (valeur == null) {
+          plan.notes.push(`compte ${id} : liquidités sans valeur, ignorées`);
+        } else {
+          const ligne = adopter((p) => p.mode === "manual" && !texte(p.isin) && /liquid|especes/.test(plat(p.name)),
+            (p) => nombre(p.value) ?? -1, "les liquidités");
+          if (ligne) {
+            liqLien = String(ligne.id);
+            plan.positionsMaj.push({ id: liqLien, patch: { ...valeurPatch, ...auto }, adoption: true });
+          } else if (d.idsLiquidites?.[String(id)]) {
+            liqLien = d.idsLiquidites[String(id)];
+            plan.positionsCreer.push({ id: liqLien, user_id, name: `Liquidités ${enveloppe}`.slice(0, 140), envelope: enveloppe, owner: titulaire,
+              bloc: "", mode: "manual", value: valeur, value_date: aujourdhui, status: "actif", ...auto });
+          }
+        }
+      }
+
       for (const inv of l.placements) {
         if (inv?.id == null || inv.deleted) continue;
         presents.add(String(inv.id));
         const isin = isinDe(inv);
         const libelle = nettoyerLibelle(inv.label) || isin || "Placement";
         const qte = nombre(inv.quantity);
-        const ancien = anciens.find((p) => String(p.id) === String(inv.id));
+        const ancien = ancienDe(inv);
         let lien: string | null = texte(ancien?.position_id);
         let creeeLe: string | null = texte(ancien?.ligne_creee_le);
         if (enveloppe && actif && isin) {
           if (lien) plan.positionsMaj.push({ id: lien, patch: { qty: qte, isin, ...auto }, auto: true });
-          else if (!creeeLe) { // ligne déjà créée puis supprimée par l'utilisateur : jamais recréée
-            lien = d.idsLignes?.[String(inv.id)] ?? null;
-            if (lien) {
+          else if (!creeeLe) { // ligne déjà créée (ou adoptée) puis supprimée par l'utilisateur : jamais recréée
+            // D'abord adopter une ligne existante du même ISIN (casse ignorée) : nom, mode et valeur de l'utilisateur intacts.
+            const ligne = adopter((p) => String(p.isin ?? "").trim().toUpperCase() === isin, rangQte, `l'ISIN ${isin}`);
+            if (ligne) {
+              lien = String(ligne.id);
               creeeLe = maintenant;
-              plan.instruments.push({ isin, name: libelle, requested_by: user_id });
-              plan.positionsCreer.push({ id: lien, user_id, name: libelle, envelope: enveloppe, owner: titulaire, bloc: "", mode: "market",
-                isin, qty: qte, status: "actif", ...auto });
+              if (String(ligne.isin) !== isin) plan.instruments.push({ isin, name: libelle, requested_by: user_id });
+              plan.positionsMaj.push({ id: lien, patch: { ...(qte == null ? {} : { qty: qte }), isin, ...auto }, adoption: true });
+            } else {
+              lien = d.idsLignes?.[String(inv.id)] ?? null;
+              if (lien) {
+                creeeLe = maintenant;
+                plan.instruments.push({ isin, name: libelle, requested_by: user_id });
+                plan.positionsCreer.push({ id: lien, user_id, name: libelle, envelope: enveloppe, owner: titulaire, bloc: "", mode: "market",
+                  isin, qty: qte, status: "actif", ...auto });
+              }
             }
+          }
+        } else if (enveloppe && actif && !isin) {
+          if (estLiquidites(inv)) {
+            if (!lien && !creeeLe && liqLien) { lien = liqLien; creeeLe = maintenant; }
+          } else {
+            plan.notes.push(`compte ${id} : placement ${inv.id} (« ${libelle} ») sans ISIN, ignoré`);
           }
         }
         plan.placements.push({ user_id, id: Number(inv.id), compte_id: id, isin, libelle, quantite: qte, valeur: nombre(inv.valuation),
@@ -247,7 +338,8 @@ export function planifier(etat: Etat, d: Donnees) {
         plan.creditsMaj.push({ id: creditId, crd: Math.round(Math.abs(crd) * 100) / 100 });
       }
       const lot = d.lots[String(id)], idProp = d.idsPropositions?.[String(id)];
-      if (!ignore && !r.propose_le && !positionId && !enveloppe && !texte(r.credit_id) && type !== "credit" && lot && idProp && !etat.lotsExistants.includes(lot)) {
+      if (!ignore && !r.propose_le && !positionId && !enveloppe && !texte(r.credit_id) && type !== "credit" && !TYPES_ENVELOPPE.includes(type)
+        && lot && idProp && !etat.lotsExistants.includes(lot)) {
         plan.propositions.push({
           id: idProp, user_id, lot, cible: "position", operation: "creer",
           apres: { name: nom, envelope: ENVELOPPE_PROPOSEE[type] ?? "", mode: "manual", value: solde, value_date: aujourdhui, owner: "p1" },
@@ -300,7 +392,7 @@ const ECART_ACCEPTATION_MS = 2 * 60 * 1000;
 export async function synchroniser(db: any, api: any, userId: string, connexionId: number, opts: { maintenant?: Date } = {}) {
   const maintenant = opts.maintenant ?? new Date();
   const rapport = { ok: false, connexion: connexionId, etat: null as string | null, comptes: 0, operations: 0, positions_creees: 0, propositions: 0,
-    rattaches: 0, sautee: false, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[] };
+    rattaches: 0, lignes_adoptees: 0, sautee: false, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[] };
 
   let connexion: any;
   try {
@@ -387,17 +479,24 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
     lectures.push(l);
   }
 
-  const ids = [...new Set([...etatComptes.map((c) => Number(c.id)), ...comptes.map((c) => Number(c.id))])];
   let placements: any[] = [], propositions: any[] = [];
+  let lignes: any[] = [];
   const lots: Record<string, string> = {}, idsPropositions: Record<string, string> = {}, idsLignes: Record<string, string> = {};
+  const idsLiquidites: Record<string, string> = {};
   for (const c of comptes) {
     lots[String(c.id)] = await lotProposition(userId, c.id);
     idsPropositions[String(c.id)] = await idProposition(userId, c.id);
+    idsLiquidites[String(c.id)] = await idLiquidites(userId, c.id);
   }
   for (const l of lectures) for (const inv of l.placements ?? []) if (inv?.id != null) idsLignes[String(inv.id)] = await idLigne(userId, inv.id);
+  // Lignes candidates à l'adoption : lues seulement si un compte rattaché à une enveloppe a des placements.
+  const enveloppes = new Set(etatComptes.filter((c) => c.ignore !== true && texte(c.enveloppe)).map((c) => String(c.id)));
+  const adoptionPossible = lectures.some((l) => l.placements?.length && enveloppes.has(String(l.compte.id)));
   try {
-    if (ids.length) {
-      placements = await lireTable(db.from("banque_placements").select("id, compte_id, position_id, ligne_creee_le").eq("user_id", userId).in("compte_id", ids), "des placements");
+    // Tous les placements de l'utilisateur (toutes connexions) : une ligne déjà liée n'est jamais adoptée une seconde fois.
+    placements = await lireTable(db.from("banque_placements").select("id, compte_id, position_id, ligne_creee_le").eq("user_id", userId), "des placements");
+    if (adoptionPossible) {
+      lignes = await lireTable(db.from("positions").select("id, user_id, name, envelope, owner, mode, isin, qty, value, status").eq("user_id", userId), "des lignes");
     }
     const valeurs = Object.values(lots);
     if (valeurs.length) {
@@ -428,11 +527,12 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
     }
   }
 
-  const plan = planifier({ comptes: etatComptes, placements, lotsExistants, acceptes }, {
+  const plan = planifier({ comptes: etatComptes, placements, lotsExistants, acceptes, lignes }, {
     userId, connexion, comptes: lectures, lectureComptesOk, erreurComptes, maintenant: maintenant.toISOString(), aujourdhui, minDate, lots,
-    idsPropositions, idsLignes,
+    idsPropositions, idsLignes, idsLiquidites,
   });
   rapport.erreurs.push(...plan.erreurs);
+  rapport.notes.push(...plan.notes);
   rapport.etat = plan.connexion.etat;
 
   const etape = async (quoi: string, f: () => Promise<{ error: any } | any>) => {
@@ -468,14 +568,31 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
     rapport.positions_creees = plan.positionsCreer.length;
     for (const p of plan.positionsCreer) creees.add(p.id);
   }
+  const nonAdoptees = new Set<string>();
   for (const m of plan.positionsMaj) {
+    if (m.adoption) {
+      // Ligne existante reprise : écrite sans filtre source_auto ; si elle a disparu entre-temps, le lien n'est pas posé.
+      const lues = { n: 0 };
+      const ok = await etape("adoption d'une ligne", async () => {
+        const r = await db.from("positions").update(m.patch).eq("user_id", userId).eq("id", m.id).select("id");
+        lues.n = Array.isArray(r?.data) ? r.data.length : 0;
+        return r;
+      });
+      if (ok && lues.n) rapport.lignes_adoptees++;
+      else {
+        nonAdoptees.add(m.id);
+        if (ok) rapport.notes.push(`ligne ${m.id} introuvable au moment de l'adoption ; non liée`);
+      }
+      continue;
+    }
     await etape("mise à jour d'une ligne", () => {
       const q = db.from("positions").update(m.patch).eq("user_id", userId).eq("id", m.id);
       return m.auto ? q.eq("source_auto", "powens") : q;
     });
   }
-  // Un lien vers une ligne non créée (échec ci-dessus) n'est pas enregistré : la ligne sera recréée au prochain passage.
-  const placementsOk = plan.placements.map((p) => (p.position_id && plan.positionsCreer.some((c) => c.id === p.position_id) && !creees.has(p.position_id)
+  // Un lien vers une ligne non créée ou non adoptée (échec ci-dessus) n'est pas enregistré : nouvel essai au prochain passage.
+  const placementsOk = plan.placements.map((p) => (p.position_id && (nonAdoptees.has(p.position_id)
+    || (plan.positionsCreer.some((c) => c.id === p.position_id) && !creees.has(p.position_id)))
     ? { ...p, position_id: null, ligne_creee_le: null } : p));
   if (placementsOk.length) await etape("placements", () => db.from("banque_placements").upsert(placementsOk, { onConflict: "user_id,id" }));
   if (plan.placementsSupprimer.length) {

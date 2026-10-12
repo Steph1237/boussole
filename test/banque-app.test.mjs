@@ -273,6 +273,34 @@ test("banqueHtml : tutoiement dans tous les états", () => {
   }
 });
 
+const AIDE_GERER = "Pour ajouter un compte d'une banque déjà connectée (livret, PEA…), utilise « Gérer les comptes » : ne connecte pas la même banque une deuxième fois.";
+test("banqueHtml : « Gérer les comptes » sur chaque connexion, quel que soit son état (webview Manage de Powens)", () => {
+  for (const etat of [null, ...ETATS_POWENS]) {
+    const h = G.banqueHtml(S0({ banque: banque({ connexions: [cx(7, etat, { etablissement: "LCL" })], comptes: [] }) }), AUJ);
+    assert.match(h, /<button type="button" class="cg-btn ghost" data-cg-banque-gerer="7"><svg[^>]*>[\s\S]*?<\/svg>Gérer les comptes<span class="cg-sr"> LCL<\/span><\/button>/, String(etat));
+  }
+  const h = G.banqueHtml(S0(), AUJ);
+  assert.deepEqual([...h.matchAll(/data-cg-banque-gerer="(\d+)"/g)].map(m => m[1]), ["1", "2"], "un bouton par connexion");
+});
+
+test("banqueHtml : doublon évité — avec une banque connectée, « Connecter une banque » passe sous la liste avec le rappel « Gérer les comptes »", () => {
+  const h = G.banqueHtml(S0(), AUJ), t = texteDe(h);
+  assert.equal(t.split(AIDE_GERER).length - 1, 1, "rappel affiché une fois");
+  const iListe = h.indexOf('<ul class="cg-bq-cx">'), iBouton = h.indexOf("data-cg-banque-connecter"), iAide = h.indexOf("cg-bq-aide");
+  assert.ok(iListe >= 0 && iListe < iBouton && iBouton < iAide, "liste, puis « Connecter une banque », puis le rappel juste dessous");
+  assert.match(h, /<p class="cg-rt-p cg-bq-aide">Pour ajouter un compte d&#39;une banque déjà connectée \(livret, PEA…\), utilise « Gérer les comptes » : ne connecte pas la même banque une deuxième fois\.<\/p>/);
+  // Sans connexion (ou pendant la lecture) : pas de rappel, bouton en tête.
+  for (const b of [banque({ connexions: [], comptes: [] }), banque({ lu: false, connexions: [], comptes: [] })]) {
+    const v = G.banqueHtml(S0({ banque: b }), AUJ);
+    assert.ok(!texteDe(v).includes(AIDE_GERER));
+    assert.match(v, /data-cg-banque-connecter/);
+  }
+  // L'erreur générale suit le bouton.
+  const e = G.banqueHtml(S0(), AUJ, null, { erreur: "Panne" });
+  assert.ok(e.indexOf("data-cg-banque-connecter") < e.indexOf('<p class="cg-rt-err" role="alert">Panne</p>'));
+  assert.doesNotMatch(t, VOUVOIEMENT);
+});
+
 test("claude-guide.html : section « Banques connectées » après « Ta revue mensuelle », masquée par défaut, zone d'état", () => {
   const html = src("claude-guide.html");
   assert.match(html, /<section class="panel cg-banques" id="cgBanques" aria-labelledby="cgBqTitle" hidden>/);
@@ -281,7 +309,7 @@ test("claude-guide.html : section « Banques connectées » après « Ta revue m
   assert.match(html, /<p class="cg-msg ok" id="cgBqMsg" role="status" aria-live="polite"><\/p>/);
   const js = src("claude-guide.js");
   assert.match(js, /banqueHtml\(S, RE\(\)\.aujParis\(\), window\.UI \|\| null, etatBq\)/);
-  for (const k of ["window.Store.banque.connecter(", "window.Store.banque.deconnecter(", "window.Store.banque.rattacher(", "window.location.assign(res.url)"]) assert.ok(js.includes(k), k);
+  for (const k of ["window.Store.banque.connecter(", "window.Store.banque.gerer(", "window.Store.banque.deconnecter(", "window.Store.banque.rattacher(", "window.location.assign(res.url)"]) assert.ok(js.includes(k), k);
   assert.doesNotMatch(js.replace(/\/\*[\s\S]*?\*\//g, ""), /\bconfirm\(/, "pas de confirm() natif");
 });
 
@@ -299,7 +327,7 @@ function guideVm(reponses, S) {
     setTimeout: () => 0, clearTimeout() {}, location: { assign: u => assigns.push(u) },
     App: { register: (n, a) => { reg[n] = a; } },
     Store: { mode: "supabase", routines: { pause: async () => ({ ok: true }) }, banque: {
-      connecter: (...a) => repondre("connecter", a), deconnecter: (...a) => repondre("deconnecter", a), rattacher: (...a) => repondre("rattacher", a) } } };
+      connecter: (...a) => repondre("connecter", a), gerer: (...a) => repondre("gerer", a), deconnecter: (...a) => repondre("deconnecter", a), rattacher: (...a) => repondre("rattacher", a) } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
   for (const f of ["claude-prompts.js", "routine-etat.js", "banque-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
@@ -348,6 +376,24 @@ test("Banques (vm) : « Reconnecter » passe l'identifiant de la connexion ; exc
   assert.deepEqual(v.appels, [["connecter", 2]]);
   assert.equal(v.$("#cgBanquesCorps").querySelector(".cg-rt-err").textContent, "Connexion bancaire impossible pour le moment. Réessaie.");
   assert.equal(v.assigns.length, 0);
+});
+
+test("Banques (vm) : « Gérer les comptes » → Store.banque.gerer(id) puis redirection vers la page Powens ; erreur en ligne, focus rendu", async () => {
+  const URL_MANAGE = "https://webview.powens.com/manage?domain=x.biapi.pro&code=abc&connection_id=1";
+  const v = guideVm([{ ok: true, url: URL_MANAGE }, { erreur: "Connexion introuvable." }]);
+  const b = v.$('[data-cg-banque-gerer="1"]');
+  b.click(); b.click();
+  assert.equal(b.getAttribute("aria-busy"), "true");
+  await v.fin();
+  assert.deepEqual(v.appels, [["gerer", 1]], "un seul appel, avec l'identifiant de la connexion");
+  assert.deepEqual(v.assigns, [URL_MANAGE]);
+  assert.match(v.msg(), /Ouverture de la page de gestion de Powens/);
+  v.$('[data-cg-banque-gerer="2"]').click();
+  await v.fin();
+  assert.deepEqual(v.appels[1], ["gerer", 2]);
+  assert.equal(v.assigns.length, 1, "pas de redirection en cas d'erreur");
+  assert.equal(v.$("#cgBanquesCorps").querySelector(".cg-rt-err").textContent, "Connexion introuvable.");
+  assert.equal(v.doc.activeElement, v.$('[data-cg-banque-gerer="2"]'), "focus rendu au bouton");
 });
 
 test("Banques (vm) : rattachement par sélecteur → Store.banque.rattacher(id, cible) ; message ; erreur sous le compte, focus rendu", async () => {
@@ -656,6 +702,9 @@ test("démo : Store.banque — connecter indisponible (erreur douce), rattacher 
   const B = ctx.Store.banque, get = () => ctx.Store.get().banque;
   assert.match((await B.connecter()).erreur, /^Indisponible en démonstration/);
   assert.match((await B.connecter(102)).erreur, /^Indisponible en démonstration/);
+  const g = await B.gerer(get().connexions[0].id);
+  assert.match(g.erreur, /^Indisponible en démonstration/, "gérer les comptes : erreur douce en démo");
+  assert.equal(g.url, undefined);
   const libre = BE.comptesARattacher(get())[0];
   assert.deepEqual(J(await B.rattacher(libre.id, { positionId: "compte-commun" })), { ok: true });
   assert.equal(get().comptes.find(c => c.id === libre.id).positionId, "compte-commun");
@@ -792,6 +841,27 @@ test("store-supabase (exécuté) : connecter → POST /functions/v1/powens/conne
   const f = storeSup({ tables: tablesBq, fetchRep: { status: 503 } });
   await pret(f.ctx);
   assert.match((await f.ctx.Store.banque.connecter()).erreur, /indisponible pour le moment/);
+});
+
+test("store-supabase (exécuté) : gerer → POST /powens/connecter { connection_id, mode: \"gerer\" } ; URL Powens vérifiée ; connexion inconnue refusée", async () => {
+  const URL_MANAGE = "https://webview.powens.com/manage?domain=boussole2-sandbox.biapi.pro&client_id=1&code=c&connection_id=7";
+  const a = storeSup({ tables: tablesBq, fetchRep: { status: 200, body: { url: URL_MANAGE } } });
+  await pret(a.ctx);
+  assert.deepEqual(J(await a.ctx.Store.banque.gerer(7)), { ok: true, url: URL_MANAGE });
+  assert.equal(a.fetchs[0].url, "https://projet.supabase.co/functions/v1/powens/connecter");
+  assert.equal(a.fetchs[0].init.method, "POST");
+  assert.equal(a.fetchs[0].init.headers.Authorization, "Bearer jeton-utilisateur-factice");
+  assert.equal(a.fetchs[0].init.body, '{"connection_id":7,"mode":"gerer"}');
+  for (const v of [undefined, null, "7; drop", 99]) assert.match((await a.ctx.Store.banque.gerer(v)).erreur, /Connexion introuvable/, String(v));
+  assert.equal(a.fetchs.length, 1, "rien n'est envoyé pour une connexion inconnue");
+  for (const u of ["https://evil.example/manage", "http://webview.powens.com/manage", "javascript:alert(1)"]) {
+    const b = storeSup({ tables: tablesBq, fetchRep: { status: 200, body: { url: u } } });
+    await pret(b.ctx);
+    assert.match((await b.ctx.Store.banque.gerer(7)).erreur, /Adresse de connexion inattendue/, u);
+  }
+  const c = storeSup({ tables: tablesBq, fetchRep: { status: 404, body: { erreur: "Connexion introuvable." } } });
+  await pret(c.ctx);
+  assert.deepEqual(J(await c.ctx.Store.banque.gerer(7)), { erreur: "Connexion introuvable." });
 });
 
 test("store-supabase (exécuté) : deconnecter → POST /powens/deconnecter { connection_id } puis rechargement ; connexion inconnue refusée", async () => {

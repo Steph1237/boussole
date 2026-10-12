@@ -87,7 +87,9 @@
    précédentes). etat : null (à jour) ou l'état Powens (libellés : banque-etat.js). Les ids Powens restent tels que lus (nombres).
    Store.banque.connecter(connectionId?) → { ok: true, url } | { erreur } : POST <supabaseUrl>/functions/v1/powens/connecter avec le JWT
    de la session (corps { connection_id } pour une reconnexion) ; l'URL renvoyée n'est acceptée qu'en https chez Powens
-   (BanqueEtat.urlPowensOk) ; la vue redirige. Store.banque.deconnecter(connectionId) → { ok: true } | { erreur } : POST /powens/deconnecter
+   (BanqueEtat.urlPowensOk) ; la vue redirige. Store.banque.gerer(connectionId) → { ok: true, url } | { erreur } : même appel avec
+   { connection_id, mode: "gerer" } (page de gestion Powens de cette connexion : activer un autre compte de la même banque, sans
+   seconde connexion), même vérification de l'URL. Store.banque.deconnecter(connectionId) → { ok: true } | { erreur } : POST /powens/deconnecter
    puis rechargement. Store.banque.rattacher(compteId, { positionId } | { enveloppe, titulaire } | { creditId } | { aucun: true } |
    { ignorer: true }) → { ok: true } | { erreur } : update banque_comptes des 5 colonnes de rattachement (position_id, enveloppe,
    titulaire, credit_id, ignore ; seule écriture permise par 0021 ; ignorer → ignore = true et les 4 autres à null), validée d'abord
@@ -540,6 +542,13 @@
     if (!r.ok) return { erreur: BE().messageErreur(r.status, d) };
     return { ok: true, data: d && typeof d === "object" ? d : {} };
   }
+  /* POST /powens/connecter → { ok: true, url } seulement pour une adresse https chez Powens (BanqueEtat.urlPowensOk). */
+  async function pagePowens(corps) {
+    const r = await appelPowens("connecter", corps);
+    if (r.erreur) return r;
+    if (!BE().urlPowensOk(r.data.url)) return { erreur: "Adresse de connexion inattendue : rien n'a été ouvert. Réessaie dans un instant." };
+    return { ok: true, url: r.data.url };
+  }
   const banqueApi = {
     async connecter(connectionId) {
       const corps = {};
@@ -548,10 +557,13 @@
         if (id == null || !C.banque.connexions.some(c => String(c.id) === String(id))) return { erreur: "Connexion introuvable." };
         corps.connection_id = id;
       }
-      const r = await appelPowens("connecter", corps);
-      if (r.erreur) return r;
-      if (!BE().urlPowensOk(r.data.url)) return { erreur: "Adresse de connexion inattendue : rien n'a été ouvert. Réessaie dans un instant." };
-      return { ok: true, url: r.data.url };
+      return pagePowens(corps);
+    },
+    /* Gérer les comptes d'une connexion existante (webview Manage) : jamais une seconde connexion à la même banque. */
+    async gerer(connectionId) {
+      const id = idPowens(connectionId);
+      if (id == null || !C.banque.connexions.some(c => String(c.id) === String(id))) return { erreur: "Connexion introuvable." };
+      return pagePowens({ connection_id: id, mode: "gerer" });
     },
     async deconnecter(connectionId) {
       const id = idPowens(connectionId);

@@ -249,7 +249,9 @@ test("dateParis, premierDuMois, datePowens", { skip: SANS_STRIP }, () => {
   const { S } = charger();
   assert.equal(S.dateParis(new Date("2026-10-11T22:30:00Z")), "2026-10-12", "minuit passé à Paris");
   assert.equal(S.premierDuMois("2026-09-20"), "2026-09-01");
-  assert.equal(S.datePowens("2026-10-12 07:55:00"), "2026-10-12T07:55:00Z");
+  assert.equal(S.datePowens("2026-10-12 07:55:00"), "2026-10-12T05:55:00Z", "heure de Paris (été, +2 h)");
+  assert.equal(S.datePowens("2026-12-12 07:55:00"), "2026-12-12T06:55:00Z", "heure de Paris (hiver, +1 h)");
+  assert.equal(S.datePowens("2026-10-12 07:55:00Z"), "2026-10-12T07:55:00Z");
   assert.equal(S.datePowens("2026-10-12T07:55:00+02:00"), "2026-10-12T07:55:00+02:00");
   assert.equal(S.datePowens(null), null);
   assert.equal(S.datePowens("n'importe quoi"), null);
@@ -264,7 +266,7 @@ test("planifier : connexion, comptes (sans colonnes de rattachement), états et 
     maintenant: MAINTENANT.toISOString(), aujourdhui: AUJ, minDate: "2026-07-14", lots: {}, uuid: OPTS().uuid,
   });
   assert.deepEqual(J(plan.connexion), { user_id: U, id: 7, etablissement: "Banque Test", etat: "SCARequired", message: "Valide dans ton appli bancaire",
-    derniere_synchro: "2026-10-12T07:55:00Z", maj_le: MAINTENANT.toISOString() });
+    derniere_synchro: "2026-10-12T05:55:00Z", maj_le: MAINTENANT.toISOString() });
   assert.equal(plan.comptes.length, 1);
   const c = plan.comptes[0];
   const carte = S.planifier({ comptes: [], placements: [], lotsExistants: [] }, {
@@ -316,9 +318,9 @@ test("synchroniser : les 4 cas d'application aux lignes (ligne, enveloppe, créd
   assert.deepEqual({ name: msci.name, envelope: msci.envelope, owner: msci.owner, qty: msci.qty, user_id: msci.user_id, status: msci.status, source_auto: msci.source_auto },
     { name: "Amundi MSCI World", envelope: "PEA", owner: "p2", qty: 120, user_id: U, status: "actif", source_auto: "powens" });
   assert.deepEqual(T.instruments.map(i => i.isin).sort(), ["FR0010315770", "IE00B4L5Y983"]);
-  assert.equal(T.banque_placements.length, 3, "le placement sans ISIN est gardé, sans ligne");
+  assert.equal(T.banque_placements.length, 3, "le placement sans ISIN est gardé");
   assert.equal(T.banque_placements.find(p => p.id === 501).position_id, msci.id);
-  assert.equal(T.banque_placements.find(p => p.id === 503).position_id, null);
+  assert.equal(T.banque_placements.find(p => p.id === 503).position_id, await S.uuidDeterministe(`powens-liq-${U}-103`), "liquidités : ligne manuelle");
   assert.equal(T.banque_placements.find(p => p.id === 501).prix_revient, 20.1);
   // 3. Crédit : capital restant dû = |solde|.
   assert.equal(T.credits.find(c => c.id === "cred-1").crd, 150000.25);
@@ -446,8 +448,8 @@ test("synchroniser : compte disparu chez Powens → inactif ; enveloppe vide tra
   await S.synchroniser(db, apiFactice(), U, 7, OPTS());
   assert.equal(db.tables.banque_comptes.find(c => c.id === 199).actif, false);
   assert.equal(db.tables.positions.filter(p => p.mode === "market").length, 0, "enveloppe vide : pas de ligne marché");
-  assert.equal(db.tables.propositions.length, 2, "le PEA sans rattachement donne lieu à une proposition");
-  assert.ok(db.tables.propositions.some(p => p.apres.envelope === "PEA" && p.apres.value === 25000));
+  assert.equal(db.tables.propositions.length, 1, "le PEA sans rattachement ne donne pas lieu à une proposition (il se rattache à une enveloppe)");
+  assert.ok(!db.tables.propositions.some(p => p.apres.envelope === "PEA"));
 });
 
 test("oublierConnexion : lignes repassées en saisie manuelle, connexion supprimée (cascade), filtré par user_id", { skip: SANS_STRIP }, async () => {
@@ -593,4 +595,157 @@ test("nettoyerLibelle : un ISIN valide n'est pas masqué ; une suite de 8 chiffr
   assert.equal(S.nettoyerLibelle("ACHAT US0378331005"), "ACHAT US0378331005");
   assert.equal(S.nettoyerLibelle("REF AB12345678"), "REF AB••••", "pas un ISIN : chiffres masqués");
   assert.equal(S.nettoyerLibelle("FR00103157701 X"), "FR•••• X", "13 caractères : pas un ISIN");
+});
+
+/* ---------- comptes enveloppe : adoption des lignes existantes, liquidités, propositions ---------- */
+/** Lignes saisies à la main par l'utilisateur dans son PEA (titulaire p2, comme le compte 103 de RATTACHES). */
+const LIGNES_PEA = () => [
+  { id: "m-msci", user_id: U, name: "MSCI World (saisi)", envelope: " pea ", owner: "p2", mode: "manual", isin: "fr0010315770", qty: 100, value: 2800, status: "actif" },
+  { id: "m-ishares", user_id: U, name: "iShares World", envelope: "PEA", owner: "p2", mode: "market", isin: "IE00B4L5Y983", qty: 8, value: 700, status: "actif" },
+  { id: "m-liq", user_id: U, name: "Espèces PEA", envelope: "P E A", owner: "p2", mode: "manual", isin: null, value: 40, status: "actif" },
+];
+const baseAvecLignes = (lignes, comptes = J(RATTACHES)) => { const b = baseInitiale(comptes); b.positions.push(...lignes); return b; };
+
+test("adoption par ISIN : lignes existantes reprises (ISIN et enveloppe sans casse ni espaces), aucune ligne créée, nom, mode et valeur intacts", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const db = fausseBase(baseAvecLignes(LIGNES_PEA()), { rpc: rpcBanque() });
+  const nAvant = db.tables.positions.length;
+  const r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  const T = db.tables;
+  assert.equal(T.positions.length, nAvant, "aucune nouvelle ligne");
+  assert.equal(r.positions_creees, 0);
+  const msci = T.positions.find(p => p.id === "m-msci");
+  assert.deepEqual({ name: msci.name, mode: msci.mode, value: msci.value, envelope: msci.envelope, qty: msci.qty, isin: msci.isin, source_auto: msci.source_auto, source_auto_le: msci.source_auto_le },
+    { name: "MSCI World (saisi)", mode: "manual", value: 2800, envelope: " pea ", qty: 120, isin: "FR0010315770", source_auto: "powens", source_auto_le: MAINTENANT.toISOString() });
+  const ish = T.positions.find(p => p.id === "m-ishares");
+  assert.deepEqual([ish.qty, ish.value, ish.mode, ish.source_auto], [10, 700, "market", "powens"]);
+  assert.equal(T.banque_placements.find(p => p.id === 501).position_id, "m-msci");
+  assert.equal(T.banque_placements.find(p => p.id === 502).position_id, "m-ishares");
+  assert.ok(T.banque_placements.find(p => p.id === 501).ligne_creee_le, "lien posé : une suppression par l'utilisateur sera respectée");
+  assert.ok(T.instruments.some(i => i.isin === "FR0010315770"), "instrument en majuscules (clé étrangère de positions.isin)");
+  // Liquidités : ligne manuelle existante adoptée, valeur et date mises à jour.
+  const liq = T.positions.find(p => p.id === "m-liq");
+  assert.deepEqual([liq.value, liq.value_date, liq.source_auto, liq.name, liq.mode], [50, AUJ, "powens", "Espèces PEA", "manual"]);
+  assert.equal(T.banque_placements.find(p => p.id === 503).position_id, "m-liq");
+  assert.equal(r.lignes_adoptees, 3);
+  // Deuxième synchronisation : rien de plus, quantités suivies par la voie ordinaire (filtre source_auto).
+  const avant = J(T);
+  const r2 = await S.synchroniser(db, apiFactice({ placements: { 103: [{ ...PLACEMENTS[103][0], quantity: 125 }, PLACEMENTS[103][1], { ...PLACEMENTS[103][2], valuation: 60 }] } }), U, 7, OPTS());
+  assert.equal(r2.ok, true, JSON.stringify(r2.erreurs));
+  assert.equal(db.tables.positions.length, avant.positions.length);
+  assert.equal(r2.lignes_adoptees, 0);
+  assert.equal(r2.positions_creees, 0);
+  assert.equal(db.tables.positions.find(p => p.id === "m-msci").qty, 125);
+  assert.equal(db.tables.positions.find(p => p.id === "m-liq").value, 60);
+});
+
+test("adoption par ISIN : cas type, 14 lignes PEA saisies (13 avec ISIN) → aucun doublon", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const isins = ["FR0010315770", "IE00B4L5Y983", "LU1681043599", "FR0011550185", "FR0013412285", "IE00BK5BQT80", "LU0392494562",
+    "FR0010296061", "IE00B5BMR087", "FR0011871128", "LU1829221024", "IE00B3RBWM25", "FR0007052782"];
+  const lignes = isins.map((isin, i) => ({ id: `pea-${i}`, user_id: U, name: `Ligne ${i}`, envelope: "PEA", owner: "p2", mode: i % 2 ? "market" : "manual", isin, qty: i + 1, value: 1000 + i, status: "actif" }));
+  lignes.push({ id: "pea-liq", user_id: U, name: "Liquidités", envelope: "PEA", owner: "p2", mode: "manual", isin: null, value: 12, status: "actif" });
+  const placements = { 103: [...isins.map((isin, i) => ({ id: 700 + i, id_account: 103, code: isin, code_type: "ISIN", label: `Fonds ${i}`, quantity: i + 2, valuation: 10, deleted: null })),
+    { id: 799, id_account: 103, code: null, code_type: null, label: "Liquidités", quantity: null, valuation: 321.5, deleted: null }] };
+  const db = fausseBase(baseAvecLignes(lignes), { rpc: rpcBanque() });
+  const nAvant = db.tables.positions.length;
+  for (let i = 0; i < 2; i++) {
+    const r = await S.synchroniser(db, apiFactice({ placements }), U, 7, OPTS());
+    assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+    assert.equal(r.positions_creees, 0, `passage ${i + 1}`);
+  }
+  assert.equal(db.tables.positions.length, nAvant, "aucun doublon");
+  assert.ok(lignes.every(l => db.tables.positions.find(p => p.id === l.id).source_auto === "powens"));
+  assert.equal(db.tables.positions.find(p => p.id === "pea-3").qty, 5);
+  assert.equal(db.tables.positions.find(p => p.id === "pea-liq").value, 321.5);
+  assert.equal(new Set(db.tables.banque_placements.map(p => p.position_id)).size, 14, "un placement par ligne");
+});
+
+test("adoption par ISIN : plusieurs correspondances → la plus grande quantité, noté dans le rapport", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const lignes = [
+    { id: "a-petite", user_id: U, name: "MSCI 1", envelope: "PEA", owner: "p2", mode: "manual", isin: "FR0010315770", qty: 10, value: 1, status: "actif" },
+    { id: "a-grande", user_id: U, name: "MSCI 2", envelope: "pea", owner: "p2", mode: "manual", isin: "FR0010315770", qty: 90, value: 2, status: "actif" },
+    { id: "a-sans-qte", user_id: U, name: "MSCI 3", envelope: "PEA", owner: "p2", mode: "manual", isin: "FR0010315770", qty: null, value: 3, status: "actif" },
+  ];
+  const db = fausseBase(baseAvecLignes(lignes), { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  assert.equal(db.tables.banque_placements.find(p => p.id === 501).position_id, "a-grande");
+  assert.equal(db.tables.positions.find(p => p.id === "a-grande").qty, 120);
+  assert.equal(db.tables.positions.find(p => p.id === "a-petite").qty, 10, "les autres sont intactes");
+  assert.equal(db.tables.positions.find(p => p.id === "a-petite").source_auto ?? null, null);
+  assert.ok(r.notes.some(n => /FR0010315770/.test(n) && /3 lignes/.test(n)), JSON.stringify(r.notes));
+});
+
+test("adoption par ISIN : titulaire, ligne clôturée, autre enveloppe, autre utilisateur ou ligne déjà liée → pas adoptées, ligne créée", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const lignes = [
+    { id: "x-p1", user_id: U, name: "MSCI p1", envelope: "PEA", owner: "p1", mode: "manual", isin: "FR0010315770", qty: 1, status: "actif" },
+    { id: "x-cloture", user_id: U, name: "MSCI clos", envelope: "PEA", owner: "p2", mode: "manual", isin: "FR0010315770", qty: 1, status: "clôturé" },
+    { id: "x-cto", user_id: U, name: "MSCI CTO", envelope: "Compte-titres", owner: "p2", mode: "manual", isin: "FR0010315770", qty: 1, status: "actif" },
+    { id: "x-autre", user_id: AUTRE, name: "MSCI autre", envelope: "PEA", owner: "p2", mode: "manual", isin: "FR0010315770", qty: 1, status: "actif" },
+  ];
+  const db = fausseBase(baseAvecLignes(lignes), { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiFactice(), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  const id501 = await S.idLigne(U, 501);
+  assert.equal(db.tables.banque_placements.find(p => p.id === 501).position_id, id501, "aucune correspondance : ligne créée");
+  for (const l of lignes) assert.equal(db.tables.positions.find(p => p.id === l.id).qty, 1, l.id);
+  // Compte sans titulaire : la ligne de p1 est adoptée.
+  const sansTitulaire = J(RATTACHES).map(c => (c.id === 103 ? { ...c, titulaire: null } : c));
+  const db2 = fausseBase(baseAvecLignes(lignes, sansTitulaire), { rpc: rpcBanque() });
+  await S.synchroniser(db2, apiFactice(), U, 7, OPTS());
+  assert.equal(db2.tables.banque_placements.find(p => p.id === 501).position_id, "x-p1");
+  // Deux placements du même ISIN, une seule ligne : la ligne est liée au premier, le second a sa propre ligne.
+  const doubles = { 103: [PLACEMENTS[103][0], { ...PLACEMENTS[103][0], id: 505, quantity: 7 }] };
+  const db3 = fausseBase(baseAvecLignes([{ ...LIGNES_PEA()[0] }]), { rpc: rpcBanque() });
+  await S.synchroniser(db3, apiFactice({ placements: doubles }), U, 7, OPTS());
+  assert.equal(db3.tables.banque_placements.find(p => p.id === 501).position_id, "m-msci");
+  assert.equal(db3.tables.banque_placements.find(p => p.id === 505).position_id, await S.idLigne(U, 505));
+  assert.equal(db3.tables.positions.find(p => p.id === "m-msci").qty, 120);
+});
+
+test("liquidités : sans ligne existante → ligne manuelle « Liquidités <enveloppe> » créée une fois ; autres placements sans ISIN ignorés et listés", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const lignes = [
+    { id: "liq-cto", user_id: U, name: "Liquidités CTO", envelope: "CTO", owner: "p2", mode: "manual", isin: null, value: 5, status: "actif" },
+    { id: "liq-isin", user_id: U, name: "Liquidités monétaire", envelope: "PEA", owner: "p2", mode: "manual", isin: "FR0010296061", value: 5, status: "actif" },
+    { id: "liq-marche", user_id: U, name: "Liquidités", envelope: "PEA", owner: "p2", mode: "market", isin: null, value: 5, status: "actif" },
+  ];
+  const placements = { 103: [...PLACEMENTS[103], { id: 506, id_account: 103, code: "QS0002005324", code_type: "AMF", label: "Fonds euros", quantity: null, valuation: 400, deleted: null }] };
+  const db = fausseBase(baseAvecLignes(lignes), { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiFactice({ placements }), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  const idLiq = await S.uuidDeterministe(`powens-liq-${U}-103`);
+  const liq = db.tables.positions.find(p => p.id === idLiq);
+  assert.deepEqual({ name: liq.name, envelope: liq.envelope, owner: liq.owner, mode: liq.mode, isin: liq.isin ?? null, value: liq.value, value_date: liq.value_date, source_auto: liq.source_auto, status: liq.status, user_id: liq.user_id },
+    { name: "Liquidités PEA", envelope: "PEA", owner: "p2", mode: "manual", isin: null, value: 50, value_date: AUJ, source_auto: "powens", status: "actif", user_id: U });
+  assert.equal(db.tables.banque_placements.find(p => p.id === 503).position_id, idLiq);
+  assert.equal(db.tables.banque_placements.find(p => p.id === 506).position_id, null, "fonds euros sans ISIN : ignoré");
+  assert.ok(r.notes.some(n => /506/.test(n) && /sans ISIN/.test(n)), JSON.stringify(r.notes));
+  for (const l of lignes) assert.equal(db.tables.positions.find(p => p.id === l.id).value, 5, l.id);
+  const n1 = db.tables.positions.length;
+  const r2 = await S.synchroniser(db, apiFactice({ placements: { 103: [PLACEMENTS[103][0], PLACEMENTS[103][1], { ...PLACEMENTS[103][2], valuation: 75 }] } }), U, 7, OPTS());
+  assert.equal(r2.ok, true, JSON.stringify(r2.erreurs));
+  assert.equal(db.tables.positions.length, n1, "pas de seconde ligne de liquidités");
+  assert.equal(db.tables.positions.find(p => p.id === idLiq).value, 75);
+  // Libellé « Liquidités » sans code_type : reconnu aussi.
+  const db2 = fausseBase(baseInitiale(J(RATTACHES)), { rpc: rpcBanque() });
+  await S.synchroniser(db2, apiFactice({ placements: { 103: [{ id: 510, id_account: 103, label: "LIQUIDITES", valuation: 9, deleted: null }] } }), U, 7, OPTS());
+  assert.equal(db2.tables.positions.find(p => p.id === idLiq).value, 9);
+});
+
+test("propositions : aucune pour un compte pea, compte_titres, assurance_vie ou per ; gardées pour courant et livret", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const types = { 201: "checking", 202: "livret_a", 203: "pea", 204: "market", 205: "lifeinsurance", 206: "per" };
+  const comptes = Object.entries(types).map(([id, type]) => ({ id: Number(id), id_connection: 7, name: `Compte ${type}`, balance: 100, currency: { id: "EUR" }, type, disabled: null, deleted: null }));
+  const db = fausseBase(baseInitiale([]), { rpc: rpcBanque() });
+  const r = await S.synchroniser(db, apiFactice({ comptes, placements: {}, operations: {} }), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  assert.deepEqual(db.tables.propositions.map(p => p.apres.envelope).sort(), ["Compte courant", "Livret"]);
+  assert.deepEqual(db.tables.banque_comptes.filter(c => c.propose_le).map(c => c.id).sort(), [201, 202]);
+  // Toujours « à rattacher » côté app (sans ligne, enveloppe ni crédit) tant que l'utilisateur n'a pas choisi.
+  assert.equal(db.tables.banque_comptes.filter(c => !c.position_id && !c.enveloppe && !c.credit_id && !c.ignore).length, 6);
 });

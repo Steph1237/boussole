@@ -319,6 +319,34 @@ test("connecter avec connection_id : URL de reconnexion exacte ; connexion d'un 
   assert.equal((await m.appeler("/powens/connecter", { jeton: JWT, corps: "pas du json" })).status, 400);
 });
 
+test("connecter mode gerer : URL de la webview Manage exacte pour la connexion ; connection_id obligatoire ; connexion d'un autre → 404 ; mode inconnu → 400", { skip: SANS_STRIP }, async () => {
+  const coffre = () => ({ [U]: { powens_user_id: 42, jeton: JETON, empreinte: sha256(JETON) } });
+  const m = monter({ coffre: coffre(),
+    init: { banque_connexions: [{ user_id: U, id: 7, etablissement: "LCL", etat: null }, { user_id: AUTRE, id: 8 }] } });
+  const r = await m.appeler("/powens/connecter", { jeton: JWT, corps: { connection_id: 7, mode: "gerer" } });
+  assert.equal(r.status, 200);
+  const { url } = await corps(r);
+  assert.equal(url, "https://webview.powens.com/manage?domain=boussole2-sandbox.biapi.pro&client_id=12345678&code=code%20temp%2Ffactice%2B1"
+    + "&connection_id=7&redirect_uri=https%3A%2F%2Foapcewpqsbbjdlcdeizi.supabase.co%2Ffunctions%2Fv1%2Fpowens%2Fretour");
+  assert.ok(!url.includes(JETON) && !url.includes("secret"), "ni jeton ni secret dans l'URL");
+  assert.equal(m.powens.appels.filter(a => a.chemin === "auth/init").length, 0, "pas de nouvel utilisateur Powens");
+  assert.equal(m.powens.appels.find(a => a.chemin === "auth/token/code").auth, `Bearer ${JETON}`);
+  assert.equal((await m.appeler("/powens/connecter", { jeton: JWT, corps: { connection_id: 8, mode: "gerer" } })).status, 404, "connexion d'un autre");
+  assert.equal((await m.appeler("/powens/connecter", { jeton: JWT, corps: { connection_id: 99, mode: "gerer" } })).status, 404, "connexion inconnue");
+  const sans = await m.appeler("/powens/connecter", { jeton: JWT, corps: { mode: "gerer" } });
+  assert.equal(sans.status, 400, "gérer exige une connexion");
+  assert.match((await corps(sans)).erreur, /connection_id/);
+  for (const v of ["supprimer", 1, "GERER "]) assert.equal((await m.appeler("/powens/connecter", { jeton: JWT, corps: { connection_id: 7, mode: v } })).status, 400, String(v));
+  assert.equal((await m.appeler("/powens/connecter", { corps: { connection_id: 7, mode: "gerer" } })).status, 401);
+  // Sans accès Powens enregistré : pas de nouvel utilisateur (il n'aurait pas cette connexion).
+  const m2 = monter({ init: { banque_connexions: [{ user_id: U, id: 7 }] } });
+  assert.equal((await m2.appeler("/powens/connecter", { jeton: JWT, corps: { connection_id: 7, mode: "gerer" } })).status, 409);
+  assert.equal(m2.powens.appels.length, 0);
+  // Interrupteur éteint : 403 comme pour la connexion.
+  const m3 = monter({ banque: false, coffre: coffre(), init: { banque_connexions: [{ user_id: U, id: 7 }] } });
+  assert.equal((await m3.appeler("/powens/connecter", { jeton: JWT, corps: { connection_id: 7, mode: "gerer" } })).status, 403);
+});
+
 test("connecter : erreur Powens → 502 en français, sans jeton ni secret", { skip: SANS_STRIP }, async () => {
   const m = monter({ powens: powensSimule({ pannes: { "POST auth/init": 500 } }) });
   const r = await m.appeler("/powens/connecter", { jeton: JWT, corps: {} });
@@ -476,6 +504,25 @@ test("webhook CONNECTION_DELETED et ACCOUNT_DISABLED ; payload sans connexion ig
   const vide = await m.appeler("/powens/webhook/connection_synced", { jeton: JETON, corps: JSON.stringify({ id_webhook_data: 3 }) });
   assert.equal(vide.status, 200);
   assert.equal((await m.appeler("/powens/webhook/connection_synced", { jeton: JETON, corps: "{pas du json" })).status, 400);
+});
+
+test("webhook ACCOUNT_ENABLED (compte activé dans la webview Manage) : synchronisation de sa connexion ; déduit du contenu (disabled null)", { skip: SANS_STRIP }, async () => {
+  const COMPTE_ACTIVE = JSON.stringify({ id: 102, id_user: 42, id_connection: 7, name: "Livret A", type: "livret_a", disabled: null, balance: 8000 });
+  let m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }], banque_comptes: [{ user_id: U, id: 101, connexion_id: 7, actif: true }] } });
+  const r = await m.appeler("/powens/webhook/account_enabled", { jeton: JETON, corps: COMPTE_ACTIVE });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await corps(r), { ok: true });
+  assert.ok(m.powens.appels.some(a => a.methode === "GET" && a.chemin === "users/me/connections/7/accounts"), "comptes de la connexion relus");
+  assert.ok(m.powens.appels.every(a => a.auth === `Bearer ${JETON}`));
+  assert.ok(m.db.tables.banque_comptes.some(c => c.id === 102 && c.user_id === U), "le compte activé arrive dans Boussole");
+  // Route générique : un compte dont disabled vaut null est un ACCOUNT_ENABLED (et non un ACCOUNT_DISABLED).
+  m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }], banque_comptes: [{ user_id: U, id: 102, connexion_id: 7, actif: false }] } });
+  assert.equal((await m.appeler("/powens/webhook", { jeton: JETON, corps: COMPTE_ACTIVE })).status, 200);
+  assert.ok(m.powens.appels.some(a => a.chemin === "users/me/connections/7/accounts"), "synchronisation lancée");
+  // Sans id_connection : ignoré, aucun appel Powens.
+  m = monter({ coffre: coffreU() });
+  assert.equal((await m.appeler("/powens/webhook/account_enabled", { jeton: JETON, corps: JSON.stringify({ id: 102, disabled: null }) })).status, 200);
+  assert.equal(m.powens.appels.length, 0);
 });
 
 /* ---------- nuit ---------- */

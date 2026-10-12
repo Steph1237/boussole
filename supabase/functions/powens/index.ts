@@ -21,6 +21,12 @@
 //   `domain` est le nom d'hôte de l'API, avec `.biapi.pro` (exemple de la référence : `example.biapi.pro`) ;
 // - reconnexion : https://{domain}.biapi.pro/2.0/auth/webview/reconnect?client_id=…&code=…&connection_id=…&redirect_uri=…
 //   (https://docs.powens.com/documentation/integration-guides/sca-and-connection-states) ;
+// - gestion d'une connexion existante (« Gérer les comptes » : activer un compte découvert mais non partagé, livret, PEA…) :
+//   https://webview.powens.com/manage?domain={domain}.biapi.pro&client_id=…&code=…&connection_id=…&redirect_uri=…
+//   (https://docs.powens.com/api-reference/overview/webview#manage-connections, consultée le 2026-10-12 : domain, client_id et
+//   code obligatoires ; connection_id facultatif, la webview ouvre directement cette connexion ; redirect_uri facultatif, il
+//   ajoute un bouton de fermeture qui y mène, sans aucun paramètre de retour hormis state). Les comptes découverts sont désactivés
+//   par défaut (RGPD) : les activer depuis cette page évite une seconde connexion à la même banque (doublon facturé) ;
 // - retour : redirect_uri?connection_id=… en cas de succès, ?error=…&error_description=… sinon. redirect_uri (RETOUR_URL) est
 //   déclarée dans la console Powens ; /retour ne transmet à l'app que connection_id (chiffres) et error (code [a-z_]), jamais
 //   error_description : supabase-js lirait ce paramètre comme une erreur d'authentification et effacerait la session.
@@ -28,10 +34,13 @@
 // Webhooks (https://docs.powens.com/documentation/integration-guides/webhooks) : POST JSON, 2XX attendu (sinon Powens réessaie) ;
 // en-tête Authorization: Bearer <jeton utilisateur> ; signature facultative BI-Signature = BASE64(HMAC_SHA256(METHOD + "." +
 // endpoint + "." + date + "." + payload)) avec la date de BI-Signature-Date. Aucun champ ne porte le nom de l'événement : on
-// déclare une URL par événement (/powens/webhook/connection_synced, /connection_deleted, /account_disabled) ; /powens/webhook
-// seul déduit l'événement de la forme du contenu. Formes (https://docs.powens.com/api-reference/user-connections/connections et
+// déclare une URL par événement (/powens/webhook/connection_synced, /connection_deleted, /account_disabled, /account_enabled) ;
+// /powens/webhook seul déduit l'événement de la forme du contenu. Formes (https://docs.powens.com/api-reference/user-connections/connections et
 // …/data-aggregation/bank-accounts) : CONNECTION_SYNCED { user, connection: { id, … } } ; CONNECTION_DELETED = objet connexion
-// { id, id_connector, state, … } ; ACCOUNT_DISABLED = objet compte { id, id_connection, disabled, … }.
+// { id, id_connector, state, … } ; ACCOUNT_DISABLED = objet compte { id, id_connection, disabled, … } ; ACCOUNT_ENABLED = objet
+// compte avec disabled null (https://docs.powens.com/api-reference/products/data-aggregation/bank-accounts#account-enabled) :
+// émis quand l'utilisateur active un compte (webview Manage) ; la connexion du compte est alors synchronisée comme pour
+// CONNECTION_SYNCED (rien ne garantit qu'une synchronisation suive l'activation).
 import { createClient } from "@supabase/supabase-js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -234,7 +243,8 @@ app.use("*", cors({
   maxAge: 86400,
 }));
 
-/* POST /powens/connecter { connection_id? } → { url } (page de connexion, ou de reconnexion avec connection_id). */
+/* POST /powens/connecter { connection_id?, mode? } → { url } : page de connexion ; de reconnexion avec connection_id ; de gestion
+   de cette connexion (webview Manage : activer d'autres comptes de la même banque) avec connection_id et mode "gerer". */
 app.post("/connecter", async (c: any) => {
   const req: Request = c.req.raw;
   const db = admin();
@@ -253,6 +263,9 @@ app.post("/connecter", async (c: any) => {
     connexionId = idPowens(corps.connection_id);
     if (connexionId == null) return erreur(400, "connection_id invalide.");
   }
+  if (corps.mode != null && corps.mode !== "gerer") return erreur(400, "mode invalide.");
+  let gerer = corps.mode === "gerer";
+  if (gerer && connexionId == null) return erreur(400, "connection_id manquant : choisis la connexion à gérer.");
   try {
     if (connexionId != null && !(await connexionAppartient(db, user.id, connexionId))) return erreur(404, "Connexion introuvable.");
     let jeton = await jetonDe(db, user.id);
@@ -272,10 +285,13 @@ app.post("/connecter", async (c: any) => {
       jeton = await creerUtilisateur(db, cfg, user.id);
       code = await api(cfg.base, jeton, deps.fetch).code();
       connexionId = null;
+      gerer = false;
     }
     const e = encodeURIComponent;
     const url = connexionId == null
       ? `https://webview.powens.com/connect?domain=${e(cfg.nom + ".biapi.pro")}&client_id=${e(cfg.clientId)}&redirect_uri=${e(RETOUR_URL)}&code=${e(code)}`
+      : gerer
+      ? `https://webview.powens.com/manage?domain=${e(cfg.nom + ".biapi.pro")}&client_id=${e(cfg.clientId)}&code=${e(code)}&connection_id=${connexionId}&redirect_uri=${e(RETOUR_URL)}`
       : `${cfg.base}auth/webview/reconnect?client_id=${e(cfg.clientId)}&code=${e(code)}&connection_id=${connexionId}&redirect_uri=${e(RETOUR_URL)}`;
     return json({ url });
   } catch (err) {
@@ -341,8 +357,8 @@ app.post("/supprimer", async (c: any) => {
 });
 
 /* POST /powens/webhook[/:evenement] (Powens) → 200 dès l'authentification passée ; traitement en fond, idempotent. */
-type Evenement = "CONNECTION_SYNCED" | "CONNECTION_DELETED" | "ACCOUNT_DISABLED";
-const EVENEMENTS: Evenement[] = ["CONNECTION_SYNCED", "CONNECTION_DELETED", "ACCOUNT_DISABLED"];
+type Evenement = "CONNECTION_SYNCED" | "CONNECTION_DELETED" | "ACCOUNT_DISABLED" | "ACCOUNT_ENABLED";
+const EVENEMENTS: Evenement[] = ["CONNECTION_SYNCED", "CONNECTION_DELETED", "ACCOUNT_DISABLED", "ACCOUNT_ENABLED"];
 
 /** Événement : nom du chemin s'il est donné, sinon déduit de la forme du contenu. */
 function evenementDe(chemin: string | undefined, corps: any): Evenement | null {
@@ -352,7 +368,7 @@ function evenementDe(chemin: string | undefined, corps: any): Evenement | null {
   }
   if (corps?.connection && typeof corps.connection === "object") return "CONNECTION_SYNCED";
   if (corps?.connection_id != null) return "CONNECTION_SYNCED";
-  if (corps?.id != null && "id_connection" in corps) return "ACCOUNT_DISABLED";
+  if (corps?.id != null && "id_connection" in corps) return corps.disabled === null ? "ACCOUNT_ENABLED" : "ACCOUNT_DISABLED";
   if (corps?.id != null && ("id_connector" in corps || "connector_uuid" in corps || "state" in corps)) return "CONNECTION_DELETED";
   return null;
 }
@@ -379,8 +395,9 @@ async function signatureValide(req: Request, brut: string, secret: string): Prom
 }
 
 async function traiterEvenement(db: any, userId: string, jeton: string, ev: Evenement, corps: any) {
-  if (ev === "CONNECTION_SYNCED") {
-    const id = idPowens(corps?.connection?.id ?? corps?.id_connection ?? corps?.connection_id);
+  if (ev === "CONNECTION_SYNCED" || ev === "ACCOUNT_ENABLED") {
+    // ACCOUNT_ENABLED : objet compte, sa connexion est dans id_connection.
+    const id = idPowens(ev === "ACCOUNT_ENABLED" ? corps?.id_connection : corps?.connection?.id ?? corps?.id_connection ?? corps?.connection_id);
     if (id == null) return;
     const cfg = configPowens();
     if (!cfg) { console.error("powens: configuration absente, synchronisation ignorée"); return; }

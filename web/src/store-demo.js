@@ -40,7 +40,7 @@
    comme le déclencheur routines_maj (premier jour `jour` d'un mois au plus tôt dans 7 jours, date de Paris).
    banque = { actif, lu, connexions, comptes, mois } (D.banque : interrupteur actif, 2 connexions dont une SCARequired, 6 comptes dont un
    non rattaché et un ignoré, 6 mois de totaux). Store.banque.connecter() → { erreur: « Indisponible en démonstration… » } (aucune page Powens en
-   démo) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
+   démo), de même pour gerer(id) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
    de store-supabase.js (BanqueEtat.normRattachement).
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
@@ -561,6 +561,10 @@
     async connecter() {
       await tick();
       return { erreur: "Indisponible en démonstration : la connexion bancaire fonctionne avec ton propre compte." };
+    },
+    async gerer() {
+      await tick();
+      return { erreur: "Indisponible en démonstration : la gestion des comptes bancaires fonctionne avec ton propre compte." };
     },
     async deconnecter(connectionId) {
       await tick();
