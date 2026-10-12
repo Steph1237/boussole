@@ -435,7 +435,10 @@ test("délais : chaque appel Yahoo, Euronext et Binance porte un signal de 10 s 
     if (u.hostname === "fc.yahoo.com") return new Response("", { status: 404 });
     return base.fetch(url, init);
   } };
-  const m = monter({ net, signal: ms => AbortSignal.timeout(Math.min(ms, 20)) });
+  // Minuterie « tenue » (pas AbortSignal.timeout, dont la minuterie ne retient pas la boucle d'événements sous Node 22 : le test
+  // serait annulé avant la fin de l'appel bloqué).
+  const signal = ms => { const c = new AbortController(); setTimeout(() => c.abort(new DOMException("délai", "TimeoutError")), Math.min(ms, 20)); return c.signal; };
+  const m = monter({ net, signal });
   const corps = await (await m.appeler()).json();
   assert.ok(m.signaux.length > 10);
   assert.ok(m.signaux.every(s => s instanceof AbortSignal), "un signal sur chaque appel");
