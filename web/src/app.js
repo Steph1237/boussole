@@ -124,6 +124,17 @@
       return false;
     };
   }
+  /* Retour de la page de connexion Powens (BQ1), via /powens/retour : app.html?connection_id=<chiffres> (succès) ou ?error=<code>
+     (échec ou abandon), jamais error_description. → { ok, message, recherche } ou null (BanqueEtat.retourPowens, banque-etat.js) ;
+     recherche = la query sans les paramètres du retour (les autres, comme demo, sont gardés). Le message est fixe, en français : la
+     valeur des paramètres n'est jamais affichée ni réutilisée. auth.js retire ces paramètres de l'URL avant la création du client
+     Supabase (detectSessionInUrl) et garde la query d'origine dans window.BOUSSOLE_RETOUR_BANQUE. */
+  const BanqueEtatMod = () => (typeof window !== "undefined" && window.BanqueEtat) ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./banque-etat.js") : null);
+  function retourBanque(search) {
+    const BE = BanqueEtatMod();
+    return BE && typeof BE.retourPowens === "function" ? BE.retourPowens(search) : null;
+  }
   const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name) return { space: sp.space, sub: s.id }; return null; };
 
   /* ---------- navigateur ---------- */
@@ -437,6 +448,22 @@
         mounted.forEach(k => { const m = mods[k]; if (m.update) try { m.update(S, isActive(k)); } catch (e) { console.error(k, e); } });
         refreshHeadlines();
       });
+      /* Retour de la page Powens : message (succès ou échec), Agent › Connexion ouvert, paramètres retirés de l'URL ; en cas de
+         succès, le store est relu à 5 s puis à 15 s (la synchronisation se fait côté serveur, à la réception de la notification). */
+      const retour = retourBanque(window.BOUSSOLE_RETOUR_BANQUE || location.search);
+      if (retour) {
+        route = resolve("agent/connexion"); lastSubs.agent = "connexion";
+        history.replaceState(null, "", location.pathname + retour.recherche + "#agent/connexion");
+        const bb = $("banqueBanner");
+        if (bb) {
+          bb.setAttribute("role", retour.ok ? "status" : "alert");
+          bb.classList.toggle("err", !retour.ok);
+          $("banqueBannerTxt").textContent = retour.message;
+          bb.hidden = false;
+          $("banqueBannerClose").addEventListener("click", () => { bb.hidden = true; focusTitle(); });
+        }
+        if (retour.ok) [5000, 15000].forEach(ms => setTimeout(() => Store.reload(), ms));
+      }
       navigate(route, { focus: false });
       /* Après le montage : l'URL prend la forme canonique, sans entrée d'historique supplémentaire. */
       if (location.hash !== "#" + key(route)) history.replaceState(null, "", "#" + key(route));
@@ -451,5 +478,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation, retourBanque };
 })();

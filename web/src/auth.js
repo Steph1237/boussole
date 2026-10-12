@@ -15,6 +15,20 @@
   // Page voisine (index.html, app.html…) dans le dossier courant, sans query ni hash.
   const page = name => { const u = new URL(location.href); u.search = ""; u.hash = ""; return new URL((B.base || "./") + name, u).href; };
 
+  /* Retour de la page Powens (BQ1, app.html?connection_id=… ou ?error=…, via /powens/retour) : supabase-js (detectSessionInUrl) prend
+     tout ?error= pour un retour d'authentification en échec (2.117 : session gardée mais restauration sautée ; versions antérieures :
+     session effacée). Les paramètres du retour sont donc retirés de l'URL AVANT la création du client ; la query d'origine reste dans
+     window.BOUSSOLE_RETOUR_BANQUE pour app.js (bandeau, rechargements). Seulement sur app.html, où BanqueEtat (banque-etat.js) est
+     chargé avant ce fichier ; un vrai retour d'authentification (error_description, error_code, access_token) est laissé à supabase-js. */
+  try {
+    const BE = window.BanqueEtat, s = String((window.location && window.location.search) || "");
+    const r = BE && typeof BE.retourPowens === "function" ? BE.retourPowens(s) : null;
+    if (r && window.history && typeof window.history.replaceState === "function") {
+      window.BOUSSOLE_RETOUR_BANQUE = s;
+      window.history.replaceState(window.history.state, "", window.location.pathname + r.recherche + (window.location.hash || ""));
+    }
+  } catch (e) { /* URL laissée telle quelle */ }
+
   const ready = !isDemo && !!(window.supabase && window.supabase.createClient && B.supabaseUrl && B.supabaseKey);
   const client = ready ? window.supabase.createClient(B.supabaseUrl, B.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
 

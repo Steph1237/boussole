@@ -3,12 +3,18 @@
    au compte courant. Suppression : RPC delete_me() (security definer, supprime auth.users → cascade).
    Compte anonyme (« Commencer sans e-mail ») : section #securiser (Auth.secureAccount) à la place des sections
    e-mail et mot de passe ; suppression confirmée par « SUPPRIMER ». Sans service d'e-mail (BOUSSOLE.emails !== true),
-   le changement d'adresse est immédiat (aucun courrier de confirmation). */
+   le changement d'adresse est immédiat (aucun courrier de confirmation).
+   Banques connectées (BQ1) : l'utilisateur Powens est toujours supprimé AVANT delete_me (POST <supabaseUrl>/functions/v1/powens/supprimer,
+   JWT de la session), sans condition sur l'interrupteur banque : la fonction répond { ok: true } quand il n'y a rien à supprimer (jamais
+   connecté, ou déjà supprimé chez Powens). Tout échec (réseau, 5xx, autre refus) bloque la suppression avec un message ; 401 ou session
+   absente → session expirée. */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
   const A = window.Auth || null;
   const EMAILS = !!(window.BOUSSOLE && window.BOUSSOLE.emails === true);
+  const B = window.BOUSSOLE || {};
+  const POWENS_URL = B.powensUrl || String(B.supabaseUrl || "").replace(/\/+$/, "") + "/functions/v1/powens";
   let client = null, user = null, people = {}, anon = false;
 
   /* ---------- messages ---------- */
@@ -198,6 +204,22 @@
   }));
 
   /* ---------- suppression ---------- */
+  const SUPPR_SESSION = "Ta session a expiré. Reconnecte-toi, puis recommence la suppression. Ton compte est conservé.";
+  const SUPPR_RESEAU = "Suppression impossible : connexion au serveur impossible. Ton compte est conservé. Vérifie ta connexion internet et réessaie.";
+  const SUPPR_POWENS = "Suppression impossible : la déconnexion de tes banques (Powens) n'a pas abouti, ton compte est conservé. Réessaie dans un instant.";
+  /* Supprime l'utilisateur Powens (et ses connexions) → null si c'est fait (ou s'il n'y avait rien), sinon le message qui bloque. */
+  async function supprimerBanque() {
+    let s = null;
+    try { s = A && typeof A.session === "function" ? await A.session() : null; } catch (e) { s = null; }
+    const jeton = s && s.access_token;
+    if (!jeton) return SUPPR_SESSION;
+    let r;
+    try {
+      r = await fetch(POWENS_URL + "/supprimer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + jeton }, body: "{}" });
+    } catch (e) { return SUPPR_RESEAU; }
+    if (r.status === 401) return SUPPR_SESSION;
+    return r.ok ? null : SUPPR_POWENS;
+  }
   // Compte anonyme : pas d'adresse à retaper, on demande « SUPPRIMER ».
   const matches = () => !!user && (anon
     ? $("delConfirm").value.trim().toUpperCase() === "SUPPRIMER"
@@ -209,6 +231,13 @@
     const btn = $("delBtn");
     btn.disabled = true; btn.textContent = "Suppression…";
     (async () => {
+      // Banques connectées d'abord, toujours : sans cela, l'utilisateur Powens et ses connexions survivraient au compte.
+      const bloque = await supprimerBanque();
+      if (bloque) {
+        btn.textContent = "Supprimer définitivement"; btn.disabled = !matches();
+        say("delMsg", bloque);
+        return;
+      }
       try {
         await run(client.rpc("delete_me"));
       } catch (err) {

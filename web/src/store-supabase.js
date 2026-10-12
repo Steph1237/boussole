@@ -19,9 +19,9 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded() }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues).
    risque = { reponses, profil, score, date } | null (questionnaire jamais rempli) — colonne profiles.risque.
    classes = { <poche>: <classe> } — surcharges poche → classe (profiles.classes).
@@ -78,7 +78,20 @@
    valeur précédente ([] au départ). routinesLues = true dès qu'une lecture de la table a réussi (Aujourd'hui ne propose
    « Active ta revue mensuelle » qu'à cette condition). Store.routines.pause(type, enPause) → { ok: true } ou { erreur } : seule
    écriture, update routines set active = !enPause where type = … (le déclencheur routines_maj recalcule le prochain passage à la
-   réactivation) ; rechargement puis émission. */
+   réactivation) ; rechargement puis émission.
+   banque = { actif, lu, connexions: [{ id, etablissement, etat, message, derniereSynchro }], comptes: [{ id, connexionId, nom, type, solde,
+   devise, soldeLe, actif, positionId, enveloppe, titulaire, creditId, ignore }], mois: [{ mois, categorie, entrees, sorties, nombre }] } : banques
+   connectées par Powens (BQ1, migration 0021, tables écrites par la fonction powens). L'interrupteur (fonctionnalites, cle « banque »)
+   est lu avec le reste par loadAll ; éteint (ou table absente) : { actif: false } et rien d'autre n'est lu. Allumé : connexions, comptes
+   et les 6 derniers mois de banque_mois (mois en cours compris), lus ensuite ; lu = true quand ces lectures ont réussi (en échec : valeurs
+   précédentes). etat : null (à jour) ou l'état Powens (libellés : banque-etat.js). Les ids Powens restent tels que lus (nombres).
+   Store.banque.connecter(connectionId?) → { ok: true, url } | { erreur } : POST <supabaseUrl>/functions/v1/powens/connecter avec le JWT
+   de la session (corps { connection_id } pour une reconnexion) ; l'URL renvoyée n'est acceptée qu'en https chez Powens
+   (BanqueEtat.urlPowensOk) ; la vue redirige. Store.banque.deconnecter(connectionId) → { ok: true } | { erreur } : POST /powens/deconnecter
+   puis rechargement. Store.banque.rattacher(compteId, { positionId } | { enveloppe, titulaire } | { creditId } | { aucun: true } |
+   { ignorer: true }) → { ok: true } | { erreur } : update banque_comptes des 5 colonnes de rattachement (position_id, enveloppe,
+   titulaire, credit_id, ignore ; seule écriture permise par 0021 ; ignorer → ignore = true et les 4 autres à null), validée d'abord
+   par BanqueEtat.normRattachement (même règle que store-demo.js) ; rechargement puis émission. */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
   if (isDemo) return;
@@ -89,7 +102,7 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, banque: { actif: false, lu: false, connexions: [], comptes: [], mois: [] }, onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -129,6 +142,7 @@
       journalConsentement: C.journalConsentement,
       routines: clone(C.routines),
       routinesLues: C.routinesLues,
+      banque: clone(C.banque),
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -214,6 +228,32 @@
     dernierPassage: r.dernier_passage ?? null, dernierClient: r.dernier_client ?? null, prochainPassage: r.prochain_passage ?? null,
     questions: Array.isArray(r.questions) ? r.questions.filter(x => x && typeof x === "object").map(questionView) : [], synthese: r.synthese ?? null,
   });
+  /* Banques connectées (BQ1) : colonnes lues et vues canoniques ; BanqueEtat (banque-etat.js) chargé avant ce fichier par build.mjs. */
+  const BE = () => window.BanqueEtat;
+  const BQ_CX = "id, etablissement, etat, message, derniere_synchro";
+  const BQ_CPT = "id, connexion_id, nom, type, solde, devise, solde_le, actif, position_id, enveloppe, titulaire, credit_id, ignore";
+  const BQ_MOIS = "mois, categorie, entrees, sorties, nombre";
+  const bqCxView = r => ({ id: r.id, etablissement: r.etablissement || "", etat: r.etat ?? null, message: r.message ?? null, derniereSynchro: r.derniere_synchro ?? null });
+  const bqCptView = r => ({ id: r.id, connexionId: r.connexion_id, nom: r.nom || "", type: r.type || "autre", solde: num(r.solde), devise: r.devise || "EUR",
+    soldeLe: r.solde_le ?? null, actif: r.actif !== false, positionId: r.position_id ?? null, enveloppe: r.enveloppe ?? null, titulaire: r.titulaire ?? null, creditId: r.credit_id ?? null, ignore: r.ignore === true });
+  const bqMoisView = r => ({ mois: String(r.mois).slice(0, 10), categorie: r.categorie, entrees: num(r.entrees) || 0, sorties: num(r.sorties) || 0, nombre: r.nombre == null ? 0 : +r.nombre });
+  const BANQUE_ETEINTE = () => ({ actif: false, lu: true, connexions: [], comptes: [], mois: [] });
+  /* 1er du mois, 5 mois avant le mois en cours : 6 mois de totaux (le mois en cours compris). */
+  const debutSixMois = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth() - 5, 1)).toISOString().slice(0, 10); };
+  async function lireBanque() {
+    const res = await Promise.allSettled([
+      q(sb.from("banque_connexions").select(BQ_CX).order("etablissement")),
+      q(sb.from("banque_comptes").select(BQ_CPT).order("nom")),
+      q(sb.from("banque_mois").select(BQ_MOIS).gte("mois", debutSixMois()).order("mois")),
+    ]);
+    if (res.some(r => r.status === "rejected")) {
+      console.warn("Boussole : lecture des banques partielle", res.filter(r => r.status === "rejected").map(r => r.reason));
+      C.banque = Object.assign({}, C.banque, { actif: true });
+      return;
+    }
+    const [cx, cpt, mois] = res.map(r => r.value || []);
+    C.banque = { actif: true, lu: true, connexions: cx.map(bqCxView), comptes: cpt.map(bqCptView), mois: mois.map(bqMoisView) };
+  }
   const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
   const objView = r => ({
     id: r.id, nom: r.nom || "", type: r.type, cible: num(r.cible), dateCible: r.date_cible || null, deja: num(r.deja),
@@ -242,9 +282,10 @@
       q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
       qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire")),
       q(sb.from("routines").select(ROUTINE_SELECT).order("type")),
+      q(sb.from("fonctionnalites").select("cle, active").eq("cle", "banque").maybeSingle()),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, expertises, journal, nARelire, routines] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
-    const failed = res.filter(r => r.status === "rejected");
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, expertises, journal, nARelire, routines, banque] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const failed = res.filter((r, i) => r.status === "rejected" && i !== res.length - 1); // interrupteur banque (0021) absent : pas une erreur de lecture
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
     if (positions !== undefined) C.positions = (positions || []).map(posView);
@@ -265,6 +306,8 @@
     C.journalARelire = nARelire !== undefined ? nARelire : C.journal.filter(e => e && e.statut === "a_relire").length;
     // Routines (0020) : table absente → valeur précédente, comme le journal ; routinesLues reste vrai après une première lecture.
     if (routines !== undefined) { C.routines = (routines || []).map(routineView); C.routinesLues = true; }
+    // Banques (0021) : interrupteur éteint → { actif: false }, rien d'autre n'est lu ; lecture en échec ou table absente → valeur précédente.
+    if (banque !== undefined) { if (banque && banque.active) await lireBanque(); else C.banque = BANQUE_ETEINTE(); }
     // Colonne absente (migration 0013 non appliquée) ou valeur inconnue : « demander », comme le connecteur.
     if (prof !== undefined) C.journalConsentement = prof && CONSENTEMENTS.includes(prof.journal_consentement) ? prof.journal_consentement : "demander";
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
@@ -480,6 +523,56 @@
     },
   };
 
+  /* ---------- banques connectées (BQ1) : fonction powens (connexion, déconnexion) et rattachement des comptes ---------- */
+  const POWENS_URL = B.powensUrl || String(B.supabaseUrl || "").replace(/\/+$/, "") + "/functions/v1/powens";
+  const idPowens = v => (v != null && /^\d{1,15}$/.test(String(v)) ? Number(v) : null);
+  /* POST <POWENS_URL>/<route> avec le JWT de la session (rafraîchi par Auth.session()) → { ok: true, data } | { erreur }. */
+  async function appelPowens(route, corps) {
+    if (!sb || !session) return { erreur: "Base indisponible : reconnecte-toi." };
+    let s = session;
+    try { const A = window.Auth, f = A && typeof A.session === "function" ? await A.session() : null; if (f && f.access_token) s = f; } catch (e) { /* session courante */ }
+    let r;
+    try {
+      r = await fetch(POWENS_URL + "/" + route, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + s.access_token }, body: JSON.stringify(corps || {}) });
+    } catch (e) { return { erreur: BE().MSG_RESEAU }; }
+    let d = null;
+    try { d = await r.json(); } catch (e) { d = null; }
+    if (!r.ok) return { erreur: BE().messageErreur(r.status, d) };
+    return { ok: true, data: d && typeof d === "object" ? d : {} };
+  }
+  const banqueApi = {
+    async connecter(connectionId) {
+      const corps = {};
+      if (connectionId != null) {
+        const id = idPowens(connectionId);
+        if (id == null || !C.banque.connexions.some(c => String(c.id) === String(id))) return { erreur: "Connexion introuvable." };
+        corps.connection_id = id;
+      }
+      const r = await appelPowens("connecter", corps);
+      if (r.erreur) return r;
+      if (!BE().urlPowensOk(r.data.url)) return { erreur: "Adresse de connexion inattendue : rien n'a été ouvert. Réessaie dans un instant." };
+      return { ok: true, url: r.data.url };
+    },
+    async deconnecter(connectionId) {
+      const id = idPowens(connectionId);
+      if (id == null || !C.banque.connexions.some(c => String(c.id) === String(id))) return { erreur: "Connexion introuvable." };
+      const r = await appelPowens("deconnecter", { connection_id: id });
+      if (r.erreur) return r;
+      await reload();
+      return { ok: true };
+    },
+    async rattacher(compteId, cible) {
+      try {
+        const cpt = C.banque.comptes.find(c => String(c.id) === String(compteId));
+        if (!cpt) throw bad("Compte introuvable.");
+        const row = BE().normRattachement(cible, { compte: cpt, positions: C.positions, credits: (C.profil && C.profil.credits) || [] });
+        const rows = await write(async () => q(sb.from("banque_comptes").update(row).eq("id", cpt.id).select("id")));
+        if (!Array.isArray(rows) || !rows.length) return { erreur: "Compte introuvable." };
+        return { ok: true };
+      } catch (e) { const x = asErr(e); return { erreur: x.message || "Rattachement impossible pour le moment. Réessaie." }; }
+    },
+  };
+
   const savoir = {
     /* Fiche complète (avec son contenu markdown), lue à l'ouverture ; null si elle n'existe pas ou si la lecture échoue. */
     async fiche(slug) {
@@ -559,6 +652,7 @@
     reload,
     markOnboarded() { return write(uid => q(sb.from("profiles").update({ onboarding_done: true }).eq("user_id", uid))); },
     surveillerConnexions,
+    banque: banqueApi,
   };
   window.Store = Store;
   publish();

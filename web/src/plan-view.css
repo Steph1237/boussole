@@ -43,6 +43,9 @@
 #view-plan .pv-cat-v{display:flex;align-items:baseline;gap:10px;margin-left:auto;white-space:nowrap}
 #view-plan .pv-cat-v b{font-weight:600}
 #view-plan .pv-cat-part{font:500 12px var(--f-num);color:var(--muted);min-width:34px;text-align:right}
+#view-plan .pv-cat-reel{font:500 12px var(--f-num);font-variant-numeric:tabular-nums;color:var(--muted)}
+#view-plan .pv-reel-l{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.04em;color:var(--accent)}
+#view-plan .pv-reel-hors{margin:10px 0 0;font-size:13px;line-height:1.5;color:var(--muted)}
 #view-plan .pv-cat .ui-acc-chevron{margin-left:0}
 #view-plan .pv-cat-corps{display:flex;flex-direction:column;gap:8px}
 #view-plan .pv-cat-act,#view-plan .pv-ros-act{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
@@ -87,4 +90,5 @@
   #view-plan .pv-tete-act{width:100%}
   #view-plan .pv-mode{flex:1 1 100%}
   #view-plan .pv-cat-part{display:none}
+  #view-plan .pv-cat-v{flex-direction:column;align-items:flex-end;gap:0}
 }

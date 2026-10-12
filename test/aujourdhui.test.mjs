@@ -236,14 +236,16 @@ test("boite : tri par urgence puis date, tous types mêlés", () => {
   }
 });
 
-test("boite : sur la démo, la revue du mois prête, un lot de 5 propositions, le point SCPI à reprendre, les alertes des règles", () => {
+test("boite : sur la démo, la revue du mois prête, un lot de 5 propositions, le point SCPI à reprendre, les alertes des règles, les banques", () => {
   const S = demoS();
   const b = A.boite(S, jourLocal(), DEPS);
   const t = b.map(x => x.titre);
   // Urgence 1 : la revue (prête depuis le 1er du mois, donc la plus ancienne, sauf le 1er où elle passe après), les propositions,
   // puis l'avis à relire.
-  const u1 = b.filter(x => x.urgence === 1).map(x => x.titre);
+  const u1 = b.filter(x => x.urgence === 1 && x.type !== "banque").map(x => x.titre);
   assert.deepEqual(u1.filter(x => x !== "Ta revue du mois est prête : 2 questions"), ["Claude propose 5 changements", "1 entrée du journal à relire"], t.join(" | "));
+  // Banques connectées (BQ1) : Néo Courtage demande une authentification forte (urgence 1), un compte à rattacher (urgence 2).
+  assert.deepEqual(b.filter(x => x.type === "banque").map(x => [x.urgence, x.titre]), [[1, "Ta banque Néo Courtage demande une reconnexion"], [2, "1 compte à rattacher"]]);
   assert.ok(u1.includes("Ta revue du mois est prête : 2 questions"), t.join(" | "));
   assert.equal(b.filter(x => x.type === "proposition").length, 1);
   assert.equal(b.filter(x => x.type === "routine").length, 1);
@@ -634,7 +636,7 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   else ctx.UI = { esc: s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
     carte: o => '<button type="button" class="ui-carte" data-ui-carte="' + o.id + '">' + ctx.UI.esc(o.titre) + "</button>",
@@ -729,7 +731,7 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
     App: { register: (n, api) => { reg[n] = api; }, refreshHeadlines() {} } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   const premieres = [];
   ctx.UI = Object.assign({}, ctx.UI, { brancher() {}, periode: () => ({ valeur: () => null, premiere: d => premieres.push(d) }) });
@@ -838,7 +840,7 @@ function vueDom(stock) {
     App: { register: (n, a) => { reg[n] = a; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js"])
+  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js"])
     vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const root = doc.body.appendChild(doc.createElement("section"));

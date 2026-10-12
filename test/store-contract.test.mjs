@@ -28,6 +28,7 @@ function browser({ search = "?demo", mode, prep } = {}) {
   if (prep) prep(ctx.DEMO);
   vm.runInContext(src("sensible.js"), ctx, { filename: "sensible.js" }); // filtre partagé (window.Sensible), chargé avant les stores comme dans build.mjs
   vm.runInContext(src("routine-etat.js"), ctx, { filename: "routine-etat.js" }); // règle de la revue mensuelle (window.RoutineEtat), avant les stores comme dans build.mjs
+  vm.runInContext(src("banque-etat.js"), ctx, { filename: "banque-etat.js" }); // banques connectées (window.BanqueEtat), avant les stores comme dans build.mjs
   vm.runInContext(src("store-demo.js"), ctx, { filename: "store-demo.js" });
   return ctx;
 }
@@ -55,7 +56,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], banque: ["object"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -920,7 +921,7 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
 test("lecture seule : les deux stores n'écrivent plus que les données de contrôle (propositions, journal, mémoire, routines, règles, risque, compte)", () => {
   const sup = src("store-supabase.js"), demo = src("store-demo.js");
   for (const [nom, s] of [["store-supabase.js", sup], ["store-demo.js", demo]]) {
-    assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\) \}/, nom + " : en-tête du contrat à jour");
+    assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\), banque \}/, nom + " : en-tête du contrat à jour");
     assert.match(s, /db = \{ doc\("config\/main"\)\.update\(\{ rules \}\), doc\("profil\/main"\)\.update\(\{ risque \}\) \}/, nom + " : façade db documentée");
     assert.ok(s.includes('const LECTURE_SEULE = "Écriture non disponible dans l\'app : complète ou corrige avec Claude, puis valide sa proposition."'), nom + " : refus au tutoiement, même texte");
     assert.match(s, /seulement\(p(atch)?, \["rules"\]\)/, nom + " : config/main n'accepte que rules");
@@ -930,7 +931,10 @@ test("lecture seule : les deux stores n'écrivent plus que les données de contr
   }
   // Côté Supabase : plus aucune écriture sur les tables de saisie (positions, transactions, biens, crédits, budgets, objectifs).
   const ecritures = [...sup.matchAll(/from\("(\w+)"\)\.(insert|update|upsert|delete)\(/g)].map(m => m[1] + "." + m[2]);
-  assert.deepEqual([...new Set(ecritures)].sort(), ["config.upsert", "journal.delete", "journal.update", "memoire_agent.delete", "memoire_agent.update", "profiles.update", "profiles.upsert", "routines.update"].sort());
+  assert.deepEqual([...new Set(ecritures)].sort(), ["banque_comptes.update", "config.upsert", "journal.delete", "journal.update", "memoire_agent.delete", "memoire_agent.update", "profiles.update", "profiles.upsert", "routines.update"].sort());
+  // banque_comptes : seules les 5 colonnes de rattachement (BanqueEtat.normRattachement, ignore compris), seule écriture permise par 0021.
+  assert.ok(sup.includes('from("banque_comptes").update(row).eq("id", cpt.id).select("id")'));
+  assert.match(src("banque-etat.js"), /const vide = \{ position_id: null, enveloppe: null, titulaire: null, credit_id: null, ignore: false \};/);
   assert.doesNotMatch(sup, /rpc\("request_instrument"/, "plus de demande d'instrument (ajout de placement)");
   assert.deepEqual([...sup.matchAll(/rpc\("(\w+)"/g)].map(m => m[1]).sort(), ["appliquer_propositions", "refuser_propositions"]);
 });

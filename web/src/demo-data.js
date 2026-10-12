@@ -621,7 +621,42 @@
   ];
   /* @genere:expertises — fin */
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines };
+  /* Banques connectées par Powens (BQ1) : interrupteur actif, deux connexions (« Banque des Canuts » à jour, « Néo Courtage » qui demande
+     une authentification forte depuis 3 jours) et six comptes. Soldes cohérents avec les lignes rattachées (compte commun 3 400 €,
+     Livret A 12 000 €, prêt auto −6 500 € = capital restant dû) ; le PEA est rattaché à l'enveloppe « PEA Camille » (titulaire p1) ;
+     le compte de dépôt de Sam n'est rattaché à rien (« 1 compte à rattacher ») ; le compte professionnel de Camille n'est pas suivi
+     (ignore = true : « Non suivi », hors des comptes à rattacher). Totaux mensuels : 6 mois (le mois en cours, partiel,
+     compris), proches du budget de la démo, avec quelques écarts parlants (courses et loisirs au-dessus, un abonnement de plus). */
+  const moisDebut = k => { const d = new Date(now); return iso(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - k, 1)); };
+  const BQ_BASE = { logement: 455, alimentation: 815, transport: 205, enfants: 300, sante: 52, loisirs: 310, abonnements: 89, impots: 280, divers: 135, revenus: 5100, epargne: 650 };
+  const BQ_VAR = [1.02, 0.97, 1.05, 0.99, 1.01]; // mois complets, du plus récent au plus ancien
+  const bqMois = [];
+  for (let k = 0; k < 6; k++) {
+    const f = k === 0 ? 0.4 : BQ_VAR[k - 1];
+    Object.keys(BQ_BASE).forEach(cat => {
+      const v = Math.round(BQ_BASE[cat] * (cat === "revenus" || cat === "epargne" || cat === "impots" ? (k === 0 ? 0.4 : 1) : f) * 100) / 100;
+      bqMois.push({ mois: moisDebut(k), categorie: cat, entrees: cat === "revenus" ? v : cat === "alimentation" && k === 2 ? 24.9 : 0, sorties: cat === "revenus" ? 0 : v,
+        nombre: cat === "revenus" ? 2 : cat === "alimentation" ? 18 : 4 });
+    });
+  }
+  const banque = {
+    actif: true, lu: true,
+    connexions: [
+      { id: 101, etablissement: "Banque des Canuts", etat: null, message: null, derniereSynchro: at(0, "04:12") },
+      { id: 102, etablissement: "Néo Courtage", etat: "SCARequired", message: "Ta banque demande de confirmer ton identité tous les 180 jours.", derniereSynchro: at(3, "04:10") },
+    ],
+    comptes: [
+      { id: 1001, connexionId: 101, nom: "Compte joint", type: "courant", solde: 3400, devise: "EUR", soldeLe: ago(0), actif: true, positionId: "compte-commun", enveloppe: null, titulaire: null, creditId: null, ignore: false },
+      { id: 1002, connexionId: 101, nom: "Livret A Camille", type: "livret", solde: 12000, devise: "EUR", soldeLe: ago(0), actif: true, positionId: "livret-a", enveloppe: null, titulaire: null, creditId: null, ignore: false },
+      { id: 1003, connexionId: 101, nom: "Compte de dépôt Sam", type: "courant", solde: 1182.4, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: false },
+      { id: 1004, connexionId: 101, nom: "Prêt auto", type: "credit", solde: -6500, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: "credit-auto", ignore: false },
+      { id: 1005, connexionId: 101, nom: "Compte pro Camille", type: "courant", solde: 842.15, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: true },
+      { id: 2001, connexionId: 102, nom: "PEA", type: "pea", solde: 25871.6, devise: "EUR", soldeLe: ago(3), actif: true, positionId: null, enveloppe: "PEA Camille", titulaire: "p1", creditId: null, ignore: false },
+    ],
+    mois: bqMois,
+  };
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines, banque };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);

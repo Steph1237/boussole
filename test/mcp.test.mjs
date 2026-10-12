@@ -33,7 +33,9 @@ const srcRoutines = readFileSync(path("supabase/functions/mcp/routines.ts"), "ut
    écrit à part : test/analyser.test.mjs), enregistrés par index.ts. */
 const srcExpertises = readFileSync(path("supabase/functions/mcp/expertises.ts"), "utf8");
 const srcAnalyser = existsSync(path("supabase/functions/mcp/analyser.ts")) ? readFileSync(path("supabase/functions/mcp/analyser.ts"), "utf8") : "";
-const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser].join("\n");
+/* BQ1 : banque connectée (banque.ts, lecture seule, tests détaillés : test/banque-mcp.test.mjs), enregistrée par index.ts. */
+const srcBanque = readFileSync(path("supabase/functions/mcp/banque.ts"), "utf8");
+const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser, srcBanque].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
@@ -50,6 +52,7 @@ const TOOLS = [
   "regler_matelas", "regler_versements", "corriger_classe",
   "activer_routine", "demarrer_routine", "cloturer_routine", "questions_routine",
   "consulter_expertise", "analyser",
+  "lire_banque", "operations_recentes",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
@@ -689,7 +692,7 @@ test("CK2 : journal.ts enregistré par index.ts, calculs injectés (pas dupliqu�
   assert.match(srcJournal, /import \{ estSensible \} from "\.\/memoire\.ts";/, "même filtre sensible que la mémoire");
   // get_overview et l'état figé partagent le même chargement
   assert.match(outil("get_overview"), /chargerDonnees\(\)/);
-  for (const nom of ["lire_journal", "cloturer_session"]) assert.match(outil(nom), /annotations:\s*RO/, `${nom} en lecture seule`);
+  for (const nom of ["lire_journal", "cloturer_session", "lire_banque", "operations_recentes"]) assert.match(outil(nom), /annotations:\s*RO/, `${nom} en lecture seule`);
   for (const nom of ["journaliser", "completer_journal"]) assert.match(outil(nom), /annotations:\s*RW/, `${nom} en écriture`);
   assert.match(srcJournal, /export const JOURNAL = "Boussole › Agent › Journal";/, "chemin de la nouvelle navigation");
   for (const nom of ["journaliser", "completer_journal"]) assert.match(outil(nom), /\+ JOURNAL \+/, `${nom} : renvoie vers Agent › Journal`);

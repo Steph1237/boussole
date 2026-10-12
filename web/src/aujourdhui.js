@@ -3,7 +3,9 @@
      écart d'allocation au profil de risque, prochaine échéance ; chaque carte ouvre UI.panneau (2-4 lignes + lien vers la page).
    - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), entrées du journal à relire
      (CK2), revue mensuelle (routine de l'agent, RT1 : en retard, prête ou à activer), alertes des règles (rules.js), points « à suivre »
-     échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard.
+     échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard, banques connectées (BQ1 : connexion
+     à refaire, urgence 1 pour SCARequired, wrongpass, webauthRequired, passwordExpired, 2 pour les autres états qui demandent une action,
+     rien pour un incident passager ; « N comptes à rattacher », urgence 2 ; règles de BanqueEtat, banque-etat.js).
    - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an ;
      granularité automatique selon la période, sauf si l'utilisateur la choisit sur sa bascule : elle est alors mémorisée) ;
      repères verticaux aux dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
@@ -25,6 +27,9 @@
      voisin sous Node (tests). */
   const RE = () => glob("RoutineEtat") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./routine-etat.js") : null);
+  /* Banques connectées (BanqueEtat, banque-etat.js) : absent → aucun élément bancaire. */
+  const BE = () => glob("BanqueEtat") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./banque-etat.js") : null);
 
   /* ---------- dates (AAAA-MM-JJ, jours calendaires) ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -137,8 +142,28 @@
     return null;
   }
 
+  /** Éléments bancaires de la boîte (type « banque », vers Agent › Connexion). */
+  function elementsBanque(S, t) {
+    const B = BE(), b = S && S.banque, out = [];
+    if (!B || !b || !b.actif) return out;
+    (Array.isArray(b.connexions) ? b.connexions : []).forEach(c => {
+      const e = c ? B.etat(c.etat) : null;
+      if (!e || !e.action) return;
+      const etab = plat(c.etablissement) || "sans nom", d = jj(c.derniereSynchro);
+      out.push({ type: "banque", urgence: e.urgence || 2, date: isoOk(d) ? d : t, titre: "Ta banque " + etab + " demande une reconnexion",
+        contexte: e.libelle + "." + (isoOk(d) ? " Dernière synchronisation le " + dateFr(d) + " : soldes et dépenses ne sont plus à jour." : ""),
+        action: { label: "Reconnecter", route: R.connexion } });
+    });
+    const libres = B.comptesARattacher(b);
+    if (libres.length) out.push({ type: "banque", urgence: 2, date: t, titre: pluriel(libres.length, "compte") + " à rattacher",
+      contexte: extrait(libres.map(c => plat(c.nom) || "Compte").join(", "), 80) + " : relie " + (libres.length > 1 ? "ces comptes" : "ce compte") +
+        " à tes lignes pour que les soldes se mettent à jour seuls.",
+      action: { label: "Rattacher", route: R.connexion } });
+    return out;
+  }
+
   /** Tout ce qui demande une action, trié par urgence (1 haute … 3) puis date (la plus ancienne d'abord).
-      → [{ type: proposition|journal|routine|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
+      → [{ type: proposition|journal|routine|banque|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
       Textes bruts : l'échappement se fait au rendu. deps = { Rules } (window.Rules par défaut). */
   function boite(S, today, deps) {
     if (!S || S.ready === false) return [];
@@ -177,6 +202,10 @@
     // mois en attente), à activer (urgence 3, aucune routine) ; rien si elle est en pause ou à jour.
     const rv = elementRevue(S, deps && deps.aujRevue ? jour(deps.aujRevue) : t);
     if (rv) out.push(rv);
+
+    // 1 quater. Banques connectées (BQ1) : connexion à refaire (seulement les états qui demandent une action de l'utilisateur) et
+    // comptes à rattacher. Rien si l'interrupteur est éteint.
+    out.push(...elementsBanque(S, t));
 
     // 2. Alertes des règles de l'utilisateur et des contrôles intégrés (même contexte que Recommandations › Actions).
     if (Rules) {
@@ -396,8 +425,9 @@
     echeance: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     cours: '<path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/>',
     routine: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/><path d="M8.5 12.2l2.4 2.4 4.6-4.6"/>',
+    banque: '<path d="M3.5 9.5L12 4l8.5 5.5"/><path d="M5 20h14M6 10.5v7M10 10.5v7M14 10.5v7M18 10.5v7"/>',
   };
-  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
+  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 

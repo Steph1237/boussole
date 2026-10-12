@@ -10,8 +10,11 @@
    - Une ligne ouvre un panneau (UI.panneau) : détail chiffré et « Corriger avec Claude » pour cette ligne.
    Totaux des sections et des cartes : Plan.budgetTotaux (une seule source). Les objectifs et la projection vivent dans
    Patrimoine › Objectifs (objectifs-view.js). Calculs : plan.js (Plan) et calc.js (Calc).
+   - Banques connectées (BQ1) : à côté du prévu, chaque catégorie affiche son « réel » (moyenne des 3 derniers mois complets de
+     S.banque.mois, BanqueEtat.reelMoyen), et les dépenses réelles d'une catégorie absente du budget sont listées sous les dépenses.
+     Seulement pour le foyer (les comptes ne sont pas répartis par personne) et quand l'interrupteur banque est actif.
    Fonctions pures exportées pour les tests : lignesProfil, regrouper, resume, barre, segments, cartesHtml, barreHtml,
-   groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude. Dépendances injectées (ctx) : { Plan, Calc } ; window.* par
+   groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, reelDe, noteReel. Dépendances injectées (ctx) : { Plan, Calc } ; window.* par
    défaut (ClaudePrompts compris). */
 (function () {
   "use strict";
@@ -21,6 +24,10 @@
   /* Phrases « Compléter avec Claude » : global du navigateur, sinon le module voisin sous Node (tests). */
   const prompts = () => glob("ClaudePrompts") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
+
+  /* Banques connectées (banque-etat.js) : absent → pas de colonne « réel ». */
+  const BE = () => glob("BanqueEtat") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./banque-etat.js") : null);
 
   /* ---------- formats ---------- */
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
@@ -201,17 +208,45 @@
       (notes.length ? '<span class="pv-ligne-note">' + esc(notes.join(" · ")) + "</span>" : "") + "</button></li>";
   }
 
+  /* ---------- réel (banques connectées) ---------- */
+  /** Réel moyen des 3 derniers mois complets (BanqueEtat.reelMoyen sur S.banque.mois) → { n, du, au, parCategorie } ou null
+      (interrupteur éteint, vue d'une personne, aucun mois complet). */
+  function reelDe(S, today) {
+    const B = BE(), b = S && S.banque;
+    if (!B || !b || !b.actif || (S.scope || "foyer") !== "foyer") return null;
+    return B.reelMoyen(b.mois, today);
+  }
+  const MOIS_NOMS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  const moisNom = (iso, an) => MOIS_NOMS[+iso.slice(5, 7) - 1] + (an ? " " + iso.slice(0, 4) : "");
+  /** Phrase d'explication de la colonne « réel » (période couverte). */
+  function noteReel(r) {
+    if (!r || !r.du || !r.au) return "";
+    if (r.du === r.au) return "« Réel » : " + moisNom(r.du, true) + ", d'après tes comptes connectés.";
+    const de = /^[aeiouyéè]/.test(moisNom(r.du)) ? "d'" : "de ";
+    const memeAn = r.du.slice(0, 4) === r.au.slice(0, 4);
+    return "« Réel » : moyenne " + de + moisNom(r.du, !memeAn) + " à " + moisNom(r.au, true) + ", d'après tes comptes connectés.";
+  }
+  /** Réel mensuel d'un groupe du budget (catégorie reconnue et de même sens), ou null. */
+  function reelGroupe(g, reel) {
+    const B = BE();
+    if (!reel || !B) return null;
+    const cle = B.categoriePourTitre(g.titre), cat = B.CATEGORIES.find(c => c.cle === cle);
+    return cat && cat.sens === g.type ? +(reel.parCategorie[cle] || 0) : null;
+  }
+
   const NOM_TYPE = { revenu: "revenus", depense: "dépenses", epargne: "épargne" };
   /** Une catégorie : carte dépliable (<details>) avec montant et part (lue aussi sur mobile, ui-sr) ; lignes reprises de
       Compte › Données (« Corriger avec Claude »), lignes du budget (boutons qui ouvrent le panneau), « Compléter avec Claude ». */
-  function groupeHtml(g, m, ouverts, U) {
-    const ouvert = ouverts && ouverts.has(g.cle);
+  function groupeHtml(g, m, ouverts, U, reel) {
+    const ouvert = ouverts && ouverts.has(g.cle), rv = reelGroupe(g, reel);
+    const reelHtml = rv == null ? "" : '<span class="pv-cat-reel" aria-hidden="true"><span class="pv-reel-l">réel</span> ' + esc(eur(rv * m.facteur) + m.suffixe) + "</span>" +
+      '<span class="ui-sr">, réel moyen sur ' + reel.n + " mois : " + esc(eur(rv * m.facteur) + m.suffixe) + "</span>";
     const seulProfil = !g.lignes.length && g.profil.length;
     const secProfil = g.type === "revenu" ? "revenus" : "immobilier";
     return '<details class="ui-acc pv-cat" data-pv-cat="' + esc(g.cle) + '"' + (ouvert ? " open" : "") + ">" +
       '<summary class="ui-acc-titre pv-cat-t"><span class="pv-cat-nom">' + esc(g.titre) + '</span><span class="pv-cat-v">' +
       '<b class="pv-num">' + esc(eur(g.mensuel * m.facteur) + m.suffixe) + '</b><span class="pv-cat-part" aria-hidden="true">' + esc(pct(g.part)) + "</span>" +
-      '<span class="ui-sr">, soit ' + esc(pct(g.part)) + " des " + esc(NOM_TYPE[g.type] || "montants") + "</span></span>" +
+      '<span class="ui-sr">, soit ' + esc(pct(g.part)) + " des " + esc(NOM_TYPE[g.type] || "montants") + "</span>" + reelHtml + "</span>" +
       '<span class="ui-acc-chevron">' + CHEVRON + "</span></summary>" +
       '<div class="ui-acc-corps pv-cat-corps">' +
       (g.profil.length ? '<div class="pv-ros"><p class="pv-ros-t">Repris de Compte › Données</p><ul class="pv-ro">' + g.profil.map(r => roRow(r, m)).join("") + "</ul>" +
@@ -227,20 +262,32 @@
     { type: "epargne", titre: "Épargne", vide: "Aucune épargne prévue dans ton budget." },
   ];
   const TOTAL_DE = { revenu: "revenus", depense: "depenses", epargne: "epargne" };
+  /** Dépenses réelles des catégories absentes du budget (« Dans tes comptes, hors budget : … »). */
+  function horsBudgetHtml(gs, reel, m) {
+    const B = BE();
+    if (!reel || !B) return "";
+    const vues = new Set(gs.map(g => B.categoriePourTitre(g.titre)).filter(Boolean));
+    const hors = B.CATEGORIES.filter(c => c.sens === "depense" && !vues.has(c.cle) && (reel.parCategorie[c.cle] || 0) >= 1)
+      .sort((a, b) => reel.parCategorie[b.cle] - reel.parCategorie[a.cle]);
+    if (!hors.length) return "";
+    return '<p class="pv-reel-hors">Dans tes comptes, hors budget : ' + hors.map(c => esc(c.libelle) + " (réel " + esc(eur(reel.parCategorie[c.cle] * m.facteur) + m.suffixe) + ")").join(", ") +
+      ". " + boutonClaude(glob("UI"), "budget", "les dépenses réelles hors budget (" + hors.map(c => c.libelle).join(", ") + ")", "Ajouter avec Claude") + "</p>";
+  }
   /** Les trois sections (Revenus, Dépenses, Épargne) et leurs catégories ; total de section = totaux de Plan.budgetTotaux
-      (le même que les cartes). o = { mode, ouverts: Set de clés, totaux, U }. */
+      (le même que les cartes). o = { mode, ouverts: Set de clés, totaux, U, reel (reelDe, facultatif) }. */
   function groupesHtml(groupes, o) {
-    const opt = o || {}, m = mode0(opt.mode), U = opt.U || glob("UI");
+    const opt = o || {}, m = mode0(opt.mode), U = opt.U || glob("UI"), reel = opt.reel || null;
     return SECTIONS.map(s => {
       const gs = (groupes && groupes[s.type]) || [];
       const tv = opt.totaux && opt.totaux[TOTAL_DE[s.type]];
       const total = tv != null && isFinite(tv) ? +tv : gs.reduce((a, g) => a + g.mensuel, 0);
       const corps = gs.length
-        ? (U && typeof U.voirPlus === "function" ? U.voirPlus(gs, 5, g => groupeHtml(g, m, opt.ouverts, U), "Voir plus de catégories", "div", "pv-cat-" + s.type) : gs.map(g => groupeHtml(g, m, opt.ouverts, U)).join(""))
+        ? (U && typeof U.voirPlus === "function" ? U.voirPlus(gs, 5, g => groupeHtml(g, m, opt.ouverts, U, reel), "Voir plus de catégories", "div", "pv-cat-" + s.type) : gs.map(g => groupeHtml(g, m, opt.ouverts, U, reel)).join(""))
         : '<div class="pv-sec-vide"><p class="pv-muet">' + esc(s.vide) + "</p>" +
           boutonClaude(U, s.type === "revenu" ? "revenus" : "budget", s.type === "revenu" ? "" : "les " + NOM_TYPE[s.type] + " du budget", "Compléter avec Claude") + "</div>";
       return '<section class="pv-sec" aria-labelledby="pv-sec-' + s.type + '"><div class="pv-sec-h"><h3 id="pv-sec-' + s.type + '">' + esc(s.titre) + "</h3>" +
-        '<span class="pv-num pv-sec-t">' + esc(eur(total * m.facteur) + m.suffixe) + "</span></div>" + corps + "</section>";
+        '<span class="pv-num pv-sec-t">' + esc(eur(total * m.facteur) + m.suffixe) + "</span></div>" + corps +
+        (s.type === "depense" ? horsBudgetHtml(gs, reel, m) : "") + "</section>";
     }).join("");
   }
 
@@ -285,7 +332,7 @@
       acts("budget", "");
   }
 
-  const H = { lignesProfil, regrouper, resume, barre, segments, cartesHtml, barreHtml, groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, MODES, PALETTE };
+  const H = { lignesProfil, regrouper, resume, barre, segments, cartesHtml, barreHtml, groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, reelDe, noteReel, MODES, PALETTE };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -305,6 +352,7 @@
   const scope = () => (S && S.scope) || "foyer";
   const duScope = () => (scope() === "foyer" ? "du foyer" : C().deNom(nomDe(scope(), people()), scope() === "p2" ? 2 : 1));
   const ctxCalc = () => ({ profil: S && S.profil, scope: scope(), people: people(), Plan: P(), Calc: C() });
+  const jourLocal = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); };
   const lignes = () => (S && S.budget && Array.isArray(S.budget.lignes) ? S.budget.lignes : []);
   const ligne = id => lignes().find(l => l && String(l.id) === String(id)) || null;
   const echap = s => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, "\\$&"));
@@ -346,13 +394,15 @@
     const g = regrouper(L, ctxCalc()), t = g.totaux;
     const r = resume(t, mode, has);
     $("pvTitre").textContent = "Où va mon argent " + (mode === "an" ? "chaque année" : "chaque mois") + " ?";
-    $("pvBudgetNote").textContent = scope() === "foyer" ? "Montants du foyer, " + MODES[mode].unite + "." : "Vue " + duScope() + " : ses lignes, et la moitié des lignes communes.";
+    const reel = has ? reelDe(S, jourLocal()) : null;
+    $("pvBudgetNote").textContent = (scope() === "foyer" ? "Montants du foyer, " + MODES[mode].unite + "." : "Vue " + duScope() + " : ses lignes, et la moitié des lignes communes.") +
+      (reel ? " " + noteReel(reel) : "");
     const hc = cartesHtml(r, u, { duScope: duScope() });
     if (hc !== sigCartes) { sigCartes = hc; ecrire($("pvCartes"), hc); }
     const hb = has ? barreHtml(barre(t), mode, u) : "";
     $("pvBarBloc").hidden = !has;
     if (hb !== sigBar) { sigBar = hb; ecrire($("pvBar"), hb); }
-    const hg = has ? groupesHtml(g.groupes, { mode, ouverts, totaux: t, U: u }) : videHtml();
+    const hg = has ? groupesHtml(g.groupes, { mode, ouverts, totaux: t, U: u, reel }) : videHtml();
     if (hg !== sigBudget) { sigBudget = hg; ecrire($("pvBudget"), hg); }
     renderPanneau(g, r);
   }

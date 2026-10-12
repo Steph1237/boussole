@@ -8,7 +8,13 @@
    « Ta revue mensuelle » (RT1) : état de la routine lu dans S.routines / S.routinesLues, bascule active / en pause
    (Store.routines.pause, seule écriture de la page), prompt de la tâche planifiée à copier et ses 4 étapes ; rendu par la
    fonction pure exportée routinesHtml(S, auj, U). État de la revue : RoutineEtat.etat (routine-etat.js), règle partagée avec
-   Aujourd'hui, l'accueil et le connecteur. */
+   Aujourd'hui, l'accueil et le connecteur.
+   « Banques connectées » (BQ1, Powens) : visible seulement si S.banque.actif ; rendue par la fonction pure exportée
+   banqueHtml(S, auj, U, o). Connexions avec leur état en français (BanqueEtat, mêmes libellés que le connecteur), « Reconnecter » pour
+   les états qui demandent une action, comptes avec solde et sélecteur de rattachement (ligne, enveloppe et titulaire, crédit pour un
+   compte de crédit seulement, aucun, ou « Ne pas suivre ce compte » : compte ignoré, affiché discrètement « Non suivi », réversible),
+   « Déconnecter » confirmé dans la page (pas de confirm()). Écritures de contrôle : Store.banque.connecter (puis redirection vers la
+   page Powens), deconnecter, rattacher. */
 (function () {
   "use strict";
   /* Demandes pré-remplies : courtes, en langage naturel, elles invoquent le connecteur et ses outils. */
@@ -98,13 +104,118 @@
       '<ol class="cg-rt-etapes">' + ETAPES_TACHE.map(t => "<li>" + esc(t) + "</li>").join("") + "</ol></div>";
   }
 
-  if (typeof module === "object" && module.exports) module.exports = { PARCOURS, lienClaude, routinesHtml, ETAPES_TACHE, PHRASE_ACTIVER, PROMPT_TACHE_REPLI };
+  /* ---------- Banques connectées (BQ1, Powens ; spec 2026-10-12-bq1-powens-design § 5) ---------- */
+  const BE = () => glob("BanqueEtat") || viaNode("./banque-etat.js");
+  function montant(v, devise) {
+    if (v == null || !isFinite(+v)) return "—";
+    try { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: String(devise || "EUR") }).format(+v); }
+    catch (e) { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(+v) + " " + String(devise || ""); }
+  }
+  const TITRES = ["pea", "compte_titres", "assurance_vie", "per"];
+  const nomPersonne = (S, k) => { const p = ((S && S.people) || []).find(x => x && x.id === k); return (p && p.nom) || (k === "p2" ? "Conjoint(e)" : "Moi"); };
+  /** Options du sélecteur de rattachement d'un compte, selon son type : [{ valeur, libelle, groupe }]. Valeurs : "" (aucun),
+      "pos:<id>", "env:<p1|p2>:<enveloppe encodée>", "cre:<id>" (compte de crédit seulement), "ign" (ne pas suivre ce compte). */
+  function optionsRattachement(c, S) {
+    const s = S || {}, credit = c.type === "credit", out = [{ valeur: "", libelle: credit ? "Aucun crédit" : "Aucune (nouvelle ligne proposée)", groupe: null }];
+    const ignorer = { valeur: "ign", libelle: "Ne pas suivre ce compte", groupe: null };
+    if (credit) {
+      (((s.profil && s.profil.credits) || [])).forEach(k => out.push({ valeur: "cre:" + k.id, libelle: String(k.nom || "Crédit"), groupe: "Crédits" }));
+      return out.concat(ignorer);
+    }
+    const lignes = (Array.isArray(s.positions) ? s.positions : []).filter(p => p && p.status !== "clôturé");
+    if (TITRES.includes(c.type)) {
+      const vus = new Set();
+      lignes.forEach(p => {
+        if (!p.envelope || !["p1", "p2"].includes(p.owner)) return;
+        const v = "env:" + p.owner + ":" + encodeURIComponent(p.envelope);
+        if (vus.has(v)) return; vus.add(v);
+        out.push({ valeur: v, libelle: p.envelope + " · " + nomPersonne(s, p.owner), groupe: "Enveloppes (placements suivis un par un)" });
+      });
+    }
+    lignes.forEach(p => out.push({ valeur: "pos:" + p.id, libelle: String(p.name || "Ligne") + (p.envelope ? " · " + p.envelope : ""), groupe: "Lignes" }));
+    return out.concat(ignorer);
+  }
+  /* Valeur courante du sélecteur ; un crédit n'est lu que sur un compte de crédit (le déclencheur de 0021 refuse les autres). */
+  const valeurRattachement = c => (c.ignore === true ? "ign" : c.positionId ? "pos:" + c.positionId : c.creditId && c.type === "credit" ? "cre:" + c.creditId :
+    c.enveloppe ? "env:" + c.titulaire + ":" + encodeURIComponent(c.enveloppe) : "");
+  /** Valeur du sélecteur → cible de Store.banque.rattacher. */
+  function cibleDe(valeur) {
+    const v = String(valeur || "");
+    if (!v) return { aucun: true };
+    if (v === "ign") return { ignorer: true };
+    if (v.startsWith("pos:")) return { positionId: v.slice(4) };
+    if (v.startsWith("cre:")) return { creditId: v.slice(4) };
+    const m = /^env:(p1|p2):(.*)$/.exec(v);
+    if (m) { let e = m[2]; try { e = decodeURIComponent(e); } catch (x) { /* tel quel */ } return { enveloppe: e, titulaire: m[1] }; }
+    return null;
+  }
+  function selecteurHtml(c, S, err) {
+    const opts = optionsRattachement(c, S), cur = valeurRattachement(c);
+    if (cur && !opts.some(o => o.valeur === cur)) opts.push({ valeur: cur, libelle: c.creditId ? "Crédit introuvable" : c.positionId ? "Ligne introuvable" : (c.enveloppe || "") + " (introuvable)", groupe: null });
+    let html = "", groupe = null;
+    opts.forEach(o => {
+      if (o.groupe !== groupe) { if (groupe) html += "</optgroup>"; if (o.groupe) html += '<optgroup label="' + esc(o.groupe) + '">'; groupe = o.groupe; }
+      html += '<option value="' + esc(o.valeur) + '"' + (o.valeur === cur ? " selected" : "") + ">" + esc(o.libelle) + "</option>";
+    });
+    if (groupe) html += "</optgroup>";
+    const id = esc(c.id);
+    return '<div class="cg-bq-ratt"><label for="cgBq-' + id + '">Rattaché à</label><select id="cgBq-' + id + '" data-cg-banque-compte="' + id + '"' +
+      (err ? ' aria-describedby="cgBqErr-' + id + '"' : "") + ">" + html + "</select></div>" +
+      (err ? '<p class="cg-rt-err" role="alert" id="cgBqErr-' + id + '">' + esc(err) + "</p>" : "");
+  }
+  function compteHtml(c, S, err) {
+    const B = BE(), fait = B.rattache(c), ign = c.ignore === true, sl = /^\d{4}-\d{2}-\d{2}/.test(String(c.soldeLe || "")) ? " au " + String(c.soldeLe).slice(8, 10) + "/" + String(c.soldeLe).slice(5, 7) : "";
+    const etiquette = c.actif === false ? '<span class="cg-bq-tag">Compte fermé</span>' : ign ? '<span class="cg-bq-tag">Non suivi</span>' : !fait ? '<span class="cg-bq-tag a-faire">À rattacher</span>' : "";
+    return '<li class="cg-bq-cpt' + (ign ? " ignore" : "") + '"><div class="cg-bq-cpt-t"><b>' + esc(c.nom || "Compte") + "</b> " + etiquette +
+      '<span class="cg-bq-cpt-s">' + esc(B.typeLibelle(c.type)) + ' · <span class="cg-bq-num">' + esc(montant(c.solde, c.devise)) + "</span>" + esc(sl) + "</span></div>" +
+      selecteurHtml(c, S, err) + "</li>";
+  }
+  function synchroTxt(ts, auj) {
+    const p = BE().heureParis(ts);
+    if (!p) return "Pas encore synchronisée.";
+    return "Dernière synchronisation " + (p.jour === auj ? "aujourd'hui" : "le " + p.jjmm) + " à " + p.heure + ".";
+  }
+  /** Section « Banques connectées » (HTML, pur). S : instantané du store (S.banque, S.positions, S.profil.credits, S.people) ;
+      auj : AAAA-MM-JJ (jour de Paris) ; U : bibliothèque UI (facultative) ; o = { confirmer: id de la connexion à confirmer,
+      erreur: erreur générale, erreurs: { <compteId>: erreur du rattachement } }. "" si l'interrupteur banque est éteint. */
+  function banqueHtml(S, auj, U, o) {
+    const b = S && S.banque, B = BE(), opt = o || {};
+    if (!b || !b.actif || !B) return "";
+    let html = '<div class="cg-bq-tete"><p class="cg-rt-p">Boussole lit tes comptes par Powens, prestataire agréé : tes identifiants bancaires se saisissent sur la page de Powens, jamais dans Boussole. ' +
+      "Une fois un compte rattaché à une ligne, son solde se met à jour tout seul.</p>" +
+      '<button type="button" class="cg-btn" data-cg-banque-connecter>' + svg("ext") + "Connecter une banque</button></div>" +
+      (opt.erreur ? '<p class="cg-rt-err" role="alert">' + esc(opt.erreur) + "</p>" : "");
+    if (!b.lu) return html + '<p class="cg-rt-voyant attente"><span class="cg-rt-pt" aria-hidden="true"></span><b>Lecture de tes banques…</b></p>';
+    const cxs = Array.isArray(b.connexions) ? b.connexions : [], comptes = Array.isArray(b.comptes) ? b.comptes : [], errs = opt.erreurs || {};
+    if (!cxs.length) return html + '<p class="cg-rt-p muted">Aucune banque connectée pour le moment.</p>';
+    html += '<ul class="cg-bq-cx">' + cxs.map(c => {
+      const e = B.etat(c.etat), id = esc(c.id), nom = String(c.etablissement || "Banque");
+      const pastille = e.aJour ? '<span class="cg-bq-pastille ok">À jour</span>' : e.action ? '<span class="cg-bq-pastille alerte">À reconnecter</span>' : '<span class="cg-bq-pastille attente">Incident passager</span>';
+      const cpts = comptes.filter(k => k && String(k.connexionId) === String(c.id));
+      const conf = String(opt.confirmer) === String(c.id) && opt.confirmer != null;
+      return '<li class="cg-bq-c"><div class="cg-bq-c-tete"><h3>' + esc(nom) + "</h3>" + pastille + "</div>" +
+        '<p class="cg-bq-etat">' + (e.aJour ? "" : esc(e.libelle) + ". ") + esc(synchroTxt(c.derniereSynchro, auj)) + "</p>" +
+        (c.message && !e.aJour ? '<p class="cg-bq-msg">' + esc(c.message) + "</p>" : "") +
+        '<div class="cg-rt-act">' + (e.action ? '<button type="button" class="cg-btn" data-cg-banque-reconnecter="' + id + '">' + svg("ext") + 'Reconnecter<span class="cg-sr"> ' + esc(nom) + "</span></button>" : "") +
+        '<button type="button" class="cg-btn ghost" data-cg-banque-deconnecter="' + id + '">Déconnecter<span class="cg-sr"> ' + esc(nom) + "</span></button></div>" +
+        (conf ? '<div class="cg-bq-conf" role="group" aria-labelledby="cgBqConf-' + id + '"><p id="cgBqConf-' + id + '">Déconnecter <b>' + esc(nom) + "</b> ? Ses comptes et ses opérations sont retirés de Boussole ; tes lignes rattachées restent, en saisie manuelle.</p>" +
+          '<div class="cg-rt-act"><button type="button" class="cg-btn danger" data-cg-banque-confirmer="' + id + '">Déconnecter</button>' +
+          '<button type="button" class="cg-btn ghost" data-cg-banque-annuler="' + id + '">Annuler</button></div></div>' : "") +
+        (cpts.length ? '<ul class="cg-bq-comptes">' + cpts.map(k => compteHtml(k, S, errs[k.id])).join("") + "</ul>" : '<p class="cg-rt-p muted">Aucun compte lu pour le moment.</p>') +
+        "</li>";
+    }).join("") + "</ul>";
+    return html;
+  }
+
+  if (typeof module === "object" && module.exports) module.exports = { PARCOURS, lienClaude, routinesHtml, ETAPES_TACHE, PHRASE_ACTIVER, PROMPT_TACHE_REPLI, banqueHtml, cibleDe, optionsRattachement };
   if (typeof document === "undefined") return;
   const STATUT_TXT = { complet: "complet", partiel: "en partie renseigné", vide: "à renseigner" };
 
   const B = window.BOUSSOLE || {};
   const MCP_URL = B.mcpUrl || String(B.supabaseUrl || "").replace(/\/+$/, "") + "/functions/v1/mcp";
   let S = null, root = null, dirty = true, anon = false, sigSec = "", sigRt = "", erreurRt = "", tMsgRt = 0;
+  let sigBq = "", tMsgBq = 0;
+  const etatBq = { confirmer: null, erreur: "", erreurs: {} }; // section « Banques connectées » : confirmation et erreurs en cours
   const ouverts = new Set(); // sections dépliées (conservées d'un rendu à l'autre)
   const $ = id => root.querySelector("#" + id);
   const demo = () => !!(window.Store && window.Store.mode === "demo");
@@ -151,6 +262,7 @@
     $("cgPending").classList.toggle("has", n > 0);
     steps();
     routines();
+    banques();
   }
   /* Ta revue mensuelle : réécrite seulement si son contenu change (le focus et le retour « Copié » survivent aux mises à jour).
      Jour de Paris, comme le serveur. */
@@ -181,6 +293,79 @@
       erreurRt = String((res && res.erreur) || "Changement impossible pour le moment. Réessaie.").trim();
       sigRt = ""; // réécrit la zone d'alerte : une erreur identique à la précédente est réannoncée
       routines(true);
+    }
+  }
+  /* Banques connectées : réécrite seulement si son contenu change ; focus rendu à l'élément désigné (sélecteur CSS) après réécriture. */
+  function banques(focus) {
+    const actif = !!(S && S.banque && S.banque.actif);
+    $("cgBanques").hidden = !actif;
+    const html = actif ? banqueHtml(S, RE().aujParis(), window.UI || null, etatBq) : "";
+    if (html !== sigBq) { sigBq = html; $("cgBanquesCorps").innerHTML = html; }
+    if (focus) { const el = root.querySelector(focus); if (el) el.focus(); }
+  }
+  function direBq(m) {
+    const el = $("cgBqMsg"); el.textContent = m;
+    clearTimeout(tMsgBq);
+    if (m) tMsgBq = setTimeout(() => { if (el.textContent === m) el.textContent = ""; }, 5000);
+  }
+  const occupe = (b, on) => { b.disabled = on; if (on) b.setAttribute("aria-busy", "true"); else b.removeAttribute("aria-busy"); };
+  const ECHEC_BQ = "Connexion bancaire impossible pour le moment. Réessaie.";
+  const trouver = (liste, id) => ((S && S.banque && S.banque[liste]) || []).find(x => x && String(x.id) === String(id)) || null;
+  /* Connecter (sans identifiant) ou reconnecter une connexion : Store.banque.connecter → redirection vers la page Powens. */
+  async function connecterBq(b, cx) {
+    occupe(b, true);
+    direBq("");
+    let res;
+    try { res = await window.Store.banque.connecter(...(cx ? [cx.id] : [])); }
+    catch (e) { res = { erreur: ECHEC_BQ }; }
+    occupe(b, false);
+    if (res && res.ok && res.url) {
+      etatBq.erreur = "";
+      direBq("Ouverture de la page de connexion de Powens…");
+      window.location.assign(res.url);
+      return;
+    }
+    etatBq.erreur = String((res && res.erreur) || ECHEC_BQ).trim();
+    sigBq = ""; // zone d'alerte reposée : une même erreur est réannoncée
+    banques(cx ? '[data-cg-banque-reconnecter="' + String(cx.id).replace(/"/g, "") + '"]' : "[data-cg-banque-connecter]");
+  }
+  async function deconnecterBq(b, cx) {
+    occupe(b, true);
+    let res;
+    try { res = await window.Store.banque.deconnecter(cx.id); }
+    catch (e) { res = { erreur: ECHEC_BQ }; }
+    etatBq.confirmer = null;
+    if (res && res.ok) {
+      etatBq.erreur = "";
+      S = Object.assign({}, S, { banque: Object.assign({}, S.banque, { connexions: S.banque.connexions.filter(c => c !== cx), comptes: (S.banque.comptes || []).filter(k => String(k.connexionId) !== String(cx.id)) }) });
+      banques("[data-cg-banque-connecter]");
+      direBq((cx.etablissement || "Banque") + " déconnectée.");
+    } else {
+      etatBq.erreur = String((res && res.erreur) || ECHEC_BQ).trim();
+      sigBq = "";
+      banques('[data-cg-banque-deconnecter="' + String(cx.id).replace(/"/g, "") + '"]');
+    }
+  }
+  async function rattacherBq(sel) {
+    const cpt = trouver("comptes", sel.dataset.cgBanqueCompte), cible = cibleDe(sel.value);
+    if (!cpt || !cible) return;
+    const focus = '[data-cg-banque-compte="' + String(cpt.id).replace(/"/g, "") + '"]';
+    occupe(sel, true);
+    let res;
+    try { res = await window.Store.banque.rattacher(cpt.id, cible); }
+    catch (e) { res = { erreur: "Rattachement impossible pour le moment. Réessaie." }; }
+    occupe(sel, false);
+    if (res && res.ok) {
+      delete etatBq.erreurs[cpt.id];
+      const maj = { positionId: cible.positionId || null, enveloppe: cible.enveloppe || null, titulaire: cible.titulaire || null, creditId: cible.creditId || null, ignore: cible.ignorer === true };
+      S = Object.assign({}, S, { banque: Object.assign({}, S.banque, { comptes: S.banque.comptes.map(k => (k === cpt ? Object.assign({}, k, maj) : k)) }) });
+      banques(focus);
+      const o = cible.aucun || cible.ignorer ? null : optionsRattachement(cpt, S).find(x => x.valeur === sel.value), nomC = "« " + (cpt.nom || "Compte") + " »";
+      direBq(cible.ignorer ? nomC + " n'est plus suivi : tu peux le suivre de nouveau à tout moment." : cible.aucun ? nomC + " n'est plus rattaché." : nomC + " rattaché à " + (o ? o.libelle : "ta sélection") + ".");
+    } else {
+      etatBq.erreurs[cpt.id] = String((res && res.erreur) || "Rattachement impossible pour le moment. Réessaie.").trim();
+      sigBq = "";
+      banques(focus);
     }
   }
   function steps() {
@@ -226,6 +411,20 @@
     root.addEventListener("click", async e => {
       const b = e.target.closest("button"); if (!b) return;
       if (b.dataset.cgRoutine) { if (!b.disabled) basculerRoutine(b); return; }
+      if (b.hasAttribute("data-cg-banque-connecter")) { if (!b.disabled) connecterBq(b, null); return; }
+      if (b.dataset.cgBanqueReconnecter) { const cx = trouver("connexions", b.dataset.cgBanqueReconnecter); if (cx && !b.disabled) connecterBq(b, cx); return; }
+      if (b.dataset.cgBanqueDeconnecter) {
+        const cx = trouver("connexions", b.dataset.cgBanqueDeconnecter); if (!cx) return;
+        etatBq.confirmer = cx.id;
+        banques('[data-cg-banque-confirmer="' + String(cx.id).replace(/"/g, "") + '"]');
+        return;
+      }
+      if (b.dataset.cgBanqueAnnuler) {
+        etatBq.confirmer = null;
+        banques('[data-cg-banque-deconnecter="' + String(b.dataset.cgBanqueAnnuler).replace(/"/g, "") + '"]');
+        return;
+      }
+      if (b.dataset.cgBanqueConfirmer) { const cx = trouver("connexions", b.dataset.cgBanqueConfirmer); if (cx && !b.disabled) deconnecterBq(b, cx); return; }
       if (b.hasAttribute("data-cg-copier-tache")) {
         const ok = await copier(promptTache(), root.querySelector("#cgRtPrompt"));
         direRt(ok ? "Prompt copié : colle-le dans une nouvelle tâche planifiée de Claude." : "Copie impossible : le prompt est sélectionné, copie-le avec Ctrl+C ou ⌘C.", ok);
@@ -240,6 +439,7 @@
         dire(ok ? "Demande « " + p.titre + " » copiée : colle-la dans une nouvelle conversation avec Claude." : "Copie impossible : la demande est sélectionnée ci-dessus, copie-la avec Ctrl+C ou ⌘C.", ok); flash(b, ok);
       }
     });
+    root.addEventListener("change", e => { const s = e.target && e.target.closest && e.target.closest("[data-cg-banque-compte]"); if (s && !s.disabled) rattacherBq(s); });
     root.addEventListener("toggle", e => { const d = e.target; if (d.dataset && d.dataset.sec) { if (d.open) ouverts.add(d.dataset.sec); else ouverts.delete(d.dataset.sec); } }, true);
     /* Compte anonyme : uniquement en mode Supabase (la démo montre tout). */
     if (!demo() && window.Auth && typeof Auth.session === "function") {

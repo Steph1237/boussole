@@ -6,11 +6,11 @@
    et seul celui qui correspond installe window.Store. Ce fichier s'installe quand l'URL contient `demo`
    (app.html?demo) ou quand window.BOUSSOLE_MODE === "demo" ; store-supabase.js s'installe dans tous les
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
-   sensible, routine-etat, store-demo, store-supabase, auth, reel, modules, app.
+   sensible, routine-etat, banque-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded() }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument).
@@ -38,6 +38,10 @@
    champ }], synthese }] (D.routines : la revue mensuelle de la démo, prête avec deux questions) ; routinesLues = true une fois prêt.
    Store.routines.pause(type, enPause) → { ok: true } ou { erreur }, en mémoire ; la réactivation recalcule le prochain passage
    comme le déclencheur routines_maj (premier jour `jour` d'un mois au plus tôt dans 7 jours, date de Paris).
+   banque = { actif, lu, connexions, comptes, mois } (D.banque : interrupteur actif, 2 connexions dont une SCARequired, 6 comptes dont un
+   non rattaché et un ignoré, 6 mois de totaux). Store.banque.connecter() → { erreur: « Indisponible en démonstration… » } (aucune page Powens en
+   démo) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
+   de store-supabase.js (BanqueEtat.normRattachement).
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
    byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
@@ -56,6 +60,7 @@
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
     memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander",
     routines: D.routines || [], routinesLues: false,
+    banque: D.banque || { actif: false, lu: true, connexions: [], comptes: [], mois: [] },
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
   };
   // Fiches : S n'expose que les résumés (comme store-supabase.js) ; le contenu reste ici pour Store.savoir.fiche(slug).
@@ -109,6 +114,7 @@
       journalConsentement: C.journalConsentement,
       routines: clone(C.routines),
       routinesLues: C.routinesLues,
+      banque: clone(C.banque),
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -548,6 +554,35 @@
     },
   };
 
+  /* ---------- banques connectées (BQ1) : pas de page Powens en démo ; déconnexion et rattachement en mémoire ---------- */
+  const BE = () => (typeof window !== "undefined" && window.BanqueEtat) ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./banque-etat.js") : null);
+  const banque = {
+    async connecter() {
+      await tick();
+      return { erreur: "Indisponible en démonstration : la connexion bancaire fonctionne avec ton propre compte." };
+    },
+    async deconnecter(connectionId) {
+      await tick();
+      const id = String(connectionId);
+      if (!C.banque.connexions.some(c => String(c.id) === id)) return { erreur: "Connexion introuvable." };
+      C.banque = Object.assign({}, C.banque, { connexions: C.banque.connexions.filter(c => String(c.id) !== id), comptes: C.banque.comptes.filter(c => String(c.connexionId) !== id) });
+      publish();
+      return { ok: true };
+    },
+    async rattacher(compteId, cible) {
+      await tick();
+      try {
+        const cpt = C.banque.comptes.find(c => String(c.id) === String(compteId));
+        if (!cpt) throw bad("Compte introuvable.");
+        const row = BE().normRattachement(clone(cible), { compte: cpt, positions: C.positions, credits: (C.profil && C.profil.credits) || [] });
+        Object.assign(cpt, { positionId: row.position_id, enveloppe: row.enveloppe, titulaire: row.titulaire, creditId: row.credit_id, ignore: row.ignore });
+        publish();
+        return { ok: true };
+      } catch (e) { return { erreur: e.message || String(e) }; }
+    },
+  };
+
   const savoir = {
     async fiche(slug) {
       await tick();
@@ -604,6 +639,7 @@
     reload() { publish(); return Promise.resolve(); },
     markOnboarded() { return Promise.resolve(); },
     surveillerConnexions,
+    banque,
   };
   window.Store = Store;
 

@@ -34,6 +34,8 @@
     <div id="demoBanner" class="banner demo" hidden>Démo avec un foyer fictif : rien n'est enregistré. <a href="index.html#connexion">Crée ton compte</a> pour suivre ton propre patrimoine.</div>
     <!-- Compte anonyme (« Commencer sans e-mail ») : affiché par app.js, masquable pour la session de l'onglet. -->
     <div id="anonBanner" class="banner anon" role="status" hidden><span>Compte sans e-mail : tes données sont liées à ce navigateur. Sécurise ton compte pour les retrouver ailleurs et éviter leur suppression après 90 jours d'inactivité. <a href="compte.html#securiser">Sécuriser mon compte</a></span><button type="button" class="banner-x" id="anonBannerClose" aria-label="Masquer ce message">×</button></div>
+    <!-- Retour de la page de connexion Powens (?connection_id / ?error) : message posé par app.js, masquable. -->
+    <div id="banqueBanner" class="banner retour" role="status" hidden><span id="banqueBannerTxt"></span><button type="button" class="banner-x" id="banqueBannerClose" aria-label="Masquer ce message">×</button></div>
     <header class="page-head">
       <div class="page-title">
         <h1 id="spaceTitle" tabindex="-1">Aujourd'hui</h1>
