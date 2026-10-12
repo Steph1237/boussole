@@ -26,6 +26,7 @@ Claude lit ces données pour la revue mensuelle et pour repérer les nouveaux fl
 - **Agrément.** Powens est l'établissement agréé (AISP) : Boussole utilise son service sous contrat, sans agrément propre. À faire valider avant la production : contrat Powens, inscription REGAFI de Powens, mise à jour des mentions légales et de la politique de confidentialité (Powens comme sous-traitant, données bancaires, durées de conservation).
 - **Identifiants bancaires.** Boussole ne voit jamais les identifiants bancaires : ils sont saisis uniquement dans la page de connexion Powens.
 - **Secrets**, saisis par Stéph dans Supabase, jamais dans le code ni dans la conversation : `POWENS_DOMAIN`, `POWENS_CLIENT_ID`, `POWENS_CLIENT_SECRET`, et facultativement `POWENS_WEBHOOK_SECRET` (signature HMAC).
+- **`POWENS_DOMAIN`** est normalisé. Les valeurs `boussole2-sandbox`, `boussole2-sandbox.biapi.pro` et `https://boussole2-sandbox.biapi.pro/2.0/` donnent toutes le nom `boussole2-sandbox` et l'API `https://boussole2-sandbox.biapi.pro/2.0/`. Le nom doit respecter le motif `^[a-z0-9-]+$` ; sinon, erreur de configuration explicite.
 - **Jeton Powens permanent de chaque utilisateur.**
   - Stocké dans Supabase Vault.
   - Une empreinte SHA-256 du jeton est gardée à part, pour reconnaître l'utilisateur dans une notification.
