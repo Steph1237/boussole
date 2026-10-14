@@ -43,7 +43,8 @@
 #view-pilotage .pl-pied{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-top:8px}
 #view-pilotage .pl-note{margin:0;font-size:var(--t-caption);line-height:1.45;color:var(--muted);max-width:620px}
 #view-pilotage .pl-note:empty{display:none}
-#view-pilotage .pl-note a{color:var(--accent);font-weight:600}
+#view-pilotage .pl-note a{position:relative;color:var(--brand);font-weight:600}
+#view-pilotage .pl-note a::after{content:"";position:absolute;inset:-14px -4px}
 
 /* boutons */
 #view-pilotage .pl-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}

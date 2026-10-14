@@ -42,7 +42,7 @@
 #view-objectifs-view .ov-proj-ctl{display:flex;gap:14px 24px;flex-wrap:wrap;align-items:flex-start}
 #view-objectifs-view .ov-champ{display:flex;flex-direction:column;gap:6px;min-width:0}
 #view-objectifs-view .ov-lab{font-size:var(--t-small);font-weight:600;color:var(--muted)}
-#view-objectifs-view .ov-money{display:flex;align-items:stretch;min-height:var(--hit);border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--surface);overflow:hidden;max-width:220px}
+#view-objectifs-view .ov-money{display:flex;align-items:stretch;min-height:calc(var(--hit) + 2px);border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--surface);overflow:hidden;max-width:220px}
 #view-objectifs-view .ov-money:focus-within{border-color:var(--focus);box-shadow:0 0 0 3px var(--brand-soft)}
 #view-objectifs-view .ov-money input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--ink);font:500 var(--t-body) var(--f-body);font-variant-numeric:tabular-nums lining-nums;padding:0 var(--sp-3);outline:none}
 #view-objectifs-view .ov-u{display:flex;align-items:center;padding-right:var(--sp-3);color:var(--muted);font:var(--t-caption) var(--f-body);white-space:nowrap}
