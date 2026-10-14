@@ -376,7 +376,7 @@ test("vue (DOM) : projection en accordéon — dessinée à l'ouverture, horizon
   assert.match(sp(v.root.querySelector("#ovVersSrc").textContent), /simulation locale, non enregistrée · réel : 650 €\/mois/);
   v.root.querySelector("[data-ov-vreset]").click();
   assert.equal(v.root.querySelector("#ovVers").value, "650");
-  assert.match(v.root.querySelector("#ovVersTag").innerHTML, /réel/);
+  assert.match(v.root.querySelector("#ovVersTag").innerHTML, /prévu/);
   assert.deepEqual(v.acces, [], "le simulateur n'écrit rien");
 });
 

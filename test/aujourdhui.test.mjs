@@ -644,7 +644,7 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   else ctx.UI = { esc: s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
     carte: o => '<button type="button" class="ui-carte" data-ui-carte="' + o.id + '">' + ctx.UI.esc(o.titre) + "</button>",
@@ -741,7 +741,7 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
     App: { register: (n, api) => { reg[n] = api; }, refreshHeadlines() {} } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   const premieres = [];
   ctx.UI = Object.assign({}, ctx.UI, { brancher() {}, periode: () => ({ valeur: () => null, premiere: d => premieres.push(d) }) });
@@ -851,7 +851,7 @@ function vueDom(stock) {
     App: { register: (n, a) => { reg[n] = a; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"])
+  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"])
     vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
@@ -1121,7 +1121,7 @@ test("evolution : passé + cône de projection (Plan, versement des Objectifs) q
   assert.ok(Math.abs(e.futur.points[0].central - net) <= 1, "le cône part du patrimoine net d'aujourd'hui");
   assert.ok(e.futur.points.every(p => p.pessimiste <= p.central && p.central <= p.optimiste));
   const budget = S.budget && S.budget.lignes ? Plan.budgetTotaux(S.budget.lignes, S.profil, "foyer").epargne : 0;
-  const reel = ObjectifsView.versementReel(S, Plan.budgetTotaux((S.budget && S.budget.lignes) || [], S.profil, "foyer"), "foyer");
+  const reel = ObjectifsView.versementProjection(S, Plan.budgetTotaux((S.budget && S.budget.lignes) || [], S.profil, "foyer"), "foyer", t, DEPS);
   assert.equal(e.futur.versement, reel ? reel.v : 0, "même versement que la projection de Patrimoine › Objectifs (" + budget + ")");
   assert.equal(e.futur.versementSource, reel ? reel.src : null);
   const passee = A.evolution(S, t, { id: "perso", du: "2026-01-01", au: "2026-06-30" }, 10, DEPS);
@@ -1139,7 +1139,7 @@ function vueAvecStore(store, stock) {
     App: { register: (n, a) => { reg[n] = a; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"])
+  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"])
     vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
@@ -1238,7 +1238,7 @@ test("vue : animation des cartes à la première apparition seulement, jamais av
       matchMedia: q => ({ matches: reduit && /reduced-motion/.test(q) }) };
     ctx.window = ctx; ctx.self = ctx;
     vm.createContext(ctx);
-    for (const f of ["calc.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
+    for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
     ctx.UI = Object.assign({}, UI, { periode() {}, brancher() {}, bascule() {} });
     vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
     const { root, els } = faux();

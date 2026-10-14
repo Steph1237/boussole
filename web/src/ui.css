@@ -21,6 +21,10 @@
 
 .ui-tendance{display:inline-flex;align-items:baseline;gap:3px;font:600 12px var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
 .ui-tendance-fleche{font-size:10px}
+/* Squelette : place réservée à un chiffre en cours de calcul (jamais un chiffre provisoire qui changerait ensuite). */
+.ui-skel{display:inline-block;width:9em;max-width:100%;height:1em;vertical-align:middle;border-radius:var(--radius-sm);background:var(--sunk);animation:ui-skel 1.4s ease-in-out infinite}
+@keyframes ui-skel{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.ui-skel{animation:none}}
 .ui-tendance.pos{color:var(--good)}
 .ui-tendance.neg{color:var(--crit)}
 .ui-tendance.neutre{color:var(--muted)}

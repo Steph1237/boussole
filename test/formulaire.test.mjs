@@ -329,7 +329,7 @@ test("soumettre_formulaire : regroupement par cible, un seul lot (formulaire_id)
   assert.deepEqual(appels.risque, [{ horizon: "8-15", connaissances: ["etf", "actions"], experience: 6, perte_max: "p20" }]);
   assert.deepEqual(appels.protection, [{ prevoyance: false }]);
   assert.equal(appels.deposer.length, 1, "un seul dépôt");
-  assert.deepEqual(appels.deposer[0].d, { source: "Saisi par l'utilisateur dans le formulaire interactif", lot: id });
+  assert.deepEqual(appels.deposer[0].d, { source: "Saisi par toi dans le formulaire interactif", lot: id });
   assert.deepEqual(appels.deposer[0].items.map(i => i.cible), ["profil", "risque", "protection"]);
   const s = r.structuredContent;
   assert.equal(s.lot, id); assert.equal(s.nombre, 3);
@@ -345,7 +345,7 @@ test("soumettre_formulaire : regroupement par cible, un seul lot (formulaire_id)
   // sans réponse de risque : pas de profil estimé ; sans formulaire_id : nouveau lot
   const b = serveurFormulaire();
   const r2 = await b.outils.soumettre_formulaire.fn({ formulaire_id: "pas-un-uuid", reponses: { "foyer.enfants": 1 } });
-  assert.equal(r2.structuredContent.profil_estime, undefined); assert.deepEqual(b.appels.deposer[0].d, { source: "Saisi par l'utilisateur dans le formulaire interactif" });
+  assert.equal(r2.structuredContent.profil_estime, undefined); assert.deepEqual(b.appels.deposer[0].d, { source: "Saisi par toi dans le formulaire interactif" });
 });
 
 test("profil estimé : port fidèle de Risque.evaluer (scores, profils, garde-fous, textes tutoyés) sur plusieurs jeux de réponses", { skip: SANS_STRIP }, () => {
@@ -383,7 +383,7 @@ test("prompt completer_profil : une section par argument, formulaire pour le cat
   const risque = p.fn({ section: "risque" }).messages[0].content.text;
   assert.match(risque, /outil formulaire/); assert.match(risque, /risque\.horizon, risque\.objectif/); assert.match(risque, /Ne réponds jamais à ma place/);
   const budget = p.fn({ section: "budget" }).messages[0].content.text;
-  for (const m of [/totaux mensuels par catégorie .*, jamais les lignes brutes/, /IBAN/, /update_budget/, /déposé par l'utilisateur/]) assert.match(budget, m);
+  for (const m of [/totaux mensuels par catégorie .*, jamais les lignes brutes/, /IBAN/, /update_budget/, /que tu as déposé/]) assert.match(budget, m);
   assert.match(p.fn({ section: "placements" }).messages[0].content.text, /soldes, les positions .* opérations sur titres/);
   assert.throws(() => p.fn({ section: "voiture" }), /section/);
 });
@@ -403,7 +403,7 @@ test("index.ts : formulaires branchés sur les mêmes fonctions de dépôt, dire
   assert.match(bloc("const CONDUITE_ONBOARDING"), /utilise l'outil formulaire/); assert.match(bloc("const CONDUITE_ONBOARDING"), /Tutoiement, phrases courtes/);
   assert.match(bloc("const CONDUITE = ["), /utilise l'outil formulaire plutôt que des questions en texte/);
   for (const b of [bloc("const INSTRUCTIONS"), bloc("const CONDUITE_COPILOTE")]) {
-    for (const m of [/agrège/, /jamais les lignes brutes/, /soldes, positions, opérations sur titres/, /retire tout identifiant \(IBAN/, /« Relevé … du … déposé par l'utilisateur »/, /confirmer ou compléter ce qui est ambigu/]) assert.match(b, m);
+    for (const m of [/agrège/, /jamais les lignes brutes/, /soldes, positions, opérations sur titres/, /retire tout identifiant \(IBAN/, /« Relevé … du … déposé par toi »/, /confirmer ou compléter ce qui est ambigu/]) assert.match(b, m);
   }
   assert.match(bloc('nom: "profil_de_risque"'), /outil formulaire \(champs risque\.\*\)/);
 });

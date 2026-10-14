@@ -169,7 +169,7 @@ test("mcp : chaque outil d'écriture exige une source (DEPOT) et dépose des pro
   const source = depot.slice(depot.indexOf("source:"), depot.indexOf("justification:"));
   assert.match(source, /z\.string\(/); assert.match(source, /min\(1/); assert.match(source, /max\(500/);
   assert.doesNotMatch(source, /\.optional\(\)/, "source jamais optionnelle");
-  assert.ok(source.includes("D'où vient ce chiffre : relevé collé, déclaration de l'utilisateur, document…"), "description française de source");
+  assert.ok(source.includes("D'où vient ce chiffre : relevé collé, « Ce que tu as dit à Claude », document…"), "description française de source");
   assert.match(depot, /justification:[^\n]*\n?[^\n]*\.optional\(\)/, "justification optionnelle");
   assert.match(depot, /lot:\s*uuid\.optional\(\)/, "lot optionnel (UUID)");
   for (const nom of ECRITURE) {
@@ -588,7 +588,7 @@ test("onboarding : la feuille de conduite porte les règles de l'agent expert", 
   assert.match(c, /petit tableau/, "relevés collés : résumé en tableau");
   for (const k of ["TMI", "PEA", "fonds euros", "matelas"]) assert.ok(c.includes(k), `jargon expliqué : ${k}`);
   assert.match(c, /fin de chaque section/, "dépôt à la fin de chaque section");
-  assert.ok(c.includes("déclaré par l'utilisateur pendant l'onboarding") && c.includes("lot_suggere"), "source et lot des dépôts");
+  assert.ok(c.includes("Ce que tu as dit à Claude pendant l'onboarding") && c.includes("lot_suggere"), "source et lot des dépôts");
   assert.ok(c.includes("changements à valider dans Boussole › Agent › Propositions"), "rappel après chaque dépôt");
   const credentials = c.split("\n").find(l => /identifiants bancaires/.test(l));
   assert.ok(credentials, "règle sur les identifiants bancaires");

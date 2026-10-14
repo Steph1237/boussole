@@ -214,7 +214,7 @@ function introHtml(E){
     <h2 class="label" id="rvTitre">Mon portefeuille correspond-il à mon profil ?</h2>
     <p class="rv-verdict" id="rvVerdict" tabindex="-1">Ton profil de risque n'est pas encore défini.</p>
     <p class="rv-lead">${QS().length||10} questions, 3 minutes, dans Claude : un formulaire interactif te les pose une à une. Ce profil sert à comparer ton portefeuille à ce que tu peux supporter.</p>
-    <p class="rv-note">Horizon, réaction à une baisse, perte acceptable, connaissances, revenus : inspiré du questionnaire d'adéquation des conseillers (MiFID II). Claude dépose ensuite ton profil en proposition : tu le valides dans Agent › Propositions.</p>
+    <p class="rv-note">Horizon, réaction à une baisse, perte acceptable, connaissances, revenus : inspiré du questionnaire d'adéquation réglementaire (MiFID II). Claude dépose ensuite ton profil en proposition : tu le valides dans Agent › Propositions.</p>
     <div class="rv-actions">${lienFaire()}</div>
     ${immoHtml()}
   </section>

@@ -18,6 +18,23 @@
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  /** Sources et justifications déposées par Claude : l'app tutoie, jamais « l'utilisateur » (« Dit par l'utilisateur » → « Ce que tu as dit à
+      Claude », « collé par l'utilisateur » → « que tu as collé »). Les nouveaux dépôts sont déjà écrits à la 2e personne (consignes du
+      connecteur) ; ceci couvre les propositions déjà en base. */
+  const REECRITURES = [
+    [/\b(?:déclaration|déclaré(?:e)?s?|dit(?:e)?s?|réponses?) (?:de|par) l['’]utilisateur/gi, m => (/^réponse/i.test(m) ? "Tes réponses" : "Ce que tu as dit à Claude")],
+    [/\bsaisi(e?s?) par l['’]utilisateur/gi, "Saisi$1 par toi"],
+    [/\b(collé|déposé|fourni|importé|envoyé|transmis)(e?s?) par l['’]utilisateur/gi, "que tu as $1$2"],
+    [/\bpar l['’]utilisateur/gi, "par toi"],
+    [/\bde l['’]utilisateur/gi, "de ta part"],
+    [/\bl['’]utilisateur/gi, "toi"],
+  ];
+  function tutoyer(t) {
+    let x = String(t ?? "");
+    if (!/utilisateur/i.test(x)) return x;
+    for (const [re, par] of REECRITURES) x = x.replace(re, par);
+    return x;
+  }
   const isObj = v => v != null && typeof v === "object" && !Array.isArray(v);
   const vide = v => v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length);
 
@@ -264,7 +281,7 @@
       if (!isObj(n)) return "Frais du contrat « " + env + " » : retirés";
       const champs = Object.keys(F_FRAIS_ENV).filter(k => n[k] != null).map(k =>
         F_FRAIS_ENV[k].l + " " + (o[k] != null && !egal(+o[k], +n[k]) ? txt(o[k]) + " → " : "") + txt(n[k]) + " par an");
-      return "Frais du contrat « " + env + " » : " + (champs.join(", ") || "aucun pourcentage") + (n.source ? " (source : " + n.source + ")" : "");
+      return "Frais du contrat « " + env + " » : " + (champs.join(", ") || "aucun pourcentage") + (n.source ? " (source : " + tutoyer(n.source) + ")" : "");
     });
     return parts.length ? parts.join(" ; ") : "Frais des contrats : aucun changement";
   }
@@ -273,7 +290,7 @@
   const eurs = v => nf.format(+v) + " €";
   const TYPES_ENV_TXT = { pea: "PEA", pea_pme: "PEA PME-ETI", pea_jeune: "PEA d'un majeur rattaché", assurance_vie: "assurance-vie", capitalisation: "contrat de capitalisation", per: "PER",
     pel: "PEL", cel: "CEL", pee: "PEE", percol: "PERCOL", compte_titres: "compte-titres", livret_a: "Livret A", ldds: "LDDS", lep: "LEP", autre: "autre enveloppe" };
-  const srcTxt = n => (isObj(n) && n.source ? " (source : " + n.source + ")" : "");
+  const srcTxt = n => (isObj(n) && n.source ? " (source : " + tutoyer(n.source) + ")" : "");
   /** Informations d'enveloppes : une phrase par donnée qui change (« Date d'ouverture de « PEA Exemple » : 15/06/2021 »), « retirées » pour null. */
   function decrireInfosEnveloppes(av, ap) {
     const avant = isObj(av) ? av : {}, parts = [];
@@ -398,7 +415,7 @@
     return { apres: scalaire ? out.valeur : out };
   }
 
-  const H = { CIBLES, ORDRE_CIBLES, decrire, changements, sujet, valeurTxt, lireSaisie, appliquerSaisies, aplatir, texteMatelas };
+  const H = { tutoyer, CIBLES, ORDRE_CIBLES, decrire, changements, sujet, valeurTxt, lireSaisie, appliquerSaisies, aplatir, texteMatelas };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -467,8 +484,8 @@
         '<p class="pp-desc">' + (p.operation === "supprimer" ? '<span class="pp-op del">suppression</span> ' : p.operation === "creer" && CIBLES[p.cible] && CIBLES[p.cible].entite ? '<span class="pp-op add">ajout</span> ' : "") +
           '<span class="pp-txt">' + esc(plusieurs ? (sujet(p, c) || (p.cible === "risque" ? ch.length + " réponses au questionnaire" : ch.length + " informations")) : desc) + "</span>" + (mod ? ' <span class="pp-op mod">corrigé</span>' : "") + "</p>" +
         diff + champs +
-        '<p class="pp-src">' + svg("source") + "<span>" + esc(p.source || "source non précisée") + "</span></p>" +
-        (p.justification ? '<details class="pp-why"><summary>Pourquoi ce changement</summary><p>' + esc(p.justification) + "</p></details>" : "") +
+        '<p class="pp-src">' + svg("source") + "<span>" + esc(tutoyer(p.source) || "source non précisée") + "</span></p>" +
+        (p.justification ? '<details class="pp-why"><summary>Pourquoi ce changement</summary><p>' + esc(tutoyer(p.justification)) + "</p></details>" : "") +
         (editable && !ed ? '<button type="button" class="pp-lnk pp-edit-btn" data-edit="' + esc(p.id) + '">Modifier</button>' : "") +
       "</div></li>";
   }

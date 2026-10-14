@@ -112,6 +112,15 @@
     return sum(biens(profil), b => pos(b.crd) * part(scope, b.part_p1)) +
       sum(credits(profil), c => pos(c.crd) * partCredit(scope, c.owner));
   }
+  /** Crédits en cours du foyer (avant partage par personne), UNE définition pour Patrimoine › Immobilier et crédits, Compte › Données et la
+      protection du bilan : les prêts rattachés aux biens (reste dû ou mensualité positifs), puis chaque crédit déclaré (auto, consommation,
+      travaux). → [{ kind: "pret" | "credit", nom, crd, mensualite }]. Leur somme est Calc.dettes / Calc.mensualites du foyer. */
+  function creditsEnCours(profil) {
+    const out = [];
+    biens(profil).forEach(b => { if (b && (pos(b.crd) > 0 || pos(b.mensualite) > 0)) out.push({ kind: "pret", nom: String(b.nom || "").trim() || "Bien", crd: pos(b.crd), mensualite: pos(b.mensualite) }); });
+    credits(profil).forEach(c => { if (c) out.push({ kind: "credit", nom: String(c.nom || "").trim() || "Crédit", crd: pos(c.crd), mensualite: pos(c.mensualite) }); });
+    return out;
+  }
   function mensualites(profil, scope) {
     return sum(biens(profil), b => pos(b.mensualite) * part(scope, b.part_p1)) +
       sum(credits(profil), c => pos(c.mensualite) * partCredit(scope, c.owner));
@@ -339,7 +348,7 @@
     return { epargne, matelas: matelas_, libre, placements, aRecevoir: rec, total: libre + placements + rec };
   }
 
-  /* ---------- complétude et validation ---------- */
+  /* ---------- noms et validation (la complétude du bilan est dans bilan-etat.js : une seule fonction) ---------- */
   /* « de Camille », « d'Alex » ; sans prénom (ou prénom par défaut) : « de la personne 1 ». */
   const NOMS_PAR_DEFAUT = ["", "moi", "conjoint", "conjoint(e)", "conjointe"];
   function deNom(nom, rang) {
@@ -347,30 +356,6 @@
     if (NOMS_PAR_DEFAUT.includes(s.toLowerCase())) return "de la personne " + (rang || 1);
     return (/^[aeiouyhàâäéèêëîïôöûüÿæœ]/i.test(s) ? "d'" : "de ") + s;
   }
-  function checks(profil) {
-    const f = (profil && profil.foyer) || {}, ps = (profil && profil.personnes) || {};
-    const has = v => v !== undefined && v !== null && v !== "";
-    const de = k => deNom(ps[k] && ps[k].nom, k === "p2" ? 2 : 1);
-    const list = [
-      ["Taille du foyer", has(f.adultes)],
-      ["Âge", has(f.age)],
-      ["Tranche d'imposition", has(f.tmi)],
-      ["Salaire " + de("p1"), pos(ps.p1 && ps.p1.salaire) > 0],
-      ["Statut " + de("p1"), has(ps.p1 && ps.p1.statut)],
-      ["Patrimoine hors Pilotage", !!profil && (Array.isArray(profil.biens) || Array.isArray(profil.credits))],
-    ];
-    if (n(f.adultes) >= 2) list.push(
-      ["Salaire " + de("p2"), pos(ps.p2 && ps.p2.salaire) > 0],
-      ["Statut " + de("p2"), has(ps.p2 && ps.p2.statut)]);
-    return list;
-  }
-  function completude(profil) {
-    if (!profil) return 0;
-    const c = checks(profil);
-    return Math.round(c.filter(x => x[1]).length / c.length * 100);
-  }
-  const manquants = profil => checks(profil).filter(x => !x[1]).map(x => x[0]);
-
   function valider(profil) {
     const erreurs = [], avertissements = [];
     biens(profil).forEach(b => {
@@ -392,6 +377,6 @@
 
   return { calendrier, CLASSES_LABELS, LIQUIDITE_LABELS, FAMILLES_LABELS, classe, liquidite, famille, horsCourants, parClasse, parLiquidite,
     comptesCourants, moisCourants, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort,
-    val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites,
-    autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, completude, manquants, valider };
+    val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites, creditsEnCours,
+    autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, valider };
 });

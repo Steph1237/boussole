@@ -187,7 +187,7 @@ function dateOk(nom: string, v: unknown, aujourdhui: string, futur = false): str
 }
 const sourceDe = (a: any, erreurs: string[]) => {
   const source = String(a?.source ?? "").trim();
-  if (!source) erreurs.push("source : document consulté ou « déclaration de l'utilisateur » (obligatoire).");
+  if (!source) erreurs.push("source : document consulté ou « Ce que tu as dit à Claude » (obligatoire).");
   else if (source.length > FRAIS_SOURCE_MAX) erreurs.push(`source : ${FRAIS_SOURCE_MAX} caractères au plus (référence du document).`);
   return source;
 };
@@ -343,7 +343,7 @@ export function donationsDe(a: any, existantes: any[], aujourdhui: string, nouve
   const cur = (Array.isArray(existantes) ? existantes : []).filter(isObj);
   const parId = new Map(cur.filter((d) => d.id != null).map((d) => [String(d.id), d]));
   const sourceDefaut = String(a?.source ?? "").trim();
-  if (!sourceDefaut) erreurs.push("source : document consulté ou « déclaration de l'utilisateur » (obligatoire).");
+  if (!sourceDefaut) erreurs.push("source : document consulté ou « Ce que tu as dit à Claude » (obligatoire).");
   else if (sourceDefaut.length > FRAIS_SOURCE_MAX) erreurs.push(`source : ${FRAIS_SOURCE_MAX} caractères au plus.`);
   const vus = new Set<string>();
   const donations = liste.map((d: any, i: number) => {

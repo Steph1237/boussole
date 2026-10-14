@@ -12,7 +12,7 @@
    Calculs inchangés (plan.js : affecterDeja, repartirEpargne, statutObjectif, projection…), faits une fois par émission du
    store ; l'épargne vient du budget enregistré.
    Fonctions pures exportées pour les tests (et window.ObjectifsView, lu par Aujourd'hui) : trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA,
-   versementReel, projectionSvg, projectionTableHtml, hypothesesHtml, valeurPoche, boutonClaude.
+   versementReel, versementProjection, projectionPhrases, projectionSvg, projectionTableHtml, hypothesesHtml, valeurPoche, boutonClaude.
    Dépendances injectées (deps / ctx) : { Plan, Calc } ; window.* par défaut (ClaudePrompts compris). */
 (function () {
   "use strict";
@@ -233,6 +233,45 @@
     return null;
   }
 
+  /* ---------- versement de la projection : UNE fonction pour Objectifs et pour le cône d'Aujourd'hui ---------- */
+  /* Écart (relatif au budget) à partir duquel l'épargne réellement constatée à la banque remplace l'épargne prévue au budget. */
+  const SEUIL_ECART = 0.3;
+  const calcDe = deps => dep(deps, "Calc") || (typeof module === "object" && module.exports && typeof require === "function" ? require("./calc.js") : null);
+  /** Versement mensuel de la projection, avec sa source dite en toutes lettres :
+      - prévu : épargne du budget (versementReel), sinon versements programmés ;
+      - réel : épargne versée des comptes courants, moyenne des derniers mois complets (Calc.budgetReel.epargne), foyer et banque connectée seulement.
+      Le réel est choisi quand il existe et que le prévu manque ou en diffère de plus de 30 % ; le prévu est alors rappelé à côté.
+      → { v, origine: "reel" | "prevu", detail (« prévus au budget », « réellement épargnés sur 3 mois »…), src (detail + rappel du prévu),
+          libelle (« 1 700 €/mois prévus au budget »), prevu: { v, detail } | null, reel: { v, n, detail } | null } ou null sans aucun des deux. */
+  function versementProjection(S, totaux, scope, today, deps) {
+    const sc = scope || "foyer", p = versementReel(S, totaux, sc), b = S && S.banque, C = calcDe(deps);
+    const prevu = p ? { v: p.v, detail: /programmés/.test(p.src) ? "de versements programmés" : "prévus au budget" } : null;
+    let reel = null;
+    if (sc === "foyer" && b && b.actif && C && typeof C.budgetReel === "function") {
+      try {
+        const br = C.budgetReel(b, today);
+        if (br && br.n > 0 && isFinite(br.epargne) && br.epargne >= 0) reel = { v: br.epargne, n: br.n, detail: "réellement épargnés sur " + (br.n > 1 ? br.n + " mois" : "le dernier mois") };
+      } catch (e) { reel = null; }
+    }
+    const ecart = prevu && prevu.v > 0 && reel ? Math.abs(reel.v - prevu.v) / prevu.v : null;
+    const choisi = reel && (!prevu || ecart > SEUIL_ECART) ? Object.assign({ origine: "reel" }, reel) : prevu ? Object.assign({ origine: "prevu" }, prevu) : null;
+    if (!choisi) return null;
+    const rappel = choisi.origine === "reel" && prevu ? " (budget : " + eurM(prevu.v) + " " + prevu.detail + ")" : "";
+    return { v: choisi.v, origine: choisi.origine, detail: choisi.detail, src: choisi.detail + rappel, libelle: eurM(choisi.v) + " " + choisi.detail + rappel, prevu, reel };
+  }
+  /** Phrases sous le chiffre de la projection, les mêmes sur Aujourd'hui et sur Objectifs :
+      « Dans 5 ans : 160 000 € (central), soit +65 000 € par rapport à aujourd'hui, dont 60 000 € de tes versements et 5 000 € des marchés
+      (euros courants, avant frais et impôts). » puis « Versement pris en compte : 1 000 €/mois réellement épargnés sur 3 mois (budget : … prévus). »
+      depart / fin : valeur centrale aujourd'hui et à l'horizon ; versement : €/mois ; vp : versementProjection ou null. */
+  function projectionPhrases(depart, fin, versement, annees, vp) {
+    const v = Math.max(0, +versement || 0), gain = fin - depart, versements = v * 12 * annees, marches = gain - versements;
+    const sg = x => (Math.round(x) < 0 ? "−" : "") + eur(Math.abs(x));
+    const dont = "dont " + (v > 0 ? eur(versements) + " de tes versements et " : "") + sg(marches) + " des marchés (euros courants, avant frais et impôts)";
+    return { total: "Dans " + annees + (annees > 1 ? " ans" : " an") + " : " + eur(fin) + " (central), soit " + (gain >= 0 ? "+" : "−") + eur(Math.abs(gain)) + " par rapport à aujourd'hui, " + dont + ".",
+      versement: v > 0 && vp ? "Versement pris en compte : " + vp.libelle + "." : v > 0 ? "Versement pris en compte : " + eurM(v) + "." : "Aucun versement mensuel pris en compte.",
+      versements, marches, gain };
+  }
+
   /* ---------- projection du patrimoine financier (moteur Plan.projection) ---------- */
   function niceStep(r) { const p = Math.pow(10, Math.floor(Math.log10(r || 1))), n = r / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; }
   /** Courbe : bande pessimiste–optimiste, ligne centrale ; dessinée à la largeur réelle du conteneur (cw). */
@@ -269,7 +308,7 @@
         return "<tr><td>" + esc(b === "_autre" ? "Autres" : b) + '</td><td class="n">' + esc(eur(pb.capital)) + '</td><td class="n">' + esc(pct(pb.poids)) + '</td><td class="n">' + esc(fr(r.pessimiste)) + '</td><td class="n">' + esc(fr(r.central)) + '</td><td class="n">' + esc(fr(r.optimiste)) + "</td></tr>"; }).join("") + "</tbody>";
   }
 
-  const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA, versementReel, projectionSvg, projectionTableHtml,
+  const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA, versementReel, versementProjection, projectionPhrases, projectionSvg, projectionTableHtml,
     hypothesesHtml, valeurPoche, boutonClaude, STATUTS };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof window !== "undefined") window.ObjectifsView = H; // pour Aujourd'hui (jauge d'objectifs, versement de la projection)
@@ -338,20 +377,21 @@
   /* ---------- projection (accordéon, simulateur local) ---------- */
   function renderProjection(forceInput) {
     if (!root || !S) return;
-    const t = analyse().totaux, real = versementReel(S, t, scope()), inp = $("ovVers");
+    const t = analyse().totaux, real = versementProjection(S, t, scope(), isoToday(), null), inp = $("ovVers");
     const v = versOverride != null ? versOverride : real ? real.v : 0;
     const res = P().projection({ positions: S.positions, scope: scope(), versementMensuel: v, annees: horizon });
     const N = horizon, y0 = new Date().getFullYear();
     poser("resume", $("ovProjResume"), "· dans " + N + " ans : " + eur(res.central[N]) + " (central)", true);
+    const ph = projectionPhrases(res.central[0], res.central[N], v, N, versOverride != null ? null : real);
     if (!$("ovProjAcc").hasAttribute("open")) return; // dessinée à l'ouverture seulement
     if (forceInput || versOverride == null || document.activeElement !== inp) {
       const val = String(Math.round(v * 100) / 100);
       if (inp.value !== val) inp.value = val;
     }
     poser("tag", $("ovVersTag"), versOverride != null ? '<button type="button" class="ov-tag scen" data-ov-vreset title="Revenir à la valeur réelle">scénario ↺</button>'
-      : real ? '<span class="ov-tag reel" title="Repris de tes données">réel</span>' : "");
-    poser("src", $("ovVersSrc"), versOverride != null ? "simulation locale, non enregistrée" + (real ? " · réel : " + eurM(real.v) : "") : real ? real.src : "aucune épargne mensuelle connue : essaie un montant", true);
-    poser("note", $("ovProjNote"), "Patrimoine financier " + duScope() + " aujourd'hui : " + eur(res.central[0]) + ".", true);
+      : real ? '<span class="ov-tag reel" title="Repris de tes données">' + (real.origine === "reel" ? "réel" : "prévu") + "</span>" : "");
+    poser("src", $("ovVersSrc"), versOverride != null ? "simulation locale, non enregistrée" + (real ? " · réel : " + eurM(real.v) : "") : real ? real.libelle : "aucune épargne mensuelle connue : essaie un montant", true);
+    poser("note", $("ovProjNote"), "Patrimoine financier " + duScope() + " aujourd'hui : " + eur(res.central[0]) + ". " + ph.total + " " + ph.versement, true);
     poser("chart", $("ovChart"), projectionSvg(res, N, y0, $("ovChart").clientWidth || 640));
     poser("legende", $("ovLegend"), '<span><i class="ln"></i>scénario central</span><span><i class="bd"></i>entre pessimiste et optimiste (pointillés)</span>');
     poser("table", $("ovProjTable"), projectionTableHtml(res, v, N, y0));

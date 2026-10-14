@@ -205,7 +205,8 @@ test("cartesHtml : quatre cartes, capacité d'épargne en badge, reste négatif 
   assert.match(h, /Revenus du foyer/);
   assert.match(h, /5 100 €/);
   assert.match(h, /dont 1 030 € de crédits/);
-  assert.match(h, /Capacité d'épargne 31 %/);
+  assert.match(h, /Capacité d'épargne prévue au budget 31 %/, "la mesure du budget est dite « prévue »");
+  assert.doesNotMatch(h, /Capacité d'épargne 31 %/, "jamais le nom nu : la capacité réelle (comptes) est un autre nombre");
   assert.match(h, /au-dessus du repère/);
   const an = sp(PV.cartesHtml(PV.resume(t, "an", true), UI, { duScope: "du foyer" }));
   assert.match(an, /61 200 €/);
@@ -539,7 +540,7 @@ test("budget réel : capacité d'épargne puis épargne versée (3 mois complets
   assert.equal(PV.budgetReelDe({ scope: "p2", banque: b }, AUJ_R), null, "les comptes ne sont pas répartis par personne");
   assert.equal(PV.budgetReelDe({ scope: "foyer", banque: Object.assign({}, b, { actif: false }) }, AUJ_R), null);
   const h = sp(PV.tauxReelHtml(br));
-  assert.match(texteDeR(h), /^Capacité d'épargne 95 % \(revenus − dépenses\) ÷ revenus\. Épargne versée 20 % versements d'épargne et d'investissement ÷ revenus\. /, "Capacité d'abord, chaque taux avec sa formule");
+  assert.match(texteDeR(h), /^Capacité d'épargne réelle, 3 derniers mois 95 % \(revenus − dépenses\) ÷ revenus\. Épargne versée 20 % versements d'épargne et d'investissement ÷ revenus\. /, "Capacité d'abord, chaque taux avec sa formule");
   assert.ok(h.indexOf("Capacité d'épargne") < h.indexOf("Épargne versée"));
   assert.doesNotMatch(texteDeR(h), /[Tt]aux d'épargne/, "un seul vocabulaire");
   assert.equal(br.parCompte, false, "totaux par utilisateur (sans compte)");
@@ -550,7 +551,7 @@ test("budget réel : capacité d'épargne puis épargne versée (3 mois complets
   assert.equal(PV.tauxReelHtml(null), "");
   assert.equal(PV.tauxReelHtml(Object.assign({}, br, { tauxEpargne: null, tauxCapacite: null })), "", "revenus inconnus : pas de taux");
   const neg = texteDeR(PV.tauxReelHtml(Object.assign({}, br, { tauxCapacite: -0.1, capacite: -500, tauxEpargne: 0 })));
-  assert.match(neg, /^Capacité d'épargne -10 % .*Épargne versée 0 % /, "dépenses > revenus : capacité négative, rien de versé");
+  assert.match(neg, /^Capacité d'épargne réelle, 3 derniers mois -10 % .*Épargne versée 0 % /, "dépenses > revenus : capacité négative, rien de versé");
   const lignes = [{ id: "e", type: "epargne", categorie: "Épargne", libelle: "Livret", montant: 200, frequence: "mois" }];
   const { groupes, totaux } = PV.regrouper(lignes, { profil: null, scope: "foyer", people: PEOPLE, Plan, Calc });
   const g = sp(PV.groupesHtml(groupes, { mode: "mois", totaux, U: UI, budgetReel: br }));
@@ -568,7 +569,7 @@ test("vue (DOM) : banque connectée → colonne réel, capacité d'épargne et �
   const v = vueDom(Object.assign(demoS(), { banque: banqueR(mois) }));
   assert.match(sp(v.root.querySelector("#pvBudgetNote").textContent), /« Réel » : moyenne d[e'][^,]+, d'après tes comptes connectés\. Virements entre tes comptes exclus\./);
   assert.match(sp(v.root.querySelector('[data-pv-cat="depense:Alimentation"]').textContent), /réel 800 €\/mois/, "comptes courants seulement");
-  assert.match(sp(v.root.querySelector("#pvBudget").textContent), /Capacité d'épargne 84 %[\s\S]*Épargne versée 15 %/);
+  assert.match(sp(v.root.querySelector("#pvBudget").textContent), /Capacité d'épargne réelle, 3 derniers mois 84 %[\s\S]*Épargne versée 15 %/);
   const sans = vueDom(Object.assign(demoS(), { banque: { actif: false, lu: true, connexions: [], comptes: [], mois: [] } }));
   assert.doesNotMatch(sp(sans.root.querySelector("#pvBudgetNote").textContent), /Virements/);
   assert.equal(sans.root.querySelector(".pv-reel-taux"), null);

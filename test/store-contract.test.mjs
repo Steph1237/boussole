@@ -125,7 +125,7 @@ test("démo : Calc.financier(S.positions, 'foyer') = somme calculée depuis DEMO
   near(Calc.financier(S.positions, "p1"), p1, "total p1");
   near(Calc.financier(S.positions, "p2"), p2, "total p2");
   near(Calc.aRecevoir(S.positions, "foyer"), D.filter(p => p.status === "à recevoir").reduce((a, p) => a + val(p), 0), "à recevoir");
-  assert.ok(Calc.completude(S.profil) > 80, "profil démo quasi complet");
+  assert.ok(require("../web/src/bilan-etat.js").etat(S, "2026-10-14").pourcentage >= 70, "bilan de la démo bien avancé");
 });
 
 test("démo : setScope n'accepte que foyer / p1 / p2 et le mémorise", async () => {

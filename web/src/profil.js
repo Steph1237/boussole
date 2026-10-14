@@ -1,7 +1,7 @@
 /* Compte › Données (module « profil ») : le profil du foyer en LECTURE SEULE (spec 2026-10-11-saisie-par-agent). La saisie se
    fait avec Claude (formulaires interactifs, documents déposés dans la conversation) ; Boussole affiche et fait valider les
    propositions dans Agent › Propositions. Aucune écriture au store ici.
-   En tête : taux de remplissage, ce qui manque, récapitulatif, « Compléter avec Claude » (bilan).
+   En tête : taux de remplissage du bilan (BilanEtat, protection comprise), ce qui manque, récapitulatif, « Compléter avec Claude » (bilan).
    Puis six sections en accordéons fermés (Foyer, Revenus, Biens immobiliers, Crédits, Protection, Autres biens), chacune avec une
    ligne de résumé dans son titre (« 2 adultes, 1 enfant, TMI 30 % »), son contenu en lecture (valeurs renseignées, « non
    renseigné » sinon) et son « Compléter avec Claude » (UI.demanderAClaude + ClaudePrompts.phrase, section de l'agent).
@@ -18,6 +18,13 @@
   const prompts = () => glob("ClaudePrompts") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
 
+  /* Complétude : la fonction du bilan (BilanEtat, bilan-etat.js), la même que Agent › Connexion et l'outil etat_du_bilan du connecteur. */
+  const bilanEtat = () => glob("BilanEtat") ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? require("./bilan-etat.js") : null);
+
+  /* Crédits en cours (Calc.creditsEnCours, la définition de Patrimoine › Immobilier et crédits) : global du navigateur, sinon le module voisin. */
+  const calc = () => glob("Calc") || (typeof module === "object" && module.exports && typeof require === "function" ? require("./calc.js") : null);
+
   /* ---------- logique pure ---------- */
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
   const eur = v => nf.format(Math.round(v || 0)) + " €";
@@ -33,7 +40,7 @@
     { id: "foyer", titre: "Foyer", claude: "foyer" },
     { id: "revenus", titre: "Revenus", claude: "revenus" },
     { id: "biens", titre: "Biens immobiliers", claude: "immobilier", contexte: "mes biens immobiliers et leurs prêts" },
-    { id: "credits", titre: "Crédits", claude: "immobilier", contexte: "mes crédits hors prêts immobiliers (auto, consommation, travaux)" },
+    { id: "credits", titre: "Crédits", claude: "immobilier", contexte: "mes crédits (prêts immobiliers, auto, consommation, travaux)" },
     { id: "protection", titre: "Protection", claude: "protection" },
     { id: "autres", titre: "Autres biens", claude: "bilan", contexte: "mes autres biens (voiture, meubles, parts d'entreprise)" },
   ];
@@ -49,8 +56,20 @@
   const deuxAdultes = pr => num(pr && pr.foyer && pr.foyer.adultes) >= 2;
   const personnesDe = pr => (deuxAdultes(pr) ? ["p1", "p2"] : ["p1"]);
   const nomDe = (pr, k) => String((pr && pr.personnes && pr.personnes[k] && pr.personnes[k].nom) || "").trim() || DEFAULT_NOMS[k];
-  /** Un crédit est en cours (prêt immobilier sur un bien ou autre crédit) : reste dû ou mensualité positifs. */
-  const aCredit = pr => [].concat((pr && pr.biens) || [], (pr && pr.credits) || []).some(x => x && (num(x.crd) > 0 || num(x.mensualite) > 0));
+  /** Crédits en cours : prêts immobiliers des biens et autres crédits, comme Patrimoine › Immobilier et crédits (Calc.creditsEnCours). */
+  const creditsDe = pr => { const C = calc(); return C && typeof C.creditsEnCours === "function" ? C.creditsEnCours(pr) : []; };
+  /** Un crédit est en cours (prêt immobilier sur un bien ou autre crédit). */
+  const aCredit = pr => creditsDe(pr).length > 0;
+
+  /** Complétude du bilan : { pourcentage, incompletes: [titre de section, …] } d'après BilanEtat.etat (foyer, revenus, budget, placements,
+      immobilier et crédits, protection, objectifs, profil de risque), une seule définition pour Compte › Données, Agent › Connexion et le
+      connecteur. S = état du store ; today = jour (AAAA-MM-JJ, défaut : aujourd'hui). Sans le module : { pourcentage: 0, incompletes: [] }. */
+  function completude(S, today) {
+    const B = bilanEtat();
+    if (!B || !S) return { pourcentage: 0, incompletes: [] };
+    const e = B.etat(S, today);
+    return { pourcentage: e.pourcentage, incompletes: e.sections.filter(s => s.statut !== "complet").map(s => s.titre) };
+  }
 
   /** « 2 adultes, 1 enfant, TMI 30 % ». */
   function resumeFoyer(pr) {
@@ -76,12 +95,13 @@
     if (!L.length) return "aucun";
     return L.length + " bien" + s_(L.length) + ", " + eur(L.reduce((a, b) => a + num(b.valeur), 0));
   }
-  /** « 1 crédit, 6 500 € restants, 210 €/mois » ; « aucun » (ou « aucun en dehors des prêts immobiliers »). */
+  /** « 2 crédits, dont 1 prêt immobilier, 156 500 € restants, 1 030 €/mois » : tous les crédits en cours (prêts des biens compris), le
+      même compte que Patrimoine › Immobilier et crédits ; « aucun » sans crédit. */
   function resumeCredits(pr) {
-    const L = ((pr && pr.credits) || []).filter(Boolean);
-    if (!L.length) return ((pr && pr.biens) || []).some(b => b && (num(b.crd) > 0 || num(b.mensualite) > 0)) ? "aucun en dehors des prêts immobiliers" : "aucun";
-    const crd = L.reduce((a, c) => a + num(c.crd), 0), m = L.reduce((a, c) => a + num(c.mensualite), 0);
-    return L.length + " crédit" + s_(L.length) + ", " + eur(crd) + " restant" + s_(crd) + ", " + eur(m) + "/mois";
+    const L = creditsDe(pr);
+    if (!L.length) return "aucun";
+    const prets = L.filter(c => c.kind === "pret").length, crd = L.reduce((a, c) => a + c.crd, 0), m = L.reduce((a, c) => a + c.mensualite, 0);
+    return L.length + " crédit" + s_(L.length) + (prets ? ", dont " + prets + (prets > 1 ? " prêts immobiliers" : " prêt immobilier") : "") + ", " + eur(crd) + " restant" + s_(crd) + ", " + eur(m) + "/mois";
   }
 
   /** Déclaration de protection lue sous ses deux formes (comme pratiques.js) :
@@ -181,11 +201,13 @@
           [["Reste à rembourser", montant0(b.crd)], ["Mensualité", montant0(b.mensualite, "/mois")], ["Loyer perçu", montant0(b.loyer, "/mois")]]))));
     }
     if (id === "credits") {
+      const prets = (pr.biens || []).filter(b => b && (num(b.crd) > 0 || num(b.mensualite) > 0));
       const L = (pr.credits || []).filter(Boolean);
-      if (!L.length) return aucun(Array.isArray(pr.credits) ? "Aucun crédit en dehors des prêts immobiliers." : "Aucun crédit renseigné.");
+      if (!prets.length && !L.length) return aucun(Array.isArray(pr.credits) ? "Aucun crédit." : "Aucun crédit renseigné.");
       const titulaire = o => (o === "p1" || o === "p2" ? nomDe(pr, o) : o === "commun" ? "Commun" : NR);
-      return groupe(L.map(c => bloc(String(c.nom || "").trim() || "Crédit", [["Titulaire", titulaire(c.owner)], ["Reste à rembourser", montant(c.crd)],
-        ["Mensualité", montant(c.mensualite, "/mois")]])));
+      return groupe(prets.map(b => bloc("Prêt immobilier · " + (String(b.nom || "").trim() || "Bien"), [["Reste à rembourser", montant0(b.crd)], ["Mensualité", montant0(b.mensualite, "/mois")]]))
+        .concat(L.map(c => bloc(String(c.nom || "").trim() || "Crédit", [["Titulaire", titulaire(c.owner)], ["Reste à rembourser", montant(c.crd)],
+          ["Mensualité", montant(c.mensualite, "/mois")]]))));
     }
     if (id === "protection") {
       const l = protectionLue(pr);
@@ -209,7 +231,7 @@
   /** Bouton « Compléter avec Claude » d'une section (ou de l'en-tête, id absent). U = UI. */
   const claudeHtml = (id, U) => (U && typeof U.demanderAClaude === "function" ? U.demanderAClaude(phraseSection(id), "Compléter avec Claude") : "");
 
-  const PURE = { SECTIONS, sectionDemandee, aCredit, protectionLue, resumeFoyer, resumeRevenus, resumeBiens, resumeCredits, resumeProtection, resumeAutres,
+  const PURE = { completude, SECTIONS, sectionDemandee, aCredit, protectionLue, resumeFoyer, resumeRevenus, resumeBiens, resumeCredits, resumeProtection, resumeAutres,
     resumes, phraseSection, sectionHtml, claudeHtml };
   if (typeof module === "object" && module.exports) module.exports = PURE;
   if (typeof document === "undefined") return;
@@ -226,11 +248,10 @@
   function render() {
     if (!root || !S) return;
     const C = window.Calc, U = window.UI, pr = S.profil || null, prC = pr || {};
-    const pct = pr ? C.completude(pr) : 0;
+    const cp = completude(S), pct = cp.pourcentage;
     texte("pfPct", pct + " %");
     $("pfBar").setAttribute("style", "width:" + pct + "%");
-    const miss = C.manquants(prC);
-    texte("pfMissing", !pret() ? "" : miss.length ? "À compléter : " + miss.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "."
+    texte("pfMissing", !pret() ? "" : cp.incompletes.length ? "À compléter : " + cp.incompletes.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "."
       : "Tout est renseigné. Aujourd'hui, Patrimoine, Pilotage et les simulations utilisent ces chiffres.");
     const pat = C.patrimoine(S.positions || [], prC, "foyer"), rev = C.revenusFoyer(prC, "foyer"), mens = C.mensualites(prC, "foyer");
     ecrire("pfRecap", [
@@ -270,7 +291,7 @@
   }
   function headline() {
     if (!S || !(S.profilLoaded || S.dbOk === false)) return "–";
-    return S.profil ? window.Calc.completude(S.profil) + " % rempli" : "À remplir";
+    return S.profil ? completude(S).pourcentage + " % rempli" : "À remplir";
   }
   const api = { mount, update, show, headline };
   const reg = () => App.register("profil", api); if (window.App) reg(); else (window.__pending = window.__pending || []).push(reg);

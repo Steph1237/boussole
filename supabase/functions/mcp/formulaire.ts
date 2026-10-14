@@ -14,7 +14,7 @@ import { HTML_FORMULAIRE } from "./formulaire-ui.ts";
 
 export const RESSOURCE = "ui://boussole/formulaire";
 export const MIME = "text/html;profile=mcp-app";
-export const SOURCE_FORMULAIRE = "Saisi par l'utilisateur dans le formulaire interactif";
+export const SOURCE_FORMULAIRE = "Saisi par toi dans le formulaire interactif";
 export const MENTION = "Indicateur pédagogique, pas un conseil en investissement.";
 export const PROPOSITIONS = "Boussole › Agent › Propositions";
 export const QUESTIONS_MAX = 20;
@@ -249,7 +249,7 @@ function valeursEnClair(q: any): string {
 export function texteRepli(f: any): string {
   const l = [
     "Formulaire « " + f.titre + " » (formulaire_id " + f.formulaire_id + ", " + f.questions.length + " question" + (f.questions.length > 1 ? "s" : "") + ").",
-    "Si le formulaire interactif ne s'affiche pas chez l'utilisateur, pose-lui ces questions en texte, puis enregistre seulement ses réponses (jamais une réponse déduite) avec update_profile, set_protection ou set_risk_answers (source : « Dit par l'utilisateur »).",
+    "Si le formulaire interactif ne s'affiche pas chez l'utilisateur, pose-lui ces questions en texte, puis enregistre seulement ses réponses (jamais une réponse déduite) avec update_profile, set_protection ou set_risk_answers (source : « Ce que tu as dit à Claude »).",
   ];
   if (f.intro) l.push(f.intro);
   f.questions.forEach((q: any, i: number) => {
@@ -294,7 +294,7 @@ export function texteCompleter(section: string): string {
     l.push("Utilise l'outil formulaire pour me poser d'un coup les questions manquantes de cette section, avec les champs : " + champs.join(", ") + ". " +
       "Ne réponds jamais à ma place ; les aides informent, elles ne recommandent pas. Si le formulaire ne s'affiche pas, pose les questions en texte, puis dépose mes réponses avec les outils d'écriture.");
   } else {
-    l.push(IMPORT[section] + " Retire tout identifiant (IBAN, numéros de compte ou de carte) avant de récapituler ; source : « Relevé … du … déposé par l'utilisateur ». " +
+    l.push(IMPORT[section] + " Retire tout identifiant (IBAN, numéros de compte ou de carte) avant de récapituler ; source : « Relevé … du … que tu as déposé ». " +
       "Récapitule avant de déposer ; pour ce qui reste ambigu et figure au catalogue, utilise l'outil formulaire, sinon pose la question en texte.");
   }
   l.push("Après le dépôt, résume ce qui a été proposé et rappelle-moi de valider dans " + PROPOSITIONS + " (rien n'est appliqué avant).");

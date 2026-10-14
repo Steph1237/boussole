@@ -41,7 +41,7 @@ const demo = () => {
 
 test("données : s'enregistre, chiffre clé inchangé, se compile", () => {
   assert.match(js, /App\.register\("profil", api\)/);
-  assert.match(js, /return S\.profil \? window\.Calc\.completude\(S\.profil\) \+ " % rempli" : "À remplir";/, "chiffre clé inchangé");
+  assert.match(js, /return S\.profil \? completude\(S\)\.pourcentage \+ " % rempli" : "À remplir";/, "chiffre clé : la complétude du bilan (BilanEtat)");
   assert.doesNotThrow(() => new vm.Script(js, { filename: "profil.js" }));
 });
 
@@ -80,7 +80,7 @@ test("« Compléter avec Claude » : phrase de l'agent par section (ClaudePrompt
   assert.equal(P.phraseSection("revenus"), ClaudePrompts.phrase("revenus"));
   assert.equal(P.phraseSection("protection"), ClaudePrompts.phrase("protection"));
   assert.equal(P.phraseSection("biens"), ClaudePrompts.phrase("immobilier", "mes biens immobiliers et leurs prêts"));
-  assert.match(P.phraseSection("credits"), /^Boussole : aide-moi à renseigner mes biens immobiliers et mes crédits\. Concerne : mes crédits hors prêts immobiliers/);
+  assert.match(P.phraseSection("credits"), /^Boussole : aide-moi à renseigner mes biens immobiliers et mes crédits\. Concerne : mes crédits \(prêts immobiliers, auto, consommation, travaux\)/);
   assert.match(P.phraseSection("autres"), /Concerne : mes autres biens \(voiture, meubles, parts d'entreprise\)\./);
   assert.equal(P.phraseSection(null), ClaudePrompts.phrase("bilan"));
   for (const s of P.SECTIONS) {
@@ -109,9 +109,10 @@ test("résumés : foyer, revenus, biens, crédits, protection, autres (démo et 
   assert.equal(P.resumeBiens({ biens: [] }), "aucun");
   assert.equal(P.resumeBiens({ biens: [{ valeur: 100000 }, { valeur: "50000" }] }), "2 biens, " + eur(150000));
 
-  assert.equal(P.resumeCredits(pr), "1 crédit, " + eur(6500) + " restants, " + eur(210) + "/mois");
+  assert.equal(P.resumeCredits(pr), "2 crédits, dont 1 prêt immobilier, " + eur(156500) + " restants, " + eur(1030) + "/mois", "tous les crédits en cours, prêt immobilier compris (comme Patrimoine › Immobilier et crédits)");
+  assert.equal(P.resumeCredits({ credits: [{ nom: "Auto", crd: 6500, mensualite: 210 }] }), "1 crédit, " + eur(6500) + " restants, " + eur(210) + "/mois");
   assert.equal(P.resumeCredits({ credits: [] }), "aucun");
-  assert.equal(P.resumeCredits({ credits: [], biens: [{ crd: 1000 }] }), "aucun en dehors des prêts immobiliers");
+  assert.equal(P.resumeCredits({ credits: [], biens: [{ crd: 1000 }] }), "1 crédit, dont 1 prêt immobilier, " + eur(1000) + " restants, " + eur(0) + "/mois");
 
   assert.equal(P.resumeAutres(pr), eur(15000));
   assert.equal(P.resumeAutres({ foyer: { adultes: 1 }, autres: { p1: { usage: 0 }, p2: { usage: 9000 } } }), "aucun", "une seule personne : p2 ignorée");
@@ -190,7 +191,10 @@ test("contenu en lecture : valeurs renseignées de la démo, « non renseigné �
   assert.equal((v.match(/class="pf-nr">non renseigné</g) || []).length, 4, "adultes, enfants, âge, TMI");
   assert.match(P.sectionHtml("biens", null, Calc), /Aucun bien immobilier renseigné\./);
   assert.match(P.sectionHtml("biens", { biens: [] }, Calc), /Aucun bien immobilier\./);
-  assert.match(P.sectionHtml("credits", { credits: [] }, Calc), /Aucun crédit en dehors des prêts immobiliers\./);
+  assert.match(P.sectionHtml("credits", { credits: [] }, Calc), /Aucun crédit\./);
+  const cr = sp(P.sectionHtml("credits", demo().profil, Calc));
+  assert.match(cr, /Prêt immobilier · Appartement \(résidence principale\)/, "le prêt du bien est listé avec les autres crédits");
+  assert.match(cr, /Prêt auto/);
   assert.match(P.sectionHtml("revenus", null, Calc), /<dt>Salaire<\/dt><dd class="pf-nr">non renseigné<\/dd>/);
   // échappement
   const piege = JSON.parse(JSON.stringify(pr));
@@ -228,7 +232,7 @@ function vue(S0, o = {}) {
   const espion = chemin => ({ set: async d => { ecritures.push({ chemin, d }); }, update: async d => { ecritures.push({ chemin, d }); }, delete: async () => { ecritures.push({ chemin }); } });
   ctx.Store = { db: { doc: espion, collection: espion } };
   vm.createContext(ctx);
-  for (const f of ["calc.js", "ui.js", "claude-prompts.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
+  for (const f of ["calc.js", "bilan-etat.js", "ui.js", "claude-prompts.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "profil.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.innerHTML = html;
@@ -275,7 +279,7 @@ test("vue (DOM) : le lien profond ouvre la section et lui donne le focus ; secti
 
   const w = vue(etat(null));
   assert.equal(w.api.headline(), "À remplir");
-  assert.equal(w.$("pfPct").textContent, "0 %");
+  assert.equal(w.$("pfPct").textContent, require("../web/src/bilan-etat.js").etat(etat(null), undefined).pourcentage + " %", "même complétude que le bilan, profil absent compris");
   assert.equal(w.$("pfResFoyer").textContent, "taille du foyer à renseigner, sans enfant, TMI à renseigner");
   assert.match(w.$("pfLuFoyer").innerHTML, /non renseigné/);
   assert.match(w.$("pfMissing").textContent, /^À compléter : /);

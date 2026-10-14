@@ -171,11 +171,15 @@
   }
 
   /* =============================================================== rendus HTML =============================================================== */
+  /* Une capacité d'épargne = (revenus − dépenses) ÷ revenus, mais deux mesures sur cet écran : celle du budget (prévue) et celle des comptes
+     (réelle). Chacune porte son qualificatif, jamais deux nombres différents sous le même nom. */
+  const LIBELLE_PREVUE = "Capacité d'épargne prévue au budget";
+  const libelleReelle = n => "Capacité d'épargne réelle, " + (n > 1 ? n + " derniers mois" : "dernier mois");
   /** Quatre cartes de l'en-tête (UI.carte) : revenus, dépenses, épargne (capacité d'épargne en badge), reste. o = { duScope }. */
   function cartesHtml(r, U, o) {
     const u = r.unite;
     const sous = (...xs) => xs.filter(Boolean).join(" · ");
-    const sousTaux = r.taux != null ? "Capacité d'épargne " + pct(r.taux) : !r.aLignes ? SANS_TAUX : "capacité d'épargne inconnue";
+    const sousTaux = r.taux != null ? LIBELLE_PREVUE + " " + pct(r.taux) : !r.aLignes ? SANS_TAUX : "capacité d'épargne inconnue";
     return U.carte({ id: "revenu", titre: "Revenus " + ((o && o.duScope) || "du foyer"), valeur: eur(r.revenus),
         sous: sous(u, r.revenusProfil > 0 ? "dont " + eur(r.revenusProfil) + " repris de Compte › Données" : "salaires à compléter avec Claude") }) +
       U.carte({ id: "depense", titre: "Dépenses", valeur: eur(r.depenses), sous: sous(u, r.mensualites > 0 ? "dont " + eur(r.mensualites) + " de crédits" : "crédits compris") }) +
@@ -246,14 +250,14 @@
   }
   const MENTION_VIREMENTS = "Virements entre tes comptes exclus.";
   /** Deux lignes sous la section Épargne, chacune avec sa formule d'une ligne (même vocabulaire que Santé et le connecteur) :
-      « Capacité d'épargne » = (revenus − dépenses) ÷ revenus (br.tauxCapacite, peut être négative) puis « Épargne versée » =
+      « Capacité d'épargne réelle, N derniers mois » = (revenus − dépenses) ÷ revenus (br.tauxCapacite, peut être négative) puis « Épargne versée » =
       versements d'épargne et d'investissement ÷ revenus (br.tauxEpargne) ; 3 derniers mois complets, « sur tes comptes courants » si
       chaque mois est détaillé par compte (br.parCompte), sinon « sur tous tes comptes connectés » ; vide sans taux. */
   function tauxReelHtml(br) {
     if (!br || br.tauxEpargne == null || !isFinite(br.tauxEpargne) || br.tauxCapacite == null || !isFinite(br.tauxCapacite) || !br.du || !br.au) return "";
     const ligne = (titre, v, formule) => '<p class="pv-reel-taux"><span class="pv-reel-taux-l">' + titre + '</span> <b class="pv-num">' + esc(pct(v)) + "</b> " +
       '<span class="pv-muet">' + formule + "</span></p>";
-    return ligne("Capacité d'épargne", br.tauxCapacite, "(revenus − dépenses) ÷ revenus.") + "\n" +
+    return ligne(libelleReelle(br.n), br.tauxCapacite, "(revenus − dépenses) ÷ revenus.") + "\n" +
       ligne("Épargne versée", br.tauxEpargne, "versements d'épargne et d'investissement ÷ revenus.") +
       '\n<p class="pv-reel-taux"><span class="pv-muet">' + esc(periodeReel(br)) + (br.parCompte ? ", sur tes comptes courants. " : ", sur tous tes comptes connectés (le détail par compte n'est pas encore disponible). ") +
       MENTION_VIREMENTS + "</span></p>";
@@ -543,7 +547,7 @@
     const L = lignes();
     if (!L.length) return "Budget à remplir";
     const t = window.Plan.budgetTotaux(L, S.profil, S.scope).tauxEpargne;
-    return t == null ? "Budget à remplir" : Math.round(t * 100) + " % de capacité d'épargne";
+    return t == null ? "Budget à remplir" : Math.round(t * 100) + " % de capacité prévue au budget";
   }
 
   const api = { mount, update, show, headline };

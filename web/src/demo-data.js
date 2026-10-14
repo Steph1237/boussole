@@ -101,7 +101,7 @@
       "PEA Camille": { type: "pea", titulaire: "p1", date_ouverture: reculer(4, 8), versements_cumules: 24000, source: "Relevé annuel du PEA (exemple)", le: ago(40) },
       "Assurance vie Sam": { type: "assurance_vie", titulaire: "p2", date_ouverture: reculer(9, 3), versements_cumules: 21500, versements_avant_70: 21500, source: "Conditions particulières du contrat (exemple)", le: ago(40) },
       "PEL Camille": { type: "pel", titulaire: "p1", date_ouverture: "2016-09-12", source: "Contrat du PEL (exemple)", le: ago(40) },
-      "PEA Sam": { type: "pea", titulaire: "p2", source: "Déclaration de l'utilisateur (exemple)", le: ago(40) }, // date d'ouverture inconnue : à compléter
+      "PEA Sam": { type: "pea", titulaire: "p2", source: "Ce que tu as dit à Claude (exemple)", le: ago(40) }, // date d'ouverture inconnue : à compléter
     },
     prets_infos: {
       ["credit:" + ID_CREDIT_AUTO]: { date_signature: reculer(2, 5), duree_mois: 60, source: "Offre de prêt (exemple)", le: ago(40) },
@@ -180,15 +180,15 @@
     source, justification, statut: "en_attente", creeLe: new Date(now - minutes * 6e4).toISOString(), decideLe: null });
   const propositions = [
     Pr("prop-demo-protection", "protection", "creer", null, null, { prevoyance: true, emprunteur: true },
-      "Déclaration de l'utilisateur pendant l'entretien", "Camille a une prévoyance d'entreprise complétée par un contrat individuel ; les deux prêts sont assurés à 100 % chacun.", 14),
+      "Ce que tu as dit à Claude pendant l'entretien", "Camille a une prévoyance d'entreprise complétée par un contrat individuel ; les deux prêts sont assurés à 100 % chacun.", 14),
     Pr("prop-demo-pea", "position", "modifier", "pea-etf-monde", { qty: 120 }, { qty: 124 },
-      "Relevé PEA du 30/09 (collé par l'utilisateur)", "Le relevé indique 124 parts d'ETF MSCI World : 4 parts achetées depuis la dernière mise à jour.", 13),
+      "Relevé PEA du 30/09 (que tu as collé)", "Le relevé indique 124 parts d'ETF MSCI World : 4 parts achetées depuis la dernière mise à jour.", 13),
     Pr("prop-demo-rp", "bien", "modifier", "bien-rp", { crd: 150000 }, { crd: 147800 },
-      "Tableau d'amortissement du prêt immobilier (collé par l'utilisateur)", "Capital restant dû après l'échéance de septembre.", 12),
+      "Tableau d'amortissement du prêt immobilier (que tu as collé)", "Capital restant dû après l'échéance de septembre.", 12),
     Pr("prop-demo-sport", "budget", "creer", null, null, { type: "depense", categorie: "Loisirs", libelle: "Salle de sport", montant: 39, frequence: "mois" },
-      "Relevé bancaire de septembre (collé par l'utilisateur)", "Prélèvement mensuel récurrent absent du budget.", 11),
+      "Relevé bancaire de septembre (que tu as collé)", "Prélèvement mensuel récurrent absent du budget.", 11),
     Pr("prop-demo-risque", "risque", "creer", null, null, { horizon: "8-15", reaction: "rien" },
-      "Réponses de l'utilisateur pendant l'entretien", "Deux premières réponses du questionnaire de risque ; les huit autres restent à poser.", 10),
+      "Tes réponses pendant l'entretien", "Deux premières réponses du questionnaire de risque ; les huit autres restent à poser.", 10),
   ];
 
   // Aucun assistant connecté au départ : Store.surveillerConnexions(true) simule la connexion de Claude (onboarding).

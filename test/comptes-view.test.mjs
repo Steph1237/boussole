@@ -18,6 +18,9 @@ const Calc = require("../web/src/calc.js");
 const UI = require("../web/src/ui.js");
 const ClaudePrompts = require("../web/src/claude-prompts.js");
 const DEMO = require("../web/src/demo-data.js");
+const BilanCalc = require("../web/src/bilan-calc.js");
+const Periodes = require("../web/src/periodes.js");
+const DEPS = { Calc, BilanCalc, Periodes };
 
 const J = v => JSON.parse(JSON.stringify(v));
 const sp = s => String(s).replace(/[  ]/g, " ");
@@ -181,17 +184,21 @@ test("comptes : périmètre d'une personne (ses lignes, sa quote-part des dettes
   assert.equal(clos.familles.reduce((a, F) => a + F.nb, 0), 0);
 });
 
-test("entete : patrimoine net, financier, immobilier, dettes ; variation sur 1 mois = valeur du jour − dernière photo vieille d'au moins 30 jours", () => {
+test("entete : patrimoine net, financier, immobilier, dettes ; variation du patrimoine net sur la période d'Aujourd'hui (1 an par défaut), comme la carte d'Aujourd'hui", () => {
   const S = S0({ positions: [POS("a", { qty: 10, price: 110 })], profil: { biens: [{ id: "b", valeur: 200000, part_p1: 100, crd: 50000 }], credits: [] },
-    snapshots: [{ date: "2026-08-01", foyer: 900 }, { date: "2026-09-01", foyer: 1000 }, { date: "2026-10-01", foyer: 1050 }] });
-  const e = CV.entete(S, "2026-10-12", { Calc });
+    snapshots: [{ date: "2025-10-01", foyer: 900 }, { date: "2026-09-01", foyer: 1000 }, { date: "2026-10-01", foyer: 1050 }] });
+  const e = CV.entete(S, "2026-10-12", DEPS);
   assert.equal(e.financier, 1100); assert.equal(e.immobilier, 200000); assert.equal(e.dettes, 50000); assert.equal(e.net, 151100);
-  assert.deepEqual(J(e.variation), { montant: 100, pct: 10, depuis: "2026-09-01" });
-  assert.equal(CV.entete(S0({ positions: [POS("a")], snapshots: [{ date: "2026-10-01", foyer: 1 }] }), "2026-10-12", { Calc }).variation, null, "moins d'un mois de photos");
+  assert.equal(e.variation.montant, 200, "net d'aujourd'hui − net il y a 1 an (immobilier et dettes tenus à leur valeur du jour)");
+  assert.equal(Math.round(e.variation.pct * 100) / 100, 0.13, "en % du net de départ, pas du financier");
+  assert.equal(e.variation.texte, "sur 1 an"); assert.equal(e.variation.debut, "2025-10-12"); assert.equal(e.variation.enAttente, false);
+  assert.equal(CV.entete(S0({ positions: [POS("a")], snapshots: [] }), "2026-10-12", DEPS).variation, null, "aucune photo : pas de variation");
   const h = sp(CV.enteteHtml(e));
-  assert.match(h, /151 100 €/); assert.match(h, /\+100 € \(\+10,0 %\)/); assert.match(h, /depuis le 1 sept\. 2026/);
+  assert.match(h, /151 100 €/); assert.match(h, /\+200 € \(\+0,1 %\)/); assert.match(h, /sur 1 an/); assert.doesNotMatch(h, /depuis le/, "la période est écrite en « sur … », comme Aujourd'hui");
   assert.match(h, /Dettes<\/span><span class="cv-fait-v neg">−50 000 €/);
-  assert.match(sp(CV.enteteHtml(Object.assign({}, e, { variation: null }))), /après un mois de photos/);
+  assert.match(sp(CV.enteteHtml(Object.assign({}, e, { variation: null }))), /première photo nocturne/);
+  const attente = sp(CV.enteteHtml(CV.entete(S, "2026-10-12", Object.assign({}, DEPS, { enAttente: true }))));
+  assert.match(attente, /ui-skel/, "passé en cours de lecture : squelette"); assert.doesNotMatch(attente, /\+200 €/, "jamais un chiffre provisoire");
 });
 
 test("famillesHtml : blocs repliables (bouton aria-expanded / aria-controls), établissements en h4, cartes = liens (href + data-goto, nom accessible complet), échappement", () => {
@@ -471,7 +478,7 @@ function monter({ cours } = {}) {
     Store: { cours: async (isins, depuis) => { appels.push([isins.slice(), depuis]); return cours || {}; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "ui.js", "claude-prompts.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
+  for (const f of ["calc.js", "bilan-calc.js", "periodes.js", "serie-net.js", "ui.js", "claude-prompts.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "comptes-view.js" });
   const root = doc.createElement("section");
   root.setAttribute("id", "view-comptes-view");

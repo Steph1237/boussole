@@ -43,6 +43,8 @@
   const voisin = f => (typeof module === "object" && module.exports && typeof require === "function" ? require(f) : null);
   const calcDe = deps => dep(deps, "Calc") || voisin("./calc.js");
   const promptsDe = deps => dep(deps, "ClaudePrompts") || voisin("./claude-prompts.js");
+  /* Variation du patrimoine net : la même définition, sur la même période, que la carte d'Aujourd'hui (serie-net.js). */
+  const serieNetDe = deps => dep(deps, "SerieNet") || voisin("./serie-net.js");
   const calendrierDe = deps => (deps && Object.prototype.hasOwnProperty.call(deps, "Calendrier") ? deps.Calendrier : glob("Calendrier") || voisin("./calendrier.js"));
 
   /* ---------- dates (AAAA-MM-JJ) ---------- */
@@ -276,15 +278,15 @@
     return { familles, financier, dettes: totalDettes };
   }
 
-  /** En-tête : { net, financier, immobilier, dettes, autres, variation: { montant, pct, depuis } | null } (Calc.patrimoine du périmètre ;
-      variation = valeur du jour − dernière photo vieille d'au moins 30 jours, immobilier et dettes supposés inchangés). */
+  /** En-tête : { net, financier, immobilier, dettes, autres, variation: { montant, pct, debut, texte, reconstitue, enAttente } | null }
+      (Calc.patrimoine du périmètre). variation = SerieNet.variation : patrimoine net d'aujourd'hui moins sa valeur au début de la période
+      choisie sur Aujourd'hui (1 an par défaut), photos observées puis passé reconstitué (deps.reconstitue) : le même chiffre qu'Aujourd'hui.
+      deps.enAttente : le passé est encore lu, la vue montre un squelette plutôt qu'un chiffre provisoire. */
   function entete(S, today, deps) {
     const C = calcDe(deps), s = S || {}, sc = scopeDe(s), t = jour(today);
     const pat = C && typeof C.patrimoine === "function" ? C.patrimoine(liste(s.positions), s.profil || null, sc)
       : { financier: sum(liste(s.positions).filter(p => compte(p) && dansScope(p, sc, C)), p => valeur(p, C)), immobilier: 0, usage: 0, entreprise: 0, dettes: 0, net: 0 };
-    const limite = plusJours(t, -30);
-    const ref = liste(s.snapshots).filter(x => x && fini(x[sc]) && isoOk(jj(x.date)) && jj(x.date) <= limite).sort((a, b) => (jj(a.date) < jj(b.date) ? -1 : 1)).pop();
-    const variation = ref ? { montant: pat.financier - +ref[sc], pct: +ref[sc] ? (pat.financier - +ref[sc]) / +ref[sc] * 100 : null, depuis: jj(ref.date) } : null;
+    const SN = serieNetDe(deps), variation = SN ? SN.variation(s, t, undefined, deps) : null;
     return { net: pat.net, financier: pat.financier, immobilier: pat.immobilier, autres: (pat.usage || 0) + (pat.entreprise || 0), dettes: pat.dettes, variation };
   }
 
@@ -642,8 +644,10 @@
   /** En-tête de la liste (e = entete()). */
   function enteteHtml(e) {
     const v = e.variation;
-    const varTxt = v ? '<span class="cv-var ' + (v.montant >= 0 ? "pos" : "neg") + '"><span aria-hidden="true">' + (Math.round(v.montant) > 0 ? "▲ " : Math.round(v.montant) < 0 ? "▼ " : "") + "</span>" +
-      esc(eurS(v.montant) + (v.pct != null ? " (" + pctS(v.pct) + ")" : "")) + "</span> " + esc("depuis le " + dateFr(v.depuis)) : esc("Variation sur 1 mois disponible après un mois de photos quotidiennes.");
+    const varTxt = v && v.enAttente ? '<span class="ui-skel" role="status" aria-label="Variation en cours de calcul"></span>'
+      : v ? '<span class="cv-var ' + (v.montant >= 0 ? "pos" : "neg") + '"><span aria-hidden="true">' + (Math.round(v.montant) > 0 ? "▲ " : Math.round(v.montant) < 0 ? "▼ " : "") + "</span>" +
+        esc(eurS(v.montant) + (v.pct != null ? " (" + pctS(v.pct) + ")" : "")) + "</span> " + esc(v.texte + (v.reconstitue ? " · début reconstitué" : ""))
+      : esc("La variation apparaîtra après la première photo nocturne du patrimoine.");
     const fait = (l, val, s, cls) => '<li><span class="cv-fait-l">' + esc(l) + '</span><span class="cv-fait-v' + (cls ? " " + cls : "") + '">' + esc(val) + "</span>" + (s ? '<span class="cv-fait-s">' + esc(s) + "</span>" : "") + "</li>";
     return '<p class="cv-total">' + esc(eur(e.net)) + '</p><p class="cv-sous">' + varTxt + "</p>" +
       '<ul class="cv-faits">' + fait("Financier", eur(e.financier), "comptes et placements") + fait("Immobilier", eur(e.immobilier), e.autres ? "+ " + eur(e.autres) + " d'autres biens" : "") +
@@ -909,7 +913,9 @@
     const BQ = window.BanqueEtat, mfa = !!(BQ && typeof BQ.mfaRequise === "function" && BQ.mfaRequise(S.banque));
     $("cvMfa").hidden = !mfa;
     if (mfa && !$("cvMfa").innerHTML) $("cvMfa").innerHTML = BQ.carteMfa();
-    const L = comptes(S, jour()), e = entete(S, jour());
+    const t = jour(), SN = serieNetDe(null);
+    if (SN) SN.charger(S, t, SN.periode(), null); // lecture du passé (partagée avec Aujourd'hui) ; la fin d'une lecture réaffiche la page
+    const L = comptes(S, t), e = entete(S, t, SN ? { reconstitue: SN.reconstitution(S, t, null), enAttente: SN.enAttente(S, null) } : null);
     const vide = !L.familles.some(F => F.nb);
     $("cvVide").hidden = !vide;
     $("cvTitre").textContent = "Patrimoine net " + (scopeDe(S) === "foyer" ? "du foyer" : (window.Calc && window.Calc.deNom ? window.Calc.deNom(nomDe(S, S.scope), S.scope === "p2" ? 2 : 1) : ""));
@@ -1048,6 +1054,8 @@
     root = r;
     setTimeout(() => { bootFini = true; }, 0); // l'affichage du chargement de la page ne déplace pas le focus
     $("cvTitre").setAttribute("tabindex", "-1");
+    const SN = serieNetDe(null);
+    if (SN) SN.abonner(() => { if (!root || !S) return; if (root.hidden) dirty = true; else render(); });
     const u = U();
     if (u && typeof u.demanderAClaude === "function") {
       const P = window.ClaudePrompts;

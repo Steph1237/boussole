@@ -20,7 +20,7 @@ const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
 // "actions" n'a plus de sous-vue (sa liste passe dans la boîte de réception d'Aujourd'hui) : son script reste chargé
 // pour window.Actions, son fragment n'est plus posé dans la coque.
 const MODULES = ["aujourdhui", "comptes-view", "bilan", "pilotage", "sante", "toise", "simu", "plan-view", "objectifs-view", "actions", "risque-view", "profil", "regles", "claude-guide", "propositions", "memoire-view", "fiches-view", "expertises-view", "journal-view"];
-const SCRIPTS = ["calc", "demo-data", "sensible", "routine-etat", "banque-etat", "mfa", "store-demo", "store-supabase", "auth", "reel", "rules", "reperes", "calendrier", "plan", "historique", "bilan-calc", "bilan-etat", "periodes", "ui", "graphe-patrimoine", "claude-prompts", "marche", "risque", "pratiques", "accueil", ...MODULES, "app"];
+const SCRIPTS = ["calc", "demo-data", "sensible", "routine-etat", "banque-etat", "mfa", "store-demo", "store-supabase", "auth", "reel", "rules", "reperes", "calendrier", "plan", "historique", "serie-net", "bilan-calc", "bilan-etat", "periodes", "ui", "graphe-patrimoine", "claude-prompts", "marche", "risque", "pratiques", "accueil", ...MODULES, "app"];
 // supabase-js v2, build UMD épinglé (window.supabase). Le paquet n'est pas publié sur cdnjs : jsdelivr sert
 // le fichier du paquet npm officiel. Chargé juste après config.js, avant les adaptateurs store-* et auth.js.
 const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js";

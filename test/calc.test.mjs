@@ -101,17 +101,15 @@ test("apport : jamais négatif si épargne sous le matelas", () => {
   assert.equal(a.total, 0);
 });
 
-test("complétude du profil et champs manquants", () => {
-  assert.equal(Calc.completude(null), 0);
-  assert.equal(Calc.completude(PROFIL), 100);
-  const partial = { foyer: { adultes: 2, age: "a30" }, personnes: { p1: { salaire: 3000 } } };
-  const c = Calc.completude(partial);
-  assert.ok(c > 0 && c < 100);
-  assert.ok(Calc.manquants(partial).includes("Salaire de la personne 2"));
-  const named = { foyer: { adultes: 2 }, personnes: { p1: { nom: "Camille" }, p2: { nom: "Alex" } } };
-  assert.ok(Calc.manquants(named).includes("Salaire de Camille"));
-  assert.ok(Calc.manquants(named).includes("Statut d'Alex"));
-  assert.ok(Calc.manquants({ foyer: { adultes: 1 }, personnes: { p1: { nom: "Moi" } } }).includes("Salaire de la personne 1"));
+test("crédits en cours : prêts des biens (reste dû ou mensualité) puis crédits déclarés ; leur somme = dettes et mensualités du foyer", () => {
+  const pr = { biens: [{ nom: "RP", valeur: 240000, part_p1: 50, crd: 150000, mensualite: 820 }, { nom: "Studio", valeur: 90000, part_p1: 100, crd: 0, mensualite: 0 }],
+    credits: [{ nom: "Prêt auto", owner: "commun", crd: 6500, mensualite: 210 }] };
+  const L = Calc.creditsEnCours(pr);
+  assert.deepEqual(L.map(c => [c.kind, c.nom, c.crd, c.mensualite]), [["pret", "RP", 150000, 820], ["credit", "Prêt auto", 6500, 210]], "un bien sans prêt n'est pas un crédit");
+  assert.equal(L.reduce((a, c) => a + c.crd, 0), Calc.dettes(pr, "foyer"));
+  assert.equal(L.reduce((a, c) => a + c.mensualite, 0), Calc.mensualites(pr, "foyer"));
+  assert.deepEqual(Calc.creditsEnCours(null), []);
+  assert.equal(Calc.completude, undefined, "la complétude est celle du bilan (bilan-etat.js) : une seule fonction");
 });
 
 test("validation : quote-part et montants", () => {

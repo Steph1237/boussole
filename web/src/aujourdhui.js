@@ -72,6 +72,8 @@
   const HIST = d => dep(d, "Historique") || voisin("Historique", "./historique.js");
   const GRAPHE = () => voisin("GraphePatrimoine", "./graphe-patrimoine.js");
   const OBJV = d => dep(d, "ObjectifsView") || voisin("ObjectifsView", "./objectifs-view.js");
+  /* Série du patrimoine net et variation : UNE définition pour toute l'app (serie-net.js), partagée avec Patrimoine › Comptes. */
+  const SN = d => dep(d, "SerieNet") || voisin("SerieNet", "./serie-net.js");
 
   /* ---------- dates (AAAA-MM-JJ, jours calendaires) ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -371,9 +373,7 @@
   }
 
   /* =============================================================== indicateurs =============================================================== */
-  const PERIODE_TXT = { "1m": "sur 1 mois", "3m": "sur 3 mois", "6m": "sur 6 mois", ytd: "depuis janvier", "1a": "sur 1 an", "3a": "sur 3 ans", tout: "depuis le début de l'historique" };
-  const estPerso = p => !!p && /^perso/.test(String(p.id)) && isoOk(p.du) && isoOk(p.au);
-  const periodeTxt = p => (estPerso(p) ? "du " + dateFr(p.du) + " au " + dateFr(p.au) : PERIODE_TXT[p && p.id] || PERIODE_TXT["1a"]);
+  const periodeTxt = p => SN().periodeTxt(p);
 
   /** Repères de la frise : décisions du journal non abandonnées et datées, triées par date → [{ id, date, titre, synthese, statut }]. */
   function reperesJournal(journal) {
@@ -384,33 +384,14 @@
   }
 
   /** Série du passé : patrimoine net estimé (photos + point du jour, BilanCalc.evolution) fusionné avec le passé reconstitué quand
-      deps.reconstitue (résultat de Historique.reconstituer) en fournit un, puis agrégé sur la période, et repères des décisions du journal.
-      L'observé gagne toujours ; le reconstitué n'existe qu'avant la première photo et rejoint celle-ci (Historique.fusionner).
+      deps.reconstitue (résultat de Historique.reconstituer) en fournit un, puis agrégé sur la période (SerieNet.serie, la même série que la
+      variation de Patrimoine › Comptes), et repères des décisions du journal.
       periode = { id: 1m|3m|1a|tout|perso…, du?, au?, granularite? } →
       { points (Periodes.agreger, chacun avec sa nature observe|reconstitue), resume, bornes, granularite, historique, reperes,
         reconstitue (vrai si la période dessinée contient du reconstitué), decalage, horsFin (net − financier d'aujourd'hui), premiere (1re date de la série) } */
   function frise(S, today, periode, deps) {
-    const BC = dep(deps, "BilanCalc"), Pe = dep(deps, "Periodes"), t = jour(today), s = S || {}, p = periode || {};
-    const vide = { points: [], resume: { debut: null, fin: null, variation: null, variationPct: null }, bornes: null, granularite: p.granularite || "mois", historique: false,
-      reperes: reperesJournal(s.journal), reconstitue: false, decalage: 0, horsFin: 0, premiere: null };
-    if (!BC || !Pe) return vide;
-    let pts = [];
-    try { pts = BC.evolution(s.snapshots || [], s.positions || [], s.profil || null, s.scope || "foyer", t); } catch (e) { return vide; }
-    if (!pts.length) return vide;
-    const live = pts[pts.length - 1], horsFin = live && isFinite(live.net) && isFinite(live.financier) ? live.net - live.financier : 0;
-    let serie = pts.map(x => ({ date: x.date, net: x.net, live: !!x.live, nature: "observe" })), decalage = 0;
-    const rec = dep(deps, "reconstitue"), Hi = rec && Array.isArray(rec.points) && rec.points.length ? HIST(deps) : null;
-    if (Hi) {
-      const fus = Hi.fusionner(serie, rec.points);
-      serie = fus.points; decalage = fus.decalage;
-    }
-    const id = estPerso(p) ? { du: p.du, au: p.au } : PERIODE_TXT[p.id] ? p.id : "1a";
-    const b = Pe.bornes(id, t, serie[0].date);
-    const g = !p.granularite || p.granularite === "auto" || !Pe.GRANULARITES.some(x => x.id === p.granularite) ? Pe.auto(b) : p.granularite;
-    const nature = new Map(serie.map(x => [x.date, x.nature]));
-    const ag = Pe.agreger(serie, b, g, x => x.net).map(x => Object.assign(x, { nature: nature.get(x.date) || "observe" }));
-    return { points: ag, resume: Pe.resume(ag, serie, b, x => x.net), bornes: b, granularite: g, historique: serie.some(x => !x.live), reperes: vide.reperes,
-      reconstitue: ag.some(x => x.nature === "reconstitue"), decalage, horsFin, premiere: serie[0].date };
+    const s = S || {};
+    return Object.assign(SN(deps).serie(s, jour(today), periode, deps), { reperes: reperesJournal(s.journal) });
   }
 
   /** Écart d'allocation au profil de risque (actifs financiers, comme Pilotage › Risque et la bonne pratique « adéquation ») →
@@ -485,6 +466,7 @@
       dettes: pat.dettes, composition,
       vide: !positions.some(counted) && !pat.immobilier && !pat.dettes && !pat.usage && !pat.entreprise,
       variation: f.historique ? f.resume.variation : null, variationPct: f.historique ? f.resume.variationPct : null,
+      enAttente: !!(deps && deps.enAttente), // le passé est encore lu : la variation n'est pas définitive (squelette, jamais un chiffre provisoire)
       reconstitue: f.reconstitue && f.points.length > 0 && f.points[0].nature === "reconstitue", courbe: courbe.length > 60 ? courbe.filter((_, i) => i % Math.ceil(courbe.length / 60) === 0 || i === courbe.length - 1) : courbe };
     // Bonnes pratiques
     let r = null;
@@ -506,7 +488,7 @@
   }
 
   /** Cône de projection du net (Historique.projeter : moteur Plan, trois scénarios) sur `annees` ans, avec le versement mensuel de la page
-      Objectifs (ObjectifsView.versementReel : épargne prévue au budget, sinon versements programmés). f = frise() (horsFin : immobilier, autres
+      Objectifs (ObjectifsView.versementProjection : épargne réelle des comptes si elle diffère de plus de 30 % du budget, sinon épargne prévue au budget ou versements programmés). f = frise() (horsFin : immobilier, autres
       biens et dettes d'aujourd'hui, maintenus). → { points, versement, annees, parBloc, rendements, versementSource } | null sans moteur. */
   function projection(S, today, annees, f, deps) {
     const Hi = HIST(deps), P = dep(deps, "Plan"), OV = OBJV(deps), s = S || {}, scope = s.scope || "foyer";
@@ -514,10 +496,10 @@
     let reel = null;
     try {
       const lignes = s.budget && Array.isArray(s.budget.lignes) ? s.budget.lignes : [];
-      reel = OV && typeof OV.versementReel === "function" ? OV.versementReel(s, P.budgetTotaux(lignes, s.profil || null, scope), scope) : null;
+      reel = OV && typeof OV.versementProjection === "function" ? OV.versementProjection(s, P.budgetTotaux(lignes, s.profil || null, scope), scope, jour(today), deps) : null;
     } catch (e) { reel = null; }
     const r = Hi.projeter({ today: jour(today), positions: s.positions || [], scope, versementMensuel: reel ? reel.v : 0, annees, horsFin: f ? f.horsFin : 0, Plan: P });
-    return Object.assign(r, { versementSource: reel ? reel.src : null });
+    return Object.assign(r, { versementSource: reel ? reel.src : null, versementInfo: reel });
   }
 
   /** Modèle du graphe maître : le passé (frise) et le futur (projection) quand la période va jusqu'à aujourd'hui. */
@@ -582,13 +564,14 @@
   /** Les 4 cartes du bandeau (patrimoine net, bonnes pratiques, objectifs, prochaine échéance). Chaque champ est échappé. */
   function cartes(ind, U, periode) {
     const n = ind.net, pr = ind.pratiques, ob = ind.objectifs || objectifs({}, TODAY_VIDE, null), ec = ind.echeance, v = n.variation;
-    // 1. Patrimoine net
-    const sens = v == null || n.vide ? null : Math.round(v) > 0 ? "hausse" : Math.round(v) < 0 ? "baisse" : "stable";
-    const sous1 = n.vide ? "Lance ton bilan avec Claude" : v == null ? "Première photo cette nuit" : periodeTxt(periode) + (n.reconstitue ? " · début reconstitué" : "");
-    const c1 = carteBtn("net", "aj-k-net", "Patrimoine net : " + (n.vide ? "pas encore de données" : eur(n.valeur) + (sens ? ", " + { hausse: "en hausse de ", baisse: "en baisse de ", stable: "stable, " }[sens] + (sens === "stable" ? "" : eur(Math.abs(v))) + " " + periodeTxt(periode) : "")),
+    // 1. Patrimoine net (variation : SerieNet.variation, la même sur Patrimoine › Comptes ; squelette tant que le passé est lu)
+    const attente = !!n.enAttente && !n.vide;
+    const sens = attente || v == null || n.vide ? null : Math.round(v) > 0 ? "hausse" : Math.round(v) < 0 ? "baisse" : "stable";
+    const sous1 = n.vide ? "Lance ton bilan avec Claude" : attente ? "" : v == null ? "Première photo cette nuit" : periodeTxt(periode) + (n.reconstitue ? " · début reconstitué" : "");
+    const c1 = carteBtn("net", "aj-k-net", "Patrimoine net : " + (n.vide ? "pas encore de données" : eur(n.valeur) + (attente ? ", variation en cours de calcul" : sens ? ", " + { hausse: "en hausse de ", baisse: "en baisse de ", stable: "stable, " }[sens] + (sens === "stable" ? "" : eur(Math.abs(v))) + " " + periodeTxt(periode) : "")),
       teteHtml("Patrimoine net") + '<span class="aj-k-val' + (!n.vide && eur(n.valeur).length > 10 ? " aj-k-long" : "") + '"' + (n.vide ? "" : ' data-aj-count="' + Math.round(n.valeur) + '" data-aj-fmt="eur"') + ">" + (n.vide ? "—" : esc(eur(n.valeur))) + "</span>" +
-      '<span class="aj-k-pied">' + (sens ? tendanceHtml(sens, eurS(v) + (n.variationPct != null ? " (" + (n.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(n.variationPct)) + " %)" : "")) : "") + '<span class="aj-k-sous">' + esc(sous1) + "</span></span>" +
-      (n.vide ? "" : spark(n.courbe)));
+      '<span class="aj-k-pied">' + (attente ? '<span class="ui-skel" aria-hidden="true"></span>' : sens ? tendanceHtml(sens, eurS(v) + (n.variationPct != null ? " (" + (n.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(n.variationPct)) + " %)" : "")) : "") + '<span class="aj-k-sous">' + esc(sous1) + "</span></span>" +
+      (n.vide || attente ? "" : spark(n.courbe)));
     // 2. Bonnes pratiques
     const tot = pr.total, tonP = tot == null ? "neutre" : tot >= 80 ? "bon" : tot >= 60 ? "info" : "attention", motP = tot == null ? "À compléter" : tot >= 80 ? "Solide" : tot >= 60 ? "Correct" : "À consolider";
     const sous2 = tot == null ? "Données à compléter" : pr.aCompleter ? pluriel(pr.aCompleter, "critère") + " à compléter" : "Tous les critères sont notés";
@@ -652,7 +635,8 @@
     if (id === "net") {
       titre = "Patrimoine net"; route = R.comptes; label = "Voir mes comptes";
       question = "Explique-moi la composition de mon patrimoine net dans Boussole et ce qui l'a fait varier récemment.";
-      note = n.variation == null ? "La variation apparaîtra après la première photo nocturne du patrimoine."
+      note = n.enAttente ? "La variation est en cours de calcul : Boussole lit l'historique des cours pour reconstituer le passé."
+        : n.variation == null ? "La variation apparaîtra après la première photo nocturne du patrimoine."
         : "Variation " + periodeTxt(periode) + " : " + eurS(n.variation) + ". Estimation : placements de chaque photo, immobilier, autres biens et dettes d'aujourd'hui.";
     } else if (id === "pratiques") {
       titre = "Bonnes pratiques"; route = R.sante; label = "Voir le détail des critères";
@@ -861,28 +845,9 @@
   }
 
   /* ---------- période de la frise : mémorisée, granularité seulement si l'utilisateur l'a choisie ---------- */
-  /** Période relue du stockage local (JSON ou objet) → { periode: { id, du?, au?, granularite? }, gChoisie }. La granularité n'est
-      reprise que si l'utilisateur l'avait choisie lui-même (gChoisie) ; sinon elle reste automatique (Periodes.auto selon la
-      période). Les anciennes valeurs sans gChoisie (granularité « mois » enregistrée d'office) repassent donc en automatique. */
-  function lirePeriode(brut) {
-    let p = brut;
-    if (typeof brut === "string") { try { p = JSON.parse(brut); } catch (e) { p = null; } }
-    if (!p || typeof p !== "object" || typeof p.id !== "string" || !p.id) return { periode: { id: "1a" }, gChoisie: false };
-    const gChoisie = p.gChoisie === true && typeof p.granularite === "string" && !!p.granularite;
-    const periode = { id: p.id };
-    if (isoOk(p.du)) periode.du = p.du;
-    if (isoOk(p.au)) periode.au = p.au;
-    if (gChoisie) periode.granularite = p.granularite;
-    return { periode, gChoisie };
-  }
-  /** Ce qui s'enregistre : la période (et ses dates si elle est personnalisée) ; la granularité et gChoisie seulement après un choix
-      de l'utilisateur. */
-  function periodeAEnregistrer(periode, gChoisie) {
-    const p = periode || {}, out = { id: String(p.id || "1a") };
-    if (/^perso/.test(out.id) && isoOk(p.du) && isoOk(p.au)) { out.du = p.du; out.au = p.au; }
-    if (gChoisie && p.granularite) { out.granularite = String(p.granularite); out.gChoisie = true; }
-    return out;
-  }
+  /** Période relue du stockage local (JSON ou objet) et ce qui s'enregistre : voir SerieNet (la période est partagée avec Patrimoine › Comptes). */
+  const lirePeriode = brut => SN().lirePeriode(brut);
+  const periodeAEnregistrer = (periode, gChoisie) => SN().periodeAEnregistrer(periode, gChoisie);
 
   const H = { boite, elementArgentQuiDort, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, calendrierDetail, contexteACompleter, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, objectifs, evolution, projection, compteARebours, jour, delai, premiereDate,
     lirePeriode, periodeAEnregistrer };
@@ -895,15 +860,17 @@
      ne l'est qu'au rendu, quand la vue est visible. sigX : dernier HTML écrit ; rien n'est réécrit (ni le focus perdu,
      ni un « Voir plus » replié) quand il n'a pas changé. */
   let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, ctlPeriode = null; // largeur : celle du dernier dessin du graphe
-  const sig = { boite: "", ech: "", cartes: "", graphe: "", legende: "", table: "", etat: "", resume: "" };
+  const sig = { proj: "", boite: "", ech: "", cartes: "", graphe: "", legende: "", table: "", etat: "", resume: "" };
   /* periode.granularite : celle du dessin (choisie, ou automatique selon la période) ; gChoisie : l'utilisateur l'a choisie lui-même
      (seul cas où elle est passée à UI.periode et enregistrée) ; gClic : vrai pendant le traitement d'un clic ou d'une touche sur la
      bascule de granularité (posé à la capture, effacé au retour de l'événement). */
   let periode = { id: "1a" }, gChoisie = false, gClic = false, horizon = 5, animer = true, modele = null, geo = null;
   try { const l = lirePeriode(localStorage.getItem(CLE)); periode = l.periode; gChoisie = l.gChoisie; } catch (e) {}
+  SN().definirPeriode(periode);
   try { const h = +localStorage.getItem(CLE_H); if (HORIZONS.includes(h)) horizon = h; } catch (e) {}
-  /* Passé reconstitué : données lues à la demande (cours, transactions, opérations bancaires), puis calcul mémorisé. */
-  const hist = { cle: "", depuis: null, isins: "", comptes: "", cours: {}, tx: null, ops: [], opsDepuis: null, version: 0, etat: "rien", seq: 0, enCours: "", memo: null };
+  /* Passé reconstitué : données lues à la demande (cours, transactions, opérations bancaires) par SerieNet, dont l'état est partagé avec
+     Patrimoine › Comptes (même passé, même variation, au même moment). */
+  const hist = SN().hist;
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
   const scopeLabel = () => {
@@ -913,57 +880,21 @@
   };
   const reduit = () => { try { return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { return false; } };
 
-  /** Passé reconstitué pour l'état courant du store (mémorisé tant que le store, le périmètre, le jour et les données lues ne changent pas). */
-  function reconstitution() {
-    const Hi = HIST(null), C = window.Calc;
-    if (!Hi || !C || !S || hist.etat === "rien" || hist.etat === "charge" && !hist.version) return null;
-    const t = jour(), cle = [t, S.scope, hist.version].join("|");
-    if (hist.memo && hist.memo.S === S && hist.memo.cle === cle) return hist.memo.res;
-    let res = null;
-    try {
-      const pat = C.patrimoine(S.positions || [], S.profil || null, S.scope || "foyer");
-      res = Hi.reconstituer({ today: t, positions: S.positions || [], scope: S.scope || "foyer", cours: hist.cours, tx: hist.tx || S.tx || [],
-        comptes: S.banque && S.banque.comptes ? S.banque.comptes : [], operations: hist.ops, operationsDepuis: hist.opsDepuis, depuis: hist.depuis, horsFin: pat.net - pat.financier });
-    } catch (e) { res = null; }
-    hist.memo = { S, cle, res };
-    return res;
-  }
-  const depsVue = () => ({ reconstitue: reconstitution() });
+  /** Passé reconstitué pour l'état courant du store (mémorisé par SerieNet). */
+  const reconstitution = () => SN().reconstitution(S, jour(), null);
+  /* deps des indicateurs : passé reconstitué, et `enAttente` tant que sa lecture n'est pas finie (la variation est alors un squelette). */
+  const depsVue = () => ({ reconstitue: reconstitution(), enAttente: SN().enAttente(S, null) });
 
-  /* Début de la période voulue pour le graphe, moins quelques jours (variation sur la période) : jusqu'où lire l'historique. */
-  function depuisVoulu() {
-    const Hi = HIST(null), Pe = window.Periodes, t = jour();
-    if (!Hi) return t;
-    if (periode.id === "tout") return Hi.plusJours(t, -Hi.JOURS_MAX);
-    const b = Pe ? Pe.bornes(estPerso(periode) ? { du: periode.du, au: periode.au } : PERIODE_TXT[periode.id] ? periode.id : "1a", t) : { du: Hi.plusJours(t, -365) };
-    const d = Hi.plusJours(b.du, -10), plancher = Hi.plusJours(t, -Hi.JOURS_MAX);
-    return d < plancher ? plancher : d;
+  /* Lit l'historique nécessaire à la période affichée (SerieNet.charger) ; la fin d'une lecture réaffiche la page (abonnement posé au mount). */
+  function chargerHistorique() {
+    SN().charger(S, jour(), periode, null);
+    if (hist.etat === "charge" && !hist.version) majEtat();
   }
-  /* Lit les cours, les transactions et les opérations bancaires nécessaires à la reconstitution (une seule lecture à la fois ; refaite si la
-     période remonte plus loin, ou si les lignes cotées ou les comptes rattachés changent). Une lecture en échec laisse le reste : le
-     passé est alors reconstitué avec ce qui est lu, et le dit. */
-  async function chargerHistorique() {
-    const st = window.Store, Hi = HIST(null);
-    if (!S || !S.ready || S.dbOk === false || !st || !Hi) return;
-    const t = jour(), depuis = depuisVoulu();
-    const isins = [...new Set((S.positions || []).filter(p => counted(p) && p.mode === "market" && p.isin).map(p => String(p.isin)))].sort().join(",");
-    const comptes = (S.banque && S.banque.actif && !S.banque.mfaRequise && Array.isArray(S.banque.comptes) ? S.banque.comptes : [])
-      .filter(c => c && c.positionId != null && !c.ignore && c.type !== "credit").map(c => c.id).sort().join(",");
-    if (hist.etat !== "rien" && hist.depuis <= depuis && hist.isins === isins && hist.comptes === comptes) return;
-    const cle = depuis + "|" + isins + "|" + comptes;
-    if (hist.enCours === cle) return;
-    hist.enCours = cle; const seq = ++hist.seq; hist.etat = hist.version ? hist.etat : "charge";
-    if (!hist.version) majEtat();
-    const tolerant = f => Promise.resolve().then(f).catch(() => null);
-    const [cours, tx, ops] = await Promise.all([
-      isins && typeof st.cours === "function" ? tolerant(() => st.cours(isins.split(","), depuis)) : {},
-      typeof st.transactions === "function" ? tolerant(() => st.transactions(depuis)) : null,
-      comptes && st.banque && typeof st.banque.operations === "function" ? tolerant(() => st.banque.operations(comptes.split(",").map(x => (/^\d+$/.test(x) ? +x : x)), Hi.plusJours(t, -90))) : [],
-    ]);
-    if (seq !== hist.seq) return;
-    Object.assign(hist, { cle, depuis, isins, comptes, cours: cours || {}, tx: Array.isArray(tx) ? tx : null, ops: Array.isArray(ops) ? ops : [], opsDepuis: Hi.plusJours(t, -90),
-      version: hist.version + 1, etat: cours === null ? "echec" : "pret", enCours: "", memo: null });
-    if (root && S) { ctlPremiere(); if (!root.hidden) { ind = indicateurs(S, jour(), periode, depsVue()); renderCartes(); renderGraphe(); } else dirty = true; }
+  /* Une lecture vient de finir : « Tout » repart de la première donnée, et la page se redessine (ou se redessinera à l'affichage). */
+  function histPrete() {
+    if (!root || !S) return;
+    ctlPremiere();
+    if (!root.hidden) { ind = indicateurs(S, jour(), periode, depsVue()); renderCartes(); renderGraphe(); } else dirty = true;
   }
   /* « Tout » part de la première donnée : première photo, ou début du passé reconstitué s'il est plus ancien. */
   function premiereGlobale() {
@@ -1054,10 +985,16 @@
     poser("graphe", el, gr.svg || vide);
     poser("legende", $("ajLegende"), gr.svg ? G.legendeHtml(f, modele.futur) : "");
     poser("table", $("ajTable"), gr.svg ? G.tableauHtml(f, modele.futur, { scopeLabel: scopeLabel() }) : "");
-    const t = f.points.length > 1 && r.variation != null
+    const t = f.points.length > 1 && r.variation != null && !(ind && ind.net && ind.net.enAttente)
       ? eurS(r.variation) + " " + periodeTxt(periode) + (r.variationPct != null ? " (" + (r.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(r.variationPct)) + " %)" : "") : "";
     if (sig.resume !== t) { sig.resume = t; $("ajFriseResume").textContent = t; }
     const promesse = $("ajPromesse"); if (promesse) promesse.hidden = !modele.futur;
+    // Versement pris en compte par le cône (avec sa source) et décomposition du gain : mêmes phrases que Patrimoine › Objectifs.
+    const pn = $("ajProjNote"), OVp = OBJV(null), fu = modele.futur;
+    const ph = fu && fu.points.length > 1 && OVp && typeof OVp.projectionPhrases === "function"
+      ? OVp.projectionPhrases(fu.points[0].central, fu.points[fu.points.length - 1].central, fu.versement, fu.annees, fu.versementInfo) : null;
+    const tp = ph ? ph.total + " " + ph.versement : "";
+    if (pn) { if (sig.proj !== tp) { sig.proj = tp; pn.textContent = tp; } pn.hidden = !tp; }
     const hz = $("ajHorizonZone"); if (hz) hz.hidden = !modele.futur; // pas de futur : période terminée avant aujourd'hui, ou aucune donnée
     majEtat();
   }
@@ -1119,6 +1056,7 @@
     const x = o && typeof o === "object" ? o : { periode: o };
     if (gClic) gChoisie = true; // la granularité vient d'être choisie sur sa bascule : elle ne suit plus la période
     periode = { id: String(x.periode || x.id || periode.id), granularite: x.granularite ? String(x.granularite) : periode.granularite, du: x.du || undefined, au: x.au || undefined };
+    SN().definirPeriode(periode); // Patrimoine › Comptes affiche la variation sur la même période
     try { localStorage.setItem(CLE, JSON.stringify(periodeAEnregistrer(periode, gChoisie))); } catch (e) {}
     if (!S || !U() || !root) return;
     ind = indicateurs(S, jour(), periode, depsVue());
@@ -1174,6 +1112,7 @@
   function mount(r) {
     root = r;
     const u = U();
+    SN().abonner(histPrete); // fin d'une lecture du passé (déclenchée ici ou par Patrimoine › Comptes)
     const fr = $("ajFrise");
     fr.addEventListener("click", e => { const el = e.target && e.target.closest ? e.target.closest("[data-journal]") : null; if (el) ouvrirRepere(el); });
     fr.addEventListener("keydown", e => {
