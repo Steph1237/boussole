@@ -577,7 +577,8 @@ test("SEC2 banqueDeSession et banqueDeRoutine : sans aal2 → { actif: true, mfa
 test("SEC2 index.ts : le jeton donne son aal (aalDuJeton) au serveur ; lireBanqueCalcul, demarrer_session et routines s'y plient ; message dans les instructions", () => {
   assert.match(src, /import \{ registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton \} from "\.\/banque\.ts";/);
   assert.match(code, /type Ctx = .*aal\?: string/);
-  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal: aalDuJeton\(token\) \}\)/);
+  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal, mfa \}\)/);
+  assert.match(code, /const aal = aalDuJeton\(token\)/);
   assert.match(code, /const h = \{ db, wrap, must, UserError, RO, RW, today, source: client\?\.nom \?\? "Assistant", aal \}/);
   const lb = code.slice(code.indexOf("async function lireBanqueCalcul"), code.indexOf("async function lireConfigCalcul"));
   assert.match(lb, /aal !== "aal2"/, "pas de lecture bancaire (budget réel) sans aal2");

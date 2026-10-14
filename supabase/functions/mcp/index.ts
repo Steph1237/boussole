@@ -79,6 +79,7 @@ import { registerReglages } from "./reglages.ts";
 import { registerExpertises, listeExpertises } from "./expertises.ts";
 import { registerAnalyser } from "./analyser.ts";
 import { registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton } from "./banque.ts";
+import { verdictMfa, gardeOutils, type VerdictMfa } from "./garde-mfa.ts";
 import { CATALOGUE } from "./catalogue.gen.ts";
 
 // Motifs du filtre de contenu sensible (mêmes que public.contenu_sensible), réexportés comme contrat public du connecteur.
@@ -102,7 +103,7 @@ const PROTECTED_RESOURCE = {
 };
 
 // Point d'injection pour les tests locaux (client Supabase factice) ; inchangé en production.
-export const deps = { createClient: createClient as (...a: any[]) => any };
+export const deps = { createClient: createClient as (...a: any[]) => any, env: (k: string) => Deno.env.get(k) };
 
 const INSTRUCTIONS = [
   "Boussole est l'outil de suivi de patrimoine de l'utilisateur : placements (positions), immobilier (biens), crédits, profil du foyer (revenus, statut, tranche d'imposition), budget, objectifs, profil de risque et protection.",
@@ -113,6 +114,7 @@ const INSTRUCTIONS = [
   "Journal des décisions (journaliser, lire_journal, completer_journal, cloturer_session) : avis, décisions, scénarios comparés, hypothèses, revues et événements, avec l'état du patrimoine figé au moment de l'écriture. Respecte toujours journal_consentement (renvoyé par demarrer_session), pour journaliser comme pour completer_journal : jamais → n'enregistre ni ne modifie rien ; demander → demande l'accord et n'appelle journaliser ou completer_journal avec accord_utilisateur: true qu'après un oui explicite ; prevenir → enregistre puis dis-le. Quand l'échange a abouti à un avis ou une décision, appelle cloturer_session. Chaque entrée est à relire par l'utilisateur dans Boussole › Agent › Journal ; completer_journal ajoute une note datée ou change le statut ou la date de revue, jamais le titre ni la synthèse.",
   "Routines (activer_routine, demarrer_routine, cloturer_routine, questions_routine) : la revue mensuelle, activée à la fin de l'onboarding et exécutée par une tâche planifiée de Claude ou lancée à la main. demarrer_routine renvoie sa conduite et ce qui a changé ; cloturer_routine enregistre la synthèse et les questions du mois (dépôt au journal selon le consentement) ; questions_routine garde les questions encore sans réponse. La revue n'écrit rien dans le bilan sans l'utilisateur. demarrer_session signale une revue due ou des questions en attente.",
   "Banque connectée (lire_banque, operations_recentes ; lecture seule, quand la connexion bancaire est ouverte pour l'utilisateur, sinon { actif: false }) : Boussole synchronise seul, par Powens, les soldes, les placements et les opérations des banques que l'utilisateur a reliées ; lire_banque donne l'état des connexions, les comptes et leur rattachement, les totaux des 6 derniers mois par catégorie et les écarts avec le budget, operations_recentes le détail des 90 derniers jours. Une connexion à reconnecter ou un compte à rattacher se règle par l'utilisateur dans Boussole › Agent › Connexion ; tu ne vois jamais ses identifiants bancaires et tu ne les demandes jamais.",
+  "Double authentification du connecteur : si un outil (demarrer_session compris) répond « Double authentification requise », ou que la vérification de la double authentification est impossible, aucune donnée n'a été lue. N'en conclus jamais que l'utilisateur n'a rien, ne devine aucun chiffre et ne réessaie pas : relaie le message tel quel (reconnecter le connecteur Boussole dans Claude, Réglages › Connecteurs, puis saisir le code à 6 chiffres sur la page d'autorisation). Seuls consulter_savoir, reperes et consulter_expertise (savoir commun) restent disponibles.",
   "Point d'entrée d'un nouvel utilisateur : quand il veut commencer ou reprendre son onboarding (« Lance l'onboarding Boussole », « je débute »), appelle d'abord demarrer_onboarding et suis à la lettre la conduite qu'il renvoie (prompt MCP équivalent : onboarding).",
   "Tous les montants sont en euros. Les dates sont au format AAAA-MM-JJ.",
   "p1 et p2 désignent les personnes du foyer dont les prénoms figurent dans le profil (get_profile, champ personnes) ; « foyer » est leur ensemble. Utilise leurs prénoms quand tu parles à l'utilisateur.",
@@ -241,6 +243,7 @@ const CONDUITE_COPILOTE = [
   "16. Quand tu proposes de journaliser un avis appuyé sur des expertises, passe expertises: [{ slug, version }] à journaliser, toujours selon journal_consentement (règle 10).",
   "17. Banque connectée (banque ; null si la lecture a échoué : n'en parle pas) : si banque.connexions_a_reconnecter n'est pas vide, propose tôt dans la conversation, une fois, de reconnecter chaque banque citée avec le bouton « Reconnecter » dans Boussole › Agent › Connexion (la synchronisation est arrêtée tant que ce n'est pas fait ; tu ne peux pas le faire à sa place). Si banque.comptes_a_rattacher est supérieur à 0, propose de rattacher ces comptes à une ligne, une enveloppe ou un crédit au même endroit. Si banque.connexions_en_double est supérieur à 0, signale qu'une banque est connectée deux fois et propose de déconnecter la connexion en double au même endroit (bouton « Déconnecter » ; ses comptes sont déjà suivis par l'autre connexion). Pour les soldes, les totaux par catégorie et les écarts au budget, appelle lire_banque ; pour le détail des 90 derniers jours, operations_recentes (règle 7 bis pour les libellés). Double authentification : si banque.mfa_requise est vrai, ou si lire_banque ou operations_recentes répondent « Double authentification requise », ne réessaie pas et ne devine aucun chiffre : dis à l'utilisateur d'activer la double authentification dans Boussole › Mon compte › Sécurité si ce n'est pas fait, puis de reconnecter le connecteur après avoir validé son code (les données bancaires restent fermées au connecteur tant que ce n'est pas fait).",
   "18. Doublons probables (doublons_probables ; null si la lecture a échoué) : chaque élément est une ligne manuelle sans ISIN dont la valeur recopie, à 3 % près, le total des autres lignes de la même enveloppe (souvent créée en validant une ancienne proposition « créer une ligne ») ; le patrimoine est alors compté deux fois. Signale-le tôt, une fois, avec le nom de la ligne et de l'enveloppe, et propose de la clôturer : upsert_positions avec son id et status « clôturé », en citant la source (la vérification de Boussole) ; l'utilisateur valide dans Agent › Propositions. Ne la clôture jamais sans son accord ; s'il confirme que la ligne est réelle, n'insiste pas.",
+  "19. Double authentification du connecteur : si demarrer_session ou un autre outil répond « Double authentification requise » (ou dit que la vérification est impossible), aucune donnée de l'utilisateur n'a été lue. Ne conclus jamais qu'il n'a rien (« tu n'as pas de patrimoine », « ton bilan est vide ») et ne devine aucun chiffre. Relaie le message en tes mots : reconnecter le connecteur Boussole dans Claude (Réglages › Connecteurs) et saisir son code à 6 chiffres sur la page d'autorisation. Seuls le savoir commun (consulter_savoir, reperes, consulter_expertise) reste disponible en attendant.",
 ].join("\n");
 
 const PROMPT_ONBOARDING = "Lance l'onboarding Boussole. Commence par appeler l'outil demarrer_onboarding, puis suis à la lettre la conduite qu'il renvoie (champ conduite), en t'appuyant sur l'état du bilan (etat) et en passant lot_suggere à chaque dépôt de propositions.";
@@ -2228,7 +2231,7 @@ const ObjectifRow = z.strictObject({
 /* ------------------------------------------------------------------ */
 
 /* aal : niveau d assurance du jeton (aalDuJeton, banque.ts) ; les données bancaires exigent "aal2" (SEC2, migration 0028). */
-type Ctx = { db: any; user: { id: string; email?: string }; client?: { id: string; nom: string }; aal?: string };
+type Ctx = { db: any; user: { id: string; email?: string }; client?: { id: string; nom: string }; aal?: string; mfa?: VerdictMfa };
 
 function wrap<A>(fn: (args: A) => Promise<unknown>) {
   return async (args: A) => {
@@ -2250,7 +2253,7 @@ async function loadPeople(db: any) {
   return people;
 }
 
-export function buildServer({ db, user, client, aal }: Ctx): McpServer {
+export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
   const server = new McpServer({ name: "boussole", version: "1.1.0" }, { instructions: INSTRUCTIONS });
   // Erreurs de validation des paramètres : message français lisible (isError: true) au lieu du JSON brut du SDK.
   (server as any).validateToolInput = async (tool: any, args: unknown, name: string) => {
@@ -2260,6 +2263,9 @@ export function buildServer({ db, user, client, aal }: Ctx): McpServer {
     const lines = res.error.issues.map((i: any) => `- ${i.path.length ? i.path.join(".") : "paramètres"} : ${i.message}`);
     throw new UserError(`Paramètres invalides pour ${name} :\n${lines.join("\n")}`);
   };
+  // SEC2 : jeton aal1 d'un compte à double authentification (ou facteurs illisibles) : les outils de données personnelles répondent
+  // le message de reconnexion au lieu de s'exécuter (garde-mfa.ts). Appliqué avant tout registerTool, après le validateToolInput ci-dessus.
+  gardeOutils(server, mfa ?? "ok");
   const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const RW = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 
@@ -3217,8 +3223,16 @@ async function handleMcp(c: any) {
   // Écriture de connexion en parallèle de l'appel, sans le bloquer (noterConnexion ne lève jamais) ; le runtime la laisse
   // finir après la réponse (EdgeRuntime.waitUntil), sinon on l'attend avant de rendre la main.
   const connexion = noterConnexion(db, token);
+  // SEC2 : aal du jeton (déjà validé par getUser) et, hors aal2, facteur vérifié lu côté serveur (API admin Auth, clé de service) ;
+  // échec de lecture : refus des outils de données personnelles (garde-mfa.ts).
+  const aal = aalDuJeton(token);
+  const mfa = await verdictMfa(() => {
+    const cle = deps.env("SUPABASE_SERVICE_ROLE_KEY");
+    if (!cle) throw new Error("clé de service absente");
+    return deps.createClient(deps.env("SUPABASE_URL") ?? SUPABASE_URL, cle, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  }, data.user.id, aal);
   const runtime = (globalThis as any).EdgeRuntime;
-  const server = buildServer({ db, user: { id: data.user.id, email: data.user.email }, client: clientDuJeton(token), aal: aalDuJeton(token) });
+  const server = buildServer({ db, user: { id: data.user.id, email: data.user.email }, client: clientDuJeton(token), aal, mfa });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {

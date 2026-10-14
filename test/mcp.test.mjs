@@ -94,7 +94,8 @@ test("mcp : jeton vérifié par le serveur avec un client porteur du JWT (RLS)",
 
 test("mcp : tous les outils de la spec sont enregistrés, sans suppression de compte ni export", () => {
   for (const t of TOOLS) assert.match(codeAll, new RegExp(`["']${t}["']`), `outil ${t} absent`);
-  assert.doesNotMatch(codeAll, /delete_me|export_all|delete_account|auth\.admin/);
+  // auth.admin : seulement la lecture des facteurs de la garde MFA (garde-mfa.ts, SEC2), jamais de gestion de comptes
+  assert.doesNotMatch(codeAll.replace(/auth\.admin\.mfa\.listFactors/g, ""), /delete_me|export_all|delete_account|auth\.admin/);
 });
 
 test("mcp : budget et objectifs (schémas), get_overview expose le score de santé", () => {
@@ -647,7 +648,7 @@ test("AG1 : demarrer_session — conduite experte, mémoire, nouveautés par mar
   assert.match(instr, /demarrer_session/);
   for (const k of ["reperes", "consulter_savoir", "memoriser", "Agent › Mémoire"]) assert.ok(instr.includes(k), `instructions : ${k}`);
   // le client du jeton est transmis au serveur (source des souvenirs, nouveautés par client)
-  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal: aalDuJeton\(token\) \}\)/);
+  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal, mfa \}\)/);
   assert.match(code, /registerSavoir\(server, h\)/); assert.match(code, /registerMemoire\(server, h\)/);
 });
 test("AG1 : conduite experte — reperes avant tout chiffre, consulter_savoir, mémoire effaçable, jamais d'identifiants", () => {
@@ -1335,8 +1336,11 @@ test("réglages : instructions et conduite — frais des contrats relevés dans 
   assert.doesNotMatch(instr + conduite, /conseiller/i);
 });
 
-test("mcp : aucune clé de service", () => {
-  assert.doesNotMatch(srcAll, /SERVICE_ROLE|service_role|sb_secret_/i);
+test("mcp : aucune clé de service en dur ; la clé de la plateforme ne sert qu'à lister les facteurs MFA (SEC2)", () => {
+  assert.doesNotMatch(srcAll.replace("SUPABASE_SERVICE_ROLE_KEY", ""), /service_role|sb_secret_/i);
+  // seule occurrence : la lecture de l'environnement, dans la garde de handleMcp (garde-mfa.ts n'y touche pas)
+  assert.equal((srcAll.match(/SUPABASE_SERVICE_ROLE_KEY/g) ?? []).length, 1);
+  assert.match(code.slice(code.indexOf("async function handleMcp(")), /deps\.env\("SUPABASE_SERVICE_ROLE_KEY"\)/);
 });
 
 test("mcp : verify_jwt désactivé assumé (vérification faite par le serveur) et documenté", () => {
