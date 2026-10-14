@@ -1212,7 +1212,7 @@ test("vue : l'horizon (1 · 5 · 10 · 20 ans) est une bascule accessible, mémo
   assert.deepEqual(radios().map(r => r.getAttribute("aria-label")), ["1 an", "5 ans", "10 ans", "20 ans"]);
   assert.equal(radios().find(r => r.getAttribute("aria-checked") === "true").getAttribute("data-ui-id"), "5", "défaut : 5 ans");
   assert.equal(v.root.querySelector("#ajHorizon").querySelector('[role="radiogroup"]').getAttribute("aria-label"), "Horizon de la projection");
-  const an0 = new Date().getFullYear();
+  const an0 = +jourLocal().slice(0, 4);
   assert.match(v.root.querySelector("#ajFrise").innerHTML, new RegExp(">" + (an0 + 5) + "</text>"));
   radios().find(r => r.getAttribute("data-ui-id") === "20").click();
   assert.match(v.root.querySelector("#ajFrise").innerHTML, new RegExp(">" + (an0 + 20) + "</text>"));

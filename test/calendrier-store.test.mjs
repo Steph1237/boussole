@@ -16,7 +16,9 @@ const J = v => JSON.parse(JSON.stringify(v));
 const Cal = require("../web/src/calendrier.js");
 const A = "11111111-1111-1111-1111-111111111111";
 const CREDIT = "aaaaaaaa-0000-4000-8000-000000000001", BIEN = "aaaaaaaa-0000-4000-8000-000000000002", INCONNU = "cccccccc-0000-4000-8000-000000000009";
-const ANNEE = new Date().getFullYear(), FUTUR = (ANNEE + 1) + "-01-01";
+// Jour de Paris (AAAA-MM-JJ) : la CI tourne en UTC et échouait entre minuit et 2 h à Paris (naissance « future » ou année fausse).
+const jourParis = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const ANNEE = +jourParis().slice(0, 4), FUTUR = (ANNEE + 1) + "-01-01";
 
 function browser(prep) {
   const mem = new Map();
@@ -153,7 +155,7 @@ test("démo ↔ base : mêmes acceptations (valeurs valides, listes vides non st
 /* ---------------------------------------------------------------- démo valide pour le moteur ; store-supabase */
 test("démo : le calendrier a des échéances, des données à compléter et aucune règle indisponible", async () => {
   const { S } = await demo();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = jourParis(); // Calendrier.calendrier attend le jour de Paris
   const r = Cal.calendrier({ positions: S.positions, config: S.config, profil: S.profil, credits: S.profil.credits, biens: S.profil.biens, reperes: S.savoir.reperes }, today);
   assert.deepEqual(r.regles_indisponibles, []);
   const cles = new Set(r.jalons.map(j => j.cle));

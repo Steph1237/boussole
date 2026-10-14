@@ -44,6 +44,8 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, msg + ` : ${a} ≠
 // Les tableaux et objets créés dans le contexte vm ont les prototypes de ce contexte : on les normalise
 // par JSON avant deepEqual (qui compare aussi les prototypes).
 const J = v => JSON.parse(JSON.stringify(v));
+// Jour de Paris (AAAA-MM-JJ), comme la démo et la base : la CI tourne en UTC et échouait entre minuit et 2 h à Paris.
+const jourParis = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 test("démo : état de chargement puis S au contrat (clés exactes, types)", async () => {
   const ctx = browser();
@@ -842,7 +844,7 @@ test("démo : routines au contrat (revue mensuelle active, passée le 1er du moi
   assert.equal(typeof ctx.Store.routines.pause, "function");
   // Aujourd'hui (fonction pure, même module que la vue) : la démo affiche « Ta revue du mois est prête »
   const A = require("../web/src/aujourdhui.js");
-  const b = A.boite(J(S), new Date().toISOString().slice(0, 10), { Rules: null });
+  const b = A.boite(J(S), jourParis(), { Rules: null }); // « aujourd'hui » de l'app = jour de Paris (jour() de la vue)
   assert.ok(b.some(x => x.type === "routine" && x.titre === "Ta revue du mois est prête : 2 questions"), b.map(x => x.titre).join(" | "));
 });
 
@@ -859,7 +861,7 @@ test("démo : Store.routines.pause en mémoire (pause, réactivation qui recalcu
   assert.equal(r.active, true);
   // routines_maj : pause → active recalcule routine_date(jour, auj, 7) : un 1er du mois, entre 7 jours et 7 jours + un mois
   assert.match(r.prochainPassage, /^\d{4}-\d{2}-01$/);
-  const ecart = (Date.parse(r.prochainPassage) - Date.parse(new Date().toISOString().slice(0, 10))) / 864e5;
+  const ecart = (Date.parse(r.prochainPassage) - Date.parse(jourParis())) / 864e5; // routine_date part du jour de Paris (store-demo : aujParis)
   assert.ok(ecart >= 6 && ecart <= 7 + 31, "prochain passage dans 7 jours au moins : " + r.prochainPassage);
   for (const [args, re] of [[["veille", true], /inconnue/], [["revue_mensuelle", "oui"], /Pause invalide/], [["revue_mensuelle"], /Pause invalide/]]) {
     const x = await R.pause(...args);
