@@ -620,7 +620,11 @@ test("connexions : écriture limitée (5 minutes, en SQL) et jamais bloquante", 
 test("connexions : client_id lu dans le jeton (Claude, inconnu, session)", () => {
   const debut = src.indexOf("const CLIENTS_CONNUS"), fin = src.indexOf("/** Note la connexion");
   const js = strip(src.slice(debut, fin).replace("export function", "function"), { mode: "strip" }) + "\n;clientDuJeton";
-  const lire = vm.runInNewContext(js, { atob, TextDecoder, Uint8Array, JSON });
+  // chargeUtileDuJeton (banque.ts) : seul décodeur de jeton du connecteur, injecté ici comme le fait l'import dans index.ts
+  const iDec = srcBanque.indexOf("export function chargeUtileDuJeton"), fDec = srcBanque.indexOf("/** Niveau d'assurance", iDec);
+  const dec = strip(srcBanque.slice(iDec, fDec).replace("export function", "function"), { mode: "strip" }) + "\n;chargeUtileDuJeton";
+  const chargeUtileDuJeton = vm.runInNewContext(dec, { atob, TextDecoder, Uint8Array, JSON, String });
+  const lire = vm.runInNewContext(js, { chargeUtileDuJeton, JSON });
   const b64 = o => Buffer.from(JSON.stringify(o)).toString("base64url");
   const jeton = claims => b64({ alg: "ES256" }) + "." + b64(claims) + ".signature";
   assert.deepEqual(J(lire(jeton({ sub: "u", client_id: "30351516-1e76-4884-8fb2-ae856799a723" }))), { id: "30351516-1e76-4884-8fb2-ae856799a723", nom: "Claude" });

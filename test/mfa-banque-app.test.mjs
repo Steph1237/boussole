@@ -39,6 +39,13 @@ test("BanqueEtat.carteMfa : titre exact, explication, bouton vers Mon compte ›
     assert.equal(BE.mfaRequise(b), false, JSON.stringify(b));
 });
 
+test("BanqueEtat.carteMfa (I2) : dit que les comptes restent masqués sans double authentification ET que, une fois activée, toutes les données demandent le code", () => {
+  const t = BE.carteMfa().replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(t, /Tes comptes bancaires restent masqués tant que tu n'as pas activé la double authentification/);
+  assert.match(t, /Une fois activée, tout Boussole \(comptes, placements, crédits, budget…\) te demande un code à 6 chiffres/);
+  assert.doesNotMatch(t, VOUVOIEMENT);
+});
+
 test("Agent › Connexion : sans aal2, la section « Banques connectées » devient la carte bloquante (ni bouton « Connecter », ni liste de comptes)", () => {
   const S = { ready: true, banque: { actif: true, lu: true, mfaRequise: true, connexions: [], comptes: [], mois: [] }, positions: [], profil: { credits: [] }, people: [] };
   const h = G.banqueHtml(S, AUJ);
@@ -93,7 +100,7 @@ test("mfa.css : la carte a ses styles (bouton à 44 px, couleurs du thème), ass
 });
 
 /* =================================================================== store Supabase exécuté =================================================================== */
-function storeSup({ niveau = { current: "aal2", next: "aal2" }, niveauErreur = false, banqueActive = true, fetchRep, sansMfa = false } = {}) {
+function storeSup({ niveau = { current: "aal2", next: "aal2" }, niveauErreur = false, banqueActive = true, fetchRep, sansMfa = false, exigerRetour = true, sansSignal = false } = {}) {
   const ordre = [], tables = [], fetchs = [];
   const session = { access_token: "jeton-utilisateur-factice", user: { id: "u1", email: "a@b.c" } };
   const lignes = {
@@ -125,7 +132,8 @@ function storeSup({ niveau = { current: "aal2", next: "aal2" }, niveauErreur = f
     supabase: { createClient: () => client },
     Auth: { client, session: async () => session, onChange() {}, requireSession() {}, signOut: async () => { ordre.push("signOut"); }, urls: { connexion: () => "https://x/index.html#connexion" },
       ...(sansMfa ? {} : { mfa: { niveau: async () => { ordre.push("niveau"); if (niveauErreur) throw new Error("illisible"); return niveau; } } }) },
-    Mfa: { exiger: async (api, o) => { ordre.push("exiger"); ctx.__exiger = { api, o }; return true; } },
+    Mfa: { exiger: async (api, o) => { ordre.push("exiger"); ctx.__exiger = { api, o }; return exigerRetour; },
+      ...(sansSignal ? {} : { signalerNouvelAppareil: async (api, o) => { ordre.push("signaler"); return true; } }) },
     fetch: async (url, init) => {
       fetchs.push({ url, init });
       const x = typeof fetchRep === "function" ? fetchRep(url, init) : fetchRep || { status: 200, body: { ok: true } };
@@ -192,6 +200,20 @@ test("store (exécuté) : la fonction powens répond 403 mfa_requise → son mes
   assert.deepEqual(J(r), { erreur: MSG });
 });
 
+test("store (exécuté, M1) : la garde ne peut pas afficher son écran (false) → aucune lecture, erreur « mfa » ; sinon bandeau d'appareil lancé après la garde, avant la lecture", async () => {
+  const ferme = storeSup({ exigerRetour: false });
+  const S = await pret(ferme.ctx);
+  assert.equal(S.error, "mfa"); assert.equal(S.dbOk, false);
+  assert.deepEqual(ferme.ordre.filter(x => x.startsWith("lire:") || x === "signaler"), [], "rien n'est lu, pas de bandeau");
+  const ok = storeSup();
+  await pret(ok.ctx);
+  const i = ok.ordre.indexOf("exiger"), j = ok.ordre.indexOf("signaler"), k = ok.ordre.findIndex(x => x.startsWith("lire:"));
+  assert.ok(i === 0 && j > i && k > j, "garde, puis bandeau, puis lecture : " + ok.ordre.join(","));
+  // Mfa sans signalerNouvelAppareil (page ancienne en cache) : le démarrage continue
+  const ancien = await pret(storeSup({ sansSignal: true }).ctx);
+  assert.equal(ancien.banque.comptes.length, 1);
+});
+
 test("store-supabase.js : la garde est avant loadAll au démarrage, et le drapeau est documenté dans le contrat", () => {
   const js = src("store-supabase.js");
   const boot = js.slice(js.indexOf("async function boot()"));
@@ -201,7 +223,7 @@ test("store-supabase.js : la garde est avant loadAll au démarrage, et le drapea
 
 /* =================================================================== page de consentement (exécutée) =================================================================== */
 const RETOUR = "https://client.example.org/cb?code=abc";
-function consentVm({ session = { user: { email: "camille@example.org", is_anonymous: false } }, current = "aal1", next = "aal2", codeJuste = "123456", approbation } = {}) {
+function consentVm({ session = { user: { email: "camille@example.org", is_anonymous: false } }, current = "aal1", next = "aal2", codeJuste = "123456", approbation, niveauErreur = false } = {}) {
   const dom = miniDom(), { doc, Ev } = dom;
   doc.querySelectorAll = sel => doc.body.querySelectorAll(sel);
   doc.getElementById = id => doc.body.querySelector("#" + id);
@@ -210,6 +232,7 @@ function consentVm({ session = { user: { email: "camille@example.org", is_anonym
   doc.body.innerHTML = main;
   const appels = [];
   let niveau = { currentLevel: current, nextLevel: next };
+  let erreurNiveau = niveauErreur;
   const sb = {
     auth: {
       getSession: async () => ({ data: { session } }),
@@ -217,7 +240,7 @@ function consentVm({ session = { user: { email: "camille@example.org", is_anonym
       signOut: async () => { appels.push(["signOut"]); return {}; },
       signInWithPassword: async () => ({ data: {}, error: null }),
       mfa: {
-        getAuthenticatorAssuranceLevel: async () => ({ data: niveau, error: null }),
+        getAuthenticatorAssuranceLevel: async () => (erreurNiveau ? { data: null, error: { code: "network", message: "Failed to fetch" } } : { data: niveau, error: null }),
         listFactors: async () => ({ data: { all: [], totp: next === "aal2" || niveau.nextLevel === "aal2" ? [{ id: "f-1", status: "verified", created_at: "2026-09-01T10:00:00Z" }] : [] }, error: null }),
         challenge: async a => { appels.push(["challenge", a.factorId]); return { data: { id: "ch-1" }, error: null }; },
         verify: async a => {
@@ -245,7 +268,7 @@ function consentVm({ session = { user: { email: "camille@example.org", is_anonym
   const $ = id => doc.body.querySelector("#" + id);
   const visible = () => doc.body.querySelectorAll("[data-state]").filter(s => !s.hidden).map(s => s.getAttribute("data-state"));
   const saisir = async code => { $("mfaCode").value = code; $("mfaCodeForm").dispatchEvent(new Ev("submit")); await tick(); };
-  return { appels, $, visible, saisir, doc, sb, setNiveau: n => { niveau = n; } };
+  return { appels, $, visible, saisir, doc, sb, setNiveau: n => { niveau = n; }, setErreurNiveau: b => { erreurNiveau = b; } };
 }
 
 test("consentement (exécuté) : compte avec facteur vérifié et session aal1 → écran de code AVANT toute demande ; bon code → demande affichée ; Autoriser avec aal2", async () => {
@@ -306,6 +329,32 @@ test("consentement (exécuté) : sans double authentification → demande possib
   assert.doesNotMatch(v.$("mfaNote").textContent, VOUVOIEMENT);
   v.$("approveBtn").click(); await tick();
   assert.ok(v.appels.some(a => a[0] === "approve"), "la connexion reste possible : les outils bancaires répondent « Double authentification requise »");
+});
+
+test("consentement (échec fermé, M1) : niveau illisible → message + « Réessayer », demande jamais lue ni approuvée ; réessai réussi → code puis demande", async () => {
+  const v = consentVm({ niveauErreur: true });
+  await tick();
+  assert.deepEqual(v.visible(), ["mfa"], "ni la demande ni un « ok » par défaut");
+  assert.match(v.$("mfaErreurMsg").textContent, /Connexion au serveur impossible/);
+  assert.ok(!v.appels.some(a => a[0] === "details"), "la demande d'autorisation n'est pas lue");
+  v.$("mfaReessayer").click(); await tick();
+  assert.deepEqual(v.visible(), ["mfa"], "toujours illisible : toujours fermé");
+  assert.ok(v.$("mfaErreurMsg"));
+  v.setErreurNiveau(false);
+  v.$("mfaReessayer").click(); await tick();
+  assert.ok(v.$("mfaCodeForm"), "niveau lu : écran de code (aal1 + facteur)");
+  await v.saisir("123456");
+  assert.deepEqual(v.visible(), ["consent"]);
+  // l'approbation re-vérifie le niveau : illisible au clic sur « Autoriser » → rien n'est approuvé
+  v.setErreurNiveau(true);
+  v.$("approveBtn").click(); await tick();
+  assert.ok(!v.appels.some(a => a[0] === "approve"), "aucune approbation si le niveau est illisible");
+  assert.deepEqual(v.visible(), ["mfa"]);
+  assert.ok(v.$("mfaReessayer"));
+  // « Se déconnecter » reste possible depuis l'écran d'erreur
+  v.$("mfaErreurQuitter").click(); await tick();
+  assert.ok(v.appels.some(a => a[0] === "signOut"));
+  assert.deepEqual(v.visible(), ["signin"]);
 });
 
 test("consentement : compte anonyme → toujours l'écran « à sécuriser » (pas de code) ; consent.html charge mfa.js avant consent.js", async () => {

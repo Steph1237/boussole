@@ -50,8 +50,19 @@ function fauxClient({ current = "aal1", next = "aal2", verifies = [], nonVerifie
       return { data: { id: a.factorId }, error: null };
     },
   };
-  return { appels, facteurs, abandonnes, client: { auth: { mfa, refreshSession: async () => { appels.push(["refreshSession"]); return { data: {}, error: null }; } } } };
+  const auth = {
+    mfa,
+    refreshSession: async () => { appels.push(["refreshSession"]); return { data: {}, error: null }; },
+    signInWithPassword: async a => {
+      appels.push(["signIn", a.email]);
+      if (erreurs.signIn) return { data: null, error: erreurs.signIn };
+      if (a.password !== MOT_DE_PASSE) return { data: null, error: { code: "invalid_credentials", message: "Invalid login credentials", status: 400 } };
+      return { data: { session: {} }, error: null };
+    },
+  };
+  return { appels, facteurs, abandonnes, erreurs, client: { auth } };
 }
+const MOT_DE_PASSE = "mot-de-passe-factice-1";
 const F1 = { id: "f-1", friendly_name: "Appareil 2026-09-01 10:00", created_at: "2026-09-01T10:00:00Z" };
 const F2 = { id: "f-2", friendly_name: "Appareil 2026-09-15 18:30", created_at: "2026-09-15T18:30:00Z" };
 
@@ -203,9 +214,14 @@ test("écran de code : erreur réseau ou limite de débit expliquée ; deux appa
 
 test("écran de code : liste des appareils illisible ou vide → message, jamais d'appel verify", async () => {
   const panne = await monterEcran({ erreurs: { listFactors: { code: "network", message: "Failed to fetch" } } });
-  assert.match(texte(panne.$("mfaCodeMsg")), /Connexion au serveur impossible/);
-  await panne.saisir("123456");
+  assert.match(texte(panne.$("mfaErreurMsg")), /Connexion au serveur impossible/);
+  assert.equal(panne.$("mfaReessayer").localName, "button");
+  assert.equal(panne.cont.querySelector("#mfaCodeForm"), null, "pas de formulaire à moitié fonctionnel");
   assert.ok(!panne.f.appels.some(a => a[0] === "verify"));
+  // « Réessayer » relit les appareils ; une fois la panne levée, l'écran de code apparaît
+  delete panne.f.erreurs.listFactors;
+  panne.$("mfaReessayer").click(); await tick();
+  assert.ok(panne.$("mfaCodeForm"), "écran de code après réessai");
   const vide = await monterEcran({ verifies: [] });
   assert.match(texte(vide.$("mfaCodeMsg")), /Aucun appareil/);
 });
@@ -250,11 +266,47 @@ test("exiger : aal1 avec un facteur vérifié → dialogue modal plein écran, l
   assert.equal(app.inert, false); assert.equal(app.getAttribute("aria-hidden"), null);
 });
 
-test("exiger : niveau illisible → false (la RLS protège de toute façon les données bancaires), aucun écran", async () => {
-  const { doc } = domGarde();
-  const f = fauxClient({ erreurs: { niveau: { code: "session_not_found", message: "x", status: 401 } } });
-  assert.equal(await Mfa.exiger(Mfa.adapter(f.client), { doc }), false);
+test("exiger (échec fermé) : niveau illisible → la garde reste affichée avec le message et « Réessayer », l'app inerte ; true seulement après une lecture réussie", async () => {
+  const { doc, app, dom } = domGarde();
+  const f = fauxClient({ erreurs: { niveau: { code: "network", message: "Failed to fetch" } }, verifies: [F1] });
+  let fini = null;
+  const p = Mfa.exiger(Mfa.adapter(f.client), { doc, onQuitter: () => {} }).then(v => { fini = v; });
+  await tick();
+  const gate = doc.body.children.find(c => c.classList.contains("mfa-gate"));
+  assert.ok(gate, "garde affichée malgré l'erreur");
+  assert.equal(app.inert, true);
+  assert.match(texte(gate.querySelector("#mfaErreurMsg")), /Connexion au serveur impossible/);
+  assert.ok(gate.querySelector("#mfaErreurQuitter"), "« Se déconnecter » proposé");
+  assert.equal(fini, null, "la garde ne résout pas");
+  gate.querySelector("#mfaReessayer").click(); await tick();
+  assert.equal(fini, null, "toujours illisible : toujours fermé");
+  assert.match(texte(gate.querySelector("#mfaErreurMsg")), /Connexion au serveur impossible/);
+  assert.ok(!gate.querySelector("#mfaReessayer").disabled, "bouton réutilisable");
+  // la panne cesse : le niveau est lu (aal1 + facteur) → l'écran de code prend le relais
+  delete f.erreurs.niveau;
+  gate.querySelector("#mfaReessayer").click(); await tick();
+  assert.equal(fini, null);
+  assert.ok(gate.querySelector("#mfaCodeForm"), "écran de code");
+  gate.querySelector("#mfaCode").value = "123456";
+  gate.querySelector("#mfaCodeForm").dispatchEvent(new dom.Ev("submit")); await p; await tick();
+  assert.equal(fini, true);
+  assert.equal(app.inert, false);
+});
+
+test("exiger (échec fermé) : niveau illisible puis aal2 → la garde se lève sans demander de code ; sans document pour afficher → false (jamais true)", async () => {
+  const { doc, app } = domGarde();
+  const f = fauxClient({ current: "aal2", erreurs: { niveau: { code: "session_not_found", message: "x", status: 401 } }, verifies: [F1] });
+  let fini = null;
+  const p = Mfa.exiger(Mfa.adapter(f.client), { doc }).then(v => { fini = v; });
+  await tick();
+  assert.match(texte(doc.body.children.find(c => c.classList.contains("mfa-gate")).querySelector("#mfaErreurMsg")), /session a expiré/);
+  delete f.erreurs.niveau;
+  doc.body.querySelector("#mfaReessayer").click(); await p;
+  assert.equal(fini, true);
   assert.equal(doc.body.children.some(c => c.classList.contains("mfa-gate")), false);
+  assert.equal(app.inert, false);
+  const g = fauxClient({ erreurs: { niveau: { code: "network", message: "x" } } });
+  assert.equal(await Mfa.exiger(Mfa.adapter(g.client), { doc: null }), false);
 });
 
 test("apresConnexion : code à valider → écran dans le panneau, onPret seulement après le bon code ; sinon onPret tout de suite", async () => {
@@ -274,6 +326,34 @@ test("apresConnexion : code à valider → écran dans le panneau, onPret seulem
   assert.equal(pret, 2); assert.equal(cont2.querySelector("#mfaCodeForm"), null);
 });
 
+test("apresConnexion (échec fermé) : niveau illisible → message et « Réessayer » dans le panneau, onPret jamais appelé tant que le niveau est illisible", async () => {
+  const { doc, dom } = domGarde(false);
+  const cont = doc.body.appendChild(doc.createElement("div"));
+  const f = fauxClient({ erreurs: { niveau: { code: "network", message: "Failed to fetch" } }, verifies: [F1] });
+  let pret = 0, codeAffiche = 0;
+  const affiche = await Mfa.apresConnexion(Mfa.adapter(f.client), cont, { doc, onPret: () => { pret++; }, onCode: () => { codeAffiche++; }, onQuitter: () => {} });
+  assert.equal(affiche, true); assert.equal(pret, 0); assert.equal(codeAffiche, 1, "panneau rendu visible");
+  assert.match(texte(cont.querySelector("#mfaErreurMsg")), /Connexion au serveur impossible/);
+  cont.querySelector("#mfaReessayer").click(); await tick();
+  assert.equal(pret, 0, "toujours illisible");
+  assert.ok(cont.querySelector("#mfaErreurMsg"));
+  delete f.erreurs.niveau;
+  cont.querySelector("#mfaReessayer").click(); await tick();
+  assert.equal(pret, 0, "aal1 + facteur : le code est demandé");
+  assert.ok(cont.querySelector("#mfaCodeForm"));
+  cont.querySelector("#mfaCode").value = "123456";
+  cont.querySelector("#mfaCodeForm").dispatchEvent(new dom.Ev("submit")); await tick();
+  assert.equal(pret, 1);
+});
+
+test("etatConsentement (échec fermé) : niveau illisible → erreur relancée, jamais « ok »", async () => {
+  const f = fauxClient({ erreurs: { niveau: { code: "network", message: "Failed to fetch" } } });
+  await assert.rejects(Mfa.etatConsentement(Mfa.adapter(f.client)), e => e.code === "network");
+  assert.equal(await Mfa.etatConsentement(Mfa.adapter(fauxClient({ verifies: [F1] }).client)), "code");
+  assert.equal(await Mfa.etatConsentement(Mfa.adapter(fauxClient({ current: "aal1", next: "aal1" }).client)), "sans_facteur");
+  assert.equal(await Mfa.etatConsentement(Mfa.adapter(fauxClient({ current: "aal2", verifies: [F1] }).client)), "ok");
+});
+
 test("accueil : après le mot de passe, goApp passe par apresConnexion ; panneau de code prévu ; mfa.js chargé avant auth.js", () => {
   const js = src("landing.js"), html = page("index.html");
   assert.match(js, /await A\.signInPassword\(em, p\);\s*await ouvrirApresConnexion\(\);\s*return;/);
@@ -287,16 +367,26 @@ test("accueil : après le mot de passe, goApp passe par apresConnexion ; panneau
 });
 
 /* =================================================================== Compte › Sécurité =================================================================== */
-async function monterSec({ verifies = [], anonyme = false, erreurs, qr } = {}) {
+function fauxStockage(init = {}) {
+  const m = new Map(Object.entries(init));
+  return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: k => { m.delete(k); }, _m: m };
+}
+async function monterSec({ verifies = [], anonyme = false, erreurs, qr, email = "camille@example.org" } = {}) {
   const dom = miniDom(), { doc, Ev } = dom;
   const f = fauxClient({ verifies, erreurs: Object.assign({}, erreurs, qr !== undefined ? { qr } : {}) });
   const cont = doc.body.appendChild(doc.createElement("div"));
   const changes = [];
-  await Mfa.monterSecurite(cont, Mfa.adapter(f.client), { doc, anonyme, lienSecuriser: "#securiser", onChange: l => changes.push(l.length) });
+  const storage = fauxStockage();
+  await Mfa.monterSecurite(cont, Mfa.adapter(f.client), { doc, anonyme, email, storage, lienSecuriser: "#securiser", onChange: l => changes.push(l.length) });
   const $ = id => cont.querySelector("#" + id);
   const clic = async sel => { const b = cont.querySelector(sel); assert.ok(b, "bouton " + sel); b.click(); await tick(); };
   const soumettre = async code => { $("mfaInscrCode").value = code; $("mfaInscrForm").dispatchEvent(new Ev("submit")); await tick(); };
-  return { doc, cont, f, $, clic, soumettre, changes };
+  // première inscription : le mot de passe est redemandé dans la page avant d'appeler enroll
+  const ajouter = async (mdp = MOT_DE_PASSE) => {
+    await clic("#mfaAjouter");
+    if (cont.querySelector("#mfaReauthForm")) { $("mfaReauthPw").value = mdp; $("mfaReauthForm").dispatchEvent(new Ev("submit")); await tick(); }
+  };
+  return { doc, cont, f, $, clic, soumettre, changes, ajouter, storage };
 }
 
 test("Sécurité, compte anonyme : phrase d'explication et lien pour sécuriser le compte d'abord, aucune inscription possible", async () => {
@@ -313,12 +403,12 @@ test("Sécurité, sans appareil : état clair, bouton « Activer la double authe
   assert.equal(texte(v.$("mfaAjouter")), "Activer la double authentification");
   assert.equal(v.$("mfaAjouter").localName, "button");
   assert.equal(v.cont.querySelector("#mfaSecours"), null);
-  assert.match(texte(v.cont), /obligatoire pour voir tes comptes bancaires/);
+  assert.match(texte(v.cont), /Sans lui, tes comptes bancaires restent masqués ; une fois activé, il est demandé pour accéder à toutes tes données/);
 });
 
 test("Sécurité, inscription : QR code (SVG) avec texte alternatif, clé en texte, code à 6 chiffres ; bon code → appareil listé et message", async () => {
   const v = await monterSec();
-  await v.clic("#mfaAjouter");
+  await v.ajouter();
   assert.deepEqual(v.f.appels.find(a => a[0] === "enroll")[1].factorType, "totp");
   const img = v.$("mfaQr");
   assert.ok(img && img.localName === "img");
@@ -372,17 +462,17 @@ test("Sécurité : retrait refusé sans aal2 → message ; deux appareils → co
   await deux.clic('[data-mfa="retirer"]');
   assert.match(texte(deux.cont.querySelector('[role="group"]')), /Tes autres appareils restent valables/);
   const ann = await monterSec();
-  await ann.clic("#mfaAjouter"); await ann.clic('[data-mfa="annuler-inscription"]');
+  await ann.ajouter(); await ann.clic('[data-mfa="annuler-inscription"]');
   assert.equal(ann.cont.querySelector("#mfaInscrForm"), null);
   assert.ok(ann.f.appels.some(a => a[0] === "unenroll" && a[1].factorId === "f-nouveau"), "inscription abandonnée retirée");
 });
 
 test("Sécurité : erreur à l'inscription expliquée ; QR d'origine inattendue jamais affiché (clé en texte seulement) ; tutoiement partout", async () => {
   const panne = await monterSec({ erreurs: { enroll: { code: "too_many_enrolled_mfa_factors", message: "x", status: 422 } } });
-  await panne.clic("#mfaAjouter");
+  await panne.ajouter();
   assert.match(texte(panne.$("mfaMsg")), /nombre maximal d'appareils/);
   const bizarre = await monterSec({ qr: "javascript:alert(1)" });
-  await bizarre.clic("#mfaAjouter");
+  await bizarre.ajouter();
   assert.equal(bizarre.cont.querySelector("#mfaQr"), null);
   assert.equal(texte(bizarre.$("mfaSecret")), "JBSWY3DPEHPK3PXP");
   for (const v of [await monterSec(), await monterSec({ verifies: [F1] }), bizarre]) assert.doesNotMatch(texte(v.cont), VOUVOIEMENT);
@@ -409,4 +499,129 @@ test("build : mfa.js assemblé dans app.html (avant auth.js) et copié pour les 
   const b = readFileSync(new URL("../build.mjs", import.meta.url), "utf8");
   const scripts = b.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
   assert.ok(scripts.indexOf('"mfa"') > 0 && scripts.indexOf('"mfa"') < scripts.indexOf('"auth"'));
+});
+
+/* =================================================================== I1 : mot de passe redemandé avant la première inscription =================================================================== */
+test("Sécurité (I1) : première inscription → le mot de passe est redemandé dans la page, enroll n'est PAS appelé avant", async () => {
+  const v = await monterSec();
+  await v.clic("#mfaAjouter");
+  assert.ok(v.$("mfaReauthForm"), "formulaire de mot de passe dans la page");
+  const champ = v.$("mfaReauthPw");
+  assert.equal(champ.getAttribute("type"), "password");
+  assert.equal(champ.getAttribute("autocomplete"), "current-password");
+  assert.ok(v.cont.querySelector('label[for="mfaReauthPw"]'));
+  assert.equal(v.cont.querySelector("#mfaInscrForm"), null);
+  assert.ok(!v.f.appels.some(a => a[0] === "enroll" || a[0] === "signIn"), "ni connexion ni inscription avant la saisie");
+  assert.doesNotMatch(texte(v.cont), VOUVOIEMENT);
+});
+
+test("Sécurité (I1) : mauvais mot de passe → message, champ vidé, enroll jamais appelé ; bon mot de passe → signInWithPassword sur l'e-mail courant PUIS enroll", async () => {
+  const v = await monterSec({ email: "camille@example.org" });
+  await v.clic("#mfaAjouter");
+  v.$("mfaReauthPw").value = "mauvais"; v.$("mfaReauthForm").dispatchEvent(new (miniDom().Ev)("submit")); await tick();
+  assert.match(texte(v.$("mfaMsg")), /^Mot de passe incorrect\./);
+  assert.equal(v.$("mfaReauthPw").value, "");
+  assert.ok(!v.f.appels.some(a => a[0] === "enroll"), "aucune inscription sur un mauvais mot de passe");
+  v.$("mfaReauthPw").value = MOT_DE_PASSE; v.$("mfaReauthForm").dispatchEvent(new (miniDom().Ev)("submit")); await tick();
+  assert.ok(v.$("mfaInscrForm"), "bon mot de passe : l'inscription démarre");
+  assert.deepEqual(v.f.appels.map(a => a[0]).filter(n => n === "signIn" || n === "enroll"), ["signIn", "signIn", "enroll"]);
+});
+
+test("Sécurité (I1) : séquence exacte signIn → enroll ; champ vide refusé sans appel ; annuler revient à la liste ; e-mail inconnu → refus (échec fermé)", async () => {
+  const v = await monterSec();
+  await v.clic("#mfaAjouter");
+  v.$("mfaReauthPw").value = ""; v.$("mfaReauthForm").dispatchEvent(new (miniDom().Ev)("submit")); await tick();
+  assert.match(texte(v.$("mfaMsg")), /^Saisis ton mot de passe\./);
+  assert.equal(v.f.appels.length > 0 && v.f.appels.some(a => a[0] === "signIn"), false);
+  await v.clic('[data-mfa="annuler-reauth"]');
+  assert.ok(v.$("mfaAjouter") && !v.cont.querySelector("#mfaReauthForm"), "retour à la liste");
+  await v.ajouter();
+  const seq = v.f.appels.map(a => a[0]).filter(n => n === "signIn" || n === "enroll");
+  assert.deepEqual(seq, ["signIn", "enroll"]);
+  assert.deepEqual(v.f.appels.find(a => a[0] === "signIn"), ["signIn", "camille@example.org"]);
+  assert.ok(v.$("mfaInscrForm"), "inscription affichée");
+  const sansEmail = await monterSec({ email: "" });
+  await sansEmail.ajouter();
+  assert.match(texte(sansEmail.$("mfaMsg")), /Adresse e-mail introuvable/);
+  assert.ok(!sansEmail.f.appels.some(a => a[0] === "enroll" || a[0] === "signIn"));
+  const reseau = await monterSec({ erreurs: { signIn: { code: "network", message: "Failed to fetch" } } });
+  await reseau.ajouter();
+  assert.match(texte(reseau.$("mfaMsg")), /Connexion au serveur impossible/);
+  assert.ok(!reseau.f.appels.some(a => a[0] === "enroll"), "réseau en panne : pas d'inscription");
+});
+
+test("Sécurité (I1) : second appareil (une session aal2 existe déjà) → pas de nouveau mot de passe, enroll direct", async () => {
+  const v = await monterSec({ verifies: [F1] });
+  await v.clic("#mfaAjouter");
+  assert.equal(v.cont.querySelector("#mfaReauthForm"), null);
+  assert.ok(v.$("mfaInscrForm"));
+  assert.ok(!v.f.appels.some(a => a[0] === "signIn"));
+});
+
+/* =================================================================== I1 : bandeau « un appareil a été ajouté » =================================================================== */
+async function monterBandeau({ verifies = [F1], vus, erreurs } = {}) {
+  const dom = miniDom(), { doc } = dom;
+  const f = fauxClient({ verifies, erreurs });
+  const storage = fauxStockage(vus ? { "boussole.mfa.vus": JSON.stringify(vus) } : {});
+  const pose = await Mfa.signalerNouvelAppareil(Mfa.adapter(f.client), { doc, storage });
+  const bandeau = doc.body.querySelector("#mfaAlerte");
+  return { doc, f, storage, pose, bandeau };
+}
+
+test("bandeau (I1) : appareil jamais vu sur ce navigateur → alerte avec la date et l'adresse d'assistance ; « C'est moi » l'acquitte et le retire", async () => {
+  const v = await monterBandeau({ verifies: [F1, F2] });
+  assert.equal(v.pose, true);
+  assert.equal(v.bandeau.getAttribute("role"), "alert");
+  const t = texte(v.bandeau);
+  assert.match(t, /^Un appareil de double authentification a été ajouté le 15 septembre 2026 — ce n'est pas toi \? Écris à stephane@ceres\.agency\./, "le plus récent est signalé");
+  assert.equal(v.bandeau.querySelector("a").getAttribute("href"), "mailto:stephane@ceres.agency");
+  assert.doesNotMatch(t, VOUVOIEMENT);
+  assert.equal(texte(v.bandeau.querySelector("#mfaAlerteOk")), "C'est moi");
+  v.bandeau.querySelector("#mfaAlerteOk").click();
+  assert.equal(v.doc.body.querySelector("#mfaAlerte"), null);
+  assert.deepEqual(JSON.parse(v.storage.getItem("boussole.mfa.vus")).sort(), ["f-1", "f-2"], "tous les appareils actuels acquittés");
+  // démarrage suivant : plus de bandeau
+  const apres = await Mfa.signalerNouvelAppareil(Mfa.adapter(fauxClient({ verifies: [F1, F2] }).client), { doc: v.doc, storage: v.storage });
+  assert.equal(apres, false);
+});
+
+test("bandeau (I1) : tous les appareils déjà acquittés → rien ; un appareil plus récent que ceux acquittés → seul lui est signalé", async () => {
+  const rien = await monterBandeau({ verifies: [F1], vus: ["f-1"] });
+  assert.equal(rien.pose, false); assert.equal(rien.bandeau, null);
+  const nouveau = await monterBandeau({ verifies: [F1, F2], vus: ["f-1"] });
+  assert.equal(nouveau.pose, true);
+  assert.match(texte(nouveau.bandeau), /ajouté le 15 septembre 2026/);
+  assert.doesNotMatch(texte(nouveau.bandeau), /1er septembre/);
+  assert.deepEqual(JSON.parse(nouveau.storage.getItem("boussole.mfa.vus")), ["f-1"], "rien n'est acquitté sans clic");
+});
+
+test("bandeau (I1) : stockage absent, bloqué ou illisible → bandeau quand même (par prudence), jamais d'exception ; lecture des appareils en échec → rien", async () => {
+  const dom = miniDom(), { doc } = dom;
+  const api = Mfa.adapter(fauxClient({ verifies: [F1] }).client);
+  const bloque = { getItem() { throw new Error("SecurityError"); }, setItem() { throw new Error("QuotaExceeded"); } };
+  assert.equal(await Mfa.signalerNouvelAppareil(api, { doc, storage: bloque }), true);
+  doc.body.querySelector("#mfaAlerteOk").click(); // setItem lève : sans conséquence
+  assert.equal(doc.body.querySelector("#mfaAlerte"), null);
+  const corrompu = fauxStockage({ "boussole.mfa.vus": "{pas du json" });
+  assert.equal(await Mfa.signalerNouvelAppareil(api, { doc: miniDom().doc, storage: corrompu }), true);
+  assert.equal((await monterBandeau({ erreurs: { listFactors: { code: "network", message: "x" } } })).pose, false);
+  assert.equal(await Mfa.signalerNouvelAppareil(api, { doc: null }), false);
+});
+
+test("bandeau (I1) : un appareil enrôlé depuis cet appareil-ci (Sécurité) est acquitté d'office, pas de fausse alerte au démarrage suivant", async () => {
+  const v = await monterSec();
+  await v.ajouter();
+  await v.soumettre("123456");
+  assert.deepEqual(JSON.parse(v.storage.getItem("boussole.mfa.vus")), ["f-nouveau"]);
+});
+
+test("store-supabase.js et mentions : le bandeau est lancé au démarrage de l'app, l'adresse d'assistance est celle des mentions légales", () => {
+  const js = src("store-supabase.js");
+  const boot = js.slice(js.indexOf("async function boot()"));
+  assert.match(boot, /window\.Mfa\.signalerNouvelAppareil\(A\.mfa/);
+  assert.ok(boot.indexOf("signalerNouvelAppareil") > boot.indexOf("Mfa.exiger") && boot.indexOf("signalerNouvelAppareil") < boot.indexOf("await loadAll()"));
+  const mentions = readFileSync(new URL("../web/legal/mentions.html", import.meta.url), "utf8");
+  assert.match(mentions, /mailto:stephane@ceres\.agency/);
+  assert.match(src("mfa.js"), /const CONTACT = "stephane@ceres\.agency";/);
+  assert.match(src("account.js"), /email: user\.email/);
 });

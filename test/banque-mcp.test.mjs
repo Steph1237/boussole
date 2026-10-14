@@ -4,7 +4,7 @@
 // Exécution du module dans un contexte vm (types retirés, zod simulé, base factice), sur le modèle de test/routines-mcp.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as nodeModule from "node:module";
 import { createRequire } from "node:module";
@@ -349,7 +349,7 @@ test("banqueDeRoutine : historique de moins de 60 jours, mois écoulé non synch
 
 /* ---------- intégration dans index.ts et routines.ts ---------- */
 test("index.ts : banque.ts enregistré (chargement et budgetTotaux injectés), demarrer_session renvoie banque sans bloquer", () => {
-  assert.match(src, /import \{ registerBanque, banqueDeSession(, aalDuJeton)? \} from "\.\/banque\.ts";/);
+  assert.match(src, /import \{ registerBanque, banqueDeSession(, aalDuJeton(, chargeUtileDuJeton)?)? \} from "\.\/banque\.ts";/);
   assert.match(code, /registerBanque\(server, \{ \.\.\.h, charger: chargerDonnees, budgetTotaux \}\);/);
   const ds = code.slice(code.indexOf('registerTool("demarrer_session"'), code.indexOf('registerTool("list_propositions"'));
   assert.match(ds, /banqueDeSession\(db, must, aal\)/);
@@ -529,6 +529,16 @@ test("SEC2 aalDuJeton : aal2 lu dans la charge utile ; aal1, revendication absen
   for (const t of ["", "abc", "a.b.c", "a..c", jwtFactice({ aal: "AAL2" }), jwtFactice({ aal: ["aal2"] })]) assert.equal(B.aalDuJeton(t), "aal1", String(t));
 });
 
+test("SEC2 (M4) chargeUtileDuJeton : seul point de décodage du connecteur, objet vide si le jeton est illisible ; avertissement « jeton déjà validé »", { skip: SANS_STRIP }, () => {
+  const B = chargerBanque({ atob, TextDecoder, Uint8Array });
+  assert.deepEqual(J(B.chargeUtileDuJeton(jwtFactice({ sub: "u", aal: "aal2", client_id: "c" }))), { sub: "u", aal: "aal2", client_id: "c" });
+  for (const t of ["", "abc", "a.b.c", undefined, null, jwtFactice([1, 2]), jwtFactice("texte"), jwtFactice(null)]) assert.deepEqual(J(B.chargeUtileDuJeton(t)), {}, String(t));
+  const i = srcBanque.indexOf("export function chargeUtileDuJeton");
+  assert.match(srcBanque.slice(Math.max(0, i - 600), i), /SANS vérifier la signature[\s\S]*déjà validé par auth\.getUser/);
+  const sources = readdirSync(path("supabase/functions/mcp")).filter(f => f.endsWith(".ts")).map(f => readFileSync(path("supabase/functions/mcp/" + f), "utf8"));
+  assert.equal(sources.map(t => (t.match(/\batob\(/g) || []).length).reduce((a, b) => a + b, 0), 1, "un seul décodage de jeton dans le connecteur");
+});
+
 test("SEC2 lire_banque et operations_recentes : sans aal2, message clair, aucune table banque_* lue ; interrupteur éteint → { actif: false } comme avant", { skip: SANS_STRIP }, async () => {
   for (const aal of ["aal1", undefined, "", "aal3"]) {
     const db = dbBanque();
@@ -565,7 +575,7 @@ test("SEC2 banqueDeSession et banqueDeRoutine : sans aal2 → { actif: true, mfa
 });
 
 test("SEC2 index.ts : le jeton donne son aal (aalDuJeton) au serveur ; lireBanqueCalcul, demarrer_session et routines s'y plient ; message dans les instructions", () => {
-  assert.match(src, /import \{ registerBanque, banqueDeSession, aalDuJeton \} from "\.\/banque\.ts";/);
+  assert.match(src, /import \{ registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton \} from "\.\/banque\.ts";/);
   assert.match(code, /type Ctx = .*aal\?: string/);
   assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal: aalDuJeton\(token\) \}\)/);
   assert.match(code, /const h = \{ db, wrap, must, UserError, RO, RW, today, source: client\?\.nom \?\? "Assistant", aal \}/);

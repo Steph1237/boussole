@@ -4,6 +4,8 @@
 // Déploiement : verify_jwt = false. Chaque route contrôle elle-même l'appelant :
 // - /connecter, /deconnecter, /synchroniser, /supprimer : JWT Supabase de l'utilisateur (auth.getUser) ; SEC2 : /connecter exige en plus
 //   la revendication aal = "aal2" du JWT (double authentification), sinon 403 { erreur, code: "mfa_requise" } avant tout appel Powens ;
+//   /deconnecter, /synchroniser et /supprimer l'exigent dès que l'utilisateur a un facteur vérifié (lu côté serveur par l'API admin
+//   Auth, auth.admin.mfa.listFactors, jamais d'après le client) ; sans facteur vérifié, leur comportement est inchangé ;
 // - /webhook : jeton Powens de l'utilisateur (Authorization: Bearer), reconnu par son empreinte SHA-256
 //   (RPC powens_utilisateur_par_empreinte), et, si POWENS_WEBHOOK_SECRET est défini, signature BI-Signature datée de moins de
 //   5 minutes (BI-Signature-Date) ; sans ce secret, accepté seulement sur un domaine de bac à sable (suffixe -sandbox). Corps
@@ -64,6 +66,9 @@ const MSG_NON_CONNECTE = "Connecte-toi à Boussole pour gérer tes banques.";
 const MSG_CONFIG = "La connexion bancaire n'est pas encore configurée : réessaie plus tard.";
 /** SEC2 : connecter une banque exige une session passée par la double authentification (aal2). Code lu par l'app (Store.banque). */
 const MSG_MFA = "Active la double authentification et valide ton code pour connecter ta banque. Tu la règles dans Mon compte › Sécurité.";
+/** SEC2 : déconnecter, synchroniser et supprimer exigent aal2 dès que l'utilisateur a un facteur vérifié. */
+const MSG_MFA_ACTION = "Valide ton code de double authentification pour faire cela, puis réessaie.";
+const MSG_MFA_INCERTAIN = "Impossible de vérifier ta double authentification pour le moment : réessaie dans un moment.";
 
 // Points d'injection pour les tests (client Supabase, fetch Powens, environnement, horloge) ; inchangés en production.
 export const deps = {
@@ -125,16 +130,19 @@ function configPowens(): { nom: string; base: string; clientId: string; secret: 
   }
 }
 
-async function utilisateur(db: any, req: Request): Promise<{ id: string } | null> {
+/** Utilisateur du JWT de la requête, validé par auth.getUser (signature, expiration, session), avec le niveau d'assurance du jeton.
+    C'est le seul endroit qui appelle aalDuJeton, et seulement après ce contrôle : l'aal n'est jamais lu sur un jeton non validé. */
+async function utilisateur(db: any, req: Request): Promise<{ id: string; aal: "aal1" | "aal2" } | null> {
   const jwt = bearer(req);
   if (!jwt) return null;
   const { data, error } = await db.auth.getUser(jwt);
-  return error || !data?.user?.id ? null : { id: data.user.id };
+  return error || !data?.user?.id ? null : { id: data.user.id, aal: aalDuJeton(jwt) };
 }
 
-/** Niveau d'assurance (revendication aal) du JWT de la requête : "aal2" si la session a franchi un second facteur, "aal1" sinon.
-    Le jeton a déjà été validé par auth.getUser (utilisateur) ; ici on ne fait que lire sa charge utile. Illisible ou sans
-    revendication : aal1 (comme Supabase, qui traite un jeton sans aal comme aal1). */
+/** Niveau d'assurance (revendication aal) d'un JWT : "aal2" si la session a franchi un second facteur, "aal1" sinon.
+    ATTENTION : décodage de la charge utile SANS vérifier la signature. À n'appeler que sur un jeton déjà validé par auth.getUser
+    (voir utilisateur() ci-dessus) ; ne jamais s'en servir pour authentifier. Illisible ou sans revendication : aal1 (comme Supabase,
+    qui traite un jeton sans aal comme aal1). */
 export function aalDuJeton(jwt: string): "aal1" | "aal2" {
   try {
     const b64 = (jwt.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
@@ -144,6 +152,24 @@ export function aalDuJeton(jwt: string): "aal1" | "aal2" {
   } catch {
     return "aal1";
   }
+}
+
+/** SEC2 : garde des actions sur une banque déjà connectée (déconnecter, synchroniser, supprimer). Session aal2 : rien à contrôler.
+    Session aal1 : si l'utilisateur a un facteur vérifié (API admin Auth, clé de service : le client ne peut pas le fausser), la
+    double authentification est exigée (403 mfa_requise) ; sinon, comportement habituel. Lecture des facteurs en échec : refus (503),
+    jamais un passe-droit. → null (continuer) ou la réponse d'erreur. */
+async function exigerAal2SiFacteur(db: any, user: { id: string; aal: string }): Promise<Response | null> {
+  if (user.aal === "aal2") return null;
+  let facteurs: any[];
+  try {
+    const { data, error } = await db.auth.admin.mfa.listFactors({ userId: user.id });
+    if (error) throw new Error(error.message ?? "listFactors");
+    facteurs = Array.isArray(data?.factors) ? data.factors : [];
+  } catch (e) {
+    console.error("powens: facteurs illisibles", msg(e));
+    return erreur(503, MSG_MFA_INCERTAIN);
+  }
+  return facteurs.some((f) => f?.status === "verified") ? erreur(403, MSG_MFA_ACTION, "mfa_requise") : null;
 }
 
 /** Corps brut, lu par morceaux ; null au-delà de `max` octets (Content-Length annoncé ou octets reçus). */
@@ -272,7 +298,7 @@ app.post("/connecter", async (c: any) => {
   if (f.error) return erreur(500, "Erreur interne : réessaie dans un moment.");
   if (f.data?.active !== true) return erreur(403, MSG_FERME);
   // SEC2 : connexion, reconnexion et gestion d'une banque seulement après la double authentification (aal2), avant tout appel Powens.
-  if (aalDuJeton(bearer(req)) !== "aal2") return erreur(403, MSG_MFA, "mfa_requise");
+  if (user.aal !== "aal2") return erreur(403, MSG_MFA, "mfa_requise");
   const cfg = configPowens();
   if (!cfg) return erreur(503, MSG_CONFIG);
   const corps = await lireCorps(req);
@@ -325,6 +351,8 @@ app.post("/deconnecter", async (c: any) => {
   if (!db) return erreur(500, "Configuration serveur manquante.");
   const user = await utilisateur(db, req);
   if (!user) return erreur(401, MSG_NON_CONNECTE);
+  const mfa = await exigerAal2SiFacteur(db, user);
+  if (mfa) return mfa;
   const corps = await lireCorps(req);
   const id = idPowens(corps?.connection_id);
   if (id == null) return erreur(400, "connection_id manquant ou invalide.");
@@ -360,6 +388,8 @@ app.post("/synchroniser", async (c: any) => {
   if (!db) return erreur(500, "Configuration serveur manquante.");
   const user = await utilisateur(db, req);
   if (!user) return erreur(401, MSG_NON_CONNECTE);
+  const mfa = await exigerAal2SiFacteur(db, user);
+  if (mfa) return mfa;
   const corps = await lireCorps(req);
   const id = idPowens(corps?.connection_id);
   if (id == null) return erreur(400, "connection_id manquant ou invalide.");
@@ -405,6 +435,8 @@ app.post("/supprimer", async (c: any) => {
   if (!db) return erreur(500, "Configuration serveur manquante.");
   const user = await utilisateur(db, req);
   if (!user) return erreur(401, MSG_NON_CONNECTE);
+  const mfa = await exigerAal2SiFacteur(db, user);
+  if (mfa) return mfa;
   try {
     const jeton = await jetonDe(db, user.id);
     if (!jeton) return json({ ok: true });

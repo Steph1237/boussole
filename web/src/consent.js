@@ -130,7 +130,16 @@
   /* ---------- double authentification ---------- */
   /* "code" : l'écran de code est affiché (loadDetails reprend une fois le code validé) ; "sans_facteur" | "ok" : rien à valider. */
   async function exigerCode() {
-    const etat = await window.Mfa.etatConsentement(mfaApi);
+    let etat;
+    try { etat = await window.Mfa.etatConsentement(mfaApi); }
+    catch (e) {
+      // Échec fermé : niveau illisible → ni demande affichée ni approbation ; le message et « Réessayer » reprennent depuis le début.
+      show("mfa");
+      $("mfaBox").textContent = "";
+      window.Mfa.monterErreur($("mfaBox"), window.Mfa.texteErreur(e), () => { loadDetails().catch(x => { const [t, y, retry] = explainOAuth(x || {}); fail(t, y, retry ? loadDetails : null); }); },
+        { onQuitter: async () => { await sb.auth.signOut({ scope: "local" }).catch(() => {}); showSignin(); } });
+      return "code";
+    }
     if (etat !== "code") return etat;
     show("mfa");
     $("mfaBox").textContent = "";

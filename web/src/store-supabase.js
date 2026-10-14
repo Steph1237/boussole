@@ -799,8 +799,12 @@
       return;
     }
     // SEC2 : session aal1 avec un second facteur activé → écran de code (mfa.js) avant toute lecture ; reprise de session comprise.
+    // Échec fermé : niveau illisible → la garde reste affichée (message + « Réessayer ») ; sans document pour l'afficher (false), rien n'est lu.
     if (A && A.mfa && window.Mfa && typeof window.Mfa.exiger === "function") {
-      await window.Mfa.exiger(A.mfa, { onQuitter: async () => { try { await A.signOut(); } catch (e) { try { await sb.auth.signOut({ scope: "local" }); } catch (x) { /* rien */ } } if (A.urls) location.replace(A.urls.connexion()); } });
+      const passe = await window.Mfa.exiger(A.mfa, { onQuitter: async () => { try { await A.signOut(); } catch (e) { try { await sb.auth.signOut({ scope: "local" }); } catch (x) { /* rien */ } } if (A.urls) location.replace(A.urls.connexion()); } });
+      if (passe === false) { C.dbOk = false; C.error = "mfa"; C.ready = true; publish(); return; }
+      // Appareil de double authentification ajouté depuis la dernière visite de ce navigateur : bandeau d'alerte (information, jamais bloquant).
+      if (typeof window.Mfa.signalerNouvelAppareil === "function") window.Mfa.signalerNouvelAppareil(A.mfa, {}).catch(() => {});
     }
     C.dbOk = true;
     try { await loadAll(); } catch (e) { C.error = asErr(e).code; C.ready = true; }

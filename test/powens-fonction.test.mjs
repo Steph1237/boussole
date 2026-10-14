@@ -88,7 +88,7 @@ const CLES = {
   banque_operations: ["user_id", "id"], positions: ["id"], instruments: ["isin"], credits: ["id"], propositions: ["id"],
   fonctionnalites: ["user_id", "cle"],
 };
-function fausseBase(init = {}, { rpc = {}, utilisateurs = {} } = {}) {
+function fausseBase(init = {}, { rpc = {}, utilisateurs = {}, facteurs = {}, facteursErreur = null } = {}) {
   const tables = J(init);
   const journal = [];
   const lignes = t => (tables[t] ??= []);
@@ -136,7 +136,14 @@ function fausseBase(init = {}, { rpc = {}, utilisateurs = {} } = {}) {
   return {
     tables, journal, from,
     rpc: async (nom, args) => { journal.push({ rpc: nom, args }); const f = rpc[nom]; return f ? f(args, tables) : { data: null, error: { message: `rpc ${nom} inconnue` } }; },
-    auth: { getUser: async jwt => utilisateurs[jwt] ? { data: { user: utilisateurs[jwt] }, error: null } : { data: { user: null }, error: { message: "jeton invalide" } } },
+    auth: {
+      getUser: async jwt => utilisateurs[jwt] ? { data: { user: utilisateurs[jwt] }, error: null } : { data: { user: null }, error: { message: "jeton invalide" } },
+      // API admin Auth (clé de service) : supabase-js 2.x, auth.admin.mfa.listFactors({ userId }) → { data: { factors }, error }
+      admin: { mfa: { listFactors: async ({ userId }) => {
+        journal.push({ admin: "listFactors", userId });
+        return facteursErreur ? { data: null, error: { message: facteursErreur } } : { data: { factors: (facteurs[userId] || []).map(f => ({ factor_type: "totp", ...f })) }, error: null };
+      } } },
+    },
   };
 }
 /** Coffre (Vault + prive.powens_utilisateurs + prive.powens_a_supprimer) simulé par les RPC du contrat de la migration 0021. */
@@ -202,13 +209,13 @@ function powensSimule({ etat = null, pannes = {}, jetonInit = JETON, jetons = [J
 }
 
 /* ---------- montage ---------- */
-function monter({ env = {}, banque = true, coffre = {}, init = {}, powens = powensSimule(), edgeRuntime, aSupprimer = [], rpc = {}, horloge } = {}) {
+function monter({ env = {}, banque = true, coffre = {}, init = {}, powens = powensSimule(), edgeRuntime, aSupprimer = [], rpc = {}, horloge, facteurs = {}, facteursErreur = null } = {}) {
   const { A, S, I } = charger({ edgeRuntime });
   const db = fausseBase({
     fonctionnalites: [{ user_id: U, cle: "banque", active: banque }, { user_id: AUTRE, cle: "banque", active: true }],
     banque_connexions: [], banque_comptes: [], banque_placements: [], banque_operations: [], positions: [], instruments: [], credits: [], propositions: [],
     ...init,
-  }, { rpc: { ...rpcPowens(coffre, aSupprimer), ...rpc }, utilisateurs: { [JWT]: { id: U, email: "u@example.test" }, [JWT_AAL1]: { id: U }, [JWT_SANS_AAL]: { id: U }, [JWT_OPAQUE]: { id: U }, [JWT_AUTRE]: { id: AUTRE } } });
+  }, { rpc: { ...rpcPowens(coffre, aSupprimer), ...rpc }, utilisateurs: { [JWT]: { id: U, email: "u@example.test" }, [JWT_AAL1]: { id: U }, [JWT_SANS_AAL]: { id: U }, [JWT_OPAQUE]: { id: U }, [JWT_AUTRE]: { id: AUTRE } }, facteurs, facteursErreur });
   const ENV = { ...ENV_BASE, ...env };
   const clients = [];
   I.deps.createClient = (...a) => { clients.push(a); return db; };
@@ -330,10 +337,55 @@ test("connecter (SEC2) : ordre des refus — 401 (jeton), 403 interrupteur étei
   assert.deepEqual(await corps(r), { erreur: "La connexion bancaire n'est pas encore ouverte pour ton compte." }, "interrupteur éteint : sans code");
 });
 
-test("SEC2 : déconnecter et supprimer ne demandent pas aal2 (retirer ses données ou fermer son compte reste toujours possible)", { skip: SANS_STRIP }, async () => {
-  const m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }] } });
-  assert.equal((await m.appeler("/powens/deconnecter", { jeton: JWT_AAL1, corps: { connection_id: 7 } })).status, 200);
-  assert.equal((await m.appeler("/powens/supprimer", { jeton: JWT_AAL1 })).status, 200);
+const FACTEUR_U = { [U]: [{ id: "f1", status: "verified" }] };
+const appelsAdmin = m => m.db.journal.filter(j => j.admin === "listFactors");
+
+test("SEC2 (M2) : déconnecter, synchroniser et supprimer exigent aal2 quand l'utilisateur a un facteur vérifié (vérifié côté serveur, API admin)", { skip: SANS_STRIP }, async () => {
+  for (const [nom, jeton] of [["aal1", JWT_AAL1], ["aal absent", JWT_SANS_AAL], ["jeton illisible", JWT_OPAQUE]]) {
+    const m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }] }, facteurs: FACTEUR_U });
+    for (const [chemin, corpsReq] of [["/powens/deconnecter", { connection_id: 7 }], ["/powens/synchroniser", { connection_id: 7 }], ["/powens/supprimer", undefined]]) {
+      const r = await m.appeler(chemin, { jeton, corps: corpsReq });
+      assert.equal(r.status, 403, nom + " " + chemin);
+      const c = await corps(r);
+      assert.equal(c.code, "mfa_requise", nom + " " + chemin);
+      assert.match(c.erreur, /double authentification/i);
+      assert.doesNotMatch(c.erreur, /(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu);
+    }
+    assert.equal(m.powens.appels.length, 0, nom + " : aucun appel à Powens");
+    assert.ok(Object.keys(m.coffre).length === 1, nom + " : coffre intact (l'utilisateur Powens n'est pas oublié)");
+    assert.equal(m.db.tables.banque_connexions.length, 1, nom + " : connexion conservée");
+    assert.ok(appelsAdmin(m).every(a => a.userId === U), "facteurs lus pour l'utilisateur du jeton");
+  }
+  // aal2 : parcours normal, sans même interroger les facteurs
+  const ok = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }] }, facteurs: FACTEUR_U });
+  assert.equal((await ok.appeler("/powens/synchroniser", { jeton: JWT, corps: { connection_id: 7 } })).status, 200);
+  assert.equal((await ok.appeler("/powens/deconnecter", { jeton: JWT, corps: { connection_id: 7 } })).status, 200);
+  assert.equal((await ok.appeler("/powens/supprimer", { jeton: JWT })).status, 200);
+  assert.equal(appelsAdmin(ok).length, 0, "aal2 : aucune lecture des facteurs");
+});
+
+test("SEC2 (M2) : sans facteur vérifié (aucun, ou inscription non vérifiée), aal1 suffit comme avant", { skip: SANS_STRIP }, async () => {
+  for (const [nom, facteurs] of [["aucun facteur", {}], ["facteur non vérifié", { [U]: [{ id: "f1", status: "unverified" }] }], ["facteur d'un autre", { [AUTRE]: [{ id: "f9", status: "verified" }] }]]) {
+    const m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }] }, facteurs });
+    assert.equal((await m.appeler("/powens/synchroniser", { jeton: JWT_AAL1, corps: { connection_id: 7 } })).status, 200, nom + " synchroniser");
+    assert.equal((await m.appeler("/powens/deconnecter", { jeton: JWT_AAL1, corps: { connection_id: 7 } })).status, 200, nom + " deconnecter");
+    assert.equal((await m.appeler("/powens/supprimer", { jeton: JWT_AAL1 })).status, 200, nom + " supprimer");
+  }
+});
+
+test("SEC2 (M2) : lecture des facteurs impossible → refus (échec fermé), jamais un passe-droit ; le jeton est d'abord validé par getUser", { skip: SANS_STRIP }, async () => {
+  const m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }] }, facteursErreur: "auth indisponible" });
+  for (const [chemin, corpsReq] of [["/powens/deconnecter", { connection_id: 7 }], ["/powens/synchroniser", { connection_id: 7 }], ["/powens/supprimer", undefined]]) {
+    const r = await m.appeler(chemin, { jeton: JWT_AAL1, corps: corpsReq });
+    assert.equal(r.status, 503, chemin);
+    assert.doesNotMatch(JSON.stringify(await corps(r)), /auth indisponible/, "détail interne non renvoyé");
+  }
+  assert.equal(m.powens.appels.length, 0);
+  assert.equal(m.db.tables.banque_connexions.length, 1);
+  // jeton non reconnu par getUser : 401, avant toute lecture des facteurs
+  const inconnu = monter({ facteurs: FACTEUR_U });
+  assert.equal((await inconnu.appeler("/powens/deconnecter", { jeton: jwtAvec(U, { aal: "aal2" }) + "x", corps: { connection_id: 7 } })).status, 401);
+  assert.equal(appelsAdmin(inconnu).length, 0);
 });
 
 test("connecter : création de l'utilisateur Powens au premier appel, réutilisation ensuite, URL de connexion exacte", { skip: SANS_STRIP }, async () => {

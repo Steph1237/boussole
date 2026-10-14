@@ -208,18 +208,24 @@ async function lireMois(db: any, must: any, debut: string) {
 
 /** Message renvoyé (outils) ou joint (demarrer_session, demarrer_routine) quand le jeton du connecteur n'est pas aal2. */
 export const MSG_MFA = "Double authentification requise : reconnecte le connecteur après avoir validé ton code. Si tu n'as pas encore activé la double authentification, fais-le d'abord dans Boussole › Mon compte › Sécurité, puis relance la connexion du connecteur.";
-/** Niveau d'assurance (revendication aal) du jeton : "aal2" si la session qui l'a obtenu a franchi un second facteur, "aal1" sinon.
-    Le jeton a déjà été validé par auth.getUser ; on ne lit que sa charge utile. Illisible ou sans revendication : aal1 (comme
-    Supabase, qui traite un jeton sans aal comme aal1). */
-export function aalDuJeton(token: string): "aal1" | "aal2" {
+/** Charge utile (revendications) d'un JWT, décodée SANS vérifier la signature. Seul point de décodage du connecteur (aalDuJeton ici,
+    clientDuJeton dans index.ts). À n'appeler que sur un jeton déjà validé par auth.getUser (handleMcp le fait avant de construire le
+    serveur) : ce qu'elle renvoie n'authentifie rien. Jeton illisible : objet vide. */
+export function chargeUtileDuJeton(token: string): Record<string, unknown> {
   try {
     const b64 = (String(token ?? "").split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
     const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
     const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0))));
-    return claims?.aal === "aal2" ? "aal2" : "aal1";
+    return claims && typeof claims === "object" && !Array.isArray(claims) ? claims : {};
   } catch {
-    return "aal1";
+    return {};
   }
+}
+/** Niveau d'assurance (revendication aal) du jeton : "aal2" si la session qui l'a obtenu a franchi un second facteur, "aal1" sinon.
+    Jeton déjà validé par auth.getUser (voir chargeUtileDuJeton). Illisible ou sans revendication : aal1 (comme Supabase, qui traite
+    un jeton sans aal comme aal1). */
+export function aalDuJeton(token: string): "aal1" | "aal2" {
+  return chargeUtileDuJeton(token).aal === "aal2" ? "aal2" : "aal1";
 }
 const mfaOk = (aal: unknown) => aal === "aal2";
 

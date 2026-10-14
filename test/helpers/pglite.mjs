@@ -48,6 +48,8 @@ alter default privileges in schema public grant all on functions to anon, authen
 create schema auth; create schema extensions; create schema cron; create schema net; create schema vault;
 create table auth.users (id uuid primary key, is_anonymous boolean default false, created_at timestamptz default now(), last_sign_in_at timestamptz);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+-- auth.mfa_factors (SEC2, 0028 : public.mfa_exigee() la lit) : une ligne par facteur ; status 'verified' = facteur actif (GoTrue)
+create table auth.mfa_factors (id uuid primary key default gen_random_uuid(), user_id uuid not null, factor_type text default 'totp', status text not null, created_at timestamptz default now());
 -- auth.jwt() : revendications du jeton de la session simulée. Le niveau d'assurance (aal) vient du réglage test.aal : « aal2 » par défaut
 -- (les tests des autres migrations simulent un utilisateur pleinement connecté), « aal1 » ou « aucun » (revendication absente) pour la
 -- double authentification (test/mfa-pglite.test.mjs).

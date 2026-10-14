@@ -267,8 +267,10 @@
     client = A.client; user = s.user;
     anon = A.isAnonymous(s);
     // SEC2 : un compte qui a activé la double authentification valide son code avant d'accéder à cette page (retirer un appareil exige aal2).
+    // Échec fermé : niveau illisible → la garde reste affichée (message + « Réessayer ») ; sans moyen de l'afficher (false), la page ne s'ouvre pas.
     if (A.mfa && window.Mfa) {
-      await window.Mfa.exiger(A.mfa, { onQuitter: async () => { try { await A.signOut(); } catch (e) { try { await client.auth.signOut({ scope: "local" }); } catch (x) { /* rien */ } } location.href = A.urls.home(); } });
+      const passe = await window.Mfa.exiger(A.mfa, { onQuitter: async () => { try { await A.signOut(); } catch (e) { try { await client.auth.signOut({ scope: "local" }); } catch (x) { /* rien */ } } location.href = A.urls.home(); } });
+      if (passe === false) { $("who").textContent = "Impossible de vérifier ta double authentification. Recharge la page."; return; }
     }
     $("who").textContent = anon ? "Compte sans e-mail, lié à ce navigateur." : "Connecté avec " + (user.email || "ton compte") + ".";
     $("securiser").hidden = !anon;
@@ -283,7 +285,7 @@
     $("pwUser").value = user.email || "";
     $("main").hidden = false;
     // Section Double authentification : appareils, inscription par QR code, second appareil. Compte anonyme : phrase et lien « sécuriser » seulement.
-    if (A.mfa && window.Mfa) window.Mfa.monterSecurite($("mfaBox"), A.mfa, { anonyme: anon, lienSecuriser: "#securiser" });
+    if (A.mfa && window.Mfa) window.Mfa.monterSecurite($("mfaBox"), A.mfa, { anonyme: anon, lienSecuriser: "#securiser", email: user.email || "" });
     else $("securite").hidden = true;
     if (location.hash === "#securite" && $("securite").scrollIntoView) $("securite").scrollIntoView();
     if (anon && location.hash === "#securiser") $("secEmail").focus();

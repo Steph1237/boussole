@@ -167,7 +167,7 @@
   const LIEN_SECURITE = "compte.html#securite";
   function carteMfa() {
     return '<section class="bq-mfa" role="note" aria-labelledby="bqMfaTitre"><h3 id="bqMfaTitre">Active la double authentification pour voir tes comptes bancaires</h3>' +
-      "<p>Tes comptes bancaires sont des données sensibles : Boussole ne les affiche qu'avec un code à 6 chiffres, en plus de ton mot de passe. L'activation prend deux minutes.</p>" +
+      "<p>Tes comptes bancaires restent masqués tant que tu n'as pas activé la double authentification. Une fois activée, tout Boussole (comptes, placements, crédits, budget…) te demande un code à 6 chiffres, en plus de ton mot de passe. L'activation prend deux minutes.</p>" +
       '<a class="bq-mfa-btn" href="' + LIEN_SECURITE + '">Activer la double authentification</a></section>';
   }
 

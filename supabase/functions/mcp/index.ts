@@ -78,7 +78,7 @@ import { registerFormulaire } from "./formulaire.ts";
 import { registerReglages } from "./reglages.ts";
 import { registerExpertises, listeExpertises } from "./expertises.ts";
 import { registerAnalyser } from "./analyser.ts";
-import { registerBanque, banqueDeSession, aalDuJeton } from "./banque.ts";
+import { registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton } from "./banque.ts";
 import { CATALOGUE } from "./catalogue.gen.ts";
 
 // Motifs du filtre de contenu sensible (mêmes que public.contenu_sensible), réexportés comme contrat public du connecteur.
@@ -3179,12 +3179,9 @@ const CLIENTS_CONNUS: Record<string, string> = { "30351516-1e76-4884-8fb2-ae8567
     Nom : table des clients connus, « Assistant » sinon. */
 export function clientDuJeton(token: string): { id: string; nom: string } {
   let id = "session";
-  try {
-    const b64 = (token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
-    const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
-    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0))));
-    if (typeof claims?.client_id === "string" && claims.client_id.trim()) id = claims.client_id.trim().slice(0, 200);
-  } catch { /* jeton illisible : déjà validé par getUser, on le traite comme une session */ }
+  // Charge utile lue sans vérifier la signature : jeton déjà validé par getUser (chargeUtileDuJeton, banque.ts).
+  const claims = chargeUtileDuJeton(token);
+  if (typeof claims.client_id === "string" && claims.client_id.trim()) id = claims.client_id.trim().slice(0, 200);
   return { id, nom: CLIENTS_CONNUS[id] ?? "Assistant" };
 }
 
