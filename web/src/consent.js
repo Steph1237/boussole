@@ -3,7 +3,11 @@
    on affiche le client et les droits demandés, puis on approuve ou refuse et on renvoie vers le client.
    API : supabase.auth.oauth.getAuthorizationDetails / approveAuthorization / denyAuthorization (supabase-js ≥ 2.8x).
    Sans service d'e-mail (BOUSSOLE.emails !== true) : connexion par mot de passe uniquement (pas de lien magique).
-   Un compte anonyme (« Commencer sans e-mail ») ne peut pas autoriser de connecteur : il doit d'abord être sécurisé. */
+   Un compte anonyme (« Commencer sans e-mail ») ne peut pas autoriser de connecteur : il doit d'abord être sécurisé.
+   Double authentification (SEC2, mfa.js) : si le compte a un facteur vérifié et que la session est encore aal1, l'état « mfa » demande le code
+   avant d'afficher la demande, et de nouveau avant d'approuver (session retombée à aal1) : le jeton émis au connecteur porte alors aal2, que
+   les tables bancaires exigent (RLS, migration 0028). Sans double authentification, la demande reste possible mais un avertissement dit que
+   le connecteur ne lira pas les comptes bancaires. */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
@@ -11,7 +15,7 @@
   const authId = new URLSearchParams(location.search).get("authorization_id");
   const EMAILS = cfg.emails === true;
   const isAnon = session => !!(session && session.user && session.user.is_anonymous);
-  let sb = null, state = "loading", busy = false, lastRetry = null, signingIn = false;
+  let sb = null, mfaApi = null, state = "loading", busy = false, lastRetry = null, signingIn = false;
 
   /* ---------- états ---------- */
   function show(name) {
@@ -94,7 +98,7 @@
   }
 
   /* ---------- affichage du consentement ---------- */
-  function renderConsent(d, session) {
+  function renderConsent(d, session, mfa) {
     const name = (d.client && d.client.name) || "Une application";
     $("clientName").textContent = name;
     document.title = "Autoriser " + name + " · Boussole";
@@ -109,6 +113,7 @@
     const last = ul.lastElementChild && ul.lastElementChild.querySelector("span");
     if (last) last.textContent = last.textContent.replace(/ ;$/, ".");
     note($("consentMsg"), "");
+    $("mfaNote").hidden = mfa !== "sans_facteur";
     setBusy(false);
     show("consent");
     $("approveBtn").focus({ preventScroll: true });
@@ -122,6 +127,20 @@
     location.assign(url);
   }
 
+  /* ---------- double authentification ---------- */
+  /* "code" : l'écran de code est affiché (loadDetails reprend une fois le code validé) ; "sans_facteur" | "ok" : rien à valider. */
+  async function exigerCode() {
+    const etat = await window.Mfa.etatConsentement(mfaApi);
+    if (etat !== "code") return etat;
+    show("mfa");
+    $("mfaBox").textContent = "";
+    await window.Mfa.monterCode($("mfaBox"), mfaApi, {
+      onVerifie: () => { loadDetails().catch(e => { const [t, x, retry] = explainOAuth(e || {}); fail(t, x, retry ? loadDetails : null); }); },
+      onQuitter: async () => { await sb.auth.signOut({ scope: "local" }).catch(() => {}); showSignin(); },
+    });
+    return "code";
+  }
+
   /* ---------- étapes ---------- */
   async function loadDetails() {
     loading("Vérification de la demande…");
@@ -130,6 +149,8 @@
     if (!session) return showSignin();
     // Compte anonyme : pas d'autorisation de connecteur tant qu'il n'a ni e-mail ni mot de passe.
     if (isAnon(session)) return show("anon");
+    const mfa = await exigerCode();
+    if (mfa === "code") return;
     let res;
     try { res = await sb.auth.oauth.getAuthorizationDetails(authId); }
     catch (e) { res = { data: null, error: e }; }
@@ -145,7 +166,7 @@
     if (!data) return fail("Demande introuvable", RELAUNCH, false);
     // Consentement déjà donné : Supabase renvoie directement l'adresse de retour.
     if (!("authorization_id" in data)) return redirect(data.redirect_url || data.redirect_to, true);
-    renderConsent(data, session);
+    renderConsent(data, session, mfa);
   }
 
   function showSignin(message) {
@@ -168,6 +189,8 @@
     if (approve) {
       const { data: s } = await sb.auth.getSession().catch(() => ({ data: null }));
       if (isAnon(s && s.session)) return show("anon");
+      // La session peut être retombée à aal1 depuis l'affichage : le code est redemandé, rien n'est approuvé.
+      if ((await exigerCode()) === "code") return;
     }
     setBusy(true);
     $(approve ? "approveBtn" : "denyBtn").textContent = approve ? "Autorisation…" : "Refus…";
@@ -203,6 +226,10 @@
     sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
+    if (!window.Mfa) {
+      return fail("Chargement incomplet", "Un composant de la page n'a pas pu être chargé (bloqueur de contenu ou réseau). Recharge la page.", () => location.reload());
+    }
+    mfaApi = window.Mfa.adapter(sb);
     if (!sb.auth.oauth || typeof sb.auth.oauth.getAuthorizationDetails !== "function") {
       return fail("Version incompatible", "La bibliothèque d'authentification chargée ne gère pas l'autorisation OAuth. Recharge la page.", () => location.reload());
     }

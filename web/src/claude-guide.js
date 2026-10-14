@@ -213,6 +213,8 @@
   function banqueHtml(S, auj, U, o) {
     const b = S && S.banque, B = BE(), opt = o || {};
     if (!b || !b.actif || !B) return "";
+    // SEC2 : interrupteur actif mais session sans double authentification — carte bloquante, ni connexion ni liste de comptes.
+    if (B.mfaRequise(b)) return B.carteMfa();
     const bouton = '<button type="button" class="cg-btn" data-cg-banque-connecter>' + svg("ext") + "Connecter une banque</button>";
     const err = opt.erreur ? '<p class="cg-rt-err" role="alert">' + esc(opt.erreur) + "</p>" : "";
     const intro = '<p class="cg-rt-p">Boussole lit tes comptes par Powens, prestataire agréé : tes identifiants bancaires se saisissent sur la page de Powens, jamais dans Boussole. ' +

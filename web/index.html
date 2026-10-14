@@ -293,11 +293,14 @@ dialog.auth::backdrop{background:rgba(18,24,29,.55)}
       </button>
       <p class="hint" id="authHint">Mot de passe oublié : sans service d'e-mail, la réinitialisation n'est pas encore possible. Écris à <a href="mailto:stephane@ceres.agency">stephane@ceres.agency</a>.</p>
     </form>
+    <!-- Double authentification : écran de code posé par landing.js (Mfa.apresConnexion) à la place du formulaire. -->
+    <div id="authMfa" hidden></div>
   </div>
 </dialog>
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<script src="app/mfa.js"></script>
 <script src="app/auth.js"></script>
 <script src="app/landing.js"></script>
 </body>

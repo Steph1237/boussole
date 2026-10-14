@@ -46,7 +46,7 @@ const must = (t, r) => { if (r.error) throw new UserErrorT(`Erreur base de donn�
 function serveur(register, db, extra = {}) {
   const outils = {};
   const h = {
-    db, UserError: UserErrorT, RO: { readOnlyHint: true }, RW: { readOnlyHint: false }, source: "Claude", today: () => TODAY, must,
+    db, UserError: UserErrorT, RO: { readOnlyHint: true }, RW: { readOnlyHint: false }, source: "Claude", aal: "aal2", today: () => TODAY, must,
     wrap: fn => async a => { try { return { ok: await fn(a) }; } catch (e) { if (e instanceof UserErrorT) return { erreur: e.message }; throw e; } },
     ...extra,
   };
@@ -257,20 +257,20 @@ test("operations_recentes : 50 par défaut, 200 au plus, plus récentes d'abord,
 /* ---------- demarrer_session ---------- */
 test("banqueDeSession : connexions à reconnecter, comptes à rattacher ; éteint ; null en cas d'échec (ne lève jamais)", { skip: SANS_STRIP }, async () => {
   const B = chargerBanque();
-  const s = await B.banqueDeSession(dbBanque(), must);
+  const s = await B.banqueDeSession(dbBanque(), must, "aal2");
   assert.deepEqual(J(s), { actif: true, connexions_a_reconnecter: [{ id: 12, etablissement: "Assureur Test", etat: "SCARequired", etat_libelle: B.ETATS_LIBELLES.SCARequired }], comptes_a_rattacher: 1,
     connexions_en_double: 0 }, "compte inactif et comptes rattachés exclus");
-  assert.deepEqual(J(await B.banqueDeSession(dbBanque({ actif: false }), must)), { actif: false, connexions_a_reconnecter: [], comptes_a_rattacher: 0, connexions_en_double: 0 });
+  assert.deepEqual(J(await B.banqueDeSession(dbBanque({ actif: false }), must, "aal2")), { actif: false, connexions_a_reconnecter: [], comptes_a_rattacher: 0, connexions_en_double: 0 });
   const dbl = await B.banqueDeSession(dbBanque({ connexions: [...CONNEXIONS, { id: 14, etablissement: "Banque Test", etat: null, doublon_de: 11 }],
-    comptes: [...COMPTES, { ...COMPTES[3], id: 141, connexion_id: 14, doublon_de: 101 }] }), must);
+    comptes: [...COMPTES, { ...COMPTES[3], id: 141, connexion_id: 14, doublon_de: 101 }] }), must, "aal2");
   assert.equal(dbl.connexions_en_double, 1);
   assert.equal(dbl.comptes_a_rattacher, 1, "compte en double : pas à rattacher (la connexion est à déconnecter)");
   const avert = [];
   const Bw = chargerBanque({ console: { warn: (...a) => avert.push(a.join(" ")), error() {}, log() {} } });
-  for (const panne of [["fonctionnalites"], ["banque_connexions"], ["banque_comptes"]]) assert.equal(await Bw.banqueDeSession(dbBanque({ panne }), must), null, "panne : " + panne);
-  const ig = await B.banqueDeSession(dbBanque({ comptes: [...COMPTES, { ...COMPTES[3], id: 106, ignore: true }] }), must);
+  for (const panne of [["fonctionnalites"], ["banque_connexions"], ["banque_comptes"]]) assert.equal(await Bw.banqueDeSession(dbBanque({ panne }), must, "aal2"), null, "panne : " + panne);
+  const ig = await B.banqueDeSession(dbBanque({ comptes: [...COMPTES, { ...COMPTES[3], id: 106, ignore: true }] }), must, "aal2");
   assert.equal(ig.comptes_a_rattacher, 1, "compte ignoré : pas à rattacher");
-  assert.equal(await Bw.banqueDeSession({ from() { throw new Error("panne"); } }, must), null, "ne lève jamais");
+  assert.equal(await Bw.banqueDeSession({ from() { throw new Error("panne"); } }, must, "aal2"), null, "ne lève jamais");
   assert.ok(avert.length, "avertissement");
 });
 
@@ -298,7 +298,7 @@ test("cleLibelle : même règle que synchro.ts (powens) — parité des noms de 
 test("banqueDeRoutine : dépenses du mois écoulé contre le budget, nouveaux libellés récurrents, connexions à reconnecter", { skip: SANS_STRIP }, async () => {
   const B = chargerBanque();
   const db = dbBanque();
-  const r = await B.banqueDeRoutine(db, must, TODAY, totauxFaux());
+  const r = await B.banqueDeRoutine(db, must, TODAY, totauxFaux(), "aal2");
   assert.equal(r.actif, true);
   assert.equal(r.mois_ecoule, "2026-09-01");
   const m = db.appels.find(a => a.table === "banque_mois");
@@ -331,28 +331,28 @@ test("banqueDeRoutine : dépenses du mois écoulé contre le budget, nouveaux li
 
 test("banqueDeRoutine : historique de moins de 60 jours, mois écoulé non synchronisé, pas de budget, éteint, panne → null", { skip: SANS_STRIP }, async () => {
   const B = chargerBanque(silencieux);
-  let r = await B.banqueDeRoutine(dbBanque({ operations: OPERATIONS.filter(o => o.date >= "2026-09-01") }), must, TODAY, totauxFaux());
+  let r = await B.banqueDeRoutine(dbBanque({ operations: OPERATIONS.filter(o => o.date >= "2026-09-01") }), must, TODAY, totauxFaux(), "aal2");
   assert.equal(r.historique_suffisant, false); assert.deepEqual(J(r.nouveaux_libelles_recurrents), []);
   assert.match(r.note_recurrents, /60 jours/);
-  r = await B.banqueDeRoutine(dbBanque({ mois: MOIS.filter(x => x.mois !== "2026-09-01") }), must, TODAY, totauxFaux());
+  r = await B.banqueDeRoutine(dbBanque({ mois: MOIS.filter(x => x.mois !== "2026-09-01") }), must, TODAY, totauxFaux(), "aal2");
   assert.equal(r.depenses_vs_budget, null, "mois écoulé pas encore synchronisé : rien à comparer");
-  r = await B.banqueDeRoutine(dbBanque(), must, TODAY, null);
+  r = await B.banqueDeRoutine(dbBanque(), must, TODAY, null, "aal2");
   assert.equal(r.budget_renseigne, false);
   assert.deepEqual(J(r.depenses_vs_budget.lignes.map(l => [l.categorie, l.prevu, l.reel])), [["logement", 0, 1200], ["alimentation", 0, 500]]);
-  assert.deepEqual(J(await B.banqueDeRoutine(dbBanque({ actif: false }), must, TODAY, totauxFaux())), { actif: false });
-  for (const panne of [["fonctionnalites"], ["banque_mois"], ["banque_operations"]]) assert.equal(await B.banqueDeRoutine(dbBanque({ panne }), must, TODAY, totauxFaux()), null, "panne : " + panne);
+  assert.deepEqual(J(await B.banqueDeRoutine(dbBanque({ actif: false }), must, TODAY, totauxFaux(), "aal2")), { actif: false });
+  for (const panne of [["fonctionnalites"], ["banque_mois"], ["banque_operations"]]) assert.equal(await B.banqueDeRoutine(dbBanque({ panne }), must, TODAY, totauxFaux(), "aal2"), null, "panne : " + panne);
   // janvier : mois écoulé = décembre de l'année précédente
   const db = dbBanque();
-  r = await B.banqueDeRoutine(db, must, "2027-01-05", totauxFaux());
+  r = await B.banqueDeRoutine(db, must, "2027-01-05", totauxFaux(), "aal2");
   assert.equal(r.mois_ecoule, "2026-12-01");
 });
 
 /* ---------- intégration dans index.ts et routines.ts ---------- */
 test("index.ts : banque.ts enregistré (chargement et budgetTotaux injectés), demarrer_session renvoie banque sans bloquer", () => {
-  assert.match(src, /import \{ registerBanque, banqueDeSession \} from "\.\/banque\.ts";/);
+  assert.match(src, /import \{ registerBanque, banqueDeSession(, aalDuJeton)? \} from "\.\/banque\.ts";/);
   assert.match(code, /registerBanque\(server, \{ \.\.\.h, charger: chargerDonnees, budgetTotaux \}\);/);
   const ds = code.slice(code.indexOf('registerTool("demarrer_session"'), code.indexOf('registerTool("list_propositions"'));
-  assert.match(ds, /banqueDeSession\(db, must\)/);
+  assert.match(ds, /banqueDeSession\(db, must, aal\)/);
   assert.match(ds, /\n\s*banque,\n/);
   assert.match(ds, /banque \(connexion bancaire/, "description de demarrer_session");
   assert.match(src.slice(0, src.indexOf("import ")), /banque\.ts/, "en-tête du connecteur");
@@ -365,7 +365,7 @@ test("index.ts : banque.ts enregistré (chargement et budgetTotaux injectés), d
 test("routines.ts : demarrer_routine importe banqueDeRoutine ; CONDUITE_REVUE traite la banque et les libellés", { skip: SANS_STRIP }, () => {
   assert.match(srcRoutines, /import \{ banqueDeRoutine \} from "\.\/banque\.ts";/);
   const dr = srcRoutines.slice(srcRoutines.indexOf('registerTool("demarrer_routine"'), srcRoutines.indexOf('registerTool("cloturer_routine"'));
-  assert.match(dr, /banqueDeRoutine\(db, must, auj, t\)/);
+  assert.match(dr, /banqueDeRoutine\(db, must, auj, t, aal\)/);
   assert.match(dr, /\n\s*banque,\n/);
   const c = srcRoutines.slice(srcRoutines.indexOf("export const CONDUITE_REVUE"), srcRoutines.indexOf("].join", srcRoutines.indexOf("export const CONDUITE_REVUE")));
   const l = c.split("\n").find(x => x.includes('"2 ter. '));
@@ -503,16 +503,79 @@ const B0 = () => banqueSrv(dbBanque());
 test("banqueDeRoutine : budget_reel sur banque_mois à côté des écarts du mois écoulé (sommés sur les comptes) ; détail lu jusqu'à une page vide", { skip: SANS_STRIP }, async () => {
   const B = chargerBanque();
   const db = dbBanque({ comptes: COMPTES_BUDGET, mois: MOIS_BUDGET });
-  const r = await B.banqueDeRoutine(db, must, TODAY, totauxFaux());
+  const r = await B.banqueDeRoutine(db, must, TODAY, totauxFaux(), "aal2");
   const { note, ...rest } = r.budget_reel;
   assert.deepEqual(J(rest), BUDGET_REEL);
   assert.deepEqual(J(r.depenses_vs_budget.lignes.map(l => [l.categorie, l.reel])), [["alimentation", 1300], ["divers", 750], ["logement", 1200]],
     "septembre, tous comptes connectés (comme avant 0025)");
   assert.deepEqual(ecritures(db), [], "lecture seule");
-  assert.equal(await chargerBanque(silencieux).banqueDeRoutine(dbBanque({ panne: ["banque_comptes"] }), must, TODAY, totauxFaux()), null);
+  assert.equal(await chargerBanque(silencieux).banqueDeRoutine(dbBanque({ panne: ["banque_comptes"] }), must, TODAY, totauxFaux(), "aal2"), null);
   // détail des opérations : l'API plafonne à 4 lignes par requête → lecture poursuivie jusqu'à une page vide
   const db2 = dbBanque({ plafond: 4 });
-  const r2 = await B.banqueDeRoutine(db2, must, TODAY, totauxFaux());
+  const r2 = await B.banqueDeRoutine(db2, must, TODAY, totauxFaux(), "aal2");
   assert.deepEqual(J(db2.appels.filter(a => a.table === "banque_operations").map(a => a.ops.find(o => o[0] === "range").slice(1))), [[0, 999], [4, 1003], [8, 1007], [11, 1010]]);
   assert.equal(r2.nouveaux_libelles_recurrents.length, 2, "toutes les opérations lues (11)");
+});
+
+/* =================================================================== SEC2 : double authentification (aal2) =================================================================== */
+const MSG_MFA = /^Double authentification requise : reconnecte le connecteur après avoir validé ton code\./;
+const jwtFactice = claims => ["eyJhbGciOiJFUzI1NiJ9", Buffer.from(JSON.stringify(claims)).toString("base64url"), "signature-factice"].join(".");
+
+test("SEC2 aalDuJeton : aal2 lu dans la charge utile ; aal1, revendication absente, jeton illisible → aal1", { skip: SANS_STRIP }, () => {
+  const B = chargerBanque({ atob, TextDecoder, Uint8Array });
+  assert.equal(B.aalDuJeton(jwtFactice({ sub: "u", aal: "aal2", client_id: "c" })), "aal2");
+  assert.equal(B.aalDuJeton(jwtFactice({ sub: "u", aal: "aal1" })), "aal1");
+  assert.equal(B.aalDuJeton(jwtFactice({ sub: "u" })), "aal1", "sans revendication : aal1 (documentation Supabase)");
+  for (const t of ["", "abc", "a.b.c", "a..c", jwtFactice({ aal: "AAL2" }), jwtFactice({ aal: ["aal2"] })]) assert.equal(B.aalDuJeton(t), "aal1", String(t));
+});
+
+test("SEC2 lire_banque et operations_recentes : sans aal2, message clair, aucune table banque_* lue ; interrupteur éteint → { actif: false } comme avant", { skip: SANS_STRIP }, async () => {
+  for (const aal of ["aal1", undefined, "", "aal3"]) {
+    const db = dbBanque();
+    const { T, charges } = banqueSrv(db, { aal });
+    for (const nom of ["lire_banque", "operations_recentes"]) {
+      const r = await T[nom].handler({});
+      assert.match(r.erreur, MSG_MFA, `${nom} (${aal})`);
+      assert.match(r.erreur, /Mon compte › Sécurité/, "dit où activer la double authentification");
+      assert.doesNotMatch(r.erreur, VOUS);
+    }
+    assert.deepEqual([...new Set(db.appels.map(a => a.table))], ["fonctionnalites"], "seul l'interrupteur est lu : aucune donnée bancaire");
+    assert.equal(charges(), 0);
+  }
+  const off = dbBanque({ actif: false });
+  assert.deepEqual(J((await banqueSrv(off, { aal: "aal1" }).T.lire_banque.handler({})).ok), { actif: false });
+  const { T } = banqueSrv(dbBanque(), { aal: "aal2" });
+  assert.equal((await T.lire_banque.handler({})).ok.actif, true);
+  assert.equal((await T.operations_recentes.handler({})).ok.actif, true);
+});
+
+test("SEC2 banqueDeSession et banqueDeRoutine : sans aal2 → { actif: true, mfa_requise: true, message }, aucune donnée lue ; ne lèvent jamais", { skip: SANS_STRIP }, async () => {
+  const B = chargerBanque();
+  for (const aal of ["aal1", undefined]) {
+    const db = dbBanque();
+    const s = await B.banqueDeSession(db, must, aal);
+    assert.equal(s.actif, true); assert.equal(s.mfa_requise, true); assert.match(s.message, MSG_MFA);
+    assert.deepEqual(J([s.connexions_a_reconnecter, s.comptes_a_rattacher, s.connexions_en_double]), [[], 0, 0]);
+    const r = await B.banqueDeRoutine(db, must, TODAY, totauxFaux(), aal);
+    assert.equal(r.actif, true); assert.equal(r.mfa_requise, true); assert.match(r.message, MSG_MFA);
+    assert.deepEqual([...new Set(db.appels.map(a => a.table))], ["fonctionnalites"], "aucune donnée bancaire lue");
+  }
+  assert.deepEqual(J(await B.banqueDeSession(dbBanque({ actif: false }), must, "aal1")), { actif: false, connexions_a_reconnecter: [], comptes_a_rattacher: 0, connexions_en_double: 0 });
+  assert.deepEqual(J(await B.banqueDeRoutine(dbBanque({ actif: false }), must, TODAY, totauxFaux(), "aal1")), { actif: false });
+});
+
+test("SEC2 index.ts : le jeton donne son aal (aalDuJeton) au serveur ; lireBanqueCalcul, demarrer_session et routines s'y plient ; message dans les instructions", () => {
+  assert.match(src, /import \{ registerBanque, banqueDeSession, aalDuJeton \} from "\.\/banque\.ts";/);
+  assert.match(code, /type Ctx = .*aal\?: string/);
+  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal: aalDuJeton\(token\) \}\)/);
+  assert.match(code, /const h = \{ db, wrap, must, UserError, RO, RW, today, source: client\?\.nom \?\? "Assistant", aal \}/);
+  const lb = code.slice(code.indexOf("async function lireBanqueCalcul"), code.indexOf("async function lireConfigCalcul"));
+  assert.match(lb, /aal !== "aal2"/, "pas de lecture bancaire (budget réel) sans aal2");
+  const conduite = src.slice(src.indexOf("const CONDUITE_COPILOTE = ["), src.indexOf("].join", src.indexOf("const CONDUITE_COPILOTE = [")));
+  const r17 = conduite.split("\n").find(l => l.includes('"17. '));
+  assert.match(r17, /banque\.mfa_requise/);
+  assert.match(r17, /Double authentification requise/);
+  assert.match(r17, /Mon compte › Sécurité/);
+  assert.doesNotMatch(r17, VOUS);
+  assert.match(srcRoutines, /const \{ db, wrap, must, UserError, RO, RW, source, today, calcul, aal \} = h;/);
 });

@@ -140,6 +140,11 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
       <div class="actions"><a class="btn primary" id="secureLink" href="../compte.html#securiser">Sécuriser mon compte</a></div>
     </section>
 
+    <!-- Double authentification (SEC2) : code à valider avant d'autoriser un assistant, si le compte en a une -->
+    <section data-state="mfa" hidden>
+      <p class="eyebrow">Sécurité</p>
+      <div id="mfaBox"></div>
+    </section>
     <!-- Consentement -->
     <section data-state="consent" hidden>
       <p class="eyebrow">Autorisation</p>
@@ -156,6 +161,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
         <span>Application&nbsp;: <b id="clientInfo"></b></span>
         <span>Retour vers&nbsp;: <b id="redirectHost"></b></span>
       </div>
+      <p class="msg info" id="mfaNote" hidden>Tu n'as pas activé la double authentification : l'assistant ne pourra pas lire tes comptes bancaires. Active-la dans <a href="../compte.html#securite">Mon compte › Sécurité</a>, puis relance la connexion du connecteur.</p>
       <p class="muted small" style="margin-top:12px">N'autorise que les assistants que tu as toi-même connectés. Tu pourras retirer cet accès à tout moment depuis <a href="../compte.html">Mon compte</a>.</p>
       <div class="actions">
         <button class="btn" id="denyBtn" type="button">Refuser</button>
@@ -187,6 +193,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
 </div>
 <script src="../config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
+<script src="../app/mfa.js"></script>
 <script src="../app/consent.js"></script>
 </body>
 </html>

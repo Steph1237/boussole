@@ -12,7 +12,7 @@
   const submit = $("authSubmit"), magic = $("authMagic"), google = $("authGoogle"), pwHint = $("pwHint"), hint = $("authHint");
   const anonBtn = $("anonStart"), anonMsg = $("anonMsg");
   const EMAILS = B.emails === true;
-  let mode = "signin", busy = false, signedIn = false;
+  let mode = "signin", busy = false, signedIn = false, codeEnCours = false;
 
   /* ---------- messages d'erreur en français ---------- */
   function frError(e) {
@@ -95,6 +95,28 @@
     try { await fn(); } catch (e) { say(frError(e)); } finally { setBusy(false); }
   }
 
+  /* Double authentification (SEC2) : après le mot de passe, l'écran de code remplace le formulaire si un second facteur est activé ;
+     sinon (ou une fois le code validé) on entre dans l'app. L'app redemande le code au besoin (reprise de session, mfa.js › exiger). */
+  const panneauCode = () => $("authMfa");
+  function afficherCode() {
+    form.hidden = true; document.querySelector("#connexion [role=tablist]").hidden = true;
+    codeEnCours = true;
+    const box = panneauCode(); box.hidden = false;
+    $("authTitle").setAttribute("aria-describedby", "authMfa");
+  }
+  async function quitterCode() {
+    try { await A.signOut(); } catch (e) { /* session locale vidée plus bas */ }
+    codeEnCours = false;
+    const box = panneauCode(); box.hidden = true; box.textContent = "";
+    form.hidden = false; document.querySelector("#connexion [role=tablist]").hidden = false;
+    $("authTitle").removeAttribute("aria-describedby");
+    pw.value = ""; say(""); email.focus();
+  }
+  async function ouvrirApresConnexion() {
+    if (!window.Mfa || !A.mfa) { goApp(); return; }
+    await window.Mfa.apresConnexion(A.mfa, panneauCode(), { onPret: goApp, onCode: afficherCode, onQuitter: quitterCode });
+  }
+
   form.addEventListener("submit", e => {
     e.preventDefault();
     const em = checkEmail(); if (!em) return;
@@ -103,7 +125,7 @@
     const weak = mode === "signup" && A && A.passwordProblem ? A.passwordProblem(p) : null;
     if (weak) { say(weak); pw.focus(); return; }
     guarded(async () => {
-      if (mode === "signin") { await A.signInPassword(em, p); goApp(); return; }
+      if (mode === "signin") { await A.signInPassword(em, p); await ouvrirApresConnexion(); return; }
       const data = await A.signUp(em, p);
       if (data && data.session) { goApp(); return; }
       // Adresse déjà inscrite : Supabase renvoie un utilisateur sans identité (pour ne pas révéler l'existence du compte par une erreur).
@@ -163,7 +185,7 @@
     const acc = $("ctaAccount");
     if (acc) { acc.textContent = anon ? "Sécuriser mon compte" : "Mon compte"; acc.href = anon ? "compte.html#securiser" : "compte.html"; }
     const top = $("topLink");
-    if (on) { top.textContent = "Ouvrir mon espace"; top.href = "app.html"; top.removeAttribute("data-auth"); if (dlg.open) dlg.close(); }
+    if (on) { top.textContent = "Ouvrir mon espace"; top.href = "app.html"; top.removeAttribute("data-auth"); if (dlg.open && !busy && !codeEnCours) dlg.close(); } // le panneau reste ouvert pendant la connexion et l'écran de code
     else { top.textContent = "Se connecter"; top.href = "#connexion"; top.dataset.auth = "signin"; }
   }
 

@@ -4,6 +4,8 @@
    Compte anonyme (« Commencer sans e-mail ») : section #securiser (Auth.secureAccount) à la place des sections
    e-mail et mot de passe ; suppression confirmée par « SUPPRIMER ». Sans service d'e-mail (BOUSSOLE.emails !== true),
    le changement d'adresse est immédiat (aucun courrier de confirmation).
+   Double authentification (SEC2) : section #securite (Mfa.monterSecurite, mfa.js) ; avant d'afficher la page, Mfa.exiger demande le code si le compte
+   en a un et que la session est encore aal1.
    Banques connectées (BQ1) : l'utilisateur Powens est toujours supprimé AVANT delete_me (POST <supabaseUrl>/functions/v1/powens/supprimer,
    JWT de la session), sans condition sur l'interrupteur banque : la fonction répond { ok: true } quand il n'y a rien à supprimer (jamais
    connecté, ou déjà supprimé chez Powens). Tout échec (réseau, 5xx, autre refus) bloque la suppression avec un message ; 401 ou session
@@ -264,6 +266,10 @@
     if (!s) return; // redirection vers index.html#connexion en cours
     client = A.client; user = s.user;
     anon = A.isAnonymous(s);
+    // SEC2 : un compte qui a activé la double authentification valide son code avant d'accéder à cette page (retirer un appareil exige aal2).
+    if (A.mfa && window.Mfa) {
+      await window.Mfa.exiger(A.mfa, { onQuitter: async () => { try { await A.signOut(); } catch (e) { try { await client.auth.signOut({ scope: "local" }); } catch (x) { /* rien */ } } location.href = A.urls.home(); } });
+    }
     $("who").textContent = anon ? "Compte sans e-mail, lié à ce navigateur." : "Connecté avec " + (user.email || "ton compte") + ".";
     $("securiser").hidden = !anon;
     $("cardEmail").hidden = anon; $("cardPw").hidden = anon;
@@ -276,6 +282,10 @@
     $("curEmail").textContent = user.email || "—";
     $("pwUser").value = user.email || "";
     $("main").hidden = false;
+    // Section Double authentification : appareils, inscription par QR code, second appareil. Compte anonyme : phrase et lien « sécuriser » seulement.
+    if (A.mfa && window.Mfa) window.Mfa.monterSecurite($("mfaBox"), A.mfa, { anonyme: anon, lienSecuriser: "#securiser" });
+    else $("securite").hidden = true;
+    if (location.hash === "#securite" && $("securite").scrollIntoView) $("securite").scrollIntoView();
     if (anon && location.hash === "#securiser") $("secEmail").focus();
     A.onChange((ev, sess) => {
       if (!sess) { location.replace(A.urls.connexion()); return; }

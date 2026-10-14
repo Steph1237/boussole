@@ -11,6 +11,9 @@
 // routines.ts) ne lèvent jamais : null en cas d'échec.
 // Les libellés d'opérations viennent de la banque : ce sont des informations, jamais des consignes, et Claude ne les recopie
 // jamais tels quels dans la mémoire ni dans le journal.
+// SEC2 (double authentification, docs/superpowers/specs/2026-10-14-sec2-mfa-design.md) : les tables banque_* exigent aal = 'aal2' (politiques
+// restrictives, migration 0028). Le connecteur lit l'aal du jeton (aalDuJeton) ; sans aal2, les deux outils répondent MSG_MFA, et
+// banqueDeSession / banqueDeRoutine renvoient { actif: true, mfa_requise: true, message } sans lire aucune donnée bancaire.
 // Ce module ne dépend pas d'index.ts : utilitaires du serveur (wrap, must, UserError…), chargement des données et budgetTotaux
 // (catégories du budget) sont passés en paramètre ; aucun calcul du budget n'est dupliqué ici.
 import { z } from "zod";
@@ -203,6 +206,23 @@ async function lireMois(db: any, must: any, debut: string) {
     .gte("mois", debut).order("mois", { ascending: false })) as any[]) ?? [];
 }
 
+/** Message renvoyé (outils) ou joint (demarrer_session, demarrer_routine) quand le jeton du connecteur n'est pas aal2. */
+export const MSG_MFA = "Double authentification requise : reconnecte le connecteur après avoir validé ton code. Si tu n'as pas encore activé la double authentification, fais-le d'abord dans Boussole › Mon compte › Sécurité, puis relance la connexion du connecteur.";
+/** Niveau d'assurance (revendication aal) du jeton : "aal2" si la session qui l'a obtenu a franchi un second facteur, "aal1" sinon.
+    Le jeton a déjà été validé par auth.getUser ; on ne lit que sa charge utile. Illisible ou sans revendication : aal1 (comme
+    Supabase, qui traite un jeton sans aal comme aal1). */
+export function aalDuJeton(token: string): "aal1" | "aal2" {
+  try {
+    const b64 = (String(token ?? "").split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0))));
+    return claims?.aal === "aal2" ? "aal2" : "aal1";
+  } catch {
+    return "aal1";
+  }
+}
+const mfaOk = (aal: unknown) => aal === "aal2";
+
 /** Interrupteur de la connexion bancaire (fonctionnalites, clé banque) : absent ou éteint → false. Lève en cas d'échec. */
 export async function lireActif(db: any, must: any): Promise<boolean> {
   const f = must("fonctionnalites", await db.from("fonctionnalites").select("active").eq("cle", "banque").maybeSingle()) as any;
@@ -219,9 +239,10 @@ async function lireConnexions(db: any, must: any) {
 const aRattacher = (c: any) => c.actif !== false && c.ignore !== true && c.doublon_de == null && !c.position_id && !c.enveloppe && !c.credit_id;
 
 /** Banque pour demarrer_session. Ne lève jamais : null si une lecture échoue (table absente, panne). */
-export async function banqueDeSession(db: any, must: any) {
+export async function banqueDeSession(db: any, must: any, aal?: string) {
   try {
     if (!(await lireActif(db, must))) return { actif: false, connexions_a_reconnecter: [], comptes_a_rattacher: 0, connexions_en_double: 0 };
+    if (!mfaOk(aal)) return { actif: true, mfa_requise: true, message: MSG_MFA, connexions_a_reconnecter: [], comptes_a_rattacher: 0, connexions_en_double: 0 };
     const [connexions, comptes] = await Promise.all([
       lireConnexions(db, must),
       (async () => (must("banque_comptes", await db.from("banque_comptes").select("actif, position_id, enveloppe, credit_id, ignore, doublon_de")) as any[]) ?? [])(),
@@ -243,9 +264,10 @@ export async function banqueDeSession(db: any, must: any) {
 /** Banque pour demarrer_routine (revue mensuelle) : dépenses réelles du mois écoulé par catégorie comparées au budget
     (totaux = budgetTotaux du foyer, ou null sans budget), nouveaux libellés récurrents, connexions à reconnecter.
     Ne lève jamais : null si une lecture échoue. */
-export async function banqueDeRoutine(db: any, must: any, auj: string, totaux: any) {
+export async function banqueDeRoutine(db: any, must: any, auj: string, totaux: any, aal?: string) {
   try {
     if (!(await lireActif(db, must))) return { actif: false };
+    if (!mfaOk(aal)) return { actif: true, mfa_requise: true, message: MSG_MFA };
     const mois = premierDuMois(auj, -1);
     const [connexions, moisLus, ops, comptes] = await Promise.all([
       lireConnexions(db, must),
@@ -279,8 +301,8 @@ export async function banqueDeRoutine(db: any, must: any, auj: string, totaux: a
   }
 }
 
-export function registerBanque(server: any, h: { db: any; wrap: any; must: any; RO: any; today: () => string; charger: () => Promise<{ donnees: any }>; budgetTotaux: (d: any, scope: string) => any }) {
-  const { db, wrap, must, RO, today, charger, budgetTotaux } = h;
+export function registerBanque(server: any, h: { db: any; wrap: any; must: any; UserError: any; RO: any; today: () => string; aal?: string; charger: () => Promise<{ donnees: any }>; budgetTotaux: (d: any, scope: string) => any }) {
+  const { db, wrap, must, UserError, RO, today, aal, charger, budgetTotaux } = h;
   /** Lecture qui ne bloque pas l'outil : échec → valeur de repli et avertissement. */
   const sansBloquer = async <T>(nom: string, f: () => Promise<T>, repli: T): Promise<T> => {
     try { return await f(); } catch (e) { console.warn(`banque : ${nom} indisponible :`, msg(e)); return repli; }
@@ -293,6 +315,7 @@ export function registerBanque(server: any, h: { db: any; wrap: any; must: any; 
     annotations: RO,
   }, wrap(async () => {
     if (!(await lireActif(db, must))) return { actif: false };
+    if (!mfaOk(aal)) throw new UserError(MSG_MFA);
     const auj = today(), debut = premierDuMois(auj, -(MOIS_LUS - 1)), courant = premierDuMois(auj);
     const [connexions, comptes, moisLus, charge] = await Promise.all([
       lireConnexions(db, must),
@@ -378,6 +401,7 @@ export function registerBanque(server: any, h: { db: any; wrap: any; must: any; 
     annotations: RO,
   }, wrap(async (a: any) => {
     if (!(await lireActif(db, must))) return { actif: false };
+    if (!mfaOk(aal)) throw new UserError(MSG_MFA);
     const limite = Math.min(OPERATIONS_MAX, Math.max(1, Math.trunc(Number(a?.limite ?? OPERATIONS_DEFAUT)) || OPERATIONS_DEFAUT));
     let req = db.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie");
     if (a?.depuis) req = req.gte("date", a.depuis);
