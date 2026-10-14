@@ -192,17 +192,19 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
   assert.match(shell, /\/\*@css\*\//);
 });
 
-test("coque : éléments communs présents (navigation, Compte, périmètre, veille, compte, bandeaux)", () => {
-  for (const id of ["sideNav", "sideCompte", "bottomBar", "subTabs", "spaceTitle", "spaceDesc", "scopeSeg", "veilleLine", "accountLink", "accountLinkM", "accountLinkC", "profileBtn", "demoBanner", "sideDemo", "dbBanner", "fresh"])
+test("coque : éléments communs présents (navigation, Compte, périmètre, Claude, fraîcheur, veille, compte, bandeaux)", () => {
+  for (const id of ["sideNav", "sideCompte", "bottomBar", "subTabs", "tabsWrap", "spaceTitle", "spaceDesc", "scopeBtn", "claudeBtn", "freshBtn", "veilleLine", "accountLink", "accountLinkC", "profileBtn", "demoBanner", "demoBannerClose", "sideDemo", "dbBanner", "fresh"])
     assert.match(shell, new RegExp(`id="${id}"`), id);
   assert.match(shell, /id="subTabs" role="tablist"/);
   assert.match(shell, /id="profileBtn" data-goto="compte\/donnees" aria-label="Compte et réglages" title="Compte et réglages"/);
-  assert.match(shell, /id="accountLinkM" href="compte\.html" aria-label="Sécurité du compte" title="Sécurité du compte"/, "engrenage distinct de l'avatar");
+  assert.doesNotMatch(shell, /accountLinkM/, "plus d'engrenage dans l'en-tête mobile : « Mon compte » vit dans Compte (accountLinkC) et dans le rail");
   assert.match(shell, /class="brand" href="#aujourdhui\/vue" data-goto="aujourdhui\/vue"/);
+  assert.equal((shell.match(/class="brand"/g) || []).length, 1, "le logo n'est que dans la barre latérale (plus dans l'en-tête mobile)");
   assert.doesNotMatch(shell, /href="#(bilan|recos|profil|diagnostic|avenir|decisions)\//, "plus de lien vers une ancienne route dans la coque");
   assert.doesNotMatch(shell, /app-tabs/);
-  assert.match(shell, /<header class="page-head">[\s\S]*id="scopeSeg"[\s\S]*<\/header>/, "périmètre dans l'en-tête de page");
-  assert.equal((shell.match(/scope-seg/g) || []).length, 1, "un seul sélecteur de périmètre");
+  assert.match(shell, /<header class="page-head">[\s\S]*id="scopeBtn"[\s\S]*id="claudeBtn"[\s\S]*<\/header>/, "périmètre et Claude dans l'en-tête de page");
+  assert.doesNotMatch(shell, /scope-seg|mhead/, "plus de segment de périmètre ni d'en-tête mobile séparé");
+  assert.equal((shell.match(/id="claudeBtn"/g) || []).length, 1, "un seul bouton Claude");
 });
 
 test("coque : plus de bandeau global #propBanner ; pastilles Aujourd'hui et Agent (propositions + journal à relire)", () => {
@@ -229,7 +231,10 @@ test("theme.css : point de rupture à 900 px et barre basse à 4 entrées avec z
   assert.ok(bbar, ".bbar absent");
   assert.match(bbar[0], /position:fixed/);
   assert.match(bbar[0], /grid-template-columns:repeat\(4,/);
-  assert.match(bbar[0], /padding:[^;]*calc\(8px \+ env\(safe-area-inset-bottom[^)]*\)\)/);
+  assert.match(bbar[0], /min-height:var\(--bbar-h\)/, "hauteur = barre de 56 px + zone de sécurité");
+  assert.match(bbar[0], /padding:[^;]*var\(--bottom\)/, "zone de sécurité en bas");
+  assert.match(theme, /--bbar-h:calc\(var\(--nav-h\) \+ 4px \+ var\(--bottom\)\)/);
+  assert.match(theme, /--bottom:env\(safe-area-inset-bottom,0px\)/);
   assert.match(theme, /\.side\{[^}]*position:sticky[^}]*top:var\(--top\)/);
   assert.doesNotMatch(theme, /\.app-tabs/);
   assert.doesNotMatch(theme, /propBanner/);

@@ -21,32 +21,32 @@
     </div>
   </aside>
 
-  <!-- Mobile (< 900 px) : en-tête compact ; l'avatar ouvre Compte. -->
-  <header class="mhead">
-    <a class="brand" href="#aujourdhui/vue" data-goto="aujourdhui/vue"><span data-brand-icon></span>Boussole</a>
-    <div class="mhead-actions">
-      <button type="button" class="icon-btn" id="profileBtn" data-goto="compte/donnees" aria-label="Compte et réglages" title="Compte et réglages"></button>
-      <a class="icon-btn" id="accountLinkM" href="compte.html" aria-label="Sécurité du compte" title="Sécurité du compte"></a>
-    </div>
-  </header>
-
   <main class="main" id="main">
-    <div id="demoBanner" class="banner demo" hidden>Démo avec un foyer fictif : rien n'est enregistré. <a href="index.html#connexion">Crée ton compte</a> pour suivre ton propre patrimoine.</div>
+    <!-- En-tête (collant, 56 px sur mobile ; en-tête de page sur ordinateur). Titre de la destination et point de fraîcheur à gauche ;
+         à droite, le périmètre (feuille « Foyer · prénoms », visible s'il y a au moins deux personnes), Claude (une seule action,
+         feuille de demandes contextuelles) et, sur mobile, Compte (avatar). Boutons et feuilles posés par app.js. -->
+    <header class="page-head">
+      <div class="page-title">
+        <h1 id="spaceTitle" tabindex="-1">Aujourd'hui</h1>
+        <button type="button" class="fresh-btn" id="freshBtn" data-etat="inconnu" aria-haspopup="dialog" aria-label="Sources et mises à jour : chargement des données"><span class="fresh-dot" aria-hidden="true"></span></button>
+        <p class="page-desc" id="spaceDesc">Ce qui demande ton attention</p>
+      </div>
+      <div class="head-actions">
+        <button type="button" class="scope-btn" id="scopeBtn" aria-haspopup="dialog" aria-label="Périmètre : foyer. Changer" hidden><span class="scope-pill"><span class="scope-pill-nom" id="scopeNom">Foyer</span><svg class="ico" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span></button>
+        <button type="button" class="icon-btn claude-btn" id="claudeBtn" aria-haspopup="dialog" aria-label="Demander à Claude" title="Demander à Claude"><span data-claude-icon></span><span class="claude-lbl" aria-hidden="true">Claude</span></button>
+        <button type="button" class="icon-btn avatar-btn" id="profileBtn" data-goto="compte/donnees" aria-label="Compte et réglages" title="Compte et réglages"></button>
+      </div>
+    </header>
+    <!-- Bandeau démo : une ligne fine sous l'en-tête, repliable pour la session de l'onglet. -->
+    <div id="demoBanner" class="banner demo" hidden><span>Démo · foyer fictif</span><a href="index.html#connexion">Créer mon compte</a><button type="button" class="banner-x" id="demoBannerClose" aria-label="Masquer le bandeau démo">×</button></div>
     <!-- Compte anonyme (« Commencer sans e-mail ») : affiché par app.js, masquable pour la session de l'onglet. -->
     <div id="anonBanner" class="banner anon" role="status" hidden><span>Compte sans e-mail : tes données sont liées à ce navigateur. Sécurise ton compte pour les retrouver ailleurs et éviter leur suppression après 90 jours d'inactivité. <a href="compte.html#securiser">Sécuriser mon compte</a></span><button type="button" class="banner-x" id="anonBannerClose" aria-label="Masquer ce message">×</button></div>
     <!-- Retour de la page de connexion Powens (?connection_id / ?error) : message posé par app.js, masquable. -->
     <div id="banqueBanner" class="banner retour" role="status" hidden><span id="banqueBannerTxt"></span><button type="button" class="banner-x" id="banqueBannerClose" aria-label="Masquer ce message">×</button></div>
-    <header class="page-head">
-      <div class="page-title">
-        <h1 id="spaceTitle" tabindex="-1">Aujourd'hui</h1>
-        <p id="spaceDesc">Ce qui demande ton attention</p>
-        <a class="app-link page-link" id="accountLinkC" href="compte.html" hidden>Mon compte : e-mail, sécurité, export</a>
-      </div>
-      <!-- Périmètre (Foyer · prénoms) : visible sur Aujourd'hui, Patrimoine et Pilotage s'il y a au moins deux personnes. -->
-      <div class="seg scope-seg" id="scopeSeg" role="group" aria-label="Périmètre" hidden></div>
-    </header>
-    <div class="subtabs" id="subTabs" role="tablist" aria-label="Sous-vues"></div>
-    <div class="fresh" id="fresh">Chargement des données…</div>
+    <a class="app-link page-link" id="accountLinkC" href="compte.html" hidden>Mon compte : e-mail, sécurité, export</a>
+    <div class="tabs-wrap" id="tabsWrap"><div class="subtabs" id="subTabs" role="tablist" aria-label="Sous-vues"></div></div>
+    <!-- Dernière mise à jour des données : lue par la feuille « Sources et mises à jour » (point de l'en-tête). -->
+    <div class="fresh" id="fresh" hidden>Chargement des données…</div>
     <div id="dbBanner" class="banner" hidden></div>
 
     <!-- Aujourd'hui : une seule sous-vue, donc pas d'onglets ni de role="tabpanel". -->

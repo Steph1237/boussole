@@ -156,6 +156,67 @@
   }
   const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name) return { space: sp.space, sub: s.id }; return null; };
 
+  /* ---------- en-tête : fraîcheur, demandes à Claude, périmètre (pur, testé par test/shell.test.mjs et test/ux1-coque.test.mjs) ---------- */
+  const ModOuvert = (nom, fichier) => (typeof window !== "undefined" && window[nom]) ||
+    (typeof module === "object" && module.exports && typeof require === "function" ? (() => { try { return require(fichier); } catch (e) { return null; } })() : null);
+  const FmtMod = () => ModOuvert("Fmt", "./format.js");
+  const HEURES_VIEUX = 36;
+  /* Point de fraîcheur de l'en-tête : « ok » (vert) si l'agent est passé il y a moins de 36 h, « vieux » (ambre) au-delà, « inconnu » (gris)
+     sans donnée ou pendant le chargement. À défaut de passage de l'agent, la date du dernier cours sert de repère. Les lignes alimentent la
+     feuille « Sources et mises à jour ». S : état du store ; now : Date ou horodatage (tests). */
+  function fraicheur(S, now) {
+    const F = FmtMod(), fd = (d, o) => (F ? F.fmtDate(d, o) : String(d));
+    const maintenant = now == null ? new Date() : now instanceof Date ? now : new Date(now);
+    S = S || {};
+    if (S.dbOk === false) return { etat: "inconnu", resume: "données indisponibles", phrase: "Les données ne sont pas disponibles pour le moment.", lignes: [{ label: "Données", valeur: "indisponibles pour le moment" }] };
+    if (!S.ready) return { etat: "inconnu", resume: "chargement des données", phrase: "Chargement des données en cours.", lignes: [{ label: "Données", valeur: "chargement en cours" }] };
+    const cours = (S.positions || []).filter(p => p && p.mode === "market" && p.priceDate).map(p => p.priceDate).sort();
+    const dernierCours = cours[cours.length - 1] || null;
+    const run = S.status && S.status.lastRun ? S.status.lastRun : null;
+    const tRun = run ? Date.parse(run) : NaN;
+    const repere = Number.isFinite(tRun) ? tRun : dernierCours ? Date.parse(dernierCours + "T23:00:00Z") : NaN;
+    const age = Number.isFinite(repere) ? (maintenant.getTime() - repere) / 36e5 : NaN;
+    const etat = !Number.isFinite(age) ? "inconnu" : age > HEURES_VIEUX ? "vieux" : "ok";
+    const lignes = [
+      { label: "Cours des placements", valeur: dernierCours ? "au " + fd(dernierCours, { court: true }) : "pas encore mis à jour" },
+      { label: "Passage de l'agent", valeur: Number.isFinite(tRun) ? fd(run, { maintenant }) : "jamais lancé" },
+    ];
+    const lr = S.status && S.status.veille && S.status.veille.lastReport, tv = lr ? Date.parse(lr) : NaN;
+    lignes.push({ label: "Veille", valeur: Number.isFinite(tv) ? fd(lr, { maintenant }) : "jamais lancée" });
+    const resume = etat === "ok" ? "à jour" : etat === "vieux" ? "mise à jour de plus de " + HEURES_VIEUX + " h" : "aucune mise à jour connue";
+    const phrase = etat === "ok" ? "Dernière mise à jour il y a moins de " + HEURES_VIEUX + " h." : etat === "vieux" ? "Plus de " + HEURES_VIEUX + " h sans mise à jour : les cours affichés peuvent avoir bougé." : "Aucune mise à jour connue pour le moment.";
+    return { etat, resume, phrase, lignes };
+  }
+  /* Demandes contextuelles du bouton Claude de l'en-tête (3 par destination ou sous-vue) : { label, section } ; la phrase vient de
+     ClaudePrompts.phrase(section). Une seule action Claude par écran, toujours au même endroit. */
+  const DEMANDES = {
+    "aujourdhui": [["Faire ma revue du mois", "revue"], ["Compléter mon bilan", "bilan"], ["Enregistrer un mouvement", "mouvement"]],
+    "patrimoine/placements": [["Enregistrer un mouvement", "mouvement"], ["Mettre à jour mes placements", "placements"], ["Régler mes versements programmés", "versements"]],
+    "patrimoine/comptes": [["Mettre à jour mes placements", "placements"], ["Renseigner mes biens et mes crédits", "immobilier"], ["Enregistrer un mouvement", "mouvement"]],
+    "patrimoine/immobilier": [["Renseigner mes biens et mes crédits", "immobilier"], ["Compléter mon bilan", "bilan"], ["Compléter mon calendrier", "calendrier"]],
+    "patrimoine/budget": [["Établir mon budget", "budget"], ["Compléter mes revenus", "revenus"], ["Définir mes objectifs", "objectifs"]],
+    "patrimoine/objectifs": [["Définir mes objectifs", "objectifs"], ["Établir mon budget", "budget"], ["Compléter mon bilan", "bilan"]],
+    "pilotage": [["Compléter mon bilan", "bilan"], ["Remplir mon profil de risque", "risque"], ["Définir mes objectifs", "objectifs"]],
+    "agent": [["Faire ma revue du mois", "revue"], ["Répondre aux questions de ma revue", "routine"], ["Consulter une expertise", "expertise"]],
+    "compte": [["Compléter mon foyer", "foyer"], ["Renseigner ma protection", "protection"], ["Régler mes règles d'alerte", "regles"]],
+  };
+  /** Les 3 demandes de la route : celles de « destination/sous-vue » si elles existent, sinon celles de la destination. */
+  function demandesClaude(space, sub) {
+    return (DEMANDES[space + "/" + sub] || DEMANDES[space] || DEMANDES.aujourdhui).map(([label, section]) => ({ label, section }));
+  }
+  /* Entrées du sélecteur de périmètre : Foyer + une par personne, avec le patrimoine net de chacune quand le calcul est disponible. */
+  function entreesPerimetre(S) {
+    S = S || {};
+    const C = ModOuvert("Calc", "./calc.js"), F = FmtMod();
+    const ppl = Array.isArray(S.people) ? S.people : [];
+    const items = [{ id: "foyer", nom: "Foyer" }].concat(ppl.map((p, i) => ({ id: p.id, nom: String(p.nom || "").trim() || (i ? "Conjoint(e)" : "Moi") })));
+    return items.map(x => {
+      let net = null;
+      try { const r = C && typeof C.patrimoine === "function" ? C.patrimoine(S.positions || [], S.profil || null, x.id) : null; net = r && Number.isFinite(r.net) ? r.net : null; } catch (e) { net = null; }
+      return { id: x.id, nom: x.nom, net, montant: net != null && F ? F.fmtEUR(net) : null, actif: x.id === (S.scope || "foyer") };
+    });
+  }
+
   /* ---------- navigateur ---------- */
   function browser() {
     const ICONS = {
@@ -252,7 +313,7 @@
         (bar ? '<span class="bb-ico">' + svg(sp.icon) + "</span>" : svg(sp.icon)) +
         '<span class="nl">' + esc(bar ? sp.short : sp.label) + "</span>" +
         (sp.space === "aujourdhui" ? '<span class="pill-count" data-today-count hidden></span>' : "") +
-        (sp.space === "agent" ? '<span class="pill-count" data-prop-count hidden></span>' : "") + "</a>";
+        (sp.space === "agent" ? '<span class="pill-dot" data-prop-count hidden></span>' : "") + "</a>";
     }
     /* Rail (ordinateur) et barre basse (mobile) : les 4 destinations primaires. Compte (non primaire) : pied du rail,
        et bouton avatar #profileBtn de l'en-tête mobile. */
@@ -271,22 +332,20 @@
       const pb = $("profileBtn"); if (route.space === "compte") pb.setAttribute("aria-current", "page"); else pb.removeAttribute("aria-current");
       $("spaceTitle").textContent = sp.label;
       $("spaceDesc").textContent = sp.desc;
+      document.title = sp.label + " · Boussole";
       $("accountLinkC").hidden = route.space !== "compte" || Store.mode === "demo";
       scopeVisibility();
       const tabs = $("subTabs");
       tabs.setAttribute("aria-label", "Sous-vues : " + sp.label);
-      tabs.hidden = sp.subs.length < 2;
+      $("tabsWrap").hidden = sp.subs.length < 2;
       tabs.innerHTML = sp.subs.map(s => {
         const on = s.id === route.sub; const p = panelOf({ space: sp.space, sub: s.id });
         return '<button type="button" role="tab" id="subtab-' + sp.space + "-" + s.id + '"' + (p && p.id ? ' aria-controls="' + p.id + '"' : "") +
-          ' aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-sub="' + s.id + '">' + esc(s.label) + "</button>";
+          ' aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-sub="' + s.id + '"><span>' + esc(s.label) + "</span></button>";
       }).join("");
-      /* Sous-onglets plus larges que l'écran (mobile) : l'onglet actif reste visible. */
-      const sel = tabs.querySelector('[aria-selected="true"]');
-      if (sel && tabs.scrollWidth > tabs.clientWidth) {
-        const a = tabs.getBoundingClientRect(), b = sel.getBoundingClientRect();
-        tabs.scrollLeft += b.left - a.left - (a.width - b.width) / 2;
-      }
+      /* Sous-onglets plus larges que l'écran (mobile) : fondu de bord (data-fade) et l'onglet actif reste visible. */
+      const d = window.UI && UI.defilant ? UI.defilant(tabs) : null;
+      if (d) { d.montrerActif(); d.maj(); }
     }
 
     /* Nombre entier renvoyé par headline() du module branché sur espace/sous-vue ; NaN sinon. */
@@ -301,10 +360,11 @@
        headline() du module journal-view ; à défaut, S.journalARelire du store). */
     function refreshHeadlines() {
       /* Le nombre visible, suivi de sa légende pour les lecteurs d'écran (texte .ui-sr : un aria-label sur <span> n'est pas lu). */
-      const pill = (sel, n, suffix) => {
+      const pill = (sel, n, suffix, point) => {
         const show = Number.isFinite(n) && n > 0;
         document.querySelectorAll(sel).forEach(el => {
-          el.hidden = !show; el.textContent = show ? String(n) : "";
+          /* point : pastille sans chiffre (Agent) ; le nombre reste lu aux lecteurs d'écran */
+          el.hidden = !show; el.textContent = show && !point ? String(n) : "";
           if (show) { const s = document.createElement("span"); s.className = "ui-sr"; s.textContent = suffix(n); el.appendChild(s); }
         });
       };
@@ -315,7 +375,7 @@
         const S = window.Store && Store.get();
         j = S && Number.isFinite(S.journalARelire) ? S.journalARelire : S && Array.isArray(S.journal) ? S.journal.filter(e => e && e.statut === "a_relire").length : NaN;
       }
-      pill("[data-prop-count]", Number.isFinite(p) || Number.isFinite(j) ? (Number.isFinite(p) ? p : 0) + (Number.isFinite(j) ? j : 0) : NaN, () => legendeAgent(p, j));
+      pill("[data-prop-count]", Number.isFinite(p) || Number.isFinite(j) ? (Number.isFinite(p) ? p : 0) + (Number.isFinite(j) ? j : 0) : NaN, () => legendeAgent(p, j), true);
     }
 
     const frDate = d => new Date(d + (d.length === 10 ? "T12:00:00" : "")).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
@@ -325,33 +385,64 @@
       let t = S.dbOk === false ? "Données indisponibles dans cette vue" : !S.ready ? "Chargement des données…" :
         (last ? "Cours au " + frDate(last) : "Cours non encore mis à jour") + (S.status && S.status.lastRun ? " · agent passé le " + new Date(S.status.lastRun).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
       $("fresh").textContent = t;
+      majFraicheur(S);
       const b = $("dbBanner");
       if (S.dbOk === false) { b.hidden = false; b.textContent = "Connexion à ton espace impossible pour le moment. Recharge la page ; si le problème persiste, reconnecte-toi."; }
       else if (S.error) { b.hidden = false; b.textContent = "Lecture des données interrompue (" + S.error + "). Recharge la page."; }
       else b.hidden = true;
-      scopeSeg(S);
+      majPerimetre(S);
       veille(S);
     }
-    /* Sélecteur de périmètre (en-tête de page) : « Foyer » + une entrée par personne ; masqué s'il n'y a qu'une personne
-       et hors des destinations SCOPED (Agent, Compte). */
-    let scopeMany = false;
+    /* Point de fraîcheur de l'en-tête (vert, ambre au-delà de 36 h, gris sans donnée) ; sa feuille liste les sources. */
+    let derniereFraicheur = null;
+    function majFraicheur(S) {
+      const f = derniereFraicheur = fraicheur(S);
+      const b = $("freshBtn");
+      b.dataset.etat = f.etat;
+      b.setAttribute("aria-label", "Sources et mises à jour : " + f.resume);
+    }
+    /* Périmètre (chip « Foyer ▾ » de l'en-tête, global et persistant) : s'ouvre en feuille « Foyer · prénoms » avec le patrimoine net de chacun ;
+       masqué s'il n'y a qu'une personne et hors des destinations SCOPED (Agent, Compte). */
+    let scopeMany = false, dernierS = null;
     function scopeVisibility() {
       const on = scopeMany && SCOPED.includes(route.space);
-      document.querySelectorAll(".scope-seg").forEach(seg => { seg.hidden = !on; });
+      $("scopeBtn").hidden = !on;
     }
-    function scopeSeg(S) {
-      const ppl = Array.isArray(S.people) ? S.people : [];
-      const items = [{ id: "foyer", nom: "Foyer" }].concat(ppl.map((p, i) => ({ id: p.id, nom: String(p.nom || "").trim() || (i ? "Conjoint(e)" : "Moi") })));
-      const sig = JSON.stringify(items);
-      document.querySelectorAll(".scope-seg").forEach(seg => {
-        if (seg.dataset.sig !== sig) {
-          seg.innerHTML = items.map(x => '<button type="button" data-scope="' + esc(x.id) + '">' + esc(x.nom) + "</button>").join("");
-          seg.dataset.sig = sig;
-        }
-        seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.scope === S.scope)));
-      });
-      scopeMany = ppl.length >= 2;
+    function majPerimetre(S) {
+      dernierS = S;
+      const entrees = entreesPerimetre(S), cur = entrees.find(x => x.actif) || entrees[0];
+      $("scopeNom").textContent = cur.nom;
+      $("scopeBtn").setAttribute("aria-label", "Périmètre : " + cur.nom + ". Changer");
+      scopeMany = (Array.isArray(S.people) ? S.people : []).length >= 2;
       scopeVisibility();
+      if (window.UI && UI.panneau && UI.panneau.ouvert() && ouverte === "perimetre") ouvrirPerimetre(true);
+    }
+    /* Feuilles de l'en-tête : une à la fois (périmètre, Claude, sources) ; ouverte retient laquelle pour la rafraîchir. */
+    let ouverte = null;
+    const apresFermeture = () => { ouverte = null; };
+    function ouvrirPerimetre(rafraichir) {
+      const S = dernierS || Store.get(), entrees = entreesPerimetre(S);
+      const lignes = entrees.map(x => UI.ligne({ id: x.id, titre: x.nom, sous: x.actif ? "Affiché maintenant" : x.id === "foyer" ? "Toutes les personnes du foyer" : "Ses comptes seulement", montant: x.montant || "", icone: x.id === "foyer" ? "maison" : "personne" }));
+      const contenu = '<p class="ui-panneau-note">Le périmètre s\'applique à Aujourd\'hui, Patrimoine et Pilotage, et reste choisi d\'une visite à l\'autre.</p>' + UI.liste(lignes, { label: "Périmètre" });
+      ouverte = "perimetre";
+      const o = { titre: "Périmètre", contenu, retour: $("scopeBtn"), surFermeture: apresFermeture };
+      if (rafraichir) UI.panneau.remplacer({ titre: o.titre, contenu }); else UI.panneau.ouvrir(o);
+      document.querySelectorAll(".ui-panneau [data-ui-ligne]").forEach(b => { b.setAttribute("data-scope", b.getAttribute("data-ui-ligne")); b.setAttribute("aria-pressed", String(b.getAttribute("data-ui-ligne") === (S.scope || "foyer"))); });
+    }
+    function ouvrirClaude() {
+      const CP = window.ClaudePrompts;
+      const lignes = demandesClaude(route.space, route.sub).map(d => UI.ligne({ href: UI.urlClaude(CP && CP.phrase ? CP.phrase(d.section) : d.label), titre: d.label, icone: "etincelle", multiligne: true }));
+      ouverte = "claude";
+      UI.panneau.ouvrir({ titre: "Demander à Claude", retour: $("claudeBtn"), surFermeture: apresFermeture,
+        contenu: '<p class="ui-panneau-note">Claude ouvre ta session Boussole et te pose les questions qui manquent, dans des formulaires. Tu valides avant tout enregistrement.</p>' + UI.liste(lignes, { label: "Demandes pour cette page" }) });
+    }
+    function ouvrirFraicheur() {
+      const f = derniereFraicheur || fraicheur(Store.get());
+      const lignes = f.lignes.map(l => UI.ligne({ titre: l.label, montant: l.valeur }));
+      ouverte = "fraicheur";
+      UI.panneau.ouvrir({ titre: "Sources et mises à jour", retour: $("freshBtn"), surFermeture: apresFermeture,
+        contenu: '<p class="ui-panneau-note"><span class="ui-puce ' + (f.etat === "ok" ? "bon" : f.etat === "vieux" ? "surveiller" : "completer") + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(f.etat === "ok" ? "À jour" : f.etat === "vieux" ? "À rafraîchir" : "Inconnu") + "</span> " + esc(f.phrase) + "</p>" + UI.liste(lignes, { label: "Sources" }),
+        lien: { label: "Voir la connexion de Claude", href: "#agent/connexion" } });
     }
     /* État de la veille : S.status.veille.lastReport (date ISO ou horodatage) ; alerte au-delà de 8 jours. */
     function veille(S) {
@@ -395,7 +486,7 @@
           x.addEventListener("click", () => { b.hidden = true; try { sessionStorage.setItem(ANON_KEY, "1"); } catch (e) { /* rien */ } });
         }
       }
-      const link = $("accountLink"), linkM = $("accountLinkM"), linkC = $("accountLinkC");
+      const link = $("accountLink"), linkM = $("accountLinkM"), linkC = $("accountLinkC"); // linkM : ancien engrenage mobile, retiré de l'en-tête (le lien vit dans Compte)
       const label = anon ? "Sécuriser mon compte" : "Mon compte", labelM = anon ? "Sécuriser mon compte" : "Sécurité du compte", href = anon ? "compte.html#securiser" : "compte.html";
       if (link) { link.textContent = label; link.href = href; }
       if (linkC) { linkC.textContent = anon ? "Sécuriser mon compte (e-mail, mot de passe)" : "Mon compte : e-mail, sécurité, export"; linkC.href = href; }
@@ -404,8 +495,8 @@
 
     function boot() {
       document.querySelectorAll("[data-brand-icon]").forEach(el => { el.innerHTML = svg("compass", "brand-ico"); });
-      $("profileBtn").innerHTML = svg("compte");
-      $("accountLinkM").innerHTML = svg("reglages");
+      $("profileBtn").innerHTML = '<span class="avatar">' + svg("compte") + "</span>";
+      document.querySelectorAll("[data-claude-icon]").forEach(el => { el.innerHTML = svg("agent"); });
       renderNav();
       const tabs = $("subTabs");
       /* Les onglets sont redessinés à chaque navigation : le focus suit l'onglet choisi (clic comme clavier). */
@@ -423,7 +514,10 @@
         /* Lien interne du panneau de détail : le panneau se ferme sans rendre le focus ; s'il pointe vers la vue courante
            (pas de navigation), le focus irait sur BODY : on le pose sur le titre de page. */
         if (e.target.closest && e.target.closest('.ui-panneau a[href^="#"]')) setTimeout(() => { if (focusLost()) focusTitle(); }, 0);
-        const sc = e.target.closest(".scope-seg [data-scope]"); if (sc) { Store.setScope(sc.dataset.scope); return; }
+        const sc = e.target.closest(".ui-panneau [data-scope]"); if (sc) { Store.setScope(sc.dataset.scope); UI.panneau.fermer(); return; }
+        if (e.target.closest("#scopeBtn")) { ouvrirPerimetre(); return; }
+        if (e.target.closest("#claudeBtn")) { ouvrirClaude(); return; }
+        if (e.target.closest("#freshBtn")) { ouvrirFraicheur(); return; }
         if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         const n = e.target.closest("[data-nav]"); if (n) { e.preventDefault(); App.go(n.dataset.nav); return; }
         const t = e.target.closest("[data-goto-tab]"); if (t) { e.preventDefault(); App.go(t.dataset.gotoTab); return; }
@@ -438,10 +532,14 @@
         try { if (m.mount) m.mount(root); mounted.add(k); } catch (e) { console.error(k, e); }
       });
       const demo = Store.mode === "demo";
-      $("demoBanner").hidden = !demo;
       $("sideDemo").hidden = !demo;
       $("accountLink").hidden = demo;
-      $("accountLinkM").hidden = demo;
+      /* Bandeau démo : repliable pour la session de l'onglet. */
+      const DEMO_KEY = "boussole.demoBanner.masque";
+      let demoMasque = false;
+      try { demoMasque = sessionStorage.getItem(DEMO_KEY) === "1"; } catch (e) { /* stockage indisponible : bandeau affiché */ }
+      $("demoBanner").hidden = !demo || demoMasque;
+      $("demoBannerClose").addEventListener("click", () => { $("demoBanner").hidden = true; try { sessionStorage.setItem(DEMO_KEY, "1"); } catch (e) { /* rien */ } focusTitle(); });
       /* Compte anonyme (« Commencer sans e-mail ») : bandeau #anonBanner (masquable pour la session de l'onglet)
          et « Sécuriser mon compte » à la place de « Mon compte ». Seulement en mode Supabase ; la démo ne change pas. */
       if (!demo && window.Auth && typeof Auth.session === "function") {
@@ -505,5 +603,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, PARAMS_DANS_URL, hashCanonique, lienCompte, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation, retourBanque };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, PARAMS_DANS_URL, hashCanonique, lienCompte, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation, retourBanque, fraicheur, demandesClaude, entreesPerimetre, DEMANDES, HEURES_VIEUX };
 })();

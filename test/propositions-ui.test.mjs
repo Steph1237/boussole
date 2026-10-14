@@ -56,7 +56,7 @@ test("propositions.css : entièrement scopé (vue, pastille de la barre latéral
 test("coque : plus de bandeau global #propBanner ; pastille Agent pilotée par headline() du module propositions", () => {
   assert.doesNotMatch(shell, /id="propBanner"/);
   assert.doesNotMatch(app, /propBanner/);
-  assert.match(app, /sp\.space === "agent" \? '<span class="pill-count" data-prop-count hidden><\/span>'/);
+  assert.match(app, /sp\.space === "agent" \? '<span class="pill-dot" data-prop-count hidden><\/span>'/);
   assert.match(app, /countOf\("agent", "propositions"\)/);
   assert.match(app, /countOf\("aujourdhui", "vue"\)/, "pastille Aujourd'hui (boîte de réception)");
   const { routeOfModule } = require("../web/src/app.js");
