@@ -36,7 +36,8 @@ const srcAnalyser = existsSync(path("supabase/functions/mcp/analyser.ts")) ? rea
 /* BQ1 : banque connectée (banque.ts, lecture seule, tests détaillés : test/banque-mcp.test.mjs), enregistrée par index.ts. */
 const srcBanque = readFileSync(path("supabase/functions/mcp/banque.ts"), "utf8");
 const srcCalendrier = readFileSync(path("supabase/functions/mcp/calendrier.ts"), "utf8"); // DAT1 : calendrier patrimonial (tests détaillés : test/calendrier-mcp.test.mjs)
-const srcAll = [src, srcCalendrier, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser, srcBanque].join("\n");
+const srcProjection = readFileSync(path("supabase/functions/mcp/projection.ts"), "utf8"); // PROJ : projection du patrimoine (tests détaillés : test/projection-mcp.test.mjs)
+const srcAll = [src, srcCalendrier, srcProjection, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser, srcBanque].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
@@ -55,12 +56,13 @@ const TOOLS = [
   "consulter_expertise", "analyser",
   "lire_banque", "operations_recentes",
   "calendrier", "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot",
+  "decrire_foyer", "lire_foyer", "projeter", "comparer_variantes", "capacite_emprunt",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
   "update_budget", "upsert_objectifs", "delete_objectif", "set_risk_answers", "set_protection",
   "regler_matelas", "regler_versements", "corriger_classe", "regler_frais_enveloppe",
-  "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot"];
+  "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot", "decrire_foyer"];
 const PROMPTS = ["bilan_complet", "profil_de_risque", "budget", "placements", "revue_mensuelle"];
 /** Section du code d'un outil (de son registerTool au suivant). delete_bien / delete_credit partagent une boucle. */
 function outil(nom) {
