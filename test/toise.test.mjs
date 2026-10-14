@@ -13,6 +13,9 @@ const read = rel => readFileSync(fileURLToPath(new URL("../" + rel, import.meta.
 const js = read("web/src/toise.js"), html = read("web/src/toise.html"), css = read("web/src/toise.css");
 const T = require("../web/src/toise.js");
 const Reperes = require("../web/src/reperes.js");
+// Le code de crédit lit les repères datés (taux du jour, taux d'usure, frais) : mêmes taux qu'avant la migration (15 ans 3,14 %, 20 ans 3,27 %, 25 ans 3,35 %).
+import { reperesComplets } from "./helpers/projection-cas.mjs";
+T.chargerCredit(reperesComplets());
 // Espaces fines insécables des montants (Intl fr-FR) ramenées à des espaces simples pour comparer.
 const n = x => String(x).replace(/[\u202f\u00a0]/g, " ");
 const etat = over => { Object.assign(T._etat, JSON.parse(JSON.stringify(T.DEFAULTS)), over || {}); return T.derive(); };
@@ -285,9 +288,10 @@ function vueToise(snap, o = {}) {
   ctx.window = ctx; ctx.self = ctx;
   ctx.App = { register: (nm, api) => { modules[nm] = api; } };
   vm.createContext(ctx);
-  for (const f of ["calc.js", "reperes.js", "ui.js", "claude-prompts.js"].concat(o.reel ? ["reel.js"] : [])) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
+  for (const f of ["calc.js", "reperes.js", "projection-outils.js", "projection-credit.js", "ui.js", "claude-prompts.js"].concat(o.reel ? ["reel.js"] : [])) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
   ctx.module = { exports: {} }; // fonctions pures et état de la Toise (module.exports), la vue restant montée
   vm.runInContext(js, ctx, { filename: "toise.js" });
+  ctx.module.exports.chargerCredit(reperesComplets());
   const root = doc.body.appendChild(doc.createElement("section"));
   root.innerHTML = html;
   const api = modules.toise;
