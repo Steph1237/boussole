@@ -32,7 +32,7 @@
    Fonctions pures exportées (module.exports, et window.ComptesView dans le navigateur pour app.js, pilotage.js et aujourdhui.js) :
    FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, etablissement, sourceDe, comptes, entete, debutPeriode, serieEnveloppe,
    perfDepuis, vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, et les rendus HTML enteteHtml,
-   famillesHtml, arianeHtml, ficheEnveloppeHtml, grapheEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg,
+   famillesHtml, arianeHtml, ficheEnveloppeHtml, calendrierEnveloppeHtml, grapheEnveloppeHtml, calendrierEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg,
    barresSvg, donneesHtml (UI reçu en paramètre quand il en faut ; aucune ne touche au DOM). Dépendances injectées (deps) :
    { Calc, ClaudePrompts }, window.* par défaut. */
 (function () {
@@ -43,6 +43,7 @@
   const voisin = f => (typeof module === "object" && module.exports && typeof require === "function" ? require(f) : null);
   const calcDe = deps => dep(deps, "Calc") || voisin("./calc.js");
   const promptsDe = deps => dep(deps, "ClaudePrompts") || voisin("./claude-prompts.js");
+  const calendrierDe = deps => (deps && Object.prototype.hasOwnProperty.call(deps, "Calendrier") ? deps.Calendrier : glob("Calendrier") || voisin("./calendrier.js"));
 
   /* ---------- dates (AAAA-MM-JJ) ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -417,7 +418,30 @@
       repartition: repartition(ls, s, deps), source: sourceDe(toutes, s), etablissement: etablissement(toutes, s),
       isins: [...new Set(ls.filter(p => p.mode === "market" && p.isin).map(p => String(p.isin)))], aRecevoir: toutes.filter(p => p.status === "à recevoir").map(p => plat(p.name)),
       vraie: vraiePerformance(s, c.enveloppe, toutes, t, deps),
+      calendrier: calendrierEnveloppe(s, plat(c.enveloppe), c.titulaire || (owners.length === 1 ? owners[0] : null), t, deps),
       doublons: doublonsDe(s, deps).filter(d => toutes.some(p => String(p.id) === String(d.ligne))).map(d => ({ ligne: d.ligne, nom: plat(d.nom) || "sans nom", enveloppe: d.enveloppe })) };
+  }
+  /* Calendrier patrimonial (DAT1) d'une enveloppe : jalons de l'enveloppe (à venir, et le dernier passé), règles du foyer qui la concernent
+     (abattement annuel de l'assurance-vie, plafond et fin d'année de l'épargne retraite, taux des livrets), informations à compléter et
+     seuil de versements. null si le moteur manque, échoue, ou n'a rien à dire de cette enveloppe. */
+  const FOYER_PAR_TYPE = { assurance_vie: ["av_abattement_annee"], capitalisation: ["av_abattement_annee"], per: ["per_fin_annee", "per_plafond_expire"], livret_a: ["taux_reglementes"], ldds: ["taux_reglementes"], lep: ["taux_reglementes"] };
+  function calendrierEnveloppe(S, nom, titulaire, today, deps) {
+    const M = calendrierDe(deps), s = S || {};
+    if (!M || typeof M.calendrier !== "function" || typeof M.cleEnveloppe !== "function") return null;
+    let sortie;
+    try { sortie = M.calendrier(typeof M.depuisEtat === "function" ? M.depuisEtat(s) : s, today); } catch (e) { return null; }
+    const cle = M.cleEnveloppe(nom, titulaire, liste(s.positions), s.config && s.config.enveloppes_infos);
+    const mien = x => x.enveloppe === cle;
+    const type = ([].concat(sortie.jalons, sortie.a_completer, sortie.seuils).find(x => mien(x) && x.type) || {}).type || null;
+    const foyer = j => type && (FOYER_PAR_TYPE[type] || []).includes(j.cle) && (j.enveloppe === "foyer" || (titulaire && j.enveloppe === "foyer|" + titulaire));
+    const propres = sortie.jalons.filter(j => mien(j) || foyer(j));
+    // les jalons passés : seulement le dernier de chaque règle propre à l'enveloppe, jamais l'historique entier
+    const dernierPasse = propres.filter(j => j.statut === "passe").pop();
+    const jalons = propres.filter(j => j.statut !== "passe").concat(dernierPasse ? [dernierPasse] : []).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const aCompleter = sortie.a_completer.filter(a => mien(a) || (a.enveloppe === "foyer" && a.champ === "avis_impot" && type === "per"));
+    const seuils = sortie.seuils.filter(mien);
+    if (!jalons.length && !aCompleter.length && !seuils.length) return null;
+    return { cle, type, jalons, aCompleter, seuils };
   }
   const famLabel = id => (FAMILLES.find(f => f.id === id) || {}).label || "";
 
@@ -676,9 +700,44 @@
   const introuvable = (quoi, U) => arianeHtml([RETOUR, { label: "Introuvable" }]) + titreFiche(quoi + " introuvable", "") +
     '<section class="panel cv-f-bloc"><p>Ce compte n\'existe plus ou a été renommé. Reviens à la liste de tes comptes.</p><p><a class="cv-lien" href="#' + ROUTE + '" data-goto="' + ROUTE + '">Voir tous mes comptes</a></p></section>';
 
+
+  /* Échéances d'une enveloppe (DAT1) : une ligne par jalon (mot d'état en plus de la couleur), informations à compléter, seuil de versements en
+     jauge avec son texte équivalent, lien vers le calendrier d'Aujourd'hui. cal = ficheEnveloppe().calendrier. Chaque champ est échappé. */
+  const dateNumC = s => (isoOk(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : "");
+  const MOT_ETAT_C = { passe: "passé", proche: "bientôt", futur: "à venir" };
+  const COMPLETER_TXT = { date_ouverture: "Date d'ouverture à compléter", naissance: "Date de naissance à compléter", versements: "Versements à compléter", avis_impot: "Avis d'impôt à compléter", date_fin: "Date de fin du prêt à compléter" };
+  const motsConfiance = j => (j.confiance === "approchee" ? (j.cle === "av_70_ans" || j.cle === "per_70_ans" ? "dès le " : j.cle === "pee_disponible" ? "au plus tôt le " : "au plus tard le ") : "");
+  function ligneJalonHtml(j) {
+    const court = plat(j.titre).replace(/^[^:]*:\s*/, ""), d = dateNumC(j.date);
+    const quand = j.statut === "passe" ? "depuis le " + d : j.delai + " (" + motsConfiance(j) + d + ")";
+    return '<li class="cv-ech-l t-' + esc(j.statut) + '"><span class="cv-ech-t">' + esc(court) + '</span> <span class="cv-ech-q"><time datetime="' + esc(j.date) + '">' + esc(quand) + "</time></span> " +
+      '<span class="ui-badge ' + (j.statut === "proche" ? "attention" : j.statut === "futur" ? "info" : "neutre") + '">' + esc(MOT_ETAT_C[j.statut]) + "</span>" +
+      (j.confiance === "approchee" ? ' <span class="ui-badge neutre">approchée</span>' : "") + "</li>";
+  }
+  function seuilHtml(sl) {
+    const pct = sl.plafond > 0 ? Math.max(0, Math.min(100, sl.verse / sl.plafond * 100)) : 0;
+    const txt = eur(sl.verse) + " versés sur " + eur(sl.plafond) + (sl.verse > sl.plafond ? ", le plafond est dépassé" : ", il reste " + eur(sl.reste));
+    const d = sl.donnee && sl.donnee.le ? " Donnée relevée le " + dateNumC(sl.donnee.le) + (sl.donnee.source ? " (" + sl.donnee.source + ")" : "") + "." : "";
+    return '<div class="cv-seuil"><p class="cv-seuil-t">' + esc(txt) + '</p><div class="cv-seuil-barre" role="img" aria-label="' + esc(plat(sl.titre) + " : " + txt) + '"><span style="width:' + pct.toFixed(1) + '%"></span></div>' +
+      '<p class="cv-note">' + esc(plat(sl.titre) + "." + d) + "</p></div>";
+  }
+  function calendrierEnveloppeHtml(cal, U, deps) {
+    if (!cal) return "";
+    const P = promptsDe(deps), phrase = a => (P && typeof P.phrase === "function" ? P.phrase("calendrier", a.contexte) : a.contexte);
+    const ctx = a => { const nom = plat(a.enveloppe_nom) || plat(a.enveloppe); return a.champ === "date_ouverture" ? "la date d'ouverture de mon " + nom : a.champ === "naissance" ? plat(a.titre).replace(/^Date/, "la date")
+      : a.champ === "versements" ? "les versements de mon " + nom : a.champ === "avis_impot" ? "mon avis d'impôt (plafond épargne retraite)" : plat(a.titre); };
+    return '<section class="panel cv-f-bloc" aria-labelledby="cvEchTitre"><h3 id="cvEchTitre">Échéances de ce compte</h3>' +
+      (cal.jalons.length ? '<ul class="cv-ech">' + cal.jalons.map(ligneJalonHtml).join("") + "</ul>" : "") +
+      liste(cal.aCompleter).map(a => '<p class="cv-ech-cmp"><span>' + esc(COMPLETER_TXT[a.champ] || plat(a.titre)) + "</span> " +
+        lienClaude(U, phrase({ contexte: ctx(a) }), "Compléter avec Claude") + "</p>").join("") +
+      liste(cal.seuils).map(seuilHtml).join("") +
+      '<p class="cv-note">Information générale sur les règles, pas une recommandation : chaque date est lue dans tes pièces justificatives.</p>' +
+      '<p><a class="cv-lien" href="#aujourdhui?echeances=1" data-goto="aujourdhui?echeances=1">Voir le calendrier</a></p></section>';
+  }
+
   /** Fiche enveloppe (f = ficheEnveloppe()) : squelette ; la courbe et les lignes vont dans #cvGraphe et #cvLignesFiche
       (grapheEnveloppeHtml), redessinés au changement de période sans toucher au sélecteur. */
-  function ficheEnveloppeHtml(f, U) {
+  function ficheEnveloppeHtml(f, U, deps) {
     if (!f.trouvee) return introuvable("Compte « " + f.nom + " »", U);
     const resume = [["Valeur", eur(f.total)], ["Plus-value latente", f.plusValue != null ? eurS(f.plusValue) + (f.cout ? " (" + pctS(f.plusValue / f.cout * 100) + ")" : "") : "non calculable sans prix de revient", f.plusValue != null ? (f.plusValue >= 0 ? "pos" : "neg") : ""],
       ["Prix de revient total", f.cout != null ? eur(f.cout) : "—"], ["Établissement", f.etablissement.nom], ["Source", f.source.texte]];
@@ -690,7 +749,7 @@
         '<p class="cv-note">Calcul : variation de valeur moins les versements et retraits enregistrés, rapportée au capital moyen engagé.</p>'
       : '<p class="cv-muet">Pas encore assez de photos de cette enveloppe pour la calculer.</p>';
     return arianeHtml([RETOUR, { label: f.nom }]) + titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.total)) + "</p>") +
-      liste(f.doublons).map(d => alerteDoublonHtml(d, U)).join("") +
+      liste(f.doublons).map(d => alerteDoublonHtml(d, U)).join("") + calendrierEnveloppeHtml(f.calendrier, U, deps) +
       '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Valeur de tes lignes actuelles</h3><div class="cv-periode" id="cvPeriode"></div></div>' +
       '<div id="cvGraphe" aria-live="polite"></div></section>' +
       '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(resume) +
@@ -810,7 +869,7 @@
 
   const H = { FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
     vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, echantillon, enteteHtml, famillesHtml, carteHtml, arianeHtml, ficheEnveloppeHtml,
-    grapheEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg, barresSvg, donneesHtml, jour };
+    grapheEnveloppeHtml, calendrierEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg, barresSvg, donneesHtml, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof window !== "undefined") window.ComptesView = H;
   if (typeof document === "undefined") return;

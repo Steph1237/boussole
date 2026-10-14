@@ -14,7 +14,7 @@
      seuils: [{ id, enveloppe, enveloppe_nom, cle, titre, verse, plafond, reste, source, donnee }],
      regles_indisponibles: [{ cle, reperes_manquants: [cle] }],
      prochains: [3 premiers jalons non passés], dans_3_mois: [jalons proches] }
-   data = { positions, config, profil, credits, biens, reperes } (formes de l'app) ; today = AAAA-MM-JJ (date de Paris) ;
+   data = { positions, config, profil, credits, biens, reperes } (formes de l'app ; Calendrier.depuisEtat(S) la construit depuis le store) ; today = AAAA-MM-JJ (date de Paris) ;
    options = { horizonAns = 40 }. */
 (function (root, factory) {
   const api = factory(root);
@@ -149,8 +149,8 @@
       effetPasse: "Le plan est devenu un livret d'épargne ordinaire : son taux et sa fiscalité ont changé." },
     { cle: "pel_12_ans", types: ["pel"], ancre: "date_ouverture", reperes: ["pel_exoneration_ir_ans"], fiche: null,
       titre: "{env} : {pel_exoneration_ir_ans}, fin de l'exonération d'impôt",
-      effet: "Les intérêts acquis à partir de cette date sont soumis à l'impôt sur le revenu (ceux des {pel_exoneration_ir_ans} premières années en sont exonérés ; les prélèvements sociaux restent dus).",
-      effetPasse: "Les intérêts acquis depuis cette date sont soumis à l'impôt sur le revenu (ceux des {pel_exoneration_ir_ans} premières années en étaient exonérés ; les prélèvements sociaux restent dus)." },
+      effet: "Les intérêts acquis à partir de cette date sont soumis à l'impôt sur le revenu (ceux acquis pendant les {pel_exoneration_ir_ans} qui précèdent en sont exonérés ; les prélèvements sociaux restent dus).",
+      effetPasse: "Les intérêts acquis depuis cette date sont soumis à l'impôt sur le revenu (ceux acquis pendant les {pel_exoneration_ir_ans} qui précédaient en étaient exonérés ; les prélèvements sociaux restent dus)." },
     { cle: "pee_disponible", types: ["pee"], ancre: "versements", reperes: ["pee_blocage_ans"], fiche: null,
       titre: "{env} : avoirs disponibles",
       effet: "{montant} deviennent disponibles sans motif.",
@@ -167,11 +167,11 @@
       effet: "Dernier jour pour verser sur un PER en utilisant ce reste de plafond ({montant}) ; il ne peut plus servir ensuite.",
       effetPasse: "Ce reste de plafond ({montant}) ne pouvait plus servir après cette date." },
     { cle: "per_fin_annee", types: [], ancre: "annee", reperes: ["per_report_ans"], fiche: "per",
-      titre: "Épargne retraite : dernier jour de l'année pour les versements",
+      titre: "Épargne retraite de l'année",
       effet: "Les versements déductibles comptent pour l'année où ils sont faits. Ton plafond disponible est sur ton avis d'impôt.",
       effetPasse: "Les versements déductibles comptent pour l'année où ils sont faits." },
     { cle: "av_abattement_annee", types: [], ancre: "annee", reperes: ["av_abattement_seul", "av_abattement_couple"], fiche: "assurance-vie",
-      titre: "Assurance-vie : dernier jour de l'année pour l'abattement",
+      titre: "Abattement assurance-vie",
       effet: "L'abattement sur les gains retirés est annuel : celui de cette année ne se reporte pas sur la suivante.",
       effetPasse: "L'abattement sur les gains retirés est annuel : celui de l'année ne se reporte pas sur la suivante." },
     { cle: "donation_15_ans", types: [], ancre: "donations", reperes: ["donation_rappel_ans", "donation_abattement_enfant", "don_familial_argent"], fiche: null,
@@ -190,7 +190,7 @@
       effet: "Dernier jour pour imputer la moins-value de {annee} ({montant}) sur des plus-values de même nature ; elle est perdue ensuite.",
       effetPasse: "La moins-value de {annee} ({montant}) ne peut plus être imputée sur des plus-values de même nature." },
     { cle: "taux_reglementes", types: ["livret_a", "ldds", "lep"], ancre: "reperes", reperes: ["livret_a_taux", "lep_taux"], fiche: "livrets-reglementes",
-      titre: "Livrets réglementés : fin de la période du taux actuel",
+      titre: "Taux des livrets réglementés",
       effet: "Fin de la période du taux actuel ({taux}) : un nouveau taux peut s'appliquer à partir de cette date.",
       effetPasse: "La période du taux indiqué ({taux}) est terminée : un nouveau taux s'applique." },
     { cle: "pret_fin", types: [], ancre: "prets_infos", reperes: [], fiche: null,
@@ -604,5 +604,11 @@
     };
   }
 
-  return { calendrier, REGLES, TYPES, typeDeduit, cleEnveloppe, ajouterAns, ajouterMois, lendemain, joursEntre, estDate, texteDelai, dateFr, PROCHE_JOURS, DOCUMENTS };
+  /** Entrée du moteur depuis l'état S du store (S.positions, S.config, S.profil, S.savoir.reperes) : crédits et biens sont ceux du profil. */
+  function depuisEtat(S) {
+    const s = objet(S), pr = objet(s.profil);
+    return { positions: liste(s.positions), config: objet(s.config), profil: pr, credits: liste(pr.credits), biens: liste(pr.biens), reperes: liste(objet(s.savoir).reperes) };
+  }
+
+  return { depuisEtat, calendrier, REGLES, TYPES, typeDeduit, cleEnveloppe, ajouterAns, ajouterMois, lendemain, joursEntre, estDate, texteDelai, dateFr, PROCHE_JOURS, DOCUMENTS };
 });

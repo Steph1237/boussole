@@ -394,3 +394,8 @@ test("chaque jalon : source (titre, url https, vérifié le), confiance et statu
 test("Calc.calendrier === Calendrier.calendrier sous Node", () => {
   assert.equal(Calc.calendrier, C.calendrier);
 });
+test("depuisEtat : entrée du moteur construite depuis l'état du store (positions, config, profil, crédits, biens, repères)", () => {
+  const S = { positions: [{ id: "a" }], config: { donations: [] }, profil: { credits: [{ id: "c" }], biens: [{ id: "b" }], personnes: {} }, savoir: { reperes: [{ cle: "x" }] } };
+  assert.deepEqual(C.depuisEtat(S), { positions: [{ id: "a" }], config: { donations: [] }, profil: S.profil, credits: [{ id: "c" }], biens: [{ id: "b" }], reperes: [{ cle: "x" }] });
+  assert.deepEqual(C.depuisEtat(null), { positions: [], config: {}, profil: {}, credits: [], biens: [], reperes: [] });
+});

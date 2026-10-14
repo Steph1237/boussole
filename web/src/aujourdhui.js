@@ -6,6 +6,13 @@
      4. Prochaine échéance : compte à rebours en jours et libellé.
      L'écart au profil de risque a quitté le bandeau : il reste dans Pilotage › Risque et dans la boîte « À traiter » (élément « Allocation
      hors des fourchettes de ton profil », urgence 3, quand le profil est renseigné et qu'une classe est hors fourchette).
+   - Calendrier patrimonial (DAT1, calendrier.js) : echeances() ajoute les jalons à venir du calendrier (source « calendrier ») aux jalons,
+     objectifs datés et points à reprendre ; la carte « Prochaine échéance » prend la plus proche. Sous le bandeau, la carte « Prochaines
+     échéances » (prochainesHtml : 5 jalons au plus, date, délai en mots, enveloppe, effet en une ligne, mot d'état) mène au panneau de chaque
+     jalon (jalonDetail : effet, « Comment c'est calculé », donnée et source, règle et source datée) et au panneau des informations à compléter
+     (aCompleterDetail, « Compléter avec Claude »). Jamais une date sans donnée : l'état vide dit ce qui manque. Un jalon à 30 jours ou moins
+     entre dans la boîte (urgence 3, 2 à 7 jours) ; la revue mensuelle ajoute « N échéances dans les 3 prochains mois ». Lien profond :
+     #aujourdhui?echeances=1 ouvre le panneau complet.
    - Jauge d'objectifs (indicateurs().objectifs) : moyenne des avancements pondérée par la priorité, sur les objectifs de
      ObjectifsView.analyser (moteur Plan : affecterDeja, repartirEpargne, statutObjectif) :
          jauge = Σ poids × min(avancement, 1) / Σ poids,  avancement = déjà de côté / cible,  poids = N − rang + 1
@@ -34,7 +41,7 @@
    Accessibilité et mouvement : cartes = vrais boutons (nom accessible complet, aria-label), jauges avec équivalent texte, statuts en mots
    (jamais la couleur seule) ; décompte des chiffres et remplissage des jauges seulement à la première apparition, jamais avec
    prefers-reduced-motion. Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
-   Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, indicateurs, objectifs, frise, evolution, reperesJournal,
+   Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, indicateurs, objectifs, frise, evolution, reperesJournal,
    urlClaude, delai, lirePeriode, periodeAEnregistrer, phraseRevue, et les rendus HTML cartes, detail, repereDetail, boiteHtml (qui reçoivent
    UI en paramètre quand ils en ont besoin ; aucune ne touche au DOM).
    Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes, Plan, Historique, ObjectifsView, reconstitue? } ;
@@ -108,7 +115,7 @@
   /* ---------- liens ---------- */
   /* Lien profond vers une entrée du journal : la coque retient le paramètre et Agent › Journal ouvre l'entrée (app.js, journal-view.js). */
   const lienEntree = id => "agent/journal?entree=" + encodeURIComponent(String(id));
-  const R = { comptes: "patrimoine/comptes", propositions: "agent/propositions", journal: "agent/journal", connexion: "agent/connexion", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque" };
+  const R = { comptes: "patrimoine/comptes", propositions: "agent/propositions", journal: "agent/journal", connexion: "agent/connexion", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque", echeances: "aujourdhui?echeances=1" };
   /** Lien vers une nouvelle conversation Claude, question préremplie (même forme que UI.demanderAClaude). */
   function urlClaude(question) { return "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? "")); }
   const httpsOk = u => /^https:\/\//.test(String(u || ""));
@@ -126,9 +133,19 @@
     return { label: "Voir les placements", route: R.placements }; // règles de l'utilisateur, écarts aux cibles, signaux de la nuit
   }
 
-  /** Échéances à venir (aujourd'hui compris), triées : jalons de config, objectifs datés, points « à suivre » de la mémoire.
-      → [{ source: jalon|objectif|a_suivre, date, jours, titre, texte, cible? }] */
-  function echeances(S, today) {
+  /* Calendrier patrimonial (Calendrier, calendrier.js) : global du navigateur, sinon le module voisin sous Node. */
+  const CAL = d => (d && Object.prototype.hasOwnProperty.call(d, "Calendrier") ? d.Calendrier : glob("Calendrier") || voisin("Calendrier", "./calendrier.js"));
+  /** Sortie du moteur du calendrier pour l'état S au jour `today` (jalons, a_completer, seuils, regles_indisponibles, prochains,
+      dans_3_mois), ou null si le moteur manque ou échoue. */
+  function calendrierDe(S, today, deps) {
+    const M = CAL(deps), t = jour(today);
+    if (!M || typeof M.calendrier !== "function" || !S || !isoOk(t)) return null;
+    try { return M.calendrier(typeof M.depuisEtat === "function" ? M.depuisEtat(S) : S, t); } catch (e) { return null; }
+  }
+  /** Échéances à venir (aujourd'hui compris), triées : jalons de config, objectifs datés, points « à suivre » de la mémoire, jalons du
+      calendrier patrimonial (jalon = le jalon du moteur).
+      → [{ source: jalon|objectif|a_suivre|calendrier, date, jours, titre, texte, cible?, jalon? }] */
+  function echeances(S, today, deps) {
     const s = S || {}, t = jour(today), out = [];
     const add = (source, date, titre, texte, extra) => {
       if (!isoOk(date)) return;
@@ -143,6 +160,8 @@
     (Array.isArray(s.memoire) ? s.memoire : []).forEach(m => {
       if (m && m.categorie === "a_suivre" && m.echeance) add("a_suivre", jj(m.echeance), "À reprendre : " + extrait(m.contenu, 90), "");
     });
+    const cal = calendrierDe(s, t, deps);
+    if (cal) cal.jalons.filter(j => j.statut !== "passe").forEach(j => add("calendrier", j.date, j.titre, j.effet, { jalon: j }));
     return out.map((x, i) => ({ x, i })).sort((a, b) => a.x.jours - b.x.jours || a.i - b.i).map(o => o.x);
   }
 
@@ -154,20 +173,25 @@
     const s = S || {};
     return RE().etat(s.routines, jour(today), { lues: s.routinesLues === true, dbOk: s.dbOk === true });
   }
+  /** « 2 échéances dans les 3 prochains mois » (calendrier patrimonial), ou "" s'il n'y en a pas. */
+  function phraseEcheances3Mois(S, t, deps) {
+    const cal = calendrierDe(S, t, deps), n = cal ? cal.dans_3_mois.length : 0;
+    return n ? pluriel(n, "échéance") + " dans les 3 prochains mois" : "";
+  }
   /** Élément de la boîte pour la revue mensuelle, ou null (en pause, à jour, état inconnu). */
-  function elementRevue(S, t) {
-    const e = etatRevue(S, t);
+  function elementRevue(S, t, deps) {
+    const e = etatRevue(S, t), ech = e.code === "retard" || e.code === "prete" ? phraseEcheances3Mois(S, t, deps) : "";
     if (e.code === "retard") {
       const n = e.questions.length;
       return { type: "routine", urgence: 2, date: e.prochain,
         titre: e.retard > 0 ? "Revue mensuelle en retard de " + pluriel(e.retard, "jour") : "Revue mensuelle due aujourd'hui",
         contexte: "Prévue le " + dateFr(e.prochain) + " : Claude fait le point du mois et prépare les questions à te poser." +
-          (n ? " " + pluriel(n, "question") + " du mois précédent " + (n > 1 ? "attendent" : "attend") + " encore ta réponse." : ""),
+          (n ? " " + pluriel(n, "question") + " du mois précédent " + (n > 1 ? "attendent" : "attend") + " encore ta réponse." : "") + (ech ? " " + ech + "." : ""),
         action: { label: "Lancer ma revue avec Claude", url: urlClaude(phraseRevue()) } };
     }
     if (e.code === "prete") {
       return { type: "routine", urgence: 1, date: e.dernier || t, titre: "Ta revue du mois est prête : " + pluriel(e.questions.length, "question"),
-        contexte: plat(e.questions[0].question), action: { label: "Répondre avec Claude", url: urlClaude(RE().phraseRoutine(e.questions)) } };
+        contexte: plat(e.questions[0].question) + (ech ? " · " + ech + "." : ""), action: { label: "Répondre avec Claude", url: urlClaude(RE().phraseRoutine(e.questions)) } };
     }
     if (e.code === "a_activer") {
       return { type: "routine", urgence: 3, date: t, titre: "Active ta revue mensuelle",
@@ -272,7 +296,7 @@
 
     // 1 ter. Revue mensuelle (routine de l'agent) : en retard (urgence 2, prioritaire sur « prête »), prête (urgence 1, questions du
     // mois en attente), à activer (urgence 3, aucune routine) ; rien si elle est en pause ou à jour.
-    const rv = elementRevue(S, deps && deps.aujRevue ? jour(deps.aujRevue) : t);
+    const rv = elementRevue(S, deps && deps.aujRevue ? jour(deps.aujRevue) : t, deps);
     if (rv) out.push(rv);
 
     // 1 quater. Banques connectées (BQ1) : connexion à refaire (seulement les états qui demandent une action de l'utilisateur) et
@@ -311,9 +335,9 @@
     });
 
     // 4. Échéances à 30 jours au plus (jalons de config, objectifs datés).
-    echeances(S, t).filter(e => e.source !== "a_suivre" && e.jours <= 30).forEach(e => out.push({ type: "echeance", urgence: e.jours <= 7 ? 2 : 3, date: e.date,
+    echeances(S, t, deps).filter(e => e.source !== "a_suivre" && e.jours <= 30).forEach(e => out.push({ type: "echeance", urgence: e.jours <= 7 ? 2 : 3, date: e.date,
       titre: e.titre, contexte: "Le " + dateFr(e.date) + " (" + delai(e.jours) + ")." + (e.texte ? " " + e.texte : "") + (e.cible ? " Cible : " + eur(e.cible) + "." : ""),
-      action: { label: "Voir les objectifs", route: R.objectifs } }));
+      action: e.source === "calendrier" ? { label: "Voir l'échéance", route: R.echeances } : { label: "Voir les objectifs", route: R.objectifs } }));
 
     // 5. Cours manquants et photo nocturne en retard (fraîcheur de l'en-tête : positions cotées, S.status).
     const sans = (S.positions || []).filter(p => counted(p) && p.mode === "market" && p.price == null);
@@ -456,8 +480,12 @@
       familles: r && Array.isArray(r.familles) ? r.familles.map(x => ({ titre: x.titre, total: x.total })) : [],
       aCompleter: crit.filter(c => c && c.aCompleter).length };
     // Prochaine échéance
-    const ech = echeances(s, t);
-    return { net, pratiques, objectifs: objectifs(s, t, deps), allocation: ecartAllocation(s, deps), echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4) }, frise: f };
+    const ech = echeances(s, t, deps), cal = calendrierDe(s, t, deps);
+    // Calendrier patrimonial : jalons à venir (5 au plus pour la carte), tous les jalons pour le panneau, données à compléter
+    const venir = cal ? cal.jalons.filter(j => j.statut !== "passe") : [];
+    const calendrier = { disponible: !!cal, prochains: venir.slice(0, 5), nPlus: Math.max(0, venir.length - 5), aCompleter: cal ? cal.a_completer : [], jalons: cal ? cal.jalons : [],
+      seuils: cal ? cal.seuils : [], indisponibles: cal ? cal.regles_indisponibles : [] };
+    return { net, pratiques, objectifs: objectifs(s, t, deps), allocation: ecartAllocation(s, deps), echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4) }, calendrier, frise: f };
   }
 
   /** Cône de projection du net (Historique.projeter : moteur Plan, trois scénarios) sur `annees` ans, avec le versement mensuel de la page
@@ -636,14 +664,123 @@
       }
     } else {
       titre = "Prochaines échéances"; route = R.objectifs; label = "Voir les objectifs";
-      question = "Passons en revue mes prochaines échéances et mes objectifs datés dans Boussole.";
+      const jal = ec.prochaine && ec.prochaine.jalon;
+      if (jal && jal.enveloppe && !/^(foyer|donation:|credit:|bien:)/.test(jal.enveloppe)) { route = lienFiche({ enveloppe: plat(jal.enveloppe_nom) || plat(jal.enveloppe), titulaire: jal.titulaire }); label = "Voir l'enveloppe"; }
+      question = "Passons en revue mes prochaines échéances (calendrier patrimonial, objectifs datés) dans Boussole.";
       lignes = ec.liste.slice(0, 4).map(e => [extrait(e.titre, 70), dateFr(e.date) + " · " + quand(e).toLowerCase()]);
       if (!lignes.length) lignes.push(["Échéances à venir", "aucune"]);
       if (lignes.length < 2) lignes.push(["Objectifs datés", "dans Objectifs"]);
-      note = "Dates tirées de tes objectifs, des échéances enregistrées et des points que l'agent doit reprendre avec toi.";
+      note = "Dates tirées du calendrier de tes enveloppes, de tes objectifs, des échéances enregistrées et des points que l'agent doit reprendre avec toi.";
     }
     return { titre, contenu: (id === "net" ? compositionHtml(n) : '<ul class="aj-det">' + lignes.slice(0, 4).map(l => ligne(l[0], l[1])).join("") + "</ul>") +
       '<p class="aj-det-note">' + esc(note) + "</p>", lien: { label, href: "#" + route }, question };
+  }
+
+
+  /* ---------- carte « Prochaines échéances » et panneaux du calendrier patrimonial (DAT1) ---------- */
+  const dateLongue = s => (isoOk(s) ? new Date(s + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "");
+  const dateNum = s => (isoOk(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : "");
+  const MOT_ETAT = { passe: "passé", proche: "bientôt", futur: "à venir" };
+  const TON_ETAT = { passe: "neutre", proche: "attention", futur: "info" };
+  /** Mot de confiance d'un jalon (« date exacte », « au plus tard », « dès », « au plus tôt », « calculée »). */
+  function motConfiance(j) {
+    if (j.confiance === "sure") return "date exacte";
+    if (j.confiance === "calculee") return "date calculée";
+    return j.cle === "av_70_ans" || j.cle === "per_70_ans" ? "dès cette date" : j.cle === "pee_disponible" ? "au plus tôt" : "au plus tard";
+  }
+  /** Phrase d'un jalon sans l'enveloppe : « 5 ans révolus · dans 4 mois ». */
+  const courtDe = j => plat(j.titre).replace(/^[^:]*:\s*/, "");
+  const nomEnv = j => plat(j.enveloppe_nom) || (j.enveloppe === "foyer" ? "Foyer" : plat(j.enveloppe));
+  /** Phrase de la donnée à compléter pour « Compléter avec Claude » : « la date d'ouverture de mon PEA Exemple ». */
+  function contexteACompleter(a) {
+    const nom = plat(a.enveloppe_nom) || plat(a.enveloppe);
+    if (a.champ === "date_ouverture") return "la date d'ouverture de mon " + nom;
+    if (a.champ === "naissance") return plat(a.titre).replace(/^Date/, "la date");
+    if (a.champ === "versements") return "les versements de mon " + nom;
+    if (a.champ === "avis_impot") return "mon avis d'impôt (plafond épargne retraite)";
+    if (a.champ === "date_fin") return "la date de fin de mon prêt « " + nom + " »";
+    return plat(a.titre);
+  }
+  const phraseACompleter = a => prompts().phrase("calendrier", contexteACompleter(a));
+  /** Pied de la carte : « Aucune échéance connue pour l'instant. Il manque la date d'ouverture de 2 enveloppes. » */
+  function ilManque(liste) {
+    const n = champ => liste.filter(a => a.champ === champ).length, parts = [];
+    if (n("date_ouverture")) parts.push("la date d'ouverture de " + pluriel(n("date_ouverture"), "enveloppe"));
+    if (n("naissance")) parts.push(n("naissance") > 1 ? "des dates de naissance" : "une date de naissance");
+    if (n("versements")) parts.push("les versements de " + pluriel(n("versements"), "plan d'épargne salariale", "plans d'épargne salariale"));
+    if (n("avis_impot")) parts.push("ton avis d'impôt");
+    if (n("date_fin")) parts.push("la date de fin de " + pluriel(n("date_fin"), "prêt"));
+    return parts.length ? "Il manque " + liste_(parts) + "." : "";
+  }
+  const liste_ = liste;
+  /** Carte « Prochaines échéances » : liste ordonnée (<ol>) de 5 jalons au plus, boutons ouvrant le panneau du jalon ; pied « N informations à
+      compléter » ; état vide honnête. cal = indicateurs().calendrier. Chaque champ est échappé. */
+  function prochainesHtml(cal, U) {
+    const c = cal || { disponible: false, prochains: [], nPlus: 0, aCompleter: [], indisponibles: [] };
+    if (!c.disponible) return '<p class="aj-vide-x">Le calendrier n\'est pas disponible pour l\'instant.</p>';
+    const ligne = j => {
+      const approx = j.confiance === "approchee", date = (approx ? motConfiance(j) + " le " : "") + dateNum(j.date);
+      return '<li class="aj-ech-it"><button type="button" class="aj-ech-l t-' + TON_ETAT[j.statut] + '" data-ech="' + esc(j.id) + '" aria-haspopup="dialog">' +
+        '<span class="aj-ech-date"><time datetime="' + esc(j.date) + '">' + esc(dateLongue(j.date)) + '</time><span class="aj-ech-delai">' + esc(j.delai) + "</span></span>" +
+        '<span class="aj-ech-txt"><span class="aj-ech-nom">' + esc(nomEnv(j)) + " · " + esc(courtDe(j)) + '</span><span class="aj-ech-eff">' + esc(j.effet) + "</span></span>" +
+        '<span class="aj-ech-etat">' + badge(MOT_ETAT[j.statut], TON_ETAT[j.statut]) + (approx ? badge("approchée", "neutre") : "") + "</span>" +
+        '<span class="ui-sr">' + esc("Date " + date + ", " + motConfiance(j) + ". Ouvre le détail.") + "</span></button></li>";
+    };
+    const n = c.aCompleter.length;
+    const pied = n ? '<p class="aj-ech-pied"><button type="button" class="aj-ech-completer" data-ech-completer aria-haspopup="dialog">' + esc(pluriel(n, "information") + " à compléter") + "</button>" +
+      '<span class="aj-ech-pied-t"> pour dater plus de délais.</span></p>' : "";
+    const dispo = c.indisponibles && c.indisponibles.length ? '<p class="aj-ech-note">' + esc(pluriel(c.indisponibles.length, "règle") + " indisponible" + (c.indisponibles.length > 1 ? "s" : "") + " : un repère chiffré manque, aucune valeur n'est inventée.") + "</p>" : "";
+    if (!c.prochains.length) {
+      const manque = ilManque(c.aCompleter);
+      return '<div class="aj-vide"><p class="aj-vide-t">Aucune échéance connue pour l\'instant.</p>' +
+        '<p class="aj-vide-x">' + esc(manque || "Aucune date n'est enregistrée : Claude les relève dans tes documents (relevés, contrats, avis d'impôt).") + "</p>" +
+        U.demanderAClaude(prompts().phrase("calendrier"), "Compléter avec Claude") + "</div>" + dispo;
+    }
+    return '<ol class="aj-ech-liste" aria-label="Prochaines échéances, par date">' + c.prochains.map(ligne).join("") + "</ol>" +
+      (c.nPlus ? '<p class="aj-ech-note">' + esc("Et " + pluriel(c.nPlus, "autre") + " plus tard.") + "</p>" : "") + pied + dispo;
+  }
+  /** Panneau d'un jalon : l'effet d'abord, puis « Comment c'est calculé » (calcul, donnée et sa source, règle et sa source datée, confiance),
+      la mention fixe. → { titre, contenu, lien?, question } ; contenu échappé. */
+  function jalonDetail(j) {
+    const d = j.donnee, src = j.source || {};
+    const lignes = [];
+    if (j.calcul) lignes.push(ligne("Calcul", j.calcul));
+    lignes.push(ligne("Date", dateLongue(j.date) + " (" + motConfiance(j) + ")"));
+    if (d) lignes.push(ligne("Donnée", [d.source, d.le ? "relevée le " + dateNum(d.le) : ""].filter(Boolean).join(", ") || d.champ));
+    const url = httpsOk(src.url) ? '<a href="' + esc(src.url) + '" target="_blank" rel="noopener noreferrer">' + esc(src.titre || src.url) + '<span class="ui-sr"> (nouvel onglet)</span></a>' : esc(src.titre || "");
+    const regle = src.titre || src.url ? '<li><span class="aj-det-l">Règle</span><span class="aj-det-v">' + url + (src.verifie_le ? "<br>vérifiée le " + esc(dateNum(src.verifie_le)) : "") + "</span></li>" : "";
+    const avert = liste_a(j.avertissements);
+    const calcul = '<ul class="aj-det aj-det-pile">' + lignes.join("") + regle + "</ul>" + avert;
+    const environ = j.enveloppe && !/^(foyer|donation:|credit:|bien:)/.test(j.enveloppe);
+    return { titre: plat(j.titre), contenu: '<p class="aj-det-effet">' + esc(j.effet) + "</p>" + accordeon("Comment c'est calculé", calcul) +
+      '<p class="aj-det-note">Information générale sur la règle, pas une recommandation. Vérifie auprès de ton établissement avant une opération proche de la date.</p>',
+      lien: environ ? { label: "Voir l'enveloppe", href: "#" + lienFiche({ enveloppe: plat(j.enveloppe_nom) || plat(j.enveloppe).replace(/\|p[12]$/, ""), titulaire: j.titulaire }) } : undefined,
+      question: "Explique-moi cette échéance de mon calendrier patrimonial dans Boussole : « " + plat(j.titre) + " » le " + dateNum(j.date) + ". Consulte l'expertise fiscalite-enveloppes, décris l'effet et ce qu'il faut vérifier auprès de mon établissement." };
+  }
+  const liste_a = av => (Array.isArray(av) && av.length ? '<ul class="aj-liste">' + av.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "");
+  /** Panneau des informations à compléter : chaque donnée, pourquoi, où la trouver, et « Compléter avec Claude ». */
+  function aCompleterDetail(liste, U) {
+    const l = Array.isArray(liste) ? liste : [];
+    const items = l.map(a => '<li class="aj-cmp"><p class="aj-cmp-t">' + esc(a.titre) + '</p><p class="aj-cmp-p">' + esc(a.pourquoi) + "</p>" +
+      (a.document ? '<p class="aj-cmp-d">Où la trouver : ' + esc(a.document) + ".</p>" : "") + U.demanderAClaude(phraseACompleter(a), "Compléter avec Claude") + "</li>").join("");
+    return { titre: pluriel(l.length, "information") + " à compléter",
+      contenu: '<p class="aj-det-note">Boussole ne date rien sans donnée : chaque information ci-dessous fait courir un délai. Claude la lit dans ton document, sinon te la demande une seule fois.</p>' +
+        '<ul class="aj-cmps">' + items + "</ul>" };
+  }
+
+  /** Panneau du calendrier complet (lien profond #aujourdhui?echeances=1) : jalons à venir par date, jalons déjà passés repliés, données à compléter. */
+  function calendrierDetail(cal, U) {
+    const c = cal || { prochains: [], jalons: [], aCompleter: [] };
+    const venir = c.jalons.filter(j => j.statut !== "passe"), passes = c.jalons.filter(j => j.statut === "passe");
+    const li = j => '<li><span class="aj-det-l"><time datetime="' + esc(j.date) + '">' + esc(dateLongue(j.date)) + "</time> · " + esc(nomEnv(j)) + " · " + esc(courtDe(j)) + (j.confiance === "approchee" ? " (" + esc(motConfiance(j)) + ")" : "") +
+      '</span><span class="aj-det-v">' + esc(j.delai) + " · " + esc(MOT_ETAT[j.statut]) + "</span></li>";
+    const n = c.aCompleter.length;
+    return { titre: "Calendrier patrimonial",
+      contenu: (venir.length ? '<ol class="aj-det aj-det-ol aj-det-pile">' + venir.map(li).join("") + "</ol>" : '<p class="aj-det-note">Aucune échéance à venir pour l\'instant.</p>') +
+        (passes.length ? accordeon("Déjà passées (" + passes.length + ")", '<ol class="aj-det aj-det-ol aj-det-pile">' + passes.map(li).join("") + "</ol>") : "") +
+        (n ? '<p class="aj-sec-t">' + esc(pluriel(n, "information") + " à compléter") + '</p><ul class="aj-cmps">' + c.aCompleter.map(a => '<li class="aj-cmp"><p class="aj-cmp-t">' + esc(a.titre) + "</p>" +
+          (a.document ? '<p class="aj-cmp-d">Où la trouver : ' + esc(a.document) + ".</p>" : "") + U.demanderAClaude(phraseACompleter(a), "Compléter avec Claude") + "</li>").join("") + "</ul>" : "") +
+        '<p class="aj-det-note">Information générale sur les règles, pas une recommandation. Chaque date vient d\'un document que tu as donné, jamais d\'une estimation.</p>' };
   }
 
   const STATUT_TXT = { a_relire: "À relire", actif: "En cours", realise: "Réalisée", abandonne: "Abandonnée", archive: "Archivée" };
@@ -721,7 +858,7 @@
     return out;
   }
 
-  const H = { boite, elementArgentQuiDort, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, objectifs, evolution, projection, compteARebours, jour, delai, premiereDate,
+  const H = { boite, elementArgentQuiDort, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, calendrierDetail, contexteACompleter, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, objectifs, evolution, projection, compteARebours, jour, delai, premiereDate,
     lirePeriode, periodeAEnregistrer };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
@@ -732,7 +869,7 @@
      ne l'est qu'au rendu, quand la vue est visible. sigX : dernier HTML écrit ; rien n'est réécrit (ni le focus perdu,
      ni un « Voir plus » replié) quand il n'a pas changé. */
   let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, ctlPeriode = null; // largeur : celle du dernier dessin du graphe
-  const sig = { boite: "", cartes: "", graphe: "", legende: "", table: "", etat: "", resume: "" };
+  const sig = { boite: "", ech: "", cartes: "", graphe: "", legende: "", table: "", etat: "", resume: "" };
   /* periode.granularite : celle du dessin (choisie, ou automatique selon la période) ; gChoisie : l'utilisateur l'a choisie lui-même
      (seul cas où elle est passée à UI.periode et enregistrée) ; gClic : vrai pendant le traitement d'un clic ou d'une touche sur la
      bascule de granularité (posé à la capture, effacé au retour de l'événement). */
@@ -814,6 +951,7 @@
     if (!root || !S || !u) return;
     ind = indicateurs(S, jour(), periode, depsVue());
     renderCartes();
+    renderEcheances(u);
     // Même contenu : on ne réécrit pas la liste (une émission du store ne replie pas un « Voir plus » déplié).
     const sg = JSON.stringify(items);
     if (sg !== sig.boite) { sig.boite = sg; $("ajBoite").innerHTML = boiteHtml(items, u); }
@@ -822,6 +960,15 @@
     if ($("ajBoiteN").textContent !== n) $("ajBoiteN").textContent = n;
     renderGraphe();
     chargerHistorique();
+    lienProfond();
+  }
+  /* Carte « Prochaines échéances » : réécrite seulement si son HTML change (le focus d'un bouton n'est pas perdu à chaque émission du store). */
+  function renderEcheances(u) {
+    const h = prochainesHtml(ind && ind.calendrier, u), el = $("ajEch");
+    if (!el || h === sig.ech) return;
+    sig.ech = h; el.innerHTML = h;
+    const n = ind && ind.calendrier ? ind.calendrier.prochains.length : 0, sr = $("ajEchN");
+    if (sr) sr.textContent = n ? pluriel(n, "échéance") + " à venir" : "";
   }
   function renderCartes() {
     const h = cartes(ind, U(), periode);
@@ -962,6 +1109,31 @@
       surFermeture: () => { if (el && !el.isConnected) { const c = root.querySelector('[data-ui-carte="' + id + '"]'); if (c) c.focus(); } } });
   }
 
+  /* Jalon du calendrier → panneau (effet, « Comment c'est calculé », sources) ; focus rendu au bouton, ou à celui du même jalon si la carte a été redessinée. */
+  function ouvrirJalon(el) {
+    const u = U(); if (!u || !u.panneau || !ind || !ind.calendrier) return;
+    const id = el.getAttribute("data-ech"), j = ind.calendrier.jalons.find(x => x.id === id);
+    if (!j) return;
+    const d = jalonDetail(j);
+    u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, lien: d.lien, pied: u.demanderAClaude(d.question, "Demander à Claude"), retour: el,
+      surFermeture: () => { if (!el.isConnected) { const c = Array.from(root.querySelectorAll("[data-ech]")).find(x => x.getAttribute("data-ech") === id); if (c) c.focus(); } } });
+  }
+  function ouvrirACompleter(el) {
+    const u = U(); if (!u || !u.panneau || !ind || !ind.calendrier) return;
+    const d = aCompleterDetail(ind.calendrier.aCompleter, u);
+    u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, retour: el,
+      surFermeture: () => { if (!el.isConnected) { const c = root.querySelector("[data-ech-completer]"); if (c) c.focus(); } } });
+  }
+  /* Lien profond #aujourdhui?echeances=1 : ouvre le calendrier complet une fois les données prêtes. */
+  let ouvrirCalendrierComplet = false;
+  function lienProfond() {
+    const u = U();
+    if (!ouvrirCalendrierComplet || !u || !u.panneau || !ind || !ind.calendrier) return;
+    ouvrirCalendrierComplet = false;
+    const d = calendrierDetail(ind.calendrier, u);
+    u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, retour: root.querySelector("[data-ech]") || undefined });
+  }
+
   /* Repère de décision du graphe → panneau (synthèse, date, statut, lien vers Agent › Journal) ; focus rendu au repère, ou au repère
      du même id si le graphe a été redessiné entre-temps. */
   function ouvrirRepere(el) {
@@ -998,6 +1170,11 @@
     if (u && u.bascule) u.bascule($("ajHorizon"), { label: "Horizon de la projection", actif: String(horizon),
       options: HORIZONS.map(n => ({ id: String(n), label: n + (n > 1 ? " ans" : " an"), aria: n + (n > 1 ? " ans" : " an") })),
       surChange: id => { horizon = +id; try { localStorage.setItem(CLE_H, String(horizon)); } catch (e) {} if (S && ind) renderGraphe(); } });
+    $("ajEch").addEventListener("click", e => {
+      const t = e.target && e.target.closest ? e.target : null;
+      const b = t && t.closest("[data-ech]"), c = t && t.closest("[data-ech-completer]");
+      if (b) ouvrirJalon(b); else if (c) ouvrirACompleter(c);
+    });
     const bc = $("ajCalcul"); if (bc) bc.addEventListener("click", () => ouvrirCalcul(bc));
     $("ajClaude").innerHTML = u && u.demanderAClaude
       ? u.demanderAClaude("Explique-moi simplement l'évolution de mon patrimoine net dans Boussole sur la dernière année : qu'est-ce qui l'a fait bouger ?", "Commenter avec Claude") : "";
@@ -1015,7 +1192,11 @@
     dirty = true;
     if (visible) { render(); dirty = false; }
   }
-  function show() { if (dirty) { render(); dirty = false; } }
+  function show() {
+    const p = window.App && typeof App.parametres === "function" ? App.parametres() : {};
+    if (p && p.echeances) ouvrirCalendrierComplet = true;
+    if (dirty) { render(); dirty = false; } else lienProfond();
+  }
   /* Pastille de la navigation : nombre d'éléments de la boîte de réception (ne dépend que de `items`) ; vide quand il n'y en a pas. */
   function headline() { return items.length ? String(items.length) : ""; }
 

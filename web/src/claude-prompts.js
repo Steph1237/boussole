@@ -2,6 +2,7 @@
    docs/superpowers/specs/2026-10-11-saisie-par-agent.md). Chaque bouton de l'app ouvre Claude avec une phrase prête qui active
    l'agent Boussole sur la bonne section et lui demande d'utiliser les formulaires interactifs. Pur, sans DOM, au tutoiement.
    ClaudePrompts.phrase(section, contexte?) → texte ; ClaudePrompts.SECTIONS → sections connues.
+   Section « calendrier » (DAT1) : le contexte est la donnée à compléter (« la date d'ouverture de mon PEA Exemple »), intégrée à la demande.
    Section « expertise » (EX1) : le contexte est le nom de l'expertise, intégré à la demande (« consulte l'expertise <nom> sur ma
    situation. ») au lieu d'être ajouté en « Concerne : … ».
    ClaudePrompts.PROMPT_TACHE = { revue_mensuelle } : prompt exact de la tâche planifiée de Claude (« Tâches planifiées »), le même
@@ -31,10 +32,13 @@
     revue: "faisons ma revue du mois (demarrer_routine, type revue_mensuelle).",
     routine: "réponds avec moi aux questions de ma revue mensuelle (demarrer_routine, puis le formulaire, puis questions_routine).",
     expertise: "consulte l'expertise adaptée à ma question sur ma situation.",
+    calendrier: "aide-moi à compléter mon calendrier patrimonial (calendrier) : les dates d'ouverture de mes enveloppes, ma date de naissance, la fin de mes prêts. Pars de mes documents et demande-moi seulement ce qui manque, une seule fois.",
   };
   /* Sections dont le contexte fait partie de la demande elle-même (plutôt qu'un « Concerne : … » ajouté). */
   const AVEC_CONTEXTE = {
     expertise: nom => "consulte l'expertise " + nom + " sur ma situation.",
+    /* Calendrier patrimonial (DAT1) : la donnée à compléter (« la date d'ouverture de mon PEA Exemple »). */
+    calendrier: info => "je veux compléter " + info + ". Lis cette information dans le document que je te donne, sinon demande-la-moi une seule fois.",
   };
   /* Prompt des tâches planifiées, par type de routine (contrat RT1, docs/superpowers/plans/2026-10-11-rt1-routines.md). */
   const PROMPT_TACHE = Object.freeze({
