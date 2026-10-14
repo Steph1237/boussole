@@ -16,8 +16,8 @@ for (const c of FIXTURE.cas) {
   test("cas de référence : " + c.nom, () => assert.deepEqual(reduit(sortie(c)), attenduDe(c)));
 }
 
-test("fixture : 43 cas au moins, données fictives, aucun nom réel", () => {
-  assert.ok(FIXTURE.cas.length >= 43);
+test("fixture : 47 cas au moins, données fictives, aucun nom réel", () => {
+  assert.ok(FIXTURE.cas.length >= 47);
   const brut = readFileSync(new URL("./fixtures/calendrier-cas.json", import.meta.url), "utf8");
   assert.doesNotMatch(brut, /boursorama|linxea|spirica|credit agricole|bnp|societe generale/i);
 });
@@ -305,6 +305,90 @@ test("donations : le texte suit le lien et la nature", () => {
   const j = sortie(cas("Donations")).jalons;
   assert.match(esp(j[0].effet), /La donation du 01\/07\/2015 à Enfant 1 n'est plus rappelée : l'abattement de 100 000 €/);
   assert.match(esp(j[1].effet), /Le don familial de sommes d'argent \(31 865 €\)/);
+});
+test("donations : une autre donation des mêmes donateur et bénéficiaire encore rappelée à la date du jalon change le texte (l'abattement se reconstitue de son montant)", () => {
+  const j = sortie(cas("Donations 2012 et 2020")).jalons;
+  assert.equal(esp(j[0].effet), "La donation du 10/04/2012 n'est plus rappelée : l'abattement se reconstitue de son montant (50 000 €).");
+  assert.doesNotMatch(j[0].effet, /de nouveau entier/);
+  assert.match(esp(j[1].effet), /de nouveau entier/, "la dernière donation : plus rien à rappeler, l'abattement est entier");
+  // autre bénéficiaire ou autre donateur : pas de chevauchement
+  const e = entreeDe(cas("Donations 2012 et 2020"));
+  e.config.donations[1].beneficiaire = "Enfant 2";
+  assert.match(esp(C.calendrier(e, "2026-10-14").jalons[0].effet), /de nouveau entier/);
+  e.config.donations[1].beneficiaire = "enfant 1"; e.config.donations[1].donateur = "p2";
+  assert.match(esp(C.calendrier(e, "2026-10-14").jalons[0].effet), /de nouveau entier/);
+  // le chevauchement s'arrête au rappel : une donation faite plus de 15 ans après ne compte pas
+  e.config.donations[1].donateur = "p1"; e.config.donations[1].date = "2028-01-01";
+  assert.match(esp(C.calendrier(e, "2026-10-14").jalons[0].effet), /de nouveau entier/);
+  // un don familial d'argent (abattement propre) ne chevauche pas l'abattement des donations
+  e.config.donations[1].date = "2020-09-15"; e.config.donations[1].nature = "don_argent_790g";
+  assert.match(esp(C.calendrier(e, "2026-10-14").jalons[0].effet), /de nouveau entier/);
+  // montant d'une grosse donation : plafonné à l'abattement
+  e.config.donations[1].nature = "donation"; e.config.donations[0].montant = 250000;
+  assert.match(esp(C.calendrier(e, "2026-10-14").jalons[0].effet), /se reconstitue de son montant \(100 000 €\)/);
+});
+test("don familial d'argent : le texte nomme le donateur (le donateur à défaut de nom)", () => {
+  const e = entreeDe(cas("Donations : 15 ans"));
+  const don = o => o.jalons.find(x => x.enveloppe === "donation:don-2").effet;
+  assert.match(esp(don(C.calendrier(e, "2026-10-14"))), /est de nouveau possible entre Charlie et Enfant 1,/);
+  delete e.profil.personnes.p2;
+  assert.match(esp(don(C.calendrier(e, "2026-10-14"))), /entre le donateur et Enfant 1,/);
+  assert.doesNotMatch(don(C.calendrier(e, "2026-10-14")), /\btoi\b/);
+});
+test("textes du titulaire : son nom (ou « le titulaire »), jamais « tu / tes / ton » pour le PEA, le PER et l'assurance-vie", () => {
+  const per = entreeDe(cas("PER, titulaire né"));
+  const txt = (e, cle) => esp(C.calendrier(e, "2026-10-14").jalons.find(j => j.cle === cle).effet);
+  assert.equal(txt(per, "per_70_ans"), "À partir de cette date, Alex ne peut plus déduire de son revenu imposable ses versements sur un PER.");
+  delete per.profil.personnes.p1.nom;
+  assert.match(txt(per, "per_70_ans"), /^À partir de cette date, le titulaire ne peut plus déduire/);
+  const pea = entreeDe(cas("PEA ouvert le 2021-06-15"));
+  assert.match(txt(pea, "pea_5_ans"), /plan et Alex peut continuer à verser/);
+  const av = txt(entreeDe(cas("Assurance-vie ouverte le 2018-03-01")), "av_8_ans");
+  assert.match(av, /tant que les versements nets \(tous contrats confondus\) restent sous 150 000 € ; au-dessus, ce taux ne s'applique qu'au prorata/);
+  assert.doesNotMatch(av, /\btes\b|\btu\b/);
+});
+test("PEL : l'effet des 2 ans dit qu'un retrait clôture le PEL à tout moment", () => {
+  const j = sortie(cas("PEL ouvert le 2014-09-01")).jalons.find(x => x.cle === "pel_2_ans");
+  const futur = C.REGLES.find(r => r.cle === "pel_2_ans").effet;
+  assert.equal(futur, "Un retrait, à tout moment, clôture le PEL. Avant cette date, ses intérêts sont alors recalculés au taux du CEL et tu perds le droit au prêt.");
+  assert.match(j.effet, /clôturer le PEL ne fait plus recalculer/);
+});
+test("PEL connu à l'année à cheval sur une borne de génération : date d'ouverture exacte « à compléter » (la génération du plan en dépend)", () => {
+  const a = sortie(cas("PEL connu à l'année (2011)")).a_completer;
+  assert.equal(a.length, 1);
+  assert.deepEqual([a[0].enveloppe, a[0].champ], ["PEL Exemple", "date_ouverture"]);
+  assert.match(a[0].pourquoi, /la génération du plan en dépend/);
+  assert.match(a[0].pourquoi, /à l'année près/);
+  const e = entreeDe(cas("PEL connu à l'année (2011)"));
+  const pel = o => C.calendrier(e, "2026-10-14").a_completer.map(x => x.champ);
+  e.config.enveloppes_infos["PEL Exemple"].date_ouverture_approx = "2011-02";
+  assert.deepEqual(pel(), [], "février 2011 : avant la borne, rien à compléter");
+  e.config.enveloppes_infos["PEL Exemple"].date_ouverture_approx = "2011-03";
+  assert.deepEqual(pel(), [], "un mois ne chevauche jamais une borne au 1er du mois");
+  e.config.enveloppes_infos["PEL Exemple"].date_ouverture_approx = "1992";
+  assert.deepEqual(pel(), ["date_ouverture"], "1992 chevauche le 01/04/1992");
+  e.config.enveloppes_infos["PEL Exemple"].date_ouverture_approx = "2015";
+  assert.deepEqual(pel(), [], "2015 : aucune borne");
+  e.config.enveloppes_infos["PEL Exemple"].date_ouverture_approx = "2011";
+  e.config.enveloppes_infos["PEL Exemple"].date_cloture = "2020-01-01";
+  assert.deepEqual(pel(), [], "enveloppe close : rien à compléter");
+});
+test("naissance à compléter : une seule demande par titulaire, même avec une assurance-vie et un PER", () => {
+  const s = sortie(cas("Assurance-vie et PER du même titulaire"));
+  assert.deepEqual(s.a_completer.filter(a => a.champ === "naissance").map(a => a.id), ["naissance:p1"]);
+  const e = entreeDe(cas("Assurance-vie et PER du même titulaire"));
+  e.config.enveloppes_infos["PER Exemple"].titulaire = "p2";
+  e.profil.personnes.p2 = { nom: "Charlie" };
+  assert.deepEqual(C.calendrier(e, "2026-10-14").a_completer.filter(a => a.champ === "naissance").map(a => a.id).sort(), ["naissance:p1", "naissance:p2"]);
+});
+test("clé sans suffixe prise par l'autre titulaire : cleEnveloppe donne nom|titulaire, p2 n'écrase jamais p1", () => {
+  const infos = { PEA: { type: "pea", titulaire: "p1" } };
+  const pos = [{ envelope: "PEA", owner: "p2" }];
+  assert.equal(C.cleEnveloppe("PEA", "p2", pos, infos), "PEA|p2");
+  assert.equal(C.cleEnveloppe("pea", "p1", pos, infos), "PEA", "p1 retrouve sa clé");
+  assert.equal(C.cleEnveloppe("PEA", "p2", pos, { PEA: { type: "pea" } }), "PEA", "clé sans titulaire : partagée, inchangée");
+  assert.equal(C.cleEnveloppe("PEA", "p2", pos, { PEA: { type: "pea", titulaire: "p2" } }), "PEA");
+  assert.equal(C.cleEnveloppe("PEA", null, pos, infos), "PEA", "titulaire inconnu : inchangé");
 });
 test("moins-values : même échéance regroupée, sommes en euros", () => {
   const c = cas("Moins-value de 2017 : dernier");

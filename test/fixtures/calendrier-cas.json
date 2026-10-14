@@ -2677,6 +2677,271 @@
         "seuils": [],
         "regles_indisponibles": []
       }
+    },
+    {
+      "nom": "Donations 2012 et 2020 au même bénéficiaire : le jalon de 2027 garde le rappel de 2020, celui de 2035 est entier",
+      "today": "2026-10-14",
+      "data": {
+        "positions": [],
+        "config": {
+          "donations": [
+            {
+              "id": "don-a",
+              "date": "2012-04-10",
+              "montant": 50000,
+              "donateur": "p1",
+              "lien": "enfant",
+              "beneficiaire": "Enfant 1",
+              "nature": "donation",
+              "source": "acte de donation (exemple)",
+              "le": "2026-02-12"
+            },
+            {
+              "id": "don-b",
+              "date": "2020-09-15",
+              "montant": 30000,
+              "donateur": "p1",
+              "lien": "enfant",
+              "beneficiaire": "Enfant 1",
+              "nature": "donation",
+              "source": "acte de donation (exemple)",
+              "le": "2026-02-12"
+            }
+          ]
+        },
+        "profil": {
+          "personnes": {
+            "p1": {
+              "nom": "Alex"
+            }
+          }
+        }
+      },
+      "attendu": {
+        "jalons": [
+          {
+            "cle": "donation_15_ans",
+            "date": "2027-04-11",
+            "statut": "futur",
+            "confiance": "sure",
+            "enveloppe": "donation:don-a"
+          },
+          {
+            "cle": "donation_15_ans",
+            "date": "2035-09-16",
+            "statut": "futur",
+            "confiance": "sure",
+            "enveloppe": "donation:don-b"
+          }
+        ],
+        "a_completer": [],
+        "seuils": [],
+        "regles_indisponibles": []
+      }
+    },
+    {
+      "nom": "Clé « PEA » sans suffixe déjà prise par p1 : les lignes de p2 ne reprennent pas ses informations (PEA|p2 à compléter)",
+      "today": "2026-10-14",
+      "data": {
+        "positions": [
+          {
+            "id": "a2",
+            "name": "Ligne a2",
+            "envelope": "PEA",
+            "owner": "p2",
+            "status": "actif"
+          }
+        ],
+        "config": {
+          "enveloppes_infos": {
+            "PEA": {
+              "type": "pea",
+              "titulaire": "p1",
+              "date_ouverture": "2021-06-15",
+              "source": "relevé annuel 2025 (exemple)",
+              "le": "2026-02-12"
+            }
+          }
+        },
+        "profil": {
+          "personnes": {
+            "p1": {
+              "nom": "Alex"
+            },
+            "p2": {
+              "nom": "Charlie"
+            }
+          }
+        }
+      },
+      "attendu": {
+        "jalons": [
+          {
+            "cle": "pea_5_ans",
+            "date": "2026-06-16",
+            "statut": "passe",
+            "confiance": "sure",
+            "enveloppe": "PEA"
+          }
+        ],
+        "a_completer": [
+          {
+            "enveloppe": "PEA|p2",
+            "champ": "date_ouverture"
+          }
+        ],
+        "seuils": [],
+        "regles_indisponibles": []
+      }
+    },
+    {
+      "nom": "PEL connu à l'année (2011) : la génération du plan en dépend, date d'ouverture exacte à compléter",
+      "today": "2026-10-14",
+      "data": {
+        "positions": [
+          {
+            "id": "d1",
+            "name": "Ligne d1",
+            "envelope": "PEL Exemple",
+            "owner": "p1",
+            "status": "actif"
+          }
+        ],
+        "config": {
+          "enveloppes_infos": {
+            "PEL Exemple": {
+              "type": "pel",
+              "titulaire": "p1",
+              "date_ouverture_approx": "2011",
+              "source": "relevé annuel 2025 (exemple)",
+              "le": "2026-02-12"
+            }
+          }
+        },
+        "profil": {
+          "personnes": {
+            "p1": {
+              "nom": "Alex"
+            }
+          }
+        }
+      },
+      "attendu": {
+        "jalons": [
+          {
+            "cle": "pel_2_ans",
+            "date": "2014-01-01",
+            "statut": "passe",
+            "confiance": "approchee",
+            "enveloppe": "PEL Exemple"
+          },
+          {
+            "cle": "pel_4_ans",
+            "date": "2016-01-01",
+            "statut": "passe",
+            "confiance": "approchee",
+            "enveloppe": "PEL Exemple"
+          },
+          {
+            "cle": "pel_12_ans",
+            "date": "2023-12-31",
+            "statut": "passe",
+            "confiance": "approchee",
+            "enveloppe": "PEL Exemple"
+          }
+        ],
+        "a_completer": [
+          {
+            "enveloppe": "PEL Exemple",
+            "champ": "date_ouverture"
+          }
+        ],
+        "seuils": [],
+        "regles_indisponibles": []
+      }
+    },
+    {
+      "nom": "Assurance-vie et PER du même titulaire, naissance absente : une seule demande de naissance",
+      "today": "2026-10-14",
+      "data": {
+        "positions": [
+          {
+            "id": "b1",
+            "name": "Ligne b1",
+            "envelope": "Assurance vie Exemple",
+            "owner": "p1",
+            "status": "actif"
+          },
+          {
+            "id": "c1",
+            "name": "Ligne c1",
+            "envelope": "PER Exemple",
+            "owner": "p1",
+            "status": "actif"
+          }
+        ],
+        "config": {
+          "enveloppes_infos": {
+            "Assurance vie Exemple": {
+              "type": "assurance_vie",
+              "titulaire": "p1",
+              "date_ouverture": "2012-01-10",
+              "source": "relevé annuel 2025 (exemple)",
+              "le": "2026-02-12"
+            },
+            "PER Exemple": {
+              "type": "per",
+              "titulaire": "p1",
+              "source": "relevé annuel 2025 (exemple)",
+              "le": "2026-02-12"
+            }
+          }
+        },
+        "profil": {
+          "personnes": {
+            "p1": {
+              "nom": "Alex"
+            }
+          }
+        }
+      },
+      "attendu": {
+        "jalons": [
+          {
+            "cle": "av_8_ans",
+            "date": "2020-01-11",
+            "statut": "passe",
+            "confiance": "sure",
+            "enveloppe": "Assurance vie Exemple"
+          },
+          {
+            "cle": "av_abattement_annee",
+            "date": "2026-12-31",
+            "statut": "proche",
+            "confiance": "sure",
+            "enveloppe": "foyer"
+          },
+          {
+            "cle": "per_fin_annee",
+            "date": "2026-12-31",
+            "statut": "proche",
+            "confiance": "sure",
+            "enveloppe": "foyer"
+          }
+        ],
+        "a_completer": [
+          {
+            "enveloppe": "Assurance vie Exemple",
+            "champ": "naissance"
+          },
+          {
+            "enveloppe": "foyer",
+            "champ": "avis_impot"
+          }
+        ],
+        "seuils": [],
+        "regles_indisponibles": []
+      }
     }
   ]
 }

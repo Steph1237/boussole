@@ -25,7 +25,7 @@ function chargerModule(source, globaux = {}) {
   const noms = [...source.matchAll(/^export (?:const|function|async function) (\w+)/gm)].map(m => m[1]);
   const js = strip(source, { mode: "strip" }).replace(/^import .*$/gm, "").replace(/^export (const|function|async function)/gm, "$1");
   return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`,
-    { z: fauxZ(), RegExp, Date, Math, JSON, Number, String, Object, Array, Set, Map, Promise, console, isFinite, isNaN, Infinity, Intl, Error, crypto: globalThis.crypto, ...globaux });
+    { z: fauxZ(), RegExp, Date, Math, JSON, Number, String, Object, Array, Set, Map, Promise, console, isFinite, isNaN, Infinity, Intl, Error, TextEncoder, crypto: globalThis.crypto, ...globaux });
 }
 const M = SANS_STRIP ? null : chargerModule(lire("supabase/functions/mcp/calendrier.ts"));
 
@@ -286,6 +286,17 @@ test("regler_infos_enveloppe : deux titulaires avec le même nom → clé |p2 ch
   r = await T2.regler_infos_enveloppe.handler({ enveloppe: "PEA Exemple", type: "pea", titulaire: "p1", date_ouverture: "2021-06-15", ...SRC });
   eq(r.ok.items, [], "identique : rien à proposer");
 });
+test("regler_infos_enveloppe : une clé « PEA » sans suffixe déjà prise par p1 → la proposition de p2 va sur PEA|p2 et n'écrase pas p1", { skip: SANS_STRIP }, async () => {
+  const infosP1 = { type: "pea", titulaire: "p1", date_ouverture: "2021-06-15", source: SRC.source, le: TODAY };
+  const T = outilsReglages(baseCal({ config: { ...CFG, enveloppes_infos: { PEA: infosP1 } }, positions: [{ envelope: "PEA", owner: "p2", status: "actif" }] }));
+  const r = await T.regler_infos_enveloppe.handler({ enveloppe: "PEA", type: "pea", titulaire: "p2", date_ouverture: "2023-01-10", ...SRC });
+  eq(Object.keys(r.ok.items[0].apres.enveloppes_infos), ["PEA|p2"]);
+  eq(r.ok.items[0].avant, { enveloppes_infos: { "PEA|p2": null } });
+  assert.ok(r.ok.extra.avertissements.some(x => /« PEA » existe déjà pour p1/.test(x) && /« PEA\|p2 »/.test(x)), "avertit qu'une entrée distincte est créée");
+  const meme = await T.regler_infos_enveloppe.handler({ enveloppe: "PEA", type: "pea", titulaire: "p1", date_ouverture: "2021-06-15", ...SRC });
+  eq(meme.ok.items, [], "p1 retrouve sa clé sans suffixe");
+  assert.equal(M.cleEnveloppe("PEA", "p2", [{ envelope: "PEA", owner: "p2" }], { PEA: { titulaire: "p1" } }), Cal.cleEnveloppe("PEA", "p2", [{ envelope: "PEA", owner: "p2" }], { PEA: { titulaire: "p1" } }));
+});
 test("regler_infos_enveloppe : champs non fournis repris de l'existant ; avertissements (aucune ligne, type déduit différent, titulaire)", { skip: SANS_STRIP }, async () => {
   const actuel = { type: "assurance_vie", titulaire: "p2", date_ouverture: "2018-03-01", source: "ancien", le: "2025-01-01" };
   const T = outilsReglages(baseCal({ config: { ...CFG, enveloppes_infos: { "Assurance vie Exemple": actuel } } }));
@@ -438,6 +449,18 @@ test("CONDUITE_REVUE cite les échéances des 3 mois ; INSTRUCTIONS portent la r
     assert.equal((t.match(/(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu) || [])[0], undefined);
     assert.equal((t.match(/conseill?er|conseillère/i) || [])[0], undefined);
   }
+});
+test("tropVolumineux : mesure en octets UTF-8 avec 10 % de marge sur la limite de 20 000 octets (avant comme apres)", { skip: SANS_STRIP }, () => {
+  const taille = n => ({ apres: { x: "a".repeat(n - JSON.stringify({ x: "" }).length) } });
+  assert.equal(Buffer.byteLength(JSON.stringify(taille(18000).apres)), 18000);
+  assert.equal(R.tropVolumineux([taille(18000)]), null, "18 000 octets : encore accepté");
+  assert.match(R.tropVolumineux([taille(18001)]), /trop volumineuse/);
+  // 3 octets par caractère : 6 000 « € » dépassent la marge bien que JSON.stringify(...).length reste sous 18 000
+  const euros = { apres: { x: "€".repeat(6000) } };
+  assert.ok(JSON.stringify(euros.apres).length < 18000 && Buffer.byteLength(JSON.stringify(euros.apres)) > 18000);
+  assert.match(R.tropVolumineux([euros]), /trop volumineuse/);
+  assert.match(R.tropVolumineux([{ avant: taille(19000).apres, apres: { x: 1 } }]), /trop volumineuse/);
+  assert.equal(R.tropVolumineux([{ avant: null, apres: { x: 1 } }, {}]), null);
 });
 test("propositions trop volumineuses (apres > 20 000 octets) : message clair avant la table ; listes vides non stockées", { skip: SANS_STRIP }, async () => {
   const T = outilsReglages(baseCal());

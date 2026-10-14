@@ -116,20 +116,20 @@ const LIVRETS = ["livret_a", "ldds", "lep"];
 export const REGLES = [
   { cle: "pea_5_ans", types: ["pea", "pea_pme", "pea_jeune"], ancre: "date_ouverture", reperes: ["pea_duree_ans"], fiche: "pea",
     titre: "{env} : {pea_duree_ans} révolus",
-    effet: "Un retrait partiel ne clôture plus le plan et tu peux continuer à verser. Les gains sont exonérés d'impôt sur le revenu ; les prélèvements sociaux restent dus. Avant cette date, un retrait clôture le plan, sauf cas prévus par la loi (licenciement, invalidité, mise à la retraite anticipée…).",
-    effetPasse: "Les {pea_duree_ans} sont révolus : un retrait partiel ne clôture plus le plan et tu peux continuer à verser. Les gains sont exonérés d'impôt sur le revenu ; les prélèvements sociaux restent dus." },
+    effet: "Un retrait partiel ne clôture plus le plan et {qui} peut continuer à verser. Les gains sont exonérés d'impôt sur le revenu ; les prélèvements sociaux restent dus. Avant cette date, un retrait clôture le plan, sauf cas prévus par la loi (licenciement, invalidité, mise à la retraite anticipée…).",
+    effetPasse: "Les {pea_duree_ans} sont révolus : un retrait partiel ne clôture plus le plan et {qui} peut continuer à verser. Les gains sont exonérés d'impôt sur le revenu ; les prélèvements sociaux restent dus." },
   { cle: "av_8_ans", types: ["assurance_vie", "capitalisation"], ancre: "date_ouverture",
     reperes: ["av_duree_ans", "av_abattement_seul", "av_abattement_couple", "av_seuil_versements"], fiche: "assurance-vie",
     titre: "{env} : {av_duree_ans} révolus",
-    effet: "Les gains retirés bénéficient chaque année d'un abattement de {av_abattement_seul} ({av_abattement_couple} pour un couple soumis à imposition commune), tous contrats confondus. Au-delà, ils sont taxés à un taux réduit tant que tes versements nets restent sous {av_seuil_versements}. L'abattement ne joue que sur l'impôt sur le revenu : les prélèvements sociaux restent dus sur la totalité des gains.",
-    effetPasse: "Les {av_duree_ans} sont révolus : les gains retirés bénéficient chaque année d'un abattement de {av_abattement_seul} ({av_abattement_couple} pour un couple soumis à imposition commune), tous contrats confondus. Au-delà, ils sont taxés à un taux réduit tant que tes versements nets restent sous {av_seuil_versements}. L'abattement ne joue que sur l'impôt sur le revenu : les prélèvements sociaux restent dus sur la totalité des gains." },
+    effet: "Les gains retirés bénéficient chaque année d'un abattement de {av_abattement_seul} ({av_abattement_couple} pour un couple soumis à imposition commune), tous contrats confondus. Au-delà, ils sont taxés à un taux réduit tant que les versements nets (tous contrats confondus) restent sous {av_seuil_versements} ; au-dessus, ce taux ne s'applique qu'au prorata. L'abattement ne joue que sur l'impôt sur le revenu : les prélèvements sociaux restent dus sur la totalité des gains.",
+    effetPasse: "Les {av_duree_ans} sont révolus : les gains retirés bénéficient chaque année d'un abattement de {av_abattement_seul} ({av_abattement_couple} pour un couple soumis à imposition commune), tous contrats confondus. Au-delà, ils sont taxés à un taux réduit tant que les versements nets (tous contrats confondus) restent sous {av_seuil_versements} ; au-dessus, ce taux ne s'applique qu'au prorata. L'abattement ne joue que sur l'impôt sur le revenu : les prélèvements sociaux restent dus sur la totalité des gains." },
   { cle: "av_70_ans", types: ["assurance_vie"], ancre: "naissance", reperes: ["av_age_seuil", "av_990i_abattement", "av_757b_abattement"], fiche: "assurance-vie",
     titre: "{env} : {av_age_seuil} de l'assuré",
     effet: "Les versements faits avant cette date relèvent, au décès de l'assuré, d'un abattement de {av_990i_abattement} par bénéficiaire. Ceux faits ensuite relèvent d'un abattement global de {av_757b_abattement}, tous contrats et bénéficiaires confondus ; seuls ces versements sont comptés, pas les gains qu'ils ont produits.",
     effetPasse: "L'assuré a passé les {av_age_seuil} : les versements faits avant relèvent, à son décès, d'un abattement de {av_990i_abattement} par bénéficiaire. Ceux faits depuis relèvent d'un abattement global de {av_757b_abattement}, tous contrats et bénéficiaires confondus ; seuls ces versements sont comptés, pas les gains qu'ils ont produits." },
   { cle: "pel_2_ans", types: ["pel"], ancre: "date_ouverture", reperes: ["pel_retrait_min_ans"], fiche: null,
     titre: "{env} : {pel_retrait_min_ans} révolus",
-    effet: "Avant cette date, un retrait clôture le PEL : ses intérêts sont recalculés au taux du CEL et tu perds le droit au prêt.",
+    effet: "Un retrait, à tout moment, clôture le PEL. Avant cette date, ses intérêts sont alors recalculés au taux du CEL et tu perds le droit au prêt.",
     effetPasse: "Les {pel_retrait_min_ans} sont révolus : clôturer le PEL ne fait plus recalculer ses intérêts au taux du CEL." },
   { cle: "pel_4_ans", types: ["pel"], ancre: "date_ouverture", reperes: ["pel_duree_min_ans", "pel_duree_max_ans"], fiche: null,
     titre: "{env} : {pel_duree_min_ans} révolus",
@@ -160,7 +160,7 @@ export const REGLES = [
       effetPasse: "{montant} sont disponibles sans motif, au plus tôt depuis cette date : le règlement du plan peut en fixer une plus tardive, ton relevé l'indique." } } },
   { cle: "per_70_ans", types: ["per"], ancre: "naissance", reperes: ["per_age_fin_deduction"], fiche: "per",
     titre: "{env} : {per_age_fin_deduction}, fin de la déduction",
-    effet: "À partir de cette date, tes versements sur un PER ne sont plus déductibles de ton revenu imposable.",
+    effet: "À partir de cette date, {qui} ne peut plus déduire de son revenu imposable ses versements sur un PER.",
     effetPasse: "Depuis cette date, les versements sur un PER ne sont plus déductibles du revenu imposable." },
   { cle: "per_plafond_expire", types: [], ancre: "avis_impot", reperes: ["per_report_ans", "per_report_ans_ancien"], fiche: "per",
     titre: "Plafond épargne retraite {annee} : dernier jour pour l'utiliser",
@@ -179,9 +179,12 @@ export const REGLES = [
     effet: "La donation du {date} à {beneficiaire} n'est plus rappelée : l'abattement de {donation_abattement_enfant} entre ce parent et cet enfant est de nouveau entier.",
     effetPasse: "La donation du {date} à {beneficiaire} n'est plus rappelée : l'abattement de {donation_abattement_enfant} entre ce parent et cet enfant est de nouveau entier.",
     variantes: {
+      reconstitue: { reperes: ["donation_rappel_ans", "donation_abattement_enfant"],
+        effet: "La donation du {date} n'est plus rappelée : l'abattement se reconstitue de son montant ({montant}).",
+        effetPasse: "La donation du {date} n'est plus rappelée : l'abattement se reconstitue de son montant ({montant})." },
       don_argent: { reperes: ["donation_rappel_ans", "don_familial_argent"],
-        effet: "Le don familial de sommes d'argent ({don_familial_argent}) est de nouveau possible entre toi et {beneficiaire}, si les conditions d'âge sont remplies.",
-        effetPasse: "Le don familial de sommes d'argent ({don_familial_argent}) est de nouveau possible entre toi et {beneficiaire}, si les conditions d'âge sont remplies." },
+        effet: "Le don familial de sommes d'argent ({don_familial_argent}) est de nouveau possible entre {donateur} et {beneficiaire}, si les conditions d'âge sont remplies.",
+        effetPasse: "Le don familial de sommes d'argent ({don_familial_argent}) est de nouveau possible entre {donateur} et {beneficiaire}, si les conditions d'âge sont remplies." },
       autre: { reperes: ["donation_rappel_ans"],
         effet: "La donation du {date} à {beneficiaire} n'est plus rappelée lors d'une nouvelle donation à la même personne.",
         effetPasse: "La donation du {date} à {beneficiaire} n'est plus rappelée lors d'une nouvelle donation à la même personne." } } },
@@ -239,6 +242,8 @@ export function cleEnveloppe(nom: any, titulaire: any, positions: any, infos: an
   if (direct) return direct;
   const nu = Object.keys(inf).find((k: any) => norm(k) === n && (!objet(inf[k]).titulaire || objet(inf[k]).titulaire === titulaire));
   if (nu) return nu;
+  // une clé sans suffixe existe pour l'autre titulaire : celle-ci ne doit pas être écrasée
+  if (PERSONNES.includes(titulaire) && Object.keys(inf).some(k => norm(k) === n && objet(inf[k]).titulaire && objet(inf[k]).titulaire !== titulaire)) return String(nom).trim() + "|" + titulaire;
   const proprietaires = new Set(liste(positions).filter((p: any) => p && norm(p.envelope) === n).map((p: any) => p.owner));
   return proprietaires.size > 1 && PERSONNES.includes(titulaire) ? String(nom).trim() + "|" + titulaire : String(nom).trim();
 }
@@ -324,7 +329,7 @@ export function calendrier(data: any, today: any, options?: any) {
     if (o.inst && o.inst.cloture && !o.ignorerCloture && o.date > o.inst.cloture.date) return;
     if (o.date > finHorizon) return;
     const jours = joursEntre(today, o.date), statut = statutDe(jours);
-    const ctx = Object.assign({ env: o.nom || "", pel_prolongation: "" }, o.ctx || {});
+    const ctx = Object.assign({ env: o.nom || "", pel_prolongation: "", qui: nomPersonne(o.titulaire) || "le titulaire" }, o.ctx || {});
     if (o.cle === "pel_10_ans" && !o.variante) ctx.pel_prolongation = R.format({ valeur: val("pel_duree_vie_ans") - val("pel_duree_max_ans"), unite: "ans" });
     const modele = (v && v.effet) || regle.effet, modelePasse = (v && v.effetPasse) || regle.effetPasse;
     jalons.push({
@@ -334,8 +339,8 @@ export function calendrier(data: any, today: any, options?: any) {
       source: o.source || sourceDe(cles), confiance: o.confiance, donnee: o.donnee || null, avertissements: avertissementsDe(cles),
     });
   }
-  function aCompl(inst: any, regleCle: any, champ: any, titre: any, pourquoi: any, document: any) {
-    const id = champ + ":" + inst.cle;
+  function aCompl(inst: any, regleCle: any, champ: any, titre: any, pourquoi: any, document: any, idUnique?: string) {
+    const id = idUnique || champ + ":" + inst.cle;
     if (dejaDemande.has(id)) return;
     dejaDemande.add(id);
     aCompleter.push({ id, enveloppe: inst.cle, enveloppe_nom: inst.nom || null, titulaire: inst.titulaire || null, type: inst.type, cle: regleCle, champ, titre, pourquoi, document });
@@ -397,7 +402,7 @@ export function calendrier(data: any, today: any, options?: any) {
       const n = ancreNaissance(inst);
       if (!n) {
         if (ouvert) aCompl(inst, "av_70_ans", "naissance", "Date de naissance " + (nomPersonne(inst.titulaire) ? "de " + nomPersonne(inst.titulaire) : "de l'assuré"),
-          "Elle fixe le " + R.format(rep("av_age_seuil")).replace(" ans", "ᵉ anniversaire") + " de l'assuré, qui change l'abattement applicable aux versements à son décès.", DOCUMENTS.naissance);
+          "Elle fixe le " + R.format(rep("av_age_seuil")).replace(" ans", "ᵉ anniversaire") + " de l'assuré, qui change l'abattement applicable aux versements à son décès.", DOCUMENTS.naissance, "naissance:" + inst.titulaire);
       } else {
         const age = val("av_age_seuil"), date = ajouterAns(n.date, age);
         jalon(Object.assign({}, base, { cle: "av_70_ans", date, confiance: n.confiance, donnee: n.donnee,
@@ -408,7 +413,7 @@ export function calendrier(data: any, today: any, options?: any) {
       const n = ancreNaissance(inst);
       if (!n) {
         if (ouvert) aCompl(inst, "per_70_ans", "naissance", "Date de naissance " + (nomPersonne(inst.titulaire) ? "de " + nomPersonne(inst.titulaire) : "du titulaire"),
-          "Elle fixe le " + R.format(rep("per_age_fin_deduction")).replace(" ans", "ᵉ anniversaire") + ", à partir duquel les versements ne sont plus déductibles.", DOCUMENTS.naissance);
+          "Elle fixe le " + R.format(rep("per_age_fin_deduction")).replace(" ans", "ᵉ anniversaire") + ", à partir duquel les versements ne sont plus déductibles.", DOCUMENTS.naissance, "naissance:" + inst.titulaire);
       } else {
         const age = val("per_age_fin_deduction"), date = ajouterAns(n.date, age);
         jalon(Object.assign({}, base, { cle: "per_70_ans", date, confiance: n.confiance, donnee: n.donnee,
@@ -425,6 +430,9 @@ export function calendrier(data: any, today: any, options?: any) {
       } else {
         const depuis2011 = a.min >= "2011-03-01", avant2011 = a.max < "2011-03-01", depuis1992 = a.min >= "1992-04-01";
         const plan = (c: any, rd: any, o: any) => duree(c, rd, Object.assign({ ancre: "versement initial" }, o));
+        const cheval = (borne: string) => a.min < borne && a.max >= borne;
+        if (ouvert && a.confiance === "approchee" && (cheval("2011-03-01") || cheval("1992-04-01")))
+          demanderOuverture("pel_10_ans", "Elle n'est connue qu'à l'année près et la génération du plan en dépend : durée maximale, fin du plan et exonération d'impôt ne sont pas les mêmes selon la date d'ouverture exacte.");
         plan("pel_2_ans", "pel_retrait_min_ans", {});
         if (depuis1992) plan("pel_4_ans", "pel_duree_min_ans", {});
         if (depuis2011) plan("pel_10_ans", "pel_duree_max_ans", {});
@@ -505,13 +513,19 @@ export function calendrier(data: any, today: any, options?: any) {
   // donations consenties : rappel fiscal à 15 ans
   liste(cfg.donations).forEach((dn: any) => {
     if (!dn || typeof dn !== "object" || !estDate(dn.date) || dn.nature === "don_logement_790a_bis" || typeof dn.id !== "string" || !dn.id) return;
-    const variante = dn.nature === "don_argent_790g" ? "don_argent" : dn.lien === "enfant" ? null : "autre";
+    let variante = dn.nature === "don_argent_790g" ? "don_argent" : dn.lien === "enfant" ? null : "autre";
     const v = variante && REGLE.donation_15_ans.variantes[variante];
     const requis = v ? v.reperes : REGLE.donation_15_ans.reperes.slice(0, 2);
     if (manquants("donation_15_ans", requis)) return;
     const expire = ajouterAns(dn.date, val("donation_rappel_ans")), date = lendemain(expire);
+    // une autre donation des mêmes donateur et bénéficiaire encore dans le rappel à cette date : l'abattement ne redevient pas « entier »
+    const garde = (o: any) => o && o !== dn && typeof o === "object" && estDate(o.date) && o.date <= date && ajouterAns(o.date, val("donation_rappel_ans")) >= date
+      && o.nature !== "don_argent_790g" && o.nature !== "don_logement_790a_bis" && o.donateur === dn.donateur && norm(o.beneficiaire) === norm(dn.beneficiaire);
+    const montant = nombre(dn.montant);
+    if (!variante && montant > 0 && typeof dn.donateur === "string" && norm(dn.beneficiaire) && liste(cfg.donations).some(garde)) variante = "reconstitue";
     jalon({ cle: "donation_15_ans", enveloppe: "donation:" + dn.id, nom: dn.beneficiaire || "le bénéficiaire", titulaire: PERSONNES.includes(dn.donateur) ? dn.donateur : null, type: "donation",
-      date, confiance: "sure", reperes: requis, variante, ctx: { beneficiaire: dn.beneficiaire || "le bénéficiaire", date: dateFr(dn.date) },
+      date, confiance: "sure", reperes: requis, variante, ctx: { beneficiaire: dn.beneficiaire || "le bénéficiaire", date: dateFr(dn.date), donateur: nomPersonne(dn.donateur) || "le donateur",
+        montant: eur(variante === "reconstitue" ? Math.min(montant, val("donation_abattement_enfant")) : montant || 0) },
       donnee: { champ: "donations", source: dn.source != null ? String(dn.source) : null, le: dn.le != null ? String(dn.le) : null },
       calcul: "donation du " + dateFr(dn.date) + " + " + R.format(rep("donation_rappel_ans")) + " → " + dateFr(expire) + ", rappel écarté dès le " + dateFr(date) });
   });

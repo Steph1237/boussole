@@ -275,10 +275,13 @@ export function infosEnveloppeDe(a: any, aujourdhui: string, actuel: any = null)
   if (erreurs.length) return { erreurs };
   return { nom, suffixe: m ? m[2] : null, erreurs, infos: { type, titulaire, ...fusion, source, le } };
 }
-/** La table propositions limite `apres` à 20 000 octets : message clair plutôt que le refus de la table. */
+/** La table propositions limite `avant` et `apres` à 20 000 octets (octet_length(jsonb::text) : UTF-8, avec les espaces que jsonb ajoute
+    après « : » et « , »). Mesure en octets (TextEncoder), avec 10 % de marge : message clair plutôt que le refus de la table. */
 export const APRES_OCTETS_MAX = 20000;
+const OCTETS_SEUIL = Math.floor(APRES_OCTETS_MAX * 0.9);
+const octets = (v: unknown): number => new TextEncoder().encode(JSON.stringify(v ?? {})).length;
 export const tropVolumineux = (items: any[]): string | null =>
-  items.some((i) => JSON.stringify(i?.apres ?? {}).length > APRES_OCTETS_MAX - 500) ? "La proposition est trop volumineuse pour la table des propositions (20 000 octets) : propose moins de lignes à la fois." : null;
+  items.some((i) => octets(i?.apres) > OCTETS_SEUIL || octets(i?.avant) > OCTETS_SEUIL) ? "La proposition est trop volumineuse pour la table des propositions (20 000 octets) : propose moins de lignes à la fois." : null;
 /** Phrase lisible des informations d'une enveloppe : « PEA, titulaire p1, ouverte le 15/06/2021, 92 000 € versés (relevé annuel 2025) ». */
 export function texteInfosEnveloppe(i: any): string {
   if (!isObj(i)) return "aucune information";
@@ -585,6 +588,8 @@ export function registerReglages(server: any, h: Reglages) {
     else if (!lignes.some((p: any) => p.owner === a.titulaire)) avertissements.push(`Les lignes de « ${nom} » appartiennent à ${[...new Set(lignes.map((p: any) => p.owner))].join(" et ")}, pas à ${a.titulaire} : vérifie le titulaire.`);
     const deduit = h.calendrier?.typeDeduit(nom);
     if (deduit && deduit !== a.type) avertissements.push(`Le nom « ${nom} » évoque le type ${deduit}, tu proposes ${a.type} : confirme-le avec l'utilisateur.`);
+    const prise = Object.keys(actuels).find((k) => sansAccent(k) === sansAccent(nom) && isObj(actuels[k]) && actuels[k].titulaire && actuels[k].titulaire !== a.titulaire);
+    if (prise && !cleActuelle) avertissements.push(`« ${prise} » existe déjà pour ${actuels[prise].titulaire} : cette proposition crée une entrée distincte « ${cle} » pour ${a.titulaire} (l'autre n'est pas modifiée). Si c'était une correction du titulaire, dis-le à l'utilisateur.`);
     const cles = Object.keys(actuels);
     if (!cleActuelle && cles.length >= ENVELOPPES_MAX) avertissements.push(`${ENVELOPPES_MAX} enveloppes au plus : retire-en une avant d'en ajouter.`);
     const items = pareil(cur, r.infos) ? [] : [{ cible: "config", operation: "modifier", avant: { enveloppes_infos: { [cle]: cur } }, apres: { enveloppes_infos: { [cle]: r.infos } } }];
