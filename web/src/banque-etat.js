@@ -168,7 +168,7 @@
   function carteMfa() {
     return '<section class="bq-mfa" role="note" aria-labelledby="bqMfaTitre"><h3 id="bqMfaTitre">Active la double authentification pour voir ton détail bancaire</h3>' +
       "<p>Sans double authentification, le détail bancaire (opérations, budget réel, gestion des banques connectées) reste masqué ; tes soldes, eux, restent visibles dans ton patrimoine. Une fois activée, tout Boussole (comptes, placements, crédits, budget…) te demande un code à 6 chiffres, en plus de ton mot de passe. L'activation prend deux minutes.</p>" +
-      '<a class="bq-mfa-btn" href="' + LIEN_SECURITE + '">Activer la double authentification</a></section>';
+      '<a class="bq-mfa-btn" href="' + LIEN_SECURITE + '" data-mfa-activer>Activer la double authentification</a></section>';
   }
 
   /* ---------- appels à la fonction powens ---------- */

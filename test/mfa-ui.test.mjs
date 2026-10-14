@@ -31,7 +31,7 @@ function fauxClient({ current = "aal1", next = "aal2", verifies = [], nonVerifie
       const e = erreurs.enroll; if (e) return { data: null, error: e };
       const id = "f-nouveau";
       abandonnes.push({ id, factor_type: "totp", status: "unverified", created_at: "2026-10-14T09:00:00Z" });
-      return { data: { id, type: "totp", totp: { qr_code: erreurs.qr ?? QR, secret: "JBSWY3DPEHPK3PXP", uri: "otpauth://totp/Boussole:camille@example.org?secret=JBSWY3DPEHPK3PXP" } }, error: null };
+      return { data: { id, type: "totp", totp: { qr_code: erreurs.qr ?? QR, secret: "JBSWY3DPEHPK3PXP", uri: erreurs.uri ?? "otpauth://totp/Boussole:camille@example.org?secret=JBSWY3DPEHPK3PXP&issuer=Boussole" } }, error: null };
     },
     challenge: async a => { appels.push(["challenge", a]); return err("challenge", { data: { id: "ch-" + a.factorId }, error: null }); },
     verify: async a => {
@@ -200,9 +200,13 @@ test("écran de code : erreur réseau ou limite de débit expliquée ; deux appa
   await net.saisir("123456");
   assert.match(texte(net.$("mfaCodeMsg")), /Trop de tentatives/);
   const deux = await monterEcran({ verifies: [F1, F2] });
-  assert.ok(deux.$("mfaFacteur"), "choix de l'appareil");
-  assert.ok(deux.cont.querySelector('label[for="mfaFacteur"]'));
-  deux.$("mfaFacteur").value = "f-2";
+  assert.equal(deux.cont.querySelector("#mfaFacteur"), null, "plus de liste déroulante : une seule étape");
+  assert.match(texte(deux.$("mfaAppareil")), /^Appareil 1 sur 2, ajouté le 1(er)? septembre 2026\.$/);
+  assert.equal(texte(deux.$("mfaAutre")), "Utiliser un autre appareil");
+  assert.equal(deux.$("mfaAutre").localName, "button"); assert.equal(deux.$("mfaAutre").getAttribute("type"), "button");
+  deux.$("mfaAutre").click();
+  assert.match(texte(deux.$("mfaAppareil")), /^Appareil 2 sur 2, ajouté le 15 septembre 2026\.$/);
+  assert.equal(deux.doc.activeElement, deux.$("mfaCode"), "focus rendu au champ du code");
   await deux.saisir("123456");
   assert.deepEqual(deux.f.appels.find(a => a[0] === "challenge"), ["challenge", { factorId: "f-2" }]);
   const q = await monterEcran();
@@ -210,6 +214,7 @@ test("écran de code : erreur réseau ou limite de débit expliquée ; deux appa
   assert.equal(q.evts.quitte, 1);
   const sans = await monterEcran({ opts: { sansQuitter: true } });
   assert.equal(sans.cont.querySelector("#mfaCodeQuitter"), null);
+  assert.equal(sans.cont.querySelector("#mfaAutre"), null, "un seul appareil : pas de bouton « autre appareil »");
 });
 
 test("écran de code : liste des appareils illisible ou vide → message, jamais d'appel verify", async () => {
@@ -371,22 +376,24 @@ function fauxStockage(init = {}) {
   const m = new Map(Object.entries(init));
   return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: k => { m.delete(k); }, _m: m };
 }
-async function monterSec({ verifies = [], anonyme = false, erreurs, qr, email = "camille@example.org" } = {}) {
-  const dom = miniDom(), { doc, Ev } = dom;
-  const f = fauxClient({ verifies, erreurs: Object.assign({}, erreurs, qr !== undefined ? { qr } : {}) });
+async function monterSec({ verifies = [], anonyme = false, erreurs, qr, uri, email = "camille@example.org", clipboard, petitEcran = false } = {}) {
+  const dom = miniDom(), { doc, Ev, touche } = dom;
+  const f = fauxClient({ verifies, erreurs: Object.assign({}, erreurs, qr !== undefined ? { qr } : {}, uri !== undefined ? { uri } : {}) });
   const cont = doc.body.appendChild(doc.createElement("div"));
   const changes = [];
   const storage = fauxStockage();
-  await Mfa.monterSecurite(cont, Mfa.adapter(f.client), { doc, anonyme, email, storage, lienSecuriser: "#securiser", onChange: l => changes.push(l.length) });
+  await Mfa.monterSecurite(cont, Mfa.adapter(f.client), { doc, anonyme, email, storage, clipboard, petitEcran, lienSecuriser: "#securiser", onChange: l => changes.push(l.length) });
   const $ = id => cont.querySelector("#" + id);
-  const clic = async sel => { const b = cont.querySelector(sel); assert.ok(b, "bouton " + sel); b.click(); await tick(); };
-  const soumettre = async code => { $("mfaInscrCode").value = code; $("mfaInscrForm").dispatchEvent(new Ev("submit")); await tick(); };
-  // première inscription : le mot de passe est redemandé dans la page avant d'appeler enroll
+  const D = id => doc.body.querySelector("#" + id); // dans le dialogue d'activation (posé sur le body)
+  const clic = async sel => { const b = doc.body.querySelector(sel); assert.ok(b, "bouton " + sel); b.click(); await tick(); };
+  // étape 1 → 2 : le dialogue s'ouvre ; premier appareil = mot de passe redemandé avant d'appeler enroll
   const ajouter = async (mdp = MOT_DE_PASSE) => {
     await clic("#mfaAjouter");
-    if (cont.querySelector("#mfaReauthForm")) { $("mfaReauthPw").value = mdp; $("mfaReauthForm").dispatchEvent(new Ev("submit")); await tick(); }
+    if (D("mfaAssPw")) { D("mfaAssPw").value = mdp; D("mfaAssForm1").dispatchEvent(new Ev("submit")); await tick(); }
   };
-  return { doc, cont, f, $, clic, soumettre, changes, ajouter, storage };
+  const versCode = async () => { await ajouter(); D("mfaAssSuite").click(); await tick(); }; // étape 3
+  const soumettre = async code => { D("mfaAssCode").value = code; D("mfaAssForm").dispatchEvent(new Ev("submit")); await tick(); };
+  return { doc, Ev, touche, cont, f, $, D, clic, soumettre, changes, ajouter, versCode, storage };
 }
 
 test("Sécurité, compte anonyme : phrase d'explication et lien pour sécuriser le compte d'abord, aucune inscription possible", async () => {
@@ -406,28 +413,36 @@ test("Sécurité, sans appareil : état clair, bouton « Activer la double authe
   assert.match(texte(v.cont), /Sans lui, le détail bancaire \(opérations, budget réel\) reste masqué ; une fois activé, il est demandé pour accéder à toutes tes données/);
 });
 
-test("Sécurité, inscription : QR code (SVG) avec texte alternatif, clé en texte, code à 6 chiffres ; bon code → appareil listé et message", async () => {
+test("Sécurité, inscription : bouton → dialogue (plus de formulaire dans la page) ; QR code avec texte alternatif, clé révélée à la demande ; bon code → appareil listé et message", async () => {
   const v = await monterSec();
   await v.ajouter();
+  assert.ok(v.D("mfaAss") && v.D("mfaAss").getAttribute("role") === "dialog", "l'inscription se fait dans un dialogue");
+  assert.equal(v.cont.querySelector("#mfaInscrForm"), null);
   assert.deepEqual(v.f.appels.find(a => a[0] === "enroll")[1].factorType, "totp");
-  const img = v.$("mfaQr");
+  const img = v.D("mfaQr");
   assert.ok(img && img.localName === "img");
   assert.match(img.getAttribute("src"), /^data:image\/svg\+xml;utf-8,<svg/);
   assert.match(img.getAttribute("alt"), /QR code à scanner avec ton application d'authentification/);
-  assert.equal(texte(v.$("mfaSecret")), "JBSWY3DPEHPK3PXP", "clé de secours en texte");
-  assert.ok(v.cont.querySelector('label[for="mfaInscrCode"]'));
-  assert.equal(v.$("mfaInscrCode").getAttribute("autocomplete"), "one-time-code");
+  assert.equal(v.D("mfaCle").hidden, true, "clé masquée tant qu'on ne demande pas");
+  await v.clic("#mfaPasScanner");
+  assert.equal(v.D("mfaCle").hidden, false);
+  assert.equal(texte(v.D("mfaSecret")), "JBSWY3DPEHPK3PXP", "clé de secours en texte");
+  v.D("mfaAssSuite").click(); await tick();
+  assert.ok(v.doc.body.querySelector('label[for="mfaAssCode"]'));
+  assert.equal(v.D("mfaAssCode").getAttribute("autocomplete"), "one-time-code");
   await v.soumettre("000000");
-  assert.match(texte(v.$("mfaMsg")), /^Code incorrect\./);
-  assert.equal(v.$("mfaMsg").getAttribute("role"), "alert");
-  assert.ok(v.$("mfaInscrForm"), "toujours en inscription");
+  assert.match(texte(v.D("mfaAssMsg")), /^Code incorrect\./);
+  assert.equal(v.D("mfaAssMsg").getAttribute("role"), "alert");
+  assert.ok(v.D("mfaAssForm"), "toujours à l'étape du code");
   await v.soumettre("123 456");
   assert.deepEqual(v.f.appels.filter(a => a[0] === "verify").at(-1), ["verify", { factorId: "f-nouveau", challengeId: "ch-f-nouveau", code: "123456" }]);
-  assert.equal(v.cont.querySelector("#mfaInscrForm"), null);
+  assert.equal(texte(v.D("mfaEtape")), "Étape 4 sur 4");
+  assert.deepEqual(v.changes, [1], "onChange dès l'activation");
+  v.D("mfaAssFin").click(); await tick();
+  assert.equal(v.D("mfaAss"), null, "dialogue fermé");
   assert.match(texte(v.cont), /Appareil 1/);
   assert.match(texte(v.$("mfaMsg")), /^Double authentification activée\./);
   assert.equal(v.$("mfaMsg").getAttribute("role"), "status");
-  assert.deepEqual(v.changes, [1]);
   assert.equal(texte(v.$("mfaAjouter")), "Ajouter un second appareil");
 });
 
@@ -462,20 +477,22 @@ test("Sécurité : retrait refusé sans aal2 → message ; deux appareils → co
   await deux.clic('[data-mfa="retirer"]');
   assert.match(texte(deux.cont.querySelector('[role="group"]')), /Tes autres appareils restent valables/);
   const ann = await monterSec();
-  await ann.ajouter(); await ann.clic('[data-mfa="annuler-inscription"]');
-  assert.equal(ann.cont.querySelector("#mfaInscrForm"), null);
+  await ann.ajouter(); await ann.clic('[data-ass="fermer"]');
+  assert.equal(ann.D("mfaAss"), null);
   assert.ok(ann.f.appels.some(a => a[0] === "unenroll" && a[1].factorId === "f-nouveau"), "inscription abandonnée retirée");
 });
 
 test("Sécurité : erreur à l'inscription expliquée ; QR d'origine inattendue jamais affiché (clé en texte seulement) ; tutoiement partout", async () => {
   const panne = await monterSec({ erreurs: { enroll: { code: "too_many_enrolled_mfa_factors", message: "x", status: 422 } } });
   await panne.ajouter();
-  assert.match(texte(panne.$("mfaMsg")), /nombre maximal d'appareils/);
+  assert.match(texte(panne.D("mfaAssMsg")), /nombre maximal d'appareils/);
+  assert.equal(texte(panne.D("mfaEtape")), "Étape 1 sur 4", "l'assistant reste à l'étape 1");
   const bizarre = await monterSec({ qr: "javascript:alert(1)" });
   await bizarre.ajouter();
-  assert.equal(bizarre.cont.querySelector("#mfaQr"), null);
-  assert.equal(texte(bizarre.$("mfaSecret")), "JBSWY3DPEHPK3PXP");
+  assert.equal(bizarre.D("mfaQr"), null);
+  assert.equal(texte(bizarre.D("mfaSecret")), "JBSWY3DPEHPK3PXP");
   for (const v of [await monterSec(), await monterSec({ verifies: [F1] }), bizarre]) assert.doesNotMatch(texte(v.cont), VOUVOIEMENT);
+  assert.doesNotMatch(texte(bizarre.doc.body), VOUVOIEMENT);
 });
 
 test("compte.html : section Double authentification (ancre #securite), conteneur, mfa.js avant auth.js ; account.js la monte et exige le code avant tout", () => {
@@ -502,59 +519,62 @@ test("build : mfa.js assemblé dans app.html (avant auth.js) et copié pour les 
 });
 
 /* =================================================================== I1 : mot de passe redemandé avant la première inscription =================================================================== */
-test("Sécurité (I1) : première inscription → le mot de passe est redemandé dans la page, enroll n'est PAS appelé avant", async () => {
+test("Sécurité (I1) : première inscription → le mot de passe est redemandé dans le dialogue, enroll n'est PAS appelé avant", async () => {
   const v = await monterSec();
   await v.clic("#mfaAjouter");
-  assert.ok(v.$("mfaReauthForm"), "formulaire de mot de passe dans la page");
-  const champ = v.$("mfaReauthPw");
+  assert.ok(v.D("mfaAssForm1"), "formulaire de mot de passe (étape 1)");
+  const champ = v.D("mfaAssPw");
   assert.equal(champ.getAttribute("type"), "password");
   assert.equal(champ.getAttribute("autocomplete"), "current-password");
-  assert.ok(v.cont.querySelector('label[for="mfaReauthPw"]'));
-  assert.equal(v.cont.querySelector("#mfaInscrForm"), null);
+  assert.ok(v.doc.body.querySelector('label[for="mfaAssPw"]'));
+  assert.equal(v.doc.body.querySelector("#mfaQr"), null);
   assert.ok(!v.f.appels.some(a => a[0] === "enroll" || a[0] === "signIn"), "ni connexion ni inscription avant la saisie");
-  assert.doesNotMatch(texte(v.cont), VOUVOIEMENT);
+  assert.doesNotMatch(texte(v.doc.body), VOUVOIEMENT);
 });
 
 test("Sécurité (I1) : mauvais mot de passe → message, champ vidé, enroll jamais appelé ; bon mot de passe → signInWithPassword sur l'e-mail courant PUIS enroll", async () => {
   const v = await monterSec({ email: "camille@example.org" });
   await v.clic("#mfaAjouter");
-  v.$("mfaReauthPw").value = "mauvais"; v.$("mfaReauthForm").dispatchEvent(new (miniDom().Ev)("submit")); await tick();
-  assert.match(texte(v.$("mfaMsg")), /^Mot de passe incorrect\./);
-  assert.equal(v.$("mfaReauthPw").value, "");
+  v.D("mfaAssPw").value = "mauvais"; v.D("mfaAssForm1").dispatchEvent(new v.Ev("submit")); await tick();
+  assert.match(texte(v.D("mfaAssMsg")), /^Mot de passe incorrect\./);
+  assert.equal(v.D("mfaAssPw").value, "");
   assert.ok(!v.f.appels.some(a => a[0] === "enroll"), "aucune inscription sur un mauvais mot de passe");
-  v.$("mfaReauthPw").value = MOT_DE_PASSE; v.$("mfaReauthForm").dispatchEvent(new (miniDom().Ev)("submit")); await tick();
-  assert.ok(v.$("mfaInscrForm"), "bon mot de passe : l'inscription démarre");
+  v.D("mfaAssPw").value = MOT_DE_PASSE; v.D("mfaAssForm1").dispatchEvent(new v.Ev("submit")); await tick();
+  assert.ok(v.D("mfaQr") && texte(v.D("mfaEtape")) === "Étape 2 sur 4", "bon mot de passe : l'inscription démarre");
   assert.deepEqual(v.f.appels.map(a => a[0]).filter(n => n === "signIn" || n === "enroll"), ["signIn", "signIn", "enroll"]);
 });
 
-test("Sécurité (I1) : séquence exacte signIn → enroll ; champ vide refusé sans appel ; annuler revient à la liste ; e-mail inconnu → refus (échec fermé)", async () => {
+test("Sécurité (I1) : séquence exacte signIn → enroll ; champ vide refusé sans appel ; annuler ferme le dialogue ; e-mail inconnu → refus (échec fermé)", async () => {
   const v = await monterSec();
   await v.clic("#mfaAjouter");
-  v.$("mfaReauthPw").value = ""; v.$("mfaReauthForm").dispatchEvent(new (miniDom().Ev)("submit")); await tick();
-  assert.match(texte(v.$("mfaMsg")), /^Saisis ton mot de passe\./);
-  assert.equal(v.f.appels.length > 0 && v.f.appels.some(a => a[0] === "signIn"), false);
-  await v.clic('[data-mfa="annuler-reauth"]');
-  assert.ok(v.$("mfaAjouter") && !v.cont.querySelector("#mfaReauthForm"), "retour à la liste");
+  v.D("mfaAssPw").value = ""; v.D("mfaAssForm1").dispatchEvent(new v.Ev("submit")); await tick();
+  assert.match(texte(v.D("mfaAssMsg")), /^Saisis ton mot de passe\./);
+  assert.equal(v.f.appels.some(a => a[0] === "signIn"), false);
+  await v.clic('[data-ass="annuler"]');
+  assert.equal(v.D("mfaAss"), null, "dialogue fermé");
+  assert.ok(v.$("mfaAjouter") && v.doc.activeElement === v.$("mfaAjouter"), "retour à la liste, focus sur le bouton");
   await v.ajouter();
   const seq = v.f.appels.map(a => a[0]).filter(n => n === "signIn" || n === "enroll");
   assert.deepEqual(seq, ["signIn", "enroll"]);
   assert.deepEqual(v.f.appels.find(a => a[0] === "signIn"), ["signIn", "camille@example.org"]);
-  assert.ok(v.$("mfaInscrForm"), "inscription affichée");
+  assert.ok(v.D("mfaQr"), "inscription affichée");
   const sansEmail = await monterSec({ email: "" });
   await sansEmail.ajouter();
-  assert.match(texte(sansEmail.$("mfaMsg")), /Adresse e-mail introuvable/);
+  assert.match(texte(sansEmail.D("mfaAssMsg")), /Adresse e-mail introuvable/);
   assert.ok(!sansEmail.f.appels.some(a => a[0] === "enroll" || a[0] === "signIn"));
   const reseau = await monterSec({ erreurs: { signIn: { code: "network", message: "Failed to fetch" } } });
   await reseau.ajouter();
-  assert.match(texte(reseau.$("mfaMsg")), /Connexion au serveur impossible/);
+  assert.match(texte(reseau.D("mfaAssMsg")), /Connexion au serveur impossible/);
   assert.ok(!reseau.f.appels.some(a => a[0] === "enroll"), "réseau en panne : pas d'inscription");
 });
 
 test("Sécurité (I1) : second appareil (une session aal2 existe déjà) → pas de nouveau mot de passe, enroll direct", async () => {
   const v = await monterSec({ verifies: [F1] });
   await v.clic("#mfaAjouter");
-  assert.equal(v.cont.querySelector("#mfaReauthForm"), null);
-  assert.ok(v.$("mfaInscrForm"));
+  assert.equal(v.D("mfaAssPw"), null, "pas de champ mot de passe");
+  assert.match(texte(v.D("mfaAss")), /second appareil de double authentification/);
+  v.D("mfaAssForm1").dispatchEvent(new v.Ev("submit")); await tick();
+  assert.ok(v.D("mfaQr"));
   assert.ok(!v.f.appels.some(a => a[0] === "signIn"));
 });
 
@@ -610,7 +630,7 @@ test("bandeau (I1) : stockage absent, bloqué ou illisible → bandeau quand mê
 
 test("bandeau (I1) : un appareil enrôlé depuis cet appareil-ci (Sécurité) est acquitté d'office, pas de fausse alerte au démarrage suivant", async () => {
   const v = await monterSec();
-  await v.ajouter();
+  await v.versCode();
   await v.soumettre("123456");
   assert.deepEqual(JSON.parse(v.storage.getItem("boussole.mfa.vus")), ["f-nouveau"]);
 });
@@ -624,4 +644,411 @@ test("store-supabase.js et mentions : le bandeau est lancé au démarrage de l'a
   assert.match(mentions, /mailto:stephane@ceres\.agency/);
   assert.match(src("mfa.js"), /const CONTACT = "stephane@ceres\.agency";/);
   assert.match(src("account.js"), /email: user\.email/);
+});
+
+/* =================================================================== assistant d'activation (dialogue en 4 étapes) =================================================================== */
+const URI_TEST = "otpauth://totp/Boussole:camille@example.org?secret=JBSWY3DPEHPK3PXP&issuer=Boussole";
+async function ouvrirAss({ verifies = [], email = "camille@example.org", petitEcran = false, clipboard, erreurs, qr, uri, passerPar } = {}) {
+  const dom = miniDom(), { doc, Ev, touche } = dom;
+  const app = doc.body.appendChild(doc.createElement("main"));
+  const declencheur = app.appendChild(doc.createElement("button"));
+  declencheur.id = "declencheur";
+  declencheur.focus();
+  const f = fauxClient({ verifies, erreurs: Object.assign({}, erreurs, qr !== undefined ? { qr } : {}, uri !== undefined ? { uri } : {}) });
+  const api = Mfa.adapter(f.client);
+  if (passerPar) passerPar(api);
+  const changes = [], storage = fauxStockage();
+  let resultat = null;
+  const fini = Mfa.ouvrirActivation(api, { doc, email, storage, petitEcran, clipboard, onChange: l => changes.push(l.length) }).then(v => { resultat = v; return v; });
+  await tick();
+  const D = id => doc.body.querySelector("#" + id);
+  const fond = () => doc.body.children.find(c => c.classList.contains("mfa-ass-fond"));
+  const soumettre = async (id, valeur, champ) => { if (champ) D(champ).value = valeur; D(id).dispatchEvent(new Ev("submit")); await tick(); };
+  const clic = async sel => { const b = doc.body.querySelector(sel); assert.ok(b, "bouton " + sel); b.click(); await tick(); };
+  const etape = () => texte(D("mfaEtape"));
+  const titre = () => texte(D("mfaAssTitre"));
+  const barre = () => { const c = D("mfaAss").querySelector(".mfa-prog").children; return [c.length, c.filter(i => i.classList.contains("on")).length]; };
+  // étape 1 → 2 (mot de passe si premier appareil)
+  const versQr = async () => { if (D("mfaAssPw")) D("mfaAssPw").value = MOT_DE_PASSE; await soumettre("mfaAssForm1"); };
+  const versCode = async () => { await versQr(); await clic("#mfaAssSuite"); };
+  const saisirCode = async code => { const c = D("mfaAssCode"); c.value = code; c.dispatchEvent(new Ev("input")); await tick(); };
+  return { doc, app, declencheur, f, api, changes, storage, fini, resultat: () => resultat, D, fond, soumettre, clic, etape, titre, barre, versQr, versCode, saisirCode, touche, Ev };
+}
+
+test("assistant : dialogue accessible (role, aria-modal, titre de l'étape), « Étape N sur 4 », focus dans la boîte, page derrière inerte", async () => {
+  const v = await ouvrirAss();
+  const boite = v.D("mfaAss");
+  assert.equal(boite.getAttribute("role"), "dialog"); assert.equal(boite.getAttribute("aria-modal"), "true");
+  const lie = boite.getAttribute("aria-labelledby");
+  assert.equal(lie, "mfaAssTitre"); assert.equal(v.titre(), "Pourquoi un code ?");
+  assert.equal(v.etape(), "Étape 1 sur 4");
+  assert.equal(v.doc.activeElement, v.D("mfaAssPw"), "focus sur le mot de passe (premier appareil)");
+  assert.equal(v.app.inert, true); assert.equal(v.app.getAttribute("aria-hidden"), "true");
+  assert.ok(v.doc.documentElement.classList.contains("mfa-ass-ouvert"), "défilement de la page verrouillé");
+  assert.deepEqual(v.barre(), [4, 1], "barre : 1 étape sur 4");
+  const x = boite.querySelector('[data-ass="fermer"]');
+  assert.equal(x.getAttribute("aria-label"), "Fermer"); assert.equal(x.localName, "button");
+  assert.match(texte(v.D("mfaAss")), /Même si quelqu'un trouve ton mot de passe/);
+  v.D("mfaAss").querySelector('[data-ass="annuler"]').click(); await v.fini;
+});
+
+test("assistant : les 4 étapes dans l'ordre (mot de passe → QR → code → activé), titres, progression et état final", async () => {
+  const v = await ouvrirAss();
+  assert.equal(v.D("mfaAssPw").getAttribute("type"), "password");
+  assert.ok(!v.f.appels.some(a => a[0] === "enroll"), "rien n'est créé avant le mot de passe");
+  await v.versQr();
+  assert.equal(v.etape(), "Étape 2 sur 4"); assert.equal(v.titre(), "Ajoute Boussole à ton application");
+  assert.equal(v.doc.activeElement, v.D("mfaAssTitre"), "focus sur le titre de l'étape (annoncé)");
+  assert.deepEqual(v.barre(), [4, 2]);
+  assert.ok(v.D("mfaQr"));
+  await v.clic("#mfaAssSuite");
+  assert.equal(v.etape(), "Étape 3 sur 4"); assert.equal(v.titre(), "Saisis le code");
+  assert.equal(v.doc.activeElement, v.D("mfaAssCode"), "focus sur le champ du code");
+  const champ = v.D("mfaAssCode");
+  assert.equal(champ.getAttribute("inputmode"), "numeric");
+  assert.equal(champ.getAttribute("autocomplete"), "one-time-code");
+  assert.ok(v.doc.body.querySelector('label[for="mfaAssCode"]'));
+  await v.soumettre("mfaAssForm", "123456", "mfaAssCode");
+  assert.equal(v.etape(), "Étape 4 sur 4"); assert.equal(v.titre(), "C'est activé");
+  assert.match(texte(v.D("mfaAssFait")), /La double authentification est activée/);
+  assert.match(texte(v.D("mfaAss")), /ne propose pas de codes de secours/);
+  assert.deepEqual(v.barre(), [4, 4]);
+  assert.deepEqual(v.changes, [1]);
+  assert.equal(texte(v.D("mfaAssSecond")), "Ajouter un second appareil");
+  await v.clic("#mfaAssFin");
+  assert.equal(v.fond(), undefined, "dialogue retiré");
+  assert.equal(await v.fini, true, "résolu à true : un appareil a été activé");
+  assert.equal(v.app.inert, false); assert.equal(v.app.getAttribute("aria-hidden"), null);
+  assert.equal(v.doc.documentElement.classList.contains("mfa-ass-ouvert"), false);
+  assert.equal(v.doc.activeElement, v.declencheur, "focus rendu à l'élément qui a ouvert le dialogue");
+  assert.deepEqual(JSON.parse(v.storage.getItem("boussole.mfa.vus")), ["f-nouveau"], "pas de fausse alerte « appareil ajouté » pour l'appareil créé ici");
+  assert.ok(!v.f.appels.some(a => a[0] === "unenroll" && a[1].factorId === "f-nouveau"), "l'appareil activé n'est pas retiré à la fermeture");
+});
+
+test("assistant : retour de l'étape 3 à l'étape 2 garde la même inscription ; retour de l'étape 2 à l'étape 1 la retire, une nouvelle est créée ensuite", async () => {
+  const v = await ouvrirAss();
+  await v.versCode();
+  await v.clic('[data-ass="retour"]');
+  assert.equal(v.etape(), "Étape 2 sur 4");
+  assert.equal(v.f.appels.filter(a => a[0] === "enroll").length, 1, "même inscription");
+  await v.clic('[data-ass="retour"]');
+  assert.equal(v.etape(), "Étape 1 sur 4");
+  assert.ok(v.f.appels.some(a => a[0] === "unenroll" && a[1].factorId === "f-nouveau"), "inscription non vérifiée retirée");
+  assert.equal(v.D("mfaAssPw"), null, "mot de passe déjà confirmé : pas redemandé");
+  await v.soumettre("mfaAssForm1");
+  assert.equal(v.etape(), "Étape 2 sur 4");
+  assert.equal(v.f.appels.filter(a => a[0] === "enroll").length, 2);
+  v.D("mfaAss").querySelector('[data-ass="fermer"]').click(); await v.fini;
+});
+
+test("assistant : « Je ne peux pas scanner » révèle la clé (aria-expanded) ; Copier utilise le presse-papiers ; repli : clé sélectionnée et message", async () => {
+  const copies = [];
+  const v = await ouvrirAss({ clipboard: { writeText: async t => { copies.push(t); } } });
+  await v.versQr();
+  const b = v.D("mfaPasScanner");
+  assert.equal(b.localName, "button"); assert.equal(b.getAttribute("aria-expanded"), "false"); assert.equal(b.getAttribute("aria-controls"), "mfaCle");
+  assert.equal(v.D("mfaCle").hidden, true);
+  await v.clic("#mfaPasScanner");
+  assert.equal(b.getAttribute("aria-expanded"), "true"); assert.equal(v.D("mfaCle").hidden, false);
+  assert.equal(texte(v.D("mfaSecret")), "JBSWY3DPEHPK3PXP");
+  assert.equal(v.D("mfaSecret").getAttribute("tabindex"), "0", "clé focalisable : copiable au clavier");
+  assert.equal(texte(v.D("mfaCopier")), "Copier");
+  await v.clic("#mfaCopier");
+  assert.deepEqual(copies, ["JBSWY3DPEHPK3PXP"]);
+  assert.equal(texte(v.D("mfaCopieMsg")), "Clé copiée."); assert.equal(v.D("mfaCopieMsg").getAttribute("role"), "status");
+  v.D("mfaAss").querySelector('[data-ass="fermer"]').click(); await v.fini;
+  // presse-papiers refusé (contexte non sécurisé, permission) ou absent : jamais d'exception, la clé est sélectionnée et le message le dit
+  for (const clipboard of [{ writeText: async () => { throw new Error("NotAllowedError"); } }, null, undefined]) {
+    const w = await ouvrirAss({ clipboard });
+    await w.versQr(); await w.clic("#mfaPasScanner"); await w.clic("#mfaCopier");
+    assert.match(texte(w.D("mfaCopieMsg")), /Copie automatique impossible : la clé est sélectionnée/);
+    assert.equal(w.doc.activeElement, w.D("mfaSecret"), "clé focalisée pour Ctrl+C");
+    w.D("mfaAss").querySelector('[data-ass="fermer"]').click(); await w.fini;
+  }
+});
+
+test("assistant : petit écran → bouton « Ouvrir dans mon application d'authentification » (lien otpauth://) AVANT le QR code ; grand écran → QR seul", async () => {
+  const p = await ouvrirAss({ petitEcran: true });
+  await p.versQr();
+  const ouvrir = p.D("mfaOuvrir");
+  assert.ok(ouvrir, "bouton présent");
+  assert.equal(ouvrir.localName, "a"); assert.equal(ouvrir.getAttribute("href"), URI_TEST);
+  assert.equal(texte(ouvrir), "Ouvrir dans mon application d'authentification");
+  assert.ok(ouvrir.classList.contains("mfa-btn"));
+  const ordre = p.D("mfaAss").descendants();
+  assert.ok(ordre.indexOf(ouvrir) < ordre.indexOf(p.D("mfaQr")), "le bouton précède le QR code");
+  assert.ok(p.D("mfaQr"), "le QR reste disponible (autre appareil)");
+  assert.match(texte(p.D("mfaAss")), /Sur ce téléphone, un QR code ne peut pas être scanné/);
+  await p.clic("#mfaPasScanner"); assert.equal(texte(p.D("mfaSecret")), "JBSWY3DPEHPK3PXP", "la clé reste le dernier recours");
+  p.D("mfaAss").querySelector('[data-ass="fermer"]').click(); await p.fini;
+  const g = await ouvrirAss({ petitEcran: false });
+  await g.versQr();
+  assert.equal(g.D("mfaOuvrir"), null); assert.ok(g.D("mfaQr"));
+  g.D("mfaAss").querySelector('[data-ass="fermer"]').click(); await g.fini;
+  // lien d'un autre schéma (réponse inattendue) : jamais proposé
+  for (const uri of ["javascript:alert(1)", "https://exemple.org/x", "otpauth://hotp/x?secret=A"]) {
+    const x = await ouvrirAss({ petitEcran: true, uri });
+    await x.versQr();
+    assert.equal(x.D("mfaOuvrir"), null, uri);
+    x.D("mfaAss").querySelector('[data-ass="fermer"]').click(); await x.fini;
+  }
+});
+
+test("assistant : étape 3 — code faux : message clair, champ vidé et focalisé, nouvel essai possible ; Retour et Annuler présents", async () => {
+  const v = await ouvrirAss();
+  await v.versCode();
+  await v.soumettre("mfaAssForm", "000000", "mfaAssCode");
+  assert.match(texte(v.D("mfaAssMsg")), /^Code incorrect\./);
+  assert.equal(v.D("mfaAssMsg").getAttribute("role"), "alert");
+  assert.equal(v.D("mfaAssCode").value, ""); assert.equal(v.doc.activeElement, v.D("mfaAssCode"));
+  assert.equal(v.etape(), "Étape 3 sur 4");
+  assert.ok(!v.D("mfaAssOk").disabled, "bouton réutilisable");
+  await v.soumettre("mfaAssForm", "12 34", "mfaAssCode");
+  assert.match(texte(v.D("mfaAssMsg")), /^Saisis les 6 chiffres/);
+  assert.equal(v.f.appels.filter(a => a[0] === "verify").length, 1, "moins de 6 chiffres : aucun appel");
+  await v.soumettre("mfaAssForm", "123456", "mfaAssCode");
+  assert.equal(v.etape(), "Étape 4 sur 4");
+  assert.deepEqual(v.f.appels.filter(a => a[0] === "verify").map(a => a[1].code), ["000000", "123456"]);
+  await v.clic("#mfaAssFin"); await v.fini;
+  const r = await ouvrirAss({ erreurs: { verify: { code: "over_request_rate_limit", message: "rate", status: 429 } } });
+  await r.versCode(); await r.saisirCode("123456");
+  assert.match(texte(r.D("mfaAssMsg")), /Trop de tentatives/);
+  r.D("mfaAss").querySelector('[data-ass="annuler"]').click(); await r.fini;
+});
+
+test("assistant : envoi automatique dès le 6e chiffre (frappe ou saisie automatique), pas avant ; collage tolérant (espaces, texte autour)", async () => {
+  const v = await ouvrirAss();
+  await v.versCode();
+  await v.saisirCode("12345");
+  assert.equal(v.f.appels.filter(a => a[0] === "verify").length, 0, "5 chiffres : rien n'est envoyé");
+  await v.saisirCode("123456");
+  assert.equal(v.f.appels.filter(a => a[0] === "verify").length, 1, "6 chiffres : envoyé tout seul");
+  assert.equal(v.etape(), "Étape 4 sur 4");
+  await v.clic("#mfaAssFin"); await v.fini;
+  for (const [colle, attendu] of [["123 456", "123456"], ["Code : 123-456", "123456"], ["123456", "123456"]]) {
+    const w = await ouvrirAss();
+    await w.versCode();
+    const champ = w.D("mfaAssCode");
+    const ev = new w.Ev("paste", { clipboardData: { getData: () => colle } });
+    champ.dispatchEvent(ev); await tick();
+    assert.equal(ev.defaultPrevented, true, "collage pris en charge");
+    assert.equal(w.f.appels.filter(a => a[0] === "verify").map(a => a[1].code)[0], attendu, colle);
+    assert.equal(w.etape(), "Étape 4 sur 4");
+    await w.clic("#mfaAssFin"); await w.fini;
+  }
+  // collage incomplet : rempli mais pas envoyé
+  const c = await ouvrirAss();
+  await c.versCode();
+  c.D("mfaAssCode").dispatchEvent(new c.Ev("paste", { clipboardData: { getData: () => "12 34" } })); await tick();
+  assert.equal(c.D("mfaAssCode").value, "1234"); assert.equal(c.f.appels.filter(a => a[0] === "verify").length, 0);
+  // double déclenchement (frappe puis Entrée) : un seul envoi tant que le premier n'est pas revenu
+  const d = await ouvrirAss();
+  await d.versCode();
+  d.D("mfaAssCode").value = "123456";
+  d.D("mfaAssCode").dispatchEvent(new d.Ev("input")); d.D("mfaAssForm").dispatchEvent(new d.Ev("submit")); await tick();
+  assert.equal(d.f.appels.filter(a => a[0] === "verify").length, 1);
+});
+
+test("assistant : Échap ferme et retire l'inscription non vérifiée (étapes 2 et 3), focus rendu, page de nouveau active ; résolu à false", async () => {
+  for (const etapeVoulue of [2, 3]) {
+    const v = await ouvrirAss();
+    await (etapeVoulue === 2 ? v.versQr() : v.versCode());
+    assert.equal(v.f.abandonnes.length, 1, "inscription non vérifiée en cours côté serveur");
+    const e = v.touche(v.D("mfaAss"), "Escape"); await tick();
+    assert.equal(e.defaultPrevented, true);
+    assert.equal(v.fond(), undefined, "dialogue fermé");
+    assert.equal(await v.fini, false);
+    assert.deepEqual(v.f.appels.filter(a => a[0] === "unenroll").map(a => a[1].factorId), ["f-nouveau"]);
+    assert.ok(v.f.appels.some(a => a[0] === "listFactors"), "nettoyage = listFactors puis unenroll des non vérifiés");
+    assert.equal(v.f.abandonnes.length, 0, "rien ne reste côté serveur : une nouvelle tentative repart proprement");
+    assert.equal(v.app.inert, false); assert.equal(v.doc.activeElement, v.declencheur);
+    assert.equal(v.doc.documentElement.classList.contains("mfa-ass-ouvert"), false);
+  }
+  // un appareil vérifié n'est jamais touché par le nettoyage (second appareil abandonné)
+  const s = await ouvrirAss({ verifies: [F1] });
+  await s.soumettre("mfaAssForm1");
+  s.touche(s.D("mfaAss"), "Escape"); await s.fini;
+  assert.ok(s.f.facteurs.some(f => f.id === "f-1"), "appareil existant intact");
+  assert.deepEqual(s.f.appels.filter(a => a[0] === "unenroll").map(a => a[1].factorId), ["f-nouveau"]);
+  // fermer sans avoir rien créé (étape 1) : aucun appel de nettoyage
+  const u = await ouvrirAss();
+  u.touche(u.D("mfaAss"), "Escape"); await u.fini;
+  assert.ok(!u.f.appels.some(a => a[0] === "unenroll" || a[0] === "enroll"));
+});
+
+test("assistant : ×, Annuler et Terminer ferment ; fermer pendant la création → l'inscription qui arrive ensuite est retirée aussitôt", async () => {
+  for (const sel of ['[data-ass="fermer"]', '[data-ass="annuler"]']) {
+    const v = await ouvrirAss();
+    await v.versCode();
+    await v.clic(sel);
+    assert.equal(v.fond(), undefined, sel);
+    assert.equal(await v.fini, false);
+    assert.equal(v.f.abandonnes.length, 0, sel);
+  }
+  let relacher;
+  const attente = new Promise(r => { relacher = r; });
+  const v = await ouvrirAss({ passerPar: api => { const orig = api.inscrire; api.inscrire = async () => { await attente; return orig(); }; } });
+  v.D("mfaAssPw").value = MOT_DE_PASSE; v.D("mfaAssForm1").dispatchEvent(new v.Ev("submit")); await tick();
+  assert.equal(v.D("mfaAssSuite").getAttribute("aria-busy"), "true", "création en cours");
+  v.touche(v.D("mfaAss"), "Escape"); await tick();
+  assert.equal(v.fond(), undefined);
+  relacher(); await v.fini; await tick();
+  assert.equal(v.f.abandonnes.length, 0, "l'inscription tardive est retirée");
+  assert.ok(v.f.appels.some(a => a[0] === "unenroll" && a[1].factorId === "f-nouveau"));
+});
+
+test("assistant : piège à focus — Tab et Maj+Tab bouclent dans la boîte, la page derrière reste inerte, le focus extérieur est ramené", async () => {
+  const v = await ouvrirAss();
+  const boite = v.D("mfaAss");
+  const focalisables = [...boite.querySelectorAll("button, a[href], input, select, textarea, [tabindex]")].filter(e => e.getAttribute("tabindex") !== "-1");
+  assert.deepEqual(focalisables.map(e => e.id || e.getAttribute("data-ass") || e.getAttribute("type")), ["fermer", "mfaAssPw", "mfaAssSuite", "annuler"]);
+  const dernier = focalisables.at(-1), premier = focalisables[0];
+  dernier.focus();
+  let e = v.touche(dernier, "Tab");
+  assert.equal(e.defaultPrevented, true); assert.equal(v.doc.activeElement, premier, "Tab sur le dernier → premier");
+  e = v.touche(premier, "Tab", { shiftKey: true });
+  assert.equal(e.defaultPrevented, true); assert.equal(v.doc.activeElement, dernier, "Maj+Tab sur le premier → dernier");
+  v.D("mfaAssPw").focus();
+  e = v.touche(v.D("mfaAssPw"), "Tab");
+  assert.equal(e.defaultPrevented, false, "au milieu : le navigateur avance seul");
+  // focus qui s'échappe (clic en dehors, outil d'accessibilité) : ramené dans la boîte
+  v.app.inert = false; v.declencheur.focus();
+  assert.ok(boite.contains(v.doc.activeElement), "focus ramené dans le dialogue");
+  v.touche(boite, "Escape"); await v.fini;
+  // après fermeture, plus d'écoute : Échap ou Tab sans effet
+  const apres = v.touche(v.doc.body, "Tab");
+  assert.equal(apres.defaultPrevented, false);
+});
+
+test("assistant : second appareil depuis l'étape 4 — nouvelle inscription à l'étape 2 (sans mot de passe) ; appareil existant : texte adapté", async () => {
+  const v = await ouvrirAss();
+  await v.versCode(); await v.saisirCode("123456");
+  assert.equal(v.etape(), "Étape 4 sur 4");
+  await v.clic("#mfaAssSecond");
+  assert.equal(v.etape(), "Étape 2 sur 4");
+  assert.equal(v.f.appels.filter(a => a[0] === "enroll").length, 2, "nouvelle inscription");
+  assert.equal(v.f.appels.filter(a => a[0] === "signIn").length, 1, "mot de passe non redemandé");
+  assert.ok(v.D("mfaQr"));
+  await v.clic("#mfaAssSuite");
+  await v.saisirCode("123456");
+  assert.equal(v.etape(), "Étape 4 sur 4");
+  assert.deepEqual(v.changes, [1, 2]);
+  await v.clic("#mfaAssFin");
+  assert.equal(await v.fini, true);
+  const w = await ouvrirAss({ verifies: [F1] });
+  assert.match(texte(w.D("mfaAss")), /Tu ajoutes un second appareil de double authentification\. Si tu perds le premier/);
+  assert.equal(w.D("mfaAssPw"), null);
+  w.touche(w.D("mfaAss"), "Escape"); await w.fini;
+});
+
+test("assistant : appareils illisibles → mot de passe demandé par prudence ; erreur à la création → étape 1 conservée avec le message", async () => {
+  const v = await ouvrirAss({ erreurs: { listFactors: { code: "network", message: "Failed to fetch" } } });
+  assert.ok(v.D("mfaAssPw"), "échec fermé : mot de passe redemandé");
+  v.touche(v.D("mfaAss"), "Escape"); await v.fini;
+  const e = await ouvrirAss({ erreurs: { enroll: { code: "too_many_enrolled_mfa_factors", message: "x", status: 422 } } });
+  await e.versQr();
+  assert.equal(e.etape(), "Étape 1 sur 4");
+  assert.match(texte(e.D("mfaAssMsg")), /nombre maximal d'appareils/);
+  assert.ok(!e.D("mfaAssSuite").disabled, "on peut réessayer");
+  e.touche(e.D("mfaAss"), "Escape"); await e.fini;
+  assert.equal(await Mfa.ouvrirActivation(Mfa.adapter(fauxClient().client), { doc: null }), false, "sans document : rien, false");
+});
+
+test("assistant : tous les textes tutoient ; aucun message anglais brut", async () => {
+  const v = await ouvrirAss({ petitEcran: true });
+  const textes = [texte(v.D("mfaAss"))];
+  await v.versQr(); await v.clic("#mfaPasScanner"); textes.push(texte(v.D("mfaAss")));
+  await v.clic("#mfaAssSuite"); await v.soumettre("mfaAssForm", "000000", "mfaAssCode"); textes.push(texte(v.D("mfaAss")));
+  await v.soumettre("mfaAssForm", "123456", "mfaAssCode"); textes.push(texte(v.D("mfaAss")));
+  for (const t of textes) { assert.doesNotMatch(t, VOUVOIEMENT); assert.doesNotMatch(t, /Invalid|enroll|factor/i); }
+  await v.clic("#mfaAssFin"); await v.fini;
+});
+
+test("assistant : style — feuille plein écran sur téléphone, mouvement réduit respecté, clair/sombre via les variables de la page", () => {
+  const css = Mfa.CSS;
+  assert.match(css, /@media \(max-width:640px\)\{\.mfa-ass-fond\{padding:0;align-items:stretch\}\.mfa-ass-box\{max-width:none;max-height:none;min-height:100%;border:0;border-radius:0/);
+  assert.match(css, /env\(safe-area-inset-bottom,0px\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:no-preference\)\{\.mfa-ass-box\{animation:/, "animation seulement si le mouvement n'est pas réduit");
+  assert.doesNotMatch(css.replace(/@media \(prefers-reduced-motion:no-preference\)\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\}/, ""), /animation|transition/, "aucun mouvement hors de la requête média");
+  const boite = css.match(/\.mfa-ass-box\{[^}]*\}/)[0];
+  assert.match(boite, /color:var\(--ink,/); assert.match(boite, /background:var\(--surface,/); assert.match(boite, /border:1px solid var\(--line,/);
+  assert.match(css, /\.mfa-btn:focus-visible[^{]*\{outline:2px solid/);
+  assert.match(css, /\.mfa-ass-x\{[^}]*min-width:44px;min-height:44px/);
+});
+
+/* =================================================================== écran de code : saisie (auto-envoi, collage) =================================================================== */
+test("écran de code : envoi automatique au 6e chiffre, collage tolérant, une seule étape sans liste d'appareils", async () => {
+  const a = await monterEcran();
+  a.$("mfaCode").value = "12345"; a.$("mfaCode").dispatchEvent(new (miniDom().Ev)("input")); await tick();
+  assert.equal(a.f.appels.filter(x => x[0] === "verify").length, 0);
+  a.$("mfaCode").value = "123456"; a.$("mfaCode").dispatchEvent(new (miniDom().Ev)("input")); await tick();
+  assert.equal(a.evts.verifie, 1, "6 chiffres : validé sans clic");
+  const b = await monterEcran();
+  const ev = new (miniDom().Ev)("paste", { clipboardData: { getData: () => "123 456" } });
+  b.$("mfaCode").dispatchEvent(ev); await tick();
+  assert.equal(ev.defaultPrevented, true);
+  assert.equal(b.evts.verifie, 1);
+  assert.deepEqual(b.f.appels.find(x => x[0] === "verify")[1].code, "123456");
+  // mauvais code envoyé tout seul : champ vidé, message, prêt pour un nouvel essai
+  const c = await monterEcran();
+  c.$("mfaCode").value = "000000"; c.$("mfaCode").dispatchEvent(new (miniDom().Ev)("input")); await tick();
+  assert.match(texte(c.$("mfaCodeMsg")), /^Code incorrect\./);
+  assert.equal(c.$("mfaCode").value, ""); assert.equal(c.doc.activeElement, c.$("mfaCode"));
+  assert.equal(c.evts.verifie, 0);
+  assert.equal(c.$("mfaCode").getAttribute("autocomplete"), "one-time-code"); assert.equal(c.$("mfaCode").getAttribute("inputmode"), "numeric");
+});
+
+/* =================================================================== ouverture depuis la carte « Active la double authentification » =================================================================== */
+test("carte bloquante : le bouton (data-mfa-activer) ouvre l'assistant sur place ; compte anonyme ou sans client → lien normal vers Compte › Sécurité", async () => {
+  const montage = async ({ auth, apres, aller }) => {
+    const dom = miniDom(), { doc, Ev } = dom;
+    const app = doc.body.appendChild(doc.createElement("main"));
+    app.innerHTML = '<a class="bq-mfa-btn" id="carte" href="compte.html#securite" data-mfa-activer>Activer la double authentification</a>';
+    Mfa.installerOuverture(doc, { auth, apres, aller, petitEcran: false });
+    const lien = doc.body.querySelector("#carte");
+    const clic = new Ev("click"); lien.dispatchEvent(clic); await tick();
+    return { doc, Ev, lien, clic, D: id => doc.body.querySelector("#" + id) };
+  };
+  const f = fauxClient();
+  const auth = { mfa: Mfa.adapter(f.client), session: async () => ({ user: { email: "camille@example.org" } }), isAnonymous: () => false };
+  const appels = { apres: 0, aller: [] };
+  const v = await montage({ auth, apres: () => { appels.apres++; }, aller: u => appels.aller.push(u) });
+  assert.equal(v.clic.defaultPrevented, true, "pas de navigation : on reste dans la page");
+  assert.ok(v.D("mfaAss"), "assistant ouvert");
+  assert.equal(v.D("mfaAssTitre").textContent, "Pourquoi un code ?");
+  v.D("mfaAssPw").value = MOT_DE_PASSE; v.D("mfaAssForm1").dispatchEvent(new v.Ev("submit")); await tick();
+  assert.deepEqual(f.appels.find(a => a[0] === "signIn"), ["signIn", "camille@example.org"], "e-mail de la session");
+  v.D("mfaAssSuite").click(); await tick();
+  v.D("mfaAssCode").value = "123456"; v.D("mfaAssCode").dispatchEvent(new v.Ev("input")); await tick();
+  assert.equal(appels.apres, 0, "pas de rechargement tant que le dialogue est ouvert");
+  v.D("mfaAssFin").click(); await tick();
+  assert.equal(appels.apres, 1, "données rechargées une fois activé (la carte disparaît)");
+  assert.deepEqual(appels.aller, []);
+  assert.equal(v.doc.activeElement, v.lien, "focus rendu au bouton de la carte");
+  // annulé : rien n'est rechargé
+  const g = fauxClient(), appels2 = { apres: 0 };
+  const w = await montage({ auth: { mfa: Mfa.adapter(g.client), session: async () => ({ user: { email: "c@example.org" } }), isAnonymous: () => false }, apres: () => { appels2.apres++; }, aller: () => {} });
+  w.D("mfaAss").querySelector('[data-ass="fermer"]').click(); await tick();
+  assert.equal(appels2.apres, 0);
+  // anonyme : navigation vers Compte
+  const h = { apres: 0, aller: [] };
+  const x = await montage({ auth: { mfa: Mfa.adapter(fauxClient().client), session: async () => ({ user: { is_anonymous: true } }), isAnonymous: s => !!s.user.is_anonymous }, apres: () => { h.apres++; }, aller: u => h.aller.push(u) });
+  assert.equal(x.D("mfaAss"), null); assert.deepEqual(h.aller, ["compte.html#securite"]);
+  // session illisible : même repli
+  const y = { aller: [] };
+  const z = await montage({ auth: { mfa: Mfa.adapter(fauxClient().client), session: async () => { throw new Error("x"); } }, aller: u => y.aller.push(u) });
+  assert.equal(z.D("mfaAss"), null); assert.deepEqual(y.aller, ["compte.html#securite"]);
+  // sans client (démo, page sans Auth) : on ne détourne pas le clic
+  const n = await montage({ auth: { mfa: null, session: async () => null } });
+  assert.equal(n.clic.defaultPrevented, false);
+  // un clic ailleurs n'ouvre rien
+  const dom = miniDom(); Mfa.installerOuverture(dom.doc, { auth });
+  const autre = dom.doc.body.appendChild(dom.doc.createElement("a")); autre.dispatchEvent(new dom.Ev("click")); await tick();
+  assert.equal(dom.doc.body.querySelector("#mfaAss"), null);
+});
+
+test("carte bloquante : la carte porte data-mfa-activer ; mfa.js s'installe tout seul dans le navigateur (document), pas sous Node", () => {
+  assert.match(src("banque-etat.js"), /<a class="bq-mfa-btn" href="' \+ LIEN_SECURITE \+ '" data-mfa-activer>/);
+  assert.match(src("mfa.js"), /if \(typeof document !== "undefined"\) installerOuverture\(document\);/);
+  assert.equal(typeof Mfa.ouvrirActivation, "function"); assert.equal(typeof Mfa.installerOuverture, "function");
 });

@@ -3,7 +3,7 @@
                    signInAnon(), isAnonymous(session), secureAccount(email, pw), passwordProblem(pw), weakPasswordText(e),
                    signInGoogle(), signOut(), onChange(fn), requireSession({ demoOk }) , urls, mfa }
    mfa (SEC2) : adaptateur de la double authentification sur ce client (Mfa.adapter, mfa.js, chargé avant ce fichier) :
-   niveau() → { current, next }, facteurs(), inscrire(), verifier(facteurId, code), annuler(facteurId), supprimer(facteurId) ; null en démo.
+   niveau() → { current, next }, facteurs(), inscrire(), verifier(facteurId, code), annuler(facteurId), nettoyer(), supprimer(facteurId) ; null en démo.
    Mode sans e-mail (BOUSSOLE.emails !== true, décision du 2026-10-10) : Supabase n'envoie aucun e-mail. Inscription
    sans confirmation (session immédiate), compte anonyme « Commencer sans e-mail » (signInAnon), sécurisé ensuite par
    secureAccount (e-mail + mot de passe posés sans courrier). signInMagic reste disponible mais n'est pas proposé.

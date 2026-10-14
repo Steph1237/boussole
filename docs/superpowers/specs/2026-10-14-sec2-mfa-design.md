@@ -21,7 +21,7 @@ Pas de SMS, pas de codes de récupération (Supabase n'en propose pas) : l'app c
 | --- | --- |
 | Base (0028) | `banque_*` : politique RESTRICTIVE `aal2` ; toutes les autres tables avec `user_id` : politique RESTRICTIVE `aal2` OU pas de facteur vérifié (`public.mfa_exigee()`) |
 | Fonction `powens` | `/connecter` : 403 `{ erreur, code: "mfa_requise" }` sans `aal2`, avant tout appel Powens. `/deconnecter`, `/synchroniser`, `/supprimer` : même 403 sans `aal2` si l'utilisateur a un facteur vérifié (lu côté serveur par l'API admin) |
-| Connecteur MCP | `lire_banque`, `operations_recentes`, `demarrer_session`, `demarrer_routine`, budget réel : message « Double authentification requise : reconnecte le connecteur après avoir validé ton code » ; le reste est fermé par la RLS (voir plus bas) |
+| Connecteur MCP | garde globale (`garde-mfa.ts`) : jeton `aal1` + facteur vérifié (lu côté serveur) → tout outil de données personnelles répond « Double authentification requise… Reconnecte le connecteur Boussole dans Claude » au lieu de s'exécuter ; savoir commun (`consulter_savoir`, `reperes`, `consulter_expertise`) inchangé ; la RLS reste la barrière (voir plus bas) |
 | App | écran de code, section Compte › Sécurité, carte bloquante, page de consentement, bandeau « appareil ajouté » |
 
 ## Base de données (0028_mfa.sql)
@@ -64,14 +64,25 @@ Pas de SMS, pas de codes de récupération (Supabase n'en propose pas) : l'app c
 
 - `web/src/mfa.js` (partagé) : adaptateur `client.auth.mfa`, écran de code, garde plein écran, section Sécurité, bandeau, textes d'erreur.
   Le style est injecté par le module (classes `mfa-*`).
-- **Compte › Sécurité** (`compte.html#securite`, `account.js`) : activation (QR code SVG de `enroll`, clé en texte, code à 6 chiffres :
-  `challenge` + `verify`), liste des appareils vérifiés, second appareil, retrait avec confirmation dans la page (`unenroll`, exige
-  `aal2` ; la page exige donc le code avant de s'afficher). Une phrase explique l'absence de codes de secours. Compte anonyme : phrase et
-  lien « Sécuriser mon compte ».
-- **Mot de passe redemandé avant la première inscription** : sans appareil vérifié, « Activer » ouvre d'abord, dans la page, un champ
-  « Mot de passe » ; `signInWithPassword` sur l'e-mail courant doit réussir avant tout appel à `enroll`. Une session volée (jeton,
-  poste déverrouillé) ne suffit donc pas à enrôler le facteur d'un attaquant. Un second appareil se fait depuis une session `aal2` : pas
-  de nouveau mot de passe.
+- **Compte › Sécurité** (`compte.html#securite`, `account.js`) : liste des appareils vérifiés, retrait avec confirmation dans la page
+  (`unenroll`, exige `aal2` ; la page exige donc le code avant de s'afficher), bouton « Activer » / « Ajouter un second appareil » qui
+  ouvre l'assistant d'activation. Une phrase explique l'absence de codes de secours. Compte anonyme : phrase et lien « Sécuriser mon compte ».
+- **Assistant d'activation** (`Mfa.ouvrirActivation`, boîte de dialogue modale en 4 étapes, « Étape N sur 4 » + barre de progression) :
+  1. « Pourquoi un code ? » (deux phrases) ; **mot de passe redemandé avant la première inscription** (`signInWithPassword` sur l'e-mail
+     courant doit réussir avant tout appel à `enroll` : une session volée ne suffit pas à enrôler le facteur d'un attaquant) ; un second
+     appareil se fait depuis une session `aal2` : pas de nouveau mot de passe ;
+  2. « Ajoute Boussole à ton application » : QR code (SVG de `enroll`) ; sur petit écran (`max-width: 640px`), un bouton « Ouvrir dans mon
+     application d'authentification » (lien `otpauth://totp/…` renvoyé par `enroll`, seul schéma accepté) passe AVANT le QR code, qu'on ne peut
+     pas scanner avec le téléphone qui l'affiche ; « Je ne peux pas scanner » révèle la clé avec un bouton « Copier »
+     (`navigator.clipboard.writeText` en `try/catch`, sinon clé sélectionnée et message) ;
+  3. « Saisis le code » : 6 chiffres (`inputmode="numeric"`, `autocomplete="one-time-code"`), envoi automatique au 6e chiffre (frappe, saisie
+     automatique, collage tolérant), erreur claire et nouvel essai, « Retour » / « Annuler » ;
+  4. « C'est activé » : confirmation, conseil d'un second appareil (bouton qui repart à l'étape 2), « Terminer ».
+  Accessibilité : `role="dialog"`, `aria-modal`, nommé par le titre de l'étape, piège à focus (Tab, Maj+Tab), page derrière `inert`, focus
+  rendu à l'élément d'origine, Échap ferme, feuille plein écran sur téléphone, `prefers-reduced-motion` respecté, variables de thème (clair /
+  sombre). **Fermer en cours de route** (Échap, ×, Annuler, Retour avant le code) retire l'inscription non vérifiée (`listFactors` puis
+  `unenroll` des non vérifiés) : une nouvelle tentative repart proprement. L'assistant s'ouvre aussi depuis la carte bloquante
+  (`data-mfa-activer`, `Mfa.installerOuverture`) ; compte anonyme ou sans client : lien normal vers Compte › Sécurité.
 - **Bandeau « appareil ajouté »** : à chaque démarrage de l'app (après la garde), si un facteur vérifié n'a pas encore été acquitté sur
   ce navigateur (identifiants dans `localStorage`, clé `boussole.mfa.vus`, accès protégés par try/catch), bandeau d'alerte : « Un
   appareil de double authentification a été ajouté le … — ce n'est pas toi ? Écris à stephane@ceres.agency » (adresse des mentions
@@ -79,7 +90,8 @@ Pas de SMS, pas de codes de récupération (Supabase n'en propose pas) : l'app c
   reparaît à chaque démarrage, par prudence. Information, jamais une barrière.
 - **Connexion** : après le mot de passe (`landing.js`, `Mfa.apresConnexion`) et à chaque démarrage de l'app (`store-supabase.js`,
   `Mfa.exiger`, donc aussi à la reprise de session) : si `nextLevel = aal2` et `currentLevel = aal1`, écran de code avant toute lecture.
-  Mauvais code : message en français, champ vidé. Aucun verrouillage côté app : Supabase décide.
+  Une seule étape, le champ du code au premier plan (envoi automatique au 6e chiffre, collage, `one-time-code`) ; plusieurs appareils :
+  « Utiliser un autre appareil » passe au suivant. Mauvais code : message en français, champ vidé. Aucun verrouillage côté app : Supabase décide.
 - **Les contrôles côté navigateur échouent fermés** : si le niveau de session est illisible (`exiger`, `apresConnexion`,
   `etatConsentement`) ou la liste des appareils illisible (écran de code), l'écran affiche le message d'erreur et un bouton
   « Réessayer » ; rien n'est lu, aucun écran n'est levé, aucune autorisation n'est approuvée tant que le niveau n'a pas été lu.
@@ -118,8 +130,15 @@ Conséquence : le comportement n'est pas supposé, il est protégé de trois fa�
 
 1. La page de consentement exige `aal2` avant d'approuver quand le compte a un facteur vérifié (code demandé avant d'afficher la
    demande, et de nouveau au clic sur « Autoriser » si la session est retombée à `aal1`).
-2. Le connecteur lit l'`aal` du jeton (`aalDuJeton`). Sans `aal2`, les outils bancaires répondent le message clair ci-dessus et
-   `demarrer_session` / `demarrer_routine` renvoient `mfa_requise: true` (rien n'est lu) ; Claude le répète à l'utilisateur (règle 17).
+2. Le connecteur lit l'`aal` du jeton (`aalDuJeton`, après `auth.getUser`). Hors `aal2`, il lit côté serveur les facteurs de l'utilisateur
+   (`auth.admin.mfa.listFactors`, clé de service de la plateforme, comme la fonction `powens` ; aucune autre lecture ni écriture avec cette
+   clé). Jeton `aal1` + facteur vérifié, ou lecture impossible (échec fermé) : TOUS les outils de données personnelles, `demarrer_session`
+   comprise, répondent un message unique (« Double authentification requise : ton compte Boussole est protégé par un code. Reconnecte le
+   connecteur Boussole dans Claude (Réglages › Connecteurs) et saisis ton code à 6 chiffres sur la page d'autorisation. », ou, si la
+   vérification est impossible, un message qui dit qu'aucune donnée n'a été lue) au lieu de s'exécuter, pour que le Copilote ne conclue
+   jamais « tu n'as rien » quand la RLS rend les tables illisibles ; la règle 19 de sa conduite et une ligne des instructions lui demandent
+   de relayer le message. Sans facteur vérifié : comportement inchangé. Les outils de savoir commun restent disponibles. Les messages
+   propres à la banque (`lire_banque`, `banque.mfa_requise`, règle 17) restent pour un jeton `aal2` sans second facteur.
 3. La RLS reste la barrière : un jeton `aal1` ne lit rien dans `banque_*`, ni rien d'autre pour un compte à facteur vérifié, quoi que fasse le connecteur.
 
 **À vérifier après déploiement** : connecter le connecteur avec un compte qui a la double authentification, puis appeler un outil de
@@ -150,7 +169,7 @@ facteur vérifié) et à documenter ici avec le résultat.
 
 `test/mfa-pglite.test.mjs` (PGlite : politiques, aal1 / aal2 / absent, facteur vérifié / non vérifié / aucun, écritures, `export_all`,
 `delete_me`, `mfa_exigee`, énumération de toutes les tables avec `user_id`, fonctions `security definer`, `service_role`), `test/powens-fonction.test.mjs` (403 `mfa_requise` ; facteurs lus par l'API admin ; échec fermé), `test/banque-mcp.test.mjs` (outils,
-session, routine, `aalDuJeton`), `test/mfa-ui.test.mjs` (adaptateur, écran de code, garde, Sécurité), `test/mfa-banque-app.test.mjs`
+session, routine, `aalDuJeton`), `test/mfa-connecteur.test.mjs` (garde MFA du connecteur : aal1 + facteur, aal2, sans facteur, échec fermé, savoir commun), `test/mfa-ui.test.mjs` (adaptateur, écran de code, garde, Sécurité, assistant d'activation en 4 étapes : navigation, focus, nettoyage à la fermeture, envoi automatique, bouton `otpauth://`), `test/mfa-banque-app.test.mjs`
 (carte, store exécuté, page de consentement exécutée). `auth.jwt()` est simulé dans `test/helpers/pglite.mjs` (aal2 par défaut, réglable
 par `test.aal`).
 

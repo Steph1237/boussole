@@ -30,7 +30,7 @@ const TITRE = "Active la double authentification pour voir ton détail bancaire"
 test("BanqueEtat.carteMfa : titre exact, explication, bouton vers Mon compte › Sécurité ; mfaRequise seulement interrupteur actif ET drapeau posé", () => {
   const h = BE.carteMfa();
   assert.match(h, /<h3 id="bqMfaTitre">Active la double authentification pour voir ton détail bancaire<\/h3>/);
-  assert.match(h, /<a class="bq-mfa-btn" href="compte\.html#securite">Activer la double authentification<\/a>/);
+  assert.match(h, /<a class="bq-mfa-btn" href="compte\.html#securite" data-mfa-activer>Activer la double authentification<\/a>/);
   assert.match(h, /role="note" aria-labelledby="bqMfaTitre"/);
   assert.doesNotMatch(texte(h), VOUVOIEMENT);
   assert.equal(BE.LIEN_SECURITE, "compte.html#securite");
