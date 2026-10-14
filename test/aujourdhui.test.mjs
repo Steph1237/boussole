@@ -33,7 +33,8 @@ const DEPS = { Rules, Plan, Pratiques, Calc, BilanCalc, Risque, Periodes };
 const TODAY = "2026-10-10";
 const J = v => JSON.parse(JSON.stringify(v));
 const sp = s => String(s).replace(/[  ]/g, " ");
-const jourLocal = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); };
+// Jour de Paris, comme l'app (jour() des vues) : la CI tourne en UTC et échouait entre minuit et 2 h à Paris.
+const jourLocal = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 /* État minimal : aucune donnée, prêt. */
 const vide = o => Object.assign({ ready: true, dbOk: true, positions: [], snapshots: [], tx: [], config: {}, status: null, profil: null, budget: null, objectifs: [],
   risque: null, classes: {}, propositions: [], connexions: [], memoire: [], scope: "foyer", people: [{ id: "p1", nom: "Camille" }], error: null }, o);
