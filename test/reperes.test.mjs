@@ -24,5 +24,12 @@ test("format : unité française", () => {
 });
 test("depuisLignes : lignes SQL → vue camelCase", () => {
   const v = R.depuisLignes([{ cle: "x", libelle: "X", valeur: "2.5", unite: "%", date_effet: "2026-01-01", source_titre: "s", source_url: "https://s", verifie_le: "2026-02-01", mode: "manuel" }]);
-  assert.deepEqual(v[0], { cle: "x", libelle: "X", valeur: 2.5, unite: "%", dateEffet: "2026-01-01", sourceTitre: "s", sourceUrl: "https://s", verifieLe: "2026-02-01", mode: "manuel" });
+  assert.deepEqual(v[0], { cle: "x", libelle: "X", valeur: 2.5, unite: "%", dateEffet: "2026-01-01", dateFin: null, sourceTitre: "s", sourceUrl: "https://s", verifieLe: "2026-02-01", mode: "manuel" });
+});
+test("depuisLignes : date_fin → dateFin (null si absente ou nulle)", () => {
+  const base = { cle: "x", libelle: "X", valeur: "1.7", unite: "%", date_effet: "2026-08-01", source_titre: "s", source_url: "https://s", verifie_le: "2026-10-14", mode: "manuel" };
+  const v = R.depuisLignes([{ ...base, date_fin: "2027-01-31" }, { ...base, cle: "y", date_fin: null }, { ...base, cle: "z" }]);
+  assert.deepEqual(v.map(r => [r.cle, r.dateFin]), [["x", "2027-01-31"], ["y", null], ["z", null]]);
+  assert.equal(v[0].dateEffet, "2026-08-01", "les autres champs sont inchangés");
+  assert.equal(R.depuisLignes(null).length, 0);
 });

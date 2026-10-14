@@ -140,7 +140,7 @@ test("comparaison : patrimoine net, bonnes pratiques, profils et repères, au mo
   const idp = S.risque && S.risque.profil ? (typeof S.risque.profil === "object" ? S.risque.profil.id : S.risque.profil) : null;
   const decl = Risque.PROFILS.find(p => p.id === idp);
   assert.equal(L.profil.aujourdhui, decl ? decl.label : "non renseigné");
-  assert.equal(L.livret_a_taux.label, "Taux du Livret A");
+  assert.match(L.livret_a_taux.label, /^Taux du Livret A/, "libellé du repère (0029 : « Taux du Livret A (et du LDDS) »)");
   assert.equal(sp(L.livret_a_taux.moment), "2,4 %");
   assert.equal(sp(L.livret_a_taux.aujourdhui), "1,7 %");
   assert.equal(L.livret_a_taux.change, true);

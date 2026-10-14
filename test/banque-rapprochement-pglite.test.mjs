@@ -50,7 +50,7 @@ test("PGlite 0022 : colonnes ajoutées, valeurs par défaut, index uniques parti
   await superu();
   const cols = async t => (await q(`select column_name c from information_schema.columns where table_schema = 'public' and table_name = $1 order by ordinal_position`, [t])).map(r => r.c);
   assert.deepEqual((await cols("banque_connexions")).slice(-2), ["connecteur", "doublon_de"]);
-  assert.deepEqual((await cols("banque_comptes")).slice(-5), ["doublon_de", "rattache_auto", "cree_auto", "auto_retire_le", "suggestion"]);
+  assert.deepEqual((await cols("banque_comptes")).filter(c => !["ouverture_le", "pret", "infos_proposees_le"].includes(c)).slice(-5), ["doublon_de", "rattache_auto", "cree_auto", "auto_retire_le", "suggestion"]); // hors colonnes de 0029
   const c = await un(`select doublon_de, rattache_auto, cree_auto, auto_retire_le, suggestion from public.banque_comptes where user_id = '${A}' and id = 10`);
   assert.deepEqual({ ...c }, { doublon_de: null, rattache_auto: null, cree_auto: false, auto_retire_le: null, suggestion: null });
   const idx = (await q(`select indexdef d from pg_indexes where tablename = 'banque_comptes'`)).map(r => r.d).join("\n");

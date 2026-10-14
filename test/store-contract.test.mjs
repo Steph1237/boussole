@@ -385,10 +385,10 @@ test("démo : connexions vides, surveillerConnexions(true) simule Claude après 
 
 const MEM_KEYS = ["categorie", "contenu", "creeLe", "echeance", "epingle", "id", "majLe", "source"];
 const FICHE_KEYS = ["misAJourLe", "motsCles", "resume", "slug", "sources", "theme", "titre", "version"];
-const REPERE_KEYS = ["cle", "dateEffet", "libelle", "mode", "sourceTitre", "sourceUrl", "unite", "valeur", "verifieLe"];
+const REPERE_KEYS = ["cle", "dateEffet", "dateFin", "libelle", "mode", "sourceTitre", "sourceUrl", "unite", "valeur", "verifieLe"];
 const CATEGORIES = ["contexte", "preference", "projet", "decision", "explique", "a_suivre"];
 
-test("démo : mémoire de l'agent et savoir commun au contrat (6 souvenirs, 4 fiches sans contenu, 4 repères d'exemple)", async () => {
+test("démo : mémoire de l'agent et savoir commun au contrat (6 souvenirs, 4 fiches sans contenu, repères d'exemple)", async () => {
   const ctx = browser();
   const S = await whenReady(ctx);
   const today = new Date().toISOString().slice(0, 10);
@@ -414,11 +414,18 @@ test("démo : mémoire de l'agent et savoir commun au contrat (6 souvenirs, 4 fi
     assert.ok(f.sources.length >= 1 && f.sources.every(s => /^https:\/\//.test(s.url) && s.titre), "sources https");
     assert.ok(f.resume.length <= 400 && f.titre.length <= 120);
   });
-  assert.deepEqual(J(S.savoir.reperes.map(r => r.cle)).sort(), ["hcsf_taux_effort", "livret_a_taux", "pea_plafond", "pfu_taux"]);
+  // les quatre repères d'exemple d'origine + ceux de la migration 0029 (DAT1 : mêmes clés, dont les dates de fin)
+  const clesRep = S.savoir.reperes.map(r => r.cle);
+  for (const k of ["hcsf_taux_effort", "livret_a_taux", "pea_plafond", "pfu_taux", "pea_duree_ans", "av_duree_ans", "av_abattement_seul", "lep_taux", "pel_duree_max_ans", "per_report_ans"])
+    assert.ok(clesRep.includes(k), "repère d'exemple " + k);
+  assert.equal(new Set(clesRep).size, clesRep.length, "clés de repères uniques");
+  assert.equal(S.savoir.reperes.find(r => r.cle === "livret_a_taux").dateFin, "2027-01-31", "dateFin du taux du Livret A (période de l'arrêté)");
+  assert.equal(S.savoir.reperes.find(r => r.cle === "pea_plafond").dateFin, null);
   S.savoir.reperes.forEach(r => {
     assert.deepEqual(Object.keys(r).sort(), REPERE_KEYS, `forme du repère ${r.cle}`);
     assert.equal(typeof r.valeur, "number");
-    assert.ok(["%", "€", "ans"].includes(r.unite));
+    assert.ok(["%", "€", "ans", "mois"].includes(r.unite));
+    assert.ok(r.dateFin === null || (/^\d{4}-\d{2}-\d{2}$/.test(r.dateFin) && r.dateFin >= r.dateEffet), `dateFin de ${r.cle}`);
     assert.match(r.sourceTitre, /exemple/i, "valeur d'exemple signalée");
     assert.match(r.sourceUrl, /^https:\/\//);
   });

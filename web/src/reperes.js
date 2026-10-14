@@ -1,5 +1,6 @@
 /* Repères chiffrés du savoir commun (table reperes) : lecture avec valeur de secours, ancienneté, format français.
-   Pur, sans DOM. S.savoir.reperes = [{ cle, libelle, valeur, unite, dateEffet, sourceTitre, sourceUrl, verifieLe, mode }]. */
+   Pur, sans DOM. S.savoir.reperes = [{ cle, libelle, valeur, unite, dateEffet, dateFin, sourceTitre, sourceUrl, verifieLe, mode }]
+   (dateFin : fin d'un dispositif ou d'une période, null si aucune). */
 (function (root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -19,7 +20,7 @@
   function format(r) { return r ? nf.format(+r.valeur) + " " + r.unite : ""; }
   function depuisLignes(rows) {
     return (rows || []).map(x => ({ cle: x.cle, libelle: x.libelle, valeur: +x.valeur, unite: x.unite, dateEffet: x.date_effet,
-      sourceTitre: x.source_titre, sourceUrl: x.source_url, verifieLe: x.verifie_le, mode: x.mode }));
+      dateFin: x.date_fin || null, sourceTitre: x.source_titre, sourceUrl: x.source_url, verifieLe: x.verifie_le, mode: x.mode }));
   }
   return { valeur, aVerifier, format, depuisLignes, trouver, A_VERIFIER_JOURS };
 });

@@ -88,7 +88,8 @@ test("PGlite : structure — colonnes, clés primaires, clés étrangères, colo
   assert.deepEqual(await cols("public.banque_connexions"), ["id", "user_id", "etablissement", "etat", "message", "derniere_synchro", "verrou_jusqua", "cree_le", "maj_le",
     "connecteur", "doublon_de"]); // + 0022
   assert.deepEqual(await cols("public.banque_comptes"), ["id", "user_id", "connexion_id", "nom", "type", "debit_differe", "solde", "devise", "solde_le", "actif",
-    "position_id", "enveloppe", "titulaire", "credit_id", "ignore", "propose_le", "maj_le", "doublon_de", "rattache_auto", "cree_auto", "auto_retire_le", "suggestion"]); // + 0022
+    "position_id", "enveloppe", "titulaire", "credit_id", "ignore", "propose_le", "maj_le", "doublon_de", "rattache_auto", "cree_auto", "auto_retire_le", "suggestion",
+    "ouverture_le", "pret", "infos_proposees_le"]); // + 0022, + 0029 (calendrier : données du prêt transmises par Powens)
   assert.deepEqual(await cols("public.banque_placements"), ["id", "user_id", "compte_id", "isin", "libelle", "quantite", "valeur", "prix_revient", "position_id",
     "ligne_creee_le", "maj_le"]);
   assert.deepEqual(await cols("public.banque_operations"), ["id", "user_id", "compte_id", "date", "montant", "libelle", "categorie",

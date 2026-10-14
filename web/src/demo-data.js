@@ -243,14 +243,51 @@
         "Le reste à vivre, ce qui reste une fois les mensualités payées, compte aussi dans la décision de la banque.",
       ].join("\n\n") },
   ];
-  const rep = (cle, libelle, valeur, unite, dateEffet, site, sourceUrl) => ({ cle, libelle, valeur, unite, dateEffet,
+  const rep = (cle, libelle, valeur, unite, dateEffet, site, sourceUrl, dateFin) => ({ cle, libelle, valeur, unite, dateEffet, dateFin: dateFin || null,
     sourceTitre: "Valeur d'exemple (démo) — " + site, sourceUrl, verifieLe: ago(20), mode: "manuel" });
   const reperes = [
-    // Valeurs et dates d'effet alignées sur la migration 0010_savoir_reperes.sql (vérifiées le 2026-10-10).
-    rep("livret_a_taux", "Taux du Livret A", 1.7, "%", "2026-08-01", "service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2365"),
+    // Valeurs et dates d'effet alignées sur la migration 0010_savoir_reperes.sql (vérifiées le 2026-10-10), mises à jour par 0029.
+    rep("livret_a_taux", "Taux du Livret A (et du LDDS)", 1.7, "%", "2026-08-01", "Légifrance — arrêté du 28 juillet 2026 relatif aux taux d'intérêt des produits d'épargne réglementée", "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000054541376", "2027-01-31"),
     rep("pea_plafond", "Plafond de versements du PEA", 150000, "€", "2014-01-01", "service-public.fr", "https://www.service-public.fr/particuliers/vosdroits/F2385"),
     rep("hcsf_taux_effort", "Taux d'effort maximal (norme HCSF)", 35, "%", "2022-01-01", "economie.gouv.fr", "https://www.economie.gouv.fr/hcsf"),
     rep("pfu_taux", "Prélèvement forfaitaire unique (prélèvements sociaux inclus)", 31.4, "%", "2026-01-01", "impots.gouv.fr", "https://www.impots.gouv.fr/particulier"),
+    rep("av_abattement_seul", "Abattement annuel assurance-vie après 8 ans, personne seule", 4600, "€", "2018-01-01", "impots.gouv.fr — Imposition des produits des contrats d'assurance-vie", "https://www.impots.gouv.fr/particulier/questions/jai-effectue-des-retraits-sur-mon-contrat-dassurance-vie-quelles-sont-les"),
+    rep("av_abattement_couple", "Abattement annuel assurance-vie après 8 ans, couple soumis à imposition commune", 9200, "€", "2018-01-01", "impots.gouv.fr — Imposition des produits des contrats d'assurance-vie", "https://www.impots.gouv.fr/particulier/questions/jai-effectue-des-retraits-sur-mon-contrat-dassurance-vie-quelles-sont-les"),
+    // Repères du calendrier (DAT1) : mêmes clés, libellés, valeurs, dates d'effet et de fin, sources que la migration 0029_calendrier.sql
+    // (spec § 11.2). Seule la date de vérification est celle de la démo (il y a 20 jours).
+    rep("pea_duree_ans", "Durée après laquelle un retrait ne clôture plus le PEA", 5, "ans", "2019-05-24", "Service-public — PEA : retraits et clôture", "https://www.service-public.gouv.fr/particuliers/vosdroits/F22449"),
+    rep("pea_pme_plafond_global", "Plafond cumulé PEA + PEA PME-ETI par titulaire", 225000, "€", "2019-05-24", "Service-public — Plan d'épargne en actions (PEA)", "https://www.service-public.gouv.fr/particuliers/vosdroits/F2385"),
+    rep("pea_jeune_plafond", "Plafond du PEA d'un majeur rattaché au foyer de ses parents", 20000, "€", "2019-05-24", "Service-public — PEA", "https://www.service-public.gouv.fr/particuliers/vosdroits/F2385"),
+    rep("av_duree_ans", "Durée d'un contrat d'assurance-vie ouvrant l'abattement annuel", 8, "ans", "1990-01-01", "BOFiP — BOI-RPPM-RCM-30-10-20-20 (durée du contrat)", "https://bofip.impots.gouv.fr/bofip/9312-PGP.html/identifiant=BOI-RPPM-RCM-30-10-20-20-20220630"),
+    rep("av_seuil_versements", "Seuil de primes nettes pour le taux réduit de l'assurance-vie après 8 ans", 150000, "€", "2017-09-27", "Service-public — Fiscalité de l'assurance-vie", "https://www.service-public.gouv.fr/particuliers/vosdroits/F22414"),
+    rep("av_age_seuil", "Âge de l'assuré qui sépare les régimes 990 I et 757 B", 70, "ans", "2023-03-11", "Légifrance — CGI art. 757 B", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047288569"),
+    rep("av_990i_abattement", "Abattement par bénéficiaire, primes versées avant 70 ans (art. 990 I)", 152500, "€", "2023-03-11", "Légifrance — CGI art. 990 I", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047288653"),
+    rep("av_757b_abattement", "Abattement global, primes versées après 70 ans (art. 757 B)", 30500, "€", "2023-03-11", "Légifrance — CGI art. 757 B", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047288569"),
+    rep("pel_retrait_min_ans", "Durée en dessous de laquelle la résiliation du PEL fait appliquer aux intérêts le taux du CEL", 2, "ans", "2019-09-01", "Légifrance — Code de la construction et de l'habitation, art. R315-32", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039042305"),
+    rep("pel_duree_min_ans", "Durée minimale du PEL", 4, "ans", "2019-09-01", "Légifrance — Code de la construction et de l'habitation, art. R315-28", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039042324"),
+    rep("pel_duree_max_ans", "Durée maximale de versement du PEL", 10, "ans", "2011-03-01", "Service-public — PEL", "https://www.service-public.gouv.fr/particuliers/vosdroits/F16140"),
+    rep("pel_duree_vie_ans", "Durée au terme de laquelle un PEL ouvert depuis le 1er mars 2011 devient un livret ordinaire", 15, "ans", "2011-03-01", "Service-public — PEL", "https://www.service-public.gouv.fr/particuliers/vosdroits/F16140"),
+    rep("pel_exoneration_ir_ans", "Années d'intérêts exonérés d'impôt sur le revenu, PEL ouvert du 1er avril 1992 au 31 décembre 2017", 12, "ans", "2018-01-01", "BOFiP — BOI-RPPM-RCM-10-10-50, § 60", "https://bofip.impots.gouv.fr/bofip/857-PGP.html"),
+    rep("pel_taux_ouverture", "Taux du PEL ouvert en 2026 (fixé à l'ouverture)", 2, "%", "2026-01-01", "Légifrance — avis du 20 décembre 2025 relatif au taux du PEL", "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000053095350", "2026-12-31"),
+    rep("pee_blocage_ans", "Durée minimale de blocage d'un versement sur un PEE", 5, "ans", "2021-01-01", "Légifrance — Code du travail art. L3332-25", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042340834"),
+    rep("donation_rappel_ans", "Délai de rappel fiscal des donations", 15, "ans", "2012-08-17", "Service-public — Donation : abattements", "https://www.service-public.gouv.fr/particuliers/vosdroits/F14203"),
+    rep("donation_abattement_enfant", "Abattement par parent et par enfant sur une donation", 100000, "€", "2012-08-17", "Service-public — Donation : abattements", "https://www.service-public.gouv.fr/particuliers/vosdroits/F14203"),
+    rep("don_familial_argent", "Don familial de sommes d'argent (art. 790 G), par donateur et par bénéficiaire", 31865, "€", "2023-12-31", "Légifrance — CGI art. 790 G", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041471332"),
+    rep("don_logement_donateur", "Dons pour un logement neuf ou une rénovation énergétique : plafond par donateur et par donataire (art. 790 A bis)", 100000, "€", "2025-02-15", "Service-public — Don familial de sommes d'argent", "https://www.service-public.gouv.fr/particuliers/vosdroits/F36656", "2026-12-31"),
+    rep("don_logement_donataire", "Dons pour un logement neuf ou une rénovation énergétique : plafond par donataire (art. 790 A bis)", 300000, "€", "2025-02-15", "Légifrance — CGI art. 790 A bis", "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043662329", "2026-12-31"),
+    rep("mv_report_ans", "Années de report des moins-values sur valeurs mobilières", 10, "ans", "2017-01-01", "Service-public — Plus-values sur valeurs mobilières", "https://www.service-public.gouv.fr/particuliers/vosdroits/F21618"),
+    rep("per_report_ans", "Années de report du plafond épargne retraite non utilisé (plafonds depuis 2026)", 5, "ans", "2026-01-01", "BOFiP — ACTU-2026-00106 (loi de finances pour 2026, art. 10)", "https://bofip.impots.gouv.fr/bofip/15111-PGP.html/ACTU-2026-00106"),
+    rep("per_report_ans_ancien", "Années de report du plafond épargne retraite non utilisé (plafonds jusqu'à 2025)", 3, "ans", "2019-10-01", "Service-public — Plafond de déduction de l'épargne retraite", "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709", "2025-12-31"),
+    rep("per_age_fin_deduction", "Âge à partir duquel les versements sur un PER ne sont plus déductibles", 70, "ans", "2026-01-01", "Service-public — Plafond de déduction de l'épargne retraite", "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709"),
+    rep("per_plafond_plancher", "Plafond minimal de déduction épargne retraite (2026)", 4710, "€", "2026-01-01", "Service-public — Plafond de déduction de l'épargne retraite", "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709", "2026-12-31"),
+    rep("per_plafond_max", "Plafond maximal de déduction épargne retraite d'un salarié (2026)", 37680, "€", "2026-01-01", "Service-public — Plafond de déduction de l'épargne retraite", "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709", "2026-12-31"),
+    rep("ps_taux_general", "Prélèvements sociaux sur les revenus du capital, cas général", 18.6, "%", "2026-01-01", "Service-public — Prélèvements sociaux sur les revenus du capital", "https://www.service-public.gouv.fr/particuliers/vosdroits/F2329"),
+    rep("ps_taux_av_epargne_logement", "Prélèvements sociaux sur l'assurance-vie, le PEL et le CEL", 17.2, "%", "2018-01-01", "Service-public — Prélèvements sociaux sur les revenus du capital", "https://www.service-public.gouv.fr/particuliers/vosdroits/F2329"),
+    rep("lep_rfr_1_part", "Revenu fiscal de référence maximal pour un LEP, 1 part (métropole, 2026)", 23028, "€", "2026-01-01", "Service-public — Livret d'épargne populaire (LEP)", "https://www.service-public.gouv.fr/particuliers/vosdroits/F2367", "2026-12-31"),
+    rep("ira_plafond_mois", "Plafond des indemnités de remboursement anticipé : mois d'intérêts", 6, "mois", "2016-07-01", "Légifrance — Code de la consommation R313-25", "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006069565/LEGISCTA000032807570/"),
+    rep("ira_plafond_pct", "Plafond des indemnités de remboursement anticipé : part du capital restant dû", 3, "%", "2016-07-01", "Légifrance — Code de la consommation R313-25", "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006069565/LEGISCTA000032807570/"),
+    rep("assurance_emprunteur_sans_questionnaire", "Part assurée par assuré en dessous de laquelle aucun questionnaire de santé n'est demandé (fin du crédit avant 60 ans)", 200000, "€", "2022-06-01", "Légifrance — loi n° 2022-270 du 28 février 2022", "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000045268729"),
+    rep("lep_taux", "Taux du LEP", 2.5, "%", "2026-08-01", "Légifrance — arrêté du 29 juillet 2026 relatif au taux d'intérêt du livret d'épargne populaire", "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000054569438", "2027-01-31"),
   ];
   const savoir = { fiches, reperes };
 
