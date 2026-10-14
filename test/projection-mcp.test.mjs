@@ -327,6 +327,14 @@ test("decrire_foyer : réglages de projection → proposition config { projectio
   assert.ok(depots[0].items[0].apres.projection.le, "la date de la source est posée");
 });
 
+test("decrire_foyer : prix d'achat d'un bien (reglages.biens) → proposition config { projection: { biens } } ; bien inconnu refusé", { skip: SANS_STRIP }, async () => {
+  depots.length = 0;
+  const bien = { prix_achat: 205000, date_achat: "2016-03-01", source: "Acte d'achat (exemple)" };
+  await ok(T0.decrire_foyer.handler({ reglages: { biens: { "bien:bien-rp": bien } }, ...SRC }));
+  assert.deepEqual(depots[0].items[0].apres.projection.biens["bien:bien-rp"], { ...bien, le: TODAY });
+  assert.match(await echec(T0.decrire_foyer.handler({ reglages: { biens: { "bien:inconnu": bien } }, ...SRC })), /introuvable/);
+});
+
 /* ---------------------------------------------------------------- projeter */
 test("projeter : résumé du moteur de l'app (phrase, bande, couches, capacité, garde-fous, événements, objectifs, hypothèses sourcées), jamais les chemins", { skip: SANS_STRIP }, async () => {
   const r = await ok(T0.projeter.handler({}));

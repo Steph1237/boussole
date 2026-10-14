@@ -102,6 +102,15 @@ test("démo : réglages de projection par proposition (fusion champ par champ, n
   assert.match(await refuse(ctx, "p3"), /^Proposition non appliquée \(réglages, modifier\) : projection : tmi_pct invalide \(0, 11, 30, 41 ou 45 attendu\)\.$/);
   assert.match(await refuse(ctx, "p4"), /projection : champ « inconnu » inconnu \(base_capacite, capacite_mensuelle/);
 });
+test("démo : prix d'achat d'un bien par proposition de réglages (config.projection.biens), bien inconnu refusé", async () => {
+  const biens = { "bien:bien-rp": { prix_achat: 205000, date_achat: "2016-03-01", source: "Acte d'achat (exemple)" } };
+  const { ctx } = await demo([prop("b1", "config", "modifier", { projection: { biens } }), prop("b2", "config", "modifier", { projection: { biens: { "bien:inconnu": biens["bien:bien-rp"] } } })]);
+  await ctx.Store.propositions.appliquer(["b1"]);
+  const pj = ctx.Store.get().config.projection;
+  assert.equal(pj.biens["bien:bien-rp"].prix_achat, 205000); assert.equal(pj.biens["bien:bien-rp"].source, "Acte d'achat (exemple)"); assert.match(pj.biens["bien:bien-rp"].le, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(pj.tmi_pct, 30, "les autres réglages sont conservés");
+  assert.match(await refuse(ctx, "b2"), /projection\.biens : bien « bien:inconnu » introuvable/);
+});
 test("démo ↔ moteur : les 15 cas V-1 à V-15 donnent le message du moteur (ou s'appliquent s'ils sont valides)", async () => {
   const cas = FIXTURE.cas.filter(c => c.famille === "validation");
   assert.equal(cas.length, 15);

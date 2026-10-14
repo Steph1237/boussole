@@ -208,3 +208,18 @@ test("SCPI en direct bloquée, levier : classe et multiple lus dans le nom, sous
   assert.deepEqual(lev.levier, { multiple: 3, sous_jacent: "actions_nasdaq100" });
   assert.ok(scpi && scpi.dispo === false);
 });
+
+/* ---- réglages de projection : biens (revue Opus, correctif 1) ---- */
+{
+  const E = req("../web/src/projection-evenements.js");
+  test("fusionnerReglagesProjection : prix d'achat d'un bien de l'utilisateur accepté, bien inconnu refusé, retrait par null", () => {
+    const biens = [{ id: "bien-rp" }, { id: "b2" }];
+    const ok = E.fusionnerReglagesProjection({}, { biens: { "bien:bien-rp": { prix_achat: 200000, date_achat: "2015-06-01", source: "Acte (exemple)" } } }, { today: "2026-10-14", biens });
+    assert.equal(ok.erreur, undefined);
+    assert.deepEqual(ok.projection.biens["bien:bien-rp"], { prix_achat: 200000, date_achat: "2015-06-01", source: "Acte (exemple)", le: "2026-10-14" });
+    assert.match(E.fusionnerReglagesProjection({}, { biens: { "bien:zzz": { prix_achat: 1, date_achat: "2015-06-01", source: "x" } } }, { today: "2026-10-14", biens }).erreur, /introuvable/);
+    const retire = E.fusionnerReglagesProjection(ok.projection, { biens: { "bien:bien-rp": null } }, { today: "2026-10-14", biens });
+    assert.equal(retire.projection.biens, undefined);
+    assert.match(E.fusionnerReglagesProjection({}, { biens: { "bien:bien-rp": { prix_achat: 1 } } }, { today: "2026-10-14", biens }).erreur, /date_achat invalide/);
+  });
+}

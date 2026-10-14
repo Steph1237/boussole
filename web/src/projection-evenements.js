@@ -37,6 +37,7 @@
   M.type_inconnu = "Type d'événement inconnu : choisis parmi " + TYPES_V1.join(", ") + ".";
 
   const estObjet = v => v !== null && typeof v === "object" && !Array.isArray(v);
+  const liste = v => (Array.isArray(v) ? v : []);
   const nombre = v => O.estNombre(v);
   const present = v => v !== undefined && v !== null && v !== "";
   /** Message de la base de la même règle ; null si tout va bien. */
