@@ -1,9 +1,9 @@
 /* Calculs patrimoniaux purs, partagés par tous les onglets. Aucun accès au DOM. */
 (function (root, factory) {
-  const api = factory();
+  const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.Calc = api;
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : this, function (root) {
   const n = v => (isFinite(+v) ? +v : 0);
   const pos = v => Math.max(0, n(v));
 
@@ -385,7 +385,12 @@
     return { erreurs: [...new Set(erreurs)], avertissements };
   }
 
-  return { CLASSES_LABELS, LIQUIDITE_LABELS, FAMILLES_LABELS, classe, liquidite, famille, horsCourants, parClasse, parLiquidite,
+  /* Calendrier patrimonial (DAT1) : délégation à Calendrier.calendrier (web/src/calendrier.js), la même fonction sous Node. */
+  const calendrier = typeof module === "object" && module.exports && typeof require === "function"
+    ? require("./calendrier.js").calendrier
+    : (data, today, options) => root.Calendrier.calendrier(data, today, options);
+
+  return { calendrier, CLASSES_LABELS, LIQUIDITE_LABELS, FAMILLES_LABELS, classe, liquidite, famille, horsCourants, parClasse, parLiquidite,
     comptesCourants, moisCourants, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort,
     val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites,
     autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, completude, manquants, valider };
