@@ -21,11 +21,53 @@
      Exemple : UI.carte({ id: "net", titre: "Patrimoine net", valeur: "512 300 €", sous: "sur 1 an",
                           tendance: { sens: "hausse", texte: "+3,2 %" }, badge: "Provisoire" })
 
+   UI.puce(statut | { statut, texte? }) → HTML
+     Chip de statut : point de 8 px et libellé en toutes lettres (12 px, 600). 4 statuts, jamais une couleur de texte courant :
+     "bon" (Bon), "surveiller" (À surveiller), "travailler" (À travailler), "completer" (À compléter : neutre, contour pointillé, une
+     donnée manquante n'est pas une faute). `texte` remplace le libellé (« Correct »). Statut inconnu → "".
+     Exemple : UI.puce("surveiller")  ·  UI.puce({ statut: "bon", texte: "Correct" })
+
+   UI.carte : variantes (UX1) — `variante: "heros"` (chiffre de 36 px, 44 sur ordinateur), `"compacte"` (104 px au moins, valeur de 22 px, sans
+     chevron : rangée de 3 dans <div class="ui-cartes compactes">) ; `statut` = argument de UI.puce, affiché sous la valeur.
+     Exemple : UI.carte({ id: "bp", titre: "Bonnes pratiques", valeur: "79", variante: "compacte", statut: "bon" })
+
+   UI.ligne({ titre, sous?, montant?, delta?: { texte, ton }, icone?, id? | href?, barre?, aria?, multiligne? }) → HTML
+     Ligne de liste : 56 px (64 avec sous-libellé), toute la ligne cliquable (<button data-ui-ligne> avec `id`, <a> avec `href` « #… » ou
+     « https://… », sinon <div> sans chevron), icône de 32 px (clé de UI.ICONES : alerte, banque, calendrier, check, maison, graphe,
+     document, personne, etincelle), montant à droite en chiffres tabulaires, delta en dessous (ton pos | neg | neutre), barre de part de 4 px
+     (0 à 100). multiligne : le titre passe à la ligne au lieu d'être tronqué.
+     Exemple : UI.ligne({ id: "pea", titre: "PEA Camille", sous: "3 lignes · 26,8 %", montant: UI.fmtEUR(24380), barre: 26.8 })
+   UI.liste(lignes, { label? }) → HTML
+     <ul class="ui-liste"> : séparateurs internes, sans carte par ligne. `lignes` : HTML de UI.ligne ou UI.aTraiter.
+     Exemple : UI.liste(comptes.map(c => UI.ligne({ id: c.id, titre: c.nom, montant: UI.fmtEUR(c.solde) })), { label: "Comptes" })
+
+   UI.aTraiter({ titre, raison?, icone?, urgent?, action?: { texte, id | href, aria? } }) → HTML
+     Élément d'« À traiter » : icône de type, titre (2 lignes au plus), une ligne de raison, action à droite (36 px visuels, zone de 44 px).
+     La priorité vient de l'ordre ; `urgent` (true → « Urgent », ou un texte comme « Bloquant ») ajoute la chip seulement si le délai
+     ou le blocage est réel.
+     Exemple : UI.aTraiter({ titre: "5 changements à valider", raison: "Proposés par Claude", icone: "etincelle", action: { texte: "Examiner", href: "#agent/propositions" } })
+
+   UI.bouton({ texte, variante?: "primaire" | "secondaire" | "tertiaire", href? | id?, pleineLargeur? }) → HTML
+     Primaire (plein, marque : un par écran au plus), secondaire (contour), tertiaire (texte souligné) ; 44 px de haut sur mobile, 40 sur ordinateur.
+     Exemple : UI.bouton({ texte: "Valider la sélection", id: "valider" })
+
+   UI.defilant(racine) → { maj(), montrerActif() }
+     Fondu de bord d'un conteneur qui défile horizontalement (chips, onglets) : pose data-fade = none | start | end | both (CSS : fondu de 24 à
+     28 px) et le met à jour au défilement et au redimensionnement ; rappeler renvoie la même instance. UI.onglets l'applique tout seul.
+     montrerActif() recentre l'élément actif ([aria-selected="true"] ou [aria-pressed="true"]). UI.etatFondu(gauche, largeur, total) est la règle pure.
+     Exemple : const d = UI.defilant($("subTabs")); d.montrerActif()
+
+   Formats : UI.fmtEUR, UI.fmtPct, UI.fmtDate, UI.fmtDelta, UI.fmtNombre, UI.fmtAxe, UI.graduations, UI.classeMontant sont ceux de format.js (voir son en-tête).
+     Exemple : UI.fmtEUR(193490, { compact: "kpi" }) → « 193 k€ »  ·  UI.fmtDelta({ montant: 9646, pct: 5.2 }).texte → « ▲ +9 646 € · +5,2 % sur 1 an »
+
+   UI.decisionGlisse(dy, dt) → booléen : règle du glisser vers le bas qui ferme la feuille (dy px en dt ms : au moins 96 px, ou 24 px à 0,6 px/ms).
+
    UI.panneau.ouvrir({ titre, contenu, lien?, pied?, retour?, surFermeture? }) → élément de contenu (.ui-panneau-corps)
    UI.panneau.fermer({ focus? }?)   UI.panneau.ouvert() → booléen
    UI.panneau.remplacer({ titre?, contenu?, lien?, pied? }) → élément de contenu, ou null si le panneau est fermé
      Panneau de détail unique (role="dialog", aria-modal="true", aria-labelledby sur le titre), créé dans document.body à la
-     première ouverture : volet latéral droit de 420 px à partir de 900 px, feuille du bas (85 vh max) en dessous. Fond voilé,
+     première ouverture : volet latéral droit de 480 px à partir de 900 px, feuille du bas (92 vh max, poignée, titre collant, glisser vers le bas pour fermer) en dessous ;
+     ouverture 220 ms, fermeture 180 ms (sans animation si le mouvement est réduit). Fond voilé,
      reste de la page inerte, focus piégé (Tab / Maj+Tab), fermeture par Échap, clic sur le voile, bouton « Fermer » ou lien
      interne (#…) cliqué dans le panneau ; le focus revient à `retour` ou, à défaut, à l'élément actif avant l'ouverture.
      Retour arrière du navigateur (popstate) ou hash changé pendant l'ouverture : le panneau se ferme sans reprendre le
@@ -109,6 +151,9 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
+  /* Formats uniques (format.js, global Fmt) : alias UI.fmtEUR, UI.fmtPct… ; absents si format.js n'est pas chargé (tests isolés de ui.js). */
+  const F = (typeof globalThis !== "undefined" && globalThis.Fmt) || (typeof module === "object" && module.exports && typeof require === "function" ? (() => { try { return require("./format.js"); } catch (e) { return null; } })() : null);
+
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   let compteur = 0;
   const uid = p => "ui-" + p + "-" + (++compteur);
@@ -148,15 +193,124 @@
     if (vide(o.texte)) return "";
     return '<span class="ui-badge ' + (TONS_BADGE.includes(o.ton) ? o.ton : "neutre") + '">' + esc(o.texte) + "</span>";
   }
+  /* Statuts : 4 valeurs, toujours avec un libellé (point de couleur + texte), jamais une couleur de texte courant. */
+  const STATUTS = {
+    bon: { classe: "bon", libelle: "Bon" },
+    surveiller: { classe: "surveiller", libelle: "À surveiller" },
+    travailler: { classe: "travailler", libelle: "À travailler" },
+    completer: { classe: "completer", libelle: "À compléter" },
+  };
+  function puce(o) {
+    const x = typeof o === "string" ? { statut: o } : o || {};
+    const st = STATUTS[x.statut];
+    if (!st) return "";
+    return '<span class="ui-puce ' + st.classe + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(vide(x.texte) ? st.libelle : x.texte) + "</span>";
+  }
+  const VARIANTES_CARTE = ["heros", "compacte"];
   function carte(o) {
     o = o || {};
     const pied = htmlTendance(o.tendance) + (vide(o.sous) ? "" : '<span class="ui-carte-sous">' + esc(o.sous) + "</span>");
-    return '<button type="button" class="ui-carte" data-ui-carte="' + esc(o.id) + '" aria-haspopup="dialog"' +
+    const variante = VARIANTES_CARTE.includes(o.variante) ? " " + o.variante : "";
+    return '<button type="button" class="ui-carte' + variante + '" data-ui-carte="' + esc(o.id) + '" aria-haspopup="dialog"' +
       (vide(o.aria) ? "" : ' aria-label="' + esc(o.aria) + '"') + ">" +
       '<span class="ui-carte-tete"><span class="ui-carte-titre">' + esc(o.titre) + "</span>" + htmlBadge(o.badge) + "</span>" +
       '<span class="ui-carte-valeur">' + (vide(o.valeur) ? "—" : esc(o.valeur)) + "</span>" +
+      (vide(o.statut) ? "" : '<span class="ui-carte-statut">' + puce(o.statut) + "</span>") +
       (pied ? '<span class="ui-carte-pied">' + pied + "</span>" : "") +
       '<span class="ui-carte-ouvrir">' + CHEVRON_DROITE + "</span></button>";
+  }
+
+  /* ============================================================ ligne de liste, élément à traiter, bouton ============================================================ */
+  const ICONES = {
+    alerte: "M12 3l9.5 17h-19zM12 10v4.5M12 17.5v.5",
+    banque: "M3 10l9-6 9 6M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18",
+    calendrier: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
+    check: "M5 12.5l4.5 4.5L19 7.5",
+    maison: "M3.5 11L12 4l8.5 7M5.5 9.5V20h13V9.5",
+    graphe: "M4 20V11M10 20V5M16 20v-6M21 20H3",
+    document: "M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5",
+    personne: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c.8-3.6 3.8-5.5 7.5-5.5s6.7 1.9 7.5 5.5",
+  };
+  const icone = k => (ICONES[k] ? '<span class="ui-ligne-ico" aria-hidden="true">' + svg(ICONES[k]) + "</span>" : k === "etincelle" ? '<span class="ui-ligne-ico" aria-hidden="true">' + ETINCELLE + "</span>" : "");
+  const TONS_MONTANT = ["pos", "neg", "neutre"];
+  /* Lien de ligne ou d'action : « #… » ou « https://… » (un « ' » est admis : encodeURIComponent le laisse, esc() le protège dans l'attribut). */
+  const lienLigne = h => (typeof h === "string" && (/^#\S*$/.test(h) || /^https:\/\/\S+$/.test(h)) ? h : null);
+
+  /** Ligne de liste : 56 px (64 avec sous-libellé), toute la ligne cliquable, montant à droite en chiffres tabulaires. */
+  function ligne(o) {
+    o = o || {};
+    const href = lienLigne(o.href), actif = href || !vide(o.id);
+    const balise = href ? "a" : actif ? "button" : "div";
+    const attrs = href ? ' href="' + esc(href) + '"' + (/^https:/.test(href) ? ' target="_blank" rel="noopener noreferrer"' : "") : actif ? ' type="button" data-ui-ligne="' + esc(o.id) + '"' : "";
+    const d = o.delta && typeof o.delta === "object" ? o.delta : null;
+    const barre = Number.isFinite(+o.barre) && o.barre !== null && o.barre !== "" ? Math.max(0, Math.min(100, +o.barre)) : null;
+    return "<" + balise + ' class="ui-ligne' + (actif ? " actif" : "") + (o.multiligne ? " multi" : "") + (vide(o.sous) ? "" : " avec-sous") + (barre != null ? " avec-barre" : "") + '"' + attrs + (vide(o.aria) ? "" : ' aria-label="' + esc(o.aria) + '"') + ">" +
+      icone(o.icone) +
+      '<span class="ui-ligne-corps"><span class="ui-ligne-titre">' + esc(o.titre) + "</span>" +
+      (vide(o.sous) ? "" : '<span class="ui-ligne-sous">' + esc(o.sous) + "</span>") + "</span>" +
+      (vide(o.montant) && !d ? "" : '<span class="ui-ligne-montant"><span class="ui-ligne-valeur num">' + esc(o.montant) + "</span>" +
+        (d ? '<span class="ui-ligne-delta num ' + (TONS_MONTANT.includes(d.ton) ? d.ton : "neutre") + '">' + esc(d.texte) + "</span>" : "") + "</span>") +
+      (actif ? '<span class="ui-ligne-chevron" aria-hidden="true">' + CHEVRON_DROITE + "</span>" : "") +
+      (barre != null ? '<span class="ui-ligne-barre" aria-hidden="true"><span style="width:' + barre.toFixed(1) + '%"></span></span>' : "") +
+      "</" + balise + ">";
+  }
+  /** Liste de lignes : séparateurs internes, pas de carte par ligne. `lignes` : HTML de UI.ligne / UI.aTraiter. */
+  function liste(lignes, o) {
+    o = o || {};
+    const xs = Array.isArray(lignes) ? lignes : [];
+    return '<ul class="ui-liste"' + (vide(o.label) ? "" : ' aria-label="' + esc(o.label) + '"') + ">" + xs.map(h => "<li>" + h + "</li>").join("") + "</ul>";
+  }
+  /** Élément d'« À traiter » : icône de type, titre, une ligne de raison, une action à droite (zone de 44 px), « Urgent » seulement si le délai ou le blocage est réel. */
+  function aTraiter(o) {
+    o = o || {};
+    const a = o.action && typeof o.action === "object" ? o.action : null;
+    const href = a ? lienLigne(a.href) : null;
+    const act = !a ? "" : (href ? '<a class="ui-item-action" href="' + esc(href) + '"' : '<button type="button" class="ui-item-action" data-ui-action="' + esc(a.id) + '"') +
+      (vide(a.aria) ? "" : ' aria-label="' + esc(a.aria) + '"') + "><span>" + esc(a.texte) + "</span>" + (href ? "</a>" : "</button>");
+    const urgent = o.urgent ? '<span class="ui-item-meta">' + puce({ statut: "travailler", texte: typeof o.urgent === "string" ? o.urgent : "Urgent" }) + "</span>" : "";
+    return '<div class="ui-item' + (o.urgent ? " urgent" : "") + '">' + (icone(o.icone) || '<span class="ui-ligne-ico" aria-hidden="true"></span>') +
+      '<span class="ui-ligne-corps">' + urgent + '<span class="ui-ligne-titre">' + esc(o.titre) + "</span>" +
+      (vide(o.raison) ? "" : '<span class="ui-ligne-sous">' + esc(o.raison) + "</span>") + "</span>" + act + "</div>";
+  }
+  const VARIANTES_BOUTON = { primaire: "", secondaire: " secondaire", tertiaire: " tertiaire" };
+  /** Bouton : primaire (plein, marque ; un seul par écran au plus), secondaire (contour), tertiaire (texte souligné) ; 44 px sur mobile, 40 sur ordinateur. */
+  function bouton(o) {
+    o = o || {};
+    const classe = "ui-btn" + (VARIANTES_BOUTON[o.variante] || "") + (o.pleineLargeur ? " plein" : "");
+    const href = lienLigne(o.href);
+    return href
+      ? '<a class="' + classe + '" href="' + esc(href) + '">' + esc(o.texte) + "</a>"
+      : '<button type="button" class="' + classe + '"' + (vide(o.id) ? "" : ' data-ui-bouton="' + esc(o.id) + '"') + ">" + esc(o.texte) + "</button>";
+  }
+
+  /* ============================================================ défilement : fondu de bord ============================================================ */
+  /** État du fondu d'un conteneur à défilement horizontal : "none" (rien ne déborde), "end" (suite à droite), "start" (suite à gauche), "both". */
+  function etatFondu(gauche, largeur, total) {
+    if (!(total > largeur + 1)) return "none";
+    const debut = gauche > 1, fin = gauche + largeur < total - 1;
+    return debut && fin ? "both" : fin ? "end" : debut ? "start" : "none";
+  }
+  const defilants = new WeakMap();
+  /** Pose data-fade (none | start | end | both) sur un conteneur qui défile horizontalement (onglets, chips) ; rappeler renvoie la même instance.
+      { maj() } recalcule (après un nouveau rendu) ; { montrerActif() } fait défiler pour que l'élément actif reste visible. */
+  function defilant(racine) {
+    if (!racine || typeof racine.addEventListener !== "function") return null;
+    if (defilants.has(racine)) return defilants.get(racine);
+    const maj = () => racine.setAttribute("data-fade", etatFondu(racine.scrollLeft, racine.clientWidth, racine.scrollWidth));
+    const montrerActif = () => {
+      const el = racine.querySelector('[aria-selected="true"],[aria-pressed="true"],[aria-current]');
+      if (!el || !(racine.scrollWidth > racine.clientWidth) || typeof el.getBoundingClientRect !== "function") return;
+      const a = racine.getBoundingClientRect(), b = el.getBoundingClientRect();
+      racine.scrollLeft += b.left - a.left - (a.width - b.width) / 2;
+    };
+    racine.addEventListener("scroll", maj, { passive: true });
+    const w = typeof window !== "undefined" ? window : null;
+    if (w && typeof w.addEventListener === "function") w.addEventListener("resize", maj);
+    if (typeof ResizeObserver !== "undefined") { try { new ResizeObserver(maj).observe(racine); } catch (e) { /* sans observateur : scroll et resize suffisent */ } }
+    const ctl = { maj, montrerActif };
+    defilants.set(racine, ctl);
+    maj();
+    return ctl;
   }
 
   /* ============================================================ onglets et bascule ============================================================ */
@@ -206,6 +360,7 @@
     let actif = idActif(liste, o.actif);
     const htmlGroupe = cfg.html;
     racine.innerHTML = htmlGroupe(Object.assign({}, o, { actif }));
+    if (cfg.cle === "onglets") { const d = defilant(racine.querySelector(".ui-onglets")); if (d) d.montrerActif(); }
     const sel = '[role="' + cfg.role + '"]';
     const elements = () => Array.from(racine.querySelectorAll(sel));
     const original = id => { const x = liste.find(y => String(y.id) === id); return x ? x.id : id; };
@@ -470,9 +625,15 @@
   const focalisables = c => Array.from(c.querySelectorAll(SEL_FOCALISABLES))
     .filter(el => !el.hasAttribute("disabled") && el.getAttribute("tabindex") !== "-1" && el.getAttribute("type") !== "hidden" && visible(el));
 
+  /** Glisser vers le bas pour fermer la feuille : fermer si le déplacement dépasse 96 px, ou 24 px avec une vitesse d'au moins 0,6 px/ms. */
+  function decisionGlisse(dy, dt) {
+    if (!(dy > 0)) return false;
+    return dy >= 96 || (dy >= 24 && dt > 0 && dy / dt >= 0.6);
+  }
+
   const panneau = (function () {
     let el = null, voile = null, titreEl = null, corps = null, piedEl = null;
-    let estOuvert = false, retourEl = null, inertes = [], surFermeture = null;
+    let estOuvert = false, retourEl = null, inertes = [], surFermeture = null, minuterie = null;
 
     function construire(d) {
       voile = d.createElement("div");
@@ -490,6 +651,7 @@
       piedEl = el.querySelector(".ui-panneau-pied");
       voile.addEventListener("click", () => fermer());
       el.querySelector(".ui-panneau-fermer").addEventListener("click", () => fermer());
+      glisser(el.querySelector(".ui-panneau-poignee"), el.querySelector(".ui-panneau-tete"));
       el.addEventListener("keydown", pieger);
       // un lien interne mène à une autre vue : on ferme d'abord (le focus suivra la navigation)
       el.addEventListener("click", e => {
@@ -498,6 +660,43 @@
       });
       d.body.appendChild(voile);
       d.body.appendChild(el);
+    }
+    /* Feuille du bas (mobile) : la poignée et l'en-tête se tirent vers le bas ; relâcher au-delà du seuil ferme, sinon la feuille revient. */
+    function glisser(...zones) {
+      const w = fenetre();
+      if (!w || typeof w.matchMedia !== "function") return;
+      let y0 = null, t0 = 0, dy = 0;
+      const feuille = () => w.matchMedia("(max-width: 899.98px)").matches;
+      const fin = e => {
+        if (y0 == null) return;
+        const d = dy, dt = Math.max(1, (e && e.timeStamp ? e.timeStamp : Date.now()) - t0);
+        y0 = null; dy = 0;
+        reposer();
+        if (decisionGlisse(d, dt)) fermer();
+      };
+      zones.forEach(z => {
+        if (!z || typeof z.addEventListener !== "function") return;
+        z.addEventListener("pointerdown", e => {
+          if (!feuille() || (e.button != null && e.button !== 0) || (e.target.closest && e.target.closest("button"))) return;
+          y0 = e.clientY; t0 = e.timeStamp || Date.now(); dy = 0;
+          try { z.setPointerCapture(e.pointerId); } catch (x) { /* capture facultative */ }
+        });
+        z.addEventListener("pointermove", e => {
+          if (y0 == null) return;
+          dy = Math.max(0, e.clientY - y0);
+          if (el.style) { el.style.transition = "none"; el.style.transform = "translateY(" + dy + "px)"; }
+        });
+        z.addEventListener("pointerup", fin);
+        z.addEventListener("pointercancel", fin);
+      });
+    }
+    const reposer = () => { if (el && el.style) { el.style.transition = ""; el.style.transform = ""; } };
+    /* Fermeture animée (180 ms) seulement dans un navigateur qui anime ; sans animation (mouvement réduit, tests), le panneau se masque aussitôt. */
+    const anime = () => { const w = fenetre(); return !!(w && typeof w.matchMedia === "function" && !w.matchMedia("(prefers-reduced-motion: reduce)").matches); };
+    function masquer() {
+      if (minuterie) { clearTimeout(minuterie); minuterie = null; }
+      if (el) { el.hidden = true; el.classList.remove("sort"); }
+      if (voile) { voile.hidden = true; voile.classList.remove("sort"); }
     }
     function pieger(e) {
       if (e.key !== "Tab" || !estOuvert) return;
@@ -533,6 +732,8 @@
       piedEl.hidden = !piedEl.querySelector("a,button") && !o.pied;
       if (!garder) surFermeture = typeof o.surFermeture === "function" ? o.surFermeture : null;
       if (!estOuvert) {
+        masquer(); // une fermeture animée encore en cours est terminée avant de rouvrir
+        reposer();
         estOuvert = true;
         inertes = Array.from(d.body.children).filter(c => c !== el && c !== voile && !c.inert);
         inertes.forEach(c => { c.inert = true; });
@@ -575,8 +776,10 @@
       if (w) { w.removeEventListener("hashchange", surHistorique); w.removeEventListener("popstate", surHistorique); }
       inertes.forEach(c => { c.inert = false; });
       inertes = [];
-      el.hidden = true;
-      voile.hidden = true;
+      if (anime()) {
+        el.classList.add("sort"); voile.classList.add("sort");
+        minuterie = setTimeout(masquer, 200);
+      } else masquer();
       d.documentElement.classList.remove("ui-bloque");
       const r = retourEl, f = surFermeture, focus = !(opts && opts.focus === false);
       retourEl = null; surFermeture = null;
@@ -588,6 +791,9 @@
 
   return {
     esc, carte, panneau, onglets, bascule, accordeon, voirPlus, brancher, periode, demanderAClaude, urlClaude, markdown,
+    puce, ligne, liste, aTraiter, bouton, defilant, etatFondu, decisionGlisse, ICONES, STATUTS,
     htmlOnglets, htmlBascule, cibleClavier, PERIODES, GRANULARITES,
+    fmtNombre: F && F.fmtNombre, fmtEUR: F && F.fmtEUR, fmtPct: F && F.fmtPct, fmtDate: F && F.fmtDate, fmtDelta: F && F.fmtDelta,
+    classeMontant: F && F.classeMontant, graduations: F && F.graduations, fmtAxe: F && F.fmtAxe,
   };
 });

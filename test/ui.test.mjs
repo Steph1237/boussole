@@ -536,8 +536,7 @@ test("voirPlus : balise \"ul\" → deux listes <ul> (le rendu fournit les <li>) 
   assert.match(UI.voirPlus(["a"], 2), /^<div class="ui-voirplus"><div class="ui-voirplus-liste">a<\/div><\/div>$/);
   assert.match(UI.voirPlus(["a"], 2, null, "", "script"), /<div class="ui-voirplus-liste">/, "balise inconnue → div");
   assert.match(css, /\.ui-voirplus-liste\{[^}]*list-style:none/);
-  const mobile = css.slice(css.indexOf("@media (max-width:899.98px)"));
-  assert.match(mobile, /\.ui-voirplus-btn\{min-height:40px/, "« Voir plus » d'au moins 40 px de haut sur mobile");
+  assert.match(css, /\.ui-voirplus-btn\{[^}]*min-height:var\(--hit\)/, "« Voir plus » : zone de 44 px (jeton --hit)");
 });
 
 test("periode (DOM) : « Tout » sans première date puis « Personnalisée » → 1 an (pas du = au) ; premiere(date) met à jour « Tout »", () => {
@@ -582,11 +581,11 @@ test("ui.css : sélecteurs tous préfixés .ui-, couleurs issues des variables d
   const bad = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith(".ui-"));
   assert.deepEqual(bad, []);
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")), "pas de couleur en dur : variables de theme.css");
-  for (const v of ["--surface", "--ink", "--muted", "--line", "--accent", "--good", "--crit", "--radius", "--f-num"]) assert.ok(css.includes("var(" + v), v);
+  for (const v of ["--surface", "--ink", "--muted", "--line", "--brand", "--pos", "--neg", "--r-card", "--t-body", "--hit", "--e3", "--dur-open"]) assert.ok(css.includes("var(" + v), v);
   assert.match(css, /@media \(min-width:900px\)/);
   assert.match(css, /@media \(max-width:899\.98px\)/);
-  assert.match(css, /max-height:85vh/);
-  assert.match(css, /width:min\(420px/);
+  assert.match(css, /max-height:92vh/, "feuille de 92 vh");
+  assert.match(css, /width:min\(480px/, "volet latéral de 480 px");
   assert.match(css, /\.ui-sr\{/);
 });
 
