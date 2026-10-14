@@ -126,7 +126,7 @@ test("boite : propositions en attente regroupées par lot, cibles en contexte, u
   assert.ok(b.every(x => x.type === "proposition" && x.urgence === 1));
   const l1 = b.find(x => /3 changements/.test(x.titre)), l2 = b.find(x => /1 changement\b/.test(x.titre));
   assert.ok(l1 && l2, b.map(x => x.titre).join(" | "));
-  assert.equal(l1.titre, "Claude propose 3 changements");
+  assert.equal(l1.titre, "3 changements à valider");
   assert.match(l1.contexte, /placements/i);
   assert.match(l1.contexte, /budget/i);
   assert.doesNotMatch(l1.contexte, /biens/i, "une proposition déjà acceptée ne compte plus");
@@ -231,7 +231,7 @@ test("boite : tri par urgence puis date, tous types mêlés", () => {
   const R = fauxRules([{ level: "crit", title: "Urgent", text: "x", rule: {} }, { level: "warn", title: "Attention", text: "y", rule: {} }], []);
   const b = A.boite(S, TODAY, { Rules: R });
   assert.deepEqual(b.map(x => x.urgence), [...b.map(x => x.urgence)].sort((x, y) => x - y));
-  assert.deepEqual(b.map(x => x.titre).slice(0, 2), ["Claude propose 1 changement", "Urgent"], "à urgence égale, la date la plus ancienne d'abord");
+  assert.deepEqual(b.map(x => x.titre).slice(0, 2), ["1 changement à valider", "Urgent"], "à urgence égale, la date la plus ancienne d'abord");
   const u2 = b.filter(x => x.urgence === 2).map(x => x.type);
   assert.deepEqual(u2, ["a_suivre", "alerte", "echeance"], "date croissante : rappel échu, alerte du jour, échéance à venir");
   for (const x of b) {
@@ -248,10 +248,10 @@ test("boite : sur la démo, la revue du mois prête, un lot de 5 propositions, l
   // Urgence 1 : la revue (prête depuis le 1er du mois, donc la plus ancienne, sauf le 1er où elle passe après), les propositions,
   // puis l'avis à relire.
   const u1 = b.filter(x => x.urgence === 1 && x.type !== "banque").map(x => x.titre);
-  assert.deepEqual(u1.filter(x => x !== "Ta revue du mois est prête : 2 questions"), ["Claude propose 5 changements", "1 entrée du journal à relire"], t.join(" | "));
+  assert.deepEqual(u1.filter(x => x !== "Revue du mois : 2 questions"), ["5 changements à valider", "1 note de Claude à relire"], t.join(" | "));
   // Banques connectées (BQ1) : Néo Courtage demande une authentification forte (urgence 1), un compte à rattacher (urgence 2).
-  assert.deepEqual(b.filter(x => x.type === "banque").map(x => [x.urgence, x.titre]), [[1, "Ta banque Néo Courtage demande une reconnexion"], [2, "1 compte à rattacher"]]);
-  assert.ok(u1.includes("Ta revue du mois est prête : 2 questions"), t.join(" | "));
+  assert.deepEqual(b.filter(x => x.type === "banque").map(x => [x.urgence, x.titre]), [[1, "Néo Courtage : reconnecte ta banque"], [2, "1 compte à rattacher"]]);
+  assert.ok(u1.includes("Revue du mois : 2 questions"), t.join(" | "));
   assert.equal(b.filter(x => x.type === "proposition").length, 1);
   assert.equal(b.filter(x => x.type === "routine").length, 1);
   assert.ok(b.some(x => x.type === "a_suivre" && /SCPI/.test(x.titre)), t.join(" | "));
@@ -267,7 +267,7 @@ test("boite : sur la démo, la revue du mois prête, un lot de 5 propositions, l
 const E = (id, type, statut, o) => Object.assign({ id, type, titre: "Entrée " + id, synthese: "Synthèse " + id, raisonnement: null, options: [], statut, dateDecision: null, revueLe: null,
   liens: {}, etat: { date: "2026-09-01", patrimoine_net: 1 }, source: "Claude", historique: [], creeLe: "2026-10-08T10:00:00.000Z", majLe: "2026-10-08T10:00:00.000Z" }, o);
 
-test("boite : entrées du journal à relire → un élément « N entrées du journal à relire », urgence 1, vers Agent › Journal", () => {
+test("boite : entrées du journal à relire → un élément « N notes de Claude à relire », urgence 1, vers Agent › Journal", () => {
   const S = vide({ journal: [
     E("a", "avis", "a_relire", { titre: "Avis <b>LDDS</b>", creeLe: "2026-10-09T08:00:00.000Z" }),
     E("b", "decision", "a_relire", { titre: "Décision PEA", creeLe: "2026-10-07T08:00:00.000Z" }),
@@ -277,21 +277,21 @@ test("boite : entrées du journal à relire → un élément « N entrées du jo
   assert.equal(b.length, 1);
   const x = b[0];
   assert.equal(x.type, "journal"); assert.equal(x.urgence, 1);
-  assert.equal(x.titre, "2 entrées du journal à relire");
+  assert.equal(x.titre, "2 notes de Claude à relire");
   assert.deepEqual(J(x.action), { label: "Relire", route: "agent/journal" });
   assert.match(x.contexte, /Avis <b>LDDS<\/b>/, "texte brut : l'échappement se fait au rendu");
   assert.match(x.contexte, /Décision PEA/);
   assert.equal(x.date, "2026-10-09");
   const un = A.boite(vide({ journal: [E("a", "avis", "a_relire")] }), TODAY, { Rules: fauxRules([], []) });
-  assert.equal(un[0].titre, "1 entrée du journal à relire");
+  assert.equal(un[0].titre, "1 note de Claude à relire");
   assert.deepEqual(J(un[0].action), { label: "Relire", route: "agent/journal?entree=a" }, "une seule entrée : lien profond qui l'ouvre");
   // nombre exact du store (S.journalARelire), au-delà des entrées lues ; plusieurs : la liste (filtre « À relire »)
   const exact = A.boite(vide({ journal: [E("a", "avis", "a_relire")], journalARelire: 7 }), TODAY, { Rules: fauxRules([], []) });
-  assert.equal(exact[0].titre, "7 entrées du journal à relire");
+  assert.equal(exact[0].titre, "7 notes de Claude à relire");
   assert.deepEqual(J(exact[0].action), { label: "Relire", route: "agent/journal" });
   const horsLecture = A.boite(vide({ journal: [], journalARelire: 1 }), TODAY, { Rules: fauxRules([], []) });
-  assert.equal(horsLecture[0].titre, "1 entrée du journal à relire");
-  assert.equal(horsLecture[0].contexte, "Confirme ou corrige ce que l'agent a noté.");
+  assert.equal(horsLecture[0].titre, "1 note de Claude à relire");
+  assert.equal(horsLecture[0].contexte, "Confirme ou corrige ce que Claude a noté.");
   assert.equal(horsLecture[0].action.route, "agent/journal", "entrée non lue : la liste");
   assert.deepEqual(A.boite(vide({ journal: [E("a", "avis", "a_relire")], journalARelire: 0 }), TODAY, { Rules: fauxRules([], []) }), [], "compte exact à 0 : rien");
   assert.deepEqual(A.boite(vide({ journal: [E("c", "decision", "actif")] }), TODAY, { Rules: fauxRules([], []) }), [], "rien à relire");
@@ -313,13 +313,13 @@ const RT = o => Object.assign({ type: "revue_mensuelle", jour: 1, active: true, 
 const sansRegles = { Rules: fauxRules([], []) };
 const routine = (S, today) => A.boite(S, today || TODAY, sansRegles).filter(x => x.type === "routine");
 
-test("boite : revue prête → « Ta revue du mois est prête : N questions », urgence 1, première question en contexte, « Répondre avec Claude »", () => {
+test("boite : revue prête → « Revue du mois : N questions », urgence 1, première question en contexte, « Répondre avec Claude »", () => {
   const qs = [Q("As-tu fait un versement <b>exceptionnel</b> ce mois-ci ?", { pourquoi: "Le PEA n'a pas bougé.", champ: "mouvement" }), Q("Ton salaire a-t-il changé ?")];
   const b = routine(vide({ routines: [RT({ questions: qs })] }));
   assert.equal(b.length, 1);
   const x = b[0];
   assert.equal(x.urgence, 1);
-  assert.equal(x.titre, "Ta revue du mois est prête : 2 questions");
+  assert.equal(x.titre, "Revue du mois : 2 questions");
   assert.equal(x.contexte, "As-tu fait un versement <b>exceptionnel</b> ce mois-ci ?", "texte brut : l'échappement se fait au rendu");
   assert.equal(x.date, "2026-10-01", "prête depuis le passage de Claude");
   assert.equal(x.action.label, "Répondre avec Claude");
@@ -329,7 +329,7 @@ test("boite : revue prête → « Ta revue du mois est prête : N questions », 
   const q = decodeURIComponent(x.action.url.split("?q=")[1]);
   assert.match(q, /questions de ma revue mensuelle \(demarrer_routine, puis le formulaire, puis questions_routine\)\. Concerne : 2 questions en attente\./);
   assert.doesNotMatch(q, /versement|salaire/i, "aucun texte de question dans l'URL");
-  assert.equal(routine(vide({ routines: [RT({ questions: [Q("Une seule question ?")] })] }))[0].titre, "Ta revue du mois est prête : 1 question");
+  assert.equal(routine(vide({ routines: [RT({ questions: [Q("Une seule question ?")] })] }))[0].titre, "Revue du mois : 1 question");
   // questions vides ignorées ; aucune question → rien (ni prête ni en retard)
   assert.deepEqual(routine(vide({ routines: [RT({ questions: [Q("  "), null] })] })), []);
 });
@@ -363,7 +363,7 @@ test("boite : date du passage lue à Paris (dernier_passage::date) — passage l
   const S = vide({ routines: [RT({ prochainPassage: "2026-11-01", dernierPassage: "2026-10-31T23:30:00.000Z", questions: [Q("Question ?")] })] });
   const b = routine(S, "2026-11-05");
   assert.equal(b.length, 1);
-  assert.equal(b[0].titre, "Ta revue du mois est prête : 1 question", "passée le 1er novembre à Paris : pas en retard");
+  assert.equal(b[0].titre, "Revue du mois : 1 question", "passée le 1er novembre à Paris : pas en retard");
   assert.equal(b[0].date, "2026-11-01");
   assert.equal(A.etatRevue(S, "2026-11-05").code, "prete");
 });
@@ -413,12 +413,12 @@ test("boiteHtml : élément « routine » (pictogramme, libellé pour lecteur d'
   assert.deepEqual(items.map(x => x.type), ["routine", "routine", "routine"]);
   const h = A.boiteHtml(items, UI || { voirPlus: (l, n, r) => l.map(r).join("") });
   assert.equal((h.match(/data-type="routine"/g) || []).length, 3);
-  assert.match(h, /<span class="ui-sr">Revue mensuelle, urgent : <\/span>Ta revue du mois est prête : 1 question/);
+  assert.match(h, /<span class="ui-sr">Revue mensuelle, urgent : <\/span>Revue du mois : 1 question/);
   assert.match(h, /Revue mensuelle, à traiter : <\/span>Revue mensuelle en retard de 9 jours/);
   assert.match(h, /Revue mensuelle, à surveiller : <\/span>Active ta revue mensuelle/);
-  assert.match(h, /href="https:\/\/claude\.ai\/new\?q=[^"]+" target="_blank" rel="noopener noreferrer">Répondre avec Claude/);
-  assert.match(h, />Lancer ma revue avec Claude</);
-  assert.match(h, /href="#agent\/connexion" data-goto="agent\/connexion">Voir comment</);
+  assert.match(h, /href="https:\/\/claude\.ai\/new\?q=[^"]+" target="_blank" rel="noopener noreferrer" aria-label="Répondre avec Claude"><span>Répondre<\/span>/);
+  assert.match(h, /aria-label="Lancer ma revue avec Claude"><span>Lancer<\/span>/, "libellé court visible, libellé complet pour les lecteurs d'écran");
+  assert.match(h, /href="#agent\/connexion" data-goto="agent\/connexion"><span>Voir comment<\/span>/);
   assert.match(h, /Versement &lt;b&gt;PEA&lt;\/b&gt; \?/);
   assert.doesNotMatch(h, /<b>PEA/);
   assert.match(h, /<svg class="aj-ico"[^>]*><path d="M20 12a8 8/, "pictogramme de la revue");
@@ -550,11 +550,15 @@ test("rendu : 4 cartes (net, bonnes pratiques, objectifs, échéance), boîte de
   for (const id of ["net", "pratiques", "objectifs", "echeance"]) assert.match(c, new RegExp('data-ui-carte="' + id + '"'));
   assert.doesNotMatch(c, /data-ui-carte="allocation"|Écart au profil de risque/, "l'écart au profil de risque a quitté le bandeau");
   assert.equal((c.match(/<button type="button" class="aj-k /g) || []).length, 4, "de vrais boutons");
+  assert.doesNotMatch(c, /text-transform|<text |data-aj-count/, "pas de chiffre animé, pas de texte SVG dans les anneaux");
   const b = A.boite(S, t, DEPS);
   assert.ok(b.length > 5, "la démo a plus de 5 éléments à traiter");
   const h = A.boiteHtml(b, UI);
   assert.match(h, /data-ui-voirplus/);
-  assert.match(h, /Voir plus/);
+  assert.match(h, /Voir les autres \(\d+\)/, "3 éléments d'abord, puis « Voir les autres (N) »");
+  assert.equal((A.boiteHtml(b, UI, 5).match(/<ul class="ui-voirplus-liste"><li/g) || []).length, 1);
+  assert.equal(((A.boiteHtml(b, UI, 5).split('ui-voirplus-reste')[0]).match(/<li class="aj-it /g) || []).length, 5, "colonne de droite (≥ 1240 px) : 5 d'abord");
+  assert.equal(((h.split('ui-voirplus-reste')[0]).match(/<li class="aj-it /g) || []).length, 3, "mobile : 3 d'abord");
   assert.match(h, /href="#agent\/propositions" data-goto="agent\/propositions"/);
   assert.match(h, /href="https:\/\/claude\.ai\/new\?q=[^"]+" target="_blank" rel="noopener noreferrer"/);
   const v = A.boiteHtml([], UI);
@@ -645,7 +649,7 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   else ctx.UI = { esc: s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
     carte: o => '<button type="button" class="ui-carte" data-ui-carte="' + o.id + '">' + ctx.UI.esc(o.titre) + "</button>",
@@ -664,10 +668,10 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   const b = A.boite(S, jourLocal(), DEPS);
   assert.equal(api.headline(), String(b.length));
   assert.equal((els.get("ajCartes").innerHTML.match(/data-ui-carte="/g) || []).length, 4);
-  assert.match(els.get("ajBoite").innerHTML, /Claude propose 5 changements/);
+  assert.match(els.get("ajBoite").innerHTML, /5 changements à valider/);
   assert.match(els.get("ajFrise").innerHTML, /<svg/);
   assert.match(els.get("ajFrise").innerHTML, /data-journal="/, "repère de la décision de la démo sur la frise");
-  assert.match(els.get("ajBoite").innerHTML, /entrée du journal à relire/);
+  assert.match(els.get("ajBoite").innerHTML, /note de Claude à relire/);
   api.update(vide(), false);
   api.show();
   assert.equal(api.headline(), "");
@@ -691,7 +695,7 @@ test("delai : jours jusqu'à 60, puis mois jusqu'à 24 mois, puis années ; form
   // dans les cartes et le panneau des échéances
   const S = vide({ objectifs: [{ id: "o", nom: "Retraite", cible: 1, dateCible: "2046-10-10" }] });
   const ind = A.indicateurs(S, TODAY, { id: "1a" }, DEPS);
-  assert.match(A.cartes(ind, UI, { id: "1a" }), /data-aj-count="20" data-aj-fmt="int">20<\/span><span class="aj-k-unit"> ans<\/span>/, "compte à rebours : 20 ans");
+  assert.match(A.cartes(ind, UI, { id: "1a" }), /<span class="aj-k-n">20<\/span><span class="aj-k-unit"><span> ans<\/span><\/span>/, "compte à rebours : 20 ans");
   assert.deepEqual(A.compteARebours(0), { mot: "Aujourd'hui" }); assert.deepEqual(A.compteARebours(1), { mot: "Demain" });
   assert.deepEqual(A.compteARebours(12), { n: 12, unite: "jours" }); assert.deepEqual(A.compteARebours(200), { n: 7, unite: "mois" }); assert.deepEqual(A.compteARebours(-4), { mot: "Aujourd'hui" });
   assert.match(A.detail("echeance", ind, { id: "1a" }).contenu, /dans 20 ans/);
@@ -742,7 +746,7 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
     App: { register: (n, api) => { reg[n] = api; }, refreshHeadlines() {} } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
   const premieres = [];
   ctx.UI = Object.assign({}, ctx.UI, { brancher() {}, periode: () => ({ valeur: () => null, premiere: d => premieres.push(d) }) });
@@ -852,7 +856,7 @@ function vueDom(stock) {
     App: { register: (n, a) => { reg[n] = a; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"])
+  for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"])
     vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
@@ -928,7 +932,7 @@ test("boite : « Argent qui dort » (Calc.argentQuiDort) → urgence 3, vers Pat
   if (HAS_UI) {
     const h = A.boiteHtml([x], UI);
     assert.match(h, /data-type="argent"/); assert.match(h, /<span class="ui-sr">Argent qui dort, à surveiller : <\/span>/);
-    assert.match(h, /<a class="aj-act" href="#patrimoine\/comptes" data-goto="patrimoine\/comptes">Voir mes comptes<\/a>/);
+    assert.match(h, /<a class="ui-item-action aj-act" href="#patrimoine\/comptes" data-goto="patrimoine\/comptes" aria-label="Voir mes comptes"><span>Voir<\/span><\/a>/);
   }
 });
 
@@ -1036,32 +1040,42 @@ test("jour() sans argument : date de Paris (RoutineEtat.aujParis), pas celle du 
     if (ancienTZ === undefined) delete process.env.TZ; else process.env.TZ = ancienTZ;
   }
 });
-test("cartes : objectifs (jauge, 3 rappels avec statut en mots, échéance, barre), bonnes pratiques (anneau), échéance (compte à rebours) ; texte équivalent aux jauges", { skip: !HAS_UI && "ui.js" }, () => {
+test("cartes : anneaux (chiffre en texte HTML centré, unité plus petite), objectifs en puce de statut, échéance sur une ligne ; texte équivalent aux jauges", { skip: !HAS_UI && "ui.js" }, () => {
   const S = demoS(), t = jourLocal(), ind = A.indicateurs(S, t, { id: "1a" }, DEPS);
   const c = A.cartes(ind, UI, { id: "1a" });
   const carte = id => c.split("<button ").find(x => x.includes('data-ui-carte="' + id + '"'));
   const ob = carte("objectifs");
   assert.match(ob, /aria-label="Objectifs : 57 % d(?:'|&#39;)avancement pondéré, 1 objectif en retard\./);
-  assert.equal((ob.match(/class="aj-ob /g) || []).length, 3, "les 3 premiers objectifs");
-  assert.match(ob, /Matelas de précaution/);
-  assert.match(ob, /<span class="ui-badge [a-z]+">(atteint|en avance|dans les temps|en retard|hors de portée)<\/span>/, "statut en toutes lettres");
-  assert.match(ob, /aj-ob-barre" aria-hidden="true"><i style="width:/);
-  assert.match(ob, /juin 2027/);
-  assert.match(ob, /<svg class="aj-ring[^"]*" viewBox="0 0 80 80" aria-hidden="true"/, "jauge décorative : le texte est dans la carte");
+  assert.match(ob, /Matelas de précaution 100 %, atteint/, "les 3 premiers objectifs restent dans le nom accessible (et dans le panneau)");
+  assert.doesNotMatch(ob, /aj-ob|aj-obs|aj-suite/, "plus de liste d'objectifs tronquée dans la carte");
+  assert.match(ob, /<span class="ui-puce surveiller"><span class="ui-puce-point" aria-hidden="true"><\/span>1 en retard<\/span>/, "statut en puce avec son mot");
+  assert.match(ob, /<svg class="aj-ring s-surveiller" viewBox="0 0 80 80" aria-hidden="true"/, "arc décoratif");
+  assert.doesNotMatch(ob, /<text/, "le chiffre n'est pas un <text> SVG (il débordait de l'anneau)");
+  assert.match(ob, /<span class="aj-ring-fig pct" aria-hidden="true"><span class="aj-ring-n">57<\/span><span class="aj-ring-u">%<\/span><\/span>/, "« % » plus petit, sur la même ligne de base");
   assert.match(ob, /data-aj-off="/);
   const pr = carte("pratiques");
   assert.match(pr, /aria-label="Bonnes pratiques : \d+ sur 100, (solide|correct|à consolider)/);
+  assert.match(pr, /<span class="aj-ring-fig sur" aria-hidden="true"><span class="aj-ring-n">\d+<\/span><span class="aj-ring-u">\/ 100<\/span>/, "note sur 100 : unité sous le chiffre");
   assert.match(pr, /critères? à compléter/);
-  assert.match(carte("echeance"), /aria-label="Prochaine échéance : dans 40 jours|aria-label="Prochaine échéance : dans \d+ jours/);
+  assert.match(pr, /<span class="ui-puce bon">/);
+  const ech = carte("echeance");
+  assert.match(ech, /aria-label="Prochaine échéance : dans \d+ jours/);
+  assert.match(ech, /<span class="aj-k-n">\d+<\/span><span class="aj-k-unit"><span class="u-l"> jours<\/span>/, "compte à rebours et unité dans un même bloc sans retour à la ligne");
+  assert.match(ech, /<span class="aj-k-lib" title="[^"]+">/, "libellé complet en title, coupé en CSS sur deux lignes au plus");
+  assert.doesNotMatch(ech, /À venir|ui-badge/, "plus de puce « À venir » redondante");
   const net = carte("net");
-  assert.match(net, /class="aj-k-val" data-aj-count="\d+" data-aj-fmt="eur"/);
+  assert.doesNotMatch(net, /data-aj-count/, "plus de chiffre qui défile");
+  assert.match(net, /<span class="aj-k-val num">\d{1,3}(?:<span class="aj-sep">\u202f<\/span>\d{3})*\u00a0€<\/span>/, "valeur Fmt.fmtEUR en chiffres tabulaires, séparateur de milliers élargi à l'écran");
   assert.match(net, /<svg class="aj-spark"/, "mini-courbe");
-  assert.match(net, /class="ui-tendance pos"><span class="ui-tendance-fleche" aria-hidden="true">▲<\/span><span class="ui-sr">En hausse : /);
+  assert.match(net, /class="ui-tendance pos"><span class="ui-tendance-fleche" aria-hidden="true">▲<\/span><span class="ui-sr">En hausse : <\/span>\+[\d\u202f\u00a0 ]+€ · \+[\d,]+\u00a0%<\/span><span class="aj-k-per">sur 1 an<\/span>/, "variation Fmt.fmtDelta : signe, flèche, période en muted");
+  // anneau à 100 % : chiffre à 3 chiffres → classe « long » (taille réduite, tient dans l'anneau)
+  const cent = A.cartes(Object.assign({}, ind, { objectifs: Object.assign({}, ind.objectifs, { pct: 100 }) }), UI, { id: "1a" });
+  assert.match(cent, /aj-ring-fig pct long/);
   // sans données : états vides orientés vers Claude, aucun compte, jauge vide
   const vides = A.cartes(A.indicateurs(vide(), TODAY, { id: "1a" }, DEPS), UI, { id: "1a" });
   assert.match(vides, /Fixe ton premier objectif avec Claude/);
   assert.match(vides, /Aucune date à venir/);
-  assert.doesNotMatch(vides, /aj-obs|aj-spark/);
+  assert.doesNotMatch(vides, /aj-spark/);
 });
 
 test("detail (Objectifs) : les lignes des 3 premiers, jauge, et le calcul objectif par objectif dans un accordéon « Calcul »", () => {
@@ -1109,7 +1123,8 @@ test("frise : le passé reconstitué (deps.reconstitue) est fusionné avant la p
   assert.ok(sans.points.every(p => p.nature === "observe"));
   const ind = A.indicateurs(S, t, { id: "tout", granularite: "mois" }, Object.assign({}, DEPS, { reconstitue: rec }));
   assert.equal(ind.net.reconstitue, true, "la carte dit que le début est reconstitué");
-  assert.match(A.cartes(ind, UI, { id: "tout" }), /début reconstitué/);
+  assert.doesNotMatch(A.cartes(ind, UI, { id: "tout" }), /début reconstitué/, "la reconstitution se voit sur le graphe : la carte dit seulement la période");
+  assert.match(A.detail("net", ind, { id: "tout" }).contenu, /début de la période est reconstitué/, "…et s'explique dans le panneau");
 });
 
 test("evolution : passé + cône de projection (Plan, versement des Objectifs) quand la période va jusqu'à aujourd'hui ; pas de futur pour une période terminée", () => {
@@ -1140,7 +1155,7 @@ function vueAvecStore(store, stock) {
     App: { register: (n, a) => { reg[n] = a; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"])
+  for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"])
     vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
@@ -1176,7 +1191,7 @@ test("vue : la reconstitution lit les cours (ISIN cotés), les transactions et l
   assert.match(svg, /class="aj-proj"/, "projection centrale");
   assert.match(v.root.querySelector("#ajLegende").innerHTML, /Reconstitué/);
   assert.match(v.root.querySelector("#ajEtat").textContent, /Avant ta première photo \(.*\), le passé est reconstitué/);
-  assert.match(v.root.querySelector("#ajCartes").innerHTML, /début reconstitué/);
+  assert.doesNotMatch(v.root.querySelector("#ajCartes").innerHTML, /début reconstitué/);
   assert.match(v.root.querySelector("#ajTable").innerHTML, /<th scope="row">[^<]*<\/th><td class="n">[^<]*<\/td><td class="n">—<\/td><td class="n">—<\/td><td>reconstitué<\/td>/, "équivalent accessible : le tableau dit la nature de chaque point");
   v.api.update(J(S2), true);
   await attend();
@@ -1229,7 +1244,7 @@ test("vue : l'horizon (1 · 5 · 10 · 20 ans) est une bascule accessible, mémo
   v.root.querySelector("#ajPeriode").querySelector(".ui-periode-p").querySelectorAll('[role="radio"]').find(r => r.getAttribute("data-ui-id") === "perso").click();
 });
 
-test("vue : animation des cartes à la première apparition seulement, jamais avec prefers-reduced-motion", () => {
+test("vue : les anneaux se tracent à la première apparition seulement, jamais avec prefers-reduced-motion ; aucun chiffre ne défile", () => {
   const src = f => readFileSync("web/src/" + f, "utf8");
   const essai = reduit => {
     const reg = {}, frames = [], ecrits = [];
@@ -1239,12 +1254,12 @@ test("vue : animation des cartes à la première apparition seulement, jamais av
       matchMedia: q => ({ matches: reduit && /reduced-motion/.test(q) }) };
     ctx.window = ctx; ctx.self = ctx;
     vm.createContext(ctx);
-    for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
+    for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
     ctx.UI = Object.assign({}, UI, { periode() {}, brancher() {}, bascule() {} });
     vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
     const { root, els } = faux();
     const arc = { style: {}, getAttribute: k => (k === "data-aj-off" ? "44.86" : null), getBoundingClientRect() { return {}; } };
-    const nombre = { textContent: "193 490 €", getAttribute: k => ({ "data-aj-count": "193490", "data-aj-fmt": "eur" }[k]) };
+    const nombre = { textContent: "193 490 €", getAttribute: k => ({ "data-aj-count": "193490", "data-aj-fmt": "eur" }[k]) }; // ancien compteur : ne doit plus être lu
     Object.defineProperty(arc.style, "strokeDashoffset", { get() { return this._v; }, set(v) { this._v = v; ecrits.push(v); } });
     els.set("ajCartes", Object.assign(root.querySelector("#ajCartes"), { querySelectorAll: s => (/data-aj-off/.test(s) ? [arc] : /data-aj-count/.test(s) ? [nombre] : []) }));
     reg.aujourdhui.mount(root);
@@ -1259,8 +1274,8 @@ test("vue : animation des cartes à la première apparition seulement, jamais av
   const normal = essai(false);
   assert.ok(normal.apres1.ecrits.length >= 1 && normal.apres1.ecrits[0] !== "44.86", "jauge : départ vide (dasharray complet), puis remplissage");
   assert.equal(normal.final.ecrits[normal.final.ecrits.length - 1], "44.86", "arrivée à la valeur de la jauge");
-  assert.notEqual(normal.apres1.texte, "193 490 €", "chiffre compté depuis 0");
-  assert.equal(normal.final.texte, "193 490 €", "valeur finale exacte");
+  assert.equal(normal.apres1.texte, "193 490 €", "aucun chiffre compté depuis 0 : un chiffre qui défile paraît inventé");
+  assert.equal(normal.final.texte, "193 490 €");
   assert.equal(normal.frames, 0, "pas de nouvelle animation au rendu suivant");
   const calme = essai(true);
   assert.deepEqual(calme.final.ecrits, [], "reduced motion : aucune animation de jauge");
@@ -1268,12 +1283,16 @@ test("vue : animation des cartes à la première apparition seulement, jamais av
   assert.match(js, /prefers-reduced-motion: reduce/);
 });
 
-test("aujourdhui.css : bandeau 4 colonnes / 2 / 1, survol et focus des cartes, couleurs par variables (clair et sombre), mouvement réduit respecté", () => {
-  assert.match(css, /\.aj-kpis\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
-  assert.match(css, /@media \(max-width:1239\.98px\)\{[^}]*\.aj-kpis\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
-  assert.match(css, /@media \(max-width:599\.98px\)\{[^}]*\.aj-kpis\{grid-template-columns:minmax\(0,1fr\)/);
-  assert.match(css, /\.aj-k:hover\{/); assert.match(css, /\.aj-k:focus-visible\{outline:2px solid var\(--accent\)/);
+test("aujourdhui.css : bandeau héros + 3 / 2 × 2 / 4 en rangée, « À traiter » en colonne de droite dès 1240 px, survol discret, focus visible, jetons seulement, mouvement réduit respecté", () => {
+  assert.match(css, /\.aj-kpis\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/, "mobile : 3 mini-cartes");
+  assert.match(css, /\.aj-k-net\{grid-column:1\/-1/, "mobile : le patrimoine net en héros pleine largeur");
+  assert.match(css, /@media \(min-width:900px\)\{[^@]*\.aj-kpis\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /@media \(min-width:1240px\)\{\s*#view-aujourdhui \.aj-kpis\{grid-template-columns:[\d.]+fr 1fr 1fr 1fr\}/, "rangée de 4");
+  assert.match(css, /@media \(min-width:1240px\)\{\s*#view-aujourdhui \.aj\{grid-template-columns:minmax\(0,1fr\) 360px;grid-template-areas:"kpi kpi" "graphe traiter" "ech traiter"/, "À traiter en colonne de droite");
+  assert.match(css, /\.aj-k:hover\{/); assert.match(css, /\.aj-k:focus-visible\{outline:2px solid var\(--focus\)/);
+  assert.doesNotMatch(css, /\.aj-k::before|translateY|text-transform/, "plus de liseré de couleur en haut des cartes, plus de soulèvement, plus de majuscules");
   assert.match(css, /\.aj-ring-arc\{[^}]*transition:stroke-dashoffset/);
+  assert.match(css, /\.aj-ring-fig\{[^}]*max-width:62%[^}]*white-space:nowrap/, "le chiffre de l'anneau ne dépasse jamais l'anneau");
   const decl = css.replace(/\/\*[\s\S]*?\*\//g, "");
   assert.doesNotMatch(decl, /(?:color|fill|stroke|background|border[a-z-]*)\s*:\s*[^;}]*#[0-9a-fA-F]{3,8}\b/, "aucune couleur en dur : uniquement les variables du thème");
   assert.match(readFileSync("web/src/theme.css", "utf8"), /prefers-reduced-motion:reduce\)\{\*\{transition:none!important;animation:none!important\}\}/, "règle globale de mouvement réduit");

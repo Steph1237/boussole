@@ -1,9 +1,12 @@
 /* Aujourd'hui : page d'accueil du cockpit (« le board lit, l'agent écrit »).
-   - Bandeau de 4 indicateurs en cartes cliquables (cartes(), boutons data-ui-carte qui ouvrent UI.panneau : 2-4 lignes + lien vers la page) :
-     1. Patrimoine net : gros chiffre (décompte à la première apparition), variation sur la période du graphe, mini-courbe ;
-     2. Bonnes pratiques : jauge en anneau sur 100 (Pratiques.evaluer) et « N critères à compléter » ;
-     3. Objectifs : jauge d'atteinte et rappel des 3 objectifs prioritaires (nom, barre, échéance, statut en toutes lettres) ;
-     4. Prochaine échéance : compte à rebours en jours et libellé.
+   - Bandeau de 4 indicateurs en cartes cliquables (cartes(), boutons data-ui-carte qui ouvrent UI.panneau : 2-4 lignes + lien vers la page).
+     Même squelette pour les 4 (libellé en casse normale, corps, pied), statut en puce avec son mot, aucun chiffre animé (UX2) :
+     1. Patrimoine net : gros chiffre, variation (Fmt.fmtDelta : signe, flèche, période) et mini-courbe en un seul bloc ;
+     2. Bonnes pratiques : anneau sur 100 (Pratiques.evaluer), chiffre en texte HTML centré, puce de statut et « N critères à compléter » ;
+     3. Objectifs : anneau d'atteinte (« % » plus petit), puce « N en retard » ; les objectifs un par un sont dans le panneau de la carte ;
+     4. Prochaine échéance : « 39 jours » sur une ligne, libellé (deux lignes au plus, texte complet en title) et date.
+     Mobile : le patrimoine net en héros, puis 3 mini-cartes, puis « À traiter » (3 éléments), le graphe, les échéances ; ≥ 1240 px : « À traiter »
+     passe en colonne de droite à côté du graphe (5 éléments).
      L'écart au profil de risque a quitté le bandeau : il reste dans Pilotage › Risque et dans la boîte « À traiter » (élément « Allocation
      hors des fourchettes de ton profil », urgence 3, quand le profil est renseigné et qu'une classe est hors fourchette).
    - Calendrier patrimonial (DAT1, calendrier.js) : echeances() ajoute les jalons à venir du calendrier (source « calendrier ») aux jalons,
@@ -26,7 +29,7 @@
      sauf si l'utilisateur la choisit : elle est alors mémorisée) ; l'horizon suit ses propres boutons. Les cours, transactions et opérations
      bancaires de la reconstitution sont lus à la demande (Store.cours, Store.transactions, Store.banque.operations) ; repères verticaux aux
      dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
-   - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), entrées du journal à relire
+   - Boîte de réception unique (3 éléments puis « Voir les autres », 5 dans la colonne de droite) : propositions de Claude en attente (par lot), entrées du journal à relire
      (CK2), revue mensuelle (routine de l'agent, RT1 : en retard, prête ou à activer), alertes des règles (rules.js), points « à suivre »
      échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard, banques connectées (BQ1 : connexion
      à refaire, urgence 1 pour SCARequired, wrongpass, webauthRequired, passwordExpired, 2 pour les autres états qui demandent une action,
@@ -39,8 +42,8 @@
    - Fiches de Patrimoine › Comptes (CP1 § 3) : la carte « Patrimoine net » mène à Comptes et chaque enveloppe de son détail ouvre sa
      fiche ; sous le graphe, « Voir le détail par compte ».
    Accessibilité et mouvement : cartes = vrais boutons (nom accessible complet, aria-label), jauges avec équivalent texte, statuts en mots
-   (jamais la couleur seule) ; décompte des chiffres et remplissage des jauges seulement à la première apparition, jamais avec
-   prefers-reduced-motion. Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
+   (jamais la couleur seule) ; le tracé des anneaux seulement à la première apparition, jamais avec prefers-reduced-motion ; aucun
+   chiffre ne défile. Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
    Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, indicateurs, objectifs, frise, evolution, reperesJournal,
    urlClaude, delai, lirePeriode, periodeAEnregistrer, phraseRevue, et les rendus HTML cartes, detail, repereDetail, boiteHtml (qui reçoivent
    UI en paramètre quand ils en ont besoin ; aucune ne touche au DOM).
@@ -90,7 +93,7 @@
   const utc = s => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
   const joursEntre = (a, b) => Math.round((utc(b) - utc(a)) / 864e5);
   const jj = v => (v ? String(v).slice(0, 10) : "");
-  const dateFr = s => (isoOk(s) ? new Date(s + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "");
+  const dateFr = s => (isoOk(s) ? FM().fmtDate(s) : "");
   /** Délai lisible jusqu'à une date à `jours` jours : « aujourd'hui », « demain », « dans N jours » (jusqu'à 60 jours),
       « dans N mois » (jusqu'à 24 mois), puis « dans N ans ». court : « dans N j » au lieu de « dans N jours ». */
   function delai(jours, court) {
@@ -104,11 +107,12 @@
   }
 
   /* ---------- nombres et textes ---------- */
-  const nf0 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-  const nf1 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 });
-  const eur = v => (Math.round(v) < 0 ? "−" : "") + nf0.format(Math.abs(Math.round(v))) + " €";
-  const eurS = v => (Math.round(v) > 0 ? "+" : Math.round(v) < 0 ? "−" : "") + nf0.format(Math.abs(Math.round(v))) + " €";
-  const kEur = v => (Math.abs(v) >= 1e6 ? nf1.format(v / 1e6) + " M€" : Math.abs(v) >= 1e3 ? nf0.format(v / 1e3) + " k€" : nf0.format(v) + " €");
+  /* Formats uniques (format.js, UX1) : « 193 490 € », « +9 646 € », « 5,2 % », « 14 oct. 2026 » ; global du navigateur, sinon le module voisin sous Node. */
+  const FM = () => glob("Fmt") || (typeof module === "object" && module.exports && typeof require === "function" ? require("./format.js") : null);
+  const nf0 = { format: v => FM().fmtNombre(v) };
+  const nf1 = { format: v => FM().fmtNombre(v, { decimales: 1 }).replace(/,0$/, "") };
+  const eur = v => FM().fmtEUR(v);
+  const eurS = v => FM().fmtEUR(v, { signe: true });
   const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
   const liste = xs => (xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " et " + xs[xs.length - 1]);
   const maj = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -207,7 +211,7 @@
         action: { label: "Lancer ma revue avec Claude", url: urlClaude(phraseRevue()) } };
     }
     if (e.code === "prete") {
-      return { type: "routine", urgence: 1, date: e.dernier || t, titre: "Ta revue du mois est prête : " + pluriel(e.questions.length, "question"),
+      return { type: "routine", urgence: 1, date: e.dernier || t, titre: "Revue du mois : " + pluriel(e.questions.length, "question"),
         contexte: plat(e.questions[0].question) + (ech ? " · " + ech + "." : ""), action: { label: "Répondre avec Claude", url: urlClaude(RE().phraseRoutine(e.questions)) } };
     }
     if (e.code === "a_activer") {
@@ -226,7 +230,7 @@
       const e = c ? B.etat(c.etat) : null;
       if (!e || !e.action) return;
       const etab = plat(c.etablissement) || "sans nom", d = jj(c.derniereSynchro);
-      out.push({ type: "banque", urgence: e.urgence || 2, date: isoOk(d) ? d : t, titre: "Ta banque " + etab + " demande une reconnexion",
+      out.push({ type: "banque", urgence: e.urgence || 2, date: isoOk(d) ? d : t, titre: etab + " : reconnecte ta banque",
         contexte: e.libelle + "." + (isoOk(d) ? " Dernière synchronisation le " + dateFr(d) + " : soldes et dépenses ne sont plus à jour." : ""),
         action: { label: "Reconnecter", route: R.connexion } });
     });
@@ -294,7 +298,7 @@
     lots.forEach(ps => {
       const cibles = [...new Set(ps.map(p => CIBLES[p.cible] || plat(p.cible || "données")))];
       const date = ps.map(p => jj(p.creeLe)).filter(isoOk).sort().pop() || t;
-      out.push({ type: "proposition", urgence: 1, date, titre: "Claude propose " + pluriel(ps.length, "changement"),
+      out.push({ type: "proposition", urgence: 1, date, titre: pluriel(ps.length, "changement") + " à valider",
         contexte: maj(liste(cibles)) + " : rien n'est enregistré sans ton accord.",
         action: { label: "Examiner", route: R.propositions } });
     });
@@ -307,8 +311,8 @@
     if (nRelire) {
       const titres = aRelire.slice(0, 2).map(e => "« " + extrait(e.titre, 60) + " »").join(", ") + (nRelire > 2 ? "…" : "");
       out.push({ type: "journal", urgence: 1, date: aRelire.map(e => jj(e.creeLe)).filter(isoOk).sort().pop() || t,
-        titre: pluriel(nRelire, "entrée") + " du journal à relire",
-        contexte: (titres ? titres + " : c" : "C") + "onfirme ou corrige ce que l'agent a noté.",
+        titre: pluriel(nRelire, "note") + " de Claude à relire",
+        contexte: (titres ? titres + " : c" : "C") + "onfirme ou corrige ce que Claude a noté.",
         action: { label: "Relire", route: nRelire === 1 && aRelire.length === 1 ? lienEntree(aRelire[0].id) : R.journal } });
     }
 
@@ -520,19 +524,24 @@
   const fpts = v => nf1.format(Math.abs(v)) + (Math.abs(v) >= 2 ? " pts" : " pt");
   const quand = e => maj(delai(e.jours, true));
 
-  /* ---------- cartes du bandeau : boutons data-ui-carte (UI.brancher ouvre le panneau), figures en grand, jauges, mini-courbe ---------- */
+  /* ---------- cartes du bandeau : boutons data-ui-carte (UI.brancher ouvre le panneau) ----------
+     Même squelette pour les 4 : en-tête (libellé en casse normale, chevron), corps (chiffre, anneau ou courbe), pied (statut en puce avec son mot).
+     Aucune couleur de statut hors de la puce et de l'arc de l'anneau ; aucun chiffre animé. */
   const CHEVRON_DROITE = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg>';
-  const TON_BADGE = { bon: "bon", info: "info", attention: "attention", critique: "critique", neutre: "neutre" };
-  const badge = (texte, ton) => '<span class="ui-badge ' + (TON_BADGE[ton] || "neutre") + '">' + esc(texte) + "</span>";
+  /** Puce de statut (même balisage que UI.puce) : bon | surveiller | travailler | completer, toujours avec son mot. */
+  const puceH = (statut, texte) => '<span class="ui-puce ' + statut + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(texte) + "</span>";
+  const badge = (texte, ton) => '<span class="ui-badge ' + ({ bon: "bon", info: "info", attention: "attention", critique: "critique" }[ton] || "neutre") + '">' + esc(texte) + "</span>";
   const R_ANNEAU = 34, CIRC = 2 * Math.PI * R_ANNEAU;
-  /** Jauge en anneau (décorative : le texte équivalent est dans la carte). pct 0 à 100 ou null (anneau vide) ; centre : valeur écrite au milieu. */
-  function anneau(pct, ton, centre, sous) {
+  /** Jauge en anneau : l'arc est décoratif (aria-hidden) et le chiffre est du texte HTML centré au milieu (grille), jamais un <text> SVG :
+      il se centre optiquement, reste en chiffres tabulaires et ne déborde pas (taille par jeton, max-width de l'anneau).
+      pct 0 à 100 ou null (anneau vide) ; statut : couleur de l'arc ; fig = { n, u?, mode: "sur" (unité sous le chiffre) | "pct" (unité à côté, plus petite) }. */
+  function anneau(pct, statut, fig) {
     const p = pct == null ? 0 : Math.max(0, Math.min(100, +pct)), off = CIRC * (1 - p / 100);
-    return '<svg class="aj-ring t-' + (TON_BADGE[ton] || "neutre") + '" viewBox="0 0 80 80" aria-hidden="true" focusable="false">' +
+    const long = String(fig.n).length >= 3 ? " long" : "";
+    return '<span class="aj-ring-box"><svg class="aj-ring s-' + esc(statut || "neutre") + '" viewBox="0 0 80 80" aria-hidden="true" focusable="false">' +
       '<circle class="aj-ring-fond" cx="40" cy="40" r="' + R_ANNEAU + '"/>' +
-      '<circle class="aj-ring-arc" cx="40" cy="40" r="' + R_ANNEAU + '" transform="rotate(-90 40 40)" stroke-dasharray="' + CIRC.toFixed(2) + '" stroke-dashoffset="' + off.toFixed(2) + '" data-aj-off="' + off.toFixed(2) + '"/>' +
-      '<text class="aj-ring-v" x="40" y="' + (sous ? 41 : 46) + '" text-anchor="middle"' + (pct != null ? ' data-aj-count="' + Math.round(+pct) + '" data-aj-fmt="int"' : "") + ">" + esc(centre) + "</text>" +
-      (sous ? '<text class="aj-ring-s" x="40" y="54" text-anchor="middle">' + esc(sous) + "</text>" : "") + "</svg>";
+      '<circle class="aj-ring-arc" cx="40" cy="40" r="' + R_ANNEAU + '" transform="rotate(-90 40 40)" stroke-dasharray="' + CIRC.toFixed(2) + '" stroke-dashoffset="' + off.toFixed(2) + '" data-aj-off="' + off.toFixed(2) + '"/></svg>' +
+      '<span class="aj-ring-fig ' + (fig.mode === "pct" ? "pct" : "sur") + long + '" aria-hidden="true"><span class="aj-ring-n">' + esc(fig.n) + "</span>" + (fig.u ? '<span class="aj-ring-u">' + esc(fig.u) + "</span>" : "") + "</span></span>";
   }
   /** Mini-courbe du patrimoine net sur la période (décorative). */
   function spark(vals) {
@@ -547,6 +556,12 @@
     const lu = { hausse: "En hausse", baisse: "En baisse", stable: "Stable" }[sens], fl = { hausse: "▲", baisse: "▼", stable: "–" }[sens], ton = { hausse: "pos", baisse: "neg", stable: "neutre" }[sens];
     return '<span class="ui-tendance ' + ton + '"><span class="ui-tendance-fleche" aria-hidden="true">' + fl + '</span><span class="ui-sr">' + lu + " : </span>" + esc(texte) + "</span>";
   };
+  /** Variation avec signe, flèche et période (Fmt.fmtDelta) : « ▲ +9 646 € · +5,2 % » en couleur de mouvement, « sur 1 an » en muted. */
+  function deltaHtml(v, pct, periode) {
+    const p = periodeTxt(periode), d = FM().fmtDelta({ montant: v, pct, periode: p });
+    const mouvement = d.texte.slice(0, d.texte.length - p.length).trim().replace(/^\S+\s*/, "");
+    return '<span class="aj-k-delta">' + tendanceHtml(d.sens, mouvement) + '<span class="aj-k-per">' + esc(p) + "</span></span>";
+  }
   /** Compte à rebours lisible : { mot } (« Aujourd'hui », « Demain ») ou { n, unite } (jours jusqu'à 60, puis mois jusqu'à 24, puis ans). */
   function compteARebours(jours) {
     const d = Math.max(0, Math.round(+jours || 0));
@@ -557,51 +572,47 @@
     return mois <= 24 ? { n: mois, unite: "mois" } : { n: Math.round(d / 365.25), unite: "ans" };
   }
   const enToutesLettres = c => (c.mot ? c.mot.toLowerCase() : "dans " + c.n + " " + c.unite);
-  const carteBtn = (id, cls, aria, corps) => '<button type="button" class="aj-k ' + cls + '" data-ui-carte="' + id + '" aria-haspopup="dialog" aria-label="' + esc(aria) + '">' + corps +
-    '<span class="aj-k-ouvrir">' + CHEVRON_DROITE + "</span></button>";
-  const teteHtml = (titre, b) => '<span class="aj-k-tete"><span class="aj-k-titre">' + esc(titre) + "</span>" + (b || "") + "</span>";
+  const carteBtn = (id, cls, aria, titre, corps) => '<button type="button" class="aj-k ' + cls + '" data-ui-carte="' + id + '" aria-haspopup="dialog" aria-label="' + esc(aria) + '">' +
+    '<span class="aj-k-tete"><span class="aj-k-titre">' + esc(titre) + '</span><span class="aj-k-ouvrir">' + CHEVRON_DROITE + "</span></span>" + corps + "</button>";
+  /** Date courte d'une liste : « 14 oct. » dans l'année, « 1 févr. 2027 » au-delà. */
+  const dateListe = (s, auj) => (isoOk(s) ? FM().fmtDate(s, { court: isoOk(auj) ? s.slice(0, 4) === auj.slice(0, 4) : false }) : "");
+  /* statut du moteur (ton des anciens badges) → statut de puce */
+  const ST_PRATIQUES = { bon: "bon", info: "bon", attention: "surveiller", neutre: "completer" };
 
   /** Les 4 cartes du bandeau (patrimoine net, bonnes pratiques, objectifs, prochaine échéance). Chaque champ est échappé. */
   function cartes(ind, U, periode) {
     const n = ind.net, pr = ind.pratiques, ob = ind.objectifs || objectifs({}, TODAY_VIDE, null), ec = ind.echeance, v = n.variation;
-    // 1. Patrimoine net (variation : SerieNet.variation, la même sur Patrimoine › Comptes ; squelette tant que le passé est lu)
+    // 1. Patrimoine net : valeur, variation (SerieNet.variation, la même sur Patrimoine › Comptes), période, courbe : un seul bloc ; squelette tant que le passé est lu
     const attente = !!n.enAttente && !n.vide;
     const sens = attente || v == null || n.vide ? null : Math.round(v) > 0 ? "hausse" : Math.round(v) < 0 ? "baisse" : "stable";
-    const sous1 = n.vide ? "Lance ton bilan avec Claude" : attente ? "" : v == null ? "Première photo cette nuit" : periodeTxt(periode) + (n.reconstitue ? " · début reconstitué" : "");
-    const c1 = carteBtn("net", "aj-k-net", "Patrimoine net : " + (n.vide ? "pas encore de données" : eur(n.valeur) + (attente ? ", variation en cours de calcul" : sens ? ", " + { hausse: "en hausse de ", baisse: "en baisse de ", stable: "stable, " }[sens] + (sens === "stable" ? "" : eur(Math.abs(v))) + " " + periodeTxt(periode) : "")),
-      teteHtml("Patrimoine net") + '<span class="aj-k-val' + (!n.vide && eur(n.valeur).length > 10 ? " aj-k-long" : "") + '"' + (n.vide ? "" : ' data-aj-count="' + Math.round(n.valeur) + '" data-aj-fmt="eur"') + ">" + (n.vide ? "—" : esc(eur(n.valeur))) + "</span>" +
-      '<span class="aj-k-pied">' + (attente ? '<span class="ui-skel" aria-hidden="true"></span>' : sens ? tendanceHtml(sens, eurS(v) + (n.variationPct != null ? " (" + (n.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(n.variationPct)) + " %)" : "")) : "") + '<span class="aj-k-sous">' + esc(sous1) + "</span></span>" +
-      (n.vide || attente ? "" : spark(n.courbe)));
-    // 2. Bonnes pratiques
+    const sous1 = n.vide ? "Lance ton bilan avec Claude" : attente ? "" : v == null ? "Première photo cette nuit" : "";
+    const c1 = carteBtn("net", "aj-k-net", "Patrimoine net : " + (n.vide ? "pas encore de données" : eur(n.valeur) + (attente ? ", variation en cours de calcul" : sens ? ", " + { hausse: "en hausse de ", baisse: "en baisse de ", stable: "stable, " }[sens] + (sens === "stable" ? "" : eur(Math.abs(v))) + " " + periodeTxt(periode) : "")), "Patrimoine net",
+      '<span class="aj-k-val num">' + (n.vide ? "—" : esc(eur(n.valeur)).replace(/\u202f/g, '<span class="aj-sep">\u202f</span>')) + "</span>" +
+      '<span class="aj-k-pied">' + (attente ? '<span class="ui-skel" aria-hidden="true"></span>' : sens ? deltaHtml(v, n.variationPct, periode) : "") + (sous1 ? '<span class="aj-k-sous">' + esc(sous1) + "</span>" : "") + "</span>" +
+      (n.vide || attente ? "" : '<span class="aj-k-courbe">' + spark(n.courbe) + "</span>"));
+    // 2. Bonnes pratiques : anneau (note sur 100, unité sous le chiffre), puce de statut, une ligne
     const tot = pr.total, tonP = tot == null ? "neutre" : tot >= 80 ? "bon" : tot >= 60 ? "info" : "attention", motP = tot == null ? "À compléter" : tot >= 80 ? "Solide" : tot >= 60 ? "Correct" : "À consolider";
     const sous2 = tot == null ? "Données à compléter" : pr.aCompleter ? pluriel(pr.aCompleter, "critère") + " à compléter" : "Tous les critères sont notés";
-    const c2 = carteBtn("pratiques", "aj-k-pra t-" + tonP, "Bonnes pratiques : " + (tot == null ? "pas encore de note, données à compléter" : tot + " sur 100, " + motP.toLowerCase() + (pr.provisoire ? ", note provisoire" : "") + ", " + sous2.toLowerCase()),
-      teteHtml("Bonnes pratiques", tot != null && pr.provisoire ? badge("Provisoire", "neutre") : "") +
-      '<span class="aj-k-jauge">' + anneau(tot, tonP, tot == null ? "—" : String(Math.round(tot)), tot == null ? "" : "/ 100") +
-      '<span class="aj-k-jauge-t">' + (tot == null ? "" : badge(motP, tonP)) + '<span class="aj-k-sous">' + esc(sous2) + "</span></span></span>" +
-      (tot != null && pr.familles.length > 1 ? '<ul class="aj-suite aj-fam">' + pr.familles.slice(0, 4).map(f => "<li><span>" + esc(extrait(f.titre, 30)) + "</span><span>" + (f.total == null ? "à compléter" : esc(Math.round(f.total) + " / 100")) + "</span></li>").join("") + "</ul>" : ""));
-    // 3. Objectifs
+    const c2 = carteBtn("pratiques", "aj-k-pra t-" + tonP, "Bonnes pratiques : " + (tot == null ? "pas encore de note, données à compléter" : tot + " sur 100, " + motP.toLowerCase() + (pr.provisoire ? ", note provisoire" : "") + ", " + sous2.toLowerCase()), "Bonnes pratiques",
+      '<span class="aj-k-corps">' + anneau(tot, tot == null ? "neutre" : ST_PRATIQUES[tonP], { n: tot == null ? "—" : String(Math.round(tot)), u: tot == null ? "" : "/ 100", mode: "sur" }) +
+      '<span class="aj-k-jauge-t">' + puceH(ST_PRATIQUES[tonP], pr.provisoire && tot != null ? motP + " · provisoire" : motP) + '<span class="aj-k-sous">' + esc(sous2) + "</span></span></span>");
+    // 3. Objectifs : anneau (avancement pondéré, « % » plus petit à côté du chiffre), puce, une ligne ; les objectifs un par un sont dans le panneau
     const motO = ob.vide ? "" : ob.retard ? ob.retard + " en retard" : ob.liste.every(x => x.statut === "atteint") ? "Tous atteints" : "Tous dans les temps";
-    const ligneO = x => '<li class="aj-ob t-' + x.ton + '"><span class="aj-ob-nom">' + esc(extrait(x.nom, 34)) + "</span>" + badge(x.mot, x.ton) +
-      '<span class="aj-ob-barre" aria-hidden="true"><i style="width:' + (x.progression * 100).toFixed(1) + '%"></i></span>' +
-      '<span class="aj-ob-pied">' + esc(Math.round(x.progression * 100) + " %") + (x.dateCible ? " · " + esc(dateCourte(x.dateCible)) : "") + "</span></li>";
+    const stO = ob.vide ? "completer" : ob.ton === "critique" ? "travailler" : ob.retard ? "surveiller" : "bon";
     const c3 = carteBtn("objectifs", "aj-k-obj t-" + ob.ton, "Objectifs : " + (ob.vide ? "aucun objectif défini" : ob.pct + " % d'avancement pondéré, " + (ob.retard ? pluriel(ob.retard, "objectif") + " en retard" : motO.toLowerCase()) + ". " +
-      ob.top.map(x => x.nom + " " + Math.round(x.progression * 100) + " %, " + x.mot).join(" ; ")),
-      teteHtml("Objectifs") + '<span class="aj-k-jauge">' + anneau(ob.pct, ob.vide ? "neutre" : ob.ton, ob.vide ? "—" : ob.pct + " %") +
-      '<span class="aj-k-jauge-t">' + (ob.vide ? "" : badge(motO, ob.retard ? ob.ton : "bon")) + '<span class="aj-k-sous">' + esc(ob.vide ? "Fixe ton premier objectif avec Claude" : "d'avancement, selon la priorité") + "</span></span></span>" +
-      (ob.vide ? "" : '<ul class="aj-obs">' + ob.top.map(ligneO).join("") + "</ul>"));
-    // 4. Prochaine échéance
-    const e = ec.prochaine, cr = e ? compteARebours(e.jours) : null, tonE = !e ? "neutre" : e.jours <= 7 ? "attention" : e.jours <= 30 ? "info" : "neutre", motE = !e ? "" : e.jours <= 7 ? "Imminente" : e.jours <= 30 ? "Proche" : "À venir";
-    const suite = (ec.liste || []).slice(1, 3);
-    const c4 = carteBtn("echeance", "aj-k-ech t-" + tonE, "Prochaine échéance : " + (e ? enToutesLettres(cr) + ", " + extrait(e.titre, 70) + ", le " + dateFr(e.date) + ", " + motE.toLowerCase() : "aucune date à venir"),
-      teteHtml("Prochaine échéance", e ? badge(motE, tonE) : "") +
-      '<span class="aj-k-val">' + (!e ? "Aucune" : cr.mot ? esc(cr.mot) : '<span data-aj-count="' + cr.n + '" data-aj-fmt="int">' + cr.n + '</span><span class="aj-k-unit"> ' + cr.unite + "</span>") + "</span>" +
-      '<span class="aj-k-pied"><span class="aj-k-sous">' + esc(e ? extrait(e.titre, 60) + " · " + dateFr(e.date) : "Aucune date à venir") + "</span></span>" +
-      (suite.length ? '<ul class="aj-suite">' + suite.map(x => "<li><span>" + esc(extrait(x.titre.replace(/^Objectif « (.*) »$/, "$1"), 28)) + "</span><span>" + esc(quand(x)) + "</span></li>").join("") + "</ul>" : ""));
+      ob.top.map(x => x.nom + " " + Math.round(x.progression * 100) + " %, " + x.mot).join(" ; ")), "Objectifs",
+      '<span class="aj-k-corps">' + anneau(ob.pct, ob.vide ? "neutre" : stO, { n: ob.vide ? "—" : String(ob.pct), u: ob.vide ? "" : "%", mode: "pct" }) +
+      '<span class="aj-k-jauge-t">' + (ob.vide ? "" : puceH(stO, motO)) + '<span class="aj-k-sous">' + esc(ob.vide ? "Fixe ton premier objectif avec Claude" : "d'avancement, selon la priorité") + "</span></span></span>");
+    // 4. Prochaine échéance : « 47 jours » sur une ligne, libellé (deux lignes au plus, texte complet en title), date qui ne se coupe pas ; puce seulement si c'est proche
+    const e = ec.prochaine, cr = e ? compteARebours(e.jours) : null, stE = !e ? null : e.jours <= 7 ? "travailler" : e.jours <= 30 ? "surveiller" : null, motE = e ? (e.jours <= 7 ? "Imminente" : "Proche") : "";
+    const unite = cr && !cr.mot ? (cr.unite === "jours" ? '<span class="u-l"> jours</span><span class="u-c"> j</span>' : '<span> ' + esc(cr.unite) + "</span>") : "";
+    const c4 = carteBtn("echeance", "aj-k-ech" + (stE ? " t-" + (stE === "travailler" ? "critique" : "attention") : ""), "Prochaine échéance : " + (e ? enToutesLettres(cr) + ", " + plat(e.titre) + ", le " + dateFr(e.date) + (stE ? ", " + motE.toLowerCase() : "") : "aucune date à venir"), "Prochaine échéance",
+      '<span class="aj-k-val num">' + (!e ? '<span class="aj-k-mot">Aucune</span>' : cr.mot ? '<span class="aj-k-mot">' + esc(cr.mot) + "</span>" : '<span class="aj-k-n">' + cr.n + '</span><span class="aj-k-unit">' + unite + "</span>") + "</span>" +
+      '<span class="aj-k-pied aj-k-pied-ech">' + (e ? '<span class="aj-k-lib" title="' + esc(plat(e.titre)) + '">' + esc(plat(e.titre)) + '</span><span class="aj-k-date">' + (stE ? puceH(stE, motE) : "") + "<span>" + esc(dateFr(e.date)) + "</span></span>"
+        : '<span class="aj-k-sous">Aucune date à venir</span>') + "</span>");
     return c1 + c2 + c3 + c4;
   }
   const TODAY_VIDE = "2000-01-01";
-  const dateCourte = s => (isoOk(s) ? new Date(s + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) : "");
 
   const ligne = (label, valeur) => '<li><span class="aj-det-l">' + esc(label) + '</span><span class="aj-det-v">' + esc(valeur) + "</span></li>";
   /** Ligne d'une enveloppe : son nom ouvre sa fiche de Patrimoine › Comptes (le panneau se ferme, la coque suit le lien). */
@@ -637,7 +648,7 @@
       question = "Explique-moi la composition de mon patrimoine net dans Boussole et ce qui l'a fait varier récemment.";
       note = n.enAttente ? "La variation est en cours de calcul : Boussole lit l'historique des cours pour reconstituer le passé."
         : n.variation == null ? "La variation apparaîtra après la première photo nocturne du patrimoine."
-        : "Variation " + periodeTxt(periode) + " : " + eurS(n.variation) + ". Estimation : placements de chaque photo, immobilier, autres biens et dettes d'aujourd'hui.";
+        : "Variation " + periodeTxt(periode) + " : " + eurS(n.variation) + (n.reconstitue ? ". Le début de la période est reconstitué à partir des cours et de tes comptes, avant ta première photo." : ".") + " Estimation : placements de chaque photo, immobilier, autres biens et dettes d'aujourd'hui.";
     } else if (id === "pratiques") {
       titre = "Bonnes pratiques"; route = R.sante; label = "Voir le détail des critères";
       question = "Explique-moi ma note de bonnes pratiques dans Boussole, famille par famille, et ce que mesure chaque critère.";
@@ -723,10 +734,13 @@
       const approx = j.confiance === "approchee", mot = motConfiance(j);
       // lecteur d'écran : une seule fois le mot de confiance (« Date au plus tard le … », « Date … , date exacte »)
       const lecture = approx ? "Date " + (mot === "dès cette date" ? "dès le" : mot + " le") + " " + dateNum(j.date) : "Date " + dateNum(j.date) + ", " + mot;
+      const etat = (j.statut === "proche" ? puceH("surveiller", "Bientôt") : "") + (approx ? badge("approchée", "neutre") : "");
+      const nom = nomEnv(j) + " · " + courtDe(j);
       return '<li class="aj-ech-it"><button type="button" class="aj-ech-l t-' + TON_ETAT[j.statut] + '" data-ech="' + esc(j.id) + '" aria-haspopup="dialog">' +
-        '<span class="aj-ech-date"><time datetime="' + esc(j.date) + '">' + esc(dateLongue(j.date)) + '</time><span class="aj-ech-delai">' + esc(j.delai) + "</span></span>" +
-        '<span class="aj-ech-txt"><span class="aj-ech-nom">' + esc(nomEnv(j)) + " · " + esc(courtDe(j)) + '</span><span class="aj-ech-eff">' + esc(j.effet) + "</span></span>" +
-        '<span class="aj-ech-etat">' + badge(MOT_ETAT[j.statut], TON_ETAT[j.statut]) + (approx ? badge("approchée", "neutre") : "") + "</span>" +
+        '<span class="aj-ech-date"><time datetime="' + esc(j.date) + '">' + esc(FM().fmtDate(j.date)) + '</time><span class="aj-ech-delai">' + esc(j.delai) + "</span></span>" +
+        '<span class="aj-ech-txt"><span class="aj-ech-nom" title="' + esc(nom) + '">' + esc(nom) + '</span><span class="aj-ech-eff" title="' + esc(j.effet) + '">' + esc(j.effet) + "</span></span>" +
+        '<span class="aj-ech-etat">' + etat + "</span>" +
+        '<span class="aj-ech-ouvrir" aria-hidden="true">' + CHEVRON_DROITE + "</span>" +
         '<span class="ui-sr">' + esc(lecture + ". Ouvre le détail.") + "</span></button></li>";
     };
     const n = c.aCompleter.length;
@@ -820,28 +834,39 @@
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 
+  /** Libellé visible court de l'action (« Répondre », « Voir ») : le nom accessible garde le libellé complet (aria-label). */
+  function libelleCourt(label) {
+    const l = plat(label).replace(/ avec Claude$/, "");
+    if (/^Voir (comment|l'échéance)/.test(l) && l === "Voir comment") return l;
+    if (/^Voir /.test(l)) return "Voir";
+    return l.length > 14 ? l.split(" ")[0] : l;
+  }
   function actionHtml(a) {
     if (!a || !a.label) return "";
-    if (a.url) return httpsOk(a.url) ? '<a class="aj-act" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">' + esc(a.label) + '<span class="ui-sr"> (nouvel onglet)</span></a>' : "";
-    return a.route ? '<a class="aj-act" href="#' + esc(a.route) + '" data-goto="' + esc(a.route) + '">' + esc(a.label) + "</a>" : "";
+    const court = libelleCourt(a.label), aria = court !== plat(a.label) ? ' aria-label="' + esc(plat(a.label)) + '"' : "";
+    if (a.url) return httpsOk(a.url) ? '<a class="ui-item-action aj-act" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer"' + aria + "><span>" + esc(court) + '</span><span class="ui-sr"> (nouvel onglet)</span></a>' : "";
+    return a.route ? '<a class="ui-item-action aj-act" href="#' + esc(a.route) + '" data-goto="' + esc(a.route) + '"' + aria + "><span>" + esc(court) + "</span></a>" : "";
   }
+  /** Élément d'« À traiter » (grammaire de UI.aTraiter) : icône de type, titre (2 lignes au plus), raison (2 lignes au plus, texte complet au survol),
+      action courte à droite. La priorité est donnée par l'ordre ; la puce « Bloquant » n'apparaît que pour une banque à reconnecter. */
   function itemHtml(x) {
-    const t = TYPE_TXT[x.type] ? x.type : "alerte", u = URG_TXT[x.urgence] ? +x.urgence : 3;
-    return '<li class="aj-it u' + u + '" data-type="' + t + '">' +
-      '<span class="aj-pic">' + ico(t) + "</span>" +
-      '<div class="aj-txt"><p class="aj-t"><span class="ui-sr">' + esc(TYPE_TXT[t] + ", " + URG_TXT[u] + " : ") + "</span>" + esc(x.titre) + "</p>" +
-      (x.contexte ? '<p class="aj-c">' + esc(x.contexte) + "</p>" : "") + "</div>" +
+    const t = TYPE_TXT[x.type] ? x.type : "alerte", u = URG_TXT[x.urgence] ? +x.urgence : 3, bloquant = t === "banque" && u === 1;
+    return '<li class="aj-it ui-item' + (bloquant ? " urgent" : "") + '" data-type="' + t + '">' +
+      '<span class="ui-ligne-ico aj-pic" aria-hidden="true">' + ico(t) + "</span>" +
+      '<div class="ui-ligne-corps aj-txt">' + (bloquant ? '<span class="ui-item-meta">' + puceH("travailler", "Bloquant") + "</span>" : "") +
+      '<p class="aj-t"><span class="ui-sr">' + esc(TYPE_TXT[t] + ", " + URG_TXT[u] + " : ") + "</span>" + esc(x.titre) + "</p>" +
+      (x.contexte ? '<p class="aj-c" title="' + esc(x.contexte) + '">' + esc(x.contexte) + "</p>" : "") + "</div>" +
       actionHtml(x.action) + "</li>";
   }
   /** Phrase prête de « Faire le point avec Claude » : la revue du mois de l'agent (ClaudePrompts.phrase("revue"), via RoutineEtat). */
   function phraseRevue() { return RE().phraseRevue(); }
   /** Liste de la boîte de réception (<ul>/<li>) : 5 éléments puis « Voir plus » (UI.voirPlus, clé fixe : un bloc déplié le reste
       quand la liste change) ; vide : « Rien à traiter. » et « Faire le point avec Claude » (revue du mois). */
-  function boiteHtml(items, U) {
+  function boiteHtml(items, U, n) {
     if (!items || !items.length) return '<div class="aj-vide"><p class="aj-vide-t">Rien à traiter.</p>' +
       '<p class="aj-vide-x">Aucune proposition, alerte ni échéance proche. Pour un regard d\'ensemble, fais le point avec Claude.</p>' +
       U.demanderAClaude(phraseRevue(), "Faire le point avec Claude") + "</div>";
-    return U.voirPlus(items, 5, itemHtml, "Voir plus", "ul", "aj-boite");
+    return U.voirPlus(items, n > 0 ? n : 3, itemHtml, "Voir les autres", "ul", "aj-boite");
   }
 
   /* ---------- période de la frise : mémorisée, granularité seulement si l'utilisateur l'a choisie ---------- */
@@ -880,6 +905,10 @@
   };
   const reduit = () => { try { return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { return false; } };
 
+  /* Éléments visibles de « À traiter » avant « Voir les autres » : 3 sur mobile, 5 dans la colonne de droite (≥ 1240 px, voir aujourdhui.css). */
+  const COLONNE = "(min-width: 1240px)";
+  const nBoite = () => { try { return window.matchMedia && window.matchMedia(COLONNE).matches ? 5 : 3; } catch (e) { return 3; } };
+
   /** Passé reconstitué pour l'état courant du store (mémorisé par SerieNet). */
   const reconstitution = () => SN().reconstitution(S, jour(), null);
   /* deps des indicateurs : passé reconstitué, et `enAttente` tant que sa lecture n'est pas finie (la variation est alors un squelette). */
@@ -910,8 +939,8 @@
     renderCartes();
     renderEcheances(u);
     // Même contenu : on ne réécrit pas la liste (une émission du store ne replie pas un « Voir plus » déplié).
-    const sg = JSON.stringify(items);
-    if (sg !== sig.boite) { sig.boite = sg; $("ajBoite").innerHTML = boiteHtml(items, u); }
+    const nb = nBoite(), sg = nb + JSON.stringify(items);
+    if (sg !== sig.boite) { sig.boite = sg; $("ajBoite").innerHTML = boiteHtml(items, u, nb); }
     // Nombre d'éléments pour les lecteurs d'écran seulement (règle 9 : les compteurs visibles sont dans la navigation).
     const n = items.length ? pluriel(items.length, "élément") + " à traiter" : "";
     if ($("ajBoiteN").textContent !== n) $("ajBoiteN").textContent = n;
@@ -933,7 +962,8 @@
     sig.cartes = h; $("ajCartes").innerHTML = h;
     if (animer && S && S.ready) { animer = false; animerCartes(); }
   }
-  /* Première apparition des cartes : chiffres comptés de 0 à leur valeur, jauges remplies. Jamais avec prefers-reduced-motion. */
+  /* Première apparition des cartes : les anneaux se tracent (transition CSS du trait), c'est tout. Aucun chiffre ne défile (un chiffre qui
+     compte paraît inventé) ; jamais avec prefers-reduced-motion. */
   function animerCartes() {
     const zone = $("ajCartes");
     if (reduit() || typeof requestAnimationFrame !== "function" || !zone.querySelectorAll) return;
@@ -941,17 +971,6 @@
     arcs.forEach(a => { if (a.style) a.style.strokeDashoffset = String(CIRC); });
     if (arcs.length && arcs[0].getBoundingClientRect) arcs[0].getBoundingClientRect(); // fixe l'état de départ avant la transition
     requestAnimationFrame(() => arcs.forEach(a => { if (a.style) a.style.strokeDashoffset = a.getAttribute("data-aj-off"); }));
-    const nums = Array.from(zone.querySelectorAll("[data-aj-count]")).map(el => ({ el, cible: +el.getAttribute("data-aj-count"), fmt: el.getAttribute("data-aj-fmt"), final: el.textContent }));
-    if (!nums.length) return;
-    const duree = 850, t0 = (typeof performance !== "undefined" && performance.now ? performance.now() : Date.now());
-    const ecrire = (o, v) => { o.el.textContent = o.fmt === "eur" ? eur(v) : String(Math.round(v)); };
-    nums.forEach(o => ecrire(o, 0));
-    const pas = now => {
-      const k = Math.min(1, ((now || Date.now()) - t0) / duree), e = 1 - Math.pow(1 - k, 3);
-      nums.forEach(o => { if (k < 1) ecrire(o, o.cible * e); else o.el.textContent = o.final; });
-      if (k < 1) requestAnimationFrame(pas);
-    };
-    requestAnimationFrame(pas);
   }
 
   /* ---------- graphe maître ---------- */
@@ -986,7 +1005,7 @@
     poser("legende", $("ajLegende"), gr.svg ? G.legendeHtml(f, modele.futur) : "");
     poser("table", $("ajTable"), gr.svg ? G.tableauHtml(f, modele.futur, { scopeLabel: scopeLabel() }) : "");
     const t = f.points.length > 1 && r.variation != null && !(ind && ind.net && ind.net.enAttente)
-      ? eurS(r.variation) + " " + periodeTxt(periode) + (r.variationPct != null ? " (" + (r.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(r.variationPct)) + " %)" : "") : "";
+      ? FM().fmtDelta({ montant: r.variation, pct: r.variationPct, periode: periodeTxt(periode) }).texte : "";
     if (sig.resume !== t) { sig.resume = t; $("ajFriseResume").textContent = t; }
     const promesse = $("ajPromesse"); if (promesse) promesse.hidden = !modele.futur;
     // Versement pris en compte par le cône (avec sa source) et décomposition du gain : mêmes phrases que Patrimoine › Objectifs.
@@ -1141,8 +1160,8 @@
       if (b) ouvrirJalon(b); else if (c) ouvrirACompleter(c);
     });
     const bc = $("ajCalcul"); if (bc) bc.addEventListener("click", () => ouvrirCalcul(bc));
-    $("ajClaude").innerHTML = u && u.demanderAClaude
-      ? u.demanderAClaude("Explique-moi simplement l'évolution de mon patrimoine net dans Boussole sur la dernière année : qu'est-ce qui l'a fait bouger ?", "Commenter avec Claude") : "";
+    /* Le bouton Claude de l'en-tête couvre les demandes de la page : plus de bouton Claude empilé sous le graphe. */
+    try { const mq = window.matchMedia(COLONNE), re = () => { if (root && !root.hidden && S && ind) render(); }; if (mq.addEventListener) mq.addEventListener("change", re); } catch (e) {}
     if (u && u.brancher) u.brancher(root, { surCarte: ouvrirCarte }); // cartes et « Voir plus » de la boîte de réception
     /* Le graphe est dessiné à la largeur réelle (textes lisibles sur mobile) : redessin quand la largeur change nettement. */
     if (typeof ResizeObserver === "function") new ResizeObserver(() => {

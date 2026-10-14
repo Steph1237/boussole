@@ -86,12 +86,12 @@ test("prochainesHtml : <ol> de 5 jalons au plus, boutons, <time datetime>, déla
   const lignes = h.match(/<li class="aj-ech-it">/g) || [];
   assert.ok(lignes.length >= 1 && lignes.length <= 5);
   assert.match(h, /<button type="button" class="aj-ech-l t-attention" data-ech="pea_5_ans:PEA Exemple:2026-10-25" aria-haspopup="dialog">/);
-  assert.match(h, /<time datetime="2026-10-25">25 octobre 2026<\/time>/);
+  assert.match(h, /<time datetime="2026-10-25">25 oct\. 2026<\/time>/);
   assert.match(sp(h), /dans 11 jours/);
   assert.match(sp(h), /PEA Exemple · 5 ans révolus/);
   assert.match(sp(h), /Un retrait partiel ne clôture plus le plan/);
-  assert.match(h, /ui-badge attention">bientôt</, "mot d'état « bientôt » (≤ 92 jours)");
-  assert.match(h, /ui-badge info">à venir</, "mot d'état « à venir »");
+  assert.match(h, /ui-puce surveiller"><span class="ui-puce-point" aria-hidden="true"><\/span>Bientôt</, "mot d'état « Bientôt » (≤ 92 jours), en puce avec son mot");
+  assert.doesNotMatch(h, /à venir</, "plus de puce « à venir » sur chaque ligne : le délai (« dans 4 mois ») suffit");
   assert.match(sp(h), /<span class="ui-sr">Date 25\/10\/2026, date exacte\. Ouvre le détail\.<\/span>/);
 });
 test("prochainesHtml : 5 lignes au plus, « Et N autres plus tard » ; un jalon approché le dit (badge et phrase)", () => {
