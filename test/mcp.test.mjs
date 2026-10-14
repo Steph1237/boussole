@@ -35,7 +35,8 @@ const srcExpertises = readFileSync(path("supabase/functions/mcp/expertises.ts"),
 const srcAnalyser = existsSync(path("supabase/functions/mcp/analyser.ts")) ? readFileSync(path("supabase/functions/mcp/analyser.ts"), "utf8") : "";
 /* BQ1 : banque connectée (banque.ts, lecture seule, tests détaillés : test/banque-mcp.test.mjs), enregistrée par index.ts. */
 const srcBanque = readFileSync(path("supabase/functions/mcp/banque.ts"), "utf8");
-const srcAll = [src, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser, srcBanque].join("\n");
+const srcCalendrier = readFileSync(path("supabase/functions/mcp/calendrier.ts"), "utf8"); // DAT1 : calendrier patrimonial (tests détaillés : test/calendrier-mcp.test.mjs)
+const srcAll = [src, srcCalendrier, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser, srcBanque].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
 const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
@@ -53,11 +54,13 @@ const TOOLS = [
   "activer_routine", "demarrer_routine", "cloturer_routine", "questions_routine",
   "consulter_expertise", "analyser",
   "lire_banque", "operations_recentes",
+  "calendrier", "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
   "update_budget", "upsert_objectifs", "delete_objectif", "set_risk_answers", "set_protection",
-  "regler_matelas", "regler_versements", "corriger_classe", "regler_frais_enveloppe"];
+  "regler_matelas", "regler_versements", "corriger_classe", "regler_frais_enveloppe",
+  "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot"];
 const PROMPTS = ["bilan_complet", "profil_de_risque", "budget", "placements", "revue_mensuelle"];
 /** Section du code d'un outil (de son registerTool au suivant). delete_bien / delete_credit partagent une boucle. */
 function outil(nom) {
@@ -1215,7 +1218,7 @@ const SRC = { source: "Dit par l'utilisateur" };
 
 test("réglages : regler_matelas — proposition config { cushion } en mois (dépenses du budget ou fournies) ou en montant ; valeurs contrôlées", { skip: SANS_STRIP }, async () => {
   let { T, depots } = reglagesSrv();
-  assert.deepEqual(Object.keys(T).sort(), ["corriger_classe", "regler_frais_enveloppe", "regler_matelas", "regler_versements"]);
+  assert.deepEqual(Object.keys(T).sort(), ["corriger_classe", "regler_avis_impot", "regler_donations", "regler_frais_enveloppe", "regler_infos_enveloppe", "regler_infos_pret", "regler_matelas", "regler_versements"]);
   let r = await T.regler_matelas.handler({ mode: "mois", mois: 6, ...SRC });
   assert.deepEqual(r.ok.items, [{ cible: "config", operation: "modifier", avant: { cushion: { mode: "amount", min: 15000, max: 20000 } },
     apres: { cushion: { mode: "months", months: 6, depenses: 2500 } } }]);

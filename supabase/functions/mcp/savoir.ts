@@ -13,7 +13,7 @@ const jourUTC = () => new Date().toISOString().slice(0, 10);
 
 /** Repères (tous, ou ceux de `cles`), valeur numérique et drapeau a_verifier calculé au jour `auj` (AAAA-MM-JJ). */
 export async function lireReperes(db: any, must: any, cles?: string[], auj: string = jourUTC()) {
-  let req = db.from("reperes").select("cle, libelle, valeur, unite, date_effet, source_titre, source_url, verifie_le").order("cle");
+  let req = db.from("reperes").select("cle, libelle, valeur, unite, date_effet, date_fin, source_titre, source_url, verifie_le").order("cle");
   if (cles?.length) req = req.in("cle", cles);
   const rows = (must("reperes", await req) as any[]) ?? [];
   return rows.map((r) => ({
@@ -64,7 +64,7 @@ export function registerSavoir(server: any, h: { db: any; wrap: any; must: any; 
 
   server.registerTool("reperes", {
     title: "Repères chiffrés",
-    description: "Chiffres de référence à jour (taux et plafonds des livrets, plafond du PEA, prélèvement forfaitaire unique, abattements de l'assurance-vie, normes HCSF, PASS…) avec libellé, unité, date d'effet, source et date de vérification ; a_verifier = vérifié il y a plus de 180 jours (le signaler à l'utilisateur). À appeler avant de citer tout chiffre réglementaire ; sans cles, renvoie tous les repères.",
+    description: "Chiffres de référence à jour (taux et plafonds des livrets, avec date_fin quand le chiffre ne vaut que pour une période, plafond du PEA, prélèvement forfaitaire unique, abattements de l'assurance-vie, normes HCSF, PASS…) avec libellé, unité, date d'effet, source et date de vérification ; a_verifier = vérifié il y a plus de 180 jours (le signaler à l'utilisateur). À appeler avant de citer tout chiffre réglementaire ; sans cles, renvoie tous les repères.",
     inputSchema: z.strictObject({
       cles: z.array(z.string().regex(/^[a-z0-9_]{2,60}$/, { error: "cles : identifiants de repères (minuscules, chiffres, _)." })).max(30).optional().describe("Identifiants de repères (cle) ; tous si absent."),
     }),

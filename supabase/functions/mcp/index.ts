@@ -76,6 +76,7 @@ import { registerJournal, journalDeSession } from "./journal.ts";
 import { registerRoutines, routinesDeSession } from "./routines.ts";
 import { registerFormulaire } from "./formulaire.ts";
 import { registerReglages } from "./reglages.ts";
+import { registerCalendrier, calendrierDeSession, typeDeduit as typeDeduitCalendrier, cleEnveloppe as cleEnveloppeCalendrier } from "./calendrier.ts";
 import { registerExpertises, listeExpertises } from "./expertises.ts";
 import { registerAnalyser } from "./analyser.ts";
 import { registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton } from "./banque.ts";
@@ -132,6 +133,7 @@ const INSTRUCTIONS = [
   "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
   "Frais, zone et devise des fonds (annotate_instrument, écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
   "Frais des contrats (regler_frais_enveloppe, par proposition) : frais de gestion d'une assurance-vie ou d'un PER sur les unités de compte et sur le fonds en euros, droits de garde d'un PEA ou d'un compte-titres, en % par an. Relève-les dans les documents du contrat (conditions générales, annexe de frais, relevé annuel) que l'utilisateur te donne ou que tu consultes, cite le document et sa date dans source (le : date du document) ; n'invente jamais un pourcentage : sans document, ne propose rien et dis ce qui manque. Le critère « Frais des supports » de Santé reste « à compléter » tant que les frais des contrats qui portent des unités de compte manquent (bonnes_pratiques, critère frais : manque, frais.enveloppes_a_completer).",
+  "Calendrier patrimonial (calendrier, lecture ; regler_infos_enveloppe, regler_infos_pret, regler_donations, regler_avis_impot, par proposition) : les dates qui font courir les délais fiscaux (PEA à 5 ans, assurance-vie à 8 ans et au 70ᵉ anniversaire de l'assuré, PEL, épargne salariale, plafond épargne retraite non utilisé, donations à 15 ans, moins-values à 10 ans, 31 décembre, fin de période des taux réglementés, fin des prêts). calendrier calcule les jalons d'après les documents de l'utilisateur et les repères sourcés ; jamais une date sans donnée : ce qui manque est dans a_completer, avec le document où le trouver. Une date qui fait courir un délai fiscal se lit dans un document : demande d'abord le document (relevé annuel d'un PEA, conditions particulières d'une assurance-vie, contrat d'un PEL, relevé d'épargne salariale, avis d'impôt, offre de prêt) et relève la date avec sa source ; sans document, pose la question une seule fois, et si l'utilisateur ne sait pas, propose l'année seule (date_ouverture_approx) et mémorise (memoriser) qu'il ne faut pas reposer la question. N'invente jamais une date, ne la déduis jamais de la synchronisation bancaire ni de la première opération connue. Pour une assurance-vie, la date qui compte est celle du premier versement (souvent la date d'effet des conditions particulières) ; l'âge qui compte est celui de l'assuré. Décris l'effet d'une échéance, jamais une recommandation de produit ; près d'une date, invite l'utilisateur à confirmer auprès de son établissement ; pour une donation ou une succession, rappelle que l'avis d'un notaire est utile. À la revue mensuelle, cite les échéances des 3 prochains mois et propose de compléter une seule donnée manquante.",
 ].join("\n");
 
 /* Parcours d'entretien (prompts MCP) : une conduite commune et un objectif par parcours. */
@@ -2327,6 +2329,9 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
   /* ---------- Routines (routines.ts) : revue mensuelle, mêmes calculs (budget, objectifs, état figé du journal) ---------- */
   registerRoutines(server, { ...h, calcul: { ...calcul, budgetTotaux, situationObjectifs } });
 
+  /* ---------- Calendrier patrimonial (calendrier.ts) : dates des délais fiscaux, lecture seule (les données se proposent dans reglages.ts) ---------- */
+  registerCalendrier(server, h);
+
   /* ---------- Copilote patrimonial : expertises (expertises.ts) et calculs par angle (analyser.ts), mêmes moteurs ---------- */
   const moteurs = { bilan, budgetTotaux, syntheseRisque, bonnesPratiques, situationObjectifs, classeRisque, liquidite, typeEnveloppe, datesAV,
     val, counted, terDe, zoneDe, deviseDe, CLASSES_RISQUE, GROUPE_DE };
@@ -2691,10 +2696,10 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
   }));
 
   /* ---------- config ---------- */
-  const CONFIG_FIELDS = "targets, rules, cushion, recurring, todo, milestones, hypotheses, frais_enveloppes, updated_at";
+  const CONFIG_FIELDS = "targets, rules, cushion, recurring, todo, milestones, hypotheses, frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, updated_at";
   server.registerTool("get_config", {
     title: "Réglages",
-    description: "Réglages de pilotage : cibles d'allocation par poche (targets), règles d'alerte (rules), matelas de sécurité (cushion), versements programmés (recurring), ordres à passer (todo), échéances (milestones), hypothèses, frais des contrats par enveloppe (frais_enveloppes, réglés par regler_frais_enveloppe).",
+    description: "Réglages de pilotage : cibles d'allocation par poche (targets), règles d'alerte (rules), matelas de sécurité (cushion), versements programmés (recurring), ordres à passer (todo), échéances (milestones), hypothèses, frais des contrats par enveloppe (frais_enveloppes, réglés par regler_frais_enveloppe), informations des enveloppes qui datent leurs délais fiscaux (enveloppes_infos, regler_infos_enveloppe), des prêts (prets_infos, regler_infos_pret), donations consenties (donations, regler_donations) et avis d'impôt (avis_impot, regler_avis_impot) ; le calendrier qui en résulte se lit avec calendrier.",
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => ({ config: must("config", await db.from("config").select(CONFIG_FIELDS).maybeSingle()) ?? null })));
@@ -3036,7 +3041,7 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
   }
   server.registerTool("demarrer_session", {
     title: "Démarrer la session",
-    description: "À appeler au début de chaque conversation : conduite du Copilote patrimonial, mémoire de l'utilisateur (épinglés puis 30 plus récents), points à suivre échus, état du bilan (pourcentage, prochaines questions), propositions en attente, nouveautés du savoir Boussole depuis la session précédente de cet assistant, journal des décisions (nombre à relire, décisions en cours, revues dues), consentement au journal (journal_consentement : demander, prevenir ou jamais) et routines (revue mensuelle : active, jour, prochain passage, retard_jours si elle est due, nombre de questions du mois en attente ; [] si aucune n'est activée, null si la lecture a échoué) et expertises publiées (slug, nom, quand consulter, version ; null si la lecture a échoué) et banque (connexion bancaire : actif, connexions à reconnecter, nombre de comptes à rattacher ; null si la lecture a échoué) et doublons_probables (lignes manuelles qui recopient le total de leur enveloppe : ligne, nom, enveloppe, titulaire, valeur, somme_autres ; null si la lecture a échoué).",
+    description: "À appeler au début de chaque conversation : conduite du Copilote patrimonial, mémoire de l'utilisateur (épinglés puis 30 plus récents), points à suivre échus, état du bilan (pourcentage, prochaines questions), propositions en attente, nouveautés du savoir Boussole depuis la session précédente de cet assistant, journal des décisions (nombre à relire, décisions en cours, revues dues), consentement au journal (journal_consentement : demander, prevenir ou jamais) et routines (revue mensuelle : active, jour, prochain passage, retard_jours si elle est due, nombre de questions du mois en attente ; [] si aucune n'est activée, null si la lecture a échoué) et expertises publiées (slug, nom, quand consulter, version ; null si la lecture a échoué) et banque (connexion bancaire : actif, connexions à reconnecter, nombre de comptes à rattacher ; null si la lecture a échoué) et doublons_probables (lignes manuelles qui recopient le total de leur enveloppe : ligne, nom, enveloppe, titulaire, valeur, somme_autres ; null si la lecture a échoué) et calendrier (les 3 prochaines échéances fiscales et le nombre de données à compléter avec les 3 premières : prochains, a_completer { nombre, premiers } ; null si la lecture a échoué ; détail avec l'outil calendrier).",
     inputSchema: z.strictObject({}),
     // readOnlyHint bien que l'outil tienne la date de dernière session (marquer_savoir_vu) : écriture de pure tenue de
     // compte, non bloquante, qui ne touche à aucune donnée de l'utilisateur.
@@ -3047,8 +3052,9 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
     // lancée en même temps que les autres lectures.
     const banqueLue = banqueDeSession(db, must, aal);
     const doublonsLus = doublonsDeSession();
+    const calendrierLu = calendrierDeSession(db, must, today()); // DAT1 : ne lève jamais (null en cas d'échec de lecture)
     const [{ vue }, memoire, journal, routines, expertises] = await Promise.all([lireEtat(), lireMemoire(db, must), journalDeSession(db, must, today()), routinesDeSession(db, must, today()), listeExpertises(db, must)]);
-    const banque = await banqueLue, doublons_probables = await doublonsLus;
+    const banque = await banqueLue, doublons_probables = await doublonsLus, calendrier = await calendrierLu;
     // marquer_savoir_vu renvoie la date de la session précédente de ce client (null la première fois) et la remplace par
     // maintenant. Appelé APRÈS la réussite des lectures : si l'une échoue, la date n'avance pas et les nouveautés restent dues
     // à la prochaine session. Un échec de l'appel lui-même n'empêche pas la session.
@@ -3069,6 +3075,7 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
       expertises,
       banque,
       doublons_probables,
+      calendrier,
     };
   }));
 
@@ -3129,7 +3136,7 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
   }));
 
   /* ---------- Matelas, versements programmés et classe d'une poche (reglages.ts) : par propositions ---------- */
-  registerReglages(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer, today,
+  registerReglages(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer, today, calendrier: { typeDeduit: typeDeduitCalendrier, cleEnveloppe: cleEnveloppeCalendrier },
     depensesMensuelles: async () => { const t = budgetTotaux((await loadPlan(false)).d, "foyer"); return t.depensesLignes > 0 ? r2(t.depenses) : 0; } });
 
   /* ---------- Formulaires dynamiques (formulaire.ts) : mêmes fonctions de dépôt, un seul lot ---------- */

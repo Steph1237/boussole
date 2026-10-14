@@ -10,7 +10,13 @@
 //   regler_frais_enveloppe → cible config, apres { frais_enveloppes: { <enveloppe>: { gestion_uc_pct?, gestion_euro_pct?, garde_pct?,
 //                       source, le } } } : frais d'un contrat (assurance-vie, PER, PEA, compte-titres) relevés par Claude dans les
 //                       documents du contrat (spec CP4 § 2) ; fusion par enveloppe en base (les autres enveloppes restent).
-// Application par public.appliquer_propositions (migrations 0019, 0026 et 0027 pour frais_enveloppes), qui revalide tout.
+//   regler_infos_enveloppe → cible config, apres { enveloppes_infos: { <clé d'enveloppe>: { type, titulaire, date_ouverture?, … } } } :
+//                       les dates qui font courir les délais fiscaux d'une enveloppe (DAT1, spec § 2.1) ; fusion par clé en base ;
+//   regler_infos_pret → apres { prets_infos: { "credit:<id>" | "bien:<id>": { date_signature?, date_fin?, … } } } (DAT1 § 2.2) ;
+//   regler_donations  → apres { donations: [...] } : liste complète des donations consenties (DAT1 § 2.3) ;
+//   regler_avis_impot → apres { avis_impot: {...} } : plafond épargne retraite non utilisé et revenu fiscal de référence (DAT1 § 2.4).
+// Application par public.appliquer_propositions (migrations 0019, 0026, 0027 pour frais_enveloppes ; 0029 pour les quatre clés DAT1),
+// qui revalide tout.
 // Ce module ne dépend pas d'index.ts : utilitaires (wrap, must, UserError…), champs DEPOT, fonction deposer et dépenses
 // mensuelles du budget sont passés en paramètre. Les fonctions de validation sont pures et exportées pour les tests.
 import { z } from "zod";
@@ -161,6 +167,249 @@ export function texteFrais(f: any): string {
   const pc = (v: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(v) + " % par an";
   return FRAIS_CHAMPS.filter((k) => f[k] != null).map((k) => `${FRAIS_LIBELLES[k]} ${pc(+f[k])}`).join(", ") || "aucun pourcentage";
 }
+
+/* ---------- DAT1 : informations des enveloppes, des prêts, donations et avis d'impôt (mêmes règles que la migration 0029) ---------- */
+export const TYPES_ENVELOPPE = ["pea", "pea_pme", "pea_jeune", "assurance_vie", "capitalisation", "per", "pel", "cel", "pee", "percol", "compte_titres", "livret_a", "ldds", "lep", "autre"] as const;
+export const ORIGINES_VERSEMENT = ["versement", "abondement", "participation", "interessement"] as const;
+export const LIENS_DONATION = ["enfant", "petit_enfant", "arriere_petit_enfant", "autre"] as const;
+export const NATURES_DONATION = ["donation", "don_argent_790g", "don_logement_790a_bis"] as const;
+export const ENVELOPPES_MAX = 30, PRETS_MAX = 50, DONATIONS_MAX = 100, VERSEMENTS_PEE_MAX = 120, MOINS_VALUES_MAX = 15, PLAFONDS_PER_MAX = 6;
+export const DATE_MIN = "1950-01-01";
+const LIBELLES_TYPE: Record<string, string> = { pea: "PEA", pea_pme: "PEA PME-ETI", pea_jeune: "PEA d'un majeur rattaché", assurance_vie: "assurance-vie", capitalisation: "contrat de capitalisation",
+  per: "PER", pel: "PEL", cel: "CEL", pee: "PEE", percol: "PERCOL", compte_titres: "compte-titres", livret_a: "Livret A", ldds: "LDDS", lep: "LEP", autre: "autre enveloppe" };
+const frDate = (s: string) => (dateReelle(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : String(s));
+/** Date AAAA-MM-JJ réelle, après 1950 et pas dans le futur ; sinon le message d'erreur. */
+function dateOk(nom: string, v: unknown, aujourdhui: string, futur = false): string | null {
+  if (!dateReelle(v)) return `${nom} : date AAAA-MM-JJ réelle attendue.`;
+  if (!futur && (v as string) > aujourdhui) return `${nom} : pas dans le futur (la date du document ou de l'événement est attendue).`;
+  if ((v as string) < DATE_MIN) return `${nom} : pas avant le 01/01/1950.`;
+  return null;
+}
+const sourceDe = (a: any, erreurs: string[]) => {
+  const source = String(a?.source ?? "").trim();
+  if (!source) erreurs.push("source : document consulté ou « déclaration de l'utilisateur » (obligatoire).");
+  else if (source.length > FRAIS_SOURCE_MAX) erreurs.push(`source : ${FRAIS_SOURCE_MAX} caractères au plus (référence du document).`);
+  return source;
+};
+const leDe = (a: any, aujourdhui: string, erreurs: string[]) => {
+  if (a?.le == null) return aujourdhui;
+  const e = dateOk("le", a.le, aujourdhui);
+  if (e) { erreurs.push(e.replace("la date du document ou de l'événement", "date du document consulté")); return aujourdhui; }
+  return a.le as string;
+};
+const CHAMPS_ENVELOPPE = ["date_ouverture", "date_ouverture_approx", "date_cloture", "versements_cumules", "versements_avant_70", "beneficiaires_revus_le", "versements", "moins_values"] as const;
+
+/** Informations d'une enveloppe proposées → { nom, suffixe, infos } ou { erreurs }. `actuel` : enveloppes_infos[clé] actuel, dont les
+    champs non fournis sont repris (null retire un champ) ; la base remplace l'objet en entier. aujourdhui : AAAA-MM-JJ (Europe/Paris). */
+export function infosEnveloppeDe(a: any, aujourdhui: string, actuel: any = null):
+    { nom?: string; suffixe?: string | null; infos?: Record<string, unknown>; erreurs: string[] } {
+  const erreurs: string[] = [];
+  const brut = String(a?.enveloppe ?? "").trim();
+  const m = /^(.*)\|(p[12])$/.exec(brut);
+  const nom = (m ? m[1] : brut).trim();
+  if (!nom || nom.length > 80) erreurs.push("enveloppe : nom de 1 à 80 caractères (champ envelope des lignes de list_positions).");
+  const type = a?.type;
+  if (!(TYPES_ENVELOPPE as readonly string[]).includes(type)) erreurs.push(`type : ${TYPES_ENVELOPPE.join(", ")}.`);
+  const titulaire = a?.titulaire;
+  if (titulaire !== "p1" && titulaire !== "p2") erreurs.push("titulaire : p1 ou p2 (l'assuré pour une assurance-vie).");
+  else if (m && m[2] !== titulaire) erreurs.push(`enveloppe : le suffixe |${m[2]} ne correspond pas au titulaire ${titulaire}.`);
+  const fusion: Record<string, any> = {};
+  if (isObj(actuel)) for (const k of CHAMPS_ENVELOPPE) if (actuel[k] != null) fusion[k] = actuel[k];
+  for (const k of CHAMPS_ENVELOPPE) { if (a?.[k] === null) delete fusion[k]; else if (a?.[k] !== undefined) fusion[k] = a[k]; }
+  if (a?.date_ouverture != null && a?.date_ouverture_approx != null) erreurs.push("date_ouverture et date_ouverture_approx ne vont pas ensemble : une date exacte, ou l'année (ou le mois) seulement.");
+  else if (a?.date_ouverture != null) delete fusion.date_ouverture_approx;
+  else if (a?.date_ouverture_approx != null) delete fusion.date_ouverture;
+  for (const k of ["date_ouverture", "date_cloture", "beneficiaires_revus_le"]) if (fusion[k] != null) { const e = dateOk(k, fusion[k], aujourdhui); if (e) erreurs.push(e); }
+  if (fusion.date_ouverture_approx != null) {
+    const x = /^(\d{4})(?:-(\d{2}))?$/.exec(String(fusion.date_ouverture_approx));
+    const debut = x ? `${x[1]}-${x[2] ?? "01"}-01` : "";
+    if (!x || !dateReelle(debut)) erreurs.push("date_ouverture_approx : AAAA ou AAAA-MM.");
+    else if (debut > aujourdhui) erreurs.push("date_ouverture_approx : pas dans le futur.");
+    else if (debut < DATE_MIN) erreurs.push("date_ouverture_approx : pas avant 1950.");
+  }
+  if (fusion.date_cloture != null && fusion.date_ouverture != null && dateReelle(fusion.date_cloture) && dateReelle(fusion.date_ouverture) && fusion.date_cloture < fusion.date_ouverture)
+    erreurs.push("date_cloture : après la date d'ouverture.");
+  for (const k of ["versements_cumules", "versements_avant_70"]) if (fusion[k] != null) {
+    const x = nombreFr(fusion[k]);
+    if (!(x >= 0)) erreurs.push(`${k} : montant en euros, 0 ou plus.`); else fusion[k] = x;
+  }
+  if (typeof fusion.versements_cumules === "number" && typeof fusion.versements_avant_70 === "number" && fusion.versements_avant_70 > fusion.versements_cumules)
+    erreurs.push("versements_avant_70 : au plus égal à versements_cumules.");
+  if (fusion.versements != null) {
+    if (type !== "pee" && type !== "percol") erreurs.push("versements : réservés aux types pee et percol.");
+    else if (!Array.isArray(fusion.versements)) erreurs.push("versements : liste attendue.");
+    else if (fusion.versements.length > VERSEMENTS_PEE_MAX) erreurs.push(`versements : ${VERSEMENTS_PEE_MAX} au plus.`);
+    else fusion.versements = fusion.versements.map((v: any, i: number) => {
+      const n = `versement ${i + 1}`;
+      if (!isObj(v)) { erreurs.push(`${n} : objet attendu.`); return v; }
+      const e = dateOk(`${n} : le`, v.le, aujourdhui);
+      if (e) erreurs.push(e);
+      const montant = nombreFr(v.montant);
+      if (!(montant >= 0)) erreurs.push(`${n} : montant en euros, 0 ou plus.`);
+      if (!(ORIGINES_VERSEMENT as readonly string[]).includes(v.origine)) erreurs.push(`${n} : origine ${ORIGINES_VERSEMENT.join(", ")}.`);
+      const sortie: Record<string, unknown> = { le: v.le, montant, origine: v.origine };
+      if (v.disponible_le != null) {
+        if (!dateReelle(v.disponible_le)) erreurs.push(`${n} : disponible_le au format AAAA-MM-JJ.`);
+        else if (dateReelle(v.le) && v.disponible_le < v.le) erreurs.push(`${n} : disponible_le avant la date du versement.`);
+        else sortie.disponible_le = v.disponible_le;
+      }
+      return sortie;
+    });
+  }
+  if (fusion.moins_values != null) {
+    const an = +aujourdhui.slice(0, 4);
+    if (type !== "compte_titres") erreurs.push("moins_values : réservées au type compte_titres.");
+    else if (!Array.isArray(fusion.moins_values)) erreurs.push("moins_values : liste attendue.");
+    else if (fusion.moins_values.length > MOINS_VALUES_MAX) erreurs.push(`moins_values : ${MOINS_VALUES_MAX} au plus.`);
+    else fusion.moins_values = fusion.moins_values.map((v: any, i: number) => {
+      const n = `moins-value ${i + 1}`;
+      if (!isObj(v)) { erreurs.push(`${n} : objet attendu.`); return v; }
+      if (!(Number.isInteger(v.annee) && v.annee >= 2000 && v.annee <= an)) erreurs.push(`${n} : annee, entier de 2000 à ${an}.`);
+      const montant = nombreFr(v.montant);
+      if (!(montant > 0)) erreurs.push(`${n} : montant strictement positif, en euros.`);
+      return { annee: v.annee, montant };
+    });
+  }
+  const source = sourceDe(a, erreurs), le = leDe(a, aujourdhui, erreurs);
+  if (erreurs.length) return { erreurs };
+  return { nom, suffixe: m ? m[2] : null, erreurs, infos: { type, titulaire, ...fusion, source, le } };
+}
+/** Phrase lisible des informations d'une enveloppe : « PEA, titulaire p1, ouverte le 15/06/2021, 92 000 € versés (relevé annuel 2025) ». */
+export function texteInfosEnveloppe(i: any): string {
+  if (!isObj(i)) return "aucune information";
+  const l: string[] = [LIBELLES_TYPE[i.type] ?? String(i.type ?? "?")];
+  if (i.date_ouverture) l.push("ouverte le " + frDate(i.date_ouverture));
+  if (i.date_ouverture_approx) l.push("ouverte en " + i.date_ouverture_approx);
+  if (i.date_cloture) l.push("close le " + frDate(i.date_cloture));
+  if (i.versements_cumules != null) l.push(eur(+i.versements_cumules) + " versés");
+  if (i.versements_avant_70 != null) l.push(eur(+i.versements_avant_70) + " avant 70 ans");
+  if (i.beneficiaires_revus_le) l.push("clause bénéficiaire revue le " + frDate(i.beneficiaires_revus_le));
+  if (Array.isArray(i.versements)) l.push(i.versements.length + " versement" + (i.versements.length > 1 ? "s" : ""));
+  if (Array.isArray(i.moins_values)) l.push(i.moins_values.length + " moins-value" + (i.moins_values.length > 1 ? "s" : ""));
+  return l.join(", ") + (i.source ? ` (${i.source})` : "");
+}
+
+const PRET_RE = /^(credit|bien):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const CHAMPS_PRET = ["date_signature", "date_fin", "duree_mois", "taux_pct", "assurance_taux_pct", "ira_exoneration"] as const;
+/** Informations d'un prêt proposées → { pret, infos } ou { erreurs }. `actuel` : prets_infos[clé] actuel (champs non fournis repris, null retire). */
+export function infosPretDe(a: any, aujourdhui: string, actuel: any = null): { pret?: string; infos?: Record<string, unknown>; erreurs: string[] } {
+  const erreurs: string[] = [];
+  const pret = String(a?.pret ?? "").trim();
+  if (!PRET_RE.test(pret)) erreurs.push("pret : credit:<identifiant> ou bien:<identifiant> (identifiants de get_overview, listes credits et biens).");
+  const f: Record<string, any> = {};
+  if (isObj(actuel)) for (const k of CHAMPS_PRET) if (actuel[k] != null) f[k] = actuel[k];
+  for (const k of CHAMPS_PRET) { if (a?.[k] === null) delete f[k]; else if (a?.[k] !== undefined) f[k] = a[k]; }
+  for (const k of ["date_signature", "date_fin"]) if (f[k] != null) { const e = dateOk(k, f[k], aujourdhui, k === "date_fin"); if (e) erreurs.push(e); }
+  if (f.date_signature != null && f.date_fin != null && dateReelle(f.date_signature) && dateReelle(f.date_fin) && f.date_fin <= f.date_signature) erreurs.push("date_fin : après date_signature.");
+  if (f.duree_mois != null) { const x = nombre(f.duree_mois); if (!(Number.isInteger(x) && x >= 1 && x <= 480)) erreurs.push("duree_mois : entier de 1 à 480."); else f.duree_mois = x; }
+  for (const [k, max] of [["taux_pct", 20], ["assurance_taux_pct", 5]] as [string, number][]) if (f[k] != null) {
+    const x = nombreFr(f[k]);
+    if (!(x >= 0 && x <= max)) erreurs.push(`${k} : pourcentage par an entre 0 et ${max} (0.5 pour 0,50 %).`); else f[k] = x;
+  }
+  if (f.ira_exoneration != null && typeof f.ira_exoneration !== "boolean") erreurs.push("ira_exoneration : true ou false.");
+  if (!CHAMPS_PRET.some((k) => f[k] != null)) erreurs.push("au moins une information : date_signature, date_fin, duree_mois, taux_pct, assurance_taux_pct ou ira_exoneration.");
+  const source = sourceDe(a, erreurs), le = leDe(a, aujourdhui, erreurs);
+  return erreurs.length ? { erreurs } : { pret, erreurs, infos: { ...f, source, le } };
+}
+/** Phrase lisible d'un prêt : « signé le 15/04/2022, fin le 15/04/2029, 84 mois, 3,5 % (offre de prêt) ». */
+export function texteInfosPret(i: any): string {
+  if (!isObj(i)) return "aucune information";
+  const l: string[] = [];
+  if (i.date_signature) l.push("signé le " + frDate(i.date_signature));
+  if (i.date_fin) l.push("fin le " + frDate(i.date_fin));
+  if (i.duree_mois != null) l.push(i.duree_mois + " mois");
+  if (i.taux_pct != null) l.push(new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(+i.taux_pct) + " % par an");
+  if (i.assurance_taux_pct != null) l.push("assurance " + new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(+i.assurance_taux_pct) + " % par an");
+  if (i.ira_exoneration != null) l.push(i.ira_exoneration ? "sans indemnité de remboursement anticipé" : "avec indemnité de remboursement anticipé");
+  return l.join(", ") + (i.source ? ` (${i.source})` : "");
+}
+
+/** Donations consenties proposées → liste complète normalisée ou erreurs. `existantes` : config.donations actuel (source et date de saisie
+    d'une donation inchangée reprises par id) ; nouvelId : identifiant d'une donation sans id. */
+export function donationsDe(a: any, existantes: any[], aujourdhui: string, nouvelId: () => string):
+    { donations: any[]; erreurs: string[]; retires: any[] } {
+  const erreurs: string[] = [];
+  const liste = a?.donations;
+  if (!Array.isArray(liste)) return { donations: [], erreurs: ["donations : liste attendue."], retires: [] };
+  if (liste.length > DONATIONS_MAX) erreurs.push(`donations : ${DONATIONS_MAX} au plus.`);
+  const cur = (Array.isArray(existantes) ? existantes : []).filter(isObj);
+  const parId = new Map(cur.filter((d) => d.id != null).map((d) => [String(d.id), d]));
+  const sourceDefaut = String(a?.source ?? "").trim();
+  if (!sourceDefaut) erreurs.push("source : document consulté ou « déclaration de l'utilisateur » (obligatoire).");
+  else if (sourceDefaut.length > FRAIS_SOURCE_MAX) erreurs.push(`source : ${FRAIS_SOURCE_MAX} caractères au plus.`);
+  const vus = new Set<string>();
+  const donations = liste.map((d: any, i: number) => {
+    const n = `donation ${i + 1}`;
+    if (!isObj(d)) { erreurs.push(`${n} : objet attendu.`); return null; }
+    const id = d.id == null || String(d.id).trim() === "" ? nouvelId() : String(d.id).trim();
+    if (id.length > 64) erreurs.push(`${n} : identifiant trop long (64 caractères au plus).`);
+    if (vus.has(id)) erreurs.push(`${n} : identifiant « ${id} » en double.`);
+    vus.add(id);
+    const e = dateOk(`${n} : date`, d.date, aujourdhui);
+    if (e) erreurs.push(e);
+    const montant = nombreFr(d.montant);
+    if (!(montant > 0)) erreurs.push(`${n} : montant strictement positif, en euros.`);
+    if (d.donateur !== "p1" && d.donateur !== "p2") erreurs.push(`${n} : donateur p1 ou p2.`);
+    if (!(LIENS_DONATION as readonly string[]).includes(d.lien)) erreurs.push(`${n} : lien ${LIENS_DONATION.join(", ")}.`);
+    const benef = String(d.beneficiaire ?? "").trim();
+    if (!benef || benef.length > 40) erreurs.push(`${n} : beneficiaire, libellé court de 1 à 40 caractères (« Enfant 1 » : jamais un nom imposé).`);
+    if (!(NATURES_DONATION as readonly string[]).includes(d.nature)) erreurs.push(`${n} : nature ${NATURES_DONATION.join(", ")}.`);
+    const base = parId.get(id);
+    const memeDonnee = base && base.date === d.date && +base.montant === montant;
+    const src = String(d.source ?? (memeDonnee ? base.source : sourceDefaut) ?? "").trim();
+    if (!src || src.length > FRAIS_SOURCE_MAX) erreurs.push(`${n} : source de 1 à ${FRAIS_SOURCE_MAX} caractères.`);
+    const le = d.le != null ? d.le : memeDonnee && base.le ? base.le : aujourdhui;
+    if (!dateReelle(le) || le > aujourdhui) erreurs.push(`${n} : le, date du document consulté (AAAA-MM-JJ), pas dans le futur.`);
+    return { id, date: d.date, montant, donateur: d.donateur, lien: d.lien, beneficiaire: benef, nature: d.nature, source: src, le };
+  }).filter(Boolean);
+  return { donations, erreurs, retires: cur.filter((d) => !vus.has(String(d.id))) };
+}
+export function texteDonation(d: any): string {
+  return `${d?.nature === "don_argent_790g" ? "Don familial" : d?.nature === "don_logement_790a_bis" ? "Don pour un logement" : "Donation"} à ${d?.beneficiaire ?? "?"} du ${frDate(d?.date)} : ${eur(+d?.montant || 0)}`;
+}
+
+/** Avis d'impôt proposé → { avis, avertissements } ou erreurs. aujourdhui : AAAA-MM-JJ. Remplace l'avis précédent en entier. */
+export function avisImpotDe(a: any, aujourdhui: string): { avis?: Record<string, unknown>; avertissements: string[]; erreurs: string[] } {
+  const erreurs: string[] = [], avertissements: string[] = [];
+  const an = +aujourdhui.slice(0, 4);
+  const annee = a?.annee_revenus;
+  if (!(Number.isInteger(annee) && annee >= 2000 && annee <= an)) erreurs.push(`annee_revenus : année des revenus de l'avis (2000 à ${an}).`);
+  const avis: Record<string, unknown> = {};
+  if (a?.rfr != null) { const x = nombreFr(a.rfr); if (!(x >= 0)) erreurs.push("rfr : revenu fiscal de référence en euros, 0 ou plus."); else avis.rfr = x; }
+  if (a?.plafonds_per != null) {
+    if (!isObj(a.plafonds_per)) erreurs.push("plafonds_per : objet { p1, p2 } attendu.");
+    else {
+      const out: Record<string, unknown> = {};
+      for (const [p, l] of Object.entries(a.plafonds_per)) {
+        if (p !== "p1" && p !== "p2") { erreurs.push(`plafonds_per : personne « ${p} » inconnue (p1 ou p2).`); continue; }
+        if (!Array.isArray(l)) { erreurs.push(`plafonds_per.${p} : liste attendue.`); continue; }
+        if (l.length > PLAFONDS_PER_MAX) erreurs.push(`plafonds_per.${p} : ${PLAFONDS_PER_MAX} lignes au plus.`);
+        const vus = new Set<number>();
+        out[p] = l.map((x: any, i: number) => {
+          const n = `plafonds_per.${p} ligne ${i + 1}`;
+          if (!isObj(x)) { erreurs.push(`${n} : objet attendu.`); return x; }
+          if (!(Number.isInteger(x.annee) && x.annee >= 2000 && x.annee <= an + 1)) erreurs.push(`${n} : annee, entier de 2000 à ${an + 1} (année imprimée sur l'avis).`);
+          else if (vus.has(x.annee)) erreurs.push(`${n} : annee ${x.annee} en double.`);
+          else { vus.add(x.annee); if (Number.isInteger(annee) && (x.annee < annee - 4 || x.annee > annee + 1)) avertissements.push(`${n} : l'année ${x.annee} sort de ${annee - 4} à ${annee + 1} : vérifie le libellé imprimé sur l'avis.`); }
+          const montant = nombreFr(x.montant);
+          if (!(montant > 0)) erreurs.push(`${n} : montant strictement positif, en euros.`);
+          return { annee: x.annee, montant };
+        });
+      }
+      avis.plafonds_per = out;
+    }
+  }
+  const source = sourceDe(a, erreurs), le = leDe(a, aujourdhui, erreurs);
+  return erreurs.length ? { avertissements, erreurs } : { avertissements, erreurs, avis: { annee_revenus: annee, ...avis, source, le } };
+}
+export function texteAvisImpot(v: any): string {
+  if (!isObj(v) || v.annee_revenus == null) return "aucun avis d'impôt";
+  const l = [`revenus ${v.annee_revenus}`];
+  if (v.rfr != null) l.push("revenu fiscal de référence " + eur(+v.rfr));
+  for (const p of ["p1", "p2"]) if (Array.isArray(v.plafonds_per?.[p]) && v.plafonds_per[p].length)
+    l.push(`plafond épargne retraite ${p} : ` + v.plafonds_per[p].map((x: any) => `${x.annee} ${eur(+x.montant)}`).join(", "));
+  return l.join(", ") + (v.source ? ` (${v.source})` : "");
+}
 const sansLastApplied = (l: any[]) => (Array.isArray(l) ? l : []).map((r) => { if (!isObj(r)) return r; const { lastApplied: _l, ...x } = r; return x; });
 
 export type Reglages = {
@@ -171,6 +420,8 @@ export type Reglages = {
   nouvelId?: () => string;
   /** Date du jour (AAAA-MM-JJ, Europe/Paris) ; par défaut, l'horloge. */
   today?: () => string;
+  /** Fonctions du calendrier (calendrier.ts) : type déduit du nom et clé d'enveloppe. */
+  calendrier?: { typeDeduit: (nom: unknown) => string | null; cleEnveloppe: (nom: string, titulaire: string, positions: any[], infos?: any) => string };
 };
 
 export function registerReglages(server: any, h: Reglages) {
@@ -281,5 +532,129 @@ export function registerReglages(server: any, h: Reglages) {
     const avertissements = enveloppes.includes(nom) ? [] : [`Aucune ligne dans l'enveloppe « ${nom} » : vérifie son nom exact (list_positions, champ envelope).`];
     const items = pareil(cur, r.frais) ? [] : [{ cible: "config", operation: "modifier", avant: { frais_enveloppes: { [nom]: cur } }, apres: { frais_enveloppes: { [nom]: r.frais } } }];
     return deposer(items, a, { avertissements, enveloppe: nom, frais_proposes: texteFrais(r.frais), frais_actuels: texteFrais(cur) });
+  }));
+
+  /* ---------- DAT1 : dates et informations du calendrier patrimonial (calendrier.ts lit, ces outils proposent) ---------- */
+  const DOC = "Relève la donnée dans un document que l'utilisateur te donne (jamais de mémoire, jamais de la synchronisation bancaire) ; sans document, demande-la une seule fois, et à défaut propose l'année seule (date_ouverture_approx). Cite le document dans source.";
+  const DateIso = (k: string, aide: string) => z.string().regex(DATE_RE, { error: `${k} : date AAAA-MM-JJ.` }).nullable().optional().describe(aide);
+  const Euros = (aide: string) => z.union([z.number(), z.string()]).nullable().optional().describe(aide);
+  const LeDoc = z.string().regex(DATE_RE, { error: "le : date AAAA-MM-JJ du document consulté." }).optional().describe("Date du document consulté (AAAA-MM-JJ), jamais dans le futur ; absente : aujourd'hui.");
+  server.registerTool("regler_infos_enveloppe", {
+    title: "Proposer les informations d'une enveloppe (calendrier)",
+    description: "Propose les informations d'une enveloppe qui font courir ses délais fiscaux : type (pea, pea_pme, pea_jeune, assurance_vie, capitalisation, per, pel, cel, pee, percol, compte_titres, livret_a, ldds, lep, autre), titulaire (p1 ou p2 ; l'assuré pour une assurance-vie), date d'ouverture (date du premier versement pour un PEA ou une assurance-vie) ou, à défaut, l'année ou le mois seul (date_ouverture_approx), date de clôture, versements cumulés (plafond du PEA, seuil de l'assurance-vie), versements avant 70 ans, dernière revue de la clause bénéficiaire (la date seulement : aucun nom n'est gardé), versements d'épargne salariale (pee, percol : date, montant, origine, disponible_le du relevé) et moins-values reportables (compte_titres : année et montant). " + DOC + " Les champs non fournis d'une enveloppe déjà renseignée sont conservés ; null retire un champ. Le nom est aligné sur une enveloppe connue (casse et accents ignorés) ; si deux titulaires ont une enveloppe de ce nom, la clé porte le titulaire. " + PROPOSE,
+    inputSchema: z.strictObject({
+      enveloppe: z.string().trim().min(1).max(80).describe("Nom de l'enveloppe, tel que dans le champ envelope des lignes de list_positions (ex. « PEA Exemple »)."),
+      type: z.enum(TYPES_ENVELOPPE, { error: "type : " + TYPES_ENVELOPPE.join(", ") + "." }).describe("Type de l'enveloppe ; le nom permet de le déduire, mais confirme-le."),
+      titulaire: z.enum(["p1", "p2"], { error: "titulaire : p1 ou p2." }).describe("Titulaire (p1 ou p2) ; l'assuré pour une assurance-vie."),
+      date_ouverture: DateIso("date_ouverture", "Date du premier versement (PEA, assurance-vie, capitalisation) ou d'ouverture (PEL, CEL), AAAA-MM-JJ, lue dans un document."),
+      date_ouverture_approx: z.string().regex(/^\d{4}(-\d{2})?$/, { error: "date_ouverture_approx : AAAA ou AAAA-MM." }).nullable().optional().describe("Année (AAAA) ou mois (AAAA-MM) seuls, quand l'utilisateur ne connaît pas la date exacte ; exclusif de date_ouverture. Boussole retient alors la date la plus tardive possible."),
+      date_cloture: DateIso("date_cloture", "Date de clôture de l'enveloppe (plus aucun jalon futur)."),
+      versements_cumules: Euros("Versements nets cumulés, en euros (plafond du PEA, seuil de 150 000 € de l'assurance-vie), à la date le du document."),
+      versements_avant_70: Euros("Assurance-vie : primes versées avant les 70 ans de l'assuré, en euros (au plus versements_cumules)."),
+      beneficiaires_revus_le: DateIso("beneficiaires_revus_le", "Date de la dernière revue de la clause bénéficiaire (aucun nom n'est gardé)."),
+      versements: z.array(z.looseObject({})).max(VERSEMENTS_PEE_MAX).nullable().optional().describe("pee, percol : [{ le: AAAA-MM-JJ, montant, origine: versement | abondement | participation | interessement, disponible_le?: AAAA-MM-JJ du relevé }], " + VERSEMENTS_PEE_MAX + " au plus. Remplace la liste actuelle."),
+      moins_values: z.array(z.looseObject({})).max(MOINS_VALUES_MAX).nullable().optional().describe("compte_titres : [{ annee: année de la moins-value, montant > 0 }], " + MOINS_VALUES_MAX + " au plus. Remplace la liste actuelle."),
+      le: LeDoc,
+      ...DEPOT,
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const auj = aujourdhui();
+    const [cfg, po] = await Promise.all([lireConfig("enveloppes_infos"), db.from("positions").select("envelope, owner, status")]);
+    const actuels = isObj(cfg.enveloppes_infos) ? cfg.enveloppes_infos : {};
+    const positions = ((must("positions", po) as any[]) ?? []).filter((p: any) => String(p.envelope ?? "").trim());
+    /* Nom aligné sur une enveloppe connue (lignes, puis informations déjà enregistrées), à la casse et aux accents près. */
+    const brut = String(a.enveloppe ?? "").trim().replace(/\|p[12]$/, "").trim();
+    const nom = positions.map((p: any) => String(p.envelope).trim()).find((e: string) => sansAccent(e) === sansAccent(brut))
+      ?? Object.keys(actuels).map((k) => k.replace(/\|p[12]$/, "")).find((k) => sansAccent(k) === sansAccent(brut)) ?? brut;
+    const cle0 = String(a.enveloppe ?? "").trim().match(/\|(p[12])$/);
+    const cleCalc = h.calendrier ? h.calendrier.cleEnveloppe(nom, a.titulaire, positions, actuels) : nom;
+    const cle = cle0 ? `${nom}|${cle0[1]}` : cleCalc;
+    const cleActuelle = Object.keys(actuels).find((k) => sansAccent(k) === sansAccent(cle));
+    const cur = cleActuelle != null && isObj(actuels[cleActuelle]) ? actuels[cleActuelle] : null;
+    const r = infosEnveloppeDe({ ...a, enveloppe: cle0 ? `${nom}|${cle0[1]}` : nom }, auj, cur);
+    if (r.erreurs.length) throw new UserError("Aucune proposition déposée :\n- " + r.erreurs.join("\n- "));
+    const lignes = positions.filter((p: any) => sansAccent(p.envelope) === sansAccent(nom));
+    const avertissements: string[] = [];
+    if (!lignes.length) avertissements.push(`Aucune ligne dans l'enveloppe « ${nom} » : vérifie son nom exact (list_positions, champ envelope).`);
+    else if (!lignes.some((p: any) => p.owner === a.titulaire)) avertissements.push(`Les lignes de « ${nom} » appartiennent à ${[...new Set(lignes.map((p: any) => p.owner))].join(" et ")}, pas à ${a.titulaire} : vérifie le titulaire.`);
+    const deduit = h.calendrier?.typeDeduit(nom);
+    if (deduit && deduit !== a.type) avertissements.push(`Le nom « ${nom} » évoque le type ${deduit}, tu proposes ${a.type} : confirme-le avec l'utilisateur.`);
+    const cles = Object.keys(actuels);
+    if (!cleActuelle && cles.length >= ENVELOPPES_MAX) avertissements.push(`${ENVELOPPES_MAX} enveloppes au plus : retire-en une avant d'en ajouter.`);
+    const items = pareil(cur, r.infos) ? [] : [{ cible: "config", operation: "modifier", avant: { enveloppes_infos: { [cle]: cur } }, apres: { enveloppes_infos: { [cle]: r.infos } } }];
+    return deposer(items, a, { avertissements, enveloppe: cle, infos_proposees: texteInfosEnveloppe(r.infos), infos_actuelles: texteInfosEnveloppe(cur) });
+  }));
+
+  server.registerTool("regler_infos_pret", {
+    title: "Proposer les informations d'un prêt (calendrier)",
+    description: "Propose les informations du contrat d'un crédit ou du prêt d'un bien : date de signature, date de fin, durée en mois, taux, taux de l'assurance emprunteur, exonération d'indemnités de remboursement anticipé. Elles datent la dernière échéance (calendrier) et serviront aux astuces. pret : credit:<id> ou bien:<id> (identifiants de get_overview). Relève-les dans l'offre de prêt ou le tableau d'amortissement. " + DOC + " Les champs non fournis sont conservés ; null retire un champ. " + PROPOSE,
+    inputSchema: z.strictObject({
+      pret: z.string().regex(PRET_RE, { error: "pret : credit:<identifiant> ou bien:<identifiant>." }).describe("credit:<id> ou bien:<id> (identifiants des listes credits et biens de get_overview)."),
+      date_signature: DateIso("date_signature", "Date de signature de l'offre, AAAA-MM-JJ."),
+      date_fin: DateIso("date_fin", "Date de la dernière échéance, AAAA-MM-JJ (après la signature)."),
+      duree_mois: z.number().int().min(1).max(480).nullable().optional().describe("Durée du prêt en mois (1 à 480)."),
+      taux_pct: Euros("Taux nominal annuel en % (0.5 pour 0,50 %), de 0 à 20."),
+      assurance_taux_pct: Euros("Taux annuel de l'assurance emprunteur en %, de 0 à 5."),
+      ira_exoneration: z.boolean().nullable().optional().describe("true si l'offre exclut les indemnités de remboursement anticipé."),
+      le: LeDoc,
+      ...DEPOT,
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const auj = aujourdhui();
+    const pret = String(a.pret ?? "").trim().toLowerCase();
+    const m = PRET_RE.exec(pret);
+    if (!m) throw new UserError("Aucune proposition déposée :\n- pret : credit:<identifiant> ou bien:<identifiant> (identifiants de get_overview).");
+    const [ligne, cfg] = await Promise.all([db.from(m[1] === "credit" ? "credits" : "biens").select("id").eq("id", m[2]).maybeSingle(), lireConfig("prets_infos")]);
+    if (!must(m[1] === "credit" ? "credits" : "biens", ligne)) throw new UserError(`Aucune proposition déposée :\n- pret : ${m[1] === "credit" ? "crédit" : "bien"} inconnu (${pret}) : utilise un identifiant de get_overview.`);
+    const actuels = isObj(cfg.prets_infos) ? cfg.prets_infos : {};
+    const cur = isObj(actuels[pret]) ? actuels[pret] : null;
+    const r = infosPretDe({ ...a, pret }, auj, cur);
+    if (r.erreurs.length) throw new UserError("Aucune proposition déposée :\n- " + r.erreurs.join("\n- "));
+    const items = pareil(cur, r.infos) ? [] : [{ cible: "config", operation: "modifier", avant: { prets_infos: { [pret]: cur } }, apres: { prets_infos: { [pret]: r.infos } } }];
+    return deposer(items, a, { pret, infos_proposees: texteInfosPret(r.infos), infos_actuelles: texteInfosPret(cur) });
+  }));
+
+  const Donation = z.looseObject({});
+  server.registerTool("regler_donations", {
+    title: "Proposer les donations consenties (calendrier)",
+    description: "Propose la liste complète des donations consenties par le foyer (celles qu'il reçoit sont hors périmètre) : elles datent la fin du rappel fiscal de 15 ans. Chaque donation : { id? (pour la garder ou la modifier), date AAAA-MM-JJ, montant, donateur p1 ou p2, lien enfant | petit_enfant | arriere_petit_enfant | autre, beneficiaire (libellé court choisi par l'utilisateur, 40 caractères au plus, ex. « Enfant 1 » : jamais un nom), nature donation | don_argent_790g | don_logement_790a_bis }. Relève-les dans l'acte ou la déclaration de don. mode remplacer : la liste fournie remplace la liste existante ; lis d'abord get_config (donations) et renvoie TOUTES les donations à garder avec leur id ; une donation absente est supprimée. " + PROPOSE,
+    inputSchema: z.strictObject({
+      donations: z.array(Donation).max(DONATIONS_MAX).describe("Liste complète des donations consenties à garder (vide : aucune)."),
+      mode: z.literal("remplacer", { error: "mode : remplacer (la liste fournie remplace la liste existante)." }).describe("remplacer : la liste fournie remplace la liste existante."),
+      ...DEPOT,
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    if (a.mode !== "remplacer") throw new UserError("mode : remplacer (la liste fournie remplace la liste existante).");
+    const d0 = (await lireConfig("donations")).donations;
+    const cur = Array.isArray(d0) ? d0 : [];
+    const r = donationsDe(a, cur, aujourdhui(), () => "don-" + crypto.randomUUID().slice(0, 8));
+    if (r.erreurs.length) throw new UserError("Aucune proposition déposée :\n- " + r.erreurs.join("\n- "));
+    const items = pareil(cur, r.donations) ? [] : [{ cible: "config", operation: "modifier", avant: { donations: cur }, apres: { donations: r.donations } }];
+    const avertissements = r.retires.map((x: any) => `Supprimée si l'utilisateur valide : ${texteDonation(x)}.`);
+    return deposer(items, a, { avertissements, donations_proposees: r.donations.map(texteDonation) });
+  }));
+
+  server.registerTool("regler_avis_impot", {
+    title: "Proposer les données de l'avis d'impôt (calendrier)",
+    description: "Propose les données de l'avis d'impôt : année des revenus (annee_revenus), revenu fiscal de référence (rfr) et plafond épargne retraite non utilisé de chaque déclarant, par année du plafond (plafonds_per : { p1: [{ annee, montant }], p2: [...] }, 6 lignes au plus par personne). Elles datent l'expiration de chaque part du plafond. Recopie, pour chaque montant, l'année imprimée sur l'avis et son libellé dans source. Quand le libellé n'est pas « plafond <année> » mais renvoie à des revenus (« non utilisé pour les revenus de N », « calculé sur les revenus de N »), montre à l'utilisateur la date d'expiration qui en découle et fais-la confirmer avant de déposer : lecture attendue, à confirmer, « non utilisé pour les revenus de N » → annee N ; « calculé sur les revenus de N » → annee N + 1. Un avis remplace le précédent en entier. " + DOC + " " + PROPOSE,
+    inputSchema: z.strictObject({
+      annee_revenus: z.number().int().min(2000).describe("Année des revenus de l'avis (2025 pour l'avis reçu en 2026)."),
+      rfr: Euros("Revenu fiscal de référence, en euros."),
+      plafonds_per: z.strictObject({ p1: z.array(z.looseObject({})).max(PLAFONDS_PER_MAX).optional(), p2: z.array(z.looseObject({})).max(PLAFONDS_PER_MAX).optional() })
+        .optional().describe("Plafond épargne retraite non utilisé par personne : [{ annee: année du plafond (« plafond 2024 »), montant > 0 }]."),
+      le: LeDoc,
+      ...DEPOT,
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    const r = avisImpotDe(a, aujourdhui());
+    if (r.erreurs.length) throw new UserError("Aucune proposition déposée :\n- " + r.erreurs.join("\n- "));
+    const c = (await lireConfig("avis_impot")).avis_impot;
+    const cur = isObj(c) && Object.keys(c).length ? c : {};
+    const items = pareil(cur, r.avis) ? [] : [{ cible: "config", operation: "modifier", avant: { avis_impot: cur }, apres: { avis_impot: r.avis } }];
+    return deposer(items, a, { avertissements: r.avertissements, avis_propose: texteAvisImpot(r.avis), avis_actuel: texteAvisImpot(cur) });
   }));
 }

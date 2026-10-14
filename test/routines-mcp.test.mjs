@@ -18,6 +18,7 @@ const srcJournal = lire("supabase/functions/mcp/journal.ts");
 const srcMemoire = lire("supabase/functions/mcp/memoire.ts");
 const srcSavoir = lire("supabase/functions/mcp/savoir.ts");
 const srcBanque = lire("supabase/functions/mcp/banque.ts");
+const srcCalendrier = lire("supabase/functions/mcp/calendrier.ts");
 const sansCommentaires = s => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 const code = sansCommentaires(src);
 
@@ -59,9 +60,9 @@ function serveur(register, db, extra = {}) {
 }
 const chargerRoutines = (globaux = {}) => {
   const M = chargerModule(srcMemoire), S = chargerModule(srcSavoir), B = chargerModule(srcBanque, globaux);
-  const Jn = chargerModule(srcJournal, { estSensible: M.estSensible, ...globaux });
+  const Jn = chargerModule(srcJournal, { estSensible: M.estSensible, ...globaux }), Cal = chargerModule(srcCalendrier, globaux);
   return chargerModule(srcRoutines, { estSensible: M.estSensible, etatFige: Jn.etatFige, journalDeSession: Jn.journalDeSession,
-    lireConsentement: Jn.lireConsentement, JOURNAL: Jn.JOURNAL, REFUS_SENSIBLE: Jn.REFUS_SENSIBLE, nouveautes: S.nouveautes, banqueDeRoutine: B.banqueDeRoutine, ...globaux });
+    lireConsentement: Jn.lireConsentement, JOURNAL: Jn.JOURNAL, REFUS_SENSIBLE: Jn.REFUS_SENSIBLE, nouveautes: S.nouveautes, banqueDeRoutine: B.banqueDeRoutine, echeancesDeRevue: Cal.echeancesDeRevue, ...globaux });
 };
 const calculFaux = (surcharge = {}) => ({
   charger: async () => ({ donnees: { positions: [], lignes: [] }, objectifs: [], risque: null, classes: null }),
