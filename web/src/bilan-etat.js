@@ -48,7 +48,7 @@
     const rev = [];
     ["p1"].concat(deux ? ["p2"] : []).forEach(k => {
       const p = ps[k] || {};
-      if (!(num(p.salaire) > 0)) rev.push(q("personnes." + k + ".salaire", (nomDe(pr, k) === "toi" ? "Quel est ton salaire" : "Quel est le salaire de " + nomDe(pr, k)) + " (net ou brut, par mois ou par an) ?", "C'est la base du taux d'épargne, de l'endettement et de la capacité d'emprunt."));
+      if (!(num(p.salaire) > 0)) rev.push(q("personnes." + k + ".salaire", (nomDe(pr, k) === "toi" ? "Quel est ton salaire" : "Quel est le salaire de " + nomDe(pr, k)) + " (net ou brut, par mois ou par an) ?", "C'est la base de la capacité d'épargne, de l'endettement et de la capacité d'emprunt."));
       if (!has(p.statut)) rev.push(q("personnes." + k + ".statut", nomDe(pr, k) === "toi" ? "Es-tu cadre ou non-cadre ?" : majuscule(nomDe(pr, k)) + " est-il cadre ou non-cadre ?", "Utile pour convertir un salaire brut en net."));
     });
     out.push({ cle: "revenus", titre: "Revenus", total: deux ? 4 : 2, manquants: rev });
@@ -56,7 +56,7 @@
     // 3. Budget
     const lignes = (S.budget && Array.isArray(S.budget.lignes)) ? S.budget.lignes : [];
     const bud = [];
-    if (!lignes.some(l => l.type === "depense")) bud.push(q("budget.depenses", "Quelles sont tes principales dépenses mensuelles (logement, courses, transport, abonnements…) ? Un relevé bancaire collé suffit.", "Sans dépenses, impossible de mesurer ton matelas en mois et ton taux d'épargne."));
+    if (!lignes.some(l => l.type === "depense")) bud.push(q("budget.depenses", "Quelles sont tes principales dépenses mensuelles (logement, courses, transport, abonnements…) ? Un relevé bancaire collé suffit.", "Sans dépenses, impossible de mesurer ton matelas en mois et ta capacité d'épargne."));
     if (!lignes.some(l => l.type === "epargne")) bud.push(q("budget.epargne", "Combien mets-tu de côté chaque mois, et où ?", "L'épargne régulière alimente tes objectifs et tes projections."));
     out.push({ cle: "budget", titre: "Budget", total: 2, manquants: bud });
 

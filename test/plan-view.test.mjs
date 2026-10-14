@@ -153,7 +153,7 @@ test("regrouper : périmètre d'une personne — ligne commune pour moitié, lig
   assert.deepEqual(PV.regrouper([], ctx({ profil: null })).groupes, { revenu: [], depense: [], epargne: [] });
 });
 
-test("resume : montants par mois ou par an (×12), taux d'épargne et son repère ; sans ligne : reste et taux inconnus", () => {
+test("resume : montants par mois ou par an (×12), capacité d'épargne et son repère ; sans ligne : reste et taux inconnus", () => {
   const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
   const m = PV.resume(t, "mois", true), a = PV.resume(t, "an", true);
   proche(m.revenus, 5100); proche(a.revenus, 5100 * 12);
@@ -198,14 +198,14 @@ test("barre et segments : dépenses par catégorie triées ; 8 couleurs distinct
   assert.equal(new Set(beaucoup.map(s => s.couleur)).size, beaucoup.length);
 });
 
-test("cartesHtml : quatre cartes, taux d'épargne en badge, reste négatif signalé ; sans ligne : « remplis ton budget avec Claude »", () => {
+test("cartesHtml : quatre cartes, capacité d'épargne en badge, reste négatif signalé ; sans ligne : « remplis ton budget avec Claude »", () => {
   const t = Plan.budgetTotaux(DEMO.budget.lignes, DEMO.profil, "foyer");
   const h = sp(PV.cartesHtml(PV.resume(t, "mois", true), UI, { duScope: "du foyer" }));
   assert.deepEqual([...h.matchAll(/data-ui-carte="([^"]+)"/g)].map(m => m[1]), ["revenu", "depense", "epargne", "reste"]);
   assert.match(h, /Revenus du foyer/);
   assert.match(h, /5 100 €/);
   assert.match(h, /dont 1 030 € de crédits/);
-  assert.match(h, /Taux d'épargne 31 %/);
+  assert.match(h, /Capacité d'épargne 31 %/);
   assert.match(h, /au-dessus du repère/);
   const an = sp(PV.cartesHtml(PV.resume(t, "an", true), UI, { duScope: "du foyer" }));
   assert.match(an, /61 200 €/);
@@ -215,7 +215,7 @@ test("cartesHtml : quatre cartes, taux d'épargne en badge, reste négatif signa
   assert.match(neg, /ui-badge critique/);
   const vide = sp(PV.cartesHtml(PV.resume(t, "mois", false), UI, { duScope: "du foyer" }));
   assert.match(vide, /remplis ton budget avec Claude pour le calculer/);
-  assert.doesNotMatch(vide, /Taux d'épargne \d|au-dessus du repère/);
+  assert.doesNotMatch(vide, /Capacité d'épargne \d|au-dessus du repère/);
 });
 
 test("barreHtml : barre lisible (role=img avec toutes les catégories), légende en 5 puis « Voir plus », pas de couleur codée en dur", () => {
@@ -528,42 +528,47 @@ test("budget réel : colonne « réel » sur les comptes courants seulement (moi
   assert.equal(PV.reelDe({ scope: "p1", banque: parCompte }, AUJ_R), null);
 });
 
-test("budget réel : taux d'épargne réel (épargne ÷ revenus, 3 mois complets) et mention des virements internes exclus", () => {
+test("budget réel : capacité d'épargne puis épargne versée (3 mois complets), chacune avec sa formule, et mention des virements internes exclus", () => {
   const b = banqueR([
     MOIS_R("2026-07-01", "revenus", 5000, 0), MOIS_R("2026-07-01", "epargne", 0, 500), MOIS_R("2026-08-01", "revenus", 5000, 0), MOIS_R("2026-08-01", "epargne", 0, 1000),
     MOIS_R("2026-09-01", "revenus", 5000, 0), MOIS_R("2026-09-01", "epargne", 0, 1500), MOIS_R("2026-09-01", "virement_interne", 2000, 2000),
     MOIS_R("2026-09-01", "alimentation", 0, 700)]);
   const br = PV.budgetReelDe({ scope: "foyer", banque: b }, AUJ_R);
-  assert.equal(br.tauxEpargne, 0.2);
+  assert.equal(br.tauxEpargne, 0.2, "épargne versée ÷ revenus");
+  assert.ok(Math.abs(br.tauxCapacite - (5000 - 700 / 3) / 5000) < 1e-9, "capacité d'épargne = (revenus − dépenses) ÷ revenus");
   assert.equal(PV.budgetReelDe({ scope: "p2", banque: b }, AUJ_R), null, "les comptes ne sont pas répartis par personne");
   assert.equal(PV.budgetReelDe({ scope: "foyer", banque: Object.assign({}, b, { actif: false }) }, AUJ_R), null);
   const h = sp(PV.tauxReelHtml(br));
-  assert.match(texteDeR(h), /^Taux d'épargne réel 20 %/);
+  assert.match(texteDeR(h), /^Capacité d'épargne 95 % \(revenus − dépenses\) ÷ revenus\. Épargne versée 20 % versements d'épargne et d'investissement ÷ revenus\. /, "Capacité d'abord, chaque taux avec sa formule");
+  assert.ok(h.indexOf("Capacité d'épargne") < h.indexOf("Épargne versée"));
+  assert.doesNotMatch(texteDeR(h), /[Tt]aux d'épargne/, "un seul vocabulaire");
   assert.equal(br.parCompte, false, "totaux par utilisateur (sans compte)");
-  assert.match(texteDeR(h), /épargne ÷ revenus, moyenne de juillet à septembre 2026, sur tous tes comptes connectés \(le détail par compte n'est pas encore disponible\)\. Virements entre tes comptes exclus\./,
+  assert.match(texteDeR(h), /moyenne de juillet à septembre 2026, sur tous tes comptes connectés \(le détail par compte n'est pas encore disponible\)\. Virements entre tes comptes exclus\./,
     "libellé honnête sans détail par compte");
   const hc = sp(PV.tauxReelHtml(Object.assign({}, br, { parCompte: true })));
   assert.match(texteDeR(hc), /moyenne de juillet à septembre 2026, sur tes comptes courants\. Virements entre tes comptes exclus\./, "détail par compte : comptes courants");
   assert.equal(PV.tauxReelHtml(null), "");
-  assert.equal(PV.tauxReelHtml(Object.assign({}, br, { tauxEpargne: null })), "", "revenus inconnus : pas de taux");
+  assert.equal(PV.tauxReelHtml(Object.assign({}, br, { tauxEpargne: null, tauxCapacite: null })), "", "revenus inconnus : pas de taux");
+  const neg = texteDeR(PV.tauxReelHtml(Object.assign({}, br, { tauxCapacite: -0.1, capacite: -500, tauxEpargne: 0 })));
+  assert.match(neg, /^Capacité d'épargne -10 % .*Épargne versée 0 % /, "dépenses > revenus : capacité négative, rien de versé");
   const lignes = [{ id: "e", type: "epargne", categorie: "Épargne", libelle: "Livret", montant: 200, frequence: "mois" }];
   const { groupes, totaux } = PV.regrouper(lignes, { profil: null, scope: "foyer", people: PEOPLE, Plan, Calc });
   const g = sp(PV.groupesHtml(groupes, { mode: "mois", totaux, U: UI, budgetReel: br }));
   const epargne = g.slice(g.indexOf('id="pv-sec-epargne"'));
-  assert.match(epargne, /pv-reel-taux/, "ligne « Taux d'épargne réel » dans la section Épargne");
+  assert.match(epargne, /pv-reel-taux/, "lignes « Capacité d'épargne » et « Épargne versée » dans la section Épargne");
   assert.doesNotMatch(g.slice(0, g.indexOf('id="pv-sec-epargne"')), /pv-reel-taux/);
-  assert.match(sp(PV.groupesHtml(groupes, { mode: "an", totaux, U: UI, budgetReel: br })), /Taux d'épargne réel<\/span> <b class="pv-num">20 %/, "taux identique par an");
+  assert.match(sp(PV.groupesHtml(groupes, { mode: "an", totaux, U: UI, budgetReel: br })), /Épargne versée<\/span> <b class="pv-num">20 %/, "taux identique par an");
   assert.doesNotMatch(sp(PV.groupesHtml(groupes, { mode: "mois", totaux, U: UI })), /pv-reel-taux/, "sans banque : rendu inchangé");
 });
 
-test("vue (DOM) : banque connectée → colonne réel, taux d'épargne réel et note « virements entre tes comptes exclus »", () => {
+test("vue (DOM) : banque connectée → colonne réel, capacité d'épargne et épargne versée, note « virements entre tes comptes exclus »", () => {
   const d = new Date(), iso = k => { const x = new Date(Date.UTC(d.getFullYear(), d.getMonth() - k, 1)); return x.toISOString().slice(0, 10); };
   const mois = [1, 2, 3].flatMap(k => [MOIS_R(iso(k), "revenus", 5000, 0, { compteId: 1 }), MOIS_R(iso(k), "epargne", 0, 750, { compteId: 1 }),
     MOIS_R(iso(k), "alimentation", 0, 800, { compteId: 1 }), MOIS_R(iso(k), "alimentation", 0, 300, { compteId: 2 })]);
   const v = vueDom(Object.assign(demoS(), { banque: banqueR(mois) }));
   assert.match(sp(v.root.querySelector("#pvBudgetNote").textContent), /« Réel » : moyenne d[e'][^,]+, d'après tes comptes connectés\. Virements entre tes comptes exclus\./);
   assert.match(sp(v.root.querySelector('[data-pv-cat="depense:Alimentation"]').textContent), /réel 800 €\/mois/, "comptes courants seulement");
-  assert.match(sp(v.root.querySelector("#pvBudget").textContent), /Taux d'épargne réel 15 %/);
+  assert.match(sp(v.root.querySelector("#pvBudget").textContent), /Capacité d'épargne 84 %[\s\S]*Épargne versée 15 %/);
   const sans = vueDom(Object.assign(demoS(), { banque: { actif: false, lu: true, connexions: [], comptes: [], mois: [] } }));
   assert.doesNotMatch(sp(sans.root.querySelector("#pvBudgetNote").textContent), /Virements/);
   assert.equal(sans.root.querySelector(".pv-reel-taux"), null);

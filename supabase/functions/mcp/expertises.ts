@@ -227,7 +227,8 @@ export function contextePour(slug: string, ch: Charge, marche: string | null | u
       const disponible = de((p) => m.liquidite(p.envelope) === "immediate");
       return fin({
         budget: { revenus: r0(t.revenus), depenses: r0(t.depenses), dont_mensualites_credits: r0(t.mensualites), epargne_prevue: r0(t.epargne), reste: r0(t.reste),
-          taux_epargne_pct: t.tauxEpargne == null ? null : r1(t.tauxEpargne * 100),
+          taux_capacite_pct: t.tauxEpargne == null ? null : r1(t.tauxEpargne * 100), // capacité d'épargne prévue = (épargne prévue + reste positif) ÷ revenus
+          taux_epargne_pct: t.tauxEpargne == null ? null : r1(t.tauxEpargne * 100), // DÉPRÉCIÉ : ancien nom de taux_capacite_pct
           depenses_par_categorie: Object.fromEntries(Object.entries(t.parCategorie ?? {}).map(([k, v]) => [k, r0(v)])) },
         matelas: { cible: d.config?.cushion ?? null, epargne_disponible_immediatement: r0(somme(disponible, m.val)), mois_de_depenses: vueCritere("matelas", "mois") },
         ...borne(disponible.map(ligne), "livrets_et_disponible", "livrets_et_disponible_"),

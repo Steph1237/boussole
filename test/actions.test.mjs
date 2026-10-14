@@ -73,11 +73,11 @@ test("liens : règle → placements (+ réglages), matelas → budget, pistes se
 test("pistes : seulement les critères calculés et sous le maximum", () => {
   const P = A.pistes({ items: [
     { cle: "matelas", titre: "Matelas", points: 20, sur: 20, aCompleter: false, texte: "t", piste: "p" },
-    { cle: "epargne", titre: "Taux d'épargne", points: 12, sur: 20, aCompleter: false, texte: "10 %.", piste: "Visez 15 %." },
+    { cle: "epargne", titre: "Capacité d'épargne", points: 12, sur: 20, aCompleter: false, texte: "10 %.", piste: "Visez 15 %." },
     { cle: "patrimoine", titre: "Patrimoine", points: 0, sur: 20, aCompleter: true, texte: "?", piste: "?" },
   ] });
   assert.equal(P.length, 1);
-  assert.deepEqual([P[0].level, P[0].title, P[0].text, P[0].ordre, P[0].lien.route], ["piste", "Taux d'épargne : 12/20", "10 %. Visez 15 %.", 12, "patrimoine/budget"]);
+  assert.deepEqual([P[0].level, P[0].title, P[0].text, P[0].ordre, P[0].lien.route], ["piste", "Capacité d'épargne : 12/20", "10 %. Visez 15 %.", 12, "patrimoine/budget"]);
 });
 
 test("construire sur la démo : alertes des règles et pistes, triées, scope respecté", () => {

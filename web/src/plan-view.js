@@ -1,7 +1,7 @@
 /* Patrimoine › Budget (module « plan ») : « Où va mon argent chaque mois ? ». Lecture seule : la saisie passe par Claude
    (spec docs/superpowers/specs/2026-10-11-saisie-par-agent.md) ; ce module n'écrit jamais dans le store.
    - En-tête : revenus, dépenses, épargne, reste en cartes (UI.carte → panneau de détail), bascule Par mois · Par an
-     (UI.bascule ; montants ×12 par an, le taux d'épargne ne change pas), « Compléter avec Claude », « Demander à Claude ».
+     (UI.bascule ; montants ×12 par an, la capacité d'épargne ne change pas), « Compléter avec Claude », « Demander à Claude ».
    - Barre empilée des dépenses par catégorie (8 couleurs distinctes au plus, le reste regroupé en « Autres catégories » à
      motif) ; légende en 5 puis « Voir plus ».
    - Une carte par catégorie (montant, part du total du type) qui se déplie en lignes (<details>, état ouvert conservé au
@@ -15,7 +15,8 @@
      Seulement pour le foyer (les comptes ne sont pas répartis par personne) et quand l'interrupteur banque est actif.
    - Budget réel sur les comptes courants (spec cp1 § 5) : si S.banque.mois est détaillé par compte (compteId), seules les lignes
      des comptes courants suivis comptent (Calc.moisCourants : type courant, ni ignorés ni en double) ; sinon les totaux tels quels.
-     Ligne « Taux d'épargne réel » dans la section Épargne (Calc.budgetReel : épargne ÷ revenus, 3 derniers mois complets) et
+     Lignes « Capacité d'épargne » ((revenus − dépenses) ÷ revenus) et « Épargne versée » (épargne et investissement ÷ revenus) dans la
+     section Épargne (Calc.budgetReel : tauxCapacite puis tauxEpargne, 3 derniers mois complets) et
      mention « Virements entre tes comptes exclus » à côté de la note du réel.
    Fonctions pures exportées pour les tests : lignesProfil, regrouper, resume, barre, segments, cartesHtml, barreHtml,
    groupesHtml, ligneDetailHtml, resumeDetailHtml, boutonClaude, reelDe, noteReel, budgetReelDe, tauxReelHtml. Dépendances injectées
@@ -137,7 +138,7 @@
   }
 
   /** Résumé de l'en-tête dans le mode choisi (« mois » ×1, « an » ×12). aLignes : le budget a au moins une ligne (sinon reste
-      et taux d'épargne inconnus : les seuls revenus de Compte › Données donneraient un taux trompeur : tout le reste compté comme épargne).
+      et capacité d'épargne inconnus : les seuls revenus de Compte › Données donneraient un taux trompeur : tout le reste compté comme épargne).
       → { mode, facteur, suffixe, unite, aLignes, revenus, revenusProfil, depenses, mensualites, epargne, reste, taux, ton, repere, negatif }. */
   function resume(t, mode, aLignes) {
     const m = mode0(mode), f = m.facteur, x = v => (+v || 0) * f, tt = t || {};
@@ -170,11 +171,11 @@
   }
 
   /* =============================================================== rendus HTML =============================================================== */
-  /** Quatre cartes de l'en-tête (UI.carte) : revenus, dépenses, épargne (taux d'épargne en badge), reste. o = { duScope }. */
+  /** Quatre cartes de l'en-tête (UI.carte) : revenus, dépenses, épargne (capacité d'épargne en badge), reste. o = { duScope }. */
   function cartesHtml(r, U, o) {
     const u = r.unite;
     const sous = (...xs) => xs.filter(Boolean).join(" · ");
-    const sousTaux = r.taux != null ? "Taux d'épargne " + pct(r.taux) : !r.aLignes ? SANS_TAUX : "taux d'épargne inconnu";
+    const sousTaux = r.taux != null ? "Capacité d'épargne " + pct(r.taux) : !r.aLignes ? SANS_TAUX : "capacité d'épargne inconnue";
     return U.carte({ id: "revenu", titre: "Revenus " + ((o && o.duScope) || "du foyer"), valeur: eur(r.revenus),
         sous: sous(u, r.revenusProfil > 0 ? "dont " + eur(r.revenusProfil) + " repris de Compte › Données" : "salaires à compléter avec Claude") }) +
       U.carte({ id: "depense", titre: "Dépenses", valeur: eur(r.depenses), sous: sous(u, r.mensualites > 0 ? "dont " + eur(r.mensualites) + " de crédits" : "crédits compris") }) +
@@ -223,7 +224,7 @@
     if (!B || !b || !b.actif || (S.scope || "foyer") !== "foyer") return null;
     return B.reelMoyen(C && typeof C.moisCourants === "function" ? C.moisCourants(b) : b.mois, today);
   }
-  /** Budget réel des comptes courants (Calc.budgetReel) → { n, du, au, revenus, depenses, epargne, tauxEpargne, parCompte } ou null
+  /** Budget réel des comptes courants (Calc.budgetReel) → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte } ou null
       (interrupteur éteint, vue d'une personne, aucun mois complet). */
   function budgetReelDe(S, today) {
     const C = CA(), b = S && S.banque;
@@ -244,12 +245,17 @@
     return "« Réel » : " + periodeReel(r) + ", d'après tes comptes connectés.";
   }
   const MENTION_VIREMENTS = "Virements entre tes comptes exclus.";
-  /** Ligne « Taux d'épargne réel » (épargne ÷ revenus, 3 derniers mois complets) : « sur tes comptes courants » si chaque mois est
-      détaillé par compte (br.parCompte), sinon « sur tous tes comptes connectés » ; vide sans taux. */
+  /** Deux lignes sous la section Épargne, chacune avec sa formule d'une ligne (même vocabulaire que Santé et le connecteur) :
+      « Capacité d'épargne » = (revenus − dépenses) ÷ revenus (br.tauxCapacite, peut être négative) puis « Épargne versée » =
+      versements d'épargne et d'investissement ÷ revenus (br.tauxEpargne) ; 3 derniers mois complets, « sur tes comptes courants » si
+      chaque mois est détaillé par compte (br.parCompte), sinon « sur tous tes comptes connectés » ; vide sans taux. */
   function tauxReelHtml(br) {
-    if (!br || br.tauxEpargne == null || !isFinite(br.tauxEpargne) || !br.du || !br.au) return "";
-    return '<p class="pv-reel-taux"><span class="pv-reel-taux-l">Taux d\'épargne réel</span> <b class="pv-num">' + esc(pct(br.tauxEpargne)) + "</b> " +
-      '<span class="pv-muet">épargne ÷ revenus, ' + esc(periodeReel(br)) + (br.parCompte ? ", sur tes comptes courants. " : ", sur tous tes comptes connectés (le détail par compte n'est pas encore disponible). ") +
+    if (!br || br.tauxEpargne == null || !isFinite(br.tauxEpargne) || br.tauxCapacite == null || !isFinite(br.tauxCapacite) || !br.du || !br.au) return "";
+    const ligne = (titre, v, formule) => '<p class="pv-reel-taux"><span class="pv-reel-taux-l">' + titre + '</span> <b class="pv-num">' + esc(pct(v)) + "</b> " +
+      '<span class="pv-muet">' + formule + "</span></p>";
+    return ligne("Capacité d'épargne", br.tauxCapacite, "(revenus − dépenses) ÷ revenus.") + "\n" +
+      ligne("Épargne versée", br.tauxEpargne, "versements d'épargne et d'investissement ÷ revenus.") +
+      '\n<p class="pv-reel-taux"><span class="pv-muet">' + esc(periodeReel(br)) + (br.parCompte ? ", sur tes comptes courants. " : ", sur tous tes comptes connectés (le détail par compte n'est pas encore disponible). ") +
       MENTION_VIREMENTS + "</span></p>";
   }
   /** Réel mensuel d'un groupe du budget (catégorie reconnue et de même sens), ou null. */
@@ -301,7 +307,7 @@
   }
   /** Les trois sections (Revenus, Dépenses, Épargne) et leurs catégories ; total de section = totaux de Plan.budgetTotaux
       (le même que les cartes). o = { mode, ouverts: Set de clés, totaux, U, reel (reelDe, facultatif), budgetReel (budgetReelDe,
-      facultatif : ligne « Taux d'épargne réel » en fin de section Épargne) }. */
+      facultatif : lignes « Capacité d'épargne » et « Épargne versée » en fin de section Épargne) }. */
   function groupesHtml(groupes, o) {
     const opt = o || {}, m = mode0(opt.mode), U = opt.U || glob("UI"), reel = opt.reel || null;
     return SECTIONS.map(s => {
@@ -335,7 +341,7 @@
   }
 
   /** Détail d'une carte de l'en-tête : catégories du type (avec leurs lignes pour revenus et épargne ; dépenses en 5 puis
-      « Voir plus »), taux d'épargne, calcul du reste, et « Compléter avec Claude ». */
+      « Voir plus »), capacité d'épargne, calcul du reste, et « Compléter avec Claude ». */
   function resumeDetailHtml(type, groupes, r, U) {
     const m = mode0(r && r.mode), gs = (groupes && groupes[type]) || [], u = U || glob("UI");
     const item = g => {
@@ -351,8 +357,8 @@
     if (type === "depense") return (liste || '<p class="pv-note">Aucune dépense dans ton budget.</p>') +
       '<p class="pv-note">Les mensualités de tes prêts et crédits viennent de Compte › Données.</p>' + acts("budget", "les dépenses");
     if (type === "epargne") return (liste || '<p class="pv-note">Aucune épargne prévue dans ton budget.</p>') +
-      '<p class="pv-note">Taux d\'épargne : ' + esc(r && r.taux != null ? pct(r.taux) + (r.repere ? " (" + r.repere + ")" : "") : r && !r.aLignes ? SANS_TAUX : "inconnu") +
-      ". C'est l'épargne prévue et le reste positif, rapportés aux revenus ; repère 15 %.</p>" + acts("budget", "l'épargne prévue");
+      '<p class="pv-note">Capacité d\'épargne prévue : ' + esc(r && r.taux != null ? pct(r.taux) + (r.repere ? " (" + r.repere + ")" : "") : r && !r.aLignes ? SANS_TAUX : "inconnu") +
+      ". C'est l'épargne prévue et le reste positif, rapportés aux revenus (revenus − dépenses, au moins l'épargne prévue) ; repère 15 %.</p>" + acts("budget", "l'épargne prévue");
     return dl([["Revenus", eur(r.revenus) + m.suffixe], ["Dépenses", eur(r.depenses) + m.suffixe], ["Épargne", eur(r.epargne) + m.suffixe],
       ["Reste", r.reste == null ? "—" : eur(r.reste) + m.suffixe]]) +
       '<p class="pv-note">Reste = revenus − dépenses − épargne. ' + (r.reste == null ? "Il se calcule une fois le budget rempli." : r.negatif ? "Il est négatif : le budget dépense plus qu'il ne reçoit." : "C'est la marge qui te reste chaque mois après tes dépenses et ton épargne prévue.") + "</p>" +
@@ -406,7 +412,7 @@
     const pr = lignesProfil(S && S.profil, scope(), people(), C()), connus = pr.rev.map(([l, v]) => ({ libelle: l, mensuel: v })).concat(pr.dep.map(([l, v]) => ({ libelle: l, mensuel: v })));
     return '<div class="pv-vide"><h3>Ton budget est vide</h3>' +
       "<p>En quelques lignes (logement, courses, transport, épargne…), le budget donne trois repères que le reste de Boussole ne peut pas deviner :</p>" +
-      "<ul><li><b>ton taux d'épargne</b>, la part des revenus mise de côté chaque mois ;</li>" +
+      "<ul><li><b>ta capacité d'épargne</b>, la part de tes revenus qui reste après les dépenses chaque mois ;</li>" +
       "<li><b>ton matelas en mois de dépenses</b>, pour savoir combien de temps tu tiendrais sans revenu ;</li>" +
       "<li><b>ton score de santé</b> financière, affiché dans Pilotage › Santé.</li></ul>" +
       "<p>Claude le remplit avec toi, à partir de tes réponses ou d'un relevé bancaire ; tu valides ensuite ses propositions.</p>" +
@@ -440,7 +446,7 @@
   const QUESTIONS_RESUME = {
     revenu: "Mes revenus dans Boussole sont-ils complets ? Aide-moi à vérifier ce qui manque.",
     depense: "Analyse mes dépenses par catégorie dans Boussole : où puis-je économiser sans me priver ?",
-    epargne: "Mon taux d'épargne dans Boussole est-il suffisant, et comment l'améliorer ?",
+    epargne: "Ma capacité d'épargne dans Boussole est-elle suffisante, et comment l'améliorer ?",
     reste: "Que faire du reste de mon budget chaque mois dans Boussole : épargne de précaution, objectifs, placements ?",
   };
   function contenuPanneau(g, r) {
@@ -537,7 +543,7 @@
     const L = lignes();
     if (!L.length) return "Budget à remplir";
     const t = window.Plan.budgetTotaux(L, S.profil, S.scope).tauxEpargne;
-    return t == null ? "Budget à remplir" : Math.round(t * 100) + " % épargnés";
+    return t == null ? "Budget à remplir" : Math.round(t * 100) + " % de capacité d'épargne";
   }
 
   const api = { mount, update, show, headline };

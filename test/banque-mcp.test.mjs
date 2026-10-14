@@ -425,7 +425,9 @@ const BUDGET_REEL = {
   par_mois: [{ mois: "2026-07-01", revenus: 3000, depenses: 1000, epargne: 200 }, { mois: "2026-08-01", revenus: 3000, depenses: 1460, epargne: 400 },
     { mois: "2026-09-01", revenus: 3200, depenses: 1300, epargne: 300 }],
   moyenne: { revenus: 3066.67, depenses: 1253.33, epargne: 300 },
-  taux_epargne_reel_pct: 9.8,
+  taux_capacite_pct: 59.1,        // capacité d'épargne = (revenus − dépenses) ÷ revenus
+  taux_epargne_versee_pct: 9.8,   // épargne versée = épargne nette ÷ revenus
+  taux_epargne_reel_pct: 9.8,     // alias déprécié de taux_epargne_versee_pct
 };
 
 test("budgetReel : banque_mois par compte, comptes courants suivis, 3 derniers mois complets, épargne nette des retours, virements internes exclus", { skip: SANS_STRIP }, () => {
@@ -433,11 +435,17 @@ test("budgetReel : banque_mois par compte, comptes courants suivis, 3 derniers m
   const r = B.budgetReel(MOIS_BUDGET, COMPTES_BUDGET, TODAY);
   const { note, ...rest } = r;
   assert.deepEqual(J(rest), BUDGET_REEL, "mai (au-delà des 3 derniers mois complets), juin (sans compte) et octobre (en cours) écartés");
-  for (const k of [/courants/, /virements internes/, /débit différé/, /retours d'épargne/, /3 derniers mois complets/]) assert.match(note, k);
+  for (const k of [/courants/, /virements internes/, /débit différé/, /retours d'épargne/, /3 derniers mois complets/, /Capacité d'épargne = \(revenus − dépenses\) ÷ revenus/, /Épargne versée = épargne nette ÷ revenus/]) assert.match(note, k);
+  assert.doesNotMatch(note, /taux d'épargne/i);
   // aucun compte courant, ou aucun mois complet : null ; revenus nuls : taux null ; montants en texte (numeric) tolérés
   assert.equal(B.budgetReel(MOIS_BUDGET, COMPTES.filter(c => c.type !== "courant"), TODAY), null);
   assert.equal(B.budgetReel(MOIS_BUDGET.filter(m => m.mois >= "2026-10-01"), COMPTES_BUDGET, TODAY), null);
   assert.equal(B.budgetReel([mc("2026-09-01", 101, "logement", 0, 800)], COMPTES_BUDGET, TODAY).taux_epargne_reel_pct, null);
+  const sansRev = B.budgetReel([mc("2026-09-01", 101, "logement", 0, 800)], COMPTES_BUDGET, TODAY);
+  assert.deepEqual([sansRev.taux_capacite_pct, sansRev.taux_epargne_versee_pct], [null, null], "revenus nuls : aucun des deux taux");
+  const neg = B.budgetReel([mc("2026-09-01", 101, "revenus", 1000, 0), mc("2026-09-01", 101, "logement", 0, 1500)], COMPTES_BUDGET, TODAY);
+  assert.deepEqual([neg.taux_capacite_pct, neg.taux_epargne_versee_pct], [-50, 0], "dépenses > revenus : capacité négative, rien de versé");
+  assert.equal(B.budgetReel(MOIS_BUDGET, COMPTES_BUDGET, TODAY).taux_epargne_reel_pct, B.budgetReel(MOIS_BUDGET, COMPTES_BUDGET, TODAY).taux_epargne_versee_pct, "alias déprécié = épargne versée");
   assert.deepEqual(J(B.budgetReel(MOIS_BUDGET.map(m => ({ ...m, entrees: String(m.entrees), sorties: String(m.sorties) })), COMPTES_BUDGET, TODAY).moyenne), BUDGET_REEL.moyenne);
   // totaux sans compte (forme de BQ1) : lignes prises telles quelles
   const sans = B.budgetReel([{ mois: "2026-09-01", categorie: "revenus", entrees: 2000, sorties: 0 }, { mois: "2026-09-01", categorie: "logement", entrees: 0, sorties: 500 }], COMPTES, TODAY);
@@ -455,7 +463,10 @@ test("budgetReel : parité avec Calc.budgetReel (web/src/calc.js) sur les mêmes
     const a = B.budgetReel(mois, COMPTES_BUDGET, auj), c = Calc.budgetReel({ actif: true, comptes: COMPTES_BUDGET, mois }, auj);
     assert.deepEqual([a.mois_compares[0], a.mois_compares.at(-1), a.mois_compares.length], [c.du, c.au, c.n], "mêmes mois retenus");
     for (const k of ["revenus", "depenses", "epargne"]) assert.equal(a.moyenne[k], Math.round(c[k] * 100) / 100, k);
-    assert.equal(a.taux_epargne_reel_pct, c.tauxEpargne == null ? null : Math.round(c.tauxEpargne * 1000) / 10);
+    const pct = (v) => v == null ? null : Math.round(v * 1000) / 10;
+    assert.equal(a.taux_epargne_versee_pct, pct(c.tauxEpargne), "épargne versée ÷ revenus");
+    assert.equal(a.taux_epargne_reel_pct, pct(c.tauxEpargne), "alias déprécié");
+    assert.equal(a.taux_capacite_pct, pct(c.tauxCapacite), "capacité d'épargne (revenus − dépenses) ÷ revenus");
     if ("parCompte" in c) assert.equal(a.detail_par_compte, c.parCompte);
   }
 });
@@ -481,6 +492,11 @@ test("lire_banque : mois par compte (par_compte), budget_reel calculé sur banqu
   assert.deepEqual(ecritures(db), [], "lecture seule");
   assert.match(B0().T.lire_banque.def.description, /par_compte/);
   assert.match(B0().T.lire_banque.def.description, /budget_reel/);
+  const dsc = B0().T.lire_banque.def.description;
+  assert.match(dsc, /taux_capacite_pct \(capacité d'épargne = \(revenus − dépenses\) ÷ revenus\)/);
+  assert.match(dsc, /taux_epargne_versee_pct \(épargne versée = épargne nette ÷ revenus\)/);
+  assert.match(dsc, /taux_epargne_reel_pct[^.]*déprécié/);
+  assert.doesNotMatch(dsc, /taux d'épargne/i, "un seul vocabulaire : capacité d'épargne / épargne versée");
 });
 const B0 = () => banqueSrv(dbBanque());
 

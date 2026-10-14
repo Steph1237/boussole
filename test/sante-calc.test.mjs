@@ -136,10 +136,12 @@ describe("contrat de critère (spec § 3)", () => {
 });
 
 describe("jeu p1 : corrections de justesse (spec § 1)", () => {
-  test("taux d'épargne réel prioritaire : capacité réelle (revenus − dépenses) ÷ revenus ≈ 13,4 %, épargne versée affichée à part", () => {
+  test("capacité d'épargne réelle prioritaire : capacité réelle (revenus − dépenses) ÷ revenus ≈ 13,4 %, épargne versée affichée à part", () => {
     const e = crit(evalP1(), "epargne");
     proche(e.valeur, (5800 - 5020) / 5800, "capacité réelle");
     assert.equal(e.mesure.valeur, 13.4);
+    assert.equal(e.titre, "Capacité d'épargne", "un seul vocabulaire : « Capacité d'épargne » (revenus − dépenses), « Épargne versée » à part");
+    assert.match(e.regle, /^Capacité d'épargne = \(revenus − dépenses\) ÷ revenus/);
     assert.equal(e.points, Math.round(Plan.BAREMES.epargne((5800 - 5020) / 5800 * 100)));
     assert.equal(e.source_donnees, "réel, juillet à septembre 2026");
     assert.match(e.texte, /^Tu dégages 13 % de tes revenus \(revenus − dépenses\), d'après tes comptes \(juillet à septembre 2026\), dont 600 € par mois versés sur ton épargne\.$/);
@@ -150,6 +152,7 @@ describe("jeu p1 : corrections de justesse (spec § 1)", () => {
     assert.match(e.regle, /\(revenus − dépenses\) ÷ revenus/);
     assert.ok(e.ameliorer.every(a => /^Dégage /.test(a.action)), "réel : dégager une capacité, pas seulement verser");
     const prevu = crit(evalP1({ banque: null }), "epargne");
+    assert.equal(prevu.titre, "Capacité d'épargne");
     assert.equal(prevu.source_donnees, "budget prévu");
     assert.ok(prevu.valeur > 0.3, "sans banque : budget prévu");
     assert.equal(crit(evalP1({ scope: "p1" }), "epargne").source_donnees, "budget prévu", "vue d'une personne : le réel est celui du foyer");

@@ -53,7 +53,7 @@
   /* Part d'une ligne de budget dans le périmètre : sans titulaire = commun (moitié pour p1 / p2). */
   const partLigne = (l, scope) => Calc.partCredit(scope, l.owner === "p1" || l.owner === "p2" ? l.owner : "commun");
 
-  /** Totaux mensuels du budget : revenus (profil + lignes), dépenses (lignes + mensualités), épargne, reste, taux d'épargne. */
+  /** Totaux mensuels du budget : revenus (profil + lignes), dépenses (lignes + mensualités), épargne, reste, capacité d'épargne (tauxEpargne : même base que Plan.capaciteEpargne). */
   function budgetTotaux(lignes, profil, scope) {
     const L = (Array.isArray(lignes) ? lignes : []).filter(Boolean);
     const de = type => L.filter(l => l.type === type);
@@ -131,7 +131,7 @@
 
   const SCORE_MIN_CRITERES = 3;
 
-  /** Capacité d'épargne mensuelle : épargne prévue + reste positif (même base que le taux d'épargne). */
+  /** Capacité d'épargne mensuelle : épargne prévue + reste positif (même base que tauxEpargne de budgetTotaux). */
   const capaciteEpargne = t => t ? pos(t.epargne) + Math.max(0, +t.reste || 0) : 0;
 
   /** Répartit l'argent des poches entre objectifs, en cascade par priorité : une même ligne ne finance jamais
@@ -370,15 +370,15 @@
         : "Ta réserve couvre " + frc(mois) + " mois de dépenses : au-delà de 6 mois, une partie pourrait servir un objectif." };
   }
 
-  /** Taux d'épargne. o = { taux (fraction ou null), revenus, epargne (mensuelle : prévue, ou versée pour le réel), reste (prévu),
-      depenses (réel), source, periode, points, manque? }. Réel (spec cp4 § 1.2) : taux = capacité d'épargne (revenus − dépenses) ÷ revenus,
+  /** Capacité d'épargne. o = { taux (fraction ou null), revenus, epargne (mensuelle : prévue, ou versée pour le réel), reste (prévu),
+      depenses (réel), source, periode, points, manque? }. Réel (spec cp4 § 1.2) : taux = capacité d'épargne = (revenus − dépenses) ÷ revenus,
       l'épargne versée étant affichée à part (elle en est une partie ; le reste demeure sur les comptes courants). */
   function expliqueEpargne(o) {
     const f = BAREMES.epargne, repere = { texte: REPERES.epargne, zones: zones(f, 0, 30) };
     if (o.taux == null) return { repere, confiance: "absente",
-      pourquoi: "Pas de note : il faut tes revenus et tes dépenses (ou ton épargne) pour calculer ton taux d'épargne.",
+      pourquoi: "Pas de note : il faut tes revenus et tes dépenses (ou ton épargne) pour calculer ta capacité d'épargne.",
       manque: o.manque || ["Tes revenus et tes dépenses mensuels (budget, ou banque connectée)"],
-      ameliorer: [{ action: "Donne tes revenus et tes dépenses à Claude (ou connecte ta banque) pour calculer ton taux d'épargne.", gain_points: null }] };
+      ameliorer: [{ action: "Donne tes revenus et tes dépenses à Claude (ou connecte ta banque) pour calculer ta capacité d'épargne.", gain_points: null }] };
     const t = o.taux, pts = o.points, src = sourceBudget(o.source, o.periode), reel = o.source === "reel";
     const capacite = reel ? o.revenus - o.depenses : 0, reste = capacite - o.epargne;
     const calcul = reel
@@ -476,9 +476,9 @@
   }
 
   function itemEpargne(totaux) {
-    const base = { cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus" };
+    const base = { cle: "epargne", titre: "Capacité d'épargne", cible: "15 % des revenus ou plus" };
     if (!(totaux.revenus > 0) || (totaux.depensesLignes <= 0 && totaux.epargne <= 0)) return contrat({ ...base, valeur: null, aCompleter: true,
-      texte: "Budget incomplet.", piste: "Donne tes revenus et tes dépenses à Claude pour calculer ton taux d'épargne." }, expliqueEpargne({ taux: null }));
+      texte: "Budget incomplet.", piste: "Donne tes revenus et tes dépenses à Claude pour calculer ta capacité d'épargne." }, expliqueEpargne({ taux: null }));
     const t = totaux.tauxEpargne;
     const points = Math.round(BAREMES.epargne(t * 100));
     const piste = t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."

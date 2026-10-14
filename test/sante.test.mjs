@@ -111,7 +111,7 @@ const R = (criteres, o = {}) => Object.assign(P.agreger(criteres), { criteres },
 /* Jeu d'en-tête : pertes = (20 − points) ÷ (20 × critères notés de la famille) × 100 × poids ÷ poids notés. */
 const jeuEntete = () => R([
   N("matelas", { points: 14, statut: "surveiller", libelle: "Matelas de précaution", ameliorer: [{ action: "Porte ton matelas à 6 mois", gain_points: 6 }] }),
-  N("epargne", { famille: "effort", points: 8, statut: "travailler", libelle: "Taux d'épargne", ameliorer: [{ action: "Épargne 200 € de plus par mois", gain_points: 8 }] }),
+  N("epargne", { famille: "effort", points: 8, statut: "travailler", libelle: "Capacité d'épargne", ameliorer: [{ action: "Épargne 200 € de plus par mois", gain_points: 8 }] }),
   N("adequation", { famille: "allocation", points: 20 }),
   N("frais", { famille: "efficacite", points: 10, statut: "surveiller", ameliorer: [], piste: "Compare les frais de tes fonds" }),
   A("protection"),
@@ -267,7 +267,7 @@ test("coutsPrincipaux : points perdus = (20 − points) × poids, rapportés sur
   const r = jeuEntete();
   const c = SV.coutsPrincipaux(r, null);
   assert.deepEqual(c.map(x => [x.cle, x.points]), [["epargne", 15], ["matelas", 9], ["frais", 7.5]]);
-  assert.equal(c[0].nom, "Taux d'épargne");
+  assert.equal(c[0].nom, "Capacité d'épargne");
   assert.equal(c[0].action, "Épargne 200 € de plus par mois");
   assert.equal(c[2].action, "Compare les frais de tes fonds", "repli sur la piste");
   assert.equal(Math.round(100 - c.reduce((a, x) => a + x.points, 0)), r.total, "les pertes expliquent la note");
@@ -291,7 +291,7 @@ test("enteteHtml : anneau accessible, synthèse, couverture, provisoire, date, �
   assert.match(h, /<h3 class="st-h3" id="santeCoutsT">Ce qui te coûte le plus<\/h3>/);
   assert.deepEqual([...h.matchAll(/data-st-cout="([^"]+)"/g)].map(m => m[1]), ["epargne", "matelas", "frais"]);
   assert.match(h, /<button type="button" class="st-cout" data-ui-carte="epargne" data-st-cout="epargne" aria-haspopup="dialog">/);
-  assert.match(h, /<span class="st-cout-nom">Taux d&#39;épargne<\/span>/);
+  assert.match(h, /<span class="st-cout-nom">Capacité d&#39;épargne<\/span>/);
   assert.match(h, /15 points de ta note globale/);
   assert.match(h, /7,5 points de ta note globale/);
   assert.doesNotMatch(h, /pts en jeu/);

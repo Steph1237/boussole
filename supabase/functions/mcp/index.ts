@@ -125,7 +125,7 @@ const INSTRUCTIONS = [
   "Objectifs datés (list_objectifs, upsert_objectifs, delete_objectif) : apport, matelas, retraite ou projet, avec cible, échéance, montant déjà réuni (saisi ou poches rattachées), rendement attendu et priorité ; list_objectifs calcule l'effort mensuel requis et le statut.",
   "Réglages (get_config, update_config) : update_config modifie directement, après l'accord de l'utilisateur dans la conversation, les seules préférences sans montant du bilan (cibles d'allocation en %, règles d'alerte, ordres à passer, échéances, hypothèses) ; l'utilisateur peut mettre une règle en pause dans Boussole.",
   "Matelas, versements programmés et classes (regler_matelas, regler_versements, corriger_classe) : ces réglages passent par des propositions, comme le bilan. regler_matelas propose la cible du matelas de précaution, en montant (minimum, maximum facultatif) ou en mois de dépenses. regler_versements propose la liste complète des versements programmés (mode remplacer : lis get_config et renvoie tous les versements à garder avec leur id ; un versement absent est supprimé), appliqués chaque nuit par Boussole sur la ligne visée. corriger_classe propose la classe d'actifs d'une poche quand celle déduite de son nom ne correspond pas à son contenu (null : retour à la classe automatique). Demande toujours la valeur à l'utilisateur et récapitule avant de déposer.",
-  "get_overview inclut un score de santé financière sur 100 (matelas, taux d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels. Scores honnêtes : sante.total vaut null sous 3 critères calculés (sante.calcules) et bonnes_pratiques.provisoire est vrai quand moins de 60 % des critères sont notés (bonnes_pratiques.couverture, couverture_texte) : dis-le plutôt que d'annoncer une note. Un critère « a_completer » n'a pas de note (points null) : dis ce qui manque (manque). Explique une note par son calcul (pourquoi, calcul, avec les chiffres de l'utilisateur) et ses actions chiffrées (ameliorer, couts_principaux), jamais par une recommandation de produit.",
+  "get_overview inclut un score de santé financière sur 100 (matelas, capacité d'épargne, endettement, diversification, patrimoine net selon l'âge), les bonnes pratiques notées (Sécurité, Effort, Allocation, Efficacité ; chaque critère avec sa règle, sa source et une piste) et le profil de risque : ce sont des indicateurs pédagogiques, pas un conseil en investissement ; présente-les comme tels. Scores honnêtes : sante.total vaut null sous 3 critères calculés (sante.calcules) et bonnes_pratiques.provisoire est vrai quand moins de 60 % des critères sont notés (bonnes_pratiques.couverture, couverture_texte) : dis-le plutôt que d'annoncer une note. Un critère « a_completer » n'a pas de note (points null) : dis ce qui manque (manque). Explique une note par son calcul (pourquoi, calcul, avec les chiffres de l'utilisateur) et ses actions chiffrées (ameliorer, couts_principaux), jamais par une recommandation de produit.",
   "Profil de risque (get_risk_profile, set_risk_answers) : questionnaire de l'application (Prudent, Modéré, Équilibré, Dynamique, Offensif), allocation réelle par classe comparée aux fourchettes du profil, profil équivalent du portefeuille réel. Pose les questions avec l'outil formulaire (champs risque.*), ou en texte à défaut, et enregistre les seules réponses choisies par l'utilisateur (set_risk_answers en texte), jamais une réponse déduite ; le profil définitif est calculé par l'application après validation. Parle de classes d'actifs et de comportements, jamais de produits à acheter.",
   "Protection (set_protection) : prévoyance et assurance emprunteur déclarées par l'utilisateur.",
   "Frais, zone et devise des fonds (annotate_instrument, écriture directe : donnée publique du fonds, non personnelle) : renseigne-les seulement pour un fonds détenu, à partir d'une source consultée (document d'informations clés / DIC-KID, page officielle de l'émetteur), citée dans source (URL ou référence du document). Source obligatoire ; n'invente jamais un TER ni une zone : sans source fiable, ne renseigne rien et dis-le. Le TER s'exprime en % par an (0.2 pour 0,20 %).",
@@ -435,7 +435,8 @@ const viewTotaux = (t: Totaux) => ({
   revenus_profil: r2(t.revenusProfil), revenus_lignes: r2(t.revenusLignes), revenus: r2(t.revenus),
   depenses_lignes: r2(t.depensesLignes), mensualites_credits: r2(t.mensualites), depenses: r2(t.depenses),
   epargne: r2(t.epargne), reste: r2(t.reste),
-  taux_epargne: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000,
+  taux_capacite: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000, // capacité d'épargne prévue = (épargne + reste positif) ÷ revenus
+  taux_epargne: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000, // DÉPRÉCIÉ : ancien nom de taux_capacite
   par_categorie: Object.fromEntries(Object.entries(t.parCategorie).map(([k, v]) => [k, r2(v)])),
 });
 
@@ -655,9 +656,9 @@ function expliqueMatelas(o: any): Explication {
 function expliqueEpargne(o: any): Explication {
   const f = BAREMES.epargne, repere = { texte: REPERES.epargne, zones: zones(f, 0, 30) };
   if (o.taux == null) return { repere, confiance: "absente",
-    pourquoi: "Pas de note : il faut tes revenus et tes dépenses (ou ton épargne) pour calculer ton taux d'épargne.",
+    pourquoi: "Pas de note : il faut tes revenus et tes dépenses (ou ton épargne) pour calculer ta capacité d'épargne.",
     manque: o.manque || ["Tes revenus et tes dépenses mensuels (budget, ou banque connectée)"],
-    ameliorer: [{ action: "Donne tes revenus et tes dépenses à Claude (ou connecte ta banque) pour calculer ton taux d'épargne.", gain_points: null }] };
+    ameliorer: [{ action: "Donne tes revenus et tes dépenses à Claude (ou connecte ta banque) pour calculer ta capacité d'épargne.", gain_points: null }] };
   const t = o.taux, pts = o.points, src = sourceBudget(o.source, o.periode), reel = o.source === "reel";
   const capacite = reel ? o.revenus - o.depenses : 0, reste = capacite - o.epargne;
   const calcul = reel
@@ -752,9 +753,9 @@ function itemMatelas(d: Donnees, scope: string, totaux: Totaux): Item {
 }
 
 function itemEpargne(totaux: Totaux): Item {
-  const base = { cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus" };
+  const base = { cle: "epargne", titre: "Capacité d'épargne", cible: "15 % des revenus ou plus" };
   if (!(totaux.revenus > 0) || (totaux.depensesLignes <= 0 && totaux.epargne <= 0)) return contrat({ ...base, valeur: null, aCompleter: true,
-    texte: "Budget incomplet.", piste: "Donne tes revenus et tes dépenses à Claude pour calculer ton taux d'épargne." } as Item, expliqueEpargne({ taux: null }));
+    texte: "Budget incomplet.", piste: "Donne tes revenus et tes dépenses à Claude pour calculer ta capacité d'épargne." } as Item, expliqueEpargne({ taux: null }));
   const t = totaux.tauxEpargne as number;
   const points = Math.round(BAREMES.epargne(t * 100));
   const piste = t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."
@@ -963,8 +964,8 @@ function moisCourants(banque: any): any[] {
 }
 const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
 /** Moyenne des nb (3) derniers mois complets : revenus, dépenses (toutes catégories hors revenus, épargne et virements internes),
-    épargne versée, tauxEpargne = épargne versée ÷ revenus, capacité d'épargne réelle (capacite = revenus − dépenses, tauxCapacite =
-    capacite ÷ revenus : taux d'épargne de Santé, spec cp4 § 1.2) ; parCompte : chaque mois retenu détaillé par compte (sinon totaux de
+    épargne versée (versements d'épargne et d'investissement), tauxEpargne = épargne versée ÷ revenus (« Épargne versée » en %), capacité d'épargne réelle (capacite = revenus − dépenses, tauxCapacite =
+    capacite ÷ revenus : capacité d'épargne de Santé, spec cp4 § 1.2) ; parCompte : chaque mois retenu détaillé par compte (sinon totaux de
     tous les comptes connectés) ; null sans mois complet. Parité testée avec Calc.budgetReel. */
 function budgetReel(banque: any, auj: string, nb = 3) {
   if (!banque || banque.actif === false) return null;
@@ -1215,7 +1216,7 @@ const aCompleter = (famille: string, cle: string, b: Base, texte: string, piste:
 
 const DE_PLAN: Record<string, { famille: string; regle: string; source: string }> = {
   matelas: { famille: "securite", regle: "Matelas = (épargne disponible + comptes courants au-delà de la réserve) ÷ dépenses mensuelles ; réserve = 1 mois de dépenses par défaut (réglable) ; dépenses réelles des comptes courants si connues, sinon budget prévu ; repère 3 à 6 mois", source: "Repère courant en gestion de patrimoine" },
-  epargne: { famille: "effort", regle: "Taux d'épargne = capacité d'épargne ÷ revenus : (revenus − dépenses) ÷ revenus d'après les comptes courants (3 derniers mois complets) si la banque est connectée, l'épargne versée étant affichée à part ; sinon (épargne prévue + reste du mois) ÷ revenus du budget ; repère 15 % ou plus", source: "Repère courant en gestion de patrimoine" },
+  epargne: { famille: "effort", regle: "Capacité d'épargne = (revenus − dépenses) ÷ revenus d'après les comptes courants (3 derniers mois complets) si la banque est connectée, l'épargne versée étant affichée à part ; sinon (épargne prévue + reste du mois) ÷ revenus du budget ; repère 15 % ou plus", source: "Repère courant en gestion de patrimoine" },
   endettement: { famille: "effort", regle: "Endettement = mensualités de crédit ÷ revenus ; plafond 35 %", source: "HCSF, décision D-HCSF-2021-7" },
   concentration: { famille: "allocation", regle: "Poids de la plus grosse ligne dans le financier ; repère 20 % au plus et au moins 3 poches",
     source: "Principe de diversification ; repère courant en gestion de patrimoine" },
@@ -1257,7 +1258,7 @@ const zoneDe = (p: any) => p.instrument?.zone ?? null;
 const deviseDe = (p: any) => p.instrument?.devise ?? null;
 
 /** banque (facultatif) : { comptes, mois } de banque_comptes / banque_mois, pour le budget réel des comptes courants (matelas, argent
-    dormant, taux d'épargne) ; absente : celle des données chargées (d.banque, chargerDonnees). */
+    dormant, capacité d'épargne) ; absente : celle des données chargées (d.banque, chargerDonnees). */
 type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string; banque?: any };
 type DepRef = { montant: number; source: string; periode?: string } | null;
 
@@ -1417,11 +1418,11 @@ function bpApport(c: ContexteBP, deja: Record<string, number>): Critere | null {
     pourquoi: eurP(reuni) + " réunis sur " + eurP(cible) + " visés" + (attendus > 0 ? " ; les " + eurP(attendus) + " à recevoir ne comptent pas encore." : ".") });
 }
 
-/** Taux d'épargne réel (Pratiques.epargneReelle) : capacité d'épargne (revenus − dépenses) ÷ revenus des comptes courants
+/** Capacité d'épargne réelle (Pratiques.epargneReelle) : (revenus − dépenses) ÷ revenus des comptes courants
     (tauxCapacite), épargne versée affichée à part ; barème du score de santé. */
 function bpEpargneReelle(reel: any, periode: string): Critere {
   const t = reel.tauxCapacite as number, points = Math.round(BAREMES.epargne(t * 100));
-  return contrat({ cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus", valeur: t, points, sur: 20, aCompleter: false,
+  return contrat({ cle: "epargne", titre: "Capacité d'épargne", cible: "15 % des revenus ou plus", valeur: t, points, sur: 20, aCompleter: false,
     texte: t < 0 ? "Tes dépenses dépassent tes revenus de " + eurP(-reel.capacite) + " par mois, d'après tes comptes (" + periode + ")."
       : "Tu dégages " + pctP(t) + " de tes revenus (revenus − dépenses), d'après tes comptes (" + periode + "), dont " + eurP(reel.epargne) + " par mois versés sur ton épargne.",
     piste: t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."
@@ -1839,7 +1840,7 @@ function bonnesPratiques(c: ContexteBP) {
   const totaux = budgetTotaux(d, scope);
   const cu = d.config?.cushion;
   const prevu = totaux.depensesLignes > 0 ? totaux.depenses : cu && typeof cu === "object" && cu.mode === "months" && pos(cu.depenses) > 0 ? pos(cu.depenses) : 0;
-  /* Dépenses de référence (matelas, argent dormant) et taux d'épargne : budget réel des comptes courants (foyer seulement), sinon budget prévu. */
+  /* Dépenses de référence (matelas, argent dormant) et capacité d'épargne : budget réel des comptes courants (foyer seulement), sinon budget prévu. */
   const reel = scope === "foyer" ? budgetReel(c.banque ?? c.d.banque, c.ref) : null;
   const periode = reel ? periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
   const depRef: DepRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
@@ -2004,7 +2005,7 @@ const BilanEtat = (() => {
     const rev: Q[] = [];
     ["p1"].concat(deux ? ["p2"] : []).forEach((k) => {
       const p = ps[k] || {};
-      if (!(num(p.salaire) > 0)) rev.push(q("personnes." + k + ".salaire", (nomDe(pr, k) === "toi" ? "Quel est ton salaire" : "Quel est le salaire de " + nomDe(pr, k)) + " (net ou brut, par mois ou par an) ?", "C'est la base du taux d'épargne, de l'endettement et de la capacité d'emprunt."));
+      if (!(num(p.salaire) > 0)) rev.push(q("personnes." + k + ".salaire", (nomDe(pr, k) === "toi" ? "Quel est ton salaire" : "Quel est le salaire de " + nomDe(pr, k)) + " (net ou brut, par mois ou par an) ?", "C'est la base de la capacité d'épargne, de l'endettement et de la capacité d'emprunt."));
       if (!has(p.statut)) rev.push(q("personnes." + k + ".statut", nomDe(pr, k) === "toi" ? "Es-tu cadre ou non-cadre ?" : majuscule(nomDe(pr, k)) + " est-il cadre ou non-cadre ?", "Utile pour convertir un salaire brut en net."));
     });
     out.push({ cle: "revenus", titre: "Revenus", total: deux ? 4 : 2, manquants: rev });
@@ -2012,7 +2013,7 @@ const BilanEtat = (() => {
     // 3. Budget
     const lignes: any[] = (S.budget && Array.isArray(S.budget.lignes)) ? S.budget.lignes : [];
     const bud: Q[] = [];
-    if (!lignes.some((l) => l.type === "depense")) bud.push(q("budget.depenses", "Quelles sont tes principales dépenses mensuelles (logement, courses, transport, abonnements…) ? Un relevé bancaire collé suffit.", "Sans dépenses, impossible de mesurer ton matelas en mois et ton taux d'épargne."));
+    if (!lignes.some((l) => l.type === "depense")) bud.push(q("budget.depenses", "Quelles sont tes principales dépenses mensuelles (logement, courses, transport, abonnements…) ? Un relevé bancaire collé suffit.", "Sans dépenses, impossible de mesurer ton matelas en mois et ta capacité d'épargne."));
     if (!lignes.some((l) => l.type === "epargne")) bud.push(q("budget.epargne", "Combien mets-tu de côté chaque mois, et où ?", "L'épargne régulière alimente tes objectifs et tes projections."));
     out.push({ cle: "budget", titre: "Budget", total: 2, manquants: bud });
 
@@ -2755,7 +2756,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
 
   server.registerTool("get_budget", {
     title: "Budget mensuel",
-    description: "Lignes du budget (revenus, dépenses par catégorie, épargne ; montant par mois ou par an ; titulaire p1, p2 ou commun) et totaux mensuels par périmètre (foyer, p1, p2). Les revenus incluent les salaires, autres revenus et loyers du profil ; les dépenses incluent les mensualités de crédit du profil. taux_epargne = (épargne + reste positif) / revenus.",
+    description: "Lignes du budget (revenus, dépenses par catégorie, épargne ; montant par mois ou par an ; titulaire p1, p2 ou commun) et totaux mensuels par périmètre (foyer, p1, p2). Les revenus incluent les salaires, autres revenus et loyers du profil ; les dépenses incluent les mensualités de crédit du profil. taux_capacite = capacité d'épargne prévue = (épargne + reste positif) ÷ revenus (taux_epargne est son ancien nom, déprécié).",
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => {
@@ -2821,7 +2822,8 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
     const resume = (list: any[]) => {
       const t = budgetTotaux({ ...d, lignes: list }, "foyer");
       return { nombre_lignes: list.length, revenus: r2(t.revenus), depenses: r2(t.depenses), epargne: r2(t.epargne), reste: r2(t.reste),
-        taux_epargne: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000 };
+        taux_capacite: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000,
+        taux_epargne: t.tauxEpargne == null ? null : Math.round(t.tauxEpargne * 10000) / 10000 /* DÉPRÉCIÉ : ancien nom de taux_capacite */ };
     };
     return deposer(items, a, { mode, budget_actuel: resume(before), budget_si_tout_est_valide: resume(after) });
   }));

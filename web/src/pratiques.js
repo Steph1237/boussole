@@ -25,9 +25,9 @@
    Reprend Plan.score pour matelas, épargne, endettement et concentration (mêmes barèmes et points).
    Comptes courants (Calc.famille « courant », spec cp1 § 1) : comptés dans le patrimoine net et dans le matelas au-delà d'une
    réserve (Calc.matelasDisponible), mais exclus de la famille Allocation (adéquation, diversification, géographie, spéculatif,
-   devises). Dépenses de référence (matelas, argent dormant) et taux d'épargne : budget réel des comptes courants (ctx.banque, foyer
-   seulement) s'il existe, sinon budget prévu ; le taux d'épargne réel est la capacité d'épargne (revenus − dépenses) ÷ revenus,
-   l'épargne versée étant affichée à part. Projets proches (objectifs à moins de 3 ans, hors objectifs de type matelas ; un objectif
+   devises). Dépenses de référence (matelas, argent dormant) et capacité d'épargne : budget réel des comptes courants (ctx.banque, foyer
+   seulement) s'il existe, sinon budget prévu ; la capacité d'épargne réelle est (revenus − dépenses) ÷ revenus,
+   l'épargne versée (versements d'épargne et d'investissement) étant affichée à part. Projets proches (objectifs à moins de 3 ans, hors objectifs de type matelas ; un objectif
    sans montant rend le critère « à compléter ») : seul l'argent disponible ET peu risqué compte (épargne, monétaire, fonds en euros,
    obligations courtes identifiées), moins le matelas visé (config.cushion), qui reste pour les imprévus. Apport : poches rattachées
    à l'objectif, « à recevoir » à part. Frais des supports : frais courants des fonds (instruments.ter, en % par an) + frais
@@ -114,7 +114,7 @@
   const DE_PLAN = {
     matelas: { famille: "securite", regle: "Matelas = (épargne disponible + comptes courants au-delà de la réserve) ÷ dépenses mensuelles ; réserve = 1 mois de dépenses par défaut (réglable) ; dépenses réelles des comptes courants si connues, sinon budget prévu ; repère 3 à 6 mois",
       source: "Repère courant en gestion de patrimoine", lien: "patrimoine/budget" },
-    epargne: { famille: "effort", regle: "Taux d'épargne = capacité d'épargne ÷ revenus : (revenus − dépenses) ÷ revenus d'après les comptes courants (3 derniers mois complets) si la banque est connectée, l'épargne versée étant affichée à part ; sinon (épargne prévue + reste du mois) ÷ revenus du budget ; repère 15 % ou plus",
+    epargne: { famille: "effort", regle: "Capacité d'épargne = (revenus − dépenses) ÷ revenus d'après les comptes courants (3 derniers mois complets) si la banque est connectée, l'épargne versée étant affichée à part ; sinon (épargne prévue + reste du mois) ÷ revenus du budget ; repère 15 % ou plus",
       source: "Repère courant en gestion de patrimoine", lien: "patrimoine/budget" },
     endettement: { famille: "effort", regle: "Endettement = mensualités de crédit ÷ revenus ; plafond 35 %",
       source: "HCSF, décision D-HCSF-2021-7", lien: "compte/donnees" },
@@ -310,11 +310,11 @@
       pourquoi: eur(reuni) + " réunis sur " + eur(cible) + " visés" + (attendus > 0 ? " ; les " + eur(attendus) + " à recevoir ne comptent pas encore." : ".") });
   }
 
-  /** Taux d'épargne réel (spec cp4 § 1.2) : capacité d'épargne (revenus − dépenses) ÷ revenus des comptes courants (Calc.budgetReel :
+  /** Capacité d'épargne réelle (spec cp4 § 1.2) : (revenus − dépenses) ÷ revenus des comptes courants (Calc.budgetReel :
       tauxCapacite) ; l'épargne versée est affichée à part (elle en est une partie) ; barème de Plan.score. */
   function epargneReelle(reel, periode) {
     const t = reel.tauxCapacite, points = Math.round(Plan.BAREMES.epargne(t * 100));
-    return Plan.contrat(Object.assign({ cle: "epargne", titre: "Taux d'épargne", cible: "15 % des revenus ou plus", valeur: t, points, sur: 20, aCompleter: false,
+    return Plan.contrat(Object.assign({ cle: "epargne", titre: "Capacité d'épargne", cible: "15 % des revenus ou plus", valeur: t, points, sur: 20, aCompleter: false,
       texte: t < 0 ? "Tes dépenses dépassent tes revenus de " + eur(-reel.capacite) + " par mois, d'après tes comptes (" + periode + ")."
         : "Tu dégages " + pct(t) + " de tes revenus (revenus − dépenses), d'après tes comptes (" + periode + "), dont " + eur(reel.epargne) + " par mois versés sur ton épargne.",
       piste: t >= 0.15 ? "Tu es au-dessus du repère de 15 % : de quoi alimenter tes objectifs régulièrement."

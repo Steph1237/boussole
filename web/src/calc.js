@@ -185,8 +185,8 @@
   /** Budget réel moyen des nb (3) derniers mois complets (mois en cours exclu), comptes courants seulement :
       revenus = entrées − sorties de « revenus » ; épargne = sorties − entrées de « epargne » (virements vers l'épargne et
       l'investissement) ; dépenses = sorties − entrées de toutes les autres catégories ; virements internes exclus.
-      tauxEpargne = épargne versée ÷ revenus (moyennes de la période ; même chiffre que lire_banque, banque.ts). Capacité d'épargne réelle
-      (spec cp4 § 1.2, critère « Taux d'épargne » de Santé) : capacite = revenus − dépenses, tauxCapacite = capacite ÷ revenus (l'épargne
+      tauxEpargne = « Épargne versée » : versements d'épargne et d'investissement ÷ revenus (moyennes de la période ; même chiffre que lire_banque, banque.ts). « Capacité d'épargne » réelle
+      (spec cp4 § 1.2, critère « Capacité d'épargne » de Santé) : capacite = revenus − dépenses, tauxCapacite = capacite ÷ revenus (l'épargne
       versée en est une partie, affichée à part). parCompte : vrai si chaque mois retenu est détaillé par compte
       (chiffres des seuls comptes courants) ; faux sinon (totaux de tous les comptes connectés : libellé « tous comptes connectés »).
       → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte } ou null (interrupteur éteint, aucun mois

@@ -325,11 +325,12 @@ test("contexte fiscalite-enveloppes : enveloppes typées, montants, ouverture de
   assert.equal(ctx("fiscalite-enveloppes", null, enLignes(DEMO, { profil: { foyer: { ...DEMO.profil.foyer, tmi: "41" } } })).tmi_pct, 41);
 });
 
-test("contexte budget-epargne : budget, matelas, taux d'épargne et objectifs (moteurs du plan)", { skip: SANS_STRIP }, () => {
+test("contexte budget-epargne : budget, matelas, capacité d'épargne et objectifs (moteurs du plan)", { skip: SANS_STRIP }, () => {
   const c = ctx("budget-epargne");
   const t = M.budgetTotaux(D0, "foyer");
   assert.equal(c.budget.revenus, Math.round(t.revenus)); assert.equal(c.budget.depenses, Math.round(t.depenses));
-  assert.equal(c.budget.taux_epargne_pct, Math.round(t.tauxEpargne * 1000) / 10);
+  assert.equal(c.budget.taux_capacite_pct, Math.round(t.tauxEpargne * 1000) / 10, "capacité d'épargne prévue");
+  assert.equal(c.budget.taux_epargne_pct, c.budget.taux_capacite_pct, "ancien nom conservé (déprécié)");
   assert.equal(Object.values(c.budget.depenses_par_categorie).length, Object.keys(t.parCategorie).length);
   const bp = M.bonnesPratiques({ d: D0, scope: "foyer", objectifs: enLignes(DEMO).objectifs, risque: null, classes: undefined, ref: TODAY });
   // critères en unités explicites : mois (matelas, argent dormant), jamais une fraction à côté de *_pct
