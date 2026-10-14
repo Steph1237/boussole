@@ -120,11 +120,11 @@ test("0027 repart exactement de 0026 : annoter_instrument (ter_par en plus) et a
     let j = 0;
     for (const l of avant.filter(l => apres.includes(l))) { j = apres.indexOf(l, j); assert.ok(j >= 0, nom + " : ordre " + l); j++; }
   }
-  // aucune autre migration après 0027 ne redéfinit ces fonctions (hors 0029, qui repart de 0027 pour appliquer_propositions : calendrier-pglite)
+  // aucune autre migration après 0027 ne redéfinit ces fonctions (hors 0029, qui repart de 0027 pour appliquer_propositions : calendrier-pglite, et 0031 qui repart de 0029 : projection-pglite)
   const dir = new URL("../supabase/migrations/", import.meta.url);
   const apres = readdirSync(dir).filter(f => /^\d{4}_.*\.sql$/.test(f) && f > "0027_frais_suite.sql")
     .filter(f => /function\s+public\.(appliquer_propositions|annoter_instrument|frais_a_chercher)\s*\(/.test(readFileSync(new URL(f, dir), "utf8")));
-  assert.deepEqual(apres, ["0029_calendrier.sql"]);
+  assert.deepEqual(apres, ["0029_calendrier.sql", "0031_projection.sql"]);
   await superu();
   const f = await un(`select p.prosecdef s, p.proconfig c, has_function_privilege('anon', p.oid, 'execute') anon,
     has_function_privilege('authenticated', p.oid, 'execute') auth from pg_proc p where p.oid = 'public.appliquer_propositions(uuid[], jsonb)'::regprocedure`);

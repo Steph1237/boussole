@@ -180,71 +180,24 @@ function incomeFor(h,target){
   return hi;
 }
 /* capacité d'emprunt */
-const LOAN={rates:{15:3.14,20:3.27,25:3.35},usure:{15:4.57,20:5.29,25:5.29},dti:.35,notaryAncien:.08,notaryPrimo:.075,notaryNeuf:.025,guarantee:.01,dossier:1000,rentShare:.7,ins:{u30:.10,a30:.15,a40:.25,a50:.45,a60:.80,a70:1.20},ageMax:{u30:29,a30:39,a40:49,a50:59,a60:69,a70:79}};
-const PTZ={res:{A:[49000,73500,88200,102900,117600,132300,147000,161700],B1:[34500,51750,62100,72450,82800,93150,103500,113850],B2:[31500,47250,56700,66150,75600,85050,94500,103950],C:[28500,42750,51300,59850,68400,76950,85500,94050]},
-  op:{A:[150000,225000,270000,315000,360000],B1:[135000,202500,243000,283500,324000],B2:[110000,165000,198000,231000,264000],C:[100000,150000,180000,210000,240000]},
-  coef:[1,1.5,1.8,2.1,2.4],tr:{A:[25000,31000,37000,49000],B1:[21500,26000,30000,34500],B2:[18000,22500,27000,31500],C:[15000,19500,24000,28500]},
-  quot:{coll:[.5,.4,.4,.2],indiv:[.3,.2,.2,.1]},rep:[[10,15],[8,12],[2,13],[0,10]]};
-function annuity(ratePct,years){const i=ratePct/100/12,n=years*12;return i===0?1/n:i/(1-Math.pow(1+i,-n))}
-function ptzInfo(o){
-  if(!o.primo)return{ok:false,why:'réservé aux personnes qui achètent leur première résidence principale'};
-  if(o.bien==='ancien'&&!(o.zone==='B2'||o.zone==='C'))return{ok:false,why:'dans l\'ancien, seulement en zone B2 ou C'};
-  if(o.bien==='ancien'&&!o.travaux)return{ok:false,why:'dans l\'ancien, il faut au moins 25 % de travaux'};
-  const n=Math.max(1,Math.min(8,o.persons)),n5=Math.min(5,n),res=Math.max(o.rfr,o.cost/9),plaf=PTZ.res[o.zone][n-1];
-  if(res>plaf)return{ok:false,why:'revenus retenus ('+eur(res)+') au-dessus du plafond ('+eur(plaf)+')',res,plaf};
-  let t=PTZ.tr[o.zone].findIndex(x=>res/PTZ.coef[n5-1]<=x);if(t<0)t=3;
-  const quot=(o.bien==='neuf'&&o.type==='indiv'?PTZ.quot.indiv:PTZ.quot.coll)[t],opCap=PTZ.op[o.zone][n5-1];
-  const amt=Math.max(0,Math.min(Math.min(o.cost,opCap)*quot,(t===0?1.25:1)*Math.max(0,o.mainLoan)));
-  const[diff,remb]=PTZ.rep[t],rembY=Math.max(1,Math.min(remb,o.years-diff));
-  return{ok:true,tranche:t+1,amt,diff,rembY,monthly:amt/(rembY*12),quot,opCap,res,plaf};
-}
-function taeg(C,fees,monthly,n){
-  if(!(C>fees)||!(monthly>0))return 0;const net=C-fees;let lo=0,hi=.05;
-  for(let k=0;k<80;k++){const r=(lo+hi)/2,pv=r===0?monthly*n:monthly*(1-Math.pow(1+r,-n))/r;if(pv>net)lo=r;else hi=r}
-  return (Math.pow(1+(lo+hi)/2,12)-1)*100;
-}
+/* Crédit : le code (annuité, PTZ, TAEG, plan de prêt, amortissement) est celui du moteur partagé (web/src/projection-credit.js, PROJ spec § 8.3),
+   déplacé sans changer les calculs. Les constantes viennent des repères datés du savoir commun (taux du jour, taux d'usure du trimestre, frais
+   d'acquisition, garantie, frais de dossier, pondération des loyers) ; LOAN.dti (plafond du simulateur) et LOAN.ins (assurance par âge) restent des
+   conventions de Rang. Sans repère, la valeur est null et le plan de prêt le dit (indispo) : jamais une valeur de secours. */
+const PC=(typeof window==='object'&&window.ProjectionCredit)?window.ProjectionCredit:require('./projection-credit.js');
+const LOAN_CONV={dti:.35,ins:{u30:.10,a30:.15,a40:.25,a50:.45,a60:.80,a70:1.20},ageMax:{u30:29,a30:39,a40:49,a50:59,a60:69,a70:79}};
+let LOAN=Object.assign(PC.constantesPret(null),LOAN_CONV);
+function chargerCredit(reperes){LOAN=Object.assign(PC.constantesPret(reperes),LOAN_CONV)}
+function annuity(ratePct,years){return PC.annuite(ratePct,years)}
+function ptzInfo(o){return PC.ptz(o,eur)}
+const taeg=PC.taeg;
+function loanIndispo(o){return{R:0,Mmax:0,C:0,mens:0,insM:0,monthly:0,dti:0,interest:0,insTotal:0,notary:0,notaryEur:0,guar:0,price:0,fees:0,rav:0,ptz:{ok:false,amt:0,monthly:0},taeg:0,usure:null,total:0,indispo:true}}
 function loanPlan(o){
-  const R=Math.max(0,o.incM)+LOAN.rentShare*Math.max(0,o.rentM||0),credits=Math.max(0,o.creditsM||0),Mmax=Math.max(0,LOAN.dti*R-credits);
-  const a=annuity(o.ratePct,o.years),ins=o.insPct/100/12,g=LOAN.guarantee,dossier=LOAN.dossier,apport=Math.max(0,o.apport);
-  const notary=o.bien==='neuf'?LOAN.notaryNeuf:o.primo?LOAN.notaryPrimo:LOAN.notaryAncien;
-  let ptz={ok:false,amt:0,monthly:0},C=0,price=0,guar=0;
-  const ptzFor=(cost,main)=>o.ptz?ptzInfo(Object.assign({},o.ptz,{cost,mainLoan:main,bien:o.bien,primo:o.primo,years:o.years})):{ok:false,amt:0,monthly:0,why:'non simulé'};
-  if(o.price==null){
-    let amt=0;
-    for(let it=0;it<80;it++){
-      const info=amt>0?ptzFor(price,C):null,monthlyPtz=info&&info.ok?amt/(info.rembY*12):0;
-      C=R>0?Math.max(0,Mmax-monthlyPtz)/(a+ins):0;guar=C>0?C*g+dossier:0;
-      price=Math.max(0,(C+amt+apport-guar)/(1+notary));
-      const nx=ptzFor(price,C),target=nx.ok?nx.amt:0;
-      if(Math.abs(target-amt)<.5){ptz=nx.ok?Object.assign(nx,{amt,monthly:amt/(nx.rembY*12)}):Object.assign(nx,{amt:0,monthly:0});break}
-      amt=amt+(target-amt)*.5;ptz=nx.ok?Object.assign(nx,{amt,monthly:amt/(nx.rembY*12)}):Object.assign(nx,{amt:0,monthly:0});
-    }
-    if(ptz.amt>0){C=R>0?Math.max(0,Mmax-ptz.monthly)/(a+ins):0;guar=C>0?C*g+dossier:0;price=Math.max(0,(C+ptz.amt+apport-guar)/(1+notary))}
-  }else{
-    price=Math.max(0,o.price);let amt=0;
-    for(let it=0;it<80;it++){
-      C=apport+amt>=price*(1+notary)?0:Math.max(0,(price*(1+notary)+dossier-apport-amt)/(1-g));
-      const nx=ptzFor(price,C),target=nx.ok?nx.amt:0;
-      if(Math.abs(target-amt)<.5){ptz=nx.ok?Object.assign(nx,{amt,monthly:amt/(nx.rembY*12)}):Object.assign(nx,{amt:0,monthly:0});break}
-      amt=amt+(target-amt)*.5;ptz=nx.ok?Object.assign(nx,{amt,monthly:amt/(nx.rembY*12)}):Object.assign(nx,{amt:0,monthly:0});
-    }
-    C=apport+ptz.amt>=price*(1+notary)?0:Math.max(0,(price*(1+notary)+dossier-apport-ptz.amt)/(1-g));
-    guar=C>0?C*g+dossier:0;
-  }
-  const n=o.years*12,mens=C*a,insM=C*ins,monthly=mens+insM+ptz.monthly;
-  const dti=R>0?(credits+monthly)/R:Infinity;
-  return{R,Mmax,C,mens,insM,monthly,dti,interest:mens*n-C,insTotal:insM*n,notary,notaryEur:price*notary,guar,price,fees:price*notary+guar,
-    rav:R-credits-monthly,ptz,taeg:taeg(C,guar,mens+insM,n),usure:LOAN.usure[o.years],total:price*(1+notary)+guar};
+  if(!isFinite(o.ratePct)||LOAN.guarantee==null||LOAN.dossier==null||LOAN.notaryAncien==null||LOAN.notaryPrimo==null||LOAN.notaryNeuf==null||LOAN.rentShare==null)return loanIndispo(o);
+  return PC.planPret(o,LOAN,eur);
 }
-function amortization(L,o){
-  const i=o.ratePct/100/12,n=o.years*12,rows=[];let crd=L.C,cumI=0;
-  for(let y=0;y<=o.years;y++){
-    let ptzCrd=0;if(L.ptz.amt>0){const p=L.ptz;ptzCrd=y<=p.diff?p.amt:Math.max(0,p.amt-p.monthly*12*(y-p.diff))}
-    rows.push({y,crd:Math.max(0,crd),ptz:ptzCrd,interest:cumI});
-    for(let m=0;m<12&&y<o.years;m++){const int=crd*i;cumI+=int;crd-=L.mens-int}
-  }
-  return rows;
-}
+const amortization=PC.amortissementAnnuel;
+function trimestreUsure(){const e=LOAN.sources&&LOAN.sources.usure&&LOAN.sources.usure.effet;return e?', '+(Math.ceil(+e.slice(5,7)/3)===1?'1er':Math.ceil(+e.slice(5,7)/3)+'e')+' trimestre '+e.slice(0,4):''}
 /*ENGINE-END*/
 
 
@@ -455,7 +408,7 @@ const keur=v=>v>=1e6?eur(v):nf0.format(Math.round(v/1000))+' k€';
 const r1000=v=>Math.round(v/1000)*1000;
 const ptzPersons=()=>+state.ad+ +state.kids+ +state.k3;
 function loanInputs(D,over){
-  const years=+state.duree,ratePct=state.rateC>0?state.rateC:LOAN.rates[years],insPct=state.insC>0?state.insC:LOAN.ins[state.age];
+  const years=+state.duree,ratePct=state.rateC>0?state.rateC:(LOAN.rates[years]==null?NaN:LOAN.rates[years]),insPct=state.insC>0?state.insC:LOAN.ins[state.age];
   const rfrEst=Math.round(D.h.incM*12*IR.nonDed*.9/(1+D.gR.c)*(1-.017));
   const o={incM:D.h.incM,rentM:+state.loyers||0,creditsM:+state.credits||0,apport:+state.apport||0,years,ratePct,insPct,bien:state.bien,primo:state.primo==='oui',
     ptz:{zone:state.zone,type:state.htype,travaux:state.travaux==='oui',rfr:+state.rfr>0?+state.rfr:rfrEst,persons:ptzPersons()},price:state.lmode==='price'?Math.max(0,+state.price||0):null};
@@ -512,7 +465,7 @@ function renderLoan(D){
   // contrôles bancaires
   const ul=$('loan-checks');ul.textContent='';const endAge=LOAN.ageMax[state.age]+o.years;
   checkItem(ul,L.dti<=.35+1e-9?'ok':L.dti<=.40?'warn':'ko','Taux d\'endettement : '+nf0.format(Math.round(L.dti*100))+' %','Maximum 35 % assurance comprise ; au-delà, seulement par dérogation (20 % des dossiers).');
-  checkItem(ul,L.taeg<=L.usure?'ok':'ko','TAEG estimé : '+dec(L.taeg,2)+' %','Taux d\'usure en vigueur pour cette durée : '+dec(L.usure,2)+' % (Banque de France, 3e trimestre 2026).');
+  checkItem(ul,L.usure==null||L.taeg<=L.usure?'ok':'ko','TAEG estimé : '+dec(L.taeg,2)+' %',L.usure==null?'Taux d\'usure indisponible (repère manquant).':'Taux d\'usure en vigueur pour cette durée : '+dec(L.usure,2)+' % (Banque de France'+trimestreUsure()+').');
   checkItem(ul,o.apport>=L.fees?'ok':'warn','Apport : '+eur(o.apport),o.apport>=L.fees?'Il couvre les frais de notaire et de garantie ('+eur(L.fees)+'), ce que la plupart des banques demandent.':'Il ne couvre pas les frais de notaire et de garantie ('+eur(L.fees)+') : un financement à plus de 100 % est rare.');
   checkItem(ul,ravUc>=poor?'ok':'warn','Reste à vivre : '+eur(ravUc)+' par unité de consommation',ravUc>=poor?'Au-dessus du seuil de pauvreté INSEE (1 337 € par mois).':'Sous le seuil de pauvreté INSEE (1 337 € par mois) : la banque risque de juger le budget trop serré.');
   checkItem(ul,endAge<=70?'ok':endAge<=80?'warn':'ko','Âge en fin de prêt : environ '+endAge+' ans',endAge<=70?'Pas de difficulté particulière pour l\'assurance.':'Au-delà de 70 ans, l\'assurance emprunteur est plus chère et plus difficile à obtenir ; une durée plus courte peut être demandée.');
@@ -530,7 +483,7 @@ function renderLoan(D){
   renderAmort(L,o);
   // durée × taux
   const t2=$('loan-heat');t2.textContent='';const deltas=[-.5,0,.5],durs=[15,20,25];
-  const cells=durs.map(y=>deltas.map(dl=>{const base=state.rateC>0?state.rateC:LOAN.rates[y],r=Math.max(.1,base+dl),P=loanPlan(Object.assign({},o,{years:y,ratePct:r}));return{y,r,P,cur:y===o.years&&dl===0}}));
+  const cells=durs.map(y=>deltas.map(dl=>{const base=state.rateC>0?state.rateC:(LOAN.rates[y]==null?NaN:LOAN.rates[y]),r=Math.max(.1,base+dl),P=loanPlan(Object.assign({},o,{years:y,ratePct:r}));return{y,r,P,cur:y===o.years&&dl===0}}));
   const val=c=>state.lmode==='price'?c.P.dti:c.P.C+c.P.ptz.amt;
   const vals=cells.flat().map(val),mx=Math.max(...vals),mn=Math.min(...vals);
   $('heat-desc').textContent=state.lmode==='price'?'Taux d\'endettement pour ce logement. En rouge : au-delà de 35 %. La case encadrée correspond à ta simulation.':'Montant total que tu peux emprunter, PTZ compris. La case encadrée correspond à ta simulation.';
@@ -839,7 +792,7 @@ function syncControls(D){
   $('inc-help').textContent={nm:'Net avant impôt par mois, tous les adultes réunis : salaires, pensions, revenus d\'indépendant.',na:'Net avant impôt sur l\'année, tous les adultes réunis, primes comprises.',ba:'Brut annuel de tous les adultes, primes comprises : converti en net (environ 22 % de cotisations, 25 % pour les cadres).',am:'Ce qui arrive sur tes comptes chaque mois, après prélèvement de l\'impôt : le net avant impôt en est déduit.'}[state.incUnit];
   $('pat-detail').hidden=!state.patDetail;$('own').readOnly=state.patDetail;$('detail-btn').textContent=state.patDetail?'Saisir un total':'Détailler';
   if(state.patDetail&&document.activeElement!==$('own'))$('own').value=nf0.format(['immo','fin','pro','res'].reduce((s,k)=>s+Math.max(0,+state[k]||0),0));
-  all('[data-dec]').forEach(i=>{if(document.activeElement!==i)i.value=state[i.dataset.dec]>0?dec(state[i.dataset.dec],2):'';const k=i.dataset.dec;i.placeholder=k==='rateC'?dec(LOAN.rates[+state.duree],2):dec(LOAN.ins[state.age],2)});
+  all('[data-dec]').forEach(i=>{if(document.activeElement!==i)i.value=state[i.dataset.dec]>0?dec(state[i.dataset.dec],2):'';const k=i.dataset.dec;i.placeholder=k==='rateC'?(LOAN.rates[+state.duree]==null?'':dec(LOAN.rates[+state.duree],2)):dec(LOAN.ins[state.age],2)});
   all('[data-csp]').forEach(s=>{if([...s.options].some(o=>o.value===state.csp))s.value=state.csp;else s.value=''});
   $('toise-desc').textContent=GRIDS[state.grid].desc+' Montants avant impôt pour : '+hhName().toLowerCase()+'.';
   $('price-q').hidden=state.lmode!=='price';
@@ -856,7 +809,7 @@ function syncHyp(D){
   $('sal-hint-t').textContent=single?'Dans « Foyer et revenus », une personne seule avec '+eur(h.incM)+' par mois : si ce salaire est le seul revenu, les deux montants devraient être égaux.':'';
   $('inc-l').textContent=per.rev;$('loan-inc-l').textContent=per.rev;$('sal-l').textContent=per.sal;$('own-l').textContent=per.ownL;$('debt-l').textContent=per.debtL;
   $('loan-inc').textContent=eur(h.incM)+' / mois';$('loan-hh').textContent=hhName()+' · net avant impôt';
-  $('rate-help').textContent='Vide : taux moyen du marché sur '+o.years+' ans ('+dec(LOAN.rates[o.years],2)+' %, août 2026).';
+  $('rate-help').textContent=LOAN.rates[o.years]==null?'Taux du jour indisponible : saisis celui de ton offre.':'Vide : taux moyen du marché sur '+o.years+' ans ('+dec(LOAN.rates[o.years],2)+' %'+(LOAN.sources&&LOAN.sources.taux&&LOAN.sources.taux.effet?', '+LOAN.sources.taux.effet.slice(0,7).split('-').reverse().join('/'):'')+').';
   $('ins-help').textContent='Vide : taux indicatif pour ton âge ('+dec(LOAN.ins[state.age],2)+' %).';
   $('rfr-help').textContent='Vide : estimé à '+eur(o.rfrEst)+' à partir de tes revenus.';
   $('type-field').hidden=state.bien!=='neuf';$('trav-field').hidden=state.bien!=='ancien';
@@ -1151,13 +1104,13 @@ function mount(r){
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(!root.hidden)render()});
 }
 
-const PURE={plafondHcsf,texteHcsf,perimetre,position,verdict,cartes,resumeHypotheses,panneauHtml,questionPage,questionCarte,derive,foyerTab,tabValue,hhName,_etat:state,DEFAULTS};
+const PURE={chargerCredit,plafondHcsf,texteHcsf,perimetre,position,verdict,cartes,resumeHypotheses,panneauHtml,questionPage,questionCarte,derive,foyerTab,tabValue,hhName,_etat:state,DEFAULTS};
 if(typeof module==="object"&&module.exports){module.exports=PURE;}
 if(typeof document==="undefined")return;
 
 const api={
   mount,
-  update(S,visible){snapS=S;per=perimetre(S&&(S.scope==='p1'||S.scope==='p2')?S.scope:'foyer',nomsDe(S));repereHcsf=plafondHcsf(S&&S.savoir&&S.savoir.reperes,window.Reperes);applyReal();profileBox();headlineCache=null;if(visible)render();else dirty=true},
+  update(S,visible){snapS=S;if(S&&S.savoir&&S.savoir.reperes&&S.savoir.reperes.length)chargerCredit(S.savoir.reperes);per=perimetre(S&&(S.scope==='p1'||S.scope==='p2')?S.scope:'foyer',nomsDe(S));repereHcsf=plafondHcsf(S&&S.savoir&&S.savoir.reperes,window.Reperes);applyReal();profileBox();headlineCache=null;if(visible)render();else dirty=true},
   show(){render()},
   headline(){if(headlineCache==null){try{headlineCache=foyerTab(derive())}catch(e){return '–'}}return headlineCache},
 };

@@ -99,9 +99,9 @@ test("migration 0029 : en-tête (non appliquée, apply_migration name = calendri
 test("0029 n'ajoute aucun droit de modification sur banque_comptes et ne redéfinit que appliquer_propositions", () => {
   assert.doesNotMatch(SQL, /grant\s+update/i);
   assert.deepEqual([...SQL.matchAll(/create (?:or replace )?function\s+([\w.]+)\s*\(/gi)].map(m => m[1]), ["public.appliquer_propositions"]);
-  const apres = readdirSync(DIR).filter(f => /^\d{4}_.*\.sql$/.test(f) && f > "0027_frais_suite.sql" && f !== "0029_calendrier.sql")
+  const apres = readdirSync(DIR).filter(f => /^\d{4}_.*\.sql$/.test(f) && f > "0027_frais_suite.sql" && f !== "0029_calendrier.sql" && f !== "0031_projection.sql")
     .filter(f => /function\s+public\.appliquer_propositions\s*\(/.test(readFileSync(new URL(f, DIR), "utf8")));
-  assert.deepEqual(apres, [], "ni 0028 ni une migration suivante ne redéfinit la fonction : 0029 repart bien de la dernière définition (0027)");
+  assert.deepEqual(apres, [], "ni 0028 ni une migration suivante (hors 0031, qui repart de 0029 : projection-pglite) ne redéfinit la fonction : 0029 repart bien de la dernière définition (0027)");
 });
 
 /* ---------- colonnes de config ---------- */
@@ -792,7 +792,7 @@ test("appliquer_propositions de 0029 = celle de 0027 + les ajouts annoncés (tro
 });
 
 /* ---------- chaîne complète ---------- */
-test("baseComplete() complète : 0001 → 0029 s'appliquent dans l'ordre, la fonction et les colonnes sont là", async () => {
+test("baseComplete() complète : 0001 → 0031 s'appliquent dans l'ordre, la fonction et les colonnes sont là", async () => {
   const complet = await baseComplete();
   try {
     const r = await complet.query(`select (select count(*)::int from information_schema.columns where table_schema = 'public' and table_name = 'config'
@@ -803,7 +803,7 @@ test("baseComplete() complète : 0001 → 0029 s'appliquent dans l'ordre, la fon
       (select count(*)::int from public.reperes) n_reperes,
       (select count(*)::int from pg_policies where schemaname = 'public' and policyname like '%aal2%') politiques`);
     const { politiques, ...reste } = r.rows[0];
-    assert.deepEqual(reste, { config: 4, banque: 3, reperes: 1, n_reperes: 44 });
+    assert.deepEqual(reste, { config: 4, banque: 3, reperes: 1, n_reperes: 112 });
     assert.ok(politiques >= 20, "politiques MFA de 0028 en place dans la chaîne complète (" + politiques + ")");
   } finally { await complet.close(); }
 });

@@ -29,7 +29,7 @@ function browser(prep) {
   vm.createContext(ctx);
   vm.runInContext(src("demo-data.js"), ctx);
   prep && prep(ctx.DEMO);
-  for (const f of ["sensible.js", "routine-etat.js", "banque-etat.js", "store-demo.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["marche.js", "projection-outils.js", "projection-evenements.js", "sensible.js", "routine-etat.js", "banque-etat.js", "store-demo.js"]) vm.runInContext(src(f), ctx, { filename: f });
   return ctx;
 }
 const pret = ctx => new Promise((res, rej) => {

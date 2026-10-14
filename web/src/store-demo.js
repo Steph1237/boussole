@@ -647,10 +647,10 @@
         break;
       case "config": {
         if (p.operation !== "modifier") throw bad("réglages : seule la modification est possible.");
-        const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot"];
+        const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot", "projection"];
         const autre = Object.keys(v).find(k => !CLES_CFG.includes(k));
-        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations ou avis_impot seulement).");
-        if (!CLES_CFG.some(k => k in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes, enveloppes_infos, prets_infos, donations ou avis_impot).");
+        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot ou projection seulement).");
+        if (!CLES_CFG.some(k => k in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot ou projection).");
         const cfg = Object.assign({}, C.config || {});
         if ("cushion" in v) cfg.cushion = normMatelas(v.cushion);
         if ("recurring" in v) cfg.recurring = normVersements(v.recurring, cfg.recurring);
@@ -659,6 +659,11 @@
         if ("prets_infos" in v) cfg.prets_infos = fusionPretsInfos(v.prets_infos, cfg.prets_infos);
         if ("donations" in v) cfg.donations = remplacerDonations(v.donations);
         if ("avis_impot" in v) cfg.avis_impot = remplacerAvisImpot(v.avis_impot);
+        if ("projection" in v) { /* PROJ : réglages de projection, mêmes règles et messages que la base (0031) */
+          const r = window.ProjectionEvenements.fusionnerReglagesProjection(cfg.projection, v.projection, { today: jourIso(), biens: (C.profil && C.profil.biens) || [] });
+          if (r.erreur) throw bad(r.erreur);
+          cfg.projection = r.projection;
+        }
         C.config = cfg;
         break;
       }

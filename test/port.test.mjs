@@ -7,7 +7,11 @@ import { readFileSync, existsSync } from "node:fs";
 const lines = (file, a, b) => readFileSync(file, "utf8").split("\n").slice(a - 1, b).map(l => l.trim()).filter(Boolean);
 const norm = file => readFileSync(file, "utf8").split("\n").map(l => l.trim()).filter(Boolean).join("\n");
 const BLOCKS = [
-  ["toise", "sources/toise.html", 718, 946],
+  /* Le code de crédit (lignes 881-945 : LOAN, PTZ, annuity, ptzInfo, taeg, loanPlan, amortization) a quitté le bloc : il est dans
+     web/src/projection-credit.js, partagé avec le moteur de projection (PROJ spec § 8.3, décision 1 : une seule logique de crédit). Ses calculs
+     sont inchangés (test/projection-capacite.test.mjs et test/toise.test.mjs) ; seules les constantes (taux, usure, frais) lisent les repères datés. */
+  ["toise", "sources/toise.html", 718, 880],
+  ["toise", "sources/toise.html", 946, 946],
   ["simu", "sources/simu.html", 725, 780],
   ["simu", "sources/simu.html", 782, 838], // 781 = le sélecteur $ global, volontairement remplacé
   ["simu", "sources/simu.html", 878, 1030],
