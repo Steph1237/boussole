@@ -84,15 +84,16 @@
     const sortieVide = pourquoi => ({ perimetre: sc, indisponible: true, avertissements: [pourquoi].concat(avertissements), mention: MENTION, manquants: [...ctx.manquants.keys()] });
     const effort = ctx.rv("hcsf_taux_effort"), dureeMax = ctx.rv("hcsf_duree_max");
     if (effort === undefined) { ctx.manquant("hcsf_taux_effort", "plafond d'endettement"); return sortieVide("repère manquant (hcsf_taux_effort) : plafond d'endettement du HCSF indisponible"); }
+    if (dureeMax === undefined) { ctx.manquant("hcsf_duree_max", "durée maximale du crédit"); return sortieVide("repère manquant (hcsf_duree_max) : durée maximale du HCSF indisponible, aucune durée n'est supposée"); }
     const rev = revenusRetenus(d, sc, ctx);
     rev.mentions.forEach(m => avertissements.push(m));
     const charges = Calc.mensualites(d.profil, sc);
     const mensMax = Math.max(0, effort / 100 * rev.total - charges);
     /* durée : plafond HCSF, 27 ans seulement avec différé dans les cas prévus */
     let duree = o.duree_ans != null ? +o.duree_ans : dureeMax;
-    if (!(duree > 0)) return sortieVide("repère manquant (hcsf_duree_max) : durée maximale du HCSF indisponible");
+    if (!(duree > 0)) return sortieVide("la durée du crédit doit être strictement positive");
     let differe = 0, dureeAmort = duree;
-    if (dureeMax !== undefined && duree > dureeMax) {
+    if (duree > dureeMax) {
       const max27 = ctx.rv("hcsf_duree_max_differe"), seuilTravaux = ctx.rv("hcsf_travaux_seuil_pct");
       const eligible = ["vefa", "ccmi", "promotion"].includes(o.type_projet) || (o.type_projet === "ancien_travaux" && seuilTravaux !== undefined && O.n0(o.travaux_pct) >= seuilTravaux);
       if (max27 !== undefined && eligible && duree <= max27) {
@@ -121,13 +122,15 @@
     if (o.apport != null) apport = { total: +o.apport, sans_per: +o.apport, per: 0, detail: [], impots: 0, matelas_exclu: matelas, impose: true };
     else {
       const cc = Dn.construireCompartiments(ctx);
-      const comps = cc.comps.filter(c => c.v0 > 0).map(c => ({ id: c.id, enveloppe: c.enveloppe, type: c.type, valeur: c.v0, base: c.base0, dispo: c.dispo, prep: c.prep, pee_disponible: c.pee_disponible }));
+      const sep = Dn.ecarterIndisponibles(cc.comps, ctx);
+      sep.exclus.forEach(x => avertissements.push("apport : « " + x.enveloppe + " » (" + O.eur(x.valeur) + ") n'est pas compté, son impôt de sortie est inconnu" + (x.manquants.length ? " — repère manquant (" + x.manquants.join(", ") + ")" : " — " + (x.mentions[0] || "règle fiscale indisponible"))));
+      const comps = sep.gardes.filter(c => c.v0 > 0).map(c => ({ id: c.id, enveloppe: c.enveloppe, type: c.type, valeur: c.v0, base: c.base0, dispo: c.dispo, prep: c.prep, pee_disponible: c.pee_disponible }));
       const plan = F.planRetrait(comps, Infinity, { date: today, matelas, rp: (o.usage || "rp") === "rp", niveau_max: 4 });
       const detail = plan.sources.map(s => ({ enveloppe: s.enveloppe, brut: s.brut, net: s.net, impots: s.impots, type: (comps.find(c => c.id === s.id) || {}).type }));
       const per = detail.filter(x => x.type === "per").reduce((a, x) => a + x.net, 0);
-      apport = { total: plan.net_obtenu, sans_per: plan.net_obtenu - per, per, detail, impots: plan.impots, matelas_exclu: matelas, impose: false };
+      apport = { total: plan.net_obtenu, sans_per: plan.net_obtenu - per, per, detail, impots: plan.impots, matelas_exclu: matelas, impose: false, exclus: sep.exclus };
       if (per > 0) avertissements.push("le PER (" + O.eur(per) + ") n'est mobilisable que pour l'achat de la résidence principale (déblocage anticipé) : il est indiqué à part");
-      cc.comps.filter(c => c.type === "pea" && c.v0 > 0 && c.prep.seuil && today < c.prep.seuil).forEach(c => avertissements.push("le PEA « " + c.enveloppe + " » a moins de 5 ans : il n'est pas compté (un retrait clôturerait le plan)"));
+      sep.gardes.filter(c => c.type === "pea" && c.v0 > 0 && c.prep.seuil && today < c.prep.seuil).forEach(c => avertissements.push("le PEA « " + c.enveloppe + " » a moins de 5 ans : il n'est pas compté (un retrait clôturerait le plan)"));
     }
     const fraisAcq = o.neuf ? "neuf" : o.primo ? "primo" : "ancien";
     const base = { mensualite_max: mensMax, duree_ans: dureeAmort, taux_pct: taux.valeur, assurance_pct: assPct, apport: apport.total, garantie_pct: gar, frais_dossier: dos, frais_acquisition: fa };

@@ -62,18 +62,19 @@
       reequilibrage: pick(o.reequilibrage, hv.reequilibrage, cfgp.reequilibrage, "aucun"),
       part_reaffectee_epargne_pct: +pick(hv.part_reaffectee_epargne_pct, cfgp.part_reaffectee_epargne_pct, 100),
       part_hausse_epargnee_pct: +pick(hv.part_hausse_epargnee_pct, cfgp.part_hausse_epargnee_pct, 50),
-      salaire_croissance_reelle_pct: pick(hv.salaire_croissance_reelle_pct, cfgp.salaire_croissance_reelle_pct, rv("salaire_croissance_reelle")),
+      salaire_croissance_reelle_pct: pick(hv.salaire_croissance_reelle_pct, cfgp.salaire_croissance_reelle_pct, R.salaire_croissance_reelle ? +R.salaire_croissance_reelle.valeur : undefined),
       tmi_pct: pick(cfgp.tmi_pct, objet(objet(d.profil).foyer).tmi),
       per_versements_deduits: cfgp.per_versements_deduits !== false,
       assurance_pct: cfgp.assurance_pct != null ? +cfgp.assurance_pct : undefined,
       epargne_delta_mensuel: +pick(hv.epargne_delta_mensuel, 0),
       biens: objet(cfgp.biens),
     };
-    if (reglages.salaire_croissance_reelle_pct === undefined) { manquant("salaire_croissance_reelle", "hausse réelle des salaires : supposée nulle"); reglages.salaire_croissance_reelle_pct = 0; }
+    /* repères propres à la projection : déclarés (manquants, utilisés) par preparer(), pas par les autres fonctions (capacité d'emprunt…) */
+    const salaireManquant = reglages.salaire_croissance_reelle_pct === undefined;
+    if (salaireManquant) reglages.salaire_croissance_reelle_pct = 0;
     const hypClasses = Object.assign({}, objet(hv.hypotheses_classes), objet(o.hypotheses_classes));
-    const pi0 = rv("inflation_hypothese");
-    if (pi0 === undefined) manquant("inflation_hypothese", "inflation : la projection est faite en euros courants");
-    return { d, o, today: d.today, perimetre: o.perimetre || "foyer", R, rv, manquant, manquants, utilises, pi: (pi0 || 0) / 100, reglages, hypClasses, variante, cibles };
+    const pi0 = R.inflation_hypothese ? +R.inflation_hypothese.valeur : undefined;
+    return { d, o, today: d.today, perimetre: o.perimetre || "foyer", R, rv, manquant, manquants, utilises, pi: (pi0 || 0) / 100, reglages, hypClasses, variante, cibles, inflationManquante: pi0 === undefined, salaireManquant };
   }
 
   /** Poids d'allocation cible par classe (somme 1) depuis config.targets : plat { classe: % } ou par personne { p1: { poche: % }, p2 }. null si aucune cible. */
@@ -269,6 +270,20 @@
     return { comps, idxCourant, manques, calendrier: cal, couple };
   }
 
+  /** Sépare les compartiments dont la règle fiscale de sortie est indisponible (repère manquant, type inconnu) : leur impôt n'est jamais compté à zéro en silence.
+      → { gardes, exclus: [{ enveloppe, type, valeur, manquants, mentions }] } ; les repères manquants sont consignés dans le contexte. */
+  function ecarterIndisponibles(comps, ctx) {
+    const gardes = [], exclus = [];
+    comps.forEach(c => {
+      if (c.v0 > 0 && !c.dispo && c.prep.indisponible) {
+        const manquants = [...c.prep.reperes.manquants];
+        manquants.forEach(k => ctx.manquant(k, "impôt de sortie de « " + c.enveloppe + " »"));
+        exclus.push({ enveloppe: c.enveloppe, type: c.type, valeur: c.v0, manquants, mentions: c.prep.mentions.slice() });
+      } else gardes.push(c);
+    });
+    return { gardes, exclus };
+  }
+
   /* ------------------------------------------------------------------ crédits en cours (spec § 6.4) */
   /** Crédits du périmètre : [{ cle ("credit:<id>" / "bien:<id>"), id, nom, part, mensualite, crd, taux_pct, n (mensualités restantes), fin (date), mentions, taux_suppose }]. */
   function creditsExistants(ctx) {
@@ -306,6 +321,6 @@
       reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes) };
   }
 
-  return { depuisEtat, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
+  return { ecarterIndisponibles, depuisEtat, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
     creditsExistants, DISPO, TYPES_ENVELOPPE, personnesDe, objet, liste, sum };
 });

@@ -72,7 +72,7 @@ test("mode déterministe : une seule étape", async () => {
 test("le worker charge les modules purs par importScripts, dans l'ordre des dépendances", () => {
   const src = readFileSync(new URL("../web/src/projection-worker.js", import.meta.url), "utf8");
   const m = /importScripts\(([^)]*)\)/.exec(src)[1].match(/"([^"]+)"/g).map(x => x.slice(1, -1));
-  const ordre = ["calc.js", "marche.js", "projection-outils.js", "projection-fiscalite.js", "projection-evenements.js", "projection-credit.js", "projection-donnees.js", "projection-immo.js", "projection.js"];
+  const ordre = ["calc.js", "marche.js", "projection-outils.js", "projection-fiscalite.js", "projection-evenements.js", "projection-credit.js", "projection-donnees.js", "projection.js", "projection-immo.js"];
   const pos = ordre.map(f => m.indexOf(f));
   assert.ok(pos.every(x => x >= 0), "tous les modules sont chargés");
   assert.deepEqual([...pos].sort((a, b) => a - b), pos, "ordre des dépendances respecté");

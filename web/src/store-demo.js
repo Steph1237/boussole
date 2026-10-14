@@ -98,23 +98,20 @@
 
   const subs = []; let tmr = null;
   const emit = () => { clearTimeout(tmr); tmr = setTimeout(() => subs.forEach(fn => { try { fn(S); } catch (e) { console.error(e); } }), 60); };
-  /* PROJ : deux plans figés (revues mensuelles passées) calculés par le moteur à partir de l'état de la démo, la première fois que le moteur est chargé. */
-  let plansFaits = false;
-  function plansFigesDemo() {
-    if (!plansFaits && !C.plansFiges.length && window.Projection && window.Projection.figerPlan && C.ready) {
-      plansFaits = true;
-      try {
-        const Pj = window.Projection, jour = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
-        [62, 31].forEach(n => {
-          const data = Pj.depuisEtat(clone({ positions: C.positions, config: C.config, profil: C.profil, budget: C.budget, banque: C.banque, objectifs: C.objectifs, foyer: C.foyer,
-            savoir: C.savoir, indices: C.indices, classes: C.classes }), jour(n));
-          const options = { horizon_ans: 10, vue: "net", euros: "courants" };
-          const ligne = Pj.figerPlan({ data, options }, Pj.simuler(Pj.preparer(data, options), { chemins: 500 }), "revue_mensuelle");
-          C.plansFiges.push(Object.assign({ id: newId("plan"), cree_le: jour(n) + "T20:00:00.000Z" }, ligne));
-        });
-      } catch (e) { console.error(e); }
-    }
-    return C.plansFiges;
+  /* PROJ : deux plans figés (revues mensuelles passées, il y a 62 et 31 jours). La liste (id, date, raison, horizon) est immédiate ; le calcul de la série et des
+     paramètres (moteur de projection, 500 chemins) se fait à la demande, dans Store.plansFiges.detail(id), puis reste en mémoire. */
+  if (!C.plansFiges.length) C.plansFiges = [62, 31].map(n => ({ id: "plan-demo-" + n, cree_le: new Date(Date.now() - n * 864e5).toISOString().slice(0, 10) + "T20:00:00.000Z", raison: "revue_mensuelle", horizon_mois: 120, _jours: n }));
+  function plansFigesDemo() { return C.plansFiges; }
+  function completerPlan(r) {
+    if (!r || r.serie || !r._jours) return r;
+    const Pj = window.Projection;
+    if (!Pj || !Pj.figerPlan) return r;
+    const jour = new Date(Date.now() - r._jours * 864e5).toISOString().slice(0, 10);
+    const data = Pj.depuisEtat(clone({ positions: C.positions, config: C.config, profil: C.profil, budget: C.budget, banque: C.banque, objectifs: C.objectifs, foyer: C.foyer, savoir: C.savoir, indices: C.indices, classes: C.classes }), jour);
+    const options = { horizon_ans: 10, vue: "net", euros: "courants" };
+    const ligne = Pj.figerPlan({ data, options }, Pj.simuler(Pj.preparer(data, options), { chemins: 500 }), "revue_mensuelle");
+    Object.assign(r, { parametres: ligne.parametres, serie: ligne.serie, horizon_mois: ligne.horizon_mois });
+    return r;
   }
   const S = {};
   function publish() {
@@ -1067,7 +1064,7 @@
     expertises,
     journal,
     routines,
-    plansFiges: { detail(id) { const r = C.plansFiges.find(x => x.id === id); return Promise.resolve(r ? clone(r) : null); } },
+    plansFiges: { detail(id) { const r = completerPlan(C.plansFiges.find(x => x.id === id)); if (!r) return Promise.resolve(null); const o = clone(r); delete o._jours; return Promise.resolve(o); } },
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

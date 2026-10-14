@@ -18,14 +18,15 @@
   const api = factory({
     O: dep("ProjectionOutils", "./projection-outils.js"), F: dep("ProjectionFiscalite", "./projection-fiscalite.js"),
     E: dep("ProjectionEvenements", "./projection-evenements.js"), C: dep("ProjectionCredit", "./projection-credit.js"),
-    Dn: dep("ProjectionDonnees", "./projection-donnees.js"), Immo: dep("ProjectionImmo", "./projection-immo.js"),
+    Dn: dep("ProjectionDonnees", "./projection-donnees.js"),
+    /* projection-immo est chargé après ce fichier dans l'app : résolu à l'usage */ get Immo() { return dep("ProjectionImmo", "./projection-immo.js"); },
     Marche: dep("Marche", "./marche.js"), Calc: dep("Calc", "./calc.js"), Plan: dep("Plan", "./plan.js"), Calendrier: dep("Calendrier", "./calendrier.js"),
   });
   if (noeud) module.exports = api;
   else root.Projection = api;
 })(typeof self !== "undefined" ? self : this, function (D) {
   "use strict";
-  const { O, F, E, C, Dn, Immo, Marche, Calc, Plan, Calendrier } = D;
+  const { O, F, E, C, Dn, Marche, Calc, Plan, Calendrier } = D;
 
   const GRAINE = 20261014;
   /** Incrémentée à chaque changement de calcul ; rendue avec chaque résultat (rejouer une projection passée). */
@@ -64,6 +65,10 @@
     const ctx = Dn.contexte(d, { perimetre: o.perimetre || "foyer", variante: o.variante || null, hypotheses_classes: o.hypotheses_classes, capacite_mensuelle: o.capacite_mensuelle,
       reste_capacite: o.reste_capacite, base_capacite: o.base_capacite, reequilibrage: o.reequilibrage });
     const today = ctx.today, sc = ctx.perimetre, rv = ctx.rv, pi = ctx.pi, rg = ctx.reglages;
+    /* repères propres à la projection : lus et, s'ils manquent, déclarés ici (et non par la capacité d'emprunt) */
+    rv("inflation_hypothese"); rv("salaire_croissance_reelle");
+    if (ctx.inflationManquante) ctx.manquant("inflation_hypothese", "inflation : la projection est faite en euros courants");
+    if (ctx.salaireManquant) ctx.manquant("salaire_croissance_reelle", "hausse réelle des salaires : supposée nulle");
     const horizon = o.horizon_ans > 0 ? Math.round(+o.horizon_ans) : 10, N = 12 * horizon;
     const avertissements = [];
     const dates = new Array(N + 2);
@@ -1059,6 +1064,7 @@
     jalons.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
     const avert = M.avertissements.slice();
     M.ctx.manquants.forEach((pourquoi, cle) => avert.push("repère manquant (" + cle + ") : " + pourquoi));
+    M.comps.filter(c => c.v0 > 0 && !c.dispo && c.prep.indisponible).forEach(c => avert.push("impôt de sortie de « " + c.enveloppe + " » non calculé (" + (c.prep.mentions[0] || "règle indisponible") + ") : ses retraits et sa valeur nette sont comptés sans impôt"));
     if (M.plafondDepasse) avert.push("le plafond de versements du PEA est dépassé : les versements suivants y sont maintenus faute d'autre enveloppe ouverte");
     const resume = vueTitre(M, vues[vue], euros, vue, couv.couverture, existant, futur);
     return {
@@ -1211,19 +1217,20 @@
     if (o.tmi_pct != null) ctx.reglages.tmi_pct = o.tmi_pct;
     const cc = Dn.construireCompartiments(ctx), today = ctx.today, date = O.estDate(o.date) ? o.date : today;
     const mat = Calc.matelas(objet(d.config)), matelas = (mat ? mat.min : 0) / (sc === "foyer" ? 1 : 2);
-    const entree = cc.comps.filter(c => c.v0 > 0).map(c => ({ id: c.id, enveloppe: c.enveloppe, type: c.type, valeur: c.v0, base: c.base0, dispo: c.dispo, prep: c.prep, pee_disponible: c.pee_disponible }));
+    const { gardes, exclus } = Dn.ecarterIndisponibles(cc.comps, ctx);
+    const entree = gardes.filter(c => c.v0 > 0).map(c => ({ id: c.id, enveloppe: c.enveloppe, type: c.type, valeur: c.v0, base: c.base0, dispo: c.dispo, prep: c.prep, pee_disponible: c.pee_disponible }));
     const flags = { date, matelas, rp: (o.usage || o.motif_usage || "rp") === "rp", autoriser_cloture_pea: !!o.autoriser_cloture_pea };
     const plan = F.planRetrait(entree, +o.montant_net, flags);
     const mob = F.planRetrait(entree, Infinity, Object.assign({}, flags, { niveau_max: o.autoriser_cloture_pea ? 6 : 5 }));
     const sources = plan.sources.map(s => ({ enveloppe: s.enveloppe, type: (entree.find(c => c.id === s.id) || {}).type, niveau: s.niveau, brut: s.brut, net: s.net, gain: s.gain, impot_revenu: s.impot_revenu,
       prelevements_sociaux: s.prelevements_sociaux, impots: s.impots, cloture: !!s.cloture }));
-    const avertissements = [];
+    const avertissements = exclus.map(x => "« " + x.enveloppe + " » n'est pas comptée : " + (x.mentions[0] || "règle fiscale indisponible"));
     if (plan.manque > 0.5) avertissements.push("apport insuffisant : il manque " + eur(plan.manque));
     const parEnv = {}; sources.forEach(s => { parEnv[s.enveloppe] = s; });
     return { date, montant_net: +o.montant_net, sources, impots: plan.impots, manque: plan.manque, mobilisable: mob.net_obtenu, excedent_au_disponible: plan.excedent_au_disponible,
       matelas_utilise: plan.matelas_utilise, pea_intact: !sources.some(s => ["pea", "pea_pme", "pea_jeune"].includes(s.type)),
       ordre_niveau_2: sources.filter(s => s.niveau === 2).map(s => s.enveloppe), besoin_couvert_par_pea: Math.min(sum(sources.filter(s => s.cloture), s => s.net), Math.max(0, +o.montant_net - sum(sources.filter(s => !s.cloture), s => s.net))),
-      per: sources.find(s => s.type === "per") || null, avertissements };
+      per: sources.find(s => s.type === "per") || null, exclus, manquants: [...ctx.manquants.keys()], avertissements };
   }
 
   /** Capacité d'emprunt dans le temps (IMMO1, spec § 8.2) : mensualité maximale et montant empruntable mois par mois (déterministes en revenus), apport mobilisable
@@ -1232,7 +1239,7 @@
     const o = opts || {}, N = M.N, rv = M.ctx.rv, d = M.data;
     assurerDet(M);
     const effort = rv("hcsf_taux_effort"), dureeMax = rv("hcsf_duree_max");
-    const vide = pourquoi => ({ indisponible: true, avertissements: [pourquoi], mention: Immo.MENTION });
+    const vide = pourquoi => ({ indisponible: true, avertissements: [pourquoi], mention: D.Immo.MENTION });
     if (effort === undefined) return vide("repère manquant (hcsf_taux_effort) : plafond d'endettement indisponible");
     const duree = o.duree_ans != null ? Math.min(+o.duree_ans, dureeMax != null ? Math.max(dureeMax, 0) : +o.duree_ans) : dureeMax;
     if (!(duree > 0)) return vide("repère manquant (hcsf_duree_max)");
@@ -1255,7 +1262,7 @@
     const marques = []; for (let t = 12; t <= N; t += 12) marques.push(t);
     const P = (resultat && resultat.chemins) || o.chemins || 2000, graine = resultat && resultat.graine != null ? resultat.graine : (o.graine == null ? GRAINE : o.graine);
     const run = derouler(M, { P, graine, vue: "financier", apportMois: [0].concat(marques).filter(t => t > 0) });
-    const apport0 = Immo.capaciteEmprunt(d, { perimetre: sc, duree_ans: duree, taux_pct: tauxCentral, neuf: o.neuf, primo: o.primo }).apport;
+    const apport0 = D.Immo.capaciteEmprunt(d, { perimetre: sc, duree_ans: duree, taux_pct: tauxCentral, neuf: o.neuf, primo: o.primo }).apport;
     const mois = [], mensualite_max = [], montant_empruntable = [], app = { p10: [], p50: [], p90: [] }, bud = { p10: [], p50: [], p90: [] };
     const fx = t => (M.options.euros === "courants" ? 1 : 1 / M.infl[t]);
     const rg = rangs(P).filter((_, j) => ["p10", "p50", "p90"].includes(NOMS_P[j]));
@@ -1292,7 +1299,7 @@
     }
     return { duree_ans: duree, type_frais: type, mois, mensualite_max, montant_empruntable, apport: app, budget_achat: bud, budget_achat_par_taux: parTaux,
       taux: { central: tauxCentral, bas: Math.max(0.05, tauxCentral - 1), haut: tauxCentral + 1 }, serie_mensuelle: serie, jalons, phrase, point, euros: M.options.euros, version_modele: versionModele,
-      avertissements: ["Le taux du jour est supposé constant : aucun modèle des taux en V1 (lignes à ±1 point).", "Estimation selon les règles du HCSF, chaque banque décide."], mention: Immo.MENTION };
+      avertissements: ["Le taux du jour est supposé constant : aucun modèle des taux en V1 (lignes à ±1 point).", "Estimation selon les règles du HCSF, chaque banque décide."], mention: D.Immo.MENTION };
   }
 
   /* ---- plans figés (CK5) : de quoi rejouer une projection passée et la comparer au réel ---- */
@@ -1418,7 +1425,7 @@
     GRAINE, versionModele, CLASSES_TIREES, HYPOTHESES, EVENEMENTS, PERCENTILES, PLAN_MAX_OCTETS,
     preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
     fiscaliteSortie: F.fiscaliteSortie, amortissement: C.amortissement, annuite: C.annuite, planPret: C.planPret, ptz: C.ptz, taeg: C.taeg,
-    capaciteEmprunt: Immo.capaciteEmprunt, capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
+    capaciteEmprunt: (data, opts) => D.Immo.capaciteEmprunt(data, opts), capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
     rendementAttendu, capitaliser, centile: O.centile, _executer,
   };
 });

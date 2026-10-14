@@ -231,3 +231,62 @@ test("capaciteDansLeTemps : repère manquant → indisponible, jamais de valeur 
   const k = Proj.capaciteDansLeTemps(M, Proj.simuler(M, { chemins: 50 }), { duree_ans: 25 });
   assert.equal(k.indisponible, true); assert.match(k.avertissements[0], /repère manquant/);
 });
+
+/* ------------------------------------------------------------ repères manquants : jamais de réponse sans plafond ni d'impôt à zéro en silence */
+test("durée demandée sans repère hcsf_duree_max : indisponible (aucune réponse sans plafond) et le repère est dans « manquants »", () => {
+  const d = entreeDe(cas("I-1")); d.reperes = d.reperes.filter(r => r.cle !== "hcsf_duree_max");
+  for (const opts of [{ duree_ans: 30 }, { duree_ans: 25 }, { duree_ans: 20 }, {}]) {
+    const r = Immo.capaciteEmprunt(d, { taux_pct: 3.35, apport: 0, ...opts });
+    assert.equal(r.indisponible, true, JSON.stringify(opts));
+    assert.ok(r.manquants.includes("hcsf_duree_max"), JSON.stringify(opts));
+    assert.equal(r.montant_empruntable, undefined);
+    assert.ok(r.avertissements.some(m => /hcsf_duree_max/.test(m)));
+  }
+});
+test("repères fiscaux manquants : l'impôt de l'apport n'est pas compté à zéro — la part inconnue est exclue, signalée et listée dans « manquants »", () => {
+  const d = entreeDe(cas("R-1"));
+  d.profil = { foyer: { adultes: 2, union: "joint" }, personnes: { p1: { nom: "Alex", salaire: 5000, salaireUnite: "nm" }, p2: { nom: "Sam", salaire: 0, salaireUnite: "nm" } }, credits: [], biens: [] };
+  const avec = Immo.capaciteEmprunt(d, { taux_pct: 3.35, duree_ans: 25, usage: "locatif" });
+  assert.ok(avec.apport.total > 0);
+  for (const cle of ["ir_taux_forfaitaire", "av_taux_ir_reduit", "ps_taux_general"]) {
+    const sans = JSON.parse(JSON.stringify(d)); sans.reperes = sans.reperes.filter(r => r.cle !== cle);
+    const r = Immo.capaciteEmprunt(sans, { taux_pct: 3.35, duree_ans: 25, usage: "locatif" });
+    assert.ok(r.apport.total < avec.apport.total, cle + " : la part dont l'impôt est inconnu est exclue de l'apport (" + r.apport.total + " contre " + avec.apport.total + ")");
+    assert.ok(r.manquants.includes(cle), cle + " dans manquants : " + r.manquants.join(","));
+    assert.ok(r.avertissements.some(m => m.includes("repère manquant") && m.includes(cle)), cle);
+    assert.ok(r.apport.exclus && r.apport.exclus.length >= 1);
+    assert.equal(r.indisponible, undefined, "le calcul reste possible avec les autres enveloppes");
+    for (const x of r.apport.detail) assert.ok(isFinite(x.net) && x.impots >= 0);
+  }
+});
+test("« manquants » ne liste que les repères de la fonction appelée : jamais l'inflation ni la hausse des salaires pour la capacité d'emprunt", () => {
+  const d = entreeDe(cas("I-1")); d.reperes = d.reperes.filter(r => !["inflation_hypothese", "salaire_croissance_reelle", "taux_credit_immo_25"].includes(r.cle));
+  const r = Immo.capaciteEmprunt(d, { duree_ans: 25, apport: 0 });
+  assert.equal(r.indisponible, true);
+  assert.deepEqual(r.manquants, ["taux_credit_immo_25"]);
+  const ok = Immo.capaciteEmprunt(entreeDe(cas("I-1")), { duree_ans: 25, apport: 0 });
+  assert.deepEqual(ok.manquants, []);
+  const sans = entreeDe(cas("I-1")); sans.reperes = sans.reperes.filter(r2 => !["inflation_hypothese", "salaire_croissance_reelle"].includes(r2.cle));
+  const r2 = Immo.capaciteEmprunt(sans, { duree_ans: 25, apport: 0 });
+  assert.equal(r2.indisponible, undefined); assert.deepEqual(r2.manquants, []);
+});
+test("tout repère qui bloque un résultat est dans « manquants » (HCSF, taux du jour, frais, garantie, assurance, usure)", () => {
+  const cles = { hcsf_taux_effort: "hcsf_taux_effort", taux_credit_immo_25: "taux_credit_immo_25", frais_acquisition_primo_pct: "frais_acquisition_primo_pct", garantie_pct: "garantie_pct", frais_dossier: "frais_dossier",
+    assurance_emprunteur_defaut_pct: "assurance_emprunteur_defaut_pct", hcsf_duree_max: "hcsf_duree_max" };
+  for (const cle of Object.keys(cles)) {
+    const d = entreeDe(cas("I-1")); d.reperes = d.reperes.filter(r => r.cle !== cle);
+    if (cle === "assurance_emprunteur_defaut_pct") d.config.projection.assurance_pct = undefined;
+    const r = Immo.capaciteEmprunt(d, { duree_ans: 25, apport: 0 });
+    assert.equal(r.indisponible, true, cle); assert.ok(r.manquants.includes(cle), cle + " : " + r.manquants.join(","));
+  }
+  const u = entreeDe(cas("I-1")); u.reperes = u.reperes.filter(r => r.cle !== "taux_usure_20_plus");
+  const r = Immo.capaciteEmprunt(u, { duree_ans: 25, apport: 0 });
+  assert.ok(r.manquants.includes("taux_usure_20_plus")); assert.equal(r.usure.indisponible, true);
+});
+test("le moteur de projection ne perd pas de vue ses propres repères manquants (inflation, hausse des salaires) : ils restent signalés par preparer / simuler", () => {
+  const d = entreeDe(cas("D-1")); d.reperes = d.reperes.filter(r => !["salaire_croissance_reelle"].includes(r.cle)); d.config.projection = {};
+  const res = Proj.simuler(Proj.preparer(d, { horizon_ans: 1, vue: "financier" }), { volatilite: 0 });
+  assert.ok(res.avertissements.some(m => m.includes("salaire_croissance_reelle")));
+  const sansInflation = entreeDe(cas("D-1")); sansInflation.reperes = sansInflation.reperes.filter(r => r.cle !== "inflation_hypothese");
+  assert.ok(Proj.simuler(Proj.preparer(sansInflation, { horizon_ans: 1, vue: "financier" }), { volatilite: 0 }).avertissements.some(m => m.includes("inflation_hypothese")));
+});

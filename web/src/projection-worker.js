@@ -6,7 +6,7 @@
   const noeud = typeof module === "object" && module.exports;
   if (!noeud) {
     importScripts("calc.js", "reperes.js", "calendrier.js", "plan.js", "marche.js", "projection-outils.js", "projection-fiscalite.js", "projection-evenements.js",
-      "projection-credit.js", "projection-donnees.js", "projection-immo.js", "projection.js");
+      "projection-credit.js", "projection-donnees.js", "projection.js", "projection-immo.js");
   }
   const Projection = noeud ? require("./projection.js") : self.Projection;
   /** Traite un message du fil principal ; publie chaque étape. */
