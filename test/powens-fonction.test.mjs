@@ -18,8 +18,15 @@ const DOSSIER = "supabase/functions/powens/";
 /* ---------- valeurs factices ---------- */
 const U = "11111111-1111-4111-8111-111111111111";
 const AUTRE = "22222222-2222-4222-8222-222222222222";
-const JWT = "jwt-utilisateur-factice";
-const JWT_AUTRE = "jwt-autre-factice";
+/* Jetons de forme JWT (en-tête.charge utile.signature) : la signature est factice, la validité est celle de auth.getUser (simulé). SEC2 : la
+   charge utile porte le niveau d'assurance (aal) de la session. */
+const b64u = o => Buffer.from(JSON.stringify(o)).toString("base64url");
+const jwtAvec = (sub, claims) => `${b64u({ alg: "ES256", typ: "JWT" })}.${b64u({ sub, role: "authenticated", ...claims })}.signature-factice`;
+const JWT = jwtAvec("11111111-1111-4111-8111-111111111111", { aal: "aal2" });
+const JWT_AAL1 = jwtAvec("11111111-1111-4111-8111-111111111111", { aal: "aal1" });
+const JWT_SANS_AAL = jwtAvec("11111111-1111-4111-8111-111111111111", {});
+const JWT_OPAQUE = "jeton-opaque-sans-charge-utile"; // jamais lisible : traité comme aal1
+const JWT_AUTRE = jwtAvec("22222222-2222-4222-8222-222222222222", { aal: "aal2" });
 const JETON = "jeton-powens-factice-0123456789";
 const SECRET_HMAC = "secret-hmac-factice";
 const ENV_BASE = {
@@ -201,7 +208,7 @@ function monter({ env = {}, banque = true, coffre = {}, init = {}, powens = powe
     fonctionnalites: [{ user_id: U, cle: "banque", active: banque }, { user_id: AUTRE, cle: "banque", active: true }],
     banque_connexions: [], banque_comptes: [], banque_placements: [], banque_operations: [], positions: [], instruments: [], credits: [], propositions: [],
     ...init,
-  }, { rpc: { ...rpcPowens(coffre, aSupprimer), ...rpc }, utilisateurs: { [JWT]: { id: U, email: "u@example.test" }, [JWT_AUTRE]: { id: AUTRE } } });
+  }, { rpc: { ...rpcPowens(coffre, aSupprimer), ...rpc }, utilisateurs: { [JWT]: { id: U, email: "u@example.test" }, [JWT_AAL1]: { id: U }, [JWT_SANS_AAL]: { id: U }, [JWT_OPAQUE]: { id: U }, [JWT_AUTRE]: { id: AUTRE } } });
   const ENV = { ...ENV_BASE, ...env };
   const clients = [];
   I.deps.createClient = (...a) => { clients.push(a); return db; };
@@ -284,6 +291,49 @@ test("connecter : jeton Supabase obligatoire, interrupteur éteint → 403, conf
   assert.match((await corps(r2)).erreur, /pas encore configurée/);
   m = monter({ env: { POWENS_DOMAIN: "evil.com" } });
   assert.equal((await m.appeler("/powens/connecter", { jeton: JWT, corps: {} })).status, 503);
+});
+
+test("connecter (SEC2) : sans aal2 → 403 mfa_requise, avant tout appel à Powens ; aal1, aal absent et jeton illisible refusés ; aal2 accepté", { skip: SANS_STRIP }, async () => {
+  for (const [nom, jeton] of [["aal1", JWT_AAL1], ["aal absent", JWT_SANS_AAL], ["jeton illisible", JWT_OPAQUE]]) {
+    const m = monter();
+    const r = await m.appeler("/powens/connecter", { jeton, corps: {} });
+    assert.equal(r.status, 403, nom);
+    const c = await corps(r);
+    assert.equal(c.code, "mfa_requise", nom);
+    assert.match(c.erreur, /^Active la double authentification et valide ton code pour connecter ta banque\./, nom);
+    assert.doesNotMatch(c.erreur, /(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu, nom);
+    assert.equal(m.powens.appels.length, 0, nom + " : aucun appel à Powens");
+    assert.deepEqual(m.coffre, {}, nom + " : aucun utilisateur Powens créé");
+  }
+  // reconnexion et gestion d'une connexion existante : même règle
+  const m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }] } });
+  for (const corpsReq of [{ connection_id: 7 }, { connection_id: 7, mode: "gerer" }]) {
+    const r = await m.appeler("/powens/connecter", { jeton: JWT_AAL1, corps: corpsReq });
+    assert.equal(r.status, 403, JSON.stringify(corpsReq));
+    assert.equal((await corps(r)).code, "mfa_requise");
+  }
+  assert.equal(m.powens.appels.length, 0);
+  // aal2 : le parcours normal
+  const ok = monter();
+  const r = await ok.appeler("/powens/connecter", { jeton: JWT, corps: {} });
+  assert.equal(r.status, 200);
+  assert.match((await corps(r)).url, /^https:\/\/webview\.powens\.com\/connect\?/);
+});
+
+test("connecter (SEC2) : ordre des refus — 401 (jeton), 403 interrupteur éteint (message habituel), puis 403 mfa_requise", { skip: SANS_STRIP }, async () => {
+  const inconnu = jwtAvec(U, { aal: "aal2" }) + "x";
+  const m = monter();
+  assert.equal((await m.appeler("/powens/connecter", { jeton: inconnu, corps: {} })).status, 401, "aal2 forgé mais jeton non reconnu par auth.getUser");
+  const off = monter({ banque: false });
+  const r = await off.appeler("/powens/connecter", { jeton: JWT_AAL1, corps: {} });
+  assert.equal(r.status, 403);
+  assert.deepEqual(await corps(r), { erreur: "La connexion bancaire n'est pas encore ouverte pour ton compte." }, "interrupteur éteint : sans code");
+});
+
+test("SEC2 : déconnecter et supprimer ne demandent pas aal2 (retirer ses données ou fermer son compte reste toujours possible)", { skip: SANS_STRIP }, async () => {
+  const m = monter({ coffre: coffreU(), init: { banque_connexions: [{ user_id: U, id: 7 }] } });
+  assert.equal((await m.appeler("/powens/deconnecter", { jeton: JWT_AAL1, corps: { connection_id: 7 } })).status, 200);
+  assert.equal((await m.appeler("/powens/supprimer", { jeton: JWT_AAL1 })).status, 200);
 });
 
 test("connecter : création de l'utilisateur Powens au premier appel, réutilisation ensuite, URL de connexion exacte", { skip: SANS_STRIP }, async () => {

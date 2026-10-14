@@ -643,7 +643,7 @@ test("AG1 : demarrer_session — conduite experte, mémoire, nouveautés par mar
   assert.match(instr, /demarrer_session/);
   for (const k of ["reperes", "consulter_savoir", "memoriser", "Agent › Mémoire"]) assert.ok(instr.includes(k), `instructions : ${k}`);
   // le client du jeton est transmis au serveur (source des souvenirs, nouveautés par client)
-  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\) \}\)/);
+  assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal: aalDuJeton\(token\) \}\)/);
   assert.match(code, /registerSavoir\(server, h\)/); assert.match(code, /registerMemoire\(server, h\)/);
 });
 test("AG1 : conduite experte — reperes avant tout chiffre, consulter_savoir, mémoire effaçable, jamais d'identifiants", () => {

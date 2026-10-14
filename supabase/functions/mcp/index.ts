@@ -78,7 +78,7 @@ import { registerFormulaire } from "./formulaire.ts";
 import { registerReglages } from "./reglages.ts";
 import { registerExpertises, listeExpertises } from "./expertises.ts";
 import { registerAnalyser } from "./analyser.ts";
-import { registerBanque, banqueDeSession } from "./banque.ts";
+import { registerBanque, banqueDeSession, aalDuJeton } from "./banque.ts";
 import { CATALOGUE } from "./catalogue.gen.ts";
 
 // Motifs du filtre de contenu sensible (mêmes que public.contenu_sensible), réexportés comme contrat public du connecteur.
@@ -239,7 +239,7 @@ const CONDUITE_COPILOTE = [
   "14. Chiffres : utilise analyser (angles_utiles de l'expertise : allocation, frais, concentration, devises, crise, enveloppes, liquidite) plutôt que de calculer toi-même, et donne ses hypothèses.",
   "15. Synthèse en une seule voix, la tienne : points d'accord entre les expertises, tensions entre elles, options avec leurs avantages et leurs risques, ce qui manque pour conclure ; cite chaque expertise et sa version. La décision revient à l'utilisateur ; aucun produit ni établissement recommandé.",
   "16. Quand tu proposes de journaliser un avis appuyé sur des expertises, passe expertises: [{ slug, version }] à journaliser, toujours selon journal_consentement (règle 10).",
-  "17. Banque connectée (banque ; null si la lecture a échoué : n'en parle pas) : si banque.connexions_a_reconnecter n'est pas vide, propose tôt dans la conversation, une fois, de reconnecter chaque banque citée avec le bouton « Reconnecter » dans Boussole › Agent › Connexion (la synchronisation est arrêtée tant que ce n'est pas fait ; tu ne peux pas le faire à sa place). Si banque.comptes_a_rattacher est supérieur à 0, propose de rattacher ces comptes à une ligne, une enveloppe ou un crédit au même endroit. Si banque.connexions_en_double est supérieur à 0, signale qu'une banque est connectée deux fois et propose de déconnecter la connexion en double au même endroit (bouton « Déconnecter » ; ses comptes sont déjà suivis par l'autre connexion). Pour les soldes, les totaux par catégorie et les écarts au budget, appelle lire_banque ; pour le détail des 90 derniers jours, operations_recentes (règle 7 bis pour les libellés).",
+  "17. Banque connectée (banque ; null si la lecture a échoué : n'en parle pas) : si banque.connexions_a_reconnecter n'est pas vide, propose tôt dans la conversation, une fois, de reconnecter chaque banque citée avec le bouton « Reconnecter » dans Boussole › Agent › Connexion (la synchronisation est arrêtée tant que ce n'est pas fait ; tu ne peux pas le faire à sa place). Si banque.comptes_a_rattacher est supérieur à 0, propose de rattacher ces comptes à une ligne, une enveloppe ou un crédit au même endroit. Si banque.connexions_en_double est supérieur à 0, signale qu'une banque est connectée deux fois et propose de déconnecter la connexion en double au même endroit (bouton « Déconnecter » ; ses comptes sont déjà suivis par l'autre connexion). Pour les soldes, les totaux par catégorie et les écarts au budget, appelle lire_banque ; pour le détail des 90 derniers jours, operations_recentes (règle 7 bis pour les libellés). Double authentification : si banque.mfa_requise est vrai, ou si lire_banque ou operations_recentes répondent « Double authentification requise », ne réessaie pas et ne devine aucun chiffre : dis à l'utilisateur d'activer la double authentification dans Boussole › Mon compte › Sécurité si ce n'est pas fait, puis de reconnecter le connecteur après avoir validé son code (les données bancaires restent fermées au connecteur tant que ce n'est pas fait).",
   "18. Doublons probables (doublons_probables ; null si la lecture a échoué) : chaque élément est une ligne manuelle sans ISIN dont la valeur recopie, à 3 % près, le total des autres lignes de la même enveloppe (souvent créée en validant une ancienne proposition « créer une ligne ») ; le patrimoine est alors compté deux fois. Signale-le tôt, une fois, avec le nom de la ligne et de l'enveloppe, et propose de la clôturer : upsert_positions avec son id et status « clôturé », en citant la source (la vérification de Boussole) ; l'utilisateur valide dans Agent › Propositions. Ne la clôture jamais sans son accord ; s'il confirme que la ligne est réelle, n'insiste pas.",
 ].join("\n");
 
@@ -2226,7 +2226,8 @@ const ObjectifRow = z.strictObject({
 /* Serveur MCP (un par requête, lié au client de l'utilisateur)        */
 /* ------------------------------------------------------------------ */
 
-type Ctx = { db: any; user: { id: string; email?: string }; client?: { id: string; nom: string } };
+/* aal : niveau d assurance du jeton (aalDuJeton, banque.ts) ; les données bancaires exigent "aal2" (SEC2, migration 0028). */
+type Ctx = { db: any; user: { id: string; email?: string }; client?: { id: string; nom: string }; aal?: string };
 
 function wrap<A>(fn: (args: A) => Promise<unknown>) {
   return async (args: A) => {
@@ -2248,7 +2249,7 @@ async function loadPeople(db: any) {
   return people;
 }
 
-export function buildServer({ db, user, client }: Ctx): McpServer {
+export function buildServer({ db, user, client, aal }: Ctx): McpServer {
   const server = new McpServer({ name: "boussole", version: "1.1.0" }, { instructions: INSTRUCTIONS });
   // Erreurs de validation des paramètres : message français lisible (isError: true) au lieu du JSON brut du SDK.
   (server as any).validateToolInput = async (tool: any, args: unknown, name: string) => {
@@ -2263,7 +2264,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
 
   /* ---------- Savoir commun (savoir.ts) et mémoire de l'agent (memoire.ts) ---------- */
   // source des souvenirs : nom de l'assistant (claim client_id du jeton, « Assistant » sinon).
-  const h = { db, wrap, must, UserError, RO, RW, today, source: client?.nom ?? "Assistant" };
+  const h = { db, wrap, must, UserError, RO, RW, today, source: client?.nom ?? "Assistant", aal };
   registerSavoir(server, h);
   registerMemoire(server, h);
 
@@ -2275,6 +2276,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
     try {
       const f = must("fonctionnalites", await db.from("fonctionnalites").select("active").eq("cle", "banque").maybeSingle()) as any;
       if (!f || f.active !== true) return null;
+      if (aal !== "aal2") return null; // SEC2 : sans double authentification, les tables banque_* sont fermées (RLS, 0028) : budget prévu
       const d = new Date(), depuis = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 5, 1)).toISOString().slice(0, 10);
       const mois = async (avecCompte: boolean) => db.from("banque_mois").select(
         avecCompte ? "mois, categorie, entrees, sorties, compte_id" : "mois, categorie, entrees, sorties").gte("mois", depuis);
@@ -3035,7 +3037,7 @@ export function buildServer({ db, user, client }: Ctx): McpServer {
     // journalDeSession, routinesDeSession et listeExpertises ne lèvent jamais (table absente, panne : valeurs vides ; routines et
     // expertises : null) : ni le journal, ni les routines, ni les expertises ne bloquent la session. banqueDeSession non plus (null),
     // lancée en même temps que les autres lectures.
-    const banqueLue = banqueDeSession(db, must);
+    const banqueLue = banqueDeSession(db, must, aal);
     const doublonsLus = doublonsDeSession();
     const [{ vue }, memoire, journal, routines, expertises] = await Promise.all([lireEtat(), lireMemoire(db, must), journalDeSession(db, must, today()), routinesDeSession(db, must, today()), listeExpertises(db, must)]);
     const banque = await banqueLue, doublons_probables = await doublonsLus;
@@ -3217,7 +3219,7 @@ async function handleMcp(c: any) {
   // finir après la réponse (EdgeRuntime.waitUntil), sinon on l'attend avant de rendre la main.
   const connexion = noterConnexion(db, token);
   const runtime = (globalThis as any).EdgeRuntime;
-  const server = buildServer({ db, user: { id: data.user.id, email: data.user.email }, client: clientDuJeton(token) });
+  const server = buildServer({ db, user: { id: data.user.id, email: data.user.email }, client: clientDuJeton(token), aal: aalDuJeton(token) });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {

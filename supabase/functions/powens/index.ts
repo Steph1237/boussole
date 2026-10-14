@@ -2,7 +2,8 @@
 // docs/superpowers/plans/2026-10-12-bq1-powens.md › Fonction serveur).
 //
 // Déploiement : verify_jwt = false. Chaque route contrôle elle-même l'appelant :
-// - /connecter, /deconnecter, /synchroniser, /supprimer : JWT Supabase de l'utilisateur (auth.getUser) ;
+// - /connecter, /deconnecter, /synchroniser, /supprimer : JWT Supabase de l'utilisateur (auth.getUser) ; SEC2 : /connecter exige en plus
+//   la revendication aal = "aal2" du JWT (double authentification), sinon 403 { erreur, code: "mfa_requise" } avant tout appel Powens ;
 // - /webhook : jeton Powens de l'utilisateur (Authorization: Bearer), reconnu par son empreinte SHA-256
 //   (RPC powens_utilisateur_par_empreinte), et, si POWENS_WEBHOOK_SECRET est défini, signature BI-Signature datée de moins de
 //   5 minutes (BI-Signature-Date) ; sans ce secret, accepté seulement sur un domaine de bac à sable (suffixe -sandbox). Corps
@@ -61,6 +62,8 @@ const CORPS_MAX = 5 * 1024 * 1024;
 const MSG_FERME = "La connexion bancaire n'est pas encore ouverte pour ton compte.";
 const MSG_NON_CONNECTE = "Connecte-toi à Boussole pour gérer tes banques.";
 const MSG_CONFIG = "La connexion bancaire n'est pas encore configurée : réessaie plus tard.";
+/** SEC2 : connecter une banque exige une session passée par la double authentification (aal2). Code lu par l'app (Store.banque). */
+const MSG_MFA = "Active la double authentification et valide ton code pour connecter ta banque. Tu la règles dans Mon compte › Sécurité.";
 
 // Points d'injection pour les tests (client Supabase, fetch Powens, environnement, horloge) ; inchangés en production.
 export const deps = {
@@ -74,7 +77,7 @@ export const deps = {
 /* ---------- outils ---------- */
 const json = (corps: unknown, status = 200) =>
   new Response(JSON.stringify(corps), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
-const erreur = (status: number, message: string) => json({ erreur: message }, status);
+const erreur = (status: number, message: string, code?: string) => json({ erreur: message, ...(code ? { code } : {}) }, status);
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function bearer(req: Request): string {
@@ -127,6 +130,20 @@ async function utilisateur(db: any, req: Request): Promise<{ id: string } | null
   if (!jwt) return null;
   const { data, error } = await db.auth.getUser(jwt);
   return error || !data?.user?.id ? null : { id: data.user.id };
+}
+
+/** Niveau d'assurance (revendication aal) du JWT de la requête : "aal2" si la session a franchi un second facteur, "aal1" sinon.
+    Le jeton a déjà été validé par auth.getUser (utilisateur) ; ici on ne fait que lire sa charge utile. Illisible ou sans
+    revendication : aal1 (comme Supabase, qui traite un jeton sans aal comme aal1). */
+export function aalDuJeton(jwt: string): "aal1" | "aal2" {
+  try {
+    const b64 = (jwt.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0))));
+    return claims?.aal === "aal2" ? "aal2" : "aal1";
+  } catch {
+    return "aal1";
+  }
 }
 
 /** Corps brut, lu par morceaux ; null au-delà de `max` octets (Content-Length annoncé ou octets reçus). */
@@ -254,6 +271,8 @@ app.post("/connecter", async (c: any) => {
   const f = await db.from("fonctionnalites").select("active").eq("user_id", user.id).eq("cle", "banque").maybeSingle();
   if (f.error) return erreur(500, "Erreur interne : réessaie dans un moment.");
   if (f.data?.active !== true) return erreur(403, MSG_FERME);
+  // SEC2 : connexion, reconnexion et gestion d'une banque seulement après la double authentification (aal2), avant tout appel Powens.
+  if (aalDuJeton(bearer(req)) !== "aal2") return erreur(403, MSG_MFA, "mfa_requise");
   const cfg = configPowens();
   if (!cfg) return erreur(503, MSG_CONFIG);
   const corps = await lireCorps(req);

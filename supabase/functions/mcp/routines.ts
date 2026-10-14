@@ -364,8 +364,8 @@ export type CalculRoutine = {
   situationObjectifs: (d: any, objectifs: any[], ref: string) => { epargneMensuelle: number; objectifs: any[] };
 };
 
-export function registerRoutines(server: any, h: { db: any; wrap: any; must: any; UserError: any; RO: any; RW: any; source: string; today: () => string; calcul: CalculRoutine }) {
-  const { db, wrap, must, UserError, RO, RW, source, today, calcul } = h;
+export function registerRoutines(server: any, h: { db: any; wrap: any; must: any; UserError: any; RO: any; RW: any; source: string; today: () => string; calcul: CalculRoutine; aal?: string }) {
+  const { db, wrap, must, UserError, RO, RW, source, today, calcul, aal } = h;
   const Type = z.enum(TYPES_ROUTINE, { error: "type : " + TYPES_ROUTINE.join(", ") + "." });
   // Le schéma ne contrôle que les types : longueurs, nombre, champ et taille sont contrôlés dans l'outil avec les règles et les
   // messages exacts de la RPC cloturer_routine (questionsNormalisees, syntheseValide).
@@ -451,7 +451,7 @@ export function registerRoutines(server: any, h: { db: any; wrap: any; must: any
     const t = (donnees.lignes ?? []).length ? calcul.budgetTotaux(donnees, "foyer") : null;
     const obj = calcul.situationObjectifs(donnees, objectifs ?? [], auj);
     // Banque connectée : ne lève jamais (null en cas d'échec) ; { actif: false } si la connexion bancaire n'est pas ouverte.
-    const banque = await banqueDeRoutine(db, must, auj, t);
+    const banque = await banqueDeRoutine(db, must, auj, t, aal);
     // Argent qui dort (I8) : photos des 12 derniers mois (poches et enveloppes), dépenses réelles sinon prévues ; lecture sans blocage.
     const photos = await sansBloquer("photos", async () => (must("snapshots", await db.from("snapshots").select("date, by_bloc, by_envelope")
       .gte("date", moisAvant(moisIso(auj)!, 12) + "-01")) as any[]) ?? [], [] as any[]);

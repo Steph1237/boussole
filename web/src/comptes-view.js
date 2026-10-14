@@ -843,6 +843,10 @@
   function renderListe(u) {
     $("cvChargement").hidden = pret();
     if (!pret()) return;
+    // SEC2 : banque connectée mais session sans double authentification — les comptes bancaires restent fermés (RLS), carte bloquante en tête.
+    const BQ = window.BanqueEtat, mfa = !!(BQ && typeof BQ.mfaRequise === "function" && BQ.mfaRequise(S.banque));
+    $("cvMfa").hidden = !mfa;
+    if (mfa && !$("cvMfa").innerHTML) $("cvMfa").innerHTML = BQ.carteMfa();
     const L = comptes(S, jour()), e = entete(S, jour());
     const vide = !L.familles.some(F => F.nb);
     $("cvVide").hidden = !vide;

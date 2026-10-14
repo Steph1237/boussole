@@ -25,6 +25,10 @@
      [a-z_]>, jamais error_description) → { ok, message (fixe, en français, jamais le code), recherche (query sans ces paramètres) } ;
      null sinon, en particulier pour un retour d'authentification Supabase (error_description, error_code, access_token : laissé à
      supabase-js). Lu par auth.js (URL nettoyée avant la création du client) et app.js (bandeau).
+   - mfaRequise(banque) / carteMfa() (SEC2, migration 0028) : les tables banque_* exigent la double authentification (aal2). Store : S.banque.mfaRequise
+     vrai quand l'interrupteur est actif mais la session n'a pas franchi le second facteur ; les vues de données bancaires (Patrimoine › Comptes,
+     Agent › Connexion) montrent alors la carte bloquante « Active la double authentification pour voir tes comptes bancaires » (HTML pur,
+     bouton vers Mon compte › Sécurité) à la place des comptes.
    - heureParis(horodatage) : { jour, jjmm, heure } à l'heure de Paris (dernière synchronisation d'une connexion). */
 (function (root) {
   "use strict";
@@ -158,6 +162,15 @@
     return { jour: p.year + "-" + p.month + "-" + p.day, jjmm: p.day + "/" + p.month, heure: p.hour + ":" + p.minute };
   }
 
+  /* ---------- double authentification obligatoire (SEC2) ---------- */
+  const mfaRequise = b => !!(b && b.actif && b.mfaRequise === true);
+  const LIEN_SECURITE = "compte.html#securite";
+  function carteMfa() {
+    return '<section class="bq-mfa" role="note" aria-labelledby="bqMfaTitre"><h3 id="bqMfaTitre">Active la double authentification pour voir tes comptes bancaires</h3>' +
+      "<p>Tes comptes bancaires sont des données sensibles : Boussole ne les affiche qu'avec un code à 6 chiffres, en plus de ton mot de passe. L'activation prend deux minutes.</p>" +
+      '<a class="bq-mfa-btn" href="' + LIEN_SECURITE + '">Activer la double authentification</a></section>';
+  }
+
   /* ---------- appels à la fonction powens ---------- */
   /* Analyse par expression (sans dépendre de URL, absent de certains contextes) : https, pas d'identifiants dans l'autorité. */
   function urlPowensOk(url) {
@@ -199,7 +212,7 @@
     return { ok: true, message: "Connexion enregistrée, synchronisation en cours.", recherche };
   }
 
-  const BanqueEtat = { ETATS, etat, heureParis, TYPES, typeLibelle, comptesARattacher, rattache, ignore, enDouble, connexionsEnDouble, cibleSuggestion, suggestionOk, CATEGORIES, categoriePourTitre, reelMoyen, normRattachement, urlPowensOk, messageErreur, MSG_RESEAU, retourPowens };
+  const BanqueEtat = { ETATS, etat, heureParis, TYPES, typeLibelle, comptesARattacher, rattache, ignore, enDouble, connexionsEnDouble, cibleSuggestion, suggestionOk, CATEGORIES, categoriePourTitre, reelMoyen, normRattachement, urlPowensOk, messageErreur, MSG_RESEAU, retourPowens, mfaRequise, carteMfa, LIEN_SECURITE };
   root.BanqueEtat = BanqueEtat;
   if (typeof module === "object" && module.exports) module.exports = BanqueEtat;
 })(typeof window !== "undefined" ? window : globalThis);

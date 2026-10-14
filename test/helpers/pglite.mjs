@@ -9,6 +9,8 @@ create role anon; create role authenticated; create role service_role bypassrls;
 create schema auth;
 create table auth.users (id uuid primary key);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+-- auth.jwt() (SEC2, migration 0028) : niveau d'assurance aal2 par défaut, réglable par test.aal (voir BOUCHONS_SUPABASE plus bas)
+create function auth.jwt() returns jsonb language sql stable as $$ select jsonb_build_object('role', 'authenticated', 'aal', coalesce(nullif(current_setting('test.aal', true), ''), 'aal2')) $$;
 create table public.connexions_assistant (user_id uuid not null default auth.uid(), client_id text not null, client_nom text, premier_le timestamptz default now(), dernier_le timestamptz default now(), appels int default 1, primary key (user_id, client_id));
 create table public.profiles (user_id uuid); create table public.biens (user_id uuid, created_at timestamptz); create table public.credits (user_id uuid, created_at timestamptz);
 create table public.positions (user_id uuid, created_at timestamptz); create table public.transactions (user_id uuid, date date, created_at timestamptz);
@@ -46,6 +48,13 @@ alter default privileges in schema public grant all on functions to anon, authen
 create schema auth; create schema extensions; create schema cron; create schema net; create schema vault;
 create table auth.users (id uuid primary key, is_anonymous boolean default false, created_at timestamptz default now(), last_sign_in_at timestamptz);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+-- auth.jwt() : revendications du jeton de la session simulée. Le niveau d'assurance (aal) vient du réglage test.aal : « aal2 » par défaut
+-- (les tests des autres migrations simulent un utilisateur pleinement connecté), « aal1 » ou « aucun » (revendication absente) pour la
+-- double authentification (test/mfa-pglite.test.mjs).
+create function auth.jwt() returns jsonb language sql stable
+  as $$ select case coalesce(nullif(current_setting('test.aal', true), ''), 'aal2')
+               when 'aucun' then jsonb_build_object('role', 'authenticated')
+               else jsonb_build_object('role', 'authenticated', 'aal', coalesce(nullif(current_setting('test.aal', true), ''), 'aal2')) end $$;
 create function extensions.gen_random_bytes(int) returns bytea language sql as $$ select decode(md5(random()::text), 'hex') $$;
 create function extensions.digest(text, text) returns bytea language sql immutable strict
   as $$ select case lower($2) when 'sha256' then sha256(convert_to($1, 'UTF8')) end $$;

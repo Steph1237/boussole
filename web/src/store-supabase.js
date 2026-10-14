@@ -97,6 +97,11 @@
    est lu avec le reste par loadAll ; éteint (ou table absente) : { actif: false } et rien d'autre n'est lu. Allumé : connexions, comptes
    et les 6 derniers mois de banque_mois (mois en cours compris), lus ensuite ; lu = true quand ces lectures ont réussi (en échec : valeurs
    précédentes). etat : null (à jour) ou l'état Powens (libellés : banque-etat.js). Les ids Powens restent tels que lus (nombres).
+   SEC2 (migration 0028) : les tables banque_* exigent une session aal2 (double authentification). Interrupteur allumé mais session aal1
+   (aucun facteur activé) : rien n'est lu, S.banque = { actif: true, lu: true, mfaRequise: true, connexions: [], comptes: [], mois: [] }
+   (clé absente sinon), les vues montrent la carte « Active la double authentification » (BanqueEtat.carteMfa) et connecter / gerer
+   répondent { erreur } sans appel réseau. Au démarrage, Mfa.exiger (mfa.js) pose l'écran de code plein écran tant qu'une session aal1
+   a un facteur vérifié : rien n'est lu avant la validation.
    Store.banque.connecter(connectionId?) → { ok: true, url } | { erreur } : POST <supabaseUrl>/functions/v1/powens/connecter avec le JWT
    de la session (corps { connection_id } pour une reconnexion) ; l'URL renvoyée n'est acceptée qu'en https chez Powens
    (BanqueEtat.urlPowensOk) ; la vue redirige. Store.banque.gerer(connectionId) → { ok: true, url } | { erreur } : même appel avec
@@ -265,6 +270,14 @@
     doublonDe: r.doublon_de ?? null, rattacheAuto: r.rattache_auto ?? null, creeAuto: r.cree_auto === true, suggestion: BE().suggestionOk(r.suggestion) ? r.suggestion : null });
   const bqMoisView = r => ({ mois: String(r.mois).slice(0, 10), compteId: r.compte_id == null || +r.compte_id === 0 ? null : r.compte_id, categorie: r.categorie, entrees: num(r.entrees) || 0, sorties: num(r.sorties) || 0, nombre: r.nombre == null ? 0 : +r.nombre });
   const BANQUE_ETEINTE = () => ({ actif: false, lu: true, connexions: [], comptes: [], mois: [] });
+  /* Interrupteur actif mais session sans double authentification (aal1) : aucune donnée bancaire n'est lisible (RLS, migration 0028). */
+  const BANQUE_MFA = () => ({ actif: true, lu: true, mfaRequise: true, connexions: [], comptes: [], mois: [] });
+  /* La session a-t-elle franchi la double authentification ? Auth.mfa (auth.js) absent (démo, tests anciens) → oui ; niveau illisible → non. */
+  async function sessionAal2() {
+    const A = window.Auth;
+    if (!A || !A.mfa || typeof A.mfa.niveau !== "function") return true;
+    try { const n = await A.mfa.niveau(); return !!n && n.current === "aal2"; } catch (e) { return false; }
+  }
   /* 1er du mois, 5 mois avant le mois en cours : 6 mois de totaux (le mois en cours compris). */
   const debutSixMois = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth() - 5, 1)).toISOString().slice(0, 10); };
   /* banque_mois avec compte_id (0025) ; colonne absente (42703, migration pas encore appliquée) : relecture sans elle. */
@@ -339,7 +352,13 @@
     // Routines (0020) : table absente → valeur précédente, comme le journal ; routinesLues reste vrai après une première lecture.
     if (routines !== undefined) { C.routines = (routines || []).map(routineView); C.routinesLues = true; }
     // Banques (0021) : interrupteur éteint → { actif: false }, rien d'autre n'est lu ; lecture en échec ou table absente → valeur précédente.
-    if (banque !== undefined) { if (banque && banque.active) await lireBanque(); else C.banque = BANQUE_ETEINTE(); }
+    // SEC2 (0028) : les tables banque_* exigent une session aal2 (RLS) ; sans elle, rien n'est lu et S.banque.mfaRequise est vrai (carte
+    // « Active la double authentification » dans les vues, connexion d'une banque refusée).
+    if (banque !== undefined) {
+      if (!banque || !banque.active) C.banque = BANQUE_ETEINTE();
+      else if (!(await sessionAal2())) C.banque = BANQUE_MFA();
+      else await lireBanque();
+    }
     // Colonne absente (migration 0013 non appliquée) ou valeur inconnue : « demander », comme le connecteur.
     if (prof !== undefined) C.journalConsentement = prof && CONSENTEMENTS.includes(prof.journal_consentement) ? prof.journal_consentement : "demander";
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
@@ -579,8 +598,10 @@
     if (!BE().urlPowensOk(r.data.url)) return { erreur: "Adresse de connexion inattendue : rien n'a été ouvert. Réessaie dans un instant." };
     return { ok: true, url: r.data.url };
   }
+  const MSG_MFA_BANQUE = "Active la double authentification (Mon compte › Sécurité) et valide ton code pour connecter ta banque.";
   const banqueApi = {
     async connecter(connectionId) {
+      if (C.banque.mfaRequise) return { erreur: MSG_MFA_BANQUE };
       const corps = {};
       if (connectionId != null) {
         const id = idPowens(connectionId);
@@ -591,6 +612,7 @@
     },
     /* Gérer les comptes d'une connexion existante (webview Manage) : jamais une seconde connexion à la même banque. */
     async gerer(connectionId) {
+      if (C.banque.mfaRequise) return { erreur: MSG_MFA_BANQUE };
       const id = idPowens(connectionId);
       if (id == null || !C.banque.connexions.some(c => String(c.id) === String(id))) return { erreur: "Connexion introuvable." };
       return pagePowens({ connection_id: id, mode: "gerer" });
@@ -775,6 +797,10 @@
       C.dbOk = false; C.ready = true; publish();
       if (A && A.requireSession) A.requireSession({ demoOk: true });
       return;
+    }
+    // SEC2 : session aal1 avec un second facteur activé → écran de code (mfa.js) avant toute lecture ; reprise de session comprise.
+    if (A && A.mfa && window.Mfa && typeof window.Mfa.exiger === "function") {
+      await window.Mfa.exiger(A.mfa, { onQuitter: async () => { try { await A.signOut(); } catch (e) { try { await sb.auth.signOut({ scope: "local" }); } catch (x) { /* rien */ } } if (A.urls) location.replace(A.urls.connexion()); } });
     }
     C.dbOk = true;
     try { await loadAll(); } catch (e) { C.error = asErr(e).code; C.ready = true; }

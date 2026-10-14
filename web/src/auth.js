@@ -1,7 +1,9 @@
 /* Authentification Supabase (supabase-js v2, build UMD chargé par build.mjs juste après config.js).
    window.Auth = { client, emails, session(), signInPassword(email, pw), signUp(email, pw), signInMagic(email),
                    signInAnon(), isAnonymous(session), secureAccount(email, pw), passwordProblem(pw), weakPasswordText(e),
-                   signInGoogle(), signOut(), onChange(fn), requireSession({ demoOk }) , urls }
+                   signInGoogle(), signOut(), onChange(fn), requireSession({ demoOk }) , urls, mfa }
+   mfa (SEC2) : adaptateur de la double authentification sur ce client (Mfa.adapter, mfa.js, chargé avant ce fichier) :
+   niveau() → { current, next }, facteurs(), inscrire(), verifier(facteurId, code), annuler(facteurId), supprimer(facteurId) ; null en démo.
    Mode sans e-mail (BOUSSOLE.emails !== true, décision du 2026-10-10) : Supabase n'envoie aucun e-mail. Inscription
    sans confirmation (session immédiate), compte anonyme « Commencer sans e-mail » (signInAnon), sécurisé ensuite par
    secureAccount (e-mail + mot de passe posés sans courrier). signInMagic reste disponible mais n'est pas proposé.
@@ -63,6 +65,7 @@
     client,
     isDemo,
     emails: EMAILS,
+    mfa: (window.Mfa && client) ? window.Mfa.adapter(client) : null,
     urls: { app: () => page("app.html"), home: () => page("index.html"), connexion: () => page("index.html") + "#connexion" },
     async session() {
       if (!client) return null;

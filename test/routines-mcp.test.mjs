@@ -50,7 +50,7 @@ const must = (t, r) => { if (r.error) throw new UserErrorT(`Erreur base de donnÃ
 function serveur(register, db, extra = {}) {
   const outils = {};
   const h = {
-    db, UserError: UserErrorT, RO: { readOnlyHint: true }, RW: { readOnlyHint: false }, source: "Claude", today: () => TODAY, must,
+    db, UserError: UserErrorT, RO: { readOnlyHint: true }, RW: { readOnlyHint: false }, source: "Claude", aal: "aal2", today: () => TODAY, must,
     wrap: fn => async a => { try { return { ok: await fn(a) }; } catch (e) { if (e instanceof UserErrorT) return { erreur: e.message }; throw e; } },
     ...extra,
   };
