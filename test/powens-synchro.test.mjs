@@ -281,7 +281,7 @@ test("planifier : connexion, comptes (sans colonnes de rattachement), états et 
     maintenant: MAINTENANT.toISOString(), aujourdhui: AUJ, minDate: "2026-07-14", lots: {},
   });
   assert.deepEqual([carte.comptes[0].type, carte.comptes[0].debit_differe], ["courant", true], "carte à débit différé repérée");
-  assert.deepEqual(Object.keys(c).sort(), ["actif", "connexion_id", "debit_differe", "devise", "id", "maj_le", "nom", "solde", "solde_le", "type", "user_id"]);
+  assert.deepEqual(Object.keys(c).sort(), ["actif", "connexion_id", "debit_differe", "devise", "id", "maj_le", "nom", "ouverture_le", "pret", "solde", "solde_le", "type", "user_id"]);
   assert.equal(c.debit_differe, false);
   assert.equal(c.nom, "Compte chèque ••••", "numéro masqué dans le nom");
   assert.equal(c.type, "courant");
@@ -1457,4 +1457,189 @@ test("synchroniser : cas type — 400 € « VIR.PERMANENT DUPONT » le 5 vers l
   assert.ok(r2.notes.some(n => /versements programmés illisibles/.test(n)));
   const cat2 = id => db2.tables.banque_operations.find(o => o.id === id).categorie;
   assert.deepEqual([cat2(9401), cat2(9402)], ["divers", "epargne"], "sans versements programmés : « DUPONT » seul n'est pas un indice");
+});
+
+/* ---------- DAT1 : données du prêt (spec dat1-calendrier § 2.6 et § 7) ---------- */
+const PRET_BANQUE = { subscription_date: "2021-03-15", maturity_date: "2041-03-15", start_repayment_date: "2021-04-15", rate: 1.45,
+  duration: 240, total_amount: 200000, insurance_rate: 0.0035, next_payment_date: "2026-11-15", type: "mortgage" };
+const avecPret = (loan, base = COMPTES) => base.map(c => (c.id === 104 ? { ...c, loan } : c));
+const apiPret = (comptes, surcharge = {}) => apiFactice({ comptes, connexion: connexionPowens({ connector: { id: 59, name: "Banque Exemple" } }), ...surcharge });
+const propsConfig = db => db.tables.propositions.filter(p => p.cible === "config");
+
+test("pretDe : champs documentés présents et valides seulement, dates réelles tronquées au jour, rien d'inventé", { skip: SANS_STRIP }, () => {
+  const { S } = charger();
+  assert.deepEqual(J(S.pretDe({ loan: PRET_BANQUE })), PRET_BANQUE);
+  // Chaîne ISO complète valide : tronquée au jour. Date impossible, texte, nombre non fini : écartés.
+  const bruit = S.pretDe({ loan: { subscription_date: "2021-03-15T00:00:00Z", maturity_date: "2041-02-30", start_repayment_date: "bientôt",
+    next_payment_date: "2026-11-15 00:00:00", rate: "abc", duration: Infinity, total_amount: NaN, insurance_rate: null, type: "autre_type" } });
+  assert.deepEqual(J(bruit), { subscription_date: "2021-03-15", next_payment_date: "2026-11-15" });
+  // Nombres sous forme de chaîne numérique stricte acceptés ; booléens, tableaux, objets refusés.
+  assert.deepEqual(J(S.pretDe({ loan: { rate: "1.45", duration: "240", total_amount: true, insurance_rate: [0.003], type: "LOAN" } })),
+    { rate: 1.45, duration: 240, type: "loan" });
+  // Seuls les champs documentés sont copiés : ni capital restant dû, ni montant d'assurance, ni champ inconnu.
+  const copie = S.pretDe({ loan: { ...PRET_BANQUE, remaining_capital: 160000, insurance_amount: 30, nb_payments_left: 12, inconnu: "x", iban: "FR76" } });
+  assert.deepEqual(Object.keys(copie).sort(), Object.keys(PRET_BANQUE).sort());
+  // Jamais de date inventée : une durée seule ne produit aucune date.
+  assert.deepEqual(J(S.pretDe({ loan: { duration: 240 } })), { duration: 240 });
+  // Absent, vide, nul, mal formé, sans champ exploitable : null.
+  for (const compte of [null, undefined, {}, { loan: null }, { loan: {} }, { loan: [] }, { loan: "x" }, { loan: 12 },
+    { loan: { subscription_date: null, maturity_date: null, rate: null, duration: null, type: null } }, { loan: { type: "inconnu", remaining_capital: 5 } }])
+    assert.equal(S.pretDe(compte), null, JSON.stringify(compte));
+});
+
+test("infosPret : bornes de la base (date_fin > date_signature, durée 1 à 480, assurance 0 à 5 %), taux_pct jamais proposé", { skip: SANS_STRIP }, () => {
+  const { S } = charger();
+  assert.deepEqual(J(S.infosPret(PRET_BANQUE, AUJ)), { date_signature: "2021-03-15", date_fin: "2041-03-15", duree_mois: 240, assurance_taux_pct: 0.35 });
+  assert.equal("assurance_taux_pct" in S.infosPret({ ...PRET_BANQUE, insurance_rate: 0.07 }, AUJ), false, "7 % : hors borne, omis");
+  assert.equal(S.infosPret({ ...PRET_BANQUE, insurance_rate: 0.05 }, AUJ).assurance_taux_pct, 5);
+  assert.equal(S.infosPret({ ...PRET_BANQUE, insurance_rate: 0 }, AUJ).assurance_taux_pct, 0);
+  assert.equal("assurance_taux_pct" in S.infosPret({ ...PRET_BANQUE, insurance_rate: 3.5 }, AUJ), false, "hors du ratio documenté : omis");
+  assert.equal("assurance_taux_pct" in S.infosPret({ ...PRET_BANQUE, insurance_rate: -0.01 }, AUJ), false);
+  assert.equal("duree_mois" in S.infosPret({ ...PRET_BANQUE, duration: 481 }, AUJ), false);
+  assert.equal("duree_mois" in S.infosPret({ ...PRET_BANQUE, duration: 0 }, AUJ), false);
+  assert.equal("duree_mois" in S.infosPret({ ...PRET_BANQUE, duration: 12.5 }, AUJ), false);
+  assert.equal(S.infosPret({ ...PRET_BANQUE, duration: 480 }, AUJ).duree_mois, 480);
+  assert.equal("date_fin" in S.infosPret({ ...PRET_BANQUE, maturity_date: "2021-03-15" }, AUJ), false, "fin = signature : omise");
+  assert.equal("date_fin" in S.infosPret({ ...PRET_BANQUE, maturity_date: "2020-01-01" }, AUJ), false);
+  assert.equal("date_signature" in S.infosPret({ ...PRET_BANQUE, subscription_date: "2027-01-01" }, AUJ), false, "signature dans le futur : omise");
+  assert.equal("date_signature" in S.infosPret({ ...PRET_BANQUE, subscription_date: "1900-01-01" }, AUJ), false);
+  // Taux nominal : échelle de `rate` non documentée → jamais proposé ; un prêt qui n'a que ce champ ne donne rien.
+  assert.equal("taux_pct" in S.infosPret(PRET_BANQUE, AUJ), false);
+  assert.equal(S.infosPret({ rate: 1.45, total_amount: 1000, next_payment_date: "2026-11-15", type: "loan" }, AUJ), null);
+  assert.equal(S.infosPret(null, AUJ), null);
+});
+
+test("synchroniser (DAT1) : compte de crédit avec prêt → pret et ouverture_le, une seule proposition prets_infos, tracée ensuite", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const autre = { user_id: AUTRE, id: 104, connexion_id: 7, position_id: null, enveloppe: null, titulaire: null, credit_id: "cred-b" };
+  const db = fausseBase({ ...baseInitiale([...J(RATTACHES), autre]), config: [{ user_id: U, prets_infos: {} }, { user_id: AUTRE, prets_infos: {} }] }, { rpc: RPC });
+  const api = apiPret(avecPret(PRET_BANQUE));
+  const r = await S.synchroniser(db, api, U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  assert.equal(r.prets_proposes, 1);
+  const T = db.tables;
+  const c104 = T.banque_comptes.find(c => c.user_id === U && c.id === 104);
+  assert.deepEqual(J(c104.pret), PRET_BANQUE);
+  assert.equal(c104.ouverture_le, "2021-03-15");
+  assert.equal(c104.infos_proposees_le, MAINTENANT.toISOString());
+  // Un compte non crédit : aucune date d'ouverture, aucun prêt.
+  for (const id of [101, 102, 103]) {
+    const c = T.banque_comptes.find(x => x.user_id === U && x.id === id);
+    assert.equal(c.ouverture_le, null, `compte ${id}`);
+    assert.equal(c.pret, null, `compte ${id}`);
+    assert.equal(c.infos_proposees_le ?? null, null, `compte ${id}`);
+  }
+  // La proposition : cible config, modifier, clé du crédit, champs documentés et valides, source Powens, jour de la synchronisation.
+  const ps = propsConfig(db);
+  assert.equal(ps.length, 1);
+  assert.equal(ps[0].user_id, U);
+  assert.equal(ps[0].statut ?? "en_attente", "en_attente");
+  assert.equal(ps[0].operation, "modifier");
+  assert.deepEqual(J(ps[0].apres), { prets_infos: { "credit:cred-1": { date_signature: "2021-03-15", date_fin: "2041-03-15", duree_mois: 240,
+    assurance_taux_pct: 0.35, source: "Powens — Banque Exemple : données du prêt transmises par la banque", le: AUJ } } });
+  assert.equal(ps[0].id, await S.idPret(U, 104));
+  assert.equal(ps[0].lot, await S.lotPret(U, 104));
+  assert.ok(!JSON.stringify(ps[0]).includes("enveloppes_infos"));
+  assert.equal(T.propositions.filter(p => JSON.stringify(p.apres ?? {}).includes("enveloppes_infos")).length, 0, "jamais de proposition d'enveloppe");
+  // L'autre utilisateur n'est pas touché.
+  assert.deepEqual(J(T.banque_comptes.find(c => c.user_id === AUTRE)), J(autre));
+  assert.deepEqual(J(T.config.find(c => c.user_id === AUTRE).prets_infos), {});
+  // Deuxième passage, même refusée entre-temps : aucune nouvelle proposition, trace inchangée.
+  T.propositions.forEach(p => { p.statut = "refusee"; p.decide_le = MAINTENANT.toISOString(); });
+  const r2 = await S.synchroniser(db, apiPret(avecPret(PRET_BANQUE)), U, 7, { ...OPTS(), maintenant: new Date("2026-10-13T08:00:00Z") });
+  assert.equal(r2.prets_proposes, 0);
+  assert.equal(propsConfig(db).length, 1);
+  assert.equal(T.banque_comptes.find(c => c.user_id === U && c.id === 104).infos_proposees_le, MAINTENANT.toISOString());
+});
+
+test("synchroniser (DAT1) : clé déjà dans prets_infos, déjà proposé, non rattaché, ignoré ou prêt sans champ proposable → aucune proposition", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const sync = async (comptes, { config = [{ user_id: U, prets_infos: {} }], credits, loan = PRET_BANQUE } = {}) => {
+    const base = baseInitiale(comptes);
+    if (credits) base.credits = credits;
+    const db = fausseBase({ ...base, config }, { rpc: RPC });
+    const r = await S.synchroniser(db, apiPret(avecPret(loan)), U, 7, OPTS());
+    assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+    return db;
+  };
+  // Clé déjà présente (saisie par l'utilisateur) : rien, et pas de trace non plus.
+  let db = await sync(J(RATTACHES), { config: [{ user_id: U, prets_infos: { "credit:cred-1": { date_fin: "2040-01-01", source: "relevé", le: "2026-01-01" } } }] });
+  assert.equal(propsConfig(db).length, 0);
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 104).infos_proposees_le ?? null, null);
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 104).ouverture_le, "2021-03-15", "le prêt reste gardé sur le compte");
+  // Clé d'un autre crédit présente : la proposition a lieu.
+  db = await sync(J(RATTACHES), { config: [{ user_id: U, prets_infos: { "credit:autre": { date_fin: "2040-01-01", source: "x", le: "2026-01-01" } } }] });
+  assert.equal(propsConfig(db).length, 1);
+  // Déjà proposé une fois (infos_proposees_le), même refusée depuis : rien.
+  db = await sync(J(RATTACHES).map(c => (c.id === 104 ? { ...c, infos_proposees_le: "2026-09-01T00:00:00Z" } : c)));
+  assert.equal(propsConfig(db).length, 0);
+  // Compte de crédit non rattaché (aucun crédit dans le profil) : le prêt est gardé, rien n'est proposé.
+  db = await sync(J(RATTACHES).filter(c => c.id !== 104), { credits: [] });
+  assert.equal(propsConfig(db).length, 0);
+  assert.deepEqual(J(db.tables.banque_comptes.find(c => c.id === 104).pret), PRET_BANQUE);
+  // Compte ignoré : rien.
+  db = await sync(J(RATTACHES).map(c => (c.id === 104 ? { ...c, ignore: true } : c)));
+  assert.equal(propsConfig(db).length, 0);
+  // Prêt dont aucun champ n'est proposable (taux et montant seulement) : pret gardé, pas de proposition ni de trace.
+  db = await sync(J(RATTACHES), { loan: { rate: 1.45, total_amount: 200000, type: "mortgage" } });
+  assert.equal(propsConfig(db).length, 0);
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 104).infos_proposees_le ?? null, null);
+  assert.deepEqual(J(db.tables.banque_comptes.find(c => c.id === 104).pret), { rate: 1.45, total_amount: 200000, type: "mortgage" });
+  // config illisible : aucune proposition (échec fermé), noté, le reste de la synchronisation continue.
+  const base = baseInitiale(J(RATTACHES));
+  const dbPanne = fausseBase({ ...base, config: [{ user_id: U, prets_infos: {} }] }, { rpc: RPC, echec: (t, op) => (t === "config" ? "panne config" : null) });
+  const rp = await S.synchroniser(dbPanne, apiPret(avecPret(PRET_BANQUE)), U, 7, OPTS());
+  assert.equal(propsConfig(dbPanne).length, 0);
+  assert.ok(rp.notes.some(x => x.includes("panne config")));
+  assert.equal(dbPanne.tables.banque_comptes.find(c => c.id === 104).ouverture_le, "2021-03-15");
+});
+
+test("synchroniser (DAT1) : loan absent ou sans champ → pret et ouverture_le null, aucune date inventée, aucune proposition", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  for (const loan of [undefined, null, {}, { subscription_date: null, maturity_date: null, rate: null, duration: null, insurance_rate: null }]) {
+    const db = fausseBase({ ...baseInitiale(J(RATTACHES)), config: [{ user_id: U, prets_infos: {} }] }, { rpc: RPC });
+    const r = await S.synchroniser(db, apiPret(avecPret(loan)), U, 7, OPTS());
+    assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+    const c = db.tables.banque_comptes.find(x => x.id === 104);
+    assert.equal(c.pret, null);
+    assert.equal(c.ouverture_le, null);
+    assert.equal(propsConfig(db).length, 0);
+  }
+  // Un `loan` posé sur un compte qui n'est pas un crédit n'est pas lu : ouverture_le reste null.
+  const db = fausseBase({ ...baseInitiale(J(RATTACHES)), config: [{ user_id: U, prets_infos: {} }] }, { rpc: RPC });
+  const comptes = COMPTES.map(c => (c.id === 103 || c.id === 101 ? { ...c, loan: PRET_BANQUE } : c));
+  await S.synchroniser(db, apiPret(comptes), U, 7, OPTS());
+  for (const id of [101, 103]) {
+    const c = db.tables.banque_comptes.find(x => x.id === id);
+    assert.equal(c.ouverture_le, null);
+    assert.equal(c.pret, null);
+  }
+  assert.equal(propsConfig(db).length, 0);
+});
+
+test("synchroniser (DAT1) : une erreur sur un compte n'arrête pas les autres (proposition de prêt et trace compte par compte)", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const credit2 = { id: 108, id_connection: 7, name: "Prêt travaux", balance: -20000, currency: { id: "EUR" }, type: "consumercredit", disabled: null, deleted: null,
+    last_update: "2026-10-12 07:55:00", loan: { subscription_date: "2023-06-01", maturity_date: "2028-06-01", duration: 60, type: "consumercredit" } };
+  const comptes = [...avecPret(PRET_BANQUE), credit2];
+  const rattaches = [...J(RATTACHES), { user_id: U, id: 108, connexion_id: 7, position_id: null, enveloppe: null, titulaire: null, credit_id: "cred-2" }];
+  const base = baseInitiale(rattaches);
+  base.credits.push({ id: "cred-2", user_id: U, nom: "Travaux", crd: 20000 });
+  const idEchec = await S.idPret(U, 104);
+  const db = fausseBase({ ...base, config: [{ user_id: U, prets_infos: {} }] }, { rpc: RPC,
+    echec: (t, op, q) => (t === "propositions" && op === "upsert" && q.val?.id === idEchec ? "refus de la base" : null) });
+  const r = await S.synchroniser(db, apiPret(comptes), U, 7, OPTS());
+  assert.equal(r.ok, false);
+  assert.ok(r.erreurs.some(e => e.erreur.includes("proposition de prêt") && e.erreur.includes("refus de la base")));
+  assert.equal(r.prets_proposes, 1);
+  const ps = propsConfig(db);
+  assert.equal(ps.length, 1);
+  assert.deepEqual(Object.keys(ps[0].apres.prets_infos), ["credit:cred-2"]);
+  assert.deepEqual(J(ps[0].apres.prets_infos["credit:cred-2"]), { date_signature: "2023-06-01", date_fin: "2028-06-01", duree_mois: 60,
+    source: "Powens — Banque Exemple : données du prêt transmises par la banque", le: AUJ });
+  // Le compte en échec n'est pas tracé : nouvel essai au prochain passage ; l'autre l'est.
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 104).infos_proposees_le ?? null, null);
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 108).infos_proposees_le, MAINTENANT.toISOString());
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 108).ouverture_le, "2023-06-01");
+  assert.equal(db.tables.banque_comptes.find(c => c.id === 104).ouverture_le, "2021-03-15", "les deux comptes sont enregistrés");
 });

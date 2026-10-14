@@ -42,13 +42,28 @@
 // Robustesse : une lecture en échec n'efface rien (placements, opérations, comptes) ; une erreur sur un compte ou sur une étape
 // d'écriture n'arrête pas les autres ; le dernier échec est résumé dans banque_connexions.message.
 //
-// Champs Powens lus (documentation consultée le 2026-10-12) :
+// Données du prêt (DAT1, docs/superpowers/specs/2026-10-14-dat1-calendrier-design.md § 2.6 et § 7) : pour un compte de type credit,
+// `pretDe` (pure) copie sur banque_comptes.pret les seuls champs documentés de l'objet `loan` qui sont présents et valides, et
+// banque_comptes.ouverture_le reçoit loan.subscription_date (null pour tout autre type : Powens ne documente aucune date
+// d'ouverture hors prêt). Un compte de crédit rattaché à un crédit (credit_id), avec un prêt renseigné, sans infos_proposees_le et
+// sans clé « credit:<id> » déjà présente dans config.prets_infos, reçoit UNE proposition config/prets_infos (`infosPret`, pure),
+// identifiant déterministe (powens-pret-<user>-<compte>), puis infos_proposees_le est posé, une seule fois même si la proposition
+// est refusée. Jamais de proposition enveloppes_infos. Le rattachement d'un compte à un bien n'existe pas dans BQ1
+// (banque_comptes n'a pas de bien_id) : seule la clé « credit:<id> » est proposée.
+//
+// Champs Powens lus (documentation consultée le 2026-10-14) :
 // - connexion (https://docs.powens.com/api-reference/user-connections/connections) : id, state, error_message, last_update
 //   (UTC, « AAAA-MM-JJ HH:MM:SS »), connector.name (expand=connector). États :
 //   https://docs.powens.com/documentation/integration-guides/sca-and-connection-states ;
 // - compte (https://docs.powens.com/api-reference/products/data-aggregation/bank-accounts) : id, name, original_name, balance,
 //   currency.id, type (AccountTypeName, https://docs.powens.com/api-reference/products/data-aggregation/bank-account-types),
 //   disabled, deleted, last_update, loan.remaining_capital (si présent) ; le numéro et l'IBAN ne sont jamais lus ;
+// - prêt imbriqué `loan` du même objet compte (tous champs nullables, aucune garantie de remplissage par banque) : subscription_date,
+//   maturity_date, start_repayment_date (dates AAAA-MM-JJ), rate, duration (mois), total_amount, insurance_rate, next_payment_date,
+//   type (mortgage | consumercredit | revolvingcredit | loan). Unités : `insurance_rate` est documenté « entre 0 et 1 » (ratio) →
+//   proposé en pourcentage (× 100, borné 0 à 5) ; l'échelle de `rate` n'est PAS documentée (« Rate of the loan ») → copié tel quel
+//   dans banque_comptes.pret, jamais proposé comme taux_pct tant que Powens ne la précise pas. Hors DAT1 : loan.remaining_capital,
+//   lu plus haut, n'existe pas dans l'objet `loan` documenté (le repli sur le solde du compte est ce qui fonctionne) ;
 // - placement (https://docs.powens.com/api-reference/products/data-aggregation/investments) : id, code, code_type (ISIN | AMF),
 //   label, quantity, unitprice (prix de revient unitaire), valuation, deleted ;
 // - opération (https://docs.powens.com/api-reference/products/data-aggregation/bank-transactions) : id, date, value,
@@ -160,6 +175,62 @@ const nombre = (v: unknown): number | null => {
 };
 const texte = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 
+/* ---------- prêt (DAT1) ---------- */
+const TYPES_PRET = ["mortgage", "consumercredit", "revolvingcredit", "loan"];
+/** Jour AAAA-MM-JJ réel d'une date Powens (une chaîne ISO complète est tronquée au jour) ; null si absent ou impossible (2026-02-30). */
+function jourReel(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/);
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3] ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+/** Nombre fini (nombre JSON, ou chaîne numérique stricte) ; null sinon. */
+function nombreFini(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v.trim())) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+  return null;
+}
+/** Champs documentés de `compte.loan`, présents et valides, rien d'autre ; null si `loan` est absent, vide ou sans champ exploitable.
+    Aucune date n'est inventée ni déduite. Ne lève pas. */
+export function pretDe(compte: any): Record<string, string | number> | null {
+  const loan = compte?.loan;
+  if (!loan || typeof loan !== "object" || Array.isArray(loan)) return null;
+  const sortie: Record<string, string | number> = {};
+  for (const k of ["subscription_date", "maturity_date", "start_repayment_date"]) {
+    const j = jourReel(loan[k]);
+    if (j) sortie[k] = j;
+  }
+  for (const k of ["rate", "duration", "total_amount", "insurance_rate"]) {
+    const n = nombreFini(loan[k]);
+    if (n != null) sortie[k] = n;
+  }
+  const next = jourReel(loan.next_payment_date);
+  if (next) sortie.next_payment_date = next;
+  const type = typeof loan.type === "string" ? loan.type.trim().toLowerCase() : "";
+  if (TYPES_PRET.includes(type)) sortie.type = type;
+  return Object.keys(sortie).length ? sortie : null;
+}
+/** Informations du prêt à proposer dans config.prets_infos (sans source ni date de saisie), bornées comme la base : un champ hors
+    limites est omis (la base refuserait la proposition entière) ; null si aucun champ n'est proposable. `taux_pct` n'est jamais
+    proposé (échelle de `rate` non documentée). `aujourdhui` : AAAA-MM-JJ à Paris. */
+export function infosPret(pret: any, aujourdhui: string): Record<string, string | number> | null {
+  if (!pret || typeof pret !== "object") return null;
+  const sortie: Record<string, string | number> = {};
+  const signature = jourReel(pret.subscription_date);
+  if (signature && signature >= "1950-01-01" && signature <= aujourdhui) sortie.date_signature = signature;
+  const fin = jourReel(pret.maturity_date);
+  if (fin && (!sortie.date_signature || fin > sortie.date_signature)) sortie.date_fin = fin;
+  const duree = nombreFini(pret.duration);
+  if (duree != null && Number.isInteger(duree) && duree >= 1 && duree <= 480) sortie.duree_mois = duree;
+  const assurance = nombreFini(pret.insurance_rate); // ratio de 0 à 1 (documentation Powens) → pourcentage
+  if (assurance != null && assurance >= 0 && assurance <= 1) {
+    const pct = Math.round(assurance * 1e6) / 1e4;
+    if (pct <= 5) sortie.assurance_taux_pct = pct;
+  }
+  return Object.keys(sortie).length ? sortie : null;
+}
+
 /** Uuid déterministe (forme v5 : SHA-256 tronqué, version 5, variante RFC 4122). */
 export async function uuidDeterministe(graine: string): Promise<string> {
   const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(graine))).slice(0, 16);
@@ -175,6 +246,13 @@ export function lotProposition(userId: string, compteId: number | string): Promi
 /** Identifiant de la proposition d'un compte (une seule, même si deux synchronisations la déposent en même temps). */
 export function idProposition(userId: string, compteId: number | string): Promise<string> {
   return uuidDeterministe(`powens-prop-${userId}-${compteId}`);
+}
+/** Lot et identifiant de la proposition prets_infos d'un compte de crédit (une seule, même si deux synchronisations la déposent). */
+export function lotPret(userId: string, compteId: number | string): Promise<string> {
+  return uuidDeterministe(`powens-pret-lot-${userId}-${compteId}`);
+}
+export function idPret(userId: string, compteId: number | string): Promise<string> {
+  return uuidDeterministe(`powens-pret-${userId}-${compteId}`);
 }
 /** Identifiant de la ligne de marché d'un placement. */
 export function idLigne(userId: string, placementId: number | string): Promise<string> {
@@ -893,11 +971,13 @@ type LectureCompte = { compte: any; placements: any[] | null; operations: any[] 
 /** État local : comptes (rattachements, ignore, propose_le), placements (liens, ligne_creee_le ; tous ceux de l'utilisateur),
     lots des propositions déjà déposées, comptes à rattacher à la ligne créée par une proposition acceptée (id du compte → id de
     la ligne), et lignes de l'utilisateur candidates à l'adoption (id, user_id, name, envelope, owner, mode, isin, qty, status). */
-export type Etat = { comptes: any[]; placements: any[]; lotsExistants: string[]; acceptes?: Record<string, string>; lignes?: any[] };
+export type Etat = { comptes: any[]; placements: any[]; lotsExistants: string[]; acceptes?: Record<string, string>; lignes?: any[];
+  /** config.prets_infos de l'utilisateur ; absent ou null (illisible) : aucune proposition de prêt. */
+  pretsInfos?: Record<string, unknown> | null };
 export type Donnees = {
   userId: string; connexion: any; comptes: LectureCompte[]; lectureComptesOk: boolean; maintenant: string; aujourdhui: string;
   minDate: string; lots: Record<string, string>; idsPropositions?: Record<string, string>; idsLignes?: Record<string, string>;
-  idsLiquidites?: Record<string, string>; erreurComptes?: string;
+  idsLiquidites?: Record<string, string>; erreurComptes?: string; idsPrets?: Record<string, { id: string; lot: string }>;
   /** Résultat de rapprocher (absent : ni rattachement automatique, ni suggestion, ni marque de doublon écrits). */
   rapprochement?: ResultatRapprochement;
 };
@@ -912,7 +992,7 @@ export function planifier(etat: Etat, d: Donnees) {
     // adoption : ligne existante de l'utilisateur reprise par la synchronisation (écrite sans ce filtre, une fois)
     positionsMaj: [] as { id: string; patch: Record<string, unknown>; auto?: boolean; adoption?: boolean }[], placements: [] as any[], placementsSupprimer: [] as any[],
     creditsMaj: [] as { id: string; crd: number }[], operations: [] as any[], operationsSupprimer: [] as any[], propositions: [] as any[],
-    rattachements: [] as { id: number; position_id: string }[], comptesProposes: [] as number[],
+    rattachements: [] as { id: number; position_id: string }[], comptesProposes: [] as number[], propositionsPrets: [] as { compte: number; proposition: any }[],
     // rattachements automatiques (rapprocher) : posés seulement si le compte est encore libre ; lignesAuto : lignes à créer avant
     rattachementsAuto: [] as { id: number; patch: Record<string, unknown>; cree: boolean; ligne: string | null }[], lignesAuto: [] as any[],
     moisDepuis: null as string | null, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[],
@@ -950,9 +1030,12 @@ export function planifier(etat: Etat, d: Donnees) {
     const solde = nombre(c.balance);
     const nom = nettoyerLibelle(c.name ?? c.original_name) || "Compte";
     const rp = d.rapprochement?.comptes?.[String(id)];
+    // Prêt (DAT1) : seulement pour un compte de crédit ; la date d'ouverture n'est documentée que pour lui (loan.subscription_date).
+    const pret = type === "credit" ? pretDe(c) : null;
     plan.comptes.push({
       user_id, id, connexion_id: Number(d.connexion.id), nom, type, debit_differe: String(c.type ?? "").toLowerCase() === "card", solde,
       devise: texte(c.currency?.id) ?? texte(c.currency) ?? "EUR", solde_le: jour(c.last_update) ?? aujourdhui, actif, maj_le: maintenant,
+      ouverture_le: pret?.subscription_date ?? null, pret,
       ...(d.rapprochement ? { suggestion: rp?.auto ? null : rp?.suggestion ?? null, doublon_de: rp?.doublon_de ?? null } : {}),
     });
     let r = existants.get(String(id)) ?? {};
@@ -1092,6 +1175,27 @@ export function planifier(etat: Etat, d: Donnees) {
       }
     }
 
+    // Prêt transmis par la banque (DAT1, spec § 7) : une seule proposition config/prets_infos par compte de crédit rattaché à un
+    // crédit, jamais si l'information existe déjà (clé présente), si elle a déjà été proposée (infos_proposees_le), pour un compte
+    // inactif, ignoré ou en double, ni quand config.prets_infos est illisible. Une erreur ici n'arrête pas les autres comptes.
+    try {
+      const infos = actif && !ignore && creditId && !r.infos_proposees_le && rp?.doublon_de == null && etat.pretsInfos && pret
+        ? infosPret(pret, aujourdhui) : null;
+      const cle = creditId ? `credit:${creditId}` : "";
+      const ids = d.idsPrets?.[String(id)];
+      if (infos && ids && !Object.prototype.hasOwnProperty.call(etat.pretsInfos, cle)) {
+        const origine = `Powens — ${etablissement ?? "connexion bancaire"}`;
+        plan.propositionsPrets.push({ compte: id, proposition: {
+          id: ids.id, user_id, lot: ids.lot, cible: "config", operation: "modifier",
+          apres: { prets_infos: { [cle]: { ...infos, source: `${origine} : données du prêt transmises par la banque`.slice(0, 300), le: aujourdhui } } },
+          source: origine.slice(0, 500),
+          justification: "Ta banque transmet les données de ce prêt (date de souscription, fin, durée, assurance) : les voici pour le calendrier. Rien n'est modifié sans ta validation.",
+        } });
+      }
+    } catch (e) {
+      plan.erreurs.push({ compte_id: id, erreur: `prêt : ${e instanceof Error ? e.message : String(e)}` });
+    }
+
     // Opérations des 90 derniers jours (déjà comptabilisées seulement).
     if (l.operations) {
       for (const o of l.operations) {
@@ -1139,7 +1243,7 @@ export async function synchroniser(db: any, api: any, userId: string, connexionI
   const maintenant = opts.maintenant ?? new Date();
   const rapport = { ok: false, connexion: connexionId, etat: null as string | null, comptes: 0, operations: 0, positions_creees: 0, propositions: 0,
     rattaches: 0, lignes_adoptees: 0, rattaches_auto: 0, crees_auto: 0, suggestions: 0, comptes_en_double: 0, doublon_de: null as number | null, sautee: false,
-    virements_internes: 0, versements_epargne: 0, revenus_proposes: 0, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[] };
+    virements_internes: 0, versements_epargne: 0, revenus_proposes: 0, prets_proposes: 0, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[] };
 
   let connexion: any;
   try {
@@ -1192,7 +1296,7 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
   // Tous les comptes de l'utilisateur (toutes connexions) : rattachements pris ailleurs, comptes jumeaux d'une autre connexion.
   let etatComptes: any[] = [], tousComptes: any[] = [];
   try {
-    tousComptes = await lireTable(db.from("banque_comptes").select("id, connexion_id, nom, actif, type, debit_differe, solde, position_id, enveloppe, titulaire, credit_id, ignore, propose_le, doublon_de, rattache_auto, auto_retire_le")
+    tousComptes = await lireTable(db.from("banque_comptes").select("id, connexion_id, nom, actif, type, debit_differe, solde, position_id, enveloppe, titulaire, credit_id, ignore, propose_le, infos_proposees_le, doublon_de, rattache_auto, auto_retire_le")
       .eq("user_id", userId), "des comptes");
     etatComptes = tousComptes.filter((c) => Number(c.connexion_id) === Number(connexionId));
   } catch (e) {
@@ -1240,6 +1344,21 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
     idsLivret[String(c.id)] = await idLivret(userId, c.id);
   }
   for (const l of lectures) for (const inv of l.placements ?? []) if (inv?.id != null) idsLignes[String(inv.id)] = await idLigne(userId, inv.id);
+  // Prêts transmis par la banque (DAT1) : config.prets_infos lu seulement s'il y a un prêt à proposer ; illisible → aucune proposition.
+  const idsPrets: Record<string, { id: string; lot: string }> = {};
+  let pretsInfos: Record<string, unknown> | null = null;
+  const comptesPret = lectures.filter((l) => normaliserType(l.compte) === "credit" && pretDe(l.compte));
+  if (comptesPret.length) {
+    for (const l of comptesPret) idsPrets[String(l.compte.id)] = { id: await idPret(userId, l.compte.id), lot: await lotPret(userId, l.compte.id) };
+    try {
+      const cf = await db.from("config").select("prets_infos").eq("user_id", userId).maybeSingle();
+      if (cf?.error) throw new Error(cf.error.message);
+      const v = cf?.data?.prets_infos;
+      pretsInfos = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    } catch (e) {
+      rapport.notes.push(`informations de prêt illisibles (${msg(e)}) : aucune proposition de prêt`);
+    }
+  }
   try {
     // Tous les placements de l'utilisateur (toutes connexions) : une ligne déjà liée n'est jamais adoptée une seconde fois.
     placements = await lireTable(db.from("banque_placements").select("id, compte_id, position_id, ligne_creee_le").eq("user_id", userId), "des placements");
@@ -1306,9 +1425,9 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
   }
   const donnees = {
     userId, connexion, comptes: lectures, lectureComptesOk, erreurComptes, maintenant: maintenant.toISOString(), aujourdhui, minDate, lots,
-    idsPropositions, idsLignes, idsLiquidites, rapprochement,
+    idsPropositions, idsLignes, idsLiquidites, idsPrets, rapprochement,
   };
-  const etatPlan = { comptes: etatComptes, placements, lotsExistants, acceptes, lignes };
+  const etatPlan = { comptes: etatComptes, placements, lotsExistants, acceptes, lignes, pretsInfos };
   let plan = planifier(etatPlan, donnees);
   rapport.erreurs.push(...plan.erreurs);
   rapport.notes.push(...plan.notes);
@@ -1511,6 +1630,13 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
     rapport.propositions = plan.propositions.length;
     await etape("trace des propositions", () => db.from("banque_comptes").update({ propose_le: maintenant.toISOString() })
       .eq("user_id", userId).in("id", plan.comptesProposes));
+  }
+  // Prêts : une proposition par compte, déposée puis tracée compte par compte (une erreur n'arrête pas les autres).
+  for (const p of plan.propositionsPrets) {
+    if (!await etape("proposition de prêt", () => db.from("propositions").upsert(p.proposition, { onConflict: "id", ignoreDuplicates: true }))) continue;
+    rapport.prets_proposes++;
+    await etape("trace de la proposition de prêt", () => db.from("banque_comptes").update({ infos_proposees_le: maintenant.toISOString() })
+      .eq("user_id", userId).eq("id", p.compte).is("infos_proposees_le", null));
   }
 }
 
