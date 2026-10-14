@@ -9,7 +9,10 @@
    émergentes ») et corrigeables avant validation comme les autres cibles (cible du matelas, montant et jour de chaque versement
    ajouté ou modifié, classe). Frais des contrats (0026, outil regler_frais_enveloppe) : apres { frais_enveloppes: { <enveloppe>: { gestion_uc_pct?,
    gestion_euro_pct?, garde_pct?, source, le? } | null } }, décrits en phrase (« Frais du contrat « Assurance-vie » : gestion des unités de
-   compte 0,6 % → 0,5 % par an (source : …) ») et corrigeables pourcentage par pourcentage (sauf nom d'enveloppe contenant un point). */
+   compte 0,6 % → 0,5 % par an (source : …) ») et corrigeables pourcentage par pourcentage (sauf nom d'enveloppe contenant un point).
+   Calendrier patrimonial (0029, outils regler_infos_enveloppe, regler_infos_pret, regler_donations, regler_avis_impot) : apres { enveloppes_infos |
+   prets_infos | donations | avis_impot }, décrits en phrases (« Date d'ouverture de « PEA Exemple » : 15/06/2021 (source : …) », « Prêt « Prêt auto » :
+   fin le 30/04/2029 », « Donation à Enfant 1 du 01/07/2015 : 20 000 € », « Avis d'impôt (revenus 2025) : … ») ; à valider ou refuser tels quels. */
 (function () {
   "use strict";
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
@@ -265,11 +268,82 @@
     });
     return parts.length ? parts.join(" ; ") : "Frais des contrats : aucun changement";
   }
+  /* ---------- calendrier patrimonial (DAT1, 0029) : informations des enveloppes et des prêts, donations, avis d'impôt ---------- */
+  const dateNum = d => (/^\d{4}-\d{2}-\d{2}/.test(String(d)) ? String(d).slice(8, 10) + "/" + String(d).slice(5, 7) + "/" + String(d).slice(0, 4) : String(d));
+  const eurs = v => nf.format(+v) + " €";
+  const TYPES_ENV_TXT = { pea: "PEA", pea_pme: "PEA PME-ETI", pea_jeune: "PEA d'un majeur rattaché", assurance_vie: "assurance-vie", capitalisation: "contrat de capitalisation", per: "PER",
+    pel: "PEL", cel: "CEL", pee: "PEE", percol: "PERCOL", compte_titres: "compte-titres", livret_a: "Livret A", ldds: "LDDS", lep: "LEP", autre: "autre enveloppe" };
+  const srcTxt = n => (isObj(n) && n.source ? " (source : " + n.source + ")" : "");
+  /** Informations d'enveloppes : une phrase par donnée qui change (« Date d'ouverture de « PEA Exemple » : 15/06/2021 »), « retirées » pour null. */
+  function decrireInfosEnveloppes(av, ap) {
+    const avant = isObj(av) ? av : {}, parts = [];
+    Object.keys(isObj(ap) ? ap : {}).forEach(env => {
+      const n = ap[env], o = isObj(avant[env]) ? avant[env] : {}, nom = "« " + env.replace(/\|p[12]$/, "") + " »";
+      if (!isObj(n)) { parts.push("Informations de " + nom + " : retirées"); return; }
+      const ch = [], diff = k => k in n && !egal(o[k], n[k]);
+      if (diff("type")) ch.push("Type de " + nom + " : " + (TYPES_ENV_TXT[n.type] || n.type));
+      if (diff("titulaire")) ch.push("Titulaire de " + nom + " : " + n.titulaire);
+      if (diff("date_ouverture")) ch.push("Date d'ouverture de " + nom + " : " + dateNum(n.date_ouverture));
+      if (diff("date_ouverture_approx")) { const a = String(n.date_ouverture_approx); ch.push("Date d'ouverture de " + nom + " : en " + (a.length === 7 ? a.slice(5) + "/" + a.slice(0, 4) : a) + " (approximative)"); }
+      if (diff("date_cloture")) ch.push("Clôture de " + nom + " : " + dateNum(n.date_cloture));
+      if (diff("versements_cumules")) ch.push("Versements cumulés de " + nom + " : " + eurs(n.versements_cumules));
+      if (diff("versements_avant_70")) ch.push("Dont versés avant 70 ans, " + nom + " : " + eurs(n.versements_avant_70));
+      if (diff("beneficiaires_revus_le")) ch.push("Clause bénéficiaire de " + nom + " revue le " + dateNum(n.beneficiaires_revus_le));
+      if (diff("versements")) ch.push("Versements de " + nom + " : " + (Array.isArray(n.versements) ? n.versements.length : 0) + " ligne" + ((n.versements || []).length > 1 ? "s" : ""));
+      if (diff("moins_values")) ch.push("Moins-values de " + nom + " : " + (Array.isArray(n.moins_values) ? n.moins_values.map(m => m.annee + " " + eurs(m.montant)).join(", ") : "aucune"));
+      parts.push((ch.join(" ; ") || "Informations de " + nom + " : aucun changement") + srcTxt(n));
+    });
+    return parts.length ? parts.join(" ; ") : "Informations des enveloppes : aucun changement";
+  }
+  /** Informations de prêts : « Prêt « Crédit auto » : fin le 30/04/2029, 60 mois (source : …) ». */
+  function decrirePrets(av, ap, ctx) {
+    const avant = isObj(av) ? av : {}, pr = (ctx && ctx.profil) || {}, parts = [];
+    Object.keys(isObj(ap) ? ap : {}).forEach(cle => {
+      const m = /^(credit|bien):(.*)$/.exec(cle), liste = m ? (m[1] === "credit" ? pr.credits : pr.biens) || [] : [];
+      const e = m ? liste.find(x => String(x.id).toLowerCase() === m[2].toLowerCase()) : null;
+      const nom = "Prêt « " + ((e && e.nom) || (m && m[1] === "bien" ? "bien immobilier" : "crédit")) + " »", n = ap[cle], o = isObj(avant[cle]) ? avant[cle] : {};
+      if (!isObj(n)) { parts.push(nom + " : informations retirées"); return; }
+      const ch = [], diff = k => k in n && !egal(o[k], n[k]), pc = v => nf.format(+v) + " % par an";
+      if (diff("date_signature")) ch.push("signé le " + dateNum(n.date_signature));
+      if (diff("date_fin")) ch.push("fin le " + dateNum(n.date_fin));
+      if (diff("duree_mois")) ch.push(n.duree_mois + " mois");
+      if (diff("taux_pct")) ch.push("taux " + pc(n.taux_pct));
+      if (diff("assurance_taux_pct")) ch.push("assurance " + pc(n.assurance_taux_pct));
+      if (diff("ira_exoneration")) ch.push(n.ira_exoneration ? "sans indemnité de remboursement anticipé" : "avec indemnité de remboursement anticipé");
+      parts.push(nom + " : " + (ch.join(", ") || "aucun changement") + srcTxt(n));
+    });
+    return parts.length ? parts.join(" ; ") : "Prêts : aucun changement";
+  }
+  /** Donations consenties : ajoutées ou modifiées (« Donation à Enfant 1 du 01/07/2015 : 20 000 € »), retirées. */
+  function decrireDonations(av, ap) {
+    const avant = parId(av), apres = Array.isArray(ap) ? ap.filter(isObj) : [], ids = new Set(apres.map(r => String(r.id))), parts = [];
+    const txt = d => (d.nature === "don_argent_790g" ? "Don familial" : d.nature === "don_logement_790a_bis" ? "Don pour un logement" : "Donation") + " à " + (d.beneficiaire || "?") + " du " + dateNum(d.date) + " : " + eurs(d.montant);
+    apres.forEach(d => {
+      const o = avant.get(String(d.id));
+      if (!o) parts.push(txt(d) + srcTxt(d));
+      else if (!egal(o, d)) parts.push(txt(o) + " → " + txt(d));
+    });
+    avant.forEach((o, id) => { if (!ids.has(id)) parts.push(txt(o) + " : retirée"); });
+    return parts.length ? parts.join(" ; ") : "Donations : aucun changement";
+  }
+  /** Avis d'impôt : « Avis d'impôt (revenus 2025) : revenu fiscal de référence 31 000 €, plafond épargne retraite … ». */
+  function decrireAvis(av, ap) {
+    if (!isObj(ap) || !Object.keys(ap).length) return "Avis d'impôt : effacé";
+    const l = ["Avis d'impôt (revenus " + ap.annee_revenus + ")"], d = [];
+    if (ap.rfr != null) d.push("revenu fiscal de référence " + eurs(ap.rfr));
+    ["p1", "p2"].forEach(k => { if (isObj(ap.plafonds_per) && Array.isArray(ap.plafonds_per[k]) && ap.plafonds_per[k].length)
+      d.push("plafond épargne retraite " + (k === "p1" ? "personne 1" : "personne 2") + " : " + ap.plafonds_per[k].map(x => x.annee + " " + eurs(x.montant)).join(", ")); });
+    return l[0] + (d.length ? " : " + d.join(", ") : "") + srcTxt(ap);
+  }
   function decrireConfig(p, ctx) {
     const a = commeObjet(p.apres), b = commeObjet(p.avant), parts = [];
     if ("cushion" in a) parts.push("Matelas de précaution : " + (matelasRegle(b.cushion) && !egal(b.cushion, a.cushion) ? texteMatelas(b.cushion) + " → " : "") + texteMatelas(a.cushion));
     if ("recurring" in a) parts.push(decrireVersements(b.recurring, a.recurring, ctx));
     if ("frais_enveloppes" in a) parts.push(decrireFrais(b.frais_enveloppes, a.frais_enveloppes));
+    if ("enveloppes_infos" in a) parts.push(decrireInfosEnveloppes(b.enveloppes_infos, a.enveloppes_infos));
+    if ("prets_infos" in a) parts.push(decrirePrets(b.prets_infos, a.prets_infos, ctx));
+    if ("donations" in a) parts.push(decrireDonations(b.donations, a.donations));
+    if ("avis_impot" in a) parts.push(decrireAvis(b.avis_impot, a.avis_impot));
     return parts.length ? parts.join(" ; ") : "Réglages : aucun changement";
   }
 

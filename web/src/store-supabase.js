@@ -23,7 +23,7 @@
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues),
-   symbol (symbole Yahoo de l'instrument ou null) ; config.frais_enveloppes = frais des contrats (0026, {} par défaut) ;
+   symbol (symbole Yahoo de l'instrument ou null) ; config.frais_enveloppes = frais des contrats (0026, {} par défaut) ; config.enveloppes_infos, prets_infos, donations, avis_impot = calendrier patrimonial (0029 : {}, {}, [], {} par défaut) ;
    sourceAuto ("powens" | "binance" | null) et sourceAutoLe (horodatage | null) : ligne alimentée par une synchronisation (0021, 0023).
    Store.transactions(depuis) → Promise<[{ id, positionId, date, type, qty, price, amount, note, source, createdAt }]> : transactions depuis
    `depuis` (AAAA-MM-JJ ; absente : toutes), les plus récentes d'abord, par pages de 1 000, 3 pages au plus (S.tx n'en garde que les 60
@@ -223,7 +223,9 @@
   // frais_enveloppes (0026) : frais des contrats { "<enveloppe>": { gestion_uc_pct?, gestion_euro_pct?, garde_pct?, source, le } }, {} par défaut.
   const objetOu = v => (v != null && typeof v === "object" && !Array.isArray(v) ? v : {});
   const cfgView = r => ({ targets: r.targets || {}, rules: r.rules || [], cushion: r.cushion || null, recurring: r.recurring || [], todo: r.todo || [], milestones: r.milestones || [], hypotheses: r.hypotheses || [],
-    frais_enveloppes: objetOu(r.frais_enveloppes) });
+    frais_enveloppes: objetOu(r.frais_enveloppes),
+    // Calendrier patrimonial (0029) : informations des enveloppes et des prêts, donations consenties, avis d'impôt ({}, {}, [], {} par défaut).
+    enveloppes_infos: objetOu(r.enveloppes_infos), prets_infos: objetOu(r.prets_infos), donations: Array.isArray(r.donations) ? r.donations : [], avis_impot: objetOu(r.avis_impot) });
   const stView = r => ({ lastRun: r.last_run, summary: r.summary || "", alerts: r.alerts || [], missingPrices: r.missing_prices || 0 });
   const profView = (p, biens, credits) => ({
     foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {}, protection: p.protection || {},
@@ -242,7 +244,7 @@
   const ficheView = r => ({ slug: r.slug, theme: r.theme, titre: r.titre, resume: r.resume, motsCles: r.mots_cles || [], sources: r.sources || [], version: r.version == null ? 1 : +r.version, misAJourLe: r.mis_a_jour_le });
   // Repères : module pur reperes.js s'il est chargé, sinon la même correspondance.
   const repView = rows => (window.Reperes && window.Reperes.depuisLignes ? window.Reperes.depuisLignes(rows) : (rows || []).map(x => ({
-    cle: x.cle, libelle: x.libelle, valeur: +x.valeur, unite: x.unite, dateEffet: x.date_effet, sourceTitre: x.source_titre, sourceUrl: x.source_url, verifieLe: x.verifie_le, mode: x.mode })));
+    cle: x.cle, libelle: x.libelle, valeur: +x.valeur, unite: x.unite, dateEffet: x.date_effet, dateFin: x.date_fin || null, sourceTitre: x.source_titre, sourceUrl: x.source_url, verifieLe: x.verifie_le, mode: x.mode })));
   const tableau = v => (Array.isArray(v) ? v : []);
   const expView = r => ({ slug: r.slug, nom: r.nom, quandConsulter: r.quand_consulter, perimetre: r.perimetre, version: r.version == null ? 1 : +r.version,
     misAJourLe: r.mis_a_jour_le, marches: tableau(r.marches), angles: tableau(r.angles) });
@@ -325,7 +327,7 @@
       q(sb.from("connexions_assistant").select(CONN_SELECT).order("premier_le")),
       q(sb.from("memoire_agent").select("id, categorie, contenu, echeance, epingle, source, cree_le, maj_le").order("cree_le", { ascending: false })),
       q(sb.from("savoir_fiches").select("slug, theme, titre, resume, mots_cles, sources, version, mis_a_jour_le").order("mis_a_jour_le", { ascending: false }).order("titre")),
-      q(sb.from("reperes").select("cle, libelle, valeur, unite, date_effet, source_titre, source_url, verifie_le, mode").order("cle")),
+      q(sb.from("reperes").select("cle, libelle, valeur, unite, date_effet, date_fin, source_titre, source_url, verifie_le, mode").order("cle")),
       q(sb.from("expertises").select("slug, nom, quand_consulter, perimetre, version, mis_a_jour_le, marches, angles").eq("statut", "publie").order("nom")),
       q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
       qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire")),

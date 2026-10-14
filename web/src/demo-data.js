@@ -18,6 +18,8 @@
   // Dernier jour du k-ième mois précédent (k = 1 : fin du mois dernier).
   const monthEnd = k => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - k + 1); d.setUTCDate(0); return iso(d); };
   const hier = ago(1);
+  // Date d'il y a `ans` ans et `mois` mois (même quantième, ou dernier jour du mois), pour les dates d'ouverture du calendrier de la démo.
+  const reculer = (ans, mois) => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - ans * 12 - mois); const f = new Date(now); const dernier = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(f.getUTCDate(), dernier)); return iso(d); };
 
   const P = o => Object.assign({ isin: null, qty: null, pru: null, price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null,
     ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null, sourceAuto: null, sourceAutoLe: null }, o);
@@ -90,6 +92,20 @@
       { text: "Arbitrer 1 000 € du fonds en euros vers l'ETF Monde", amount: "1 000 €", done: false },
       { text: "Ouvrir un LDDS au nom de Camille", done: false },
     ],
+    // Calendrier patrimonial (DAT1) : données fictives de la démo, comme si Claude les avait relevées dans les documents du foyer.
+    enveloppes_infos: {
+      "PEA Camille": { type: "pea", titulaire: "p1", date_ouverture: reculer(4, 8), versements_cumules: 24000, source: "Relevé annuel du PEA (exemple)", le: ago(40) },
+      "Assurance vie Sam": { type: "assurance_vie", titulaire: "p2", date_ouverture: reculer(9, 3), versements_cumules: 21500, versements_avant_70: 21500, source: "Conditions particulières du contrat (exemple)", le: ago(40) },
+      "PEL Camille": { type: "pel", titulaire: "p1", date_ouverture: "2016-09-12", source: "Contrat du PEL (exemple)", le: ago(40) },
+      "PEA Sam": { type: "pea", titulaire: "p2", source: "Déclaration de l'utilisateur (exemple)", le: ago(40) }, // date d'ouverture inconnue : à compléter
+    },
+    prets_infos: {
+      "credit:credit-auto": { date_signature: reculer(2, 5), duree_mois: 60, source: "Offre de prêt (exemple)", le: ago(40) },
+    },
+    donations: [
+      { id: "don-demo-1", date: reculer(9, 0), montant: 20000, donateur: "p1", lien: "enfant", beneficiaire: "Enfant 1", nature: "donation", source: "Acte de donation (exemple)", le: ago(40) },
+    ],
+    avis_impot: {},
     milestones: [
       { title: "Fin de la période d'essai de Sam", date: iso(now + 40 * DAY), warnDays: 60, text: "Revoir la répartition des versements programmés." },
     ],
@@ -101,8 +117,8 @@
   const profil = {
     foyer: { adultes: 2, enfants: 1, enfants14: 0, union: "joint", age: "a30", tmi: 30 },
     personnes: {
-      p1: { nom: "Camille", salaire: 2800, salaireUnite: "nm", statut: "cadre", csp: "cadre", essai: false, autresRevenus: 0 },
-      p2: { nom: "Sam", salaire: 2300, salaireUnite: "nm", statut: "nc", csp: "inter", essai: true, autresRevenus: 0 },
+      p1: { nom: "Camille", naissance: "1992-03-18", salaire: 2800, salaireUnite: "nm", statut: "cadre", csp: "cadre", essai: false, autresRevenus: 0 },
+      p2: { nom: "Sam", naissance: "1990-08-24", salaire: 2300, salaireUnite: "nm", statut: "nc", csp: "inter", essai: true, autresRevenus: 0 },
     },
     biens: [
       { id: "bien-rp", nom: "Appartement (résidence principale)", usage: "rp", valeur: 240000, part_p1: 50, crd: 150000, mensualite: 820, loyer: 0 },

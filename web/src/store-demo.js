@@ -14,7 +14,8 @@
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument) et symbol (null en démo) ;
-   config.frais_enveloppes = frais des contrats (0026 ; {} par défaut), réglés par proposition (cible config, mêmes règles qu'en base).
+   config.frais_enveloppes = frais des contrats (0026 ; {} par défaut), réglés par proposition (cible config, mêmes règles qu'en base) ;
+  config.enveloppes_infos, prets_infos, donations, avis_impot (0029, calendrier patrimonial : {}, {}, [], {} par défaut), même principe.
    propositions = [{ id, lot, cible, operation, ref, avant, apres, source, justification, statut, creeLe, decideLe }] (toutes, les plus
    récentes d'abord) ; Store.propositions.appliquer(ids, modifications) / refuser(ids) les décident en mémoire (même effet que la
    fonction SQL appliquer_propositions, voir l'en-tête de store-supabase.js), réglages compris (0019 : cible config, matelas et
@@ -63,7 +64,7 @@
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
   const C = {
     ready: false, dbOk: null, positions: (D.positions || []).map(p => Object.assign({}, p, { symbol: p.symbol || null })), snapshots: D.snapshots || [], tx: D.tx || [],
-    config: D.config ? Object.assign({}, D.config, { frais_enveloppes: D.config.frais_enveloppes || {} }) : null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
+    config: D.config ? Object.assign({}, D.config, { frais_enveloppes: D.config.frais_enveloppes || {}, enveloppes_infos: D.config.enveloppes_infos || {}, prets_infos: D.config.prets_infos || {}, donations: D.config.donations || [], avis_impot: D.config.avis_impot || {} }) : null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
     memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander",
@@ -294,6 +295,237 @@
     if (Object.keys(out).length > 30) throw bad("frais_enveloppes : 30 enveloppes au plus (" + Object.keys(out).length + " après fusion).");
     return out;
   }
+
+  /* ---------- DAT1 (0029) : informations des enveloppes et des prêts, donations, avis d'impôt, naissance ----------
+     Mêmes contrôles et mêmes messages que appliquer_propositions de la migration 0029 (test/store-contract.test.mjs en compare 10 cas). */
+  const TYPES_ENV = ["pea", "pea_pme", "pea_jeune", "assurance_vie", "capitalisation", "per", "pel", "cel", "pee", "percol", "compte_titres", "livret_a", "ldds", "lep", "autre"];
+  const ORIGINES_PEE = ["versement", "abondement", "participation", "interessement"];
+  const ISO10 = /^\d{4}-\d{2}-\d{2}$/;
+  const jourReel = s => { if (typeof s !== "string" || !ISO10.test(s)) return null; const [y, m, d] = s.split("-").map(Number), x = new Date(Date.UTC(y, m - 1, d)); return x.getUTCFullYear() === y && x.getUTCMonth() === m - 1 && x.getUTCDate() === d ? s : null; };
+  const nombreStrict = v => ((typeof v === "number" && isFinite(v)) || (typeof v === "string" && /^\d+(\.\d+)?$/.test(v)) ? +v : null);
+  const nonVide = v => v !== undefined && v !== null;
+  const ecrit = s => (typeof s === "string" ? s.trim() : "");
+  /** « le » (date du document consulté) : défaut aujourd'hui, jamais dans le futur. */
+  function dateLe(v, prefixe) {
+    if (!nonVide(v)) return jourIso();
+    const d = jourReel(v);
+    if (!d) throw bad(prefixe + " : date (le) invalide (AAAA-MM-JJ).");
+    if (d > jourIso()) throw bad(prefixe + " : date (le) dans le futur (la date du document consulté est attendue).");
+    return d;
+  }
+  const sourceObl = (f, prefixe) => { const s = ecrit(f.source); if (!s || s.length > 300) throw bad(prefixe + " : source obligatoire (1 à 300 caractères)."); return s; };
+  function fusionEnveloppesInfos(v, existants) {
+    if (!objet(v)) throw bad("enveloppes_infos : objet { enveloppe: informations } attendu.");
+    if (Object.keys(v).length > 30) throw bad("enveloppes_infos : 30 enveloppes au plus.");
+    const out = Object.assign({}, objet(existants) ? existants : {}), auj = jourIso();
+    Object.keys(v).forEach(k => {
+      const env = k.trim(), f = v[k], nom = env.replace(/\|p[12]$/, "");
+      if (!nom || nom !== nom.trim() || nom.length > 80) throw bad("enveloppes_infos : nom d'enveloppe invalide (1 à 80 caractères).");
+      if (f === null) { delete out[env]; return; }
+      const P = "enveloppes_infos « " + env + " »";
+      if (!objet(f)) throw bad(P + " : objet ou null attendu.");
+      const champs = ["type", "titulaire", "date_ouverture", "date_ouverture_approx", "date_cloture", "versements_cumules", "versements_avant_70", "beneficiaires_revus_le", "versements", "moins_values", "source", "le"];
+      const inconnu = Object.keys(f).find(x => !champs.includes(x));
+      if (inconnu) throw bad(P + " : champ « " + inconnu + " » inconnu (" + champs.join(", ") + ").");
+      if (!TYPES_ENV.includes(f.type)) throw bad(P + " : type invalide (" + TYPES_ENV.slice(0, -1).join(", ") + " ou autre attendu).");
+      if (!["p1", "p2"].includes(f.titulaire)) throw bad(P + " : titulaire invalide (p1 ou p2 attendu).");
+      const sfx = (/\|(p[12])$/.exec(env) || [])[1];
+      if (sfx && sfx !== f.titulaire) throw bad(P + " : la clé se termine par |" + sfx + " mais le titulaire est " + f.titulaire + ".");
+      const ligne = { type: f.type, titulaire: f.titulaire };
+      ["date_ouverture", "date_cloture", "beneficiaires_revus_le"].forEach(c => {
+        if (!nonVide(f[c])) return;
+        const d = jourReel(f[c]);
+        if (!d) throw bad(P + " : " + c + " invalide (AAAA-MM-JJ).");
+        if (d > auj) throw bad(P + " : " + c + " dans le futur.");
+        if (d < "1950-01-01") throw bad(P + " : " + c + " antérieure à 1950.");
+        ligne[c] = d;
+      });
+      if (nonVide(f.date_ouverture_approx)) {
+        if ("date_ouverture" in ligne) throw bad(P + " : date_ouverture et date_ouverture_approx ne vont pas ensemble.");
+        const a = f.date_ouverture_approx, d = typeof a === "string" && /^\d{4}(-\d{2})?$/.test(a) ? jourReel(a.length === 4 ? a + "-01-01" : a + "-01") : null;
+        if (!d) throw bad(P + " : date_ouverture_approx invalide (AAAA ou AAAA-MM).");
+        if (d > auj) throw bad(P + " : date_ouverture_approx dans le futur.");
+        if (d < "1950-01-01") throw bad(P + " : date_ouverture_approx antérieure à 1950.");
+        ligne.date_ouverture_approx = a;
+      }
+      if (ligne.date_cloture && ligne.date_ouverture && ligne.date_cloture < ligne.date_ouverture) throw bad(P + " : date_cloture avant date_ouverture.");
+      ["versements_cumules", "versements_avant_70"].forEach(c => {
+        if (!nonVide(f[c])) return;
+        const x = nombreStrict(f[c]);
+        if (x === null || x < 0) throw bad(P + " : " + c + " invalide (montant positif ou nul attendu).");
+        ligne[c] = x;
+      });
+      if ("versements_avant_70" in ligne && "versements_cumules" in ligne && ligne.versements_avant_70 > ligne.versements_cumules) throw bad(P + " : versements_avant_70 supérieur à versements_cumules.");
+      if (nonVide(f.versements)) {
+        if (!["pee", "percol"].includes(f.type)) throw bad(P + " : versements réservés aux types pee et percol.");
+        if (!Array.isArray(f.versements)) throw bad(P + " : versements : liste attendue.");
+        if (f.versements.length > 120) throw bad(P + " : versements : 120 au plus.");
+        const liste = f.versements.map((it, i) => {
+          const n = i + 1, Q = P + " : versement " + n;
+          if (!objet(it)) throw bad(Q + " : objet attendu.");
+          const x = Object.keys(it).find(c => !["le", "montant", "origine", "disponible_le"].includes(c));
+          if (x) throw bad(Q + " : champ « " + x + " » inconnu (le, montant, origine, disponible_le).");
+          const d = jourReel(it.le);
+          if (!d) throw bad(Q + " : date (le) invalide (AAAA-MM-JJ).");
+          if (d > auj) throw bad(Q + " : date (le) dans le futur.");
+          if (d < "1950-01-01") throw bad(Q + " : date (le) antérieure à 1950.");
+          const m = nombreStrict(it.montant);
+          if (m === null || m < 0) throw bad(Q + " : montant invalide (montant positif ou nul attendu).");
+          if (!ORIGINES_PEE.includes(it.origine)) throw bad(Q + " : origine invalide (versement, abondement, participation ou interessement attendu).");
+          const r = { le: d, montant: m, origine: it.origine };
+          if (nonVide(it.disponible_le)) {
+            const d2 = jourReel(it.disponible_le);
+            if (!d2) throw bad(Q + " : disponible_le invalide (AAAA-MM-JJ).");
+            if (d2 < d) throw bad(Q + " : disponible_le avant la date du versement.");
+            r.disponible_le = d2;
+          }
+          return r;
+        });
+        if (liste.length) ligne.versements = liste;
+      }
+      if (nonVide(f.moins_values)) {
+        if (f.type !== "compte_titres") throw bad(P + " : moins_values réservées au type compte_titres.");
+        if (!Array.isArray(f.moins_values)) throw bad(P + " : moins_values : liste attendue.");
+        if (f.moins_values.length > 15) throw bad(P + " : moins_values : 15 au plus.");
+        const liste = f.moins_values.map((it, i) => {
+          const Q = P + " : moins-value " + (i + 1);
+          if (!objet(it)) throw bad(Q + " : objet attendu.");
+          const x = Object.keys(it).find(c => !["annee", "montant"].includes(c));
+          if (x) throw bad(Q + " : champ « " + x + " » inconnu (annee, montant).");
+          const a = typeof it.annee === "number" || (typeof it.annee === "string" && /^\d{4}$/.test(it.annee)) ? +it.annee : null;
+          if (a === null || a !== Math.trunc(a) || a < 2000 || a > +auj.slice(0, 4)) throw bad(Q + " : annee invalide (entier de 2000 à l'année en cours attendu).");
+          const m = nombreStrict(it.montant);
+          if (m === null || m <= 0) throw bad(Q + " : montant invalide (montant strictement positif attendu).");
+          return { annee: a, montant: m };
+        });
+        if (liste.length) ligne.moins_values = liste;
+      }
+      out[env] = Object.assign(ligne, { source: sourceObl(f, P), le: dateLe(f.le, P) });
+    });
+    if (Object.keys(out).length > 30) throw bad("enveloppes_infos : 30 enveloppes au plus (" + Object.keys(out).length + " après fusion).");
+    return out;
+  }
+  function fusionPretsInfos(v, existants) {
+    if (!objet(v)) throw bad("prets_infos : objet { prêt: informations } attendu.");
+    if (Object.keys(v).length > 50) throw bad("prets_infos : 50 prêts au plus.");
+    const out = Object.assign({}, objet(existants) ? existants : {}), auj = jourIso(), pr = C.profil || {};
+    Object.keys(v).forEach(k => {
+      const env = k.trim().toLowerCase(), f = v[k];
+      const m = /^(credit|bien):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(env);
+      if (!m) throw bad("prets_infos : clé « " + k + " » invalide (credit:<identifiant> ou bien:<identifiant> attendu).");
+      if (f === null) { delete out[env]; return; }
+      const P = "prets_infos « " + env + " »";
+      if (!objet(f)) throw bad(P + " : objet ou null attendu.");
+      const liste = m[1] === "credit" ? pr.credits : pr.biens;
+      if (!(Array.isArray(liste) ? liste : []).some(x => String(x.id).toLowerCase() === m[2])) throw bad(P + " : " + (m[1] === "credit" ? "crédit" : "bien") + " introuvable.");
+      const champs = ["date_signature", "date_fin", "duree_mois", "taux_pct", "assurance_taux_pct", "ira_exoneration", "source", "le"];
+      const inconnu = Object.keys(f).find(x => !champs.includes(x));
+      if (inconnu) throw bad(P + " : champ « " + inconnu + " » inconnu (" + champs.join(", ") + ").");
+      const ligne = {};
+      ["date_signature", "date_fin"].forEach(c => {
+        if (!nonVide(f[c])) return;
+        const d = jourReel(f[c]);
+        if (!d) throw bad(P + " : " + c + " invalide (AAAA-MM-JJ).");
+        if (c === "date_signature" && d > auj) throw bad(P + " : date_signature dans le futur.");
+        if (d < "1950-01-01") throw bad(P + " : " + c + " antérieure à 1950.");
+        ligne[c] = d;
+      });
+      if (ligne.date_signature && ligne.date_fin && ligne.date_fin <= ligne.date_signature) throw bad(P + " : date_fin à placer après date_signature.");
+      [["duree_mois", 1, 480, "entier de 1 à 480 attendu"], ["taux_pct", 0, 20, "pourcentage par an entre 0 et 20 attendu"], ["assurance_taux_pct", 0, 5, "pourcentage par an entre 0 et 5 attendu"]].forEach(([c, lo, hi, txt]) => {
+        if (!nonVide(f[c])) return;
+        const x = nombreStrict(f[c]);
+        if (x === null || x < lo || x > hi || (c === "duree_mois" && x !== Math.trunc(x))) throw bad(P + " : " + c + " invalide (" + txt + ").");
+        ligne[c] = x;
+      });
+      if (nonVide(f.ira_exoneration)) {
+        if (typeof f.ira_exoneration !== "boolean") throw bad(P + " : ira_exoneration invalide (true ou false attendu).");
+        ligne.ira_exoneration = f.ira_exoneration;
+      }
+      if (!Object.keys(ligne).length) throw bad(P + " : au moins une information attendue (date_signature, date_fin, duree_mois, taux_pct, assurance_taux_pct ou ira_exoneration).");
+      out[env] = Object.assign(ligne, { source: sourceObl(f, P), le: dateLe(f.le, P) });
+    });
+    if (Object.keys(out).length > 50) throw bad("prets_infos : 50 prêts au plus (" + Object.keys(out).length + " après fusion).");
+    return out;
+  }
+  function remplacerDonations(v) {
+    if (!Array.isArray(v)) throw bad("donations : liste de donations attendue.");
+    if (v.length > 100) throw bad("donations : 100 donations au plus.");
+    const ids = [], auj = jourIso();
+    return v.map((it, i) => {
+      const n = i + 1;
+      if (!objet(it)) throw bad("donation " + n + " : objet attendu.");
+      const id = ecrit(it.id);
+      if (!id || id.length > 64) throw bad("donation " + n + " : identifiant (id) manquant ou trop long (1 à 64 caractères).");
+      if (ids.includes(id)) throw bad("donation " + n + " : identifiant « " + id + " » en double.");
+      ids.push(id);
+      const P = "donations « " + id + " »";
+      const inconnu = Object.keys(it).find(x => !["id", "date", "montant", "donateur", "lien", "beneficiaire", "nature", "source", "le"].includes(x));
+      if (inconnu) throw bad(P + " : champ « " + inconnu + " » inconnu (id, date, montant, donateur, lien, beneficiaire, nature, source, le).");
+      const d = jourReel(it.date);
+      if (!d) throw bad(P + " : date invalide (AAAA-MM-JJ).");
+      if (d > auj) throw bad(P + " : date dans le futur.");
+      const m = nombreStrict(it.montant);
+      if (m === null || m <= 0) throw bad(P + " : montant invalide (montant strictement positif attendu).");
+      if (!["p1", "p2"].includes(it.donateur)) throw bad(P + " : donateur invalide (p1 ou p2 attendu).");
+      if (!["enfant", "petit_enfant", "arriere_petit_enfant", "autre"].includes(it.lien)) throw bad(P + " : lien invalide (enfant, petit_enfant, arriere_petit_enfant ou autre attendu).");
+      const b = ecrit(it.beneficiaire);
+      if (!b || b.length > 40) throw bad(P + " : bénéficiaire (beneficiaire) obligatoire (1 à 40 caractères).");
+      if (!["donation", "don_argent_790g", "don_logement_790a_bis"].includes(it.nature)) throw bad(P + " : nature invalide (donation, don_argent_790g ou don_logement_790a_bis attendu).");
+      return { id, date: d, montant: m, donateur: it.donateur, lien: it.lien, beneficiaire: b, nature: it.nature, source: sourceObl(it, P), le: dateLe(it.le, P) };
+    });
+  }
+  function remplacerAvisImpot(v) {
+    if (!objet(v)) throw bad("avis_impot : objet attendu.");
+    if (!Object.keys(v).length) return {};
+    const an = +jourIso().slice(0, 4);
+    const inconnu = Object.keys(v).find(x => !["annee_revenus", "rfr", "plafonds_per", "source", "le"].includes(x));
+    if (inconnu) throw bad("avis_impot : champ « " + inconnu + " » inconnu (annee_revenus, rfr, plafonds_per, source, le).");
+    const annee = x => (typeof x === "number" || (typeof x === "string" && /^\d{4}$/.test(x)) ? +x : null);
+    const a = annee(v.annee_revenus);
+    if (a === null || a !== Math.trunc(a) || a < 2000 || a > an) throw bad("avis_impot : annee_revenus invalide (entier de 2000 à l'année en cours attendu).");
+    const avis = { annee_revenus: a };
+    if (nonVide(v.rfr)) {
+      const r = nombreStrict(v.rfr);
+      if (r === null || r < 0) throw bad("avis_impot : rfr invalide (montant positif ou nul attendu).");
+      avis.rfr = r;
+    }
+    if (nonVide(v.plafonds_per)) {
+      if (!objet(v.plafonds_per)) throw bad("avis_impot : plafonds_per : objet { p1, p2 } attendu.");
+      const autre = Object.keys(v.plafonds_per).find(x => !["p1", "p2"].includes(x));
+      if (autre) throw bad("avis_impot : plafonds_per : personne « " + autre + " » inconnue (p1 ou p2).");
+      const pl = {};
+      ["p1", "p2"].forEach(p => {
+        const l = v.plafonds_per[p];
+        if (!nonVide(l)) return;
+        if (!Array.isArray(l)) throw bad("avis_impot : plafonds_per." + p + " : liste attendue.");
+        if (l.length > 6) throw bad("avis_impot : plafonds_per." + p + " : 6 lignes au plus.");
+        const vus = [], lignes = l.map((it, i) => {
+          const Q = "avis_impot : plafonds_per." + p + " : ligne " + (i + 1);
+          if (!objet(it)) throw bad(Q + " : objet attendu.");
+          const x = Object.keys(it).find(c => !["annee", "montant"].includes(c));
+          if (x) throw bad(Q + " : champ « " + x + " » inconnu (annee, montant).");
+          const y = annee(it.annee);
+          if (y === null || y !== Math.trunc(y) || y < 2000 || y > an + 1) throw bad(Q + " : annee invalide (entier de 2000 à l'année en cours + 1 attendu).");
+          if (vus.includes(y)) throw bad("avis_impot : plafonds_per." + p + " : annee " + y + " en double.");
+          vus.push(y);
+          const m = nombreStrict(it.montant);
+          if (m === null || m <= 0) throw bad(Q + " : montant invalide (montant strictement positif attendu).");
+          return { annee: y, montant: m };
+        });
+        if (lignes.length) pl[p] = lignes;
+      });
+      if (Object.keys(pl).length) avis.plafonds_per = pl;
+    }
+    return Object.assign(avis, { source: sourceObl(v, "avis_impot"), le: dateLe(v.le, "avis_impot") });
+  }
+  /** personnes.<p1|p2>.naissance : AAAA-MM-JJ ou AAAA-MM, date réelle, pas dans le futur, pas avant 1900 (null la retire). */
+  function controlerNaissance(cle, val) {
+    if (!nonVide(val)) return;
+    const d = typeof val === "string" && /^\d{4}-\d{2}(-\d{2})?$/.test(val) ? jourReel(val.length === 7 ? val + "-01" : val) : null;
+    if (!d) throw bad("personnes." + cle + " : naissance invalide (AAAA-MM-JJ ou AAAA-MM).");
+    if (d > jourIso()) throw bad("personnes." + cle + " : naissance dans le futur.");
+    if (d < "1900-01-01") throw bad("personnes." + cle + " : naissance antérieure à 1900.");
+  }
   function normVersements(liste, existants) {
     if (!Array.isArray(liste)) throw bad("recurring : liste de versements attendue.");
     if (liste.length > 50) throw bad("recurring : 50 versements au plus.");
@@ -335,7 +567,7 @@
           Object.keys(v[cle]).forEach(k => {
             if (!["p1", "p2"].includes(k)) throw bad(cle + " : personne « " + k + " » inconnue (p1 ou p2).");
             if (v[cle][k] === null && cle === "personnes") { if (k === "p1") throw bad("la première personne du foyer ne peut pas être retirée."); delete cur[k]; }
-            else if (objet(v[cle][k])) cur[k] = sansNull(Object.assign({}, cur[k], v[cle][k]));
+            else if (objet(v[cle][k])) { if (cle === "personnes") controlerNaissance(k, v[cle][k].naissance); cur[k] = sansNull(Object.assign({}, cur[k], v[cle][k])); }
             else throw bad(cle + "." + k + " : objet attendu.");
           });
           pr[cle] = cur;
@@ -409,13 +641,18 @@
         break;
       case "config": {
         if (p.operation !== "modifier") throw bad("réglages : seule la modification est possible.");
-        const autre = Object.keys(v).find(k => !["cushion", "recurring", "frais_enveloppes"].includes(k));
-        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring ou frais_enveloppes seulement).");
-        if (!("cushion" in v) && !("recurring" in v) && !("frais_enveloppes" in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes).");
+        const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot"];
+        const autre = Object.keys(v).find(k => !CLES_CFG.includes(k));
+        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations ou avis_impot seulement).");
+        if (!CLES_CFG.some(k => k in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes, enveloppes_infos, prets_infos, donations ou avis_impot).");
         const cfg = Object.assign({}, C.config || {});
         if ("cushion" in v) cfg.cushion = normMatelas(v.cushion);
         if ("recurring" in v) cfg.recurring = normVersements(v.recurring, cfg.recurring);
         if ("frais_enveloppes" in v) cfg.frais_enveloppes = fusionFraisEnveloppes(v.frais_enveloppes, cfg.frais_enveloppes);
+        if ("enveloppes_infos" in v) cfg.enveloppes_infos = fusionEnveloppesInfos(v.enveloppes_infos, cfg.enveloppes_infos);
+        if ("prets_infos" in v) cfg.prets_infos = fusionPretsInfos(v.prets_infos, cfg.prets_infos);
+        if ("donations" in v) cfg.donations = remplacerDonations(v.donations);
+        if ("avis_impot" in v) cfg.avis_impot = remplacerAvisImpot(v.avis_impot);
         C.config = cfg;
         break;
       }

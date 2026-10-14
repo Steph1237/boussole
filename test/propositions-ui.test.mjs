@@ -208,3 +208,36 @@ test("propositions : tutoiement — aucun « vous / votre / vos » dans les text
     assert.doesNotMatch(texte, IMPERATIFS, nomFichier);
   }
 });
+
+/* ---------- calendrier patrimonial (0029 : regler_infos_enveloppe, regler_infos_pret, regler_donations, regler_avis_impot) ---------- */
+const CAL = (apres, avant = {}) => ({ cible: "config", operation: "modifier", avant, apres });
+const CREDIT_ID = "6f1c2a9e-0000-4000-8000-000000000001";
+const CTX_CAL = { ...CTX_R, profil: { credits: [{ id: CREDIT_ID, nom: "Prêt auto" }], biens: [] } };
+test("calendrier : les données proposées sont décrites en clair (date d'ouverture, prêt, donation, avis d'impôt), source citée", () => {
+  assert.equal(d(CAL({ enveloppes_infos: { "PEA Exemple": { type: "pea", titulaire: "p1", date_ouverture: "2021-06-15", source: "relevé annuel 2025", le: "2026-02-12" } } }), CTX_CAL),
+    "Type de « PEA Exemple » : PEA ; Titulaire de « PEA Exemple » : p1 ; Date d'ouverture de « PEA Exemple » : 15/06/2021 (source : relevé annuel 2025)");
+  assert.equal(d(CAL({ enveloppes_infos: { "PEA Exemple": { type: "pea", titulaire: "p1", date_ouverture: "2021-06-15", versements_cumules: 92000, source: "relevé annuel 2025", le: "2026-02-12" } } },
+    { enveloppes_infos: { "PEA Exemple": { type: "pea", titulaire: "p1", date_ouverture: "2021-06-15", source: "ancien", le: "2025-01-01" } } }), CTX_CAL),
+    "Versements cumulés de « PEA Exemple » : 92 000 € (source : relevé annuel 2025)", "seul ce qui change est décrit");
+  assert.match(d(CAL({ enveloppes_infos: { "PEL|p2": { type: "pel", titulaire: "p2", date_ouverture_approx: "2016-09", source: "dit", le: "2026-02-12" } } }), CTX_CAL), /Date d'ouverture de « PEL » : en 09\/2016 \(approximative\)/);
+  assert.match(d(CAL({ enveloppes_infos: { "PEA Exemple": { type: "pea", titulaire: "p1", date_ouverture_approx: "2019", source: "dit" } } }), CTX_CAL), /en 2019 \(approximative\)/);
+  assert.equal(d(CAL({ enveloppes_infos: { "PEA Exemple": null } }), CTX_CAL), "Informations de « PEA Exemple » : retirées");
+  assert.equal(d(CAL({ prets_infos: { ["credit:" + CREDIT_ID]: { date_fin: "2029-04-30", duree_mois: 84, source: "offre de prêt", le: "2026-02-12" } } }), CTX_CAL),
+    "Prêt « Prêt auto » : fin le 30/04/2029, 84 mois (source : offre de prêt)");
+  assert.equal(d(CAL({ donations: [{ id: "a", date: "2015-07-01", montant: 20000, donateur: "p1", lien: "enfant", beneficiaire: "Enfant 1", nature: "donation", source: "acte", le: "2026-02-12" }] }), CTX_CAL),
+    "Donation à Enfant 1 du 01/07/2015 : 20 000 € (source : acte)");
+  const dn = { id: "a", date: "2015-07-01", montant: 20000, donateur: "p1", lien: "enfant", beneficiaire: "Enfant 1", nature: "donation", source: "acte", le: "2026-02-12" };
+  assert.equal(d(CAL({ donations: [] }, { donations: [dn] }), CTX_CAL), "Donation à Enfant 1 du 01/07/2015 : 20 000 € : retirée");
+  assert.equal(d(CAL({ avis_impot: { annee_revenus: 2025, rfr: 31000, plafonds_per: { p1: [{ annee: 2024, montant: 1234 }] }, source: "avis 2026", le: "2026-09-01" } }), CTX_CAL),
+    "Avis d'impôt (revenus 2025) : revenu fiscal de référence 31 000 €, plafond épargne retraite personne 1 : 2024 1 234 € (source : avis 2026)");
+  assert.equal(d(CAL({ avis_impot: {} }), CTX_CAL), "Avis d'impôt : effacé");
+  assert.equal(d(CAL({ cushion: { mode: "amount", min: 10000, max: null }, donations: [] }), CTX_CAL), "Matelas de précaution : au moins 10 000 € ; Donations : aucun changement");
+  // pas de champ corrigeable champ par champ : valider ou refuser tels quels
+  assert.deepEqual(H.changements(CAL({ enveloppes_infos: { X: { type: "pea", titulaire: "p1", source: "s" } } }), CTX_CAL), []);
+});
+test("propositions.js : aucun vouvoiement ni « conseiller » dans les nouvelles descriptions", () => {
+  const bloc = js.slice(js.indexOf("calendrier patrimonial (DAT1, 0029)"), js.indexOf("function decrireConfig"));
+  assert.ok(bloc.length > 1000);
+  assert.equal((bloc.match(/(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu) || [])[0], undefined);
+  assert.equal((bloc.match(/conseill/i) || [])[0], undefined);
+});

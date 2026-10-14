@@ -82,7 +82,8 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.equal(S.snapshots.length, 3);
   S.snapshots.forEach(s => assert.deepEqual(Object.keys(s).sort(), ["byBloc", "byEnvelope", "date", "foyer", "p1", "p2", "source"]));
   S.snapshots.forEach(s => near(s.p1 + s.p2, s.foyer, "photo : p1 + p2 = foyer"));
-  assert.deepEqual(Object.keys(S.config).sort(), ["cushion", "frais_enveloppes", "hypotheses", "milestones", "recurring", "rules", "targets", "todo"]);
+  assert.deepEqual(Object.keys(S.config).sort(), ["avis_impot", "cushion", "donations", "enveloppes_infos", "frais_enveloppes", "hypotheses", "milestones", "prets_infos", "recurring", "rules", "targets", "todo"]);
+  assert.deepEqual([J(S.config.avis_impot), Array.isArray(S.config.donations), typeof S.config.enveloppes_infos, typeof S.config.prets_infos], [{}, true, "object", "object"], "calendrier patrimonial (0029) : avis {}, donations [], infos d'enveloppes et de prêts");
   assert.deepEqual(J(S.config.frais_enveloppes), {}, "frais des contrats : objet vide par défaut (comme config.frais_enveloppes, 0026)");
   assert.deepEqual(Object.keys(S.config.targets).sort(), ["p1", "p2", "tolerancePts"], "cibles par personne");
   assert.equal(S.config.targets.tolerancePts, 3);
