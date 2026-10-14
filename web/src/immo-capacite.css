@@ -1,0 +1,105 @@
+/* IMMO1 : carte « Ta capacité d'emprunt aujourd'hui » (web/src/immo-capacite.js) dans Patrimoine › Immobilier et crédits.
+   Mobile d'abord : une colonne (héros, puis sensibilité) ; à partir de 1100 px le héros et la sensibilité sont côte à côte.
+   Jetons de theme.css seulement (clair et sombre suivent les variables). Aucune bordure colorée en haut de carte. Le contenu de la feuille
+   « Comment c'est calculé » est monté dans le panneau commun (UI.panneau, hors de la vue) : ses règles sont sous .ui-panneau .ic-f-…. */
+#view-bilan .ic{display:flex;flex-direction:column;gap:var(--sp-5);min-width:0;padding:var(--card-pad);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--e1)}
+#view-bilan .ic-tete{display:flex;flex-direction:column;gap:2px}
+#view-bilan .ic-h2{margin:0;font:700 var(--t-h2)/var(--lh-h2) var(--f-display);letter-spacing:-.005em}
+#view-bilan .ic-perimetre{margin:0;font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
+#view-bilan .ic-corps{display:flex;flex-direction:column;gap:var(--sp-5);min-width:0}
+#view-bilan .ic-grille{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-6)}
+#view-bilan .ic-lbl{font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-bilan .ic-note{margin:0;font-size:var(--t-caption);line-height:var(--lh-caption);color:var(--muted)}
+#view-bilan .ic-h3{margin:0;font:650 var(--t-h3)/var(--lh-h3) var(--f-display)}
+
+/* héros : budget d'achat, puis durée et quatre chiffres */
+#view-bilan .ic-hero{display:flex;flex-direction:column;gap:var(--sp-3);min-width:0}
+#view-bilan .ic-hero-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-3)}
+#view-bilan .ic-hero-v{margin:0;font:700 var(--t-hero)/var(--lh-hero) var(--f-display);letter-spacing:-.02em;font-variant-numeric:lining-nums proportional-nums;overflow-wrap:anywhere}
+#view-bilan .ic-hero-s{margin:0;max-width:48ch;font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
+#view-bilan .ic-duree{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2)}
+#view-bilan .ic-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-4);margin:var(--sp-1) 0 0;padding-top:var(--sp-4);border-top:1px solid var(--line)}
+#view-bilan .ic-m{display:flex;flex-direction:column;gap:2px;min-width:0}
+#view-bilan .ic-m-l{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-bilan .ic-m-v{margin:0;font:700 var(--t-kpi)/var(--lh-kpi) var(--f-display);letter-spacing:-.01em;font-variant-numeric:lining-nums proportional-nums;overflow-wrap:anywhere}
+#view-bilan .ic-m-s{margin:0;font-size:var(--t-caption);line-height:var(--lh-caption);color:var(--muted)}
+#view-bilan .ic-alerte{margin:0;padding:var(--sp-3);border-radius:var(--r-ctl);background:var(--st-watch-bg);color:var(--st-watch);font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+#view-bilan .ic-hero .ui-puce{align-self:flex-start}
+
+/* sensibilité : 20 et 25 ans × taux −1 / 0 / +1 point ; barres sur une base zéro commune, colonne du taux du jour en creux */
+#view-bilan .ic-sens{display:flex;flex-direction:column;gap:var(--sp-3);min-width:0}
+#view-bilan .ic-sens-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-3)}
+#view-bilan .ic-s-table{table-layout:fixed;border-collapse:separate;border-spacing:var(--sp-1) var(--sp-1);margin:0 calc(var(--sp-1) * -1);width:calc(100% + var(--sp-2))}
+#view-bilan .ic-s-h{padding:0 0 var(--sp-1);text-align:center;font-weight:400;vertical-align:bottom}
+#view-bilan .ic-s-t{display:block;font:700 var(--t-small)/var(--lh-small) var(--f-body);font-variant-numeric:tabular-nums lining-nums}
+#view-bilan .ic-s-tl{display:block;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-bilan .ic-s-h.centre .ic-s-tl{color:var(--ink);font-weight:600}
+#view-bilan .ic-s-table thead td:first-child,#view-bilan .ic-s-r{width:52px}
+#view-bilan .ic-s-r{padding:0;text-align:left;vertical-align:middle;font:600 var(--t-small)/var(--lh-small) var(--f-body);white-space:nowrap}
+#view-bilan .ic-s-c{padding:var(--sp-3) var(--sp-2);border-radius:var(--r-ctl);text-align:center;vertical-align:top}
+#view-bilan .ic-s-c.centre{background:var(--sunk)}
+#view-bilan .ic-s-c.actuel{box-shadow:inset 0 0 0 2px var(--brand)}
+#view-bilan .ic-s-bar{display:block;height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+#view-bilan .ic-s-bar i{display:block;height:100%;border-radius:4px;background:var(--muted)}
+#view-bilan .ic-s-c.centre .ic-s-bar i{background:var(--brand)}
+#view-bilan .ic-s-v{display:block;margin-top:var(--sp-2);font:700 var(--t-h3)/var(--lh-h3) var(--f-body);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
+#view-bilan .ic-s-d{display:block;font:500 var(--t-caption)/var(--lh-caption) var(--f-body);font-variant-numeric:tabular-nums lining-nums;color:var(--muted);white-space:nowrap}
+
+/* réglages repliés, pied, emplacement « demain » */
+#view-bilan .ic-reglages .ui-acc-titre{gap:var(--sp-3)}
+#view-bilan .ic-reg-res{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-bilan .ic-reglages .ui-acc-chevron{margin-left:0}
+#view-bilan .ic-reg-corps{display:flex;flex-direction:column;gap:var(--sp-4)}
+#view-bilan .ic-reg{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2)}
+#view-bilan .ic-pied{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3) var(--sp-4)}
+#view-bilan .ic-feuille-btn .ui-ico{margin-right:-4px}
+#view-bilan .ic-pied .ic-mention{flex:1 1 260px}
+#view-bilan .ic-mention,.ui-panneau .ic-mention{margin:0;font-size:var(--t-caption);line-height:var(--lh-caption);color:var(--muted)}
+#view-bilan .ic-demain{display:flex;align-items:center;gap:var(--sp-2);padding-top:var(--sp-4);border-top:1px dashed var(--line2);font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+
+/* état indisponible : ce qui manque, jamais un chiffre */
+#view-bilan .ic-indispo{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-4);border-radius:var(--r-card);background:var(--st-todo-bg);outline:1px dashed var(--st-todo);outline-offset:-1px}
+#view-bilan .ic-indispo>p{margin:0}
+#view-bilan .ic-indispo-t{font:700 var(--t-h3)/var(--lh-h3) var(--f-display)}
+#view-bilan .ic-indispo-p{font-size:var(--t-body);line-height:var(--lh-body)}
+#view-bilan .ic-indispo-l{margin:0;padding-left:var(--sp-5);font-size:var(--t-body);line-height:var(--lh-body)}
+#view-bilan .ic-indispo-l li+li{margin-top:var(--sp-1)}
+#view-bilan .ic-m-origine{color:var(--muted);font-size:var(--t-small)}
+#view-bilan .ic-indispo .ic-note{color:var(--st-todo)}
+#view-bilan .ic-indispo-act{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+
+@media (min-width:1100px){
+  #view-bilan .ic-grille{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:var(--sp-8)}
+  #view-bilan .ic-sens{padding-left:var(--sp-8);border-left:1px solid var(--line)}
+}
+@media (max-width:520px){
+  #view-bilan .ic-reg-res{display:none}
+}
+@media (max-width:420px){
+  #view-bilan .ic-metrics{gap:var(--sp-4) var(--sp-3)}
+  #view-bilan .ic-m-v{font-size:var(--t-h2);line-height:var(--lh-h2)}
+}
+
+/* feuille « Comment c'est calculé » (UI.panneau) */
+.ui-panneau .ic-f-sec{display:flex;flex-direction:column;gap:var(--sp-2)}
+.ui-panneau .ic-f-h{margin:0;font:650 var(--t-h3)/var(--lh-h3) var(--f-display)}
+.ui-panneau .ic-f-dl{display:flex;flex-direction:column;margin:0}
+.ui-panneau .ic-f-l{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--line);font-size:var(--t-small);line-height:var(--lh-small)}
+.ui-panneau .ic-f-l dt{min-width:0;color:var(--muted)}
+.ui-panneau .ic-f-l dd{margin:0;flex:none;text-align:right;font-weight:600;font-variant-numeric:lining-nums proportional-nums}
+.ui-panneau .ic-f-l.total dt{color:var(--ink);font-weight:600}
+.ui-panneau .ic-f-l.total dd{font-weight:700}
+.ui-panneau .ic-f-n{margin:0;font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
+.ui-panneau .ic-f-alerte{margin:0;padding:var(--sp-3);border-radius:var(--r-ctl);background:var(--st-watch-bg);color:var(--st-watch);font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+.ui-panneau .ic-f-scroll{overflow-x:auto}
+.ui-panneau .ic-f-table{width:100%;min-width:340px;border-collapse:collapse;font-size:var(--t-small);line-height:var(--lh-small);font-variant-numeric:tabular-nums lining-nums}
+.ui-panneau .ic-f-table th,.ui-panneau .ic-f-table td{padding:var(--sp-2) var(--sp-2) var(--sp-2) 0;border-bottom:1px solid var(--line);text-align:right;vertical-align:baseline}
+.ui-panneau .ic-f-table th:first-child{text-align:left;font-weight:600}
+.ui-panneau .ic-f-table thead th{font-size:var(--t-caption);font-weight:600;color:var(--muted)}
+.ui-panneau .ic-f-table tfoot th,.ui-panneau .ic-f-table tfoot td{font-weight:700;border-bottom:0}
+.ui-panneau .ic-f-tag{display:inline-block;margin-left:var(--sp-1);padding:0 var(--sp-2);border-radius:var(--r-chip);background:var(--sunk);font:600 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+.ui-panneau .ic-f-src,.ui-panneau .ic-f-av{display:flex;flex-direction:column;gap:var(--sp-3);margin:0;padding:0;list-style:none;font-size:var(--t-small);line-height:var(--lh-small)}
+.ui-panneau .ic-f-av{padding-left:var(--sp-4);list-style:disc;gap:var(--sp-2)}
+.ui-panneau .ic-f-src li{display:flex;flex-direction:column;gap:0}
+.ui-panneau .ic-f-src a{display:flex;align-items:center;align-self:flex-start;min-height:var(--hit);color:var(--brand);font-weight:600;text-underline-offset:2px;overflow-wrap:anywhere}
+.ui-panneau .ic-f-src-d{color:var(--muted);font-size:var(--t-caption);line-height:var(--lh-caption)}

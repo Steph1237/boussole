@@ -20,7 +20,7 @@ const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
 // "actions" n'a plus de sous-vue (sa liste passe dans la boîte de réception d'Aujourd'hui) : son script reste chargé
 // pour window.Actions, son fragment n'est plus posé dans la coque.
 const MODULES = ["aujourdhui", "comptes-view", "bilan", "pilotage", "sante", "toise", "simu", "plan-view", "objectifs-view", "actions", "risque-view", "profil", "regles", "claude-guide", "propositions", "memoire-view", "fiches-view", "expertises-view", "journal-view"];
-const SCRIPTS = ["calc", "demo-data", "sensible", "routine-etat", "banque-etat", "mfa", "store-demo", "store-supabase", "auth", "reel", "rules", "reperes", "calendrier", "plan", "historique", "serie-net", "bilan-calc", "bilan-etat", "format", "periodes", "ui", "graphe-patrimoine", "claude-prompts", "marche", "projection-outils", "projection-credit", "projection-fiscalite", "projection-evenements", "projection-donnees", "projection-immo", "risque", "pratiques", "accueil", ...MODULES, "app"];
+const SCRIPTS = ["calc", "demo-data", "sensible", "routine-etat", "banque-etat", "mfa", "store-demo", "store-supabase", "auth", "reel", "rules", "reperes", "calendrier", "plan", "historique", "serie-net", "bilan-calc", "bilan-etat", "format", "periodes", "ui", "graphe-patrimoine", "claude-prompts", "marche", "projection-outils", "projection-credit", "projection-fiscalite", "projection-evenements", "projection-donnees", "projection-immo", "immo-capacite", "risque", "pratiques", "accueil", ...MODULES, "app"];
 // supabase-js v2, build UMD épinglé (window.supabase). Le paquet n'est pas publié sur cdnjs : jsdelivr sert
 // le fichier du paquet npm officiel. Chargé juste après config.js, avant les adaptateurs store-* et auth.js.
 const SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js";
@@ -42,7 +42,7 @@ function wrap(fragment) {
 // --- app.html : coque + fragments ---
 let app = read(join(SRC, "shell.html"));
 // ui.css (composants communs .ui-*) juste après le thème ; un fichier absent est ignoré (read → "").
-const css = [read(join(SRC, "theme.css")), read(join(SRC, "ui.css")), ...MODULES.map(m => read(join(SRC, `${m}.css`))), read(join(SRC, "accueil.css")), read(join(SRC, "mfa.css"))].join("\n");
+const css = [read(join(SRC, "theme.css")), read(join(SRC, "ui.css")), ...MODULES.map(m => read(join(SRC, `${m}.css`))), read(join(SRC, "immo-capacite.css")), read(join(SRC, "accueil.css")), read(join(SRC, "mfa.css"))].join("\n");
 app = app.replace("/*@css*/", () => css);
 for (const m of MODULES) {
   app = app.replace(`<!--@${m}-->`, () => read(join(SRC, `${m}.html`)) || `<p class="muted">Module ${m} en construction.</p>`);
