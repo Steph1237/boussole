@@ -60,8 +60,9 @@ test("pilotage.html : identifiants utilisés par le script, en-tête, bascule, �
   const ids = [...js.matchAll(/\$\("(pl[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 12);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  for (const id of ["plTotal", "plSous", "plPeriode", "plCourbe", "plMode", "plGroupes", "plSuivi", "plVide", "plChargement", "plCompleter", "plMvtClaude", "plVideClaude"])
+  for (const id of ["plTotal", "plSous", "plPeriode", "plCourbe", "plMode", "plGroupes", "plSuivi", "plVide", "plChargement", "plVideClaude"])
     assert.match(html, new RegExp('id="' + id + '"'), id);
+  assert.doesNotMatch(html, /plCompleter|plMvtClaude|plClaude"/, "plus de bouton Claude empilé : le bouton de l'en-tête couvre les demandes de la page");
   assert.doesNotMatch(html, /<select|<table/, "plus de formulaire ni de tableau affichés d'un coup");
 });
 
@@ -85,9 +86,9 @@ test("pilotage : lecture seule — aucun formulaire, aucune écriture au store, 
   for (const f of ["mouvement", "champsMouvement", "nouvelleLigne", "modificationLigne", "formMouvementHtml", "formLigneHtml"]) assert.equal(PL[f], undefined, f);
 });
 
-test("pilotage : boutons « Compléter avec Claude » (placements) et mouvement, branchés sur ClaudePrompts", () => {
-  assert.match(js, /u\.demanderAClaude\(phraseClaude\("placements"\), "Compléter avec Claude"\)/);
-  assert.match(js, /u\.demanderAClaude\(phraseClaude\("mouvement"\), "Enregistrer un mouvement avec Claude"\)/);
+test("pilotage : un seul « Compléter avec Claude » (état vide), les autres demandes sont dans le bouton Claude de l'en-tête ; branché sur ClaudePrompts", () => {
+  assert.doesNotMatch(js, /"Enregistrer un mouvement avec Claude"\)\s*;?\s*\n\s*\$\("plVideClaude"\)/);
+  assert.doesNotMatch(js, /\$\("plCompleter"\)|\$\("plMvtClaude"\)|\$\("plClaude"\)/);
   assert.match(js, /\$\("plVideClaude"\)\.innerHTML = u\.demanderAClaude\(phraseClaude\("placements"\), "Compléter avec Claude"\)/);
   assert.equal(PL.phraseClaude("placements", "la ligne « X »", DEPS), ClaudePrompts.phrase("placements", "la ligne « X »"));
   assert.match(PL.phraseClaude("placements", "", { ClaudePrompts: null }), /^Boussole : /, "repli sans ClaudePrompts");
@@ -250,7 +251,7 @@ test("detailLigne : cours et date, quantité, PRU, plus-value latente, poids, fr
   assert.match(sp(F["Cours"]), new RegExp("^248,30 € · " + jourCours + " [a-zéû]+\\.? \\d{4}$"));
   assert.equal(F["Quantité"], "36");
   assert.equal(sp(F["Prix de revient unitaire (PRU)"]), "215,10 €");
-  assert.match(sp(F["Plus-value latente"]), /^\+1 1\d\d € \(\+15,4 %\)$/);
+  assert.match(sp(F["Plus-value latente"]), /^\+1 1\d\d € \(\+15 %\)$/);
   assert.equal(sp(F["Frais courants"]), "0,07 % par an");
   assert.equal(F["Zone"], "Europe");
   assert.match(d.source, /frais courants 0,07 %, relevé le \d{1,2} [a-zéû]+\.? \d{4}$/);
@@ -402,7 +403,7 @@ test("groupesHtml : cartes dépliables (aria-expanded / aria-controls), lignes e
   assert.match(h, /data-pl-ligne="l1" aria-haspopup="dialog"/);
   assert.match(h, /Voir plus de lignes \(1\)/);
   assert.match(h, /Camille/, "titulaire affiché pour le foyer");
-  assert.match(sp(h), /6 lignes · 85,7 %/);
+  assert.match(sp(h), /6 lignes · 86 %/);
   const neuf = Array.from({ length: 9 }, (_, i) => POS("g" + i, { envelope: "E" + i, qty: 10 - i }));
   const h9 = PL.groupesHtml(PL.grouper(neuf, "enveloppe", { scope: "foyer" }, DEPS), "enveloppe", { scope: "foyer" }, UI, { today: TODAY, deps: DEPS });
   assert.match(h9, /data-pl-vp="groupes:enveloppe"/);
@@ -427,7 +428,7 @@ function vueDom(S0, stockage) {
   ctx.App = { register: (n, api) => { modules[n] = api; } };
   ctx.Store = { get: () => S };
   vm.createContext(ctx);
-  for (const f of ["calc.js", "periodes.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
+  for (const f of ["format.js", "calc.js", "periodes.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
   vm.runInContext(uiJs, ctx, { filename: "ui.js" });
   vm.runInContext(readFileSync("web/src/claude-prompts.js", "utf8"), ctx, { filename: "claude-prompts.js" });
   vm.runInContext(readFileSync("web/src/comptes-view.js", "utf8"), ctx, { filename: "comptes-view.js" }); // window.ComptesView (adresses des fiches)
@@ -452,12 +453,9 @@ test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de r
   assert.equal(api.headline(), $(root, "plTotal").textContent);
   assert.match($(root, "plTitre").textContent, /^Placements du foyer$/);
   assert.match($(root, "plSous").textContent, /\d+ lignes/);
-  assert.match($(root, "plCompleter").innerHTML, />Compléter avec Claude</);
-  assert.deepEqual(phrasesClaude($(root, "plCompleter").innerHTML), [ClaudePrompts.phrase("placements")]);
-  assert.equal($(root, "plMvtClaude").hidden, false);
-  assert.deepEqual(phrasesClaude($(root, "plMvtClaude").innerHTML), [ClaudePrompts.phrase("mouvement")]);
+  assert.equal(root.querySelectorAll(".ui-claude").filter(b => b.closest(".pl-tete")).length, 0, "pas de bouton Claude empilé sous le total (celui de l'en-tête de la coque les couvre)");
   const radios = $(root, "plMode").querySelectorAll('[role="radio"]');
-  assert.deepEqual(radios.map(r => r.textContent), ["Par enveloppe", "Par poche", "Par titulaire", "Par disponibilité"]);
+  assert.deepEqual(radios.map(r => r.textContent), ["Enveloppe", "Poche", "Titulaire", "Disponibilité"]);
   assert.ok(root.querySelectorAll("[data-pl-groupe-btn]").length >= 6);
   assert.ok(root.querySelectorAll("[data-pl-groupe-btn]").every(b => b.getAttribute("aria-expanded") === "false"));
   assert.ok(root.querySelectorAll(".pl-g-corps").every(c => c.hidden));
@@ -467,7 +465,6 @@ test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de r
   assert.deepEqual($(root, "plSuivi").querySelectorAll(".ui-acc-titre").map(s => sp(s.textContent)).slice(1, 3), ["Ordres à passer · en attente", "Versements programmés · 500 € par mois"]);
   assert.equal($(root, "plVide").hidden, true);
   assert.equal($(root, "plChargement").hidden, true);
-  assert.match($(root, "plClaude").innerHTML, /claude\.ai\/new\?q=/);
   assert.equal(root.querySelectorAll("input").filter(i => !i.closest("#plPeriode")).length, 0, "aucun champ de saisie hors du sélecteur de période");
 });
 
@@ -617,7 +614,6 @@ test("vue (DOM) : état vide orienté (Compléter avec Claude), chargement, pér
   assert.match($(v.root, "plVide").textContent, /Dis à Claude ce que tu détiens/);
   assert.equal($(v.root, "plGroupesBloc").hidden, true);
   assert.equal($(v.root, "plSuivi").hidden, true);
-  assert.equal($(v.root, "plMvtClaude").hidden, true);
   assert.equal(v.api.headline(), "–");
   const c = vueDom(demoS({ ready: false, positions: [] }));
   assert.equal($(c.root, "plChargement").hidden, false);

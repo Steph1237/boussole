@@ -71,8 +71,10 @@
     t.setUTCDate(Math.min(d, fin));
     return isoUtc(t.getTime());
   }
-  const dateFr = s => { const d = jj(s); return isoOk(d) ? new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : ""; };
-  const dateCourte = s => { const d = jj(s); return isoOk(d) ? new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""; };
+  /* Formats uniques (format.js, UX1) : « 14 oct. 2026 », « 14 oct. », « 193 490 € », « +5,2 % » ; global du navigateur, sinon le module voisin sous Node. */
+  const FM = () => (typeof globalThis !== "undefined" && globalThis.Fmt) || (typeof module === "object" && module.exports && typeof require === "function" ? require("./format.js") : null);
+  const dateFr = s => { const d = jj(s); return isoOk(d) ? FM().fmtDate(d) : ""; };
+  const dateCourte = s => { const d = jj(s); return isoOk(d) ? FM().fmtDate(d, { court: true }) : ""; };
   /** « JJ/MM » d'une date ou d'un horodatage (heure locale pour un horodatage). */
   function jjmm(v) {
     if (!v) return "";
@@ -92,13 +94,13 @@
   const nf2 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const nfq = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 6 });
   const fini = v => v != null && v !== "" && isFinite(+v);
-  const eur = v => (!fini(v) ? "—" : (Math.round(v) < 0 ? "−" : "") + nf0.format(Math.abs(Math.round(v))) + " €");
-  const eurS = v => (!fini(v) ? "—" : (Math.round(v) > 0 ? "+" : Math.round(v) < 0 ? "−" : "") + nf0.format(Math.abs(Math.round(v))) + " €");
-  const eur2 = v => (!fini(v) ? "—" : (v < 0 ? "−" : "") + nf2.format(Math.abs(v)) + " €");
-  const pct = v => (!fini(v) ? "—" : nf1.format(v) + " %");
-  const pctS = v => (!fini(v) ? "—" : (v > 0.05 ? "+" : v < -0.05 ? "−" : "") + nf1.format(Math.abs(v)) + " %");
-  const pct0 = v => (!fini(v) ? "—" : (v > 0 && v < 1 ? "< 1" : nf0.format(v)) + " %");
-  const kEur = v => (Math.abs(v) >= 1e6 ? nf1.format(v / 1e6) + " M€" : Math.abs(v) >= 1e3 ? nf0.format(v / 1e3) + " k€" : nf0.format(v) + " €");
+  const eur = v => (!fini(v) ? "—" : FM().fmtEUR(v));
+  const eurS = v => (!fini(v) ? "—" : FM().fmtEUR(v, { signe: true }));
+  const eur2 = v => (!fini(v) ? "—" : FM().fmtEUR(v, { decimales: 2 }));
+  const pct = v => (!fini(v) ? "—" : FM().fmtPct(v));
+  const pctS = v => (!fini(v) ? "—" : FM().fmtPct(v, { signe: true }));
+  const pct0 = v => (!fini(v) ? "—" : v > 0 && v < 1 ? "< 1 %" : FM().fmtPct(v, { decimales: 0 }));
+  const kEur = v => FM().fmtEUR(v, { compact: "graphe" });
   const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
   const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
@@ -196,15 +198,15 @@
     const auto = xs.filter(p => SOURCES_AUTO[p.sourceAuto]);
     if (auto.length) {
       const d = auto.map(p => String(p.sourceAutoLe || "")).filter(Boolean).sort().pop() || "";
-      return { texte: "Synchronisé" + (jjmm(d) ? " le " + jjmm(d) : ""), ton: "bon", date: jourDe(d), origine: auto[auto.length - 1].sourceAuto };
+      return { texte: "Synchronisé" + (dateCourte(jourDe(d)) ? " le " + dateCourte(jourDe(d)) : ""), ton: "bon", date: jourDe(d), origine: auto[auto.length - 1].sourceAuto };
     }
     const cxs = xs.flatMap(p => comptesBanque(p, S)).map(c => connexionDe(S, c)).filter(Boolean);
     if (cxs.length) {
       const d = cxs.map(c => String(c.derniereSynchro || "")).filter(Boolean).sort().pop() || "";
-      return { texte: "Synchronisé" + (jjmm(d) ? " le " + jjmm(d) : ""), ton: "bon", date: jourDe(d), origine: "powens" };
+      return { texte: "Synchronisé" + (dateCourte(jourDe(d)) ? " le " + dateCourte(jourDe(d)) : ""), ton: "bon", date: jourDe(d), origine: "powens" };
     }
     const d = xs.map(p => jj(p.valueDate)).filter(isoOk).sort().pop() || "";
-    return { texte: d ? "Saisi le " + jjmm(d) : MANUEL, ton: "neutre", date: d, origine: "manuel" };
+    return { texte: d ? "Saisi le " + dateCourte(jourDe(d)) : MANUEL, ton: "neutre", date: d, origine: "manuel" };
   }
 
   /* ============================================================ doublons probables ============================================================ */
@@ -263,7 +265,7 @@
       const cx = cpt ? connexionDe(s, cpt) : null, dt = cx && cx.derniereSynchro;
       return { cle: "dette:" + d.id, type: "dette", nom: d.nom, sous: d.credit && avecNom ? (d.credit.owner === "commun" ? "Commun" : nomDe(s, d.credit.owner)) : "",
         solde: -d.montant, part: totalDettes ? d.montant / totalDettes * 100 : 0, plusValue: null, cout: null,
-        source: cx ? { texte: "Synchronisé" + (jjmm(dt) ? " le " + jjmm(dt) : ""), ton: "bon", date: jourDe(dt), origine: "powens" } : { texte: MANUEL, ton: "neutre", date: "", origine: "manuel" },
+        source: cx ? { texte: "Synchronisé" + (dateCourte(jourDe(dt)) ? " le " + dateCourte(jourDe(dt)) : ""), ton: "bon", date: jourDe(dt), origine: "powens" } : { texte: MANUEL, ton: "neutre", date: "", origine: "manuel" },
         href: "#patrimoine/immobilier", nb: 1, titulaire: null, etablissement: cx && plat(cx.etablissement) ? { nom: plat(cx.etablissement), origine: "banque" } : { nom: MANUEL, origine: "manuel" }, doublons: [] };
     };
     const familles = FAMILLES.map(F => {
@@ -579,14 +581,16 @@
     let lo = Math.min(...vals), hi = Math.max(...vals);
     const marge = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
     lo = lo >= 0 ? Math.max(0, lo - marge) : lo - marge; hi += marge;
+    // graduations rondes (Fmt.graduations : pas de 1, 2, 2,5 ou 5 × 10ⁿ, 4 au plus) et libellés d'axe de même unité (Fmt.fmtAxe)
+    const tk = FM().graduations(lo, hi, 4), plancher = lo >= 0;
+    lo = plancher ? Math.max(0, tk[0]) : tk[0]; hi = tk[tk.length - 1];
+    const etiq = opt.format ? tk.map(opt.format) : FM().fmtAxe(tk);
     const X = x => L + (x1 === x0 ? 0 : (x - x0) / (x1 - x0)) * (W - L - R), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-    // graduations : une décimale en k€ quand l'écart est faible, pour ne pas répéter la même étiquette (comme pilotage.js)
-    const fin1 = (hi - lo) / 3 < 2000, fmt = opt.format || (v => (fin1 && Math.abs(v) >= 1e3 && Math.abs(v) < 1e6 ? nf1.format(v / 1e3) + " k€" : kEur(v)));
     let g = "";
-    for (let k = 0; k <= 3; k++) {
-      const v = lo + (hi - lo) * k / 3, y = Y(v).toFixed(1);
-      g += '<line class="cv-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="cv-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(fmt(v)) + "</text>";
-    }
+    tk.forEach((v, k) => {
+      const y = Y(v).toFixed(1);
+      g += '<line class="cv-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="cv-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(etiq[k]) + "</text>";
+    });
     const lab = p => dateCourte(p.date) + (joursEntre(rows[0].date, rows[rows.length - 1].date) > 300 ? " " + p.date.slice(2, 4) : "");
     let droite = -Infinity; const xFin = X(x1), wFin = larg(lab(rows[rows.length - 1]));
     const pas = Math.max(1, Math.floor(rows.length / 8));
@@ -615,10 +619,11 @@
     if (!rows.length) return null;
     const id = esc(opt.id || "cv-b");
     const W = Math.max(300, Math.min(1000, Math.round(+opt.largeur) || 720)), H = W < 480 ? 190 : 220, L = 62, R = 14, T = 14, B = 28;
-    const hi = Math.max(1, ...rows.map(m => Math.max(+m.entrees || 0, +m.sorties || 0))) * 1.12;
+    const hi0 = Math.max(1, ...rows.map(m => Math.max(+m.entrees || 0, +m.sorties || 0))) * 1.05, hi = FM().graduations(0, hi0, 4).slice(-1)[0];
     const Y = v => T + (1 - v / hi) * (H - T - B), bande = (W - L - R) / rows.length, bw = Math.max(4, Math.min(26, bande * 0.32));
     let g = "";
-    for (let k = 0; k <= 3; k++) { const v = hi * k / 3, y = Y(v).toFixed(1); g += '<line class="cv-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="cv-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(kEur(v)) + "</text>"; }
+    const tk = FM().graduations(0, hi, 4), etiq = FM().fmtAxe(tk);
+    tk.forEach((v, k) => { const y = Y(v).toFixed(1); g += '<line class="cv-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="cv-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(etiq[k]) + "</text>"; });
     rows.forEach((m, i) => {
       const cx = L + bande * (i + 0.5), e = +m.entrees || 0, s = +m.sorties || 0, lb = moisLabel(m.mois);
       g += '<rect class="cv-b-ent" x="' + (cx - bw - 1).toFixed(1) + '" y="' + Y(e).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (H - B - Y(e)).toFixed(1) + '"><title>' + esc(lb + " : entrées " + eur(e)) + "</title></rect>";
@@ -645,13 +650,13 @@
   function enteteHtml(e) {
     const v = e.variation;
     const varTxt = v && v.enAttente ? '<span class="ui-skel" role="status" aria-label="Variation en cours de calcul"></span>'
-      : v ? '<span class="cv-var ' + (v.montant >= 0 ? "pos" : "neg") + '"><span aria-hidden="true">' + (Math.round(v.montant) > 0 ? "▲ " : Math.round(v.montant) < 0 ? "▼ " : "") + "</span>" +
-        esc(eurS(v.montant) + (v.pct != null ? " (" + pctS(v.pct) + ")" : "")) + "</span> " + esc(v.texte + (v.reconstitue ? " · début reconstitué" : ""))
+      : v ? (() => { const d = FM().fmtDelta({ montant: v.montant, pct: v.pct, periode: v.texte }), mv = d.texte.slice(0, d.texte.length - v.texte.length).trim();
+        return '<span class="cv-var ' + d.ton + '"><span aria-hidden="true">' + esc(mv.charAt(0)) + "</span> " + '<span class="ui-sr">' + esc({ hausse: "En hausse", baisse: "En baisse", stable: "Stable" }[d.sens] + " : ") + "</span>" + esc(mv.slice(1).trim()) + "</span> " + esc(v.texte); })()
       : esc("La variation apparaîtra après la première photo nocturne du patrimoine.");
     const fait = (l, val, s, cls) => '<li><span class="cv-fait-l">' + esc(l) + '</span><span class="cv-fait-v' + (cls ? " " + cls : "") + '">' + esc(val) + "</span>" + (s ? '<span class="cv-fait-s">' + esc(s) + "</span>" : "") + "</li>";
     return '<p class="cv-total">' + esc(eur(e.net)) + '</p><p class="cv-sous">' + varTxt + "</p>" +
       '<ul class="cv-faits">' + fait("Financier", eur(e.financier), "comptes et placements") + fait("Immobilier", eur(e.immobilier), e.autres ? "+ " + eur(e.autres) + " d'autres biens" : "") +
-      fait("Dettes", eur(-e.dettes), "capital restant dû", e.dettes ? "neg" : "") + "</ul>";
+      fait("Dettes", eur(-e.dettes), "capital restant dû") + "</ul>";
   }
 
   /** Alerte « doublon probable » (texte, puis « Demander à Claude » de clôturer la ligne si U est fourni). */
@@ -682,7 +687,7 @@
       return '<section class="cv-fam' + (ouvert ? " ouvert" : "") + '" data-cv-fam="' + F.id + '" aria-labelledby="' + corps + '-h">' +
         '<h3 class="cv-fam-h" id="' + corps + '-h"><button type="button" class="cv-fam-btn" data-cv-fam-btn="' + F.id + '" aria-expanded="' + ouvert + '" aria-controls="' + corps + '">' +
         '<span class="cv-fam-txt"><span class="cv-fam-nom">' + esc(F.label) + '</span><span class="cv-fam-meta">' + esc(meta) + "</span></span>" +
-        '<span class="cv-fam-val' + (F.id === "dettes" && F.total ? " neg" : "") + '">' + esc(eur(F.total)) + "</span>" +
+        '<span class="cv-fam-val">' + esc(eur(F.total)) + "</span>" +
         '<span class="cv-fam-chev" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span>' +
         "</button></h3>" +
         '<div class="cv-fam-corps" id="' + corps + '"' + (ouvert ? "" : " hidden") + ">" +
