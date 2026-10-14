@@ -16,7 +16,7 @@
 - Ne pas committer dans les tâches : c'est le contrôleur qui committe.
 - **Dépendances et chantiers en cours** :
   - **DAT1** (`0029_calendrier.sql`, `web/src/calendrier.js`) doit être fusionné avant les tâches 3 et 5 : le moteur lit les types et les dates d'enveloppe de DAT1, et `appliquer_propositions` de 0030 repart de 0029.
-  - **HIS1** (`web/src/historique.js`, `aujourdhui.*`, en cours par un autre agent) doit être fusionné avant la tâche 12 (partie Aujourd'hui). Ne pas modifier `historique.js`, `aujourdhui.*` ni le routage avant.
+  - **HIS1** (`web/src/historique.js`, `web/src/graphe-patrimoine.js`, `aujourdhui.*`, en cours par un autre agent) doit être fusionné avant les tâches 11 et 12. Ne pas modifier `historique.js`, `graphe-patrimoine.js`, `aujourdhui.*` ni le routage avant.
   - **SEC2** (0028) est la base des politiques restrictives : 0030 s'applique après 0028 et 0029.
 
 **Modèle par tâche** (roadmap § 3 bis) : **Opus** pour la relecture de la spec, les mathématiques du moteur, les cas de test et la relecture finale (tâches 0, 3 relecture, 15) ; **Sonnet** pour le code ; **Haiku** pour le mécanique (tâches 2, 14). L'effort est indiqué à chaque tâche.
@@ -26,7 +26,7 @@
 2. Puis en parallèle, sur des fichiers disjoints : tâche 1 (migration), tâche 2 (repères et indices), tâche 3 (cœur du moteur).
 3. Puis tâches 4, 5, 6, 7 (modules du moteur, après 3 ; fichiers distincts dans `projection.js` découpé en sections, à faire **dans l'ordre** si un seul agent, sinon 4 et 6 en parallèle, puis 5, puis 7).
 4. Puis tâche 8 (worker et performance), tâche 9 (connecteur, après 1 et 7), tâche 10 (store, après 1).
-5. Puis tâche 11 (composant SIM2, après 7), tâche 12 (branchements, après 10 et 11 ; partie Aujourd'hui après HIS1), tâche 13 (IMMO1 interface, après 7, 10, 11).
+5. Puis tâche 11 (composant SIM2, après 7 et HIS1), tâche 12 (branchements, après 10 et 11 ; partie Aujourd'hui après HIS1), tâche 13 (IMMO1 interface, après 7, 10, 11).
 6. Puis tâche 14 (mécanique), tâche 15 (relecture Opus), tâche 16 (déploiement).
 
 ## Contrats communs (à respecter à l'identique dans toutes les tâches)
@@ -169,8 +169,8 @@ Centile : valeur de rang `⌈p × N⌉` des valeurs triées. Ordre des opératio
 - [ ] **Tests d'abord** : contrat du store (clés, défauts, lecture seule) ; démo valide pour le moteur (aucun avertissement de donnée invalide) ; propositions lisibles ; parité des messages store démo / base / moteur sur les 15 cas partagés.
 - [ ] Implémenter. `npm test`.
 
-## Task 11 : composant SIM2 `CourbeProjection` (Sonnet, effort medium)
-**Fichiers :** `web/src/courbe-projection.js` (nouveau : fonctions pures + contrôleur `monter`/`mettreAJour`) ; `web/src/courbe-projection.css` (nouveau, styles `cp-*`, variables de `theme.css`) ; `build.mjs` (script et CSS) ; `test/courbe-projection.test.mjs` (nouveau).
+## Task 11 : composant SIM2 `GraphePatrimoine` (Sonnet, effort medium)
+**Fichiers :** `web/src/graphe-patrimoine.js` (**existant, créé par HIS1** : à généraliser, pas à dupliquer ; ajout du contrôleur `monter`/`mettreAJour`) ; styles du composant (fichier CSS de HIS1, ou `web/src/graphe-patrimoine.css` s'il n'existe pas ; variables de `theme.css`) ; `build.mjs` (script et CSS) ; `test/graphe-patrimoine.test.mjs` (existant, HIS1 : tests ajoutés, aucun retiré). **Après la fusion de HIS1.**
 
 - [ ] **Tests d'abord** (fonctions pures sous Node, DOM simulé comme `test/aujourdhui.test.mjs`) : passé observé et reconstitué, marqueur « Aujourd'hui », éventail P10–P90 et P25–P75, médiane, aucun point annuel ; passé converti en euros constants avec `indices_mensuels` ; variante (seconde couleur, écart à l'horizon écrit) ; crise en pointillé avec sa légende ; couloir des jalons (vrais boutons, icône + libellé court, trait vertical, regroupement, bulle au focus et au survol avec l'effet en euros, Échap) ; objectifs (losange, couleur **et mot**, « 8 chances sur 10 ») ; phrase de titre (arrondi à deux chiffres significatifs, « provisoire » sous 60 %, « en euros de 2036 » en courants) ; contrôles (horizon, variante si elle existe, crise) ; panneau « Comment c'est calculé » (hypothèses, sources, limites, graine, version, données manquantes avec « Compléter avec Claude ») ; tableau accessible ; `role="img"` et `aria-label` ; mobile 400 px ; `prefers-reduced-motion` ; mode `capacite` ; réglages locaux jamais enregistrés.
 - [ ] Implémenter. Vérification visuelle en clair et en sombre, à 1 280 px et à 400 px (captures dans le compte rendu). `npm test`.
@@ -179,7 +179,7 @@ Centile : valeur de rang `⌈p × N⌉` des valeurs triées. Ordre des opératio
 **Fichiers :** `web/src/objectifs-view.{js,html,css}` ; `web/src/pilotage.{js,html}` ; `web/src/aujourdhui.{js,css}` et `web/src/historique.js` (`projeter` délègue au moteur) **seulement après la fusion de HIS1** ; `web/src/plan.js` (`projection` en façade dépréciée, `statutObjectif` + `probabilite`, `repartirEpargne` avec `rendementAttendu`) ; tests correspondants.
 
 - [ ] **Tests d'abord** :
-  - Objectifs : l'accordéon utilise `CourbeProjection` (vue `financier`, 10 ans) ; plus de champ « versement » ni d'étiquette « réel » ; la ligne de source dit « capacité d'épargne réelle (période) » ou « prévue au budget », jamais les deux ; la note de répartition dit la même source ; panneau d'un objectif : bande des poches et probabilité ; bandeau unique « cibles en euros d'aujourd'hui » ; statuts existants conservés + probabilité ;
+  - Objectifs : l'accordéon utilise `GraphePatrimoine` (vue `financier`, 10 ans) ; plus de champ « versement » ni d'étiquette « réel » ; la ligne de source dit « capacité d'épargne réelle (période) » ou « prévue au budget », jamais les deux ; la note de répartition dit la même source ; panneau d'un objectif : bande des poches et probabilité ; bandeau unique « cibles en euros d'aujourd'hui » ; statuts existants conservés + probabilité ;
   - Placements : courbe de la vue `financier` sous l'évolution passée, réglages du § 10.2 ;
   - Aujourd'hui : la courbe maîtresse de HIS1 prend l'éventail du moteur (vue `net`), les jalons et les objectifs ; `Historique.projeter` garde sa forme de points (+ `p25`, `p75`) ;
   - plus aucun appel à `Plan.RENDEMENTS` ; `Plan.projection` n'est plus appelé que par sa façade (test qui cherche les appels dans `web/src`).
@@ -188,13 +188,13 @@ Centile : valeur de rang `⌈p × N⌉` des valeurs triées. Ordre des opératio
 ## Task 13 : interface IMMO1 dans Immobilier et crédits (Sonnet, effort medium)
 **Fichiers :** `web/src/bilan.{js,html,css}` (section « Capacité d'emprunt ») ; `web/src/claude-prompts.js` (phrases « Compléter avec Claude » : revenus, primes, taux du crédit, apport) ; `test/bilan.test.mjs`.
 
-- [ ] **Tests d'abord** : sélecteur de périmètre existant (foyer, chaque personne) ; aujourd'hui : mensualité max, montant empruntable, apport par enveloppe (PER à part), budget d'achat, reste à vivre et dépenses hors logement, taux et sa date, sensibilité (tableau), mention fixe « estimation selon les règles du HCSF… chaque banque décide » ; demain : `CourbeProjection` en mode `capacite`, phrase de titre (§ 8.2), jalons ; données manquantes avec « Compléter avec Claude » ; accessibilité et mobile comme la tâche 11 ; lecture seule.
+- [ ] **Tests d'abord** : sélecteur de périmètre existant (foyer, chaque personne) ; aujourd'hui : mensualité max, montant empruntable, apport par enveloppe (PER à part), budget d'achat, reste à vivre et dépenses hors logement, taux et sa date, sensibilité (tableau), mention fixe « estimation selon les règles du HCSF… chaque banque décide » ; demain : `GraphePatrimoine` en mode `capacite`, phrase de titre (§ 8.2), jalons ; données manquantes avec « Compléter avec Claude » ; accessibilité et mobile comme la tâche 11 ; lecture seule.
 - [ ] Implémenter. `npm test`.
 
 ## Task 14 : mécanique (Haiku, effort low)
 **Fichiers :** `build.mjs`, `test/shell.test.mjs` (scripts chargés), `test/tutoiement.test.mjs` (nouveaux fichiers couverts), `docs/superpowers/specs/2026-10-10-cockpit.md` (renvoi vers PROJ pour la courbe maîtresse), roadmap privée `~/Finance/docs/boussole-roadmap.md` (statuts SIM1, SIM2, FOY1, IMMO1 ; idée « rejouer une projection passée » reliée à `versionModele`).
 
-- [ ] Vérifier que `node build.mjs` copie `projection.js`, `projection-worker.js`, `courbe-projection.js` et leur CSS ; `npm run gen` ; `npm test`.
+- [ ] Vérifier que `node build.mjs` copie `projection.js`, `projection-worker.js`, `graphe-patrimoine.js` et leur CSS ; `npm run gen` ; `npm test`.
 - [ ] Rechercher et remplacer les textes restants « hors inflation » des anciennes projections ; aucun « vous ».
 - [ ] Mettre à jour la roadmap (section 6, 7 et 11) et le renvoi du cockpit.
 

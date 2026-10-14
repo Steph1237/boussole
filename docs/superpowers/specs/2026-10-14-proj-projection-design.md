@@ -62,7 +62,8 @@ web/src/projection.js        moteur pur (UMD, global Projection) : modèle, flux
                              capacité d'emprunt, amortissement ; dépend de Marche, Calc, Plan (repartirEpargne),
                              Calendrier (DAT1 : types et dates d'enveloppe), Reperes — injectés ou globaux
 web/src/projection-worker.js Web Worker : importScripts des modules purs, reçoit { data, options }, renvoie le résultat
-web/src/courbe-projection.js composant SIM2 : SVG, jalons, tableau, panneau « Comment c'est calculé » (UI.panneau)
+web/src/graphe-patrimoine.js composant SIM2 : le graphe maître créé par HIS1 (GraphePatrimoine), généralisé : éventail, jalons,
+                             objectifs, variante, crise, mode capacité ; tableau et panneau « Comment c'est calculé » (UI.panneau)
 supabase/functions/mcp/projection-moteur.gen.js   copie générée de projection.js (+ marche.js, calendrier.js, reperes.js)
 supabase/functions/mcp/projection.ts              outils MCP (decrire_foyer, lire_foyer, projeter, comparer_variantes,
                                                   capacite_emprunt), lecture SQL → forme de l'app, puis appel du moteur
@@ -336,8 +337,8 @@ Affichée dans **Patrimoine › Immobilier et crédits** (module `bilan`), avec 
 
 ## 10. SIM2 : le graphique
 
-### 10.1 Composant `CourbeProjection`
-- `web/src/courbe-projection.js` : fonctions pures qui produisent le SVG, le tableau et les textes (testables sous Node), plus un petit contrôleur DOM (`monter(el, { donnees, reglages })`, `mettreAJour`). Mêmes conventions que les courbes existantes (`aj-svg` d'Aujourd'hui, `ov-*` d'Objectifs), styles `cp-*` scopés.
+### 10.1 Composant `GraphePatrimoine`
+- **On part du composant de HIS1** : `web/src/graphe-patrimoine.js` (`GraphePatrimoine.construire(f, fut, opt)`, `legendeHtml`, `tableauHtml`, `calculHtml`, `infobulle`), créé pour la courbe maîtresse d'Aujourd'hui (passé observé et reconstitué, trait « Aujourd'hui », échelles de temps distinctes du passé et du futur, tableau et panneau). SIM2 **le généralise** au lieu d'en créer un second : `fut` reçoit la sortie du moteur (centiles, jalons, objectifs, variante, crise), et un petit contrôleur DOM (`monter(el, { donnees, reglages })`, `mettreAJour`) le rend réutilisable sur les autres écrans. Fonctions pures testables sous Node ; ses conventions (échappement, tutoiement, styles scopés) sont gardées.
 - **Courbe continue** : passé observé (trait plein), passé reconstitué (trait plein plus clair, avec la mention de HIS1), marqueur vertical **« Aujourd'hui »**, puis l'éventail : P10–P90 en aplat clair, P25–P75 plus foncé, **médiane en trait plein**. Pas de points annuels. Le passé est converti en euros constants avec l'indice des prix (`indices_mensuels`, série IPC de l'Insee, § 11.4) quand la vue est en euros constants.
 - **Variante** : seconde couleur (médiane + P25–P75), et **l'écart à l'horizon** écrit (« +38 000 € en médiane à 10 ans, variante meilleure dans 7 chemins sur 10 »).
 - **Crise** : ligne pointillée, avec sa légende (« Crise de 2008 rejouée en octobre 2027 »).
@@ -611,7 +612,7 @@ Les lignes du § 11.4 dont la valeur est vérifiée ou conventionnelle (statut V
 - **Monte-Carlo** (`test/projection-mc.test.mjs`) : MC-1 à MC-8, matrice définie positive, temps (plafond large).
 - **Connecteur** (`test/projection-mcp.test.mjs`) : la copie générée est à jour (`npm run gen` sans écart) ; sorties identiques à l'app sur la fixture et la démo ; outils, annotations, validations, conduite.
 - **Migration** (`test/projection-pglite.test.mjs`) : tables, contraintes, RLS (B ne lit ni n'applique rien de A), politiques MFA, propositions tout ou rien, `export_all`, cascade, `config.projection`, `indices_mensuels` en lecture seule pour `authenticated`, diff de `appliquer_propositions` contre 0029 limité aux ajouts.
-- **Interface** (`test/courbe-projection.test.mjs`, `aujourdhui`, `objectifs-view`, `pilotage`, `bilan`) : SVG, phrase de titre, jalons (boutons, bulle, Échap), objectifs (mot + couleur), tableau, panneau, mobile, mouvement réduit, libellé de la source des versements, lecture seule.
+- **Interface** (`test/graphe-patrimoine.test.mjs`, `aujourdhui`, `objectifs-view`, `pilotage`, `bilan`) : SVG, phrase de titre, jalons (boutons, bulle, Échap), objectifs (mot + couleur), tableau, panneau, mobile, mouvement réduit, libellé de la source des versements, lecture seule.
 
 ## 17. Hors périmètre
 
