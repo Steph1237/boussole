@@ -678,6 +678,22 @@ export function filtrerCalendrier(s: any, f: { horizon_mois?: number; enveloppe?
 
 const jalonCompact = (j: any) => ({ date: j.date, titre: j.titre, enveloppe: j.enveloppe, statut: j.statut, delai: j.delai, confiance: j.confiance });
 const aCompleterCompact = (a: any) => ({ enveloppe: a.enveloppe, champ: a.champ, titre: a.titre, document: a.document });
+/** Taille de la sortie de l'outil calendrier : au plus JALONS_MAX jalons (les plus proches dans le temps, le reste est compté), et en mode
+    compact (défaut) des effets raccourcis à EFFET_COMPACT_MAX caractères, prochains et dans_3_mois sans détail. */
+export const JALONS_MAX = 60;
+export const EFFET_COMPACT_MAX = 160;
+export function abreger(texte: string, max: number): string {
+  const t = String(texte ?? "");
+  if (t.length <= max) return t;
+  const c = t.slice(0, max - 1), i = c.lastIndexOf(" ");
+  return (i > max / 2 ? c.slice(0, i) : c).replace(/[\s,;:.]+$/, "") + "…";
+}
+export function borner(f: any, compact: boolean) {
+  const omis = Math.max(0, f.jalons.length - JALONS_MAX);
+  const jalons = f.jalons.slice(0, JALONS_MAX).map((j: any) => (compact ? { ...j, effet: abreger(j.effet, EFFET_COMPACT_MAX) } : j));
+  const court = (l: any[]) => (compact ? l.map((j: any) => ({ id: j.id, ...jalonCompact(j) })) : l);
+  return { ...f, jalons, prochains: court(f.prochains), dans_3_mois: court(f.dans_3_mois), jalons_omis: omis };
+}
 /** Pour demarrer_session : 3 prochaines échéances et données à compléter ; null si la lecture échoue (ne lève jamais). */
 export async function calendrierDeSession(db: any, must: any, auj: string) {
   try {
@@ -706,21 +722,24 @@ export function registerCalendrier(server: any, h: { db: any; wrap: any; must: a
   const { db, wrap, must, RO } = h;
   server.registerTool("calendrier", {
     title: "Calendrier patrimonial",
-    description: "Les dates qui font courir les délais fiscaux de l'utilisateur, calculées par Boussole d'après ses documents et les repères sourcés : PEA à 5 ans, assurance-vie à 8 ans et au 70ᵉ anniversaire de l'assuré, PEL, épargne salariale, plafond épargne retraite non utilisé, donations à 15 ans, moins-values à 10 ans, 31 décembre, fin de période des taux réglementés, fin des prêts. Renvoie jalons (date, enveloppe, titre, effet décrit, calcul, statut passe · proche · futur, confiance sure · approchee · calculee, source datée), a_completer (la donnée manquante et le document où la trouver : jamais de date sans donnée), seuils (plafond de versements du PEA, seuil de l'assurance-vie), regles_indisponibles (repère absent), prochains et dans_3_mois, plus sources (repères utilisés) et conduite. Par défaut, seuls les jalons à venir et le dernier jalon passé de chaque enveloppe ; inclure_passes les donne tous. Les données se complètent avec regler_infos_enveloppe, regler_infos_pret, regler_donations et regler_avis_impot. Information générale sur les règles, pas une recommandation.",
+    description: "Les dates qui font courir les délais fiscaux de l'utilisateur, calculées par Boussole d'après ses documents et les repères sourcés : PEA à 5 ans, assurance-vie à 8 ans et au 70ᵉ anniversaire de l'assuré, PEL, épargne salariale, plafond épargne retraite non utilisé, donations à 15 ans, moins-values à 10 ans, 31 décembre, fin de période des taux réglementés, fin des prêts. Renvoie jalons (date, enveloppe, titre, effet décrit, calcul, statut passe · proche · futur, confiance sure · approchee · calculee, source datée), a_completer (la donnée manquante et le document où la trouver : jamais de date sans donnée), seuils (plafond de versements du PEA, seuil de l'assurance-vie), regles_indisponibles (repère absent), prochains et dans_3_mois, plus sources (repères utilisés) et conduite. Par défaut, seuls les jalons à venir et le dernier jalon passé de chaque enveloppe ; inclure_passes les donne tous. Sortie bornée : 60 jalons au plus (jalons_omis compte les autres) et effets raccourcis par défaut (compact: false pour les textes complets). Les données se complètent avec regler_infos_enveloppe, regler_infos_pret, regler_donations et regler_avis_impot. Information générale sur les règles, pas une recommandation.",
     inputSchema: z.strictObject({
       horizon_mois: z.number({ error: "horizon_mois : nombre de mois entre 1 et " + HORIZON_MOIS_MAX + "." }).int({ error: "horizon_mois : nombre entier de mois." })
         .min(1, { error: "horizon_mois : au moins 1 mois." }).max(HORIZON_MOIS_MAX, { error: "horizon_mois : " + HORIZON_MOIS_MAX + " mois au plus." }).optional()
         .describe("Jalons à venir dans les N prochains mois (1 à " + HORIZON_MOIS_MAX + ", défaut " + HORIZON_MOIS_MAX + ")."),
       enveloppe: z.string().trim().min(1).max(80).optional().describe("Nom d'une enveloppe (champ envelope des lignes de list_positions) ; absent : tout le foyer."),
       inclure_passes: z.boolean({ error: "inclure_passes : true ou false." }).optional().describe("true : tous les jalons passés (défaut : le dernier de chaque enveloppe)."),
+      compact: z.boolean({ error: "compact : true ou false." }).optional().describe("true (défaut) : effets raccourcis à " + EFFET_COMPACT_MAX + " caractères, prochains et dans_3_mois sans détail ; false : textes complets. Dans les deux cas, " + JALONS_MAX + " jalons au plus (les plus proches) et jalons_omis compte les autres : réduis horizon_mois ou filtre par enveloppe."),
     }),
     annotations: RO,
   }, wrap(async (a: any) => {
     const auj = h.today();
     const donnees = await lireDonneesCalendrier(db, must);
     const sortie = calendrier(donnees, auj);
-    const f = filtrerCalendrier(sortie, a, auj);
+    const complet = filtrerCalendrier(sortie, a, auj);
+    const f = borner(complet, a.compact !== false);
     const avertissements: string[] = [];
+    if (f.jalons_omis) avertissements.push(`${f.jalons_omis} jalon${f.jalons_omis > 1 ? "s" : ""} plus lointain${f.jalons_omis > 1 ? "s" : ""} non listé${f.jalons_omis > 1 ? "s" : ""} (${JALONS_MAX} au plus) : réduis horizon_mois ou filtre par enveloppe.`);
     if (a.enveloppe && !f.jalons.length && !f.a_completer.length && !f.seuils.length)
       avertissements.push(`Aucun résultat pour « ${a.enveloppe} » : vérifie son nom exact (list_positions, champ envelope) ; une enveloppe d'un type sans règle n'a pas de jalon.`);
     return { date: auj, ...f, ...(avertissements.length ? { avertissements } : {}), sources: sourcesCalendrier(f, donnees.reperes, auj), conduite: CONDUITE_CALENDRIER };

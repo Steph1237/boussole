@@ -1338,6 +1338,17 @@ test("réglages : instructions et conduite — frais des contrats relevés dans 
   assert.doesNotMatch(instr + conduite, /conseiller/i);
 });
 
+test("update_profile : personnes.<p>.naissance acceptée (AAAA-MM-JJ ou AAAA-MM, null la retire) pour dater le 70e anniversaire (DAT1)", () => {
+  const bloc = src.slice(src.indexOf("const PersonnePatch = z.strictObject({"), src.indexOf("const AutresPatch"));
+  const m = bloc.match(/naissance: z\.string\(\)\.regex\(\/([^\n]*?)\/, \{ error: "[^"]*" \}\)\.nullable\(\)\.optional\(\)/);
+  assert.ok(m, "naissance : chaîne à format contrôlé, nullable et facultative");
+  const re = new RegExp(m[1]);
+  for (const ok of ["1980-06-15", "1980-06", "2001-12-31"]) assert.ok(re.test(ok), ok);
+  for (const ko of ["1980", "15/06/1980", "1980-6-15", "1980-06-15T00:00", " 1980-06-15", "1980-06-155", ""]) assert.ok(!re.test(ko), ko);
+  // la proposition passe telle quelle (fusion générique par correctif) : la migration 0029 (branche profil) contrôle ensuite la date réelle
+  assert.match(src.slice(src.indexOf("async function propositionProfil")), /clean\(\{ foyer: args\.foyer, personnes: args\.personnes/);
+});
+
 test("mcp : aucune clé de service dans le connecteur (la garde MFA passe par la RPC mfa_exigee avec le client de l'utilisateur)", () => {
   assert.doesNotMatch(srcAll, /SERVICE_ROLE|service_role|sb_secret_/i);
   assert.match(code.slice(code.indexOf("async function handleMcp(")), /verdictMfa\(db, aal\)/);

@@ -410,6 +410,37 @@ test("calendrier : filtres horizon_mois et enveloppe (casse et accents ignorés)
   eq([rien.jalons, rien.a_completer, rien.seuils], [[], [], []]);
   assert.match(rien.avertissements[0], /Aucun résultat pour « Inconnue »/);
 });
+test("calendrier : sortie bornée — 60 jalons au plus (jalons_omis), effets raccourcis et prochains / dans_3_mois sans détail en mode compact (défaut)", { skip: SANS_STRIP }, async () => {
+  const infos = {};
+  for (let i = 1; i <= 30; i++) infos["PEL n°" + i] = { type: "pel", titulaire: "p1", date_ouverture: "2019-0" + (1 + i % 9) + "-1" + (i % 10), source: SRC.source, le: "2026-02-12" };
+  infos["Assurance vie n°1"] = { type: "assurance_vie", titulaire: "p2", date_ouverture: "2008-03-01", source: SRC.source, le: "2026-02-12" }; // 8 ans passés, parmi les premiers : effet long
+  const t = outilCalendrier(baseCal({ config: { ...CFG, enveloppes_infos: infos }, positions: [] }));
+  const complet = (await t.handler({ compact: false, inclure_passes: true })).ok;
+  assert.ok(complet.jalons_omis > 0 && complet.jalons.length === 60, "60 jalons au plus, le reste compté");
+  assert.match(complet.avertissements[0], new RegExp(complet.jalons_omis + " jalons plus lointains non listés \\(60 au plus\\)"));
+  assert.ok(complet.jalons.every((j, i, l) => i === 0 || l[i - 1].date <= j.date), "les plus proches dans le temps sont gardés");
+  assert.ok(complet.prochains[0].effet && complet.prochains[0].calcul, "compact: false : jalons complets");
+  const compact = (await t.handler({ inclure_passes: true })).ok;
+  assert.equal(compact.jalons.length, 60);
+  assert.equal(compact.jalons_omis, complet.jalons_omis);
+  assert.ok(compact.jalons.every(j => j.effet.length <= 160), "effets raccourcis à 160 caractères");
+  assert.ok(compact.jalons.some(j => j.effet.endsWith("…")) && compact.jalons.every(j => j.calcul && j.source), "calcul et source gardés");
+  eq(Object.keys(compact.prochains[0]).sort(), ["confiance", "date", "delai", "enveloppe", "id", "statut", "titre"]);
+  assert.ok(compact.dans_3_mois.every(j => !("effet" in j)));
+  assert.ok(JSON.stringify(compact).length < JSON.stringify(complet).length, "plus court que le mode complet");
+  // peu de jalons : rien d'omis, pas d'avertissement
+  const petit = outilCalendrier(baseCal({ config: CFG_FOYER }));
+  const r = (await petit.handler({})).ok;
+  assert.equal(r.jalons_omis, 0);
+  assert.equal(r.avertissements, undefined);
+});
+test("abreger : coupe au dernier espace, ajoute …, laisse un texte court intact", { skip: SANS_STRIP }, () => {
+  assert.equal(M.abreger("court", 160), "court");
+  const long = "Les gains retirés bénéficient chaque année d'un abattement de quatre mille six cents euros pour une personne seule et de neuf mille deux cents euros pour un couple.";
+  const a = M.abreger(long, 60);
+  assert.ok(a.length <= 60 && a.endsWith("…") && long.startsWith(a.slice(0, -1)), a);
+  assert.doesNotMatch(a, /\s…$/, "pas d'espace avant …");
+});
 test("calendrier : une lecture en échec lève l'erreur de la base (l'outil direct), demarrer_session et la revue retombent sur null sans lever", { skip: SANS_STRIP }, async () => {
   const db = baseCal({ erreur: "panne" });
   const r = await outilCalendrier(db).handler({});

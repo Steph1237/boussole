@@ -2144,6 +2144,8 @@ const PersonnePatch = z.strictObject({
   csp: z.string().max(60).nullable().optional(),
   essai: z.boolean().nullable().optional().describe("En période d'essai."),
   autresRevenus: money.nullable().optional().describe("Autres revenus nets mensuels (hors loyers des biens)."),
+  naissance: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/, { error: "naissance : date AAAA-MM-JJ, ou AAAA-MM si le jour est inconnu." }).nullable().optional()
+    .describe("Date de naissance (AAAA-MM-JJ, ou AAAA-MM si le jour est inconnu) : elle date le 70ᵉ anniversaire de l'assuré ou du titulaire (calendrier). À relever dans un document ou auprès de l'utilisateur, jamais déduite."),
 });
 const AutresPatch = z.strictObject({
   usage: money.nullable().optional().describe("Biens d'usage (véhicule, mobilier…), en euros."),

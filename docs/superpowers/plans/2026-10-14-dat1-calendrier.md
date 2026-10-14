@@ -217,9 +217,11 @@ Tri : date croissante, puis `cle`, puis `enveloppe`. `id` stable : `<cle>:<clé 
 - [ ] Relecture de code par `superpowers:code-reviewer` (Sonnet) : RLS et propositions (aucune écriture directe), validations identiques base / store démo / connecteur, absence de données réelles.
 
 ## Task 11 : intégration et déploiement (contrôleur, Sonnet, effort low)
-- [ ] `npm test` (Node 22 aussi), `node build.mjs`, commit, push.
-- [ ] Appliquer 0029 avec `apply_migration` (name `calendrier`) **après** 0028 ; vérifier l'empreinte md5 de `appliquer_propositions` contre le fichier.
-- [ ] Déployer `mcp`, puis `powens` (entrée épinglée sur le commit, comme d'habitude).
+Ordre impératif : **la migration 0029 d'abord, le push de `main` ensuite** (pousser sur `main` publie Pages : l'interface lirait `prets_infos`, `donations`, `avis_impot` et `naissance` avant que la base ne les accepte), puis `mcp`, puis `powens`.
+- [ ] `npm test` et `npx -y node@22 --test test/*.test.mjs` (0 échec), `node build.mjs`, commits locaux (ne rien pousser encore).
+- [ ] Appliquer 0029 avec `apply_migration` (name `calendrier`) **après** 0028, **avant tout push** ; vérifier l'empreinte md5 de `appliquer_propositions` contre le fichier.
+- [ ] Pousser `main` (déclenche Pages), vérifier la CI Pages.
+- [ ] Déployer `mcp` (aucun secret de service : la garde MFA passe par la RPC `mfa_exigee()`), puis `powens` (entrée épinglée sur le commit, comme d'habitude).
 - [ ] Contrôle Powens en sandbox (une fois) : lister les **clés** (jamais les valeurs) d'un objet compte réel par type (PEA, assurance-vie, crédit) pour confirmer qu'aucun champ de date d'ouverture n'existe hors `loan`. Noter le résultat dans la spec § 7.
-- [ ] Publier le site, vérifier la CI Pages ; test de fumée : Aujourd'hui en démo, outil `calendrier` depuis Claude.
+- [ ] Test de fumée : Aujourd'hui en démo, outil `calendrier` depuis Claude.
 - [ ] Mettre à jour la roadmap (tâche 9).
