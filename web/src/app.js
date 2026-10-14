@@ -11,8 +11,8 @@
       { id: "vue", label: "Aujourd'hui", module: "aujourdhui" },
     ] },
     { space: "patrimoine", label: "Patrimoine", short: "Patrimoine", icon: "patrimoine", primary: true, desc: "Ce que tu possèdes, ce que tu dois, ton budget et tes projets", subs: [
-      { id: "comptes", label: "Comptes", module: "comptes-view" },
       { id: "placements", label: "Placements", module: "pilotage" },
+      { id: "comptes", label: "Comptes", module: "comptes-view" },
       { id: "immobilier", label: "Immobilier et crédits", module: "bilan" },
       { id: "budget", label: "Budget", module: "plan" },
       { id: "objectifs", label: "Objectifs", module: "objectifs-view" },
@@ -51,12 +51,13 @@
     "toise": "pilotage/rang", "simu": "pilotage/scenarios", "plan": "patrimoine/budget",
   };
   /* Ancres de la toute première version (onglets et sous-onglets de la Toise et du Simulateur), en hash seulement :
-     « #pilotage » et « #patrimoine » nus gardent leur ancien sens dans un marque-page, alors que App.go("pilotage")
-     ou App.go("patrimoine") désignent les nouvelles destinations. La Toise et le Simulateur lisent encore ces ancres
-     au montage pour ouvrir leur sous-onglet. */
+     « #pilotage » nu garde son ancien sens dans un marque-page (Patrimoine › Placements), alors que App.go("pilotage")
+     désigne la nouvelle destination. « #patrimoine » nu mène désormais à Patrimoine › Placements, première sous-vue de la
+     destination (il ouvrait la Toise, onglet Patrimoine, dans la toute première version : la Toise, qui lit encore ces ancres
+     au montage pour son sous-onglet, s'ouvre alors seulement par #pilotage/rang). Le Simulateur lit aussi ses ancres. */
   const LEGACY_HASHES = {
-    "#pilotage": "patrimoine/placements",
-    "#position": "pilotage/rang", "#foyer": "pilotage/rang", "#salaire": "pilotage/rang", "#patrimoine": "pilotage/rang", "#emprunt": "pilotage/rang",
+    "#pilotage": "patrimoine/placements", "#patrimoine": "patrimoine/placements",
+    "#position": "pilotage/rang", "#foyer": "pilotage/rang", "#salaire": "pilotage/rang", "#emprunt": "pilotage/rang",
     "#acheter": "pilotage/scenarios", "#simulateur": "pilotage/scenarios", "#theorie": "pilotage/scenarios", "#explication": "pilotage/scenarios",
     "#budget": "patrimoine/budget", "#objectifs": "patrimoine/objectifs",
   };

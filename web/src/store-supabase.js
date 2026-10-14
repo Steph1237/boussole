@@ -19,12 +19,15 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues),
    symbol (symbole Yahoo de l'instrument ou null) ; config.frais_enveloppes = frais des contrats (0026, {} par défaut) ;
    sourceAuto ("powens" | "binance" | null) et sourceAutoLe (horodatage | null) : ligne alimentée par une synchronisation (0021, 0023).
+   Store.transactions(depuis) → Promise<[{ id, positionId, date, type, qty, price, amount, note, source, createdAt }]> : transactions depuis
+   `depuis` (AAAA-MM-JJ ; absente : toutes), les plus récentes d'abord, par pages de 1 000, 3 pages au plus (S.tx n'en garde que les 60
+   dernières) ; lues à la demande par la reconstitution du passé d'Aujourd'hui (historique.js) ; erreur → promesse rejetée.
    Store.cours(isins, depuis) → Promise<{ <isin>: [{ date, cloture }] }> : cours de clôture quotidiens de la table publique cours (CP1 § 4,
    migration 0023), du plus ancien au plus récent, à partir de `depuis` (AAAA-MM-JJ) ; lus à la demande (ouverture d'une fiche de
    Patrimoine › Comptes, période choisie d'abord), une requête par ISIN, au plus 6 en parallèle, par pages de 1 000 lignes des plus
@@ -758,6 +761,20 @@
     return out;
   }
 
+  /* Transactions depuis d0, des plus récentes aux plus anciennes, COURS_PAGES_MAX pages de 1 000 au plus. */
+  async function transactions(depuis) {
+    const d0 = String(depuis == null ? "" : depuis).slice(0, 10), out = [];
+    if (!sb) return out;
+    for (let page = 0; page < COURS_PAGES_MAX; page++) {
+      let rq = sb.from("transactions").select("*");
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d0)) rq = rq.gte("date", d0);
+      const rows = await q(rq.order("date", { ascending: false }).order("created_at", { ascending: false }).range(page * COURS_PAGE, (page + 1) * COURS_PAGE - 1));
+      (Array.isArray(rows) ? rows : []).forEach(r => out.push(txView(r)));
+      if (!Array.isArray(rows) || rows.length < COURS_PAGE) break;
+    }
+    return out;
+  }
+
   const Store = {
     mode: "supabase",
     db,
@@ -780,6 +797,7 @@
     markOnboarded() { return write(uid => q(sb.from("profiles").update({ onboarding_done: true }).eq("user_id", uid))); },
     surveillerConnexions,
     cours,
+    transactions,
     banque: banqueApi,
   };
   window.Store = Store;

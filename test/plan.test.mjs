@@ -279,6 +279,24 @@ describe("projection", () => {
   });
 });
 
+describe("projection : pas mensuel (option mensuel)", () => {
+  const T = "2026-10-09";
+  test("absent par défaut ; avec mensuel : une valeur par mois et par scénario, alignée sur les points annuels", () => {
+    const P = [pos("Monde", 7500), pos("Épargne", 2500)];
+    const sans = Plan.projection({ positions: P, scope: "foyer", versementMensuel: 100, annees: 3, today: T });
+    assert.equal(sans.mensuel, undefined, "résultat inchangé sans l'option");
+    const p = Plan.projection({ positions: P, scope: "foyer", versementMensuel: 100, annees: 3, mensuel: true, today: T });
+    for (const s of ["central", "pessimiste", "optimiste"]) {
+      assert.equal(p.mensuel[s].length, 3 * 12 + 1, s);
+      assert.equal(p.mensuel[s][0], 10000, s + " : départ");
+      for (const a of [0, 1, 2, 3]) assert.ok(Math.abs(p.mensuel[s][a * 12] - p[s][a]) <= 1, s + " : mois " + a * 12 + " = année " + a);
+    }
+    assert.equal(p.mensuel.central[6], Math.round(simule(7500, 75, 6, 6) + simule(2500, 25, 6, 2.4)));
+    assert.deepEqual(p.annees, sans.annees);
+    assert.deepEqual(p.central, sans.central);
+  });
+});
+
 describe("score", () => {
   const PROFIL = { foyer: { age: "a40" }, personnes: { p1: { salaire: 4000, salaireUnite: "nm" } }, biens: [], credits: [] };
   const LIGNES = [{ type: "depense", categorie: "Vie courante", montant: 2000, frequence: "mois" }];

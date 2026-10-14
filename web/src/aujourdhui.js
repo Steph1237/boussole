@@ -1,25 +1,44 @@
 /* Aujourd'hui : page d'accueil du cockpit (« le board lit, l'agent écrit »).
-   - Bandeau de 4 indicateurs en cartes (UI.carte) : patrimoine net et variation sur la période de la frise, bonnes pratiques,
-     écart d'allocation au profil de risque, prochaine échéance ; chaque carte ouvre UI.panneau (2-4 lignes + lien vers la page).
+   - Bandeau de 4 indicateurs en cartes cliquables (cartes(), boutons data-ui-carte qui ouvrent UI.panneau : 2-4 lignes + lien vers la page) :
+     1. Patrimoine net : gros chiffre (décompte à la première apparition), variation sur la période du graphe, mini-courbe ;
+     2. Bonnes pratiques : jauge en anneau sur 100 (Pratiques.evaluer) et « N critères à compléter » ;
+     3. Objectifs : jauge d'atteinte et rappel des 3 objectifs prioritaires (nom, barre, échéance, statut en toutes lettres) ;
+     4. Prochaine échéance : compte à rebours en jours et libellé.
+     L'écart au profil de risque a quitté le bandeau : il reste dans Pilotage › Risque et dans la boîte « À traiter » (élément « Allocation
+     hors des fourchettes de ton profil », urgence 3, quand le profil est renseigné et qu'une classe est hors fourchette).
+   - Jauge d'objectifs (indicateurs().objectifs) : moyenne des avancements pondérée par la priorité, sur les objectifs de
+     ObjectifsView.analyser (moteur Plan : affecterDeja, repartirEpargne, statutObjectif) :
+         jauge = Σ poids × min(avancement, 1) / Σ poids,  avancement = déjà de côté / cible,  poids = N − rang + 1
+     (N objectifs ; le rang 1, le plus prioritaire, pèse N ; le dernier pèse 1). Sans objectif : pas de jauge (« — »). Le panneau de la carte
+     détaille le calcul objectif par objectif. Statut en toutes lettres : atteint, en avance, dans les temps, en retard, hors de portée.
+   - Graphe maître « Évolution et projection du patrimoine net » (juste après le bandeau) : passé observé (photos nocturnes, trait plein)
+     et reconstitué (Historique.reconstituer, pointillés : cours × quantités, soldes bancaires, autres lignes constantes), puis cône de
+     projection (Historique.projeter : trois scénarios du moteur Plan, versements compris, horizon 1 · 5 · 10 · 20 ans), « Aujourd'hui »
+     en trait vertical, infobulle (date, valeur, nature), tableau des données (« Voir les données ») et panneau « Comment c'est calculé »
+     (graphe-patrimoine.js). Le passé suit la période et la granularité de UI.periode (défaut 1 an, granularité automatique selon la période
+     sauf si l'utilisateur la choisit : elle est alors mémorisée) ; l'horizon suit ses propres boutons. Les cours, transactions et opérations
+     bancaires de la reconstitution sont lus à la demande (Store.cours, Store.transactions, Store.banque.operations) ; repères verticaux aux
+     dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
    - Boîte de réception unique (5 éléments puis « Voir plus ») : propositions de Claude en attente (par lot), entrées du journal à relire
      (CK2), revue mensuelle (routine de l'agent, RT1 : en retard, prête ou à activer), alertes des règles (rules.js), points « à suivre »
      échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard, banques connectées (BQ1 : connexion
      à refaire, urgence 1 pour SCARequired, wrongpass, webauthRequired, passwordExpired, 2 pour les autres états qui demandent une action,
-     rien pour un incident passager ; « N comptes à rattacher », urgence 2 ; « Connexion X en double », urgence 2, vers « Déconnecter » ; règles de BanqueEtat, banque-etat.js).
+     rien pour un incident passager ; « N comptes à rattacher », urgence 2 ; « Connexion X en double », urgence 2, vers « Déconnecter » ; règles de BanqueEtat, banque-etat.js),
+     écart au profil de risque (urgence 3, vers Pilotage › Risque).
    - Argent qui dort (CP1 § 1) : Calc.argentQuiDort(S, auj) (calc.js) s'il existe → élément « Argent qui dort sur tes comptes courants »
      (urgence 3, vers Patrimoine › Comptes) ; fonction absente ou en échec : rien.
    - Doublons probables (revue CP1) : Calc.doublonsProbables(positions) → un élément urgent (1) par ligne saisie qui recopie le total
      de son enveloppe (patrimoine compté deux fois), vers la fiche de l'enveloppe.
    - Fiches de Patrimoine › Comptes (CP1 § 3) : la carte « Patrimoine net » mène à Comptes et chaque enveloppe de son détail ouvre sa
-     fiche ; sous la frise, « Voir le détail par compte ».
-   - Frise : patrimoine net estimé (BilanCalc.evolution sur S.snapshots) agrégé par Periodes, avec UI.periode (défaut 1 an ;
-     granularité automatique selon la période, sauf si l'utilisateur la choisit sur sa bascule : elle est alors mémorisée) ;
-     repères verticaux aux dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
-   Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
-   Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, delai,
-   lirePeriode, periodeAEnregistrer, phraseRevue, et les rendus HTML cartes, detail, repereDetail, boiteHtml, friseSvg (qui reçoivent UI en paramètre quand ils en ont besoin ; aucune ne touche
-   au DOM).
-   Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes } ; window.* par défaut. boite accepte aussi
+     fiche ; sous le graphe, « Voir le détail par compte ».
+   Accessibilité et mouvement : cartes = vrais boutons (nom accessible complet, aria-label), jauges avec équivalent texte, statuts en mots
+   (jamais la couleur seule) ; décompte des chiffres et remplissage des jauges seulement à la première apparition, jamais avec
+   prefers-reduced-motion. Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
+   Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, indicateurs, objectifs, frise, evolution, reperesJournal,
+   urlClaude, delai, lirePeriode, periodeAEnregistrer, phraseRevue, et les rendus HTML cartes, detail, repereDetail, boiteHtml (qui reçoivent
+   UI en paramètre quand ils en ont besoin ; aucune ne touche au DOM).
+   Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes, Plan, Historique, ObjectifsView, reconstitue? } ;
+   window.* par défaut (reconstitue : résultat de Historique.reconstituer à fusionner dans le passé). boite accepte aussi
    deps.aujRevue : jour de Paris pour la revue mensuelle (RoutineEtat.aujParis() dans la vue), le reste de la boîte restant au jour local. */
 (function () {
   "use strict";
@@ -40,6 +59,12 @@
   /* Banques connectées (BanqueEtat, banque-etat.js) : absent → aucun élément bancaire. */
   const BE = () => glob("BanqueEtat") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./banque-etat.js") : null);
+
+  /* Historique (reconstitution, fusion, cône), graphe maître et objectifs : modules voisins, globaux du navigateur ou require sous Node. */
+  const voisin = (k, f) => glob(k) || (typeof module === "object" && module.exports && typeof require === "function" ? require(f) : null);
+  const HIST = d => dep(d, "Historique") || voisin("Historique", "./historique.js");
+  const GRAPHE = () => voisin("GraphePatrimoine", "./graphe-patrimoine.js");
+  const OBJV = d => dep(d, "ObjectifsView") || voisin("ObjectifsView", "./objectifs-view.js");
 
   /* ---------- dates (AAAA-MM-JJ, jours calendaires) ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -261,6 +286,10 @@
     const dort = elementArgentQuiDort(S, t, deps);
     if (dort) out.push(dort);
 
+    // 1 sexies. Écart au profil de risque (profil renseigné et une classe d'actifs hors fourchette), urgence 3.
+    const risque = elementRisque(S, t, deps);
+    if (risque) out.push(risque);
+
     // 2. Alertes des règles de l'utilisateur et des contrôles intégrés (même contexte que Recommandations › Actions).
     if (Rules) {
       const ctx = { positions: S.positions || [], config: S.config || {}, scope: S.scope || "foyer", people: S.people || [], today: t, status: S.status || null };
@@ -302,7 +331,7 @@
   }
 
   /* =============================================================== indicateurs =============================================================== */
-  const PERIODE_TXT = { "1m": "sur 1 mois", "3m": "sur 3 mois", "6m": "sur 6 mois", ytd: "depuis janvier", "1a": "sur 1 an", "3a": "sur 3 ans", tout: "depuis la première photo" };
+  const PERIODE_TXT = { "1m": "sur 1 mois", "3m": "sur 3 mois", "6m": "sur 6 mois", ytd: "depuis janvier", "1a": "sur 1 an", "3a": "sur 3 ans", tout: "depuis le début de l'historique" };
   const estPerso = p => !!p && /^perso/.test(String(p.id)) && isoOk(p.du) && isoOk(p.au);
   const periodeTxt = p => (estPerso(p) ? "du " + dateFr(p.du) + " au " + dateFr(p.au) : PERIODE_TXT[p && p.id] || PERIODE_TXT["1a"]);
 
@@ -314,48 +343,40 @@
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
 
-  /** Série de la frise : patrimoine net estimé (photos + point du jour) agrégé sur la période, et repères des décisions du journal.
-      periode = { id: 1m|3m|1a|tout|perso…, du?, au?, granularite? } → { points (Periodes.agreger), resume, bornes, granularite, historique, reperes } */
+  /** Série du passé : patrimoine net estimé (photos + point du jour, BilanCalc.evolution) fusionné avec le passé reconstitué quand
+      deps.reconstitue (résultat de Historique.reconstituer) en fournit un, puis agrégé sur la période, et repères des décisions du journal.
+      L'observé gagne toujours ; le reconstitué n'existe qu'avant la première photo et rejoint celle-ci (Historique.fusionner).
+      periode = { id: 1m|3m|1a|tout|perso…, du?, au?, granularite? } →
+      { points (Periodes.agreger, chacun avec sa nature observe|reconstitue), resume, bornes, granularite, historique, reperes,
+        reconstitue (vrai si la période dessinée contient du reconstitué), decalage, horsFin (net − financier d'aujourd'hui), premiere (1re date de la série) } */
   function frise(S, today, periode, deps) {
     const BC = dep(deps, "BilanCalc"), Pe = dep(deps, "Periodes"), t = jour(today), s = S || {}, p = periode || {};
     const vide = { points: [], resume: { debut: null, fin: null, variation: null, variationPct: null }, bornes: null, granularite: p.granularite || "mois", historique: false,
-      reperes: reperesJournal(s.journal) };
+      reperes: reperesJournal(s.journal), reconstitue: false, decalage: 0, horsFin: 0, premiere: null };
     if (!BC || !Pe) return vide;
     let pts = [];
     try { pts = BC.evolution(s.snapshots || [], s.positions || [], s.profil || null, s.scope || "foyer", t); } catch (e) { return vide; }
     if (!pts.length) return vide;
+    const live = pts[pts.length - 1], horsFin = live && isFinite(live.net) && isFinite(live.financier) ? live.net - live.financier : 0;
+    let serie = pts.map(x => ({ date: x.date, net: x.net, live: !!x.live, nature: "observe" })), decalage = 0;
+    const rec = dep(deps, "reconstitue"), Hi = rec && Array.isArray(rec.points) && rec.points.length ? HIST(deps) : null;
+    if (Hi) {
+      const fus = Hi.fusionner(serie, rec.points);
+      serie = fus.points; decalage = fus.decalage;
+    }
     const id = estPerso(p) ? { du: p.du, au: p.au } : PERIODE_TXT[p.id] ? p.id : "1a";
-    const b = Pe.bornes(id, t, pts[0].date);
+    const b = Pe.bornes(id, t, serie[0].date);
     const g = !p.granularite || p.granularite === "auto" || !Pe.GRANULARITES.some(x => x.id === p.granularite) ? Pe.auto(b) : p.granularite;
-    const ag = Pe.agreger(pts, b, g, x => x.net);
-    return { points: ag, resume: Pe.resume(ag, pts, b, x => x.net), bornes: b, granularite: g, historique: pts.some(x => !x.live), reperes: vide.reperes };
+    const nature = new Map(serie.map(x => [x.date, x.nature]));
+    const ag = Pe.agreger(serie, b, g, x => x.net).map(x => Object.assign(x, { nature: nature.get(x.date) || "observe" }));
+    return { points: ag, resume: Pe.resume(ag, serie, b, x => x.net), bornes: b, granularite: g, historique: serie.some(x => !x.live), reperes: vide.reperes,
+      reconstitue: ag.some(x => x.nature === "reconstitue"), decalage, horsFin, premiere: serie[0].date };
   }
 
-  /** Les 4 indicateurs du bandeau (périmètre S.scope), en valeurs brutes ; le texte est composé par cartes() et detail(). */
-  function indicateurs(S, today, periode, deps) {
-    const s = S || {}, t = jour(today), scope = s.scope || "foyer", positions = s.positions || [];
-    const C = dep(deps, "Calc"), Pr = dep(deps, "Pratiques"), Ri = dep(deps, "Risque"), BC = dep(deps, "BilanCalc");
-    // Patrimoine net (et variation sur la période de la frise) ; composition « Ce que je possède, ce que je dois » (BilanCalc.composition,
-    // mêmes calculs que l'ancienne carte du Bilan) pour le panneau de la carte.
-    const pat = C ? C.patrimoine(positions, s.profil || null, scope) : { financier: 0, immobilier: 0, usage: 0, entreprise: 0, dettes: 0, net: 0 };
-    const f = frise(s, t, periode, deps);
-    let composition = null;
-    if (BC && typeof BC.composition === "function") { try { composition = BC.composition(positions, s.profil || null, scope); } catch (e) { composition = null; } }
-    const net = { valeur: pat.net, financier: pat.financier, immobilier: pat.immobilier, autres: pat.usage + pat.entreprise, usage: pat.usage, entreprise: pat.entreprise,
-      dettes: pat.dettes, composition,
-      vide: !positions.some(counted) && !pat.immobilier && !pat.dettes && !pat.usage && !pat.entreprise,
-      variation: f.historique ? f.resume.variation : null, variationPct: f.historique ? f.resume.variationPct : null };
-    // Bonnes pratiques
-    let r = null;
-    if (Pr && typeof Pr.evaluer === "function") {
-      try { r = Pr.evaluer({ positions, profil: s.profil || null, config: s.config || null, budget: s.budget || null, objectifs: s.objectifs || [], scope,
-        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, today: new Date(t + "T12:00:00") }); } catch (e) { r = null; }
-    }
-    const crit = r && Array.isArray(r.criteres) ? r.criteres : [];
-    const pratiques = { total: r && r.total != null ? r.total : null, provisoire: !!(r && r.provisoire),
-      familles: r && Array.isArray(r.familles) ? r.familles.map(x => ({ titre: x.titre, total: x.total })) : [],
-      aCompleter: crit.filter(c => c && c.aCompleter).length };
-    // Écart d'allocation au profil de risque (actifs financiers, comme Pilotage › Risque et la bonne pratique « adéquation »)
+  /** Écart d'allocation au profil de risque (actifs financiers, comme Pilotage › Risque et la bonne pratique « adéquation ») →
+      { profil, points, hors: [{ label, reel, min, max, statut, ecartPts }], placements }. points null sans profil ou sans placement. */
+  function ecartAllocation(s, deps) {
+    const scope = s.scope || "foyer", positions = s.positions || [], C = dep(deps, "Calc"), Ri = dep(deps, "Risque");
     const idp = s.risque && s.risque.profil ? (typeof s.risque.profil === "object" ? s.risque.profil.id : String(s.risque.profil)) : null;
     const fiche = idp && Ri && Array.isArray(Ri.PROFILS) ? Ri.PROFILS.find(p => p.id === idp) : null;
     const allocation = { profil: fiche ? fiche.label : null, points: null, hors: [], placements: C ? C.financier(positions, scope) > 0 : positions.some(counted) };
@@ -366,9 +387,99 @@
         allocation.hors = ec.filter(e => e.statut !== "dans").map(e => ({ label: e.label, reel: e.reel, min: e.min, max: e.max, statut: e.statut, ecartPts: e.ecartPts }));
       } catch (e) { allocation.points = null; }
     }
+    return allocation;
+  }
+
+  /** Élément de la boîte « À traiter » pour l'écart au profil de risque : seulement si le profil est renseigné et qu'une classe est hors fourchette
+      (urgence 3, vers Pilotage › Risque). */
+  function elementRisque(S, t, deps) {
+    const al = ecartAllocation(S || {}, deps);
+    if (!al.profil || !al.placements || !(al.points > 0) || !al.hors.length) return null;
+    return { type: "risque", urgence: 3, date: t, titre: "Allocation hors des fourchettes de ton profil " + al.profil,
+      contexte: pluriel(al.hors.length, "classe") + " d'actifs " + (al.hors.length > 1 ? "sortent" : "sort") + " de la fourchette (" + fpts(al.points) + " d'écart au total) : " +
+        extrait(al.hors.slice(0, 2).map(e => e.label + " " + nf0.format(e.reel) + " % pour " + e.min + " à " + e.max + " %").join(" ; "), 110) + ".",
+      action: { label: "Voir le profil de risque", route: R.risque } };
+  }
+
+  /* ---------- objectifs : jauge d'atteinte et rappel des 3 premiers ---------- */
+  /* statut du moteur Plan → ton (classes ui-badge) et mots ; « en retard » regroupe retard et hors de portée. */
+  const OBJ_TON = { atteint: "bon", avance: "bon", dans_les_temps: "info", retard: "attention", hors_portee: "critique" };
+  const OBJ_MOT = { atteint: "atteint", avance: "en avance", dans_les_temps: "dans les temps", retard: "en retard", hors_portee: "hors de portée" };
+  const enRetard = st => st === "retard" || st === "hors_portee";
+  /** Objectifs de l'utilisateur pour la carte « Objectifs » : { n, jauge (0 à 1 | null), pct (0 à 100 | null), ton, retard (nombre en retard), liste,
+      top (3 premiers par priorité), vide }. liste[i] = { id, nom, rang, poids, progression (0 à 1), deja, cible, dateCible, statut, mot, ton, enRetard }.
+      jauge = Σ poids × min(avancement, 1) / Σ poids, poids = N − rang + 1 (voir l'en-tête). Moteur : ObjectifsView.analyser (Plan). */
+  function objectifs(S, today, deps) {
+    const s = S || {}, t = jour(today), OV = OBJV(deps), P = dep(deps, "Plan"), C = dep(deps, "Calc");
+    const sortie = { n: 0, jauge: null, pct: null, ton: "neutre", retard: 0, liste: [], top: [], vide: true, somme: 0, poidsTotal: 0 };
+    if (!OV || !P || !Array.isArray(s.objectifs) || !s.objectifs.length) return sortie;
+    let a;
+    try { a = OV.analyser(s, { Plan: P, Calc: C }, t); } catch (e) { return sortie; }
+    const n = a.liste.length;
+    if (!n) return sortie;
+    const liste = a.liste.map((x, i) => {
+      const prog = Math.max(0, Math.min(1, +x.st.progression || 0)), statut = x.st.statut, poids = n - (i + 1) + 1;
+      return { id: String(x.o.id), nom: plat(x.o.nom) || "Objectif sans nom", rang: i + 1, poids, progression: prog, deja: x.st.deja, cible: +x.o.cible || 0,
+        dateCible: jj(x.o.dateCible || x.o.date_cible) || null, statut, mot: OBJ_MOT[statut] || statut, ton: OBJ_TON[statut] || "neutre", enRetard: enRetard(statut) };
+    });
+    const poidsTotal = liste.reduce((q, x) => q + x.poids, 0), somme = liste.reduce((q, x) => q + x.poids * x.progression, 0), retard = liste.filter(x => x.enRetard).length;
+    const jauge = poidsTotal > 0 ? somme / poidsTotal : null;
+    return { n, jauge, pct: jauge == null ? null : Math.round(jauge * 100), ton: liste.some(x => x.statut === "hors_portee") ? "critique" : retard ? "attention" : "bon",
+      retard, liste, top: liste.slice(0, 3), vide: false, somme, poidsTotal };
+  }
+
+  /** Les 4 indicateurs du bandeau (périmètre S.scope), en valeurs brutes ; le texte est composé par cartes() et detail().
+      L'écart au profil de risque (allocation) n'est plus affiché dans le bandeau : il alimente la boîte « À traiter » (elementRisque). */
+  function indicateurs(S, today, periode, deps) {
+    const s = S || {}, t = jour(today), scope = s.scope || "foyer", positions = s.positions || [];
+    const C = dep(deps, "Calc"), Pr = dep(deps, "Pratiques"), BC = dep(deps, "BilanCalc");
+    // Patrimoine net (et variation sur la période du graphe) ; composition « Ce que je possède, ce que je dois » (BilanCalc.composition,
+    // mêmes calculs que l'ancienne carte du Bilan) pour le panneau de la carte.
+    const pat = C ? C.patrimoine(positions, s.profil || null, scope) : { financier: 0, immobilier: 0, usage: 0, entreprise: 0, dettes: 0, net: 0 };
+    const f = frise(s, t, periode, deps);
+    let composition = null;
+    if (BC && typeof BC.composition === "function") { try { composition = BC.composition(positions, s.profil || null, scope); } catch (e) { composition = null; } }
+    const courbe = f.points.map(x => x.valeur);
+    const net = { valeur: pat.net, financier: pat.financier, immobilier: pat.immobilier, autres: pat.usage + pat.entreprise, usage: pat.usage, entreprise: pat.entreprise,
+      dettes: pat.dettes, composition,
+      vide: !positions.some(counted) && !pat.immobilier && !pat.dettes && !pat.usage && !pat.entreprise,
+      variation: f.historique ? f.resume.variation : null, variationPct: f.historique ? f.resume.variationPct : null,
+      reconstitue: f.reconstitue && f.points.length > 0 && f.points[0].nature === "reconstitue", courbe: courbe.length > 60 ? courbe.filter((_, i) => i % Math.ceil(courbe.length / 60) === 0 || i === courbe.length - 1) : courbe };
+    // Bonnes pratiques
+    let r = null;
+    if (Pr && typeof Pr.evaluer === "function") {
+      try { r = Pr.evaluer({ positions, profil: s.profil || null, config: s.config || null, budget: s.budget || null, objectifs: s.objectifs || [], scope,
+        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, today: new Date(t + "T12:00:00") }); } catch (e) { r = null; }
+    }
+    const crit = r && Array.isArray(r.criteres) ? r.criteres : [];
+    const pratiques = { total: r && r.total != null ? r.total : null, provisoire: !!(r && r.provisoire),
+      familles: r && Array.isArray(r.familles) ? r.familles.map(x => ({ titre: x.titre, total: x.total })) : [],
+      aCompleter: crit.filter(c => c && c.aCompleter).length };
     // Prochaine échéance
     const ech = echeances(s, t);
-    return { net, pratiques, allocation, echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4) }, frise: f };
+    return { net, pratiques, objectifs: objectifs(s, t, deps), allocation: ecartAllocation(s, deps), echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4) }, frise: f };
+  }
+
+  /** Cône de projection du net (Historique.projeter : moteur Plan, trois scénarios) sur `annees` ans, avec le versement mensuel de la page
+      Objectifs (ObjectifsView.versementReel : épargne prévue au budget, sinon versements programmés). f = frise() (horsFin : immobilier, autres
+      biens et dettes d'aujourd'hui, maintenus). → { points, versement, annees, parBloc, rendements, versementSource } | null sans moteur. */
+  function projection(S, today, annees, f, deps) {
+    const Hi = HIST(deps), P = dep(deps, "Plan"), OV = OBJV(deps), s = S || {}, scope = s.scope || "foyer";
+    if (!Hi || !P) return null;
+    let reel = null;
+    try {
+      const lignes = s.budget && Array.isArray(s.budget.lignes) ? s.budget.lignes : [];
+      reel = OV && typeof OV.versementReel === "function" ? OV.versementReel(s, P.budgetTotaux(lignes, s.profil || null, scope), scope) : null;
+    } catch (e) { reel = null; }
+    const r = Hi.projeter({ today: jour(today), positions: s.positions || [], scope, versementMensuel: reel ? reel.v : 0, annees, horsFin: f ? f.horsFin : 0, Plan: P });
+    return Object.assign(r, { versementSource: reel ? reel.src : null });
+  }
+
+  /** Modèle du graphe maître : le passé (frise) et le futur (projection) quand la période va jusqu'à aujourd'hui. */
+  function evolution(S, today, periode, annees, deps) {
+    const t = jour(today), passe = frise(S, t, periode, deps);
+    const futur = passe.bornes && passe.bornes.au >= t && passe.points.length ? projection(S, t, annees, passe, deps) : null;
+    return { passe, futur: futur && futur.points.length ? futur : null, today: t };
   }
 
   /** Date (AAAA-MM-JJ) de la première photo de S.snapshots, pour la période « Tout » ; undefined sans photo. */
@@ -380,24 +491,89 @@
 
   /* =============================================================== rendus HTML =============================================================== */
   const fpts = v => nf1.format(Math.abs(v)) + (Math.abs(v) >= 2 ? " pts" : " pt");
-  const fpct = v => nf0.format(v) + " %";
   const quand = e => maj(delai(e.jours, true));
 
-  /** Les 4 cartes du bandeau (UI.carte échappe chaque champ). */
-  function cartes(ind, U, periode) {
-    const n = ind.net, pr = ind.pratiques, al = ind.allocation, ec = ind.echeance, v = n.variation;
-    const tend = v == null || n.vide ? null : { sens: Math.round(v) > 0 ? "hausse" : Math.round(v) < 0 ? "baisse" : "stable", texte: eurS(v) };
-    return [
-      { id: "net", titre: "Patrimoine net", valeur: n.vide ? "—" : eur(n.valeur), tendance: tend,
-        sous: n.vide ? "Lance ton bilan avec Claude" : v == null ? "Première photo cette nuit" : periodeTxt(periode) },
-      { id: "pratiques", titre: "Bonnes pratiques", valeur: pr.total == null ? "—" : pr.total + " / 100", badge: pr.total != null && pr.provisoire ? "Provisoire" : null,
-        sous: pr.total == null ? "Données à compléter" : pr.aCompleter ? pluriel(pr.aCompleter, "critère") + " à compléter" : "Tous les critères sont notés" },
-      { id: "allocation", titre: "Écart au profil de risque", valeur: !al.profil ? "Profil à faire" : al.points == null ? "—" : fpts(al.points),
-        sous: !al.profil ? "Réponds au questionnaire avec Claude" : !al.placements ? "Aucun placement à comparer" : al.points ? "Hors des fourchettes du profil " + al.profil : "Dans les fourchettes du profil " + al.profil },
-      { id: "echeance", titre: "Prochaine échéance", valeur: ec.prochaine ? quand(ec.prochaine) : "Aucune",
-        sous: ec.prochaine ? extrait(ec.prochaine.titre, 60) + " · " + dateFr(ec.prochaine.date) : "Aucune date à venir" },
-    ].map(o => U.carte(o)).join("");
+  /* ---------- cartes du bandeau : boutons data-ui-carte (UI.brancher ouvre le panneau), figures en grand, jauges, mini-courbe ---------- */
+  const CHEVRON_DROITE = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg>';
+  const TON_BADGE = { bon: "bon", info: "info", attention: "attention", critique: "critique", neutre: "neutre" };
+  const badge = (texte, ton) => '<span class="ui-badge ' + (TON_BADGE[ton] || "neutre") + '">' + esc(texte) + "</span>";
+  const R_ANNEAU = 34, CIRC = 2 * Math.PI * R_ANNEAU;
+  /** Jauge en anneau (décorative : le texte équivalent est dans la carte). pct 0 à 100 ou null (anneau vide) ; centre : valeur écrite au milieu. */
+  function anneau(pct, ton, centre, sous) {
+    const p = pct == null ? 0 : Math.max(0, Math.min(100, +pct)), off = CIRC * (1 - p / 100);
+    return '<svg class="aj-ring t-' + (TON_BADGE[ton] || "neutre") + '" viewBox="0 0 80 80" aria-hidden="true" focusable="false">' +
+      '<circle class="aj-ring-fond" cx="40" cy="40" r="' + R_ANNEAU + '"/>' +
+      '<circle class="aj-ring-arc" cx="40" cy="40" r="' + R_ANNEAU + '" transform="rotate(-90 40 40)" stroke-dasharray="' + CIRC.toFixed(2) + '" stroke-dashoffset="' + off.toFixed(2) + '" data-aj-off="' + off.toFixed(2) + '"/>' +
+      '<text class="aj-ring-v" x="40" y="' + (sous ? 41 : 46) + '" text-anchor="middle"' + (pct != null ? ' data-aj-count="' + Math.round(+pct) + '" data-aj-fmt="int"' : "") + ">" + esc(centre) + "</text>" +
+      (sous ? '<text class="aj-ring-s" x="40" y="54" text-anchor="middle">' + esc(sous) + "</text>" : "") + "</svg>";
   }
+  /** Mini-courbe du patrimoine net sur la période (décorative). */
+  function spark(vals) {
+    const v = (vals || []).filter(x => isFinite(x));
+    if (v.length < 2) return "";
+    const W = 120, H = 36, lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
+    const pts = v.map((x, i) => [(i / (v.length - 1)) * W, 4 + (1 - (x - lo) / span) * (H - 8)]);
+    const d = pts.map((q, i) => (i ? "L" : "M") + q[0].toFixed(1) + "," + q[1].toFixed(1)).join("");
+    return '<svg class="aj-spark" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="aj-spark-aire" d="' + d + "L" + W + "," + H + "L0," + H + 'Z"/><path class="aj-spark-l" d="' + d + '"/></svg>';
+  }
+  const tendanceHtml = (sens, texte) => {
+    const lu = { hausse: "En hausse", baisse: "En baisse", stable: "Stable" }[sens], fl = { hausse: "▲", baisse: "▼", stable: "–" }[sens], ton = { hausse: "pos", baisse: "neg", stable: "neutre" }[sens];
+    return '<span class="ui-tendance ' + ton + '"><span class="ui-tendance-fleche" aria-hidden="true">' + fl + '</span><span class="ui-sr">' + lu + " : </span>" + esc(texte) + "</span>";
+  };
+  /** Compte à rebours lisible : { mot } (« Aujourd'hui », « Demain ») ou { n, unite } (jours jusqu'à 60, puis mois jusqu'à 24, puis ans). */
+  function compteARebours(jours) {
+    const d = Math.max(0, Math.round(+jours || 0));
+    if (d === 0) return { mot: "Aujourd'hui" };
+    if (d === 1) return { mot: "Demain" };
+    if (d <= 60) return { n: d, unite: "jours" };
+    const mois = Math.round(d / 30.4375);
+    return mois <= 24 ? { n: mois, unite: "mois" } : { n: Math.round(d / 365.25), unite: "ans" };
+  }
+  const enToutesLettres = c => (c.mot ? c.mot.toLowerCase() : "dans " + c.n + " " + c.unite);
+  const carteBtn = (id, cls, aria, corps) => '<button type="button" class="aj-k ' + cls + '" data-ui-carte="' + id + '" aria-haspopup="dialog" aria-label="' + esc(aria) + '">' + corps +
+    '<span class="aj-k-ouvrir">' + CHEVRON_DROITE + "</span></button>";
+  const teteHtml = (titre, b) => '<span class="aj-k-tete"><span class="aj-k-titre">' + esc(titre) + "</span>" + (b || "") + "</span>";
+
+  /** Les 4 cartes du bandeau (patrimoine net, bonnes pratiques, objectifs, prochaine échéance). Chaque champ est échappé. */
+  function cartes(ind, U, periode) {
+    const n = ind.net, pr = ind.pratiques, ob = ind.objectifs || objectifs({}, TODAY_VIDE, null), ec = ind.echeance, v = n.variation;
+    // 1. Patrimoine net
+    const sens = v == null || n.vide ? null : Math.round(v) > 0 ? "hausse" : Math.round(v) < 0 ? "baisse" : "stable";
+    const sous1 = n.vide ? "Lance ton bilan avec Claude" : v == null ? "Première photo cette nuit" : periodeTxt(periode) + (n.reconstitue ? " · début reconstitué" : "");
+    const c1 = carteBtn("net", "aj-k-net", "Patrimoine net : " + (n.vide ? "pas encore de données" : eur(n.valeur) + (sens ? ", " + { hausse: "en hausse de ", baisse: "en baisse de ", stable: "stable, " }[sens] + (sens === "stable" ? "" : eur(Math.abs(v))) + " " + periodeTxt(periode) : "")),
+      teteHtml("Patrimoine net") + '<span class="aj-k-val' + (!n.vide && eur(n.valeur).length > 10 ? " aj-k-long" : "") + '"' + (n.vide ? "" : ' data-aj-count="' + Math.round(n.valeur) + '" data-aj-fmt="eur"') + ">" + (n.vide ? "—" : esc(eur(n.valeur))) + "</span>" +
+      '<span class="aj-k-pied">' + (sens ? tendanceHtml(sens, eurS(v) + (n.variationPct != null ? " (" + (n.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(n.variationPct)) + " %)" : "")) : "") + '<span class="aj-k-sous">' + esc(sous1) + "</span></span>" +
+      (n.vide ? "" : spark(n.courbe)));
+    // 2. Bonnes pratiques
+    const tot = pr.total, tonP = tot == null ? "neutre" : tot >= 80 ? "bon" : tot >= 60 ? "info" : "attention", motP = tot == null ? "À compléter" : tot >= 80 ? "Solide" : tot >= 60 ? "Correct" : "À consolider";
+    const sous2 = tot == null ? "Données à compléter" : pr.aCompleter ? pluriel(pr.aCompleter, "critère") + " à compléter" : "Tous les critères sont notés";
+    const c2 = carteBtn("pratiques", "aj-k-pra t-" + tonP, "Bonnes pratiques : " + (tot == null ? "pas encore de note, données à compléter" : tot + " sur 100, " + motP.toLowerCase() + (pr.provisoire ? ", note provisoire" : "") + ", " + sous2.toLowerCase()),
+      teteHtml("Bonnes pratiques", tot != null && pr.provisoire ? badge("Provisoire", "neutre") : "") +
+      '<span class="aj-k-jauge">' + anneau(tot, tonP, tot == null ? "—" : String(Math.round(tot)), tot == null ? "" : "/ 100") +
+      '<span class="aj-k-jauge-t">' + (tot == null ? "" : badge(motP, tonP)) + '<span class="aj-k-sous">' + esc(sous2) + "</span></span></span>" +
+      (tot != null && pr.familles.length > 1 ? '<ul class="aj-suite aj-fam">' + pr.familles.slice(0, 4).map(f => "<li><span>" + esc(extrait(f.titre, 30)) + "</span><span>" + (f.total == null ? "à compléter" : esc(Math.round(f.total) + " / 100")) + "</span></li>").join("") + "</ul>" : ""));
+    // 3. Objectifs
+    const motO = ob.vide ? "" : ob.retard ? ob.retard + " en retard" : ob.liste.every(x => x.statut === "atteint") ? "Tous atteints" : "Tous dans les temps";
+    const ligneO = x => '<li class="aj-ob t-' + x.ton + '"><span class="aj-ob-nom">' + esc(extrait(x.nom, 34)) + "</span>" + badge(x.mot, x.ton) +
+      '<span class="aj-ob-barre" aria-hidden="true"><i style="width:' + (x.progression * 100).toFixed(1) + '%"></i></span>' +
+      '<span class="aj-ob-pied">' + esc(Math.round(x.progression * 100) + " %") + (x.dateCible ? " · " + esc(dateCourte(x.dateCible)) : "") + "</span></li>";
+    const c3 = carteBtn("objectifs", "aj-k-obj t-" + ob.ton, "Objectifs : " + (ob.vide ? "aucun objectif défini" : ob.pct + " % d'avancement pondéré, " + (ob.retard ? pluriel(ob.retard, "objectif") + " en retard" : motO.toLowerCase()) + ". " +
+      ob.top.map(x => x.nom + " " + Math.round(x.progression * 100) + " %, " + x.mot).join(" ; ")),
+      teteHtml("Objectifs") + '<span class="aj-k-jauge">' + anneau(ob.pct, ob.vide ? "neutre" : ob.ton, ob.vide ? "—" : ob.pct + " %") +
+      '<span class="aj-k-jauge-t">' + (ob.vide ? "" : badge(motO, ob.retard ? ob.ton : "bon")) + '<span class="aj-k-sous">' + esc(ob.vide ? "Fixe ton premier objectif avec Claude" : "d'avancement, selon la priorité") + "</span></span></span>" +
+      (ob.vide ? "" : '<ul class="aj-obs">' + ob.top.map(ligneO).join("") + "</ul>"));
+    // 4. Prochaine échéance
+    const e = ec.prochaine, cr = e ? compteARebours(e.jours) : null, tonE = !e ? "neutre" : e.jours <= 7 ? "attention" : e.jours <= 30 ? "info" : "neutre", motE = !e ? "" : e.jours <= 7 ? "Imminente" : e.jours <= 30 ? "Proche" : "À venir";
+    const suite = (ec.liste || []).slice(1, 3);
+    const c4 = carteBtn("echeance", "aj-k-ech t-" + tonE, "Prochaine échéance : " + (e ? enToutesLettres(cr) + ", " + extrait(e.titre, 70) + ", le " + dateFr(e.date) + ", " + motE.toLowerCase() : "aucune date à venir"),
+      teteHtml("Prochaine échéance", e ? badge(motE, tonE) : "") +
+      '<span class="aj-k-val">' + (!e ? "Aucune" : cr.mot ? esc(cr.mot) : '<span data-aj-count="' + cr.n + '" data-aj-fmt="int">' + cr.n + '</span><span class="aj-k-unit"> ' + cr.unite + "</span>") + "</span>" +
+      '<span class="aj-k-pied"><span class="aj-k-sous">' + esc(e ? extrait(e.titre, 60) + " · " + dateFr(e.date) : "Aucune date à venir") + "</span></span>" +
+      (suite.length ? '<ul class="aj-suite">' + suite.map(x => "<li><span>" + esc(extrait(x.titre.replace(/^Objectif « (.*) »$/, "$1"), 28)) + "</span><span>" + esc(quand(x)) + "</span></li>").join("") + "</ul>" : ""));
+    return c1 + c2 + c3 + c4;
+  }
+  const TODAY_VIDE = "2000-01-01";
+  const dateCourte = s => (isoOk(s) ? new Date(s + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) : "");
 
   const ligne = (label, valeur) => '<li><span class="aj-det-l">' + esc(label) + '</span><span class="aj-det-v">' + esc(valeur) + "</span></li>";
   /** Ligne d'une enveloppe : son nom ouvre sa fiche de Patrimoine › Comptes (le panneau se ferme, la coque suit le lien). */
@@ -426,7 +602,7 @@
   /** Panneau d'une carte : { titre, contenu (HTML échappé : 2 à 4 lignes et une note), lien: { label, href } vers la page complète,
       question } — question préremplie pour « Demander à Claude » (pédagogique : expliquer, pas conseiller). */
   function detail(id, ind, periode) {
-    const n = ind.net, pr = ind.pratiques, al = ind.allocation, ec = ind.echeance;
+    const n = ind.net, pr = ind.pratiques, ec = ind.echeance;
     let titre, lignes = [], note = "", route, label, question;
     if (id === "net") {
       titre = "Patrimoine net"; route = R.comptes; label = "Voir mes comptes";
@@ -441,18 +617,22 @@
       note = pr.total == null ? "Complète tes données avec Claude pour obtenir une note."
         : pr.provisoire ? "Note provisoire : moins de la moitié des critères peuvent être notés avec tes données actuelles."
         : "Une note pédagogique, pas un conseil : chaque critère explique sa règle et sa source.";
-    } else if (id === "allocation") {
-      titre = "Écart au profil de risque"; route = R.risque; label = al.profil ? "Voir le profil de risque" : "Voir Pilotage › Risque";
-      const P = prompts();
-      question = al.profil ? "Explique-moi l'écart entre ma répartition réelle et les fourchettes de mon profil de risque dans Boussole."
-        : P ? P.phrase("risque") : "Boussole : aide-moi à remplir mon profil de risque.";
-      if (!al.profil) {
-        lignes = [["Profil de risque", "non renseigné"], ["Questionnaire", "une dizaine de questions"]];
-        note = "Le questionnaire situe le risque que tu acceptes ; Boussole compare ensuite ta répartition réelle aux fourchettes de ce profil.";
+    } else if (id === "objectifs") {
+      const ob = ind.objectifs || objectifs({}, TODAY_VIDE, null);
+      titre = "Objectifs"; route = R.objectifs; label = "Voir les objectifs";
+      question = "Vais-je atteindre mes objectifs dans Boussole ? Passe-les en revue avec moi et dis-moi quoi ajuster.";
+      if (ob.vide) {
+        lignes = [["Objectifs", "aucun pour l'instant"], ["Jauge d'atteinte", "—"]];
+        note = "Un objectif daté (matelas, apport, retraite, projet) dit combien mettre de côté chaque mois. Claude t'aide à les définir ; tu valides ses propositions.";
       } else {
-        lignes = [["Profil", al.profil], ["Points hors fourchette", al.points == null ? "—" : fpts(al.points)]];
-        al.hors.slice(0, 2).forEach(e => lignes.push([e.label, fpct(e.reel) + " (fourchette " + e.min + " à " + e.max + " %)"]));
-        note = al.points ? "Chaque point mesure l'écart d'une classe d'actifs à la borne la plus proche de sa fourchette." : "Chaque classe d'actifs est dans la fourchette de ton profil.";
+        lignes = [["Jauge d'atteinte", ob.pct + " %"]].concat(ob.liste.slice(0, 3).map(x => [extrait(x.nom, 40), Math.round(x.progression * 100) + " % · " + x.mot]));
+        note = ob.retard ? pluriel(ob.retard, "objectif") + " en retard ou hors de portée : le détail est dans Objectifs." : "Tous tes objectifs sont atteints ou dans les temps.";
+        const dec = v => nf1.format(Math.round(v * 100) / 100);
+        const calcul = '<p class="aj-det-note">Jauge = Σ (poids × avancement) ÷ Σ poids. L\'avancement est la somme déjà de côté divisée par la cible, plafonné à 100 %. Le poids est le nombre d\'objectifs moins le rang de priorité plus 1 : l\'objectif prioritaire compte le plus.</p>' +
+          '<ul class="aj-det">' + ob.liste.map(x => ligne(extrait(x.nom, 36) + " (rang " + x.rang + ")", "poids " + x.poids + " × " + Math.round(x.progression * 100) + " % = " + dec(x.poids * x.progression))).join("") +
+          ligne("Jauge", "(" + ob.liste.map(x => dec(x.poids * x.progression)).join(" + ") + ") ÷ " + ob.poidsTotal + " = " + ob.pct + " %") + "</ul>";
+        return { titre, contenu: '<ul class="aj-det">' + lignes.map(l => ligne(l[0], l[1])).join("") + '</ul><p class="aj-det-note">' + esc(note) + "</p>" + accordeon("Calcul", calcul),
+          lien: { label, href: "#" + route }, question };
       }
     } else {
       titre = "Prochaines échéances"; route = R.objectifs; label = "Voir les objectifs";
@@ -486,9 +666,10 @@
     cours: '<path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/>',
     routine: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/><path d="M8.5 12.2l2.4 2.4 4.6-4.6"/>',
     banque: '<path d="M3.5 9.5L12 4l8.5 5.5"/><path d="M5 20h14M6 10.5v7M10 10.5v7M14 10.5v7M18 10.5v7"/>',
+    risque: '<path d="M12 3.5v17M5 8l7-4.5L19 8"/><path d="M5 8l-2.5 6a3 3 0 0 0 5 0zM19 8l-2.5 6a3 3 0 0 0 5 0z"/>',
     argent: '<path d="M4 7.5h16v11H4z"/><path d="M4 11h16"/><path d="M8 4.5h8"/><path d="M15.5 15h1.5"/>',
   };
-  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", argent: "Argent qui dort", doublon: "Doublon probable", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
+  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", argent: "Argent qui dort", risque: "Profil de risque", doublon: "Doublon probable", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 
@@ -516,62 +697,6 @@
     return U.voirPlus(items, 5, itemHtml, "Voir plus", "ul", "aj-boite");
   }
 
-  /** Courbe SVG du patrimoine net agrégé (f = frise()) ; texte d'état vide si moins de deux points. */
-  function friseSvg(f, o) {
-    const opt = o || {}, rows = (f && f.points) || [];
-    if (rows.length < 2) return '<p class="aj-frise-vide">' + (f && f.historique
-      ? "Pas assez de points sur cette période : élargis-la ou choisis un pas plus fin."
-      : "Pas encore d'historique : Boussole prend chaque nuit une photo de ton patrimoine, la courbe se dessine au fil des jours.") + "</p>";
-    const W = Math.max(300, Math.min(1000, Math.round(+opt.largeur) || 720)), H = W < 480 ? 200 : 220, L = 62, Rt = 14, T = 14, B = 28;
-    const ts = rows.map(p => utc(p.date)), x0 = ts[0], x1 = ts[ts.length - 1];
-    const vals = rows.map(p => p.valeur);
-    let lo = Math.min(...vals), hi = Math.max(...vals);
-    const marge = (hi - lo) * 0.2 || Math.abs(hi) * 0.05 || 1000;
-    lo -= marge; hi += marge;
-    const X = t => L + (x1 === x0 ? 0 : (t - x0) / (x1 - x0)) * (W - L - Rt), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-    let g = "";
-    // graduations : une décimale en k€ quand l'écart est faible, pour ne pas répéter la même étiquette
-    const fin1 = (hi - lo) / 3 < 2000, axe = v => (fin1 && Math.abs(v) >= 1e3 && Math.abs(v) < 1e6 ? nf1.format(v / 1e3) + " k€" : kEur(v));
-    for (let k = 0; k <= 3; k++) {
-      const v = lo + (hi - lo) * k / 3, y = Y(v);
-      g += '<line class="aj-grid" x1="' + L + '" x2="' + (W - Rt) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"/><text class="aj-ax" x="' + (L - 8) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end">' + esc(axe(v)) + "</text>";
-    }
-    // libellés de période : le premier calé à gauche, le dernier à droite, les autres centrés s'ils ne se chevauchent pas (largeur
-    // estimée d'après le texte : « sem. du 28 sept. » est bien plus long que « oct. 2026 »)
-    let droite = -Infinity;
-    const xFin = X(x1), largeurTxt = t => Math.max(40, Math.ceil(String(t ?? "").length * 6.8)); // 11 px, chiffres à chasse fixe
-    const wFin = largeurTxt(rows[rows.length - 1].label);
-    rows.forEach((p, i) => {
-      const x = X(ts[i]), last = i === rows.length - 1, w = largeurTxt(p.label);
-      const a = i === 0 ? x : last ? x - w : x - w / 2, b = i === 0 ? x + w : last ? x : x + w / 2;
-      if (!last && (a < droite + 6 || b > xFin - wFin - 6)) return;
-      droite = b;
-      g += '<text class="aj-ax" x="' + x.toFixed(1) + '" y="' + (H - 7) + '" text-anchor="' + (i === 0 ? "start" : last ? "end" : "middle") + '">' + esc(p.label) + "</text>";
-    });
-    const d = rows.map((p, i) => (i ? "L" : "M") + X(ts[i]).toFixed(1) + "," + Y(p.valeur).toFixed(1)).join("");
-    // Repères des décisions du journal dans la période dessinée : trait vertical, titre au survol, focalisables (clic / Entrée → panneau).
-    const reps = (Array.isArray(f.reperes) ? f.reperes : []).filter(r => r && isoOk(r.date) && utc(r.date) >= x0 && utc(r.date) <= x1);
-    const repSvg = reps.map(r => {
-      const x = X(utc(r.date)).toFixed(1), nom = "Décision du " + dateFr(r.date) + " : " + plat(r.titre);
-      return '<g class="aj-rep" data-journal="' + esc(r.id) + '" tabindex="0" role="button" aria-label="' + esc(nom) + '" style="cursor:pointer">' +
-        "<title>" + esc(nom) + "</title>" +
-        '<line x1="' + x + '" x2="' + x + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:transparent;stroke-width:14"/>' +
-        '<line x1="' + x + '" x2="' + x + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:var(--muted);stroke-width:1.3;stroke-dasharray:3 3"/>' +
-        '<path d="M' + x + "," + (T - 6) + "l5,6l-5,6l-5,-6z" + '" style="fill:var(--accent);stroke:var(--surface);stroke-width:1.5"/></g>';
-    }).join("");
-    const aire = d + "L" + xFin.toFixed(1) + "," + (H - B) + "L" + X(x0).toFixed(1) + "," + (H - B) + "Z";
-    const pts = rows.map((p, i) => { const last = i === rows.length - 1;
-      return '<circle class="aj-pt' + (last ? " fin" : "") + '" cx="' + X(ts[i]).toFixed(1) + '" cy="' + Y(p.valeur).toFixed(1) + '" r="' + (last ? 4.5 : 3) + '">' +
-        "<title>" + esc(p.label + " : " + eur(p.valeur) + (p.variation != null ? " (" + eurS(p.variation) + ")" : "")) + "</title></circle>"; }).join("");
-    const fin = rows[rows.length - 1], r = f.resume || {};
-    const lbl = "Patrimoine net estimé " + (opt.scopeLabel || "") + " : " + eur(fin.valeur) + (r.variation != null ? ", " + eurS(r.variation) + " sur la période" : "") + ". " +
-      rows.map(p => p.label + " " + eur(p.valeur)).join(", ");
-    const lblRep = reps.length ? ". " + pluriel(reps.length, "décision") + " du journal sur la période (repères verticaux)." : "";
-    // Avec des repères interactifs, le graphique est un groupe (role="img" rendrait ses enfants inaccessibles).
-    return '<svg class="aj-svg" viewBox="0 0 ' + W + " " + H + '" role="' + (reps.length ? "group" : "img") + '" aria-label="' + esc(plat(lbl + lblRep)) + '">' + g +
-      '<path class="aj-aire" d="' + aire + '"/><path class="aj-ligne" d="' + d + '"/>' + repSvg + pts + "</svg>";
-  }
-
   /* ---------- période de la frise : mémorisée, granularité seulement si l'utilisateur l'a choisie ---------- */
   /** Période relue du stockage local (JSON ou objet) → { periode: { id, du?, au?, granularite? }, gChoisie }. La granularité n'est
       reprise que si l'utilisateur l'avait choisie lui-même (gChoisie) ; sinon elle reste automatique (Periodes.auto selon la
@@ -596,22 +721,26 @@
     return out;
   }
 
-  const H = { boite, elementArgentQuiDort, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, friseSvg, jour, delai, premiereDate,
+  const H = { boite, elementArgentQuiDort, etatRevue, echeances, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, objectifs, evolution, projection, compteARebours, jour, delai, premiereDate,
     lirePeriode, periodeAEnregistrer };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
   /* =============================================================== vue =============================================================== */
-  const CLE = "aujourdhui-periode";
-  /* items (boîte) est calculé à chaque émission du store : headline() en dépend pour la pastille. ind (indicateurs et frise)
+  const CLE = "aujourdhui-periode", CLE_H = "aujourdhui-horizon", HORIZONS = [1, 5, 10, 20];
+  /* items (boîte) est calculé à chaque émission du store : headline() en dépend pour la pastille. ind (indicateurs et passé du graphe)
      ne l'est qu'au rendu, quand la vue est visible. sigX : dernier HTML écrit ; rien n'est réécrit (ni le focus perdu,
      ni un « Voir plus » replié) quand il n'a pas changé. */
-  let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, sigBoite = "", sigCartes = "", sigFrise = "", ctlPeriode = null; // largeur : celle du dernier dessin de la frise
+  let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, ctlPeriode = null; // largeur : celle du dernier dessin du graphe
+  const sig = { boite: "", cartes: "", graphe: "", legende: "", table: "", etat: "", resume: "" };
   /* periode.granularite : celle du dessin (choisie, ou automatique selon la période) ; gChoisie : l'utilisateur l'a choisie lui-même
      (seul cas où elle est passée à UI.periode et enregistrée) ; gClic : vrai pendant le traitement d'un clic ou d'une touche sur la
      bascule de granularité (posé à la capture, effacé au retour de l'événement). */
-  let periode = { id: "1a" }, gChoisie = false, gClic = false;
+  let periode = { id: "1a" }, gChoisie = false, gClic = false, horizon = 5, animer = true, modele = null, geo = null;
   try { const l = lirePeriode(localStorage.getItem(CLE)); periode = l.periode; gChoisie = l.gChoisie; } catch (e) {}
+  try { const h = +localStorage.getItem(CLE_H); if (HORIZONS.includes(h)) horizon = h; } catch (e) {}
+  /* Passé reconstitué : données lues à la demande (cours, transactions, opérations bancaires), puis calcul mémorisé. */
+  const hist = { cle: "", depuis: null, isins: "", comptes: "", cours: {}, tx: null, ops: [], opsDepuis: null, version: 0, etat: "rien", seq: 0, enCours: "", memo: null };
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
   const scopeLabel = () => {
@@ -619,44 +748,210 @@
     const p = (S.people || []).find(x => x.id === S.scope), C = window.Calc;
     return C && C.deNom ? C.deNom(p && p.nom, S.scope === "p2" ? 2 : 1) : "";
   };
+  const reduit = () => { try { return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { return false; } };
+
+  /** Passé reconstitué pour l'état courant du store (mémorisé tant que le store, le périmètre, le jour et les données lues ne changent pas). */
+  function reconstitution() {
+    const Hi = HIST(null), C = window.Calc;
+    if (!Hi || !C || !S || hist.etat === "rien" || hist.etat === "charge" && !hist.version) return null;
+    const t = jour(), cle = [t, S.scope, hist.version].join("|");
+    if (hist.memo && hist.memo.S === S && hist.memo.cle === cle) return hist.memo.res;
+    let res = null;
+    try {
+      const pat = C.patrimoine(S.positions || [], S.profil || null, S.scope || "foyer");
+      res = Hi.reconstituer({ today: t, positions: S.positions || [], scope: S.scope || "foyer", cours: hist.cours, tx: hist.tx || S.tx || [],
+        comptes: S.banque && S.banque.comptes ? S.banque.comptes : [], operations: hist.ops, operationsDepuis: hist.opsDepuis, depuis: hist.depuis, horsFin: pat.net - pat.financier });
+    } catch (e) { res = null; }
+    hist.memo = { S, cle, res };
+    return res;
+  }
+  const depsVue = () => ({ reconstitue: reconstitution() });
+
+  /* Début de la période voulue pour le graphe, moins quelques jours (variation sur la période) : jusqu'où lire l'historique. */
+  function depuisVoulu() {
+    const Hi = HIST(null), Pe = window.Periodes, t = jour();
+    if (!Hi) return t;
+    if (periode.id === "tout") return Hi.plusJours(t, -Hi.JOURS_MAX);
+    const b = Pe ? Pe.bornes(estPerso(periode) ? { du: periode.du, au: periode.au } : PERIODE_TXT[periode.id] ? periode.id : "1a", t) : { du: Hi.plusJours(t, -365) };
+    const d = Hi.plusJours(b.du, -10), plancher = Hi.plusJours(t, -Hi.JOURS_MAX);
+    return d < plancher ? plancher : d;
+  }
+  /* Lit les cours, les transactions et les opérations bancaires nécessaires à la reconstitution (une seule lecture à la fois ; refaite si la
+     période remonte plus loin, ou si les lignes cotées ou les comptes rattachés changent). Une lecture en échec laisse le reste : le
+     passé est alors reconstitué avec ce qui est lu, et le dit. */
+  async function chargerHistorique() {
+    const st = window.Store, Hi = HIST(null);
+    if (!S || !S.ready || S.dbOk === false || !st || !Hi) return;
+    const t = jour(), depuis = depuisVoulu();
+    const isins = [...new Set((S.positions || []).filter(p => counted(p) && p.mode === "market" && p.isin).map(p => String(p.isin)))].sort().join(",");
+    const comptes = (S.banque && S.banque.actif && !S.banque.mfaRequise && Array.isArray(S.banque.comptes) ? S.banque.comptes : [])
+      .filter(c => c && c.positionId != null && !c.ignore && c.type !== "credit").map(c => c.id).sort().join(",");
+    if (hist.etat !== "rien" && hist.depuis <= depuis && hist.isins === isins && hist.comptes === comptes) return;
+    const cle = depuis + "|" + isins + "|" + comptes;
+    if (hist.enCours === cle) return;
+    hist.enCours = cle; const seq = ++hist.seq; hist.etat = hist.version ? hist.etat : "charge";
+    if (!hist.version) majEtat();
+    const tolerant = f => Promise.resolve().then(f).catch(() => null);
+    const [cours, tx, ops] = await Promise.all([
+      isins && typeof st.cours === "function" ? tolerant(() => st.cours(isins.split(","), depuis)) : {},
+      typeof st.transactions === "function" ? tolerant(() => st.transactions(depuis)) : null,
+      comptes && st.banque && typeof st.banque.operations === "function" ? tolerant(() => st.banque.operations(comptes.split(",").map(x => (/^\d+$/.test(x) ? +x : x)), Hi.plusJours(t, -90))) : [],
+    ]);
+    if (seq !== hist.seq) return;
+    Object.assign(hist, { cle, depuis, isins, comptes, cours: cours || {}, tx: Array.isArray(tx) ? tx : null, ops: Array.isArray(ops) ? ops : [], opsDepuis: Hi.plusJours(t, -90),
+      version: hist.version + 1, etat: cours === null ? "echec" : "pret", enCours: "", memo: null });
+    if (root && S) { ctlPremiere(); if (!root.hidden) { ind = indicateurs(S, jour(), periode, depsVue()); renderCartes(); renderGraphe(); } else dirty = true; }
+  }
+  /* « Tout » part de la première donnée : première photo, ou début du passé reconstitué s'il est plus ancien. */
+  function premiereGlobale() {
+    const p = S ? premiereDate(S.snapshots) : undefined, r = hist.memo && hist.memo.res && hist.memo.res.points && hist.memo.res.points.length ? hist.memo.res.debut : null;
+    return r && (!p || r < p) ? r : p;
+  }
+  function ctlPremiere() { if (ctlPeriode && typeof ctlPeriode.premiere === "function") ctlPeriode.premiere(premiereGlobale()); }
 
   function render() {
     const u = U();
     if (!root || !S || !u) return;
-    ind = indicateurs(S, jour(), periode);
+    ind = indicateurs(S, jour(), periode, depsVue());
     renderCartes();
     // Même contenu : on ne réécrit pas la liste (une émission du store ne replie pas un « Voir plus » déplié).
-    const sig = JSON.stringify(items);
-    if (sig !== sigBoite) { sigBoite = sig; $("ajBoite").innerHTML = boiteHtml(items, u); }
+    const sg = JSON.stringify(items);
+    if (sg !== sig.boite) { sig.boite = sg; $("ajBoite").innerHTML = boiteHtml(items, u); }
     // Nombre d'éléments pour les lecteurs d'écran seulement (règle 9 : les compteurs visibles sont dans la navigation).
     const n = items.length ? pluriel(items.length, "élément") + " à traiter" : "";
     if ($("ajBoiteN").textContent !== n) $("ajBoiteN").textContent = n;
-    renderFrise();
+    renderGraphe();
+    chargerHistorique();
   }
   function renderCartes() {
     const h = cartes(ind, U(), periode);
-    if (h !== sigCartes) { sigCartes = h; $("ajCartes").innerHTML = h; }
+    if (h === sig.cartes) return;
+    sig.cartes = h; $("ajCartes").innerHTML = h;
+    if (animer && S && S.ready) { animer = false; animerCartes(); }
   }
-  function renderFrise() {
-    const f = ind.frise, r = f.resume || {};
-    const el = $("ajFrise");
+  /* Première apparition des cartes : chiffres comptés de 0 à leur valeur, jauges remplies. Jamais avec prefers-reduced-motion. */
+  function animerCartes() {
+    const zone = $("ajCartes");
+    if (reduit() || typeof requestAnimationFrame !== "function" || !zone.querySelectorAll) return;
+    const arcs = Array.from(zone.querySelectorAll("[data-aj-off]"));
+    arcs.forEach(a => { if (a.style) a.style.strokeDashoffset = String(CIRC); });
+    if (arcs.length && arcs[0].getBoundingClientRect) arcs[0].getBoundingClientRect(); // fixe l'état de départ avant la transition
+    requestAnimationFrame(() => arcs.forEach(a => { if (a.style) a.style.strokeDashoffset = a.getAttribute("data-aj-off"); }));
+    const nums = Array.from(zone.querySelectorAll("[data-aj-count]")).map(el => ({ el, cible: +el.getAttribute("data-aj-count"), fmt: el.getAttribute("data-aj-fmt"), final: el.textContent }));
+    if (!nums.length) return;
+    const duree = 850, t0 = (typeof performance !== "undefined" && performance.now ? performance.now() : Date.now());
+    const ecrire = (o, v) => { o.el.textContent = o.fmt === "eur" ? eur(v) : String(Math.round(v)); };
+    nums.forEach(o => ecrire(o, 0));
+    const pas = now => {
+      const k = Math.min(1, ((now || Date.now()) - t0) / duree), e = 1 - Math.pow(1 - k, 3);
+      nums.forEach(o => { if (k < 1) ecrire(o, o.cible * e); else o.el.textContent = o.final; });
+      if (k < 1) requestAnimationFrame(pas);
+    };
+    requestAnimationFrame(pas);
+  }
+
+  /* ---------- graphe maître ---------- */
+  const poser = (cle, el, h) => { if (sig[cle] === h) return false; sig[cle] = h; el.innerHTML = h; return true; };
+  function majEtat() {
+    if (!root) return;
+    const res = hist.memo && hist.memo.res, rec = modele && modele.passe && modele.passe.reconstitue;
+    let t = "";
+    if (hist.etat === "charge") t = "Reconstitution du passé en cours…";
+    else if (rec && res) {
+      const prem = S ? premiereDate(S.snapshots) : null;
+      t = "Avant ta première photo" + (prem ? " (" + dateFr(prem) + ")" : "") + ", le passé est reconstitué à partir des cours, de tes transactions et des soldes bancaires : une estimation, moins fiable qu'une photo.";
+    }
+    else if (hist.etat === "echec") t = "Les cours n'ont pas pu être lus : le passé n'est pas reconstitué.";
+    else if (hist.etat === "pret" && res && !res.points.length && res.raison) t = res.raison;
+    const g = geo && geo.deformee ? " L'échelle de temps du passé et du futur diffère : le trait « Aujourd'hui » les sépare." : "";
+    t = (t + g).trim();
+    if (sig.etat !== t) { sig.etat = t; $("ajEtat").textContent = t; $("ajEtat").hidden = !t; }
+  }
+  function renderGraphe() {
+    const G = GRAPHE();
+    if (!G || !ind) return;
+    modele = evolution(S, jour(), periode, horizon, depsVue());
+    const el = $("ajFrise"), f = modele.passe, r = f.resume || {};
     largeur = el.clientWidth || 0;
-    const h = friseSvg(f, { scopeLabel: scopeLabel(), largeur });
-    if (h !== sigFrise) { sigFrise = h; el.innerHTML = h; }
+    const gr = G.construire(f, modele.futur, { largeur, today: modele.today, scopeLabel: scopeLabel() });
+    geo = gr.geo; pointsGraphe = gr.points;
+    const vide = f.points.length < 2 && !modele.futur
+      ? '<p class="aj-frise-vide">' + (f.historique ? "Pas assez de points sur cette période : élargis-la ou choisis un pas plus fin."
+        : "Pas encore d'historique : Boussole prend chaque nuit une photo de ton patrimoine, la courbe se dessine au fil des jours.") + "</p>" : "";
+    poser("graphe", el, gr.svg || vide);
+    poser("legende", $("ajLegende"), gr.svg ? G.legendeHtml(f, modele.futur) : "");
+    poser("table", $("ajTable"), gr.svg ? G.tableauHtml(f, modele.futur, { scopeLabel: scopeLabel() }) : "");
     const t = f.points.length > 1 && r.variation != null
       ? eurS(r.variation) + " " + periodeTxt(periode) + (r.variationPct != null ? " (" + (r.variationPct < 0 ? "−" : "+") + nf1.format(Math.abs(r.variationPct)) + " %)" : "") : "";
-    if ($("ajFriseResume").textContent !== t) $("ajFriseResume").textContent = t;
+    if (sig.resume !== t) { sig.resume = t; $("ajFriseResume").textContent = t; }
+    const promesse = $("ajPromesse"); if (promesse) promesse.hidden = !modele.futur;
+    const hz = $("ajHorizonZone"); if (hz) hz.hidden = !modele.futur; // pas de futur : période terminée avant aujourd'hui, ou aucune donnée
+    majEtat();
   }
-  /* Période ou granularité changée (UI.periode) : la frise et la variation de la carte « Patrimoine net » suivent. */
+  let pointsGraphe = [];
+  /* Infobulle au survol (souris, doigt) : point le plus proche en abscisse ; ne touche qu'aux éléments du curseur et à l'infobulle. */
+  function survol(e) {
+    const zone = $("ajFrise"), svg = zone.querySelector ? zone.querySelector("svg") : null, tip = $("ajTip");
+    if (!svg || !geo || !pointsGraphe.length || !svg.getBoundingClientRect) return;
+    const rect = svg.getBoundingClientRect(), k = geo.W / (rect.width || geo.W), x = (e.clientX - rect.left) * k;
+    if (x < geo.L - 6 || x > geo.W - geo.R + 6) { masquerSurvol(); return; }
+    let p = pointsGraphe[0];
+    for (const q of pointsGraphe) if (Math.abs(q.x - x) < Math.abs(p.x - x)) p = q;
+    const ligne = svg.querySelector(".aj-cur-l"), pt = svg.querySelector(".aj-cur-d");
+    if (ligne) { ligne.setAttribute("x1", p.x.toFixed(1)); ligne.setAttribute("x2", p.x.toFixed(1)); ligne.setAttribute("class", "aj-cur-l on"); }
+    if (pt) { pt.setAttribute("cx", p.x.toFixed(1)); pt.setAttribute("cy", p.y.toFixed(1)); pt.setAttribute("class", "aj-cur-d on n-" + p.nature); }
+    tip.innerHTML = tipHtml(p);
+    tip.hidden = false;
+    const w = tip.offsetWidth || 170, gauche = p.x / k;
+    tip.style.left = Math.max(4, Math.min((rect.width || geo.W) - w - 4, gauche - w / 2)) + "px";
+    tip.style.top = Math.max(0, p.y / k - (tip.offsetHeight || 60) - 14) + "px";
+  }
+  function masquerSurvol() {
+    const zone = $("ajFrise"), svg = zone.querySelector ? zone.querySelector("svg") : null, tip = $("ajTip");
+    if (tip) tip.hidden = true;
+    if (!svg) return;
+    const l = svg.querySelector(".aj-cur-l"), d = svg.querySelector(".aj-cur-d");
+    if (l) l.setAttribute("class", "aj-cur-l"); if (d) d.setAttribute("class", "aj-cur-d");
+  }
+  /** Contenu de l'infobulle : date, valeur, nature du point (mots, pas seulement un style de trait). */
+  function tipHtml(p) {
+    const res = hist.memo && hist.memo.res, d = res && res.drapeaux;
+    const note = p.nature === "reconstitue" && d ? [d.compositionActuelle.length ? "à composition actuelle" : "", d.constantes.noms.length ? "autres lignes tenues constantes" : ""].filter(Boolean).join(" · ") : "";
+    return '<span class="aj-tip-d">' + esc(p.nature === "projete" ? dateFr(p.date) : p.label && p.label !== dateFr(p.date) ? p.label + " · " + dateFr(p.date) : dateFr(p.date)) + "</span>" +
+      '<span class="aj-tip-v">' + esc(eur(p.valeur)) + (p.nature === "projete" ? '<span class="aj-tip-c"> au centre</span>' : "") + "</span>" +
+      (p.nature === "projete" ? '<span class="aj-tip-f">entre ' + esc(eur(p.min)) + " et " + esc(eur(p.max)) + "</span>" : "") +
+      '<span class="aj-tip-n n-' + p.nature + '">' + { observe: "observé", reconstitue: "reconstitué", projete: "projeté, pas une promesse" }[p.nature] + "</span>" +
+      (note ? '<span class="aj-tip-f">' + esc(note) + "</span>" : "");
+  }
+
+  /* Panneau « Comment c'est calculé » : natures du passé, hypothèses de la projection, repères publics. */
+  function ouvrirCalcul(el) {
+    const u = U(), G = GRAPHE();
+    if (!u || !u.panneau || !G || !modele) return;
+    const Rp = glob("Reperes") || voisin("Reperes", "./reperes.js"), rep = S && S.savoir && Array.isArray(S.savoir.reperes) ? S.savoir.reperes : [];
+    const sources = [];
+    [["livret_a_taux", "Taux du Livret A (repère pour les poches d'épargne)"], ["pfu_taux", "Prélèvement forfaitaire unique, non déduit de la projection"]].forEach(([cle, libelle]) => {
+      const r = Rp && Rp.trouver ? Rp.trouver(rep, cle) : null;
+      if (r) sources.push({ libelle, valeur: Rp.format(r), dateEffet: r.dateEffet, sourceTitre: r.sourceTitre, sourceUrl: r.sourceUrl });
+    });
+    const f = modele.futur, res = hist.memo && hist.memo.res;
+    const contenu = G.calculHtml({ rec: res && res.points && res.points.length ? res : null, decalage: modele.passe.decalage, fut: f, rendements: f ? f.rendements : null, parBloc: f ? f.parBloc : null,
+      versementSource: f ? f.versementSource : null, sources, deformee: !!(geo && geo.deformee), scopeLabel: scopeLabel() });
+    u.panneau.ouvrir({ titre: "Comment c'est calculé", contenu, retour: el,
+      pied: u.demanderAClaude("Explique-moi simplement comment Boussole calcule la courbe d'évolution et la projection de mon patrimoine net, et ce que je dois en retenir.") });
+  }
+
+  /* Période ou granularité changée (UI.periode) : le graphe et la variation de la carte « Patrimoine net » suivent ; l'historique est relu si besoin. */
   function surPeriode(o) {
     const x = o && typeof o === "object" ? o : { periode: o };
     if (gClic) gChoisie = true; // la granularité vient d'être choisie sur sa bascule : elle ne suit plus la période
     periode = { id: String(x.periode || x.id || periode.id), granularite: x.granularite ? String(x.granularite) : periode.granularite, du: x.du || undefined, au: x.au || undefined };
     try { localStorage.setItem(CLE, JSON.stringify(periodeAEnregistrer(periode, gChoisie))); } catch (e) {}
     if (!S || !U() || !root) return;
-    ind = indicateurs(S, jour(), periode);
+    ind = indicateurs(S, jour(), periode, depsVue());
     renderCartes();
-    renderFrise();
+    renderGraphe();
+    chargerHistorique();
   }
   /* Carte → panneau de détail (le lien interne du pied ferme le panneau puis la coque suit le hash). Le focus revient à la carte,
      ou à la carte du même id si un rendu l'a remplacée entre-temps. */
@@ -667,8 +962,8 @@
       surFermeture: () => { if (el && !el.isConnected) { const c = root.querySelector('[data-ui-carte="' + id + '"]'); if (c) c.focus(); } } });
   }
 
-  /* Repère de décision de la frise → panneau (synthèse, date, statut, lien vers Agent › Journal) ; focus rendu au repère, ou au repère
-     du même id si la frise a été redessinée entre-temps. */
+  /* Repère de décision du graphe → panneau (synthèse, date, statut, lien vers Agent › Journal) ; focus rendu au repère, ou au repère
+     du même id si le graphe a été redessiné entre-temps. */
   function ouvrirRepere(el) {
     const u = U(); if (!u || !u.panneau || !ind) return;
     const id = el.getAttribute("data-journal"), r = (ind.frise.reperes || []).find(x => x.id === id);
@@ -688,6 +983,9 @@
       const el = e.target && e.target.closest ? e.target.closest("[data-journal]") : null;
       if (el) { e.preventDefault(); ouvrirRepere(el); }
     });
+    fr.addEventListener("pointermove", survol);
+    fr.addEventListener("pointerdown", survol);
+    fr.addEventListener("pointerleave", masquerSurvol);
     const zone = $("ajPeriode");
     const marquer = e => { gClic = !!(e.target && e.target.closest && e.target.closest(".ui-periode-g")); };
     const effacer = () => { gClic = false; };
@@ -697,19 +995,23 @@
       if (gChoisie && periode.granularite) o.granularite = periode.granularite; // sinon UI.periode la règle selon la période
       ctlPeriode = u.periode(zone, o);
     }
+    if (u && u.bascule) u.bascule($("ajHorizon"), { label: "Horizon de la projection", actif: String(horizon),
+      options: HORIZONS.map(n => ({ id: String(n), label: n + (n > 1 ? " ans" : " an"), aria: n + (n > 1 ? " ans" : " an") })),
+      surChange: id => { horizon = +id; try { localStorage.setItem(CLE_H, String(horizon)); } catch (e) {} if (S && ind) renderGraphe(); } });
+    const bc = $("ajCalcul"); if (bc) bc.addEventListener("click", () => ouvrirCalcul(bc));
     $("ajClaude").innerHTML = u && u.demanderAClaude
       ? u.demanderAClaude("Explique-moi simplement l'évolution de mon patrimoine net dans Boussole sur la dernière année : qu'est-ce qui l'a fait bouger ?", "Commenter avec Claude") : "";
     if (u && u.brancher) u.brancher(root, { surCarte: ouvrirCarte }); // cartes et « Voir plus » de la boîte de réception
-    /* La frise est dessinée à la largeur réelle (textes lisibles sur mobile) : redessin quand la largeur change nettement. */
+    /* Le graphe est dessiné à la largeur réelle (textes lisibles sur mobile) : redessin quand la largeur change nettement. */
     if (typeof ResizeObserver === "function") new ResizeObserver(() => {
       const w = $("ajFrise").clientWidth;
-      if (ind && w && Math.abs(w - largeur) > 24) renderFrise();
+      if (ind && w && Math.abs(w - largeur) > 24) renderGraphe();
     }).observe($("ajFrise"));
   }
   function update(snap, visible) {
     S = snap;
     items = boite(S, jour(), { aujRevue: RE().aujParis() }); // revue au jour de Paris, comme le serveur ; le reste au jour local
-    if (ctlPeriode && typeof ctlPeriode.premiere === "function") ctlPeriode.premiere(S ? premiereDate(S.snapshots) : undefined); // « Tout » part de la première photo
+    ctlPremiere(); // « Tout » part de la première donnée
     dirty = true;
     if (visible) { render(); dirty = false; }
   }

@@ -39,7 +39,7 @@ test("registre : 4 destinations primaires dans l'ordre, puis Compte hors barre",
 test("registre : sous-vues et modules de chaque destination selon le plan", () => {
   const subs = space => SPACES.find(s => s.space === space).subs.map(s => [s.id, s.module]);
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
-  assert.deepEqual(subs("patrimoine"), [["comptes", "comptes-view"], ["placements", "pilotage"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
+  assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["comptes", "comptes-view"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
   assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["projections", null], ["scenarios", "simu"]]);
   assert.deepEqual(subs("agent"), [["journal", "journal-view"], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["expertises", "expertises-view"], ["connexion", "claude-guide"]]);
   assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"]]);
@@ -96,7 +96,7 @@ test("correspondance : anciens onglets (App.go, data-goto-tab) et anciens hash d
   }
   const spec = {
     "#pilotage": "patrimoine/placements",
-    "#position": "pilotage/rang", "#foyer": "pilotage/rang", "#salaire": "pilotage/rang", "#patrimoine": "pilotage/rang", "#emprunt": "pilotage/rang",
+    "#position": "pilotage/rang", "#foyer": "pilotage/rang", "#salaire": "pilotage/rang", "#patrimoine": "patrimoine/placements", "#emprunt": "pilotage/rang",
     "#acheter": "pilotage/scenarios", "#simulateur": "pilotage/scenarios", "#theorie": "pilotage/scenarios", "#explication": "pilotage/scenarios",
     "#plan": "patrimoine/budget", "#budget": "patrimoine/budget", "#objectifs": "patrimoine/objectifs",
     "#profil": "compte/donnees",
@@ -107,9 +107,12 @@ test("correspondance : anciens onglets (App.go, data-goto-tab) et anciens hash d
     assert.equal(x.legacy, true, h);
   }
   for (const [h, r] of Object.entries(LEGACY_HASHES)) assert.ok(routes.includes(r), h + " → " + r);
-  // « pilotage » et « patrimoine » seuls (App.go) désignent les nouvelles destinations ; seul le hash nu garde l'ancien sens.
+  // « pilotage » et « patrimoine » seuls (App.go) désignent les nouvelles destinations ; « #pilotage » nu garde son ancien sens (Placements),
+  // « #patrimoine » nu mène à Placements, première sous-vue de Patrimoine (il ouvrait la Toise dans la toute première version).
   assert.deepEqual(resolve("pilotage"), { space: "pilotage", sub: "sante" });
-  assert.deepEqual(resolve("patrimoine"), { space: "patrimoine", sub: "comptes" }, "Comptes, première sous-vue de Patrimoine");
+  assert.deepEqual(resolve("patrimoine"), { space: "patrimoine", sub: "placements" }, "Placements, première sous-vue de Patrimoine");
+  assert.deepEqual(resolveHash("#patrimoine"), { space: "patrimoine", sub: "placements", legacy: true }, "#patrimoine nu → Placements, réécrit en #patrimoine/placements");
+  assert.deepEqual(resolveHash("#patrimoine/comptes"), { space: "patrimoine", sub: "comptes", legacy: false }, "les liens profonds vers Comptes marchent toujours");
 });
 
 test("routage : forme canonique, sous-vue par défaut, route inconnue → Aujourd'hui", () => {
@@ -400,7 +403,7 @@ test("Comptes : première sous-vue de Patrimoine ; ses liens profonds gardent le
     "forme canonique : l'URL n'est pas réécrite (recharger, précédent / suivant, partager le lien)");
   assert.deepEqual(resolveHash("#patrimoine/comptes?enveloppe=PEA%20Camille&titulaire=p1").query, "enveloppe=PEA%20Camille&titulaire=p1");
   assert.equal(resolveHash("#patrimoine/comptes").legacy, false);
-  assert.equal(resolveHash("#patrimoine").legacy, true, "#patrimoine nu garde son ancien sens (Rang)");
+  assert.equal(resolveHash("#patrimoine").legacy, true, "#patrimoine nu : forme ancienne, réécrite en #patrimoine/placements");
   assert.deepEqual(resolveHash("#agent/journal?entree=abc"), { space: "agent", sub: "journal", legacy: true, query: "entree=abc" }, "ailleurs, URL réécrite sans paramètres");
   assert.equal(hashCanonique({ space: "patrimoine", sub: "comptes" }, "ligne=x"), "#patrimoine/comptes?ligne=x");
   assert.equal(hashCanonique({ space: "agent", sub: "journal" }, "entree=x"), "#agent/journal");

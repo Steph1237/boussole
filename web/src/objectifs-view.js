@@ -11,7 +11,7 @@
      (simulateur). CK4 la déplacera dans Pilotage › Projections.
    Calculs inchangés (plan.js : affecterDeja, repartirEpargne, statutObjectif, projection…), faits une fois par émission du
    store ; l'épargne vient du budget enregistré.
-   Fonctions pures exportées pour les tests : trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA,
+   Fonctions pures exportées pour les tests (et window.ObjectifsView, lu par Aujourd'hui) : trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA,
    versementReel, projectionSvg, projectionTableHtml, hypothesesHtml, valeurPoche, boutonClaude.
    Dépendances injectées (deps / ctx) : { Plan, Calc } ; window.* par défaut (ClaudePrompts compris). */
 (function () {
@@ -272,6 +272,7 @@
   const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA, versementReel, projectionSvg, projectionTableHtml,
     hypothesesHtml, valeurPoche, boutonClaude, STATUTS };
   if (typeof module === "object" && module.exports) module.exports = H;
+  if (typeof window !== "undefined") window.ObjectifsView = H; // pour Aujourd'hui (jauge d'objectifs, versement de la projection)
   if (typeof document === "undefined") return;
 
   /* =================================================================== vue =================================================================== */

@@ -491,7 +491,7 @@ test("app.js : « plan » sur patrimoine/budget, « objectifs-view » sur patrim
   const { SPACES, LEGACY, resolve, resolveHash } = require("../web/src/app.js");
   const patrimoine = SPACES.find(s => s.space === "patrimoine");
   assert.deepEqual(patrimoine.subs.map(s => [s.id, s.label, s.module]), [
-    ["comptes", "Comptes", "comptes-view"], ["placements", "Placements", "pilotage"], ["immobilier", "Immobilier et crédits", "bilan"],
+    ["placements", "Placements", "pilotage"], ["comptes", "Comptes", "comptes-view"], ["immobilier", "Immobilier et crédits", "bilan"],
     ["budget", "Budget", "plan"], ["objectifs", "Objectifs", "objectifs-view"]]);
   assert.equal(LEGACY.plan, "patrimoine/budget");
   assert.equal(LEGACY["avenir/plan"], "patrimoine/budget");

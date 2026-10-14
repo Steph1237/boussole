@@ -216,7 +216,9 @@
     return out;
   }
 
-  /** Projection du patrimoine financier sur N années, trois scénarios, versement réparti comme le portefeuille actuel. */
+  /** Projection du patrimoine financier sur N années, trois scénarios, versement réparti comme le portefeuille actuel.
+      Un point par année (annees, central, pessimiste, optimiste, parBloc). Option `mensuel: true` : ajoute `mensuel` = { central,
+      pessimiste, optimiste }, une valeur par mois de 0 à 12 × N (le mois 12 k est le point annuel k), pour les courbes lisses. */
   function projection(opts) {
     const o = opts || {}, scope = o.scope || "foyer", R = o.rendements || RENDEMENTS;
     const N = Math.max(0, Math.floor(o.annees == null ? 30 : n(o.annees)));
@@ -234,22 +236,25 @@
 
     const res = { annees: Array.from({ length: N + 1 }, (_, i) => i), parBloc: {} };
     SCENARIOS.forEach(s => { res[s] = new Array(N + 1).fill(0); });
+    if (o.mensuel === true) { res.mensuel = {}; SCENARIOS.forEach(s => { res.mensuel[s] = new Array(N * 12 + 1).fill(0); }); }
     blocs.forEach(b => {
       const pb = { capital: capital[b], poids: poids(b) };
       SCENARIOS.forEach(s => {
         const r = tauxMensuel(taux(b)[s]), v = versement * pb.poids, serie = [];
         let val = capital[b];
         serie.push(val);
+        if (res.mensuel) res.mensuel[s][0] += val;
         for (let k = 1; k <= N * 12; k++) {
           val = val * (1 + r) + v;
           if (k % 12 === 0) serie.push(val);
+          if (res.mensuel) res.mensuel[s][k] += val;
         }
         serie.forEach((x, i) => { res[s][i] += x; });
         pb[s] = serie.map(Math.round);
       });
       res.parBloc[b] = pb;
     });
-    SCENARIOS.forEach(s => { res[s] = res[s].map(Math.round); });
+    SCENARIOS.forEach(s => { res[s] = res[s].map(Math.round); if (res.mensuel) res.mensuel[s] = res.mensuel[s].map(Math.round); });
     return res;
   }
 

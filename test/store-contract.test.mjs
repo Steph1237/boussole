@@ -1088,3 +1088,38 @@ test("store-supabase.js (exécuté, session factice) : config.frais_enveloppes l
   S = await run({ config: { data: { targets: {}, rules: [] }, error: null } });
   assert.deepEqual(J(S.config.frais_enveloppes), {}, "colonne absente ou vide : objet vide");
 });
+
+test("démo : Store.transactions(depuis) → transactions depuis la date, les plus récentes d'abord ; en-tête du contrat", async () => {
+  const ctx = browser();
+  const S = await whenReady(ctx);
+  assert.equal(typeof ctx.Store.transactions, "function");
+  const toutes = J(await ctx.Store.transactions("2000-01-01"));
+  assert.equal(toutes.length, S.tx.length, "toutes les transactions de la démo");
+  assert.ok(toutes.every((t, i) => !i || toutes[i - 1].date >= t.date), "les plus récentes d'abord");
+  const recentes = J(await ctx.Store.transactions(toutes[0].date));
+  assert.ok(recentes.length >= 1 && recentes.every(t => t.date >= toutes[0].date));
+  assert.deepEqual(J(await ctx.Store.transactions("2999-01-01")), []);
+  assert.equal(J(await ctx.Store.transactions(undefined)).length, toutes.length, "sans date : tout");
+  toutes[0].type = "modifié"; // copie : le store n'est pas touché
+  assert.notEqual(J(await ctx.Store.transactions("2000-01-01"))[0].type, "modifié");
+  assert.match(src("store-demo.js"), /Contrat : window\.Store = \{[^\n]*transactions\(depuis\)/, "en-tête du contrat");
+});
+
+test("store-supabase.js (exécuté, faux client) : Store.transactions — depuis, pages de 1 000 des plus récentes, 3 pages au plus, échec rejeté", async () => {
+  const ligne = (k) => ({ id: "t" + k, position_id: "p1", date: new Date(Date.UTC(2026, 9, 1) - k * 864e5).toISOString().slice(0, 10), type: "achat", qty: "2", price: "10", amount: null, note: null, source: "manuel", created_at: "2026-10-01T00:00:00Z" });
+  const { ctx, appels } = storeSupabase({ transactions: f => (f.range ? { data: Array.from({ length: Math.min(f.range[1] - f.range[0] + 1, Math.max(0, 1500 - f.range[0])) }, (_, k) => ligne(f.range[0] + k)), error: null } : { data: [], error: null }) });
+  await wait(0);
+  const r = J(await ctx.Store.transactions("2020-01-01"));
+  assert.equal(r.length, 1500, "deux pages lues");
+  assert.deepEqual(r[0], { id: "t0", positionId: "p1", date: "2026-10-01", type: "achat", qty: 2, price: 10, amount: null, note: "", source: "manuel", createdAt: "2026-10-01T00:00:00Z" });
+  const lus = appels.filter(a => a.table === "transactions" && a.range && a.range[1] >= 999);
+  assert.deepEqual(J(lus.map(a => a.range)), [[0, 999], [1000, 1999]]);
+  assert.deepEqual(J(lus[0].gte), ["date", "2020-01-01"]);
+  const pleines = storeSupabase({ transactions: f => ({ data: f.range ? Array.from({ length: 1000 }, (_, k) => ligne(f.range[0] + k)) : [], error: null }) });
+  await wait(0);
+  assert.equal((await pleines.ctx.Store.transactions("2000-01-01")).length, 3000, "3 pages au plus");
+  const ko = storeSupabase({ transactions: f => (f.range && f.range[1] >= 999 ? { data: null, error: { code: "500", message: "panne" } } : { data: [], error: null }) });
+  await wait(0);
+  await assert.rejects(ko.ctx.Store.transactions("2000-01-01"));
+  assert.match(src("store-supabase.js"), /Contrat : window\.Store = \{[^\n]*transactions\(depuis\)/, "en-tête du contrat");
+});

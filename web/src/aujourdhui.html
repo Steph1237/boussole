@@ -1,7 +1,40 @@
 <div class="aj">
   <section class="aj-bloc" aria-labelledby="ajIndTitre">
     <h2 class="ui-sr" id="ajIndTitre">Indicateurs clés</h2>
-    <div class="ui-cartes aj-cartes" id="ajCartes"></div>
+    <div class="aj-kpis" id="ajCartes"></div>
+  </section>
+
+  <section class="panel aj-frise" aria-labelledby="ajFriseTitre">
+    <div class="aj-head">
+      <h2 id="ajFriseTitre">Évolution et projection du patrimoine net</h2>
+      <span class="aj-n" id="ajFriseResume"></span>
+    </div>
+    <div class="aj-controles">
+      <div class="aj-periode" id="ajPeriode"></div>
+      <div class="aj-horizon" id="ajHorizonZone" hidden>
+        <span class="aj-horizon-l">Projection sur</span>
+        <div id="ajHorizon"></div>
+      </div>
+    </div>
+    <div id="ajLegende"></div>
+    <div class="aj-chart-wrap">
+      <div class="aj-chart" id="ajFrise"></div>
+      <div class="aj-tip" id="ajTip" hidden></div>
+    </div>
+    <p class="aj-etat" id="ajEtat" role="status" hidden></p>
+    <p class="aj-promesse" id="ajPromesse" hidden><strong>Projection, pas une promesse.</strong> Trois scénarios de rendement, versements compris, sans impôts ni inflation ni aléas : la zone colorée n'est pas une garantie.</p>
+    <details class="ui-acc aj-donnees">
+      <summary class="ui-acc-titre"><span>Voir les données</span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+      <div class="ui-acc-corps" id="ajTable"></div>
+    </details>
+    <div class="aj-pied">
+      <p class="aj-note">Estimation : placements de chaque photo nocturne, plus l'immobilier, les autres biens et les dettes d'aujourd'hui.</p>
+      <div class="aj-pied-acts">
+        <button type="button" class="aj-calcul" id="ajCalcul" aria-haspopup="dialog">Comment c'est calculé</button>
+        <a class="aj-comptes" href="#patrimoine/comptes" data-goto="patrimoine/comptes">Voir le détail par compte</a>
+        <div id="ajClaude"></div>
+      </div>
+    </div>
   </section>
 
   <section class="panel aj-boite" aria-labelledby="ajBoiteTitre">
@@ -11,21 +44,5 @@
     </div>
     <p class="aj-intro">Ce qui demande ton attention : propositions de Claude, revue du mois, alertes de tes règles, points à reprendre et échéances proches.</p>
     <div id="ajBoite"></div>
-  </section>
-
-  <section class="panel aj-frise" aria-labelledby="ajFriseTitre">
-    <div class="aj-head">
-      <h2 id="ajFriseTitre">Évolution du patrimoine net</h2>
-      <span class="aj-n" id="ajFriseResume"></span>
-    </div>
-    <div class="aj-periode" id="ajPeriode"></div>
-    <div class="aj-chart" id="ajFrise"></div>
-    <div class="aj-pied">
-      <p class="aj-note">Estimation : placements de chaque photo nocturne, plus l'immobilier, les autres biens et les dettes d'aujourd'hui.</p>
-      <div class="aj-pied-acts">
-        <a class="aj-comptes" href="#patrimoine/comptes" data-goto="patrimoine/comptes">Voir le détail par compte</a>
-        <div id="ajClaude"></div>
-      </div>
-    </div>
   </section>
 </div>

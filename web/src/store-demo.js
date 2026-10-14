@@ -8,7 +8,7 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    sensible, routine-etat, banque-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
@@ -44,6 +44,9 @@
    démo), de même pour gerer(id) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
    de store-supabase.js (BanqueEtat.normRattachement). Store.banque.operations(compteIds, depuis) → Promise<[{ id, compteId, date, montant,
    libelle, categorie }]> : opérations de démonstration (D.operationsBancaires), les plus récentes d'abord.
+   Store.transactions(depuis) → Promise<[{ id, positionId, date, type, qty, price, amount, note, source, createdAt }]> : transactions depuis
+   `depuis` (AAAA-MM-JJ ; absente : toutes), les plus récentes d'abord (S.tx n'en garde que les 60 dernières côté Supabase ; la
+   reconstitution du passé d'Aujourd'hui, historique.js, remonte les quantités par toutes les transactions de la période).
    Store.cours(isins, depuis) → Promise<{ <isin>: [{ date, cloture }] }> : cours de clôture quotidiens (jours ouvrés, du plus ancien au plus
    récent, depuis `depuis` jusqu'à la veille du cours du jour), générés de façon déterministe à partir du prix courant de la ligne de démo
    (marche aléatoire reproductible propre à chaque ISIN, qui finit au cours du jour), 5 ans au plus ; ISIN inconnu ou sans cours : absent.
@@ -719,6 +722,14 @@
     return out;
   }
 
+  /* Transactions depuis `depuis`, les plus récentes d'abord (copie). */
+  async function transactions(depuis) {
+    await tick();
+    const d0 = String(depuis == null ? "" : depuis).slice(0, 10);
+    return clone(C.tx.filter(t => !/^\d{4}-\d{2}-\d{2}$/.test(d0) || String(t.date).slice(0, 10) >= d0)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)));
+  }
+
   const Store = {
     mode: "demo",
     db,
@@ -741,6 +752,7 @@
     markOnboarded() { return Promise.resolve(); },
     surveillerConnexions,
     cours,
+    transactions,
     banque,
   };
   window.Store = Store;
