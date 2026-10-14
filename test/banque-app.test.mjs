@@ -455,10 +455,10 @@ test("Aujourd'hui : reconnexion (urgence 1 pour SCA, mot de passe…, sinon 2) e
     cx(4, "websiteUnavailable", { etablissement: "Banque C" })], comptes: [cpt(10, 1), cpt(11, 1, { nom: "Livret" }), cpt(12, 1, { positionId: "x" })] }) }), AUJ, sansRegles)
     .filter(x => x.type === "banque");
   const par = t => b.find(x => x.titre === t);
-  assert.equal(par("Ta banque Néo Courtage demande une reconnexion").urgence, 1);
-  assert.equal(par("Ta banque Banque B demande une reconnexion").urgence, 2);
+  assert.equal(par("Néo Courtage : reconnecte ta banque").urgence, 1);
+  assert.equal(par("Banque B : reconnecte ta banque").urgence, 2);
   assert.equal(par("Synchronisation de Banque C interrompue"), undefined, "incident passager : rien dans Aujourd'hui");
-  assert.match(par("Ta banque Néo Courtage demande une reconnexion").contexte, new RegExp(BE.etat("SCARequired").libelle));
+  assert.match(par("Néo Courtage : reconnecte ta banque").contexte, new RegExp(BE.etat("SCARequired").libelle));
   const r = par("2 comptes à rattacher");
   assert.equal(r.urgence, 2);
   assert.match(r.contexte, /Compte 10, Livret/);

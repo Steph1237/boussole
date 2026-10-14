@@ -842,10 +842,10 @@ test("démo : routines au contrat (revue mensuelle active, passée le 1er du moi
   assert.ok(r.synthese.length <= 4000);
   assert.equal(ctx.Sensible.estSensible(r.synthese), false);
   assert.equal(typeof ctx.Store.routines.pause, "function");
-  // Aujourd'hui (fonction pure, même module que la vue) : la démo affiche « Ta revue du mois est prête »
+  // Aujourd'hui (fonction pure, même module que la vue) : la démo affiche « Revue du mois : N questions »
   const A = require("../web/src/aujourdhui.js");
   const b = A.boite(J(S), jourParis(), { Rules: null }); // « aujourd'hui » de l'app = jour de Paris (jour() de la vue)
-  assert.ok(b.some(x => x.type === "routine" && x.titre === "Ta revue du mois est prête : 2 questions"), b.map(x => x.titre).join(" | "));
+  assert.ok(b.some(x => x.type === "routine" && x.titre === "Revue du mois : 2 questions"), b.map(x => x.titre).join(" | "));
 });
 
 test("démo : Store.routines.pause en mémoire (pause, réactivation qui recalcule le prochain passage, refus en français)", async () => {

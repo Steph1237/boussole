@@ -1,19 +1,18 @@
 <div class="aj">
-  <section class="aj-bloc" aria-labelledby="ajIndTitre">
+  <section class="aj-bloc aj-z-kpi" aria-labelledby="ajIndTitre">
     <h2 class="ui-sr" id="ajIndTitre">Indicateurs clés</h2>
     <div class="aj-kpis" id="ajCartes"></div>
   </section>
 
-  <section class="panel aj-ech" aria-labelledby="ajEchTitre">
+  <section class="aj-boite aj-z-traiter" aria-labelledby="ajBoiteTitre">
     <div class="aj-head">
-      <h2 id="ajEchTitre">Prochaines échéances</h2>
-      <span class="ui-sr" id="ajEchN" role="status" aria-live="polite"></span>
+      <h2 id="ajBoiteTitre">À traiter</h2>
+      <span class="ui-sr" id="ajBoiteN" role="status" aria-live="polite"></span>
     </div>
-    <p class="aj-intro">Les dates qui font courir les délais fiscaux de tes enveloppes, lues dans tes documents. Boussole ne date rien sans donnée.</p>
-    <div id="ajEch"></div>
+    <div id="ajBoite" class="aj-boite-carte"></div>
   </section>
 
-  <section class="panel aj-frise" aria-labelledby="ajFriseTitre">
+  <section class="panel aj-frise aj-z-graphe" aria-labelledby="ajFriseTitre">
     <div class="aj-head">
       <h2 id="ajFriseTitre">Évolution et projection du patrimoine net</h2>
       <span class="aj-n" id="ajFriseResume"></span>
@@ -42,17 +41,17 @@
       <div class="aj-pied-acts">
         <button type="button" class="aj-calcul" id="ajCalcul" aria-haspopup="dialog">Comment c'est calculé</button>
         <a class="aj-comptes" href="#patrimoine/comptes" data-goto="patrimoine/comptes">Voir le détail par compte</a>
-        <div id="ajClaude"></div>
       </div>
     </div>
   </section>
 
-  <section class="panel aj-boite" aria-labelledby="ajBoiteTitre">
+  <section class="panel aj-ech aj-z-ech" aria-labelledby="ajEchTitre">
     <div class="aj-head">
-      <h2 id="ajBoiteTitre">À traiter</h2>
-      <span class="ui-sr" id="ajBoiteN" role="status" aria-live="polite"></span>
+      <h2 id="ajEchTitre">Prochaines échéances</h2>
+      <span class="ui-sr" id="ajEchN" role="status" aria-live="polite"></span>
     </div>
-    <p class="aj-intro">Ce qui demande ton attention : propositions de Claude, revue du mois, alertes de tes règles, points à reprendre et échéances proches.</p>
-    <div id="ajBoite"></div>
+    <p class="aj-intro">Les dates qui font courir les délais de tes enveloppes, lues dans tes documents.</p>
+    <div id="ajEch"></div>
   </section>
+
 </div>

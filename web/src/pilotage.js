@@ -40,20 +40,20 @@
   const jj = v => (v ? String(v).slice(0, 10) : "");
   const utc = s => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
   const joursEntre = (a, b) => Math.round((utc(b) - utc(a)) / 864e5);
-  const dateFr = s => { const d = jj(s); return isoOk(d) ? new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : ""; };
-
-  /* ---------- nombres et textes ---------- */
+  /* Formats uniques (format.js, UX1) : « 14 oct. 2026 », « 193 490 € », « +5,2 % » ; global du navigateur, sinon le module voisin sous Node. */
+  const FM = () => (typeof globalThis !== "undefined" && globalThis.Fmt) || (typeof module === "object" && module.exports && typeof require === "function" ? require("./format.js") : null);
+  const dateFr = s => { const d = jj(s); return isoOk(d) ? FM().fmtDate(d) : ""; };
   const nf0 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
   const nf1 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const nf2 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const nfq = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 4 });
   const fini = v => v != null && v !== "" && isFinite(+v);
-  const eur = v => (!fini(v) ? "—" : (Math.round(v) < 0 ? "−" : "") + nf0.format(Math.abs(Math.round(v))) + " €");
-  const eurS = v => (!fini(v) ? "—" : (Math.round(v) > 0 ? "+" : Math.round(v) < 0 ? "−" : "") + nf0.format(Math.abs(Math.round(v))) + " €");
-  const eur2 = v => (!fini(v) ? "—" : (v < 0 ? "−" : "") + nf2.format(Math.abs(v)) + " €");
-  const pct = v => (!fini(v) ? "—" : nf1.format(v) + " %");
-  const pctS = v => (!fini(v) ? "—" : (v > 0.05 ? "+" : v < -0.05 ? "−" : "") + nf1.format(Math.abs(v)) + " %");
-  const kEur = v => (Math.abs(v) >= 1e6 ? nf1.format(v / 1e6) + " M€" : Math.abs(v) >= 1e3 ? nf0.format(v / 1e3) + " k€" : nf0.format(v) + " €");
+  const eur = v => (!fini(v) ? "—" : FM().fmtEUR(v));
+  const eurS = v => (!fini(v) ? "—" : FM().fmtEUR(v, { signe: true }));
+  const eur2 = v => (!fini(v) ? "—" : FM().fmtEUR(v, { decimales: 2 }));
+  const pct = v => (!fini(v) ? "—" : FM().fmtPct(v));
+  const pctS = v => (!fini(v) ? "—" : FM().fmtPct(v, { signe: true }));
+  const kEur = v => FM().fmtEUR(v, { compact: "graphe" });
   const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
   const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
@@ -70,14 +70,14 @@
 
   /* =============================================================== regroupements =============================================================== */
   const MODES = [
-    { id: "enveloppe", label: "Par enveloppe", aria: "Regrouper par enveloppe" }, { id: "poche", label: "Par poche", aria: "Regrouper par poche" },
-    { id: "titulaire", label: "Par titulaire", aria: "Regrouper par titulaire" }, { id: "disponibilite", label: "Par disponibilité", aria: "Regrouper par disponibilité" },
+    { id: "enveloppe", label: "Enveloppe", aria: "Regrouper par enveloppe" }, { id: "poche", label: "Poche", aria: "Regrouper par poche" },
+    { id: "titulaire", label: "Titulaire", aria: "Regrouper par titulaire" }, { id: "disponibilite", label: "Disponibilité", aria: "Regrouper par disponibilité" },
   ];
   const ORDRE_LIQ = ["immediate", "jours", "semaines", "bloque"];
   const NOTE_MODE = {
-    enveloppe: "Une carte par compte ou contrat.",
+    enveloppe: "Un compte ou un contrat par ligne.",
     poche: "Les poches regroupent tes lignes par usage ou par thème ; l'écart aux cibles est dans « Allocation par poche ».",
-    titulaire: "Une carte par personne du foyer.",
+    titulaire: "Une ligne par personne du foyer.",
     disponibilite: "Délai pour récupérer l'argent placé, estimé d'après l'enveloppe (livrets : tout de suite ; assurance-vie : quelques semaines ; PER, SCPI : bloqué). Vue limitée aux placements financiers : ton immobilier en direct est dans Immobilier et crédits.",
   };
   /** Cibles d'allocation par poche de la personne affichée (config.targets[p]) ; null pour le foyer. */
@@ -169,13 +169,15 @@
     let lo = Math.min(...rows.map(p => p.valeur)), hi = Math.max(...rows.map(p => p.valeur));
     const marge = (hi - lo) * 0.2 || Math.abs(hi) * 0.05 || 1000;
     lo = Math.max(0, lo - marge); hi += marge;
+    // graduations rondes (Fmt.graduations, 4 au plus) et libellés d'axe de même unité (Fmt.fmtAxe)
+    const tk = FM().graduations(lo, hi, 4), etiq = FM().fmtAxe(tk);
+    lo = Math.max(0, tk[0]); hi = tk[tk.length - 1];
     const X = x => L + (x1 === x0 ? 0 : (x - x0) / (x1 - x0)) * (W - L - R), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-    const fin1 = (hi - lo) / 3 < 2000, axe = v => (fin1 && Math.abs(v) >= 1e3 && Math.abs(v) < 1e6 ? nf1.format(v / 1e3) + " k€" : kEur(v));
     let g = "";
-    for (let k = 0; k <= 3; k++) {
-      const v = lo + (hi - lo) * k / 3, y = Y(v).toFixed(1);
-      g += '<line class="pl-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="pl-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(axe(v)) + "</text>";
-    }
+    tk.forEach((v, k) => {
+      const y = Y(v).toFixed(1);
+      g += '<line class="pl-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="pl-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(etiq[k]) + "</text>";
+    });
     // Largeur estimée d'une étiquette (police chiffrée de 11 px) : les étiquettes longues (« sem. du 28 sept. ») ne se chevauchent pas.
     const larg = s => Math.max(40, String(s || "").length * 6.6);
     let droite = -Infinity; const xFin = X(x1), wFin = larg(rows[rows.length - 1].label);
@@ -237,7 +239,7 @@
     }
     faits.push(["Poids dans les placements", compte ? pct(total ? v / total * 100 : 0) : "non compté"]);
     if (x.isin) faits.push(["ISIN", plat(x.isin)]);
-    if (fini(x.ter)) faits.push(["Frais courants", nf2.format(+x.ter) + " % par an"]);
+    if (fini(x.ter)) faits.push(["Frais courants", FM().fmtPct(+x.ter, { decimales: 2 }) + " par an"]);
     if (x.zone) faits.push(["Zone", plat(x.zone)]);
     if (x.devise) faits.push(["Devise", plat(x.devise)]);
     if (!fini(x.ter) && !x.zone && !x.devise) faits.push(["Frais, zone, devise", "non renseignés"]);
@@ -506,7 +508,6 @@
     $("plVide").hidden = !vide;
     $("plGroupesBloc").hidden = !pret || vide;
     $("plSuivi").hidden = !pret || vide;
-    $("plMvtClaude").hidden = !t.lignes;
     $("plTitre").textContent = "Placements " + scopeLabel();
     $("plTotal").textContent = pret ? eur(t.total) : "—";
     renderEvolution(t);
@@ -514,8 +515,8 @@
     // faits secondaires : plus-values latentes, épargne de précaution, sommes à recevoir
     const m = matelas(S);
     const faits = [];
-    if (t.cout) faits.push('<li><span class="pl-fait-l">Plus-values latentes</span><span class="pl-fait-v ' + (t.plusValue >= 0 ? "pos" : "neg") + '">' + esc(eurS(t.plusValue)) + '</span><span class="pl-fait-s">lignes cotées avec prix de revient</span></li>');
-    faits.push('<li><span class="pl-fait-l">Épargne de précaution</span><span class="pl-fait-v">' + esc(eur(m.montant)) + '</span><span class="pl-fait-s">' + esc(m.cible + (m.aRecevoir ? " · +" + eur(m.aRecevoir) + " à recevoir" : "")) +
+    if (t.cout) faits.push('<li><span class="pl-fait-l">Plus-values latentes</span><span class="pl-fait-v ' + (t.plusValue >= 0 ? "pos" : "neg") + '">' + esc(eurS(t.plusValue)) + '</span><span class="pl-fait-s">avec prix de revient</span></li>');
+    faits.push('<li><span class="pl-fait-l">Épargne de précaution</span><span class="pl-fait-v">' + esc(eur(m.montant)) + '</span><span class="pl-fait-s">' + esc(m.cible) +
       ' · <a href="#compte/regles" data-goto="compte/regles">Voir la cible</a></span></li>');
     if (t.aRecevoir.length) faits.push('<li><span class="pl-fait-l">À recevoir (non compté)</span><span class="pl-fait-v">' + esc(eur(sum(t.aRecevoir, x => x.montant))) + '</span><span class="pl-fait-s">' + esc(t.aRecevoir.map(x => x.nom).join(", ")) + "</span></li>");
     ecrire("faits", $("plFaits"), vide ? "" : faits.join(""));
@@ -532,8 +533,9 @@
     const el = $("plCourbe");
     largeur = el.clientWidth || 0;
     ecrire("courbe", el, S.ready === false ? '<p class="pl-vide-courbe">Chargement de l\'historique…</p>' : courbeSvg(ev, { largeur, scopeLabel: scopeLabel() }));
-    const varTxt = r && ev.historique ? '<span class="pl-var ' + (r.variation >= 0 ? "pos" : "neg") + '"><span aria-hidden="true">' + (Math.round(r.variation) > 0 ? "▲ " : Math.round(r.variation) < 0 ? "▼ " : "") + "</span>" +
-      esc(eurS(r.variation) + (r.variationPct != null ? " (" + pctS(r.variationPct) + ")" : "")) + "</span> " + esc(periodeTxt(periode)) : ev.historique ? "" : "historique en cours de constitution";
+    const varTxt = r && ev.historique ? (() => { const per = periodeTxt(periode), d = FM().fmtDelta({ montant: r.variation, pct: r.variationPct, periode: per }), mv = d.texte.slice(0, d.texte.length - per.length).trim();
+      return '<span class="pl-var ' + (d.ton === "neutre" ? "" : d.ton === "pos" ? "pos" : "neg") + '"><span aria-hidden="true">' + esc(mv.charAt(0)) + "</span> " + '<span class="ui-sr">' + esc({ hausse: "En hausse", baisse: "En baisse", stable: "Stable" }[d.sens] + " : ") + "</span>" + esc(mv.slice(1).trim()) + "</span> " + esc(per); })()
+      : ev.historique ? "" : "historique en cours de constitution";
     const n = t && t.nb ? pluriel(t.nb, "ligne") : "";
     ecrire("sous", $("plSous"), [varTxt, esc(n)].filter(Boolean).join(" · "));
     $("plCourbeNote").textContent = [ev.reconstitue ? "Premiers points reconstitués depuis tes relevés." : "", ev.serie.length > 1 && ev.serie[ev.serie.length - 1].live ? "Pointillé : valeur en direct." : ""].filter(Boolean).join(" ");
@@ -626,9 +628,7 @@
     const o = { periode: periode.periode, du: periode.du, au: periode.au, label: "Période de la courbe", surChange: surPeriode };
     if (granChoisie) o.granularite = periode.granularite;
     ctlPeriode = u.periode($("plPeriode"), o);
-    $("plClaude").innerHTML = u.demanderAClaude("Explique-moi simplement mes placements dans Boussole : la répartition par enveloppe et par poche, et ce qui les a fait bouger sur la dernière année.");
-    $("plCompleter").innerHTML = u.demanderAClaude(phraseClaude("placements"), "Compléter avec Claude");
-    $("plMvtClaude").innerHTML = u.demanderAClaude(phraseClaude("mouvement"), "Enregistrer un mouvement avec Claude");
+    // Le bouton Claude de l'en-tête couvre les demandes de la page (enregistrer un mouvement, compléter) : plus de boutons Claude empilés ; seul l'état vide garde le sien.
     $("plVideClaude").innerHTML = u.demanderAClaude(phraseClaude("placements"), "Compléter avec Claude");
     u.brancher(root);
     root.addEventListener("click", e => {

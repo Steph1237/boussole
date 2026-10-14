@@ -2,44 +2,36 @@
    (progression, statut, effort requis), projection du patrimoine financier en accordéon (simulateur local). Scopé #view-objectifs-view ; le contenu du panneau de détail (UI.panneau,
    injecté dans body) sous .ui-panneau .ov-…. */
 #view-objectifs-view [hidden]{display:none!important}
-#view-objectifs-view .ov{display:flex;flex-direction:column;gap:16px;min-width:0}
-#view-objectifs-view .ov-num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+#view-objectifs-view .ov{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+#view-objectifs-view .ov-num{font-variant-numeric:tabular-nums lining-nums}
 #view-objectifs-view .ov-note{margin:0;font-size:var(--t-small);line-height:1.45;color:var(--muted)}
 
 /* en-tête */
 #view-objectifs-view .ov-tete{display:flex;align-items:flex-end;justify-content:space-between;gap:10px 16px;flex-wrap:wrap}
 #view-objectifs-view .ov-tete-l{min-width:0;max-width:720px;display:flex;flex-direction:column;gap:4px}
-#view-objectifs-view .ov-tete h2{font:700 var(--t-h2) var(--f-display);margin:0}
+#view-objectifs-view .ov-tete h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0}
 #view-objectifs-view .ov-tete h2:focus{outline:none}
-#view-objectifs-view .ov-verdict{margin:0;font-size:var(--t-body);font-weight:600;line-height:1.4}
-#view-objectifs-view .ov-verdict.ton-bon{color:var(--good)}
-#view-objectifs-view .ov-verdict.ton-attention{color:var(--warn)}
-#view-objectifs-view .ov-verdict.ton-critique{color:var(--crit)}
+#view-objectifs-view .ov-verdict{margin:0;font:600 var(--t-h3)/var(--lh-h3) var(--f-body);color:var(--ink)}
+#view-objectifs-view .ov-verdict .ui-puce{margin-left:var(--sp-1);vertical-align:1px}
 #view-objectifs-view .ov-tete-act{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
 #view-objectifs-view .ov-claude:empty{display:none}
-#view-objectifs-view .ov-tag:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#view-objectifs-view .ov-tag:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 
 /* cartes */
 #view-objectifs-view .ov-cartes .ui-voirplus-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
 #view-objectifs-view .ov-cartes .ui-voirplus-reste{margin-top:12px}
-#view-objectifs-view .ov-carte{border-left:4px solid var(--line2);gap:8px}
-#view-objectifs-view .ov-carte.st-bon{border-left-color:var(--good)}
-#view-objectifs-view .ov-carte.st-info{border-left-color:var(--accent)}
-#view-objectifs-view .ov-carte.st-attention{border-left-color:var(--warn)}
-#view-objectifs-view .ov-carte.st-critique{border-left-color:var(--crit)}
-#view-objectifs-view .ov-carte-nom{font:700 var(--t-body)/1.3 var(--f-display);color:var(--ink);overflow-wrap:anywhere}
+/* le statut vit dans la puce avec son mot : plus de liseré ni de barre colorée par statut */
+#view-objectifs-view .ov-carte{gap:var(--sp-2)}
+#view-objectifs-view .ov-carte-nom{font:650 var(--t-h3)/var(--lh-h3) var(--f-display);color:var(--ink);overflow-wrap:anywhere}
 #view-objectifs-view .ov-carte-v{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap}
-#view-objectifs-view .ov-carte-cible{font:600 var(--t-h2)/1.15 var(--f-num);font-variant-numeric:tabular-nums}
+#view-objectifs-view .ov-carte-cible{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-display);font-variant-numeric:tabular-nums lining-nums}
 #view-objectifs-view .ov-carte-date{font-size:var(--t-small);color:var(--muted)}
 #view-objectifs-view .ov-barre{display:block;height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
-#view-objectifs-view .ov-barre i{display:block;height:100%;background:var(--accent)}
-#view-objectifs-view .ov-carte.st-bon .ov-barre i{background:var(--good)}
-#view-objectifs-view .ov-carte.st-attention .ov-barre i{background:var(--warn)}
-#view-objectifs-view .ov-carte.st-critique .ov-barre i{background:var(--crit)}
+#view-objectifs-view .ov-barre i{display:block;height:100%;background:var(--brand)}
 #view-objectifs-view .ov-carte .ui-carte-pied{justify-content:space-between}
 
 /* état vide */
-#view-objectifs-view .ov-vide{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;border:1px dashed var(--line2);border-radius:var(--radius);font-size:var(--t-small);line-height:1.5}
+#view-objectifs-view .ov-vide{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-4);border:1px dashed var(--line2);border-radius:var(--r-card);font-size:var(--t-small);line-height:1.5}
 #view-objectifs-view .ov-vide p{margin:0}
 #view-objectifs-view .ov-vide-t{font:700 var(--t-body) var(--f-display)}
 #view-objectifs-view .ov-vide-act{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -50,15 +42,15 @@
 #view-objectifs-view .ov-proj-ctl{display:flex;gap:14px 24px;flex-wrap:wrap;align-items:flex-start}
 #view-objectifs-view .ov-champ{display:flex;flex-direction:column;gap:6px;min-width:0}
 #view-objectifs-view .ov-lab{font-size:var(--t-small);font-weight:600;color:var(--muted)}
-#view-objectifs-view .ov-money{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden;max-width:220px}
-#view-objectifs-view .ov-money:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-#view-objectifs-view .ov-money input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--ink);font:500 var(--t-body) var(--f-num);padding:7px 9px;outline:none}
-#view-objectifs-view .ov-u{display:flex;align-items:center;padding-right:9px;color:var(--muted);font:var(--t-caption) var(--f-num);white-space:nowrap}
+#view-objectifs-view .ov-money{display:flex;align-items:stretch;min-height:calc(var(--hit) + 2px);border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--surface);overflow:hidden;max-width:220px}
+#view-objectifs-view .ov-money:focus-within{border-color:var(--focus);box-shadow:0 0 0 3px var(--brand-soft)}
+#view-objectifs-view .ov-money input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--ink);font:500 var(--t-body) var(--f-body);font-variant-numeric:tabular-nums lining-nums;padding:0 var(--sp-3);outline:none}
+#view-objectifs-view .ov-u{display:flex;align-items:center;padding-right:var(--sp-3);color:var(--muted);font:var(--t-caption) var(--f-body);white-space:nowrap}
 #view-objectifs-view .ov-tag{font:600 var(--t-caption) var(--f-body);padding:1px 7px;border-radius:999px;border:0;vertical-align:1px}
-#view-objectifs-view .ov-tag.reel{background:var(--good-soft);color:var(--good)}
-#view-objectifs-view .ov-tag.scen{background:var(--warn-soft);color:var(--warn);cursor:pointer}
+#view-objectifs-view .ov-tag.reel{background:var(--st-good-bg);color:var(--st-good)}
+#view-objectifs-view .ov-tag.scen{background:var(--st-watch-bg);color:var(--st-watch);cursor:pointer}
 #view-objectifs-view .ov-chart svg{display:block;width:100%;height:auto}
-#view-objectifs-view .ov-chart text{fill:var(--muted);font-family:var(--f-num);font-size:var(--t-caption)}
+#view-objectifs-view .ov-chart text{fill:var(--muted);font-family:var(--f-body);font-variant-numeric:tabular-nums lining-nums;font-size:var(--t-caption)}
 #view-objectifs-view .ov-chart text.ov-fin{fill:var(--ink);font-weight:500}
 #view-objectifs-view .ov-g{stroke:var(--line);stroke-width:1}
 #view-objectifs-view .ov-bande{fill:var(--accent-soft);opacity:.85}
@@ -72,16 +64,16 @@
 #view-objectifs-view .ov-legend i.bd{height:10px;background:var(--accent-soft);border-top:1px dashed var(--accent);border-bottom:1px dashed var(--accent)}
 #view-objectifs-view .ov-scroll{overflow-x:auto;max-width:100%}
 #view-objectifs-view .ov-table{width:100%;border-collapse:collapse;font-size:var(--t-small)}
-#view-objectifs-view .ov-table th{font-size:var(--t-caption);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;text-align:right;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+#view-objectifs-view .ov-table th{font-size:var(--t-caption);color:var(--muted);font-weight:600;text-align:right;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
 #view-objectifs-view .ov-table td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
 #view-objectifs-view .ov-table th:first-child,#view-objectifs-view .ov-table td:first-child{text-align:left}
-#view-objectifs-view .ov-table td.n{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+#view-objectifs-view .ov-table td.n{font-variant-numeric:tabular-nums lining-nums}
 #view-objectifs-view .ov-table td.neg{color:var(--crit)}
-#view-objectifs-view .ov-hyp summary{cursor:pointer;font-weight:600;color:var(--accent);padding:4px 0}
+#view-objectifs-view .ov-hyp summary{display:flex;align-items:center;min-height:var(--hit);cursor:pointer;font-weight:600;color:var(--brand)}
 #view-objectifs-view .ov-hyp .ov-note{margin-top:6px}
 
 /* panneau de détail (UI.panneau, hors de la vue) */
-.ui-panneau .ov-num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.ui-panneau .ov-num{font-variant-numeric:tabular-nums lining-nums}
 .ui-panneau .ov-note{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
 .ui-panneau .ov-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:var(--t-small);color:var(--muted)}
 .ui-panneau .ov-quand{margin:0;font-size:var(--t-body);line-height:1.45}
@@ -92,7 +84,7 @@
 .ui-panneau .ov-dl div:first-child{border-top:0}
 .ui-panneau .ov-dl dt{color:var(--muted);font-size:var(--t-small)}
 .ui-panneau .ov-dl dd{margin:0;display:flex;flex-direction:column;align-items:flex-end;text-align:right;min-width:0}
-.ui-panneau .ov-dl dd b{font:600 var(--t-body) var(--f-num)}
+.ui-panneau .ov-dl dd b{font:600 var(--t-body) var(--f-body);font-variant-numeric:tabular-nums lining-nums}
 .ui-panneau .ov-dl dd span{font-size:var(--t-caption);color:var(--muted);overflow-wrap:anywhere}
 .ui-panneau .ov-acts{display:flex;gap:8px;flex-wrap:wrap}
 .ui-panneau .ov-sec{display:flex;flex-direction:column;gap:8px}
@@ -100,7 +92,7 @@
 .ui-panneau .ov-poches{list-style:none;margin:0;padding:0}
 .ui-panneau .ov-poches li{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:var(--t-small)}
 .ui-panneau .ov-poches li:first-child{border-top:0}
-.ui-panneau .ov-poche-k{font-size:var(--t-caption);color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.ui-panneau .ov-poche-k{font-size:var(--t-caption);color:var(--muted)}
 .ui-panneau .ov-sec svg{display:block;width:100%;height:auto}
 .ui-panneau .ov-sec text{fill:var(--muted);font-family:var(--f-num);font-size:var(--t-caption)}
 .ui-panneau .ov-g{stroke:var(--line);stroke-width:1}
@@ -114,7 +106,6 @@
 .ui-panneau .ov-l-cible{border-top:2px dotted var(--warn)}
 
 @media (max-width:640px){
-  #view-objectifs-view .ov-tete-act{width:100%}
   #view-objectifs-view .ov-cartes .ui-voirplus-liste{grid-template-columns:minmax(0,1fr)}
   #view-objectifs-view .ov-proj-res{display:none}
 }

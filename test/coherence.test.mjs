@@ -42,8 +42,8 @@ function reconstitue(S) {
   for (let d = Historique.plusJours(prem, -400); d <= Historique.plusJours(TODAY, -1); d = Historique.plusJours(d, 1)) rec.points.push({ date: d, net: 150000 });
   return rec;
 }
-/* « +9 646 € (+5,2 %) » lu dans un HTML : [montant, pourcentage]. */
-const lu = h => { const m = sp(h.replace(/<[^>]+>/g, " ")).match(/([+−]\d[\d ]* €)\s+\(([+−][\d,]+ %)\)/); return m ? [m[1], m[2]] : null; };
+/* « +9 646 € · +5,2 % » (Fmt.fmtDelta) lu dans un HTML : [montant, pourcentage]. */
+const lu = h => { const m = sp(h.replace(/<[^>]+>/g, " ")).match(/([+−]\d[\d ]* €)\s*(?:\(|·\s*)([+−][\d,]+ %)/); return m ? [m[1], m[2]] : null; };
 
 /* ====================================================== 1. variation du patrimoine net ====================================================== */
 
@@ -108,7 +108,7 @@ function deuxVues() {
     App: { register: (n, a) => { reg[n] = a; }, parametres: () => ({}) } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "ui.js",
+  for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "ui.js",
     "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(src("aujourdhui.js"), ctx, { filename: "aujourdhui.js" });
   vm.runInContext(src("comptes-view.js"), ctx, { filename: "comptes-view.js" });
