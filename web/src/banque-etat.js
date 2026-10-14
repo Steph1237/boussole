@@ -27,7 +27,7 @@
      supabase-js). Lu par auth.js (URL nettoyée avant la création du client) et app.js (bandeau).
    - mfaRequise(banque) / carteMfa() (SEC2, migration 0028) : les tables banque_* exigent la double authentification (aal2). Store : S.banque.mfaRequise
      vrai quand l'interrupteur est actif mais la session n'a pas franchi le second facteur ; les vues de données bancaires (Patrimoine › Comptes,
-     Agent › Connexion) montrent alors la carte bloquante « Active la double authentification pour voir tes comptes bancaires » (HTML pur,
+     Agent › Connexion) montrent alors la carte bloquante « Active la double authentification pour voir ton détail bancaire » (HTML pur,
      bouton vers Mon compte › Sécurité) à la place des comptes.
    - heureParis(horodatage) : { jour, jjmm, heure } à l'heure de Paris (dernière synchronisation d'une connexion). */
 (function (root) {
@@ -166,8 +166,8 @@
   const mfaRequise = b => !!(b && b.actif && b.mfaRequise === true);
   const LIEN_SECURITE = "compte.html#securite";
   function carteMfa() {
-    return '<section class="bq-mfa" role="note" aria-labelledby="bqMfaTitre"><h3 id="bqMfaTitre">Active la double authentification pour voir tes comptes bancaires</h3>' +
-      "<p>Tes comptes bancaires restent masqués tant que tu n'as pas activé la double authentification. Une fois activée, tout Boussole (comptes, placements, crédits, budget…) te demande un code à 6 chiffres, en plus de ton mot de passe. L'activation prend deux minutes.</p>" +
+    return '<section class="bq-mfa" role="note" aria-labelledby="bqMfaTitre"><h3 id="bqMfaTitre">Active la double authentification pour voir ton détail bancaire</h3>' +
+      "<p>Sans double authentification, le détail bancaire (opérations, budget réel, gestion des banques connectées) reste masqué ; tes soldes, eux, restent visibles dans ton patrimoine. Une fois activée, tout Boussole (comptes, placements, crédits, budget…) te demande un code à 6 chiffres, en plus de ton mot de passe. L'activation prend deux minutes.</p>" +
       '<a class="bq-mfa-btn" href="' + LIEN_SECURITE + '">Activer la double authentification</a></section>';
   }
 

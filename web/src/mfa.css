@@ -1,4 +1,4 @@
-/* Double authentification (SEC2) : carte bloquante « Active la double authentification pour voir tes comptes bancaires »
+/* Double authentification (SEC2) : carte bloquante « Active la double authentification pour voir ton détail bancaire »
    (BanqueEtat.carteMfa, banque-etat.js), posée dans Patrimoine › Comptes et Agent › Connexion tant que la session est aal1.
    Les écrans de code et de sécurité (mfa.js) injectent leur propre style (classes mfa-*). */
 .bq-mfa{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin:0 0 16px;padding:16px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius)}

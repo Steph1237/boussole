@@ -1,5 +1,5 @@
 // SEC2 : double authentification obligatoire dès qu'une banque est connectée — côté app.
-//   - carte bloquante « Active la double authentification pour voir tes comptes bancaires » (Patrimoine › Comptes, Agent › Connexion) ;
+//   - carte bloquante « Active la double authentification pour voir ton détail bancaire » (Patrimoine › Comptes, Agent › Connexion) ;
 //   - store Supabase exécuté : garde de démarrage (écran de code avant toute lecture), S.banque.mfaRequise sans aal2, rien de bancaire lu,
 //     connecter / gerer refusés sans appel réseau, réponse 403 mfa_requise de la fonction powens affichée ;
 //   - page de consentement des connecteurs exécutée (mini-DOM) : code exigé avant d'autoriser quand le compte a un facteur vérifié.
@@ -24,12 +24,12 @@ const texte = h => sp(String(h).replace(/<[^>]+>/g, " ").replace(/&#39;/g, "'").
 const VOUVOIEMENT = /(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu;
 const tick = async (n = 40) => { for (let i = 0; i < n; i++) await new Promise(r => setImmediate(r)); };
 const AUJ = "2026-10-14";
-const TITRE = "Active la double authentification pour voir tes comptes bancaires";
+const TITRE = "Active la double authentification pour voir ton détail bancaire";
 
 /* =================================================================== carte bloquante =================================================================== */
 test("BanqueEtat.carteMfa : titre exact, explication, bouton vers Mon compte › Sécurité ; mfaRequise seulement interrupteur actif ET drapeau posé", () => {
   const h = BE.carteMfa();
-  assert.match(h, /<h3 id="bqMfaTitre">Active la double authentification pour voir tes comptes bancaires<\/h3>/);
+  assert.match(h, /<h3 id="bqMfaTitre">Active la double authentification pour voir ton détail bancaire<\/h3>/);
   assert.match(h, /<a class="bq-mfa-btn" href="compte\.html#securite">Activer la double authentification<\/a>/);
   assert.match(h, /role="note" aria-labelledby="bqMfaTitre"/);
   assert.doesNotMatch(texte(h), VOUVOIEMENT);
@@ -41,7 +41,7 @@ test("BanqueEtat.carteMfa : titre exact, explication, bouton vers Mon compte ›
 
 test("BanqueEtat.carteMfa (I2) : dit que les comptes restent masqués sans double authentification ET que, une fois activée, toutes les données demandent le code", () => {
   const t = BE.carteMfa().replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(t, /Tes comptes bancaires restent masqués tant que tu n'as pas activé la double authentification/);
+  assert.match(t, /Sans double authentification, le détail bancaire \(opérations, budget réel, gestion des banques connectées\) reste masqué ; tes soldes, eux, restent visibles/);
   assert.match(t, /Une fois activée, tout Boussole \(comptes, placements, crédits, budget…\) te demande un code à 6 chiffres/);
   assert.doesNotMatch(t, VOUVOIEMENT);
 });

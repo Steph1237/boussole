@@ -403,7 +403,7 @@ test("Sécurité, sans appareil : état clair, bouton « Activer la double authe
   assert.equal(texte(v.$("mfaAjouter")), "Activer la double authentification");
   assert.equal(v.$("mfaAjouter").localName, "button");
   assert.equal(v.cont.querySelector("#mfaSecours"), null);
-  assert.match(texte(v.cont), /Sans lui, tes comptes bancaires restent masqués ; une fois activé, il est demandé pour accéder à toutes tes données/);
+  assert.match(texte(v.cont), /Sans lui, le détail bancaire \(opérations, budget réel\) reste masqué ; une fois activé, il est demandé pour accéder à toutes tes données/);
 });
 
 test("Sécurité, inscription : QR code (SVG) avec texte alternatif, clé en texte, code à 6 chiffres ; bon code → appareil listé et message", async () => {

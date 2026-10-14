@@ -353,7 +353,7 @@
       }).join("");
       return '<div class="mfa-bloc">' +
         "<p>Un code à 6 chiffres, affiché par une application d'authentification (Google Authenticator, Authy, 1Password…), s'ajoute à ton mot de passe. " +
-          "Sans lui, tes comptes bancaires restent masqués ; une fois activé, il est demandé pour accéder à toutes tes données dans Boussole.</p>" +
+          "Sans lui, le détail bancaire (opérations, budget réel) reste masqué ; une fois activé, il est demandé pour accéder à toutes tes données dans Boussole.</p>" +
         (st.charge ? (n ? '<ul class="mfa-liste" aria-label="Appareils enregistrés">' + items + "</ul>"
           : '<p class="mfa-muted" id="mfaVide">La double authentification n\'est pas activée.</p>') : '<p class="mfa-muted" role="status">Chargement…</p>') +
         (n ? '<p class="mfa-muted" id="mfaSecours">' + esc(SECOURS) + "</p>" : "") +
