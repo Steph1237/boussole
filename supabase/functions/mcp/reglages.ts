@@ -270,10 +270,15 @@ export function infosEnveloppeDe(a: any, aujourdhui: string, actuel: any = null)
       return { annee: v.annee, montant };
     });
   }
+  for (const k of ["versements", "moins_values"]) if (Array.isArray(fusion[k]) && !fusion[k].length) delete fusion[k]; // liste vide : non stockée (comme la base)
   const source = sourceDe(a, erreurs), le = leDe(a, aujourdhui, erreurs);
   if (erreurs.length) return { erreurs };
   return { nom, suffixe: m ? m[2] : null, erreurs, infos: { type, titulaire, ...fusion, source, le } };
 }
+/** La table propositions limite `apres` à 20 000 octets : message clair plutôt que le refus de la table. */
+export const APRES_OCTETS_MAX = 20000;
+export const tropVolumineux = (items: any[]): string | null =>
+  items.some((i) => JSON.stringify(i?.apres ?? {}).length > APRES_OCTETS_MAX - 500) ? "La proposition est trop volumineuse pour la table des propositions (20 000 octets) : propose moins de lignes à la fois." : null;
 /** Phrase lisible des informations d'une enveloppe : « PEA, titulaire p1, ouverte le 15/06/2021, 92 000 € versés (relevé annuel 2025) ». */
 export function texteInfosEnveloppe(i: any): string {
   if (!isObj(i)) return "aucune information";
@@ -583,6 +588,8 @@ export function registerReglages(server: any, h: Reglages) {
     const cles = Object.keys(actuels);
     if (!cleActuelle && cles.length >= ENVELOPPES_MAX) avertissements.push(`${ENVELOPPES_MAX} enveloppes au plus : retire-en une avant d'en ajouter.`);
     const items = pareil(cur, r.infos) ? [] : [{ cible: "config", operation: "modifier", avant: { enveloppes_infos: { [cle]: cur } }, apres: { enveloppes_infos: { [cle]: r.infos } } }];
+    const gros = tropVolumineux(items);
+    if (gros) throw new UserError("Aucune proposition déposée :\n- " + gros);
     return deposer(items, a, { avertissements, enveloppe: cle, infos_proposees: texteInfosEnveloppe(r.infos), infos_actuelles: texteInfosEnveloppe(cur) });
   }));
 
@@ -634,6 +641,8 @@ export function registerReglages(server: any, h: Reglages) {
     if (r.erreurs.length) throw new UserError("Aucune proposition déposée :\n- " + r.erreurs.join("\n- "));
     const items = pareil(cur, r.donations) ? [] : [{ cible: "config", operation: "modifier", avant: { donations: cur }, apres: { donations: r.donations } }];
     const avertissements = r.retires.map((x: any) => `Supprimée si l'utilisateur valide : ${texteDonation(x)}.`);
+    const gros = tropVolumineux(items);
+    if (gros) throw new UserError("Aucune proposition déposée :\n- " + gros);
     return deposer(items, a, { avertissements, donations_proposees: r.donations.map(texteDonation) });
   }));
 

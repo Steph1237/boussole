@@ -439,3 +439,11 @@ test("CONDUITE_REVUE cite les échéances des 3 mois ; INSTRUCTIONS portent la r
     assert.equal((t.match(/conseill?er|conseillère/i) || [])[0], undefined);
   }
 });
+test("propositions trop volumineuses (apres > 20 000 octets) : message clair avant la table ; listes vides non stockées", { skip: SANS_STRIP }, async () => {
+  const T = outilsReglages(baseCal());
+  const d = { date: "2015-07-01", montant: 20000, donateur: "p1", lien: "enfant", beneficiaire: "Enfant 1", nature: "donation" };
+  const r = await T.regler_donations.handler({ mode: "remplacer", donations: Array(100).fill(d), source: "x".repeat(300) });
+  assert.match(r.erreur, /trop volumineuse/);
+  const e = ev({ type: "pee", versements: [] });
+  assert.equal(e.infos.versements, undefined);
+});
