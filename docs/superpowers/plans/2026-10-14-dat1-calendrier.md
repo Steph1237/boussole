@@ -83,13 +83,13 @@ Tri : date croissante, puis `cle`, puis `enveloppe`. `id` stable : `<cle>:<clé 
   - PEA avec seulement `date_ouverture_approx: "2019"` → jalon au 2025-01-01 (fin d'année + 5 ans + 1 jour), confiance `approchee` ;
   - PEA clos (`date_cloture`) → plus aucun jalon futur ; les jalons passés avant la clôture restent ;
   - PEA dont toutes les lignes sont clôturées et sans `date_cloture` → traité comme clos (confiance `calculee`) ;
-  - PEA à 92 000 € de versements → seuil `pea_plafond` reste 58 000 € ; PEA + PEA-PME du même titulaire → seuil global 225 000 € ;
+  - PEA à 92 000 € de versements → seuil `pea_plafond` reste 58 000 € ; PEA + PEA-PME du même titulaire → seuil global 225 000 € (le reste du PEA est le plus petit des deux restes, spec § 3.1) ;
   - assurance-vie ouverte le 2018-03-01, titulaire né le 1960-05-20 → `av_8_ans` le 2026-03-02 (passé), `av_70_ans` le 2030-05-20 (jour de l'anniversaire, sans lendemain) ; titulaire de 72 ans → `av_70_ans` passé et effet au passé ; naissance absente → `a_completer` `naissance` (et aucun jalon `av_70_ans`) ; naissance au mois seulement (`1960-05`) → jalon au 2030-05-01 (date la plus précoce, prudente pour une limite d'âge), `approchee` ;
   - assurance-vie dont `av_8_ans` est passé → jalon `av_abattement_annee` au 31/12 de l'année en cours ;
   - PER, titulaire né le 1957-11-02 → `per_70_ans` le 2027-11-02 ;
   - assurance-vie ouverte un 29 février ;
   - contrat de capitalisation : 8 ans, mais aucun jalon 70 ans ;
-  - PEL ouvert le 2009-05-10 (avant le 2011-03-01) → `pel_2_ans`, `pel_4_ans`, `pel_12_ans` (2021-05-11), aucun `pel_10_ans` ni `pel_15_ans` ; PEL ouvert le 2014-09-01 → `pel_2_ans`, `pel_4_ans`, `pel_10_ans` (2024-09-02), `pel_12_ans` (2026-09-02), `pel_15_ans` (2029-09-02) ; PEL ouvert le 2019-01-15 → `pel_2_ans`, `pel_4_ans`, `pel_10_ans`, `pel_15_ans`, aucun `pel_12_ans` ;
+  - PEL ouvert le 2009-05-10 (avant le 2011-03-01) → `pel_2_ans`, `pel_4_ans`, `pel_10_ans` (2019-05-11), `pel_12_ans` (2021-05-10, jour de l'anniversaire), aucun `pel_15_ans` ; PEL ouvert le 2014-09-01 → `pel_2_ans`, `pel_4_ans`, `pel_10_ans` (2024-09-02), `pel_12_ans` (2026-09-01), `pel_15_ans` (2029-09-02) ; PEL ouvert le 2019-01-15 → `pel_2_ans`, `pel_4_ans`, `pel_10_ans`, `pel_15_ans`, aucun `pel_12_ans` *(corrigé en tâche 0 : spec § 12.2, point 5, et BOFiP pour le 12ᵉ anniversaire)* ;
   - PEE avec trois versements : un avec `disponible_le` du relevé (`sure`), deux sans, de même date (regroupés en un jalon « au plus tôt », `approchee`) ;
   - donation du 2015-07-01 → `donation_15_ans` le 2030-07-02 ;
   - moins-value de 2017 → expire le 2027-12-31 (statut `futur` le 2026-10-14, `proche` le 2027-10-01) ;
@@ -99,6 +99,8 @@ Tri : date croissante, puis `cle`, puis `enveloppe`. `id` stable : `<cle>:<clé 
   - repère manquant (`pea_duree_ans` absent de `reperes`) → aucun jalon PEA, `regles_indisponibles` ;
   - deux titulaires avec une enveloppe « PEA » chacun → clés `PEA|p1` et `PEA|p2`.
 - [ ] Rendre la liste des corrections au contrôleur. Aucun code.
+
+> **Tâche 0 faite le 2026-10-14** : spec relue (en-tête, § 3, § 11, § 12.2 « résolution »), fixture `test/fixtures/calendrier-cas.json` (43 cas ; conventions de comparaison dans son champ `conventions`).
 
 ## Task 1 : migration 0029 et tests PGlite (Sonnet, effort medium)
 **Fichiers :** `supabase/migrations/0029_calendrier.sql` (nouveau) ; `test/calendrier-pglite.test.mjs` (nouveau) ; `test/helpers/pglite.mjs` seulement si `baseComplete` doit inclure 0029 pour d'autres tests (ajout seulement).
