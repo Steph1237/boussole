@@ -1001,7 +1001,7 @@ test("cartes : objectifs (jauge, 3 rappels avec statut en mots, échéance, barr
   const c = A.cartes(ind, UI, { id: "1a" });
   const carte = id => c.split("<button ").find(x => x.includes('data-ui-carte="' + id + '"'));
   const ob = carte("objectifs");
-  assert.match(ob, /aria-label="Objectifs : 53 % d(?:'|&#39;)avancement pondéré, 2 objectifs en retard\./);
+  assert.match(ob, /aria-label="Objectifs : 57 % d(?:'|&#39;)avancement pondéré, 1 objectif en retard\./);
   assert.equal((ob.match(/class="aj-ob /g) || []).length, 3, "les 3 premiers objectifs");
   assert.match(ob, /Matelas de précaution/);
   assert.match(ob, /<span class="ui-badge [a-z]+">(atteint|en avance|dans les temps|en retard|hors de portée)<\/span>/, "statut en toutes lettres");

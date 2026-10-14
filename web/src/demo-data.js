@@ -5,7 +5,7 @@
    moins une alerte dans Pilotage (périmètre Foyer).
    Les dates sont relatives à aujourd'hui pour que la démo reste « fraîche » (cours d'hier, photos aux fins
    des trois mois précédents) ; les montants sont fixes.
-   Total financier compté (hors « à recevoir ») : 94 989,90 € — Camille 51 815,50 €, Sam 43 174,40 €.
+   Total financier compté (hors « à recevoir ») : 102 589,90 € — Camille 58 615,50 €, Sam 43 974,40 € (dont le PEL de Camille et les espèces du PEA de Sam, lignes du calendrier DAT1).
    Budget (couple lyonnais, un enfant) : les salaires (2 800 + 2 300 € nets) et les mensualités (820 + 210 €) viennent
    du profil, d'où aucune ligne de revenu. Dépenses saisies : 2 400 €/mois + taxe foncière 1 100 €/an (91,67 €/mois),
    soit 3 521,67 €/mois avec les mensualités ; épargne explicite 650 €/mois ; reste ≈ 928 €/mois.
@@ -18,6 +18,8 @@
   // Dernier jour du k-ième mois précédent (k = 1 : fin du mois dernier).
   const monthEnd = k => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - k + 1); d.setUTCDate(0); return iso(d); };
   const hier = ago(1);
+  // Identifiant du crédit auto, en forme d'UUID comme en base (la clé prets_infos « credit:<uuid> » est contrôlée par le connecteur et la migration 0029).
+  const ID_CREDIT_AUTO = "5f0c1a2e-7b3d-4e8a-9c41-2d6b8f0a3e17";
   // Date d'il y a `ans` ans et `mois` mois (même quantième, ou dernier jour du mois), pour les dates d'ouverture du calendrier de la démo.
   const reculer = (ans, mois) => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - ans * 12 - mois); const f = new Date(now); const dernier = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(f.getUTCDate(), dernier)); return iso(d); };
 
@@ -42,6 +44,8 @@
     P({ id: "livret-a", name: "Livret A", envelope: "Livrets Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4), ...CANUTS }),                                             // 12 000,00
     P({ id: "ldds", name: "LDDS", envelope: "Livrets Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4) }),                                                                     // 12 000,00 (plafond)
     P({ id: "per-camille", name: "PER Camille", envelope: "PER", owner: "p1", bloc: "Monde", mode: "manual", value: 11800, valueDate: monthEnd(1) }),                                                            // 11 800,00
+    P({ id: "pel-camille", name: "PEL", envelope: "PEL Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 6800, valueDate: monthEnd(1) }),                                                                  //  6 800,00
+    P({ id: "pea-sam-especes", name: "Espèces du PEA", envelope: "PEA Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 800, valueDate: monthEnd(1) }),                                                        //    800,00
     P({ id: "crypto-btc", name: "Bitcoin", envelope: "Crypto", owner: "p1", bloc: "Crypto", mode: "market", isin: "X-BTC", qty: 0.042, pru: 58000, price: 61250, priceDate: ago(6), qtyEstimated: true,
       ...A(0, null, null, "Détention directe : pas de frais courants de fonds (frais de plateforme non compris)") }),      //  2 572,50 (cours ancien)
     P({ id: "compte-commun", name: "Compte courant commun", envelope: "Comptes courants", owner: "p2", bloc: "Comptes courants", mode: "manual", value: 3400, valueDate: ago(1), ...CANUTS }), //  3 400,00
@@ -100,7 +104,7 @@
       "PEA Sam": { type: "pea", titulaire: "p2", source: "Déclaration de l'utilisateur (exemple)", le: ago(40) }, // date d'ouverture inconnue : à compléter
     },
     prets_infos: {
-      "credit:credit-auto": { date_signature: reculer(2, 5), duree_mois: 60, source: "Offre de prêt (exemple)", le: ago(40) },
+      ["credit:" + ID_CREDIT_AUTO]: { date_signature: reculer(2, 5), duree_mois: 60, source: "Offre de prêt (exemple)", le: ago(40) },
     },
     donations: [
       { id: "don-demo-1", date: reculer(9, 0), montant: 20000, donateur: "p1", lien: "enfant", beneficiaire: "Enfant 1", nature: "donation", source: "Acte de donation (exemple)", le: ago(40) },
@@ -124,7 +128,7 @@
       { id: "bien-rp", nom: "Appartement (résidence principale)", usage: "rp", valeur: 240000, part_p1: 50, crd: 150000, mensualite: 820, loyer: 0 },
     ],
     credits: [
-      { id: "credit-auto", nom: "Prêt auto", owner: "commun", crd: 6500, mensualite: 210 },
+      { id: ID_CREDIT_AUTO, nom: "Prêt auto", owner: "commun", crd: 6500, mensualite: 210 },
     ],
     autres: { p1: { usage: 9000, entreprise: 0 }, p2: { usage: 6000, entreprise: 0 } },
     protection: {}, // non déclarée : le critère « Protection de la famille » reste à compléter (crédit + enfant)
@@ -724,7 +728,7 @@
       { id: 1001, connexionId: 101, nom: "Compte joint", type: "courant", solde: 3400, devise: "EUR", soldeLe: ago(0), actif: true, positionId: "compte-commun", enveloppe: null, titulaire: null, creditId: null, ignore: false },
       { id: 1002, connexionId: 101, nom: "Livret A Camille", type: "livret", solde: 12000, devise: "EUR", soldeLe: ago(0), actif: true, positionId: "livret-a", enveloppe: null, titulaire: null, creditId: null, ignore: false },
       { id: 1003, connexionId: 101, nom: "Compte de dépôt Sam", type: "courant", solde: 1182.4, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: false },
-      { id: 1004, connexionId: 101, nom: "Prêt auto", type: "credit", solde: -6500, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: "credit-auto", ignore: false },
+      { id: 1004, connexionId: 101, nom: "Prêt auto", type: "credit", solde: -6500, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: ID_CREDIT_AUTO, ignore: false },
       { id: 1005, connexionId: 101, nom: "Compte pro Camille", type: "courant", solde: 842.15, devise: "EUR", soldeLe: ago(0), actif: true, positionId: null, enveloppe: null, titulaire: null, creditId: null, ignore: true },
       { id: 2001, connexionId: 102, nom: "PEA", type: "pea", solde: 25871.6, devise: "EUR", soldeLe: ago(3), actif: true, positionId: null, enveloppe: "PEA Camille", titulaire: "p1", creditId: null, ignore: false },
     ].map(c => Object.assign({ doublonDe: null, rattacheAuto: null, creeAuto: false, suggestion: null }, c,

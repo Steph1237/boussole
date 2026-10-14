@@ -107,7 +107,7 @@ test("démo : patrimoine net de la composition (BilanCalc) = Calc.patrimoine, su
     assert.ok(Math.abs(a.dettes - c.dettes.total) < 1e-6, "reste à rembourser de la page = dettes de la composition : " + scope);
   }
   const f = BilanCalc.composition(DEMO.positions, DEMO.profil, "foyer");
-  assert.ok(Math.abs(f.actifs[0].total - 94989.9) < 0.01);
+  assert.ok(Math.abs(f.actifs[0].total - 102589.9) < 0.01 /* 94 989,90 + PEL Camille 6 800 + espèces du PEA de Sam 800 (lignes ajoutées pour le calendrier DAT1) */);
   assert.equal(f.dettes.total, 156500);
 });
 
@@ -124,7 +124,7 @@ test("analyser (démo, foyer) : totaux de Calc, un bien, prêt du bien puis prê
   assert.ok(Math.abs(a.taux - t.mensualites / t.revenus) < 1e-12, "même taux que le critère « endettement » de Pilotage › Santé");
   assert.equal(a.biens.length, 1);
   assert.deepEqual([a.biens[0].key, a.biens[0].usageLabel, a.biens[0].valeur, a.biens[0].crd, a.biens[0].net, a.biens[0].poids], ["bien:bien-rp", "Résidence principale", 240000, 150000, 90000, 1]);
-  assert.deepEqual(a.credits.map(c => [c.key, c.kind, c.crd, c.mensualite]), [["pret:bien-rp", "pret", 150000, 820], ["credit:credit-auto", "credit", 6500, 210]]);
+  assert.deepEqual(a.credits.map(c => [c.key, c.kind, c.crd, c.mensualite]), [["pret:bien-rp", "pret", 150000, 820], ["credit:" + DEMO.profil.credits[0].id, "credit", 6500, 210]]); // identifiant du crédit auto de la démo : en forme d'UUID (clé prets_infos du calendrier)
   assert.equal(a.credits[1].titulaire, "Commun");
   assert.equal(a.vide, false); assert.equal(a.renseigne, true); assert.equal(a.deuxAdultes, true);
   assert.equal(a.duScope, "du foyer");
@@ -315,7 +315,7 @@ test("vue (DOM) : verdict, tuiles, cartes, « Compléter avec Claude » ; carte 
   v.dom.touche(v.doc.activeElement, "Escape");
   assert.equal(dlg.hidden, true);
   assert.equal(v.doc.activeElement, carte, "focus rendu à la carte");
-  const credit = v.$("blCredits").querySelector('[data-ui-carte="credit:credit-auto"]');
+  const credit = v.$("blCredits").querySelector('[data-ui-carte="credit:' + DEMO.profil.credits[0].id + '"]');
   credit.click();
   assert.equal(phrasesClaude(v.doc.body.querySelector(".ui-panneau-pied").innerHTML)[0], ClaudePrompts.phrase("immobilier", "le crédit « Prêt auto »"));
   assert.equal(sp(v.api.headline()), "240 k€");

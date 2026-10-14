@@ -260,7 +260,8 @@ test("parité concentration ↔ plan.js (plus grosse ligne, nombre de poches)", 
 test("parité devises ↔ pratiques.js (part hors euro) quand toutes les devises sont connues", { skip: SANS_STRIP }, () => {
   const { A, M } = charger();
   const devises = { "pea-etf-monde": "USD", "pea-etf-europe": "EUR", "pea-air-liquide": "EUR", "cto-asml": "EUR", "av-fonds-euro": "EUR", "av-scpi": "EUR",
-    "livret-a": "EUR", "ldds": "EUR", "per-camille": "USD", "crypto-btc": "USD", "compte-commun": "EUR", "prime-camille": "EUR" };
+    "livret-a": "EUR", "ldds": "EUR", "per-camille": "USD", "crypto-btc": "USD", "compte-commun": "EUR", "prime-camille": "EUR",
+    "pel-camille": "EUR", "pea-sam-especes": "EUR" /* lignes du calendrier DAT1 (PEL, espèces du PEA de Sam) : toutes les devises connues */ };
   for (const scope of ["foyer", "p1", "p2"]) {
     const c = ctxDe(DEMO, { scope });
     c.donnees.positions = c.donnees.positions.map(p => ({ ...p, instrument: { ...(p.instrument || {}), devise: devises[p.id] } }));

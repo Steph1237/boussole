@@ -306,7 +306,8 @@ test("contexte fiscalite-enveloppes : enveloppes typées, montants, ouverture de
   const c = ctx("fiscalite-enveloppes");
   const types = Object.fromEntries(c.enveloppes.map(e => [e.enveloppe, e.type]));
   assert.deepEqual(types, { "PEA Camille": "pea", "Assurance vie Sam": "assurance_vie", PER: "per", "CTO Sam": "compte_titres", "Livrets Camille": "livret",
-    "Livrets Sam": "livret", Crypto: "crypto", "Comptes courants": "compte_courant" });
+    "Livrets Sam": "livret", Crypto: "crypto", "Comptes courants": "compte_courant",
+    "PEL Camille": "livret" /* le PEL est une épargne réglementée : « livret » pour ce contexte */, "PEA Sam": "pea" /* PEA de Sam : ses espèces, ajoutées à la démo pour le calendrier DAT1 */ });
   assert.ok(!("À recevoir" in types), "prime à recevoir non comptée");
   assert.equal(c.enveloppes.reduce((a, e) => a + e.montant, 0), Math.round(c.enveloppes.reduce((a, e) => a + e.montant, 0)));
   const av = c.enveloppes.find(e => e.type === "assurance_vie");
@@ -374,8 +375,8 @@ test("contexte allocation-risque : allocation par classe et profil de risque (sy
 
 test("contexte taux-obligations et crypto : poches de taux ; lignes spéculatives et leur part", { skip: SANS_STRIP }, () => {
   const t = ctx("taux-obligations");
-  assert.deepEqual(t.lignes.map(l => [l.nom, l.classe]).sort(), [["Compte courant commun", "monetaire"], ["Fonds en euros", "obligations"], ["LDDS", "monetaire"], ["Livret A", "monetaire"]].sort());
-  assert.equal(t.par_classe.monetaire.montant, 27400); assert.equal(t.par_classe.obligations.montant, 18200); assert.equal(t.par_classe.fonds_euros.montant, 0);
+  assert.deepEqual(t.lignes.map(l => [l.nom, l.classe]).sort(), [["Compte courant commun", "monetaire"], ["Espèces du PEA", "monetaire"], ["Fonds en euros", "obligations"], ["LDDS", "monetaire"], ["Livret A", "monetaire"], ["PEL", "monetaire"]].sort());
+  assert.equal(t.par_classe.monetaire.montant, 35000 /* 27 400 + PEL Camille 6 800 + espèces du PEA de Sam 800 */); assert.equal(t.par_classe.obligations.montant, 18200); assert.equal(t.par_classe.fonds_euros.montant, 0);
   assert.equal(t.lignes.find(l => l.nom === "Livret A").disponibilite, "immediate");
   const c = ctx("crypto");
   assert.deepEqual(c.lignes.map(l => l.nom), ["Bitcoin"]);

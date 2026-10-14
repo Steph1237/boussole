@@ -72,7 +72,7 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   const S = await whenReady(ctx);
   assert.deepEqual(J(S.people), [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }]);
   assert.equal(S.scope, "foyer");
-  assert.equal(S.positions.length, 12);
+  assert.equal(S.positions.length, 14); // 12 + PEL Camille et espèces du PEA de Sam (calendrier DAT1)
   S.positions.forEach(p => assert.ok(["p1", "p2"].includes(p.owner), `owner canonique pour ${p.id} : ${p.owner}`));
   const POS_KEYS = ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "valueDate", "status", "hypothesis", "qtyEstimated", "note",
     "ter", "zone", "devise", "annoteSource", "annoteLe", "sourceAuto", "sourceAutoLe", "symbol"];
@@ -119,8 +119,8 @@ test("démo : Calc.financier(S.positions, 'foyer') = somme calculée depuis DEMO
   const total = D.filter(counted).reduce((a, p) => a + val(p), 0);
   const p1 = D.filter(p => counted(p) && p.owner === "p1").reduce((a, p) => a + val(p), 0);
   const p2 = D.filter(p => counted(p) && p.owner === "p2").reduce((a, p) => a + val(p), 0);
-  assert.ok(total > 90000 && total < 100000, `total démo ≈ 95 k€ (${total})`);
-  near(total, 94989.9, "total démo inchangé");
+  assert.ok(total > 100000 && total < 105000, `total démo ≈ 103 k€ (${total})`);
+  near(total, 102589.9, "total démo : 94 989,90 + PEL Camille 6 800 + espèces du PEA de Sam 800");
   near(Calc.financier(S.positions, "foyer"), total, "total foyer");
   near(Calc.financier(S.positions, "p1"), p1, "total p1");
   near(Calc.financier(S.positions, "p2"), p2, "total p2");
@@ -180,7 +180,7 @@ test("démo : façade db réduite aux écritures de contrôle (règles, profil d
   for (const path of ["positions/livret-a", "budget/main", "objectifs/obj-apport", "transactions/x", "inconnue/x"])
     await assert.rejects(db.doc(path).update({ value: 1 }), e => e.code === "invalid_argument", path);
   assert.equal(ctx.Store.get().positions.find(p => p.id === "livret-a").value, S.positions.find(p => p.id === "livret-a").value, "placements inchangés");
-  assert.equal(ctx.DEMO.positions.length, 12, "window.DEMO n'est pas modifié (copie)");
+  assert.equal(ctx.DEMO.positions.length, 14, "window.DEMO n'est pas modifié (copie)");
   assert.equal(ctx.DEMO.risque, null, "window.DEMO n'est pas modifié (copie)");
 
   await wait(100);
@@ -298,7 +298,7 @@ test("démo : propositions sur les autres cibles (profil, crédit, bien, objecti
     statut: "en_attente", creeLe: "2026-10-10T10:00:0" + id.slice(-1) + ".000Z", decideLe: null });
   const ctx = browser({ prep: D => D.propositions.push(
     add("x1", "profil", "modifier", null, { foyer: { tmi: 41 }, personnes: { p2: { salaire: 2500 } } }),
-    add("x2", "credit", "supprimer", "credit-auto", null),
+    add("x2", "credit", "supprimer", D.profil.credits[0].id, null), // le crédit auto de la démo (identifiant en forme d'UUID)
     add("x3", "bien", "creer", null, { nom: "Studio", usage: "locatif", valeur: 120000, loyer: 550 }),
     add("x4", "objectif", "modifier", "obj-apport", { date_cible: "2030-06-30", cible: 70000 }),
     add("x5", "position", "creer", null, { name: "Livret jeune", envelope: "Livrets", owner: "p1", bloc: "Épargne", mode: "manual", value: 1600, value_date: "2026-09-30",

@@ -207,7 +207,7 @@ test("famillesHtml : blocs repliables (bouton aria-expanded / aria-controls), é
   assert.match(h, /<h4 class="cv-etab-h">Néo Courtage<\/h4>/);
   const pea = h.match(/<a class="cv-carte" href="#patrimoine\/comptes\?enveloppe=PEA%20Camille&amp;titulaire=p1" data-goto="patrimoine\/comptes\?enveloppe=PEA%20Camille&amp;titulaire=p1" data-cv-cle="[^"]+" aria-label="([^"]+)">/);
   assert.ok(pea, "carte du PEA : lien vers sa fiche");
-  assert.match(sp(pea[1]), /^PEA Camille, 3 lignes · Camille, solde 25 443 €, 27 % du financier, plus-value latente \+3 527 €, Synchronisé le \d{2}\/\d{2}, ouvrir la fiche$/);
+  assert.match(sp(pea[1]), /^PEA Camille, 3 lignes · Camille, solde 25 443 €, 25 % du financier, plus-value latente \+3 527 €, Synchronisé le \d{2}\/\d{2}, ouvrir la fiche$/);
   assert.match(h, /class="cv-carte dette" href="#patrimoine\/immobilier" data-goto="patrimoine\/immobilier"/);
   assert.match(h, /<span class="cv-chip bon">Synchronisé le/);
   assert.match(h, /<span class="cv-chip neutre">Saisi le/);
@@ -496,7 +496,7 @@ test("vue : liste au départ (chargement, puis familles), fiche au lien profond 
   assert.equal($("cvListeVue").hidden, false); assert.equal($("cvFiche").hidden, true);
   assert.equal(m.root.querySelectorAll(".cv-fam").length, 4);
   assert.ok(m.root.querySelectorAll("a.cv-carte").length >= 8);
-  assert.match(sp($("cvTete").innerHTML), /193 490 €/, "patrimoine net de la démo");
+  assert.match(sp($("cvTete").innerHTML), /201 090 €/, "patrimoine net de la démo (193 490 € + PEL Camille 6 800 € + espèces du PEA de Sam 800 €)");
   // famille repliée puis rouverte (mémorisé)
   const btn = m.root.querySelector('[data-cv-fam-btn="dettes"]');
   btn.click();
