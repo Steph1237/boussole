@@ -1053,7 +1053,7 @@ test("démo : proposition frais_enveloppes (0026) — fusion par enveloppe, null
   await whenReady(ctx);
   const P = ctx.Store.propositions;
   assert.deepEqual(J(await P.appliquer(["f1"])), { appliquees: 1 });
-  const auj = new Date().toISOString().slice(0, 10);
+  const auj = new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(new Date()); /* jour de Paris, comme le store (et non le jour UTC) */
   assert.deepEqual(J(ctx.Store.get().config.frais_enveloppes), { "Assurance-vie Camille": { gestion_uc_pct: 0.5, gestion_euro_pct: 0.6, source: "CG 2026", le: "2026-09-30" } });
   assert.deepEqual(J(await P.appliquer(["f2"])), { appliquees: 1 });
   const fe = ctx.Store.get().config.frais_enveloppes;

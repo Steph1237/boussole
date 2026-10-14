@@ -241,6 +241,66 @@
     });
   }
 
-  return { TYPES_V1, TYPES_RESERVES, PERSONNES, MODES_CRECHE, NIVEAUX, USAGES, ACTIVITES, MESSAGES: M, LIMITE_EVENEMENTS, LIMITE_VARIANTES, LIMITE_PAR_APPEL,
+
+  /* -------- réglages de projection du foyer (config.projection, proposition de la cible config) : mêmes règles et messages que la migration 0031 -------- */
+  const CHAMPS_PROJECTION = ["base_capacite", "capacite_mensuelle", "reste_capacite", "reequilibrage", "part_reaffectee_epargne_pct", "part_hausse_epargnee_pct",
+    "salaire_croissance_reelle_pct", "tmi_pct", "per_versements_deduits", "assurance_pct", "biens", "source", "le"];
+  /** Fusionne `v` (la clé « projection » d'une proposition de réglages) dans `actuel` (config.projection) champ par champ ; null retire un champ.
+      contexte : { today (AAAA-MM-JJ), biens (liste des biens de l'utilisateur, avec id) }. → { projection } ou { erreur: message }. */
+  function fusionnerReglagesProjection(actuel, v, contexte) {
+    const c = contexte || {}, auj = O.estDate(c.today) ? c.today : new Date().toISOString().slice(0, 10);
+    if (!estObjet(v)) return { erreur: "projection : objet attendu" };
+    if (!Object.keys(v).length) return { erreur: "projection : au moins un réglage attendu" };
+    const proj = estObjet(actuel) ? JSON.parse(JSON.stringify(actuel)) : {};
+    const nb = x => (O.estNombre(x) && typeof x !== "boolean" ? +x : null);
+    const texte = x => (typeof x === "string" ? x.trim().replace(/\s+/g, " ") : "");
+    for (const [k, val] of Object.entries(v)) {
+      if (!CHAMPS_PROJECTION.includes(k)) return { erreur: "projection : champ « " + k + " » inconnu (" + CHAMPS_PROJECTION.join(", ") + ")" };
+      if (val === null) { delete proj[k]; continue; }
+      if (k === "base_capacite") { if (!["reel", "prevu", "montant"].includes(val)) return { erreur: "projection : base_capacite invalide (reel, prevu ou montant attendu)" }; proj[k] = val; }
+      else if (k === "reste_capacite") { if (!["cible", "disponible"].includes(val)) return { erreur: "projection : reste_capacite invalide (cible ou disponible attendu)" }; proj[k] = val; }
+      else if (k === "reequilibrage") { if (!["aucun", "annuel"].includes(val)) return { erreur: "projection : reequilibrage invalide (aucun ou annuel attendu)" }; proj[k] = val; }
+      else if (k === "capacite_mensuelle") { const n = nb(val); if (n === null || n < -100000 || n > 100000) return { erreur: "projection : capacite_mensuelle invalide (montant de −100 000 à 100 000 € attendu)" }; proj[k] = n; }
+      else if (["part_reaffectee_epargne_pct", "part_hausse_epargnee_pct", "assurance_pct"].includes(k)) { const n = nb(val); if (n === null || n < 0 || n > 100) return { erreur: "projection : " + k + " invalide (pourcentage de 0 à 100 attendu)" }; proj[k] = n; }
+      else if (k === "salaire_croissance_reelle_pct") { const n = nb(val); if (n === null || n < -10 || n > 10) return { erreur: "projection : salaire_croissance_reelle_pct invalide (de −10 à 10 % par an attendu)" }; proj[k] = n; }
+      else if (k === "tmi_pct") { const n = nb(val); if (n === null || ![0, 11, 30, 41, 45].includes(n)) return { erreur: "projection : tmi_pct invalide (0, 11, 30, 41 ou 45 attendu)" }; proj[k] = n; }
+      else if (k === "per_versements_deduits") { if (typeof val !== "boolean") return { erreur: "projection : per_versements_deduits invalide (vrai ou faux attendu)" }; proj[k] = val; }
+      else if (k === "source") { const t = texte(val); if (!t || t.length > 300) return { erreur: "projection : source invalide (1 à 300 caractères attendus)" }; proj[k] = t; }
+      else if (k === "le") { if (!O.estDate(val)) return { erreur: "projection : date (le) invalide (AAAA-MM-JJ)" }; if (val > auj) return { erreur: "projection : date (le) dans le futur (la date du document consulté est attendue)" }; proj[k] = val; }
+      else {
+        if (!estObjet(val)) return { erreur: "projection.biens : objet { bien:<identifiant>: informations } attendu" };
+        if (Object.keys(val).length > 50) return { erreur: "projection.biens : 50 biens au plus" };
+        const row = estObjet(proj.biens) ? proj.biens : {};
+        for (const [cle, item] of Object.entries(val)) {
+          if (!/^bien:.+$/.test(cle)) return { erreur: "projection.biens : clé « " + cle + " » invalide (bien:<identifiant> attendu)" };
+          if (item === null) { delete row[cle]; continue; }
+          if (!liste(c.biens).some(b => b && "bien:" + b.id === cle)) return { erreur: "projection.biens : bien « " + cle + " » introuvable" };
+          if (!estObjet(item)) return { erreur: "projection.biens « " + cle + " » : objet ou null attendu" };
+          const inconnu = Object.keys(item).find(x => !["prix_achat", "date_achat", "source", "le"].includes(x));
+          if (inconnu) return { erreur: "projection.biens « " + cle + " » : champ « " + inconnu + " » inconnu (prix_achat, date_achat, source, le)" };
+          const prix = nb(item.prix_achat);
+          if (prix === null || prix <= 0) return { erreur: "projection.biens « " + cle + " » : prix_achat invalide (montant strictement positif attendu)" };
+          if (!O.estDate(item.date_achat)) return { erreur: "projection.biens « " + cle + " » : date_achat invalide (AAAA-MM-JJ)" };
+          if (item.date_achat < "1900-01-01") return { erreur: "projection.biens « " + cle + " » : date_achat antérieure à 1900" };
+          if (item.date_achat > auj) return { erreur: "projection.biens « " + cle + " » : date_achat dans le futur" };
+          const src = texte(item.source);
+          if (!src || src.length > 300) return { erreur: "projection.biens « " + cle + " » : source obligatoire (1 à 300 caractères)" };
+          let le = auj;
+          if (item.le !== undefined && item.le !== null) {
+            if (!O.estDate(item.le)) return { erreur: "projection.biens « " + cle + " » : date (le) invalide (AAAA-MM-JJ)" };
+            if (item.le > auj) return { erreur: "projection.biens « " + cle + " » : date (le) dans le futur (la date du document consulté est attendue)" };
+            le = item.le;
+          }
+          row[cle] = { prix_achat: prix, date_achat: item.date_achat, source: src, le };
+        }
+        if (Object.keys(row).length > 50) return { erreur: "projection.biens : 50 biens au plus (" + Object.keys(row).length + " après fusion)" };
+        if (Object.keys(row).length === 0) delete proj.biens; else proj.biens = row;
+      }
+    }
+    if (typeof v.source === "string" && !("le" in v)) proj.le = auj;
+    return { projection: proj };
+  }
+
+  return { CHAMPS_PROJECTION, fusionnerReglagesProjection, TYPES_V1, TYPES_RESERVES, PERSONNES, MODES_CRECHE, NIVEAUX, USAGES, ACTIVITES, MESSAGES: M, LIMITE_EVENEMENTS, LIMITE_VARIANTES, LIMITE_PAR_APPEL,
     HYPOTHESES_VARIANTE, ENTREES, validerEvenement, validerVariante, defautsDe };
 });
