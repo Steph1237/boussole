@@ -86,9 +86,8 @@ test("plan-view.html : identifiants utilisés par le script, question de la page
   assert.ok(ids.length >= 8);
   const missing = [...new Set(ids)].filter(id => !html.includes('id="' + id + '"'));
   assert.deepEqual(missing, []);
-  assert.match(html, /Où va mon argent/);
-  assert.match(html, /id="pvCompleter"/);
-  assert.match(html, /id="pvClaude"/);
+  assert.match(html, /id="pvTitre"/);
+  assert.doesNotMatch(html, /id="pvCompleter"|id="pvClaude"/, "plus de boutons Claude empilés : celui de l'en-tête couvre la page");
 });
 
 test("plan-view : tutoiement — aucun « vous / votre / vos » dans les textes du module (hors textes du moteur listés)", () => {
@@ -349,6 +348,7 @@ function vueDom(S0) {
   // Tout accès au store (db, écritures) est consigné : la vue ne doit jamais y toucher.
   c.Store = new Proxy({ get: () => S }, { get: (o, k) => { if (k !== "get") acces.push(String(k)); return o[k]; } });
   vm.createContext(c);
+  vm.runInContext(readFileSync("web/src/format.js", "utf8"), c, { filename: "format.js" });
   vm.runInContext(calcJs, c, { filename: "calc.js" });
   vm.runInContext(banqueJs, c, { filename: "banque-etat.js" });
   vm.runInContext(planJs, c, { filename: "plan.js" });
@@ -373,9 +373,7 @@ test("vue (DOM) : en-tête, bascule Par mois · Par an, « Compléter avec Claud
   assert.match(sp(cartes[0].textContent), /5 100 €/);
   const radios = v.root.querySelector("#pvMode").querySelectorAll('[role="radio"]');
   assert.deepEqual(radios.map(r => r.textContent), ["Par mois", "Par an"]);
-  assert.match(v.root.querySelector("#pvCompleter").textContent, /Compléter avec Claude/);
-  assert.deepEqual(questions(v.root.querySelector("#pvCompleter").innerHTML), [P("budget")]);
-  assert.match(v.root.querySelector("#pvClaude").textContent, /Demander à Claude/);
+  assert.match(v.root.querySelector("#pvTitre").textContent, /^Budget du foyer$/);
   radios[1].click();
   assert.match(sp(v.root.querySelector("#pvCartes").querySelectorAll("[data-ui-carte]")[0].textContent), /61 200 €/);
   assert.match(sp(v.root.querySelector("#pvBudget").textContent), /9 000 €\/an/);
@@ -551,7 +549,7 @@ test("budget réel : capacité d'épargne puis épargne versée (3 mois complets
   assert.equal(PV.tauxReelHtml(null), "");
   assert.equal(PV.tauxReelHtml(Object.assign({}, br, { tauxEpargne: null, tauxCapacite: null })), "", "revenus inconnus : pas de taux");
   const neg = texteDeR(PV.tauxReelHtml(Object.assign({}, br, { tauxCapacite: -0.1, capacite: -500, tauxEpargne: 0 })));
-  assert.match(neg, /^Capacité d'épargne réelle, 3 derniers mois -10 % .*Épargne versée 0 % /, "dépenses > revenus : capacité négative, rien de versé");
+  assert.match(neg, /^Capacité d'épargne réelle, 3 derniers mois [-−]10 % .*Épargne versée 0 % /, "dépenses > revenus : capacité négative, rien de versé");
   const lignes = [{ id: "e", type: "epargne", categorie: "Épargne", libelle: "Livret", montant: 200, frequence: "mois" }];
   const { groupes, totaux } = PV.regrouper(lignes, { profil: null, scope: "foyer", people: PEOPLE, Plan, Calc });
   const g = sp(PV.groupesHtml(groupes, { mode: "mois", totaux, U: UI, budgetReel: br }));

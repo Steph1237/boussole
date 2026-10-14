@@ -24,13 +24,16 @@
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
 
   /* ---------- formats et dates ---------- */
-  const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-  const eur = v => (v == null || !isFinite(v) ? "—" : nf.format(Math.round(v)) + " €");
+  /* Formats uniques (format.js, UX1) ; global du navigateur, sinon le module voisin sous Node. */
+  const FM = () => (typeof globalThis !== "undefined" && globalThis.Fmt) || (typeof module === "object" && module.exports && typeof require === "function" ? require("./format.js") : null);
+  const nf = { format: v => FM().fmtNombre(v) };
+  const eur = v => (v == null || !isFinite(v) ? "—" : FM().fmtEUR(v));
   const eurM = v => eur(v) + "/mois";
-  const pct = v => (v == null || !isFinite(v) ? "—" : (v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " %");
+  const pct = v => (v == null || !isFinite(v) ? "—" : FM().fmtPct(v * 100, { decimales: 0 }));
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
-  const kEur = v => (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " M€" : nf.format(v / 1000) + " k€");
-  const moisAn = d => (d ? new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "");
+  const kEur = v => FM().fmtEUR(v, { compact: "graphe" });
+  const MOIS_LONGS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  const moisAn = d => { const m = /^(\d{4})-(\d{2})/.exec(String(d || "")); return m ? MOIS_LONGS[+m[2] - 1] + " " + m[1] : ""; };
   const isoToday = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0, 10); };
   const dateCible = o => (o && (o.dateCible || o.date_cible)) || null;
 
@@ -355,7 +358,10 @@
     const u = U();
     if (!root || !S || !u) return;
     const a = analyse(), r = resumeObjectifs(a.liste);
-    $("ovVerdict").textContent = r.verdict + (r.detail && r.n > 1 ? " (" + r.detail + ")" : "");
+    // Réponse en encre (jamais une phrase colorée), le statut dans une puce avec son mot.
+    const st = { bon: ["bon", "Bon"], attention: ["surveiller", "À surveiller"], critique: ["travailler", "À travailler"] }[r.ton];
+    $("ovVerdict").innerHTML = esc(r.verdict + (r.detail && r.n > 1 ? " (" + r.detail + ")" : "")) +
+      (st ? ' <span class="ui-puce ' + st[0] + '"><span class="ui-puce-point" aria-hidden="true"></span>' + st[1] + "</span>" : "");
     $("ovVerdict").className = "ov-verdict ton-" + r.ton;
     const partage = a.liste.filter(x => x.o.source === "poches").some((x, i, L) => L.some((y, j) => j > i &&
       ((x.o.poches || []).some(p => (y.o.poches || []).includes(p)) || (x.o.enveloppes || []).some(p => (y.o.enveloppes || []).includes(p)))));
@@ -444,8 +450,7 @@
     $("ovTitre").setAttribute("tabindex", "-1");
     const u = U();
     if (u) {
-      $("ovCompleter").innerHTML = boutonClaude(u, "objectifs", "", "Compléter avec Claude");
-      $("ovClaude").innerHTML = u.demanderAClaude("Vais-je atteindre mes objectifs dans Boussole ? Passe-les en revue avec moi et dis-moi quoi ajuster.");
+      // Le bouton Claude de l'en-tête couvre « Définir mes objectifs » : plus de boutons Claude empilés sous le titre.
       u.brancher($("ovCartes"), { surCarte: (id, el) => ouvrir({ id, retour: el }) });
       u.bascule($("ovHorizon"), { label: "Horizon", options: [5, 10, 20, 30].map(n => ({ id: String(n), label: n + " ans" })), actif: String(horizon),
         surChange: id => { horizon = +id; renderProjection(); } });

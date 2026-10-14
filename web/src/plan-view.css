@@ -2,24 +2,24 @@
    UI.carte, barre des catégories et sa légende, sections Revenus · Dépenses · Épargne en catégories dépliables.
    Scopé #view-plan ; le contenu du panneau de détail (UI.panneau, injecté dans body) sous .ui-panneau .pv-…. */
 #view-plan [hidden]{display:none!important}
-#view-plan .pv{display:flex;flex-direction:column;gap:16px;min-width:0}
-#view-plan .pv-num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+#view-plan .pv{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+#view-plan .pv-num{font-variant-numeric:tabular-nums lining-nums}
 #view-plan .pv-muet{color:var(--muted);font-size:var(--t-small);margin:0}
 #view-plan .pv-note{margin:0;font-size:var(--t-small);line-height:1.45;color:var(--muted)}
 
 /* en-tête */
 #view-plan .pv-tete{display:flex;align-items:flex-end;justify-content:space-between;gap:10px 16px;flex-wrap:wrap}
 #view-plan .pv-tete-l{min-width:0}
-#view-plan .pv-tete h2{font:700 var(--t-h2) var(--f-display);margin:0 0 2px}
+#view-plan .pv-tete h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0 0 2px}
 #view-plan .pv-tete h2:focus{outline:none}
 #view-plan .pv-tete-act{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
 #view-plan .pv-claude:empty{display:none}
-#view-plan .pv-link{font:600 var(--t-small) var(--f-body);color:var(--accent)}
-#view-plan .pv-ligne:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#view-plan .pv-link{display:inline-flex;align-items:center;min-height:var(--hit);font:600 var(--t-small) var(--f-body);color:var(--brand)}
+#view-plan .pv-ligne:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 
 /* barre des catégories */
 #view-plan .pv-corps{display:flex;flex-direction:column;gap:18px}
-#view-plan .pv-h{font:700 var(--t-body) var(--f-display);margin:0 0 10px}
+#view-plan .pv-h{font:650 var(--t-h3)/var(--lh-h3) var(--f-display);margin:0 0 var(--sp-3)}
 #view-plan .pv-stack{display:flex;height:16px;border-radius:4px;overflow:hidden;background:var(--sunk)}
 #view-plan .pv-stack span{display:block;height:100%;min-width:2px}
 #view-plan .pv-stack span + span{box-shadow:inset 1px 0 0 var(--surface)}
@@ -34,36 +34,36 @@
 #view-plan .pv-budget{display:flex;flex-direction:column;gap:20px}
 #view-plan .pv-sec{display:flex;flex-direction:column;gap:8px;min-width:0}
 #view-plan .pv-sec-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding-bottom:4px;border-bottom:1px solid var(--line)}
-#view-plan .pv-sec-h h3{font:700 var(--t-body) var(--f-display);margin:0}
-#view-plan .pv-sec-t{font-weight:600;font-size:var(--t-small)}
+#view-plan .pv-sec-h h3{font:650 var(--t-h3)/var(--lh-h3) var(--f-display);margin:0}
+#view-plan .pv-sec-t{font-weight:600;font-size:var(--t-body)}
 #view-plan .pv-sec .ui-voirplus-liste{display:flex;flex-direction:column;gap:8px}
 #view-plan .pv-sec-vide{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
 #view-plan .pv-cat-t{gap:8px 12px}
 #view-plan .pv-cat-nom{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
 #view-plan .pv-cat-v{display:flex;align-items:baseline;gap:10px;margin-left:auto;white-space:nowrap}
 #view-plan .pv-cat-v b{font-weight:600}
-#view-plan .pv-cat-part{font:500 var(--t-caption) var(--f-num);color:var(--muted);min-width:34px;text-align:right}
-#view-plan .pv-cat-reel{font:500 var(--t-caption) var(--f-num);font-variant-numeric:tabular-nums;color:var(--muted)}
-#view-plan .pv-reel-l{font:600 var(--t-caption) var(--f-body);text-transform:uppercase;letter-spacing:.04em;color:var(--accent)}
+#view-plan .pv-cat-part{font:500 var(--t-caption) var(--f-body);font-variant-numeric:tabular-nums lining-nums;color:var(--muted);min-width:34px;text-align:right}
+#view-plan .pv-cat-reel{font:500 var(--t-caption)/var(--lh-caption) var(--f-body);font-variant-numeric:tabular-nums lining-nums;color:var(--muted)}
+#view-plan .pv-reel-l{font:600 var(--t-caption) var(--f-body);color:var(--muted)}
 #view-plan .pv-reel-hors{margin:10px 0 0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
 #view-plan .pv-reel-taux{margin:10px 0 0;font-size:var(--t-small);line-height:1.5;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
-#view-plan .pv-reel-taux-l{font:600 var(--t-caption) var(--f-body);text-transform:uppercase;letter-spacing:.04em;color:var(--accent)}
+#view-plan .pv-reel-taux-l{font:600 var(--t-small) var(--f-body);color:var(--ink)}
 #view-plan .pv-reel-taux .pv-muet{display:inline}
 #view-plan .pv-cat .ui-acc-chevron{margin-left:0}
 #view-plan .pv-cat-corps{display:flex;flex-direction:column;gap:8px}
 #view-plan .pv-cat-act,#view-plan .pv-ros-act{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
 #view-plan .pv-lignes,#view-plan .pv-ro{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
-#view-plan .pv-ligne{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:2px 12px;width:100%;text-align:left;background:transparent;border:0;border-top:1px solid var(--line);padding:9px 4px;font:var(--t-body) var(--f-body);color:var(--ink);cursor:pointer;border-radius:0}
+#view-plan .pv-ligne{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 12px;width:100%;text-align:left;background:transparent;border:0;border-top:1px solid var(--line);min-height:var(--hit);padding:var(--sp-2) var(--sp-1);font:var(--t-body) var(--f-body);color:var(--ink);cursor:pointer;border-radius:0}
 #view-plan .pv-lignes li:first-child .pv-ligne{border-top:0}
 #view-plan .pv-ligne:hover{background:var(--sunk)}
 #view-plan .pv-ligne-lib{min-width:0;overflow-wrap:anywhere}
-#view-plan .pv-ligne-mt{font-size:var(--t-small);font-weight:500;white-space:nowrap}
+#view-plan .pv-ligne-mt{font-size:var(--t-small);font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums lining-nums}
 #view-plan .pv-ligne-note{grid-column:1/-1;font-size:var(--t-caption);color:var(--muted)}
-#view-plan .pv-ros{display:flex;flex-direction:column;gap:4px;padding:8px 12px;border-radius:var(--radius-sm);background:var(--sunk);font-size:var(--t-small)}
-#view-plan .pv-ros-t{margin:0;font:600 var(--t-caption) var(--f-body);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+#view-plan .pv-ros{display:flex;flex-direction:column;gap:var(--sp-1);padding:var(--sp-2) var(--sp-3);border-radius:var(--r-ctl);background:var(--sunk);font-size:var(--t-small)}
+#view-plan .pv-ros-t{margin:0;font:600 var(--t-small) var(--f-body);color:var(--muted)}
 #view-plan .pv-ro li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:3px 0}
 #view-plan .pv-ro .pv-num{white-space:nowrap}
-#view-plan .pv-tag{font:600 var(--t-caption) var(--f-body);padding:1px 6px;border-radius:999px;background:var(--good-soft);color:var(--good);vertical-align:1px}
+#view-plan .pv-tag{font:600 var(--t-caption) var(--f-body);padding:1px 6px;border-radius:999px;background:var(--st-good-bg);color:var(--st-good);vertical-align:1px}
 #view-plan .pv-ros .pv-link{align-self:flex-start;margin-top:2px}
 
 /* état vide */
@@ -94,4 +94,13 @@
   #view-plan .pv-mode{flex:1 1 100%}
   #view-plan .pv-cat-part{display:none}
   #view-plan .pv-cat-v{flex-direction:column;align-items:flex-end;gap:0}
+}
+
+/* ≥ 1100 px : la barre des catégories à gauche (dépenses sur toute la hauteur), revenus et épargne à droite */
+@media (min-width:1100px){
+  #view-plan .pv-corps{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:var(--gap-sections);align-items:start}
+  #view-plan .pv-bar-bloc{grid-column:1/-1}
+  #view-plan .pv-budget{display:contents}
+  #view-plan .pv-sec{grid-column:2}
+  #view-plan .pv-sec:nth-child(2){grid-column:1;grid-row:2/span 2}
 }

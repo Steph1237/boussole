@@ -38,9 +38,10 @@
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./calc.js") : null);
 
   /* ---------- formats ---------- */
-  const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-  const eur = v => (v == null || !isFinite(v) ? "—" : nf.format(Math.round(v)) + " €");
-  const pct = v => (v == null || !isFinite(v) ? "—" : (v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " %");
+  /* Formats uniques (format.js, UX1) ; global du navigateur, sinon le module voisin sous Node. */
+  const FM = () => (typeof globalThis !== "undefined" && globalThis.Fmt) || (typeof module === "object" && module.exports && typeof require === "function" ? require("./format.js") : null);
+  const eur = v => (v == null || !isFinite(v) ? "—" : FM().fmtEUR(v));
+  const pct = v => (v == null || !isFinite(v) ? "—" : FM().fmtPct(v * 100, { decimales: 0 }));
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
 
   /* ---------- vocabulaire ---------- */
@@ -431,7 +432,7 @@
     const L = lignes(), has = L.length > 0;
     const g = regrouper(L, ctxCalc()), t = g.totaux;
     const r = resume(t, mode, has);
-    $("pvTitre").textContent = "Où va mon argent " + (mode === "an" ? "chaque année" : "chaque mois") + " ?";
+    $("pvTitre").textContent = "Budget " + duScope();
     const reel = has ? reelDe(S, jourLocal()) : null, budgetReel = has ? budgetReelDe(S, jourLocal()) : null;
     $("pvBudgetNote").textContent = (scope() === "foyer" ? "Montants du foyer, " + MODES[mode].unite + "." : "Vue " + duScope() + " : ses lignes, et la moitié des lignes communes.") +
       (reel ? " " + noteReel(reel) + " " + MENTION_VIREMENTS : "");
@@ -515,8 +516,7 @@
     if (u) {
       u.bascule($("pvMode"), { label: "Montants", options: [{ id: "mois", label: "Par mois" }, { id: "an", label: "Par an" }], actif: mode,
         surChange: id => { mode = id === "an" ? "an" : "mois"; render(); } });
-      $("pvCompleter").innerHTML = boutonClaude(u, "budget", "", "Compléter avec Claude");
-      $("pvClaude").innerHTML = u.demanderAClaude("Analyse mon budget dans Boussole : où va mon argent chaque mois, et où puis-je dégager de l'épargne ?");
+      // Le bouton Claude de l'en-tête couvre « Établir mon budget », « Compléter mes revenus » : plus de boutons Claude empilés sous le titre.
       u.brancher($("pvCartes"), { surCarte: (id, el) => ouvrir({ kind: "resume", id, retour: el }) });
       u.brancher($("pvBar"));
       u.brancher($("pvBudget"));

@@ -114,17 +114,17 @@ test("etablissement : compte bancaire rattaché (ligne, puis enveloppe + titulai
   assert.equal(CV.etablissement(POS("x", { envelope: "PEA Camille", owner: "p2" }), S).nom, "Saisi à la main");
 });
 
-test("sourceDe : « Synchronisé le JJ/MM » (sourceAuto powens / binance, ou compte rattaché) ; sinon « Saisi le JJ/MM » ; sans date « Saisi à la main »", () => {
+test("sourceDe : « Synchronisé le 9 oct. » (sourceAuto powens / binance, ou compte rattaché) ; sinon « Saisi le 30 sept. » ; sans date « Saisi à la main »", () => {
   const S = S0();
-  assert.deepEqual(J(CV.sourceDe([POS("a", { sourceAuto: "binance", sourceAutoLe: "2026-10-09T02:00:00" })], S)), { texte: "Synchronisé le 09/10", ton: "bon", date: "2026-10-09", origine: "binance" });
-  assert.equal(CV.sourceDe([POS("a", { sourceAuto: "powens", sourceAutoLe: "2026-10-01T12:00:00" }), POS("b", { sourceAuto: "powens", sourceAutoLe: "2026-10-05T12:00:00" })], S).texte, "Synchronisé le 05/10", "date la plus récente");
-  assert.deepEqual(J(CV.sourceDe([POS("a", { mode: "manual", valueDate: "2026-09-30" }), POS("b", { mode: "manual", valueDate: "2026-08-31" })], S)), { texte: "Saisi le 30/09", ton: "neutre", date: "2026-09-30", origine: "manuel" });
+  assert.deepEqual(J(CV.sourceDe([POS("a", { sourceAuto: "binance", sourceAutoLe: "2026-10-09T02:00:00" })], S)), { texte: "Synchronisé le 9 oct.", ton: "bon", date: "2026-10-09", origine: "binance" });
+  assert.equal(CV.sourceDe([POS("a", { sourceAuto: "powens", sourceAutoLe: "2026-10-01T12:00:00" }), POS("b", { sourceAuto: "powens", sourceAutoLe: "2026-10-05T12:00:00" })], S).texte, "Synchronisé le 5 oct.", "date la plus récente");
+  assert.deepEqual(J(CV.sourceDe([POS("a", { mode: "manual", valueDate: "2026-09-30" }), POS("b", { mode: "manual", valueDate: "2026-08-31" })], S)), { texte: "Saisi le 30 sept.", ton: "neutre", date: "2026-09-30", origine: "manuel" });
   assert.equal(CV.sourceDe([POS("a")], S).texte, "Saisi à la main");
   assert.equal(CV.sourceDe([POS("a", { sourceAuto: "inconnue" })], S).origine, "manuel", "source inconnue : saisie");
   const D = demoS();
   assert.equal(CV.sourceDe(D.positions.filter(p => p.id === "ldds"), D).texte.slice(0, 8), "Saisi le");
   const sansAuto = demoS(); sansAuto.positions.forEach(p => { p.sourceAuto = null; });
-  assert.match(CV.sourceDe(sansAuto.positions.filter(p => p.envelope === "PEA Camille"), sansAuto).texte, /^Synchronisé le \d{2}\/\d{2}$/, "compte rattaché : date de la connexion");
+  assert.match(CV.sourceDe(sansAuto.positions.filter(p => p.envelope === "PEA Camille"), sansAuto).texte, /^Synchronisé le \d{1,2} [a-zéû.]+$/, "compte rattaché : date de la connexion");
 });
 
 /* ------------------------------------------------ liste ------------------------------------------------ */
@@ -154,11 +154,11 @@ test("comptes (démo) : quatre familles dans l'ordre, comptes groupés par étab
   const pv = lignesPea.reduce((a, p) => a + (p.qty * p.price - p.qty * p.pru), 0);
   assert.ok(Math.abs(pea.plusValue - pv) < 1e-6, "plus-value latente = Σ qty × cours − qty × PRU");
   assert.match(pea.sous, /3 lignes · Camille/);
-  assert.match(pea.source.texte, /^Synchronisé le \d{2}\/\d{2}$/);
+  assert.match(pea.source.texte, /^Synchronisé le \d{1,2} [a-zéû.]+$/);
   assert.ok(Math.abs(pea.part - pea.solde / financier * 100) < 1e-9, "part du financier");
   const av = inv.etablissements.find(E => E.nom === "Saisi à la main").comptes.find(c => c.nom === "Assurance vie Sam");
   assert.equal(av.plusValue, null, "lignes saisies : pas de plus-value latente");
-  assert.match(av.source.texte, /^Saisi le \d{2}\/\d{2}$/);
+  assert.match(av.source.texte, /^Saisi le \d{1,2} [a-zéû.]+$/);
   // dettes : crédit synchronisé (rattaché à un compte de prêt) et prêt immobilier saisi
   const dettes = L.familles[3];
   assert.equal(dettes.total, -156500);
@@ -194,8 +194,8 @@ test("entete : patrimoine net, financier, immobilier, dettes ; variation du patr
   assert.equal(e.variation.texte, "sur 1 an"); assert.equal(e.variation.debut, "2025-10-12"); assert.equal(e.variation.enAttente, false);
   assert.equal(CV.entete(S0({ positions: [POS("a")], snapshots: [] }), "2026-10-12", DEPS).variation, null, "aucune photo : pas de variation");
   const h = sp(CV.enteteHtml(e));
-  assert.match(h, /151 100 €/); assert.match(h, /\+200 € \(\+0,1 %\)/); assert.match(h, /sur 1 an/); assert.doesNotMatch(h, /depuis le/, "la période est écrite en « sur … », comme Aujourd'hui");
-  assert.match(h, /Dettes<\/span><span class="cv-fait-v neg">−50 000 €/);
+  assert.match(h, /151 100 €/); assert.match(h, /\+200 € · \+0,1 %/); assert.match(h, /sur 1 an/); assert.doesNotMatch(h, /depuis le/, "la période est écrite en « sur … », comme Aujourd'hui");
+  assert.match(h, /Dettes<\/span><span class="cv-fait-v">−50 000 €/);
   assert.match(sp(CV.enteteHtml(Object.assign({}, e, { variation: null }))), /première photo nocturne/);
   const attente = sp(CV.enteteHtml(CV.entete(S, "2026-10-12", Object.assign({}, DEPS, { enAttente: true }))));
   assert.match(attente, /ui-skel/, "passé en cours de lecture : squelette"); assert.doesNotMatch(attente, /\+200 €/, "jamais un chiffre provisoire");
@@ -214,7 +214,7 @@ test("famillesHtml : blocs repliables (bouton aria-expanded / aria-controls), é
   assert.match(h, /<h4 class="cv-etab-h">Néo Courtage<\/h4>/);
   const pea = h.match(/<a class="cv-carte" href="#patrimoine\/comptes\?enveloppe=PEA%20Camille&amp;titulaire=p1" data-goto="patrimoine\/comptes\?enveloppe=PEA%20Camille&amp;titulaire=p1" data-cv-cle="[^"]+" aria-label="([^"]+)">/);
   assert.ok(pea, "carte du PEA : lien vers sa fiche");
-  assert.match(sp(pea[1]), /^PEA Camille, 3 lignes · Camille, solde 25 443 €, 25 % du financier, plus-value latente \+3 527 €, Synchronisé le \d{2}\/\d{2}, ouvrir la fiche$/);
+  assert.match(sp(pea[1]), /^PEA Camille, 3 lignes · Camille, solde 25 443 €, 25 % du financier, plus-value latente \+3 527 €, Synchronisé le \d{1,2} [a-zéû.]+, ouvrir la fiche$/);
   assert.match(h, /class="cv-carte dette" href="#patrimoine\/immobilier" data-goto="patrimoine\/immobilier"/);
   assert.match(h, /<span class="cv-chip bon">Synchronisé le/);
   assert.match(h, /<span class="cv-chip neutre">Saisi le/);
@@ -349,7 +349,7 @@ test("ficheEnveloppeHtml / grapheEnveloppeHtml : fil d'Ariane, titre focalisable
   assert.match(g.graphe, /<th scope="col">Date<\/th><th scope="col" class="cv-num">Valeur<\/th>/);
   assert.match(sp(g.graphe), /Ce n'est pas ta performance réelle/);
   assert.equal((g.lignes.match(/<a class="cv-ligne" href="#patrimoine\/comptes\?ligne=/g) || []).length, 3);
-  assert.match(sp(g.lignes), /1 A : <span class="pos">\+10,0 %<\/span>/, "perf du cours sur la période");
+  assert.match(sp(g.lignes), /1 A : <span class="pos">\+10 %<\/span>/, "perf du cours sur la période");
   const vide = CV.grapheEnveloppeHtml(f, { cours: {}, charge: "pret", periode: "1a", today: TODAY }, UI, { Calc });
   assert.match(sp(vide.graphe), /Historique des cours pas encore disponible/, "table cours vide ou absente : une phrase");
   assert.match(sp(vide.lignes), /1 A : —/);
@@ -462,7 +462,7 @@ test("courbeSvg / barresSvg : moins de deux points → null ; titre et descripti
   assert.equal(CV.barresSvg([], {}), null);
   const s = CV.courbeSvg([{ date: "2026-09-01", valeur: 100 }, { date: "2026-10-01", valeur: 120, live: true }], { id: "x", titre: "T <b>", desc: "D" });
   assert.match(s, /aria-labelledby="x-t" aria-describedby="x-d"/); assert.match(s, /<title id="x-t">T &lt;b&gt;<\/title>/);
-  assert.match(s, /<circle class="cv-pt fin"[^>]*><title>1 oct\. 2026 : 120 € \(aujourd&#39;hui\)<\/title>/);
+  assert.match(sp(s), /<circle class="cv-pt fin"[^>]*><title>1 oct\. 2026 : 120 € \(aujourd&#39;hui\)<\/title>/);
 });
 
 /* ------------------------------------------------ vue (mini-DOM) ------------------------------------------------ */
@@ -478,7 +478,7 @@ function monter({ cours } = {}) {
     Store: { cours: async (isins, depuis) => { appels.push([isins.slice(), depuis]); return cours || {}; } } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "bilan-calc.js", "periodes.js", "serie-net.js", "ui.js", "claude-prompts.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
+  for (const f of ["format.js", "calc.js", "bilan-calc.js", "periodes.js", "serie-net.js", "ui.js", "claude-prompts.js"]) vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "comptes-view.js" });
   const root = doc.createElement("section");
   root.setAttribute("id", "view-comptes-view");

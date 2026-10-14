@@ -104,10 +104,10 @@ test("objectifs-view.html : identifiants utilisés par le script, question, « C
   const ids = [...js.matchAll(/\$\("(ov[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 8);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  assert.match(html, /Vais-je atteindre mes projets/);
+  assert.match(html, /<h2 id="ovTitre">Objectifs<\/h2>/);
   assert.match(html, /<details class="ui-acc ov-proj" id="ovProjAcc">/);
   assert.match(html, /Projection du patrimoine financier/);
-  assert.match(html, /id="ovCompleter"/);
+  assert.doesNotMatch(html, /id="ovCompleter"|id="ovClaude"/, "plus de boutons Claude empilés : celui de l'en-tête couvre la page");
 });
 
 test("objectifs-view : tutoiement — aucun « vous / votre / vos » dans les textes du module (hors textes du moteur listés)", () => {
@@ -281,6 +281,7 @@ function vueDom(S0) {
   // Tout accès au store (db, écritures) est consigné : la vue ne doit jamais y toucher.
   c.Store = new Proxy({ get: () => S }, { get: (o, k) => { if (k !== "get") acces.push(String(k)); return o[k]; } });
   vm.createContext(c);
+  vm.runInContext(readFileSync("web/src/format.js", "utf8"), c, { filename: "format.js" });
   vm.runInContext(calcJs, c, { filename: "calc.js" });
   vm.runInContext(planJs, c, { filename: "plan.js" });
   vm.runInContext(reperesJs, c, { filename: "reperes.js" });
@@ -310,8 +311,7 @@ test("vue (DOM) : verdict, une carte par objectif dans l'ordre des priorités, p
   assert.match(sp(v.root.querySelector("#ovVerdict").textContent), /objectif/);
   const cartes = v.root.querySelector("#ovCartes").querySelectorAll("[data-ui-carte]");
   assert.deepEqual(cartes.map(x => x.getAttribute("data-ui-carte")), ["obj-matelas", "obj-apport", "obj-retraite"]);
-  assert.match(v.root.querySelector("#ovCompleter").textContent, /Compléter avec Claude/);
-  assert.deepEqual(questions(v.root.querySelector("#ovCompleter").innerHTML), [P("objectifs")]);
+  assert.equal(v.root.querySelectorAll(".ui-claude").filter(b => b.closest(".ov-tete")).length, 0, "pas de bouton Claude empilé sous le titre");
   const c0 = carte(v.root, "obj-apport");
   c0.focus(); c0.click();
   const dlg = dlgDe(v.doc);

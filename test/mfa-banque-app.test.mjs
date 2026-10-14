@@ -68,7 +68,7 @@ function monterComptes() {
     App: { register: (n, api) => { reg[n] = api; }, parametres: () => ({}) }, Store: { cours: async () => ({}) } };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["calc.js", "ui.js", "claude-prompts.js", "banque-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
+  for (const f of ["format.js", "calc.js", "ui.js", "claude-prompts.js", "banque-etat.js"]) vm.runInContext(src(f), ctx, { filename: f });
   vm.runInContext(src("comptes-view.js"), ctx, { filename: "comptes-view.js" });
   const root = doc.createElement("section");
   doc.body.appendChild(root);

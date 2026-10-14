@@ -13,54 +13,57 @@
 #view-comptes-view .cv-lien{color:var(--accent);font-weight:600}
 
 /* en-tête */
-#view-comptes-view .cv-label{margin:0;font:600 var(--t-caption) var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-radius:4px}
+#view-comptes-view .cv-label{margin:0;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted);border-radius:4px}
 #view-comptes-view .cv-label:focus{outline:none}
 #view-comptes-view .cv-label:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-#view-comptes-view .cv-total{margin:4px 0 2px;font-family:var(--f-display);font-weight:800;font-size:var(--t-hero);letter-spacing:-.01em;line-height:1.05;font-variant-numeric:tabular-nums}
+#view-comptes-view .cv-total{margin:4px 0 2px;font:700 var(--t-hero)/var(--lh-hero) var(--f-display);letter-spacing:-.015em;font-variant-numeric:tabular-nums lining-nums}
 #view-comptes-view .cv-sous{margin:0;font-size:var(--t-small);color:var(--muted);line-height:1.45}
-#view-comptes-view .cv-var{font:600 var(--t-small) var(--f-num)}
-#view-comptes-view .cv-faits{list-style:none;margin:14px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
-#view-comptes-view .cv-faits li{display:flex;flex-direction:column;gap:1px;padding:9px 12px;border-radius:var(--radius-sm);background:var(--sunk);min-width:0}
-#view-comptes-view .cv-fait-l{font-size:var(--t-caption);color:var(--muted);font-weight:600}
-#view-comptes-view .cv-fait-v{font:600 var(--t-h3) var(--f-num)}
-#view-comptes-view .cv-fait-s{font-size:var(--t-caption);color:var(--muted);line-height:1.4}
+#view-comptes-view .cv-var{font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+/* Financier, Immobilier, Dettes : une rangée de 3, à toutes les largeurs (les dettes en encre, jamais en rouge : ce n'est pas une perte) */
+#view-comptes-view .cv-faits{list-style:none;margin:var(--sp-4) 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-2)}
+#view-comptes-view .cv-faits li{display:flex;flex-direction:column;gap:2px;padding:var(--sp-3) var(--sp-3);border-radius:var(--r-ctl);background:var(--sunk);min-width:0}
+#view-comptes-view .cv-fait-l{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-comptes-view .cv-fait-v{font:700 var(--t-h3)/var(--lh-h3) var(--f-display);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
+#view-comptes-view .cv-fait-s{font-size:var(--t-caption);color:var(--muted);line-height:var(--lh-caption)}
 #view-comptes-view .cv-vide{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
 #view-comptes-view .cv-vide h2{font:700 var(--t-h3) var(--f-display);margin:0}
 #view-comptes-view .cv-vide p{margin:0;line-height:1.5;max-width:640px}
 
 /* familles */
-#view-comptes-view .cv-familles{display:flex;flex-direction:column;gap:10px}
-#view-comptes-view .cv-fam{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);min-width:0}
+#view-comptes-view .cv-familles{display:flex;flex-direction:column;gap:var(--gap-cards)}
+@media (min-width:1100px){#view-comptes-view .cv-familles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}
+#view-comptes-view .cv-fam{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--e1);min-width:0}
 #view-comptes-view .cv-fam-h{margin:0;font:inherit}
-#view-comptes-view .cv-fam-btn{display:flex;align-items:center;gap:6px 12px;width:100%;padding:12px 14px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;border-radius:var(--radius)}
+#view-comptes-view .cv-fam-btn{display:flex;align-items:center;gap:6px 12px;width:100%;min-height:var(--hit);padding:var(--sp-3) var(--sp-4);border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;border-radius:var(--r-card)}
 #view-comptes-view .cv-fam-btn:hover{background:var(--sunk)}
-#view-comptes-view .cv-fam-btn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#view-comptes-view .cv-fam-btn:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 #view-comptes-view .cv-fam-txt{flex:1 1 auto;display:flex;flex-direction:column;gap:2px;min-width:0}
-#view-comptes-view .cv-fam-nom{font:700 var(--t-h3)/1.3 var(--f-display)}
+#view-comptes-view .cv-fam-nom{font:650 var(--t-h3)/var(--lh-h3) var(--f-display)}
 #view-comptes-view .cv-fam-meta{font-size:var(--t-small);color:var(--muted)}
-#view-comptes-view .cv-fam-val{flex:none;font:600 var(--t-body) var(--f-num);white-space:nowrap}
+#view-comptes-view .cv-fam-val{flex:none;font:600 var(--t-h3)/var(--lh-h3) var(--f-body);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
 #view-comptes-view .cv-fam-chev{flex:none;display:grid;place-items:center;color:var(--muted);transition:transform .15s ease}
 #view-comptes-view .cv-fam-btn[aria-expanded="true"] .cv-fam-chev{transform:rotate(180deg)}
-#view-comptes-view .cv-fam-corps{padding:4px 14px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:12px}
-#view-comptes-view .cv-fam-corps > .cv-muet{padding-top:8px}
-#view-comptes-view .cv-etab-h{margin:8px 0 8px;font:600 var(--t-caption) var(--f-body);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-#view-comptes-view .cv-cartes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+#view-comptes-view .cv-fam-corps{padding:0 0 var(--sp-2);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:0}
+#view-comptes-view .cv-fam-corps > .cv-muet{padding:var(--sp-3) var(--sp-4)}
+#view-comptes-view .cv-etab-h{margin:0;padding:var(--sp-3) var(--sp-4) var(--sp-1);font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+/* un compte = une ligne simple (pas une carte dans une carte) : nom et solde, sous-libellé, source en puce ; séparateurs internes */
+#view-comptes-view .cv-cartes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 #view-comptes-view .cv-li{min-width:0}
-#view-comptes-view .cv-carte{display:flex;flex-direction:column;gap:6px;height:100%;box-sizing:border-box;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);text-decoration:none;min-width:0}
-#view-comptes-view .cv-carte:hover{border-color:var(--line2);background:var(--sunk)}
-#view-comptes-view .cv-carte:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#view-comptes-view .cv-li+.cv-li{border-top:1px solid var(--line)}
+#view-comptes-view .cv-carte{display:flex;flex-direction:column;gap:var(--sp-1);box-sizing:border-box;min-height:64px;padding:var(--sp-3) var(--sp-4);border:0;background:transparent;color:var(--ink);text-decoration:none;min-width:0}
+#view-comptes-view a.cv-carte:hover{background:var(--sunk)}
+#view-comptes-view .cv-carte:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 #view-comptes-view .cv-c-haut{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
-#view-comptes-view .cv-c-nom{font:700 var(--t-body)/1.3 var(--f-display);overflow-wrap:anywhere;min-width:0}
-#view-comptes-view .cv-c-solde{flex:none;font:600 var(--t-body) var(--f-num);white-space:nowrap}
-#view-comptes-view .cv-carte.dette .cv-c-solde{color:var(--crit)}
+#view-comptes-view .cv-c-nom{font:600 var(--t-h3)/var(--lh-h3) var(--f-body);overflow-wrap:anywhere;min-width:0}
+#view-comptes-view .cv-c-solde{flex:none;font:600 var(--t-h3)/var(--lh-h3) var(--f-body);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
 #view-comptes-view .cv-c-bas{display:flex;align-items:baseline;justify-content:space-between;gap:4px 10px;flex-wrap:wrap}
-#view-comptes-view .cv-c-sous{font-size:var(--t-caption);color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
-#view-comptes-view .cv-pv{font:500 var(--t-caption) var(--f-num);white-space:nowrap}
+#view-comptes-view .cv-c-sous{font-size:var(--t-small);color:var(--muted);line-height:var(--lh-small);overflow-wrap:anywhere}
+#view-comptes-view .cv-pv{font:600 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap}
 #view-comptes-view .cv-c-pied{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto}
 #view-comptes-view .cv-c-ouvrir{color:var(--muted);font-size:var(--t-h2);line-height:1}
-#view-comptes-view .cv-chip{display:inline-block;font:600 var(--t-caption) var(--f-body);padding:1px 8px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap}
-#view-comptes-view .cv-carte:hover .cv-chip.neutre{background:var(--surface)}
-#view-comptes-view .cv-chip.bon{background:var(--good-soft);color:var(--good)}
+#view-comptes-view .cv-chip{display:inline-flex;align-items:center;height:22px;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);padding:0 var(--sp-2);border-radius:var(--r-chip);background:var(--sunk);color:var(--muted);white-space:nowrap}
+#view-comptes-view a.cv-carte:hover .cv-chip.neutre{background:var(--surface)}
+#view-comptes-view .cv-chip.bon{background:var(--st-good-bg);color:var(--st-good)}
 
 /* fiches */
 #view-comptes-view .cv-ariane ol{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:var(--t-small)}
