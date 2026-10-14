@@ -68,6 +68,9 @@
     const neg = x < 0 && Number(Math.abs(x).toFixed(d)) !== 0;
     return (neg ? "−" : "") + s.replace(/^(\d+)/, m => m.replace(/\B(?=(\d{3})+(?!\d))/g, " "));
   }
+  /** Nombre à `dec` décimales fixes (zéros finaux conservés) : « 459,70 ». */
+  function frcFixe(x, dec) { const s = Math.abs(x).toFixed(dec).replace(".", ",").replace(/^(\d+)/, m => m.replace(/\B(?=(\d{3})+(?!\d))/g, " ")); return (x < 0 && Number(Math.abs(x).toFixed(dec)) !== 0 ? "−" : "") + s; }
+  const eurFixe = (x, dec) => frcFixe(x, dec == null ? 2 : dec) + " €";
   const eur = (x, dec) => frc(x, dec == null ? 0 : dec) + " €";
   /** Montant avec signe : « +400 € », « −1 020 € ». */
   const eurSigne = (x, dec) => (x >= 0 ? "+" : "") + eur(x, dec);
@@ -207,6 +210,6 @@
   }
 
   return { ISO, pad, dernierJour, iso, estDate, ajouterMois, ajouterAns, ajouterJours, joursEntre, moisEntre, moisDe, moisFin, annee, age,
-    n0, estNombre, arrondi2, frc, eur, eurSigne, pct, indexReperes, splitmix32, initialiserEtat, uniforme, cholesky, valeursPropres,
+    n0, estNombre, arrondi2, frc, frcFixe, eurFixe, eur, eurSigne, pct, indexReperes, splitmix32, initialiserEtat, uniforme, cholesky, valeursPropres,
     pluProcheDefiniePositive, centileTrie, centile };
 });

@@ -135,3 +135,59 @@ test("brutPourNet : exact pour les règles proportionnelles, dichotomie avec l'a
   proche(b2 - o2.ir - o2.ps, 30000, 1e-4);
   assert.equal(F.brutPourNet(pv, av, 60000, "2026-10-14"), 50000, "plus que le compartiment : tout");
 });
+
+/* ---------------------------------------------------------------- ordre de retrait (§ 6.3) : cas R-1 à R-4 et net d'impôts dans la projection */
+const Pr = createRequire(import.meta.url)("../web/src/projection.js");
+import { cas, entreeDe } from "./helpers/projection-cas.mjs";
+test("R-1 : apport net de 60 000 € — disponible au-dessus du matelas, puis compte-titres, puis assurance-vie (coût fiscal croissant) ; PEA intact", () => {
+  const c = cas("R-1"), a = c.attendu, r = Pr.retrait(entreeDe(c), c.options);
+  assert.equal(r.pea_intact, a.pea_intact); proche(r.impots, a.impots, 0.01); proche(r.manque, a.manque, 0.01);
+  assert.deepEqual(r.ordre_niveau_2, a.ordre_niveau_2.map(x => x));
+  for (const s of a.sources) {
+    const x = r.sources.find(y => y.enveloppe === s.enveloppe);
+    proche(x.brut, s.brut, 0.01, s.enveloppe); proche(x.impots, s.impots != null ? s.impots : x.impots, 0.01, s.enveloppe);
+    if (s.gain != null) { proche(x.gain, s.gain, 0.01); proche(x.impot_revenu, s.impot_revenu, 0.01); proche(x.prelevements_sociaux, s.prelevements_sociaux, 0.01); }
+    if (s.net != null) proche(x.net, s.net, 0.01);
+  }
+});
+test("R-2 : 150 000 € — PEA de 3 ans protégé, mobilisable 97 592 €, il manque 52 408 €", () => {
+  const c = cas("R-2"), a = c.attendu, r = Pr.retrait(entreeDe(c), c.options);
+  proche(r.mobilisable, a.mobilisable, 0.01); proche(r.manque, a.manque, 0.01); assert.equal(r.pea_intact, true);
+  assert.ok(r.avertissements.includes(a.avertissement_contient));
+  const av = r.sources.find(s => /Assurance/.test(s.enveloppe));
+  proche(av.brut, a.assurance_vie.brut, 0.01); proche(av.impot_revenu, a.assurance_vie.impot_revenu, 0.01); proche(av.prelevements_sociaux, a.assurance_vie.prelevements_sociaux, 0.01); proche(av.net, a.assurance_vie.net, 0.01);
+});
+test("R-3 : 120 000 € avec clôture du PEA autorisée — le plan est liquidé, l'excédent revient au disponible", () => {
+  const c = cas("R-3"), a = c.attendu, r = Pr.retrait(entreeDe(c), c.options);
+  const pea = r.sources.find(s => /PEA/.test(s.enveloppe));
+  proche(pea.brut, a.pea.brut, 0.01); proche(pea.impots, a.pea.impots, 0.01); proche(pea.net, a.pea.net, 0.01); assert.equal(pea.cloture, true);
+  proche(r.besoin_couvert_par_pea, a.besoin_couvert_par_pea, 0.01); proche(r.excedent_au_disponible, a.excedent_au_disponible, 0.01); proche(r.manque, a.manque, 0.01);
+});
+test("R-4 : PER mobilisable pour la résidence principale seulement", () => {
+  const c = cas("R-4"), a = c.attendu;
+  const rp = Pr.retrait(entreeDe(c), { ...c.options, usage: "rp" }), loc = Pr.retrait(entreeDe(c), { ...c.options, usage: "locatif" });
+  proche(rp.per.brut, a.rp.per.brut, 0.01); proche(rp.per.impots, a.rp.per.impots, 0.01); proche(rp.per.net, a.rp.per.net, 0.01);
+  proche(rp.matelas_utilise, a.rp.matelas_utilise, 0.01); proche(rp.manque, a.rp.manque, 0.01); assert.equal(rp.pea_intact, true);
+  assert.equal(loc.per, null); proche(loc.mobilisable, a.locatif.mobilisable, 0.01); proche(loc.manque, a.locatif.manque, 0.01);
+});
+test("ordre de retrait : les dates du calendrier changent l'ordre dans le temps (PEA mobilisable sans clôture après 5 ans)", () => {
+  const c = cas("R-2"), d = entreeDe(c);
+  const avant = Pr.retrait(d, { ...c.options, montant_net: 150000 });
+  assert.equal(avant.pea_intact, true);
+  d.config.enveloppes_infos["PEA Exemple"].date_ouverture = "2020-09-01";
+  const apres = Pr.retrait(d, { ...c.options, montant_net: 150000 });
+  assert.equal(apres.pea_intact, false, "un PEA de plus de 5 ans est mobilisable sans clôture");
+  assert.ok(apres.manque < avant.manque);
+});
+test("net d'impôts dans la projection : égal à la brute pour les livrets, inférieur pour les gains imposables ; repère manquant → brut et mention", () => {
+  const c = cas("C-1"), d = entreeDe(c);
+  const brut = Pr.simuler(Pr.preparer(d, { ...c.options, vue: "financier" }), { volatilite: 0 }), net = Pr.simuler(Pr.preparer(d, { ...c.options, vue: "financier", net_impots: true }), { volatilite: 0 });
+  assert.ok(net.vues.financier.p50[120] < brut.vues.financier.p50[120]);
+  assert.equal(net.net_impots, true);
+  /* assurance-vie de 2015, 50 000 € à 2,5 % et 40 000 € de primes : après 10 ans, 83 004 € dont 43 004 € de gain, abattement de 9 200 € du couple */
+  const gain = 50000 * Math.pow(1.025, 10) - 40000, attendu = gain * 0.172 + Math.max(0, gain - 9200) * 0.075;
+  proche(brut.vues.financier.p50[120] - net.vues.financier.p50[120], attendu, 0.5);
+  const sans = JSON.parse(JSON.stringify(d)); sans.reperes = sans.reperes.filter(r => r.cle !== "ps_taux_av_epargne_logement");
+  const r = Pr.simuler(Pr.preparer(sans, { ...c.options, vue: "financier", net_impots: true }), { volatilite: 0 });
+  proche(r.vues.financier.p50[120], brut.vues.financier.p50[120], 1e-6, "compartiment laissé en brut");
+});

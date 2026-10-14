@@ -8,6 +8,7 @@ import { cas, entreeDe, reperesComplets } from "./helpers/projection-cas.mjs";
 const req = createRequire(import.meta.url);
 const Immo = req("../web/src/projection-immo.js");
 const Credit = req("../web/src/projection-credit.js");
+
 const proche = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, (msg || "") + " : " + a + " ≠ " + b);
 const calcul = (id, extra) => { const c = cas(id); return Immo.capaciteEmprunt(entreeDe(c), { ...c.options, ...extra }); };
 
@@ -184,4 +185,49 @@ test("constantesPret : taux du jour, usure et frais lus dans les repères datés
   assert.equal(c.notaryAncien, 0.08); assert.equal(c.guarantee, 0.01); assert.equal(c.dossier, 1000); assert.equal(c.rentShare, 0.7);
   const vide = Credit.constantesPret([]);
   assert.equal(vide.rates[25], null); assert.equal(vide.guarantee, null);
+});
+
+/* ------------------------------------------------------------ IMMO1 « demain » : capaciteDansLeTemps (moteur de projection) */
+const Proj = req("../web/src/projection.js");
+const dansLeTemps = (id, extra, opts) => {
+  const c = cas(id), d = entreeDe(c);
+  d.reperes = d.reperes.map(r => (r.cle === "inflation_hypothese" ? { ...r, valeur: 0 } : r)); // cas du § 12 : euros courants, inflation 0
+  const M = Proj.preparer(d, { horizon_ans: 3, vue: "financier", ...(extra || {}) });
+  return { M, k: Proj.capaciteDansLeTemps(M, Proj.simuler(M, { chemins: 300 }), { duree_ans: 25, ...(opts || {}) }) };
+};
+test("I-5 : la mensualité maximale passe de 1 450 € à 1 750 € quand le crédit de 300 € finit (mois 18)", () => {
+  const a = cas("I-5").attendu.mensualite_max, { k } = dansLeTemps("I-5");
+  for (const s of k.serie_mensuelle) proche(s.mensualite_max, s.t <= a[0].jusqu_au_t ? a[0].montant : a[1].montant, 0.01, "mois " + s.t);
+  proche(k.serie_mensuelle[0].mensualite_max, Immo.capaciteEmprunt(entreeDe(cas("I-5")), { duree_ans: 25, taux_pct: 3.35, apport: 0 }).mensualite_max, 1e-9, "même valeur qu'aujourd'hui à t = 0");
+  assert.ok(k.jalons.some(j => /Fin du prêt auto/.test(j.titre)));
+});
+test("capaciteDansLeTemps : budget d'achat et apport en P10 / P50 / P90, taux et ±1 point, mention, phrase au tutoiement", () => {
+  const { k } = dansLeTemps("I-5");
+  assert.equal(k.mois.length, 4); assert.equal(k.mois[0], "2026-10-14");
+  for (let i = 0; i < k.mois.length; i++) { assert.ok(k.apport.p10[i] <= k.apport.p50[i] && k.apport.p50[i] <= k.apport.p90[i]); assert.ok(k.budget_achat.p10[i] <= k.budget_achat.p50[i] && k.budget_achat.p50[i] <= k.budget_achat.p90[i]); }
+  assert.ok(k.montant_empruntable[3] > k.montant_empruntable[0], "plus de revenus nets disponibles après la fin du crédit");
+  assert.equal(k.taux.central, 3.35); assert.equal(k.taux.bas, 2.35); assert.equal(k.taux.haut, 4.35);
+  assert.ok(k.budget_achat_par_taux.bas[3] > k.budget_achat_par_taux.central[3] && k.budget_achat_par_taux.central[3] > k.budget_achat_par_taux.haut[3]);
+  assert.match(k.phrase, /^En 20\d\d, budget d'achat médian .+ k€ avec .+ d'apport \(9 chances sur 10 d'avoir au moins .+\)\.$/);
+  assert.match(k.mention, /chaque banque décide/);
+  assert.doesNotMatch(JSON.stringify(k), /conseiller|\bvous\b|\bvotre\b/i);
+});
+test("capaciteDansLeTemps : valeur à une date et un scénario (outil capacite_emprunt)", () => {
+  const { k } = dansLeTemps("I-5", null, { date: "2028-10-14", scenario: "p10" });
+  assert.equal(k.point.date, "2028-10-14"); assert.equal(k.point.scenario, "p10");
+  proche(k.point.apport, k.apport.p10[2], 1e-9);
+});
+test("capaciteDansLeTemps : un achat prévu fait baisser la mensualité maximale (nouvelle mensualité)", () => {
+  const c = cas("C-4"), d = entreeDe(c);
+  d.reperes = d.reperes.map(r => (r.cle === "inflation_hypothese" ? { ...r, valeur: 0 } : r));
+  const M = Proj.preparer(d, { horizon_ans: 5, vue: "financier" });
+  const k = Proj.capaciteDansLeTemps(M, Proj.simuler(M, { chemins: 100 }), { duree_ans: 25 });
+  const avant = k.serie_mensuelle[26].mensualite_max, apres = k.serie_mensuelle[28].mensualite_max;
+  proche(avant - apres, 1366.5, 0.01);
+});
+test("capaciteDansLeTemps : repère manquant → indisponible, jamais de valeur de secours", () => {
+  const c = cas("I-5"), d = entreeDe(c); d.reperes = d.reperes.filter(r => r.cle !== "taux_credit_immo_25");
+  const M = Proj.preparer(d, { horizon_ans: 3, vue: "financier" });
+  const k = Proj.capaciteDansLeTemps(M, Proj.simuler(M, { chemins: 50 }), { duree_ans: 25 });
+  assert.equal(k.indisponible, true); assert.match(k.avertissements[0], /repère manquant/);
 });
