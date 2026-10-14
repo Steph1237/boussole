@@ -6,48 +6,48 @@
 /* en-tête */
 #view-bilan .bl-tete{display:flex;align-items:flex-end;justify-content:space-between;gap:10px 16px;flex-wrap:wrap}
 #view-bilan .bl-tete-l{min-width:0;max-width:760px;display:flex;flex-direction:column;gap:4px}
-#view-bilan .bl-tete h2{font:700 18px var(--f-display);margin:0;border-radius:4px}
+#view-bilan .bl-tete h2{font:700 var(--t-h2) var(--f-display);margin:0;border-radius:4px}
 #view-bilan .bl-tete h2:focus{outline:none}
 #view-bilan .bl-tete h2:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-#view-bilan .bl-verdict{margin:0;font-size:14.5px;font-weight:600;line-height:1.45}
+#view-bilan .bl-verdict{margin:0;font-size:var(--t-body);font-weight:600;line-height:1.45}
 #view-bilan .bl-verdict.ton-bon{color:var(--good)}
 #view-bilan .bl-verdict.ton-attention{color:var(--warn)}
 #view-bilan .bl-verdict.ton-critique{color:var(--crit)}
 #view-bilan .bl-tete-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-#view-bilan .bl-etat{margin:0;font-size:13.5px;color:var(--muted)}
+#view-bilan .bl-etat{margin:0;font-size:var(--t-small);color:var(--muted)}
 #view-bilan .bl-corps{display:flex;flex-direction:column;gap:20px;min-width:0}
 
 /* tuiles */
 #view-bilan .bl-tuiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 #view-bilan .bl-tuile{display:flex;flex-direction:column;gap:4px;min-width:0;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
-#view-bilan .bl-tuile-l{font:600 12px/1.3 var(--f-body);color:var(--muted);display:flex;flex-direction:column;gap:1px}
-#view-bilan .bl-tuile-def{font-weight:500;font-size:11.5px}
-#view-bilan .bl-tuile-v{font:600 22px/1.15 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:anywhere}
+#view-bilan .bl-tuile-l{font:600 var(--t-caption)/1.3 var(--f-body);color:var(--muted);display:flex;flex-direction:column;gap:1px}
+#view-bilan .bl-tuile-def{font-weight:500;font-size:var(--t-caption)}
+#view-bilan .bl-tuile-v{font:600 var(--t-kpi)/1.15 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:anywhere}
 #view-bilan .bl-tuile.bon .bl-tuile-v{color:var(--good)}
 #view-bilan .bl-tuile.attention .bl-tuile-v{color:var(--warn)}
 #view-bilan .bl-tuile.critique .bl-tuile-v{color:var(--crit)}
-#view-bilan .bl-tuile-s{font-size:12px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
+#view-bilan .bl-tuile-s{font-size:var(--t-caption);line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
 #view-bilan .bl-tuile-s a{color:var(--accent);font-weight:600;text-underline-offset:2px}
 
 /* sections et cartes */
 #view-bilan .bl-sec{display:flex;flex-direction:column;gap:10px;min-width:0}
 #view-bilan .bl-sec-tete{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
-#view-bilan .bl-h2{font:700 16px var(--f-display);margin:0}
+#view-bilan .bl-h2{font:700 var(--t-h3) var(--f-display);margin:0}
 #view-bilan .bl-sec-act{display:inline-flex}
 #view-bilan .bl-cartes .ui-voirplus-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:12px}
 #view-bilan .bl-cartes .ui-voirplus-reste{margin-top:12px}
 #view-bilan .bl-carte{border-left:4px solid var(--s3,var(--accent));height:100%}
 #view-bilan .bl-carte.bl-credit{border-left-color:var(--s6,var(--line2))}
-#view-bilan .bl-carte-nom{font:700 15px/1.3 var(--f-display);color:var(--ink);overflow-wrap:anywhere}
+#view-bilan .bl-carte-nom{font:700 var(--t-body)/1.3 var(--f-display);color:var(--ink);overflow-wrap:anywhere}
 #view-bilan .bl-barre{display:block;height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
 #view-bilan .bl-barre i{display:block;height:100%;background:var(--good)}
-#view-bilan .bl-carte-deja{font-size:12px;color:var(--muted)}
-#view-bilan .bl-aucun{margin:0;font-size:13px;color:var(--muted)}
+#view-bilan .bl-carte-deja{font-size:var(--t-caption);color:var(--muted)}
+#view-bilan .bl-aucun{margin:0;font-size:var(--t-small);color:var(--muted)}
 
 /* état vide */
-#view-bilan .bl-vide{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;border:1px dashed var(--line2);border-radius:var(--radius);font-size:13.5px;line-height:1.5;max-width:760px}
+#view-bilan .bl-vide{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;border:1px dashed var(--line2);border-radius:var(--radius);font-size:var(--t-small);line-height:1.5;max-width:760px}
 #view-bilan .bl-vide p{margin:0}
-#view-bilan .bl-vide-t{font:700 15px var(--f-display)}
+#view-bilan .bl-vide-t{font:700 var(--t-body) var(--f-display)}
 #view-bilan .bl-vide-act{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap}
 
 /* méthode */
@@ -55,11 +55,11 @@
 #view-bilan .bl-how-corps p{margin:10px 0 0}
 
 /* panneau de détail (UI.panneau, hors de la vue) */
-.ui-panneau .bl-d-dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 14px;margin:0;font-size:14px;line-height:1.45}
-.ui-panneau .bl-d-dl dt{color:var(--muted);font-size:12.5px;font-weight:600;padding-top:2px}
+.ui-panneau .bl-d-dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 14px;margin:0;font-size:var(--t-body);line-height:1.45}
+.ui-panneau .bl-d-dl dt{color:var(--muted);font-size:var(--t-small);font-weight:600;padding-top:2px}
 .ui-panneau .bl-d-dl dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.ui-panneau .bl-d-alerte{margin:0;padding:10px 12px;border-radius:8px;background:var(--warn-soft);color:var(--ink);font-size:13px;line-height:1.5}
-.ui-panneau .bl-d-note{margin:0;font-size:12.5px;line-height:1.5;color:var(--muted)}
+.ui-panneau .bl-d-alerte{margin:0;padding:10px 12px;border-radius:8px;background:var(--warn-soft);color:var(--ink);font-size:var(--t-small);line-height:1.5}
+.ui-panneau .bl-d-note{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
 
 @media (max-width:1100px){#view-bilan .bl-tuiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:420px){#view-bilan .bl-tuile{padding:12px}#view-bilan .bl-tuile-v{font-size:19px}}
+@media (max-width:420px){#view-bilan .bl-tuile{padding:12px}#view-bilan .bl-tuile-v{font-size:var(--t-h2)}}
