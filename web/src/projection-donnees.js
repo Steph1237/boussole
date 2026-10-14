@@ -298,6 +298,14 @@
     return out;
   }
 
-  return { CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
+  /** Entrée du moteur depuis l'état S du store (positions, config, profil, budget, banque, objectifs, foyer, repères, indices) ; today = AAAA-MM-JJ (jour de Paris). */
+  function depuisEtat(S, today) {
+    const s = objet(S), pr = objet(s.profil);
+    return { today, positions: liste(s.positions), instruments: [], config: objet(s.config), profil: pr, credits: liste(pr.credits), biens: liste(pr.biens), budget: s.budget || { lignes: [] },
+      banque: s.banque || null, objectifs: liste(s.objectifs), foyer: { evenements: liste(objet(s.foyer).evenements), variantes: liste(objet(s.foyer).variantes) },
+      reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes) };
+  }
+
+  return { depuisEtat, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
     creditsExistants, DISPO, TYPES_ENVELOPPE, personnesDe, objet, liste, sum };
 });

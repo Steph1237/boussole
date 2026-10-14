@@ -19,9 +19,15 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, foyer, indices, plansFiges, scope, people, user, error }
+   foyer = { evenements: [{ id, variante_id, type, personne, libelle, date, fin, params, source, created_at, updated_at }], variantes: [{ id, nom, description, retire, hypotheses,
+   created_at, updated_at }] } : événements de vie et variantes de la projection (tables foyer_evenements et foyer_variantes, 0031 ; écrits seulement par les propositions du
+   Copilote) ; indices = [{ serie, mois, valeur, source_titre, source_url, verifie_le }] : indice des prix (table publique indices_mensuels, série ipc_insee) pour passer le passé en
+   euros constants ; plansFiges = [{ id, cree_le, raison, horizon_mois }] : plans de projection figés (table plans_figes), sans leur série ni leurs paramètres ;
+   Store.plansFiges.detail(id) → Promise<{ id, cree_le, raison, horizon_mois, parametres, serie } | null>. Tables absentes (migration non appliquée) : valeurs précédentes.
+   config.projection = réglages de projection du foyer ({} par défaut, 0031).
    positions[] : … + ter (% par an), zone, devise (exposition), annoteSource, annoteLe — annotations de l'instrument (null si inconnues),
    symbol (symbole Yahoo de l'instrument ou null) ; config.frais_enveloppes = frais des contrats (0026, {} par défaut) ; config.enveloppes_infos, prets_infos, donations, avis_impot = calendrier patrimonial (0029 : {}, {}, [], {} par défaut) ;
    sourceAuto ("powens" | "binance" | null) et sourceAutoLe (horodatage | null) : ligne alimentée par une synchronisation (0021, 0023).
@@ -128,7 +134,7 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, banque: { actif: false, lu: false, connexions: [], comptes: [], mois: [] }, onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, foyer: { evenements: [], variantes: [] }, indices: [], plansFiges: [], expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, banque: { actif: false, lu: false, connexions: [], comptes: [], mois: [] }, onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -169,6 +175,7 @@
       routines: clone(C.routines),
       routinesLues: C.routinesLues,
       banque: clone(C.banque),
+      foyer: clone(C.foyer), indices: clone(C.indices), plansFiges: clone(C.plansFiges),
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -225,7 +232,10 @@
   const cfgView = r => ({ targets: r.targets || {}, rules: r.rules || [], cushion: r.cushion || null, recurring: r.recurring || [], todo: r.todo || [], milestones: r.milestones || [], hypotheses: r.hypotheses || [],
     frais_enveloppes: objetOu(r.frais_enveloppes),
     // Calendrier patrimonial (0029) : informations des enveloppes et des prêts, donations consenties, avis d'impôt ({}, {}, [], {} par défaut).
-    enveloppes_infos: objetOu(r.enveloppes_infos), prets_infos: objetOu(r.prets_infos), donations: Array.isArray(r.donations) ? r.donations : [], avis_impot: objetOu(r.avis_impot) });
+    enveloppes_infos: objetOu(r.enveloppes_infos), prets_infos: objetOu(r.prets_infos), donations: Array.isArray(r.donations) ? r.donations : [], avis_impot: objetOu(r.avis_impot), projection: objetOu(r.projection) });
+  const foyerView = r => ({ id: r.id, variante_id: r.variante_id || null, type: r.type, personne: r.personne, libelle: r.libelle, date: String(r.date).slice(0, 10), fin: r.fin ? String(r.fin).slice(0, 10) : null,
+    params: r.params && typeof r.params === "object" ? r.params : {}, source: r.source, created_at: r.created_at, updated_at: r.updated_at });
+  const varianteView = r => ({ id: r.id, nom: r.nom, description: r.description || "", retire: Array.isArray(r.retire) ? r.retire : [], hypotheses: r.hypotheses && typeof r.hypotheses === "object" ? r.hypotheses : {}, created_at: r.created_at, updated_at: r.updated_at });
   const stView = r => ({ lastRun: r.last_run, summary: r.summary || "", alerts: r.alerts || [], missingPrices: r.missing_prices || 0 });
   const profView = (p, biens, credits) => ({
     foyer: p.foyer || {}, personnes: p.personnes || {}, autres: p.autres || {}, protection: p.protection || {},
@@ -332,9 +342,13 @@
       q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
       qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire")),
       q(sb.from("routines").select(ROUTINE_SELECT).order("type")),
+      q(sb.from("foyer_evenements").select("id, variante_id, type, personne, libelle, date, fin, params, source, created_at, updated_at").order("date").order("created_at")),
+      q(sb.from("foyer_variantes").select("id, nom, description, retire, hypotheses, created_at, updated_at").order("created_at")),
+      q(sb.from("plans_figes").select("id, cree_le, raison, horizon_mois").order("cree_le", { ascending: false }).limit(60)),
+      q(sb.from("indices_mensuels").select("serie, mois, valeur, source_titre, source_url, verifie_le").eq("serie", "ipc_insee").order("mois")),
       q(sb.from("fonctionnalites").select("cle, active").eq("cle", "banque").maybeSingle()),
     ]);
-    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, expertises, journal, nARelire, routines, banque] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
+    const [prof, biens, credits, positions, tx, snaps, config, status, budget, objectifs, propositions, connexions, memoire, fiches, reperes, expertises, journal, nARelire, routines, evenements, variantes, plans, indices, banque] = res.map(r => (r.status === "fulfilled" ? r.value : undefined));
     const failed = res.filter((r, i) => r.status === "rejected" && i !== res.length - 1); // interrupteur banque (0021) absent : pas une erreur de lecture
     C.error = failed.length ? (failed[0].reason && failed[0].reason.code) || "erreur" : null;
     if (failed.length) console.warn("Boussole : lecture partielle", failed.map(f => f.reason));
@@ -352,6 +366,9 @@
     if (reperes !== undefined) C.savoir = Object.assign({}, C.savoir, { reperes: repView(reperes || []) });
     if (expertises !== undefined) C.expertises = (expertises || []).map(expView);
     if (journal !== undefined) C.journal = (journal || []).map(journalView);
+    if (evenements !== undefined || variantes !== undefined) C.foyer = { evenements: evenements !== undefined ? (evenements || []).map(foyerView) : C.foyer.evenements, variantes: variantes !== undefined ? (variantes || []).map(varianteView) : C.foyer.variantes };
+    if (plans !== undefined) C.plansFiges = (plans || []).map(r => ({ id: r.id, cree_le: r.cree_le, raison: r.raison, horizon_mois: r.horizon_mois }));
+    if (indices !== undefined) C.indices = (indices || []).map(r => ({ serie: r.serie, mois: String(r.mois).slice(0, 10), valeur: +r.valeur, source_titre: r.source_titre, source_url: r.source_url, verifie_le: r.verifie_le }));
     // Pastille « à relire » : compte exact ; à défaut, compte fait sur les entrées lues.
     C.journalARelire = nARelire !== undefined ? nARelire : C.journal.filter(e => e && e.statut === "a_relire").length;
     // Routines (0020) : table absente → valeur précédente, comme le journal ; routinesLues reste vrai après une première lecture.
@@ -786,6 +803,7 @@
     expertises,
     journal,
     routines,
+    plansFiges: { async detail(id) { guard(); const data = await q(sb.from("plans_figes").select("id, cree_le, raison, horizon_mois, parametres, serie").eq("id", id).maybeSingle()); return data || null; } },
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

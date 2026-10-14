@@ -126,3 +126,15 @@ describe("crises de référence", () => {
     assert.ok(!(Marche.CRISES.taux_2022.proxy || {}).crypto, "la crypto existait en 2022");
   });
 });
+
+describe("traçabilité des statistiques (PROJ)", () => {
+  test("chaque classe porte sa période de calcul (ou null) et une date de vérification (null : non revérifiée), valeurs inchangées", () => {
+    for (const k of Marche.CLES) {
+      const c = Marche.CLASSES[k];
+      assert.ok("periode" in c && (c.periode === null || typeof c.periode === "string"), k + " : periode");
+      assert.ok("verifie_le" in c && (c.verifie_le === null || /^\d{4}-\d{2}-\d{2}$/.test(c.verifie_le)), k + " : verifie_le");
+    }
+    assert.equal(Marche.CLASSES.actions.periode, "1970-2025"); assert.equal(Marche.CLASSES.obligations.periode, "1999-2025");
+    assert.equal(Marche.CLASSES.actions.rendementLong, 7); assert.equal(Marche.CLASSES.crypto.volatilite, 70);
+  });
+});

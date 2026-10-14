@@ -241,3 +241,30 @@ test("propositions.js : aucun vouvoiement ni « conseiller » dans les nouvelles
   assert.equal((bloc.match(/(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu) || [])[0], undefined);
   assert.equal((bloc.match(/conseill/i) || [])[0], undefined);
 });
+
+/* ---------- PROJ : événements de vie, variantes, projections figées, réglages de projection ---------- */
+test("propositions.js : événements de vie décrits en clair (spec § 14.2), tutoiement, sources", () => {
+  const ctx = { profil: { personnes: { p1: { nom: "Camille" }, p2: { nom: "Sam" } } }, foyer: { evenements: [{ id: "e1", libelle: "Achat RP" }], variantes: [{ id: "v1", nom: "2ᵉ enfant" }] } };
+  const ev = (type, params, extra) => ({ id: "p", cible: "evenement", operation: "creer", ref: null, avant: null, apres: { type, personne: "foyer", libelle: "Libellé", date: "2029-09-01", params, source: "Ce que tu as dit à Claude (exemple)", ...extra } });
+  assert.equal(d(ev("naissance", { enfant: "Enfant 2", cout_mode: "uc" }, { date: "2090-03-01" }), ctx), "Naissance prévue : Enfant 2, mars 2090 (coût selon l'échelle de l'Insee) (source : Ce que tu as dit à Claude (exemple))");
+  assert.equal(d(ev("achat_immobilier", { prix: 420000, usage: "rp", apport: "max", pret: { duree_ans: 25 }, charges_mensuelles: 250 }), ctx),
+    "Achat de la résidence principale en septembre 2029 : 420 000 €, apport maximal, prêt sur 25 ans (source : Ce que tu as dit à Claude (exemple))");
+  assert.match(d(ev("achat_immobilier", { prix: 180000, usage: "locatif", apport: 40000, pret: { duree_ans: 20 }, charges_mensuelles: 100 }), ctx), /^Achat d'un bien locatif en septembre 2029 : 180 000 €, apport 40 000 €, prêt sur 20 ans/);
+  assert.match(d(ev("creche", { enfant: "Enfant 2", mode: "psu" }, { fin: "2032-07-01" }), ctx), /^Garde de Enfant 2 dès septembre 2029 jusqu'en juillet 2032 : crèche, barème de la Caf/);
+  assert.match(d(ev("creche", { enfant: "Enfant 2", mode: "assistante_maternelle", cout_mensuel: 900, cmg_mensuel: 300 }), ctx), /assistante maternelle, 900 €\/mois dont 300 € d'aide de la Caf/);
+  assert.match(d(ev("conge_parental", { personne: "p2", activite: "arret" }, { fin: "2030-03-01" }), ctx), /^Congé parental de Sam \(arrêt complet\) de septembre 2029 à mars 2030/);
+  assert.match(d(ev("changement_emploi", { personne: "p1", salaire_net_mensuel: 3200 }), ctx), /^Nouvel emploi de Camille dès septembre 2029 : salaire net 3 200 €\/mois/);
+  assert.match(d(ev("hausse_revenu", { personne: "p2", delta_mensuel: -400 }), ctx), /^Revenu de Sam : −400 €\/mois dès septembre 2029/);
+  assert.match(d(ev("scolarite_privee", { enfant: "Enfant 1", niveau: "college", frais_annuels: 6000 }), ctx), /École privée \(collège\) de Enfant 1 dès septembre 2029 : 6 000 € par an/);
+  assert.match(d(ev("retrait", { montant: 15000, libelle: "Voiture" }), ctx), /^Retrait de 15 000 € en septembre 2029 \(Libellé\)/);
+  assert.match(d(ev("fin_credit", { credit: "credit:x", part_reaffectee_epargne_pct: 50 }), ctx), /^Fin de crédit : 50 % de la mensualité libérée va à l'épargne/);
+  assert.equal(d({ id: "p", cible: "evenement", operation: "supprimer", ref: "e1" }, ctx), "Supprimer l'événement : Achat RP");
+  assert.equal(d({ id: "p", cible: "variante", operation: "supprimer", ref: "v1" }, ctx), "Supprimer la variante : 2ᵉ enfant");
+  assert.match(d({ id: "p", cible: "variante", operation: "creer", apres: { nom: "Sans achat", description: "Si on ne finit pas par acheter.", retire: ["a"], hypotheses: { epargne_delta_mensuel: 100 } } }, ctx),
+    /^Nouvelle variante « Sans achat » : Si on ne finit pas par acheter\. \(retire 1 événement\) \(hypothèses modifiées : epargne_delta_mensuel\)/);
+  assert.match(d({ id: "p", cible: "plan_fige", operation: "creer", apres: { raison: "revue_mensuelle", horizon_mois: 120, parametres: { today: "2026-10-15" }, serie: {} } }, ctx), /^Figer la projection du 15\/10\/2026 \(revue mensuelle, sur 10 ans\)/);
+  assert.match(d({ id: "p", cible: "config", operation: "modifier", apres: { projection: { base_capacite: "reel", tmi_pct: 30, biens: { "bien:a": {} }, source: "Avis d'impôt (exemple)" } } }, ctx),
+    /^Réglages de projection : épargne de départ : ta capacité d'épargne constatée, taux marginal d'imposition 30 %, prix d'achat de 1 bien \(source : Avis d'impôt \(exemple\)\)$/);
+  assert.doesNotMatch(JSON.stringify([H.CIBLES.evenement, H.CIBLES.variante, H.CIBLES.plan_fige]), /\bvous\b|\bvotre\b|conseiller/i);
+  assert.ok(["evenement", "variante", "plan_fige"].every(c => H.ORDRE_CIBLES.includes(c)));
+});

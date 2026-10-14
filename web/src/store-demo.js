@@ -8,7 +8,7 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    sensible, routine-etat, banque-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
@@ -71,6 +71,7 @@
     routines: D.routines || [], routinesLues: false,
     banque: D.banque || { actif: false, lu: true, connexions: [], comptes: [], mois: [] },
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
+    foyer: { evenements: ((D.foyer && D.foyer.evenements) || []).slice(), variantes: ((D.foyer && D.foyer.variantes) || []).slice() }, indices: D.indices || [], plansFiges: (D.plansFiges || []).slice(),
   };
   // Fiches : S n'expose que les résumés (comme store-supabase.js) ; le contenu reste ici pour Store.savoir.fiche(slug).
   const FICHES = (D.savoir && D.savoir.fiches) || [];
@@ -97,6 +98,24 @@
 
   const subs = []; let tmr = null;
   const emit = () => { clearTimeout(tmr); tmr = setTimeout(() => subs.forEach(fn => { try { fn(S); } catch (e) { console.error(e); } }), 60); };
+  /* PROJ : deux plans figés (revues mensuelles passées) calculés par le moteur à partir de l'état de la démo, la première fois que le moteur est chargé. */
+  let plansFaits = false;
+  function plansFigesDemo() {
+    if (!plansFaits && !C.plansFiges.length && window.Projection && window.Projection.figerPlan && C.ready) {
+      plansFaits = true;
+      try {
+        const Pj = window.Projection, jour = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+        [62, 31].forEach(n => {
+          const data = Pj.depuisEtat(clone({ positions: C.positions, config: C.config, profil: C.profil, budget: C.budget, banque: C.banque, objectifs: C.objectifs, foyer: C.foyer,
+            savoir: C.savoir, indices: C.indices, classes: C.classes }), jour(n));
+          const options = { horizon_ans: 10, vue: "net", euros: "courants" };
+          const ligne = Pj.figerPlan({ data, options }, Pj.simuler(Pj.preparer(data, options), { chemins: 500 }), "revue_mensuelle");
+          C.plansFiges.push(Object.assign({ id: newId("plan"), cree_le: jour(n) + "T20:00:00.000Z" }, ligne));
+        });
+      } catch (e) { console.error(e); }
+    }
+    return C.plansFiges;
+  }
   const S = {};
   function publish() {
     const ppl = people();
@@ -124,6 +143,7 @@
       routines: clone(C.routines),
       routinesLues: C.routinesLues,
       banque: clone(C.banque),
+      foyer: clone(C.foyer), indices: clone(C.indices), plansFiges: plansFigesDemo().map(r => ({ id: r.id, cree_le: r.cree_le, raison: r.raison, horizon_mois: r.horizon_mois })),
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
       people: ppl,
@@ -645,6 +665,66 @@
       case "protection":
         pr.protection = sansNull(Object.assign({}, pr.protection, v));
         break;
+      case "evenement": case "variante": case "plan_fige": {
+        const Ev = window.ProjectionEvenements, rogner = x => String(x == null ? "" : x).trim().replace(/\s+/g, " "), present = x => x !== undefined && x !== null && x !== "";
+        const octets = x => unescape(encodeURIComponent(JSON.stringify(x))).length;
+        const uuid = () => "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+        const maintenant = new Date().toISOString();
+        if (p.cible === "evenement") {
+          const liste = C.foyer.evenements;
+          if (p.operation === "supprimer") { const i = liste.findIndex(x => x.id === p.ref); if (i < 0) throw bad("événement « " + p.ref + " » introuvable"); liste.splice(i, 1); break; }
+          const inconnu = Object.keys(v).find(k => !["type", "personne", "libelle", "date", "fin", "params", "source", "variante_id"].includes(k));
+          if (inconnu) throw bad("événement : champ « " + inconnu + " » inconnu (type, personne, libelle, date, fin, params, source, variante_id)");
+          let ev = v, cible = null;
+          if (p.operation === "modifier") { cible = liste.find(x => x.id === p.ref); if (!cible) throw bad("événement « " + p.ref + " » introuvable"); ev = Object.assign({}, cible, v); }
+          const msg = Ev.validerEvenement(ev, { today: jourIso(), credits: (C.profil && C.profil.credits) || [], biens: (C.profil && C.profil.biens) || [] });
+          if (msg) throw bad(msg);
+          let vid = null;
+          if (present(ev.variante_id)) {
+            vid = String(ev.variante_id);
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vid)) throw bad("événement : variante_id invalide (identifiant de variante attendu)");
+            if (!C.foyer.variantes.some(x => x.id === vid)) throw bad("variante « " + vid + " » introuvable");
+          }
+          const ligne = { variante_id: vid, type: ev.type, personne: ev.personne, libelle: rogner(ev.libelle), date: ev.date, fin: present(ev.fin) ? ev.fin : null, params: ev.params === undefined ? {} : clone(ev.params), source: rogner(ev.source) };
+          if (p.operation === "creer") {
+            if (liste.length >= 100) throw bad("Limite atteinte : 100 événements au plus. Supprime un événement avant d'en ajouter un.");
+            liste.push(Object.assign({ id: uuid(), created_at: maintenant, updated_at: maintenant }, ligne));
+          } else Object.assign(cible, ligne, { updated_at: maintenant });
+        } else if (p.cible === "variante") {
+          const liste = C.foyer.variantes;
+          if (p.operation === "supprimer") {
+            const i = liste.findIndex(x => x.id === p.ref); if (i < 0) throw bad("variante « " + p.ref + " » introuvable");
+            liste.splice(i, 1); C.foyer.evenements = C.foyer.evenements.filter(x => x.variante_id !== p.ref); break;
+          }
+          const inconnu = Object.keys(v).find(k => !["nom", "description", "retire", "hypotheses"].includes(k));
+          if (inconnu) throw bad("variante : champ « " + inconnu + " » inconnu (nom, description, retire, hypotheses)");
+          let ev = v, cible = null;
+          if (p.operation === "modifier") { cible = liste.find(x => x.id === p.ref); if (!cible) throw bad("variante « " + p.ref + " » introuvable"); ev = Object.assign({ nom: cible.nom, description: cible.description, retire: cible.retire, hypotheses: cible.hypotheses }, v); }
+          const msg = Ev.validerVariante(ev);
+          if (msg) throw bad(msg);
+          const ligne = { nom: rogner(ev.nom), description: present(ev.description) ? ev.description : "", retire: present(ev.retire) ? clone(ev.retire) : [], hypotheses: objet(ev.hypotheses) ? clone(ev.hypotheses) : {} };
+          if (p.operation === "creer") {
+            if (liste.length >= 10) throw bad("Limite atteinte : 10 variantes au plus. Supprime une variante avant d'en ajouter une.");
+            liste.push(Object.assign({ id: uuid(), created_at: maintenant, updated_at: maintenant }, ligne));
+          } else Object.assign(cible, ligne, { updated_at: maintenant });
+        } else {
+          const liste = C.plansFiges;
+          if (p.operation === "modifier") throw bad("plan figé : seules la création et la suppression sont possibles");
+          if (p.operation === "supprimer") { const i = liste.findIndex(x => x.id === p.ref); if (i < 0) throw bad("plan figé « " + p.ref + " » introuvable"); liste.splice(i, 1); break; }
+          const inconnu = Object.keys(v).find(k => !["raison", "horizon_mois", "parametres", "serie"].includes(k));
+          if (inconnu) throw bad("plan figé : champ « " + inconnu + " » inconnu (raison, horizon_mois, parametres, serie)");
+          if (!["revue_mensuelle", "objectif", "manuel"].includes(v.raison)) throw bad("plan figé : raison invalide (revue_mensuelle, objectif ou manuel attendu)");
+          const h = typeof v.horizon_mois === "number" || (typeof v.horizon_mois === "string" && v.horizon_mois.trim() !== "") ? +v.horizon_mois : NaN;
+          if (!(Number.isInteger(h) && h >= 1 && h <= 300)) throw bad("plan figé : horizon_mois invalide (entier de 1 à 300 attendu)");
+          if (!objet(v.parametres)) throw bad("plan figé : parametres : objet attendu");
+          if (!objet(v.serie)) throw bad("plan figé : serie : objet attendu");
+          if (octets(v.parametres) > 100000) throw bad("plan figé : parametres : 100 000 octets au plus");
+          if (octets(v.serie) > 250000) throw bad("plan figé : serie : 250 000 octets au plus");
+          if (liste.length >= 60) throw bad("Limite atteinte : 60 plans figés au plus. Supprime un plan figé avant d'en ajouter un.");
+          liste.push({ id: uuid(), cree_le: maintenant, raison: v.raison, horizon_mois: h, parametres: clone(v.parametres), serie: clone(v.serie) });
+        }
+        break;
+      }
       case "config": {
         if (p.operation !== "modifier") throw bad("réglages : seule la modification est possible.");
         const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot", "projection"];
@@ -671,7 +751,7 @@
         throw bad("cible « " + p.cible + " » inconnue.");
     }
   }
-  const LIBELLES_CIBLE = { profil: "profil", budget: "ligne de budget", position: "placement", bien: "bien immobilier", credit: "crédit", objectif: "objectif", risque: "profil de risque", protection: "protection", config: "réglages" };
+  const LIBELLES_CIBLE = { profil: "profil", budget: "ligne de budget", position: "placement", bien: "bien immobilier", credit: "crédit", objectif: "objectif", risque: "profil de risque", protection: "protection", config: "réglages", evenement: "événement", variante: "variante", plan_fige: "plan figé" };
   const propositions = {
     async appliquer(ids, modifications = {}) {
       await tick();
@@ -987,6 +1067,7 @@
     expertises,
     journal,
     routines,
+    plansFiges: { detail(id) { const r = C.plansFiges.find(x => x.id === id); return Promise.resolve(r ? clone(r) : null); } },
     get: () => S,
     on(fn) { subs.push(fn); },
     setScope(c) {

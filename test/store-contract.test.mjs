@@ -58,7 +58,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], banque: ["object"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], banque: ["object"], foyer: ["object"], indices: ["array"], plansFiges: ["array"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -84,7 +84,7 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.equal(S.snapshots.length, 3);
   S.snapshots.forEach(s => assert.deepEqual(Object.keys(s).sort(), ["byBloc", "byEnvelope", "date", "foyer", "p1", "p2", "source"]));
   S.snapshots.forEach(s => near(s.p1 + s.p2, s.foyer, "photo : p1 + p2 = foyer"));
-  assert.deepEqual(Object.keys(S.config).sort(), ["avis_impot", "cushion", "donations", "enveloppes_infos", "frais_enveloppes", "hypotheses", "milestones", "prets_infos", "recurring", "rules", "targets", "todo"]);
+  assert.deepEqual(Object.keys(S.config).sort(), ["avis_impot", "cushion", "donations", "enveloppes_infos", "frais_enveloppes", "hypotheses", "milestones", "prets_infos", "projection", "recurring", "rules", "targets", "todo"]);
   assert.deepEqual([J(S.config.avis_impot), Array.isArray(S.config.donations), typeof S.config.enveloppes_infos, typeof S.config.prets_infos], [{}, true, "object", "object"], "calendrier patrimonial (0029) : avis {}, donations [], infos d'enveloppes et de prêts");
   assert.deepEqual(J(S.config.frais_enveloppes), {}, "frais des contrats : objet vide par défaut (comme config.frais_enveloppes, 0026)");
   assert.deepEqual(Object.keys(S.config.targets).sort(), ["p1", "p2", "tolerancePts"], "cibles par personne");
@@ -427,7 +427,7 @@ test("démo : mémoire de l'agent et savoir commun au contrat (6 souvenirs, 4 fi
   S.savoir.reperes.forEach(r => {
     assert.deepEqual(Object.keys(r).sort(), REPERE_KEYS, `forme du repère ${r.cle}`);
     assert.equal(typeof r.valeur, "number");
-    assert.ok(["%", "€", "ans", "mois"].includes(r.unite));
+    assert.ok(["%", "€", "ans", "mois", "UC", "h", "dates"].includes(r.unite));
     assert.ok(r.dateFin === null || (/^\d{4}-\d{2}-\d{2}$/.test(r.dateFin) && r.dateFin >= r.dateEffet), `dateFin de ${r.cle}`);
     assert.match(r.sourceTitre, /exemple/i, "valeur d'exemple signalée");
     assert.match(r.sourceUrl, /^https:\/\//);
@@ -879,7 +879,7 @@ test("store-supabase.js : routines (lecture dans loadAll, table absente sans cas
   const sup = src("store-supabase.js"), demo = src("store-demo.js");
   for (const s of [sup, demo]) {
     assert.match(s, /S = \{[^\n]*journalConsentement, routines, routinesLues,/, "en-tête : S documente routines et routinesLues");
-    assert.match(s, /Contrat : window\.Store = \{[^\n]*journal, routines, surveillerConnexions/, "en-tête : Store.routines");
+    assert.match(s, /Contrat : window\.Store = \{[^\n]*journal, routines,( plansFiges,)? surveillerConnexions/, "en-tête : Store.routines");
     for (const k of ["routines: clone(C.routines)", "routinesLues: C.routinesLues", "routines,", "Store.routines.pause(type, enPause)", 'const ROUTINE_TYPES = ["revue_mensuelle"]'])
       assert.ok(s.includes(k), k);
   }

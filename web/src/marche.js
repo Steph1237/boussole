@@ -8,67 +8,78 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.Marche = api;
 })(typeof self !== "undefined" ? self : this, function (Calc) {
-  /* Pour chaque classe : rendementLong (% nominal par an, longue période), volatilite (% annualisée),
+  /* Pour chaque classe : periode (années couvertes par les statistiques, null si non précisée) et verifie_le (null : pas de revérification datée), rendementLong (% nominal par an, longue période), volatilite (% annualisée),
      pireBaisse (% du sommet au creux, négatif), episodePireBaisse, pireAnnee (% sur une année civile), anneePire, source. */
   const CLASSES = {
     actions: {
       label: "Actions (monde développé)",
       rendementLong: 7, volatilite: 15, pireBaisse: -55, episodePireBaisse: "2007-2009", pireAnnee: -38, anneePire: 2008,
       source: "MSCI World NR EUR 1970-2025, MSCI ; Jordà et al., « The Rate of Return on Everything », QJE 2019 ; 2008 : −38 %",
+      periode: "1970-2025", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     small_caps: {
       label: "Actions de petites entreprises (small caps)",
       rendementLong: 7.5, volatilite: 20, pireBaisse: -60, episodePireBaisse: "2007-2009", pireAnnee: -40, anneePire: 2008,
       source: "MSCI World Small Cap NR 2001-2025, MSCI ; Fama et French (prime de taille, États-Unis 1926-2024)",
+      periode: "2001-2025", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     emergents: {
       label: "Actions des pays émergents",
       rendementLong: 6.5, volatilite: 20, pireBaisse: -60, episodePireBaisse: "2007-2009", pireAnnee: -50, anneePire: 2008,
       source: "MSCI Emerging Markets NR 1988-2025, MSCI ; 2008 : environ −50 % en euros",
+      periode: "1988-2025", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     levier: {
       label: "Produits à effet de levier (ETF ×2 quotidien)",
       rendementLong: 9, volatilite: 45, pireBaisse: -85, episodePireBaisse: "2000-2002 (reconstitution)", pireAnnee: -60, anneePire: 2022,
       source: "Nasdaq-100 levier ×2 quotidien : reconstitutions −85 % à −95 % sur 2000-2002, environ −60 % en 2022 (ProShares Ultra QQQ) ; " +
         "volatilité ≈ 2 × celle de l'indice, avec l'effet de recalibrage quotidien qui érode la performance en marché agité",
+      periode: "2000-2022 (reconstitutions)", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     obligations: {
       label: "Obligations (zone euro)",
       rendementLong: 3.5, volatilite: 5, pireBaisse: -17, episodePireBaisse: "2021-2022", pireAnnee: -17, anneePire: 2022,
       source: "Indice obligataire euro agrégé, Bloomberg Euro Aggregate, 1999-2025 ; 2022 : −17 % (remontée des taux)",
+      periode: "1999-2025", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     immobilier: {
       label: "Immobilier (SCPI, pierre)",
       rendementLong: 4.5, volatilite: 6, pireBaisse: -20, episodePireBaisse: "1991-1997 et 2023-2024", pireAnnee: -10, anneePire: 2024,
       source: "IEIF pour les SCPI : pire baisse du prix de part ≈ −20 % (1991-1997 et 2023-2024) ; ASPIM ; Notaires de France / INSEE pour la pierre. " +
         "Volatilité lissée par la valorisation par expertise, le risque réel est plus élevé que le chiffre affiché",
+      periode: "1991-2024", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     monetaire: {
       label: "Monétaire et livrets",
       rendementLong: 1.5, volatilite: 0.5, pireBaisse: 0, episodePireBaisse: "aucune baisse nominale (érosion par l'inflation possible)", pireAnnee: 0, anneePire: null,
       source: "Livret A : Banque de France (taux réglementé 0,5 % à 3 %, 2015-2025) ; €STR / Eonia, BCE, 1999-2025",
+      periode: "1999-2025", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     fonds_euros: {
       label: "Fonds euros",
       rendementLong: 2.5, volatilite: 0.5, pireBaisse: 0, episodePireBaisse: "aucune baisse (capital garanti par l'assureur)", pireAnnee: 0, anneePire: null,
       source: "Fonds euros : ACPR / France Assureurs, rendement moyen 1,3–2,5 % sur 2015-2024, capital garanti",
+      periode: "2015-2024", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     or: {
       label: "Or",
       rendementLong: 4, volatilite: 15, pireBaisse: -45, episodePireBaisse: "1980-1985", pireAnnee: -30, anneePire: 2013,
       source: "Or en euros : LBMA (cours de référence), −45 % sur 1980-1985 ; 2013 : environ −30 % en euros",
+      periode: null, verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     crypto: {
       label: "Cryptoactifs",
       rendementLong: 10, volatilite: 70, pireBaisse: -80, episodePireBaisse: "2017-2018 et 2021-2022", pireAnnee: -73, anneePire: 2018,
       source: "Bitcoin : −84 % en 2017-2018, −77 % en 2021-2022 (CoinMarketCap) ; 2018 : −73 %. Historique court (depuis 2010), " +
         "rendement long très incertain : hypothèse prudente",
+      periode: "depuis 2010", verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
     autres: {
       label: "Autres (non classé)",
       rendementLong: 4, volatilite: 12, pireBaisse: -35, episodePireBaisse: "2007-2009 (hypothèse)", pireAnnee: -20, anneePire: 2008,
       source: "Hypothèse prudente Boussole pour un actif non classé, calée sur un fonds diversifié (mi-actions, mi-obligations) : " +
         "Morningstar, catégorie « allocation flexible EUR », 2008",
+      periode: null, verifie_le: null, /* période de calcul des statistiques ; verifie_le : non revérifié depuis SP2 (PROJ tâche 2), valeurs inchangées */
     },
   };
   const CLES = Object.keys(CLASSES);

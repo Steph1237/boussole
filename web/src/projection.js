@@ -1418,7 +1418,7 @@
     GRAINE, versionModele, CLASSES_TIREES, HYPOTHESES, EVENEMENTS, PERCENTILES, PLAN_MAX_OCTETS,
     preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
     fiscaliteSortie: F.fiscaliteSortie, amortissement: C.amortissement, annuite: C.annuite, planPret: C.planPret, ptz: C.ptz, taeg: C.taeg,
-    capaciteEmprunt: Immo.capaciteEmprunt, capaciteDeBase: Dn.capaciteDeBase, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
+    capaciteEmprunt: Immo.capaciteEmprunt, capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
     rendementAttendu, capitaliser, centile: O.centile, _executer,
   };
 });

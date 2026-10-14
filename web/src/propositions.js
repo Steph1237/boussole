@@ -49,8 +49,11 @@
     objectif: { label: "Objectifs", nouveau: "Nouvel objectif", suppr: "Supprimer l'objectif", entite: true },
     risque: { label: "Profil de risque", nouveau: "Profil de risque", suppr: "Retirer" },
     config: { label: "Réglages", nouveau: "Réglages", suppr: "Retirer" },
+    evenement: { label: "Événements de vie", nouveau: "Nouvel événement", suppr: "Supprimer l'événement", entite: true },
+    variante: { label: "Variantes de la projection", nouveau: "Nouvelle variante", suppr: "Supprimer la variante", entite: true },
+    plan_fige: { label: "Projections figées", nouveau: "Figer la projection", suppr: "Supprimer la projection figée", entite: true },
   };
-  const ORDRE_CIBLES = ["profil", "protection", "budget", "position", "bien", "credit", "objectif", "risque", "config"];
+  const ORDRE_CIBLES = ["profil", "protection", "budget", "position", "bien", "credit", "objectif", "evenement", "variante", "plan_fige", "risque", "config"];
   const NOUV_BUDGET = { depense: "Nouvelle dépense", revenu: "Nouveau revenu", epargne: "Nouvelle épargne" };
 
   /* ---------- champs connus : libellé, genre (f), nature (k) et options ---------- */
@@ -176,6 +179,7 @@
     const listes = {
       position: (ctx && ctx.positions) || [], bien: pr.biens || [], credit: pr.credits || [],
       objectif: (ctx && ctx.objectifs) || [], budget: (ctx && ctx.budget && ctx.budget.lignes) || [],
+      evenement: (ctx && ctx.foyer && ctx.foyer.evenements) || [], variante: (ctx && ctx.foyer && ctx.foyer.variantes) || [], plan_fige: (ctx && ctx.plansFiges) || [],
     };
     const ex = ref != null ? (listes[p.cible] || []).find(x => String(x.id) === String(ref)) : null;
     return Object.assign({}, ex || {}, b, a);
@@ -193,6 +197,7 @@
   function changements(p, ctx) {
     if (p.operation === "supprimer") return [];
     if (p.cible === "config") return changementsConfig(p);
+    if (["evenement", "variante", "plan_fige"].includes(p.cible)) return [];
     const a = commeObjet(p.apres), b = commeObjet(p.avant);
     const plat = aplatir(a, "");
     const e = p.cible === "budget" ? entite(p, ctx) : null;
@@ -361,13 +366,79 @@
     if ("prets_infos" in a) parts.push(decrirePrets(b.prets_infos, a.prets_infos, ctx));
     if ("donations" in a) parts.push(decrireDonations(b.donations, a.donations));
     if ("avis_impot" in a) parts.push(decrireAvis(b.avis_impot, a.avis_impot));
+    if ("projection" in a) parts.push(decrireProjection(b.projection, a.projection));
     return parts.length ? parts.join(" ; ") : "Réglages : aucun changement";
+  }
+
+  /* ---------- projection (PROJ) : événements de vie, variantes, projections figées, réglages de projection ---------- */
+  const MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  const moisAn = d => (/^\d{4}-\d{2}/.test(String(d || "")) ? MOIS_FR[+String(d).slice(5, 7) - 1] + " " + String(d).slice(0, 4) : "");
+  const ACTIVITES_TXT = { arret: "arrêt complet", mi_temps: "mi-temps", temps_partiel: "temps partiel" };
+  const NIVEAUX_TXT = { maternelle: "maternelle", elementaire: "élémentaire", college: "collège", lycee: "lycée", superieur: "études supérieures" };
+  function prenomDe(k, ctx) { const n = ctx && ctx.profil && ctx.profil.personnes && ctx.profil.personnes[k] && ctx.profil.personnes[k].nom; return n ? String(n) : (k === "p2" ? "la personne 2" : "la personne 1"); }
+  function decrireEvenement(p, ctx) {
+    const base = entite(p, ctx), ev = Object.assign({}, base), pr = isObj(ev.params) ? ev.params : {};
+    const a = commeObjet(p.apres);
+    if (isObj(a.params) && p.operation === "modifier") Object.assign(pr, a.params);
+    const lib = ev.libelle || CIBLES.evenement.label;
+    if (p.operation === "supprimer") return "Supprimer l'événement : " + lib;
+    const dateTxt = moisAn(ev.date), fin = ev.fin ? " jusqu'en " + moisAn(ev.fin) : "";
+    const euro = v => eurs(v);
+    let t;
+    switch (ev.type) {
+      case "naissance": t = (ev.date && ev.date > new Date().toISOString().slice(0, 10) ? "Naissance prévue : " : "Naissance : ") + (pr.enfant || lib) + ", " + dateTxt + (pr.cout_mode === "montant" ? " (coût de " + euro(pr.cout_mensuel) + "/mois)" : " (coût selon l'échelle de l'Insee)"); break;
+      case "creche": t = "Garde de " + (pr.enfant || "l'enfant") + " dès " + dateTxt + fin + " : " + ((pr.mode || "psu") === "psu" ? "crèche, barème de la Caf" : pr.mode === "assistante_maternelle" ? "assistante maternelle, " + euro(pr.cout_mensuel) + "/mois" + (pr.cmg_mensuel != null ? " dont " + euro(pr.cmg_mensuel) + " d'aide de la Caf" : "") : euro(pr.cout_mensuel) + "/mois"); break;
+      case "scolarite_privee": t = "École privée (" + (NIVEAUX_TXT[pr.niveau] || pr.niveau) + ") de " + (pr.enfant || "l'enfant") + " dès " + dateTxt + fin + " : " + euro(pr.frais_annuels) + " par an"; break;
+      case "achat_immobilier": t = (pr.usage === "locatif" ? "Achat d'un bien locatif" : pr.usage === "secondaire" ? "Achat d'une résidence secondaire" : "Achat de la résidence principale") + " en " + dateTxt + " : " + euro(pr.prix) + ", apport " + (pr.apport === "max" ? "maximal" : euro(pr.apport)) + ", prêt sur " + (isObj(pr.pret) ? pr.pret.duree_ans : "?") + " ans"; break;
+      case "retrait": t = "Retrait de " + euro(pr.montant) + " en " + dateTxt + " (" + lib + ")"; break;
+      case "hausse_revenu": t = "Revenu de " + prenomDe(pr.personne || ev.personne, ctx) + " : " + (pr.delta_mensuel != null ? (pr.delta_mensuel >= 0 ? "+" : "−") + euro(Math.abs(pr.delta_mensuel)) + "/mois" : (pr.delta_pct >= 0 ? "+" : "−") + Math.abs(pr.delta_pct) + " %") + " dès " + dateTxt + fin; break;
+      case "changement_emploi": t = "Nouvel emploi de " + prenomDe(pr.personne || ev.personne, ctx) + " dès " + dateTxt + fin + " : salaire net " + euro(pr.salaire_net_mensuel) + "/mois"; break;
+      case "conge_parental": t = "Congé parental de " + prenomDe(pr.personne || ev.personne, ctx) + " (" + (ACTIVITES_TXT[pr.activite] || pr.activite) + ") de " + dateTxt + " à " + moisAn(ev.fin); break;
+      case "fin_credit": t = "Fin de crédit : " + (pr.part_reaffectee_epargne_pct != null ? pr.part_reaffectee_epargne_pct : 100) + " % de la mensualité libérée va à l'épargne"; break;
+      case "crise": t = "Crise rejouée : " + ((window.Marche && Marche.CRISES && Marche.CRISES[pr.cle] && Marche.CRISES[pr.cle].label) || pr.cle) + " en " + dateTxt; break;
+      default: t = lib;
+    }
+    return (p.operation === "modifier" ? "Modifier l'événement « " + lib + " » : " : "") + t + srcTxt(ev);
+  }
+  function decrireVariante(p, ctx) {
+    const e = entite(p, ctx);
+    if (p.operation === "supprimer") return "Supprimer la variante : " + (e.nom || "variante");
+    const h = isObj(e.hypotheses) ? Object.keys(e.hypotheses) : [], r = Array.isArray(e.retire) ? e.retire.length : 0;
+    return (p.operation === "modifier" ? "Modifier la variante « " + e.nom + " »" : "Nouvelle variante « " + e.nom + " »") + (e.description ? " : " + e.description : "") +
+      (r ? " (retire " + r + " événement" + (r > 1 ? "s" : "") + ")" : "") + (h.length ? " (hypothèses modifiées : " + h.join(", ") + ")" : "");
+  }
+  const RAISONS_PLAN = { revue_mensuelle: "revue mensuelle", objectif: "objectif", manuel: "à ta demande" };
+  function decrirePlanFige(p, ctx) {
+    const e = entite(p, ctx);
+    if (p.operation === "supprimer") return "Supprimer la projection figée du " + (e.cree_le ? String(e.cree_le).slice(0, 10).split("-").reverse().join("/") : "") ;
+    const par = isObj(e.parametres) ? e.parametres : {};
+    return "Figer la projection du " + (par.today ? String(par.today).split("-").reverse().join("/") : "jour") + " (" + (RAISONS_PLAN[e.raison] || e.raison) + ", sur " + Math.round((e.horizon_mois || 0) / 12 * 10) / 10 + " ans) pour la comparer plus tard à la réalité";
+  }
+  const BASES_TXT = { reel: "ta capacité d'épargne constatée", prevu: "ta capacité d'épargne prévue au budget", montant: "un montant fixé" };
+  function decrireProjection(av, ap) {
+    if (!isObj(ap)) return "Réglages de projection : aucun changement";
+    const d = [];
+    if ("base_capacite" in ap) d.push("épargne de départ : " + (BASES_TXT[ap.base_capacite] || "automatique"));
+    if ("capacite_mensuelle" in ap) d.push("capacité fixée à " + eurs(ap.capacite_mensuelle) + "/mois");
+    if ("reste_capacite" in ap) d.push("le reste de l'épargne va " + (ap.reste_capacite === "cible" ? "vers l'allocation cible" : "à l'épargne disponible"));
+    if ("reequilibrage" in ap) d.push("rééquilibrage " + (ap.reequilibrage === "annuel" ? "chaque janvier" : "aucun"));
+    if ("part_reaffectee_epargne_pct" in ap) d.push(ap.part_reaffectee_epargne_pct + " % de la mensualité d'un crédit fini va à l'épargne");
+    if ("part_hausse_epargnee_pct" in ap) d.push(ap.part_hausse_epargnee_pct + " % des hausses de salaire sont épargnés");
+    if ("salaire_croissance_reelle_pct" in ap) d.push("salaires : " + ap.salaire_croissance_reelle_pct + " % par an au-dessus de l'inflation");
+    if ("tmi_pct" in ap) d.push("taux marginal d'imposition " + ap.tmi_pct + " %");
+    if ("per_versements_deduits" in ap) d.push("versements du PER " + (ap.per_versements_deduits ? "déduits" : "non déduits"));
+    if ("assurance_pct" in ap) d.push("assurance emprunteur " + ap.assurance_pct + " %");
+    if (isObj(ap.biens)) d.push("prix d'achat de " + Object.keys(ap.biens).length + " bien" + (Object.keys(ap.biens).length > 1 ? "s" : ""));
+    return "Réglages de projection : " + (d.length ? d.join(", ") : "mis à jour") + srcTxt(ap);
   }
 
   /** Phrase en français : « PEA · Amundi MSCI World : 120 parts → 135 parts », « Nouvelle dépense : Assurance auto 45 €/mois »… */
   function decrire(p, ctx) {
     const C = CIBLES[p.cible] || { label: cap(String(p.cible || "Donnée")), nouveau: "Nouveau", suppr: "Supprimer" };
     if (p.cible === "config") return decrireConfig(p, ctx);
+    if (p.cible === "evenement") return decrireEvenement(p, ctx);
+    if (p.cible === "variante") return decrireVariante(p, ctx);
+    if (p.cible === "plan_fige") return decrirePlanFige(p, ctx);
     const suj = sujet(p, ctx);
     if (p.operation === "supprimer") return C.suppr + " : " + (suj || C.label);
     const ch = changements(p, ctx);
@@ -442,7 +513,7 @@
   const P = () => (window.Store && window.Store.propositions) || null;
   const toutes = () => (P() && S && Array.isArray(S.propositions) ? S.propositions : []); // sans Store.propositions : état vide
   const enAttente = () => toutes().filter(p => p.statut === "en_attente");
-  const ctx = () => ({ people: S && S.people, profil: S && S.profil, positions: S && S.positions, objectifs: S && S.objectifs, budget: S && S.budget });
+  const ctx = () => ({ people: S && S.people, profil: S && S.profil, positions: S && S.positions, objectifs: S && S.objectifs, budget: S && S.budget, foyer: S && S.foyer, plansFiges: S && S.plansFiges });
   const quand = d => { const t = Date.parse(d); if (!isFinite(t)) return ""; const x = new Date(t); return x.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) + ", " + x.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); };
   const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
 
