@@ -279,6 +279,7 @@
     $("blCorps").hidden = !!etat || !calculable();
     if (etat || !calculable() || !u) { $("blVerdict").textContent = etat || "Chargement…"; $("blVerdict").className = "bl-verdict"; return; }
     const a = last = analyser(S);
+    if (window.ImmoCapacite) window.ImmoCapacite.rendre(S);
     const v = verdict(a);
     $("blVerdict").textContent = v.phrase;
     $("blVerdict").className = "bl-verdict ton-" + v.ton;
@@ -344,6 +345,7 @@
     const u = U();
     if (!u) return;
     u.brancher(root, { surCarte: (id, el) => ouvrir(id, el) });
+    if (window.ImmoCapacite) window.ImmoCapacite.monter($("blCapacite"), { UI: u });
     $("blBiensClaude").innerHTML = u.demanderAClaude(phraseClaude("immobilier", "mes biens immobiliers"), "Compléter avec Claude");
     $("blCreditsClaude").innerHTML = u.demanderAClaude(phraseClaude("immobilier", "mes crédits (immobilier, auto, consommation)"), "Compléter avec Claude");
   }

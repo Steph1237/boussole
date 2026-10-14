@@ -10,6 +10,15 @@
   <p class="bl-etat" id="blEtat" role="status">Chargement des données…</p>
 
   <div class="bl-corps" id="blCorps" hidden>
+    <section class="ic" id="blCapacite" aria-labelledby="icTitre">
+      <header class="ic-tete">
+        <h2 class="ic-h2" id="icTitre">Ta capacité d'emprunt aujourd'hui</h2>
+        <p class="ic-perimetre" id="icPerimetre"></p>
+      </header>
+      <div class="ic-corps" id="icCorps"></div>
+      <div class="ic-demain" data-slot="capacite-demain"><span class="ic-demain-t">Ta capacité demain</span><span class="ui-badge">bientôt</span></div>
+    </section>
+
     <section aria-label="Chiffres clés">
       <div class="bl-tuiles" id="blTuiles"></div>
     </section>

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { baseComplete, comme } from "./helpers/pglite.mjs";
+import { reperesDeMigration } from "./helpers/projection-cas.mjs";
 
 const DIR = new URL("../supabase/migrations/", import.meta.url);
 const SQL = readFileSync(new URL("0029_calendrier.sql", DIR), "utf8");
@@ -690,9 +691,13 @@ test("repères de la démo (web/src/demo-data.js) = ceux de la migration : même
     assert.ok(d.sourceTitre.startsWith("Valeur d'exemple (démo) — "), a.cle + " : marqué démo");
     assert.ok(d.sourceTitre.endsWith(a.source_titre) || a.cle === "livret_a_taux" || a.cle === "lep_taux", a.cle + " : titre de la source");
   }
+  // la base de ce test s'arrête à 0029 : les repères de la capacité d'emprunt (IMMO1) viennent de 0030, lue telle quelle
+  const m30 = reperesDeMigration("0030_reperes_projection.sql");
+  const de30 = k => { const r = m30.get(k); return r && { cle: r.cle, libelle: r.libelle, valeur: r.valeur, unite: r.unite, date_effet: r.dateEffet, date_fin: r.dateFin, source_url: r.sourceUrl }; };
   for (const d of demo) {
-    const b = base.find(r => r.cle === d.cle);
+    const b = base.find(r => r.cle === d.cle) || de30(d.cle);
     assert.ok(b, "repère de la démo inconnu de la base : " + d.cle);
+    if (!base.find(r => r.cle === d.cle)) assert.deepEqual({ libelle: d.libelle, sourceUrl: d.sourceUrl }, { libelle: b.libelle, sourceUrl: b.source_url }, d.cle + " : libellé et URL comme 0030");
     assert.deepEqual([d.valeur, d.unite, d.dateEffet, d.dateFin], [b.valeur, b.unite, b.date_effet, b.date_fin], d.cle + " : valeur, unité, dates comme en base");
     assert.match(d.sourceTitre, /exemple/i); assert.match(d.sourceUrl, /^https:\/\//);
   }
