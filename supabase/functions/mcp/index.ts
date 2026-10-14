@@ -3230,14 +3230,10 @@ async function handleMcp(c: any) {
   // Écriture de connexion en parallèle de l'appel, sans le bloquer (noterConnexion ne lève jamais) ; le runtime la laisse
   // finir après la réponse (EdgeRuntime.waitUntil), sinon on l'attend avant de rendre la main.
   const connexion = noterConnexion(db, token);
-  // SEC2 : aal du jeton (déjà validé par getUser) et, hors aal2, facteur vérifié lu côté serveur (API admin Auth, clé de service) ;
-  // échec de lecture : refus des outils de données personnelles (garde-mfa.ts).
+  // SEC2 : aal du jeton (déjà validé par getUser) et, hors aal2, double authentification lue par la RPC mfa_exigee() (migration 0028)
+  // avec le client de l'utilisateur, sans clé de service ; échec de lecture : refus des outils de données personnelles (garde-mfa.ts).
   const aal = aalDuJeton(token);
-  const mfa = await verdictMfa(() => {
-    const cle = deps.env("SUPABASE_SERVICE_ROLE_KEY");
-    if (!cle) throw new Error("clé de service absente");
-    return deps.createClient(deps.env("SUPABASE_URL") ?? SUPABASE_URL, cle, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-  }, data.user.id, aal);
+  const mfa = await verdictMfa(db, aal);
   const runtime = (globalThis as any).EdgeRuntime;
   const server = buildServer({ db, user: { id: data.user.id, email: data.user.email }, client: clientDuJeton(token), aal, mfa });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

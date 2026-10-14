@@ -1,6 +1,6 @@
 // SEC2 : garde globale de la double authentification dans le connecteur MCP (supabase/functions/mcp/garde-mfa.ts, branchée dans
 // index.ts / handleMcp). Un jeton aal1 d'un compte à facteur vérifié ne doit jamais faire répondre « rien » : message explicite.
-// Le module est exécuté dans un contexte vm (types retirés), avec un faux client admin et un faux serveur MCP.
+// Le module est exécuté dans un contexte vm (types retirés), avec un faux client utilisateur (RPC mfa_exigee) et un faux serveur MCP.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -23,11 +23,11 @@ function charger(journal = []) {
   const js = strip(srcGarde, { mode: "strip" }).replace(/^export (const|function|async function)/gm, "$1");
   return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { Array, Set, Error, Promise, console: { error: (...a) => journal.push(a.join(" ")), warn() {}, log() {} } });
 }
-/** Faux client admin : listFactors → réponse donnée (ou rejet / error). */
-const fauxAdmin = (reponse, appels = []) => ({
-  auth: { admin: { mfa: { listFactors: async a => { appels.push(a); const r = typeof reponse === "function" ? reponse(a) : reponse; if (r instanceof Error) throw r; return r; } } } },
+/** Faux client utilisateur : rpc("mfa_exigee") → réponse donnée (ou rejet). */
+const fauxDb = (reponse, appels = []) => ({
+  rpc: async (nom, args) => { appels.push([nom, ...(args === undefined ? [] : [args])]); const r = typeof reponse === "function" ? reponse() : reponse; if (r instanceof Error) throw r; return r; },
 });
-const facteurs = (...statuts) => ({ data: { factors: statuts.map((status, i) => ({ id: "f" + i, factor_type: "totp", status })) }, error: null });
+const exigee = valeur => ({ data: valeur, error: null });
 
 /** Faux McpServer : registerTool + validateToolInput comme le SDK ; appeler(nom, args) = validation puis gestionnaire. */
 function fauxServeur(journal) {
@@ -53,38 +53,36 @@ function monter(G, verdict, journal = []) {
 }
 const texte = r => r.content[0].text;
 
-test("verdict : aal2 → ok sans aucune lecture des facteurs", async t => {
-  if (SANS_STRIP) return t.skip(SANS_STRIP);
-  const G = charger();
-  let crees = 0;
-  assert.equal(await G.verdictMfa(() => { crees++; return fauxAdmin(facteurs("verified")); }, "u1", "aal2"), "ok");
-  assert.equal(crees, 0, "le client de service n'est même pas créé en aal2");
-});
-
-test("verdict : aal1 + facteur vérifié → requise (facteur lu côté serveur pour cet utilisateur)", async t => {
+test("verdict : aal2 → ok sans aucun appel à la base", async t => {
   if (SANS_STRIP) return t.skip(SANS_STRIP);
   const G = charger(), appels = [];
-  assert.equal(await G.verdictMfa(() => fauxAdmin(facteurs("verified"), appels), "u1", "aal1"), "requise");
-  assert.deepEqual(JSON.parse(JSON.stringify(appels)), [{ userId: "u1" }]);
-  assert.equal(await G.verdictMfa(() => fauxAdmin(facteurs("unverified", "verified")), "u1", "aal1"), "requise");
+  assert.equal(await G.verdictMfa(fauxDb(exigee(true), appels), "aal2"), "ok");
+  assert.equal(appels.length, 0, "mfa_exigee n'est même pas appelée en aal2");
 });
 
-test("verdict : aal1 sans facteur, ou facteur non vérifié → ok (comportement inchangé)", async t => {
+test("verdict : aal1 + double authentification exigée → requise (RPC mfa_exigee sans paramètre, client de l'utilisateur)", async t => {
+  if (SANS_STRIP) return t.skip(SANS_STRIP);
+  const G = charger(), appels = [];
+  assert.equal(await G.verdictMfa(fauxDb(exigee(true), appels), "aal1"), "requise");
+  assert.deepEqual(JSON.parse(JSON.stringify(appels)), [["mfa_exigee"]]);
+});
+
+test("verdict : aal1 sans facteur vérifié (mfa_exigee faux) → ok (comportement inchangé)", async t => {
   if (SANS_STRIP) return t.skip(SANS_STRIP);
   const G = charger();
-  assert.equal(await G.verdictMfa(() => fauxAdmin(facteurs()), "u1", "aal1"), "ok");
-  assert.equal(await G.verdictMfa(() => fauxAdmin(facteurs("unverified")), "u1", "aal1"), "ok");
+  assert.equal(await G.verdictMfa(fauxDb(exigee(false)), "aal1"), "ok");
 });
 
 test("verdict : échec de lecture → incertain (échec fermé), jamais ok", async t => {
   if (SANS_STRIP) return t.skip(SANS_STRIP);
   const journal = [], G = charger(journal);
-  assert.equal(await G.verdictMfa(() => fauxAdmin({ data: null, error: { message: "panne" } }), "u1", "aal1"), "incertain");
-  assert.equal(await G.verdictMfa(() => fauxAdmin(new Error("réseau")), "u1", "aal1"), "incertain");
-  assert.equal(await G.verdictMfa(() => { throw new Error("clé de service absente"); }, "u1", "aal1"), "incertain", "clé de service absente");
-  assert.equal(await G.verdictMfa(() => fauxAdmin({ data: {}, error: null }), "u1", "aal1"), "incertain", "réponse sans liste");
-  assert.equal(await G.verdictMfa(() => fauxAdmin({ data: { factors: "oui" }, error: null }), "u1", "aal1"), "incertain", "liste invalide");
-  assert.equal(journal.length, 5, "chaque échec est journalisé");
+  assert.equal(await G.verdictMfa(fauxDb({ data: null, error: { message: "panne" } }), "aal1"), "incertain");
+  assert.equal(await G.verdictMfa(fauxDb(new Error("réseau")), "aal1"), "incertain");
+  assert.equal(await G.verdictMfa(fauxDb({ data: null, error: null }), "aal1"), "incertain", "réponse vide");
+  assert.equal(await G.verdictMfa(fauxDb({ data: "true", error: null }), "aal1"), "incertain", "réponse qui n'est pas un booléen");
+  assert.equal(await G.verdictMfa(fauxDb({ data: [true], error: null }), "aal1"), "incertain", "liste inattendue");
+  assert.equal(await G.verdictMfa({}, "aal1"), "incertain", "client sans rpc");
+  assert.equal(journal.length, 6, "chaque échec est journalisé");
 });
 
 test("garde : aal1 + facteur → message sur un outil de données et sur demarrer_session, sans exécuter le code de l'outil", async t => {
@@ -116,7 +114,7 @@ test("garde : le message passe même avec des paramètres invalides (validation 
 test("garde : aal2 → tous les outils tournent normalement", async t => {
   if (SANS_STRIP) return t.skip(SANS_STRIP);
   const G = charger();
-  const { s, executes } = monter(G, await G.verdictMfa(() => fauxAdmin(facteurs("verified")), "u1", "aal2"));
+  const { s, executes } = monter(G, await G.verdictMfa(fauxDb(exigee(true)), "aal2"));
   for (const nom of TOUS) assert.equal(texte(await s.appeler(nom)), "données de " + nom);
   assert.deepEqual(executes, TOUS);
 });
@@ -124,7 +122,7 @@ test("garde : aal2 → tous les outils tournent normalement", async t => {
 test("garde : sans facteur → tous les outils tournent normalement", async t => {
   if (SANS_STRIP) return t.skip(SANS_STRIP);
   const G = charger();
-  const { s, executes } = monter(G, await G.verdictMfa(() => fauxAdmin(facteurs()), "u1", "aal1"));
+  const { s, executes } = monter(G, await G.verdictMfa(fauxDb(exigee(false)), "aal1"));
   for (const nom of TOUS) assert.equal(texte(await s.appeler(nom)), "données de " + nom);
   assert.deepEqual(executes, TOUS);
 });
@@ -132,7 +130,7 @@ test("garde : sans facteur → tous les outils tournent normalement", async t =>
 test("garde : échec de lecture des facteurs → message d'incertitude (échec fermé), jamais les données", async t => {
   if (SANS_STRIP) return t.skip(SANS_STRIP);
   const G = charger();
-  const { s, executes } = monter(G, await G.verdictMfa(() => fauxAdmin(new Error("panne")), "u1", "aal1"));
+  const { s, executes } = monter(G, await G.verdictMfa(fauxDb(new Error("panne")), "aal1"));
   for (const nom of ["get_overview", "demarrer_session", "lire_banque"]) {
     const r = await s.appeler(nom);
     assert.equal(r.isError, true);
@@ -172,9 +170,8 @@ test("index.ts : branchement (verdict après getUser, avant buildServer ; garde 
   const iUser = h.indexOf("auth.getUser(token)"), iAal = h.indexOf("const aal = aalDuJeton(token)"), iVerdict = h.indexOf("await verdictMfa("), iBuild = h.indexOf("buildServer(");
   assert.ok(iUser >= 0 && iUser < iAal && iAal < iVerdict && iVerdict < iBuild, "getUser, puis aal, puis verdict, puis buildServer");
   assert.match(h, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal, mfa \}\)/, "buildServer reçoit aal et mfa");
-  assert.match(h, /data\.user\.id, aal\)/, "facteur lu pour l'utilisateur validé par getUser");
-  assert.match(h, /deps\.env\("SUPABASE_SERVICE_ROLE_KEY"\)/);
-  assert.match(h, /if \(!cle\) throw/, "clé absente : échec fermé (verdict incertain)");
+  assert.match(h, /await verdictMfa\(db, aal\)/, "RPC mfa_exigee avec le client de l'utilisateur (celui qui a validé le jeton par getUser)");
+  assert.doesNotMatch(h, /SERVICE_ROLE|service_role|auth\.admin/, "aucune clé de service dans le connecteur");
   const b = code.slice(code.indexOf("export function buildServer("), code.indexOf("registerSavoir(server, h)"));
   assert.match(b, /gardeOutils\(server, mfa \?\? "ok"\)/, "garde appliquée avant l'enregistrement du premier outil");
   assert.ok(b.indexOf("validateToolInput =") < b.indexOf("gardeOutils("), "garde appliquée après la validation française des paramètres");
@@ -184,9 +181,9 @@ test("index.ts : branchement (verdict après getUser, avant buildServer ; garde 
   assert.match(instr, /Double authentification du connecteur[^"]*N'en conclus jamais que l'utilisateur n'a rien/);
 });
 
-test("garde-mfa.ts : la clé de service ne sert qu'à lister les facteurs (aucune lecture ni écriture de données)", () => {
+test("garde-mfa.ts : seule la RPC mfa_exigee est appelée, sans clé de service ni API admin Auth", () => {
   const code = sansCommentaires(srcGarde);
-  assert.match(code, /auth\.admin\.mfa\.listFactors\(\{ userId \}\)/);
-  assert.doesNotMatch(code, /\.from\(|\.rpc\(|deleteUser|createUser|updateUserById|SERVICE_ROLE/);
+  assert.match(code, /db\.rpc\("mfa_exigee"\)/);
+  assert.doesNotMatch(code, /\.from\(|deleteUser|createUser|updateUserById|SERVICE_ROLE|service_role|auth\.admin|listFactors/);
   assert.doesNotMatch(code, /sb_secret_|eyJ/);
 });

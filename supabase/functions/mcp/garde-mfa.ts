@@ -6,8 +6,9 @@
 //   - "requise"  : jeton aal1 et facteur vérifié : tout outil de données personnelles répond MSG_MFA_CONNECTEUR sans s'exécuter ;
 //   - "incertain": jeton aal1 et lecture des facteurs impossible : même refus (échec fermé), avec MSG_MFA_INCERTAIN.
 // Les outils de savoir commun (consulter_savoir, reperes, consulter_expertise) ne lisent aucune donnée personnelle : ils restent actifs.
-// Le facteur est lu côté serveur par l'API admin Auth (auth.admin.mfa.listFactors, clé de service, comme la fonction powens), jamais
-// d'après le client ni le jeton. L'aal du jeton vient de aalDuJeton (banque.ts), appelé sur un jeton déjà validé par getUser.
+// Le facteur est lu côté base par la fonction public.mfa_exigee() (migration 0028, security definer, exécutable par authenticated :
+// vrai si auth.uid() a un facteur vérifié), appelée en RPC avec le client de l'utilisateur (clé anon + son jeton). Aucune clé de
+// service dans le connecteur. L'aal du jeton vient de aalDuJeton (banque.ts), appelé sur un jeton déjà validé par getUser.
 
 export type VerdictMfa = "ok" | "requise" | "incertain";
 
@@ -19,18 +20,17 @@ export const MSG_MFA_INCERTAIN = "Double authentification : vérification imposs
 /** Outils de savoir commun, sans donnée personnelle : toujours disponibles. */
 export const OUTILS_PUBLICS: ReadonlySet<string> = new Set(["consulter_savoir", "reperes", "consulter_expertise"]);
 
-/** Verdict pour la requête. `creerAdmin` fabrique le client de service (appelé seulement hors aal2) ; toute erreur (clé absente,
-    lecture en échec, réponse inattendue) donne "incertain", jamais "ok". */
-export async function verdictMfa(creerAdmin: () => any, userId: string, aal: string): Promise<VerdictMfa> {
+/** Verdict pour la requête. `db` est le client de l'utilisateur (clé anon + son jeton) ; appelé seulement hors aal2. Toute erreur
+    (RPC en échec, réponse qui n'est pas un booléen) donne "incertain", jamais "ok". */
+export async function verdictMfa(db: any, aal: string): Promise<VerdictMfa> {
   if (aal === "aal2") return "ok";
   try {
-    const admin = creerAdmin();
-    const { data, error } = await admin.auth.admin.mfa.listFactors({ userId });
-    if (error) throw new Error(error.message ?? "listFactors");
-    if (!Array.isArray(data?.factors)) throw new Error("réponse listFactors inattendue");
-    return data.factors.some((f: any) => f?.status === "verified") ? "requise" : "ok";
+    const { data, error } = await db.rpc("mfa_exigee");
+    if (error) throw new Error(error.message ?? "mfa_exigee");
+    if (typeof data !== "boolean") throw new Error("réponse mfa_exigee inattendue");
+    return data ? "requise" : "ok";
   } catch (e) {
-    console.error("mcp: facteurs illisibles", e instanceof Error ? e.message : e);
+    console.error("mcp: double authentification illisible", e instanceof Error ? e.message : e);
     return "incertain";
   }
 }
