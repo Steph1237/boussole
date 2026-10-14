@@ -1,7 +1,7 @@
 // Aujourd'hui (web/src/aujourdhui.*) : page d'accueil du cockpit. Indicateurs en cartes, boîte de réception unique
 // (propositions de Claude, alertes, points à reprendre, échéances, cours), frise du patrimoine net. Tutoiement ; « Faire le point
 // avec Claude » = revue du mois (ClaudePrompts) ; granularité de la frise automatique sauf choix de l'utilisateur (seul enregistré).
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import vm from "node:vm";
@@ -996,6 +996,45 @@ test("objectifs : l'avancement est plafonné à 100 % ; un objectif atteint comp
   assert.deepEqual(p.liste.map(x => Math.round(x.progression * 100)), [100, 50]);
 });
 
+test("calendrier : un rendu (indicateurs) ne lance le moteur qu'une fois ; un appel isolé ou un état modifié entre deux rendus recalcule (aucun cache durable)", () => {
+  const Cal = require("../web/src/calendrier.js");
+  let n = 0;
+  const deps = { ...DEPS, Calendrier: { ...Cal, calendrier: (...a) => { n++; return Cal.calendrier(...a); } } };
+  const S = demoS();
+  const i1 = A.indicateurs(S, TODAY, { id: "1a" }, deps);
+  assert.equal(n, 1, "indicateurs lit le calendrier pour les échéances et la carte : un seul calcul");
+  assert.ok(i1.calendrier.disponible && i1.calendrier.jalons.length > 0);
+  A.echeances(S, TODAY, deps); A.echeances(S, TODAY, deps);
+  assert.equal(n, 3, "appels isolés : rien n'est mémorisé");
+  // état modifié en place entre deux rendus : le second rendu le voit
+  const avant = i1.calendrier.jalons.length;
+  S.config.enveloppes_infos["PEL Camille"].date_cloture = "2017-01-01";
+  const i2 = A.indicateurs(S, TODAY, { id: "1a" }, deps);
+  assert.equal(n, 4);
+  assert.ok(i2.calendrier.jalons.length < avant, "le PEL clos plus tôt n'a plus de jalons à venir");
+  A.indicateurs(S, "2026-10-11", { id: "1a" }, deps);
+  assert.equal(n, 5, "un autre jour : recalcul");
+  // la boîte de réception partage aussi le calcul avec le reste du rendu
+  n = 0;
+  A.boite(S, TODAY, deps);
+  assert.ok(n <= 1, "boîte : au plus un calcul");
+});
+test("jour() sans argument : date de Paris (RoutineEtat.aujParis), pas celle du fuseau du navigateur", () => {
+  const ancienTZ = process.env.TZ;
+  mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-14T20:30:00Z") }); // Paris : 14/10 22:30 ; Pacific/Kiritimati : 15/10 10:30
+  try {
+    process.env.TZ = "Pacific/Kiritimati";
+    assert.equal(new Date().getDate(), 15, "le fuseau du test est bien en avance sur Paris");
+    assert.equal(A.jour(), "2026-10-14");
+    assert.equal(A.jour(), RoutineEtat.aujParis());
+    assert.equal(A.jour("2026-01-02"), "2026-01-02", "une date seule est rendue telle quelle");
+    const CV2 = require("../web/src/comptes-view.js");
+    assert.equal(CV2.jour(), "2026-10-14");
+  } finally {
+    mock.timers.reset();
+    if (ancienTZ === undefined) delete process.env.TZ; else process.env.TZ = ancienTZ;
+  }
+});
 test("cartes : objectifs (jauge, 3 rappels avec statut en mots, échéance, barre), bonnes pratiques (anneau), échéance (compte à rebours) ; texte équivalent aux jauges", { skip: !HAS_UI && "ui.js" }, () => {
   const S = demoS(), t = jourLocal(), ind = A.indicateurs(S, t, { id: "1a" }, DEPS);
   const c = A.cartes(ind, UI, { id: "1a" });

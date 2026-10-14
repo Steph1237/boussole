@@ -47,8 +47,11 @@
 
   /* ---------- dates (AAAA-MM-JJ) ---------- */
   const pad = n => String(n).padStart(2, "0");
+  /* Aujourd'hui = jour de Paris (RoutineEtat.aujParis, comme le serveur), indépendant du fuseau du navigateur ; repli sur le jour local. */
+  const aujParis = () => { const R = glob("RoutineEtat") || voisin("./routine-etat.js"); return R && typeof R.aujParis === "function" ? R.aujParis() : null; };
   function jour(d) {
     if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    if (d == null) { const p = aujParis(); if (typeof p === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p)) return p; }
     const x = d == null ? new Date() : new Date(d);
     if (!isFinite(x)) return "";
     return x.getFullYear() + "-" + pad(x.getMonth() + 1) + "-" + pad(x.getDate());
@@ -867,7 +870,7 @@
       '<div class="cv-acts">' + lienClaude(U, "Regarde avec moi les entrées et sorties de mon compte courant dans Boussole : y a-t-il de l'argent qui dort ou des dépenses qui dérapent ?", "Demander à Claude") + "</div>";
   }
 
-  const H = { FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
+  const H = { jour, FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
     vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, echantillon, enteteHtml, famillesHtml, carteHtml, arianeHtml, ficheEnveloppeHtml,
     grapheEnveloppeHtml, calendrierEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg, barresSvg, donneesHtml, jour };
   if (typeof module === "object" && module.exports) module.exports = H;

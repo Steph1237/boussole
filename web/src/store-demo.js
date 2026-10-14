@@ -262,7 +262,13 @@
      pourcentages par an de 0 à 5 (au moins un), source obligatoire (1 à 300 caractères), le en AAAA-MM-JJ (date du jour par défaut,
      jamais dans le futur), 30 enveloppes au plus, avant comme après la fusion. */
   const CHAMPS_FRAIS = ["gestion_uc_pct", "gestion_euro_pct", "garde_pct"];
-  const jourIso = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  /* Aujourd'hui au jour de Paris (RoutineEtat.aujParis, comme la base : « le » ne peut pas être dans le futur de Paris), repli sur le jour local. */
+  const jourIso = () => {
+    const R = (typeof window !== "undefined" && window.RoutineEtat) || (typeof module === "object" && module.exports && typeof require === "function" ? require("./routine-etat.js") : null);
+    const p = R && typeof R.aujParis === "function" ? R.aujParis() : null;
+    if (typeof p === "string" && ISO10.test(p)) return p;
+    const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  };
   function fusionFraisEnveloppes(v, existants) {
     if (!objet(v)) throw bad("frais_enveloppes : objet { enveloppe: frais } attendu.");
     if (Object.keys(v).length > 30) throw bad("frais_enveloppes : 30 enveloppes au plus.");

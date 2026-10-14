@@ -75,9 +75,11 @@
 
   /* ---------- dates (AAAA-MM-JJ, jours calendaires) ---------- */
   const pad = n => String(n).padStart(2, "0");
-  /** Date locale AAAA-MM-JJ (aujourd'hui par défaut). */
+  /** Date AAAA-MM-JJ. Sans argument : aujourd'hui au jour de Paris, comme le serveur et les migrations (RoutineEtat.aujParis, indépendant du
+      fuseau du navigateur) ; repli sur le jour local si RoutineEtat manque. Avec un instant : sa date locale. */
   function jour(d) {
     if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    if (d == null) { const R = RE(), p = R && typeof R.aujParis === "function" ? R.aujParis() : null; if (isoOk(p)) return p; }
     const x = d == null ? new Date() : new Date(d);
     if (!isFinite(x)) return "";
     return x.getFullYear() + "-" + pad(x.getMonth() + 1) + "-" + pad(x.getDate());
@@ -140,7 +142,20 @@
   function calendrierDe(S, today, deps) {
     const M = CAL(deps), t = jour(today);
     if (!M || typeof M.calendrier !== "function" || !S || !isoOk(t)) return null;
-    try { return M.calendrier(typeof M.depuisEtat === "function" ? M.depuisEtat(S) : S, t); } catch (e) { return null; }
+    if (lotCal && lotCal.S === S && lotCal.t === t && lotCal.M === M) return lotCal.sortie;
+    let sortie = null;
+    try { sortie = M.calendrier(typeof M.depuisEtat === "function" ? M.depuisEtat(S) : S, t); } catch (e) { sortie = null; }
+    if (lotCal) Object.assign(lotCal, { S, t, M, sortie });
+    return sortie;
+  }
+  /* Un rendu (boîte, indicateurs, cartes) lit le calendrier 3 à 4 fois pour le même état et le même jour : dans un lot, le moteur ne tourne qu'une
+     fois par (état, jour, moteur). Le lot ne vit que le temps d'un appel synchrone (aucun état partagé entre deux rendus : un état modifié
+     ensuite est recalculé) ; les appels isolés (tests, autres vues) ne mémorisent rien. La sortie est lue, jamais modifiée, par les appelants. */
+  let lotCal = null;
+  function enLot(fn) {
+    if (lotCal) return fn();
+    lotCal = {};
+    try { return fn(); } finally { lotCal = null; }
   }
   /** Échéances à venir (aujourd'hui compris), triées : jalons de config, objectifs datés, points « à suivre » de la mémoire, jalons du
       calendrier patrimonial (jalon = le jalon du moteur).
@@ -261,7 +276,8 @@
   /** Tout ce qui demande une action, trié par urgence (1 haute … 3) puis date (la plus ancienne d'abord).
       → [{ type: proposition|journal|routine|banque|doublon|argent|alerte|a_suivre|echeance|cours, urgence, date, titre, contexte, action: { label, route } | { label, url } }]
       Textes bruts : l'échappement se fait au rendu. deps = { Rules } (window.Rules par défaut). */
-  function boite(S, today, deps) {
+  function boite(S, today, deps) { return enLot(() => boiteCalcul(S, today, deps)); }
+  function boiteCalcul(S, today, deps) {
     if (!S || S.ready === false) return [];
     const t = jour(today), out = [];
     const Rules = dep(deps, "Rules");
@@ -454,7 +470,8 @@
 
   /** Les 4 indicateurs du bandeau (périmètre S.scope), en valeurs brutes ; le texte est composé par cartes() et detail().
       L'écart au profil de risque (allocation) n'est plus affiché dans le bandeau : il alimente la boîte « À traiter » (elementRisque). */
-  function indicateurs(S, today, periode, deps) {
+  function indicateurs(S, today, periode, deps) { return enLot(() => indicateursCalcul(S, today, periode, deps)); }
+  function indicateursCalcul(S, today, periode, deps) {
     const s = S || {}, t = jour(today), scope = s.scope || "foyer", positions = s.positions || [];
     const C = dep(deps, "Calc"), Pr = dep(deps, "Pratiques"), BC = dep(deps, "BilanCalc");
     // Patrimoine net (et variation sur la période du graphe) ; composition « Ce que je possède, ce que je dois » (BilanCalc.composition,
@@ -485,7 +502,7 @@
     const venir = cal ? cal.jalons.filter(j => j.statut !== "passe") : [];
     const calendrier = { disponible: !!cal, prochains: venir.slice(0, 5), nPlus: Math.max(0, venir.length - 5), aCompleter: cal ? cal.a_completer : [], jalons: cal ? cal.jalons : [],
       seuils: cal ? cal.seuils : [], indisponibles: cal ? cal.regles_indisponibles : [] };
-    return { net, pratiques, objectifs: objectifs(s, t, deps), allocation: ecartAllocation(s, deps), echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4) }, calendrier, frise: f };
+    return { net, pratiques, objectifs: objectifs(s, t, deps), allocation: ecartAllocation(s, deps), echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4), enveloppeALignes: ech[0] && ech[0].jalon ? enveloppeALignes(s, ech[0].jalon) : null }, calendrier, frise: f };
   }
 
   /** Cône de projection du net (Historique.projeter : moteur Plan, trois scénarios) sur `annees` ans, avec le versement mensuel de la page
@@ -665,7 +682,7 @@
     } else {
       titre = "Prochaines échéances"; route = R.objectifs; label = "Voir les objectifs";
       const jal = ec.prochaine && ec.prochaine.jalon;
-      if (jal && jal.enveloppe && !/^(foyer|donation:|credit:|bien:)/.test(jal.enveloppe)) { route = lienFiche({ enveloppe: plat(jal.enveloppe_nom) || plat(jal.enveloppe), titulaire: jal.titulaire }); label = "Voir l'enveloppe"; }
+      if (jal && jal.enveloppe && !/^(foyer|donation:|credit:|bien:)/.test(jal.enveloppe) && ec.enveloppeALignes !== false) { route = lienFiche({ enveloppe: plat(jal.enveloppe_nom) || plat(jal.enveloppe), titulaire: jal.titulaire }); label = "Voir l'enveloppe"; }
       question = "Passons en revue mes prochaines échéances (calendrier patrimonial, objectifs datés) dans Boussole.";
       lignes = ec.liste.slice(0, 4).map(e => [extrait(e.titre, 70), dateFr(e.date) + " · " + quand(e).toLowerCase()]);
       if (!lignes.length) lignes.push(["Échéances à venir", "aucune"]);
@@ -719,12 +736,14 @@
     const c = cal || { disponible: false, prochains: [], nPlus: 0, aCompleter: [], indisponibles: [] };
     if (!c.disponible) return '<p class="aj-vide-x">Le calendrier n\'est pas disponible pour l\'instant.</p>';
     const ligne = j => {
-      const approx = j.confiance === "approchee", date = (approx ? motConfiance(j) + " le " : "") + dateNum(j.date);
+      const approx = j.confiance === "approchee", mot = motConfiance(j);
+      // lecteur d'écran : une seule fois le mot de confiance (« Date au plus tard le … », « Date … , date exacte »)
+      const lecture = approx ? "Date " + (mot === "dès cette date" ? "dès le" : mot + " le") + " " + dateNum(j.date) : "Date " + dateNum(j.date) + ", " + mot;
       return '<li class="aj-ech-it"><button type="button" class="aj-ech-l t-' + TON_ETAT[j.statut] + '" data-ech="' + esc(j.id) + '" aria-haspopup="dialog">' +
         '<span class="aj-ech-date"><time datetime="' + esc(j.date) + '">' + esc(dateLongue(j.date)) + '</time><span class="aj-ech-delai">' + esc(j.delai) + "</span></span>" +
         '<span class="aj-ech-txt"><span class="aj-ech-nom">' + esc(nomEnv(j)) + " · " + esc(courtDe(j)) + '</span><span class="aj-ech-eff">' + esc(j.effet) + "</span></span>" +
         '<span class="aj-ech-etat">' + badge(MOT_ETAT[j.statut], TON_ETAT[j.statut]) + (approx ? badge("approchée", "neutre") : "") + "</span>" +
-        '<span class="ui-sr">' + esc("Date " + date + ", " + motConfiance(j) + ". Ouvre le détail.") + "</span></button></li>";
+        '<span class="ui-sr">' + esc(lecture + ". Ouvre le détail.") + "</span></button></li>";
     };
     const n = c.aCompleter.length;
     const pied = n ? '<p class="aj-ech-pied"><button type="button" class="aj-ech-completer" data-ech-completer aria-haspopup="dialog">' + esc(pluriel(n, "information") + " à compléter") + "</button>" +
@@ -736,12 +755,18 @@
         '<p class="aj-vide-x">' + esc(manque || "Aucune date n'est enregistrée : Claude les relève dans tes documents (relevés, contrats, avis d'impôt).") + "</p>" +
         U.demanderAClaude(prompts().phrase("calendrier"), "Compléter avec Claude") + "</div>" + dispo;
     }
-    return '<ol class="aj-ech-liste" aria-label="Prochaines échéances, par date">' + c.prochains.map(ligne).join("") + "</ol>" +
+    return '<ol class="aj-ech-liste" role="list" aria-label="Prochaines échéances, par date">' + c.prochains.map(ligne).join("") + "</ol>" +
       (c.nPlus ? '<p class="aj-ech-note">' + esc("Et " + pluriel(c.nPlus, "autre") + " plus tard.") + "</p>" : "") + pied + dispo;
+  }
+  /** Vrai si l'enveloppe du jalon (nom, et titulaire s'il est connu) a au moins une ligne non clôturée dans l'état S : la fiche de
+      Patrimoine › Comptes existe (même règle que ComptesView.ficheEnveloppe). */
+  function enveloppeALignes(S, j) {
+    const nom = plat(j.enveloppe_nom) || plat(j.enveloppe).replace(/\|p[12]$/, "");
+    return (S && Array.isArray(S.positions) ? S.positions : []).some(p => p && p.status !== "clôturé" && plat(p.envelope) === nom && (!j.titulaire || p.owner === j.titulaire));
   }
   /** Panneau d'un jalon : l'effet d'abord, puis « Comment c'est calculé » (calcul, donnée et sa source, règle et sa source datée, confiance),
       la mention fixe. → { titre, contenu, lien?, question } ; contenu échappé. */
-  function jalonDetail(j) {
+  function jalonDetail(j, S) {
     const d = j.donnee, src = j.source || {};
     const lignes = [];
     if (j.calcul) lignes.push(ligne("Calcul", j.calcul));
@@ -751,7 +776,8 @@
     const regle = src.titre || src.url ? '<li><span class="aj-det-l">Règle</span><span class="aj-det-v">' + url + (src.verifie_le ? "<br>vérifiée le " + esc(dateNum(src.verifie_le)) : "") + "</span></li>" : "";
     const avert = liste_a(j.avertissements);
     const calcul = '<ul class="aj-det aj-det-pile">' + lignes.join("") + regle + "</ul>" + avert;
-    const environ = j.enveloppe && !/^(foyer|donation:|credit:|bien:)/.test(j.enveloppe);
+    // « Voir l'enveloppe » seulement si l'enveloppe a des lignes (sinon la fiche répondrait « compte introuvable »). Sans état (S), on ne peut pas savoir : lien gardé.
+    const environ = j.enveloppe && !/^(foyer|donation:|credit:|bien:)/.test(j.enveloppe) && (S == null || enveloppeALignes(S, j));
     return { titre: plat(j.titre), contenu: '<p class="aj-det-effet">' + esc(j.effet) + "</p>" + accordeon("Comment c'est calculé", calcul) +
       '<p class="aj-det-note">Information générale sur la règle, pas une recommandation. Vérifie auprès de ton établissement avant une opération proche de la date.</p>',
       lien: environ ? { label: "Voir l'enveloppe", href: "#" + lienFiche({ enveloppe: plat(j.enveloppe_nom) || plat(j.enveloppe).replace(/\|p[12]$/, ""), titulaire: j.titulaire }) } : undefined,
@@ -1114,7 +1140,7 @@
     const u = U(); if (!u || !u.panneau || !ind || !ind.calendrier) return;
     const id = el.getAttribute("data-ech"), j = ind.calendrier.jalons.find(x => x.id === id);
     if (!j) return;
-    const d = jalonDetail(j);
+    const d = jalonDetail(j, S);
     u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, lien: d.lien, pied: u.demanderAClaude(d.question, "Demander à Claude"), retour: el,
       surFermeture: () => { if (!el.isConnected) { const c = Array.from(root.querySelectorAll("[data-ech]")).find(x => x.getAttribute("data-ech") === id); if (c) c.focus(); } } });
   }
@@ -1187,10 +1213,12 @@
   }
   function update(snap, visible) {
     S = snap;
-    items = boite(S, jour(), { aujRevue: RE().aujParis() }); // revue au jour de Paris, comme le serveur ; le reste au jour local
-    ctlPremiere(); // « Tout » part de la première donnée
-    dirty = true;
-    if (visible) { render(); dirty = false; }
+    enLot(() => { // boîte et indicateurs du rendu partagent un seul calcul du calendrier
+      items = boite(S, jour(), { aujRevue: RE().aujParis() }); // revue au jour de Paris, comme le serveur, et le reste aussi (jour())
+      ctlPremiere(); // « Tout » part de la première donnée
+      dirty = true;
+      if (visible) { render(); dirty = false; }
+    });
   }
   function show() {
     const p = window.App && typeof App.parametres === "function" ? App.parametres() : {};

@@ -82,7 +82,7 @@ test("indicateurs : calendrier = jalons à venir (5 pour la carte), données à 
 /* ---------------------------------------------------------------- carte « Prochaines échéances » */
 test("prochainesHtml : <ol> de 5 jalons au plus, boutons, <time datetime>, délai, enveloppe, effet, mot d'état en plus de la couleur", () => {
   const h = A.prochainesHtml(ind().calendrier, UI);
-  assert.match(h, /^<ol class="aj-ech-liste" aria-label="Prochaines échéances, par date">/);
+  assert.match(h, /^<ol class="aj-ech-liste" role="list" aria-label="Prochaines échéances, par date">/, "role=\"list\" : la liste garde sa sémantique malgré list-style: none (VoiceOver)");
   const lignes = h.match(/<li class="aj-ech-it">/g) || [];
   assert.ok(lignes.length >= 1 && lignes.length <= 5);
   assert.match(h, /<button type="button" class="aj-ech-l t-attention" data-ech="pea_5_ans:PEA Exemple:2026-10-25" aria-haspopup="dialog">/);
@@ -100,7 +100,9 @@ test("prochainesHtml : 5 lignes au plus, « Et N autres plus tard » ; un jalon 
   const c = A.indicateurs(S, TODAY, { id: "1a" }, DEPS).calendrier;
   const h = A.prochainesHtml(c, UI);
   assert.match(h, /ui-badge neutre">approchée</);
-  assert.match(sp(h), /Date au plus tard le 31\/03\/2027 \+ 1 jour|Date au plus tard le 01\/04\/2027, au plus tard/);
+  assert.match(sp(h), /<span class="ui-sr">Date au plus tard le 01\/04\/2027\. Ouvre le détail\.<\/span>/);
+  assert.doesNotMatch(sp(h), /au plus tard[^<]*au plus tard/, "le mot de confiance n'est dit qu'une fois");
+  assert.match(sp(A.prochainesHtml({ ...c, prochains: [{ ...c.prochains[0], cle: "av_70_ans", confiance: "approchee" }] }, UI)), /Date dès le \d{2}\/\d{2}\/\d{4}\. Ouvre le détail\./);
   assert.equal((h.match(/<li class="aj-ech-it">/g) || []).length, 5);
 });
 test("prochainesHtml : plus de 5 jalons → les 5 premiers et « Et N autres plus tard »", () => {
@@ -190,6 +192,31 @@ test("jalonDetail : jalon du foyer sans lien d'enveloppe ; avertissement de rep�
   const d = A.jalonDetail(x);
   assert.doesNotMatch(d.contenu, /<i>|<b>/);
   assert.match(d.contenu, /&lt;i&gt;/);
+});
+test("« Voir l'enveloppe » seulement si l'enveloppe a des lignes (jalonDetail et panneau de la prochaine échéance)", () => {
+  const S = foyer();
+  S.config.enveloppes_infos["PEL Sans Ligne"] = infos("pel", { date_ouverture: "2014-01-10" }); // informations sans aucune ligne
+  const jalons = A.indicateurs(S, TODAY, { id: "1a" }, DEPS).calendrier.jalons;
+  const pea = jalons.find(x => x.cle === "pea_5_ans" && x.enveloppe === "PEA Exemple"), pel = jalons.find(x => x.enveloppe === "PEL Sans Ligne");
+  assert.ok(pel, "le PEL sans ligne a bien des jalons");
+  assert.match(A.jalonDetail(pea, S).lien.href, /^#patrimoine\/comptes\?enveloppe=PEA/);
+  assert.equal(A.jalonDetail(pel, S).lien, undefined, "pas de fiche à ouvrir : pas de lien");
+  // lignes toutes clôturées : pas de fiche non plus
+  const C = foyer(); C.positions.find(p => p.envelope === "PEA Exemple").status = "clôturé";
+  assert.equal(A.jalonDetail(pea, C).lien, undefined);
+  // sans état fourni, on ne peut pas savoir : le lien reste (comportement antérieur)
+  assert.ok(A.jalonDetail(pel).lien);
+  // titulaire : les lignes de l'enveloppe appartiennent à l'autre personne
+  assert.equal(A.jalonDetail({ ...pea, titulaire: "p2" }, S).lien, undefined);
+  // carte « Prochaine échéance » : l'indicateur dit si la fiche existe, le panneau n'envoie pas vers une fiche absente
+  assert.equal(A.indicateurs(S, TODAY, { id: "1a" }, DEPS).echeance.enveloppeALignes, true);
+  const T = foyer(); T.positions = T.positions.filter(p => p.envelope !== "PEA Exemple");
+  const iT = A.indicateurs(T, TODAY, { id: "1a" }, DEPS);
+  assert.equal(iT.echeance.prochaine.jalon.enveloppe, "PEA Exemple");
+  assert.equal(iT.echeance.enveloppeALignes, false);
+  const d = A.detail("echeance", iT, { id: "1a" });
+  assert.doesNotMatch(d.lien.href, /comptes\?enveloppe/);
+  assert.doesNotMatch(d.lien.label, /enveloppe/);
 });
 test("aCompleterDetail : chaque donnée avec son pourquoi, où la trouver et « Compléter avec Claude » (phrase prête, lien claude.ai)", () => {
   const l = ind().calendrier.aCompleter;
