@@ -1326,6 +1326,9 @@
       positions: (d.positions || []).filter(p => p && p.status !== "clôturé").map(p => ({ id: p.id, envelope: p.envelope, owner: p.owner, bloc: p.bloc, value: p.value, qty: p.qty, price: p.price, pru: p.pru, isin: p.isin })),
       credits: (d.credits || d.profil && d.profil.credits || []).map(c => ({ id: c.id, crd: c.crd, mensualite: c.mensualite, owner: c.owner })),
     };
+    /* la base limite les paramètres à 100 000 octets : les positions sont réduites à (id, valeur) puis les périodes de capacité abrégées si besoin */
+    if (JSON.stringify(parametres).length > 90000) parametres.positions = parametres.positions.map(p => ({ id: p.id, value: p.value }));
+    if (JSON.stringify(parametres).length > 90000 && parametres.capacite) parametres.capacite.par_periode = (parametres.capacite.par_periode || []).slice(0, 40).map(x => ({ debut_t: x.debut_t, fin_t: x.fin_t, montant_mensuel: x.montant_mensuel, source: x.source }));
     const ligne = { raison: ["revue_mensuelle", "objectif", "manuel"].includes(r) ? r : "manuel", horizon_mois: N, parametres, serie };
     const taille = JSON.stringify(parametres).length + JSON.stringify(serie).length;
     ligne.taille_octets = taille;

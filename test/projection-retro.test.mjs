@@ -85,6 +85,16 @@ test("figerPlan : la série reste sous la limite de taille de la base (sinon un 
   const l = P.figerPlan({ data: d, options: { horizon_ans: 25 } }, gros, "manuel");
   assert.ok(JSON.stringify(l.serie).length <= P.PLAN_MAX_OCTETS);
 });
+test("figerPlan : les paramètres restent sous la limite de 100 000 octets de la base, même avec des centaines de lignes (positions réduites à id et valeur)", () => {
+  const { s, d } = planDeDemo();
+  const beaucoup = JSON.parse(JSON.stringify(d));
+  beaucoup.positions = Array.from({ length: 900 }, (_, i) => ({ id: "6f1c2a9e-0000-4000-8000-" + String(i).padStart(12, "0"), envelope: "Enveloppe numéro " + i, owner: "p1", bloc: "Poche " + i, value: 1000 + i, qty: 1, price: 1000 + i, pru: 900, isin: "FR0000000000", status: "actif" }));
+  const l = P.figerPlan({ data: beaucoup, options: { horizon_ans: 5 } }, s, "manuel");
+  assert.ok(new TextEncoder().encode(JSON.stringify(l.parametres)).length <= 100000, "paramètres : " + JSON.stringify(l.parametres).length);
+  assert.deepEqual(Object.keys(l.parametres.positions[0]).sort(), ["id", "value"]);
+  const court = P.figerPlan({ data: d, options: { horizon_ans: 5 } }, s, "manuel");
+  assert.ok(Object.keys(court.parametres.positions[0]).length > 2, "peu de lignes : le détail des positions est gardé");
+});
 test("comparerPlanReel : par mois, médiane et bande du plan contre la valeur réelle, écart en € et en %", () => {
   const { ligne } = planDeDemo();
   const reel = ligne.serie.mois.slice(0, 7).map((date, i) => ({ date: date.slice(0, 7) + "-28", valeur: ligne.serie.p50[i] * (i === 6 ? 0.8 : 1) }));
