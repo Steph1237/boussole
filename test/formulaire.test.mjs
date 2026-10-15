@@ -11,6 +11,7 @@ import * as nodeModule from "node:module";
 import vm from "node:vm";
 import { miniDom } from "./helpers/mini-dom.mjs";
 import { generer, exigerTutoiement, sansPrerempli, SORTIE_CATALOGUE, SORTIE_LOGIQUE, EXPERIENCE_MAX } from "../scripts/gen-catalogue.mjs";
+import { PlanGen } from "./helpers/moteur-gen.mjs";
 
 const require = createRequire(import.meta.url);
 const path = rel => fileURLToPath(new URL("../" + rel, import.meta.url));
@@ -48,7 +49,7 @@ function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
   const js = strip(bloc, { mode: "strip" }) + "\n;({ entreesAides, allocationReelle, risquePortefeuille, PROFILS });";
-  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
+  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console, Plan: PlanGen });
 }
 function enLignes(D, extra = {}) {
   const positions = D.positions.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, pru: p.pru,
