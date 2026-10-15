@@ -245,7 +245,10 @@ seul → `autoriser_connecteur` refusé et jeton OAuth sans lecture ; code valid
 `lire_banque` et `demarrer_session` lisent (7 positions), écriture bancaire refusée par la RLS ; rafraîchissement : même session, toujours
 lu ; mot de passe volé après coup (consentement mémorisé) → autre session refusée, session légitime intacte ; retrait → refus immédiat ;
 nouvelle autorisation → nouveau jeton lu, ancien refusé ; expiration → message « a expiré » ; course → rien de lié, personne ne lit.
-Conseiller de base : `auth_rls_initplan` 24 → 0, aucun avertissement de sécurité.
+Conseiller de base : `auth_rls_initplan` 24 → 0, aucun avertissement de sécurité. Vraie page dans un navigateur (`npm run preprod:app`) :
+connexion par mot de passe, écran de code, demande avec la durée de 90 jours, « Autoriser » → autorisation `aal2` enregistrée avant
+l'approbation, jeton OAuth `aal1` qui lit `get_overview` et `lire_banque` ; Mon compte › Connexion de Claude liste l'accès et « Retirer »
+le révoque (le facteur reste intact). `npm run preprod:test` : 166 tests d'intégration conformes.
 
 ## Ajout d'un facteur quand un facteur existe déjà (M3)
 
