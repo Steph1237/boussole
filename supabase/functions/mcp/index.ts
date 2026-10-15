@@ -78,6 +78,7 @@ import { registerFormulaire } from "./formulaire.ts";
 import { registerReglages } from "./reglages.ts";
 import { registerCalendrier, calendrierDeSession, typeDeduit as typeDeduitCalendrier, cleEnveloppe as cleEnveloppeCalendrier } from "./calendrier.ts";
 import { registerProjection, projectionDeSession, probabilitesObjectifs, lireDonneesProjection } from "./projection.ts";
+import { registerHistorique } from "./historique.ts";
 import { registerSuivi, suiviDeSession, suiviDeRevue, etatSuiviDeCloture, planDuMois } from "./suivi.ts";
 import { Plan } from "./projection-moteur.gen.js";
 import { Calc } from "./projection-moteur.gen.js"; // HIS2 : série fusionnée des mois bancaires (Calc.budgetReel avec relevés importés)
@@ -2386,7 +2387,8 @@ export function buildServer({ db, user, client, aal: aalJeton, mfa }: Ctx): McpS
     const avertissements: string[] = Array.isArray(extra.avertissements) ? [...(extra.avertissements as string[])] : [];
     const { avertissements: _a, ...reste } = extra;
     if (!items.length) return { message: "Aucun changement : les valeurs fournies sont déjà enregistrées.", propositions: [], avertissements, ...reste };
-    const attente = (must("propositions", await db.from("propositions").select("id, cible, operation, ref, apres").eq("statut", "en_attente")) as any[]) ?? [];
+    // les imports d'historique (jusqu'à 100 000 octets de apres chacun) n'entrent pas dans cette comparaison : historique.ts contrôle leur empreinte et leur retrait lui-même
+    const attente = (must("propositions", await db.from("propositions").select("id, cible, operation, ref, apres").eq("statut", "en_attente").neq("cible", "historique")) as any[]) ?? [];
     const unique = (c: string) => ["profil", "risque", "protection", "config"].includes(c);
     const nouveaux = items.filter((it) => {
       const doublon = attente.find((p) => p.cible === it.cible && p.operation === it.operation && (p.ref ?? null) === (it.ref ?? null) && same(p.apres, it.apres ?? null));
@@ -3116,6 +3118,7 @@ export function buildServer({ db, user, client, aal: aalJeton, mfa }: Ctx): McpS
   registerProjection(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer, today, banque: lireBanqueCalcul });
 
   /* ---------- Suivi des lignes (suivi.ts) : rôles, politique de suivi, météo, « ça vaut le coût ? » ; moteur de l'app (copie générée), rôles et politique par propositions ---------- */
+  registerHistorique(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer, today, aal });
   registerSuivi(server, { db, wrap, must, UserError, RO, RW, DEPOT, deposer, today, lireDonnees: lireDonneesSuivi });
 
   /* ---------- Formulaires dynamiques (formulaire.ts) : mêmes fonctions de dépôt, un seul lot ---------- */

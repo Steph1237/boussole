@@ -68,3 +68,18 @@ export function contexteDe(c) {
 }
 const plat = s => String(s).replace(/[  ]/g, " ").toLowerCase();
 export const contientTous = (message, subs) => (subs || []).every(s => plat(message).includes(plat(s)));
+
+/** Entrée d'un cas de relevés avec les sous-catégories additionnées par catégorie large (avant BUD1 : seules les 12 catégories larges sont admises). */
+export function entreeLarge(id) {
+  const e = JSON.parse(JSON.stringify(resoudre(cas(id).entree)));
+  (e.mois || []).forEach(m => {
+    const par = new Map();
+    (m.sous_categories || []).forEach(l => {
+      const g = FIXTURE.categories_utilisees.large[l.cle] || l.cle;
+      const x = par.get(g) || { cle: g, entrees: 0, sorties: 0, nombre: 0 };
+      x.entrees += l.entrees; x.sorties += l.sorties; x.nombre += l.nombre; par.set(g, x);
+    });
+    m.sous_categories = [...par.values()];
+  });
+  return e;
+}

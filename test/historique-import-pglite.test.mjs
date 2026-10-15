@@ -5,7 +5,7 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { baseComplete } from "./helpers/pglite.mjs";
-import { cas, resoudre, HistoriqueImport as H, largeDe } from "./helpers/his2.mjs";
+import { cas, resoudre, HistoriqueImport as H, entreeLarge as entreeLargeDe } from "./helpers/his2.mjs";
 import { isinFictif } from "./helpers/isin-fictif.mjs";
 
 const A = "11111111-1111-1111-1111-111111111111";
@@ -46,16 +46,7 @@ before(async () => {
     reset role; set test.uid = '${A}'; set test.aal = 'aal2'; set test.client_id = ''; set test.session_id = ''; set role authenticated;`);
 });
 
-/** Relevés de la fixture en catégories larges (avant BUD1 : sous-catégorie vide), additionnées par catégorie large. */
-function entreeLarge(id) {
-  const e = JSON.parse(JSON.stringify(resoudre(cas(id).entree)));
-  e.mois.forEach(m => {
-    const par = new Map();
-    m.sous_categories.forEach(l => { const g = largeDe(l.cle), x = par.get(g) || { cle: g, entrees: 0, sorties: 0, nombre: 0 }; x.entrees += l.entrees; x.sorties += l.sorties; x.nombre += l.nombre; par.set(g, x); });
-    m.sous_categories = [...par.values()];
-  });
-  return e;
-}
+const entreeLarge = entreeLargeDe;
 
 test("relevés : B1 en catégories larges, puis B1-remp qui remplace février (compte retrouvé par sa clé)", async () => {
   const c = ctxBase = await ctx();
