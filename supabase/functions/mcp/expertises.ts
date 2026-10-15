@@ -35,7 +35,7 @@ export const LIGNES_MAX = 30;
 export const NOMS_MAX = 10;
 /** Expertises dont le contexte est filtré par marche (les autres listent chaque ligne avec son marché). */
 export const FILTRE_MARCHE = ["actions"];
-export const EXPERTISES_APP = "Boussole › Agent › Expertises";
+export const EXPERTISES_APP = "Boussole › Agent › Savoir";
 const COLS = "slug, nom, version, quand_consulter, perimetre, methode, controles, garde_fous, format, themes_savoir, reperes, angles, marches";
 
 /** Texte du prompt MCP expertise_<slug>. */

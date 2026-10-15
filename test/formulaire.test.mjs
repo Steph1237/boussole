@@ -335,7 +335,7 @@ test("soumettre_formulaire : regroupement par cible, un seul lot (formulaire_id)
   const s = r.structuredContent;
   assert.equal(s.lot, id); assert.equal(s.nombre, 3);
   assert.ok(s.resume.some(x => x.champ === "risque.connaissances" && x.valeur === "ETF (fonds indiciels cotés), Actions"));
-  assert.match(s.rappel, /Boussole › Agent › Propositions/);
+  assert.match(s.rappel, /Boussole › Agent › À valider/);
   // profil estimé : réponses validées (objectif, revenus) + réponses du formulaire, comme Risque.evaluer
   const web = Risque.evaluer({ objectif: "croissance", revenus: "cdi", horizon: "8-15", connaissances: ["etf", "actions"], experience: 6, perte_max: "p20" }, {});
   assert.equal(s.profil_estime.score, web.score); assert.equal(s.profil_estime.profil.id, web.profil);
@@ -378,7 +378,7 @@ test("prompt completer_profil : une section par argument, formulaire pour le cat
   assert.deepEqual(J(charges.F.SECTIONS), ["foyer", "revenus", "protection", "risque", "budget", "placements", "immobilier", "objectifs"]);
   for (const section of charges.F.SECTIONS) {
     const t = p.fn({ section }).messages[0].content.text;
-    assert.match(t, /^Boussole : aide-moi à compléter /); assert.match(t, /demarrer_session/); assert.match(t, /Boussole › Agent › Propositions/);
+    assert.match(t, /^Boussole : aide-moi à compléter /); assert.match(t, /demarrer_session/); assert.match(t, /Boussole › Agent › À valider/);
     assert.doesNotMatch(t, /(^|[^\p{L}])(vous|votre|vos)(?![\p{L}])/iu, section + " : tutoiement");
   }
   const risque = p.fn({ section: "risque" }).messages[0].content.text;
@@ -514,7 +514,7 @@ test("page : protocole MCP Apps simulé — initialize → initialized → tool-
   P.envoyer({ jsonrpc: "2.0", id: appel.id, result: sortie });
   await attendre();
   assert.equal($("fbFin").hidden, false); assert.equal($("fbForm").hidden, true);
-  assert.match($("fbFin").textContent, /Réponses envoyées/); assert.match($("fbFin").textContent, /Profil estimé : /); assert.match($("fbFin").textContent, /Boussole › Agent › Propositions/);
+  assert.match($("fbFin").textContent, /Réponses envoyées/); assert.match($("fbFin").textContent, /Profil estimé : /); assert.match($("fbFin").textContent, /Boussole › Agent › À valider/);
   const ctx = recus.find(m => m.method === "ui/update-model-context");
   assert.ok(ctx, "résumé envoyé au modèle");
   assert.deepEqual(ctx.params, { content: [{ type: "text", text: sortie.structuredContent.pour_le_modele }] });

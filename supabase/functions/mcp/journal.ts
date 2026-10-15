@@ -130,7 +130,7 @@ export const CONSIGNE_CLOTURE = [
   "1. Selon journal_consentement, pour journaliser comme pour completer_journal : jamais → n'enregistre ni ne modifie rien au journal et ne le propose pas ; demander → propose (titre et synthèse, ou note, statut, date de revue), puis n'appelle journaliser ou completer_journal (accord_utilisateur: true) qu'après un oui explicite de l'utilisateur ; prevenir → enregistre avec journaliser ou complète avec completer_journal, puis dis-lui ce que tu as écrit.",
   "2. Propose en une liste courte ce qui mérite d'aller au journal : décisions prises (avec les mots de l'utilisateur), avis donnés, hypothèses retenues, scénarios comparés, et la date de la prochaine revue (revue_le). Pas de doublon avec ecrit_aujourdhui.journal ; pour compléter une entrée existante, completer_journal.",
   "3. Puis retiens avec memoriser les points durables (contexte, préférences, projets, points à suivre avec échéance) qui ne sont pas déjà dans ecrit_aujourdhui.memoire.",
-  "4. Rappelle les entrées à relire dans " + JOURNAL + " et les propositions à valider dans Boussole › Agent › Propositions.",
+  "4. Rappelle les entrées à relire dans " + JOURNAL + " et les propositions à valider dans Boussole › Agent › À valider.",
 ].join("\n");
 
 export function registerJournal(server: any, h: { db: any; wrap: any; must: any; UserError: any; RO: any; RW: any; source: string; today: () => string; calcul: Calcul }) {

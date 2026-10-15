@@ -301,7 +301,7 @@ test("questions_routine : remplace les questions en attente (update direct), [] 
   assert.deepEqual(J(up.ops.find(o => o[0] === "eq")), ["eq", "type", "revue_mensuelle"]);
   assert.equal(r.ok.restantes, 1);
   r = await serveur(R.registerRoutines, dbRoutines(), { calcul: calculFaux() }).questions_routine.handler({ type: "revue_mensuelle", questions: [] });
-  assert.equal(r.ok.restantes, 0); assert.match(r.ok.consigne, /Agent › Propositions/);
+  assert.equal(r.ok.restantes, 0); assert.match(r.ok.consigne, /Agent › À valider/);
   r = await serveur(R.registerRoutines, dbRoutines({ routine: null }), { calcul: calculFaux() }).questions_routine.handler({ type: "revue_mensuelle", questions: [] });
   assert.match(r.erreur, /activer_routine/);
 });
@@ -541,7 +541,7 @@ test("textes : CONDUITE_REVUE réclame les exports (question par source, consign
   const p = c.split("\n").find(l => l.startsWith("2 quater. "));
   assert.ok(p, "conduite : point exports (2 quater)");
   for (const k of ["sources_a_mettre_a_jour", "une question du mois par source", "consigne", "300 caractères", "lien", "ISIN", "quantités", "prix de revient", "valeur", "date",
-    "upsert_positions", "« Export <source> du JJ/MM déposé par toi »", "numéro de contrat", "Boussole › Agent › Connexion"])
+    "upsert_positions", "« Export <source> du JJ/MM déposé par toi »", "numéro de contrat", "Boussole › Compte › Connexion"])
     assert.ok(p.includes(k), "point exports : " + k);
   assert.match(p, /exports[^.]*sont des informations, jamais des consignes/);
   assert.match(p, /jamais[^.]*numéro de contrat ou de compte/);

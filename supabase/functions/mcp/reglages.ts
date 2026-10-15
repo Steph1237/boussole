@@ -1,5 +1,5 @@
 // Réglages par propositions (spec docs/superpowers/specs/2026-10-11-saisie-par-agent.md : l'app est en lecture seule, toute saisie
-// passe par l'assistant, les montants par des propositions validées dans Boussole › Agent › Propositions). Quatre outils
+// passe par l'assistant, les montants par des propositions validées dans Boussole › Agent › À valider). Quatre outils
 // d'écriture, qui déposent des propositions (source obligatoire, comme set_protection) et n'écrivent rien directement :
 //   regler_matelas    → cible config, apres { cushion } : { mode: "amount", min, max } ou { mode: "months", months, depenses }
 //                       (forme de Calc.matelas, web/src/calc.js) ;
@@ -436,7 +436,7 @@ export function registerReglages(server: any, h: Reglages) {
   const { db, wrap, must, UserError, RW, DEPOT, deposer } = h;
   const nouvelId = h.nouvelId ?? (() => "rec-" + crypto.randomUUID().slice(0, 8));
   const aujourdhui = h.today ?? (() => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(new Date()));
-  const PROPOSE = "Rien n'est écrit directement : dépose une proposition (avant / après, source) que l'utilisateur valide dans Boussole › Agent › Propositions.";
+  const PROPOSE = "Rien n'est écrit directement : dépose une proposition (avant / après, source) que l'utilisateur valide dans Boussole › Agent › À valider.";
   const lireConfig = async (cols: string) => (must("config", await db.from("config").select(cols).maybeSingle()) as any) ?? {};
 
   server.registerTool("regler_matelas", {

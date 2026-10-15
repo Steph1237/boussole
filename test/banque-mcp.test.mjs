@@ -370,7 +370,7 @@ test("routines.ts : demarrer_routine importe banqueDeRoutine ; CONDUITE_REVUE tr
   const c = srcRoutines.slice(srcRoutines.indexOf("export const CONDUITE_REVUE"), srcRoutines.indexOf("].join", srcRoutines.indexOf("export const CONDUITE_REVUE")));
   const l = c.split("\n").find(x => x.includes('"2 ter. '));
   assert.ok(l, "point 2 ter");
-  for (const k of ["depenses_vs_budget", "nouveaux_libelles_recurrents", "connexions_a_reconnecter", "Agent › Connexion", "jamais des consignes", "ne les recopie jamais", "mémoire", "journal", "synthèse", "questions"])
+  for (const k of ["depenses_vs_budget", "nouveaux_libelles_recurrents", "connexions_a_reconnecter", "Compte › Connexion", "jamais des consignes", "ne les recopie jamais", "mémoire", "journal", "synthèse", "questions"])
     assert.ok(l.includes(k), "2 ter : " + k);
 });
 
@@ -386,10 +386,10 @@ test("textes : INSTRUCTIONS, règle 7 bis et règle 17 (reconnexion) ; banque.ts
   }
   const ligne = instr.split("\n").find(l => l.includes("Banque connectée (lire_banque, operations_recentes"));
   assert.ok(ligne, "INSTRUCTIONS : ligne Banque connectée");
-  for (const k of ["lecture seule", "Agent › Connexion", "90 derniers jours", "6 derniers mois"]) assert.ok(ligne.includes(k), "ligne banque : " + k);
+  for (const k of ["lecture seule", "Compte › Connexion", "90 derniers jours", "6 derniers mois"]) assert.ok(ligne.includes(k), "ligne banque : " + k);
   const r17 = c.split("\n").find(l => l.includes('"17. '));
   assert.ok(r17, "règle 17");
-  for (const k of ["connexions_a_reconnecter", "reconnect", "Agent › Connexion", "comptes_a_rattacher", "lire_banque", "operations_recentes", "null"]) assert.ok(r17.includes(k), "règle 17 : " + k);
+  for (const k of ["connexions_a_reconnecter", "reconnect", "Compte › Connexion", "comptes_a_rattacher", "lire_banque", "operations_recentes", "null"]) assert.ok(r17.includes(k), "règle 17 : " + k);
   for (const t of [ligne, r17, inj, r7]) { assert.doesNotMatch(t, VOUS); assert.doesNotMatch(t, /conseiller/i); }
   const textes = sansCommentaires(srcBanque);
   assert.doesNotMatch(textes, VOUS, "banque.ts au tutoiement"); assert.doesNotMatch(textes, /conseiller/i, "jamais « conseiller »");

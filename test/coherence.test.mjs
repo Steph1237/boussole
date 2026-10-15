@@ -1,6 +1,6 @@
 // FIX5 — un indicateur, une définition : le même chiffre sur chaque écran (et dans le connecteur quand l'indicateur y est exposé).
 // Audit UX mobile (docs/boussole-ux-mobile.md, constat 3) : variation du patrimoine net (Aujourd'hui ≠ Comptes, qui clignotait),
-// capacité d'épargne (31 % puis 48 % sur Budget), complétude (100 % avec « Protection non renseignée », 75 % dans Agent › Connexion),
+// capacité d'épargne (31 % puis 48 % sur Budget), complétude (100 % avec « Protection non renseignée », 75 % dans Compte › Connexion),
 // crédits (1 listé au lieu de 2). Constat 7 : tutoiement (« l'utilisateur » dans Propositions) et mot « conseiller » (test à part :
 // test/conseiller.test.mjs).
 import { test } from "node:test";
@@ -178,10 +178,10 @@ test("capacité d'épargne : le calcul réel est celui des comptes (Calc.budgetR
 
 /* ====================================================== 3. complétude ====================================================== */
 
-test("complétude : Compte › Données, Agent › Connexion et le connecteur utilisent BilanEtat.etat ; la protection non renseignée baisse le pourcentage", () => {
+test("complétude : Compte › Données, Compte › Connexion et le connecteur utilisent BilanEtat.etat ; la protection non renseignée baisse le pourcentage", () => {
   const S = demoS();
   const e = BilanEtat.etat(S), c = PF.completude(S);
-  assert.equal(c.pourcentage, e.pourcentage, "même pourcentage que le bilan (Agent › Connexion)");
+  assert.equal(c.pourcentage, e.pourcentage, "même pourcentage que le bilan (Compte › Connexion)");
   assert.equal(PF.resumeProtection(S.profil), "non renseignée", "cas de l'audit : protection non renseignée");
   assert.ok(c.pourcentage < 100, "…donc pas 100 %");
   assert.ok(c.incompletes.includes("Protection"), "la section Protection est citée parmi ce qui reste à compléter");
@@ -189,7 +189,7 @@ test("complétude : Compte › Données, Agent › Connexion et le connecteur ut
   const protege = Object.assign({}, S, { profil: Object.assign({}, S.profil, { protection: { prevoyance: true, emprunteur: true } }) });
   assert.ok(PF.completude(protege).pourcentage > c.pourcentage);
   assert.ok(!PF.completude(protege).incompletes.includes("Protection"));
-  // la vue Agent › Connexion lit la même fonction
+  // la vue Compte › Connexion lit la même fonction
   assert.match(readFileSync("web/src/claude-guide.js", "utf8"), /window\.BilanEtat\.etat\(S\)/);
   // plus de seconde fonction de complétude dans le calcul du profil
   assert.equal(Calc.completude, undefined); assert.equal(Calc.manquants, undefined);

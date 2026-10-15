@@ -6,7 +6,7 @@
    en supprimer une ou régler le matelas se fait avec Claude : « Régler avec Claude » (UI.demanderAClaude + ClaudePrompts.phrase,
    section « regles », avec la règle ou le matelas en contexte). Claude modifie les règles d'alerte après l'accord de l'utilisateur
    dans la conversation (update_config) ; la cible du matelas passe par une proposition (regler_matelas, cible config, migration
-   0019) validée dans Agent › Propositions. Les alertes qui en découlent s'affichent dans Aujourd'hui.
+   0019) validée dans Agent › À valider. Les alertes qui en découlent s'affichent dans Aujourd'hui.
    Une carte par règle : type, règle en français (Rules.describe), état du moment (Rules.evaluate sur cette seule règle), et une
    bascule actif / inactif (role="switch", aria-label « Règle : <texte> », l'état est porté par aria-checked). La carte ouvre un
    panneau en lecture (état, alertes du moment, « Régler avec Claude »). 5 règles puis « Voir les autres règles » (clé fixe).
@@ -113,7 +113,7 @@ function matelasPanneauHtml(res,badgeHtml){
   return `<div class="rg-p"><div class="rg-p-tete"><span class="rg-p-val">${esc(res.valeur)}</span>${badgeHtml||""}</div>`+
     `<p class="rg-p-sous">${esc(res.sous)}</p>`+
     `<p class="rg-p-intro">L'épargne disponible est celle de la poche « Épargne » du foyer (livrets, comptes). La cible s'exprime en montant (minimum, et maximum facultatif) ou en mois de dépenses : elle vaut alors le nombre de mois multiplié par tes dépenses mensuelles, sans plafond.</p>`+
-    `<p class="rg-p-intro">Pour la fixer ou la changer, règle-la avec Claude : il dépose une proposition que tu valides dans Agent › Propositions.</p></div>`;
+    `<p class="rg-p-intro">Pour la fixer ou la changer, règle-la avec Claude : il dépose une proposition que tu valides dans Agent › À valider.</p></div>`;
 }
 
 const PURE={estActive,resumeRegle,compteRegles,basculerRegle,epargneDisponible,resumeMatelas,phraseRegles,phraseRegle,phraseMatelas,
@@ -140,7 +140,6 @@ function annoncer(t){ const m=$("rgMsg"); if(m) m.textContent=t||""; }
 function render(){
   const rules=rulesOf(), u=U(), Rl=R(), C=window.Calc, ctx=ruleCtx();
   $("ruleCount").textContent=compteRegles(rules);
-  if(u) ecrire("rgClaude","claude",regler(u,phraseRegles()));
   const items=rules.map((r,i)=>({i,res:resumeRegle(r,ctx,Rl)}));
   ecrire("ruleList","liste",listeHtml(items,u)); // « Voir plus » à clé fixe : l'état déplié est conservé par UI
   if(u&&C){ const m=resumeMatelas(S.config,epargneDisponible(S.positions,C),C);

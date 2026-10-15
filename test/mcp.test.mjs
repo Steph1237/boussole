@@ -137,7 +137,7 @@ test("mcp : Diagnostic — annotate_instrument (source obligatoire, RPC), get_ri
 
 test("mcp : chemins de navigation du cockpit (Agent, Patrimoine, Pilotage, Compte), plus les anciens", () => {
   assert.doesNotMatch(codeAll, /Profil et données|Bilan ›|Diagnostic ›|Recommandations ›|Avenir ›|Ma position|Mémoire de l'agent/);
-  for (const k of ["Boussole › Agent › Propositions", "Boussole › Agent › Mémoire", "Boussole › Agent › Journal", "Patrimoine › Placements", "Pilotage › Risque"]) assert.ok(codeAll.includes(k), k);
+  for (const k of ["Boussole › Agent › À valider", "Boussole › Agent › Mémoire", "Boussole › Agent › Journal", "Patrimoine › Placements", "Pilotage › Risque"]) assert.ok(codeAll.includes(k), k);
 });
 
 test("mcp : aucune écriture directe dans les tables personnelles, hors propositions, mémoire et journal de l'agent, routines (et réglages sans montant)", () => {
@@ -183,7 +183,7 @@ test("mcp : chaque outil d'écriture exige une source (DEPOT) et dépose des pro
   }
   assert.match(code, /from\("propositions"\)\.insert\(rows\)/);
   assert.ok(code.includes("proposition${n > 1 ? \"s\" : \"\"} déposée${n > 1 ? \"s\" : \"\"}, ${VALIDER}"), "réponse : N proposition(s) déposée(s)…");
-  assert.ok(code.includes('const VALIDER = "à valider dans Boussole › Agent › Propositions"'));
+  assert.ok(code.includes('const VALIDER = "à valider dans Boussole › Agent › À valider"'));
   assert.doesNotMatch(outil("annotate_instrument"), /\.\.\.DEPOT|deposer\(/, "annotate_instrument reste direct");
   // set_risk_answers validé contre les questions ; list_propositions et etat_du_bilan en lecture seule
   assert.match(outil("set_risk_answers"), /reponses:\s*RisqueReponses/);
@@ -215,10 +215,10 @@ test("mcp : prompts d'entretien enregistrés (titre, description, conduite)", ()
   for (const n of PROMPTS) assert.match(code, new RegExp(`nom:\\s*"${n}",\\s*titre:\\s*"[^"]+",`), `prompt ${n}`);
   const conduite = code.slice(code.indexOf("const CONDUITE = ["), code.indexOf("const PARCOURS"));
   for (const k of ["etat_du_bilan", "list_propositions", "UNE seule question", "pourquoi", "relevé", "N'invente jamais un chiffre", "récapitule", "source", "lot",
-    "Boussole › Agent › Propositions", "aucune recommandation de produit", "pas un conseil en investissement"]) assert.ok(conduite.includes(k), `conduite : ${k}`);
+    "Boussole › Agent › À valider", "aucune recommandation de produit", "pas un conseil en investissement"]) assert.ok(conduite.includes(k), `conduite : ${k}`);
   const revue = code.slice(code.indexOf('nom: "revue_mensuelle"'), code.indexOf("].map(", code.indexOf('nom: "revue_mensuelle"')));
   for (const k of ["demarrer_routine", "type revue_mensuelle", "suis sa conduite", "je suis là"]) assert.ok(revue.includes(k), `revue_mensuelle : ${k}`);
-  for (const k of ["etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection", "Agent › Propositions", "source"]) assert.ok(src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE")).includes(k), `instructions : ${k}`);
+  for (const k of ["etat_du_bilan", "list_propositions", "set_risk_answers", "set_protection", "Agent › À valider", "source"]) assert.ok(src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("const CONDUITE")).includes(k), `instructions : ${k}`);
 });
 
 /* ---------- parité de calcul avec web/src (risque.js, marche.js, pratiques.js) ---------- */
@@ -593,7 +593,7 @@ test("onboarding : la feuille de conduite porte les règles de l'agent expert", 
   for (const k of ["TMI", "PEA", "fonds euros", "matelas"]) assert.ok(c.includes(k), `jargon expliqué : ${k}`);
   assert.match(c, /fin de chaque section/, "dépôt à la fin de chaque section");
   assert.ok(c.includes("Ce que tu as dit à Claude pendant l'onboarding") && c.includes("lot_suggere"), "source et lot des dépôts");
-  assert.ok(c.includes("changements à valider dans Boussole › Agent › Propositions"), "rappel après chaque dépôt");
+  assert.ok(c.includes("changements à valider dans Boussole › Agent › À valider"), "rappel après chaque dépôt");
   const credentials = c.split("\n").find(l => /identifiants bancaires/.test(l));
   assert.ok(credentials, "règle sur les identifiants bancaires");
   for (const k of ["Ne demande jamais", "IBAN", "numéros de compte", "carte", "mots de passe", "sécurité sociale", "retirer", "ne les enregistre"]) assert.ok(credentials.includes(k), `identifiants : ${k}`);

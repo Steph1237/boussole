@@ -892,8 +892,8 @@
     const chiffres = [["Solde", eur(f.solde)], ["Établissement", f.etablissement.nom], ["Source", f.source.texte + (f.source.ancien ? " · " + perimeLu(f.source) : "")],
       ["Plus bas solde sur 90 jours", plusBas, pb && pb.montant < 0 ? "neg" : ""]];
     const flux = !f.banqueActive || !fl.mois.length
-      ? '<p class="cv-muet">' + esc(!f.banqueActive ? "Connecte ta banque dans Agent › Connexion pour suivre les entrées et sorties de ce compte."
-        : f.portee === "aucun" ? "Rattache ce compte à un compte bancaire synchronisé (Agent › Connexion) pour suivre ses entrées et sorties."
+      ? '<p class="cv-muet">' + esc(!f.banqueActive ? "Connecte ta banque dans Compte › Connexion pour suivre les entrées et sorties de ce compte."
+        : f.portee === "aucun" ? "Rattache ce compte à un compte bancaire synchronisé (Compte › Connexion) pour suivre ses entrées et sorties."
         : "Pas encore d'opérations synchronisées.") + "</p>"
       : faitsHtml([["Entrées du mois en cours", ec ? eur(ec.entrees) : "—", "pos"], ["Sorties du mois en cours", ec ? eur(ec.sorties) : "—", "neg"],
         ["Entrées par mois (moyenne)", moy ? eur(moy.entrees) + " sur " + pluriel(moy.n, "mois", "mois") : "—"], ["Sorties par mois (moyenne)", moy ? eur(moy.sorties) + " sur " + pluriel(moy.n, "mois", "mois") : "—"]]) +

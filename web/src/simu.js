@@ -44,7 +44,7 @@ function valeursReelles(S,Reel){
     tmi,
     essai:V.has.salaire?who.some(p=>!!(ps[p]&&ps[p].essai)):null}};
 }
-const eur0=v=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0}).format(Math.round(v))+" €";
+const eur0=v=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0}).format(Math.round(v))+"\u00a0€";
 const escH=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 /** Ligne « Repris de tes données pour … » (HTML) : apport détaillé, revenus, crédits et TMI du périmètre ; msg : message discret. */
 function repriseHtml(S,R,msg){
@@ -133,9 +133,10 @@ const AUTO=["prix","loyer","fraisA","taux","tf","copro","provCopro","agence","re
 const MKT=["prix","loyer","taux","copro","prixL","loyerL","coproL"];
 const RANGES=["surface","apport","horizon","disc"];
 const manual={},touched={};
-const eur=(n,d=0)=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:d,minimumFractionDigits:d}).format(n);
-const k=n=>{const a=Math.abs(n);return (n<0?"−":"")+(a>=1e6?eur(a/1e6,2)+" M€":eur(Math.round(a/100)*100)+" €")};
-const kk=n=>{const a=Math.abs(n);return (n<0?"−":"")+(a>=1e6?eur(a/1e6,2)+" M€":eur(Math.round(a/1000))+" k€")};
+const FM=window.Fmt;
+const eur=(n,d=0)=>FM.fmtNombre(n,{decimales:d});
+const k=n=>{const a=Math.abs(n);return (n<0?"−":"")+(a>=1e6?eur(a/1e6,2)+"\u00a0M€":eur(Math.round(a/100)*100)+"\u00a0€")};
+const kk=n=>FM.fmtEUR(n,{compact:"graphe"});
 const num=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0};
 const setA=(id,v)=>{if(!manual[id])$(id).value=v};
 const r1=v=>Math.round(v*10)/10;
@@ -427,13 +428,14 @@ function headline(){
 function syncRanges(){
   RANGES.forEach(id=>{$(id+"R").value=$(id).value;});
   $("surfaceV").textContent=eur(num("surface"))+" m²";
-  $("apportV").textContent=realHas.apport&&!realOv("apport")?eur(num("apport"))+" €":kk(num("apport"));
+  $("apportV").textContent=realHas.apport&&!realOv("apport")?eur(num("apport"))+"\u00a0€":kk(num("apport"));
   $("horizonV").textContent=num("horizon")+" ans";
   $("discV").textContent=eur(num("disc"))+" %";
 }
 function render(){
   const R=realData();applyReal(R);fillAuto();syncRanges();
   const I=inputs(),SCN=scenarios();
+  $("hypoSub").textContent="· "+CITIES[$("zone").value].n+" · "+Math.round(I.s)+" m² · apport "+kk(num("apport"))+" · "+I.H+" ans";
   $("pret").value=eur(Math.round(I.L));
   $("pretL").value=eur(Math.round(I.LL));
   const runs=SCN.map(s=>simulate(I,s));
@@ -446,9 +448,9 @@ function renderAll(){renderPrecision();renderFace();renderScen();renderVerdict()
 
 function renderFace(){
   const {I}=last,c=CITIES[$("zone").value],s=I.s,price=I.prix,rent=I.rent0;
-  $("buySm").innerHTML='<b>'+eur(price/s)+' €/m²</b> · frais d\'achat <b>'+eur(I.n*100,1)+' %</b> ('+k(I.notaire)+')';
+  $("buySm").innerHTML='<b>'+eur(price/s)+'\u00a0€/m²</b> · frais d\'achat <b>'+eur(I.n*100,1)+' %</b> ('+k(I.notaire)+')';
   const cc=c.c==="FR"?Math.round((rent+s*(c.ch/0.35)*0.65/12)/10)*10:0;
-  $("rentSm").innerHTML='<b>'+eur(rent/s,1)+' €/m²</b> par mois, hors charges'+(cc?' · soit ~<b>'+eur(cc)+' €</b> charges comprises, comme dans les annonces':'');
+  $("rentSm").innerHTML='<b>'+eur(rent/s,1)+'\u00a0€/m²</b> par mois, hors charges'+(cc?' · soit ~<b>'+eur(cc)+'\u00a0€</b> charges comprises, comme dans les annonces':'');
   const yrs=rent>0?price/(rent*12):0,yld=price>0?rent*12/price:0;
   const own=ownMonthly(I,price),oc=own.total;
   // prix d'équilibre : celui pour lequel le coût d'usage égale le loyer
@@ -459,12 +461,12 @@ function renderFace(){
   $("ratio").innerHTML=
     '<p class="headline">Le prix vaut <b>'+eur(yrs,1)+' ans de loyer</b> (rendement brut <b>'+eur(yld*100,1)+' %</b>). Repères : sous 20 ans, l\'achat est souvent gagnant ; au-delà de 25 ans, la location l\'est le plus souvent.</p>'+
     '<div class="bars">'+
-      '<div class="br"><span>Coût réel d\'un propriétaire</span><div class="t"><i style="width:'+Math.max(0,oc/max*100)+'%;background:var(--buy)"></i></div><span class="v">'+eur(oc)+' €/mois</span></div>'+
-      '<div class="br"><span>Loyer</span><div class="t"><i style="width:'+(rent/max*100)+'%;background:var(--etf)"></i></div><span class="v">'+eur(rent)+' €/mois</span></div>'+
+      '<div class="br"><span>Coût réel d\'un propriétaire</span><div class="t"><i style="width:'+Math.max(0,oc/max*100)+'%;background:var(--buy)"></i></div><span class="v">'+eur(oc)+'\u00a0€/mois</span></div>'+
+      '<div class="br"><span>Loyer</span><div class="t"><i style="width:'+(rent/max*100)+'%;background:var(--etf)"></i></div><span class="v">'+eur(rent)+'\u00a0€/mois</span></div>'+
     '</div>'+
-    '<p class="seuil">Le coût réel compte ce qu\'un propriétaire ne récupère jamais : intérêts et rendement perdu sur l\'apport ('+eur(own.parts.capital/12)+' €), charges et taxes ('+eur((own.parts.charges+own.parts.assurance)/12)+' €), frais d\'achat et de revente étalés ('+eur(own.parts.frais/12)+' €), moins la hausse attendue des prix (−'+eur(own.parts.hausse/12)+' €). Ici, '+verdict+'. '+
-    (oc>rent?(be?'L\'achat deviendrait plus intéressant à partir d\'un loyer de <b>'+eur(oc)+' €</b> ou d\'un prix d\'environ <b>'+kk(be)+'</b>.':'')
-            :'Louer ne deviendrait intéressant qu\'au-dessous de <b>'+eur(oc)+' €</b> de loyer.')+'</p>';
+    '<p class="seuil">Le coût réel compte ce qu\'un propriétaire ne récupère jamais : intérêts et rendement perdu sur l\'apport ('+eur(own.parts.capital/12)+'\u00a0€), charges et taxes ('+eur((own.parts.charges+own.parts.assurance)/12)+'\u00a0€), frais d\'achat et de revente étalés ('+eur(own.parts.frais/12)+'\u00a0€), moins la hausse attendue des prix (−'+eur(own.parts.hausse/12)+'\u00a0€). Ici, '+verdict+'. '+
+    (oc>rent?(be?'L\'achat deviendrait plus intéressant à partir d\'un loyer de <b>'+eur(oc)+'\u00a0€</b> ou d\'un prix d\'environ <b>'+kk(be)+'</b>.':'')
+            :'Louer ne deviendrait intéressant qu\'au-dessous de <b>'+eur(oc)+'\u00a0€</b> de loyer.')+'</p>';
   $("srcLine").innerHTML=(c.est?'<span class="tag est">en partie estimé</span> ':'<span class="tag auto">sourcé</span> ')+'Source : '+c.src+'. Prix et loyer moyens de la ville, à remplacer par ceux de l\'annonce que tu regardes.';
 }
 
@@ -473,6 +475,8 @@ function renderScen(){
   const btn=(i,name,w)=>'<button type="button" class="pb" data-sc="'+i+'" aria-pressed="'+(i===-1?allMode:(!allMode&&i===current))+'">'+(w?'<i class="w" style="background:'+SC[w]+'"></i>':'')+name+'</button>';
   $("scen").innerHTML=SCN.map((s,i)=>btn(i,s.name,rank(runs[i],H)[0][0])).join("")+btn(-1,"Tous");
   root.querySelectorAll("#simu-scen .pb").forEach(b=>b.addEventListener("click",()=>{const i=+b.dataset.sc;if(i===-1)allMode=true;else{allMode=false;current=i;}renderAll();save();}));
+  /* Sélecteur horizontal défilant : fondu de bord, l'option choisie reste visible */
+  if(window.UI&&UI.defilant){const d=UI.defilant($("scen"));if(d){d.montrerActif();d.maj();}}
 }
 
 function renderVerdict(){
@@ -498,42 +502,49 @@ function renderVerdict(){
   }).join("");
 }
 
-const CH={W:640,H:290,ml:52,mr:12,mt:12,mb:30};
+const OFF=96; // hauteur de la barre fixe de l'application, pour amener une ligne sous l'en-tête
+const CH={W:640,H:290,ml:64,mr:12,mt:12,mb:30};
 function niceStep(range){const raw=range/5,p=Math.pow(10,Math.floor(Math.log10(raw))),f=raw/p;return (f<1.5?1:f<3?2:f<7?5:10)*p}
 function drawChart(){
   const {I,runs,SCN}=last,H=I.H;
-  const {W,H:Hh,ml,mr,mt,mb}=CH,pw=W-ml-mr,ph=Hh-mt-mb;
+  /* Le graphique prend la largeur réelle du cadre (1 unité = 1 px) : les graduations restent à 12 px sur mobile comme sur grand écran. */
+  const wrapW=($("chartwrap")&&$("chartwrap").clientWidth)||CH.W, W=Math.max(300,Math.min(Math.round(wrapW),1000)), Hh=W<480?250:W<760?280:300, {mt,mb}=CH, ml=W<480?58:64, mr=22, pw=W-ml-mr, ph=Hh-mt-mb;
   const series=allMode?runs:[runs[current]];
   let all=[0];series.forEach(R=>ST.forEach(s=>all=all.concat(R.out[s])));
   let lo=Math.min(...all),hi=Math.max(...all);
   const stp=niceStep(hi-lo||1);lo=Math.floor(lo/stp)*stp;hi=Math.ceil(hi/stp)*stp;
   const x=y=>ml+(y-1)/29*pw,yv=v=>mt+(hi-v)/(hi-lo)*ph;
   let g="";
-  for(let v=lo;v<=hi+1e-6;v+=stp){g+='<line x1="'+ml+'" x2="'+(W-mr)+'" y1="'+yv(v)+'" y2="'+yv(v)+'" stroke="var(--line)" stroke-width="'+(Math.abs(v)<1e-6?1.4:.8)+'"/><text x="'+(ml-6)+'" y="'+(yv(v)+4)+'" text-anchor="end" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono,monospace">'+(Math.abs(v)>=1e6?eur(v/1e6,1)+"M":eur(v/1000)+"k")+'</text>';}
-  [1,5,10,15,20,25,30].forEach(y=>{g+='<text x="'+x(y)+'" y="'+(Hh-10)+'" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono,monospace">'+y+(y===1?" an":" ans")+'</text>';});
+  const ticks=[];for(let v=lo;v<=hi+1e-6;v+=stp)ticks.push(v);
+  const lbls=FM.fmtAxe(ticks);
+  ticks.forEach((v,i)=>{g+='<line x1="'+ml+'" x2="'+(W-mr)+'" y1="'+yv(v)+'" y2="'+yv(v)+'" stroke="var(--line)" stroke-width="'+(Math.abs(v)<1e-6?1.4:.8)+'"/><text x="'+(ml-6)+'" y="'+(yv(v)+4)+'" text-anchor="end" font-size="12" fill="var(--muted)" font-family="Public Sans,sans-serif">'+lbls[i]+'</text>';});
+  (W<480?[1,10,20,30]:[1,5,10,15,20,25,30]).forEach(y=>{g+='<text x="'+x(y)+'" y="'+(Hh-10)+'" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="Public Sans,sans-serif">'+y+(y===1?" an":" ans")+'</text>';});
   const path=a=>a.map((v,i)=>(i?"L":"M")+x(i+1).toFixed(1)+" "+yv(v).toFixed(1)).join("");
   g+='<line x1="'+x(H)+'" x2="'+x(H)+'" y1="'+mt+'" y2="'+(mt+ph)+'" stroke="var(--fg)" stroke-dasharray="3 4" stroke-width="1"/>';
-  g+='<text x="'+(x(H)+(H>24?-6:6))+'" y="'+(mt+12)+'" text-anchor="'+(H>24?"end":"start")+'" font-size="11" font-weight="600" fill="var(--fg)" font-family="Schibsted Grotesk,sans-serif">'+H+' ans</text>';
+  g+='<text x="'+(x(H)+(H>24?-6:6))+'" y="'+(mt+12)+'" text-anchor="'+(H>24?"end":"start")+'" font-size="12" font-weight="600" fill="var(--fg)" font-family="Schibsted Grotesk,sans-serif">'+H+' ans</text>';
   const order=["inv","loc","rp"];
+  /* Bande de chaque option : du pire au meilleur des scénarios (jamais une ligne seule) ; la ligne pleine est le scénario choisi (central par défaut). */
+  order.forEach(s=>{
+    const mn=[],mx=[];for(let y=0;y<30;y++){const vs=runs.map(R=>R.out[s][y]);mn.push(Math.min(...vs));mx.push(Math.max(...vs));}
+    g+='<path d="'+path(mx)+mn.slice().reverse().map((v,i)=>"L"+x(30-i).toFixed(1)+" "+yv(v).toFixed(1)).join("")+'Z" fill="'+SC[s]+'" fill-opacity="0.14" stroke="'+SC[s]+'" stroke-opacity="0.35" stroke-width="1" stroke-dasharray="3 3"/>';
+  });
   if(allMode){
-    order.forEach(s=>{
-      const mn=[],mx=[];for(let y=0;y<30;y++){const vs=runs.map(R=>R.out[s][y]);mn.push(Math.min(...vs));mx.push(Math.max(...vs));}
-      g+='<path d="'+path(mx)+mn.slice().reverse().map((v,i)=>"L"+x(30-i).toFixed(1)+" "+yv(v).toFixed(1)).join("")+'Z" fill="'+SC[s]+'" fill-opacity="0.13" stroke="none"/>';
-    });
     order.forEach(s=>{g+='<path d="'+path(runs[0].out[s])+'" fill="none" stroke="'+SC[s]+'" stroke-width="2.4" stroke-linejoin="round"/>';});
   }else{
     const R=runs[current],sc=SCN[current];
-    if(sc.id==="k")g+='<rect x="'+x(2.5)+'" y="'+mt+'" width="'+(x(3.5)-x(2.5))+'" height="'+ph+'" fill="var(--bad)" fill-opacity="0.08"/><text x="'+x(3)+'" y="'+(mt+ph-6)+'" text-anchor="middle" font-size="10.5" fill="var(--bad)" font-family="Schibsted Grotesk,sans-serif">krach</text>';
-    if(sc.id==="m")g+='<rect x="'+x(1)+'" y="'+mt+'" width="'+(x(4.5)-x(1))+'" height="'+ph+'" fill="var(--bad)" fill-opacity="0.08"/><text x="'+x(2.75)+'" y="'+(mt+ph-6)+'" text-anchor="middle" font-size="10.5" fill="var(--bad)" font-family="Schibsted Grotesk,sans-serif">baisse des prix</text>';
+    if(sc.id==="k")g+='<rect x="'+x(2.5)+'" y="'+mt+'" width="'+(x(3.5)-x(2.5))+'" height="'+ph+'" fill="var(--bad)" fill-opacity="0.08"/><text x="'+x(3)+'" y="'+(mt+ph-6)+'" text-anchor="middle" font-size="12" fill="var(--bad)" font-family="Schibsted Grotesk,sans-serif">krach</text>';
+    if(sc.id==="m")g+='<rect x="'+x(1)+'" y="'+mt+'" width="'+(x(4.5)-x(1))+'" height="'+ph+'" fill="var(--bad)" fill-opacity="0.08"/><text x="'+x(2.75)+'" y="'+(mt+ph-6)+'" text-anchor="middle" font-size="12" fill="var(--bad)" font-family="Schibsted Grotesk,sans-serif">baisse des prix</text>';
     order.forEach(s=>{g+='<path d="'+path(R.out[s])+'" fill="none" stroke="'+SC[s]+'" stroke-width="'+(s==="inv"?2:2.8)+'" stroke-linejoin="round"'+(s==="inv"?' stroke-dasharray="6 4"':'')+'/>';});
     ST.forEach(s=>{g+='<circle cx="'+x(H)+'" cy="'+yv(R.out[s][H-1])+'" r="4.5" fill="'+SC[s]+'" stroke="var(--surface)" stroke-width="1.5"/>';});
   }
   g+='<line id="hov" x1="0" x2="0" y1="'+mt+'" y2="'+(mt+ph)+'" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>';
   $("chart").innerHTML='<svg viewBox="0 0 '+W+' '+Hh+'" role="img" aria-label="Patrimoine net des trois stratégies de 1 à 30 ans">'+g+'</svg>';
-  $("chartCap").textContent="Patrimoine net si tu soldais tout l'année indiquée (frais, dette et impôts déduits). Survole pour lire, clique pour changer la durée.";
+  const tactile=!!(window.matchMedia&&matchMedia("(hover:none)").matches);
+  $("chartCap").textContent="Patrimoine net si tu soldais tout l'année indiquée (frais, dette et impôts déduits). Bande : du pire au meilleur scénario ; trait : "+(allMode?"scénario central":"scénario "+SCN[current].name.toLowerCase())+". "+(tactile?"Touche la courbe pour lire une valeur ; la durée se règle dans tes hypothèses.":"Survole pour lire, clique pour changer la durée.");
   const svg=$("chart").querySelector("svg");
+  if(!drawChart.suivi&&typeof ResizeObserver!=="undefined"){drawChart.suivi=true;let l=0;new ResizeObserver(es=>{const w=Math.round(es[0].contentRect.width);if(l&&Math.abs(w-l)>8&&last)drawChart();l=w;}).observe($("chartwrap"));}
   const yearAt=ev=>{const r=svg.getBoundingClientRect(),vx=(ev.clientX-r.left)/r.width*W;return Math.max(1,Math.min(30,Math.round((vx-ml)/pw*29)+1));};
-  svg.addEventListener("pointermove",ev=>{
+  const lire=ev=>{
     const y=yearAt(ev),hov=$("hov");
     hov.setAttribute("x1",x(y));hov.setAttribute("x2",x(y));hov.setAttribute("visibility","visible");
     const base=allMode?runs[0]:runs[current];
@@ -545,9 +556,11 @@ function drawChart(){
     let left=r.left-wr.left+x(y)/W*r.width+12;const tw=tip.offsetWidth||230;
     if(left+tw>wr.width)left=left-tw-24;
     tip.style.left=Math.max(0,left)+"px";tip.style.top="8px";
-  });
+  };
+  svg.addEventListener("pointermove",lire);
+  svg.addEventListener("pointerdown",lire); // doigt : la valeur se lit au toucher et en glissant
   svg.addEventListener("pointerleave",()=>{$("tip").hidden=true;const h=$("hov");if(h)h.setAttribute("visibility","hidden");});
-  svg.addEventListener("click",ev=>{$("horizon").value=yearAt(ev);touched.horizon=true;render();});
+  svg.addEventListener("click",ev=>{if(ev.pointerType==="touch"||tactile)return;$("horizon").value=yearAt(ev);touched.horizon=true;render();});
 }
 
 function renderMatrix(){
@@ -564,10 +577,10 @@ function detailRun(){return last.runs[allMode?0:current]}
 
 function renderMonthly(){
   const {I}=last,m=detailRun().m1;
-  const f=v=>v?eur(v)+' €':'–';
+  const f=v=>v?eur(v)+'\u00a0€':'–';
   const line=(l,a,b,c,cls)=>'<tr'+(cls?' class="'+cls+'"':'')+'><td>'+l+'</td><td>'+f(a)+'</td><td>'+f(b)+'</td><td>'+f(c)+'</td></tr>';
   const lc=m.lc,rc=m.rc,budget=Math.max(m.rpOut,m.invOut,m.locOut);
-  $("sumCaches").textContent=eur(sum(rc))+" €/mois si tu achètes";
+  $("sumCaches").textContent=eur(sum(rc))+"\u00a0€/mois si tu achètes";
   $("monthly").innerHTML='<tr><th>1er mois</th><th>Acheter</th><th>Louer + ETF</th><th>Louer + locatif</th></tr>'+
     line("Ton loyer",0,m.loyer,m.loyer)+
     line("Mensualité de crédit",m.it+m.princ,0,m.itL+m.prL)+
@@ -580,8 +593,8 @@ function renderMonthly(){
     line("Gestion, CFE, comptable",0,0,lc.gestion+lc.cfeCompta)+
     line(m.taxAvg>=0?"Impôt sur les loyers (lissé)":"Économie d'impôt (lissée)",0,0,m.taxAvg)+
     line("Loyer encaissé, vacance déduite",0,0,-m.rentIn)+
-    '<tr class="tot"><td>Dépense nette</td><td>'+eur(m.rpOut)+' €</td><td>'+eur(m.locOut)+' €</td><td>'+eur(m.invOut)+' €</td></tr>'+
-    '<tr class="sub"><td>Placé en ETF</td><td>'+eur((budget-m.rpOut)*I.disc)+' €</td><td>'+eur((budget-m.locOut)*I.disc)+' €</td><td>'+eur((budget-m.invOut)*I.disc)+' €</td></tr>';
+    '<tr class="tot"><td>Dépense nette</td><td>'+eur(m.rpOut)+'\u00a0€</td><td>'+eur(m.locOut)+'\u00a0€</td><td>'+eur(m.invOut)+'\u00a0€</td></tr>'+
+    '<tr class="sub"><td>Placé en ETF</td><td>'+eur((budget-m.rpOut)*I.disc)+'\u00a0€</td><td>'+eur((budget-m.locOut)*I.disc)+'\u00a0€</td><td>'+eur((budget-m.invOut)*I.disc)+'\u00a0€</td></tr>';
 }
 
 function renderCosts(){
@@ -594,12 +607,12 @@ function renderCosts(){
     row("Frais d'achat, dossier, garantie",I.notaire+I.dossier+I.courtage+garNet)+row("Travaux à l'entrée",I.travaux)+
     row("Intérêts et assurance",c.interets+c.assurance)+row("Taxe foncière",c.tf)+row("Copro et gros travaux",c.copro+c.prov)+
     row("Entretien et assurance",c.entretien+c.assuHab)+(I.vente?row("Revente et pénalités",s.fV+s.ira):"")+
-    '<tr class="tot"><td>Total</td><td>'+k(totB)+'</td></tr><tr class="sub"><td>Par mois</td><td>'+eur(totB/mo)+' €</td></tr>'+
+    '<tr class="tot"><td>Total</td><td>'+k(totB)+'</td></tr><tr class="sub"><td>Par mois</td><td>'+eur(totB/mo)+'\u00a0€</td></tr>'+
     '<tr class="sub"><td>Plus-value (exonérée en France)</td><td class="'+(pv>=0?'pos':'neg')+'">'+(pv>=0?'+':'')+k(pv)+'</td></tr>';
   const cl=s.cL,p=s.pots.loc,totR=cl.loyers+cl.agence,gain=p.net-p.c;
   $("costRent").innerHTML='<tr><th>Poste</th><th>Cumul</th></tr>'+
     row("Loyers",cl.loyers)+row("Frais d'agence",cl.agence,Math.floor((H*12-1)/(12*I.reloc))+" déménagement(s)")+
-    '<tr class="tot"><td>Total</td><td>'+k(totR)+'</td></tr><tr class="sub"><td>Par mois</td><td>'+eur(totR/mo)+' €</td></tr>'+
+    '<tr class="tot"><td>Total</td><td>'+k(totR)+'</td></tr><tr class="sub"><td>Par mois</td><td>'+eur(totR/mo)+'\u00a0€</td></tr>'+
     '<tr class="sub"><td>Versé en ETF</td><td>'+k(p.c)+'</td></tr><tr class="sub"><td>Gain net d\'impôt</td><td class="'+(gain>=0?'pos':'neg')+'">'+(gain>=0?'+':'')+k(gain)+'</td></tr>';
   const ci=s.cI,garNetL=I.garantieL-s.restL;
   const costsI=ci.loyers+ci.agence+I.notaireL+I.dossier+I.courtage+garNetL+I.travauxL+I.mobilier+ci.interets+ci.assurance+ci.tf+ci.copro+ci.prov+ci.entretien+ci.pno+ci.gli+ci.gestion+ci.reloc+ci.cfeCompta+ci.impots+s.fVL+s.iraL+s.pvt.tax;
@@ -610,7 +623,7 @@ function renderCosts(){
     row("PNO, impayés, gestion, relocation",ci.pno+ci.gli+ci.gestion+ci.reloc+ci.cfeCompta)+
     row("Impôts (loyers et plus-value)",ci.impots+s.pvt.tax)+(I.vente?row("Revente et pénalités",s.fVL+s.iraL):"")+
     '<tr><td>Loyers encaissés</td><td class="pos">−'+k(ci.loyersRecus)+'</td></tr>'+
-    '<tr class="tot"><td>Total net</td><td>'+k(totI)+'</td></tr><tr class="sub"><td>Par mois</td><td>'+eur(totI/mo)+' €</td></tr>';
+    '<tr class="tot"><td>Total net</td><td>'+k(totI)+'</td></tr><tr class="sub"><td>Par mois</td><td>'+eur(totI/mo)+'\u00a0€</td></tr>';
 }
 
 function renderRenta(){
@@ -621,17 +634,17 @@ function renderRenta(){
   const net=coutTotal>0?(y1.R-chargesAn)/coutTotal:0;
   const netnet=coutTotal>0?(y1.R-chargesAn-y1.tax)/coutTotal:0;
   const cf=R.cf1/12;
-  $("sumRenta").textContent=CITIES[$("zoneL").value].n+" · "+eur(brut*100,1)+" % brut · cash-flow "+(cf>=0?"+":"")+eur(cf)+" €/mois";
+  $("sumRenta").textContent=CITIES[$("zoneL").value].n+" · "+eur(brut*100,1)+" % brut · cash-flow "+(cf>=0?"+":"")+eur(cf)+"\u00a0€/mois";
   $("kpisL").innerHTML=
     '<div class="kpi"><span class="l">Rendement brut</span><span class="n">'+eur(brut*100,2)+' %</span><span class="s">loyer annuel / prix</span></div>'+
     '<div class="kpi"><span class="l">Rendement net</span><span class="n">'+eur(net*100,2)+' %</span><span class="s">après vacance et charges</span></div>'+
     '<div class="kpi"><span class="l">Net-net</span><span class="n">'+eur(netnet*100,2)+' %</span><span class="s">après impôt</span></div>'+
-    '<div class="kpi"><span class="l">Cash-flow</span><span class="n '+(cf>=0?'pos':'neg')+'">'+(cf>=0?'+':'')+eur(cf)+' €</span><span class="s">par mois, année 1</span></div>';
+    '<div class="kpi"><span class="l">Cash-flow</span><span class="n '+(cf>=0?'pos':'neg')+'">'+(cf>=0?'+':'')+eur(cf)+'\u00a0€</span><span class="s">par mois, année 1</span></div>';
   $("fiscL").innerHTML='<tr><th>'+REG[I.regime]+' · année 1</th><th>Montant</th></tr>'+
-    '<tr><td>Loyers encaissés</td><td>'+eur(y1.R)+' €</td></tr>'+
-    '<tr><td>Charges déductibles hors intérêts'+(y1.init>0?'<span class="hint">dont '+eur(y1.init)+' € de frais d\'acquisition déduits la 1re année</span>':'')+'</td><td>'+eur(y1.Ch+y1.init)+' €</td></tr>'+
-    '<tr><td>Intérêts</td><td>'+eur(y1.Int)+' €</td></tr>'+
-    '<tr><td>'+(y1.tax>=0?'Impôt et prélèvements sociaux':'Économie d\'impôt (déficit foncier)')+'</td><td class="'+(y1.tax>0?'neg':'pos')+'">'+eur(Math.abs(y1.tax))+' €</td></tr>'+
+    '<tr><td>Loyers encaissés</td><td>'+eur(y1.R)+'\u00a0€</td></tr>'+
+    '<tr><td>Charges déductibles hors intérêts'+(y1.init>0?'<span class="hint">dont '+eur(y1.init)+'\u00a0€ de frais d\'acquisition déduits la 1re année</span>':'')+'</td><td>'+eur(y1.Ch+y1.init)+'\u00a0€</td></tr>'+
+    '<tr><td>Intérêts</td><td>'+eur(y1.Int)+'\u00a0€</td></tr>'+
+    '<tr><td>'+(y1.tax>=0?'Impôt et prélèvements sociaux':'Économie d\'impôt (déficit foncier)')+'</td><td class="'+(y1.tax>0?'neg':'pos')+'">'+eur(Math.abs(y1.tax))+'\u00a0€</td></tr>'+
     '<tr class="tot"><td>Impôt cumulé sur '+I.H+' ans</td><td>'+k(s.cI.impots)+'</td></tr>'+
     (I.vente?'<tr class="sub"><td>Impôt sur la plus-value à la revente</td><td>'+k(s.pvt.tax)+'</td></tr>':'');
 }
@@ -653,7 +666,7 @@ function renderBank(){
     '<div class="kpi"><span class="l">Endettement achat</span><span class="n">'+eur(dti*100,1)+' %</span><span class="s">'+pill(dti)+'</span></div>'+
     '<div class="kpi"><span class="l">Endettement locatif</span><span class="n">'+eur(dtiL*100,1)+' %</span><span class="s">'+pill(dtiL)+'</span></div>'+
     '<div class="kpi"><span class="l">Prix max finançable</span><span class="n">'+kk(prixMax)+'</span><span class="s">à 35 %, frais inclus</span></div>'+
-    '<div class="kpi"><span class="l">Mensualité achat</span><span class="n">'+eur(mRP)+' €</span><span class="s">crédit et assurance</span></div>';
+    '<div class="kpi"><span class="l">Mensualité achat</span><span class="n">'+eur(mRP)+'\u00a0€</span><span class="s">crédit et assurance</span></div>';
   $("gauges").innerHTML=gaugeHTML("Achat : mensualité ÷ revenus",dti)+gaugeHTML("Locatif : mensualité ÷ (revenus + 70 % du loyer perçu)",dtiL);
   const al=[];
   const fraisRP=I.notaire+I.dossier+I.courtage+I.garantie;
@@ -666,8 +679,8 @@ function renderBank(){
   if(!al.length)al.push(["ok","Les deux projets sont finançables avec ces hypothèses."]);
   $("alerts").innerHTML=al.map(a=>'<div class="alert '+a[0]+'">'+a[1]+'</div>').join("");
   const txt=nb?nb+" point"+(nb>1?"s":"")+" bloquant"+(nb>1?"s":""):nw?nw+" point"+(nw>1?"s":"")+" d'attention":"finançable";
-  $("sumBank").textContent=txt+" · revenus "+eur(rev)+" €/mois";
-  $("bankline").innerHTML=nb||nw?'<span class="pill '+(nb?'bad':'warn')+'">Banque</span><span>'+txt+' avec '+eur(rev)+' €/mois de revenus.</span><button type="button" class="linkbtn" id="goBank">Voir le détail</button>':'<span class="pill ok">Banque</span><span>Finançable avec '+eur(rev)+' €/mois de revenus.</span><button type="button" class="linkbtn" id="goBank">Changer les revenus</button>';
+  $("sumBank").textContent=txt+" · revenus "+eur(rev)+"\u00a0€/mois";
+  $("bankline").innerHTML=nb||nw?'<span class="pill '+(nb?'bad':'warn')+'">Banque</span><span>'+txt+' avec '+eur(rev)+'\u00a0€/mois de revenus.</span><button type="button" class="linkbtn" id="goBank">Voir le détail</button>':'<span class="pill ok">Banque</span><span>Finançable avec '+eur(rev)+'\u00a0€/mois de revenus.</span><button type="button" class="linkbtn" id="goBank">Changer les revenus</button>';
   $("goBank").addEventListener("click",()=>{setMore(true);const d=$("accBank");d.open=true;d.scrollIntoView({behavior:"smooth",block:"start"});save();});
 }
 
@@ -678,12 +691,12 @@ function renderExplain(){
   const top=ST.slice().sort((a,b)=>outs[b]-outs[a])[0];
   const city=CITIES[$("zone").value].n;
   const rpEtfH=R.parts.rp[H-1].etf,rpEtf30=R.parts.rp[29].etf,loanY=I.N/12;
-  const row=s=>'<tr><td><i class="dot '+SD[s]+'"></i> '+SN[s]+'</td><td>'+eur(outs[s])+' €</td><td>'+eur((budget-outs[s])*I.disc)+' €</td></tr>';
+  const row=s=>'<tr><td><i class="dot '+SD[s]+'"></i> '+SN[s]+'</td><td>'+eur(outs[s])+'\u00a0€</td><td>'+eur((budget-outs[s])*I.disc)+'\u00a0€</td></tr>';
   $("exBudget").innerHTML='<h3>Avec quel argent investit-on en ETF ?</h3>'+
     '<p>Avec la différence de coût entre les options, et seulement elle. Ton budget logement est le même dans les trois cas : celui de l\'option la plus chère. Chaque mois, les deux autres options dépensent moins et placent l\'écart en ETF. C\'est ce qui rend la comparaison juste : tu ne peux pas à la fois rembourser un crédit et placer ce même argent.</p>'+
     '<p>Exemple avec tes chiffres ('+city+', '+eur(I.s)+' m², premier mois, scénario central) :</p>'+
     '<div class="tw"><table class="detail"><tr><th>Option</th><th>Dépense nette</th><th>Placé en ETF</th></tr>'+ST.map(row).join("")+'</table></div>'+
-    '<p>Ici, l\'option la plus chère est <strong>'+SNl[top]+'</strong> : elle fixe le budget à '+eur(budget)+' € par mois. '+
+    '<p>Ici, l\'option la plus chère est <strong>'+SNl[top]+'</strong> : elle fixe le budget à '+eur(budget)+'\u00a0€ par mois. '+
     (top==="rp"?'<strong>Donc, tant que tu rembourses ton crédit, l\'achat n\'investit pas en ETF</strong> : tout ton budget part dans le logement. C\'est le locataire qui place la différence, plus tout l\'apport dès le départ. L\'achat ne commence à placer que lorsque son coût mensuel passe sous celui des autres options, en pratique à la fin du crédit (année '+loanY+'). Avec tes paramètres, l\'achat n\'a que '+kk(rpEtfH)+' d\'ETF après '+H+' ans, mais '+kk(rpEtf30)+' après 30 ans, une fois le crédit remboursé.':'Comme l\'achat coûte ici moins cher que l\'option la plus chère, il place lui aussi la différence chaque mois.')+'</p>'+
     '<p>Ce raisonnement suppose que tu places vraiment l\'argent économisé. Si tu en dépenses une partie, baisse le réglage « Part des économies réellement placée » dans le détail : il est à '+eur(I.disc*100)+' %.</p>';
   const cross=R.out.rp.findIndex((v,j)=>v>=R.out.loc[j]);
@@ -698,7 +711,7 @@ function renderExplain(){
     return '<div class="scc"><div class="h"><b>'+sc.name+'</b><span class="wn w '+w+'">'+SN[w]+' gagne</span></div><span class="hy">'+sc.desc+'</span><span class="why">'+why[sc.id]+'</span>'+
     '<div class="vals">'+ST.map(s2=>'<span><i class="dot '+SD[s2]+'"></i>'+kk(R2.out[s2][H-1])+'</span>').join("")+'</div>'+
     '<button type="button" class="ghost" data-show="'+i+'">Voir sur la courbe</button></div>';}).join("");
-  root.querySelectorAll("#exScen [data-show]").forEach(b=>b.addEventListener("click",()=>{allMode=false;current=+b.dataset.show;showTab("sim");renderAll();save();$("scen").scrollIntoView({behavior:"smooth",block:"start"});}));
+  root.querySelectorAll("#exScen [data-show]").forEach(b=>b.addEventListener("click",()=>{allMode=false;current=+b.dataset.show;renderAll();save();$("scen").scrollIntoView({behavior:"smooth",block:"start"});}));
 }
 
 /* Précision */
@@ -734,7 +747,7 @@ function renderPrecision(){
   $("precN").textContent=score+" %";$("precQ").textContent=q;$("precBar").style.width=score+"%";
   const next=PREC.filter(p=>!isDone(p.id)).slice(0,2);
   $("precline").innerHTML='<span class="pill '+(score<40?'warn':'ok')+'">Précision '+score+' %</span><span>'+(next.length?q+'. Ajoute '+next.map(p=>p.l.toLowerCase()+' (+'+p.g+' %)').join(' et ')+'.':'Toutes tes données sont renseignées.')+'</span><button type="button" class="linkbtn" id="goPrec">Améliorer</button>';
-  $("goPrec").addEventListener("click",()=>$("precCard").scrollIntoView({behavior:"smooth",block:"start"}));
+  $("goPrec").addEventListener("click",()=>{$("simuHypo").open=true;$("precCard").scrollIntoView({behavior:"smooth",block:"start"});});
 }
 
 /* Événements */
@@ -765,19 +778,17 @@ const fpPart=root.querySelector('[data-fp="part"]'),fpRec=root.querySelector('[d
 fpPart.addEventListener("input",()=>{root.querySelector('[data-fp="partV"]').textContent=fpPart.value+" %";if(window.Reel)Reel.setPref("partPlacements",+fpPart.value);});
 fpRec.addEventListener("change",()=>{if(window.Reel)Reel.setPref("inclureARecevoir",fpRec.checked);});
 
-/* Sous-onglets du module (Simulateur, Comment ça marche, La recherche) */
-const OFF=96; // hauteur de la barre d'onglets fixe de l'application
-function toTop(){const y=root.getBoundingClientRect().top+window.scrollY-OFF;if(window.scrollY>y)window.scrollTo({top:Math.max(0,y)});}
+/* « Comment ça marche » et « La recherche » : deux sections repliées en bas de page (plus de sous-onglets). showTab("ex" | "th") déplie et amène la section. */
 function showTab(t){
-  [["sim","simu-t-sim","simu-p-sim"],["ex","simu-t-ex","simu-p-ex"],["th","simu-t-th","simu-p-th"]].forEach(([k,b,p])=>{$(b).setAttribute("aria-selected",k===t?"true":"false");$(p).hidden=k!==t;});
+  const d=t==="ex"||t==="th"?$("simu-p-"+t):null;
+  if(!d)return;
+  d.open=true;
+  d.scrollIntoView({behavior:"smooth",block:"start"});
 }
-$("simu-t-sim").addEventListener("click",()=>showTab("sim"));
-$("simu-t-ex").addEventListener("click",()=>{showTab("ex");toTop();});
-$("simu-t-th").addEventListener("click",()=>{showTab("th");toTop();});
-if(location.hash==="#theorie")showTab("th");
-if(location.hash==="#explication")showTab("ex");
+if(location.hash==="#theorie")$("simu-p-th").open=true;
+if(location.hash==="#explication")$("simu-p-ex").open=true;
 root.querySelectorAll(".toc button[data-go]").forEach(b=>b.addEventListener("click",()=>{const t=$(b.dataset.go);if(t)t.scrollIntoView({behavior:"smooth",block:"start"});}));
-root.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{showTab(b.dataset.tab);toTop();}));
+root.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
 try{const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){const id=e.target.id;const nav=e.target.closest(".doc").querySelector(".toc");nav.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.go===id));}});},{rootMargin:"-20% 0px -70% 0px"});
 root.querySelectorAll(".read section[id]").forEach(sec=>io.observe(sec));}catch(e){}
 

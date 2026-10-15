@@ -31,8 +31,8 @@ test("toise.js : se compile, s'enregistre sous « toise », sans requête DOM gl
 });
 
 test("toise.html : question, verdict, cartes, onglets, quatre volets, méthode en accordéon fermé, hypothèses hors page", () => {
-  assert.ok(html.includes("Où je me situe parmi les Français ?"));
-  for (const id of ["tsVerdict", "tsCartes", "tsOnglets", "tsHypBtn", "tsClaude", "tsHypHolder", "tsHyp", "toise-p-rev", "toise-p-sal", "toise-p-pat", "toise-p-loan"])
+  assert.ok(html.includes("Ta place parmi les Français"));
+  for (const id of ["tsVerdict", "tsCartes", "tsOnglets", "tsHypBtn", "tsHypHolder", "tsHyp", "toise-p-rev", "toise-p-sal", "toise-p-pat", "toise-p-loan"])
     assert.match(html, new RegExp('id="' + id + '"'), id);
   assert.ok(html.includes("Modifier mes hypothèses"));
   assert.doesNotMatch(html, /role="tablist"/, "la barre d'onglets est rendue par UI.onglets");

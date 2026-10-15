@@ -1,7 +1,7 @@
 <div class="fiches-view">
   <header class="fv-head">
-    <h2>Ce que sait l'agent</h2>
-    <p>Les fiches et les chiffres sur lesquels s'appuie l'agent de Boussole, avec leurs sources et leur date. Elles sont relues avant publication et mises à jour avec l'actualité.</p>
+    <h2>Fiches et chiffres de référence</h2>
+    <p>Les fiches et les chiffres sur lesquels s'appuie Claude, avec leurs sources et leur date. Elles sont relues avant publication et mises à jour avec l'actualité.</p>
     <p class="fv-legende">Indicateur pédagogique, pas un conseil en investissement.</p>
   </header>
 
@@ -22,15 +22,15 @@
     </section>
     <p class="fv-err" id="fvErr" hidden>Lecture impossible pour le moment. Les fiches de l'agent n'ont pas pu être chargées ; réessaie dans quelques instants.</p>
 
-    <section class="panel fv-reperes" id="fvReperes" aria-labelledby="fvRepTitre" hidden>
-      <h3 id="fvRepTitre">Chiffres de référence</h3>
-      <p class="fv-rep-intro">Les taux et plafonds que l'agent utilise dans ses explications, avec leur date d'effet et leur source officielle.</p>
+    <details class="panel fv-reperes" id="fvReperes" hidden>
+      <summary class="fv-rep-sum"><h3 id="fvRepTitre">Chiffres de référence</h3><span class="fv-rep-aide">Taux et plafonds, avec leur date et leur source</span></summary>
+      <p class="fv-rep-intro">Les taux et plafonds que Claude utilise dans ses explications, avec leur date d'effet et leur source officielle.</p>
       <table class="fv-tab">
         <thead><tr><th scope="col">Repère</th><th scope="col">Valeur</th><th scope="col">En vigueur</th><th scope="col">Source</th></tr></thead>
         <tbody id="fvRepCorps"></tbody>
       </table>
       <p class="fv-rep-note" id="fvRepNote" hidden>« À vérifier » : ce chiffre n'a pas été revérifié depuis plus de six mois ; consulte la source avant de t'y fier.</p>
-    </section>
+    </details>
   </div>
 
   <article class="panel fv-detail" id="fvDetail" aria-labelledby="fvDTitre" hidden>

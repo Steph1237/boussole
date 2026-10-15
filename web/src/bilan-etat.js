@@ -1,5 +1,5 @@
 /* État du bilan : ce qui est renseigné, ce qui manque et les prochaines questions à poser, section par section,
-   dans l'ordre d'un entretien. Utilisé par l'app (jauge, page « Agent › Connexion ») et porté dans le connecteur MCP
+   dans l'ordre d'un entretien. Utilisé par l'app (jauge, page « Compte › Connexion ») et porté dans le connecteur MCP
    (outil etat_du_bilan) pour que Claude ne repose jamais une question déjà répondue. Fonctions pures. */
 (function (root, factory) {
   const api = factory();

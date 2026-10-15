@@ -116,7 +116,7 @@ test("boite : vide sans rien à traiter (et avant que le store soit prêt)", () 
   assert.deepEqual(A.boite(null, TODAY, { Rules }), []);
 });
 
-test("boite : propositions en attente regroupées par lot, cibles en contexte, urgence 1, vers Agent › Propositions", () => {
+test("boite : propositions en attente regroupées par lot, cibles en contexte, urgence 1, vers Agent › À valider", () => {
   const S = vide({ propositions: [
     P("a", "l1", "position", { creeLe: "2026-10-09T10:00:00.000Z" }), P("b", "l1", "budget"), P("c", "l1", "position"),
     P("d", "l2", "risque", { creeLe: "2026-10-08T09:00:00.000Z" }), P("e", "l1", "bien", { statut: "acceptee" }), P("f", "l3", "credit", { statut: "refusee" }),
@@ -325,7 +325,7 @@ test("boite : revue prête → « Revue du mois : N questions », urgence 1, pre
   assert.equal(x.action.label, "Répondre avec Claude");
   // URL préremplie : le nombre de questions seulement (leur texte vient d'une exécution planifiée de l'agent ; demarrer_routine les fournit)
   assert.equal(x.action.url, A.urlClaude(ClaudePrompts.phrase("routine", "2 questions en attente")));
-  assert.equal(x.action.url, A.urlClaude(RoutineEtat.phraseRoutine(qs)), "même phrase qu'Agent › Connexion");
+  assert.equal(x.action.url, A.urlClaude(RoutineEtat.phraseRoutine(qs)), "même phrase qu'Compte › Connexion");
   const q = decodeURIComponent(x.action.url.split("?q=")[1]);
   assert.match(q, /questions de ma revue mensuelle \(demarrer_routine, puis le formulaire, puis questions_routine\)\. Concerne : 2 questions en attente\./);
   assert.doesNotMatch(q, /versement|salaire/i, "aucun texte de question dans l'URL");
@@ -373,12 +373,12 @@ test("boite : revue en pause → rien, même en retard ou avec des questions", (
   assert.equal(A.etatRevue(vide({ routines: [RT({ active: false })] }), TODAY).code, "pause");
 });
 
-test("boite : aucune revue → « Active ta revue mensuelle » (urgence 3, Agent › Connexion), seulement si la base est là et la table lue", () => {
+test("boite : aucune revue → « Active ta revue mensuelle » (urgence 3, Compte › Connexion), seulement si la base est là et la table lue", () => {
   const b = routine(vide({ routines: [], routinesLues: true }));
   assert.equal(b.length, 1);
   assert.equal(b[0].urgence, 3);
   assert.equal(b[0].titre, "Active ta revue mensuelle");
-  assert.deepEqual(J(b[0].action), { label: "Voir comment", route: "agent/connexion" });
+  assert.deepEqual(J(b[0].action), { label: "Voir comment", route: "compte/connexion" });
   assert.match(b[0].contexte, /Claude fait le point sur ton patrimoine/);
   assert.deepEqual(routine(vide({ routines: [], routinesLues: false })), [], "table pas encore lue (migration absente, lecture en échec)");
   assert.deepEqual(routine(vide({ routines: [] })), [], "store ancien, sans routinesLues");
@@ -418,7 +418,7 @@ test("boiteHtml : élément « routine » (pictogramme, libellé pour lecteur d'
   assert.match(h, /Revue mensuelle, à surveiller : <\/span>Active ta revue mensuelle/);
   assert.match(h, /href="https:\/\/claude\.ai\/new\?q=[^"]+" target="_blank" rel="noopener noreferrer" aria-label="Répondre avec Claude"><span>Répondre<\/span>/);
   assert.match(h, /aria-label="Lancer ma revue avec Claude"><span>Lancer<\/span>/, "libellé court visible, libellé complet pour les lecteurs d'écran");
-  assert.match(h, /href="#agent\/connexion" data-goto="agent\/connexion"><span>Voir comment<\/span>/);
+  assert.match(h, /href="#compte\/connexion" data-goto="compte\/connexion"><span>Voir comment<\/span>/);
   assert.match(h, /Versement &lt;b&gt;PEA&lt;\/b&gt; \?/);
   assert.doesNotMatch(h, /<b>PEA/);
   assert.match(h, /<svg class="aj-ico"[^>]*><path d="M20 12a8 8/, "pictogramme de la revue");

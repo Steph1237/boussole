@@ -228,7 +228,7 @@ describe("Efficacité", () => {
     assert.equal(c.aCompleter, true);
     assert.equal(c.points, null);
     assert.match(c.texte, /^Frais connus sur 40 % de tes placements : coût partiel de 2 € par an \(0,2 %\)\.$/);
-    assert.equal(c.lien, "agent/connexion");
+    assert.equal(c.lien, "compte/connexion");
   });
   test("frais : coût total en % de l'encours, barème 0,40 / 0,75 / 1,20 / 1,80", () => {
     const f = (...ters) => crit(ev({ positions: ters.map(t => M("Monde", 1000, { ter: t, envelope: "PEA" })) }), "frais");

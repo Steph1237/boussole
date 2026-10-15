@@ -14,7 +14,7 @@
     <a class="brand" href="#aujourdhui/vue" data-goto="aujourdhui/vue"><span data-brand-icon></span>Boussole</a>
     <nav class="side-nav" id="sideNav" aria-label="Destinations"></nav>
     <div class="side-foot">
-      <a class="veille" id="veilleLine" href="#agent/connexion" data-goto="agent/connexion">Veille : jamais lancée</a>
+      <a class="veille" id="veilleLine" href="#compte/connexion" data-goto="compte/connexion">Veille : jamais lancée</a>
       <nav class="side-compte" id="sideCompte" aria-label="Compte"></nav>
       <a class="app-link" id="accountLink" href="compte.html">Mon compte</a>
       <div class="side-demo" id="sideDemo" hidden>Démo : foyer fictif, rien n'est enregistré. <a href="index.html#connexion">Créer mon compte</a></div>
@@ -103,14 +103,16 @@
     <section class="view" id="view-memoire-view" data-space="agent" data-sub="memoire" role="tabpanel" aria-labelledby="subtab-agent-memoire" hidden>
 <!--@memoire-view-->
     </section>
-    <section class="view" id="view-fiches-view" data-space="agent" data-sub="fiches" role="tabpanel" aria-labelledby="subtab-agent-fiches" hidden>
+    <section class="view" id="view-savoir-view" data-space="agent" data-sub="savoir" role="tabpanel" aria-labelledby="subtab-agent-savoir" hidden>
+      <div class="sv">
+        <div class="sv-tete"><h2 class="sv-titre">Ce que sait Claude</h2><div id="svBascule"></div></div>
+        <div data-sv-volet="fiches" id="view-fiches-view">
 <!--@fiches-view-->
-    </section>
-    <section class="view" id="view-expertises-view" data-space="agent" data-sub="expertises" role="tabpanel" aria-labelledby="subtab-agent-expertises" hidden>
+        </div>
+        <div data-sv-volet="expertises" id="view-expertises-view" hidden>
 <!--@expertises-view-->
-    </section>
-    <section class="view" id="view-claude-guide" data-space="agent" data-sub="connexion" role="tabpanel" aria-labelledby="subtab-agent-connexion" hidden>
-<!--@claude-guide-->
+        </div>
+      </div>
     </section>
 
     <!-- Compte (avatar) -->
@@ -120,6 +122,10 @@
     <section class="view" id="view-regles" data-space="compte" data-sub="regles" role="tabpanel" aria-labelledby="subtab-compte-regles" hidden>
 <!--@regles-->
     </section>
+    <section class="view" id="view-claude-guide" data-space="compte" data-sub="connexion" role="tabpanel" aria-labelledby="subtab-compte-connexion" hidden>
+<!--@claude-guide-->
+    </section>
+
   </main>
 
   <!-- Mobile : barre basse (4 destinations), générée par app.js. -->

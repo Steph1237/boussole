@@ -16,7 +16,7 @@ export const RESSOURCE = "ui://boussole/formulaire";
 export const MIME = "text/html;profile=mcp-app";
 export const SOURCE_FORMULAIRE = "Saisi par toi dans le formulaire interactif";
 export const MENTION = "Indicateur pédagogique, pas un conseil en investissement.";
-export const PROPOSITIONS = "Boussole › Agent › Propositions";
+export const PROPOSITIONS = "Boussole › Agent › À valider";
 export const QUESTIONS_MAX = 20;
 export const SECTIONS = ["foyer", "revenus", "protection", "risque", "budget", "placements", "immobilier", "objectifs"] as const;
 const TYPES = ["choix", "multi", "curseur", "montant", "date", "booleen", "texte_court"];
