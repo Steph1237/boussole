@@ -79,7 +79,7 @@
       const p = (ctx.positions || []).find(x => x.id === r.position_id);
       if (!p || !C().counted(p) || !C().inScope(p, scopeOf(ctx)) || p.price == null) return [];
       const price = +p.price, d = (price / floor - 1) * 100;
-      if (price <= floor) return [{ level: "crit", title: "Seuil de cours touché : " + p.name, text: "Seuil atteint : vérifie ton ordre stop. Cours " + eur2(price) + " pour un seuil de " + eur2(floor) + "." }];
+      if (price <= floor) return [{ level: "crit", title: "Seuil de cours touché : " + p.name, text: "Seuil de cours touché : c'est le moment de relire ta règle pour cette ligne. Cours " + eur2(price) + " pour un seuil de " + eur2(floor) + "." }];
       if (d < 10) return [{ level: "warn", title: p.name + " proche de son seuil", text: "Cours " + eur2(price) + ", à " + pct(d) + " du seuil de " + eur2(floor) + "." }];
       return [];
     },
