@@ -1,0 +1,35 @@
+Documents fictifs pour les tests (aucune donnee reelle) : trois avis d'opere de BoursoBank, texte extrait des PDF.
+
+========================================================================
+AVIS D'OPERE  -  PEA n° 00000000000  -  Titulaire : EXEMPLE P1
+Reference de l'ordre : 000000001
+ACHAT AU COMPTANT  -  Date d'execution : 08/01/2024  -  Lieu : EURONEXT PARIS
+Valeur : ETF MONDE A   Code ISIN : FR9990000013
+Quantite : 10
+Cours d'execution : 95,00 EUR
+Montant brut : 950,00 EUR
+Courtage : 1,00 EUR
+Montant net au debit : 951,00 EUR
+
+========================================================================
+AVIS D'OPERE  -  PEA n° 00000000000  -  Titulaire : EXEMPLE P1
+Reference de l'ordre : 000000002
+ACHAT AU COMPTANT  -  Date d'execution : 08/02/2024  -  Lieu : EURONEXT PARIS
+Valeur : ETF MONDE A   Code ISIN : FR9990000013
+Quantite : 10
+Cours d'execution : 98,00 EUR
+Montant brut : 980,00 EUR
+Courtage : 1,00 EUR
+Montant net au debit : 981,00 EUR
+
+========================================================================
+AVIS D'OPERE  -  PEA n° 00000000000  -  Titulaire : EXEMPLE P1
+Reference de l'ordre : 000000003
+VENTE AU COMPTANT  -  Date d'execution : 15/03/2024  -  Lieu : EURONEXT PARIS
+Valeur : ETF MONDE A   Code ISIN : FR9990000013
+Quantite : 5
+Cours d'execution : 104,00 EUR
+Montant brut : 520,00 EUR
+Courtage : 1,00 EUR
+Montant net au credit : 519,00 EUR
+

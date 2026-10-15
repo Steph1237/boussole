@@ -1,0 +1,34 @@
+﻿dateOp;dateVal;label;category;categoryParent;supplierFound;amount;comment;accountNum;accountLabel;accountbalance
+2024-02-29;2024-02-29;VIR SEPA EMPLOYEUR EXEMPLE SALAIRE;Salaires;Revenus;;3000,00;;00000000000;Compte courant Exemple;2280,00
+2024-02-28;2024-02-28;CARTE 27/02/24 EPICERIE EXEMPLE;Alimentation;Vie quotidienne;;-50,00;;00000000000;Compte courant Exemple;-720,00
+2024-02-27;2024-02-27;CARTE 26/02/24 MARCHE EXEMPLE;Alimentation;Vie quotidienne;;-50,00;;00000000000;Compte courant Exemple;-670,00
+2024-02-26;2024-02-26;CARTE 25/02/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-52,00;;00000000000;Compte courant Exemple;-620,00
+2024-02-22;2024-02-22;CARTE 21/02/24 BOULANGERIE EXEMPLE;Alimentation;Vie quotidienne;;-58,00;;00000000000;Compte courant Exemple;-568,00
+2024-02-21;2024-02-21;CARTE 20/02/24 PAPETERIE EXEMPLE;Achats divers;Vie quotidienne;;-25,00;;00000000000;Compte courant Exemple;-510,00
+2024-02-19;2024-02-19;CARTE 18/02/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-45,00;;00000000000;Compte courant Exemple;-485,00
+2024-02-16;2024-02-16;CARTE 15/02/24 EPICERIE EXEMPLE;Alimentation;Vie quotidienne;;-50,00;;00000000000;Compte courant Exemple;-440,00
+2024-02-16;2024-02-16;CARTE 15/02/24 SALLE DE CONCERT EXEMPLE;Sorties;Loisirs;;-156,00;;00000000000;Compte courant Exemple;-390,00
+2024-02-14;2024-02-14;CARTE 13/02/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-55,00;;00000000000;Compte courant Exemple;-234,00
+2024-02-13;2024-02-13;AVOIR CARTE VETEMENTS EXEMPLE;Habillement;Vie quotidienne;;40,00;;00000000000;Compte courant Exemple;-179,00
+2024-02-12;2024-02-12;CARTE 11/02/24 MARCHE EXEMPLE;Alimentation;Vie quotidienne;;-48,00;;00000000000;Compte courant Exemple;-219,00
+2024-02-09;2024-02-09;CARTE 08/02/24 VETEMENTS EXEMPLE;Habillement;Vie quotidienne;;-35,00;;00000000000;Compte courant Exemple;-171,00
+2024-02-09;2024-02-09;VIR VERS PEA EXEMPLE;Virements émis;Mouvements internes;;-1000,00;;00000000000;Compte courant Exemple;-136,00
+2024-02-07;2024-02-07;CARTE 06/02/24 BOULANGERIE EXEMPLE;Alimentation;Vie quotidienne;;-60,00;;00000000000;Compte courant Exemple;864,00
+2024-02-06;2024-02-06;CARTE 05/02/24 CINEMA EXEMPLE;Sorties;Loisirs;;-24,00;;00000000000;Compte courant Exemple;924,00
+2024-02-05;2024-02-05;CARTE 04/02/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-52,00;;00000000000;Compte courant Exemple;948,00
+2024-02-02;2024-02-02;PRLV SEPA AGENCE EXEMPLE LOYER;Loyer;Logement;;-1200,00;;00000000000;Compte courant Exemple;1000,00
+2024-01-31;2024-01-31;VIR SEPA EMPLOYEUR EXEMPLE SALAIRE;Salaires;Revenus;;3000,00;;00000000000;Compte courant Exemple;2200,00
+2024-01-30;2024-01-30;CARTE 29/01/24 MARCHE EXEMPLE;Alimentation;Vie quotidienne;;-38,00;;00000000000;Compte courant Exemple;-800,00
+2024-01-29;2024-01-29;CARTE 28/01/24 BOULANGERIE EXEMPLE;Alimentation;Vie quotidienne;;-41,00;;00000000000;Compte courant Exemple;-762,00
+2024-01-26;2024-01-26;CARTE 25/01/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-50,00;;00000000000;Compte courant Exemple;-721,00
+2024-01-24;2024-01-24;CARTE 23/01/24 LIBRAIRIE EXEMPLE;Achats divers;Vie quotidienne;;-24,50;;00000000000;Compte courant Exemple;-671,00
+2024-01-22;2024-01-22;CARTE 21/01/24 EPICERIE EXEMPLE;Alimentation;Vie quotidienne;;-44,25;;00000000000;Compte courant Exemple;-646,50
+2024-01-19;2024-01-19;CARTE 18/01/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-39,90;;00000000000;Compte courant Exemple;-602,25
+2024-01-17;2024-01-17;CARTE 16/01/24 MAISON EXEMPLE;Equipement maison;Vie quotidienne;;-45,50;;00000000000;Compte courant Exemple;-562,35
+2024-01-15;2024-01-15;CARTE 14/01/24 MARCHE EXEMPLE;Alimentation;Vie quotidienne;;-71,45;;00000000000;Compte courant Exemple;-516,85
+2024-01-12;2024-01-12;CARTE 11/01/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-55,00;;00000000000;Compte courant Exemple;-445,40
+2024-01-10;2024-01-10;VIR VERS PEA EXEMPLE;Virements émis;Mouvements internes;;-1000,00;;00000000000;Compte courant Exemple;-390,40
+2024-01-09;2024-01-09;CARTE 08/01/24 VETEMENTS EXEMPLE;Habillement;Vie quotidienne;;-80,00;;00000000000;Compte courant Exemple;609,60
+2024-01-08;2024-01-08;CARTE 07/01/24 BOULANGERIE EXEMPLE;Alimentation;Vie quotidienne;;-48,10;;00000000000;Compte courant Exemple;689,60
+2024-01-05;2024-01-05;CARTE 04/01/24 SUPERMARCHE EXEMPLE;Alimentation;Vie quotidienne;;-62,30;;00000000000;Compte courant Exemple;737,70
+2024-01-03;2024-01-03;PRLV SEPA AGENCE EXEMPLE LOYER;Loyer;Logement;;-1200,00;;00000000000;Compte courant Exemple;800,00

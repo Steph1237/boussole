@@ -1,0 +1,35 @@
+LCL - RELEVE DE COMPTE (document fictif pour les tests, aucune donnee reelle)
+
+COMPTE COURANT EXEMPLE        N° de compte : 00000 000000A
+IBAN : FR00 0000 0000 0000 0000 0000 000      BIC : EXEMPLEXXX
+Titulaire : EXEMPLE P1
+Periode du 01.08.2026 au 31.08.2026
+
+DATE   LIBELLE                                              DEBIT       CREDIT
+       SOLDE CREDITEUR AU 31.07.2026                                    1 000,00
+05.08  PRLV SEPA AGENCE EXEMPLE LOYER AOUT                      900,00             
+12.08  PRLV SEPA ENERGIE EXEMPLE                                 80,00             
+29.08  VIR SEPA EMPLOYEUR EXEMPLE SALAIRE                                  2 500,00
+31.08  RELEVE CARTE DIFFEREE AOUT XXXX XXXX XXXX 0000           600,00             
+       TOTAUX DES OPERATIONS                                     1 580,00     2 500,00
+       SOLDE CREDITEUR AU 31.08.2026                                    1 920,00
+
+DETAIL DES OPERATIONS PAR CARTE A DEBIT DIFFERE
+CARTE N° XXXX XXXX XXXX 0000   Titulaire : EXEMPLE P1   Debit le 31.08.2026
+
+DATE   LIBELLE                                              MONTANT
+02.08  SUPERMARCHE EXEMPLE                                       50,00
+04.08  RESTAURANT EXEMPLE                                        50,00
+06.08  SUPERMARCHE EXEMPLE                                       50,00
+09.08  SUPERMARCHE EXEMPLE                                       50,00
+11.08  RESTAURANT EXEMPLE                                        50,00
+13.08  SUPERMARCHE EXEMPLE                                       50,00
+16.08  SUPERMARCHE EXEMPLE                                       50,00
+18.08  RESTAURANT EXEMPLE                                        50,00
+20.08  SUPERMARCHE EXEMPLE                                       50,00
+23.08  SUPERMARCHE EXEMPLE                                       50,00
+25.08  RESTAURANT EXEMPLE                                        50,00
+27.08  SUPERMARCHE EXEMPLE                                       50,00
+       TOTAL CARTE                                             600,00
+
+Page 1/1

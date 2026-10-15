@@ -1,0 +1,31 @@
+Documents fictifs pour les tests (aucune donnee reelle) : releves especes mensuels et releve titres trimestriel du PEA Exemple.
+
+========================================================================
+RELEVE ESPECES  -  PEA n° 00000000000  -  Mois de 01/2024
+Solde au debut de la periode : 0,00 EUR
+DATE        LIBELLE                                DEBIT        CREDIT
+05/01/2024  VERSEMENT ESPECES                                   1 000,00
+08/01/2024  ACHAT 10 ETF MONDE A                     951,00             
+Solde a la fin de la periode : 49,00 EUR
+
+========================================================================
+RELEVE ESPECES  -  PEA n° 00000000000  -  Mois de 02/2024
+Solde au debut de la periode : 49,00 EUR
+DATE        LIBELLE                                DEBIT        CREDIT
+05/02/2024  VERSEMENT ESPECES                                   1 000,00
+08/02/2024  ACHAT 10 ETF MONDE A                     981,00             
+Solde a la fin de la periode : 68,00 EUR
+
+========================================================================
+RELEVE ESPECES  -  PEA n° 00000000000  -  Mois de 03/2024
+Solde au debut de la periode : 68,00 EUR
+DATE        LIBELLE                                DEBIT        CREDIT
+15/03/2024  VENTE 5 ETF MONDE A                                   519,00
+Solde a la fin de la periode : 587,00 EUR
+
+========================================================================
+RELEVE DE TITRES AU 29/03/2024  -  PEA n° 00000000000
+VALEUR                 CODE ISIN       QUANTITE   COURS      VALORISATION
+ETF MONDE A            FR9990000013          15   105,00          1 575,00
+Total titres : 1 575,00 EUR   Especes : 587,00 EUR
+
