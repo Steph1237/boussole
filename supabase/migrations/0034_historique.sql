@@ -5,7 +5,9 @@
 -- d'import) et de la fonction nightly (photos reconstituées). BUD1 prend 0035 et suivantes (D8) : 0035 redéfinit sous_categorie_budget_valide.
 -- Avant de l'appliquer, vérifier en production : select count(*) from public.transactions where position_id is null (doit valoir 0 : la
 -- contrainte transactions_position_ou_enveloppe l'exige désormais pour toute ligne ne portant pas d'enveloppe) ; show server_version_num
--- (150000 au moins : « on delete set null (colonne) » des clés composites).
+-- (150000 au moins : « on delete set null (colonne) » des clés composites) ; select count(*) from public.transactions t join public.positions p
+-- on p.id = t.position_id where p.user_id <> t.user_id (doit valoir 0 : clé composite transactions_position) ; et que la clé simple
+-- s'appelle bien transactions_position_id_fkey (elle est retirée par son nom).
 --
 -- Données privées, jamais d'opération brute (D1) : des totaux mensuels par compte et catégorie, des mouvements de placement datés, des photos
 -- mensuelles reconstituées. Aucun libellé d'opération, aucun tiers, aucun IBAN, aucun numéro de compte ou de carte.
@@ -41,7 +43,13 @@
 --     par lui et restées sans transaction ; pose la demande de recalcul ;
 --   - retirer_import(id) : écriture de contrôle de l'app (D5) ; exige aal2 et un jeton sans client_id (jamais par un connecteur).
 -- appliquer_propositions : repart exactement de 0032 (sa dernière définition ; 0033 ne la redéfinit pas) ; le diff se limite à la cible
---   historique (déclaration de v_hist, libellé de v_quoi, branche when 'historique'). La proposition n'est pas modifiable avant validation.
+--   historique (déclaration de v_hist, libellé de v_quoi, branche when 'historique') et à la garde « jamais par un jeton OAuth » (client_id,
+--   42501) en tête. La proposition d'import n'est pas modifiable avant validation.
+-- Propositions (décision de revue) : valider ou refuser est l'acte de l'utilisateur dans l'app. refuser_propositions (0007 + même garde) ;
+--   déclencheur propositions_garde : un jeton OAuth ne dépose que des propositions en attente, ne change que apres, avant, source et
+--   justification d'une proposition en attente (jamais statut, decide_le, user_id, cible, operation, ref, lot), ne supprime rien ;
+--   500 propositions en attente au plus par utilisateur (54000), pour tous.
+-- transactions.position_id (0001) devient composite (user_id, position_id) → positions(user_id, id), on delete cascade.
 -- export_all : repart de 0033 (garde « pas de jeton OAuth » conservée) et sort les cinq tables de plus.
 -- Contrat de apres (création) : { type: releves|ordres|versements, empreinte (hex 64), fichier { nom?, format, lignes?, octets?, periode?,
 --   sha256? }, etablissement, etablissement_libre?, compte { id } | { libelle, type, titulaire, cle, banque_compte_id?, position_id? }
@@ -201,6 +209,13 @@ grant execute on function public.categorie_budget_valide(text), public.sous_cate
 -- la vérification de clé étrangère ne passe pas par la RLS). D'où les clés uniques (user_id, id) de positions et transactions.
 alter table public.positions add constraint positions_user_id_id unique (user_id, id);
 alter table public.transactions add constraint transactions_user_id_id unique (user_id, id);
+-- transactions.position_id (0001) devient composite lui aussi : un mouvement ne porte que sur une ligne de son propriétaire (sinon la
+-- suppression de cette ligne par l'autre, ou historique_retirer qui ne voit pas sous sa RLS la transaction d'un autre, l'emporterait).
+-- Vérifier avant en production qu'aucune transaction ne désigne la ligne d'un autre (requête de l'en-tête).
+alter table public.transactions drop constraint transactions_position_id_fkey;
+alter table public.transactions add constraint transactions_position foreign key (user_id, position_id) references public.positions(user_id, id)
+  on delete cascade;
+create index transactions_user_position_idx on public.transactions (user_id, position_id) where position_id is not null;
 
 create table public.historique_comptes (
   id                  uuid primary key default gen_random_uuid(),
@@ -496,6 +511,82 @@ alter table public.propositions drop constraint if exists propositions_apres_che
 alter table public.propositions add constraint propositions_apres_check
   check (apres is null or (jsonb_typeof(apres) = 'object'
     and octet_length(apres::text) <= case when cible = 'plan_fige' then 400000 when cible = 'historique' then 100000 else 20000 end));
+
+-- Valider ou refuser une proposition est l'acte de l'utilisateur dans l'app, jamais d'un connecteur (règle d'or 1). Un jeton OAuth
+-- (client_id) passe la RLS de propositions (« aal2 si facteur » ou connecteur autorisé, 0033) : sans garde, il pouvait appeler
+-- appliquer_propositions ou refuser_propositions, ou écrire statut lui-même. Désormais, pour un jeton qui porte un client_id :
+--   - appliquer_propositions et refuser_propositions refusent (42501) ;
+--   - insertion : seulement une proposition en attente (statut en_attente, decide_le nul) ;
+--   - modification : seulement d'une proposition en attente, et seulement apres, avant, source et justification (jamais statut,
+--     decide_le, user_id, cible, operation, ref, lot ni cree_le : l'app montre le contenu en vigueur au moment de la validation) ;
+--   - suppression : jamais (retirer une proposition en attente revient à la refuser ; l'historique des décisions reste).
+-- Pour tous (app, connecteur, service) : 500 propositions en attente au plus par utilisateur, au-delà l'insertion est refusée (54000).
+-- Le service (synchronisation Powens, purge, nuit) et l'app n'ont pas de client_id : inchangés hors la limite.
+create function public.propositions_garde()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if nullif(auth.jwt()->>'client_id', '') is not null then
+    if tg_op = 'DELETE' then
+      raise exception 'Un connecteur ne peut pas retirer une proposition : l''utilisateur la refuse dans Boussole › Agent › À valider.' using errcode = '42501';
+    end if;
+    if tg_op = 'INSERT' then
+      if new.statut is distinct from 'en_attente' or new.decide_le is not null then
+        raise exception 'Un connecteur ne dépose que des propositions en attente : l''utilisateur les valide dans Boussole › Agent › À valider.' using errcode = '42501';
+      end if;
+    else
+      if old.statut is distinct from 'en_attente' then
+        raise exception 'Un connecteur ne peut pas modifier une proposition déjà décidée.' using errcode = '42501';
+      end if;
+      if new.statut is distinct from old.statut or new.decide_le is distinct from old.decide_le or new.user_id is distinct from old.user_id
+         or new.cible is distinct from old.cible or new.operation is distinct from old.operation or new.ref is distinct from old.ref
+         or new.lot is distinct from old.lot or new.cree_le is distinct from old.cree_le or new.id is distinct from old.id then
+        raise exception 'Un connecteur ne peut changer que le contenu d''une proposition en attente (apres, avant, source, justification), jamais son statut ni sa cible : l''utilisateur la valide ou la refuse dans Boussole.'
+          using errcode = '42501';
+      end if;
+    end if;
+  end if;
+  if tg_op = 'INSERT' and new.statut = 'en_attente'
+     and (select count(*) from public.propositions p where p.user_id = new.user_id and p.statut = 'en_attente') >= 500 then
+    raise exception 'Limite atteinte : 500 propositions en attente au plus. Valide ou refuse celles qui attendent dans Boussole › Agent › À valider.'
+      using errcode = '54000';
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end;
+$$;
+revoke all on function public.propositions_garde() from public, anon, authenticated;
+create trigger propositions_garde before insert or update or delete on public.propositions
+  for each row execute function public.propositions_garde();
+
+-- refuser_propositions : 0007 à l'identique, plus la garde « jamais par un jeton OAuth ».
+create or replace function public.refuser_propositions(p_ids uuid[])
+returns int
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  n int;
+begin
+  if auth.uid() is null then
+    raise exception 'non authentifié' using errcode = '42501';
+  end if;
+  if nullif(auth.jwt()->>'client_id', '') is not null then
+    raise exception 'Un connecteur ne peut pas refuser de proposition : l''utilisateur décide dans Boussole › Agent › À valider.' using errcode = '42501';
+  end if;
+  update public.propositions
+     set statut = 'refusee', decide_le = now()
+   where id = any(coalesce(p_ids, '{}'::uuid[])) and user_id = auth.uid() and statut = 'en_attente';
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+revoke all on function public.refuser_propositions(uuid[]) from public, anon;
+grant execute on function public.refuser_propositions(uuid[]) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------------------------------------------------------------
 -- 6. Écritures : garde, historique_appliquer (création), historique_retirer et retirer_import (suppression)
@@ -1221,6 +1312,10 @@ declare
 begin
   if v_uid is null then
     raise exception 'non authentifié' using errcode = '42501';
+  end if;
+  -- 0034 : valider est l'acte de l'utilisateur dans l'app, jamais d'un connecteur (jeton OAuth : client_id)
+  if nullif(auth.jwt()->>'client_id', '') is not null then
+    raise exception 'Un connecteur ne peut pas valider de proposition : l''utilisateur valide dans Boussole › Agent › À valider.' using errcode = '42501';
   end if;
   if jsonb_typeof(v_mods) <> 'object' then
     raise exception 'Modifications invalides : objet { identifiant: valeur } attendu.' using errcode = '22023';

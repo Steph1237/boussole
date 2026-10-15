@@ -451,12 +451,14 @@ describe("isolation RLS entre deux comptes", () => {
 describe("isolation RLS : tables de l'historique importé (comptes à double authentification)", () => {
   let admin, A, B;
   const empreinte = () => randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+  // clé d'un compte : jamais de suite de 6 chiffres (0034, contrainte historique_comptes_cle) ; un uuid en contient souvent, d'où les lettres
+  const sansChiffres = id => id.replace(/[0-9]/g, c => "ghijklmnop"[c]);
 
   /** Sème, par le client aal2 du compte, un compte importé, son import, un mois et ses catégories ; par le service, une photo. */
   async function seed(u) {
     u.compteId = randomUUID(); u.importId = randomUUID();
     const steps = [
-      ["historique_comptes", { id: u.compteId, libelle: `Compte ${u.label}`, etablissement: "lcl", type: "courant", titulaire: "p1", cle: `cle-${u.label}-${u.compteId}` }],
+      ["historique_comptes", { id: u.compteId, libelle: `Compte ${u.label}`, etablissement: "lcl", type: "courant", titulaire: "p1", cle: `cle-${u.label}-${sansChiffres(u.compteId)}` }],
       ["historique_imports", { id: u.importId, type: "releves", empreinte: empreinte(), etablissement: "lcl", compte_id: u.compteId, periode_du: "2024-01-01", periode_au: "2024-01-31", source: `essai ${u.label}` }],
       ["historique_releves", { compte_id: u.compteId, mois: "2024-01-01", complet: true, total_entrees: 100, total_sorties: 40, nombre: 3, import_id: u.importId }],
       ["historique_banque_mois", { compte_id: u.compteId, mois: "2024-01-01", categorie: "divers", sous_categorie: "", entrees: 0, sorties: 40, nombre: 3 }],
@@ -473,7 +475,7 @@ describe("isolation RLS : tables de l'historique importé (comptes à double aut
   // Description de chaque table : comment retrouver la ligne d'un compte, le champ à observer, la modification tentée, une insertion au nom de l'autre.
   const T = [
     { name: "historique_comptes", match: u => ({ id: u.compteId }), field: "libelle", patch: { libelle: "piraté" },
-      foreign: b => ({ user_id: b.id, libelle: "intrus", etablissement: "lcl", type: "courant", titulaire: "p1", cle: `intrus-${randomUUID()}` }) },
+      foreign: b => ({ user_id: b.id, libelle: "intrus", etablissement: "lcl", type: "courant", titulaire: "p1", cle: `intrus-${sansChiffres(randomUUID())}` }) },
     { name: "historique_imports", match: u => ({ id: u.importId }), field: "source", patch: { source: "piraté" },
       foreign: b => ({ user_id: b.id, type: "ordres", empreinte: empreinte(), etablissement: "lcl", periode_du: "2024-01-01", periode_au: "2024-01-02", source: "intrus" }) },
     { name: "historique_releves", match: u => ({ compte_id: u.compteId, mois: "2024-01-01" }), field: "total_sorties", patch: { total_sorties: 999 },
@@ -568,7 +570,7 @@ describe("isolation RLS : tables de l'historique importé (comptes à double aut
       const ref = randomUUID();
       const apres = {
         type: "releves", empreinte: empreinte(), fichier: { format: "csv" }, etablissement: "lcl", periode: { du: "2024-05-01", au: "2024-05-31" },
-        compte: { libelle: "Compte validé", type: "courant", titulaire: "p1", cle: `valide-${ref}` },
+        compte: { libelle: "Compte validé", type: "courant", titulaire: "p1", cle: `valide-${sansChiffres(ref)}` },
         donnees: { mois: [{ mois: "2024-05", complet: true, controle: { total_entrees: 100, total_sorties: 40 },
           categories: [{ categorie: "revenus", sous_categorie: "", entrees: 100, sorties: 0, nombre: 1 }, { categorie: "divers", sous_categorie: "", entrees: 0, sorties: 40, nombre: 2 }] }] },
         resume: {}, avertissements: [],

@@ -134,14 +134,20 @@ test("0034 : fichier, en-tête (non appliquée, ordre, nom), tutoiement, sans se
   assert.doesNotMatch(SQL, /conseiller/i);
 });
 
-test("appliquer_propositions : recopie de 0032, avec pour seuls écarts la déclaration de v_hist, le libellé de v_quoi et la branche historique", () => {
+test("appliquer_propositions : recopie de 0032, avec pour seuls écarts la garde « jamais un connecteur », la déclaration de v_hist, le libellé de v_quoi et la branche historique", () => {
   const corps = t => t.slice(t.indexOf("create or replace function public.appliquer_propositions"), t.indexOf("grant execute on function public.appliquer_propositions"));
   const ancien = corps(readFileSync(new URL("0032_suivi.sql", DIR), "utf8"));
   const nouveau = corps(SQL);
   assert.ok(ancien.length > 50000 && nouveau.length > ancien.length);
   const attendu = ancien
     .replace("  v_suivi  jsonb;\nbegin", "  v_suivi  jsonb;\n  v_hist   jsonb;\nbegin")
-    .replace("when 'plan_fige' then 'plan figé' end);", "when 'plan_fige' then 'plan figé' when 'historique' then 'import d''historique' end);");
+    .replace("when 'plan_fige' then 'plan figé' end);", "when 'plan_fige' then 'plan figé' when 'historique' then 'import d''historique' end);")
+    .replace("    raise exception 'non authentifié' using errcode = '42501';\n  end if;\n  if jsonb_typeof(v_mods)",
+      "    raise exception 'non authentifié' using errcode = '42501';\n  end if;\n" +
+      "  -- 0034 : valider est l'acte de l'utilisateur dans l'app, jamais d'un connecteur (jeton OAuth : client_id)\n" +
+      "  if nullif(auth.jwt()->>'client_id', '') is not null then\n" +
+      "    raise exception 'Un connecteur ne peut pas valider de proposition : l''utilisateur valide dans Boussole › Agent › À valider.' using errcode = '42501';\n" +
+      "  end if;\n  if jsonb_typeof(v_mods)");
   const i = nouveau.indexOf("      /* ---------- historique (0034)");
   const j = nouveau.indexOf("      end case;\n    exception");
   assert.ok(i > 0 && j > i, "la branche historique est insérée avant la fin du case");
@@ -1143,5 +1149,79 @@ test("import et retrait : un à la fois par utilisateur (verrou consultatif de t
       from pg_proc p where p.oid = $1::regprocedure`, ["public." + f]);
     assert.deepEqual(r, { an: false, au: true, v: "i" }, f);
   }
+  await session(A);
+});
+
+test("propositions : un connecteur ne valide, ne refuse, ne décide ni ne retire jamais une proposition ; il ne change que le contenu d'une proposition en attente", async () => {
+  await session(A, "aal1", { client: CLIENT, sess: SESSION });
+  const depot = async (nom) => (await un(`insert into public.propositions (cible, operation, apres, source) values ('objectif', 'creer', $1::jsonb, 'Claude') returning id`,
+    [JSON.stringify({ nom, montant: 1000, type: "projet" })])).id;
+  const p1 = await depot("Voyage revue 1"), p2 = await depot("Voyage revue 2");
+  const motif = /Un connecteur ne peut/;
+  await refuse(`select public.appliquer_propositions(array['${p1}']::uuid[], '{}'::jsonb)`, motif, "appliquer_propositions par le connecteur");
+  await refuse(`select public.refuser_propositions(array['${p1}']::uuid[])`, motif, "refuser_propositions par le connecteur");
+  await refuse(`update public.propositions set statut = 'acceptee', decide_le = now() where id = '${p1}'`, motif, "statut écrit directement");
+  await refuse(`update public.propositions set statut = 'refusee', decide_le = now() where id = '${p1}'`, motif, "refus écrit directement");
+  await refuse(`update public.propositions set cible = 'budget' where id = '${p1}'`, motif, "cible");
+  await refuse(`update public.propositions set operation = 'supprimer', ref = '${randomUUID()}' where id = '${p1}'`, motif, "opération et ref");
+  await refuse(`update public.propositions set user_id = '${B}' where id = '${p1}'`, motif, "user_id");
+  await refuse(`delete from public.propositions where id = '${p1}'`, motif, "retirer une proposition");
+  await refuse(`insert into public.propositions (cible, operation, apres, source, statut, decide_le) values ('objectif', 'creer', '{"nom":"x","montant":1,"type":"projet"}', 'Claude', 'acceptee', now())`,
+    /que des propositions en attente/, "déposer une proposition déjà acceptée");
+  // le contenu d'une proposition en attente reste modifiable (l'app montre le contenu en vigueur à la validation)
+  await db.query(`update public.propositions set apres = $1::jsonb, justification = 'corrigé' where id = $2`, [JSON.stringify({ nom: "Voyage revue 1 bis", montant: 1200, type: "projet" }), p1]);
+  await superu();
+  assert.equal((await un(`select statut from public.propositions where id = $1`, [p1])).statut, "en_attente");
+  // l'utilisateur, dans l'app (aal2, sans client_id), valide et refuse
+  await session(A);
+  assert.equal((await un(`select public.appliquer_propositions(array['${p1}']::uuid[], '{}'::jsonb) n`)).n, 1);
+  assert.equal((await un(`select public.refuser_propositions(array['${p2}']::uuid[]) n`)).n, 1);
+  // une proposition décidée n'est plus modifiable par le connecteur
+  await session(A, "aal1", { client: CLIENT, sess: SESSION });
+  await refuse(`update public.propositions set apres = '{"nom":"y","montant":1,"type":"projet"}' where id = '${p1}'`, /déjà décidée/, "proposition décidée");
+  await superu();
+  assert.ok((await q(`select 1 from public.objectifs where user_id = $1 and nom = 'Voyage revue 1 bis'`, [A])).length, "le contenu modifié a été appliqué");
+  await db.exec(`delete from public.objectifs where user_id = '${A}' and nom like 'Voyage revue%'; delete from public.propositions where id in ('${p1}', '${p2}');`);
+  const g = await un(`select p.prosecdef, pg_get_functiondef(p.oid) def from pg_proc p where p.oid = 'public.refuser_propositions(uuid[])'::regprocedure`);
+  assert.equal(g.prosecdef, false); assert.match(g.def, /client_id/);
+  await session(A);
+});
+
+test("propositions : 500 en attente au plus par utilisateur (les décidées ne comptent pas)", async () => {
+  await superu();
+  await db.exec(`insert into auth.users (id) values ('${E}') on conflict do nothing`);
+  await db.query(`insert into public.propositions (user_id, cible, operation, apres, source)
+    select $1, 'objectif', 'creer', '{"nom":"x","montant":1,"type":"projet"}', 'Claude' from generate_series(1, 500)`, [E]);
+  await db.query(`insert into public.propositions (user_id, cible, operation, apres, source, statut, decide_le)
+    select $1, 'objectif', 'creer', '{"nom":"x","montant":1,"type":"projet"}', 'Claude', 'refusee', now() from generate_series(1, 3)`, [E]);
+  await session(E);
+  await refuse(`insert into public.propositions (cible, operation, apres, source) values ('objectif', 'creer', '{"nom":"x","montant":1,"type":"projet"}', 'Claude')`,
+    /500 propositions en attente/, "501e proposition en attente");
+  await superu();
+  await db.exec(`update public.propositions set statut = 'refusee', decide_le = now() where id = (select id from public.propositions where user_id = '${E}' and statut = 'en_attente' limit 1)`);
+  await session(E);
+  await db.exec(`insert into public.propositions (cible, operation, apres, source) values ('objectif', 'creer', '{"nom":"x","montant":1,"type":"projet"}', 'Claude')`);
+  await superu();
+  await db.exec(`delete from public.propositions where user_id = '${E}'`);
+  await session(A);
+});
+
+test("transactions.position_id composite : un mouvement ne porte jamais sur la ligne d'un autre ; la nuit (apply_recurring) reste compatible", async () => {
+  await superu();
+  await db.exec(`insert into auth.users (id) values ('${F}') on conflict do nothing`);
+  const posF = (await un(`insert into public.positions (user_id, name, envelope, owner, bloc, mode, value) values ('${F}', 'Ligne F2', 'PEA', 'p1', 'Monde', 'manual', 100) returning id`)).id;
+  await session(A);
+  await refuse(`insert into public.transactions (position_id, date, type, amount) values ('${posF}', '2024-01-03', 'versement', 1)`, /transactions_position/, "ligne d'un autre");
+  await superu();
+  await refuse(`insert into public.transactions (user_id, position_id, date, type, amount) values ('${A}', '${posF}', '2024-01-03', 'versement', 1)`, /transactions_position/, "même en superutilisateur (service)");
+  assert.match((await un(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'transactions_position'`)).d,
+    /FOREIGN KEY \(user_id, position_id\) REFERENCES positions\(user_id, id\) ON DELETE CASCADE/);
+  assert.equal((await q(`select 1 from pg_constraint where conname = 'transactions_position_id_fkey'`)).length, 0, "l'ancienne clé simple a disparu");
+  // apply_recurring ne lit que les lignes du même utilisateur (p.user_id = c.user_id) : la transaction « programme » reste valide
+  const def = (await un(`select pg_get_functiondef('public.apply_recurring(date, uuid)'::regprocedure) d`)).d;
+  assert.match(def, /p\.user_id = c\.user_id/);
+  const tx = (await un(`insert into public.transactions (user_id, position_id, date, type, amount, source) values ('${F}', '${posF}', '2024-01-03', 'programme', 1, 'nightly') returning id`)).id;
+  await db.exec(`delete from public.positions where id = '${posF}'`);
+  assert.equal((await q(`select 1 from public.transactions where id = $1`, [tx])).length, 0, "cascade de la ligne vers ses mouvements");
   await session(A);
 });
