@@ -417,6 +417,8 @@ function vueDom(S0, o) {
   vm.runInContext(promptsJs, c, { filename: "claude-prompts.js" });
   vm.runInContext(grapheJs, c, { filename: "graphe-patrimoine.js" });
   const modele = (o && o.sansModele) ? null : modeleFactice(c);
+  if (o && o.serieNet) c.SerieNet = o.serieNet;
+  if (o && o.large) c.matchMedia = q => ({ matches: /min-width:\s*1440px/.test(q) });
   vm.runInContext(js, c, { filename: "objectifs-view.js" });
   // Compteur d'analyses : Plan.affecterDeja est appelé une fois par analyse ; Plan.projection ne doit plus jamais être appelé.
   const compte = { analyses: 0, projections: 0 };
@@ -526,6 +528,31 @@ test("vue (DOM) : le graphe de l'accordéon suit les émissions du store (actual
   v.root.querySelector("#ovProjAcc").removeAttribute("open");
   v.api.update(J(v.S()), true);
   assert.equal(l.actualisations, n + 1, "accordéon refermé : pas de travail inutile");
+});
+
+test("vue (DOM) : le graphe lit son passé (SerieNet.charger), reste en squelette tant qu'il est lu (enAttente), et suit la fin de la lecture (abonnement)", () => {
+  const appels = { charger: [], abonnes: [] };
+  let attente = true;
+  const serieNet = { charger: (S, jour, p) => { appels.charger.push(p); return Promise.resolve(); }, enAttente: () => attente, abonner: fn => { appels.abonnes.push(fn); return () => {}; } };
+  const v = vueDom(demoS(), { serieNet });
+  assert.equal(appels.charger.length, 0, "accordéon fermé : aucune lecture inutile");
+  ouvrirProj(v);
+  const l = v.modele.liaisons[0];
+  assert.equal(appels.charger.at(-1).id, "tout", "le passé est lu à l'ouverture");
+  assert.equal(typeof l.opt.enAttente, "function"); assert.equal(l.opt.enAttente(v.S()), true);
+  attente = false; assert.equal(l.opt.enAttente(v.S()), false);
+  assert.equal(appels.abonnes.length, 1, "un seul abonnement à la fin des lectures");
+  const n = l.actualisations; appels.abonnes[0]();
+  assert.equal(l.actualisations, n + 1, "la lecture finie : le graphe est relancé avec son passé");
+});
+
+test("vue (DOM) : accordéon de la projection ouvert d'office dès 1 440 px (le graphe est monté), fermé en dessous", () => {
+  const large = vueDom(demoS(), { large: true });
+  assert.equal(large.root.querySelector("#ovProjAcc").hasAttribute("open"), true);
+  assert.equal(large.modele.liaisons.length, 1, "graphe monté sans clic");
+  const etroit = vueDom(demoS());
+  assert.equal(etroit.root.querySelector("#ovProjAcc").hasAttribute("open"), false);
+  assert.equal(etroit.modele.liaisons.length, 0);
 });
 
 test("vue (DOM) : ligne de source de l'épargne — une seule source, celle du moteur ; la note de répartition dit la même", () => {

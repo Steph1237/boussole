@@ -568,6 +568,7 @@ test("vue (DOM) : le graphe maître est monté une fois dans la tête (prérégl
   assert.equal(o.deps.UI, v.ctx.UI, "UI passé en dépendance");
   assert.equal(o.today(), PL.jour());
   assert.equal(o.perimetre(), "du foyer");
+  assert.equal(typeof o.enAttente, "function", "squelette tant que le passé est lu"); assert.equal(o.enAttente({}), false, "sans état de lecture : jamais bloqué");
   assert.equal(f.j.actualiser, 1);
   assert.deepEqual(J(f.j.lectures[0].per), { id: "tout" });
   assert.equal(f.j.abonnes.length, 1, "abonnement à la fin de la lecture du passé");

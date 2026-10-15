@@ -39,6 +39,7 @@
   const noeud = () => typeof module === "object" && module.exports && typeof require === "function";
   /* Composant et liaison du graphe maître : global du navigateur, sinon le module voisin sous Node (tests). */
   const GP = () => glob("GraphePatrimoine") || (noeud() ? require("./graphe-patrimoine.js") : null);
+  const SN = () => glob("SerieNet") || (noeud() ? require("./serie-net.js") : null);
   const GM = () => glob("GrapheModele") || (noeud() ? require("./graphe-modele.js") : null);
 
   /* ---------- formats et dates ---------- */
@@ -395,11 +396,26 @@
     src.hidden = !t;
     if ($("ovProjAcc").hasAttribute("open")) monterGraphe();
   }
+  /* Passé du graphe : lu une fois (SerieNet.charger, période « tout »), le graphe garde son squelette tant qu'il est lu (enAttente) puis se dessine avec son passé, sans saut. */
+  const enAttentePasse = snap => { const sn = SN(); return !!(sn && typeof sn.enAttente === "function" && sn.enAttente(snap, null)); };
+  function chargerHistorique() { const sn = SN(); if (sn && typeof sn.charger === "function" && S) { try { Promise.resolve(sn.charger(S, isoToday(), { id: "tout" }, null)).catch(() => {}); } catch (e) { /* lecture facultative */ } } }
+  let abonne = false;
+  function histPrete() {
+    if (!root || !S) return;
+    if (liaison && $("ovProjAcc").hasAttribute("open")) liaison.actualiser(S);
+    if (liaisonPan) liaisonPan.actualiser(S);
+  }
+  function abonnerHistorique() {
+    const sn = SN();
+    if (abonne || !sn || typeof sn.abonner !== "function") return;
+    abonne = true; sn.abonner(histPrete);
+  }
   /* Le graphe est monté une fois (à la première ouverture) ; ensuite il ne se recalcule que si ce qui compte a changé (GrapheModele.actualiser). */
   function monterGraphe() {
     const Mo = GM(), el = $("ovGraphe");
     if (!root || !S || !Mo || !el) return;
-    if (!liaison) liaison = Mo.brancher(el, { preset: "objectifs", deps: { UI: U() }, today: isoToday, perimetre: duScope, store: window.Store || null });
+    abonnerHistorique(); chargerHistorique();
+    if (!liaison) liaison = Mo.brancher(el, { preset: "objectifs", deps: { UI: U() }, today: isoToday, perimetre: duScope, store: window.Store || null, enAttente: enAttentePasse });
     if (liaison) liaison.actualiser(S);
   }
 
@@ -447,7 +463,8 @@
     detruireGraphePanneau();
     const Mo = GM(), el = corpsPanneau && corpsPanneau.querySelector("[data-ov-graphe]");
     if (!Mo || !el || !pan) return;
-    liaisonPan = Mo.brancher(el, { preset: "objectifs", objectifId: pan.id, titre: "Patrimoine financier", deps: { UI: uiDuPanneau() }, today: isoToday, perimetre: duScope, store: window.Store || null });
+    abonnerHistorique(); chargerHistorique();
+    liaisonPan = Mo.brancher(el, { preset: "objectifs", objectifId: pan.id, titre: "Patrimoine financier", deps: { UI: uiDuPanneau() }, today: isoToday, perimetre: duScope, store: window.Store || null, enAttente: enAttentePasse });
     if (liaisonPan) liaisonPan.actualiser(S);
   }
   function fermeture(o) {
@@ -488,6 +505,8 @@
   function mount(r) {
     root = r;
     $("ovTitre").setAttribute("tabindex", "-1");
+    /* Grand écran (12 colonnes dès 1 440 px) : la projection est ouverte d'office, le graphe est déjà là ; en dessous, elle reste repliée. */
+    try { if (typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1440px)").matches) $("ovProjAcc").setAttribute("open", ""); } catch (e) { /* repliée */ }
     const u = U();
     if (u) {
       // Le bouton Claude de l'en-tête couvre « Définir mes objectifs » : plus de boutons Claude empilés sous le titre.

@@ -941,7 +941,8 @@
   function lancerGraphe() {
     const Mo = GM(), el = $("ajGraphe");
     if (!root || !S || !Mo || !el) return;
-    if (!liaison) liaison = Mo.brancher(el, { preset: "aujourdhui", deps: { UI: U() }, today: () => jour(), perimetre: () => scopeLabel(), store: window.Store || null });
+    if (!liaison) liaison = Mo.brancher(el, { preset: "aujourdhui", deps: { UI: U() }, today: () => jour(), perimetre: () => scopeLabel(), store: window.Store || null,
+      enAttente: snap => SN().enAttente(snap, null) });
     if (!liaison) return;
     if (pleinDemande) { pleinDemande = false; liaison.pleinEcranQuandPret(); } // lien profond #aujourdhui?graphe=plein-ecran
     liaison.actualiser(S);

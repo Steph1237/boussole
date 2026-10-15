@@ -77,3 +77,26 @@ test("le worker charge les modules purs par importScripts, dans l'ordre des dép
   assert.ok(pos.every(x => x >= 0), "tous les modules sont chargés");
   assert.deepEqual([...pos].sort((a, b) => a - b), pos, "ordre des dépendances respecté");
 });
+
+test("deux exécutions de même empreinte en vol : un seul calcul (un seul worker), les deux rappels reçoivent les étapes, le second rejoint avec l'aperçu déjà obtenu", async () => {
+  P.viderCache();
+  const avant = FauxWorker.crees.length, e1 = [], e2 = [];
+  const p1 = P.executer(d(), { ...opt, WorkerClass: FauxWorker }, (r, i) => e1.push(i.etape));
+  const p2 = P.executer(d(), { ...opt, WorkerClass: FauxWorker }, (r, i) => e2.push(i.etape));
+  const [a, b] = await Promise.all([p1, p2]);
+  assert.equal(FauxWorker.crees.length - avant, 1, "un seul worker pour deux demandes identiques");
+  assert.equal(a, b); assert.deepEqual(e1, ["apercu", "complet"]); assert.deepEqual(e2, ["apercu", "complet"]);
+  const tard = [];
+  const p3 = P.executer(d(), { ...opt, WorkerClass: FauxWorker, graine: 7 }, () => {});
+  await new Promise(r => setTimeout(r, 30));
+  const p4 = P.executer(d(), { ...opt, WorkerClass: FauxWorker, graine: 7 }, (r, i) => tard.push(i.etape));
+  await Promise.all([p3, p4]);
+  assert.ok(tard.includes("complet") && tard.length <= 2);
+  assert.equal(FauxWorker.crees.length - avant, 2, "une autre empreinte : un autre calcul");
+  const apres = await P.executer(d(), { ...opt, WorkerClass: FauxWorker }, () => {});
+  assert.equal(apres, a, "ensuite : le cache");
+  P.viderCache();
+  await assert.rejects(Promise.all([P.executer(null, { ...opt, WorkerClass: FauxWorker }), P.executer(null, { ...opt, WorkerClass: FauxWorker })]), /./);
+  const nouveau = await P.executer(d(), { ...opt, worker: false });
+  assert.ok(nouveau, "une erreur ne laisse pas l'exécution « en vol »");
+});

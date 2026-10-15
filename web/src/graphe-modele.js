@@ -292,7 +292,18 @@
     const jour = () => (typeof opt.today === "function" ? opt.today() : opt.today || new Date().toISOString().slice(0, 10));
     const perimetre = () => (typeof opt.perimetre === "function" ? opt.perimetre() : opt.perimetre || "");
     const store = opt.store || glob("Store");
-    let ctl = null;
+    let ctl = null, chaud = "", minuteur = null, delaiPasse = false;
+    /* Le passé est encore lu (Historique) : dessiner maintenant donnerait une courbe qui saute à l'arrivée du reconstitué. On garde le squelette, le moteur chauffe pendant ce temps. */
+    const attend = () => { if (delaiPasse || capacite || typeof opt.enAttente !== "function") return false; try { return !!opt.enAttente(S); } catch (e) { return false; } };
+    function prechauffer() {
+      const P = PJ(opt.moteurDeps || null);
+      if (!P || typeof P.executer !== "function") return;
+      try {
+        const data = entree(S, jour(), opt.moteurDeps || null), options = optionsMoteur(reglages, S), k = P.empreinte(data, options) + "|" + perimetre();
+        if (k === chaud) return;
+        chaud = k; Promise.resolve(P.executer(data, options, () => {})).catch(() => {});
+      } catch (e) { /* le calcul normal dira l'erreur */ }
+    }
     function calcul(r) {
       const n = ++seq;
       if (capacite) { const d = calculerCapacite(S, r, { today: jour(), perimetre: perimetre(), deps: opt.moteurDeps || null, chemins: opt.chemins }); if (n === seq && ctl) ctl.mettreAJour(d); return Promise.resolve(d); }
@@ -310,6 +321,12 @@
       actualiser(snap) {
         if (snap) S = snap;
         if (!S) return;
+        if (attend()) {
+          prechauffer();
+          if (!minuteur && typeof setTimeout === "function") minuteur = setTimeout(() => { delaiPasse = true; minuteur = null; if (ctl) this.actualiser(); }, opt.delaiAttente > 0 ? opt.delaiAttente : 8000);
+          return;
+        }
+        if (minuteur && typeof clearTimeout === "function") { clearTimeout(minuteur); minuteur = null; }
         let s = "";
         try { s = signature(S, reglages, jour(), opt.moteurDeps || null) + "|" + perimetre(); } catch (e) { s = String(Date.now()); }
         if (s === sig) return;
@@ -318,7 +335,7 @@
       /** Change des réglages du composant de l'extérieur (ex. : durée et type de bien de la carte IMMO1) ; relance le calcul si besoin. */
       definir(patch) { if (ctl) ctl.reglagesAppliques(patch); },
       pleinEcranQuandPret: () => ctl.pleinEcranQuandPret && ctl.pleinEcranQuandPret(),
-      detruire() { seq++; if (ctl && ctl.detruire) ctl.detruire(); ctl = null; },
+      detruire() { seq++; if (minuteur && typeof clearTimeout === "function") clearTimeout(minuteur); if (ctl && ctl.detruire) ctl.detruire(); ctl = null; },
     };
   }
 

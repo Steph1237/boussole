@@ -486,7 +486,8 @@
   function lancerGraphe() {
     const Mo = GM(), el = $("plGraphe"), u = U();
     if (!root || !S || S.ready === false || !Mo || !el || !u) return;
-    if (!liaison) liaison = Mo.brancher(el, { preset: "placements", deps: { UI: u }, today: () => jour(), perimetre: () => scopeLabel(), store: window.Store || null });
+    if (!liaison) liaison = Mo.brancher(el, { preset: "placements", deps: { UI: u }, today: () => jour(), perimetre: () => scopeLabel(), store: window.Store || null,
+      enAttente: snap => { const sn = SN(); return !!(sn && typeof sn.enAttente === "function" && sn.enAttente(snap, null)); } });
     if (liaison) liaison.actualiser(S);
   }
   /* Une lecture du passé vient de finir : le graphe est recalculé avec son passé (ou le sera à l'affichage). */

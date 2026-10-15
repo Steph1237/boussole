@@ -4934,10 +4934,25 @@ def("projection", function (module, exports, require) {
   /** Exécute une projection : d'abord 500 chemins (aperçu), puis 2 000, dans un Web Worker si disponible, sinon sur le fil principal.
       Résultats mis en cache par empreinte (données + options + version du modèle). rappel(resultat, { etape: "apercu" | "complet", chemins, cache? }).
       options : { …options de preparer, chemins (2000), graine, volatilite, worker (false : fil principal), WorkerClass, urlWorker, progressif (false : une seule étape) }. → Promise du résultat complet. */
+  /** Exécutions en vol, par empreinte : une demande identique rejoint le calcul en cours (aperçu déjà obtenu rejoué) au lieu d'en lancer un second. */
+  const enVol = new Map();
   function executer(data, options, rappel) {
-    const o = options || {}, cle = empreinte(data, o), final = o.chemins > 0 ? Math.round(o.chemins) : 2000;
-    const dit = (r, info) => { if (typeof rappel === "function") rappel(r, info); };
-    if (cache.has(cle)) { const r = cache.get(cle); cache.delete(cle); cache.set(cle, r); dit(r, { etape: "complet", chemins: r.chemins, cache: true }); return Promise.resolve(r); }
+    const o = options || {}, cle = empreinte(data, o);
+    if (cache.has(cle)) { const r = cache.get(cle); cache.delete(cle); cache.set(cle, r); if (typeof rappel === "function") rappel(r, { etape: "complet", chemins: r.chemins, cache: true }); return Promise.resolve(r); }
+    const deja = enVol.get(cle);
+    if (deja) {
+      if (typeof rappel === "function") { deja.abonnes.push(rappel); if (deja.apercu) rappel(deja.apercu.r, deja.apercu.info); }
+      return deja.promesse;
+    }
+    const e = { abonnes: typeof rappel === "function" ? [rappel] : [], apercu: null, promesse: null };
+    enVol.set(cle, e);
+    const diffuse = (r, info) => { if (info && info.etape === "apercu") e.apercu = { r, info }; e.abonnes.slice().forEach(f => f(r, info)); };
+    try { e.promesse = lancerExecution(data, o, cle, diffuse); } catch (err) { enVol.delete(cle); throw err; }
+    e.promesse.then(() => enVol.delete(cle), () => enVol.delete(cle));
+    return e.promesse;
+  }
+  function lancerExecution(data, o, cle, dit) {
+    const final = o.chemins > 0 ? Math.round(o.chemins) : 2000;
     const etapes = o.progressif === false || final <= 500 || o.volatilite === 0 ? [final] : [500, final];
     const garder = r => { cache.set(cle, r); while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value); return r; };
     const W = o.worker === false ? null : o.WorkerClass || (typeof Worker !== "undefined" ? Worker : null);

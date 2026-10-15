@@ -156,6 +156,27 @@ test("capacité dans le temps (IMMO1) : budget d'achat P10–P90 par année, mon
   assert.equal(v.etat, "vide"); assert.match(v.raison, /repère manquant/); assert.equal(v.capacite_demain, undefined, "jamais un chiffre sans repère");
 });
 
+test("chargement : tant que le passé est lu (enAttente), rien n'est dessiné (squelette) mais le moteur est préchauffé ; le passé arrivé, un seul dessin, avec son passé, sans second calcul", async () => {
+  const S = etat(), vus = [], monte = [], exec = [];
+  let attente = true;
+  const faux = { PRESETS: { aujourdhui: { vue: "net" } }, monter: (el, o) => { monte.push(o); return { mettreAJour: (d, i) => vus.push([d.etat, i && i.etape]), reglagesAppliques() {}, detruire() {} }; } };
+  const executer = (data, options, rappel) => { exec.push(options.vue); return sync(150)(data, options, rappel); };
+  const l = GM.brancher({}, { preset: "aujourdhui", deps: { GraphePatrimoine: faux }, today: () => AUJ, enAttente: () => attente, moteurDeps: { Projection: Object.assign({}, P, { executer }) } });
+  l.actualiser(S); await new Promise(r => setTimeout(r, 50));
+  assert.equal(vus.length, 0, "aucun dessin tant que le passé n'est pas là : pas de saut au chargement");
+  assert.equal(exec.length, 1, "le moteur est préchauffé pendant la lecture du passé");
+  l.actualiser(S); await new Promise(r => setTimeout(r, 30)); assert.equal(exec.length, 1, "préchauffé une seule fois");
+  attente = false; l.actualiser(S); await new Promise(r => setTimeout(r, 50));
+  assert.ok(vus.length >= 1 && vus.at(-1)[0] === "pret", "le passé est là : le graphe se dessine");
+  const n = vus.length; l.actualiser(S); await new Promise(r => setTimeout(r, 30)); assert.equal(vus.length, n, "aucun redessin inutile");
+  /* délai maximum : si le passé ne vient jamais, on dessine quand même */
+  const vus2 = [];
+  const faux2 = { PRESETS: { aujourdhui: { vue: "net" } }, monter: () => ({ mettreAJour: d => vus2.push(d.etat), reglagesAppliques() {}, detruire() {} }) };
+  const l2 = GM.brancher({}, { preset: "aujourdhui", deps: { GraphePatrimoine: faux2 }, today: () => AUJ, enAttente: () => true, delaiAttente: 20, moteurDeps: { Projection: Object.assign({}, P, { executer: sync(150) }) } });
+  l2.actualiser(S); await new Promise(r => setTimeout(r, 120));
+  assert.ok(vus2.includes("pret"), "au bout du délai : le graphe se dessine avec ce qui est lu");
+});
+
 test("effet d'un événement sur la médiane à l'horizon : deux modèles, mêmes tirages ; null pour ce qui n'est pas un événement du foyer", () => {
   const S = etat(), ev = S.foyer.evenements[0];
   const e = GM.effetSurMediane(S, ev.id, GM.reglagesParDefaut({ vue: "financier" }), { today: AUJ, chemins: 200, horizon_ans: 5 });

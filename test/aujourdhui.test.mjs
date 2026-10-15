@@ -658,6 +658,7 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   assert.equal(montes.length, 1, "le graphe maître est monté une fois, avec le préréglage « aujourdhui »"); assert.equal(montes[0].preset, "aujourdhui");
   assert.ok(actualisations.length >= 1 && actualisations[0].positions, "relié à l'état du store");
   assert.equal(typeof montes[0].today, "function"); assert.equal(typeof montes[0].perimetre, "function");
+  assert.equal(typeof montes[0].enAttente, "function", "le graphe garde son squelette tant que le passé est lu (pas de saut au chargement)");
   assert.match(els.get("ajBoite").innerHTML, /note de Claude à relire/);
   api.update(vide(), false);
   api.show();
