@@ -266,7 +266,7 @@ Ordre **déterministe** par niveaux, puis, à l'intérieur d'un niveau, par **co
 
 ### 6.4 Biens et crédits
 - **Biens existants** : valeur d'aujourd'hui, revalorisée chaque mois au rendement de `immobilier_physique` (§ 4.3, avec aléa dans le Monte-Carlo). Part du périmètre : `part_p1`. Prix et date d'achat (pour l'impôt d'un bien autre que la résidence principale) : `config.projection.biens["bien:<uuid>"] = { prix_achat, date_achat, source, le }` ; absent → « à compléter ».
-- **Crédits existants** (`credits`, `biens.crd` et `biens.mensualite`) : tableau d'amortissement mensuel à échéance constante (`Projection.amortissement`). Taux et fin : `config.prets_infos` (DAT1). Taux connu et fin inconnue → durée restante déduite du capital restant dû et de la mensualité. Fin connue et taux inconnu → taux déduit (dichotomie). Les deux inconnus → taux supposé égal au repère du taux moyen sur 20 ans (§ 8.1), durée déduite, mention « taux du crédit supposé, à compléter » (§ 6.6). La mensualité de `credits` est supposée assurance comprise (champ unique) ; si `prets_infos.assurance_taux_pct` existe, la part d'assurance est séparée.
+- **Crédits existants** (`credits`, `biens.crd` et `biens.mensualite`) : tableau d'amortissement mensuel à échéance constante (`Projection.amortissement`). Taux et fin : `config.prets_infos` (DAT1). Taux connu et fin inconnue → durée restante déduite du capital restant dû et de la mensualité. Fin connue et taux inconnu → taux déduit (dichotomie). Les deux inconnus → taux supposé égal au repère du taux moyen sur 20 ans (§ 8.1), durée déduite, mention « taux du crédit supposé, à compléter » (§ 6.6). La mensualité de `credits` est supposée assurance comprise (champ unique) ; la part d'assurance ne rembourse pas le capital et est séparée ainsi : `assurance_taux_pct` connu (par an, sur le capital initial) avec le taux et la durée totale (`duree_mois`) → capital initial `C0 = mensualité ÷ (annuité(taux, durée totale) + assurance_taux_pct / 12)`, assurance `C0 × assurance_taux_pct / 12`, le reste amortit le capital (cas L-1) ; `assurance_taux_pct` connu sans le taux ou la durée totale → assurance estimée sur le **capital restant dû d'aujourd'hui**, convention dite par une mention (cas L-2) ; `assurance_taux_pct` à 0 → aucune part d'assurance, sans mention ; inconnu → aucune séparation, la mensualité entière amortit le capital, avec la mention « assurance du crédit inconnue » (le capital est alors remboursé un peu trop vite, cas L-3). Durée restante, taux déduit et capital restant dû se calculent sur la part qui amortit ; la mensualité décaissée reste la mensualité entière.
 - **Convention de taux** : taux nominal annuel proportionnel (`taux / 12` par mois), échéance `C · i / (1 − (1 + i)^−n)` ; assurance sur le capital initial (`C × assurance_pct / 12` par mois), comme `toise.js`.
 - **Fin d'un crédit** : la mensualité libérée part dans la capacité selon `part_reaffectee_epargne_pct` (défaut **100 %**, « si tes dépenses n'augmentent pas » : hypothèse dite, levier de SIM4 et astuce 11 d'OPT1), modifiable par un événement `fin_credit` (§ 7.1). Le jalon « Fin du prêt » est automatique (DAT1 `pret_fin` ou fin calculée).
 - **Patrimoine net** = financier + Σ (valeur des biens × part) − Σ capitaux restant dus (× part).
@@ -665,6 +665,16 @@ Foyer fictif (Alex 3 000 €, Sam 2 000 €, dépenses 3 000 € dont loyer 1 00
 | E-1 Existant et épargne future | 100 000 € + 1 000 €/mois à 6 %, 10 ans | existant 179 084,77 € ; épargne future 162 473,44 € (versements 120 000 €, croissance 42 473,44 €) ; total 341 558,21 € |
 | BT-1 Couverture | 10 dates | 7 dans P10–P90, 5 dans P25–P75, 1 sous P10, 2 au-dessus de P90 ; non affichable (< 24) |
 | BT-2 Couverture | 30 dates | 24 dans P10–P90 (80 %), affichable |
+
+### 12.7 bis Assurance d'un crédit existant (§ 6.4)
+
+Prêt de 100 000 € restant dus, mensualité 600 € assurance comprise, taux 3 %, vue nette, 10 ans, déterministe. Attendus recalculés en Python, indépendamment du moteur.
+
+| Cas | Entrée | Attendu |
+|---|---|---|
+| L-1 Assurance connue, durée totale connue | `duree_mois` 300, `assurance_taux_pct` 0,30 | capital initial 120 189,58 € ; assurance 30,05 €/mois ; part qui amortit 569,95 € ; 232 mois restants ; capital restant dû 96 107,33 € (mois 12), 92 096,27 € (24), 79 316,12 € (60) ; pas de mention |
+| L-2 Assurance connue, durée totale inconnue | `assurance_taux_pct` 0,30 | assurance estimée sur le capital restant dû : 25 €/mois ; 575 € amortissent ; 229 mois ; 96 045,93 € au mois 12 ; mention |
+| L-3 Assurance inconnue | — | aucune séparation : 216 mois ; 95 741,77 € au mois 12 (trop vite) ; mention |
 
 ### 12.8 Validation des événements
 V-1 à V-15 : 15 événements (dont `changement_emploi`, `conge_parental`, garde par assistante maternelle) avec le message attendu, ou `null` s'il est valide ; **mêmes messages** dans `Projection.validerEvenement`, `appliquer_propositions` (0030), le store démo et `decrire_foyer`.

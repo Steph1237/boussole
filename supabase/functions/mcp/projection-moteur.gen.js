@@ -3187,16 +3187,36 @@ def("projection-donnees", function (module, exports, require) {
       if (!(M > 0) && !(crd > 0)) return;
       const cle = genre + ":" + x.id, info = objet(prets[cle]), mentions = [];
       let taux = O.estNombre(info.taux_pct) ? +info.taux_pct : null, n = null, fin = O.estDate(info.date_fin) ? info.date_fin : null, suppose = false;
+      const tauxDit = taux != null;
       if (fin) { n = 0; while (O.ajouterMois(today, n + 1) <= fin) n++; }
+      /* Part d'assurance de la mensualité (spec § 6.4) : la mensualité de `credits` est assurance comprise ; l'amortissement du capital se fait sur le reste.
+         assurance_taux_pct (par an, sur le capital initial) connu : capital initial = mensualité ÷ (annuité sur la durée totale + taux d'assurance / 12) quand
+         le taux et la durée totale (duree_mois) sont connus, sinon le capital restant dû d'aujourd'hui (convention dite). Inconnu : aucune séparation, dite. */
+      const a = O.estNombre(info.assurance_taux_pct) && +info.assurance_taux_pct >= 0 ? +info.assurance_taux_pct : null;
+      let ass = 0, assMethode = "inconnue", capitalInitial = null;
+      if (M > 0 && a === 0) assMethode = "aucune";
+      else if (M > 0 && a > 0) {
+        const D = Number.isInteger(+info.duree_mois) && +info.duree_mois > 0 ? +info.duree_mois : null;
+        let c0, exacte = false;
+        if (tauxDit && D != null) { c0 = M / (C.echeance(1, taux, D) + a / 100 / 12); exacte = true; }
+        else c0 = crd;
+        ass = c0 * (a / 100) / 12;
+        if (exacte) capitalInitial = c0;
+        if (!(ass > 0) || ass >= M) { ass = 0; capitalInitial = null; assMethode = "inconnue"; mentions.push("assurance du crédit non séparable de la mensualité (taux d'assurance incohérent avec elle) : mensualité supposée assurance comprise, capital remboursé un peu surestimé"); }
+        else if (exacte) assMethode = "capital_initial";
+        else { assMethode = "capital_restant_du"; mentions.push("assurance du crédit estimée sur le capital restant dû (capital initial inconnu : taux ou durée totale à compléter)"); }
+      } else if (M > 0) mentions.push("assurance du crédit inconnue : mensualité supposée assurance comprise sans séparation, capital remboursé un peu surestimé");
+      const Mp = Math.max(0, M - ass); /* part qui rembourse le capital et les intérêts */
       if (!(M > 0)) { mentions.push("mensualité inconnue : le capital restant dû est maintenu"); }
-      else if (taux != null && n == null) { n = C.dureeRestante(crd, M, taux); if (n == null) { mentions.push("la mensualité ne couvre pas les intérêts"); n = 0; } }
-      else if (taux == null && n != null) { taux = n > 0 ? C.tauxDeduit(crd, M, n) : 0; if (taux == null) { taux = 0; mentions.push("taux du crédit non déductible des données"); } else mentions.push("taux du crédit déduit de la fin et de la mensualité"); }
+      else if (taux != null && n == null) { n = C.dureeRestante(crd, Mp, taux); if (n == null) { mentions.push("la mensualité ne couvre pas les intérêts"); n = 0; } }
+      else if (taux == null && n != null) { taux = n > 0 ? C.tauxDeduit(crd, Mp, n) : 0; if (taux == null) { taux = 0; mentions.push("taux du crédit non déductible des données"); } else mentions.push("taux du crédit déduit de la fin et de la mensualité"); }
       else if (taux == null && n == null) {
         if (tauxMoyen === undefined) { ctx.manquant("taux_credit_immo_20", "taux supposé d'un crédit"); taux = 0; } else taux = tauxMoyen;
-        suppose = true; n = C.dureeRestante(crd, M, taux) || 0;
+        suppose = true; n = C.dureeRestante(crd, Mp, taux) || 0;
         mentions.push("taux du crédit supposé, à compléter");
       }
-      out.push({ cle, id: x.id, nom: String(x.nom || (genre === "bien" ? "Bien" : "Crédit")), genre, part, mensualite: M, crd, taux_pct: taux, n: n == null ? 0 : n, fin, taux_suppose: suppose, mentions });
+      out.push({ cle, id: x.id, nom: String(x.nom || (genre === "bien" ? "Bien" : "Crédit")), genre, part, mensualite: M, assurance_mensuelle: ass, mensualite_hors_assurance: Mp, assurance_methode: assMethode, capital_initial: capitalInitial,
+        crd, taux_pct: taux, n: n == null ? 0 : n, fin, taux_suppose: suppose, mentions });
     };
     biens.forEach(b => { if (b) ajoute("bien", b, Calc.part(sc, b.part_p1)); });
     creds.forEach(c => { if (c) ajoute("credit", c, Calc.partCredit(sc, c.owner)); });
@@ -3570,7 +3590,7 @@ def("projection", function (module, exports, require) {
       for (let t = 1; t <= N + 1; t++) {
         if (t <= n && c.mensualite > 0) {
           M.mensExist[t] += c.mensualite * part;
-          crd = t === n ? 0 : Math.max(0, crd * (1 + i) - c.mensualite);
+          crd = t === n ? 0 : Math.max(0, crd * (1 + i) - c.mensualite_hors_assurance); /* l'assurance ne rembourse pas le capital */
         } else if (c.mensualite > 0 && t > n) crd = 0;
         M.detteExist[t] += crd * part;
       }

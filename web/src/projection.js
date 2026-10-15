@@ -181,7 +181,7 @@
       for (let t = 1; t <= N + 1; t++) {
         if (t <= n && c.mensualite > 0) {
           M.mensExist[t] += c.mensualite * part;
-          crd = t === n ? 0 : Math.max(0, crd * (1 + i) - c.mensualite);
+          crd = t === n ? 0 : Math.max(0, crd * (1 + i) - c.mensualite_hors_assurance); /* l'assurance ne rembourse pas le capital */
         } else if (c.mensualite > 0 && t > n) crd = 0;
         M.detteExist[t] += crd * part;
       }

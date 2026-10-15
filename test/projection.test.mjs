@@ -120,6 +120,34 @@ for (const id of ["C-1", "C-2", "C-3", "C-4", "C-5", "C-6"]) {
     assert.ok(r.capacite_par_periode.every(s => s.raison));
   });
 }
+/* ---------------------------------------------------------------- L : part d'assurance d'un crédit existant (§ 6.4) */
+for (const id of ["L-1", "L-2", "L-3"]) {
+  test(id + " : la part d'assurance de la mensualité n'amortit pas le capital (durée restante, capital restant dû, mention)", () => {
+    const c = cas(id), a = c.attendu, { M, r } = det(c), k = M.credits[0];
+    assert.equal(k.assurance_methode, a.methode);
+    proche(k.assurance_mensuelle, a.assurance_mensuelle, 0.0001); proche(k.mensualite_hors_assurance, a.mensualite_hors_assurance, 0.0001);
+    if (a.capital_initial != null) proche(k.capital_initial, a.capital_initial, 0.01); else assert.equal(k.capital_initial, null);
+    assert.equal(k.n, a.n, "durée restante");
+    for (const [t, crd] of Object.entries(a.crd)) proche(M.detteExist[+t], crd, 0.01, "capital restant dû au mois " + t);
+    assert.equal(M.mensExist[1], a.mensualite_decaissee, "la mensualité décaissée reste la mensualité entière (assurance comprise)");
+    assert.equal(M.mensExist[M.N], k.n >= M.N ? a.mensualite_decaissee : 0, "mensualité entière jusqu'à la fin du crédit, puis plus rien (assurance comprise)");
+    assert.deepEqual(k.mentions, a.mentions);
+    for (const m of a.mentions) assert.ok(r.avertissements.includes(k.nom + " : " + m), m);
+    assert.equal(r.avertissements.filter(m => /assurance du crédit/.test(m)).length, a.mentions.length);
+  });
+}
+test("L-1 bis : assurance à 0 % déclarée → aucune séparation et aucune mention ; assurance incohérente (≥ mensualité) → aucune séparation, dite ", () => {
+  const c = cas("L-1"), d0 = entreeDe(c);
+  const avec = (a, sansDuree) => { const d = JSON.parse(JSON.stringify(d0)); const i = d.config.prets_infos["credit:c-auto"]; i.assurance_taux_pct = a; if (sansDuree) delete i.duree_mois; return P.preparer(d, c.options); };
+  const zero = avec(0).credits[0];
+  assert.equal(zero.assurance_methode, "aucune"); assert.equal(zero.assurance_mensuelle, 0); assert.equal(zero.mensualite_hors_assurance, 600); assert.deepEqual(zero.mentions, []);
+  const fou = avec(10, true).credits[0]; /* 10 % du capital restant dû : 833 € par mois pour 600 € de mensualité */
+  assert.equal(fou.assurance_methode, "inconnue"); assert.equal(fou.mensualite_hors_assurance, 600); assert.ok(fou.mentions.some(m => /non séparable/.test(m)));
+  const M = avec(0.3), k = M.credits[0];
+  assert.equal(M.mens0, 600, "mensualité du jour = mensualité entière du foyer");
+  assert.ok(M.detteExist[12] > avec(0).detteExist[12], "avec l'assurance séparée, le capital se rembourse moins vite qu'avec la mensualité entière");
+  assert.ok(k.n > zero.n);
+});
 test("C-7 : nouvel emploi, premier enfant, congé parental, crèche — capacité constatée sur 6 mois contre 1 900 € prévus", () => {
   const c = cas("C-7"), { M, r } = det(c), a = c.attendu, v = valeurs(r);
   const cb = r.capacite_base;
