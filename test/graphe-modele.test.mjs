@@ -53,10 +53,11 @@ test("passé : photos observées + reconstitué avant la première photo ; vue f
   assert.equal(GM.passeDe(etat({ sansPhoto: true }), AUJ, { vue: "financier", euros: "courants", reconstitue: null }).points.length, 1, "sans photo : le seul point du jour");
 });
 
-test("recalage : la courbe part du patrimoine net affiché ; les biens d'usage que le moteur ne compte pas sont ajoutés, maintenus à leur valeur ; 0 hors vue « net »", () => {
+test("recalage : le moteur compte lui-même les biens d'usage ; le décalage n'est qu'un contrôle de cohérence (au-delà de 1 €), 0 hors vue « net »", () => {
   const res = { today: AUJ, vues: { net: { p50: [100000] }, financier: { p50: [60000] } } };
   const passe = { points: [{ date: AUJ, valeur: 115000, nature: "observe" }] };
   assert.equal(GM.ajustementAutresBiens(res, passe, "net"), 15000); assert.equal(GM.ajustementAutresBiens(res, passe, "financier"), 0);
+  assert.equal(GM.ajustementAutresBiens({ today: AUJ, vues: { net: { p50: [114999.6] } } }, passe, "net"), 0, "écart de moins de 1 € : aucun recalage");
   assert.equal(GM.ajustementAutresBiens(res, { points: [] }, "net"), 0); assert.equal(GM.ajustementAutresBiens(res, { points: [{ date: "2026-10-13", valeur: 1 }] }, "net"), 0, "dernier point d'un autre jour : pas de recalage");
 });
 
@@ -94,7 +95,13 @@ test("calculer : le passé d'abord, puis le moteur ; la médiane part de la dern
   assert.deepEqual(d2.futur.p50, d.futur.p50);
   const net = await GM.calculer(S, GM.reglagesParDefaut({ vue: "net" }), { today: AUJ, executer: sync(200), reconstitue: null });
   assert.equal(net.futur.p50[0], net.passe.points.at(-1).valeur, "net : recalé sur le patrimoine net affiché");
-  assert.equal(net.ajust, Math.round(net.ajust * 100) / 100 || net.ajust);
+  assert.equal(net.ajust, 0, "pas de biens d'usage : aucun écart");
+  const S2 = etat(); S2.profil = JSON.parse(JSON.stringify(S2.profil)); S2.profil.autres = { p1: { usage: 15000, entreprise: 3000 } };
+  const avec = await GM.calculer(S2, GM.reglagesParDefaut({ vue: "net" }), { today: AUJ, executer: sync(200), reconstitue: null });
+  assert.equal(avec.ajust, 0, "le moteur compte lui-même les biens d'usage : la courbe n'est plus décalée");
+  assert.ok(Math.abs(avec.futur.p50[0] - avec.passe.points.at(-1).valeur) <= 1, "elle part du patrimoine net affiché");
+  assert.ok(avec.avertissements.some(a => /biens d'usage et d'entreprise/.test(a)), "dit dans les avertissements du moteur");
+  assert.ok(!avec.avertissements.some(a => /Contrôle de cohérence/.test(a)));
 });
 
 test("calculer : exécution progressive réelle (Projection.executer, 500 puis N chemins) ; l'aperçu est marqué « progressif », le complet non ; couches optionnelles à la fin", async () => {

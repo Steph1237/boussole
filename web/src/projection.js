@@ -149,6 +149,8 @@
     /* ---- biens existants ---- */
     const bienPart = b => Calc.part(sc, b.part_p1);
     M.bien0 = sum(bienList, b => O.n0(b.valeur) * bienPart(b));
+    /* biens d'usage et d'entreprise du profil : comptés dans le net, à valeur constante en euros d'aujourd'hui (aucune hypothèse de rendement ni de dépréciation) */
+    { const au = Calc.autresActifs(d.profil, sc); M.autres0 = au.usage + au.entreprise; }
     const pb = Dn.parametresClasse("immobilier_physique", ctx);
     M.bienRend = { a: Math.log(1 + pb.rendement / 100) / 12, s: pb.volatilite / 100 / Math.sqrt(12), kz: IDX.immobilier_physique };
     M.biensTaxables = [];
@@ -291,7 +293,8 @@
           run = { t0: t, t1: t + 1, v, ag, raison: (p.enfant || e.libelle) + " : " + corps + "−" + eur(Math.abs(v) * f) + "/mois" + (e.date <= today && ag >= seuil && v !== 0 ? " (passage à " + seuil + " ans)" : "") };
         }
         cl();
-        const txt = phases.map((r, k) => "−" + eur(r.v * f) + "/mois" + (k > 0 ? " à partir de " + (r.ag >= seuil ? seuil : r.ag) + " ans" : "")).join(", ");
+        const dejaNe = e.date <= today;
+        const txt = phases.map((r, k) => (r.v > 0 ? "−" : "+") + eur(Math.abs(r.v * f)) + "/mois" + (k > 0 || dejaNe ? " à partir de " + (r.ag >= seuil && r.ag < finAge ? seuil : r.ag) + " ans" : "")).join(", ");
         jalon(e, e.libelle, "enfant", txt || "déjà compris dans tes dépenses d'aujourd'hui", { mensuel: phases.length ? -phases[0].v * f : 0, mensuel_14_ans: phases[1] ? -phases[1].v * f : null },
           { quotient_familial: "non modélisé : une demi-part de plus réduit l'impôt d'au plus " + (rv("qf_plafond_demi_part") !== undefined ? eur(rv("qf_plafond_demi_part")) : "un plafond") + " par an" });
         return;
@@ -632,7 +635,7 @@
       let s = 0;
       if (nomVue === "disponible") { for (const b of dispoIdx) s += arr[off + b]; return s; }
       for (let b = 0; b < B; b++) s += arr[off + b];
-      if (nomVue === "net") s += bi - dette;
+      if (nomVue === "net") s += bi - dette + M.autres0 * infl[t];
       return s;
     }
     const prepBiens = M.biensTaxables.map(x => ({ x, prep: x.prix_achat != null ? F.preparer({ type: "bien_autre", valeur: x.valeur0, base: x.prix_achat, date_achat: x.date_achat, classe: "immobilier" }, { reperes: M.ctx.R }) : null }));
@@ -654,7 +657,7 @@
       if (nomVue === "net") {
         let biensNets = bi;
         if (M.bien0 > 0) prepBiens.forEach(({ x, prep }) => { if (prep) { const v = x.valeur0 * bi / M.bien0, tx = prep.calculer(v, x.prix_achat, date, 0); biensNets -= tx.ir + tx.ps; } });
-        s += biensNets - dette;
+        s += biensNets - dette + M.autres0 * infl[t];
       }
       return s;
     }
@@ -697,7 +700,7 @@
         let f = 0, dsp = 0;
         for (let b = 0; b < B; b++) { f += V[b]; tr.valeurs[t * B + b] = V[b]; }
         for (const b of dispoIdx) dsp += V[b];
-        tr.fin[t] = f; tr.dispo[t] = dsp; tr.bien[t] = bien[0]; tr.dette[t] = dette; tr.net[t] = f + bien[0] - dette;
+        tr.fin[t] = f; tr.dispo[t] = dsp; tr.bien[t] = bien[0]; tr.dette[t] = dette; tr.net[t] = f + bien[0] - dette + M.autres0 * infl[t];
         let fx = 0; for (let b = 0; b < B; b++) fx += Vx[b]; tr.finX[t] = fx;
       }
     }
@@ -881,6 +884,14 @@
   }
 
   /* ================================================================== résultats */
+  const AUTRES_BIENS = v => "Tes biens d'usage et d'entreprise (" + eur(v) + ") sont comptés dans le patrimoine net, à valeur constante en euros d'aujourd'hui : aucune dépréciation ni rendement supposé.";
+  /** « 8 chances sur 10 » ; dès 95 %, « plus de 9 chances sur 10 » (jamais « 10 chances sur 10 » : rien n'est certain) ; sous 5 %, « moins de 1 chance sur 10 ». */
+  function texteProbabilite(p) {
+    const n = Math.round(p * 10);
+    if (p >= 0.95) return "plus de 9 chances sur 10";
+    if (n <= 0) return "moins de 1 chance sur 10";
+    return n + (n === 1 ? " chance" : " chances") + " sur 10";
+  }
   /** « 120 k€ », « 1,2 M€ » à deux chiffres significatifs, espaces simples. */
   function kEur(x) {
     const a = Math.abs(x), s = x < 0 ? "−" : "";
@@ -1094,11 +1105,12 @@
     (M.calendrier.jalons || []).filter(j => j.statut !== "passe" && j.date <= M.dates[N]).forEach(j => jalons.push({ id: "cal:" + j.id, date: j.date, type: j.cle, titre: j.titre, icone: "calendrier",
       effet: { texte: j.effet, montants: {} }, source: "calendrier", enveloppe: j.enveloppe_nom || null }));
     objectifs.forEach(ob => { if (ob.date <= M.dates[N] && ob.date >= M.today) jalons.push({ id: "objectif:" + ob.id, date: ob.date, type: "objectif", titre: ob.nom || "Objectif", icone: "drapeau",
-      effet: { texte: ob.probabilite == null ? "" : "cible de " + kEur(ob.cible) + " : " + Math.round(ob.probabilite * 10) + " chances sur 10", montants: { cible: ob.cible, probabilite: ob.probabilite } }, source: "objectif" }); });
+      effet: { texte: ob.probabilite == null ? "" : "cible de " + kEur(ob.cible) + " : " + texteProbabilite(ob.probabilite), montants: { cible: ob.cible, probabilite: ob.probabilite } }, source: "objectif" }); });
     jalons.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
     const avert = M.avertissements.slice();
     M.ctx.manquants.forEach((pourquoi, cle) => avert.push("repère manquant (" + cle + ") : " + pourquoi));
     M.comps.filter(c => c.v0 > 0 && !c.dispo && c.prep.indisponible).forEach(c => avert.push("impôt de sortie de « " + c.enveloppe + " » non calculé (" + (c.prep.mentions[0] || "règle indisponible") + ") : ses retraits et sa valeur nette sont comptés sans impôt"));
+    if (vue === "net" && M.autres0 > 0) avert.push(AUTRES_BIENS(M.autres0));
     if (M.plafondDepasse) avert.push("le plafond de versements du PEA est dépassé : les versements suivants y sont maintenus faute d'autre enveloppe ouverte");
     const resume = vueTitre(M, vues[vue], euros, vue, couv.couverture, existant, futur);
     const retroRes = retroDuModele(M, o);
@@ -1535,7 +1547,7 @@
 
   return {
     GRAINE, versionModele, CLASSES_TIREES, HYPOTHESES, EVENEMENTS, PERCENTILES, PLAN_MAX_OCTETS, PLAN_PARAMETRES_MAX_OCTETS, PLAN_TOTAL_MAX_OCTETS, octetsJsonb: O.octetsJsonb,
-    preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, retroDuModele, historiquePourRetro: Dn.historiquePourRetro, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
+    preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, retroDuModele, texteProbabilite, historiquePourRetro: Dn.historiquePourRetro, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
     fiscaliteSortie: F.fiscaliteSortie, amortissement: C.amortissement, annuite: C.annuite, planPret: C.planPret, ptz: C.ptz, taeg: C.taeg,
     capaciteEmprunt: (data, opts) => D.Immo.capaciteEmprunt(data, opts), capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
     rendementAttendu, capitaliser, centile: O.centile, _executer,

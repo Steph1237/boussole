@@ -8,8 +8,8 @@
    (effet d'un événement sur la médiane à l'horizon : deux modèles, mêmes tirages).
 
    Conventions honnêtes :
-   - Le moteur compte le patrimoine net sans les biens d'usage et d'entreprise (Calc.patrimoine.usage / .entreprise) ; la courbe reste égale au patrimoine net affiché
-     partout ailleurs : ces biens sont ajoutés, maintenus à leur valeur d'aujourd'hui (comme l'ancien cône), et la feuille « Comment c'est calculé » le dit.
+   - Le moteur compte lui-même les biens d'usage et d'entreprise dans le patrimoine net (compartiment « autres biens », 0 % réel, dit dans ses avertissements) : la courbe part du
+     patrimoine net affiché sans décalage. Le recalage sur le dernier point observé ne subsiste que comme contrôle de cohérence (écart de plus de 1 €), et il est dit.
    - Les réglages du graphe sont locaux : rien n'est enregistré (lecture seule).
    Dépendances (deps, sinon globales ou modules voisins sous Node) : Projection, Calc, BilanCalc, Historique, SerieNet, Marche, Store. */
 (function (root, factory) {
@@ -84,14 +84,15 @@
     return { points, drapeaux, decalage, euros_constants: euros === "constants" ? constants : false,
       note: euros === "constants" && !constants ? "Le passé est en euros courants : l'indice des prix ne couvre pas toute la période." : "" };
   }
-  /** Valeur à ajouter à toutes les séries du moteur pour qu'elles partent exactement du dernier point observé : les biens d'usage et d'entreprise, que le moteur ne compte pas
-      dans le patrimoine net, maintenus à leur valeur d'aujourd'hui. 0 pour une autre vue que « net ». */
+  /** Contrôle de cohérence : le moteur compte désormais lui-même les biens d'usage et d'entreprise dans le net, donc sa série part du patrimoine net affiché. Si l'écart avec le dernier
+      point observé dépasse 1 € (autre cause : donnée absente d'un côté), la courbe est recalée sur le point observé et l'écart est dit. 0 sinon et pour une autre vue que « net ». */
   function ajustementAutresBiens(resultat, passe, vue) {
     if (vue !== "net" || !passe || !passe.points.length || !resultat) return 0;
     const v = resultat.vues && resultat.vues[vue] ? resultat.vues[vue].p50[0] : null;
     const dernier = passe.points[passe.points.length - 1];
     if (v == null || dernier.date !== resultat.today) return 0;
-    return dernier.valeur - v;
+    const ecart = dernier.valeur - v;
+    return Math.abs(ecart) > 1 ? ecart : 0;
   }
 
   /* ---------- jalons, objectifs ---------- */
@@ -155,7 +156,7 @@
     if (x.crise && !x.crise.indisponible) futur.crise = { label: x.crise.label, debut: x.crise.debut, valeurs: decal(x.crise.valeurs, a) };
     if (x.avenirs) futur.avenirs = x.avenirs.map(t => decal(t, a));
     const avert = tab(resultat.avertissements).concat(tab(x.notes));
-    if (a && vue === "net") avert.push("Tes biens d'usage et d'entreprise (" + Math.round(a).toLocaleString("fr-FR") + " €) sont ajoutés au patrimoine net du moteur et maintenus à leur valeur d'aujourd'hui, comme dans le patrimoine net affiché ailleurs.");
+    if (a && vue === "net") avert.push("Contrôle de cohérence : le patrimoine net du moteur différait de " + Math.round(Math.abs(a)).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ") + " € du patrimoine net affiché ; la courbe a été recalée sur ce dernier.");
     if (x.crise && x.crise.indisponible) avert.push(...tab(x.crise.avertissements));
     return Object.assign(base, { etat: "pret", futur, jalons: jalonsDe(resultat, S), objectifs: objectifsDe(resultat, S),
       capacite: { base: resultat.capacite_base, par_periode: resultat.capacite_par_periode }, capacite_source: resultat.capacite_source, capacite_periode: resultat.capacite_periode,
