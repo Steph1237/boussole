@@ -18,11 +18,13 @@ const TEXTE = [
   ["--st-good", "--st-good-bg"], ["--st-watch", "--st-watch-bg"], ["--st-work", "--st-work-bg"], ["--st-todo", "--st-todo-bg"],
   ["--sel-ink", "--sel-bg"], ["--me-ink", "--me"],
   // anciens noms (alias) : encore employés par les feuilles des modules
+  // statuts d'un objectif sur le graphe (mot d'une cible écrit sur le tracé, sur la surface ou le fond d'app)
+  ["--ms-ok", "--bg"], ["--ms-ok", "--surface"], ["--ms-track", "--bg"], ["--ms-track", "--surface"], ["--ms-late", "--bg"], ["--ms-late", "--surface"], ["--ms-off", "--bg"], ["--ms-off", "--surface"], ["--ms-idle", "--bg"], ["--ms-idle", "--surface"],
   ["--accent", "--surface"], ["--accent", "--accent-soft"], ["--good", "--surface"], ["--good", "--good-soft"],
   ["--warn", "--surface"], ["--warn", "--warn-soft"], ["--crit", "--surface"], ["--crit", "--crit-soft"],
 ];
 /** Éléments graphiques (courbes, jalons, anneaux, séries) : ≥ 3:1 contre la surface (WCAG 1.4.11). */
-const GRAPHIQUES = ["--dv-observed", "--dv-recon", "--dv-median", "--ms-goal", "--ms-credit", "--ms-life", "--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--focus", "--brand", "--st-good", "--st-watch", "--st-work"];
+const GRAPHIQUES = ["--dv-observed", "--dv-recon", "--dv-median", "--ms-goal", "--ms-credit", "--ms-life", "--ms-ok", "--ms-track", "--ms-late", "--ms-off", "--ms-idle", "--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s8", "--focus", "--brand", "--st-good", "--st-watch", "--st-work"];
 
 const resolu = (t, nom, fond) => {
   const c = couleur("var(" + nom + ")", t);
@@ -72,7 +74,7 @@ test("thème sombre : le bloc prefers-color-scheme et le bloc [data-theme=\"dark
   assert.match(THEME, /\[data-theme="dark"\]\{\s*color-scheme:dark/);
   assert.match(THEME, /:not\(\[data-theme="light"\]\)\)?\{\s*color-scheme:dark/);
   // aucune couleur de rôle ne reste figée au clair : les rôles qui changent de valeur en sombre sont tous redéfinis
-  for (const k of ["--bg", "--surface", "--sunk", "--ink", "--muted", "--line", "--brand", "--brand-ink", "--pos", "--neg", "--st-good", "--st-good-bg", "--st-watch", "--st-watch-bg", "--st-work", "--st-work-bg", "--st-todo", "--st-todo-bg", "--focus", "--ms-goal", "--ms-credit", "--ms-life", "--fan-in"])
+  for (const k of ["--bg", "--surface", "--sunk", "--ink", "--muted", "--line", "--brand", "--brand-ink", "--pos", "--neg", "--st-good", "--st-good-bg", "--st-watch", "--st-watch-bg", "--st-work", "--st-work-bg", "--st-todo", "--st-todo-bg", "--focus", "--ms-goal", "--ms-credit", "--ms-life", "--ms-off", "--fan-in"])
     assert.ok(k in attr, k + " non redéfini en sombre");
 });
 

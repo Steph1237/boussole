@@ -23,7 +23,13 @@
        capacite_demain?: { mois, montant_empruntable, budget_achat_par_taux, taux, duree_ans, apport, phrase } (mode "capacite"),
        phrase, decomposition_phrase, garde_fous, evenements_pris_en_compte, question_evenements, hypotheses, couverture, avertissements, a_completer,
        version_modele, graine, chemins, progressif?: bool, plans?: [{ id, cree_le, raison }], variantes?: [{ id, nom }], crises?: [{ cle, label }] }
-   Tous les textes sont au tutoiement ; toute donnée est échappée. Une projection n'est pas une promesse. */
+   Tous les textes sont au tutoiement ; toute donnée est échappée. Une projection n'est pas une promesse.
+
+   Polissage v3 : les objectifs portent la couleur de leur statut (atteint / en avance = vert, dans les temps = marque, en retard = ambre, hors de portée = rouge sourdine : jetons --ms-*), un
+   anneau de progression (part déjà de côté) autour de leur icône, et, survolés ou sélectionnés, leur cible en ligne pointillée, un halo sur la médiane et une puce « N chances sur 10 » ; les autres
+   événements ont une teinte discrète par famille. L'honnêteté sur l'épargne (alerteEpargne) ne pousse plus le tracé : puce ambre dans l'en-tête de la carte et du paysage (feuille « À savoir »),
+   carte « À savoir » en tête de l'onglet Lecture sur ordinateur ; une fenêtre de relevés sous 6 mois est dite (« seulement 2 mois de relevés ») avec l'invitation à donner d'anciens relevés. La bande
+   « épargne par mois » a une échelle robuste (echelleBande) : un mois passé isolé est coupé et marqué « ↧ −3 680 € », les marches du futur restent lisibles. */
 (function (root, factory) {
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -123,6 +129,24 @@
   const motProba = p => (p == null || !fini(p) ? null : p >= 0.8 ? "probable" : p >= 0.5 ? "incertain" : "peu probable");
   const TON_MOT = { "probable": "good", "incertain": "watch", "peu probable": "work" };
   const STATUT_OBJ = { atteint: ["Atteint", "good"], avance: ["En avance", "good"], dans_les_temps: ["Dans les temps", "good"], retard: ["En retard", "watch"], hors_portee: ["Hors de portée", "work"], hors_horizon: ["Au-delà de la projection", "todo"] };
+  /** Couleur d'un objectif sur le graphe (anneau, ligne de cible, halo) : atteint et en avance = vert (ok), dans les temps = marque (track), en retard = ambre (late), hors de portée = rouge sourdine (off),
+      sans verdict = muted (idle). Les jetons sont --ms-ok, --ms-track, --ms-late, --ms-off, --ms-idle (theme.css) ; le MOT accompagne toujours la couleur (info-bulle, liste, feuille). Sans statut du
+      moteur, le mot de probabilité en tient lieu (probable → track, incertain → late, peu probable → off). → { cle, mot, ton }. */
+  const TON_STATUT = { atteint: ["Atteint", "ok"], avance: ["En avance", "ok"], dans_les_temps: ["Dans les temps", "track"], retard: ["En retard", "late"], hors_portee: ["Hors de portée", "off"], hors_horizon: ["Au-delà de la projection", "idle"] };
+  function statutObjectif(o) {
+    if (o && TON_STATUT[o.statut]) return { cle: o.statut, mot: TON_STATUT[o.statut][0], ton: TON_STATUT[o.statut][1] };
+    const m = o ? motProba(o.probabilite) : null;
+    if (m) return { cle: "proba", mot: cap1(m), ton: m === "probable" ? "track" : m === "incertain" ? "late" : "off" };
+    return { cle: "inconnu", mot: "Sans verdict", ton: "idle" };
+  }
+  /** Part de la cible déjà de côté (0 à 1) : « déjà » ÷ cible ; 1 pour un objectif atteint ; null quand elle n'est pas connue (l'anneau est alors pointillé : jamais une progression inventée). */
+  function progressionObjectif(o) {
+    if (!o) return null;
+    if (o.statut === "atteint") return 1;
+    return fini(o.deja) && fini(o.cible) && +o.cible > 0 ? clamp(+o.deja / +o.cible, 0, 1) : null;
+  }
+  /** Ligne de statut d'un objectif pour l'info-bulle et la liste : « En retard · 3 chances sur 10 ». */
+  function statutLigne(o) { const s = statutObjectif(o); return s.mot + (o && o.probabilite != null && fini(o.probabilite) && o.statut !== "hors_horizon" ? " · " + chancesTxt(o.probabilite) : ""); }
 
   /* ---------- fenêtres, domaine du temps, granularité ---------- */
   const FENETRES = [
@@ -632,40 +656,79 @@
     if (P && typeof P.phrase === "function") return P.phrase(section, contexte);
     return "Boussole : aide-moi à compléter mes " + (section === "revenus" ? "revenus" : section) + ". Concerne : " + contexte + " Commence par demarrer_session, puis utilise les formulaires interactifs Boussole plutôt que des questions en texte.";
   }
-  /** Honnêteté sur l'épargne projetée : jamais un futur d'épargne négative en silence. Trois cas, du plus grave au moins grave :
-      1. la capacité d'épargne de départ est négative ou nulle (la projection suppose qu'elle continue) ;
+  /** En dessous de ce nombre de mois de relevés, l'épargne « constatée » est une mesure fragile : le dire, et proposer d'importer d'anciens relevés (HIS2). */
+  const SEUIL_RELEVES_MOIS = 6;
+  const moisReleves = n => n + " mois";
+  /** Honnêteté sur l'épargne projetée : jamais un futur d'épargne négative en silence. Quatre cas, du plus grave au moins grave :
+      1. la capacité d'épargne de départ est négative ou nulle (la projection suppose qu'elle continue) ; dite « sur seulement N mois de relevés » quand la fenêtre observée est sous 6 mois ;
       2. la médiane finit sous la ligne « sans versement » (les événements prévus coûtent plus que l'épargne ne rapporte) ;
-      3. l'épargne par mois passe sous zéro plus tard (événement prévu).
-      → { cle, niveau: "alerte", texte, detail?, section, contexte } ou null. */
+      3. l'épargne par mois passe sous zéro plus tard (événement prévu) ;
+      4. l'épargne constatée est positive mais ne repose que sur quelques mois de relevés (< 6).
+      → { cle, niveau: "alerte" | "info", titre (puce : « Hypothèse : épargne négative »), resume (UNE phrase, carte « À savoir »), texte (explication longue), detail?, section, contexte,
+          courte (fenêtre < 6 mois), mois, releves?: { section, contexte, libelle } (proposition d'importer d'anciens relevés) } ou null. */
   function alerteEpargne(M) {
     if (!M || M.mode === "capacite" || !M.futur) return null;
     const B = M.brut || {}, cb = M.capacite && M.capacite.base ? M.capacite.base : null, retenue = cb && fini(cb.retenue) ? +cb.retenue : null;
     const emploi = M.jalons.filter(j => j.t > M.today && /emploi/.test(String(j.type))).sort((a, b) => a.t - b.t)[0] || null;
     const gf = tab(B.garde_fous).find(g => g && g.cle === "ecart_capacite" && g.texte);
+    const det = cb && cb.source === "reel" ? cb.constatee_detail || null : null, nReleves = det && fini(det.mois) ? Math.round(+det.mois) : null;
+    const courte = nReleves != null && nReleves < SEUIL_RELEVES_MOIS;
+    const releves = courte ? { section: "budget", contexte: "mes anciens relevés bancaires (plus de " + SEUIL_RELEVES_MOIS + " mois) pour mesurer mon épargne", libelle: "Donne tes anciens relevés à Claude pour une mesure plus fiable" } : null;
+    const base = { courte, mois: nReleves, releves };
     if (retenue != null && retenue <= 0) {
-      const mot = retenue < 0 ? "négative" : "nulle", det = cb.constatee_detail || null;
+      const mot = retenue < 0 ? "négative" : "nulle";
       const suite = emploi ? " Ton changement d'emploi de " + dMois(emploi.t) + " est pris en compte à partir de cette date." : "";
       if (cb.source === "reel") {
-        const mois = det && fini(det.mois) ? +det.mois : 12;
+        const mois = nReleves != null ? nReleves : 12;
         const cause = det && fini(det.revenus) && fini(det.depenses) && det.depenses > 0 ? (det.revenus < 0.5 * det.depenses ? " (période sans salaire)" : " (dépenses supérieures aux revenus)") : "";
-        return { cle: "epargne_negative", niveau: "alerte", texte: "Ton épargne constatée sur " + mois + " mois est " + mot + cause + ". La projection suppose qu'elle continue ainsi." + (emploi ? suite : " Déclare ton nouvel emploi à Claude pour la corriger."),
-          detail: gf ? gf.texte : null, section: "revenus", contexte: "mon nouvel emploi (date de début et salaire net) et mes revenus actuels" };
+        const fenetre = courte ? "sur seulement " + moisReleves(mois) + " de relevés" : "sur " + mois + " mois";
+        const texte = "Ton épargne constatée " + fenetre + " est " + mot + cause + ". La projection suppose qu'elle continue ainsi." + (emploi ? suite : " Déclare ton nouvel emploi à Claude pour la corriger.") +
+          (courte ? " Avec si peu de relevés, la mesure est fragile." : "");
+        return Object.assign({ cle: "epargne_negative", niveau: "alerte", titre: "Hypothèse : épargne négative", resume: "Épargne " + mot + " (" + fMoisU(retenue) + ") " + (courte ? "mesurée " : "constatée ") + fenetre + " : la projection suppose qu'elle continue.",
+          texte, detail: gf ? gf.texte : null, section: "revenus", contexte: "mon nouvel emploi (date de début et salaire net) et mes revenus actuels" }, base);
       }
-      return { cle: "epargne_negative", niveau: "alerte", texte: "Ton épargne " + (cb.source === "montant" ? "fixée" : "prévue au budget") + " est " + mot + ". La projection suppose qu'elle continue ainsi." + (emploi ? suite : " Complète tes revenus et ton budget avec Claude pour la corriger."),
-        detail: null, section: "revenus", contexte: "mes revenus et mon budget mensuel" };
+      return Object.assign({ cle: "epargne_negative", niveau: "alerte", titre: "Hypothèse : épargne négative", resume: "Épargne " + (cb.source === "montant" ? "fixée" : "prévue au budget") + " " + mot + " (" + fMoisU(retenue) + ") : la projection suppose qu'elle continue.",
+        texte: "Ton épargne " + (cb.source === "montant" ? "fixée" : "prévue au budget") + " est " + mot + ". La projection suppose qu'elle continue ainsi." + (emploi ? suite : " Complète tes revenus et ton budget avec Claude pour la corriger."),
+        detail: null, section: "revenus", contexte: "mes revenus et mon budget mensuel" }, base, { courte: false, releves: null });
     }
     const F = M.futur, ex = F.existant && F.existant.p50;
     if (ex) {
       let k = -1; for (let i = ex.length - 1; i >= 0; i--) if (ex[i] != null) { k = i; break; }
       if (k > 0 && F.p50[k] != null && F.p50[k] < ex[k] - 1000) {
-        return { cle: "mediane_sous_sans_versement", niveau: "alerte", texte: "À l'horizon, ta médiane (" + fK(F.p50[k]) + ") finit sous la ligne « sans versement » (" + fK(ex[k]) + ") : les événements prévus coûtent plus que ton épargne ne rapporte. Vérifie-les avec Claude.",
-          detail: null, section: "foyer", contexte: "mes événements de vie à venir (changement d'emploi, enfant, achat)" };
+        return Object.assign({ cle: "mediane_sous_sans_versement", niveau: "alerte", titre: "Hypothèse : événements coûteux", resume: "À l'horizon, ta médiane finit sous la ligne « sans versement » : les événements prévus coûtent plus que ton épargne ne rapporte.",
+          texte: "À l'horizon, ta médiane (" + fK(F.p50[k]) + ") finit sous la ligne « sans versement » (" + fK(ex[k]) + ") : les événements prévus coûtent plus que ton épargne ne rapporte. Vérifie-les avec Claude.",
+          detail: null, section: "foyer", contexte: "mes événements de vie à venir (changement d'emploi, enfant, achat)" }, base);
       }
     }
     const neg = M.capacite && M.capacite.periodes.find(p => p.t0 >= M.today && p.montant < 0);
-    if (neg) return { cle: "epargne_future_negative", niveau: "alerte", texte: "À partir de " + dMois(neg.t0) + ", ton épargne par mois passe sous zéro (" + fMoisU(neg.montant) + (neg.raison ? " : " + neg.raison : "") + ").",
-      detail: null, section: "foyer", contexte: "mes événements de vie à venir et mes revenus" };
+    if (neg) return Object.assign({ cle: "epargne_future_negative", niveau: "alerte", titre: "Hypothèse : épargne négative dès " + dMois(neg.t0), resume: "À partir de " + dMois(neg.t0) + ", ton épargne par mois passe sous zéro (" + fMoisU(neg.montant) + ").",
+      texte: "À partir de " + dMois(neg.t0) + ", ton épargne par mois passe sous zéro (" + fMoisU(neg.montant) + (neg.raison ? " : " + neg.raison : "") + ").",
+      detail: null, section: "foyer", contexte: "mes événements de vie à venir et mes revenus" }, base);
+    if (courte && retenue != null) {
+      return Object.assign({ cle: "historique_court", niveau: "info", titre: "Hypothèse : épargne sur " + moisReleves(nReleves), resume: "Épargne de " + fMoisU(retenue) + " mesurée sur seulement " + moisReleves(nReleves) + " de relevés : une mesure fragile.",
+        texte: "Ton épargne constatée (" + fMoisU(retenue) + ") ne repose que sur " + moisReleves(nReleves) + " de relevés : c'est une mesure fragile, et la projection suppose qu'elle continue ainsi.",
+        detail: gf ? gf.texte : null, section: "budget", contexte: "mon budget mensuel et mes revenus" }, base);
+    }
     return null;
+  }
+  /** Carte « À savoir » (plein écran ordinateur, tête de l'onglet Lecture) : icône, UNE phrase, « Compléter avec Claude » et « Détails » ; l'explication longue (et, sur une fenêtre de relevés
+      courte, l'invitation à donner d'anciens relevés) se déplie sous le bouton. o = { id, ouvert, claude(question, libelle) → HTML d'un lien }. */
+  function alerteCarteHtml(a, o) {
+    const x = o || {}, cl = typeof x.claude === "function" ? x.claude : () => "", id = x.id || "gp-as";
+    let h = '<span class="gp-al-i" aria-hidden="true">' + ICO.alerte + '</span><div class="gp-as-c"><div class="gp-as-k">À savoir</div><p class="gp-as-p" data-al="' + esc(a.cle) + '">' + esc(a.resume) + "</p>";
+    if (a.releves) h += '<p class="gp-as-r" data-as-releves>' + cl(phraseClaude(a.releves.section, a.releves.contexte), a.releves.libelle) + "</p>";
+    h += '<div class="gp-as-a">' + cl(phraseClaude(a.section, a.contexte), "Compléter avec Claude") +
+      '<button type="button" class="gp-as-btn" data-act="as-detail" aria-expanded="' + !!x.ouvert + '" aria-controls="' + esc(id) + 'd">Détails</button></div>' +
+      '<div class="gp-as-d" id="' + esc(id) + 'd" data-as-d' + (x.ouvert ? "" : " hidden") + "><p>" + esc(a.texte) + "</p>" + (a.detail ? '<p class="gp-al-d">' + esc(a.detail) + "</p>" : "") + "</div></div>";
+    return h;
+  }
+  /** Contenu de la feuille « À savoir » (puce de la carte et du plein écran paysage) : la phrase, l'explication complète, les gestes (Compléter avec Claude ; d'anciens relevés quand la fenêtre est courte). */
+  function alerteFeuilleHtml(a, claude) {
+    const cl = typeof claude === "function" ? claude : () => "";
+    let h = '<p data-al="' + esc(a.cle) + '">' + esc(a.texte) + "</p>" + (a.detail ? '<p class="gp-sh-note">' + esc(a.detail) + "</p>" : "");
+    h += '<div class="gp-sh-acts">' + cl(phraseClaude(a.section, a.contexte), "Compléter avec Claude") + "</div>";
+    if (a.releves) h += '<p class="gp-sh-note" data-as-releves>' + cl(phraseClaude(a.releves.section, a.releves.contexte), a.releves.libelle) + "</p>";
+    return h;
   }
   /** Le jalon suivant aujourd'hui (le plus proche dans le futur) : null s'il n'y en a pas. */
   const prochainJalon = M => M.jalons.find(j => j.t > M.today && !estObjectif(j)) || M.jalons.find(j => j.t > M.today) || null;
@@ -688,13 +751,16 @@
     return parts.join(" · ");
   }
   const chip = (txt, ton) => '<span class="gp-chip ' + (ton || "todo") + '">' + esc(txt) + "</span>";
+  /** Puce du statut d'un objectif, d'une paire texte/fond sûre en AA (les mêmes que les puces de verdict : good, brand, watch, work, todo) : ok → good, track → brand, late → watch, off → work, idle → todo. */
+  const TON_PUCE = { ok: "good", track: "brand", late: "watch", off: "work", idle: "todo" };
+  const chipStatut = st => chip(st.mot, TON_PUCE[st.ton]);
   /** Ligne d'un objectif à une date (mot + couleur + probabilité, jamais la couleur seule). */
   function objectifLigne(M, o) {
     const mot = motProba(o.probabilite), st = STATUT_OBJ[o.statut] || null;
     const ton = mot ? TON_MOT[mot] : st ? st[1] : "todo";
     const verdict = mot || (st ? st[0].toLowerCase() : "");
     let h = '<div class="gp-ro-goal">' + chip(cap1(verdict || "sans verdict"), ton) + " <b>" + esc(plat(o.nom) || "Objectif") + " " + esc(fK(o.cible, o.cible % 1000 ? 1 : 0)) + "</b> : ";
-    if (o.probabilite != null) h += esc(chancesTxt(o.probabilite)) + " d'atteindre la cible à l'échéance (" + esc(dMois(o.t)) + ")";
+    if (o.probabilite != null) h += esc(chancesTxt(o.probabilite)) + " d'atteindre la cible à l'échéance (" + esc(dMois(o.t)) + ")" + (o.statut && o.statut !== "hors_horizon" ? " · " + esc(statutObjectif(o).mot.toLowerCase()) : "");
     else h += esc(o.statut === "hors_horizon" ? "échéance au-delà de l'horizon de la projection : aucune probabilité calculée" : "pas de probabilité calculée");
     if (fini(o.valeur_deterministe)) h += ". Au rythme médian prévu : " + esc(fK(o.valeur_deterministe));
     return h + ".</div>";
@@ -832,6 +898,10 @@
   /** Catégorie d'un événement pour les filtres de l'onglet Événements : toi (vie, crédits), objectifs, fiscal (calendrier des enveloppes), journal. */
   const categorieJalon = j => (estObjectif(j) ? "objectifs" : j.source === "journal" ? "journal" : j.source === "calendrier" ? "fiscal" : "toi");
   const CATEGORIES = [["toi", "Toi"], ["objectifs", "Objectifs"], ["fiscal", "Fiscal"], ["journal", "Journal"]];
+  /** Famille de teinte d'un type d'icône : une teinte discrète par famille, posée par le CSS d'après `data-icone` (jetons --ms-life pour la vie, --ms-credit pour crédit et logement, --s8 fiscal, --s5 journal,
+      --s6 crise ; l'encre pour « autre »). Un objectif prend la couleur de son statut, pas celle d'un type. */
+  const FAMILLE_ICONE = { enfant: "vie", emploi: "vie", credit: "credit", maison: "credit", fiscal: "fiscal", journal: "journal", crise: "crise", cible: "but" };
+  const familleIcone = nom => FAMILLE_ICONE[nom] || "autre";
   const icoH = (nom, sz) => '<svg class="gp-i" width="' + (sz || 16) + '" height="' + (sz || 16) + '" viewBox="-10 -10 20 20" aria-hidden="true" focusable="false">' + (ICONES_JALON[nom] || "") + "</svg>";
   const icone = j => icoH(iconeDe(j), 16);
   const icoG = (nom, x, y, sc) => '<g class="gp-i" transform="translate(' + x.toFixed(1) + " " + y.toFixed(1) + ") scale(" + (sc || 0.6) + ')">' + (ICONES_JALON[nom] || "") + "</g>";
@@ -843,6 +913,7 @@
     aide: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.6 2.2c-.8.5-1.2 1-1.2 1.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>',
     alerte: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l9.5 16.5h-19z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>',
     moins: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M3 9h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
+    info: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/><circle cx="8" cy="4.8" r="1" fill="currentColor"/></svg>',
   };
 
   /* ---------- tableau de données (équivalent accessible de la courbe) ---------- */
@@ -949,6 +1020,7 @@
       if (o) {
         const mot = motProba(o.probabilite), st = STATUT_OBJ[o.statut], ton = mot ? TON_MOT[mot] : st ? st[1] : "todo";
         h += cleLigne("Verdict", chip(cap1(mot || (st ? st[0].toLowerCase() : "sans verdict")), ton));
+        h += cleLigne("Statut", chipStatut(statutObjectif(o)));
         h += cleLigne("Cible", esc(fEur(o.cible) + " en " + dMois(o.t)));
         if (fini(o.deja)) h += cleLigne("Déjà de côté", esc(fEur(o.deja) + " (" + Math.round(o.deja / o.cible * 100) + NB + "%)"));
         h += cleLigne("Chances d'atteindre la cible", o.probabilite != null ? esc(chancesTxt(o.probabilite)) : "pas de probabilité (échéance au-delà de la projection)");
@@ -966,9 +1038,9 @@
       const dedans = j.t >= dom.debut && j.t <= dom.fin;
       const o = estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null;
       const mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut];
-      const date = estObjectif(j) ? "échéance " + dMois(j.t) + (o && o.probabilite != null ? " · " + chancesTxt(o.probabilite) : "") : (j.tFin ? dMois(j.t) + " → " + dMois(j.tFin) : dMois(j.t)) + " · " + relatif(M.today, j.t);
+      const date = estObjectif(j) ? "échéance " + dMois(j.t) + " · " + statutLigne(o) : (j.tFin ? dMois(j.t) + " → " + dMois(j.tFin) : dMois(j.t)) + " · " + relatif(M.today, j.t);
       const eff = estObjectif(j) ? chip(cap1(mot || (st ? st[0] : "—")), mot ? TON_MOT[mot] : st ? st[1] : "todo") : effetMensuel(j) != null && j.source !== "calendrier" ? esc(fMois(effetMensuel(j))) : "";
-      return '<li class="gp-jrow"><button type="button" class="gp-evrow' + (dedans ? "" : " out") + '" data-jump="' + esc(j.id) + '" aria-current="' + sel.includes(j.id) + '"><span class="gp-pn ic">' + icoH(iconeDe(j), 14) + '</span><span class="gp-ev-m"><span class="gp-ev-t">' + esc(j.titre) +
+      return '<li class="gp-jrow"><button type="button" class="gp-evrow' + (dedans ? "" : " out") + '" data-jump="' + esc(j.id) + '" aria-current="' + sel.includes(j.id) + '"><span class="gp-pn ic ' + (o ? "gl st-" + statutObjectif(o).ton : "gp-t-" + familleIcone(iconeDe(j))) + '">' + icoH(iconeDe(j), 14) + '</span><span class="gp-ev-m"><span class="gp-ev-t">' + esc(j.titre) +
         '</span><span class="gp-ev-d num">' + esc(date) + (dedans ? "" : " · hors fenêtre") + '</span></span><span class="gp-ev-e num">' + eff + '</span></button><button type="button" class="gp-jdet" data-jdet="' + esc(j.id) + '" aria-label="Détail : ' + esc(j.titre) + '">›</button></li>';
     });
     return '<p class="gp-sh-meta">Toucher une ligne place la lecture à cette date ; › ouvre le détail.</p><ol class="gp-evl">' + rows.join("") + "</ol>";
@@ -1192,7 +1264,7 @@
     /* jalons */
     const jalonsVus = M.jalons.filter(j => !etat.cacherObjectifs || !estObjectif(j) || etat.cacherObjectifs(j) === false);
     const geoJ = P.pins ? rail(M, jalonsVus, dom, X, Y, { B, W, R, P, mesurer, F, aFutur, railH, id, railTop: B + AXE + ECART_PISTE }) : marqueursCompacts(M, jalonsVus, dom, X, Y, { B, P, F, aFutur });
-    s += geoJ.svg;
+    s += '<g data-goal aria-hidden="true"></g>' + geoJ.svg;
     if (P.compact && C.avenirs && hopDots) s += '<g aria-hidden="true">' + hopDots + "</g>";
     s += '<g data-hop aria-hidden="true"></g><g data-sel></g>';
     s += '<g class="gp-xh" data-xh aria-hidden="true" style="opacity:0"><g data-xv><line class="gp-xh-v" x1="0" x2="0" y1="' + T + '" y2="' + (B + (P.pins ? railH : 0)) + '"/></g><g data-xhh><line class="gp-xh-h" x1="' + L + '" x2="' + f1(R) + '" y1="0" y2="0"/></g><g data-xs></g><g data-xd><circle r="11" class="gp-glow"/><circle data-xdot class="gp-dot-brand" r="5"/></g><g data-xp><g class="gp-pill" data-xpill><rect x="' + (R + 3) + '" y="-10" width="' + (W - R - 3) + '" height="20" rx="10"/><text x="' + f1((R + 3 + W) / 2) + '" y="4" text-anchor="middle"></text></g></g></g>';
@@ -1274,17 +1346,56 @@
   /** Icône d'un événement ou d'un groupe d'événements rapprochés, posée en (x, y) : l'icône du TYPE (1,5 px de trait, encre ; pétrole au survol et à la sélection), un anneau de
       couleur pour un objectif seul, une petite pastille du nombre pour un groupe. Aucun numéro, aucun texte : le lien avec la liste se fait par la même icône et par la synchro du réticule. */
   function pinSvg(M, g, x, y, sc, fond) {
-    const n = g.jalons.length, j = g.jalons[0], ids = g.jalons.map(z => z.id).join(" "), o = n === 1 && estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null;
-    const mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut], ton = o ? (mot ? TON_MOT[mot] : st ? st[1] : "todo") : null, rr = Math.round(10 * sc + 3);
+    const n = g.jalons.length, j = g.jalons[0], ids = g.jalons.map(z => z.id).join(" "), seul = n === 1 && estObjectif(j), o = seul ? M.objectifs.find(z => z.id === j.objectifId) : null;
+    const st = seul ? statutObjectif(o) : null, rr = Math.round(10 * sc + 3);
     /* un groupe prend l'icône du type le plus fréquent (à égalité, du premier) */
     const compte = {}; g.jalons.forEach(z => { const k = iconeDe(z); compte[k] = (compte[k] || 0) + 1; });
     const nom = n === 1 ? iconeDe(j) : Object.keys(compte).sort((a, b) => (compte[b] - compte[a]) || (iconeDe(g.jalons[0]) === a ? -1 : 1))[0];
-    let s = '<g class="gp-pin gp-pin-i' + (n > 1 ? " gp-pin-g" : "") + '" data-ev="' + esc(ids) + '" data-icone="' + nom + '">';
+    /* un objectif seul prend la couleur de son statut (classe st-ok|track|late|off|idle) ; les autres, la teinte de leur famille d'icône (CSS, d'après data-icone) */
+    let s = '<g class="gp-pin gp-pin-i' + (n > 1 ? " gp-pin-g" : "") + (st ? " gp-pin-b st-" + st.ton : "") + '" data-ev="' + esc(ids) + '" data-icone="' + nom + '">';
     s += '<circle class="gp-pin-bg' + (fond ? " plein" : "") + '" cx="' + F1(x) + '" cy="' + F1(y) + '" r="' + rr + '"/>';
-    if (o) s += '<circle class="gp-ring ' + ton + '" cx="' + F1(x) + '" cy="' + F1(y) + '" r="' + (rr + 2) + '"/>';
+    if (st) s += anneauObjectif(x, y, rr + 2.5, st, progressionObjectif(o), 2);
     s += icoG(nom, x, y, sc);
     if (n > 1) s += '<g class="gp-badge"><circle cx="' + F1(x + rr * 0.8) + '" cy="' + F1(y - rr * 0.8) + '" r="8"/><text x="' + F1(x + rr * 0.8) + '" y="' + F1(y - rr * 0.8 + 3.5) + '" text-anchor="middle">' + (n > 99 ? "99+" : n) + "</text></g>";
     return s + "</g>";
+  }
+  /** Anneau de progression d'un objectif autour de son icône : un fond d'anneau (couleur du statut, très atténuée) et l'arc de la part déjà de côté (du haut, dans le sens des aiguilles d'une montre) ;
+      pas de part connue : anneau pointillé (jamais une progression inventée). Les traits portent `gp-ring` et la couleur du statut (`st-ok|track|late|off|idle`). */
+  function anneauObjectif(x, y, r, st, pct, w) {
+    const c = ' cx="' + F1(x) + '" cy="' + F1(y) + '" r="' + F1(r) + '" stroke-width="' + w + '"';
+    let s = '<circle class="gp-ring gp-ring-t st-' + st.ton + '"' + c + "/>";
+    if (pct == null) return s + '<circle class="gp-ring gp-ring-u st-' + st.ton + '"' + c + ' stroke-dasharray="1.6 3.2"/>';
+    if (pct > 0) s += '<circle class="gp-ring gp-ring-p st-' + st.ton + '" data-pct="' + Math.round(pct * 100) + '"' + c + ' pathLength="100" stroke-dasharray="' + (pct * 100).toFixed(1) + ' 100" transform="rotate(-90 ' + F1(x) + " " + F1(y) + ')"/>';
+    return s;
+  }
+  /** Cible d'un objectif posée sur la médiane à son échéance (petite cible et anneau de progression, couleur de son statut dans data-ton, lue par le CSS). */
+  function cibleSvg(M, j, x, y, id) {
+    const o = M.objectifs.find(z => z.id === j.objectifId), st = statutObjectif(o);
+    return '<g class="gp-tg" data-ton="' + st.ton + '"' + (id ? ' data-ev="' + esc(id) + '"' : ' aria-hidden="true"') + '><circle class="gp-tg-bg" cx="' + F1(x) + '" cy="' + F1(y) + '" r="5.5"/>' + anneauObjectif(x, y, 8, st, progressionObjectif(o), 2) +
+      '<circle class="gp-tg-c" cx="' + F1(x) + '" cy="' + F1(y) + '" r="3.6"/><circle class="gp-tg-d" cx="' + F1(x) + '" cy="' + F1(y) + '" r="1.4"/></g>';
+  }
+  /** Objectif survolé ou sélectionné : sa cible en ligne horizontale pointillée de la couleur de son statut (sur toute la largeur du tracé ; hors cadre, un repère au bord), un halo doux au point de la
+      médiane à l'échéance, et une courte puce « 7 chances sur 10 » (le mot du statut sans probabilité). Aucun changement d'échelle : le dessin se pose sur le graphe. `reduit` : mouvement réduit, pas de
+      pulsation. → { svg, ligne: { y, dedans }, halo: { x, y } | null, puce: { texte, x, y, w } }. */
+  function objectifSelectionSvg(M, o, geo, mesurer, reduit) {
+    const st = statutObjectif(o), F = M.futur, mes = mesurer || mesureApprox, x = geo.X(o.t), c = "gp-goal st-" + st.ton;
+    const yT = geo.Y(o.cible), dedans = yT >= geo.DT - 1 && yT <= geo.B + 1, yb = clamp(yT, geo.DT + 3, geo.B - 3);
+    let svg = '<g class="' + c + '" data-goal-sel="' + esc(o.id) + '" data-statut="' + st.cle + '">';
+    const cible = "cible " + fK(o.cible, o.cible % 1000 ? 1 : 0) + (dedans ? "" : yT < geo.DT ? " ↑" : " ↓");
+    svg += '<line class="gp-goal-l" x1="' + F1(geo.L) + '" x2="' + F1(geo.R) + '" y1="' + F1(yb) + '" y2="' + F1(yb) + '"' + (dedans ? "" : ' data-hors="1"') + "/>";
+    svg += '<text class="gp-halo gp-goal-t" x="' + F1(geo.R - 6) + '" y="' + F1(yT < geo.DT + 16 ? yb + 14 : yb - 5) + '" text-anchor="end">' + esc(cible) + "</text>";
+    let halo = null;
+    if (F && o.t >= M.today && o.t <= geo.dom.fin + 864e5) {
+      const i = plusProche(F.t, o.t), y = geo.Y(F.p50[i]);
+      halo = { x, y };
+      svg += '<circle class="gp-goal-halo' + (reduit ? "" : " pulse") + '" cx="' + F1(x) + '" cy="' + F1(y) + '" r="16"/><circle class="gp-goal-ring" cx="' + F1(x) + '" cy="' + F1(y) + '" r="10"/>';
+    }
+    const texte = o.probabilite != null && fini(o.probabilite) && o.statut !== "hors_horizon" ? chancesTxt(o.probabilite) : st.mot, w = Math.round(mes(texte, 600) + 18), hy = halo ? halo.y : yb;
+    let cy = hy - 40; if (cy < geo.DT + 2) cy = hy + 20;
+    cy = clamp(cy, geo.DT + 2, geo.B - 22);
+    const cx = clamp(x - w / 2, geo.L + 2, Math.max(geo.L + 2, geo.R - w - 2));
+    svg += '<g class="gp-goal-puce"><rect x="' + F1(cx) + '" y="' + F1(cy) + '" width="' + w + '" height="20" rx="10"/><text x="' + F1(cx + w / 2) + '" y="' + F1(cy + 14) + '" text-anchor="middle">' + esc(texte) + "</text></g></g>";
+    return { svg, ligne: { y: yb, dedans }, halo, puce: { texte, x: cx, y: cy, w } };
   }
   /** Carte : une icône de 12 px par événement sur la ligne de base (fusionnées avec leur nombre quand elles se touchent) et petites cibles sur la médiane pour les objectifs. */
   function marqueursCompacts(M, jalons, dom, X, Y, ctx) {
@@ -1299,7 +1410,7 @@
     });
     buts.forEach(j => {
       const i = aFutur ? plusProche(F.t, j.t) : -1, v = i >= 0 ? F.p50[i] : M.valeurAuj, x = X(j.t), y = v != null ? Y(v) : B - 20;
-      s += '<g class="gp-tg" data-ev="' + esc(j.id) + '"><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="5"/><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="1.8"/></g>';
+      s += cibleSvg(M, j, x, y, j.id);
       marqueurs.push({ x, y, jalons: [j], type: "objectif", r: 5 });
     });
     s += '<g data-flab></g></g>';
@@ -1327,13 +1438,28 @@
     /* cibles des objectifs sur la médiane */
     jalons.filter(j => estObjectif(j) && j.t >= M.today && j.t >= dom.debut && j.t <= dom.fin && ctx.aFutur).forEach(j => {
       const i = plusProche(ctx.F.t, j.t), x = X(j.t), y = Y(ctx.F.p50[i]);
-      s += '<g class="gp-tg" aria-hidden="true"><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="5"/><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="1.8"/></g>';
+      s += cibleSvg(M, j, x, y, null);
     });
     s += '<g data-flab></g>';
     return { svg: s, marqueurs, groupes: groupes.map(g => ({ x: g.x, jalons: g.jalons })) };
   }
 
   /* ---------- bande « épargne par mois » ---------- */
+  /** Échelle robuste de la bande « épargne par mois » : un mois passé isolé (−3 680 € quand les autres tournent autour de −400 €) ne doit pas écraser l'échelle au point d'aplatir les marches du futur.
+      Médiane et écart absolu médian (MAD) de toutes les valeurs visibles : un mois PASSÉ au-delà de médiane ± 3 × MAD (plancher : 10 % de la médiane, au moins 50 €) est coupé ; l'échelle est alors
+      celle des autres valeurs (zéro inclus). Une marche du FUTUR n'est jamais coupée (elle vient d'un événement que tu as déclaré : elle doit rester lisible). Sous 4 valeurs, ou sans passé : aucune coupe.
+      → { mn, mx, robuste, coupes: [{ v, cote: "bas" | "haut" }] (valeurs passées coupées, sans doublon) }. */
+  function echelleBande(passe, futur) {
+    const p = tab(passe).filter(fini).map(Number), f = tab(futur).filter(fini).map(Number), tous = p.concat(f);
+    const brut = { mn: Math.min(0, ...tous), mx: Math.max(0, ...tous), robuste: false, coupes: [] };
+    if (tous.length < 4 || !p.length) return brut;
+    const mediane = a => { const t = a.slice().sort((x, y) => x - y), n = t.length; return n % 2 ? t[(n - 1) / 2] : (t[n / 2 - 1] + t[n / 2]) / 2; };
+    const med = mediane(tous), mad = mediane(tous.map(v => Math.abs(v - med))), d = 3 * Math.max(mad, Math.abs(med) * 0.1, 50), lo = med - d, hi = med + d;
+    const gardees = f.concat(p.filter(v => v >= lo && v <= hi)), coupes = [];
+    p.forEach(v => { if ((v < lo || v > hi) && !coupes.some(c => c.v === v)) coupes.push({ v, cote: v < lo ? "bas" : "haut" }); });
+    if (!coupes.length) return brut;
+    return { mn: Math.min(0, ...gardees), mx: Math.max(0, ...gardees), robuste: true, coupes };
+  }
   /** Épargne par mois sur le même axe du temps : de vraies barres (passé : épargne constatée mois par mois quand les comptes sont connectés ; futur : l'escalier de la capacité prévue, une
       marche à chaque événement), une ligne de zéro, des repères min / max dans la marge de droite, l'icône de l'événement à chaque marche (la même que sur la piste), et le mot « négative »
       en toutes lettres pour les mois négatifs, d'un ton d'avertissement calme (jamais la couleur seule). ouverte : sur la carte, la bande repliée ne fait que 28 px.
@@ -1353,15 +1479,17 @@
     });
     const vus = seg.filter(g => g.t1 > dom.debut && g.t0 < dom.fin);
     if (!vus.length) return { svg: "", H: 0, vide: true };
-    const valeurs = vus.map(g => g.v);
-    const mn = Math.min(0, ...valeurs), mx = Math.max(0, ...valeurs), ampl = Math.max(1, mx - mn);
-    const Ys = v => bot - ((v - mn) / ampl) * (bot - top), y0 = Ys(0), f = F1;
+    /* échelle robuste : un mois passé isolé est coupé (barre pleine hauteur + repère « ↧ −3 680 € »), l'échelle est celle des autres valeurs ; les marches du futur ne sont jamais coupées */
+    const E = echelleBande(vus.filter(g => g.passe).map(g => g.v), vus.filter(g => !g.passe).map(g => g.v)), mn = E.mn, mx = E.mx, ampl = Math.max(1, mx - mn);
+    const Ys = v => bot - ((clamp(v, mn, mx) - mn) / ampl) * (bot - top), y0 = Ys(0), f = F1;
     let s = "";
+    const caps = [];
     vus.forEach(g => {
       const xa = X(Math.max(g.t0, dom.debut)), xb = X(Math.min(g.t1, dom.fin));
       if (xb - xa < 0.3) return;
-      const wide = g.passe && xb - xa >= 4, x = xa + (wide ? 0.5 : 0), w = xb - xa - (wide ? 1 : 0), y = Ys(g.v), neg = g.v < 0;
-      s += '<rect class="gp-sb ' + (neg ? "n" : "p") + (g.passe ? " pas" : "") + '" x="' + f(x) + '" y="' + f(neg ? y0 : Math.min(y, y0)) + '" width="' + f(Math.max(0.6, w)) + '" height="' + f(Math.max(neg || g.v > 0 ? 1 : 0, Math.abs(y - y0))) + '"/>';
+      const wide = g.passe && xb - xa >= 4, x = xa + (wide ? 0.5 : 0), w = xb - xa - (wide ? 1 : 0), y = Ys(g.v), neg = g.v < 0, coupe = g.v < mn - 1e-9 ? "bas" : g.v > mx + 1e-9 ? "haut" : null;
+      s += '<rect class="gp-sb ' + (neg ? "n" : "p") + (g.passe ? " pas" : "") + (coupe ? " cap" : "") + '" x="' + f(x) + '" y="' + f(neg ? y0 : Math.min(y, y0)) + '" width="' + f(Math.max(0.6, w)) + '" height="' + f(Math.max(neg || g.v > 0 ? 1 : 0, Math.abs(y - y0))) + '"' + (coupe ? ' data-cap="' + coupe + '" data-v="' + Math.round(g.v) + '"' : "") + "/>";
+      if (coupe) caps.push({ x: x + Math.max(0.6, w) / 2, xa, xb, v: g.v, cote: coupe });
     });
     s += '<line class="gp-st-z" x1="0" x2="' + f(R) + '" y1="' + f(y0) + '" y2="' + f(y0) + '"/>';
     if (dom.debut <= M.today && dom.fin >= M.today) s += '<line class="gp-tdy" x1="' + f(X(M.today)) + '" x2="' + f(X(M.today)) + '" y1="' + (top - 2) + '" y2="' + bot + '"/>';
@@ -1373,6 +1501,16 @@
     const places = [];
     reperes.sort((a, b) => (b.v === 0) - (a.v === 0) || Math.abs(b.v) - Math.abs(a.v)).forEach(r => { if (places.every(p => Math.abs(p.y - r.y) >= 12)) places.push(r); });
     places.forEach(r => { s += '<text class="gp-sy" x="' + (W - 2) + '" y="' + f(clamp(r.y + 4, 10, H - 1)) + '" text-anchor="end">' + esc(r.t) + "</text>"; });
+    /* repère de coupe : la vraie valeur sur la barre coupée (flèche « ↧ » ou « ↥ » dessinée, puis « −3 680 € »), un petit trait de rupture en travers de la barre ; jamais deux fois la même valeur */
+    const coupesVues = [];
+    caps.forEach(c => {
+      const txt = (Math.round(c.v) < 0 ? MOINS : "+") + fInt(c.v) + NB + "€", wt = Math.round(mes(txt, 600)), bas = c.cote === "bas", k = bas ? 1 : -1;
+      const ay = bas ? bot - 6 : top + 6, droite = c.x + 8 + 8 + wt <= R - 2, ax = droite ? c.x + 9 : c.x - 9, tx = droite ? ax + 6 : ax - 6, ty = bas ? bot - 2 : top + 11;
+      s += '<path class="gp-brk-m" d="M' + f(c.x - 4.5) + " " + f(ay - 8 * k + 2) + "L" + f(c.x + 4.5) + " " + f(ay - 8 * k - 2) + '"/>';
+      s += '<g class="gp-cap" data-cap-l="' + c.cote + '" aria-hidden="true"><path class="gp-cap-f" d="M' + f(ax) + " " + f(ay - 5 * k) + "V" + f(ay + 3.5 * k) + "M" + f(ax - 2.6) + " " + f(ay + k) + "L" + f(ax) + " " + f(ay + 3.6 * k) + "L" + f(ax + 2.6) + " " + f(ay + k) + "M" + f(ax - 3.2) + " " + f(ay + 6 * k) + "H" + f(ax + 3.2) +
+        '"/><text class="gp-halo gp-tcap" x="' + f(tx) + '" y="' + f(ty) + '" text-anchor="' + (droite ? "start" : "end") + '">' + esc(txt) + "</text><title>" + esc("Mois à " + txt + " : barre coupée, hors de l'échelle") + "</title></g>";
+      coupesVues.push({ v: c.v, cote: c.cote, texte: txt, x: c.x, x0: Math.min(ax - 4, droite ? tx : tx - wt), x1: Math.max(ax + 4, droite ? tx + wt : tx), y: ty });
+    });
     /* marches : l'icône de l'événement et son effet, au-dessus de la marche (pas sur la carte repliée) */
     const marches = [];
     periodes.forEach((p, k) => { if (!k) return; const dv = p.montant - periodes[k - 1].montant; if (Math.abs(dv) >= 1 && p.t0 >= dom.debut && p.t0 <= dom.fin) marches.push({ t: p.t0, dv, raison: p.raison, evenementId: p.evenementId, x: X(p.t0) }); });
@@ -1389,12 +1527,15 @@
     /* « négative » : le mot, une fois, au début du premier stretch négatif visible */
     const neg = vus.filter(g => g.v < 0).sort((a, b) => (a.passe - b.passe) || ((Math.min(b.t1, dom.fin) - Math.max(b.t0, dom.debut)) - (Math.min(a.t1, dom.fin) - Math.max(a.t0, dom.debut))))[0];
     if (neg) {
-      const xa = X(Math.max(neg.t0, dom.debut)), ty = y0 + 12 <= bot + 2 && Ys(neg.v) - y0 > 8 ? y0 + 11 : Math.max(top + 9, y0 - 4), xt = clamp(xa + 4, 2, R - 52);
+      const xa = X(Math.max(neg.t0, dom.debut)), ty = y0 + 12 <= bot + 2 && Ys(neg.v) - y0 > 8 ? y0 + 11 : Math.max(top + 9, y0 - 4);
+      let xt = clamp(xa + 4, 2, R - 52);
+      /* le mot ne recouvre jamais un repère de coupe : il se pose juste après */
+      coupesVues.forEach(c => { if (Math.abs(c.y - ty) < 12 && xt < c.x1 + 4 && xt + 52 > c.x0 - 4) xt = Math.min(R - 52, c.x1 + 8); });
       s += '<text class="gp-tneg gp-halo" x="' + f(xt) + '" y="' + f(ty) + '">négative</text>';
     }
     s += "<g data-sxh></g>";
     const valeurA = t => { const cap = capaciteA(M, t); return cap ? cap.montant : null; };
-    return { svg: s, H, Ys, marches, periodes, mn, mx, y0, valeurA };
+    return { svg: s, H, Ys, marches, periodes, mn, mx, y0, valeurA, coupes: coupesVues, robuste: E.robuste };
   }
 
   /* ================================================================ 2. CONTRÔLEUR DOM ================================================================ */
@@ -1652,7 +1793,10 @@
     bande() {
       return '<button type="button" class="gp-bande" data-act="bande" aria-expanded="false"><span class="gp-bande-h" data-bandeh><span>Épargne par mois</span><span class="num" data-stripv></span></span><svg class="gp-s-svg" data-ssvg aria-hidden="true"></svg><span class="ui-sr">Épargne par mois : afficher ou masquer le détail</span></button>';
     }
-    alerte() { return '<div class="gp-alerte" data-alerte role="status" hidden></div>'; }
+    /** Honnêteté sur l'épargne, jamais cachée : dans la carte et en paysage, une petite puce ambre dans l'en-tête (« Hypothèse : épargne négative ⓘ ») qui ouvre une feuille ; en plein écran
+        ordinateur (et portrait), une carte « À savoir » en tête de l'onglet Lecture, qui ne pousse pas le tracé. */
+    alerteChip() { return '<button type="button" class="gp-chip-al" data-alerte data-act="alerte" aria-haspopup="dialog" hidden></button>'; }
+    alerteCarte() { return '<section class="gp-asavoir" data-alerte role="group" aria-label="À savoir" hidden></section>'; }
     zmed() { return '<button type="button" class="gp-btn-q gp-zmed" data-act="zmed" aria-pressed="false" hidden>Zoom sur la médiane</button>'; }
     apercu() {
       return '<div class="gp-apercu"><div class="gp-apercu-h"><span>Aperçu complet</span><span class="num" data-brushv></span></div><svg class="gp-b-svg" data-bsvg role="slider" tabindex="0" aria-label="Période affichée sur l\'aperçu complet. Flèches pour déplacer, plus et moins pour zoomer"></svg></div>';
@@ -1664,8 +1808,8 @@
         h = '<section class="gp gp-carte' + (this.g.preset.mode === "capacite" ? " gp-capa" : "") + '" data-mode="carte" aria-labelledby="' + id + 't"><div class="gp-tete"><h2 id="' + id + 't">' + esc(t) + '</h2>' +
           '<button type="button" class="gp-eur sm" data-act="eur"><span data-eur></span></button>' +
           '<button type="button" class="gp-icon" data-act="reglages" aria-label="Réglages du graphique">' + ICO.reglages + "</button>" +
-          '<button type="button" class="gp-icon" data-act="plein" aria-label="Ouvrir en grand" title="Ouvrir en grand">' + ICO.plein + "</button></div>" +
-          this.cadre(true) + this.alerte() + this.bande() +
+          '<button type="button" class="gp-icon" data-act="plein" aria-label="Ouvrir en grand" title="Ouvrir en grand">' + ICO.plein + '</button><span class="gp-tete-br" aria-hidden="true"></span>' + this.alerteChip() + "</div>" +
+          this.cadre(true) + this.bande() +
           '<button type="button" class="gp-ligne" data-act="lecture" aria-label="Lecture détaillée"><span class="gp-ligne-t num" data-roline aria-live="polite" aria-atomic="true"></span><span class="gp-chev" aria-hidden="true">›</span></button>' +
           '<div class="gp-lt" data-lt role="group" aria-label="Valeur de chaque courbe à cette date"></div>' +
           '<div class="gp-ctl">' + this.seg() + '<button type="button" class="gp-jal" data-act="jalons"><span data-njal></span></button></div>' +
@@ -1675,15 +1819,15 @@
         const L = m === "paysage", B = m === "bureau", pied = '<div class="gp-pied"><span class="gp-pied-t">Projection, pas une promesse.</span><button type="button" class="gp-lien" data-act="calcul">Comment c\'est calculé</button></div>';
         /* en-tête : titre, fenêtre, puces ; puis, de haut en bas, le titre vivant, le tracé (axe et piste des jalons dedans), la bande d'épargne, l'aperçu ; à droite, un panneau à onglets */
         h = '<div class="gp-fsv gp-fsv-' + m + '"><div class="gp-fs-bar"><button type="button" class="gp-icon" data-act="plein" aria-label="Quitter le plein écran">' + ICO.x + "</button>" +
-          '<div class="gp-ttl">' + esc(L ? t : t + ", passé et futur") + "</div>" + this.seg() + '<button type="button" class="gp-btn-q ink" data-act="zreset" hidden>Réinitialiser le zoom</button>' +
+          '<div class="gp-ttl">' + esc(L ? t : t + ", passé et futur") + "</div>" + (L ? this.alerteChip() : "") + this.seg() + '<button type="button" class="gp-btn-q ink" data-act="zreset" hidden>Réinitialiser le zoom</button>' +
           (m === "portrait" ? "" : this.zmed()) + (L || m === "portrait" ? "" : '<button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button>') +
           '<button type="button" class="gp-icon gp-aide" data-act="aide" aria-label="Aide : lire, sélectionner, zoomer" title="Aide : lire, sélectionner, zoomer">' + ICO.aide + "</button>" +
           '<button type="button" class="gp-icon" data-act="reglages" aria-label="Réglages du graphique">' + ICO.reglages + "</button></div>" +
-          '<div class="gp-fs-body"><div class="gp-fs-main">' + (m === "portrait" ? '<div class="gp-fs-eur">' + this.zmed() + '<button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button></div>' : "") + (L ? "" : this.hl()) + this.cadre(false) + (L ? "" : this.alerte()) + '<div class="gp-hopbar" data-hopbar hidden></div>' + this.bande() + this.apercu() + "</div>" +
-          '<aside class="gp-fs-side" aria-label="Lecture">' + (L ? this.alerte() + '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied :
+          '<div class="gp-fs-body"><div class="gp-fs-main">' + (m === "portrait" ? '<div class="gp-fs-eur">' + this.zmed() + '<button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button></div>' : "") + (L ? "" : this.hl()) + this.cadre(false) + '<div class="gp-hopbar" data-hopbar hidden></div>' + this.bande() + this.apercu() + "</div>" +
+          '<aside class="gp-fs-side" aria-label="Lecture">' + (L ? '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied :
             '<div class="gp-onglets" role="tablist" aria-label="Panneau de lecture">' + ONGLETS.map(o => '<button type="button" role="tab" id="' + id + "o" + o[0] + '" data-tab="' + o[0] + '" aria-controls="' + id + "p" + o[0] + '" aria-selected="false" tabindex="-1">' + o[1] + "</button>").join("") + "</div>" +
             ONGLETS.map(o => '<div class="gp-panneau" role="tabpanel" id="' + id + "p" + o[0] + '" aria-labelledby="' + id + "o" + o[0] + '" data-panel="' + o[0] + '" hidden>' +
-              (o[0] === "lecture" ? '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied : o[0] === "evenements" ? '<div data-list></div>' : '<div class="gp-tbl-w" data-table></div>') + "</div>").join("")) +
+              (o[0] === "lecture" ? this.alerteCarte() + '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied : o[0] === "evenements" ? '<div data-list></div>' : '<div class="gp-tbl-w" data-table></div>') + "</div>").join("")) +
           '</aside></div><p class="ui-sr" data-sr></p></div>';
         void B;
       }
@@ -1752,6 +1896,8 @@
         else if (k === "lecture") g.ouvrirLecture(a);
         else if (k === "zmed") { g.etat.zoomMediane = !g.etat.zoomMediane; g.etat.echelleY = null; g.rendreTout(); }
         else if (k === "bande") { g.etat.bandeOuverte = !g.etat.bandeOuverte; g.rendreTout(); }
+        else if (k === "alerte") g.ouvrirAlerte(a);
+        else if (k === "as-detail") { g.etat.asavoirDetail = !g.etat.asavoirDetail; this.rendreAlerte(); const b = this.q('[data-act="as-detail"]'); if (b && b.focus) b.focus(); }
         else if (k === "effacer") { g.etat.curseur = null; g.majCurseur(); }
         else if (k === "invite-off") { g.lsSet(CLES_LS.invitationOff, "1"); this.majInvitation(); }
         else if (k === "avenir-suivant" || k === "avenir-lecture") g.avenirSuivant(k === "avenir-lecture");
@@ -2032,21 +2178,29 @@
         /* zone cliquable d'au moins 44 × 44 px (la hauteur est dans le CSS) : deux repères voisins sont à 44 px l'un de l'autre sur la carte (regroupés sinon), à 24 px au moins
            sur le rail du plein écran où leurs centres restent chacun dans leur zone ; une pastille à libellé est cliquable sur toute sa largeur */
         const w = Math.max(44, m.largeur || 0), left = m.largeur ? m.gauche - (w - m.largeur) / 2 : m.x - w / 2, ids = m.jalons.map(j => j.id).join(" ");
-        const lab = m.jalons.length > 1 ? m.jalons.length + " jalons rapprochés, " + dMois(m.jalons[0].t) + " à " + dMois(m.jalons[m.jalons.length - 1].t) + ". Ouvrir la liste"
-          : m.jalons[0].titre + ", " + (estObjectif(m.jalons[0]) ? "échéance " : "") + dMois(m.jalons[0].t) + ". Ouvrir le détail";
-        h += '<button type="button" class="gp-mk-b" data-jalons="' + esc(ids) + '" style="left:' + left.toFixed(1) + "px;top:" + (m.y - 22).toFixed(1) + "px;width:" + w.toFixed(1) + 'px" aria-label="' + esc(lab) + '"></button>';
+        /* un objectif dit son statut (le mot, jamais la couleur seule) dans son nom accessible et dans son info-bulle */
+        const j0 = m.jalons[0], seul = m.jalons.length === 1, but = seul && estObjectif(j0), o = but ? g.M.objectifs.find(z => z.id === j0.objectifId) : null, sl = but ? statutLigne(o) : "";
+        const lab = !seul ? m.jalons.length + " jalons rapprochés, " + dMois(m.jalons[0].t) + " à " + dMois(m.jalons[m.jalons.length - 1].t) + ". Ouvrir la liste"
+          : j0.titre + ", " + (but ? "échéance " : "") + dMois(j0.t) + (but ? ", " + sl.charAt(0).toLowerCase() + sl.slice(1) : "") + ". Ouvrir le détail";
+        const tip = but ? "Objectif " + j0.titre + " · " + sl : seul ? etiquettesJalon(g.M, m)[0] : m.jalons.length + " événements rapprochés";
+        h += '<button type="button" class="gp-mk-b" data-jalons="' + esc(ids) + '" style="left:' + left.toFixed(1) + "px;top:" + (m.y - 22).toFixed(1) + "px;width:" + w.toFixed(1) + 'px" aria-label="' + esc(lab) + '" title="' + esc(tip) + '"></button>';
       });
       this.marks.innerHTML = h;
       void g;
     },
-    /** Bandeau d'honnêteté sur l'épargne projetée (épargne constatée négative, médiane sous la ligne « sans versement », épargne qui passe sous zéro) : jamais en silence. */
+    /** Honnêteté sur l'épargne projetée, jamais en silence : puce ambre dans l'en-tête (carte, paysage) qui ouvre une feuille, carte « À savoir » dans le panneau (ordinateur, portrait). */
     rendreAlerte() {
       const el = this.alerteEl; if (!el) return;
-      const a = alerteEpargne(this.g.M);
+      const g = this.g, a = alerteEpargne(g.M);
       if (!a) { el.hidden = true; el.innerHTML = ""; return; }
       el.hidden = false;
-      el.innerHTML = '<span class="gp-al-i" aria-hidden="true">' + ICO.alerte + '</span><div class="gp-al-t"><p data-al="' + esc(a.cle) + '">' + esc(a.texte) + "</p>" + (a.detail ? '<p class="gp-al-d">' + esc(a.detail) + "</p>" : "") +
-        '</div><div class="gp-al-a">' + this.g.claudeLien(phraseClaude(a.section, a.contexte), "Compléter avec Claude") + "</div>";
+      if (this.mode === "carte" || this.mode === "paysage") {
+        el.innerHTML = '<span class="gp-chip-l">' + esc(a.titre) + '</span><span class="gp-chip-i" aria-hidden="true">' + ICO.info + "</span>";
+        el.setAttribute("aria-label", a.titre + ". Ouvrir l'explication"); el.setAttribute("data-al", a.cle); el.setAttribute("title", a.resume);
+      } else {
+        el.innerHTML = alerteCarteHtml(a, { id: this.id + "as", ouvert: !!g.etat.asavoirDetail, claude: (q, l) => g.claudeLien(q, l) });
+        el.setAttribute("data-al", a.cle);
+      }
     },
     rendreBande(dom) {
       if (!this.ssvg) return;
@@ -2100,9 +2254,9 @@
         this.listEl.innerHTML = chips + '<ol class="gp-evl" aria-label="Événements de la projection">' + M.jalons.map(j => {
           const o = estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null, mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut];
           const dedans = j.t >= dom.debut && j.t <= dom.fin;
-          const date = estObjectif(j) ? "échéance " + dMois(j.t) + (o && o.probabilite != null ? " · " + chancesTxt(o.probabilite) : "") : (j.tFin ? dMois(j.t) + " → " + dMois(j.tFin) : dMois(j.t) + " · " + relatif(M.today, j.t));
+          const date = estObjectif(j) ? "échéance " + dMois(j.t) + " · " + statutLigne(o) : (j.tFin ? dMois(j.t) + " → " + dMois(j.tFin) : dMois(j.t) + " · " + relatif(M.today, j.t));
           const eff = estObjectif(j) ? chip(cap1(mot || (st ? st[0] : "—")), mot ? TON_MOT[mot] : st ? st[1] : "todo") : effetMensuel(j) != null && j.source !== "calendrier" ? esc(fMois(effetMensuel(j))) : "";
-          return '<li><button type="button" class="gp-evrow' + (dedans ? "" : " out") + '" data-ev="' + esc(j.id) + '" aria-current="' + sel.includes(j.id) + '"><span class="gp-pn ic' + (o ? " gl " + (mot ? TON_MOT[mot] : st ? st[1] : "todo") : "") + '" title="' + esc(TYPES_ICONE[iconeDe(j)] || "") + '">' + icoH(iconeDe(j), 14) + '</span><span class="gp-ev-m"><span class="gp-ev-t">' + esc(j.titre) +
+          return '<li><button type="button" class="gp-evrow' + (dedans ? "" : " out") + '" data-ev="' + esc(j.id) + '" aria-current="' + sel.includes(j.id) + '"><span class="gp-pn ic ' + (o ? "gl st-" + statutObjectif(o).ton : "gp-t-" + familleIcone(iconeDe(j))) + '" title="' + esc(o ? statutObjectif(o).mot : TYPES_ICONE[iconeDe(j)] || "") + '">' + icoH(iconeDe(j), 14) + '</span><span class="gp-ev-m"><span class="gp-ev-t">' + esc(j.titre) +
             '</span><span class="gp-ev-d num">' + esc(date) + (dedans ? "" : " · hors fenêtre") + '</span></span><span class="gp-ev-e num">' + eff + "</span></button></li>";
         }).join("") + "</ol>";
       }
@@ -2194,6 +2348,7 @@
       /* jalons : neutres, colorés seulement à la sélection ; une seule étiquette flottante */
       const sel = this.jalonsAuCurseur().map(j => j.id);
       this.svg.querySelectorAll("[data-ev]").forEach(n => classe(n, "is-sel", String(n.getAttribute("data-ev")).split(" ").some(i => sel.includes(i))));
+      this.majObjectifs(sel);
       this.majEtiquette(def ? null : tt);
       if (this.listEl) {
         let premier = null;
@@ -2203,13 +2358,22 @@
       if (this.tblEl) { this.tblEl.querySelectorAll("tr.cur").forEach(r => classe(r, "cur", false)); const row = this.tblEl.querySelector('tr[data-t="' + tt + '"]'); if (row) classe(row, "cur", true); }
       this.majAvenir();
     },
+    /** Objectif(s) au curseur (survol d'un repère, sélection dans la liste, doigt posé sur sa date) : ligne de cible, halo sur la médiane et puce de chances, dans la couleur du statut. */
+    majObjectifs(sel) {
+      const g = this.g, M = g.M, gg = this.geo, grp = this.svg && this.svg.querySelector("[data-goal]"); if (!grp || !gg) return;
+      const buts = sel.map(id => M.jalons.find(j => j.id === id)).filter(j => j && estObjectif(j)).map(j => M.objectifs.find(o => o.id === j.objectifId)).filter(Boolean);
+      const mes = g.mesurer(), reduit = g.reduit() || !!(this.P && this.P.reduit);
+      grp.innerHTML = buts.slice(0, 3).map(o => objectifSelectionSvg(M, o, gg, mes, reduit).svg).join("");
+    },
     majEtiquette(tt) {
       const fl = this.svg && this.svg.querySelector("[data-flab]"); if (!fl) return;
       const g = this.g, gg = this.geo;
       if (tt == null) { fl.innerHTML = ""; return; }
       const x = gg.X(tt), groupe = gg.groupes.find(gr => gr.jalons.some(j => Math.abs(j.t - tt) < 1)) || plusProcheGroupe(gg.groupes, x, 24);
       if (!groupe) { fl.innerHTML = ""; return; }
-      const ts = etiquettesJalon(g.M, groupe), mes = g.mesurer();
+      /* un objectif (seul ou en tête d'un groupe) : la puce « N chances sur 10 » est posée près de son halo (majObjectifs), l'étiquette du haut n'en répète pas la probabilité */
+      let ts = etiquettesJalon(g.M, groupe); const mes = g.mesurer();
+      if (estObjectif(groupe.jalons[0]) && ts.length > 1) ts = ts.slice(1);
       /* une seule étiquette, bornée au tracé (jamais dans la marge de droite) ; en plein écran elle flotte en haut du tracé, sous le nom du trait d'aujourd'hui */
       const bord = gg.P && gg.P.pins ? gg.R : gg.W, y0 = gg.P && gg.P.pins ? gg.T + 22 : 1;
       const t = ts.find(z => mes(z, 600) + 18 <= bord - gg.L) || ts[ts.length - 1], w = Math.min(bord - gg.L, mes(t, 600) + 18), lx = clamp(groupe.x - w / 2, gg.L, bord - w);
@@ -2320,6 +2484,10 @@
         else if (d) this.ouvrirJalon(d.dataset.jdet, d);
       });
       void corps;
+    },
+    ouvrirAlerte(opener) {
+      const a = this.M && alerteEpargne(this.M); if (!a) return;
+      this.feuille("À savoir", alerteFeuilleHtml(a, (q, l) => this.claudeLien(q, l)), opener, null);
     },
     ouvrirLecture(opener) {
       const M = this.M, vue = this.vue; if (!M || !vue || !vue.lec) return;
@@ -2500,5 +2668,5 @@
   return { esc, plat, fK, fEur, fSK, fSE, fMois, fMoisU, fPct, kRange, kTiret, chancesTxt, motProba, placerEtiquettes, dureeTxt, relatif, dMois, dJour, FENETRES, domaine, fenetreContenant, granularite, clePas, graduations, domaineY, echelleYStable, valeurCreuse, pointsConnus,
     chemin, bande, cheminInverse, facteurPrix, normaliser, echantillons, besoinY, besoinFenetre, regrouperJalons, plusProcheGroupe, lecture, planA, capaciteA, phraseTitre, titreLecture, ligneLecture, lectureHtml, lectureKvHtml, enteteHtml,
     construireSvg, construireBande, tableauHtml, calculHtml, jalonDetailHtml, jalonsListeHtml, groupeHtml, parametresMode, MODES, PRESETS, msDe, isoDe, ajouterMois, moisEntre, capaciteSourceTxt, decompositionPhrase, objectifLigne,
-    etiquettesJalon, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel, effetEpargne, pointsCurseur, lectureLignes, lectureTableHtml, alerteEpargne, phraseClaude, iconeDe, categorieJalon, CATEGORIES, TYPES_ICONE };
+    etiquettesJalon, objectifSelectionSvg, statutObjectif, progressionObjectif, statutLigne, familleIcone, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel, effetEpargne, pointsCurseur, lectureLignes, lectureTableHtml, alerteEpargne, echelleBande, alerteCarteHtml, alerteFeuilleHtml, SEUIL_RELEVES_MOIS, phraseClaude, iconeDe, categorieJalon, CATEGORIES, TYPES_ICONE };
 });
