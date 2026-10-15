@@ -148,8 +148,8 @@
 .ui-panneau .st-p-tab td.num{font-variant-numeric:tabular-nums}
 .ui-panneau .st-p-tab td.hors{font-weight:700;color:var(--crit)}
 .ui-panneau .st-d-val{text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-.ui-panneau .st-d-lien{grid-column:1/-1;justify-self:start;font-size:var(--t-small);font-weight:600;color:var(--accent);text-underline-offset:3px;padding:2px 0}
-.ui-panneau .st-d-lien:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.ui-panneau .st-d-lien{grid-column:1/-1;justify-self:start;display:inline-flex;align-items:center;min-height:var(--hit);font-size:var(--t-small);font-weight:600;color:var(--brand);text-underline-offset:3px;padding:0 var(--sp-1)}
+.ui-panneau .st-d-lien:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
 .ui-panneau .st-p-ameliorer li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 12px;padding:7px 0;border-bottom:1px solid var(--line);font-size:var(--t-small)}
 .ui-panneau .st-p-ameliorer li:last-child{border-bottom:0}
 .ui-panneau .st-gain{font:700 var(--t-small) var(--f-num);white-space:nowrap;color:var(--pos)}
