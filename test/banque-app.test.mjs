@@ -670,7 +670,7 @@ const CX_KEYS = ["derniereSynchro", "doublonDe", "etablissement", "etat", "id", 
 const CPT_KEYS = ["actif", "connexionId", "creditId", "creeAuto", "devise", "doublonDe", "enveloppe", "id", "ignore", "nom", "positionId", "rattacheAuto", "solde", "soldeLe", "suggestion", "titulaire", "type"];
 const MOIS_KEYS = ["categorie", "compteId", "entrees", "mois", "nombre", "sorties"];
 
-test("démo : S.banque au contrat — 2 connexions (une à jour, une SCARequired), 6 comptes dont un non rattaché et un ignoré, 6 mois de totaux cohérents", async () => {
+test("démo : S.banque au contrat — 2 connexions (une à jour, une SCARequired), 6 comptes dont un non rattaché et un ignoré, 13 mois de totaux cohérents", async () => {
   const ctx = demoStore();
   const S = await pret(ctx), b = S.banque;
   assert.deepEqual(Object.keys(b).sort(), BQ_KEYS);
@@ -692,7 +692,7 @@ test("démo : S.banque au contrat — 2 connexions (une à jour, une SCARequired
     if (c.enveloppe) assert.ok(S.positions.some(p => p.envelope === c.enveloppe && p.owner === c.titulaire), c.enveloppe);
   }
   b.mois.forEach(m => { assert.deepEqual(Object.keys(m).sort(), MOIS_KEYS); assert.match(m.mois, /^\d{4}-\d{2}-01$/); assert.ok(BE.CATEGORIES.some(c => c.cle === m.categorie), m.categorie); });
-  assert.equal(new Set(b.mois.map(m => m.mois)).size, 6, "6 mois de totaux");
+  assert.equal(new Set(b.mois.map(m => m.mois)).size, 13, "13 mois de totaux : le mois en cours et 12 mois complets (capacité observée sur 12 mois)");
   assert.ok(b.mois.every(m => m.compteId === 1001), "démo : totaux détaillés par compte (compte joint)");
   const r = BE.reelMoyen(b.mois, new Date().toISOString().slice(0, 10));
   assert.equal(r.n, 3);
@@ -733,7 +733,7 @@ test("démo : Store.banque — connecter indisponible (erreur douce), rattacher 
 });
 
 /* ---------- store-supabase.js exécuté : faux client (session ouverte), faux fetch ---------- */
-function storeSup({ banqueActive = true, tables = {}, fetchRep, erreurFonct } = {}) {
+function storeSup({ banqueActive = true, tables = {}, fetchRep, erreurFonct, maintenant } = {}) {
   const appels = [], fetchs = [];
   const session = { access_token: "jeton-utilisateur-factice", user: { id: "u1", email: "a@b.c" } };
   const requete = table => {
@@ -768,6 +768,7 @@ function storeSup({ banqueActive = true, tables = {}, fetchRep, erreurFonct } = 
       return { ok: x.status >= 200 && x.status < 300, status: x.status, json: async () => { if (x.body === undefined) throw new Error("pas de JSON"); return x.body; } };
     },
   };
+  if (maintenant) { const Vrai = Date; ctx.Date = class extends Vrai { constructor(...a) { super(...(a.length ? a : [maintenant])); } static now() { return new Vrai(maintenant).getTime(); } }; }
   ctx.window = ctx;
   vm.createContext(ctx);
   for (const f of ["sensible.js", "routine-etat.js", "banque-etat.js", "store-supabase.js"]) vm.runInContext(src(f), ctx, { filename: f });
@@ -813,8 +814,18 @@ test("store-supabase (exécuté) : interrupteur actif → connexions, comptes et
   const gte = m.filtres.find(x => x[0] === "gte");
   assert.equal(gte[1], "mois");
   assert.match(gte[2], /^\d{4}-\d{2}-01$/);
-  const d = new Date(), attendu = new Date(Date.UTC(d.getFullYear(), d.getMonth() - 5, 1)).toISOString().slice(0, 10);
-  assert.equal(gte[2], attendu, "depuis le 1er du mois, 5 mois avant le mois en cours (6 mois)");
+  const paris = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(new Date()), [y, mo] = paris.split("-").map(Number), t = y * 12 + (mo - 1) - 12;
+  const attendu = Math.floor(t / 12) + "-" + String(t % 12 + 1).padStart(2, "0") + "-01";
+  assert.equal(gte[2], attendu, "depuis le 1er du mois, 12 mois avant le mois en cours (13 mois : 12 mois complets pour la capacité observée)");
+});
+
+test("store-supabase (exécuté) : 13 mois de banque_mois depuis le jour de Paris (pas l'UTC ni le fuseau local) : 31 octobre 23 h 30 UTC = 1er novembre à Paris", async () => {
+  for (const [instant, debut] of [["2026-10-31T23:30:00Z", "2025-11-01"], ["2026-06-30T22:30:00Z", "2025-07-01"], ["2026-01-15T12:00:00Z", "2025-01-01"], ["2026-12-31T23:59:00Z", "2026-01-01"]]) {
+    const { ctx, appels } = storeSup({ tables: tablesBq, maintenant: instant });
+    await pret(ctx);
+    const gte = appels.find(a => a.table === "banque_mois").filtres.find(x => x[0] === "gte");
+    assert.equal(gte[2], debut, instant);
+  }
 });
 
 test("store-supabase (exécuté) : connecter → POST /functions/v1/powens/connecter avec le JWT de la session ; URL vérifiée", async () => {

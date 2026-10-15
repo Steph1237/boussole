@@ -66,6 +66,7 @@ test("démo : valide pour le moteur — aucun avertissement de donnée invalide,
   const r = P.simuler(P.preparer(data, { horizon_ans: 10, vue: "net" }), { chemins: 300 });
   assert.ok(r.avertissements.every(m => !/événement ignoré/.test(m)), r.avertissements.join(" | "));
   assert.equal(r.capacite_source, "reel");
+  assert.equal(r.capacite_base.constatee_detail.mois, 12, "la démo porte 12 mois complets : la capacité observée est lue sur 12 mois");
   assert.ok(r.capacite_base.constatee > r.capacite_base.prevue + 1, "constatée " + r.capacite_base.constatee + " contre prévue " + r.capacite_base.prevue);
   assert.equal(r.capacite_base.signale, true, "l'écart déclenche le garde-fou de la démo");
   assert.ok(r.garde_fous.some(g => g.cle === "ecart_capacite"));

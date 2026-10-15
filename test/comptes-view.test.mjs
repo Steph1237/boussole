@@ -396,7 +396,7 @@ test("ficheCourant / ficheCourantHtml : flux du compte (banque_mois par compte),
   assert.equal(f.etablissement.nom, "Banque des Canuts");
   assert.equal(f.flux.mois.length, 6);
   assert.equal(f.flux.enCours.mois.slice(0, 7), TODAY.slice(0, 7));
-  assert.equal(f.flux.moyenne.n, 5, "mois complets seulement");
+  assert.equal(f.flux.moyenne.n, 6, "mois complets seulement, 6 au plus (la démo en porte 12)");
   // plus bas solde : reconstitué à rebours depuis le solde du compte bancaire
   assert.equal(f.operations, "ok");
   assert.ok(f.plusBas && f.plusBas.montant < 3400 && f.plusBas.montant > 0, "plus bas solde positif, sous le solde actuel");

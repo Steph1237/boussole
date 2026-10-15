@@ -956,11 +956,11 @@
     if (croiss !== undefined && N >= 60 && !croissanceDejaCouverte) {
       let versements = 0;
       for (let t = 1; t <= 60; t++) versements += Math.max(0, tr.cap[t]);
-      const p50 = cap && cap.p50 ? cap.p50[60] : tr.fin[60];
-      const ratio = p50 / (tr.fin[0] + versements), borne = Math.pow(1 + croiss / 100, 5);
+      /* même vue des deux côtés : le patrimoine financier du scénario central (tr.fin), jamais la vue affichée (net avec la résidence et les dettes, ou après impôts) */
+      const ratio = tr.fin[60] / (tr.fin[0] + versements), borne = Math.pow(1 + croiss / 100, 5);
       if (tr.fin[0] + versements > 0 && ratio > borne) {
         out.push({ cle: "croissance_5_ans", niveau: "alerte", valeurs: { ratio, borne },
-          texte: "Plus de " + frc(croiss) + " % par an en médiane sur 5 ans : hypothèse très optimiste." });
+          texte: "Plus de " + frc(croiss) + " % par an sur 5 ans dans ton scénario central : hypothèse très optimiste." });
       }
     }
     return out;

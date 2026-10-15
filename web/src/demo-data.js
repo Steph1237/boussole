@@ -781,13 +781,13 @@
      une authentification forte depuis 3 jours) et six comptes. Soldes cohérents avec les lignes rattachées (compte commun 3 400 €,
      Livret A 12 000 €, prêt auto −6 500 € = capital restant dû) ; le PEA est rattaché à l'enveloppe « PEA Camille » (titulaire p1) ;
      le compte de dépôt de Sam n'est rattaché à rien (« 1 compte à rattacher ») ; le compte professionnel de Camille n'est pas suivi
-     (ignore = true : « Non suivi », hors des comptes à rattacher). Totaux mensuels : 6 mois (le mois en cours, partiel,
-     compris), proches du budget de la démo, avec quelques écarts parlants (courses et loisirs au-dessus, un abonnement de plus). */
+     (ignore = true : « Non suivi », hors des comptes à rattacher). Totaux mensuels : 13 mois (le mois en cours, partiel,
+     compris : 12 mois complets pour la capacité d'épargne observée), proches du budget de la démo, avec quelques écarts parlants (courses et loisirs au-dessus, un abonnement de plus). */
   const moisDebut = k => { const d = new Date(now); return iso(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - k, 1)); };
   const BQ_BASE = { logement: 455, alimentation: 815, transport: 205, enfants: 300, sante: 52, loisirs: 310, abonnements: 89, impots: 280, divers: 135, revenus: 5100, epargne: 650 };
-  const BQ_VAR = [1.02, 0.97, 1.05, 0.99, 1.01]; // mois complets, du plus récent au plus ancien
+  const BQ_VAR = [1.02, 0.97, 1.05, 0.99, 1.01, 1.03, 0.98, 1.04, 1.0, 0.96, 1.02, 0.99]; // mois complets, du plus récent au plus ancien
   const bqMois = [];
-  for (let k = 0; k < 6; k++) {
+  for (let k = 0; k < 13; k++) {
     const f = k === 0 ? 0.4 : BQ_VAR[k - 1];
     Object.keys(BQ_BASE).forEach(cat => {
       const v = Math.round(BQ_BASE[cat] * (cat === "revenus" || cat === "epargne" || cat === "impots" ? (k === 0 ? 0.4 : 1) : f) * 100) / 100;

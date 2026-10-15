@@ -326,3 +326,22 @@ test("HYPOTHESES : chaque repère lu par le moteur existe dans une migration (si
   const manquants = P.HYPOTHESES.reperes.filter(k => !cles.has(k) && !P.HYPOTHESES.manquants_assumes.includes(k));
   assert.deepEqual(manquants, []);
 });
+
+/* ---- revue Opus, correctif 2 : le garde-fou de croissance compare la même vue (financière), jamais le net avec la résidence ---- */
+test("G-4 bis : un foyer qui possède un logement de 400 k€ en vue nette ne déclenche pas de fausse alerte de croissance", () => {
+  const c = cas("D-2"), d = entreeDe(c);
+  const bien = { id: "bien-rp", nom: "Logement Exemple", usage: "rp", valeur: 400000, part_p1: 50, crd: 0, mensualite: 0, loyer: 0 };
+  d.profil.biens = [bien]; d.biens = [bien];
+  const opts = { horizon_ans: 5, vue: "net", euros: "constants", capacite_mensuelle: 500, hypotheses_classes: { actions: { rendement: 3, volatilite: 10 } } };
+  for (const extra of [{}, { net_impots: true }, { vue: "financier" }]) {
+    const M = P.preparer(JSON.parse(JSON.stringify(d)), { ...opts, ...extra });
+    const r = P.simuler(M, { chemins: 300 });
+    assert.ok(!r.garde_fous.some(g => g.cle === "croissance_5_ans"), JSON.stringify(extra) + " : " + JSON.stringify(r.garde_fous));
+  }
+  /* l'hypothèse vraiment trop forte déclenche toujours l'alerte, quelle que soit la vue affichée */
+  const fort = { ...opts, hypotheses_classes: { actions: { rendement: 15, volatilite: 10 } } };
+  for (const vue of ["net", "financier"]) {
+    const r = P.simuler(P.preparer(JSON.parse(JSON.stringify(d)), { ...fort, vue }), { chemins: 300 });
+    assert.ok(r.garde_fous.some(g => g.cle === "croissance_5_ans" || g.cle === "rendement_implicite"), vue);
+  }
+});

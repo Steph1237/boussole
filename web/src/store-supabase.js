@@ -104,7 +104,7 @@
    suggestion de forme inconnue → null) : banques
    connectées par Powens (BQ1, migration 0021, tables écrites par la fonction powens). L'interrupteur (fonctionnalites, cle « banque »)
    est lu avec le reste par loadAll ; éteint (ou table absente) : { actif: false } et rien d'autre n'est lu. Allumé : connexions, comptes
-   et les 6 derniers mois de banque_mois (mois en cours compris), lus ensuite ; lu = true quand ces lectures ont réussi (en échec : valeurs
+   et les 13 derniers mois de banque_mois (mois en cours compris), lus ensuite ; lu = true quand ces lectures ont réussi (en échec : valeurs
    précédentes). etat : null (à jour) ou l'état Powens (libellés : banque-etat.js). Les ids Powens restent tels que lus (nombres).
    SEC2 (migration 0028) : les tables banque_* exigent une session aal2 (double authentification). Interrupteur allumé mais session aal1
    (aucun facteur activé) : rien n'est lu, S.banque = { actif: true, lu: true, mfaRequise: true, connexions: [], comptes: [], mois: [] }
@@ -293,11 +293,17 @@
     if (!A || !A.mfa || typeof A.mfa.niveau !== "function") return true;
     try { const n = await A.mfa.niveau(); return !!n && n.current === "aal2"; } catch (e) { return false; }
   }
-  /* 1er du mois, 5 mois avant le mois en cours : 6 mois de totaux (le mois en cours compris). */
-  const debutSixMois = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth() - 5, 1)).toISOString().slice(0, 10); };
+  /* 1er du mois, 12 mois avant le mois en cours (jour de Paris, comme la base) : 13 mois de totaux, le mois en cours compris, soit les
+     12 mois complets que lit la capacité d'épargne observée (Calc.budgetReel, 12 mois puis 3). Les vues qui montrent 6 mois ou une moyenne
+     sur 3 mois découpent elles-mêmes (comptes-view, BanqueEtat.reelMoyen). */
+  const jourDeParis = () => { const R = window.RoutineEtat; return R && R.aujParis ? R.aujParis() : new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(new Date()); };
+  const debutTreizeMois = () => {
+    const [y, m] = jourDeParis().split("-").map(Number), t = y * 12 + (m - 1) - 12;
+    return Math.floor(t / 12) + "-" + String(t % 12 + 1).padStart(2, "0") + "-01";
+  };
   /* banque_mois avec compte_id (0025) ; colonne absente (42703, migration pas encore appliquée) : relecture sans elle. */
   async function lireMoisBanque() {
-    const lire = cols => q(sb.from("banque_mois").select(cols).gte("mois", debutSixMois()).order("mois"));
+    const lire = cols => q(sb.from("banque_mois").select(cols).gte("mois", debutTreizeMois()).order("mois"));
     try { return await lire(BQ_MOIS + ", compte_id"); } catch (e) { if (e && e.code === "42703") return lire(BQ_MOIS); throw e; }
   }
   async function lireBanque() {

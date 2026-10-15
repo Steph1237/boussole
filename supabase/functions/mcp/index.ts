@@ -2285,13 +2285,14 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
   /** Bilan complet du foyer pour les calculs (get_overview et état figé du journal) : profil, biens, crédits, positions,
       config, lignes du budget et objectifs. */
   /* Banque pour le budget réel des bonnes pratiques (get_overview, journal, expertises, analyser) : interrupteur actif → comptes et
-     6 mois de banque_mois (compte_id, migration 0025 ; colonne absente → relecture sans elle) ; éteint ou en échec → null (budget prévu). */
+     13 mois de banque_mois (depuis le jour de Paris ; compte_id, migration 0025 ; colonne absente → relecture sans elle) ; éteint ou en échec → null (budget prévu). */
   async function lireBanqueCalcul() {
     try {
       const f = must("fonctionnalites", await db.from("fonctionnalites").select("active").eq("cle", "banque").maybeSingle()) as any;
       if (!f || f.active !== true) return null;
       if (aal !== "aal2") return null; // SEC2 : sans double authentification, les tables banque_* sont fermées (RLS, 0028) : budget prévu
-      const d = new Date(), depuis = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 5, 1)).toISOString().slice(0, 10);
+      const [ya, ma] = today().split("-").map(Number), tm = ya * 12 + (ma - 1) - 12; // jour de Paris : 13 mois (12 mois complets pour la capacité observée)
+      const depuis = `${Math.floor(tm / 12)}-${String(tm % 12 + 1).padStart(2, "0")}-01`;
       const mois = async (avecCompte: boolean) => db.from("banque_mois").select(
         avecCompte ? "mois, categorie, entrees, sorties, compte_id" : "mois, categorie, entrees, sorties").gte("mois", depuis);
       const [cp, m0] = await Promise.all([db.from("banque_comptes").select("id, type, ignore, doublon_de, actif"), mois(true)]);

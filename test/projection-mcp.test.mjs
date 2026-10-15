@@ -270,9 +270,9 @@ test("decrire_foyer : fin_credit contrôlé contre les crédits de l'utilisateur
 test("decrire_foyer : modification (seuls les champs qui changent), aucun changement → aucune proposition, suppression", { skip: SANS_STRIP }, async () => {
   depots.length = 0;
   await ok(T0.decrire_foyer.handler({ evenements: [{ id: ID_EV, date: "2025-04-20" }], ...SRC }));
-  assert.deepEqual(depots[0].items[0], { cible: "evenement", operation: "modifier", ref: ID_EV, avant: { date: "2025-04-14" }, apres: { date: "2025-04-20" } });
+  assert.deepEqual(depots[0].items[0], { cible: "evenement", operation: "modifier", ref: ID_EV, avant: { date: D.foyer.evenements[0].date }, apres: { date: "2025-04-20" } });
   depots.length = 0;
-  const r = await ok(T0.decrire_foyer.handler({ evenements: [{ id: ID_EV, date: "2025-04-14", libelle: "Enfant 1" }], ...SRC }));
+  const r = await ok(T0.decrire_foyer.handler({ evenements: [{ id: ID_EV, date: D.foyer.evenements[0].date, libelle: "Enfant 1" }], ...SRC }));
   assert.deepEqual(depots[0].items, [], "rien ne change : aucun élément déposé");
   assert.match(r.message, /Aucun changement/);
   depots.length = 0;
@@ -519,6 +519,12 @@ test("index.ts : projection.ts enregistré avec les utilitaires du serveur, dema
   assert.match(srcIndex, /probabilitesObjectifs\(db, must, ref, lireBanqueCalcul\)/);
   assert.match(srcIndex, /probabilite: probas\?\.get\(o\.id\)\?\.probabilite \?\? null/);
   assert.doesNotMatch(srcProjection, /from "\.\/index\.ts"/, "pas d'import circulaire vers index.ts");
+});
+test("index.ts : la banque du calcul est lue sur 13 mois depuis le jour de Paris (12 mois complets pour la capacité observée)", () => {
+  const b = bloc(srcIndex, "async function lireBanqueCalcul()", "async function lireConfigCalcul");
+  assert.match(b, /today\(\)\.split\("-"\)\.map\(Number\)/);
+  assert.match(b, /\(ma - 1\) - 12/);
+  assert.doesNotMatch(b, /new Date\(\)|getUTCMonth/, "ni l'horloge UTC ni le fuseau local");
 });
 test("conduite : les 8 règles du § 7.3 sont dans les INSTRUCTIONS, la conduite du Copilote renvoie vers projeter et la question des événements", { skip: SANS_STRIP }, () => {
   const instr = bloc(srcIndex, "const INSTRUCTIONS = [", "/* Parcours d'entretien");
