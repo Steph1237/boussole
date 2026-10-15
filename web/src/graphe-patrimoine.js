@@ -1276,11 +1276,14 @@
   function pinSvg(M, g, x, y, sc, fond) {
     const n = g.jalons.length, j = g.jalons[0], ids = g.jalons.map(z => z.id).join(" "), o = n === 1 && estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null;
     const mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut], ton = o ? (mot ? TON_MOT[mot] : st ? st[1] : "todo") : null, rr = Math.round(10 * sc + 3);
-    let s = '<g class="gp-pin gp-pin-i' + (n > 1 ? " gp-pin-g" : "") + '" data-ev="' + esc(ids) + '" data-icone="' + iconeDe(j) + '">';
+    /* un groupe prend l'icône du type le plus fréquent (à égalité, du premier) */
+    const compte = {}; g.jalons.forEach(z => { const k = iconeDe(z); compte[k] = (compte[k] || 0) + 1; });
+    const nom = n === 1 ? iconeDe(j) : Object.keys(compte).sort((a, b) => (compte[b] - compte[a]) || (iconeDe(g.jalons[0]) === a ? -1 : 1))[0];
+    let s = '<g class="gp-pin gp-pin-i' + (n > 1 ? " gp-pin-g" : "") + '" data-ev="' + esc(ids) + '" data-icone="' + nom + '">';
     s += '<circle class="gp-pin-bg' + (fond ? " plein" : "") + '" cx="' + F1(x) + '" cy="' + F1(y) + '" r="' + rr + '"/>';
     if (o) s += '<circle class="gp-ring ' + ton + '" cx="' + F1(x) + '" cy="' + F1(y) + '" r="' + (rr + 2) + '"/>';
-    s += icoG(iconeDe(j), x, y, sc);
-    if (n > 1) s += '<g class="gp-badge"><circle cx="' + F1(x + rr * 0.8) + '" cy="' + F1(y - rr * 0.8) + '" r="6.5"/><text x="' + F1(x + rr * 0.8) + '" y="' + F1(y - rr * 0.8 + 3.5) + '" text-anchor="middle">' + (n > 99 ? "99+" : n) + "</text></g>";
+    s += icoG(nom, x, y, sc);
+    if (n > 1) s += '<g class="gp-badge"><circle cx="' + F1(x + rr * 0.8) + '" cy="' + F1(y - rr * 0.8) + '" r="8"/><text x="' + F1(x + rr * 0.8) + '" y="' + F1(y - rr * 0.8 + 3.5) + '" text-anchor="middle">' + (n > 99 ? "99+" : n) + "</text></g>";
     return s + "</g>";
   }
   /** Carte : une icône de 12 px par événement sur la ligne de base (fusionnées avec leur nombre quand elles se touchent) et petites cibles sur la médiane pour les objectifs. */

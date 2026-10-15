@@ -200,7 +200,7 @@ test("jalons : regroupés quand leurs pastilles se touchent (compte « 4 »), ob
   const groupes = geo.marqueurs.filter(m => m.type === "groupe");
   const gros = groupes.find(m => m.jalons.length > 1);
   assert.ok(gros && gros.jalons.length === 5, "les événements des 14 prochains mois sont regroupés (repères à 44 px l'un de l'autre) : " + groupes.map(g => g.jalons.length).join(","));
-  assert.match(svg, /<g class="gp-pin gp-pin-i gp-pin-g"[^>]*>[\s\S]*?<g class="gp-badge"><circle[^>]*r="6\.5"\/><text[^>]*>5<\/text>/, "le compte est écrit dans la pastille de l'icône");
+  assert.match(svg, /<g class="gp-pin gp-pin-i gp-pin-g"[^>]*>[\s\S]*?<g class="gp-badge"><circle[^>]*r="8"\/><text[^>]*>5<\/text>/, "le compte est écrit dans la pastille de l'icône");
   assert.match(svg, /<g class="gp-pin gp-pin-i" data-ev="[^"]+" data-icone="[a-z]+">/, "un jalon seul : sa petite icône sur la ligne de base, sans pastille de nombre");
   assert.equal(geo.marqueurs.filter(m => m.type === "objectif").length, 3, "trois objectifs en petites cibles");
   assert.equal((svg.match(/class="gp-tg"/g) || []).length, 3);
@@ -372,7 +372,7 @@ test("plein écran : piste des événements sous l'axe, une icône par type sur 
     assert.equal(new Set(pins.map(a => a.y)).size, 1, mode + " : une seule voie");
     assert.ok(pins[0].y > r.geo.B + 22, mode + " : la piste est sous l'axe du temps");
     const xs = pins.map(a => a.x).sort((a, b) => a - b); if (mode === "bureau") assert.ok(pins.length >= 2, "bureau : plusieurs icônes"); for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 20 - 1e-6, mode + " : 20 px entre deux icônes");
-    assert.match(r.svg, /<g class="gp-badge"><circle[^>]*r="6\.5"\/><text[^>]*>\d+<\/text>/, mode + " : les événements rapprochés fusionnent avec leur nombre");
+    assert.match(r.svg, /<g class="gp-badge"><circle[^>]*r="8"\/><text[^>]*>\d+<\/text>/, mode + " : les événements rapprochés fusionnent avec leur nombre");
     assert.ok(r.geo.H >= pins[0].y + 12, mode + " : le cadre contient la piste");
   }
   assert.match(svgDe(M0(), "5", "bureau", 1000).svg, /<g class="gp-puce"[^>]*><rect[^>]*\/><text[^>]*>estimé<\/text>/, "une puce « estimé » au début du segment reconstitué");

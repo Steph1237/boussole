@@ -155,7 +155,7 @@
 .gp-pin.is-sel{color:var(--brand)}
 .gp-pin.is-sel .gp-pin-bg{fill:var(--brand-soft);stroke:var(--brand);stroke-width:1.25}
 .gp-badge circle{fill:var(--ink);stroke:var(--surface);stroke-width:1.5}
-.gp-svg .gp-badge text{fill:var(--surface);font:700 calc(var(--t-caption) * .85)/1 var(--f-body)}
+.gp-svg .gp-badge text{fill:var(--surface);font:700 var(--t-caption)/1 var(--f-body)}
 .gp-pin.is-sel .gp-badge circle{fill:var(--brand)}
 .gp-rail-l{stroke:var(--line);stroke-width:1}
 .gp-ring{fill:none;stroke-width:1.5}
@@ -373,11 +373,14 @@ body.gp-bloque{overflow:hidden}
 .gp-al-t{flex:1;min-width:0}
 .gp-al-t p{margin:0}
 .gp-al-t .gp-al-d{margin-top:2px;color:var(--muted)}
-.gp-al-a{flex:none;align-self:center}
+.gp-al-a{flex:none;align-self:center;min-width:0;max-width:100%}
+.gp-al-a>*{max-width:100%;box-sizing:border-box}
 .gp-al-a a{font-weight:600;color:var(--brand);text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 @media (max-width:520px){.gp-alerte{flex-wrap:wrap}.gp-al-t{flex:1 1 calc(100% - 32px)}.gp-al-a{flex:1 1 100%;margin-left:calc(20px + var(--sp-2))}}
 @media (max-width:599px){.gp-carte .gp-al-d{display:none}}
-.gp-fsv-paysage .gp-alerte{margin:0 0 var(--sp-2)}
+.gp-fsv-paysage .gp-alerte{margin:0 0 var(--sp-2);flex-wrap:wrap}
+.gp-fsv-paysage .gp-al-t{flex:1 1 calc(100% - 32px)}
+.gp-fsv-paysage .gp-al-a{flex:1 1 100%;margin-left:0}
 .gp-fsv-paysage .gp-al-d{display:none}
 .gp-fsv .gp-alerte{margin:0}
 .gp-zmed{margin-left:auto;flex:none}
