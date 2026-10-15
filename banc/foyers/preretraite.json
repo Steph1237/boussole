@@ -1,0 +1,495 @@
+{
+  "slug": "preretraite",
+  "titre": "Martine et Alain, 61 et 63 ans, à deux ans de la retraite",
+  "description": "Couple marié, enfants adultes, résidence principale payée, un petit locatif, deux assurances-vie dont une qui atteint 8 ans dans quelques mois, PER, PEA, donation passée. Sert au calendrier (8 ans, 70e anniversaire), à la retraite et à la transmission.",
+  "mfa": false,
+  "jeton": "session",
+  "profil": {
+    "foyer": {
+      "adultes": 2,
+      "enfants": 0,
+      "enfants14": 0,
+      "union": "joint",
+      "age": "a60",
+      "tmi": 30
+    },
+    "personnes": {
+      "p1": {
+        "nom": "Martine",
+        "naissance": "1965-04-30",
+        "salaire": 2900,
+        "salaireUnite": "nm",
+        "statut": "cadre",
+        "csp": "cadre",
+        "essai": false,
+        "autresRevenus": 0
+      },
+      "p2": {
+        "nom": "Alain",
+        "naissance": "1963-11-14",
+        "salaire": 3800,
+        "salaireUnite": "nm",
+        "statut": "cadre",
+        "csp": "cadre",
+        "essai": false,
+        "autresRevenus": 0
+      }
+    },
+    "autres": {
+      "p1": {
+        "usage": 7000,
+        "entreprise": 0
+      },
+      "p2": {
+        "usage": 12000,
+        "entreprise": 0
+      }
+    },
+    "protection": {
+      "p1": {
+        "prevoyance": true,
+        "emprunteur": false
+      },
+      "p2": {
+        "prevoyance": true,
+        "emprunteur": false
+      }
+    },
+    "journal_consentement": "prevenir",
+    "onboarding_done": true
+  },
+  "risque_reponses": {
+    "horizon": "2-5",
+    "objectif": "revenus",
+    "reaction": "vendre_partie",
+    "perte_max": "p20",
+    "connaissances": [
+      "livrets",
+      "fonds_euros",
+      "obligations"
+    ],
+    "experience": 3,
+    "revenus": "cdi",
+    "matelas": "oui",
+    "part_investie": "10-25",
+    "age": "a60"
+  },
+  "biens": [
+    {
+      "ref": "rp",
+      "nom": "Maison (résidence principale)",
+      "usage": "rp",
+      "valeur": 420000,
+      "part_p1": 50,
+      "crd": 0,
+      "mensualite": 0,
+      "loyer": 0
+    },
+    {
+      "ref": "studio",
+      "nom": "Studio loué",
+      "usage": "locatif",
+      "valeur": 150000,
+      "part_p1": 50,
+      "crd": 22000,
+      "mensualite": 410,
+      "loyer": 720
+    }
+  ],
+  "credits": [],
+  "positions": [
+    {
+      "ref": "livret-a-martine",
+      "name": "Livret A",
+      "envelope": "Livrets Martine",
+      "owner": "p1",
+      "bloc": "Épargne",
+      "mode": "manual",
+      "value": 22950,
+      "value_date": "J-6"
+    },
+    {
+      "ref": "livret-a-alain",
+      "name": "Livret A",
+      "envelope": "Livrets Alain",
+      "owner": "p2",
+      "bloc": "Épargne",
+      "mode": "manual",
+      "value": 22950,
+      "value_date": "J-6"
+    },
+    {
+      "ref": "ldds",
+      "name": "LDDS",
+      "envelope": "Livrets Martine",
+      "owner": "p1",
+      "bloc": "Épargne",
+      "mode": "manual",
+      "value": 12000,
+      "value_date": "J-6"
+    },
+    {
+      "ref": "compte-joint",
+      "name": "Compte courant commun",
+      "envelope": "Comptes courants",
+      "owner": "p2",
+      "bloc": "Comptes courants",
+      "mode": "manual",
+      "value": 6800,
+      "value_date": "J-1"
+    },
+    {
+      "ref": "av-alain-euros",
+      "name": "Fonds en euros",
+      "envelope": "Assurance vie Alain",
+      "owner": "p2",
+      "bloc": "Obligations",
+      "mode": "manual",
+      "value": 85000,
+      "value_date": "FM-1"
+    },
+    {
+      "ref": "av-alain-monde",
+      "name": "Fonds Monde Indiciel A",
+      "envelope": "Assurance vie Alain",
+      "owner": "p2",
+      "bloc": "Monde",
+      "mode": "market",
+      "isin": "ZZ0000000011",
+      "qty": 270,
+      "pru": 85
+    },
+    {
+      "ref": "av-martine-euros",
+      "name": "Fonds en euros",
+      "envelope": "Assurance vie Martine",
+      "owner": "p1",
+      "bloc": "Obligations",
+      "mode": "manual",
+      "value": 60000,
+      "value_date": "FM-1"
+    },
+    {
+      "ref": "per-alain",
+      "name": "PER Alain",
+      "envelope": "PER Alain",
+      "owner": "p2",
+      "bloc": "Monde",
+      "mode": "manual",
+      "value": 31000,
+      "value_date": "FM-1"
+    },
+    {
+      "ref": "pea-alain-europe",
+      "name": "Fonds Europe Indiciel A",
+      "envelope": "PEA Alain",
+      "owner": "p2",
+      "bloc": "Europe",
+      "mode": "market",
+      "isin": "ZZ0000000029",
+      "qty": 70,
+      "pru": 190
+    },
+    {
+      "ref": "pea-alain-obligations",
+      "name": "Fonds Obligataire Euro A",
+      "envelope": "PEA Alain",
+      "owner": "p2",
+      "bloc": "Obligations",
+      "mode": "market",
+      "isin": "ZZ0000000037",
+      "qty": 150,
+      "pru": 97
+    }
+  ],
+  "budget": [
+    {
+      "id": "bl-energie",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Électricité et chauffage",
+      "montant": 230,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-mrh",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Assurances de la maison et du studio",
+      "montant": 85,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-taxe-fonciere",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Taxes foncières",
+      "montant": 2900,
+      "frequence": "an"
+    },
+    {
+      "id": "bl-courses",
+      "type": "depense",
+      "categorie": "Alimentation",
+      "libelle": "Courses",
+      "montant": 620,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-voitures",
+      "type": "depense",
+      "categorie": "Transport",
+      "libelle": "Deux voitures",
+      "montant": 340,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-sante",
+      "type": "depense",
+      "categorie": "Santé",
+      "libelle": "Mutuelle et restes à charge",
+      "montant": 260,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-loisirs",
+      "type": "depense",
+      "categorie": "Loisirs",
+      "libelle": "Voyages, sorties, famille",
+      "montant": 520,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-abos",
+      "type": "depense",
+      "categorie": "Abonnements",
+      "libelle": "Téléphones, internet, streaming",
+      "montant": 85,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-ir",
+      "type": "depense",
+      "categorie": "Impôts",
+      "libelle": "Impôt sur le revenu (prélèvement mensualisé)",
+      "montant": 640,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-divers",
+      "type": "depense",
+      "categorie": "Divers",
+      "libelle": "Cadeaux aux petits-enfants et imprévus",
+      "montant": 220,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-per",
+      "type": "epargne",
+      "categorie": "Épargne",
+      "libelle": "PER Alain",
+      "montant": 400,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-av",
+      "type": "epargne",
+      "categorie": "Épargne",
+      "libelle": "Assurance vie Alain",
+      "montant": 300,
+      "frequence": "mois"
+    }
+  ],
+  "objectifs": [
+    {
+      "nom": "Départ à la retraite d'Alain",
+      "type": "retraite",
+      "cible": 420000,
+      "date_cible": "M+24",
+      "deja": 0,
+      "source": "poches",
+      "poches": [
+        "Monde",
+        "Europe",
+        "Obligations"
+      ],
+      "rendement": 3.5,
+      "priorite": 1
+    },
+    {
+      "nom": "Matelas de précaution",
+      "type": "matelas",
+      "cible": 30000,
+      "date_cible": "M+1",
+      "deja": 0,
+      "source": "poches",
+      "poches": [
+        "Épargne"
+      ],
+      "rendement": 2.4,
+      "priorite": 2
+    }
+  ],
+  "config": {
+    "targets": {
+      "p1": {
+        "Obligations": 50,
+        "Épargne": 50
+      },
+      "p2": {
+        "Obligations": 35,
+        "Monde": 20,
+        "Europe": 10,
+        "Épargne": 35
+      },
+      "tolerancePts": 4
+    },
+    "rules": [
+      {
+        "type": "envelope_cap",
+        "envelope": "Livrets Alain",
+        "cap": 22950
+      },
+      {
+        "type": "envelope_cap",
+        "envelope": "Livrets Martine",
+        "cap": 34950
+      }
+    ],
+    "cushion": {
+      "mode": "amount",
+      "min": 28000,
+      "max": 36000
+    },
+    "recurring": [
+      {
+        "id": "rec-per",
+        "label": "Versement PER Alain",
+        "positionRef": "per-alain",
+        "amount": 400,
+        "day": 10,
+        "start": "M-30",
+        "lastApplied": null,
+        "hypothesis": null
+      }
+    ],
+    "todo": [
+      {
+        "text": "Faire le point sur la clause bénéficiaire des deux assurances-vie",
+        "done": false
+      }
+    ],
+    "milestones": [
+      {
+        "title": "Départ à la retraite d'Alain",
+        "date": "M+24",
+        "warnDays": 180,
+        "text": "Revoir le budget et les retraits."
+      }
+    ],
+    "enveloppes_infos": {
+      "Assurance vie Alain": {
+        "type": "assurance_vie",
+        "titulaire": "p2",
+        "date_ouverture": "M-90",
+        "versements_cumules": 95000,
+        "versements_avant_70": 95000,
+        "source": "Conditions particulières du contrat (exemple)",
+        "le": "J-45"
+      },
+      "Assurance vie Martine": {
+        "type": "assurance_vie",
+        "titulaire": "p1",
+        "date_ouverture": "M-150",
+        "versements_cumules": 52000,
+        "versements_avant_70": 52000,
+        "source": "Conditions particulières du contrat (exemple)",
+        "le": "J-45"
+      },
+      "PEA Alain": {
+        "type": "pea",
+        "titulaire": "p2",
+        "date_ouverture": "M-150",
+        "versements_cumules": 27000,
+        "source": "Relevé annuel du PEA (exemple)",
+        "le": "J-45"
+      },
+      "PER Alain": {
+        "type": "per",
+        "titulaire": "p2",
+        "date_ouverture": "M-96",
+        "versements_cumules": 26000,
+        "source": "Relevé annuel du PER (exemple)",
+        "le": "J-45"
+      }
+    },
+    "prets_infos": {
+      "bien:{bien:studio}": {
+        "date_signature": "M-100",
+        "duree_mois": 180,
+        "source": "Offre de prêt (exemple)",
+        "le": "J-45"
+      }
+    },
+    "donations": [
+      {
+        "id": "don-1",
+        "date": "M-96",
+        "montant": 20000,
+        "donateur": "p2",
+        "lien": "enfant",
+        "beneficiaire": "Fille aînée",
+        "nature": "donation",
+        "source": "Acte de donation (exemple)",
+        "le": "J-45"
+      }
+    ],
+    "avis_impot": {
+      "revenu_fiscal_reference": 82000,
+      "parts": 2,
+      "annee": 2025,
+      "source": "Avis d'impôt (exemple)",
+      "le": "J-60"
+    },
+    "projection": {
+      "reste_capacite": "disponible",
+      "tmi_pct": 30,
+      "source": "Ce que tu as dit à Claude (exemple)",
+      "le": "J-20"
+    }
+  },
+  "evenements": [
+    {
+      "ref": "e1",
+      "type": "retrait",
+      "personne": "foyer",
+      "libelle": "Travaux de toiture",
+      "date": "M+14",
+      "params": {
+        "montant": 18000,
+        "libelle": "Travaux de toiture"
+      }
+    }
+  ],
+  "variantes": [],
+  "historique": {
+    "mois": 12,
+    "pente_pct": 0.4,
+    "graine": 53
+  },
+  "memoire": [
+    {
+      "categorie": "contexte",
+      "contenu": "Alain part à la retraite dans deux ans ; Martine continuera quelques années.",
+      "source": "Claude",
+      "il_y_a_jours": 60,
+      "epingle": true
+    },
+    {
+      "categorie": "preference",
+      "contenu": "Préfèrent des explications posées, sans jargon.",
+      "source": "Claude",
+      "il_y_a_jours": 55
+    }
+  ]
+}

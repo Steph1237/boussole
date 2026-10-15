@@ -1,8 +1,9 @@
 // Connecteur MCP (supabase/functions/mcp) et page de consentement OAuth.
 //
 // Contrôles statiques, sans réseau : routes, en-têtes, outils exposés, absence de clé de service.
-// Contrôle en ligne (fonction déployée) seulement avec BOUSSOLE_LIVE=1 :
-//   BOUSSOLE_LIVE=1 node --test test/mcp.test.mjs
+// Contrôle en ligne (SEC5 : fonction servie sur la PRÉPRODUCTION LOCALE, jamais la production) seulement avec BOUSSOLE_LIVE=1 :
+//   npm run preprod:fonctions   (autre terminal), puis
+//   eval "$(node scripts/preprod/env.mjs --export)" && BOUSSOLE_LIVE=1 node --test test/mcp.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
@@ -41,8 +42,6 @@ const srcProjection = readFileSync(path("supabase/functions/mcp/projection.ts"),
 const srcAll = [src, srcCalendrier, srcProjection, srcSavoir, srcMemoire, srcJournal, srcFormulaire, srcReglages, srcRoutines, srcExpertises, srcAnalyser, srcBanque].join("\n");
 const codeAll = sansCommentaires(srcAll);
 
-const BASE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
-const PRM_URL = `${BASE}/.well-known/oauth-protected-resource`;
 const TOOLS = [
   "get_overview", "get_profile", "update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit",
   "list_positions", "upsert_positions", "record_transaction", "get_config", "update_config",
@@ -79,8 +78,11 @@ test("mcp : route des métadonnées de ressource protégée (et variante suffix�
   assert.match(code, /basePath\(\s*["']\/mcp["']\s*\)/);
   assert.match(code, /\.get\(\s*["']\/\.well-known\/oauth-protected-resource["']/);
   assert.match(code, /\.get\(\s*["']\/\.well-known\/oauth-protected-resource\/functions\/v1\/mcp["']/);
-  assert.ok(code.includes('authorization_servers: ["https://oapcewpqsbbjdlcdeizi.supabase.co/auth/v1"]'));
-  assert.ok(code.includes('bearer_methods_supported: ["header"]'));
+  // SEC5 : les métadonnées viennent de config-env.ts (valeurs de production par défaut, octet pour octet : test/mcp-preprod.test.mjs).
+  assert.ok(code.includes("const PROTECTED_RESOURCE = CFG.protectedResource"));
+  const configEnv = sansCommentaires(readFileSync(path("supabase/functions/mcp/config-env.ts"), "utf8"));
+  assert.ok(configEnv.includes("authorization_servers: [`${publicUrl}/auth/v1`]"));
+  assert.ok(configEnv.includes('bearer_methods_supported: ["header"]'));
 });
 
 test("mcp : 401 avec WWW-Authenticate pointant vers les métadonnées", () => {
@@ -1390,18 +1392,22 @@ test("consentement : page autonome, scripts et appels OAuth attendus", () => {
   assert.ok(existsSync(path("web/src/consent.js")));
 });
 
-const live = process.env.BOUSSOLE_LIVE === "1";
+// Cible des contrôles en ligne : la pile locale (BOUSSOLE_SUPABASE_URL), refusée si elle n'est pas locale.
+const URL_LOCALE = process.env.BOUSSOLE_SUPABASE_URL || "";
+const live = process.env.BOUSSOLE_LIVE === "1" && /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(URL_LOCALE);
+const BASE = `${URL_LOCALE}/functions/v1/mcp`;
+const PRM_URL = `${BASE}/.well-known/oauth-protected-resource`;
 const INIT = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "boussole-test", version: "1" } } };
 
-test("en ligne : métadonnées de ressource protégée", { skip: !live && "BOUSSOLE_LIVE absent : test en ligne non exécuté" }, async () => {
+test("en ligne : métadonnées de ressource protégée", { skip: !live && "BOUSSOLE_LIVE=1 et BOUSSOLE_SUPABASE_URL (pile locale) absents : test en ligne non exécuté" }, async () => {
   const res = await fetch(PRM_URL);
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.resource, BASE);
-  assert.deepEqual(body.authorization_servers, ["https://oapcewpqsbbjdlcdeizi.supabase.co/auth/v1"]);
+  assert.deepEqual(body.authorization_servers, [`${URL_LOCALE}/auth/v1`]);
 });
 
-test("en ligne : POST sans jeton → 401 + WWW-Authenticate ; jeton invalide → 401", { skip: !live && "BOUSSOLE_LIVE absent : test en ligne non exécuté" }, async () => {
+test("en ligne : POST sans jeton → 401 + WWW-Authenticate ; jeton invalide → 401", { skip: !live && "BOUSSOLE_LIVE=1 et BOUSSOLE_SUPABASE_URL (pile locale) absents : test en ligne non exécuté" }, async () => {
   const headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream" };
   let res = await fetch(BASE, { method: "POST", headers, body: JSON.stringify(INIT) });
   assert.equal(res.status, 401);

@@ -86,6 +86,17 @@ export function lignesCours(isin: string, points: Point[], source: string): Lign
     .filter((l) => isFinite(l.cloture) && l.cloture > 0 && /^\d{4}-\d{2}-\d{2}$/.test(l.date));
 }
 
+/** Cours figés de la préproduction (BOUSSOLE_COURS_FIGES = « ISIN=prix,ISIN=prix ») → Map ; les entrées invalides sont ignorées. */
+export function coursFiges(texte: string | undefined): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const part of String(texte ?? "").split(",")) {
+    const [isin, prix] = part.split("=").map((x) => x.trim());
+    const n = Number(prix);
+    if (isin && prix && isFinite(n) && n > 0) out.set(isin, n);
+  }
+  return out;
+}
+
 /** Paquets de `n` éléments au plus. */
 export function paquets<T>(liste: T[], n = 500): T[][] {
   const out: T[][] = [];

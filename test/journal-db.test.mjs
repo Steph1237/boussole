@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { hasServiceKey, SKIP_REASON, createTestUser, deleteTestUser } from "./helpers/supabase.mjs";
+import { hasServiceKey, SKIP_REASON, erreurMasquee, createTestUser, deleteTestUser } from "./helpers/supabase.mjs";
 
 const sql = readFileSync("supabase/migrations/0013_journal.sql", "utf8");
 const bloc = (debut, fin) => {
@@ -128,7 +128,8 @@ test("intégration : journal privé, sensible refusé, historique, état figé, 
     const rows = Array.from({ length: 1999 }, (_, i) => ({ type: "avis", titre: "Avis " + i, synthese: "s" }));
     assert.equal((await a.client.from("journal").insert(rows)).error, null);
     const trop = await a.client.from("journal").insert({ type: "avis", titre: "De trop", synthese: "s" });
-    assert.match(String(trop.error?.message), /2 000 entrées/);
+    assert.ok(trop.error, "2 001e entrée refusée");
+    assert.ok(erreurMasquee(trop.error) || /2 000 entrées/.test(String(trop.error.message)), String(trop.error.message)); // le compte relu plus bas (2 000) prouve le refus
     const ex = await a.client.rpc("export_all");
     assert.equal(ex.data.journal.length, 2000);
     // consentement

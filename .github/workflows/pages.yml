@@ -24,10 +24,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # SEC5 : plus aucune clé de Supabase ici. Les tests d'intégration (isolation, journal, savoir, nuit) tournent sur une pile locale dans
+      # .github/workflows/preprod.yml ; ici ils sont « non exécutés » (cible locale absente), la voie PGlite (sans Docker) reste complète.
       - run: npm test
-        env:
-          # Facultatif : sans ce secret, les tests d'isolation et de la fonction nocturne sont marqués « non exécutés ».
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       - run: node build.mjs
       - uses: actions/upload-pages-artifact@v3
         with:

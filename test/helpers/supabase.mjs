@@ -1,16 +1,22 @@
-// Aides Supabase pour les tests d'intégration (isolation RLS).
+// Aides Supabase pour les tests d'intégration (isolation RLS, journal, savoir, nuit).
 //
-// - `url` et `key` (clé publiable) sont lus dans web/config.js : une seule source de vérité.
-// - La clé service (`SUPABASE_SERVICE_KEY`) vient uniquement de l'environnement : jamais dans
-//   le repo, jamais affichée. Sans elle, `hasServiceKey` vaut false et les tests se sautent.
+// SEC5 : les tests visent la PRÉPRODUCTION LOCALE, jamais la production. La cible vient de l'environnement :
+//   BOUSSOLE_SUPABASE_URL   URL de la pile locale (http://127.0.0.1:54521)
+//   BOUSSOLE_SUPABASE_KEY   clé publiable locale
+//   SUPABASE_SERVICE_KEY    clé de service locale (jamais dans le dépôt, jamais affichée)
+// `npm run preprod:test` les renseigne depuis `supabase status` ; à la main : eval "$(node scripts/preprod/env.mjs --export)".
+// Sans cible locale, `hasServiceKey` vaut false et les tests d'intégration se sautent (avec la raison dans SKIP_REASON).
+// Garde : une URL qui n'est pas locale, ou une clé qui n'est pas celle de la pile locale, fait lever une erreur à l'import, sauf
+// BOUSSOLE_PROD=1, réservé à scripts/migrate-steph.mjs (outil de production légitime : URL lue dans web/config.js, comme avant).
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { assertLocal, assertCleLocale } from "../../scripts/preprod/garde.mjs";
 
 const CONFIG_PATH = fileURLToPath(new URL("../../web/config.js", import.meta.url));
 
-function readConfig() {
+function lireConfigProduction() {
   const src = readFileSync(CONFIG_PATH, "utf8");
   const pick = (name) => {
     const m = src.match(new RegExp(`${name}\\s*:\\s*["']([^"']+)["']`));
@@ -20,22 +26,53 @@ function readConfig() {
   return { url: pick("supabaseUrl"), key: pick("supabaseKey") };
 }
 
-export const { url, key } = readConfig();
+const RAISON_DEFAUT = "préproduction locale non active (BOUSSOLE_SUPABASE_URL, BOUSSOLE_SUPABASE_KEY et SUPABASE_SERVICE_KEY absents) : test d'intégration non exécuté, lance `npm run preprod:test`";
 
-const serviceKey = process.env.SUPABASE_SERVICE_KEY || "";
-export const hasServiceKey = serviceKey.length > 0;
-export const SKIP_REASON = "SUPABASE_SERVICE_KEY absent : test d'isolation non exécuté";
+/** Résout la cible des tests depuis un environnement. Pure (testée). Lève si la cible n'est pas la pile locale. */
+export function resoudreCible(env = process.env) {
+  const prod = env.BOUSSOLE_PROD === "1";
+  const serviceKey = env.SUPABASE_SERVICE_KEY || "";
+  let url = env.BOUSSOLE_SUPABASE_URL || "", key = env.BOUSSOLE_SUPABASE_KEY || "";
+  if (!url && prod) { const p = lireConfigProduction(); url = p.url; key = key || p.key; }
+  if (!url) {
+    return { actif: false, url: "", key: "", serviceKey: "", raison: serviceKey ? `${RAISON_DEFAUT} (SUPABASE_SERVICE_KEY est définie mais ignorée sans cible locale)` : RAISON_DEFAUT };
+  }
+  if (!prod) {
+    assertLocal(url);
+    if (serviceKey) assertCleLocale(serviceKey);
+    if (key) assertCleLocale(key);
+  }
+  const manque = [!key && "BOUSSOLE_SUPABASE_KEY", !serviceKey && "SUPABASE_SERVICE_KEY"].filter(Boolean);
+  if (manque.length) return { actif: false, url, key, serviceKey: "", raison: `${manque.join(" et ")} absent${manque.length > 1 ? "s" : ""} : test d'intégration non exécuté, lance \`npm run preprod:test\`` };
+  return { actif: true, url, key, serviceKey, raison: "" };
+}
+
+const cible = resoudreCible();
+export const url = cible.url;
+export const key = cible.key;
+export const hasServiceKey = cible.actif;
+/** Raison affichée par les tests sautés (celle de la cible, ou le message par défaut). */
+export const SKIP_REASON = cible.raison || RAISON_DEFAUT;
+export const raisonSaut = SKIP_REASON;
+
+/**
+ * PostgREST 14 (pile locale du CLI 2.107.0) répond HTTP 500 « Something went wrong » à une exception SQL de code 54000 (limite atteinte :
+ * journal, mémoire) au lieu de son message. Les tests de limite acceptent ce masque, à condition de relire ensuite le compte (export_all)
+ * qui prouve que la ligne n'a pas été écrite : le refus est vérifié, seul le texte de l'erreur ne l'est plus.
+ */
+export const erreurMasquee = (error) => !!error && error.message === "Something went wrong";
 
 const NO_SESSION = { auth: { autoRefreshToken: false, persistSession: false } };
 
-/** Client rôle service (contourne RLS). Lève une erreur si la clé service est absente. */
+/** Client rôle service (contourne RLS) de la pile locale. Lève une erreur sans cible locale. */
 export function adminClient() {
   if (!hasServiceKey) throw new Error(SKIP_REASON);
-  return createClient(url, serviceKey, NO_SESSION);
+  return createClient(url, cible.serviceKey, NO_SESSION);
 }
 
 /** Client anonyme (clé publiable), sans session persistée. */
 export function userClient() {
+  if (!url || !key) throw new Error(SKIP_REASON);
   return createClient(url, key, NO_SESSION);
 }
 
