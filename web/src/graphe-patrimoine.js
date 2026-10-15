@@ -77,11 +77,31 @@
   /** Compact : « 150 k€ », « 1,2 M€ » (sous 1 000 € : l'euro entier). dec = décimales du k€ (0 par défaut). */
   function fK(n, dec) {
     const a = Math.abs(n), sg = n < 0 && Math.round(a) !== 0 ? MOINS : "";
-    if (a >= 1e6) return sg + (a / 1e6).toFixed(2).replace(/\.?0+$/, "").replace(".", ",") + NB + "M€";
+    /* deux chiffres significatifs au-delà du million (« 1,0 M€ », « 12 M€ ») ; dès 995 k€ (« 1 M€ » à deux chiffres) on passe en M€ */
+    if (a >= 1e6 || (!dec && a >= 995000)) return sg + (a >= 1e7 ? String(Math.round(a / 1e6)) : (a / 1e6).toFixed(1).replace(".", ",")) + NB + "M€";
     if (a >= 1000) return sg + ((dec ? (a / 1000).toFixed(dec) : String(Math.round(a / 1000))).replace(".", ",")) + NB + "k€";
     return sg + fInt(a) + NB + "€";
   }
+  /** Libellés de l'axe vertical : « 0 » (jamais « 0,0 M€ »), « 500 k€ » sous le million, « 1,0 M€ » au-dessus (une même décimale pour tous les M€ de l'axe). */
+  function libellesAxe(valeurs) {
+    const frac = valeurs.some(v => Math.abs(v) >= 1e6 && Math.abs(Math.round(v / 1e5) / 10 - Math.round(v / 1e6)) > 1e-9);
+    return valeurs.map(v => {
+      const a = Math.abs(v), sg = v < 0 ? MOINS : "";
+      if (a < 1e-9) return "0";
+      if (a >= 1e6) return sg + (frac ? (a / 1e6).toFixed(1).replace(".", ",") : String(Math.round(a / 1e6))) + NB + "M€";
+      if (a >= 1000) return sg + fInt(a / 1000) + NB + "k€";
+      return sg + fInt(a) + NB + "€";
+    });
+  }
   const fSK = n => (n >= 0 ? "+" : MOINS) + fK(Math.abs(n));
+  /** Valeur telle que fK l'écrit (k€ entiers, 0,1 M€ au-delà de 995 k€) : pour que les parts affichées s'additionnent au total affiché. */
+  const arrK = n => (Math.abs(n) >= 995000 ? Math.round(n / 1e5) * 1e5 : Math.round(n / 1000) * 1000);
+  /** Parts d'une lecture projetée, arrondies comme elles s'écrivent : actuel + futur = médiane. null sans les couches. */
+  function partsAffichees(l) {
+    if (l.existant == null || l.p50 == null) return null;
+    const total = arrK(l.p50), ex = arrK(l.existant);
+    return { total, existant: ex, futur: total - ex };
+  }
   const fSE = n => (n >= 0 ? "+" : MOINS) + fInt(n) + NB + "€";
   const fMois = n => (n > 0 ? "+" : n < 0 ? MOINS : "") + fInt(n) + NB + "€/mois";
   const fMoisU = n => fInt(n) + NB + "€/mois";
@@ -89,10 +109,10 @@
   /** « 300 et 560 k€ » : la fourchette en deux nombres, l'unité une seule fois quand elle est la même. */
   const kRange = (a, b) => (Math.max(Math.abs(a), Math.abs(b)) < 1e6 && Math.min(Math.abs(a), Math.abs(b)) >= 1000 ? Math.round(a / 1000) + " et " + fK(b) : fK(a) + " et " + fK(b));
   const kTiret = (a, b) => (Math.max(Math.abs(a), Math.abs(b)) < 1e6 && Math.min(Math.abs(a), Math.abs(b)) >= 1000 ? Math.round(a / 1000) + "–" + fK(b) : fK(a) + "–" + fK(b));
-  /** Chances « sur 10 » : 0,8 → « 8 chances sur 10 », 0,05 → « moins de 1 chance sur 10 », 1 → « 10 chances sur 10 ». */
+  /** Chances « sur 10 » : 0,8 → « 8 chances sur 10 », 0,05 → « moins de 1 chance sur 10 », dès 95 % (jamais « 10 sur 10 », rien n'est certain) → « plus de 9 chances sur 10 ». */
   function chancesTxt(p) {
     const n = Math.round(p * 10);
-    if (p < 1 && n >= 10) return "plus de 9 chances sur 10";
+    if (p >= 0.95) return "plus de 9 chances sur 10";
     if (n <= 0) return "moins de 1 chance sur 10";
     return n + (n > 1 ? " chances" : " chance") + " sur 10";
   }
@@ -164,8 +184,7 @@
     }
     const valeurs = [];
     for (let k = Math.ceil(lo / pas - 1e-9); k * pas <= hi + pas * 1e-9; k++) valeurs.push(Math.round(k * pas * 1e6) / 1e6);
-    const F = FmtDef;
-    return { pas, valeurs, libelles: F && F.fmtAxe ? F.fmtAxe(valeurs) : valeurs.map(v => fK(v)) };
+    return { pas, valeurs, libelles: libellesAxe(valeurs) };
   }
   /** Domaine des y d'un besoin { lo, hi } : marge de 7 %, zéro inclus si des valeurs sont négatives. */
   function domaineY(lo, hi) {
@@ -173,7 +192,7 @@
     if (hi - lo < 1e-9) { const a = Math.abs(hi) * 0.05 || 1000; lo -= a; hi += a; }
     const pad = (hi - lo) * 0.07;
     let a = lo - pad, b = hi + pad;
-    if (lo < 0) b = Math.max(b, 0);
+    if (lo < 0) b = Math.max(b, 0); else a = Math.max(0, a); /* un patrimoine positif ne descend pas sous zéro : pas de graduation négative inventée */
     return { lo: a, hi: b };
   }
   /** Échelle des y stable : le résultat à 500 chemins est calculé une fois sur son besoin élargi de 10 % ; le résultat complet (2 000 chemins) ne la change que si son
@@ -183,10 +202,13 @@
     if (!prev) {
       if (!o.apercu) return Object.assign({ change: true }, nouveau);
       const m = (nouveau.hi - nouveau.lo) * 0.1;
-      return { lo: nouveau.lo - m, hi: nouveau.hi + m, change: true };
+      return { lo: nouveau.lo >= 0 ? Math.max(0, nouveau.lo - m) : nouveau.lo - m, hi: nouveau.hi + m, change: true };
     }
     const dedans = besoin.lo >= prev.lo && besoin.hi <= prev.hi;
-    if (dedans) return { lo: prev.lo, hi: prev.hi, change: false };
+    /* le besoin a rétréci de plus d'un tiers (variante retirée, couche masquée) : on resserre, sinon la courbe reste écrasée au milieu d'un cadre trop grand ;
+       la marge de l'aperçu (10 % de chaque côté) reste en deçà de ce seuil : le passage de l'aperçu au complet ne fait pas bouger l'échelle */
+    const trop = (prev.hi - prev.lo) > 1.35 * (nouveau.hi - nouveau.lo) * 1.2;
+    if (dedans && !trop) return { lo: prev.lo, hi: prev.hi, change: false };
     return Object.assign({ change: true }, nouveau);
   }
 
@@ -460,6 +482,8 @@
         if (t > M.today) r.valeur = F.p50[i];
         if (F.existant && F.existant.p50) { r.existant = valeurCreuse(F.t, F.existant.p50, i); r.existant25 = F.existant.p25 ? valeurCreuse(F.t, F.existant.p25, i) : null; r.existant75 = F.existant.p75 ? valeurCreuse(F.t, F.existant.p75, i) : null; }
         if (F.epargne) { r.versements = F.epargne.versements ? valeurCreuse(F.t, F.epargne.versements, i) : null; r.croissance = F.epargne.croissance ? valeurCreuse(F.t, F.epargne.croissance, i) : null; r.epargneFuture = F.epargne.p50 ? valeurCreuse(F.t, F.epargne.p50, i) : null; }
+        /* les deux parts retombent sur la médiane affichée : médiane de la courbe − médiane du patrimoine actuel (la médiane des écarts du moteur n'est pas l'écart des médianes) */
+        if (r.existant != null && r.p50 != null) { r.epargneFuture = r.p50 - r.existant; if (r.versements != null) r.croissance = r.epargneFuture - r.versements; }
         if (F.variante) { r.variante = { nom: F.variante.nom, p50: F.variante.p50[i], p25: F.variante.p25 ? F.variante.p25[i] : null, p75: F.variante.p75 ? F.variante.p75[i] : null }; }
         if (F.crise) r.crise = { label: F.crise.label, valeur: F.crise.valeurs[i] };
       }
@@ -487,6 +511,9 @@
   /** Montant lu à une date : exact pour l'observé, arrondi pour une projection. */
   const montantLu = l => (l.valeur == null ? "—" : l.nature === "projete" ? ap(l.valeur) : fEur(l.valeur));
   const avecEuros = M => (M.euros === "courants" ? ", en euros courants" : ", en euros d'aujourd'hui");
+  /** Couverture des données sous le seuil : la projection est dite provisoire, jusque dans l'en-tête visible. */
+  const SEUIL_PROVISOIRE = 0.6;
+  const provisoire = M => !!(M.brut && fini(M.brut.couverture) && M.brut.couverture < SEUIL_PROVISOIRE);
   /** Phrase de titre (aria-label de la courbe, début de l'en-tête de lecture) : « Aujourd'hui : 120 k€ · dans 10 ans : médiane 400 k€ (300 à 540 k€), en euros d'aujourd'hui. »
       `t` = fin de la fenêtre (date du dernier point futur visible). */
   function phraseTitre(M, t) {
@@ -500,7 +527,7 @@
     const l = lecture(M, null, t), n = Math.max(1, Math.round(moisEntre(M.today, t) / 12 * 10) / 10);
     const dans = moisEntre(M.today, t) >= 12 ? "dans " + dureeTxt(moisEntre(M.today, t)) : "dans " + dureeTxt(Math.max(1, moisEntre(M.today, t)));
     const ec = M.euros === "courants" ? ", en euros de " + new Date(t).getUTCFullYear() : ", en euros d'aujourd'hui";
-    const prov = M.brut && fini(M.brut.couverture) && M.brut.couverture < 0.6 ? " (provisoire)" : "";
+    const prov = provisoire(M) ? " (provisoire)" : "";
     return aj + " · " + dans + " : médiane " + fK(l.p50) + (l.p10 != null && l.p90 != null ? " (" + fK(l.p10) + " à " + fK(l.p90) + ")" : "") + ec + prov + ".";
   }
   /** « En 2028, budget d'achat médian 310 000 € avec 55 000 € d'apport (9 chances sur 10 d'avoir au moins 40 000 €). » */
@@ -513,10 +540,11 @@
   }
   /** Phrase de décomposition à un point futur : « Dont 190 k€ de ton patrimoine actuel et 210 k€ de ton épargne future, après 20 k€ de frais. » ; null sans les couches. */
   function decompositionPhrase(M, l) {
-    if (l.existant == null || l.epargneFuture == null) return null;
+    const pa = partsAffichees(l);
+    if (!pa || l.epargneFuture == null) return null;
     const dec = M.brut && Array.isArray(M.brut.decomposition) ? M.brut.decomposition : [], proche = dec.length ? dec.reduce((b, x) => (Math.abs(msDe(x.date) - l.t) < Math.abs(msDe(b.date) - l.t) ? x : b)) : null;
     const frais = proche && fini(proche.frais) ? +proche.frais : 0;
-    return "Dont " + fK(l.existant) + " de ton patrimoine actuel et " + fK(l.epargneFuture) + " de ton épargne future" + (frais >= 1000 ? ", après " + fK(frais) + " de frais" : "") + ".";
+    return "Dont " + fK(pa.existant) + " de ton patrimoine actuel et " + fK(pa.futur) + " de ton épargne future" + (frais >= 1000 ? ", après " + fK(frais) + " de frais" : "") + ".";
   }
   /** En-tête de lecture : trois niveaux (k : date, v : valeur, s : fourchette ou nature). */
   function titreLecture(M, e, l, def) {
@@ -539,7 +567,7 @@
     }
     k = t === M.today ? "Aujourd'hui · " + dJour(t) : def && t > M.today ? "Dans " + dureeTxt(moisEntre(M.today, t)) + " · " + dMois(t) : cap1(dMois(t)) + " · " + relatif(M.today, t);
     v = montantLu(l);
-    if (l.nature === "projete" && l.p10 != null && l.p90 != null) s = chancesTxt(0.8) + " entre " + kRange(l.p10, l.p90);
+    if (l.nature === "projete" && l.p10 != null && l.p90 != null) s = chancesTxt(0.8) + " entre " + kRange(l.p10, l.p90) + (provisoire(M) ? " · provisoire" : "");
     else if (l.nature === "reconstitue") s = "Estimé à partir de tes relevés";
     else s = pl ? "" : "Observé sur tes comptes";
     if (pl) s = (pl.attendu ? "Écart attendu avec le plan : " : "Écart avec le plan : ") + (pl.attendu ? fSK(pl.ecart) : fSE(pl.ecart));
@@ -600,8 +628,12 @@
       } else if (l.plan && l.plan.avant) h += '<div class="gp-ro-d">Avant la date du plan : il n\'existait pas encore.</div>';
       else if (l.nature === "projete" && l.p10 != null) {
         h += rangeBar(l.p10, l.p50, l.p90, l.p25, l.p75, "1 chance sur 2");
-        if (l.existant != null) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-sv"></i>Ton patrimoine actuel, sans nouveau versement : <b>' + esc(fK(l.existant)) + "</b></div>";
-        if (l.epargneFuture != null) h += '<div class="gp-ro-d num">+ ton épargne future et tes projets : <b>' + esc(fSK(l.epargneFuture)) + "</b>" + (l.versements != null && l.croissance != null ? " (dont <b>" + esc(fSK(l.versements)) + "</b> versés et <b>" + esc(fSK(l.croissance)) + "</b> de croissance)" : "") + "</div>";
+        const pa = partsAffichees(l);
+        if (pa) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-sv"></i>Ton patrimoine actuel, sans nouveau versement : <b>' + esc(fK(pa.existant)) + "</b></div>";
+        if (pa && l.epargneFuture != null) {
+          const vers = l.versements != null && l.croissance != null ? arrK(l.versements) : null;
+          h += '<div class="gp-ro-d num">+ ton épargne future et tes projets : <b>' + esc(fSK(pa.futur)) + "</b>" + (vers != null ? " (dont <b>" + esc(fSK(vers)) + "</b> versés et <b>" + esc(fSK(pa.futur - vers)) + "</b> de croissance)" : "") + "</div>";
+        }
         if (l.variante && l.variante.p50 != null) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-var"></i>Variante « ' + esc(l.variante.nom) + " » : <b>" + esc(fK(l.variante.p50)) + "</b> (" + esc(fSK(l.variante.p50 - l.p50)) + " en médiane).</div>";
         if (l.crise) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-cr"></i>Avec ' + esc(l.crise.label) + " rejouée : <b>" + esc(fK(l.crise.valeur)) + "</b> (" + esc(fSK(l.crise.valeur - l.p50)) + ").</div>";
       } else if (l.nature === "reconstitue") h += '<div class="gp-ro-d">Reconstitué à partir de tes cours, transactions et soldes bancaires : une estimation, moins fiable qu\'une photo.</div>';
@@ -716,7 +748,7 @@
     }
     const manque = tab(B.a_completer);
     h += '<h3 class="gp-sec-t">Données utilisées et ce qui manque</h3>';
-    h += '<p class="gp-sh-note">Couverture des données : ' + (fini(B.couverture) ? Math.round(B.couverture * 100) + " %" : "inconnue") + (fini(B.couverture) && B.couverture < 0.6 ? " (la projection reste provisoire)" : "") + ".</p>";
+    h += '<p class="gp-sh-note">Couverture des données : ' + (fini(B.couverture) ? Math.round(B.couverture * 100) + " %" : "inconnue") + (fini(B.couverture) && B.couverture < SEUIL_PROVISOIRE ? " (la projection reste provisoire)" : "") + ".</p>";
     if (manque.length) h += '<ul class="gp-liste">' + manque.map(x => li(esc(x.titre) + " : " + esc(x.effet) + (x.phrase_claude && o.claude ? " " + o.claude(x.phrase_claude, "Compléter avec Claude") : ""))).join("") + "</ul>";
     else h += '<p class="gp-sh-note">Rien d\'important ne manque.</p>';
     if (tab(B.avertissements).length) h += '<h3 class="gp-sec-t">Hypothèses prises par défaut</h3><ul class="gp-liste gp-av">' + B.avertissements.map(a => li(esc(a))).join("") + "</ul>";

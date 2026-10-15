@@ -75,8 +75,7 @@ test("graduations : au plus 4 en portrait (8 sur ordinateur), pas de 1, 2 ou 5 �
     const m = g.pas / Math.pow(10, Math.floor(Math.log10(g.pas)));
     assert.ok([1, 2, 5].some(x => Math.abs(x - m) < 1e-9), "pas rond : " + g.pas);
     g.valeurs.forEach(v => assert.ok(v >= lo - 1e-6 && v <= hi + 1e-6));
-    const unite = g.libelles.map(l => l.replace(/[\d\s  ,−-]/g, ""));
-    assert.equal(new Set(unite).size, 1, "même unité : " + g.libelles.join(" | "));
+    g.libelles.forEach(l => assert.match(l, /^(0|−?[\d  ]+(,\d)? ?(€|k€|M€))$/, "libellé net : " + l));
   }
   const neg = G.graduations(-60000, 90000, 4);
   assert.ok(neg.valeurs.includes(0) && neg.libelles.some(l => /^0/.test(l)), "zéro affiché");
@@ -85,6 +84,34 @@ test("graduations : au plus 4 en portrait (8 sur ordinateur), pas de 1, 2 ou 5 �
   const dy = G.domaineY(-5000, 20000);
   assert.ok(dy.lo < -5000 && dy.hi >= 20000, "domaine élargi de 7 %");
   assert.equal(G.domaineY(-5000, -1000).hi, 0, "toutes valeurs négatives : le zéro reste dans le cadre");
+});
+
+test("libellés de l'axe : « 0 » jamais « 0,0 M€ », « 500 k€ » sous le million, une même décimale pour les M€ ; deux chiffres significatifs (1,0 M€ / 990 k€)", () => {
+  const g = G.graduations(0, 1.1e6, 4), l = g.libelles.map(x => x.replace(/[  ]/g, " "));
+  assert.equal(l[0], "0"); assert.ok(l.every(x => !/0,0 M€/.test(x)), l.join("|"));
+  const demi = G.graduations(0, 1e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
+  assert.deepEqual(demi, ["0", "500 k€", "1 M€"]);
+  const deux = G.graduations(900000, 2.1e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
+  assert.ok(deux.every(x => !/^\d+ M€$/.test(x) || !deux.some(y => /,\d M€/.test(y))), "même décimale : " + deux.join("|"));
+  assert.ok(G.graduations(100000, 800000, 4).libelles.every(x => /k€$/.test(x) && !/M€/.test(x)));
+  const f = n => G.fK(n).replace(/[  ]/g, " ");
+  assert.equal(f(990000), "990 k€"); assert.equal(f(996000), "1,0 M€"); assert.equal(f(1000000), "1,0 M€"); assert.equal(f(1234567), "1,2 M€"); assert.equal(f(12.3e6), "12 M€");
+  assert.equal(f(0), "0 €"); assert.equal(f(-990000), "−990 k€");
+});
+
+test("chances sur 10 : dès 95 % « plus de 9 chances sur 10 », jamais « 10 chances sur 10 »", () => {
+  assert.equal(G.chancesTxt(1), "plus de 9 chances sur 10"); assert.equal(G.chancesTxt(0.97), "plus de 9 chances sur 10"); assert.equal(G.chancesTxt(0.95), "plus de 9 chances sur 10");
+  assert.equal(G.chancesTxt(0.94), "9 chances sur 10"); assert.equal(G.chancesTxt(0.8), "8 chances sur 10"); assert.equal(G.chancesTxt(0.1), "1 chance sur 10"); assert.equal(G.chancesTxt(0.02), "moins de 1 chance sur 10");
+});
+
+test("échelle des y : jamais sous zéro pour un patrimoine positif ; resserrée quand le besoin rétrécit nettement, sans bouger entre l'aperçu et le complet", () => {
+  assert.equal(G.domaineY(1000, 400000).lo, 0); assert.ok(G.domaineY(100000, 400000).lo > 0 && G.domaineY(100000, 400000).lo < 100000);
+  const ap = G.echelleYStable(null, { lo: 2000, hi: 400000 }, { apercu: true });
+  assert.equal(ap.lo, 0, "l'aperçu élargi ne descend pas sous zéro non plus");
+  assert.equal(G.echelleYStable(ap, { lo: 2000, hi: 385000 }).change, false, "complet un peu plus bas que l'aperçu : l'échelle ne bouge pas");
+  const large = G.echelleYStable(null, { lo: 100000, hi: 2000000 }), serre = G.echelleYStable(large, { lo: 150000, hi: 700000 });
+  assert.equal(serre.change, true); assert.ok(serre.hi < 900000, "le besoin a rétréci de moitié : resserrée");
+  assert.ok(G.graduations(serre.lo, serre.hi, 4).valeurs.length >= 2);
 });
 
 test("graduations dans le tracé : 4 libellés au plus à droite, en portrait ; jusqu'à 8 en plein écran ordinateur", () => {
@@ -289,6 +316,28 @@ test("plan figé (Prévu vs réel) : plan P50 en tirets avec sa bande claire à 
   const T = G.titreLecture(M, etat, l, true);
   assert.match(T.k, /^Écart avec le plan du /); assert.match(T.s.replace(/[  ]/g, " "), /(en dessous de|au-dessus de) ce qui était prévu à ce jour/);
   assert.equal(G.planA(plan, ms(plusMois(AUJ, -9))).p50, 160000); assert.equal(G.planA(plan, ms("2000-01-01")), null);
+});
+
+test("décomposition : patrimoine actuel + épargne future = la médiane affichée, à chaque point (parts arrondies comme elles s'écrivent)", () => {
+  const M = M0(), F = M.futur;
+  const val = t => Number(t.replace(/[^\d,]/g, "").replace(",", ".")) * (/M€/.test(t) ? 1e6 : 1000);
+  let vus = 0;
+  for (const i of [12, 24, 36, 50, 71, 90, 119]) {
+    const l = G.lecture(M, null, F.t[i]);
+    if (l.existant == null) continue;
+    const ph = G.decompositionPhrase(M, l), m = ph.replace(/[  ]/g, " ").match(/^Dont ([\d, ]+ (?:k|M)€) de ton patrimoine actuel et ([\d, ]+ (?:k|M)€) de ton épargne future/);
+    assert.ok(m, ph);
+    assert.equal(Math.round(val(m[1]) + val(m[2])), Math.round(val(G.fK(l.p50).replace(/[  ]/g, " "))), "point " + i + " : " + ph + " / médiane " + G.fK(l.p50));
+    vus++;
+  }
+  assert.ok(vus >= 3);
+});
+
+test("couverture faible : « provisoire » dit dans l'en-tête visible de la lecture, pas seulement dans la phrase lue ; rien quand la couverture est bonne", () => {
+  const faible = G.normaliser(Object.assign(donnees(), { couverture: 0.4 })), bonne = G.normaliser(Object.assign(donnees(), { couverture: 0.9 }));
+  const fin = ms(plusMois(AUJ, 60));
+  const tf = G.titreLecture(faible, {}, G.lecture(faible, {}, fin), false), tb = G.titreLecture(bonne, {}, G.lecture(bonne, {}, fin), false);
+  assert.match(tf.s, /provisoire/); assert.doesNotMatch(tb.s, /provisoire/);
 });
 
 test("tableau de données équivalent : une ligne par pas (date, nature, P10, P25, médiane, P75, P90, existant, variante, écart), puis les jalons avec leur effet", () => {
