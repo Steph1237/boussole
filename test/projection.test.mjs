@@ -345,3 +345,68 @@ test("G-4 bis : un foyer qui possède un logement de 400 k€ en vue nette ne d�
     assert.ok(r.garde_fous.some(g => g.cle === "croissance_5_ans" || g.cle === "rendement_implicite"), vue);
   }
 });
+
+/* ---- revue Opus, correctif 4 : le coût d'un enfant se calcule sur les dépenses du foyer, jamais sur la part d'une personne (moitié comptée deux fois) ---- */
+test("naissance : la vue d'une personne porte la moitié exacte du coût du foyer (−300 € quand le foyer paie −600 €)", () => {
+  const c = cas("D-8"), d = entreeDe(c);
+  const foyer = P.preparer(JSON.parse(JSON.stringify(d)), { ...c.options, perimetre: "foyer" }), p1 = P.preparer(JSON.parse(JSON.stringify(d)), { ...c.options, perimetre: "p1" });
+  let compte = 0;
+  for (let t = 1; t <= foyer.N; t++) {
+    if (Math.abs(foyer.reelDelta[t]) < 1e-9) continue;
+    compte++;
+    proche(p1.reelDelta[t], foyer.reelDelta[t] / 2, 0.005, "mois " + t);
+  }
+  assert.ok(compte > 12, "des mois avec un coût d'enfant");
+  const p2 = P.preparer(JSON.parse(JSON.stringify(d)), { ...c.options, perimetre: "p2" });
+  const t1 = [...Array(foyer.N).keys()].map(i => i + 1).find(t => Math.abs(foyer.reelDelta[t]) > 1e-9);
+  proche(p1.reelDelta[t1] + p2.reelDelta[t1], foyer.reelDelta[t1], 0.005, "les deux moitiés font le tout");
+});
+
+/* ---- revue Opus, correctifs 5 et 13 : distribution des SCPI détenues en direct (spec § 5.3) ---- */
+function scpiCas(extra, reperesMoins) {
+  const c = cas("D-2"), d = entreeDe(c);
+  d.positions = [{ id: "scpi", name: "SCPI Exemple", envelope: "SCPI Exemple", owner: "p1", bloc: "Immobilier", mode: "manual", value: 100000, valueDate: "2026-09-30", status: "actif", qty: 1, pru: 100000 }];
+  d.config.targets = {}; d.config.projection.tmi_pct = 30;
+  if (reperesMoins) d.reperes = d.reperes.filter(r => !reperesMoins.includes(r.cle));
+  return { d, opts: { volatilite: 0, euros: "courants", vue: "financier", horizon_ans: 1, capacite_mensuelle: 0, hypotheses_classes: { immobilier: { rendement: 5, volatilite: 0 } }, ...(extra || {}) } };
+}
+test("SCPI en direct : la distribution (4,91 %) est versée chaque mois au compte courant après impôt au barème (30 %) et prélèvements sociaux (17,2 %), le reste du rendement reste dans la part", () => {
+  const { d, opts } = scpiCas();
+  const r = P.simuler(P.preparer(d, opts), { volatilite: 0 });
+  const a = Math.log(1.05) / 12, taux = 0.0491 / 12, net = 1 - 0.30 - 0.172;
+  let v = 100000, cash = 0;
+  for (let m = 1; m <= 12; m++) { v *= Math.exp(a); const dist = v * taux; v -= dist; cash += dist * net; }
+  const M = P.preparer(d, opts), detail = P.simuler(M, { volatilite: 0 }).deterministe_detail, det = detail.courants;
+  proche(det.financier[12], v + cash, 0.01, "valeur de la part + distributions nettes au disponible");
+  const iScpi = M.comps.findIndex(c => c.type === "scpi_direct"), iC = M.comps.findIndex(c => c.type === "courant");
+  proche(detail.valeurs_par_compartiment[12 * M.B + iScpi], v, 0.01, "la part");
+  proche(detail.valeurs_par_compartiment[12 * M.B + iC], cash, 0.01, "distributions nettes versées au disponible");
+  assert.ok(det.financier[12] < 105000 - 100, "l'impôt sur les loyers est payé : moins que le rendement brut de 5 %");
+  /* la couche « patrimoine actuel sans nouveau versement » reçoit aussi les distributions */
+  proche(r.existant.p50[12], v + cash, 0.01);
+});
+test("SCPI en direct : taux marginal inconnu → 30 % supposés et dits ; repère de distribution ou de prélèvements fonciers manquant → rien n'est distribué, dit", () => {
+  const sans = scpiCas(); delete sans.d.config.projection.tmi_pct; delete sans.d.profil.foyer.tmi;
+  const r = P.simuler(P.preparer(sans.d, sans.opts), { volatilite: 0 });
+  assert.ok(r.avertissements.some(m => /30 %.*SCPI|SCPI.*30 %/.test(m)), JSON.stringify(r.avertissements));
+  const { d, opts } = scpiCas({}, ["scpi_taux_distribution"]);
+  const r2 = P.simuler(P.preparer(d, opts), { volatilite: 0 });
+  proche(r2.deterministe_detail.courants.financier[12], 105000, 0.01, "toute la performance reste dans la part");
+  assert.ok(r2.avertissements.some(m => /scpi_taux_distribution/.test(m)));
+  const s3 = scpiCas({}, ["ps_taux_foncier"]);
+  const r3 = P.simuler(P.preparer(s3.d, s3.opts), { volatilite: 0 });
+  proche(r3.deterministe_detail.courants.financier[12], 105000, 0.01);
+  assert.ok(r3.avertissements.some(m => /ps_taux_foncier/.test(m)));
+});
+test("fonds immobilier coté (ISIN, cours) dans un compte-titres : jamais traité comme une SCPI en direct (pas de distribution, impôt du compte-titres)", () => {
+  const { d, opts } = scpiCas();
+  d.positions = [{ id: "etf", name: "ETF Immobilier coté Exemple", isin: "FR0000000001", envelope: "Compte-titres Exemple", owner: "p1", bloc: "Immobilier", mode: "market", qty: 100, price: 1000, pru: 900, status: "actif" }];
+  d.config.enveloppes_infos = { "Compte-titres Exemple": { type: "compte_titres", titulaire: "p1", source: "cas fictif", le: "2026-10-14" } };
+  const M = P.preparer(d, opts);
+  assert.ok(M.comps.every(c => c.type !== "scpi_direct"), M.comps.map(c => c.type).join());
+  const r = P.simuler(M, { volatilite: 0 });
+  proche(r.deterministe_detail.courants.financier[12], 105000, 0.01, "capitalisation sans distribution");
+  /* une SCPI détenue dans un compte-titres sans ISIN, nommée comme telle, reste une SCPI directe */
+  d.positions = [{ id: "s2", name: "SCPI Exemple 2", envelope: "Compte-titres Exemple", owner: "p1", bloc: "Immobilier", mode: "manual", value: 100000, status: "actif", qty: 1, pru: 100000 }];
+  assert.ok(P.preparer(d, opts).comps.some(c => c.type === "scpi_direct"));
+});

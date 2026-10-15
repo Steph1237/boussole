@@ -290,3 +290,27 @@ test("le moteur de projection ne perd pas de vue ses propres repères manquants 
   const sansInflation = entreeDe(cas("D-1")); sansInflation.reperes = sansInflation.reperes.filter(r => r.cle !== "inflation_hypothese");
   assert.ok(Proj.simuler(Proj.preparer(sansInflation, { horizon_ans: 1, vue: "financier" }), { volatilite: 0 }).avertissements.some(m => m.includes("inflation_hypothese")));
 });
+
+/* ---- revue Opus, correctif 6 : une enveloppe dont l'impôt de sortie est inconnu ne gonfle jamais l'apport (aujourd'hui comme demain) ---- */
+test("apport futur : une enveloppe de type inconnu de 50 000 € n'entre dans aucun apport (capaciteDansLeTemps, achat à apport maximal)", () => {
+  const d = entreeDe(cas("I-5"));
+  d.positions.push({ id: "x", name: "Fonds Mystère", envelope: "Coffre Exemple", owner: "p1", bloc: "Monde", mode: "manual", value: 50000, valueDate: "2026-09-30", status: "actif", qty: 1, pru: 50000 });
+  const aujourdhui = Immo.capaciteEmprunt(d, { duree_ans: 25, taux_pct: 3.35 });
+  assert.equal(aujourdhui.apport.total, 0);
+  const M = Proj.preparer(JSON.parse(JSON.stringify(d)), { horizon_ans: 3, vue: "financier" });
+  const k = Proj.capaciteDansLeTemps(M, Proj.simuler(M, { chemins: 100 }), { duree_ans: 25 });
+  /* identique au foyer sans cette enveloppe : seules l'épargne future et les positions connues comptent */
+  const sans = JSON.parse(JSON.stringify(d)); sans.positions = sans.positions.filter(p => p.id !== "x");
+  const M0 = Proj.preparer(sans, { horizon_ans: 3, vue: "financier" });
+  const k0 = Proj.capaciteDansLeTemps(M0, Proj.simuler(M0, { chemins: 100 }), { duree_ans: 25 });
+  for (const q of ["p10", "p50", "p90"]) k.apport[q].forEach((v, i) => proche(v, k0.apport[q][i], 0.01, q + " mois " + i + " : l'enveloppe inconnue n'est pas comptée"));
+  /* un achat à apport maximal ne la compte pas non plus */
+  const e = { id: "ach", type: "achat_immobilier", personne: "foyer", libelle: "Achat", date: "2027-10-14", params: { prix: 200000, usage: "rp", apport: "max", pret: { duree_ans: 20 }, charges_mensuelles: 100 }, source: "s" };
+  const d2 = JSON.parse(JSON.stringify(d)); d2.foyer.evenements = [e];
+  const r = Proj.simuler(Proj.preparer(d2, { horizon_ans: 3, vue: "financier", euros: "courants" }), { volatilite: 0 });
+  const a = r.achats.find(x => x.evenement_id === "ach");
+  const d3 = JSON.parse(JSON.stringify(d2)); d3.positions = d3.positions.filter(p => p.id !== "x");
+  const a0 = Proj.simuler(Proj.preparer(d3, { horizon_ans: 3, vue: "financier", euros: "courants" }), { volatilite: 0 }).achats.find(x => x.evenement_id === "ach");
+  proche(a.apport, a0.apport, 0.01, "apport de l'achat identique à celui du foyer sans l'enveloppe inconnue");
+  assert.ok(r.avertissements.some(m => /Coffre Exemple.*(n'est pas comptée|impôt de sortie)/.test(m)), r.avertissements.join(" | "));
+});

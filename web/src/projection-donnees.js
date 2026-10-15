@@ -196,7 +196,12 @@
       let classe = Marche.classeRisque(p, d.classes);
       if (type === "courant") classe = "courant";
       else if (DISPO.includes(type) || type === "pel") classe = "monetaire";
-      if (classe === "immobilier" && (type == null || type === "compte_titres")) type = "scpi_direct";
+      /* SCPI détenue en direct seulement : un fonds immobilier coté (ISIN, cours) reste un titre de son compte-titres, jamais une SCPI */
+      if (classe === "immobilier" && (type == null || type === "compte_titres")) {
+        const cote = !!p.isin || p.mode === "market", scpi = /scpi|pierre papier/.test(norm((p.name || "") + " " + (p.bloc || "")));
+        if (type == null) type = cote ? "compte_titres" : "scpi_direct";
+        else if (scpi && !cote) type = "scpi_direct";
+      }
       let multiple = 0, sousJacent = null;
       if (classe === "levier") {
         const txt = norm((p.name || "") + " " + (p.bloc || ""));

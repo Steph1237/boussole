@@ -246,7 +246,14 @@
     const ucAdulte = rv("uc_adulte_supplementaire"), ucEnfant = rv("uc_enfant_moins_14"), ucSeuil = rv("uc_age_seuil");
     const adultes = Math.max(1, O.n0(fy.adultes) || 1), enf = O.n0(fy.enfants), enf14 = Math.min(enf, O.n0(fy.enfants14));
     const ucAujourdhui = ucAdulte !== undefined && ucEnfant !== undefined ? 1 + ucAdulte * (adultes - 1) + ucAdulte * enf14 + ucEnfant * (enf - enf14) : null;
-    const depParUC = ucAujourdhui ? M.depenses0 / ucAujourdhui : null;
+    /* le coût d'un enfant se calcule sur les dépenses du FOYER : la part de la personne vient du facteur de l'événement (0,5 pour un événement du foyer) ;
+       partir de la part d'une personne comptait la moitié deux fois */
+    let depensesFoyer0 = M.depenses0;
+    if (sc !== "foyer") {
+      const cbF = Dn.capaciteDeBase(d, { perimetre: "foyer", base_capacite: o.base_capacite });
+      depensesFoyer0 = cbF.source === "reel" && cbF.constatee_detail ? Math.max(0, cbF.constatee_detail.depenses - Calc.mensualites(d.profil, "foyer")) : cbF.depenses_prevues;
+    }
+    const depParUC = ucAujourdhui ? depensesFoyer0 / ucAujourdhui : null;
     const naissances = evts.filter(e => e.type === "naissance");
     const jalon = (e, titre, icone, texte, montants, extra) => M.jalons.push(Object.assign({ id: "ev:" + e.id, date: e.date, type: e.type, titre, icone, effet: { texte, montants: montants || {} }, source: "evenement", evenement_id: e.id }, extra || {}));
     const nomEv = e => minuscule1(e.libelle);
@@ -260,7 +267,7 @@
       if (e.type === "naissance") {
         const montant = p.cout_mode === "montant";
         if (!montant && depParUC == null) { avertissements.push("coût de l'enfant non estimé (repères des unités de consommation manquants)"); jalon(e, e.libelle, "enfant", "coût non estimé", {}); return; }
-        if (!montant && !(M.depenses0 > 0)) avertissements.push("dépenses courantes inconnues : le coût de « " + p.enfant + " » n'est pas estimé");
+        if (!montant && !(depensesFoyer0 > 0)) avertissements.push("dépenses courantes inconnues : le coût de « " + p.enfant + " » n'est pas estimé");
         const finAge = O.estNombre(p.fin_age) ? +p.fin_age : rv("enfant_fin_charge_age");
         if (finAge === undefined) { avertissements.push("âge de fin de charge manquant : coût de « " + p.enfant + " » non estimé"); return; }
         const seuil = ucSeuil !== undefined ? ucSeuil : 14;
@@ -461,6 +468,20 @@
     M.comps = comps;
     M.B = comps.length;
     M.scpiDistribution = rv("scpi_taux_distribution") === undefined ? null : rv("scpi_taux_distribution") / 100;
+    /* SCPI détenues en direct (spec § 5.3) : une part du rendement de la classe est distribuée chaque mois au compte courant, après impôt au barème (TMI) et
+       prélèvements sociaux fonciers ; le reste du rendement reste dans la part. Sans l'un des repères, rien n'est distribué (limite dite, jamais une valeur de secours). */
+    M.scpiB = []; M.scpiNet = null;
+    comps.forEach((c, b) => { if (c.type === "scpi_direct") M.scpiB.push(b); });
+    if (M.scpiB.length) {
+      const psFoncier = rv("ps_taux_foncier");
+      if (M.scpiDistribution == null) ctx.manquant("scpi_taux_distribution", "distribution des SCPI : toute leur performance reste dans la part, aucun revenu n'est versé");
+      else if (psFoncier === undefined) ctx.manquant("ps_taux_foncier", "prélèvements sociaux sur les revenus fonciers : les distributions des SCPI ne sont pas versées, toute leur performance reste dans la part");
+      else {
+        let tmi = rg.tmi_pct;
+        if (tmi == null || !isFinite(+tmi)) { tmi = 30; avertissements.push("taux marginal supposé de 30 % pour l'impôt sur les loyers des SCPI, à confirmer avec Claude"); }
+        M.scpiNet = 1 - (+tmi + psFoncier) / 100;
+      }
+    }
     M.det = null;
     return M;
   }
@@ -548,7 +569,7 @@
       return obtenu;
     }
     const cand = new Int16Array(B), candCout = new Float64Array(B);
-    /** Retire `need` (net) dans l'ordre du § 6.3 ; renvoie ce qui n'a pas pu être couvert. flags : { rp, autoriser_cloture_pea, niveau_max }. */
+    /** Retire `need` (net) dans l'ordre du § 6.3 ; renvoie ce qui n'a pas pu être couvert. flags : { rp, autoriser_cloture_pea, niveau_max, exclure_indisponibles (apport : les enveloppes dont l'impôt de sortie est inconnu ne sont pas comptées) }. */
     function retirer(i, t, need, flags, matelasNom) {
       const off = i * B, date = dates[t], max = flags.niveau_max || 6;
       let reste = need, dispoTot = 0;
@@ -564,6 +585,7 @@
         let nc = 0;
         for (let b = 0; b < B; b++) {
           if (comps[b].dispo || !(V[off + b] > 1e-9) || F.niveauRetrait(comps[b], date, flags) !== niveau) continue;
+          if (flags.exclure_indisponibles && comps[b].prep.indisponible) continue; /* apport : impôt de sortie inconnu, part non comptée (comme capaciteEmprunt) */
           const g = Math.min(V[off + b], reste), fr = g / V[off + b];
           const tx = comps[b].prep.calculer(g, Bs[off + b] * fr, date, abat[i]);
           candCout[nc] = (tx.ir + tx.ps) / Math.max(1e-9, g - tx.ir - tx.ps); cand[nc++] = b;
@@ -716,6 +738,11 @@
           const f = (grpDe[b] >= 0 ? gGrp[grpDe[b]] * comps[b].feeM : gDet[b]);
           V[off + b] *= f; Vx[off + b] *= f;
         }
+        if (M.scpiNet != null) for (const b of M.scpiB) {
+          const dist = V[off + b] * M.scpiDistribution / 12, distX = Vx[off + b] * M.scpiDistribution / 12;
+          if (dist > 0) { V[off + b] -= dist; depose(off, iC, dist * M.scpiNet); }
+          if (distX > 0) { Vx[off + b] -= distX; Vx[off + iC] += distX * M.scpiNet; }
+        }
         const gB = stochBien ? Math.exp(aBien + M.bienRend.s * z[M.bienRend.kz]) : gBienDet;
         bien[i] *= gB; bienX[i] *= gB;
         /* flux du foyer */
@@ -755,7 +782,7 @@
         for (let i = 0; i < P; i++) {
           const off = i * B, sv = V.slice(off, off + B), sb = Bs.slice(off, off + B), sa = abat[i];
           srcs = [];
-          retirer(i, t, 1e15, { niveau_max: 4, rp: true }, matelasNom);
+          retirer(i, t, 1e15, { niveau_max: 4, rp: true, exclure_indisponibles: true }, matelasNom);
           apportRes[t][i] = srcs.reduce((a, y) => a + y.net, 0);
           V.set(sv, off); Bs.set(sb, off); abat[i] = sa;
         }
@@ -817,8 +844,9 @@
       if (p.apport === "max") {
         const sv = V.slice(off, off + B), sb = Bs.slice(off, off + B), sa = abat[i], savedSrcs = srcs, savedImp = impotsMois;
         srcs = [];
-        retirer(i, t, 1e15, Object.assign({ niveau_max: 4 }, flags), matelasNom);
+        retirer(i, t, 1e15, Object.assign({ niveau_max: 4, exclure_indisponibles: true }, flags), matelasNom);
         apport = Math.min(cout, srcs.reduce((a, y) => a + y.net, 0));
+        M.comps.filter(c => c.v0 > 0 && !c.dispo && c.prep.indisponible).forEach(c => { const m = "achat « " + e.libelle + " » : « " + c.enveloppe + " » n'est pas comptée dans l'apport, son impôt de sortie est inconnu"; if (!M.avertissements.includes(m)) M.avertissements.push(m); });
         V.set(sv, off); Bs.set(sb, off); abat[i] = sa; srcs = savedSrcs; impotsMois = savedImp;
       } else apport = Math.min(cout, O.n0(p.apport) * f * inflT);
       const emprunt = Math.max(0, cout - apport), n = Math.round(O.n0(pret.duree_ans) * 12);
