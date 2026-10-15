@@ -647,6 +647,39 @@
     if (def && !o.sansAide) h += '<div class="gp-ro-hint">' + esc(o.survol ? "Survole ou clique la courbe pour lire une date." : "Touche ou fais glisser sur la courbe pour lire une date.") + "</div>";
     return h;
   }
+  /** Lecture compacte du panneau latéral (plein écran) : la date et la valeur, puis des lignes « libellé · valeur » sans phrase ; les explications vivent dans « Comment c'est calculé ». */
+  function lectureKvHtml(M, e, l, opt) {
+    const o = opt || {}, def = !!o.def, kv = (k, v, cls) => '<div class="gp-kv' + (cls ? " " + cls : "") + '"><span>' + k + "</span><b>" + v + "</b></div>";
+    const tag = l.t === M.today ? "aujourd'hui" : l.nature === "projete" ? "projection" : l.nature === "reconstitue" ? "estimé" : "observé";
+    let h = '<div class="gp-ro-h"><span class="gp-ro-date">' + esc(l.t === M.today ? "Aujourd'hui" : cap1(dMois(l.t))) + '</span><span class="gp-ro-tag">' + esc(tag) + "</span>" +
+      (!def && o.effacer ? '<button type="button" class="gp-ro-x" data-act="effacer" aria-label="Effacer la lecture">' + ICO.x + "</button>" : "") + "</div>";
+    h += '<div class="gp-ro-v"><b>' + esc(montantLu(l)) + "</b></div>";
+    const rows = [];
+    if (l.t !== M.today && M.valeurAuj != null && l.valeur != null) {
+      const d = l.valeur - M.valeurAuj;
+      rows.push(kv("Écart avec aujourd'hui", esc(fSK(d) + (M.valeurAuj ? " (" + fPct(d / M.valeurAuj) + ")" : "")), d < 0 ? "neg" : "pos"));
+    }
+    if (l.plan && !l.plan.avant) rows.push(kv("Prévu au plan", esc(l.plan.attendu ? ap(l.plan.prevu) : fEur(l.plan.prevu))), kv(l.plan.attendu ? "Écart attendu" : "Écart avec le plan", esc((l.plan.attendu ? fSK(l.plan.ecart) : fSE(l.plan.ecart)) + (l.plan.pct != null ? " (" + fPct(l.plan.pct) + ")" : "")), l.plan.ecart < 0 ? "neg" : "pos"));
+    else if (l.plan && l.plan.avant) rows.push(kv("Plan", "pas encore figé"));
+    if (l.nature === "projete" && l.p10 != null && l.p90 != null) {
+      rows.push(kv("8 chances sur 10", esc(kTiret(l.p10, l.p90))));
+      if (l.p25 != null && l.p75 != null) rows.push(kv("1 chance sur 2", esc(kTiret(l.p25, l.p75))));
+      const pa = partsAffichees(l);
+      if (pa) {
+        rows.push(kv('<i class="gp-sw gp-sw-sv"></i>Patrimoine actuel, sans versement', esc(fK(pa.existant))));
+        if (l.epargneFuture != null) rows.push(kv("Épargne future et projets", esc(fSK(pa.futur))));
+      }
+      if (l.variante && l.variante.p50 != null) rows.push(kv('<i class="gp-sw gp-sw-var"></i>Variante « ' + esc(l.variante.nom) + " »", esc(fK(l.variante.p50) + " (" + fSK(l.variante.p50 - l.p50) + ")")));
+      if (l.crise) rows.push(kv('<i class="gp-sw gp-sw-cr"></i>' + esc(cap1(l.crise.label)) + " rejouée", esc(fK(l.crise.valeur) + " (" + fSK(l.crise.valeur - l.p50) + ")")));
+    } else if (l.nature === "reconstitue") rows.push(kv("Nature", "estimé à partir de tes relevés"));
+    else if (l.nature === "observe") rows.push(kv("Nature", "relevé sur tes comptes"));
+    if (l.capacite) rows.push(kv("Capacité d'épargne " + (l.t <= M.today ? "constatée" : "du mois"), esc(fMoisU(l.capacite.montant))));
+    h += '<div class="gp-kvs">' + rows.join("") + "</div>";
+    l.objectifs.forEach(ob => { h += objectifLigne(M, ob); });
+    if (def) { const n = prochainJalon(M); if (n) h += '<div class="gp-ro-cs"><button type="button" class="gp-evc" data-jalon="' + esc(n.id) + '">' + icone(n) + "Prochain : " + esc(n.titre) + " <span>" + esc(relatif(M.today, n.t)) + "</span></button></div>"; }
+    else if (l.jalons.length) h += '<div class="gp-ro-cs">' + l.jalons.map(j => '<button type="button" class="gp-evc" data-jalon="' + esc(j.id) + '">' + icone(j) + esc(libelleJalonCourt(M, j)) + (effetMensuel(j) != null && !estObjectif(j) ? " <span>" + esc(fMois(effetMensuel(j))) + "</span>" : "") + "</button>").join("") + "</div>";
+    return h;
+  }
   function rangeBar(p10, p50, p90, p25, p75, libInterne) {
     const lo = p10, hi = p90, pc = x => (hi > lo ? ((x - lo) / (hi - lo) * 100) : 50).toFixed(1);
     let h = '<div class="gp-rb" aria-hidden="true"><i class="o" style="left:0;right:0"></i>' + (p25 != null && p75 != null ? '<i class="n" style="left:' + pc(p25) + "%;right:" + (100 - pc(p75)).toFixed(1) + '%"></i>' : "") + '<i class="md" style="left:' + pc(p50) + '%"></i></div>';
@@ -657,15 +690,15 @@
   function enteteHtml(M, l, opt) {
     const o = opt || {}, B = M.brut || {};
     let h = "";
-    const dp = l ? decompositionPhrase(M, l) : null;
+    const dp = l && !o.gardeFousSeuls ? decompositionPhrase(M, l) : null;
     if (dp) h += '<p class="gp-en-dec">' + esc(dp) + "</p>";
     const evs = tab(B.evenements_pris_en_compte);
-    if (M.mode !== "capacite") {
+    if (M.mode !== "capacite" && !o.gardeFousSeuls) {
       if (evs.length) h += '<p class="gp-en-ev">Événements pris en compte : ' + esc(evs.join(", ")) + ".</p>";
       else if (M.futur) h += '<p class="gp-en-ev gp-en-q">' + esc(B.question_evenements || "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?") + "</p>";
     }
-    tab(B.garde_fous).forEach(g => { if (g && g.texte) h += '<p class="gp-en-gf" data-gf="' + esc(g.cle || "") + '">' + esc(g.texte) + "</p>"; });
-    if (M.mode !== "capacite" && B.capacite_source) h += '<p class="gp-en-cap">' + esc(capaciteSourceTxt(B)) + "</p>";
+    tab(B.garde_fous).forEach(g => { if (g && g.texte && !(o.gardeFousSeuls && g.cle === "ecart_capacite")) h += '<p class="gp-en-gf" data-gf="' + esc(g.cle || "") + '">' + esc(g.texte) + "</p>"; });
+    if (M.mode !== "capacite" && B.capacite_source && !o.gardeFousSeuls) h += '<p class="gp-en-cap">' + esc(capaciteSourceTxt(B)) + "</p>";
     void o;
     return h;
   }
@@ -701,6 +734,7 @@
     plein: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
     plus: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
+    aide: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.6 2.2c-.8.5-1.2 1-1.2 1.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>',
     moins: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M3 9h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
   };
 
@@ -733,13 +767,18 @@
     let h = '<p class="gp-sh-note"><strong>Projection, pas une promesse.</strong> Une courbe, trois natures de points : seul le trait plein est une mesure.</p>';
     h += '<h3 class="gp-sec-t">Méthode</h3><ol class="gp-liste">' +
       li("<strong>Observé</strong> : chaque nuit, Boussole photographie la valeur de tes placements ; à cette valeur s'ajoutent l'immobilier, les autres biens et les dettes d'aujourd'hui.") +
-      li("<strong>Reconstitué</strong> (pointillés, fond hachuré) : avant ta première photo, le calcul est refait à rebours à partir des cours, de tes transactions et des soldes bancaires. C'est une estimation.") +
+      li("<strong>Reconstitué</strong> (trait en pointillés) : avant ta première photo, le calcul est refait à rebours à partir des cours, de tes transactions et des soldes bancaires. C'est une estimation.") +
       li("<strong>Projeté</strong> : " + esc(String(B.chemins || 2000)) + " trajectoires de marché simulées (graine fixe " + esc(String(B.graine || "")) + ", donc le même résultat à chaque lecture), net de frais, avec ta capacité d'épargne mois par mois et tes événements de vie.") +
       li("La ligne est la médiane : une chance sur deux de faire mieux. La bande foncée contient une trajectoire sur deux ; la bande claire, huit sur dix.") +
       li("Les montants futurs sont en " + (M.euros === "courants" ? "euros courants (tels qu'ils apparaîtront sur tes relevés)" : "euros d'aujourd'hui (l'inflation supposée est retirée)") + ".") + "</ol>";
     if (M.brut && M.brut.passe && M.brut.passe.drapeaux) h += passeHtml(M.brut.passe);
     const cs = capaciteSourceTxt(B);
-    if (M.mode !== "capacite") h += '<h3 class="gp-sec-t">Base de l\'épargne</h3><p class="gp-sh-note">' + esc(cs) + "</p>";
+    if (M.mode !== "capacite") {
+      h += '<h3 class="gp-sec-t">Base de l\'épargne</h3><p class="gp-sh-note">' + esc(cs) + "</p>";
+      tab(B.garde_fous).filter(g => g && g.cle === "ecart_capacite" && g.texte).forEach(g => { h += '<p class="gp-sh-note">' + esc(g.texte) + "</p>"; });
+      const evs = tab(B.evenements_pris_en_compte);
+      h += '<h3 class="gp-sec-t">Événements pris en compte</h3><p class="gp-sh-note">' + esc(evs.length ? evs.join(", ") + "." : B.question_evenements || "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?") + "</p>";
+    }
     const hyp = tab(B.hypotheses);
     if (hyp.length) {
       h += '<h3 class="gp-sec-t">Hypothèses</h3><ul class="gp-liste">' + hyp.map(x => li(esc(x.libelle || x.cle) + " : <strong>" + esc(String(x.valeur).replace(".", ",")) + esc(x.unite ? NB + x.unite : "") + "</strong>" +
@@ -840,11 +879,11 @@
     /* carte : mobile (≈ 390 px) et ordinateur ; le titre flotte dans le tracé, jalons presque invisibles, une seule étiquette */
     carte: { compact: true, gutter: 50, yTicks: 4, plotH: 284, labelsAll: false, pins: false, clusterPx: 44, stripH: 28, hover: false, select: false, brush: false, plein: false },
     /* plein écran, téléphone en paysage : barre fine, courbe sur toute la largeur, lecture à droite, pastilles numérotées et libellées */
-    paysage: { compact: false, gutter: 56, yTicks: 5, labelsAll: true, pins: true, pinLabels: true, railRows: 2, clusterPx: 0, stripH: 30, hover: false, select: false, brush: true, fill: true, plein: true },
+    paysage: { compact: false, gutter: 112, yTicks: 4, labelsAll: true, pins: true, railRows: 1, clusterPx: 0, stripH: 26, hover: false, select: false, brush: true, fill: true, plein: true },
     /* plein écran, ordinateur : grande courbe, axe jusqu'à 8 graduations, tous les libellés, panneau latéral */
-    bureau: { compact: false, gutter: 72, yTicks: 8, labelsAll: true, pins: true, pinLabels: true, fullLabels: true, railRows: 2, clusterPx: 0, stripH: 48, hover: true, select: true, brush: true, fill: true, plein: true },
+    bureau: { compact: false, gutter: 136, yTicks: 6, labelsAll: true, pins: true, railRows: 2, clusterPx: 0, stripH: 40, hover: true, select: true, brush: true, fill: true, plein: true },
     /* plein écran, téléphone en portrait : la carte agrandie, avec l'aperçu */
-    portrait: { compact: false, gutter: 50, yTicks: 4, labelsAll: false, pins: true, pinLabels: false, railRows: 1, clusterPx: 0, stripH: 38, hover: false, select: false, brush: true, plein: true },
+    portrait: { compact: false, gutter: 50, yTicks: 4, labelsAll: false, pins: true, railRows: 1, clusterPx: 0, stripH: 38, hover: false, select: false, brush: true, plein: true },
   };
   /** Paramètres d'un mode pour une largeur donnée (une carte large gagne en hauteur de tracé, en graduations et en survol). */
   function parametresMode(nom, W, opt) {
@@ -854,8 +893,8 @@
     if (nom === "portrait") p.plotH = Math.round(clamp((o.hauteurFenetre || 800) * 0.42, 220, 420));
     return p;
   }
-  /** Libellés de l'axe du temps : années ou mois selon la place (au moins 46 / 72 px entre deux), « Aujourd'hui » toujours écrit, sans chevauchement. */
-  function libellesTemps(dom, X, W, mesurer, today) {
+  /** Libellés de l'axe du temps : années ou mois selon la place (au moins 46 / 72 px entre deux), « Aujourd'hui » écrit dans l'axe de la carte (avecAuj), sans chevauchement. */
+  function libellesTemps(dom, X, W, mesurer, today, avecAuj) {
     const px = X(dom.fin) - X(dom.debut), moisVisibles = Math.max(1, (dom.fin - dom.debut) / (30.44 * MS_JOUR)), pxm = px / moisVisibles;
     let pas = 120;
     for (const s of [1, 3, 6, 12, 24, 60, 120]) { const besoin = s < 12 ? 72 : 46; if (s * pxm >= besoin) { pas = s; break; } }
@@ -869,7 +908,7 @@
       cand.push({ x: X(ms), t, w: mesurer(t, 400) });
     }
     const out = [];
-    if (today >= dom.debut && today <= dom.fin) { const w = mesurer("Aujourd'hui", 700); out.push({ x: clamp(X(today), w / 2, W - w / 2), t: "Aujourd'hui", w, b: true }); }
+    if (avecAuj !== false && today >= dom.debut && today <= dom.fin) { const w = mesurer("Aujourd'hui", 700); out.push({ x: clamp(X(today), w / 2, W - w / 2), t: "Aujourd'hui", w, b: true }); }
     cand.forEach(l => { if (l.x - l.w / 2 < 0 || l.x + l.w / 2 > W) return; if (out.some(o => Math.abs(o.x - l.x) < (o.w + l.w) / 2 + 8)) return; out.push(l); });
     return out;
   }
@@ -885,15 +924,15 @@
     const besoin = besoinY(M, dom, ech, { existant: C.existant, plan: planSerie && planSerie.valeurs, demain: M.demain && M.demain.serie ? M.demain.serie.emprunt : M.demain ? M.demain.empruntable : null });
     const dy = etat.echelleY ? etat.echelleY : domaineY(besoin.lo, besoin.hi), lo = dy.lo, hi = dy.hi;
     const grad = graduations(lo, hi, P.yTicks);
-    const topX = P.compact ? 24 : 10, railH = P.compact ? 6 : P.pins ? P.railRows * 24 + 22 : 0, labH = 22;
+    /* plein écran : de haut en bas le tracé, l'axe du temps juste dessous, puis la piste des jalons (une à deux voies) ; carte : le tracé, une ligne de base et l'axe */
+    const topX = P.compact ? 24 : 10, AXE = 22, ECART_PISTE = 10, railH = P.compact ? 6 : P.pins ? AXE + ECART_PISTE + P.railRows * 24 + 4 : 0, labH = P.pins ? 0 : 22;
     const bottom = railH + labH;
     let plotH = P.plotH;
     if (P.fill && P.H) plotH = Math.max(64, P.H - topX - bottom);
     const T = topX, B = topX + plotH, H = B + bottom, DT = P.compact ? T + 80 : T;
     const Y = v => DT + (1 - (v - lo) / (hi - lo)) * (B - DT);
-    const f1 = v => v.toFixed(1), cid = id + "c", hid = id + "h";
+    const f1 = v => v.toFixed(1), cid = id + "c";
     let s = '<defs><clipPath id="' + cid + '"><rect x="' + L + '" y="' + (DT - 2) + '" width="' + (R - L) + '" height="' + (B - DT + 4) + '"/></clipPath>' +
-      '<pattern id="' + hid + '" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="gp-hatch"/></pattern>' +
       '<linearGradient id="' + id + 'g1" x1="0" x2="1" y1="0" y2="0"><stop offset="0" class="gs-a"/><stop offset="1" class="gs-b"/></linearGradient>' +
       '<linearGradient id="' + id + 'g2" x1="0" x2="1" y1="0" y2="0"><stop offset="0" class="gs-c"/><stop offset="1" class="gs-d"/></linearGradient></defs>';
     /* pastille de fin : valeur de la médiane au dernier point visible */
@@ -904,7 +943,8 @@
       pill = { v: F.p50[Math.max(0, i)], t: F.t[Math.max(0, i)], futur: true };
     } else if (M.passe.t.length) { const i = Math.max(0, indexAvant(M.passe.t, dom.fin)); pill = { v: M.passe.v[i], t: M.passe.t[i], futur: false }; }
     const pillY = pill ? clamp(Y(pill.v), T + 10, B - 10) : null;
-    /* grille et graduations (celle qui tombe sur la pastille est masquée) */
+    const gout = P.labelsAll && aFutur && !C.plan && !C.avenirs ? etiquettesGouttiere(M, F, dom, Y, R, W, mesurer, C, pillY, DT, B) : null;
+    /* grille et graduations (celle qui tombe sur la pastille ou sur une étiquette de la marge est masquée) */
     const ticks = [];
     s += '<g aria-hidden="true">';
     grad.valeurs.forEach((v, k) => {
@@ -912,18 +952,19 @@
       if (y < DT - 1 || y > B + 1) return;
       ticks.push({ v, y, label: grad.libelles[k] });
       s += '<line class="gp-gr" x1="' + L + '" x2="' + f1(R) + '" y1="' + f1(y) + '" y2="' + f1(y) + '"/>';
-      if (!(pillY != null && Math.abs(y - pillY) < 20)) s += '<text class="gp-ytk" data-y="' + f1(y) + '" x="' + (W - 2) + '" y="' + f1(y + 4) + '" text-anchor="end">' + esc(grad.libelles[k]) + "</text>";
-      else s += '<text class="gp-ytk" data-y="' + f1(y) + '" x="' + (W - 2) + '" y="' + f1(y + 4) + '" text-anchor="end" style="display:none">' + esc(grad.libelles[k]) + "</text>";
+      const cache = (pillY != null && Math.abs(y - pillY) < 20) || (gout && gout.ys.some(gy => Math.abs(y - gy) < 15));
+      s += '<text class="gp-ytk" data-y="' + f1(y) + '"' + (cache ? ' data-cache="1" style="display:none"' : "") + ' x="' + (W - 2) + '" y="' + f1(y + 4) + '" text-anchor="end">' + esc(grad.libelles[k]) + "</text>";
     });
-    /* zone estimée (reconstituée), hachurée */
+    /* zone estimée (reconstituée) : ni aplat hachuré ni rectangle, le trait en pointillés (plus bas) et un voile très léger dessous, avec une puce « estimé » à son début */
     const premObs = M.passe.nature.indexOf("observe"), finRec = premObs > 0 ? M.passe.t[premObs] : premObs === -1 && M.passe.t.length ? M.today : null;
+    let puceEstime = "";
     if (M.passe.t.length && M.passe.nature[0] === "reconstitue" && finRec != null && dom.debut < finRec) {
       const xa = X(Math.max(dom.debut, M.passe.t[0])), xb = X(Math.min(finRec, dom.fin));
       if (xb - xa > 2) {
-        s += '<rect x="' + f1(xa) + '" y="' + f1(DT) + '" width="' + f1(Math.max(0, xb - xa)) + '" height="' + f1(B - DT) + '" fill="url(#' + hid + ')"/>';
-        const jr = new Date(finRec), lib = "Estimé avant le " + jr.getUTCDate() + " " + MOIS[jr.getUTCMonth()], libC = "Estimé";
-        const txt = mesurer(lib, 400) + 8 <= xb - xa ? lib : mesurer(libC, 400) + 8 <= xb - xa ? libC : "";
-        if (txt) s += '<text x="' + f1(xa + 4) + '" y="' + f1(DT + 16) + '" class="gp-halo">' + esc(txt) + "</text>";
+        const pr = ech.passe.filter(p => p.nature === "reconstitue" && p.t <= M.today);
+        if (pr.length > 1) s += '<path class="gp-recon-f" d="' + chemin(pr.map(p => [X(p.t), Y(p.v)])) + "L" + f1(X(pr[pr.length - 1].t)) + " " + f1(B) + "L" + f1(X(pr[0].t)) + " " + f1(B) + 'Z"/>';
+        const lib = "estimé", wl = mesurer(lib, 600) + 14;
+        if (xb - xa >= wl + 8 && pr.length) { const py = clamp(Y(pr[0].v) - 22, DT + 2, B - 22); puceEstime = '<g class="gp-puce" aria-hidden="true"><rect x="' + f1(xa + 4) + '" y="' + f1(py) + '" width="' + f1(wl) + '" height="18" rx="9"/><text x="' + f1(xa + 4 + wl / 2) + '" y="' + f1(py + 12.5) + '" text-anchor="middle">' + lib + "</text></g>"; }
       }
     }
     /* séries (clipées au tracé) */
@@ -994,11 +1035,13 @@
     const pp = ech.passe.filter(p => p.t <= M.today), recon = pp.filter(p => p.nature === "reconstitue"), obs = pp.filter(p => p.nature === "observe");
     if (recon.length) { const avecJonction = recon.concat(obs.slice(0, 1)); if (avecJonction.length > 1) s += '<path class="gp-recon" d="' + chemin(avecJonction.map(p => [X(p.t), Y(p.v)])) + '"/>'; }
     if (obs.length > 1) s += '<path class="gp-obs" d="' + chemin(obs.map(p => [X(p.t), Y(p.v)])) + '"/>';
-    s += "</g></g>";
+    s += "</g></g>" + puceEstime;
     /* aujourd'hui : trait fin, halo, pastille d'encre sur la dernière valeur observée */
     if (dom.debut <= M.today && dom.fin >= M.today && M.valeurAuj != null) {
       const x = X(M.today), y0 = Y(M.valeurAuj);
       s += '<line class="gp-tdy" x1="' + f1(x) + '" x2="' + f1(x) + '" y1="' + f1(DT) + '" y2="' + f1(B) + '" opacity=".35"/><circle class="gp-glow' + (P.reduit ? "" : " pulse") + '" cx="' + f1(x) + '" cy="' + f1(y0) + '" r="10"/><circle class="gp-dot-ink" data-today cx="' + f1(x) + '" cy="' + f1(y0) + '" r="4.5"/>';
+      /* plein écran : « Aujourd'hui » est le nom de ce trait, écrit en haut de la ligne (pas dans l'axe) */
+      if (P.pins) { const lw = mesurer("Aujourd'hui", 600) + 4, droite = x + 6 + lw <= R; s += '<text x="' + f1(droite ? x + 6 : x - 6) + '" y="' + f1(DT + 11) + '" text-anchor="' + (droite ? "start" : "end") + '" class="gp-halo gp-tb">Aujourd\'hui</text>'; }
     }
     /* annotations des inflexions : l'achat, écrite là où elle se voit, avec la vraie baisse de la vue : en patrimoine net l'apport devient du bien (seuls les frais
        d'acquisition sortent) ; en vue financière ou disponible l'apport sort (impôts de sortie compris) */
@@ -1018,16 +1061,18 @@
       s += '<text x="' + f1(clamp(l.x, L + w / 2, R - w / 2)) + '" y="' + f1(y) + '" text-anchor="middle" class="gp-halo gp-ti after">' + esc(l.t) + "</text>";
     });
     /* étiquettes directes des séries (plein écran) */
-    if (P.labelsAll && aFutur && !C.plan && !C.avenirs) s += '<g class="after">' + etiquettesDirectes(M, F, dom, X, Y, R, mesurer, C, aFutur, ech) + "</g>";
+    if (gout) s += '<g class="after" aria-hidden="true">' + gout.svg + "</g>";
     if (C.plan && planSerie) s += '<g class="after">' + etiquettesPlan(M, planSerie, dom, X, Y, L, R, DT, T, mesurer, P) + "</g>";
-    /* axe du temps */
-    libellesTemps(dom, X, W, mesurer, M.today).forEach(o => { s += '<text x="' + f1(o.x) + '" y="' + (H - 6) + '" text-anchor="middle"' + (o.b ? ' class="gp-tb"' : "") + ">" + esc(o.t) + "</text>"; });
+    /* axe du temps : juste sous le tracé en plein écran (« Aujourd'hui » y est écrit en haut de son trait), au pied de la carte sinon */
+    libellesTemps(dom, X, W, mesurer, M.today, !P.pins).forEach(o => { s += '<text x="' + f1(o.x) + '" y="' + (P.pins ? B + 16 : H - 6) + '" text-anchor="middle"' + (o.b ? ' class="gp-tb"' : "") + ">" + esc(o.t) + "</text>"; });
     s += "</g>";
-    /* pastille de fin */
-    if (pill) s += '<g class="gp-pill' + (pill.futur ? "" : " ink") + '" data-endpill aria-hidden="true"><rect x="' + (R + 3) + '" y="' + f1(pillY - 10) + '" width="' + (W - R - 3) + '" height="20" rx="10"/><text x="' + f1((R + 3 + W) / 2) + '" y="' + f1(pillY + 4) + '" text-anchor="middle">' + esc(fK(pill.v, pill.v < 1e5 && pill.v >= 1e4 ? 1 : 0)) + "</text></g>";
+    /* pastille de fin : la valeur, précédée de « médiane » quand la marge a la place (la médiane ne s'écrit pas ailleurs) */
+    let pillTxt = pill ? fK(pill.v, pill.v < 1e5 && pill.v >= 1e4 ? 1 : 0) : "";
+    if (pill && pill.futur && P.labelsAll && mesurer("médiane " + pillTxt, 600) + 12 <= W - R - 3) pillTxt = "médiane " + pillTxt;
+    if (pill) s += '<g class="gp-pill' + (pill.futur ? "" : " ink") + '" data-endpill aria-hidden="true"><rect x="' + (R + 3) + '" y="' + f1(pillY - 10) + '" width="' + (W - R - 3) + '" height="20" rx="10"/><text x="' + f1((R + 3 + W) / 2) + '" y="' + f1(pillY + 4) + '" text-anchor="middle">' + esc(pillTxt) + "</text></g>";
     /* jalons */
     const jalonsVus = M.jalons.filter(j => !etat.cacherObjectifs || !estObjectif(j) || etat.cacherObjectifs(j) === false);
-    const geoJ = P.pins ? rail(M, jalonsVus, dom, X, Y, { B, W, R, P, mesurer, F, aFutur, railH, id }) : marqueursCompacts(M, jalonsVus, dom, X, Y, { B, P, F, aFutur });
+    const geoJ = P.pins ? rail(M, jalonsVus, dom, X, Y, { B, W, R, P, mesurer, F, aFutur, railH, id, railTop: B + AXE + ECART_PISTE }) : marqueursCompacts(M, jalonsVus, dom, X, Y, { B, P, F, aFutur });
     s += geoJ.svg;
     if (P.compact && C.avenirs && hopDots) s += '<g aria-hidden="true">' + hopDots + "</g>";
     s += '<g data-hop aria-hidden="true"></g><g data-sel></g>';
@@ -1056,30 +1101,40 @@
     });
     return { dots, hors, valeurs: vals };
   }
-  /** Étiquettes d'une même colonne : par priorité croissante (1 = la plus importante), on garde celles qui ne sont pas à moins de `ecart` px verticalement d'une déjà gardée. */
-  function placerEtiquettes(cand, ecart) {
-    const gardees = [];
-    cand.slice().sort((a, b) => a.prio - b.prio).forEach(l => { if (!gardees.some(g => Math.abs(g.y - l.y) < ecart)) gardees.push(l); });
+  /** Étiquettes d'une même colonne : par priorité croissante (1 = la plus importante), on garde celles qui ne sont pas à moins de `ecart` px verticalement d'une déjà gardée
+      ni d'un obstacle fixe (`fixes` : ordonnées déjà occupées, ex. la pastille de fin) ; une étiquette qui gênerait un obstacle est décalée d'au plus `decale` px, sinon omise. */
+  function placerEtiquettes(cand, ecart, fixes, decale) {
+    const gardees = [], obst = (fixes || []).slice(), d = decale || 0;
+    cand.slice().sort((a, b) => a.prio - b.prio).forEach(l => {
+      for (const dy of d ? [0, d, -d] : [0]) {
+        const y = l.y + dy;
+        if (!gardees.some(g => Math.abs(g.y - y) < ecart) && !obst.some(o => Math.abs(o - y) < ecart)) { gardees.push(Object.assign({}, l, { y })); return; }
+      }
+    });
     return gardees.sort((a, b) => a.y - b.y);
   }
-  function etiquettesDirectes(M, F, dom, X, Y, R, mesurer, C, aFutur, ech) {
-    let s = "";
-    const i = Math.max(0, indexAvant(F.t, dom.fin)), x = R - 6;
-    const yM = Y(F.p50[i]), y75 = F.p75 ? Y(F.p75[i]) : null, y90 = F.p90 ? Y(F.p90[i]) : null, y25 = F.p25 ? Y(F.p25[i]) : null;
-    /* étiquettes alignées à droite sur la même colonne : chacune a sa place voulue et une priorité ; celle qui en gênerait une plus importante (moins de 14 px) est omise,
-       jamais superposée (« 1 chance sur 2 » et « médiane » ne se touchent plus) */
+  /** Plein écran : les étiquettes des bandes vivent dans la marge de droite, au bout des courbes, reliées par un trait fin : « 8 chances sur 10 » au bord haut de la bande
+      (une accolade descend jusqu'au bord bas), « 1 chance sur 2 » au bord haut de la bande centrale, « sans nouveau versement » au bout de la courbe pointillée ; la médiane se lit
+      dans la pastille de fin (« médiane 430 k€ »). Aucune étiquette ne recouvre la pastille ni une autre étiquette ; les graduations qui les gêneraient sont masquées.
+      → { svg, ys: [ordonnées occupées] }. */
+  function etiquettesGouttiere(M, F, dom, Y, R, W, mesurer, C, pillY, DT, B) {
+    const i = Math.max(0, indexAvant(F.t, dom.fin)), x0 = R + 12, place = W - x0 - 2;
+    const y90 = F.p90 ? Y(F.p90[i]) : null, y75 = F.p75 ? Y(F.p75[i]) : null, y25 = F.p25 ? Y(F.p25[i]) : null, y10 = F.p10 ? Y(F.p10[i]) : null, yM = Y(F.p50[i]);
     const cand = [];
-    if (y90 != null && y75 != null && y75 - y90 >= 17) cand.push({ y: y90 + 13, t: "8 chances sur 10", prio: 3, c: "gp-halo gp-tbr" });
-    if (y75 != null && yM - y75 >= 17) cand.push({ y: y75 + 13, t: "1 chance sur 2", prio: 2, c: "gp-halo gp-tbr" });
-    cand.push({ y: y25 != null && y25 - yM >= 17 ? yM + 14 : yM - 7, t: "médiane", prio: 1, c: "gp-halo gp-tbr" });
-    if (C.existant && F.existant && F.existant.p50) cand.push({ y: Y(F.existant.p50[i]) + 15, t: "sans nouveau versement", prio: 4, c: "gp-halo" });
-    placerEtiquettes(cand, 14).forEach(l => { s += '<text x="' + x + '" y="' + F1(l.y) + '" text-anchor="end" class="' + l.c + '">' + l.t + "</text>"; });
-    void aFutur; void ech;
-    if (M.passe.t.length && dom.debut < M.today - (dom.fin - dom.debut) * 0.05) {
-      const dx = X(Math.min(M.today, dom.fin)) - X(Math.max(dom.debut, M.passe.t[Math.max(0, M.passe.nature.indexOf("observe"))] || dom.debut));
-      if (dx > 60) { const tm = clamp(M.today - (M.today - Math.max(dom.debut, M.passe.t[Math.max(0, M.passe.nature.indexOf("observe"))] || dom.debut)) / 2, dom.debut, dom.fin); const k = plusProche(M.passe.t, tm); s += '<text x="' + F1(X(tm)) + '" y="' + F1(Y(M.passe.v[k]) + 20) + '" text-anchor="middle" class="gp-halo gp-ti">Observé</text>'; }
+    const tient = (t, w) => (mesurer(t, 400) <= (w || place) ? t : null);
+    if (y90 != null && y10 != null && y10 - y90 >= 18) { const t = tient("8 chances sur 10") || tient("8 sur 10"); if (t) cand.push({ y: y90 + 4, t, prio: 1, cle: "p90", yb: y90 }); }
+    if (y75 != null && y25 != null && y25 - y75 >= 18 && y75 - (y90 != null ? y90 : y75 - 20) >= 12) { const t = tient("1 chance sur 2"); if (t) cand.push({ y: y75 + 4, t, prio: 3, cle: "p75", yb: y75 }); }
+    if (C.existant && F.existant && F.existant.p50) {
+      const kn = pointsConnus(F.t, F.existant.p50, dom), k = kn.length ? kn[kn.length - 1] : -1;
+      if (k >= 0) { const ye = Y(F.existant.p50[k]), t = tient("sans nouveau versement") || tient("sans versement"); if (t) cand.push({ y: ye + 4, t, prio: 2, cle: "sv", yb: ye }); }
     }
-    return s;
+    const fixes = pillY != null ? [pillY] : [];
+    const places = placerEtiquettes(cand, 15, fixes, 12).filter(l => l.y - 4 > DT - 4 && l.y < B);
+    let svg = "";
+    if (y90 != null && y10 != null && y10 - y90 >= 18) svg += '<path class="gp-brk" d="M' + F1(R + 3) + " " + F1(y90) + "H" + F1(R + 7) + "V" + F1(y10) + "H" + F1(R + 3) + '"/>';
+    places.forEach(l => { svg += '<line class="gp-leader" x1="' + F1(R + (l.cle === "p90" ? 7 : 2)) + '" x2="' + F1(x0 - 3) + '" y1="' + F1(l.yb) + '" y2="' + F1(l.y - 4) + '"/><text x="' + F1(x0) + '" y="' + F1(l.y) + '" class="gp-gl' + (l.cle === "sv" ? " gp-gl-sv" : "") + '">' + esc(l.t) + "</text>"; });
+    void yM;
+    return { svg, ys: places.map(l => l.y - 4) };
   }
   function etiquettesPlan(M, planSerie, dom, X, Y, L, R, DT, T, mesurer, P) {
     let s = "";
@@ -1118,74 +1173,50 @@
     s += '<g data-flab></g></g>';
     return { svg: s, marqueurs, groupes: groupes.map(g => ({ x: g.x, jalons: g.jalons })).concat(buts.map(j => ({ x: X(j.t), jalons: [j] }))) };
   }
-  /** Plein écran : pastilles numérotées sous la courbe (numéro = rang dans la liste chronologique), reliées à leur date par un trait ; durées en traits fins ; anneau de couleur
-      (et mot dans la liste) pour les objectifs. Placement sans chevauchement sur 1 à 2 rangées. */
+  /** Plein écran : piste des jalons sous l'axe du temps, d'une à deux voies, de petits ronds numérotés (le numéro est celui de la liste chronologique), jamais de texte :
+      chaque rond est à la date de son jalon, décalé de voie quand il en gênerait un autre (24 px de pas), regroupé en « +N » quand les deux voies sont prises. Les durées sont un
+      trait fin derrière le rond ; un anneau de couleur (et le mot dans la liste) pour les objectifs ; l'étiquette d'un seul jalon, celui du réticule, flotte dans le tracé (data-flab). */
   function rail(M, jalons, dom, X, Y, ctx) {
-    const { B, W, P, mesurer, railH } = ctx, rows = P.railRows || 1;
-    let lab = !!P.pinLabels;
+    const { B, P, railTop } = ctx, rows = P.railRows || 1, PAS = 24;
     const numero = new Map(M.jalons.map((j, i) => [j.id, i + 1]));
-    /* Les libellés des pastilles sont tronqués (« … ») à une largeur maximale, resserrée jusqu'à ce que toutes tiennent dans la largeur du graphique sur leurs rangées :
-       jamais de pastille coupée par le bord ni superposée à sa voisine. */
-    const tronque = (txt, maxW) => { if (mesurer(txt, 600) <= maxW) return txt; let t = txt; while (t.length > 1 && mesurer(t + "…", 600) > maxW) t = t.slice(0, -1); return t.replace(/\s+$/, "") + "…"; };
-    const visibles = jalons.filter(j => j.t >= dom.debut && j.t <= dom.fin);
-    let its = [], cap = P.fullLabels ? 190 : 150;
-    for (let essai = 0; essai < 16; essai++) {
-      its = visibles.map(j => { const t = lab ? tronque(j.titre, cap) : j.titre; return { j, t, x: X(j.t), w: lab ? 28 + mesurer(t, 600) + 2 : estObjectif(j) ? 24 : 20 }; });
-      const end = Array(rows).fill(-Infinity);
-      its.forEach(it => {
-        const want = it.x - 10; let best = null;
-        for (let r = 0; r < rows; r++) { const l = Math.max(want, end[r] + 4), c = l - want; if (!best || c < best.c - 0.5) best = { r, l, c }; }
-        it.r = best.r; it.l = best.l; it.want = want; end[best.r] = best.l + it.w;
-      });
-      let deborde = false;
-      for (let r = 0; r < rows; r++) {
-        const ri = its.filter(i => i.r === r);
-        let i = 0;
-        while (i < ri.length) {
-          let j = i;
-          while (j + 1 < ri.length && ri[j + 1].l > ri[j + 1].want + 0.5 && ri[j + 1].l <= ri[j].l + ri[j].w + 4.5) j++;
-          if (j > i) { const grp = ri.slice(i, j + 1), mean = grp.reduce((a, b) => a + (b.l - b.want), 0) / grp.length, prevEnd = i > 0 ? ri[i - 1].l + ri[i - 1].w + 4 : 0, sh = Math.min(mean, grp[0].l - prevEnd); grp.forEach(x => { x.l -= Math.max(0, sh); }); }
-          i = j + 1;
-        }
-        let lim = W;
-        for (let k = ri.length - 1; k >= 0; k--) { if (ri[k].l + ri[k].w > lim) ri[k].l = lim - ri[k].w; lim = ri[k].l - 4; }
-        let mn = 0;
-        ri.forEach(x => { if (x.l < mn) x.l = mn; mn = x.l + x.w + 4; if (x.l + x.w > W + 0.5) deborde = true; });
+    const vis = jalons.filter(j => j.t >= dom.debut && j.t <= dom.fin).sort((a, b) => a.t - b.t);
+    const voies = Array.from({ length: rows }, () => []), elems = [];
+    vis.forEach(j => {
+      const x = X(j.t);
+      let k = voies.findIndex(v => !v.length || x - v[v.length - 1].x >= PAS);
+      if (k < 0) { /* les voies sont prises : le jalon rejoint le rond le plus proche (regroupement) */
+        let best = null; voies.forEach(v => { const d = Math.abs(x - v[v.length - 1].x); if (!best || d < best.d) best = { v, d }; });
+        best.v[best.v.length - 1].jalons.push(j); return;
       }
-      if (!deborde) break;
-      if (!lab) break;
-      if (cap <= 44) { lab = false; cap = 0; continue; } /* même tronquées, trop de pastilles : numéros seuls (les titres restent dans la liste) */
-      cap -= 16;
-    }
-    let s = '<g aria-hidden="true"><line class="gp-base" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + B + '" y2="' + B + '"/>';
-    /* durées en traits fins sous la courbe */
-    jalons.filter(j => j.tFin && j.tFin > dom.debut && j.t < dom.fin).forEach((j, k) => {
-      const x1 = X(Math.max(j.t, dom.debut)), x2 = X(Math.min(j.tFin, dom.fin)), y = B + 5 + (k % 2) * 6;
-      s += '<g class="gp-dur" data-ev="' + esc(j.id) + '"><line x1="' + F1(x1 + (j.t >= dom.debut ? 2 : 0)) + '" x2="' + F1(x2 - (j.tFin <= dom.fin ? 2 : 0)) + '" y1="' + y + '" y2="' + y + '"/>' + (j.t >= dom.debut ? '<line x1="' + F1(x1) + '" x2="' + F1(x1) + '" y1="' + (y - 3) + '" y2="' + (y + 3) + '"/>' : "") + (j.tFin <= dom.fin ? '<line x1="' + F1(x2) + '" x2="' + F1(x2) + '" y1="' + (y - 3) + '" y2="' + (y + 3) + '"/>' : "") + "</g>";
+      const el = { x, voie: k, jalons: [j] }; voies[k].push(el); elems.push(el);
     });
-    const off = 12;
-    its.forEach(it => { const cy = B + 17 + off + it.r * 24, cx = it.l + 10; s += '<path class="gp-lead" d="M' + it.x.toFixed(1) + " " + (B - 3) + "V" + (B + 2 + off) + "L" + cx.toFixed(1) + " " + (cy - (estObjectif(it.j) ? 12 : 9)) + '"/>'; });
+    const cy = voie => railTop + 12 + voie * PAS;
+    let s = '<g aria-hidden="true"><line class="gp-base" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + B + '" y2="' + B + '"/>';
+    vis.forEach(j => { s += '<line class="gp-lead" x1="' + F1(X(j.t)) + '" x2="' + F1(X(j.t)) + '" y1="' + B + '" y2="' + (B + 4) + '"/>'; });
+    /* durées : un trait fin à la hauteur du rond, de la date de début à celle de fin */
+    elems.forEach(el => {
+      if (el.jalons.length !== 1 || !el.jalons[0].tFin || el.jalons[0].tFin <= dom.debut) return;
+      const j = el.jalons[0], x2 = X(Math.min(j.tFin, dom.fin)), y = cy(el.voie);
+      if (x2 - el.x > 12) s += '<g class="gp-dur" data-ev="' + esc(j.id) + '"><line x1="' + F1(el.x + 10) + '" x2="' + F1(x2) + '" y1="' + y + '" y2="' + y + '"/>' + (j.tFin <= dom.fin ? '<line x1="' + F1(x2) + '" x2="' + F1(x2) + '" y1="' + (y - 3) + '" y2="' + (y + 3) + '"/>' : "") + "</g>";
+    });
     s += "</g>";
     const marqueurs = [];
-    its.forEach(it => {
-      const cy = B + 17 + off + it.r * 24, cx = it.l + 10, j = it.j, o = estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null;
+    elems.forEach(el => {
+      const y = cy(el.voie), grp = el.jalons.length > 1, j = el.jalons[0], o = !grp && estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null;
       const mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut], ton = o ? (mot ? TON_MOT[mot] : st ? st[1] : "todo") : null;
-      s += '<g class="gp-pin" data-ev="' + esc(j.id) + '">';
-      if (lab) s += '<rect class="gp-chipbg" x="' + F1(it.l) + '" y="' + (cy - 11) + '" width="' + F1(it.w) + '" height="22" rx="11"/>';
-      if (o) s += '<circle class="gp-ring ' + ton + '" cx="' + F1(cx) + '" cy="' + cy + '" r="12"/>';
-      s += '<circle class="gp-bd" cx="' + F1(cx) + '" cy="' + cy + '" r="9"/><text class="n" x="' + F1(cx) + '" y="' + (cy + 4) + '" text-anchor="middle">' + numero.get(j.id) + "</text>";
-      if (lab) s += '<text class="lb" x="' + F1(cx + 14) + '" y="' + (cy + 4) + '">' + esc(it.t) + "</text>";
-      s += "</g>";
-      marqueurs.push({ x: cx, y: cy, jalons: [j], type: o ? "objectif" : "pastille", r: 13, numero: numero.get(j.id), gauche: lab ? it.l : null, largeur: lab ? it.w : null });
+      const ids = el.jalons.map(z => z.id).join(" ");
+      s += '<g class="gp-pin' + (grp ? " gp-pin-g" : "") + '" data-ev="' + esc(ids) + '">';
+      if (o) s += '<circle class="gp-ring ' + ton + '" cx="' + F1(el.x) + '" cy="' + y + '" r="12"/>';
+      s += '<circle class="gp-bd" cx="' + F1(el.x) + '" cy="' + y + '" r="9"/><text class="n" x="' + F1(el.x) + '" y="' + (y + 4) + '" text-anchor="middle">' + (grp ? "+" + el.jalons.length : numero.get(j.id)) + "</text></g>";
+      marqueurs.push({ x: el.x, y, jalons: el.jalons, type: grp ? "groupe" : o ? "objectif" : "pastille", r: 13, numero: grp ? null : numero.get(j.id) });
     });
     /* cibles des objectifs sur la médiane */
     jalons.filter(j => estObjectif(j) && j.t >= M.today && j.t >= dom.debut && j.t <= dom.fin && ctx.aFutur).forEach(j => {
       const i = plusProche(ctx.F.t, j.t), x = X(j.t), y = Y(ctx.F.p50[i]);
-      s = s.replace(/<g data-hop/, "<g data-hop");
       s += '<g class="gp-tg" aria-hidden="true"><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="5"/><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="1.8"/></g>';
     });
-    void railH;
-    return { svg: s, marqueurs, groupes: its.map(it => ({ x: it.x, jalons: [it.j] })) };
+    s += '<g data-flab></g>';
+    return { svg: s, marqueurs, groupes: elems.map(el => ({ x: el.x, jalons: el.jalons })) };
   }
 
   /* ---------- bande « capacité d'épargne » ---------- */
@@ -1194,8 +1225,9 @@
   function construireBande(M, etat, geo, P, ouverte) {
     const C = M.capacite;
     if (!C || !C.periodes.length) return { svg: "", H: 0, vide: true };
-    const { dom, X, W } = geo, compactRepli = P.compact && !ouverte;
-    const H = compactRepli ? 28 : P.stripH + (ouverte || !P.compact ? 14 : 0), top = ouverte || !P.compact ? 16 : compactRepli ? 14 : 3, bot = H - 2;
+    const { dom, X, W } = geo, compactRepli = P.compact && !ouverte, valeurs = P.compact && !!ouverte;
+    /* les montants des marches ne s'écrivent que sur la carte dépliée ; en plein écran, la bande est un dessin et sa valeur se lit au réticule (ligne de lecture et panneau) */
+    const H = compactRepli ? 28 : P.stripH + (valeurs ? 14 : 0), top = valeurs ? 16 : compactRepli ? 14 : 3, bot = H - 2;
     const periodes = C.periodes.filter(p => p.t0 >= M.today || p.t1 == null || p.t1 > M.today);
     const montants = periodes.map(p => p.montant);
     let mn = Math.min(0, ...montants), mx = Math.max(0, ...montants);
@@ -1219,12 +1251,12 @@
     if (dom.debut <= M.today && dom.fin >= M.today) s += '<line class="gp-tdy" x1="' + F1(X(M.today)) + '" x2="' + F1(X(M.today)) + '" y1="' + (top - 2) + '" y2="' + bot + '"/>';
     const marches = [];
     periodes.forEach((p, k) => { if (!k) return; const dv = p.montant - periodes[k - 1].montant; if (Math.abs(dv) >= 1 && p.t0 >= dom.debut && p.t0 <= dom.fin) marches.push({ t: p.t0, dv, raison: p.raison, evenementId: p.evenementId, x: X(p.t0) }); });
-    if (ouverte || !P.compact) {
+    if (valeurs) {
       const posees = [], mes = P.mesurer || mesureApprox;
       marches.forEach(m => { const txt = (m.dv > 0 ? "+" : MOINS) + fInt(m.dv), w = mes(txt, 400); if (posees.some(p => Math.abs(p - m.x) < w + 6)) return; posees.push(m.x); s += '<text x="' + F1(m.x) + '" y="11" text-anchor="middle" class="gp-ti">' + esc(txt) + "</text>"; });
     }
-    if (montants.some(v => v < 0)) { const neg = periodes.find(p => p.montant < 0); if (neg && (ouverte || !P.compact)) s += '<text x="' + F1(clamp(X(Math.max(neg.t0, dom.debut)) + 4, 4, geo.R - 70)) + '" y="' + (bot - 2) + '" class="gp-tneg">négative</text>'; }
-    if (compactRepli) s += '<text x="4" y="11" class="gp-halo">Épargne par mois</text>';
+    if (montants.some(v => v < 0)) { const neg = periodes.find(p => p.montant < 0); if (neg) s += '<text x="' + F1(clamp(X(Math.max(neg.t0, dom.debut)) + 4, 4, geo.R - 70)) + '" y="' + (bot - 2) + '" class="gp-tneg">négative</text>'; }
+    if (!valeurs) s += '<text x="4" y="11" class="gp-halo gp-ti-m">Épargne par mois</text>';
     s += "<g data-sxh></g>";
     return { svg: s, H, Ys, marches, periodes };
   }
@@ -1444,6 +1476,7 @@
   }
 
   /* ---------- une vue du graphe (la carte, ou une mise en page du plein écran) ---------- */
+  const ONGLETS = [["lecture", "Lecture"], ["evenements", "Événements"], ["donnees", "Données"]];
   class Vue {
     constructor(g, host, o) {
       this.g = g; this.host = host; this.mode = o.mode; this.plein = !!o.plein; this.onClose = o.onClose || null;
@@ -1477,7 +1510,7 @@
       return '<button type="button" class="gp-bande" data-act="bande" aria-expanded="false"><span class="gp-bande-h" data-bandeh hidden><span>Capacité d\'épargne</span><span class="num" data-stripv></span></span><svg class="gp-s-svg" data-ssvg aria-hidden="true"></svg><span class="ui-sr">Capacité d\'épargne : afficher ou masquer le détail</span></button>';
     }
     apercu() {
-      return '<div class="gp-apercu"><div class="gp-apercu-h"><span>Aperçu complet · fais glisser le cadre</span><span class="num" data-brushv></span></div><svg class="gp-b-svg" data-bsvg role="slider" tabindex="0" aria-label="Période affichée sur l\'aperçu complet. Flèches pour déplacer, plus et moins pour zoomer"></svg></div>';
+      return '<div class="gp-apercu"><div class="gp-apercu-h"><span>Aperçu complet</span><span class="num" data-brushv></span></div><svg class="gp-b-svg" data-bsvg role="slider" tabindex="0" aria-label="Période affichée sur l\'aperçu complet. Flèches pour déplacer, plus et moins pour zoomer"></svg></div>';
     }
     build() {
       const id = this.id, t = this.g.preset.titre, m = this.mode;
@@ -1493,31 +1526,54 @@
           '<div class="gp-invite" data-invite hidden></div><div class="gp-notes" data-notes></div><div data-why></div>' +
           '<div class="gp-pied"><span class="gp-pied-t">Projection, pas une promesse.</span><button type="button" class="gp-lien" data-act="calcul">Comment c\'est calculé</button></div><p class="ui-sr" data-sr></p></section>';
       } else {
-        const L = m === "paysage", B = m === "bureau";
+        const L = m === "paysage", B = m === "bureau", pied = '<div class="gp-pied"><span class="gp-pied-t">Projection, pas une promesse.</span><button type="button" class="gp-lien" data-act="calcul">Comment c\'est calculé</button></div>';
+        /* en-tête : titre, fenêtre, puces ; puis, de haut en bas, le titre vivant, le tracé (axe et piste des jalons dedans), la bande d'épargne, l'aperçu ; à droite, un panneau à onglets */
         h = '<div class="gp-fsv gp-fsv-' + m + '"><div class="gp-fs-bar"><button type="button" class="gp-icon" data-act="plein" aria-label="Quitter le plein écran">' + ICO.x + "</button>" +
           '<div class="gp-ttl">' + esc(L ? t : t + ", passé et futur") + "</div>" + this.seg() + '<button type="button" class="gp-btn-q ink" data-act="zreset" hidden>Réinitialiser le zoom</button>' +
           (L || m === "portrait" ? "" : '<button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button>') +
+          '<button type="button" class="gp-icon gp-aide" data-act="aide" aria-label="Aide : lire, sélectionner, zoomer" title="Aide : lire, sélectionner, zoomer">' + ICO.aide + "</button>" +
           '<button type="button" class="gp-icon" data-act="reglages" aria-label="Réglages du graphique">' + ICO.reglages + "</button></div>" +
-          '<div class="gp-fs-body"><div class="gp-fs-main">' + (m === "portrait" ? '<div class="gp-fs-eur"><button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button></div>' : "") + (L ? "" : this.hl()) + this.cadre(false) + '<div class="gp-hopbar" data-hopbar hidden></div>' + this.bande() + this.apercu() +
-          (L ? "" : '<div class="gp-fs-hint">' + (B ? "Survole pour lire · glisse pour sélectionner une période · double-clic pour zoomer · pincement du trackpad ou ctrl + molette · + / − / 0 au clavier" : "Touche ou fais glisser pour lire · pince à deux doigts pour zoomer · double touche pour zoomer") + "</div>") + "</div>" +
-          '<aside class="gp-fs-side" aria-label="Lecture"><div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' +
-          (L ? '<div class="gp-pied"><span class="gp-pied-t">Projection, pas une promesse.</span><button type="button" class="gp-lien" data-act="calcul">Comment c\'est calculé</button></div>' :
-            '<h4>Événements</h4><div data-list></div><h4>Données</h4><div class="gp-tbl-w" data-table></div><div class="gp-pied"><span class="gp-pied-t">Projection, pas une promesse.</span><button type="button" class="gp-lien" data-act="calcul">Comment c\'est calculé</button></div>') +
+          '<div class="gp-fs-body"><div class="gp-fs-main">' + (m === "portrait" ? '<div class="gp-fs-eur"><button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button></div>' : "") + (L ? "" : this.hl()) + this.cadre(false) + '<div class="gp-hopbar" data-hopbar hidden></div>' + this.bande() + this.apercu() + "</div>" +
+          '<aside class="gp-fs-side" aria-label="Lecture">' + (L ? '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied :
+            '<div class="gp-onglets" role="tablist" aria-label="Panneau de lecture">' + ONGLETS.map(o => '<button type="button" role="tab" id="' + id + "o" + o[0] + '" data-tab="' + o[0] + '" aria-controls="' + id + "p" + o[0] + '" aria-selected="false" tabindex="-1">' + o[1] + "</button>").join("") + "</div>" +
+            ONGLETS.map(o => '<div class="gp-panneau" role="tabpanel" id="' + id + "p" + o[0] + '" aria-labelledby="' + id + "o" + o[0] + '" data-panel="' + o[0] + '" hidden>' +
+              (o[0] === "lecture" ? '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied : o[0] === "evenements" ? '<div data-list></div>' : '<div class="gp-tbl-w" data-table></div>') + "</div>").join("")) +
           '</aside></div><p class="ui-sr" data-sr></p></div>';
+        void B;
       }
       this.host.innerHTML = h;
       this.racine = this.host.firstElementChild || this.host.children[0] || this.host;
       this.cadreEl = this.q("[data-cadre]"); this.svg = this.q("[data-svg]"); this.hit = this.q("[data-hit]"); this.marks = this.q("[data-marks]");
       this.ssvg = this.q("[data-ssvg]"); this.bsvg = this.q("[data-bsvg]"); this.roEl = this.q("[data-ro]"); this.whyEl = this.q("[data-why]"); this.planBar = this.q("[data-planbar]");
       this.listEl = this.q("[data-list]"); this.tblEl = this.q("[data-table]"); this.notesEl = this.q("[data-notes]"); this.invEl = this.q("[data-invite]"); this.etatEl = this.q("[data-etat]");
+      this.majOnglets();
       this.bind();
+    }
+    majOnglets() {
+      const cur = this.g.etat.onglet || "lecture";
+      this.host.querySelectorAll("[data-tab]").forEach(b => { const on = b.dataset.tab === cur; b.setAttribute("aria-selected", String(on)); b.setAttribute("tabindex", on ? "0" : "-1"); });
+      this.host.querySelectorAll("[data-panel]").forEach(p => { p.hidden = p.dataset.panel !== cur; });
+    }
+    choisirOnglet(id, focus) {
+      if (!ONGLETS.some(o => o[0] === id)) return;
+      this.g.etat.onglet = id; this.g.vues.forEach(v => v.majOnglets && v.majOnglets());
+      if (focus) { const b = this.q('[data-tab="' + id + '"]'); if (b && b.focus) b.focus(); }
     }
     /* ---------- événements ---------- */
     bind() {
       const g = this.g;
       this.ecoute(this.host, "click", e => this.clic(e));
       this.bindHit();
+      this.ecoute(this.host, "keydown", e => {
+        const tb = e.target && e.target.closest ? e.target.closest("[data-tab]") : null; if (!tb) return;
+        const ids = ONGLETS.map(o => o[0]), i = ids.indexOf(tb.dataset.tab), k = e.key === "ArrowRight" ? (i + 1) % ids.length : e.key === "ArrowLeft" ? (i + ids.length - 1) % ids.length : e.key === "Home" ? 0 : e.key === "End" ? ids.length - 1 : -1;
+        if (k >= 0) { if (e.preventDefault) e.preventDefault(); this.choisirOnglet(ids[k], true); }
+      });
       if (this.bsvg) this.bindApercu();
+      /* survol (souris) ou focus (clavier) d'un repère : le réticule se pose sur sa date, et l'étiquette de ce seul jalon flotte dans le tracé */
+      const surMarque = e => { const b = e.target && e.target.closest ? e.target.closest(".gp-mk-b") : null; if (b) this.survolMarqueur(b); };
+      this.ecoute(this.marks, "pointerover", e => { if (e.pointerType === "mouse" && this.P && this.P.hover) surMarque(e); });
+      this.ecoute(this.marks, "focusin", surMarque);
       const ObsR = g.win && g.win.ResizeObserver;
       if (typeof ObsR === "function" && this.cadreEl) { this.ro = new ObsR(() => { if (this.raf && g.win.cancelAnimationFrame) g.win.cancelAnimationFrame(this.raf); this.raf = g.win.requestAnimationFrame ? g.win.requestAnimationFrame(() => this.render({})) : 0; }); this.ro.observe(this.cadreEl); }
     }
@@ -1525,6 +1581,7 @@
       const g = this.g, t = e.target, c = s => (t && t.closest ? t.closest(s) : null);
       const w = c("[data-win]"); if (w) { g.choisirFenetre(w.dataset.win); return; }
       const j = c("[data-jalons]"); if (j) { this.clicMarqueur(j); return; }
+      const tb = c("[data-tab]"); if (tb) { this.choisirOnglet(tb.dataset.tab); return; }
       const a = c("[data-act]");
       if (a) {
         const k = a.dataset.act;
@@ -1532,6 +1589,7 @@
         if (k === "reglages") g.ouvrirReglages(a);
         else if (k === "plein") { if (this.plein) g.fermerPlein(); else g.ouvrirPlein(a); }
         else if (k === "zreset") g.reinitialiserZoom();
+        else if (k === "aide") g.ouvrirAide(a);
         else if (k === "eur") g.ouvrirEuros(a);
         else if (k === "calcul") g.ouvrirCalcul(a);
         else if (k === "jalons") g.ouvrirJalons(a);
@@ -1549,6 +1607,11 @@
       const ev = c("[data-jalon]"); if (ev) { g.ouvrirJalon(ev.dataset.jalon, ev); return; }
       const lr = c(".gp-evrow"); if (lr && lr.dataset.ev) { g.selectionnerJalon(lr.dataset.ev); return; }
       const tr = c("tr[data-t]"); if (tr) { g.etat.curseur = +tr.dataset.t; g.majCurseur(); }
+    }
+    survolMarqueur(btn) {
+      const g = this.g, ids = String(btn.dataset.jalons).split(" "), j = g.M && ids.map(i => g.M.jalons.find(x => x.id === i)).find(Boolean);
+      if (!j || g.etat.curseur === j.t) return;
+      g.etat.curseur = j.t; g.majCurseur();
     }
     clicMarqueur(btn) {
       const g = this.g, ids = String(btn.dataset.jalons).split(" "), js = ids.map(i => g.M.jalons.find(x => x.id === i)).filter(Boolean);
@@ -1845,8 +1908,14 @@
       g.jalonsVisibles().forEach(j => { if (j.t >= bo.debut && j.t <= bo.fin) s += '<line class="gp-ax" x1="' + XB(j.t).toFixed(1) + '" x2="' + XB(j.t).toFixed(1) + '" y1="' + (H - 6) + '" y2="' + H + '"/>'; });
       const d = g.domaineCourant(), x0 = XB(d.debut), x1 = XB(d.fin);
       s += '<rect class="gp-br-win" x="' + x0.toFixed(1) + '" y="1" width="' + Math.max(6, x1 - x0).toFixed(1) + '" height="' + (H - 2) + '" rx="5"/><rect class="gp-br-h" x="' + (x0 - 2).toFixed(1) + '" y="' + (H / 2 - 9) + '" width="4" height="18" rx="2"/><rect class="gp-br-h" x="' + (x1 - 2).toFixed(1) + '" y="' + (H / 2 - 9) + '" width="4" height="18" rx="2"/>';
-      if (this.mode !== "paysage") { const a0 = new Date(bo.debut).getUTCFullYear() + 1, a1 = new Date(bo.fin).getUTCFullYear(); const pasA = Math.max(1, Math.ceil((a1 - a0 + 1) / 6)); for (let a = a0; a <= a1; a += pasA) s += '<text x="' + (XB(Date.UTC(a, 0, 1)) + 3).toFixed(1) + '" y="' + (H - 6) + '" class="after">' + a + "</text>"; }
-      this.bsvg.setAttribute("viewBox", "0 0 " + W + " " + H); this.bsvg.setAttribute("height", H); this.bsvg.innerHTML = s;
+      /* les années s'écrivent sous le cadre, jamais dedans */
+      let Ht = H;
+      if (this.mode !== "paysage") {
+        Ht = H + 16;
+        const a0 = new Date(bo.debut).getUTCFullYear() + 1, a1 = new Date(bo.fin).getUTCFullYear(), pasA = Math.max(1, Math.ceil((a1 - a0 + 1) / 8));
+        for (let a = a0; a <= a1; a += pasA) { const x = XB(Date.UTC(a, 0, 1)); if (x < L + 14 || x > R - 14) continue; s += '<line class="gp-ax" x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + H + '" y2="' + (H + 3) + '"/><text x="' + x.toFixed(1) + '" y="' + (H + 13) + '" text-anchor="middle" class="gp-axl">' + a + "</text>"; }
+      }
+      this.bsvg.setAttribute("viewBox", "0 0 " + W + " " + Ht); this.bsvg.setAttribute("height", Ht); this.bsvg.innerHTML = s;
       tc(this.q("[data-brushv]"), dMois(d.debut) + " → " + dMois(d.fin));
     },
     rendreListes(dom, gran) {
@@ -1923,7 +1992,7 @@
         if (xh) setStyle(xh, { opacity: "0" });
         if (pill) setStyle(pill, { display: "" });
       }
-      this.svg.querySelectorAll(".gp-ytk").forEach(n => { setStyle(n, { display: py != null && Math.abs(+n.getAttribute("data-y") - py) < 20 ? "none" : "" }); });
+      this.svg.querySelectorAll(".gp-ytk").forEach(n => { setStyle(n, { display: n.getAttribute("data-cache") || (py != null && Math.abs(+n.getAttribute("data-y") - py) < 20) ? "none" : "" }); });
       /* titre qui suit le doigt */
       const T = titreLecture(M, e, lec, def);
       const hl = (k, v) => { const n = this.q('[data-hl="' + k + '"]'); tc(n, v); };
@@ -1932,8 +2001,10 @@
       hit.setAttribute("aria-valuenow", String(Math.round(tt / MS_JOUR)));
       hit.setAttribute("aria-valuetext", dMois(tt) + " : " + (lec.valeur == null ? "pas de valeur" : lec.nature === "projete" ? "environ " + fK(lec.valeur) : fEur(lec.valeur)));
       const rl = this.q("[data-roline]"); if (rl) rl.innerHTML = ligneLecture(M, e, lec, def) + (e.reglages.avenirs && gg.hopHors ? " · " + gg.hopHors + " avenirs hors cadre" : "");
-      if (this.roEl) this.roEl.innerHTML = lectureHtml(M, e, lec, { def, effacer: true, survol: !!(this.P && this.P.hover) });
-      if (this.notesEl) this.notesEl.innerHTML = enteteHtml(M, lec.nature === "projete" ? lec : lecture(M, e, aFinFenetre(M, dom), { demi }));
+      /* plein écran : lecture compacte (lignes « libellé · valeur »), une fois ; les explications (base de l'épargne, événements pris en compte, décomposition) sont dans « Comment c'est calculé » */
+      const compact = this.plein && M.mode !== "capacite";
+      if (this.roEl) this.roEl.innerHTML = compact ? lectureKvHtml(M, e, lec, { def, effacer: true }) : lectureHtml(M, e, lec, { def, effacer: true, survol: !!(this.P && this.P.hover) });
+      if (this.notesEl) this.notesEl.innerHTML = enteteHtml(M, lec.nature === "projete" ? lec : lecture(M, e, aFinFenetre(M, dom), { demi }), { gardeFousSeuls: compact });
       /* bande d'épargne : curseur et montant du mois */
       const sx = this.ssvg && this.ssvg.querySelector("[data-sxh]"), sv = this.q("[data-stripv]"), cap = def ? capaciteA(M, M.today) : lec.capacite || capaciteA(M, M.today);
       if (sx && this.bande && !this.bande.vide) {
@@ -1955,8 +2026,10 @@
       const x = gg.X(tt), groupe = plusProcheGroupe(gg.groupes, x, 24);
       if (!groupe) { fl.innerHTML = ""; return; }
       const ts = etiquettesJalon(g.M, groupe), mes = g.mesurer();
-      const t = ts.find(z => mes(z, 600) + 18 <= gg.W) || ts[ts.length - 1], w = Math.min(gg.W, mes(t, 600) + 18), lx = clamp(groupe.x - w / 2, gg.L, gg.W - w);
-      fl.innerHTML = '<rect class="gp-flab" x="' + F1(lx) + '" y="1" width="' + F1(w) + '" height="21" rx="10.5"/><text x="' + F1(lx + 9) + '" y="16" class="gp-ti" style="font-weight:600">' + esc(t) + "</text>";
+      /* une seule étiquette, bornée au tracé (jamais dans la marge de droite) ; en plein écran elle flotte en haut du tracé, sous le nom du trait d'aujourd'hui */
+      const bord = gg.P && gg.P.pins ? gg.R : gg.W, y0 = gg.P && gg.P.pins ? gg.T + 22 : 1;
+      const t = ts.find(z => mes(z, 600) + 18 <= bord - gg.L) || ts[ts.length - 1], w = Math.min(bord - gg.L, mes(t, 600) + 18), lx = clamp(groupe.x - w / 2, gg.L, bord - w);
+      fl.innerHTML = '<rect class="gp-flab" x="' + F1(lx) + '" y="' + y0 + '" width="' + F1(w) + '" height="21" rx="10.5"/><text x="' + F1(lx + 9) + '" y="' + (y0 + 15) + '" class="gp-ti" style="font-weight:600">' + esc(t) + "</text>";
     },
     majAvenir() {
       const g = this.g, e = g.etat, M = g.M, gg = this.geo, grp = this.svg.querySelector("[data-hop]"), bar = this.q("[data-hopbar]");
@@ -2075,6 +2148,14 @@
         const jb = this.clicSur(ev, "[data-jalon]"), ca = this.clicSur(ev, "[data-calcul]"), ef = this.clicSur(ev, "[data-effacer]");
         if (jb) this.ouvrirJalon(jb.dataset.jalon, jb); else if (ca) this.ouvrirCalcul(ca); else if (ef) { this.fermerFeuille(); this.etat.curseur = null; this.majCurseur(); }
       }, l0 ? { lien: { href: l0.href, label: l0.libelle } } : {});
+    },
+    ouvrirAide(opener) {
+      const souris = !!(this.vue && this.vue.P && this.vue.P.hover);
+      const li = t => "<li>" + t + "</li>";
+      const html = '<ul class="gp-liste">' + (souris
+        ? li("<strong>Lire</strong> : survole la courbe, la date, la valeur et les événements du jour s'écrivent.") + li("<strong>Zoomer</strong> : glisse sur la courbe pour choisir une période, double-clique, ou utilise le pincement du trackpad, ctrl + molette, + et − au clavier ; 0 revient à la vue d'ensemble.") + li("<strong>Se déplacer</strong> : flèches gauche et droite, ou fais glisser le cadre dans l'aperçu.")
+        : li("<strong>Lire</strong> : touche la courbe ou fais-y glisser le doigt.") + li("<strong>Zoomer</strong> : pince à deux doigts ou touche deux fois.") + li("<strong>Se déplacer</strong> : fais glisser le cadre dans l'aperçu.")) + "</ul>";
+      this.feuille("Lire et zoomer le graphique", html, opener);
     },
     ouvrirEuros(opener) {
       const r = this.etat.reglages, courants = r.euros === "courants";
@@ -2233,7 +2314,7 @@
 
 
   return { esc, plat, fK, fEur, fSK, fSE, fMois, fMoisU, fPct, kRange, kTiret, chancesTxt, motProba, placerEtiquettes, dureeTxt, relatif, dMois, dJour, FENETRES, domaine, fenetreContenant, granularite, clePas, graduations, domaineY, echelleYStable, valeurCreuse, pointsConnus,
-    chemin, bande, cheminInverse, facteurPrix, normaliser, echantillons, besoinY, besoinFenetre, regrouperJalons, plusProcheGroupe, lecture, planA, capaciteA, phraseTitre, titreLecture, ligneLecture, lectureHtml, enteteHtml,
+    chemin, bande, cheminInverse, facteurPrix, normaliser, echantillons, besoinY, besoinFenetre, regrouperJalons, plusProcheGroupe, lecture, planA, capaciteA, phraseTitre, titreLecture, ligneLecture, lectureHtml, lectureKvHtml, enteteHtml,
     construireSvg, construireBande, tableauHtml, calculHtml, jalonDetailHtml, jalonsListeHtml, groupeHtml, parametresMode, MODES, PRESETS, msDe, isoDe, ajouterMois, moisEntre, capaciteSourceTxt, decompositionPhrase, objectifLigne,
     etiquettesJalon, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel };
 });

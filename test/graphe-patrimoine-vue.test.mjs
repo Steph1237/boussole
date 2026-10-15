@@ -304,19 +304,27 @@ test("plein écran (API Fullscreen) : requestFullscreen appelé, la sortie par l
   const sans = monter(); sans.api.pleinEcran(); assert.ok(sans.doc.body.querySelector(".gp-plein"), "variante en couche, sans API"); sans.api.fermerPleinEcran();
 });
 
-test("plein écran : mises en page selon la fenêtre : paysage (lecture ancrée à droite, pastilles numérotées et libellées, aperçu) et ordinateur (panneau latéral avec lecture, liste des événements, tableau)", () => {
+test("plein écran : mises en page selon la fenêtre : paysage (lecture ancrée à droite, ronds numérotés, aperçu) et ordinateur (panneau latéral avec lecture, liste des événements, tableau)", () => {
   const fen = (w, h) => ({ innerWidth: w, innerHeight: h, matchMedia: () => ({ matches: false, addEventListener() {} }), addEventListener() {}, removeEventListener() {}, location: { hash: "" } });
   const p = monter({ window: fen(844, 390) }); p.api.pleinEcran();
   const pa = p.doc.body.querySelector(".gp-fsv-paysage"); assert.ok(pa, "paysage 844 × 390");
-  assert.ok(pa.querySelector(".gp-fs-side").querySelector("[data-ro]")); assert.ok(pa.querySelectorAll(".gp-pin").length >= 6, "pastilles numérotées"); assert.match(pa.querySelector("[data-svg]").innerHTML, /class="lb"/, "jalons tous libellés");
+  assert.ok(pa.querySelector(".gp-fs-side").querySelector("[data-ro]")); assert.ok(pa.querySelectorAll(".gp-pin").length >= 2, "ronds numérotés"); assert.doesNotMatch(pa.querySelector("[data-svg]").innerHTML, /class="lb"/, "aucun texte sur la piste des jalons");
   assert.ok(pa.querySelector("[data-bsvg]"), "aperçu complet"); assert.equal(pa.querySelector("[data-list]"), null);
   p.api.fermerPleinEcran();
   const b = monter({ window: fen(1440, 900) }); b.api.pleinEcran();
   const bu = b.doc.body.querySelector(".gp-fsv-bureau"); assert.ok(bu, "ordinateur 1440 × 900");
   assert.ok(bu.querySelector(".gp-evl")); assert.ok(bu.querySelector(".gp-tab")); assert.equal(bu.querySelectorAll(".gp-evrow").length, 9, "liste des événements dans le panneau");
-  assert.ok(bu.querySelectorAll(".gp-ytk").length > 4 && bu.querySelectorAll(".gp-ytk").length <= 8, "jusqu'à 8 graduations");
-  assert.match(bu.querySelector("[data-svg]").innerHTML, /gp-ex-b/, "plein écran : la bande P25–P75 de l'existant est visible"); assert.match(bu.querySelector("[data-svg]").innerHTML, /médiane/);
-  assert.match(sp(bu.querySelector(".gp-fs-hint").textContent), /Survole pour lire · glisse pour sélectionner une période · double-clic pour zoomer/);
+  const onglets = bu.querySelectorAll('[role="tab"]'); assert.deepEqual(onglets.map(o => o.textContent), ["Lecture", "Événements", "Données"]);
+  assert.deepEqual(onglets.map(o => o.getAttribute("aria-selected")), ["true", "false", "false"], "Lecture d'abord");
+  assert.equal(bu.querySelector('[data-panel="evenements"]').hidden, true); assert.equal(bu.querySelector('[data-panel="lecture"]').hidden, false);
+  onglets[1].click();
+  assert.equal(bu.querySelector('[data-panel="evenements"]').hidden, false); assert.equal(bu.querySelector('[data-panel="lecture"]').hidden, true); assert.equal(onglets[1].getAttribute("aria-selected"), "true");
+  onglets[0].click();
+  assert.ok(bu.querySelectorAll(".gp-ytk").length >= 3 && bu.querySelectorAll(".gp-ytk").length <= 6, "jusqu'à 6 graduations");
+  assert.match(bu.querySelector("[data-svg]").innerHTML, /gp-ex-b/, "plein écran : la bande P25–P75 de l'existant est visible");
+  const svgB = bu.querySelector("[data-svg]").innerHTML; assert.match(svgB, /médiane/, "la médiane se lit dans la pastille de fin"); assert.match(svgB, /8 chances sur 10<\/text>/, "étiquettes des bandes dans la marge de droite"); assert.match(svgB, /sans nouveau versement|sans versement/);
+  assert.equal(bu.querySelector(".gp-fs-hint"), null, "plus de texte d'aide sur deux lignes"); assert.ok(bu.querySelector('[data-act="aide"]'), "une icône d'aide à la place");
+  assert.match(sp(bu.querySelector(".gp-apercu-h").textContent), /Aperçu complet/); assert.doesNotMatch(sp(bu.querySelector(".gp-apercu-h").textContent), /fais glisser le cadre/);
   assert.ok(bu.querySelector(".gp-b-svg"));
   // survol à la souris : lecture dans le panneau latéral
   const hit = bu.querySelector("[data-hit]"); hit.dispatchEvent(new b.Ev("pointermove", { clientX: 300, pointerId: 3, pointerType: "mouse" }));
@@ -325,6 +333,36 @@ test("plein écran : mises en page selon la fenêtre : paysage (lecture ancrée 
   const E = (n, x) => new b.Ev(n, { clientX: x, pointerId: 4, pointerType: "mouse" });
   hit.dispatchEvent(E("pointerdown", 100)); hit.dispatchEvent(E("pointermove", 160)); hit.dispatchEvent(E("pointermove", 200)); hit.dispatchEvent(E("pointerup", 200));
   assert.ok(b.api.etat.zoom, "sélection d'une période : zoom"); b.api.fermerPleinEcran();
+});
+
+test("plein écran ordinateur : onglets au clavier, aide en feuille, lecture compacte sans explication répétée, survol d'un repère, passé sans aplat hachuré, années de l'aperçu sous le cadre", () => {
+  const fen = (w, h) => ({ innerWidth: w, innerHeight: h, matchMedia: q => ({ matches: /hover: hover|pointer: fine/.test(q), addEventListener() {} }), addEventListener() {}, removeEventListener() {}, location: { hash: "" } });
+  const b = monter({ window: fen(1440, 900) }); b.api.pleinEcran();
+  const bu = b.doc.body.querySelector(".gp-fsv-bureau"), onglets = bu.querySelectorAll('[role="tab"]');
+  onglets[0].focus(); b.touche(onglets[0], "ArrowRight");
+  assert.equal(onglets[1].getAttribute("aria-selected"), "true", "flèche droite : onglet suivant"); assert.equal(bu.querySelector('[data-panel="evenements"]').hidden, false);
+  b.touche(onglets[1], "End"); assert.equal(onglets[2].getAttribute("aria-selected"), "true"); b.touche(onglets[2], "Home"); assert.equal(onglets[0].getAttribute("aria-selected"), "true");
+  // lecture : lignes « libellé · valeur », une seule fois la capacité, pas de paragraphe d'explication
+  const hit = bu.querySelector("[data-hit]"); hit.dispatchEvent(new b.Ev("pointermove", { clientX: 420, pointerId: 3, pointerType: "mouse" }));
+  const lec = sp(bu.querySelector('[data-panel="lecture"]').textContent);
+  assert.ok(bu.querySelectorAll(".gp-kv").length >= 4, "lignes de lecture");
+  assert.equal((lec.match(/capacité d.épargne/gi) || []).length, 1, "la capacité n'est dite qu'une fois : " + lec);
+  assert.doesNotMatch(lec, /Épargne mensuelle projetée|Événements pris en compte|Dont .* de ton patrimoine actuel/);
+  assert.equal(bu.querySelectorAll('[data-act="calcul"]').length, 1, "un seul lien « Comment c'est calculé »");
+  // aide : une feuille, pas un texte permanent
+  bu.querySelector('[data-act="aide"]').click();
+  assert.equal(b.UI.st.titre, "Lire et zoomer le graphique"); assert.match(sp(b.UI.st.corps.textContent), /survole la courbe/); b.UI.panneau.fermer();
+  // survol d'un repère : le réticule se place à sa date, une seule étiquette flotte dans le tracé
+  const marque = bu.querySelectorAll(".gp-mk-b").find(m => !/rapprochés/.test(m.getAttribute("aria-label")));
+  marque.dispatchEvent(new b.Ev("pointerover", { pointerType: "mouse", bubbles: true }));
+  assert.ok(b.api.etat.curseur != null, "le réticule suit le repère survolé"); assert.match(bu.querySelector("[data-flab]").innerHTML, /gp-flab/);
+  // passé : pas d'aplat hachuré, un voile léger, une puce « estimé »
+  const svg = bu.querySelector("[data-svg]").innerHTML;
+  assert.doesNotMatch(svg, /url\(#[^)]*h\)/, "aucun rectangle hachuré"); assert.doesNotMatch(svg, /gp-hatch|<pattern/); assert.match(svg, /class="gp-recon-f"/); assert.match(svg, /class="gp-recon"/);
+  // aperçu : les années sous le cadre
+  const bs = bu.querySelector("[data-bsvg]"), H = +bs.getAttribute("viewBox").split(" ")[3], ann = [...bs.innerHTML.matchAll(/y="([\d.]+)" text-anchor="middle" class="gp-axl">(\d{4})</g)];
+  assert.ok(ann.length >= 3 && ann.every(m => +m[1] > H - 17 && +m[1] <= H), "années sous le cadre de l'aperçu");
+  b.api.fermerPleinEcran();
 });
 
 test("plein écran : lien profond ?graphe=plein-ecran ouvre à l'affichage ; la fermeture retire le paramètre (history.replaceState)", () => {

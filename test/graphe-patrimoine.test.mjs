@@ -114,12 +114,13 @@ test("échelle des y : jamais sous zéro pour un patrimoine positif ; resserrée
   assert.ok(G.graduations(serre.lo, serre.hi, 4).valeurs.length >= 2);
 });
 
-test("graduations dans le tracé : 4 libellés au plus à droite, en portrait ; jusqu'à 8 en plein écran ordinateur", () => {
+test("graduations dans le tracé : 4 libellés au plus à droite, en portrait ; jusqu'à 6 en plein écran ordinateur", () => {
   const M = M0();
   assert.ok(svgDe(M, "5", "carte").geo.ticks.length <= 4);
   assert.ok(svgDe(M, "5", "carte", 358).svg.match(/class="gp-ytk"/g).length <= 4);
   const bureau = svgDe(M, "5", "bureau", 1000);
-  assert.ok(bureau.geo.ticks.length <= 8 && bureau.geo.ticks.length > 4);
+  assert.ok(bureau.geo.ticks.length <= 6 && bureau.geo.ticks.length >= 3);
+  assert.ok((bureau.svg.match(/class="gp-ytk"(?![^>]*display:none)/g) || []).length >= 2, "au moins deux graduations restent lisibles malgré les étiquettes de la marge");
   assert.match(svgDe(M, "5", "carte").svg, /text-anchor="end"[^>]*>[^<]*k€/, "montants alignés à droite, dans la gouttière");
 });
 
@@ -267,17 +268,20 @@ test("en-tête : phrase de titre, décomposition, « Événements pris en compte
 
 test("bande « capacité d'épargne » : une marche par période (sa raison, son montant), à partir d'aujourd'hui, le zéro marqué ; négative = alerte ET le mot", () => {
   const M = M0(), { geo } = svgDe(M, "10", "bureau", 1000);
-  const b = G.construireBande(M, { dom: geo.dom }, geo, geo.P, true);
+  const b = G.construireBande(M, { dom: geo.dom }, geo, geo.P, false);
   assert.equal(b.marches.length, M.capacite.periodes.length - 1, "une marche entre deux périodes consécutives");
   assert.deepEqual(b.marches.map(m => Math.round(m.dv)), [450, -250, 210]);
   assert.ok(b.marches.every(m => m.raison.length > 5), "chaque marche porte sa raison");
   assert.match(b.svg, /<path class="gp-st-l"/); assert.match(b.svg, /class="gp-st-z"/, "ligne du zéro");
-  assert.match(b.svg, />\+450<\/text>/); assert.match(b.svg, />\+210<\/text>/, "les montants des marches, sans se chevaucher (la marche voisine trop proche est omise)");
+  assert.doesNotMatch(b.svg, />[+−]\d+<\/text>/, "plein écran : aucune valeur flottante sur la bande, elle se lit au réticule");
+  assert.match(b.svg, />Épargne par mois</, "la bande est nommée");
+  const carte = svgDe(M, "10", "carte", 358).geo, ouverte = G.construireBande(M, { dom: carte.dom }, carte, carte.P, true);
+  assert.match(ouverte.svg, />\+450<\/text>/, "carte dépliée : les montants des marches, sans se chevaucher");
   const neg = donnees(); neg.capacite.par_periode[2].montant_mensuel = -300;
   const Mn = G.normaliser(neg), gn = svgDe(Mn, "10", "bureau", 1000).geo;
-  assert.match(G.construireBande(Mn, { dom: gn.dom }, gn, gn.P, true).svg, /class="gp-tneg"[^>]*>négative<\/text>/);
+  assert.match(G.construireBande(Mn, { dom: gn.dom }, gn, gn.P, false).svg, /class="gp-tneg"[^>]*>négative<\/text>/);
   const sans = donnees(); sans.capacite = null;
-  assert.equal(G.construireBande(G.normaliser(sans), { dom: geo.dom }, geo, geo.P, true).vide, true, "aucune capacité connue : pas de bande inventée");
+  assert.equal(G.construireBande(G.normaliser(sans), { dom: geo.dom }, geo, geo.P, false).vide, true, "aucune capacité connue : pas de bande inventée");
 });
 
 test("mode capacité (IMMO1) : éventail du budget d'achat P10–P90, médiane, ligne du montant empruntable, bande de taux, phrase de titre, jalons", () => {
@@ -329,19 +333,27 @@ test("étiquettes directes (plein écran) : jamais deux étiquettes de la colonn
   }
 });
 
-test("plein écran : les pastilles de jalons restent dans le cadre, sans se chevaucher, libellés tronqués par « … » quand la place manque", () => {
-  const base = donnees(), longs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => ({ id: "ev:l" + k, date: plusMois(AUJ, 20 + k * 3), titre: "Un événement au titre vraiment très long numéro " + k, type: "autre", source: "evenement", icone: "calendrier", evenement_id: "e-l" + k, effet: { texte: "", montants: {} } }));
+test("plein écran : piste des jalons sous l'axe, de petits ronds numérotés sur une ou deux voies, aucun texte, dans le cadre, regroupés en « +N » quand les voies sont prises", () => {
+  const base = donnees(), longs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => ({ id: "ev:l" + k, date: plusMois(AUJ, 20 + k * 1), titre: "Un événement au titre vraiment très long numéro " + k, type: "autre", source: "evenement", icone: "calendrier", evenement_id: "e-l" + k, effet: { texte: "", montants: {} } }));
   const M = G.normaliser(Object.assign(base, { jalons: base.jalons.concat(longs) }));
-  for (const [mode, W] of [["bureau", 760], ["paysage", 640]]) {
-    const r = svgDe(M, "tout", mode, W), rects = [...r.svg.matchAll(/<rect class="gp-chipbg" x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)"/g)].map(m => ({ x: +m[1], y: +m[2], w: +m[3] }));
-    const ronds = [...r.svg.matchAll(/<circle class="gp-bd" cx="([\d.-]+)"/g)].map(m => +m[1]);
-    assert.ok(ronds.length >= 8, mode + " : " + ronds.length + " pastilles");
-    ronds.forEach(cx => assert.ok(cx >= 0 && cx <= W, mode + " : numéro dans le cadre (" + cx + ")"));
-    rects.forEach(a => assert.ok(a.x >= -0.5 && a.x + a.w <= W + 0.5, mode + " : pastille dans le cadre (" + a.x + " + " + a.w + " / " + W + ")"));
-    rects.forEach((a, i) => rects.slice(i + 1).forEach(b => { if (a.y === b.y) assert.ok(a.x + a.w <= b.x + 0.5 || b.x + b.w <= a.x + 0.5, mode + " : pas de chevauchement"); }));
-    ronds.forEach((a, i) => ronds.slice(i + 1).forEach(b => { if (!rects.length) assert.ok(Math.abs(a - b) > 1 || a === b || true); }));
-    if (rects.length) assert.match(r.svg, /class="lb"[^>]*>[^<]*…</, mode + " : libellé tronqué");
+  for (const [mode, W, voies] of [["bureau", 760, 2], ["paysage", 640, 1], ["portrait", 358, 1]]) {
+    const r = svgDe(M, "tout", mode, W), ronds = [...r.svg.matchAll(/<circle class="gp-bd" cx="([\d.-]+)" cy="([\d.-]+)" r="9"/g)].map(m => ({ x: +m[1], y: +m[2] }));
+    assert.ok(ronds.length >= 2, mode + " : " + ronds.length + " ronds");
+    assert.doesNotMatch(r.svg, /class="lb"/, mode + " : aucun libellé de pastille, ni rectangle de pastille");
+    assert.doesNotMatch(r.svg, /gp-chipbg/);
+    ronds.forEach(a => assert.ok(a.x >= 0 && a.x <= W, mode + " : rond dans le cadre (" + a.x + ")"));
+    const ys = [...new Set(ronds.map(a => a.y))].sort((a, b) => a - b);
+    assert.ok(ys.length <= voies, mode + " : " + voies + " voie(s) au plus, " + ys.join(","));
+    assert.ok(ys[0] > r.geo.B + 22, mode + " : la piste est sous l'axe du temps");
+    ys.forEach(y => { const xs = ronds.filter(a => a.y === y).map(a => a.x).sort((a, b) => a - b); for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 24 - 1e-6, mode + " : 24 px entre deux ronds d'une voie"); });
+    assert.match(r.svg, /class="n"[^>]*>\+\d+</, mode + " : les jalons en trop sont regroupés en « +N »");
+    assert.ok(r.geo.H >= ys[ys.length - 1] + 12, mode + " : le cadre contient la piste");
   }
+  assert.match(svgDe(M0(), "5", "bureau", 1000).svg, /<g class="gp-puce"[^>]*><rect[^>]*\/><text[^>]*>estimé<\/text>/, "une puce « estimé » au début du segment reconstitué");
+  const peu = svgDe(G.normaliser(donnees()), "5", "bureau", 1000), tx = [...peu.svg.matchAll(/<text x="[\d.]+" y="([\d.]+)" text-anchor="middle"[^>]*>(\d{4})</g)];
+  assert.ok(tx.length >= 3 && tx.every(m => +m[1] === peu.geo.B + 16), "années de l'axe juste sous le tracé (16 px)");
+  assert.doesNotMatch(peu.svg, /text-anchor="middle" class="gp-tb">Aujourd/, "« Aujourd'hui » n'est pas dans l'axe");
+  assert.match(peu.svg, /class="gp-halo gp-tb">Aujourd'hui</, "il nomme le trait d'aujourd'hui, en haut");
 });
 
 test("annotation de l'achat : la vraie baisse de la vue — frais seuls en patrimoine net (l'apport devient du bien), apport (+ impôts) en vue financière — avec le mot « Achat »", () => {

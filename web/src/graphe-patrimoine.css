@@ -30,7 +30,7 @@
 .gp-hl{margin:0}
 .gp-carte .gp-hl{position:absolute;left:0;top:26px;z-index:1;max-width:76%;pointer-events:none;text-shadow:0 0 3px var(--surface),0 0 3px var(--surface),0 0 6px var(--surface)}
 .gp-hl-k{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
-.gp-hl-v{font:700 var(--t-hero)/var(--lh-hero) var(--f-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums lining-nums}
+.gp-hl .gp-hl-v{font:700 var(--t-hero)/var(--lh-hero) var(--f-display);letter-spacing:-.02em;font-variant-numeric:proportional-nums lining-nums}
 .gp-hl-s{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 .gp-carte .gp-hl-v{font-size:var(--t-hero)}
 .gp-planbar{display:flex;align-items:center;gap:var(--sp-2);margin:var(--sp-1) 0 var(--sp-2);padding:4px 4px 4px 12px;border-radius:10px;background:var(--sunk);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
@@ -83,7 +83,14 @@
 .gp-svg text,.gp-s-svg text,.gp-b-svg text{font-family:var(--f-body);font-variant-numeric:tabular-nums;font-size:var(--t-caption);fill:var(--muted)}
 .gp-gr{stroke:var(--gp-grid);stroke-width:1}
 .gp-ax{stroke:var(--muted);stroke-width:1}
-.gp-hatch{stroke:var(--gp-hatch);stroke-width:1.5}
+.gp-recon-f{fill:var(--dv-recon);opacity:.07;stroke:none}
+.gp-puce rect{fill:var(--surface);stroke:var(--line);stroke-width:1}
+.gp-svg .gp-puce text{fill:var(--muted);font:600 var(--t-caption)/1 var(--f-body)}
+.gp-brk{fill:none;stroke:var(--fan-edge);stroke-width:1.25}
+.gp-leader{stroke:var(--muted);stroke-width:1;opacity:.55}
+.gp-svg .gp-gl{fill:var(--ink);font:600 var(--t-caption)/1 var(--f-body)}
+.gp-svg .gp-gl-sv{fill:var(--muted);font-weight:500}
+.gp-pin-g .gp-bd{stroke-dasharray:0}
 .gp-recon{fill:none;stroke:var(--dv-recon);stroke-width:1.5;stroke-dasharray:4 3;stroke-linecap:round;stroke-linejoin:round}
 .gp-obs{fill:none;stroke:var(--dv-observed);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .gp-med{fill:none;stroke:var(--dv-median);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
@@ -272,15 +279,14 @@ body.gp-bloque{overflow:hidden}
 .gp-fs-bar .gp-seg{flex:none;min-width:260px}
 .gp-fs-bar .gp-seg button{min-height:var(--hit);padding:0 10px}
 .gp-fs-body{flex:1;min-height:0;display:flex}
-.gp-fs-main{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;padding:6px 12px}
+.gp-fs-main{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;gap:var(--gp-gap,24px);padding:6px 12px}
 .gp-fsv-paysage .gp-fs-main .gp-cadre,.gp-fsv-bureau .gp-fs-main .gp-cadre{flex:1;min-height:0}
 .gp-fsv-paysage .gp-fs-main .gp-svg,.gp-fsv-bureau .gp-fs-main .gp-svg{position:absolute;inset:0}
 .gp-fsv-portrait .gp-fs-main .gp-cadre{flex:none}
 .gp-fs-side{width:236px;flex:none;border-left:1px solid var(--line);background:var(--surface);overflow:auto;padding:var(--sp-2) var(--sp-3) var(--sp-3)}
 .gp-fs-side .gp-ro{margin-top:4px}
 .gp-fs-side h4{margin:14px 0 2px;font:700 var(--t-small)/var(--lh-small) var(--f-display)}
-.gp-fs-hint{margin-top:6px;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
-.gp-apercu{margin-top:4px}
+.gp-apercu{margin:0}
 .gp-b-svg{display:block;width:100%;touch-action:none}
 .gp-apercu-h{display:flex;justify-content:space-between;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 .gp-hopbar{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-2);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
@@ -288,11 +294,11 @@ body.gp-bloque{overflow:hidden}
 .gp-hopbar button{min-height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line);font:600 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--brand);white-space:nowrap;background:var(--surface)}
 .gp-hopbar b{color:var(--ink);font-weight:600}
 .gp-fsv-paysage .gp-hl,.gp-fsv-paysage .gp-apercu-h{display:none}
-.gp-fsv-paysage .gp-fs-main{padding:4px 8px 4px 12px}
+.gp-fsv-paysage .gp-fs-main{padding:4px 8px 4px 12px;--gp-gap:8px}
 .gp-fsv-paysage .gp-ro{font-size:var(--t-caption)}
 .gp-fsv-bureau .gp-fs-bar{padding:8px 16px;min-height:64px}
 .gp-fsv-bureau .gp-ttl{font-size:var(--t-h2);line-height:var(--lh-h2)}
-.gp-fsv-bureau .gp-fs-main{padding:14px 24px 12px}
+.gp-fsv-bureau .gp-fs-main{padding:16px 24px 16px;--gp-gap:24px}
 .gp-fsv-bureau .gp-fs-side{width:400px;padding:var(--sp-4) var(--sp-5)}
 .gp-fsv-bureau .gp-hl-v{font-size:var(--t-hero)}
 .gp-fsv-portrait .gp-fs-body{flex-direction:column;overflow:auto}
@@ -306,3 +312,19 @@ body.gp-bloque{overflow:hidden}
 .gp-offre .go{white-space:nowrap;min-height:36px;padding:0 12px;border-radius:10px;background:var(--brand);color:var(--brand-ink);font-weight:600}
 .gp-offre .x{width:36px;height:36px;display:inline-grid;place-items:center;color:var(--surface)}
 @media (prefers-reduced-motion:reduce){.gp-fondu .gp-svg{animation:gp-fondu var(--dur-fade) linear!important}}
+
+/* ----- plein écran : panneau à onglets, lecture en lignes, aide, aperçu ----- */
+.gp-onglets{display:flex;gap:2px;margin:0 0 var(--sp-3);padding:2px;border-radius:var(--r-ctl);background:var(--sunk)}
+.gp-onglets button{flex:1;min-height:var(--hit);padding:0 6px;border-radius:calc(var(--r-ctl) - 2px);font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+.gp-onglets button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--e1,0 1px 2px rgba(0,0,0,.08))}
+.gp-onglets button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.gp-panneau[hidden]{display:none}
+.gp-kvs{margin-top:var(--sp-2);border-top:1px solid var(--line)}
+.gp-kv{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3);padding:8px 0;border-bottom:1px solid var(--line);font:400 var(--t-small)/var(--lh-small) var(--f-body)}
+.gp-kv>span{color:var(--muted);min-width:0}
+.gp-kv>b{font-weight:600;text-align:right;white-space:nowrap}
+.gp-kv.neg>b{color:var(--neg)}.gp-kv.pos>b{color:var(--pos)}
+.gp-fs-side .gp-pied{margin-top:var(--sp-4)}
+.gp-apercu-h{align-items:baseline;margin-bottom:4px}
+.gp-svg text.gp-axl,.gp-b-svg text.gp-axl{fill:var(--muted);font:400 var(--t-caption)/1 var(--f-body)}
+.gp-fs-bar .gp-aide{color:var(--muted)}
