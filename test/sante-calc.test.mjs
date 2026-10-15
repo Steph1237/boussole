@@ -501,7 +501,7 @@ function portMcp() {
 }
 /* Lignes SQL (instrument joint) et banque lue par chargerDonnees. */
 const enSql = P => P.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, value: p.value, status: p.status,
-  price_override: null, instrument: p.mode === "market" ? { price: p.price, ter: p.ter, zone: p.zone, devise: p.devise } : (p.ter != null ? { ter: p.ter } : null) }));
+  price_override: null, instrument: p.mode === "market" ? { price: p.price, ter: p.ter, zone: p.zone, devise: p.devise } : (p.ter != null ? { ter: p.ter, zone: p.zone, devise: p.devise } : null) }));
 const banqueSql = b => ({ comptes: b.comptes.map(({ doublonDe, ...c }) => ({ ...c, doublon_de: doublonDe })), mois: b.mois.map(({ compteId, ...m }) => ({ ...m, compte_id: compteId })) });
 const objSql = O => O.map(({ dateCible, ...o }) => ({ ...o, date_cible: dateCible }));
 const CHAMPS_PARITE = ["statut", "points", "max", "mesure", "repere", "pourquoi", "calcul", "donnees", "ameliorer", "manque", "source_donnees", "confiance", "points_perdus", "texte", "piste", "regle", "source", "cible"];

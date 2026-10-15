@@ -175,7 +175,7 @@ test("app.js : Accueil.open quand l'onboarding n'est pas fait, ?accueil force l'
 });
 
 test("build.mjs : accueil chargé, sa feuille de style incluse, onboarding / import / assistant retirés", () => {
-  assert.match(build, /"pratiques", "accueil", \.\.\.MODULES/);
+  assert.match(build, /"pratiques", "suivi", "accueil", \.\.\.MODULES/);
   assert.match(build, /read\(join\(SRC, "accueil\.css"\)\)/);
   assert.doesNotMatch(build, /"onboarding"|"import"|"assistant"|onboarding\.css|import\.css/);
   for (const f of ["onboarding.js", "onboarding.css", "import.js", "import.css", "assistant.js"]) assert.ok(!existsSync("web/src/" + f), f + " supprimé");

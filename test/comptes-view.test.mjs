@@ -324,7 +324,7 @@ test("ficheEnveloppe (démo, PEA Camille) : lignes triées par poids vers leur f
   assert.equal(CV.ficheEnveloppe(S, { enveloppe: "Inconnue" }, TODAY, { Calc }).trouvee, false);
   assert.equal(CV.ficheEnveloppe(S, { enveloppe: "PEA Camille", titulaire: "p2" }, TODAY, { Calc }).trouvee, false, "titulaire respecté");
   const av = CV.ficheEnveloppe(S, { enveloppe: "Assurance vie Sam" }, TODAY, { Calc });
-  assert.deepEqual(av.repartition.map(r => r.label), ["Obligations", "Immobilier"]);
+  assert.deepEqual(av.repartition.map(r => r.label), ["Obligations", "Actions", "Immobilier"]);
   assert.deepEqual(av.isins, []);
 });
 

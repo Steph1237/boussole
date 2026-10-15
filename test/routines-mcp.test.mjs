@@ -316,7 +316,7 @@ function portMcp() {
 function enLignes(D) {
   const positions = D.positions.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, pru: p.pru,
     value: p.value, value_date: p.valueDate, status: p.status, price_override: null,
-    instrument: p.mode === "market" ? { price: p.price, price_date: p.priceDate, ter: p.ter, zone: p.zone, devise: p.devise } : null }));
+    instrument: p.mode === "market" || p.ter != null ? { price: p.price, price_date: p.priceDate, ter: p.ter, zone: p.zone, devise: p.devise } : null }));
   const { biens, credits, ...profil } = D.profil;
   return { d: { profil, biens, credits, positions, config: D.config, lignes: D.budget.lignes },
     objectifs: D.objectifs.map(({ dateCible, ...o }) => ({ ...o, date_cible: dateCible })) };
@@ -580,7 +580,7 @@ test("routinesDeSession : retard_jours (due, en retard, pas due, en pause, déj�
 
 test("index.ts : routines.ts enregistré avec les calculs injectés ; demarrer_session renvoie routines ; list_objectifs partage situationObjectifs", () => {
   assert.match(src, /import \{ registerRoutines, routinesDeSession \} from "\.\/routines\.ts";/);
-  assert.match(code, /registerRoutines\(server, \{ \.\.\.h, calcul: \{ \.\.\.calcul, budgetTotaux, situationObjectifs \} \}\)/);
+  assert.match(code, /registerRoutines\(server, \{ \.\.\.h, calcul: \{ \.\.\.calcul, budgetTotaux, situationObjectifs \},/);
   assert.ok(code.indexOf("registerJournal(server") < code.indexOf("registerRoutines(server"), "après registerJournal");
   const ds = code.slice(code.indexOf('registerTool("demarrer_session"'), code.indexOf('registerTool("list_propositions"'));
   assert.match(ds, /routinesDeSession\(db, must, today\(\)\)/); assert.match(ds, /\n\s*routines,\n/);

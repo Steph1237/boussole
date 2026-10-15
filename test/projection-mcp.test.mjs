@@ -585,7 +585,7 @@ test("probabilitesObjectifs : probabilité et mot par objectif daté (moteur de 
 const srcIndex = lire("supabase/functions/mcp/index.ts");
 const bloc = (src, debut, fin) => src.slice(src.indexOf(debut), src.indexOf(fin, src.indexOf(debut)));
 test("index.ts : projection.ts enregistré avec les utilitaires du serveur, demarrer_session.projection et list_objectifs.probabilite", () => {
-  assert.match(srcIndex, /import \{ registerProjection, projectionDeSession, probabilitesObjectifs \} from "\.\/projection\.ts";/);
+  assert.match(srcIndex, /import \{ registerProjection, projectionDeSession, probabilitesObjectifs, lireDonneesProjection \} from "\.\/projection\.ts";/);
   assert.match(srcIndex, /registerProjection\(server, \{ db, wrap, must, UserError, RO, RW, DEPOT, deposer, today, banque: lireBanqueCalcul \}\);/);
   assert.match(srcIndex, /const projectionLue = projectionDeSession\(db, must, today\(\)\);/);
   assert.match(srcIndex, /projection = await projectionLue/);

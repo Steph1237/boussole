@@ -194,7 +194,7 @@ test("feuille « Comment c'est calculé » : revenus, charges, taux d'effort, as
   assert.match(t, /taux 25 ans \(août 2026\)/); assert.match(t, /vérifié le \d+ \S+ 2026/);
   assert.match(h, /data-ic-mention>Estimation selon les règles du HCSF, chaque banque décide\. Ce n&#39;est pas une offre de prêt\./);
   assert.doesNotMatch(t, /conseill/i);
-  assert.match(sp(Cap.questionClaude(v, DEPS)), /^Dans Boussole, ma capacité d'emprunt est estimée à un budget d'achat d'environ 186 000 €/);
+  assert.match(sp(Cap.questionClaude(v, DEPS)), /^Dans Boussole, ma capacité d'emprunt est estimée à un budget d'achat d'environ 185 000 €/);
 });
 test("échappement : un nom d'enveloppe piégé est inerte dans la feuille", () => {
   const S = snap(), PIEGE = '<img src=x onerror="alert(1)">';

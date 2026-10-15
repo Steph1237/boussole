@@ -53,7 +53,7 @@ const Pratiques = require("../web/src/pratiques.js");
 function enLignes(D, extra = {}) {
   const positions = D.positions.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, pru: p.pru,
     value: p.value, value_date: p.valueDate, status: p.status, price_override: null,
-    instrument: p.mode === "market" ? { price: p.price, price_date: p.priceDate, ter: p.ter, zone: p.zone, devise: p.devise } : null }));
+    instrument: p.mode === "market" || p.ter != null ? { price: p.price, price_date: p.priceDate, ter: p.ter, zone: p.zone, devise: p.devise } : null }));
   const { biens, credits, ...profil } = D.profil;
   return { donnees: { profil: { ...profil, ...extra.profil }, biens, credits, positions, config: D.config, lignes: D.budget.lignes },
     objectifs: D.objectifs.map(({ dateCible, ...o }) => ({ ...o, date_cible: dateCible })) };
@@ -260,7 +260,7 @@ test("parité concentration ↔ plan.js (plus grosse ligne, nombre de poches)", 
 
 test("parité devises ↔ pratiques.js (part hors euro) quand toutes les devises sont connues", { skip: SANS_STRIP }, () => {
   const { A, M } = charger();
-  const devises = { "pea-etf-monde": "USD", "pea-etf-europe": "EUR", "pea-air-liquide": "EUR", "cto-asml": "EUR", "av-fonds-euro": "EUR", "av-scpi": "EUR",
+  const devises = { "pea-etf-monde": "USD", "pea-etf-europe": "EUR", "pea-air-liquide": "EUR", "cto-asml": "EUR", "av-fonds-euro": "EUR", "av-uc-monde": "EUR", "cto-fonds-europe": "EUR", "av-scpi": "EUR",
     "livret-a": "EUR", "ldds": "EUR", "per-camille": "USD", "crypto-btc": "USD", "compte-commun": "EUR", "prime-camille": "EUR",
     "pel-camille": "EUR", "pea-sam-especes": "EUR" /* lignes du calendrier DAT1 (PEL, espèces du PEA de Sam) : toutes les devises connues */ };
   for (const scope of ["foyer", "p1", "p2"]) {

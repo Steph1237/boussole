@@ -219,6 +219,8 @@
       // Annotations de l'instrument (outil annotate_instrument du connecteur) : frais courants, zone, devise d'exposition.
       ter: ins && ins.ter != null ? +ins.ter : null, zone: (ins && ins.zone) || null, devise: (ins && ins.devise) || null,
       annoteSource: (ins && ins.annote_source) || null, annoteLe: (ins && ins.annote_le) || null,
+      // Rôle de la ligne (SUIVI, 0032) : reserve | coeur | satellite, null tant qu'il n'est pas validé ; roleSource : propose | valide.
+      role: r.role || null, roleSource: r.role_source || null,
       // Symbole Yahoo de l'instrument (ticker d'action, code de fonds…) : aide à reconnaître une action en direct (frais des supports).
       symbol: (ins && ins.symbol) || null,
       // Synchronisation (Powens, Binance) : la ligne est alimentée automatiquement, à cette date.
@@ -232,7 +234,9 @@
   const cfgView = r => ({ targets: r.targets || {}, rules: r.rules || [], cushion: r.cushion || null, recurring: r.recurring || [], todo: r.todo || [], milestones: r.milestones || [], hypotheses: r.hypotheses || [],
     frais_enveloppes: objetOu(r.frais_enveloppes),
     // Calendrier patrimonial (0029) : informations des enveloppes et des prêts, donations consenties, avis d'impôt ({}, {}, [], {} par défaut).
-    enveloppes_infos: objetOu(r.enveloppes_infos), prets_infos: objetOu(r.prets_infos), donations: Array.isArray(r.donations) ? r.donations : [], avis_impot: objetOu(r.avis_impot), projection: objetOu(r.projection) });
+    enveloppes_infos: objetOu(r.enveloppes_infos), prets_infos: objetOu(r.prets_infos), donations: Array.isArray(r.donations) ? r.donations : [], avis_impot: objetOu(r.avis_impot), projection: objetOu(r.projection),
+    // Politique de suivi des lignes (SUIVI, 0032) : {} par défaut (les défauts sont calculés par Suivi).
+    suivi: objetOu(r.suivi) });
   const foyerView = r => ({ id: r.id, variante_id: r.variante_id || null, type: r.type, personne: r.personne, libelle: r.libelle, date: String(r.date).slice(0, 10), fin: r.fin ? String(r.fin).slice(0, 10) : null,
     params: r.params && typeof r.params === "object" ? r.params : {}, source: r.source, created_at: r.created_at, updated_at: r.updated_at });
   const varianteView = r => ({ id: r.id, nom: r.nom, description: r.description || "", retire: Array.isArray(r.retire) ? r.retire : [], hypotheses: r.hypotheses && typeof r.hypotheses === "object" ? r.hypotheses : {}, created_at: r.created_at, updated_at: r.updated_at });
@@ -266,12 +270,13 @@
     source: r.source ?? null, historique: Array.isArray(r.historique) ? r.historique : [], creeLe: r.cree_le, majLe: r.maj_le,
   });
   const CONSENTEMENTS = ["demander", "prevenir", "jamais"];
-  const ROUTINE_SELECT = "type, jour, active, consentement_journal, dernier_passage, dernier_client, prochain_passage, questions, synthese";
+  const ROUTINE_SELECT = "*"; // dont etat_suivi (0032) : mémoire de la dernière revue du suivi des lignes, écrite par cloturer_routine (jamais par l'app)
   const questionView = x => ({ question: String((x && x.question) || ""), pourquoi: (x && x.pourquoi) || null, champ: (x && x.champ) || null });
   const routineView = r => ({
     type: r.type, jour: r.jour == null ? 1 : +r.jour, active: !!r.active, consentementJournal: !!r.consentement_journal,
     dernierPassage: r.dernier_passage ?? null, dernierClient: r.dernier_client ?? null, prochainPassage: r.prochain_passage ?? null,
     questions: Array.isArray(r.questions) ? r.questions.filter(x => x && typeof x === "object").map(questionView) : [], synthese: r.synthese ?? null,
+    etatSuivi: r.etat_suivi && typeof r.etat_suivi === "object" && !Array.isArray(r.etat_suivi) ? r.etat_suivi : null,
   });
   /* Banques connectées (BQ1) : colonnes lues et vues canoniques ; BanqueEtat (banque-etat.js) chargé avant ce fichier par build.mjs. */
   const BE = () => window.BanqueEtat;

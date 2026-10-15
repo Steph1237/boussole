@@ -23,7 +23,9 @@
   // Date d'il y a `ans` ans et `mois` mois (même quantième, ou dernier jour du mois), pour les dates d'ouverture du calendrier de la démo.
   const reculer = (ans, mois) => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - ans * 12 - mois); const f = new Date(now); const dernier = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(f.getUTCDate(), dernier)); return iso(d); };
 
-  const P = o => Object.assign({ isin: null, qty: null, pru: null, price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null,
+  /* Rôles (SUIVI, 0032) : la démo en valide quelques-uns avec Claude (role_source « valide ») ; les autres sont proposés par Boussole et attendent d'être confirmés. */
+  const VALIDE = role => ({ role, roleSource: "valide" });
+  const P = o => Object.assign({ role: null, roleSource: null, isin: null, qty: null, pru: null, price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null,
     ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null, sourceAuto: null, sourceAutoLe: null }, o);
   /* Lignes alimentées par la synchronisation bancaire (Powens, migration 0021 : source_auto, source_auto_le) : le compte joint et le livret A
      de « Banque des Canuts » (synchronisée cette nuit), les lignes du PEA de « Néo Courtage » (dernière synchronisation il y a 3 jours). */
@@ -33,16 +35,22 @@
      (seuil de 50 %) et invite à faire annoter l'ETF Monde, la plus grosse ligne. */
   const A = (ter, zone, devise, annoteSource) => ({ ter, zone, devise, annoteSource, annoteLe: at(9, "19:05") });
   const positions = [
-    P({ id: "pea-etf-monde", name: "ETF MSCI World", envelope: "PEA Camille", owner: "p1", bloc: "Monde", mode: "market", isin: "IE00B4L5Y983", qty: 120, pru: 88.4, price: 104.26, priceDate: hier, ...NEO }),           // 12 511,20
-    P({ id: "pea-etf-europe", name: "ETF Stoxx Europe 600", envelope: "PEA Camille", owner: "p1", bloc: "Europe", mode: "market", isin: "LU0908500753", qty: 36, pru: 215.1, price: 248.3, priceDate: hier, ...NEO,
+    P({ id: "pea-etf-monde", name: "ETF MSCI World", envelope: "PEA Camille", owner: "p1", bloc: "Monde", mode: "market", isin: "IE00B4L5Y983", qty: 120, pru: 88.4, price: 104.26, priceDate: hier, ...NEO, ...VALIDE("coeur") }),           // 12 511,20
+    P({ id: "pea-etf-europe", name: "ETF Stoxx Europe 600", envelope: "PEA Camille", owner: "p1", bloc: "Europe", mode: "market", isin: "LU0908500753", qty: 36, pru: 215.1, price: 248.3, priceDate: hier, ...NEO, ...VALIDE("coeur"),
       ...A(0.07, "Europe", null, "Document d'informations clés du fonds (amundietf.fr), frais courants 0,07 %") }),     //  8 938,80
-    P({ id: "pea-air-liquide", name: "Air Liquide", envelope: "PEA Camille", owner: "p1", bloc: "Convictions", mode: "market", isin: "FR0000120073", qty: 22, pru: 162, price: 181.5, priceDate: hier, ...NEO }),          //  3 993,00
+    P({ id: "pea-air-liquide", name: "Air Liquide", envelope: "PEA Camille", owner: "p1", bloc: "Convictions", mode: "market", isin: "FR0000120073", qty: 22, pru: 162, price: 181.5, priceDate: hier, ...NEO, ...VALIDE("satellite") }),          //  3 993,00
     P({ id: "cto-asml", name: "ASML", envelope: "CTO Sam", owner: "p2", bloc: "Convictions", mode: "market", isin: "NL0010273215", qty: 6, pru: 640, price: 712.4, priceDate: hier,
-      ...A(0, "Pays-Bas", "EUR", "Action détenue en direct : pas de frais courants de fonds (frais de courtage non compris)") }),                             //  4 274,40
-    P({ id: "av-fonds-euro", name: "Fonds en euros", envelope: "Assurance vie Sam", owner: "p2", bloc: "Obligations", mode: "manual", value: 18200, valueDate: monthEnd(1) }),                                   // 18 200,00
+      ...A(0, "Pays-Bas", "EUR", "Action détenue en direct : pas de frais courants de fonds (frais de courtage non compris)"), ...VALIDE("coeur") }), // choisi avec Claude : conviction de long terme gardée au cœur                             //  4 274,40
+    P({ id: "av-fonds-euro", name: "Fonds en euros", envelope: "Assurance vie Sam", owner: "p2", bloc: "Obligations", mode: "manual", value: 8200, valueDate: monthEnd(1) }),                                   //  8 200,00
+    /* Les 18 200 € de l'assurance-vie de Sam sont répartis entre le fonds en euros (8 200 €), une unité de compte d'actions du monde aux frais élevés (6 000 €, SUIVI :
+       « ça vaut le coût » de la changer, arbitrage sans impôt) et un fonds d'actions européennes du compte-titres (4 000 €, plus-value de 2 400 € : « ne rien faire »). */
+    P({ id: "av-uc-monde", name: "Fonds Actions Monde (unité de compte)", envelope: "Assurance vie Sam", owner: "p2", bloc: "Monde", mode: "manual", isin: "XX0000000090", value: 6000, valueDate: monthEnd(1),
+      ...A(1.6, "Monde", "EUR", "Document d'informations clés de l'unité de compte (exemple), frais courants 1,60 %") }),                                                                                          //  6 000,00
+    P({ id: "cto-fonds-europe", name: "Fonds Actions Europe (compte-titres)", envelope: "CTO Sam", owner: "p2", bloc: "Europe", mode: "market", isin: "XX0000000124", qty: 40, pru: 40, price: 100, priceDate: hier,
+      ...A(0.8, "Europe", "EUR", "Document d'informations clés du fonds (exemple), frais courants 0,80 %") }),                                                                                                       //  4 000,00
     P({ id: "av-scpi", name: "SCPI diversifiée", envelope: "Assurance vie Sam", owner: "p2", bloc: "SCPI", mode: "manual", value: 5300, valueDate: monthEnd(1), hypothesis: "Valorisée au prix de retrait 2025, à confirmer sur le relevé annuel." }), // 5 300,00
-    P({ id: "livret-a", name: "Livret A", envelope: "Livrets Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4), ...CANUTS }),                                             // 12 000,00
-    P({ id: "ldds", name: "LDDS", envelope: "Livrets Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4) }),                                                                     // 12 000,00 (plafond)
+    P({ id: "livret-a", name: "Livret A", envelope: "Livrets Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4), ...CANUTS, ...VALIDE("reserve") }),                                             // 12 000,00
+    P({ id: "ldds", name: "LDDS", envelope: "Livrets Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 12000, valueDate: ago(4), ...VALIDE("reserve") }),                                                                     // 12 000,00 (plafond)
     P({ id: "per-camille", name: "PER Camille", envelope: "PER", owner: "p1", bloc: "Monde", mode: "manual", value: 11800, valueDate: monthEnd(1) }),                                                            // 11 800,00
     P({ id: "pel-camille", name: "PEL", envelope: "PEL Camille", owner: "p1", bloc: "Épargne", mode: "manual", value: 6800, valueDate: monthEnd(1) }),                                                                  //  6 800,00
     P({ id: "pea-sam-especes", name: "Espèces du PEA", envelope: "PEA Sam", owner: "p2", bloc: "Épargne", mode: "manual", value: 800, valueDate: monthEnd(1) }),                                                        //    800,00
@@ -77,10 +85,10 @@
       p2: { Convictions: 10, Obligations: 40, SCPI: 25, "Épargne": 25 },
       tolerancePts: 3,
     },
-    // Chaque règle déclenche une alerte sur le foyer : fonds en euros 19 % > 15 %, crypto 2,7 % > 2,5 %,
+    // Chaque règle déclenche une alerte sur le foyer : ETF MSCI World 12,2 % > 12 %, crypto 2,7 % > 2,5 %,
     // Europe 9,4 % < 12 %, Air Liquide à 6,8 % de son seuil, LDDS à son plafond, cours du bitcoin vieux de 6 jours.
     rules: [
-      { type: "max_line_pct", pct: 15 },
+      { type: "max_line_pct", pct: 12 },
       { type: "max_bloc_pct", bloc: "Crypto", pct: 2.5 },
       { type: "min_bloc_pct", bloc: "Europe", pct: 12 },
       { type: "price_floor", position_id: "pea-air-liquide", price: 170 },
@@ -110,6 +118,8 @@
       { id: "don-demo-1", date: reculer(9, 0), montant: 20000, donateur: "p1", lien: "enfant", beneficiaire: "Enfant 1", nature: "donation", source: "Acte de donation (exemple)", le: ago(40) },
     ],
     avis_impot: {},
+    // Politique de suivi des lignes (SUIVI, 0032), choisie « avec Claude » : plafond satellite de 15 %, revue du cœur le mois courant (la démo montre toujours les déclencheurs du cœur).
+    suivi: { plafond_satellite_pct: 15, mois_revue_coeur: new Date(now).getUTCMonth() + 1, source: "Ce que tu as dit à Claude (exemple)", le: ago(20) },
     milestones: [
       { title: "Fin de la période d'essai de Sam", date: iso(now + 40 * DAY), warnDays: 60, text: "Revoir la répartition des versements programmés." },
     ],

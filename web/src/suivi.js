@@ -143,6 +143,7 @@
     pays_unique: /\b(inde|india|chine|china|japon|japan|bresil|brazil|coree|korea|taiwan|vietnam|mexique|mexico|turquie|turkey|suisse|switzerland|royaume.?uni|united kingdom|canada|australie|australia|afrique du sud|south africa|indonesie|indonesia|arabie saoudite|saudi)\b/,
   };
   const CLASSES_ACTIONS = ["actions", "small_caps", "emergents"];
+  const RE_NOM_FONDS = /\betf\b|\betc\b|ucits|\bfonds\b|\bfund\b|sicav|\bfcp\b|opcvm|tracker|indiciel|\bindex\b|\bmsci\b|s&p|stoxx|nasdaq|ftse|amundi|lyxor|ishares|xtrackers|vanguard/;
   const CLASSES_RISQUEES = ["actions", "small_caps", "emergents", "levier", "crypto"];
   /** Rôle proposé pour une ligne (déterministe, spec § 4.1 et résolutions R2, R3) ; `today` sert à l'échéance proche de la réserve. */
   function roleParDefaut(ligne, instrument, objectifs, today, opts) {
@@ -183,7 +184,11 @@
     const m = MEMO.get(p);
     if (m && m.sig === sig) return m;
     const texte = sansAccent([p.name, p.bloc, ins && ins.categorie, ins && ins.indice].filter(Boolean).join(" "));
-    const r = { sig, classe: Marche.classeRisque(p, classes), fam: Calc.famille(p, classes), nature: Pratiques.natureFrais(p, classes, ter),
+    const classe = Marche.classeRisque(p, classes);
+    let nature = Pratiques.natureFrais(p, classes, ter);
+    /* une action annotée « frais courants 0 » (titre en direct) n'est pas un fonds : pas de constat de coût ni de solidité, rôle de satellite */
+    if (nature === "fonds" && ter === 0 && p.mode === "market" && CLASSES_ACTIONS.includes(classe) && !RE_NOM_FONDS.test(sansAccent(p.name))) nature = "direct";
+    const r = { sig, classe, fam: Calc.famille(p, classes), nature,
       motif: MOTIFS.thematique.test(texte) ? "thematique" : MOTIFS.pays_unique.test(texte) ? "pays_unique" : null };
     MEMO.set(p, r);
     return r;
@@ -1095,6 +1100,25 @@
     return { passages: liste(passages).filter(estDate), revue_coeur_faite_le: e && estDate(e.revue_coeur_faite_le) ? e.revue_coeur_faite_le : null, derniere_revue: e };
   }
 
+  /* ================================================================== adaptateur : état de l'app → data */
+  /** Matelas (mois de dépenses) et coût total des supports (% par an) d'après les bonnes pratiques de l'app, pour les habitudes ; {} si le calcul échoue. */
+  function santeDe(s, today) {
+    try {
+      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, today: new Date(today + "T12:00:00Z") });
+      const m = r.criteres.find(c => c.cle === "matelas"), f = r.criteres.find(c => c.cle === "frais");
+      return { matelas_mois: m && !m.aCompleter && connu(m.valeur) ? +m.valeur : null, frais_pct: f && !f.aCompleter && f.frais && connu(f.frais.pct) ? +f.frais.pct : null };
+    } catch (e) { return {}; }
+  }
+  /** État S du store de l'app (positions, config, profil, objectifs, risque, routines, journal, savoir.reperes, classes) → data du moteur. opts : { today, sante?, cours?, expositions? }. */
+  function depuisEtat(S, opts) {
+    const s = objet(S), o = objet(opts), today = o.today && estDate(o.today) ? o.today : new Date().toISOString().slice(0, 10);
+    const rt = liste(s.routines).find(r => r && r.type === "revue_mensuelle") || null;
+    const passages = liste(s.journal).filter(e => e && e.type === "revue" && e.creeLe).map(e => String(e.creeLe).slice(0, 10)).concat(rt && rt.dernierPassage ? [String(rt.dernierPassage).slice(0, 10)] : []).filter(estDate);
+    return { today, positions: liste(s.positions), instruments: [], expositions: liste(o.expositions), config: objet(s.config), profil: objet(s.profil), objectifs: liste(s.objectifs),
+      risque: { profil: (s.risque && s.risque.profil) || null }, routines: routinesDe(rt && rt.etatSuivi, passages), reperes: liste(objet(s.savoir).reperes), classes: objet(s.classes),
+      cours: liste(o.cours), sante: o.sante || santeDe(s, today) };
+  }
+
   /* ================================================================== phrases affichées (règles de présentation du § 18.4) */
   /** Phrase sur le verdict d'un levier : toujours sous le titre de la classe et de l'enveloppe, formulée sur le levier, jamais sur une ligne. */
   function phraseVerdict(res, quand) {
@@ -1107,5 +1131,5 @@
   }
 
   return { ROLES, ROLES_LIB, METEOS, METEO_LIB, STATUT_LIB, CONSTATS_LIB, VERDICT_LIB, CLASSE_LIB, LEVIERS, RAISON_LIB, DEFAUTS, classeLib, moisRevolus,
-    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, etatSuivi, routinesDe, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
+    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, etatSuivi, routinesDe, depuisEtat, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
 });

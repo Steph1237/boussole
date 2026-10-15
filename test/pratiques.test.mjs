@@ -363,8 +363,8 @@ describe("données de démonstration", () => {
     assert.equal(s.points, 20); // bitcoin 2,7 % < 5 %
     assert.equal(crit(r, "protection").aCompleter, true); // crédit + enfant, rien de déclaré
     assert.equal(crit(r, "apport").points, 4);           // 10 500 € réunis sur 60 000 € (poche Épargne 31 600 € dont PEL Camille 6 800 € et espèces du PEA de Sam 800 €, moins le matelas de 21 100 €) ; le compte courant n'est pas dans la poche
-    // projets à moins de 3 ans hors matelas : « Apport maison » (60 000 €, juin 2029) ; 53 200 € sûrs (45 600 + 7 600 de PEL et d'espèces du PEA) − 15 000 € de matelas visé = 64 %
-    assert.equal(crit(r, "liquidite_objectifs").points, 13);
+    // projets à moins de 3 ans hors matelas : « Apport maison » (60 000 €, juin 2029) ; 43 200 € sûrs (35 600 + 7 600 de PEL et d'espèces du PEA : 10 000 € du fonds en euros de Sam ont été répartis entre une unité de compte et un fonds du compte-titres, SUIVI) − 15 000 € de matelas visé = 47 %
+    assert.equal(crit(r, "liquidite_objectifs").points, 9);
     assert.ok(crit(r, "liquidite_objectifs").calcul.some(l => /Ton matelas visé \(15 000 €\) reste pour les imprévus/.test(l)));
     assert.equal(crit(r, "geographie").points, 20);
     assert.equal(crit(r, "frais").aCompleter, true);

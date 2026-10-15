@@ -961,13 +961,13 @@ test("cartes : anneaux (chiffre en texte HTML centré, unité plus petite), obje
   const c = A.cartes(ind, UI, { id: "1a" });
   const carte = id => c.split("<button ").find(x => x.includes('data-ui-carte="' + id + '"'));
   const ob = carte("objectifs");
-  assert.match(ob, /aria-label="Objectifs : 57 % d(?:'|&#39;)avancement pondéré, 1 objectif en retard\./);
+  assert.match(ob, /aria-label="Objectifs : 58 % d(?:'|&#39;)avancement pondéré, 1 objectif en retard\./);
   assert.match(ob, /Matelas de précaution 100 %, atteint/, "les 3 premiers objectifs restent dans le nom accessible (et dans le panneau)");
   assert.doesNotMatch(ob, /aj-ob|aj-obs|aj-suite/, "plus de liste d'objectifs tronquée dans la carte");
   assert.match(ob, /<span class="ui-puce surveiller"><span class="ui-puce-point" aria-hidden="true"><\/span>1 en retard<\/span>/, "statut en puce avec son mot");
   assert.match(ob, /<svg class="aj-ring s-surveiller" viewBox="0 0 80 80" aria-hidden="true"/, "arc décoratif");
   assert.doesNotMatch(ob, /<text/, "le chiffre n'est pas un <text> SVG (il débordait de l'anneau)");
-  assert.match(ob, /<span class="aj-ring-fig pct" aria-hidden="true"><span class="aj-ring-n">57<\/span><span class="aj-ring-u">%<\/span><\/span>/, "« % » plus petit, sur la même ligne de base");
+  assert.match(ob, /<span class="aj-ring-fig pct" aria-hidden="true"><span class="aj-ring-n">58<\/span><span class="aj-ring-u">%<\/span><\/span>/, "« % » plus petit, sur la même ligne de base");
   assert.match(ob, /data-aj-off="/);
   const pr = carte("pratiques");
   assert.match(pr, /aria-label="Bonnes pratiques : \d+ sur 100, (solide|correct|à consolider)/);

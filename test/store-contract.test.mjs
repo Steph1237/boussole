@@ -74,17 +74,17 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   const S = await whenReady(ctx);
   assert.deepEqual(J(S.people), [{ id: "p1", nom: "Camille" }, { id: "p2", nom: "Sam" }]);
   assert.equal(S.scope, "foyer");
-  assert.equal(S.positions.length, 14); // 12 + PEL Camille et espèces du PEA de Sam (calendrier DAT1)
+  assert.equal(S.positions.length, 16); // 12 + PEL Camille et espèces du PEA de Sam (calendrier DAT1) + une unité de compte et un fonds du compte-titres de Sam (SUIVI)
   S.positions.forEach(p => assert.ok(["p1", "p2"].includes(p.owner), `owner canonique pour ${p.id} : ${p.owner}`));
   const POS_KEYS = ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "valueDate", "status", "hypothesis", "qtyEstimated", "note",
-    "ter", "zone", "devise", "annoteSource", "annoteLe", "sourceAuto", "sourceAutoLe", "symbol"];
+    "ter", "zone", "devise", "annoteSource", "annoteLe", "sourceAuto", "sourceAutoLe", "symbol", "role", "roleSource"];
   S.positions.forEach(p => assert.deepEqual(Object.keys(p).sort(), [...POS_KEYS].sort(), `forme de la position ${p.id}`));
   assert.ok(S.positions.some(p => p.status === "à recevoir"), "une ligne à recevoir");
   // snapshots / config / profil / status aux clés attendues par pilotage.js, reel.js, profil.js
   assert.equal(S.snapshots.length, 3);
   S.snapshots.forEach(s => assert.deepEqual(Object.keys(s).sort(), ["byBloc", "byEnvelope", "date", "foyer", "p1", "p2", "source"]));
   S.snapshots.forEach(s => near(s.p1 + s.p2, s.foyer, "photo : p1 + p2 = foyer"));
-  assert.deepEqual(Object.keys(S.config).sort(), ["avis_impot", "cushion", "donations", "enveloppes_infos", "frais_enveloppes", "hypotheses", "milestones", "prets_infos", "projection", "recurring", "rules", "targets", "todo"]);
+  assert.deepEqual(Object.keys(S.config).sort(), ["avis_impot", "cushion", "donations", "enveloppes_infos", "frais_enveloppes", "hypotheses", "milestones", "prets_infos", "projection", "recurring", "rules", "suivi", "targets", "todo"]);
   assert.deepEqual([J(S.config.avis_impot), Array.isArray(S.config.donations), typeof S.config.enveloppes_infos, typeof S.config.prets_infos], [{}, true, "object", "object"], "calendrier patrimonial (0029) : avis {}, donations [], infos d'enveloppes et de prêts");
   assert.deepEqual(J(S.config.frais_enveloppes), {}, "frais des contrats : objet vide par défaut (comme config.frais_enveloppes, 0026)");
   assert.deepEqual(Object.keys(S.config.targets).sort(), ["p1", "p2", "tolerancePts"], "cibles par personne");
@@ -96,13 +96,13 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.deepEqual(J(S.profil.protection), {}, "protection non déclarée dans la démo");
   assert.equal(S.risque, null, "démo : questionnaire de risque jamais rempli");
   assert.deepEqual(J(S.classes), {}, "démo : aucune surcharge poche → classe");
-  // annotations d'instruments : trois lignes cotées sur cinq ont un TER sourcé, moins de la moitié des montants cotés
+  // annotations d'instruments : quatre lignes cotées sur six ont un TER sourcé (un peu plus de la moitié des montants cotés depuis SUIVI)
   const cotees = S.positions.filter(p => p.mode === "market" && counted(p));
   const avecTer = cotees.filter(p => p.ter != null);
-  assert.equal(avecTer.length, 3);
+  assert.equal(avecTer.length, 4);
   avecTer.forEach(p => { assert.ok(p.ter >= 0 && p.ter <= 10); assert.ok(p.annoteSource && p.annoteSource.length <= 300, `source du TER de ${p.id}`); assert.ok(p.annoteLe); });
   const part = avecTer.reduce((a, p) => a + val(p), 0) / cotees.reduce((a, p) => a + val(p), 0);
-  assert.ok(part > 0.3 && part < 0.5, `couverture des TER : ${part}`);
+  assert.ok(part > 0.3 && part < 0.6, `couverture des TER : ${part}`);
   S.positions.filter(p => p.ter == null).forEach(p => { assert.equal(p.annoteSource, null); assert.equal(p.zone, null); assert.equal(p.devise, null); });
   assert.deepEqual(Object.keys(S.profil.personnes).sort(), ["p1", "p2"]);
   assert.equal(S.profil.personnes.p1.salaire, 2800); assert.equal(S.profil.personnes.p2.salaire, 2300);
@@ -182,7 +182,7 @@ test("démo : façade db réduite aux écritures de contrôle (règles, profil d
   for (const path of ["positions/livret-a", "budget/main", "objectifs/obj-apport", "transactions/x", "inconnue/x"])
     await assert.rejects(db.doc(path).update({ value: 1 }), e => e.code === "invalid_argument", path);
   assert.equal(ctx.Store.get().positions.find(p => p.id === "livret-a").value, S.positions.find(p => p.id === "livret-a").value, "placements inchangés");
-  assert.equal(ctx.DEMO.positions.length, 14, "window.DEMO n'est pas modifié (copie)");
+  assert.equal(ctx.DEMO.positions.length, 16, "window.DEMO n'est pas modifié (copie)");
   assert.equal(ctx.DEMO.risque, null, "window.DEMO n'est pas modifié (copie)");
 
   await wait(100);
@@ -886,7 +886,8 @@ test("store-supabase.js : routines (lecture dans loadAll, table absente sans cas
   }
   const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
   assert.ok(load.includes('q(sb.from("routines").select(ROUTINE_SELECT).order("type"))'), "lecture des routines dans le même Promise.allSettled");
-  assert.ok(sup.includes('const ROUTINE_SELECT = "type, jour, active, consentement_journal, dernier_passage, dernier_client, prochain_passage, questions, synthese"'));
+  assert.ok(sup.includes('const ROUTINE_SELECT = "*";'), "toutes les colonnes, dont etat_suivi (0032) : la lecture reste valable avant la migration");
+  assert.ok(sup.includes("etatSuivi: r.etat_suivi && typeof r.etat_suivi === \"object\""), "mémoire de la dernière revue du suivi (écrite par cloturer_routine, jamais par l'app)");
   assert.ok(load.includes("if (routines !== undefined) { C.routines = (routines || []).map(routineView); C.routinesLues = true; }"), "table absente : valeur précédente");
   assert.match(sup, /routines: \[\], routinesLues: false/, "état initial");
   for (const k of ["consentementJournal: !!r.consentement_journal", "dernierPassage: r.dernier_passage ?? null", "dernierClient: r.dernier_client ?? null",

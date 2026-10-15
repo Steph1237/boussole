@@ -85,7 +85,7 @@ const Calc = require("../web/src/calc.js");
 function enLignes(D, extra = {}) {
   const positions = D.positions.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, pru: p.pru,
     value: p.value, value_date: p.valueDate, status: p.status, price_override: null,
-    instrument: p.mode === "market" ? { price: p.price, price_date: p.priceDate, ter: p.ter, zone: p.zone, devise: p.devise } : null }));
+    instrument: p.mode === "market" || p.ter != null ? { price: p.price, price_date: p.priceDate, ter: p.ter, zone: p.zone, devise: p.devise } : null }));
   const { biens, credits, ...profil } = D.profil;
   return { donnees: { profil: { ...profil, ...extra.profil }, biens, credits, positions, config: D.config, lignes: D.budget.lignes },
     objectifs: D.objectifs.map(({ dateCible, ...o }) => ({ ...o, date_cible: dateCible })), risque: extra.risque ?? null, classes: extra.classes };
@@ -231,7 +231,7 @@ test("consulter_expertise : marche hors des marchés de l'expertise ignoré et s
   // etf-fonds : marché accepté mais contexte non filtré (un fonds monde couvre aussi ce marché) : signalé dans limites
   const r3 = await srvExp(dbExpertises()).outils.consulter_expertise.handler({ slug: "etf-fonds", question: "Mes ETF américains ?", marche: "us" });
   assert.deepEqual(J(r3.ok.limites), ["marche us : contexte non filtré pour cette expertise ; chaque ligne porte son marché quand il est connu (champ marche)."]);
-  assert.deepEqual(r3.ok.contexte.fonds.map(f => f.nom), ["ETF MSCI World", "ETF Stoxx Europe 600"]);
+  assert.deepEqual(r3.ok.contexte.fonds.map(f => f.nom), ["ETF MSCI World", "ETF Stoxx Europe 600", "Fonds Actions Europe (compte-titres)"]);
   const r4 = await srvExp(dbExpertises({ expertise: { ...EXPERTISE, slug: "actions", nom: "Actions et marchés" } })).outils.consulter_expertise.handler({ slug: "actions", question: "Mes actions françaises ?", marche: "fr" });
   assert.ok(!r4.ok.limites, "actions : contexte filtré, rien à signaler");
 });
@@ -258,14 +258,14 @@ const financierDemo = () => Math.round(M.bilan(D0, "foyer").financier);
 test("contexte etf-fonds : fonds cotés avec frais, zone, devise, enveloppe et poids ; frais inconnus à compléter", { skip: SANS_STRIP }, () => {
   const c = ctx("etf-fonds");
   assert.equal(c.date, TODAY); assert.equal(c.perimetre, "foyer"); assert.equal(c.financier, financierDemo());
-  assert.deepEqual(c.fonds.map(f => f.nom), ["ETF MSCI World", "ETF Stoxx Europe 600"], "fonds seulement (ni Air Liquide, ni ASML, ni Bitcoin), plus gros d'abord");
-  const [w, e] = c.fonds;
+  assert.deepEqual(c.fonds.map(f => f.nom), ["ETF MSCI World", "ETF Stoxx Europe 600", "Fonds Actions Europe (compte-titres)"], "fonds seulement (ni Air Liquide, ni ASML, ni Bitcoin), plus gros d'abord");
+  const [w, e, x] = c.fonds; // x : fonds d'actions européennes du compte-titres de Sam (SUIVI, frais de 0,80 %)
   assert.equal(w.frais_courants_pct, null); assert.equal(e.frais_courants_pct, 0.07);
   assert.equal(e.zone, "Europe"); assert.equal(e.marche, "eu"); assert.equal(w.marche, "monde");
   assert.equal(w.enveloppe, "PEA Camille"); assert.equal(w.type_enveloppe, "pea"); assert.equal(w.titulaire, "p1");
   assert.equal(w.valeur, Math.round(120 * 104.26)); assert.equal(w.poids_pct, Math.round(120 * 104.26 * 1000 / M.bilan(D0, "foyer").financier) / 10);
-  assert.equal(c.total, w.valeur + e.valeur); assert.equal(c.nombre, 2);
-  assert.equal(c.frais_connus_pct_encours, Math.round(e.valeur * 1000 / c.total) / 10);
+  assert.equal(c.total, w.valeur + e.valeur + x.valeur); assert.equal(c.nombre, 3);
+  assert.equal(c.frais_connus_pct_encours, Math.round((e.valeur + x.valeur) * 1000 / c.total) / 10);
   assert.ok(c.a_completer.some(t => t.includes("ETF MSCI World") && t.includes("annotate_instrument")));
 });
 
@@ -273,12 +273,13 @@ test("contexte actions : titres, fonds et supports actions par marché ; filtre 
   const c = ctx("actions");
   assert.deepEqual(c.lignes.map(l => [l.nom, l.nature, l.marche, l.marche_deduit_de]).sort(), [
     ["ASML", "titre", "eu", "zone"], ["Air Liquide", "titre", "fr", "isin"], ["ETF MSCI World", "fonds", "monde", "libelle"],
-    ["ETF Stoxx Europe 600", "fonds", "eu", "zone"], ["PER Camille", "support", "monde", "libelle"]].sort());
+    ["ETF Stoxx Europe 600", "fonds", "eu", "zone"], ["Fonds Actions Europe (compte-titres)", "fonds", "eu", "zone"],
+    ["Fonds Actions Monde (unité de compte)", "support", "monde", "zone"], ["PER Camille", "support", "monde", "libelle"]].sort());
   assert.equal(c.marche_demande, null); assert.equal(c.titres_en_direct, 2);
   assert.equal(Object.values(c.par_marche).reduce((a, x) => a + x.montant, 0), c.total_actions);
   assert.deepEqual(Object.keys(c.par_marche).sort(), ["eu", "fr", "monde"]);
   assert.deepEqual(ctx("actions", "fr").lignes.map(l => l.nom), ["Air Liquide"]);
-  assert.deepEqual(ctx("actions", "eu").lignes.map(l => l.nom).sort(), ["ASML", "ETF Stoxx Europe 600"]);
+  assert.deepEqual(ctx("actions", "eu").lignes.map(l => l.nom).sort(), ["ASML", "ETF Stoxx Europe 600", "Fonds Actions Europe (compte-titres)"]);
   assert.deepEqual(ctx("actions", "us").lignes, []);
   // marché inconnu : la ligne est signalée, pas retenue
   const ch = enLignes({ ...DEMO, positions: [...DEMO.positions, { id: "x", name: "Société X", envelope: "CTO Sam", owner: "p2", bloc: "Actions", mode: "market", isin: "JP0000000001", qty: 1, price: 100, priceDate: TODAY, status: "actif" }] });
@@ -312,7 +313,7 @@ test("contexte fiscalite-enveloppes : enveloppes typées, montants, ouverture de
   assert.ok(!("À recevoir" in types), "prime à recevoir non comptée");
   assert.equal(c.enveloppes.reduce((a, e) => a + e.montant, 0), Math.round(c.enveloppes.reduce((a, e) => a + e.montant, 0)));
   const av = c.enveloppes.find(e => e.type === "assurance_vie");
-  assert.equal(av.ouverture, null); assert.deepEqual(av.titulaires, ["p2"]); assert.equal(av.montant, 23500);
+  assert.equal(av.ouverture, null); assert.deepEqual(av.titulaires, ["p2"]); assert.equal(av.montant, 19500);
   assert.ok(c.a_completer.some(t => t.startsWith("Assurance vie Sam : date d'ouverture inconnue")));
   assert.equal(c.tmi_pct, 30);
   const bp = M.bonnesPratiques({ d: D0, scope: "foyer", objectifs: enLignes(DEMO).objectifs, risque: null, classes: undefined, ref: TODAY });
@@ -377,7 +378,7 @@ test("contexte allocation-risque : allocation par classe et profil de risque (sy
 test("contexte taux-obligations et crypto : poches de taux ; lignes spéculatives et leur part", { skip: SANS_STRIP }, () => {
   const t = ctx("taux-obligations");
   assert.deepEqual(t.lignes.map(l => [l.nom, l.classe]).sort(), [["Compte courant commun", "monetaire"], ["Espèces du PEA", "monetaire"], ["Fonds en euros", "obligations"], ["LDDS", "monetaire"], ["Livret A", "monetaire"], ["PEL", "monetaire"]].sort());
-  assert.equal(t.par_classe.monetaire.montant, 35000 /* 27 400 + PEL Camille 6 800 + espèces du PEA de Sam 800 */); assert.equal(t.par_classe.obligations.montant, 18200); assert.equal(t.par_classe.fonds_euros.montant, 0);
+  assert.equal(t.par_classe.monetaire.montant, 35000 /* 27 400 + PEL Camille 6 800 + espèces du PEA de Sam 800 */); assert.equal(t.par_classe.obligations.montant, 8200); assert.equal(t.par_classe.fonds_euros.montant, 0);
   assert.equal(t.lignes.find(l => l.nom === "Livret A").disponibilite, "immediate");
   const c = ctx("crypto");
   assert.deepEqual(c.lignes.map(l => l.nom), ["Bitcoin"]);

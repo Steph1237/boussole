@@ -15,6 +15,7 @@
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument) et symbol (null en démo) ;
    config.frais_enveloppes = frais des contrats (0026 ; {} par défaut), réglés par proposition (cible config, mêmes règles qu'en base) ;
+   config.suivi = politique de suivi des lignes (0032 ; {} par défaut), position.role / roleSource = rôle de la ligne (réserve, cœur, satellite ; null = proposé par Suivi) ;
   config.enveloppes_infos, prets_infos, donations, avis_impot (0029, calendrier patrimonial : {}, {}, [], {} par défaut), même principe.
    propositions = [{ id, lot, cible, operation, ref, avant, apres, source, justification, statut, creeLe, decideLe }] (toutes, les plus
    récentes d'abord) ; Store.propositions.appliquer(ids, modifications) / refuser(ids) les décident en mémoire (même effet que la
@@ -64,7 +65,7 @@
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
   const C = {
     ready: false, dbOk: null, positions: (D.positions || []).map(p => Object.assign({}, p, { symbol: p.symbol || null })), snapshots: D.snapshots || [], tx: D.tx || [],
-    config: D.config ? Object.assign({}, D.config, { frais_enveloppes: D.config.frais_enveloppes || {}, enveloppes_infos: D.config.enveloppes_infos || {}, prets_infos: D.config.prets_infos || {}, donations: D.config.donations || [], avis_impot: D.config.avis_impot || {} }) : null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
+    config: D.config ? Object.assign({}, D.config, { frais_enveloppes: D.config.frais_enveloppes || {}, enveloppes_infos: D.config.enveloppes_infos || {}, prets_infos: D.config.prets_infos || {}, donations: D.config.donations || [], avis_impot: D.config.avis_impot || {}, suivi: D.config.suivi || {} }) : null, status: D.status || null, profil: D.profil || null, profilLoaded: false,
     budget: D.budget || null, objectifs: D.objectifs || [],
     risque: D.risque || null, classes: D.classes || {}, propositions: D.propositions || [], connexions: D.connexions || [],
     memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander",
@@ -232,7 +233,12 @@
   /* ---------- propositions de Claude (même effet que appliquer_propositions, en mémoire) ---------- */
   const QUESTIONS_RISQUE = ["horizon", "objectif", "reaction", "perte_max", "connaissances", "experience", "revenus", "matelas", "part_investie", "age"];
   const sansNull = o => { const r = {}; Object.keys(o || {}).forEach(k => { if (o[k] !== null && o[k] !== undefined) r[k] = o[k]; }); return r; };
-  const POS_VUE = { value_date: "valueDate", qty_estimated: "qtyEstimated", price_override: "price" };
+  const POS_VUE = { value_date: "valueDate", qty_estimated: "qtyEstimated", price_override: "price", role_source: "roleSource" };
+  /* role et role_source (0032) : valeurs bornées, null les retire. */
+  function controleRole(vue) {
+    if ("role" in vue && vue.role !== null && !["reserve", "coeur", "satellite"].includes(vue.role)) throw bad("role invalide (reserve, coeur ou satellite attendu)");
+    if ("roleSource" in vue && vue.roleSource !== null && !["propose", "valide"].includes(vue.roleSource)) throw bad("role_source invalide (propose ou valide attendu)");
+  }
   function versVuePosition(v) {
     const o = {};
     Object.keys(v).forEach(k => { if (k !== "transaction") o[POS_VUE[k] || k] = v[k]; });
@@ -278,7 +284,7 @@
   /* Frais des contrats (0026 + 0027) : fusion par enveloppe (une enveloppe fournie remplace l'existante en entier, null la retire),
      pourcentages par an de 0 à 5 (au moins un), source obligatoire (1 à 300 caractères), le en AAAA-MM-JJ (date du jour par défaut,
      jamais dans le futur), 30 enveloppes au plus, avant comme après la fusion. */
-  const CHAMPS_FRAIS = ["gestion_uc_pct", "gestion_euro_pct", "garde_pct"];
+  const CHAMPS_FRAIS = ["gestion_uc_pct", "gestion_euro_pct", "garde_pct", "arbitrage_pct", "courtage_pct"];
   /* Aujourd'hui au jour de Paris (RoutineEtat.aujParis, comme la base : « le » ne peut pas être dans le futur de Paris), repli sur le jour local. */
   const jourIso = () => {
     const R = (typeof window !== "undefined" && window.RoutineEtat) || (typeof module === "object" && module.exports && typeof require === "function" ? require("./routine-etat.js") : null);
@@ -286,6 +292,42 @@
     if (typeof p === "string" && ISO10.test(p)) return p;
     const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   };
+  /* config.suivi (0032) : politique de suivi des lignes, fusionnée champ par champ ; null retire un champ ; une semaine fournie remplace l'entrée en entier. */
+  const JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+  function fusionSuivi(v, existant) {
+    if (!objet(v)) throw bad("suivi : objet attendu.");
+    if (!Object.keys(v).some(k => k !== "source" && k !== "le")) throw bad("suivi : au moins un réglage attendu.");
+    const source = typeof v.source === "string" ? v.source.trim().replace(/\s+/g, " ") : "";
+    if (!source || source.length > 300) throw bad("suivi : source obligatoire (1 à 300 caractères).");
+    const out = Object.assign({}, objet(existant) ? existant : {});
+    const ENT = (x, min, max) => { const n = num(x); return Number.isFinite(n) && n >= min && n <= max ? n : null; };
+    Object.keys(v).forEach(k => {
+      const x = v[k];
+      if (!["revue_coeur", "mois_revue_coeur", "seuil_ecart_pts", "plafond_satellite_pct", "seuil_baisse_satellite_pct", "semaine", "source", "le"].includes(k))
+        throw bad("suivi : champ « " + k + " » inconnu (revue_coeur, mois_revue_coeur, seuil_ecart_pts, plafond_satellite_pct, seuil_baisse_satellite_pct, semaine, source, le).");
+      if (x === null) { delete out[k]; return; }
+      if (k === "revue_coeur") { if (x !== "annuelle" && x !== "semestrielle") throw bad("suivi : revue_coeur invalide (annuelle ou semestrielle attendu)."); out[k] = x; }
+      else if (k === "mois_revue_coeur") { const n = ENT(x, 1, 12); if (n == null || n !== Math.trunc(n)) throw bad("suivi : mois_revue_coeur invalide (mois de 1 à 12 attendu)."); out[k] = n; }
+      else if (k === "seuil_ecart_pts") { const n = ENT(x, 3, 10); if (n == null) throw bad("suivi : seuil_ecart_pts invalide (écart de 3 à 10 points attendu)."); out[k] = n; }
+      else if (k === "plafond_satellite_pct") { const n = ENT(x, 0, 30); if (n == null) throw bad("suivi : plafond_satellite_pct invalide (pourcentage de 0 à 30 attendu)."); out[k] = n; }
+      else if (k === "seuil_baisse_satellite_pct") { const n = ENT(x, 10, 50); if (n == null) throw bad("suivi : seuil_baisse_satellite_pct invalide (pourcentage de 10 à 50 attendu)."); out[k] = n; }
+      else if (k === "semaine") {
+        if (!objet(x)) throw bad("suivi : semaine invalide (objet { actif, jour } attendu).");
+        const inconnu = Object.keys(x).find(c => c !== "actif" && c !== "jour");
+        if (inconnu) throw bad("suivi.semaine : champ « " + inconnu + " » inconnu (actif, jour).");
+        if (typeof x.actif !== "boolean") throw bad("suivi.semaine : actif invalide (vrai ou faux attendu).");
+        if (x.jour != null && !JOURS.includes(x.jour)) throw bad("suivi.semaine : jour invalide (lundi, mardi, mercredi, jeudi, vendredi, samedi ou dimanche attendu).");
+        out[k] = x.jour != null ? { actif: x.actif, jour: x.jour } : { actif: x.actif };
+      } else if (k === "source") out[k] = source;
+      else {
+        if (typeof x !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(x) || isNaN(Date.parse(x))) throw bad("suivi : date (le) invalide (AAAA-MM-JJ).");
+        if (x > jourIso()) throw bad("suivi : date (le) dans le futur (la date du document consulté est attendue).");
+        out[k] = x;
+      }
+    });
+    if (v.le == null) out.le = jourIso();
+    return out;
+  }
   function fusionFraisEnveloppes(v, existants) {
     if (!objet(v)) throw bad("frais_enveloppes : objet { enveloppe: frais } attendu.");
     if (Object.keys(v).length > 30) throw bad("frais_enveloppes : 30 enveloppes au plus.");
@@ -296,7 +338,7 @@
       if (f === null) { delete out[env]; return; }
       if (!objet(f)) throw bad("frais_enveloppes « " + env + " » : objet ou null attendu.");
       const inconnu = Object.keys(f).find(x => ![...CHAMPS_FRAIS, "source", "le"].includes(x));
-      if (inconnu) throw bad("frais_enveloppes « " + env + " » : champ « " + inconnu + " » inconnu (gestion_uc_pct, gestion_euro_pct, garde_pct, source, le).");
+      if (inconnu) throw bad("frais_enveloppes « " + env + " » : champ « " + inconnu + " » inconnu (gestion_uc_pct, gestion_euro_pct, garde_pct, arbitrage_pct, courtage_pct, source, le).");
       const ligne = {};
       CHAMPS_FRAIS.forEach(c => {
         if (f[c] == null) return;
@@ -304,7 +346,7 @@
         if (!(x >= 0 && x <= 5)) throw bad("frais_enveloppes « " + env + " » : " + c + " invalide (pourcentage par an entre 0 et 5 attendu).");
         ligne[c] = x;
       });
-      if (!Object.keys(ligne).length) throw bad("frais_enveloppes « " + env + " » : au moins un pourcentage attendu (gestion_uc_pct, gestion_euro_pct ou garde_pct).");
+      if (!Object.keys(ligne).length) throw bad("frais_enveloppes « " + env + " » : au moins un pourcentage attendu (gestion_uc_pct, gestion_euro_pct, garde_pct, arbitrage_pct ou courtage_pct).");
       const source = typeof f.source === "string" ? f.source.trim() : "";
       if (!source || source.length > 300) throw bad("frais_enveloppes « " + env + " » : source obligatoire (1 à 300 caractères).");
       let le = jourIso();
@@ -617,14 +659,19 @@
         if (p.operation === "creer") {
           const vue = versVuePosition(v);
           if (vue.owner && !["p1", "p2"].includes(vue.owner)) throw bad("titulaire « " + vue.owner + " » inconnu (p1 ou p2).");
+          controleRole(vue);
+          if (vue.roleSource != null && vue.role == null) throw bad("role_source sans role (le rôle de la ligne est attendu avec sa source)");
           id = newId("pos");
           C.positions.push(Object.assign({ id, name: "Sans nom", envelope: "", owner: "p1", bloc: "", mode: vue.isin && vue.qty != null ? "market" : "manual", isin: null, qty: null, pru: null,
             price: null, priceDate: null, value: null, valueDate: null, status: "actif", hypothesis: null, qtyEstimated: false, note: null,
-            ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null, symbol: null }, vue));
+            ter: null, zone: null, devise: null, annoteSource: null, annoteLe: null, symbol: null, role: null, roleSource: null }, vue));
         } else {
           const vue = versVuePosition(v);
           if (vue.owner && !["p1", "p2"].includes(vue.owner)) throw bad("titulaire « " + vue.owner + " » inconnu (p1 ou p2).");
-          Object.assign(C.positions[ligne(C.positions, "ligne")], vue);
+          controleRole(vue);
+          const cible = C.positions[ligne(C.positions, "ligne")];
+          if ("role" in vue && vue.role == null && !("roleSource" in vue)) vue.roleSource = null; // retirer le rôle retire sa source
+          Object.assign(cible, vue);
         }
         if (objet(v.transaction)) {
           const t = v.transaction;
@@ -724,10 +771,10 @@
       }
       case "config": {
         if (p.operation !== "modifier") throw bad("réglages : seule la modification est possible.");
-        const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot", "projection"];
+        const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot", "projection", "suivi"];
         const autre = Object.keys(v).find(k => !CLES_CFG.includes(k));
-        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot ou projection seulement).");
-        if (!CLES_CFG.some(k => k in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot ou projection).");
+        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, projection ou suivi seulement).");
+        if (!CLES_CFG.some(k => k in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, projection ou suivi).");
         const cfg = Object.assign({}, C.config || {});
         if ("cushion" in v) cfg.cushion = normMatelas(v.cushion);
         if ("recurring" in v) cfg.recurring = normVersements(v.recurring, cfg.recurring);
@@ -741,6 +788,7 @@
           if (r.erreur) throw bad(r.erreur);
           cfg.projection = r.projection;
         }
+        if ("suivi" in v) cfg.suivi = fusionSuivi(v.suivi, cfg.suivi); /* SUIVI : politique de suivi des lignes, mêmes règles et messages que la base (0032) */
         C.config = cfg;
         break;
       }

@@ -86,7 +86,7 @@ test("résumé d'une règle : type, règle en français, alertes du moment ; ina
   const D = demo(), ctx = ctxDemo(D);
   const r0 = RG.resumeRegle(D.config.rules[0], ctx, Rules);
   assert.equal(r0.titre, "Plafond par ligne");
-  assert.equal(r0.texte, "Aucune ligne au-dessus de 15 % du patrimoine");
+  assert.equal(r0.texte, "Aucune ligne au-dessus de 12 % du patrimoine");
   assert.equal(r0.actif, true);
   assert.ok(r0.alertes.length >= 1, "la démo déclenche chaque règle");
   assert.match(r0.etat, /^\d+ alertes? en ce moment$/);
@@ -218,13 +218,13 @@ test("vue (DOM) : une carte par règle (5 puis « Voir plus »), bascule → act
   assert.equal(v.ecritures.length, 1);
   assert.equal(v.ecritures[0].chemin, "config/main");
   assert.deepEqual(Object.keys(v.ecritures[0].patch), ["rules"], "seule la liste des règles est écrite");
-  assert.deepEqual(v.ecritures[0].patch.rules[0], { type: "max_line_pct", pct: 15, actif: false });
+  assert.deepEqual(v.ecritures[0].patch.rules[0], { type: "max_line_pct", pct: 12, actif: false });
   assert.deepEqual(v.ecritures[0].patch.rules.slice(1), D.config.rules.slice(1), "les autres règles inchangées");
   const sw2 = v.root.querySelector('[data-rg-bascule="0"]');
   assert.equal(sw2.getAttribute("aria-checked"), "false");
   assert.equal(v.doc.activeElement, sw2, "focus sur la bascule redessinée");
   assert.equal(v.$("ruleCount").textContent, "6 règles, dont 1 inactive");
-  assert.match(v.$("rgMsg").textContent, /^Règle désactivée : Aucune ligne au-dessus de 15 %/);
+  assert.match(v.$("rgMsg").textContent, /^Règle désactivée : Aucune ligne au-dessus de 12 %/);
   // réactivation : actif retiré, la règle redevient identique à l'origine
   sw2.click();
   await attendre(); await attendre();
