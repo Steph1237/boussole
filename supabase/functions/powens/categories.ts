@@ -16,8 +16,16 @@
 // banque_operations.categorie_powens (migration 0025) : le rapprochement est recalculé à partir d'elle à chaque synchronisation,
 // et elle est rendue à l'opération quand l'appariement n'est plus valide.
 // Table versionnée : changer une correspondance → changer VERSION_CATEGORIES (test/powens-synchro.test.mjs).
+//
+// BUD1 (docs/superpowers/specs/2026-10-16-bud1-budget-design.md § 3.2 point 4) : chaque opération reçoit aussi une sous-catégorie ; la table complète des codes Powens
+// vers les sous-catégories, et tout le classement, vivent dans le module partagé web/src/budget-categories.js (copie générée budget-categories.gen.js, npm run gen).
+// Ce fichier délègue la sous-catégorie à cette copie (sousCategorieBoussole) et garde la catégorie large, qui reste celle des lecteurs existants ; elle doit rester la
+// catégorie large de la sous-catégorie (test/powens-synchro.test.mjs). Quatre codes changent de catégorie large, d'une dépense à une autre (totaux de revenus, de dépenses
+// et de capacité inchangés) : kitchen_and_appliances et furniture_and_decoration (logement → divers), health_insurance_fees (sante → divers), plane_or_boat_travel
+// (transport → loisirs) ; VERSION_CATEGORIES change en conséquence.
+import { BudgetCategories } from "./budget-categories.gen.js";
 
-export const VERSION_CATEGORIES = "2026-10-12";
+export const VERSION_CATEGORIES = "2026-10-16";
 
 export const CATEGORIES_BOUSSOLE = [
   "logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne",
@@ -44,6 +52,10 @@ export const CORRESPONDANCE: Record<string, string> = {
 
   // Enfants dont la catégorie diffère de celle du parent.
   legal_advice: "divers",
+  kitchen_and_appliances: "divers",
+  furniture_and_decoration: "divers",
+  health_insurance_fees: "divers",
+  plane_or_boat_travel: "loisirs",
   savings: "epargne",
   retirement_insurance: "epargne",
   savings_investments_and_crypto_assets: "epargne",
@@ -92,4 +104,10 @@ export function categorieBoussole(categoriePowens: unknown): string {
   if (typeof c === "string") return correspondance(code(c)) ?? "divers";
   if (c && typeof c === "object") return correspondance(code(c.code)) ?? correspondance(code(c.parent_code)) ?? "divers";
   return "divers";
+}
+
+/** Sous-catégorie du budget d'une catégorie Powens (code enfant, puis code parent), null si aucune ne la dit : le classement continue (marchands, motifs, « à classer »).
+    Délègue à BudgetCategories.sousCategoriePowens ; mêmes formes d'entrée que categorieBoussole. */
+export function sousCategorieBoussole(categoriePowens: unknown): string | null {
+  return BudgetCategories.sousCategoriePowens(categoriePowens);
 }

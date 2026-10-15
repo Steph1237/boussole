@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, createHmac } from "node:crypto";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
+import { BudgetCategoriesPowens } from "./helpers/budget-gen.mjs";
 
 const lire = rel => readFileSync(fileURLToPath(new URL("../" + rel, import.meta.url)), "utf8");
 const strip = nodeModule.stripTypeScriptTypes;
@@ -70,7 +71,7 @@ function chargerModule(source, globaux = {}) {
   return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { ...GLOBAUX, ...globaux });
 }
 function charger({ edgeRuntime } = {}) {
-  const C = chargerModule(lire(DOSSIER + "categories.ts"));
+  const C = chargerModule(lire(DOSSIER + "categories.ts"), { BudgetCategories: BudgetCategoriesPowens });
   const A = chargerModule(lire(DOSSIER + "powens-api.ts"));
   const S = chargerModule(lire(DOSSIER + "synchro.ts"), { categorieBoussole: C.categorieBoussole });
   const servis = [];
@@ -767,7 +768,7 @@ test("egalTempsConstant : compare sans court-circuit, longueurs différentes ref
 
 test("aucun secret dans le code ; jeton jamais journalisé ; deno.json épinglé", { skip: SANS_STRIP }, () => {
   const fichiers = readdirSync(fileURLToPath(new URL("../" + DOSSIER, import.meta.url)));
-  assert.deepEqual(fichiers.sort(), ["categories.ts", "deno.json", "index.ts", "powens-api.ts", "synchro.ts"]);
+  assert.deepEqual(fichiers.sort(), ["budget-categories.gen.js", "categories.ts", "deno.json", "index.ts", "powens-api.ts", "synchro.ts"]);
   for (const f of fichiers) {
     const s = lire(DOSSIER + f);
     assert.doesNotMatch(s, /sb_secret_|eyJ[A-Za-z0-9_-]{20,}|service_role_key\s*[:=]\s*["']/i, f);

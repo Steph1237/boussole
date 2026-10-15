@@ -556,8 +556,10 @@ test("page : refus du serveur affiché en ligne (réponses conservées), échec 
 /* ====================================================== tutoiement ====================================================== */
 test("tutoiement : aucun « vous » / « votre » / « vos » dans les textes du connecteur, ni dans les textes de l'app recopiés pour la parité", () => {
   const VOUS = /(^|[^\p{L}])(vous|votre|vos|vôtres?)(?![\p{L}])/iu;
-  // Liste d'exceptions motivées : vide (les moteurs de l'app, plan, pratiques, risque et bilan-etat, sont au tutoiement).
-  const EXCEPTIONS = [];
+  // Liste d'exceptions motivées (littéral entier) : « Entre vous deux », libellé de la sous-catégorie transfert_foyer de la copie du module de catégories du budget
+  // (budget-categories.gen.js, BUD1) : il désigne les deux personnes du foyer entre elles, pas un vouvoiement ; texte de la taxonomie de la fixture. Les moteurs de l'app
+  // (plan, pratiques, risque, bilan-etat) sont au tutoiement.
+  const EXCEPTIONS = ["Entre vous deux"];
   const fichiers = readdirSync(path(MCP)).filter(f => /\.(ts|js)$/.test(f));
   assert.ok(fichiers.includes("formulaire.ts") && fichiers.includes("catalogue.gen.ts") && fichiers.includes("index.ts"));
   const litterauxDe = code => [...code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")

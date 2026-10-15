@@ -6,7 +6,9 @@
 // Exceptions, explicites et commentées (toute autre occurrence fait échouer le test) :
 //   - libellés d'interfaces tierces cités tels quels : l'option « Utiliser votre propre client OAuth » du formulaire
 //     « Ajouter un connecteur personnalisé » de Claude (accueil.js, bloc « Connecter Claude » réutilisé dans Compte › Connexion) ;
-//   - le nom commun « rendez-vous » (ni vouvoiement ni verbe), dans le texte d'une expertise repris tel quel pour la démo (demo-data.js).
+//   - le nom commun « rendez-vous » (ni vouvoiement ni verbe), dans le texte d'une expertise repris tel quel pour la démo (demo-data.js) ;
+//   - « Entre vous deux », libellé de la sous-catégorie transfert_foyer (BUD1, budget-categories.js) : il désigne les deux personnes du foyer entre elles
+//     (« entre vous deux » = entre Camille et Sam), pas un vouvoiement de l'utilisateur ; le texte est celui de la taxonomie de la fixture.
 // Les exceptions prévues au départ pour les textes des moteurs (plan.js, pratiques.js, risque.js, bilan-etat.js, rules.js), le
 // bloc moteur de toise.js et le simulateur (simu.*) ne sont plus nécessaires : ces fichiers sont passés au tutoiement
 // (commit « Moteurs au tutoiement… ») ; ils restent donc couverts par ce test.
@@ -21,9 +23,10 @@ const FICHIERS = [...dans("web/src", /\.(js|html)$/), ...dans("web", /\.html$/),
 const EXCEPTIONS = {
   "web/src/accueil.js": ["Utiliser votre propre client OAuth"], // option de l'interface de Claude (connecteur personnalisé)
   "web/src/demo-data.js": ["rendez-vous"], // nom commun (« un rendez-vous annuel »), texte de l'expertise allocation-risque repris de 0017
+  "web/src/budget-categories.js": ["Entre vous deux"], // les deux personnes du foyer entre elles (libellé de transfert_foyer, taxonomie de la fixture BUD1)
 };
-/* Mots en « -ez » qui ne sont pas des verbes à la 2e personne du pluriel. */
-const MOTS_EN_EZ = new Set(["assez", "chez", "nez", "rez"]);
+/* Mots en « -ez » qui ne sont pas des verbes à la 2e personne du pluriel (« suez » : nom d'un distributeur d'eau de la table des marchands de BUD1). */
+const MOTS_EN_EZ = new Set(["assez", "chez", "nez", "rez", "suez"]);
 
 const sansCommentaires = s => s.replace(/<!--[\s\S]*?-->/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/[^\n]*/g, "$1");
 function texte(f) {

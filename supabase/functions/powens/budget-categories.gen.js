@@ -1,0 +1,1335 @@
+// Fichier généré par scripts/gen-catalogue.mjs (npm run gen) : ne pas modifier à la main.
+// Copie du module de catégories du budget de l'app (BUD1, docs/superpowers/specs/2026-10-16-bud1-budget-design.md) : les modules purs de web/src
+// (sensible, budget-categories) recopiés tels quels, évalués dans cet ordre. Aucune modification : un écart avec l'app est un bug du générateur.
+const definitions = {}, modules = {};
+function def(nom, fabrique) { definitions[nom] = fabrique; }
+function charger(nom) {
+  if (modules[nom]) return modules[nom].exports;
+  const fabrique = definitions[nom];
+  if (!fabrique) throw new Error("budget-categories : module inconnu « " + nom + " »");
+  const module = modules[nom] = { exports: {} };
+  fabrique.call(globalThis, module, module.exports, chemin => charger(chemin.replace(/^.*\//, "").replace(/\.js$/, "")));
+  return module.exports;
+}
+
+/* ---------- web/src/sensible.js ---------- */
+def("sensible", function (module, exports, require) {
+/* Filtre de contenu sensible de la mémoire de l'agent : mêmes motifs que public.contenu_sensible
+   (supabase/migrations/0009_savoir_memoire.sql) et que SENSIBLE dans supabase/functions/mcp/memoire.ts.
+   - IBAN : pays + clé + 11 à 30 caractères, refusé seulement si la correspondance contient au moins IBAN_CHIFFRES_MIN chiffres
+     (un ISIN « IE00B4L5Y983 » suivi d'un libellé n'en a que 7) ;
+   - carte : trois groupes de 4 chiffres puis 1 à 7 chiffres, espaces seulement, bornés par des non-chiffres ;
+   - mots interdits, insensible à la casse.
+   Pur, sans DOM. */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  else root.Sensible = api;
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+  const SENSIBLE = [
+    "[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]){11,30}",
+    "(?<![0-9])[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{1,7}(?![0-9])",
+    "mot de passe|password|code secret|code pin|identifiant de connexion",
+  ];
+  /* le motif partagé avec le SQL et le connecteur reste identique (lookbehind) ; côté navigateur il est lu sans lookbehind (Safari < 16.4 refuse la syntaxe) : « pas de chiffre juste avant » devient « début ou non-chiffre » */
+  const IBAN_CHIFFRES_MIN = 12;
+  const RE_IBAN = new RegExp(SENSIBLE[0], "g"), RE_CARTE = new RegExp(SENSIBLE[1].replace("(?<![0-9])", "(?:^|[^0-9])")), RE_MOTS = new RegExp(SENSIBLE[2], "i");
+  const chiffres = s => s.replace(/[^0-9]/g, "").length;
+  /** Vrai si le texte ressemble à un IBAN, un numéro de carte ou contient un mot interdit. */
+  function estSensible(t) {
+    const s = String(t == null ? "" : t);
+    for (const m of s.matchAll(RE_IBAN)) if (chiffres(m[0]) >= IBAN_CHIFFRES_MIN) return true;
+    return RE_CARTE.test(s) || RE_MOTS.test(s);
+  }
+  return { SENSIBLE, IBAN_CHIFFRES_MIN, estSensible };
+});
+});
+
+/* ---------- web/src/budget-categories.js ---------- */
+def("budget-categories", function (module, exports, require) {
+/* Catégories du budget (BUD1) : taxonomie des sous-catégories, table des marchands, motifs génériques, correspondance Powens et classement d'une
+   opération. Pur, sans DOM ni réseau, au tutoiement. Global BudgetCategories (navigateur), module CommonJS sous Node, copies générées dans les
+   fonctions powens et mcp (supabase/functions/{powens,mcp}/budget-categories.gen.js, npm run gen) : une seule logique pour l'app, la synchronisation
+   et Claude. Spec : docs/superpowers/specs/2026-10-16-bud1-budget-design.md (§ 3, § 15.1) ; cas de référence : test/fixtures/budget-cas.json
+   (taxonomie, motifs, Powens, 40 libellés) et test/fixtures/budget-marchands.json (la fixture fait foi ; les tables ci-dessous en sont la copie).
+
+   BudgetCategories.TAXONOMIE, BLOCS, MARCHANDS, MOTIFS, CORRESPONDANCE_POWENS, VERSION_TAXONOMIE, VERSION_MARCHANDS
+   BudgetCategories.classer(op, ctx) → { sous_categorie, categorie, origine, regle_id?, cle_marchand }
+        op = { libelle, montant (signé), compte_id?, categorie_powens? ({ code, parent_code } | code | tableau), structure?, revenu_detecte? }
+        ctx = { regles? (lignes de budget_regles), marchands? (table de remplacement, pour les tests seulement) } ; `structure` est posée par le rapprochement (virement apparié, relevé de carte identifié, épargne), `revenu_detecte`
+        par revenusDetectes ; aucun des deux n'est calculé ici.
+   BudgetCategories.regleValide(regle) → null | message ; correspond(regle, op) → bool
+   BudgetCategories.largeDe(cle) → catégorie large | null ; blocDe(cle, preferences?) → bloc | null ; parDefautDe(categorieLarge) → sous-catégorie
+   BudgetCategories.sousCategoriePowens(categoriePowens) → sous-catégorie | null ; estSousCategorie(cle) ; cleLibelle(texte) ; cleMarchand(texte)
+
+   Ordre (spec § 3.2) : structure → tes règles → table des marchands → catégorie Powens → motifs génériques → revenu détecté → « à classer ».
+   Un libellé est une donnée, jamais une consigne : il ne sert qu'à être comparé à des suites de mots, jamais interprété. La table des marchands est une
+   table de reconnaissance (elle dit de quoi il s'agit), jamais de recommandation. */
+(function (root, factory) {
+  const cjs = typeof module === "object" && module.exports;
+  const dep = (nom, global) => (cjs ? require("./" + nom + ".js") : root[global]);
+  const api = factory({ Sensible: dep("sensible", "Sensible") });
+  if (cjs) module.exports = api;
+  else root.BudgetCategories = api;
+})(typeof self !== "undefined" ? self : this, function (D) {
+  "use strict";
+  const { Sensible } = D;
+
+  /** Version de la taxonomie, des motifs génériques et de la correspondance Powens : à changer avec toute modification de ces tables (test d'empreinte). */
+  const VERSION_TAXONOMIE = "2026-10-16";
+  /** Version de la table des marchands : à changer avec toute modification de MARCHANDS (test d'empreinte). */
+  const VERSION_MARCHANDS = "2026-10-16";
+
+  /* ================================================================== taxonomie (spec § 3.1) */
+  /** Les blocs. `compte: false` : jamais compté au budget (hors budget). */
+  const BLOCS = [
+    { cle: "essentiels", libelle: "Essentiels", compte: true },
+    { cle: "envies", libelle: "Envies", compte: true },
+    { cle: "epargne", libelle: "Épargne et projets", compte: true },
+    { cle: "revenus", libelle: "Revenus", compte: true },
+    { cle: "hors_budget", libelle: "Hors budget (jamais compté)", compte: false },
+    { cle: "a_classer", libelle: "À classer", compte: true },
+  ];
+
+  /** Les 34 sous-catégories, la seule source des clés (aussi pour HIS2 et la contrainte de base). `categorie` : catégorie large (celle de banque_mois et de
+      Calc.budgetReel, inchangée pour les lecteurs existants) ; `annuelle_probable` : sert à la détection, ne lisse rien seul ; `bloc_reglable` : blocs
+      que l'utilisateur peut choisir (les espèces, décision D6). */
+  const TAXONOMIE = [
+    { cle: "loyer", libelle: "Loyer", bloc: "essentiels", categorie: "logement", annuelle_probable: false },
+    { cle: "credit_logement", libelle: "Crédit du logement", bloc: "essentiels", categorie: "logement", annuelle_probable: false },
+    { cle: "charges_logement", libelle: "Charges et entretien du logement", bloc: "essentiels", categorie: "logement", annuelle_probable: false },
+    { cle: "energie", libelle: "Énergie et eau", bloc: "essentiels", categorie: "logement", annuelle_probable: false },
+    { cle: "telecom", libelle: "Internet et téléphone", bloc: "essentiels", categorie: "abonnements", annuelle_probable: false },
+    { cle: "courses", libelle: "Courses", bloc: "essentiels", categorie: "alimentation", annuelle_probable: false },
+    { cle: "transport", libelle: "Transport", bloc: "essentiels", categorie: "transport", annuelle_probable: false },
+    { cle: "assurances", libelle: "Assurances", bloc: "essentiels", categorie: "divers", annuelle_probable: true },
+    { cle: "sante", libelle: "Santé", bloc: "essentiels", categorie: "sante", annuelle_probable: false },
+    { cle: "enfants", libelle: "Enfants", bloc: "essentiels", categorie: "enfants", annuelle_probable: false },
+    { cle: "autres_credits", libelle: "Autres crédits", bloc: "essentiels", categorie: "divers", annuelle_probable: false },
+    { cle: "impots", libelle: "Impôts et taxes", bloc: "essentiels", categorie: "impots", annuelle_probable: true },
+    { cle: "frais_bancaires", libelle: "Frais bancaires", bloc: "essentiels", categorie: "divers", annuelle_probable: false },
+    { cle: "especes", libelle: "Retraits d'espèces", bloc: "envies", categorie: "divers", annuelle_probable: false, bloc_reglable: ["envies", "essentiels"] },
+    { cle: "commun_non_detaille", libelle: "Versé au commun (non détaillé)", bloc: "essentiels", categorie: "divers", annuelle_probable: false },
+    { cle: "restaurants", libelle: "Restaurants et livraison", bloc: "envies", categorie: "loisirs", annuelle_probable: false },
+    { cle: "sorties", libelle: "Sorties et culture", bloc: "envies", categorie: "loisirs", annuelle_probable: false },
+    { cle: "sport", libelle: "Sport", bloc: "envies", categorie: "loisirs", annuelle_probable: false },
+    { cle: "voyages", libelle: "Voyages et vacances", bloc: "envies", categorie: "loisirs", annuelle_probable: true },
+    { cle: "shopping", libelle: "Achats", bloc: "envies", categorie: "divers", annuelle_probable: false },
+    { cle: "abonnements", libelle: "Abonnements", bloc: "envies", categorie: "abonnements", annuelle_probable: false },
+    { cle: "loisirs", libelle: "Loisirs et activités", bloc: "envies", categorie: "loisirs", annuelle_probable: false },
+    { cle: "cadeaux_dons", libelle: "Cadeaux et dons", bloc: "envies", categorie: "divers", annuelle_probable: false },
+    { cle: "animaux", libelle: "Animaux", bloc: "envies", categorie: "divers", annuelle_probable: false },
+    { cle: "epargne_precaution", libelle: "Vers ton épargne disponible", bloc: "epargne", categorie: "epargne", annuelle_probable: false },
+    { cle: "investissement", libelle: "Vers tes placements", bloc: "epargne", categorie: "epargne", annuelle_probable: false },
+    { cle: "projets", libelle: "Vers un projet", bloc: "epargne", categorie: "epargne", annuelle_probable: false },
+    { cle: "salaires", libelle: "Salaires", bloc: "revenus", categorie: "revenus", annuelle_probable: false },
+    { cle: "revenus_autres", libelle: "Autres revenus", bloc: "revenus", categorie: "revenus", annuelle_probable: false },
+    { cle: "virement_interne", libelle: "Entre tes comptes", bloc: "hors_budget", categorie: "virement_interne", annuelle_probable: false },
+    { cle: "apport_commun", libelle: "Apport au compte commun", bloc: "hors_budget", categorie: "virement_interne", annuelle_probable: false },
+    { cle: "transfert_foyer", libelle: "Entre vous deux", bloc: "hors_budget", categorie: "virement_interne", annuelle_probable: false },
+    { cle: "releve_carte", libelle: "Relevé de carte à débit différé", bloc: "hors_budget", categorie: "virement_interne", annuelle_probable: false },
+    { cle: "a_classer", libelle: "À classer", bloc: "a_classer", categorie: "divers", annuelle_probable: false },
+  ];
+  const PAR_CLE = new Map(TAXONOMIE.map(t => [t.cle, t]));
+  /** Sous-catégories posées par le rapprochement (op.structure) : jamais surchargées par une règle. */
+  const STRUCTURES = ["virement_interne", "epargne_precaution", "investissement", "apport_commun", "transfert_foyer", "releve_carte"];
+  /** Seules sous-catégories « hors budget » qu'une règle peut viser (compte d'en face non connecté). */
+  const HORS_BUDGET_EN_REGLE = ["apport_commun", "transfert_foyer"];
+  /** Sous-catégorie donnée à une catégorie large par la reprise de banque_mois (un mois enregistré avant BUD1 n'a que la catégorie large). */
+  const PAR_DEFAUT = { logement: "charges_logement", alimentation: "courses", transport: "transport", enfants: "enfants", sante: "sante", loisirs: "loisirs",
+    abonnements: "abonnements", impots: "impots", divers: "a_classer", revenus: "revenus_autres", epargne: "epargne_precaution", virement_interne: "virement_interne" };
+
+  /* ================================================================== motifs génériques (spec § 3.2 point 5) */
+  /** Motifs génériques, suites de mots au format cleLibelle ; `sens` : sortie (montant < 0), entree (montant > 0) ou les_deux. */
+  const MOTIFS = [
+    { motif: "loyer", sous_categorie: "loyer", sens: "sortie" },
+    { motif: "loyer", sous_categorie: "revenus_autres", sens: "entree" },
+    { motif: "dgfip", sous_categorie: "impots", sens: "les_deux" },
+    { motif: "impot", sous_categorie: "impots", sens: "les_deux" },
+    { motif: "impots", sous_categorie: "impots", sens: "les_deux" },
+    { motif: "cotisation carte", sous_categorie: "frais_bancaires", sens: "sortie" },
+    { motif: "commission intervention", sous_categorie: "frais_bancaires", sens: "sortie" },
+    { motif: "commission d intervention", sous_categorie: "frais_bancaires", sens: "sortie" },
+    { motif: "commissions d intervention", sous_categorie: "frais_bancaires", sens: "sortie" },
+    { motif: "agios", sous_categorie: "frais_bancaires", sens: "sortie" },
+    { motif: "frais tenue de compte", sous_categorie: "frais_bancaires", sens: "sortie" },
+    { motif: "frais de tenue de compte", sous_categorie: "frais_bancaires", sens: "sortie" },
+    { motif: "retrait dab", sous_categorie: "especes", sens: "sortie" },
+    { motif: "retrait especes", sous_categorie: "especes", sens: "sortie" },
+    { motif: "cpam", sous_categorie: "sante", sens: "entree" },
+    { motif: "mutuelle", sous_categorie: "sante", sens: "entree" },
+    { motif: "caf", sous_categorie: "revenus_autres", sens: "entree" },
+    { motif: "salaire", sous_categorie: "salaires", sens: "entree" },
+    { motif: "paie", sous_categorie: "salaires", sens: "entree" },
+  ];
+
+  /* ================================================================== correspondance Powens (spec § 3.2 point 4) */
+  /** Code Powens (taxonomie française, plus from_own_account et to_own_account de la taxonomie espagnole) → sous-catégorie ; null : le code ne dit rien
+      (bank_insurances, others), le classement continue. */
+  const CORRESPONDANCE_POWENS = {
+    administration_and_taxes: "impots",
+    bank_insurances: null,
+    food_and_restaurants: "courses",
+    household: "charges_logement",
+    healthcare: "sante",
+    housing: "charges_logement",
+    leisure: "loisirs",
+    loans: "autres_credits",
+    media_and_telecommunications: "abonnements",
+    others: null,
+    revenue: "revenus_autres",
+    shopping: "shopping",
+    travel_and_transport: "transport",
+    legal_advice: "a_classer",
+    others_administration_and_taxes: "impots",
+    social_contributions: "impots",
+    taxes: "impots",
+    banking_fees: "frais_bancaires",
+    insurance_repayments: "assurances",
+    account_card_maintenance: "frais_bancaires",
+    insurances: "assurances",
+    others_bank_insurances: "a_classer",
+    retirement_insurance: "investissement",
+    savings: "epargne_precaution",
+    unauthorized_debit_fees: "frais_bancaires",
+    irregularity_and_incident_fees: "frais_bancaires",
+    intervention_fees: "frais_bancaires",
+    foreign_exchange_fees: "frais_bancaires",
+    withdrawal: "especes",
+    rejection_fees: "frais_bancaires",
+    third_party_administrative_seizure: "a_classer",
+    deposit: "a_classer",
+    savings_investments_and_crypto_assets: "investissement",
+    baker: "courses",
+    bars_restaurants: "restaurants",
+    butcher_fishmongers_produce: "courses",
+    others_food_and_restaurants: "courses",
+    supermarket_and_groceries: "courses",
+    vending: "courses",
+    home_services_cleaning: "charges_logement",
+    kitchen_and_appliances: "shopping",
+    others_household: "charges_logement",
+    works_diy_gardening: "charges_logement",
+    child_care_kindergarten: "enfants",
+    furniture_and_decoration: "shopping",
+    alimony_payment: "enfants",
+    education_and_training: "enfants",
+    pet_care: "animaux",
+    post_and_courier: "shopping",
+    doctors_specialist_dentists_hospitals: "sante",
+    health_insurance_fees: "assurances",
+    health_insurance_reimbursement: "sante",
+    others_healthcare: "sante",
+    pharmacy: "sante",
+    energy: "energie",
+    others_housing: "charges_logement",
+    rent: "loyer",
+    water: "energie",
+    cinema_theater_culture: "sorties",
+    hotels: "voyages",
+    others_leisure: "loisirs",
+    sports: "sport",
+    tobacco_gambling: "loisirs",
+    charity_ngo_unions_associations: "cadeaux_dons",
+    consumer_loans_disposal: "a_classer",
+    mortgage_disposal: "a_classer",
+    others_loans: "autres_credits",
+    consumer_loans_payment: "autres_credits",
+    mortgage_payment: "credit_logement",
+    media_subscriptions: "abonnements",
+    others_media_and_telecommunications: "abonnements",
+    phone_internet_tv: "telecom",
+    return_debit: "a_classer",
+    transfers: "a_classer",
+    online_transfers_and_payment_services: "a_classer",
+    others_revenue: "revenus_autres",
+    pensions: "revenus_autres",
+    rental_income: "revenus_autres",
+    salary: "salaires",
+    alimony: "revenus_autres",
+    family_benefits: "revenus_autres",
+    unemployment_benefits: "revenus_autres",
+    other_benefits: "revenus_autres",
+    housing_benefits: "revenus_autres",
+    financial_income: "revenus_autres",
+    savings_disposal: "epargne_precaution",
+    beauty_hairdressing_aesthetic: "shopping",
+    clothing_and_accessories: "shopping",
+    ecommerce: "shopping",
+    multimedia_books_stationery: "loisirs",
+    others_shopping: "shopping",
+    fuel_and_vehicle_charging: "transport",
+    others_travel_and_transport: "transport",
+    parking_maintenance_tolls: "transport",
+    plane_or_boat_travel: "voyages",
+    public_transportation: "transport",
+    rental_and_taxis: "transport",
+    train_travel: "transport",
+    from_own_account: "epargne_precaution",
+    to_own_account: "epargne_precaution",
+  };
+
+  /* ================================================================== table des marchands (spec § 3.2 point 3) */
+  /** Enseignes, organismes et termes génériques (`type`), en suites de mots au format cleLibelle ; `famille` : famille d'un abonnement ; `sens` : l'entrée
+      ne vaut que pour ce sens. Aucun motif de MOTIFS ici (loyer, impôts, frais, espèces, caisses, salaires). */
+  const MARCHANDS = [
+    { motif: "cdc habitat", sous_categorie: "loyer", type: "organisme" },
+    { motif: "est metropole habitat", sous_categorie: "loyer", type: "organisme" },
+    { motif: "grand lyon habitat", sous_categorie: "loyer", type: "organisme" },
+    { motif: "habitat marseille provence", sous_categorie: "loyer", type: "organisme" },
+    { motif: "icf habitat", sous_categorie: "loyer", type: "organisme" },
+    { motif: "lille metropole habitat", sous_categorie: "loyer", type: "organisme" },
+    { motif: "logirep", sous_categorie: "loyer", type: "organisme" },
+    { motif: "paris habitat", sous_categorie: "loyer", type: "organisme" },
+    { motif: "seqens", sous_categorie: "loyer", type: "organisme" },
+    { motif: "toulouse metropole habitat", sous_categorie: "loyer", type: "organisme" },
+    { motif: "vilogia", sous_categorie: "loyer", type: "organisme" },
+    { motif: "credit immobilier", sous_categorie: "credit_logement", type: "generique" },
+    { motif: "echeance pret", sous_categorie: "credit_logement", type: "generique" },
+    { motif: "pret habitat", sous_categorie: "credit_logement", type: "generique" },
+    { motif: "pret immo", sous_categorie: "credit_logement", type: "generique" },
+    { motif: "pret immobilier", sous_categorie: "credit_logement", type: "generique" },
+    { motif: "botanic", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "brico cash", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "brico depot", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "brico leclerc", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "bricoman", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "bricomarche", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "bricorama", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "castorama", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "charges locatives", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "copropriete", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "entretien chaudiere", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "gamm vert", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "ista", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "jardiland", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "lapeyre", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "laverie", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "leroy merlin", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "manomano", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "mr bricolage", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "plombier", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "point p", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "proxiserve", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "ramonage", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "serrurier", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "syndic", sous_categorie: "charges_logement", type: "generique" },
+    { motif: "techem", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "truffaut", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "villaverde", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "weldom", sous_categorie: "charges_logement", type: "enseigne" },
+    { motif: "alpiq", sous_categorie: "energie", type: "enseigne" },
+    { motif: "antargaz", sous_categorie: "energie", type: "enseigne" },
+    { motif: "butagaz", sous_categorie: "energie", type: "enseigne" },
+    { motif: "dyneff", sous_categorie: "energie", type: "enseigne" },
+    { motif: "eau de paris", sous_categorie: "energie", type: "enseigne" },
+    { motif: "eau du grand lyon", sous_categorie: "energie", type: "enseigne" },
+    { motif: "eaux de marseille", sous_categorie: "energie", type: "enseigne" },
+    { motif: "edf", sous_categorie: "energie", type: "enseigne" },
+    { motif: "edf clients particuliers", sous_categorie: "energie", type: "enseigne" },
+    { motif: "ekwateur", sous_categorie: "energie", type: "enseigne" },
+    { motif: "electricite", sous_categorie: "energie", type: "generique" },
+    { motif: "elmy", sous_categorie: "energie", type: "enseigne" },
+    { motif: "enedis", sous_categorie: "energie", type: "enseigne" },
+    { motif: "enercoop", sous_categorie: "energie", type: "enseigne" },
+    { motif: "energies du santerre", sous_categorie: "energie", type: "enseigne" },
+    { motif: "engie", sous_categorie: "energie", type: "enseigne" },
+    { motif: "eni", sous_categorie: "energie", type: "enseigne" },
+    { motif: "eni gas power", sous_categorie: "energie", type: "enseigne" },
+    { motif: "es energies strasbourg", sous_categorie: "energie", type: "enseigne" },
+    { motif: "facture eau", sous_categorie: "energie", type: "generique" },
+    { motif: "fioul", sous_categorie: "energie", type: "generique" },
+    { motif: "gaz de bordeaux", sous_categorie: "energie", type: "enseigne" },
+    { motif: "gaz naturel", sous_categorie: "energie", type: "generique" },
+    { motif: "gedia", sous_categorie: "energie", type: "enseigne" },
+    { motif: "happ e", sous_categorie: "energie", type: "enseigne" },
+    { motif: "ilek", sous_categorie: "energie", type: "enseigne" },
+    { motif: "lyonnaise des eaux", sous_categorie: "energie", type: "enseigne" },
+    { motif: "mint energie", sous_categorie: "energie", type: "enseigne" },
+    { motif: "octopus energy", sous_categorie: "energie", type: "enseigne" },
+    { motif: "ohm energie", sous_categorie: "energie", type: "enseigne" },
+    { motif: "planete oui", sous_categorie: "energie", type: "enseigne" },
+    { motif: "primagaz", sous_categorie: "energie", type: "enseigne" },
+    { motif: "regie des eaux", sous_categorie: "energie", type: "generique" },
+    { motif: "saur", sous_categorie: "energie", type: "enseigne" },
+    { motif: "sede environnement", sous_categorie: "energie", type: "enseigne" },
+    { motif: "service des eaux", sous_categorie: "energie", type: "generique" },
+    { motif: "sowee", sous_categorie: "energie", type: "enseigne" },
+    { motif: "suez", sous_categorie: "energie", type: "enseigne" },
+    { motif: "total direct energie", sous_categorie: "energie", type: "enseigne" },
+    { motif: "totalenergies electricite", sous_categorie: "energie", type: "enseigne" },
+    { motif: "totalenergies electricite et gaz", sous_categorie: "energie", type: "enseigne" },
+    { motif: "vattenfall", sous_categorie: "energie", type: "enseigne" },
+    { motif: "veolia", sous_categorie: "energie", type: "enseigne" },
+    { motif: "veolia eau", sous_categorie: "energie", type: "enseigne" },
+    { motif: "wekiwi", sous_categorie: "energie", type: "enseigne" },
+    { motif: "abonnement mobile", sous_categorie: "telecom", type: "generique" },
+    { motif: "auchan telecom", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "b you", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "bouygues telecom", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "box internet", sous_categorie: "telecom", type: "generique" },
+    { motif: "cdiscount mobile", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "coriolis", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "forfait mobile", sous_categorie: "telecom", type: "generique" },
+    { motif: "free mobile", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "free telecom", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "freebox", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "k net", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "la poste mobile", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "lebara", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "lycamobile", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "nrj mobile", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "numericable", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "orange", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "prixtel", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "red by sfr", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "reglo mobile", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "sfr", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "sosh", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "starlink", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "syma mobile", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "videofutur", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "youprice", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "zeop", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "aldi", sous_categorie: "courses", type: "enseigne" },
+    { motif: "alimentation generale", sous_categorie: "courses", type: "generique" },
+    { motif: "auchan", sous_categorie: "courses", type: "enseigne" },
+    { motif: "auchan supermarche", sous_categorie: "courses", type: "enseigne" },
+    { motif: "banette", sous_categorie: "courses", type: "enseigne" },
+    { motif: "bio c bon", sous_categorie: "courses", type: "enseigne" },
+    { motif: "biocoop", sous_categorie: "courses", type: "enseigne" },
+    { motif: "boucherie", sous_categorie: "courses", type: "generique" },
+    { motif: "boulangerie", sous_categorie: "courses", type: "generique" },
+    { motif: "carrefour", sous_categorie: "courses", type: "enseigne" },
+    { motif: "carrefour bio", sous_categorie: "courses", type: "enseigne" },
+    { motif: "carrefour city", sous_categorie: "courses", type: "enseigne" },
+    { motif: "carrefour contact", sous_categorie: "courses", type: "enseigne" },
+    { motif: "carrefour drive", sous_categorie: "courses", type: "enseigne" },
+    { motif: "carrefour express", sous_categorie: "courses", type: "enseigne" },
+    { motif: "carrefour market", sous_categorie: "courses", type: "enseigne" },
+    { motif: "casino shop", sous_categorie: "courses", type: "enseigne" },
+    { motif: "casino supermarche", sous_categorie: "courses", type: "enseigne" },
+    { motif: "charcuterie", sous_categorie: "courses", type: "generique" },
+    { motif: "chronodrive", sous_categorie: "courses", type: "enseigne" },
+    { motif: "coccinelle", sous_categorie: "courses", type: "enseigne" },
+    { motif: "colruyt", sous_categorie: "courses", type: "enseigne" },
+    { motif: "costco", sous_categorie: "courses", type: "enseigne" },
+    { motif: "e leclerc", sous_categorie: "courses", type: "enseigne" },
+    { motif: "epicerie", sous_categorie: "courses", type: "generique" },
+    { motif: "flink", sous_categorie: "courses", type: "enseigne" },
+    { motif: "franprix", sous_categorie: "courses", type: "enseigne" },
+    { motif: "fromagerie", sous_categorie: "courses", type: "generique" },
+    { motif: "geant casino", sous_categorie: "courses", type: "enseigne" },
+    { motif: "grand frais", sous_categorie: "courses", type: "enseigne" },
+    { motif: "hellofresh", sous_categorie: "courses", type: "enseigne" },
+    { motif: "hyper u", sous_categorie: "courses", type: "enseigne" },
+    { motif: "hypermarche", sous_categorie: "courses", type: "generique" },
+    { motif: "intermarche", sous_categorie: "courses", type: "enseigne" },
+    { motif: "la belle vie", sous_categorie: "courses", type: "enseigne" },
+    { motif: "la fourche", sous_categorie: "courses", type: "enseigne" },
+    { motif: "la grande epicerie", sous_categorie: "courses", type: "enseigne" },
+    { motif: "la vie claire", sous_categorie: "courses", type: "enseigne" },
+    { motif: "lafayette gourmet", sous_categorie: "courses", type: "enseigne" },
+    { motif: "leader price", sous_categorie: "courses", type: "enseigne" },
+    { motif: "leclerc", sous_categorie: "courses", type: "enseigne" },
+    { motif: "leclerc drive", sous_categorie: "courses", type: "enseigne" },
+    { motif: "les nouveaux robinson", sous_categorie: "courses", type: "enseigne" },
+    { motif: "lidl", sous_categorie: "courses", type: "enseigne" },
+    { motif: "magasins u", sous_categorie: "courses", type: "enseigne" },
+    { motif: "marie blachere", sous_categorie: "courses", type: "enseigne" },
+    { motif: "match supermarche", sous_categorie: "courses", type: "enseigne" },
+    { motif: "monop", sous_categorie: "courses", type: "enseigne" },
+    { motif: "monoprix", sous_categorie: "courses", type: "enseigne" },
+    { motif: "naturalia", sous_categorie: "courses", type: "enseigne" },
+    { motif: "netto", sous_categorie: "courses", type: "enseigne" },
+    { motif: "nous anti gaspi", sous_categorie: "courses", type: "enseigne" },
+    { motif: "o marche frais", sous_categorie: "courses", type: "enseigne" },
+    { motif: "patisserie", sous_categorie: "courses", type: "generique" },
+    { motif: "petit casino", sous_categorie: "courses", type: "enseigne" },
+    { motif: "picard surgeles", sous_categorie: "courses", type: "enseigne" },
+    { motif: "poissonnerie", sous_categorie: "courses", type: "generique" },
+    { motif: "primeur", sous_categorie: "courses", type: "generique" },
+    { motif: "proxi", sous_categorie: "courses", type: "enseigne" },
+    { motif: "quitoque", sous_categorie: "courses", type: "enseigne" },
+    { motif: "satoriz", sous_categorie: "courses", type: "enseigne" },
+    { motif: "simply market", sous_categorie: "courses", type: "enseigne" },
+    { motif: "spar", sous_categorie: "courses", type: "enseigne" },
+    { motif: "super u", sous_categorie: "courses", type: "enseigne" },
+    { motif: "superette", sous_categorie: "courses", type: "generique" },
+    { motif: "supermarche", sous_categorie: "courses", type: "generique" },
+    { motif: "systeme u", sous_categorie: "courses", type: "enseigne" },
+    { motif: "too good to go", sous_categorie: "courses", type: "enseigne" },
+    { motif: "traiteur", sous_categorie: "courses", type: "generique" },
+    { motif: "u express", sous_categorie: "courses", type: "enseigne" },
+    { motif: "vival", sous_categorie: "courses", type: "enseigne" },
+    { motif: "ada location", sous_categorie: "transport", type: "enseigne" },
+    { motif: "aprr", sous_categorie: "transport", type: "enseigne" },
+    { motif: "asf", sous_categorie: "transport", type: "enseigne" },
+    { motif: "astuce rouen", sous_categorie: "transport", type: "enseigne" },
+    { motif: "atmb", sous_categorie: "transport", type: "enseigne" },
+    { motif: "auto ecole", sous_categorie: "transport", type: "generique" },
+    { motif: "autosur", sous_categorie: "transport", type: "enseigne" },
+    { motif: "avia", sous_categorie: "transport", type: "enseigne" },
+    { motif: "bip go", sous_categorie: "transport", type: "enseigne" },
+    { motif: "blablacar", sous_categorie: "transport", type: "enseigne" },
+    { motif: "blablacar bus", sous_categorie: "transport", type: "enseigne" },
+    { motif: "bolt", sous_categorie: "transport", type: "enseigne" },
+    { motif: "carburant", sous_categorie: "transport", type: "generique" },
+    { motif: "carglass", sous_categorie: "transport", type: "enseigne" },
+    { motif: "carrefour station", sous_categorie: "transport", type: "enseigne" },
+    { motif: "chargemap", sous_categorie: "transport", type: "enseigne" },
+    { motif: "cofiroute", sous_categorie: "transport", type: "enseigne" },
+    { motif: "controle technique", sous_categorie: "transport", type: "generique" },
+    { motif: "dekra", sous_categorie: "transport", type: "enseigne" },
+    { motif: "effia", sous_categorie: "transport", type: "enseigne" },
+    { motif: "electra", sous_categorie: "transport", type: "enseigne" },
+    { motif: "en voiture simone", sous_categorie: "transport", type: "enseigne" },
+    { motif: "escota", sous_categorie: "transport", type: "enseigne" },
+    { motif: "esso", sous_categorie: "transport", type: "enseigne" },
+    { motif: "euromaster", sous_categorie: "transport", type: "enseigne" },
+    { motif: "europcar", sous_categorie: "transport", type: "enseigne" },
+    { motif: "feu vert", sous_categorie: "transport", type: "enseigne" },
+    { motif: "fil bleu", sous_categorie: "transport", type: "enseigne" },
+    { motif: "flixbus", sous_categorie: "transport", type: "enseigne" },
+    { motif: "flowbird", sous_categorie: "transport", type: "enseigne" },
+    { motif: "free move", sous_categorie: "transport", type: "enseigne" },
+    { motif: "freshmile", sous_categorie: "transport", type: "enseigne" },
+    { motif: "getaround", sous_categorie: "transport", type: "enseigne" },
+    { motif: "heetch", sous_categorie: "transport", type: "enseigne" },
+    { motif: "hertz", sous_categorie: "transport", type: "enseigne" },
+    { motif: "ilevia", sous_categorie: "transport", type: "enseigne" },
+    { motif: "indigo", sous_categorie: "transport", type: "enseigne" },
+    { motif: "intermarche station", sous_categorie: "transport", type: "enseigne" },
+    { motif: "interparking", sous_categorie: "transport", type: "enseigne" },
+    { motif: "ionity", sous_categorie: "transport", type: "enseigne" },
+    { motif: "irigo", sous_categorie: "transport", type: "enseigne" },
+    { motif: "izivia", sous_categorie: "transport", type: "enseigne" },
+    { motif: "keolis", sous_categorie: "transport", type: "enseigne" },
+    { motif: "leasys", sous_categorie: "transport", type: "enseigne" },
+    { motif: "leclerc station", sous_categorie: "transport", type: "enseigne" },
+    { motif: "lignes d azur", sous_categorie: "transport", type: "enseigne" },
+    { motif: "marcel cab", sous_categorie: "transport", type: "enseigne" },
+    { motif: "midas", sous_categorie: "transport", type: "enseigne" },
+    { motif: "mistral toulon", sous_categorie: "transport", type: "enseigne" },
+    { motif: "navigo", sous_categorie: "transport", type: "enseigne" },
+    { motif: "norauto", sous_categorie: "transport", type: "enseigne" },
+    { motif: "onepark", sous_categorie: "transport", type: "enseigne" },
+    { motif: "ornikar", sous_categorie: "transport", type: "enseigne" },
+    { motif: "ouigo", sous_categorie: "transport", type: "enseigne" },
+    { motif: "parking", sous_categorie: "transport", type: "generique" },
+    { motif: "paybyphone", sous_categorie: "transport", type: "enseigne" },
+    { motif: "peage", sous_categorie: "transport", type: "generique" },
+    { motif: "point s", sous_categorie: "transport", type: "enseigne" },
+    { motif: "q park", sous_categorie: "transport", type: "enseigne" },
+    { motif: "ratp", sous_categorie: "transport", type: "enseigne" },
+    { motif: "rent a car", sous_categorie: "transport", type: "enseigne" },
+    { motif: "rtm marseille", sous_categorie: "transport", type: "enseigne" },
+    { motif: "saemes", sous_categorie: "transport", type: "enseigne" },
+    { motif: "sanef", sous_categorie: "transport", type: "enseigne" },
+    { motif: "sapn", sous_categorie: "transport", type: "enseigne" },
+    { motif: "securitest", sous_categorie: "transport", type: "enseigne" },
+    { motif: "shell", sous_categorie: "transport", type: "enseigne" },
+    { motif: "sixt", sous_categorie: "transport", type: "enseigne" },
+    { motif: "sncf", sous_categorie: "transport", type: "enseigne" },
+    { motif: "sncf connect", sous_categorie: "transport", type: "enseigne" },
+    { motif: "sncf voyageurs", sous_categorie: "transport", type: "enseigne" },
+    { motif: "speedy", sous_categorie: "transport", type: "enseigne" },
+    { motif: "station service", sous_categorie: "transport", type: "generique" },
+    { motif: "stych", sous_categorie: "transport", type: "enseigne" },
+    { motif: "tag grenoble", sous_categorie: "transport", type: "enseigne" },
+    { motif: "taxi", sous_categorie: "transport", type: "generique" },
+    { motif: "tbm", sous_categorie: "transport", type: "enseigne" },
+    { motif: "tcl", sous_categorie: "transport", type: "enseigne" },
+    { motif: "tesla", sous_categorie: "transport", type: "enseigne" },
+    { motif: "tisseo", sous_categorie: "transport", type: "enseigne" },
+    { motif: "total access", sous_categorie: "transport", type: "enseigne" },
+    { motif: "totalenergies", sous_categorie: "transport", type: "enseigne" },
+    { motif: "trainline", sous_categorie: "transport", type: "enseigne" },
+    { motif: "transdev", sous_categorie: "transport", type: "enseigne" },
+    { motif: "transilien", sous_categorie: "transport", type: "enseigne" },
+    { motif: "uber", sous_categorie: "transport", type: "enseigne" },
+    { motif: "ucar", sous_categorie: "transport", type: "enseigne" },
+    { motif: "ulys", sous_categorie: "transport", type: "enseigne" },
+    { motif: "velib", sous_categorie: "transport", type: "enseigne" },
+    { motif: "vinci autoroutes", sous_categorie: "transport", type: "enseigne" },
+    { motif: "vulco", sous_categorie: "transport", type: "enseigne" },
+    { motif: "zenpark", sous_categorie: "transport", type: "enseigne" },
+    { motif: "abeille assurances", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "acheel", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "ag r la mondiale", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "allianz", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "allianz iard", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "ampli mutuelle", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "amv assurance", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "apivia", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "april", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "assurance", sous_categorie: "assurances", type: "generique" },
+    { motif: "assurance auto", sous_categorie: "assurances", type: "generique" },
+    { motif: "assurance habitation", sous_categorie: "assurances", type: "generique" },
+    { motif: "assurances", sous_categorie: "assurances", type: "generique" },
+    { motif: "aviva", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "axa", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "axa france iard", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "cardif", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "cnp assurances", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "direct assurance", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "generali", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "gmf", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "groupama", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "groupama assurances", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "harmonie mutuelle", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "heyme", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "hiscox", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "l olivier assurance", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "leocare", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "lovys", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "luko", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "maaf", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "macif", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "macsf", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "maif", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "malakoff humanis", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "matmut", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "metlife", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "mgen", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "mma", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "mutuelle bleue", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "mutuelle de poitiers", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "mutuelle des motards", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "mutuelle generale", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "mutuelle saint christophe", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "ociane", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "pacifica", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "prevoyance", sous_categorie: "assurances", type: "generique" },
+    { motif: "smacl", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "smerep", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "sogessur", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "solimut", sous_categorie: "assurances", type: "organisme", sens: "sortie" },
+    { motif: "swiss life", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "thelem assurances", sous_categorie: "assurances", type: "enseigne" },
+    { motif: "afflelou", sous_categorie: "sante", type: "enseigne" },
+    { motif: "alain afflelou", sous_categorie: "sante", type: "enseigne" },
+    { motif: "ameli", sous_categorie: "sante", type: "enseigne" },
+    { motif: "amplifon", sous_categorie: "sante", type: "enseigne" },
+    { motif: "atol", sous_categorie: "sante", type: "enseigne" },
+    { motif: "audika", sous_categorie: "sante", type: "enseigne" },
+    { motif: "biogroup", sous_categorie: "sante", type: "enseigne" },
+    { motif: "cabinet medical", sous_categorie: "sante", type: "generique" },
+    { motif: "caisse primaire", sous_categorie: "sante", type: "enseigne" },
+    { motif: "centre dentaire", sous_categorie: "sante", type: "generique" },
+    { motif: "centre hospitalier", sous_categorie: "sante", type: "generique" },
+    { motif: "centre medical", sous_categorie: "sante", type: "generique" },
+    { motif: "cerballiance", sous_categorie: "sante", type: "enseigne" },
+    { motif: "clinique", sous_categorie: "sante", type: "generique" },
+    { motif: "dentiste", sous_categorie: "sante", type: "generique" },
+    { motif: "doctolib", sous_categorie: "sante", type: "enseigne" },
+    { motif: "ecouter voir", sous_categorie: "sante", type: "enseigne" },
+    { motif: "eurofins biologie", sous_categorie: "sante", type: "enseigne" },
+    { motif: "general d optique", sous_categorie: "sante", type: "enseigne" },
+    { motif: "grandoptical", sous_categorie: "sante", type: "enseigne" },
+    { motif: "hopital", sous_categorie: "sante", type: "generique" },
+    { motif: "inovie", sous_categorie: "sante", type: "enseigne" },
+    { motif: "kinesitherapeute", sous_categorie: "sante", type: "generique" },
+    { motif: "krys", sous_categorie: "sante", type: "enseigne" },
+    { motif: "laboratoire d analyses", sous_categorie: "sante", type: "generique" },
+    { motif: "lissac", sous_categorie: "sante", type: "enseigne" },
+    { motif: "optic", sous_categorie: "sante", type: "enseigne" },
+    { motif: "optical center", sous_categorie: "sante", type: "enseigne" },
+    { motif: "opticien", sous_categorie: "sante", type: "generique" },
+    { motif: "osteopathe", sous_categorie: "sante", type: "generique" },
+    { motif: "parapharmacie", sous_categorie: "sante", type: "generique" },
+    { motif: "pharmacie", sous_categorie: "sante", type: "generique" },
+    { motif: "synlab", sous_categorie: "sante", type: "enseigne" },
+    { motif: "assistante maternelle", sous_categorie: "enfants", type: "generique" },
+    { motif: "aubert", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "cantine", sous_categorie: "enfants", type: "generique" },
+    { motif: "centre de loisirs", sous_categorie: "enfants", type: "generique" },
+    { motif: "creche", sous_categorie: "enfants", type: "generique" },
+    { motif: "du pareil au meme", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "garderie", sous_categorie: "enfants", type: "generique" },
+    { motif: "jacadi", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "joueclub", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "king jouet", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "la grande recre", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "okaidi", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "orchestra", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "pajemploi", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "restauration scolaire", sous_categorie: "enfants", type: "generique" },
+    { motif: "sergent major", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "tape a l oeil", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "toys r us", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "vertbaudet", sous_categorie: "enfants", type: "enseigne" },
+    { motif: "bmw finance", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "ca consumer finance", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "carrefour banque", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "cetelem", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "cofidis", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "cofinoga", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "credipar", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "credit renouvelable", sous_categorie: "autres_credits", type: "generique" },
+    { motif: "diac", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "echeance credit conso", sous_categorie: "autres_credits", type: "generique" },
+    { motif: "floa", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "franfinance", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "klarna", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "mobilize financial", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "oney", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "pret auto", sous_categorie: "autres_credits", type: "generique" },
+    { motif: "pret personnel", sous_categorie: "autres_credits", type: "generique" },
+    { motif: "psa banque", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "rci banque", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "scalapay", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "sofinco", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "stellantis financial", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "toyota financial", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "volkswagen bank", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "younited", sous_categorie: "autres_credits", type: "enseigne" },
+    { motif: "amende", sous_categorie: "impots", type: "generique" },
+    { motif: "amendes gouv", sous_categorie: "impots", type: "organisme" },
+    { motif: "antai", sous_categorie: "impots", type: "organisme" },
+    { motif: "direction generale des finances", sous_categorie: "impots", type: "organisme" },
+    { motif: "taxe fonciere", sous_categorie: "impots", type: "generique" },
+    { motif: "taxe habitation", sous_categorie: "impots", type: "generique" },
+    { motif: "tresor public", sous_categorie: "impots", type: "organisme" },
+    { motif: "urssaf", sous_categorie: "impots", type: "organisme" },
+    { motif: "commission change", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "cotisation forfait", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "cotisation formule", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "cotisation offre", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais carte", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais de change", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais de dossier", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais de rejet", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais de virement", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais irregularite", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais lettre information", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais opposition", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais rejet prelevement", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "frais saisie", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "interets debiteurs", sous_categorie: "frais_bancaires", type: "generique" },
+    { motif: "bagelstein", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "bert s", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "big fernand", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "big mamma", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "bistro regent", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "brasserie", sous_categorie: "restaurants", type: "generique" },
+    { motif: "brioche doree", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "buffalo grill", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "burger king", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "cafeteria", sous_categorie: "restaurants", type: "generique" },
+    { motif: "class croute", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "cojean", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "columbus cafe", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "courtepaille", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "creperie", sous_categorie: "restaurants", type: "generique" },
+    { motif: "del arte", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "deliveroo", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "domino s", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "exki", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "five guys", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "flunch", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "frichti", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "hippopotamus", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "just eat", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "kebab", sous_categorie: "restaurants", type: "generique" },
+    { motif: "kfc", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "la pataterie", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "le paradis du fruit", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "leon de bruxelles", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "mcdo", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "mcdonald s", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "memphis coffee", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "nachos", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "o tacos", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "pitaya", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "pizza hut", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "pizzeria", sous_categorie: "restaurants", type: "generique" },
+    { motif: "planet sushi", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "pokawa", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "pomme de pain", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "popchef", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "pret a manger", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "quick", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "restaurant", sous_categorie: "restaurants", type: "generique" },
+    { motif: "speed burger", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "starbucks", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "subway", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "sushi", sous_categorie: "restaurants", type: "generique" },
+    { motif: "sushi shop", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "tablapizza", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "traiteur asiatique", sous_categorie: "restaurants", type: "generique" },
+    { motif: "uber eats", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "volfoni", sous_categorie: "restaurants", type: "enseigne" },
+    { motif: "billetreduc", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "billetterie", sous_categorie: "sorties", type: "generique" },
+    { motif: "centre pompidou", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "cgr", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "chateau de versailles", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "cinema", sous_categorie: "sorties", type: "generique" },
+    { motif: "cite des sciences", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "concert", sous_categorie: "sorties", type: "generique" },
+    { motif: "digitick", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "disneyland paris", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "exposition", sous_categorie: "sorties", type: "generique" },
+    { motif: "fever", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "fnac spectacles", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "futuroscope", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "gaumont", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "kinepolis", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "la villette", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "louvre", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "megarama", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "musee", sous_categorie: "sorties", type: "generique" },
+    { motif: "musee d orsay", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "olympia", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "opera de paris", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "parc asterix", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "pathe", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "philharmonie", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "puy du fou", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "see tickets", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "shotgun", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "spectacle", sous_categorie: "sorties", type: "generique" },
+    { motif: "theatre", sous_categorie: "sorties", type: "generique" },
+    { motif: "theatre de paris", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "ticketmaster", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "ugc", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "vulcania", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "walibi", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "zoo de beauval", sous_categorie: "sorties", type: "enseigne" },
+    { motif: "alltricks", sous_categorie: "sport", type: "enseigne" },
+    { motif: "au vieux campeur", sous_categorie: "sport", type: "enseigne" },
+    { motif: "basic fit", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "club de tennis", sous_categorie: "sport", type: "generique" },
+    { motif: "club med gym", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "cmg sports club", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "courir", sous_categorie: "sport", type: "enseigne" },
+    { motif: "cyclable", sous_categorie: "sport", type: "enseigne" },
+    { motif: "decathlon", sous_categorie: "sport", type: "enseigne" },
+    { motif: "ekosport", sous_categorie: "sport", type: "enseigne" },
+    { motif: "episod", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "fitness park", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "foot locker", sous_categorie: "sport", type: "enseigne" },
+    { motif: "forfait ski", sous_categorie: "sport", type: "generique" },
+    { motif: "freeletics", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "gigafit", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "go sport", sous_categorie: "sport", type: "enseigne" },
+    { motif: "intersport", sous_categorie: "sport", type: "enseigne" },
+    { motif: "jd sports", sous_categorie: "sport", type: "enseigne" },
+    { motif: "keep cool", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "l appart fitness", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "l orange bleue", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "liberty gym", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "magic form", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "neoness", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "on air fitness", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "patinoire", sous_categorie: "sport", type: "generique" },
+    { motif: "piscine", sous_categorie: "sport", type: "generique" },
+    { motif: "remontees mecaniques", sous_categorie: "sport", type: "generique" },
+    { motif: "salle de sport", sous_categorie: "sport", type: "generique" },
+    { motif: "skimium", sous_categorie: "sport", type: "enseigne" },
+    { motif: "snowleader", sous_categorie: "sport", type: "enseigne" },
+    { motif: "strava", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "ucpa", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "urban soccer", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "vita liberte", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "wellness sport club", sous_categorie: "sport", type: "enseigne", famille: "sport" },
+    { motif: "abritel", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "accor", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "agence de voyages", sous_categorie: "voyages", type: "generique" },
+    { motif: "air corsica", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "air france", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "airbnb", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "auberge de jeunesse", sous_categorie: "voyages", type: "generique" },
+    { motif: "b b hotels", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "belambra", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "best western", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "booking com", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "brittany ferries", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "campanile", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "camping", sous_categorie: "voyages", type: "generique" },
+    { motif: "capfun", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "center parcs", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "club med", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "corsair", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "corsica ferries", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "e leclerc voyages", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "easyjet", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "edreams", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "eurostar", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "expedia", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "flower campings", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "fram", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "gite", sous_categorie: "voyages", type: "generique" },
+    { motif: "gites de france", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "hilton", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "homair", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "hotel", sous_categorie: "voyages", type: "generique" },
+    { motif: "hotels com", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "huttopia", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "ibis", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "interhome", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "kyriad", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "lastminute", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "leclerc voyages", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "look voyages", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "marriott", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "mercure", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "novotel", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "odalys", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "opodo", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "pierre et vacances", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "premiere classe", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "promovacances", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "residence de tourisme", sous_categorie: "voyages", type: "generique" },
+    { motif: "ryanair", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "sunelia", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "transavia", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "tui", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "volotea", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "voyage prive", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "vueling", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "vvf", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "yelloh village", sous_categorie: "voyages", type: "enseigne" },
+    { motif: "action", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "adidas", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "aliexpress", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "alinea", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "amazon", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "amazon marketplace", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "amzn mktp", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "apple store", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "asos", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "back market", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "bershka", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "bijouterie", sous_categorie: "shopping", type: "generique" },
+    { motif: "bon marche", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "bonobo", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "but international", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "camif", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "cdiscount", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "celio", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "centrakor", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "coiffeur", sous_categorie: "shopping", type: "generique" },
+    { motif: "coiffure", sous_categorie: "shopping", type: "generique" },
+    { motif: "conforama", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "cordonnerie", sous_categorie: "shopping", type: "generique" },
+    { motif: "cyrillus", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "darty", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "devred", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "ebay", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "electro depot", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "etam", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "fleuriste", sous_categorie: "shopping", type: "generique" },
+    { motif: "flying tiger", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "fnac", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "galeries lafayette", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "gemo", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "gifi", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "hema", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "ikea", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "institut de beaute", sous_categorie: "shopping", type: "generique" },
+    { motif: "jennyfer", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "kiabi", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "kiko", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "l occitane", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "la foir fouille", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "la halle", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "la poste", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "la redoute", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "ldlc", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "leboncoin", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "lush", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "maisons du monde", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "mango", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "marionnaud", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "materiel net", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "mercerie", sous_categorie: "shopping", type: "generique" },
+    { motif: "naf naf", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "nature et decouvertes", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "nike", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "nocibe", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "noz", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "parfumerie", sous_categorie: "shopping", type: "generique" },
+    { motif: "picwictoys", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "pimkie", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "pressing", sous_categorie: "shopping", type: "generique" },
+    { motif: "primark", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "printemps", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "promod", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "pull bear", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "quincaillerie", sous_categorie: "shopping", type: "generique" },
+    { motif: "rituals", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "rue du commerce", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "samsung", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "sephora", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "shein", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "showroomprive", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "sostrene grene", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "temu", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "the body shop", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "undiz", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "uniqlo", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "veepee", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "vinted", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "yves rocher", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "zalando", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "zara", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "zodio", sous_categorie: "shopping", type: "enseigne" },
+    { motif: "adn anime", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "adobe", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "amazon music", sous_categorie: "abonnements", type: "enseigne", famille: "musique" },
+    { motif: "amazon prime", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "anthropic", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "app store", sous_categorie: "abonnements", type: "generique", famille: "autre" },
+    { motif: "apple com bill", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "apple music", sous_categorie: "abonnements", type: "enseigne", famille: "musique" },
+    { motif: "apple tv", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "audible", sous_categorie: "abonnements", type: "enseigne", famille: "livres" },
+    { motif: "babbel", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "bein sports", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "cafeyn", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "canal", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "canal plus", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "canva", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "chatgpt", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "courrier international", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "crunchyroll", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "dashlane", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "dazn", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "deezer", sous_categorie: "abonnements", type: "enseigne", famille: "musique" },
+    { motif: "disney plus", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "disneyplus", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "dropbox", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "duolingo", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "epsiloon", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "evernote", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "google one", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "google play", sous_categorie: "abonnements", type: "generique", famille: "autre" },
+    { motif: "google storage", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "hbo max", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "icloud", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "kindle unlimited", sous_categorie: "abonnements", type: "enseigne", famille: "livres" },
+    { motif: "kobo plus", sous_categorie: "abonnements", type: "enseigne", famille: "livres" },
+    { motif: "l equipe", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "l express", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "l obs", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "la depeche", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "la provence", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "la voix du nord", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le canard enchaine", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le dauphine libere", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le figaro", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le monde", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le parisien", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le point", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le progres", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "le telegramme", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "les echos", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "les jours", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "liberation", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "linkedin", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "mediapart", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "microsoft", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "molotov", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "mubi", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "mycanal", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "netflix", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "nice matin", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "nintendo eshop", sous_categorie: "abonnements", type: "enseigne", famille: "jeux" },
+    { motif: "nordvpn", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "norton", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "notion labs", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "ocs", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "openai", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "ouest france", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "paramount plus", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "playstation network", sous_categorie: "abonnements", type: "enseigne", famille: "jeux" },
+    { motif: "prime video", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "proton", sous_categorie: "abonnements", type: "enseigne", famille: "logiciel" },
+    { motif: "qobuz", sous_categorie: "abonnements", type: "enseigne", famille: "musique" },
+    { motif: "rmc sport", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "science et vie", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "soundcloud", sous_categorie: "abonnements", type: "enseigne", famille: "musique" },
+    { motif: "spotify", sous_categorie: "abonnements", type: "enseigne", famille: "musique" },
+    { motif: "sud ouest", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "telerama", sous_categorie: "abonnements", type: "enseigne", famille: "presse" },
+    { motif: "tidal", sous_categorie: "abonnements", type: "enseigne", famille: "musique" },
+    { motif: "twitch", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "ubisoft", sous_categorie: "abonnements", type: "enseigne", famille: "jeux" },
+    { motif: "universcine", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "xbox game pass", sous_categorie: "abonnements", type: "enseigne", famille: "jeux" },
+    { motif: "youboox", sous_categorie: "abonnements", type: "enseigne", famille: "livres" },
+    { motif: "youtube", sous_categorie: "abonnements", type: "enseigne", famille: "video" },
+    { motif: "betclic", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "bowling", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "bureau de tabac", sous_categorie: "loisirs", type: "generique" },
+    { motif: "cours de musique", sous_categorie: "loisirs", type: "generique" },
+    { motif: "cultura", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "decitre", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "escape game", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "fdj", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "furet du nord", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "gibert jeune", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "gibert joseph", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "jeux video", sous_categorie: "loisirs", type: "generique" },
+    { motif: "laser game", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "le geant des beaux arts", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "librairie", sous_categorie: "loisirs", type: "generique" },
+    { motif: "loisirs creatifs", sous_categorie: "loisirs", type: "generique" },
+    { motif: "maison de la presse", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "micromania", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "mollat", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "nintendo", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "parions sport", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "playstation", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "pmu", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "relay", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "rougier ple", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "smartbox", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "steam", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "tabac presse", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "unibet", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "winamax", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "wonderbox", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "xbox", sous_categorie: "loisirs", type: "enseigne" },
+    { motif: "action contre la faim", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "cagnotte", sous_categorie: "cadeaux_dons", type: "generique" },
+    { motif: "carte cadeau", sous_categorie: "cadeaux_dons", type: "generique" },
+    { motif: "croix rouge", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "don en ligne", sous_categorie: "cadeaux_dons", type: "generique" },
+    { motif: "fondation abbe pierre", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "fondation de france", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "handicap international", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "helloasso", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "institut pasteur", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "leetchi", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "lepotcommun", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "medecins sans frontieres", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "restos du coeur", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "secours populaire", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "telethon", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "unicef", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "wwf", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "animalerie", sous_categorie: "animaux", type: "generique" },
+    { motif: "animalis", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "bitiba", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "clinique veterinaire", sous_categorie: "animaux", type: "generique" },
+    { motif: "jardiland animalerie", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "maxi zoo", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "medor et compagnie", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "toilettage", sous_categorie: "animaux", type: "generique" },
+    { motif: "tom co", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "veterinaire", sous_categorie: "animaux", type: "generique" },
+    { motif: "wanimo", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "zooplus", sous_categorie: "animaux", type: "enseigne" },
+    { motif: "ldds", sous_categorie: "epargne_precaution", type: "generique" },
+    { motif: "lep", sous_categorie: "epargne_precaution", type: "generique" },
+    { motif: "livret a", sous_categorie: "epargne_precaution", type: "generique" },
+    { motif: "livret developpement durable", sous_categorie: "epargne_precaution", type: "generique" },
+    { motif: "livret jeune", sous_categorie: "epargne_precaution", type: "generique" },
+    { motif: "assurance vie", sous_categorie: "investissement", type: "generique" },
+    { motif: "binance", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "bitstack", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "bourse direct", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "coinbase", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "degiro", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "goodvest", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "kraken", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "linxea", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "nalo", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "paymium", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "placement direct", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "plan epargne retraite", sous_categorie: "investissement", type: "generique" },
+    { motif: "ramify", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "trade republic", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "versement pea", sous_categorie: "investissement", type: "generique" },
+    { motif: "versement per", sous_categorie: "investissement", type: "generique" },
+    { motif: "yomoni", sous_categorie: "investissement", type: "enseigne" },
+    { motif: "agirc arrco", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "assurance retraite", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "carsat", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "cipav", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "cnav", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "cnracl", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "france travail", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "ircantec", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "msa", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "pension", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "pole emploi", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+    { motif: "retraite complementaire", sous_categorie: "revenus_autres", type: "organisme", sens: "entree" },
+  ];
+
+  /* ================================================================== libellés */
+  /** Noms de mois (complets et abrégés, sans accents) retirés des libellés. Même liste que MOIS_LIBELLES de synchro.ts et de mcp/banque.ts (parité testée). */
+  const MOIS_LIBELLES = ["janvier", "janv", "jan", "fevrier", "fevr", "fev", "mars", "mar", "avril", "avr", "mai", "juin", "juillet", "juil",
+    "juill", "aout", "septembre", "sept", "sep", "octobre", "oct", "novembre", "nov", "decembre", "dec"];
+  /** Longueur maximale de cle_marchand : celle de LIBELLE_RECURRENT_MAX du connecteur (la clé déjà renvoyée par lire_banque pour les récurrents). */
+  const LIBELLE_RECURRENT_MAX = 40;
+  /** Libellé nettoyé : minuscules, sans accents, tout ce qui n'est pas une lettre devient espace, sans noms de mois, espaces réduits. Même règle que
+      cleLibelle de synchro.ts (fonction powens) et de mcp/banque.ts (parité testée). */
+  function cleLibelle(t) {
+    return String(t == null ? "" : t).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z]+/g, " ").trim()
+      .split(" ").filter(m => m && !MOIS_LIBELLES.includes(m)).join(" ");
+  }
+  /** Clé d'un marchand : le libellé nettoyé, tronqué à LIBELLE_RECURRENT_MAX caractères. */
+  const cleMarchand = t => cleLibelle(t).slice(0, LIBELLE_RECURRENT_MAX).trim();
+
+  /* ================================================================== lectures de la taxonomie */
+  const estSousCategorie = cle => typeof cle === "string" && PAR_CLE.has(cle);
+  /** Catégorie large d'une sous-catégorie (celle des lecteurs existants), null si la clé est inconnue. */
+  const largeDe = cle => (estSousCategorie(cle) ? PAR_CLE.get(cle).categorie : null);
+  /** Bloc d'une sous-catégorie. Seules les espèces se règlent (preferences.especes_bloc : envies ou essentiels, défaut envies) ; null si la clé est inconnue. */
+  function blocDe(cle, preferences) {
+    if (!estSousCategorie(cle)) return null;
+    const t = PAR_CLE.get(cle), choix = preferences && preferences.especes_bloc;
+    return t.bloc_reglable && t.bloc_reglable.includes(choix) ? choix : t.bloc;
+  }
+  /** Sous-catégorie donnée à une catégorie large par la reprise de banque_mois ; « à classer » pour une catégorie inconnue. */
+  const parDefautDe = categorie => (typeof categorie === "string" && Object.prototype.hasOwnProperty.call(PAR_DEFAUT, categorie) ? PAR_DEFAUT[categorie] : "a_classer");
+
+  /** Sous-catégorie d'un code Powens : le code enfant d'abord, puis le code parent ; null si aucun ne dit rien. Accepte un code, un objet { code, parent_code }
+      ou le tableau `categories` d'une opération (le premier élément). */
+  function sousCategoriePowens(categoriePowens) {
+    const c = Array.isArray(categoriePowens) ? categoriePowens[0] : categoriePowens;
+    const code = v => (typeof v === "string" && v.trim() ? v.trim().toLowerCase() : null);
+    const lire = k => (k !== null && Object.prototype.hasOwnProperty.call(CORRESPONDANCE_POWENS, k) ? CORRESPONDANCE_POWENS[k] : null);
+    if (typeof c === "string") return lire(code(c));
+    if (c && typeof c === "object") return lire(code(c.code)) || lire(code(c.parent_code)) || null;
+    return null;
+  }
+
+  /* ================================================================== suites de mots */
+  const mots = t => cleLibelle(t).split(" ").filter(Boolean);
+  /** Vrai si `sous` (liste de mots) est une suite contiguë de `mots` (jamais une sous-chaîne : « edf » ne prend pas « medfit »). */
+  function contientSuite(liste, sous) {
+    if (!sous.length) return false;
+    for (let i = 0; i + sous.length <= liste.length; i++) {
+      let ok = true;
+      for (let j = 0; j < sous.length; j++) if (liste[i + j] !== sous[j]) { ok = false; break; }
+      if (ok) return true;
+    }
+    return false;
+  }
+  const nombre = v => (typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v.trim().replace(",", ".")) : NaN);
+  /** Un sens (sortie : montant < 0, entree : montant > 0, les_deux ou absent : tous) vaut-il pour ce montant ? */
+  function sensVaut(sens, montant) {
+    if (sens === "sortie") return montant < 0;
+    if (sens === "entree") return montant > 0;
+    return true;
+  }
+  /** Index d'une table de motifs par premier mot : les entrées gardent leur rang (à égalité de longueur, la première de la table gagne). */
+  function indexer(table) {
+    const index = new Map();
+    table.forEach((e, rang) => {
+      const suite = typeof e.motif === "string" ? mots(e.motif) : [];
+      if (!suite.length) return;
+      const c = { e, rang, suite, longueur: suite.join(" ").length };
+      if (!index.has(suite[0])) index.set(suite[0], []);
+      index.get(suite[0]).push(c);
+    });
+    return index;
+  }
+  const INDEX_MARCHANDS = indexer(MARCHANDS), INDEX_MOTIFS = indexer(MOTIFS);
+  /** Meilleure entrée d'une table pour un libellé : la plus longue suite (en caractères), à égalité la première de la table. */
+  function meilleure(index, motsLibelle, montant) {
+    let best = null;
+    motsLibelle.forEach((m, i) => {
+      for (const c of index.get(m) || []) {
+        if (!sensVaut(c.e.sens, montant)) continue;
+        if (best && (c.longueur < best.longueur || (c.longueur === best.longueur && c.rang > best.rang))) continue;
+        if (c.suite.every((w, j) => motsLibelle[i + j] === w)) best = c;
+      }
+    });
+    return best && best.e;
+  }
+
+  /* ================================================================== règles personnelles (spec § 3.4) */
+  const MOTIF_MIN = 3, MOTIF_MAX = 60, SENS = ["sortie", "entree", "les_deux"];
+  const borne = v => v === null || v === undefined;
+  /** Message de refus d'une sous-catégorie de règle, nul si une règle peut la viser : une vraie sous-catégorie de dépense, de revenu ou d'épargne
+      (jamais « à classer », jamais « hors budget » sauf apport au commun et virement entre personnes du foyer). */
+  function refusSousCategorie(s) {
+    if (!estSousCategorie(s)) return "Cette sous-catégorie n'existe pas : choisis-en une de la liste.";
+    if (s === "a_classer") return "Une règle doit ranger l'opération quelque part : choisis une sous-catégorie.";
+    if (s === "commun_non_detaille") return "Cette sous-catégorie est posée par Boussole quand le compte commun n'est pas connecté : choisis-en une autre.";
+    if (PAR_CLE.get(s).bloc === "hors_budget" && !HORS_BUDGET_EN_REGLE.includes(s)) return "Une règle ne peut pas écarter une opération du budget : seuls l'apport au compte commun et le virement entre deux personnes du foyer sont permis.";
+    return null;
+  }
+  /** Nul si la règle est acceptable, sinon le message (en français, au tutoiement) à montrer. Mêmes refus que la base (budget_regles). */
+  function regleValide(regle) {
+    if (!regle || typeof regle !== "object" || Array.isArray(regle)) return "Une règle est un motif et une sous-catégorie.";
+    const motif = regle.motif;
+    if (typeof motif !== "string" || motif.trim().length < MOTIF_MIN || motif.trim().length > MOTIF_MAX) return "Le motif doit faire entre 3 et 60 caractères.";
+    if (/[0-9]{6,}/.test(motif)) return "Le motif ne doit pas contenir de suite de 6 chiffres ou plus : garde seulement le nom reconnaissable du libellé.";
+    if (Sensible.estSensible(motif) || Sensible.estSensible(motif.toUpperCase())) return "Le motif ne doit contenir ni numéro de compte ou de carte, ni mot de passe.";
+    if (cleLibelle(motif).length < MOTIF_MIN) return "Le motif doit contenir au moins 3 lettres : les chiffres et la ponctuation ne comptent pas.";
+    const refus = refusSousCategorie(regle.sous_categorie);
+    if (refus) return refus;
+    if (!borne(regle.sens) && !SENS.includes(regle.sens)) return "Le sens d'une règle est sortie, entree ou les_deux.";
+    for (const k of ["montant_min", "montant_max"]) if (!borne(regle[k]) && !(typeof regle[k] === "number" && isFinite(regle[k]) && regle[k] >= 0)) return "Les bornes de montant sont des nombres positifs.";
+    if (!borne(regle.montant_min) && !borne(regle.montant_max) && regle.montant_min > regle.montant_max) return "Les bornes de montant sont inversées : le minimum dépasse le maximum.";
+    if (!borne(regle.annuelle) && typeof regle.annuelle !== "boolean") return "« annuelle » est oui ou non.";
+    return null;
+  }
+  /** Vrai si la règle (active) s'applique à l'opération : motif en suite de mots du libellé, sens, compte, bornes sur la valeur absolue du montant. */
+  function correspond(regle, op) {
+    if (!regle || typeof regle !== "object" || !op || typeof op !== "object" || regle.active === false) return false;
+    const m = nombre(op.montant);
+    if (!sensVaut(borne(regle.sens) ? "sortie" : regle.sens, m)) return false;
+    if (!borne(regle.compte_id) && String(regle.compte_id) !== String(op.compte_id)) return false;
+    const a = Math.abs(m);
+    if (!borne(regle.montant_min) && !(a >= Number(regle.montant_min))) return false;
+    if (!borne(regle.montant_max) && !(a <= Number(regle.montant_max))) return false;
+    return contientSuite(mots(op.libelle), mots(regle.motif));
+  }
+  const bornee = r => (!borne(r.montant_min) || !borne(r.montant_max) ? 1 : 0);
+  /** Règles qui s'appliquent, de la plus spécifique à la moins spécifique : compte précisé, puis bornes de montant, puis motif le plus long (caractères),
+      puis création la plus ancienne ; à égalité, l'ordre donné. Une règle dont la sous-catégorie est refusée (à classer, hors budget, inconnue) ne classe rien. */
+  function reglesQuiCorrespondent(regles, op) {
+    const ordre = r => [borne(r.compte_id) ? 0 : 1, bornee(r), cleLibelle(r.motif).length];
+    const date = r => (typeof r.cree_le === "string" ? r.cree_le : "");
+    return (Array.isArray(regles) ? regles : []).filter(r => correspond(r, op) && refusSousCategorie(r.sous_categorie) === null)
+      .map((r, i) => ({ r, i, o: ordre(r) }))
+      .sort((x, y) => (y.o[0] - x.o[0]) || (y.o[1] - x.o[1]) || (y.o[2] - x.o[2]) || (date(x.r) < date(y.r) ? -1 : date(x.r) > date(y.r) ? 1 : 0) || (x.i - y.i))
+      .map(x => x.r);
+  }
+
+  /* ================================================================== classement d'une opération (spec § 3.2) */
+  /** Classe une opération. Sortie : { sous_categorie, categorie (large), origine: structure | regle | marchand | powens | motif | revenu | defaut, regle_id?, cle_marchand }.
+      Jamais d'exception : une opération mal formée est « à classer ». */
+  function classer(op, ctx) {
+    const o = op && typeof op === "object" ? op : {}, c = ctx && typeof ctx === "object" ? ctx : {};
+    const montant = nombre(o.montant), cle = cleMarchand(o.libelle), liste = mots(o.libelle);
+    const rendre = (sous_categorie, origine, regle_id) => {
+      const r = { sous_categorie, categorie: largeDe(sous_categorie), origine, cle_marchand: cle };
+      if (regle_id !== undefined) r.regle_id = regle_id;
+      return r;
+    };
+    // 1. structure : posée par le rapprochement, jamais surchargée
+    if (STRUCTURES.includes(o.structure)) return rendre(o.structure, "structure");
+    // 2. tes règles
+    const regle = reglesQuiCorrespondent(c.regles, o)[0];
+    if (regle) return rendre(regle.sous_categorie, "regle", regle.id);
+    // 3. table des marchands
+    const marchand = meilleure(Array.isArray(c.marchands) ? indexer(c.marchands) : INDEX_MARCHANDS, liste, montant);
+    if (marchand) return rendre(marchand.sous_categorie, "marchand");
+    // 4. catégorie Powens
+    const powens = sousCategoriePowens(o.categorie_powens);
+    if (powens) return rendre(powens, "powens");
+    // 5. motifs génériques
+    const motif = meilleure(INDEX_MOTIFS, liste, montant);
+    if (motif) return rendre(motif.sous_categorie, "motif");
+    // 6. revenu détecté : une entrée stable retenue comme salaire
+    if (o.revenu_detecte === true && montant > 0) return rendre("salaires", "revenu");
+    // 7. rien ne reconnaît l'opération
+    return rendre("a_classer", "defaut");
+  }
+
+  return { VERSION_TAXONOMIE, VERSION_MARCHANDS, BLOCS, TAXONOMIE, MARCHANDS, MOTIFS, CORRESPONDANCE_POWENS, MOIS_LIBELLES, LIBELLE_RECURRENT_MAX,
+    classer, regleValide, correspond, largeDe, blocDe, parDefautDe, sousCategoriePowens, estSousCategorie, cleLibelle, cleMarchand };
+});
+});
+
+export const BudgetCategories = charger("budget-categories");

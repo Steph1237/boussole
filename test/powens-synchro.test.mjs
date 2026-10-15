@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
+import { BudgetCategoriesPowens } from "./helpers/budget-gen.mjs";
 
 const lire = rel => readFileSync(fileURLToPath(new URL("../" + rel, import.meta.url)), "utf8");
 const strip = nodeModule.stripTypeScriptTypes;
@@ -22,7 +23,7 @@ function chargerModule(source, globaux = {}) {
   return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { ...GLOBAUX, ...globaux });
 }
 const charger = () => {
-  const C = chargerModule(lire("supabase/functions/powens/categories.ts"));
+  const C = chargerModule(lire("supabase/functions/powens/categories.ts"), { BudgetCategories: BudgetCategoriesPowens });
   const S = chargerModule(lire("supabase/functions/powens/synchro.ts"), { categorieBoussole: C.categorieBoussole });
   return { C, S };
 };
@@ -202,6 +203,35 @@ test("categorieBoussole : codes enfants et parents de la taxonomie française Po
   assert.deepEqual(J(C.CATEGORIES_BOUSSOLE), ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne", "virement_interne"]);
   assert.ok(!toutes.has("virement_interne"), "virement_interne n'est jamais une catégorie Powens : posée par le rapprochement des virements");
   assert.match(C.VERSION_CATEGORIES, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+/* BUD1 (tâche 3) : la catégorie large reste celle de la sous-catégorie, et la sous-catégorie vient du module partagé (copie générée). */
+test("categorieBoussole : quatre codes changent de catégorie large (BUD1), VERSION_CATEGORIES change avec eux", { skip: SANS_STRIP }, () => {
+  const { C } = charger();
+  const F = JSON.parse(lire("test/fixtures/budget-cas.json"));
+  // avant BUD1 : kitchen_and_appliances et furniture_and_decoration → logement (parent household), health_insurance_fees → sante, plane_or_boat_travel → transport
+  assert.equal(C.categorieBoussole({ code: "kitchen_and_appliances", parent_code: "household" }), "divers");
+  assert.equal(C.categorieBoussole({ code: "furniture_and_decoration", parent_code: "household" }), "divers");
+  assert.equal(C.categorieBoussole({ code: "health_insurance_fees", parent_code: "healthcare" }), "divers");
+  assert.equal(C.categorieBoussole({ code: "plane_or_boat_travel", parent_code: "travel_and_transport" }), "loisirs");
+  assert.notEqual(C.VERSION_CATEGORIES, "2026-10-12", "la correspondance a changé : nouvelle version");
+  assert.equal(C.VERSION_CATEGORIES, "2026-10-16");
+  // les 100 codes de la fixture : la catégorie large est celle de la fixture (avec l'écart voulu), quelle que soit la forme (code et parent)
+  for (const e of F.powens) assert.equal(C.categorieBoussole({ code: e.code, parent_code: e.parent_code }), e.ecart_categorie_large ?? e.categorie_large_actuelle, e.code);
+});
+test("sousCategorieBoussole : délègue à la copie générée du module de catégories (codes de la fixture, formes tolérées)", { skip: SANS_STRIP }, () => {
+  const { C } = charger();
+  const F = JSON.parse(lire("test/fixtures/budget-cas.json"));
+  for (const e of F.powens) {
+    const sc = C.sousCategorieBoussole({ code: e.code, parent_code: e.parent_code });
+    assert.equal(sc, e.sous_categorie, e.code);
+    // cohérence : la catégorie large de la sous-catégorie est la catégorie large de l'opération (lecteurs existants inchangés)
+    if (sc) assert.equal(BudgetCategoriesPowens.largeDe(sc), C.categorieBoussole({ code: e.code, parent_code: e.parent_code }), e.code);
+  }
+  assert.equal(C.sousCategorieBoussole([{ code: "pharmacy", parent_code: "healthcare" }]), "sante");
+  assert.equal(C.sousCategorieBoussole({ code: "code_inconnu", parent_code: "housing" }), BudgetCategoriesPowens.CORRESPONDANCE_POWENS.housing, "repli sur le parent");
+  assert.equal(C.sousCategorieBoussole({ code: null, parent_code: "bank_insurances" }), null);
+  for (const v of [null, undefined, [], 12, {}, "", "inconnu_total", "constructor", "__proto__"]) assert.equal(C.sousCategorieBoussole(v), null);
 });
 
 /* ---------- fonctions pures ---------- */

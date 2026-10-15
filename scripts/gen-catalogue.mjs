@@ -13,7 +13,11 @@
 //                                                    pratiques.js, que la copie du moteur de projection ne porte pas), recopiée de la même façon
 //                                                    (voir genererSuivi()). Parité testée par test/suivi-mcp.test.mjs.
 //
-// Usage : npm run gen (node scripts/gen-catalogue.mjs). test/formulaire.test.mjs et test/projection-mcp.test.mjs échouent si un fichier généré n'est plus à jour.
+//   supabase/functions/powens/budget-categories.gen.js   copie du module de catégories du budget (BUD1 : web/src/budget-categories.js et sa dépendance sensible.js),
+//   supabase/functions/mcp/budget-categories.gen.js      recopiée de la même façon (voir genererBudgetCategories()), à l'identique dans la fonction powens (classement à la
+//                                                        synchronisation) et dans le connecteur. Parité testée par test/budget-categories.test.mjs.
+//
+// Usage : npm run gen (node scripts/gen-catalogue.mjs). test/formulaire.test.mjs, test/projection-mcp.test.mjs et test/budget-categories.test.mjs échouent si un fichier généré n'est plus à jour.
 //
 // Sources :
 //   - web/src/risque.js (QUESTIONS) pour risque.* : thème, type, valeurs (codes et libellés de l'app, inchangés), option
@@ -38,12 +42,17 @@ export const SORTIE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.gen.ts"
 export const SOURCE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.js";
 export const SORTIE_MOTEUR = "supabase/functions/mcp/projection-moteur.gen.js";
 export const SORTIE_SUIVI = "supabase/functions/mcp/suivi.gen.js";
+export const SORTIE_BUDGET_POWENS = "supabase/functions/powens/budget-categories.gen.js";
+export const SORTIE_BUDGET_MCP = "supabase/functions/mcp/budget-categories.gen.js";
 /** Modules du moteur, dans l'ordre de définition (chacun ne dépend que des précédents) : nom → fichier de web/src. */
 export const MODULES_MOTEUR = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "projection-evenements",
   "projection-credit", "projection-donnees", "projection-immo", "projection"];
 /** Modules de la copie du moteur de suivi (SUIVI), dans l'ordre de définition : chacun ne dépend que des précédents. */
 export const MODULES_SUIVI = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "risque", "pratiques", "suivi"];
 export const EXPORTS_SUIVI = { Suivi: "suivi", Risque: "risque", Pratiques: "pratiques", Calc: "calc", Marche: "marche" };
+/** Modules de la copie du module de catégories du budget (BudgetCategories) : sensible.js (filtre des motifs de règle) puis budget-categories.js. */
+export const MODULES_BUDGET = ["sensible", "budget-categories"];
+export const EXPORTS_BUDGET = { BudgetCategories: "budget-categories" };
 /** Valeurs exportées par la copie : nom exporté → module. */
 export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection" };
 
@@ -179,6 +188,11 @@ export function genererMoteur() {
 export function genererSuivi() {
   return copierModules(MODULES_SUIVI, EXPORTS_SUIVI, "Copie du moteur de suivi des lignes de l'app (SUIVI, docs/superpowers/specs/2026-10-15-suivi-lignes-design.md)", "suivi-moteur");
 }
+/** Copie du module de catégories du budget (BUD1, docs/superpowers/specs/2026-10-16-bud1-budget-design.md § 3.3) : mêmes règles que genererMoteur().
+    Le même contenu est écrit dans les fonctions powens et mcp. */
+export function genererBudgetCategories() {
+  return copierModules(MODULES_BUDGET, EXPORTS_BUDGET, "Copie du module de catégories du budget de l'app (BUD1, docs/superpowers/specs/2026-10-16-bud1-budget-design.md)", "budget-categories");
+}
 function copierModules(MODULES, EXPORTS, titre, etiquette) {
   const corps = MODULES.map(nom => {
     const src = readFileSync(racine("web/src/" + nom + ".js"), "utf8").replace(/\r\n/g, "\n").replace(/\s+$/, "");
@@ -201,6 +215,7 @@ function copierModules(MODULES, EXPORTS, titre, etiquette) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi() };
+  const budget = genererBudgetCategories();
+  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi(), [SORTIE_BUDGET_POWENS]: budget, [SORTIE_BUDGET_MCP]: budget };
   for (const [rel, txt] of Object.entries(fichiers)) { writeFileSync(racine(rel), txt); console.log("écrit : " + rel); }
 }
