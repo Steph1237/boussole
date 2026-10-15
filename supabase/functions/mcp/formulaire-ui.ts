@@ -369,7 +369,7 @@ export const SCRIPT_VUE = String.raw`
       if (pe.base) bloc.appendChild(el("p", "fb-aide", pe.base));
       fin.appendChild(bloc);
     }
-    fin.appendChild(el("p", null, sc.rappel || "À valider dans Boussole › Agent › Propositions."));
+    fin.appendChild(el("p", null, sc.rappel || "À valider dans Boussole › Agent › À valider."));
     montrer("fbFin");
     signalerTaille();
   }

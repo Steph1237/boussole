@@ -13,7 +13,9 @@ const BLOCKS = [
   ["toise", "sources/toise.html", 718, 880],
   ["toise", "sources/toise.html", 946, 946],
   ["simu", "sources/simu.html", 725, 780],
-  ["simu", "sources/simu.html", 782, 838], // 781 = le sélecteur $ global, volontairement remplacé
+  ["simu", "sources/simu.html", 782, 785], // 781 = le sélecteur $ global, volontairement remplacé
+  /* 786-788 : eur, k et kk (formats d'affichage seulement) passent par Fmt (UX3 : espace fine des milliers, espace insécable avant « € », k€ rond) ; aucun calcul. */
+  ["simu", "sources/simu.html", 789, 838],
   ["simu", "sources/simu.html", 878, 1030],
 ];
 

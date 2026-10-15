@@ -10,10 +10,10 @@
   </section>
 
   <div class="cg-grid">
-    <section class="panel cg-sections" aria-labelledby="cgSecTitle">
-      <div class="panel-head"><h2 id="cgSecTitle">Où en est ton bilan</h2><span class="small muted" id="cgSecCount"></span></div>
+    <details class="panel cg-sections" id="cgSecDet">
+      <summary class="cg-sec-sum"><h2 id="cgSecTitle">Où en est ton bilan</h2><span class="small muted" id="cgSecCount"></span></summary>
       <ul class="cg-sec-list" id="cgSections"></ul>
-    </section>
+    </details>
     <section class="panel cg-next" aria-labelledby="cgNextTitle">
       <div class="panel-head"><h2 id="cgNextTitle">Prochaines questions</h2></div>
       <ol class="cg-next-list" id="cgNext"></ol>
@@ -42,7 +42,7 @@
       </li>
       <li class="cg-step" id="cgStep3">
         <h3>Reviens ici valider</h3>
-        <p>Claude n'enregistre rien lui-même : chaque changement attend ton accord dans <a href="#agent/propositions" data-goto="agent/propositions">Agent › Propositions</a>.</p>
+        <p>Claude n'enregistre rien lui-même : chaque changement attend ton accord dans <a href="#agent/propositions" data-goto="agent/propositions">Agent › À valider</a>.</p>
         <a class="cg-pending" id="cgPending" href="#agent/propositions" data-goto="agent/propositions"></a>
       </li>
     </ol>
@@ -65,7 +65,7 @@
   <section class="panel cg-alt" aria-labelledby="cgAltTitle">
     <h2 id="cgAltTitle">Comment se remplit Boussole</h2>
     <p>La saisie se fait avec Claude, pas dans l'application. Il compose des <b>formulaires interactifs</b> directement dans la conversation (questions, choix, montants, profil de risque) et lit les <b>fichiers que tu y déposes</b> : relevés bancaires, exports de courtier, avis d'imposition, tableaux d'amortissement. Il en tire les chiffres, sans recopier tes identifiants bancaires, et les dépose dans Boussole sous forme de propositions.</p>
-    <p>Boussole affiche ensuite tes données, les calculs et les alertes, et te fait valider chaque changement dans <a href="#agent/propositions" data-goto="agent/propositions">Agent › Propositions</a>. Sur chaque page, « Compléter avec Claude » ouvre une conversation déjà orientée vers la bonne section : <a href="#compte/donnees" data-goto="compte/donnees">Compte › Données</a>, <a href="#patrimoine/placements" data-goto="patrimoine/placements">Patrimoine › Placements</a>, <a href="#patrimoine/budget" data-goto="patrimoine/budget">Patrimoine › Budget</a>, <a href="#patrimoine/objectifs" data-goto="patrimoine/objectifs">Patrimoine › Objectifs</a>, <a href="#pilotage/risque" data-goto="pilotage/risque">Pilotage › Risque</a>…</p>
+    <p>Boussole affiche ensuite tes données, les calculs et les alertes, et te fait valider chaque changement dans <a href="#agent/propositions" data-goto="agent/propositions">Agent › À valider</a>. Sur chaque page, « Compléter avec Claude » ouvre une conversation déjà orientée vers la bonne section : <a href="#compte/donnees" data-goto="compte/donnees">Compte › Données</a>, <a href="#patrimoine/placements" data-goto="patrimoine/placements">Patrimoine › Placements</a>, <a href="#patrimoine/budget" data-goto="patrimoine/budget">Patrimoine › Budget</a>, <a href="#patrimoine/objectifs" data-goto="patrimoine/objectifs">Patrimoine › Objectifs</a>, <a href="#pilotage/risque" data-goto="pilotage/risque">Pilotage › Risque</a>…</p>
     <h3 id="cgVeille">La veille</h3>
     <p>Bientôt, ton Claude pourra aussi faire une veille régulière (tes fonds, les taux, les marchés) et en déposer le rapport dans Boussole. La ligne « Veille » de la barre latérale, qui mène ici, indique la date du dernier rapport (« jamais lancée » tant qu'il n'y en a pas) et te prévient au-delà de 8 jours sans rapport.</p>
   </section>

@@ -638,7 +638,7 @@
       calcul.push("Couverture de " + pct(cv) + ", sous le seuil de 70 % : pas de note");
       return Object.assign(aCompleter("efficacite", "frais", B.frais,
         "Frais connus sur " + pct(cv) + " de tes placements : coût partiel de " + eur(fs.cout) + " par an" + (pc == null ? "." : " (" + fr(pc, 2) + " %)."),
-        "Demande à Claude de compléter les frais courants de tes fonds et les frais de tes contrats (assurance-vie, PER).", "agent/connexion", {
+        "Demande à Claude de compléter les frais courants de tes fonds et les frais de tes contrats (assurance-vie, PER).", "compte/connexion", {
           repere, calcul, donnees, manque, confiance: cv > 0 ? "partielle" : "absente", source_donnees: "frais des fonds et des contrats renseignés",
           mesure: { valeur: pc == null ? null : r2(pc), unite: "% par an", texte: "coût partiel : " + eur(fs.cout) + " par an sur " + pct(cv) + " de tes placements" },
           pourquoi: "Pas encore de note : les frais ne sont connus que pour " + pct(cv) + " de tes placements (il en faut 70 %).",

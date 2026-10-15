@@ -99,6 +99,9 @@
   /* espacements (base 4) */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px; --sp-12:48px;
   --gutter:16px; --card-pad:16px; --gap-cards:12px; --gap-sections:24px;
+  /* mise en page fluide (UX3) : le contenu occupe la colonne jusqu'à --content-max (hors gouttières), au-delà il se centre ;
+     le texte courant ne dépasse jamais --measure (72 caractères) */
+  --content-max:1680px; --measure:72ch;
   /* rayons */
   --r-chip:999px; --r-ctl:10px; --r-card:14px; --r-sheet:20px;
   --radius:var(--r-card); --radius-sm:var(--r-ctl);
@@ -119,6 +122,9 @@
 @media (min-width:900px){:root{
   --t-hero:44px; --lh-hero:48px; --t-h1:28px; --lh-h1:34px; --t-h2:20px; --lh-h2:26px; --t-kpi:26px; --lh-kpi:30px;
   --gutter:32px; --card-pad:20px; --gap-cards:16px; --gap-sections:32px; --btn-h:40px}}
+/* ≥ 1440 px puis ≥ 1680 px : gouttières, écarts et marges internes plus généreux ; le contenu reste borné par --content-max */
+@media (min-width:1440px){:root{--gutter:40px; --card-pad:24px; --gap-cards:20px; --gap-sections:40px}}
+@media (min-width:1680px){:root{--gutter:48px; --gap-cards:24px}}
 @media (prefers-reduced-motion:reduce){:root{--dur-state:0ms; --dur-open:0ms; --dur-close:0ms}}
 
 *{box-sizing:border-box}
@@ -135,7 +141,8 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
 
 /* ---------- coque ----------
    Mobile d'abord : en-tête collant de 56 px (titre, périmètre « Foyer ▾ », Claude, Compte) + barre d'onglets fixée en bas (56 px plus la zone de sécurité).
-   ≥ 900 px : barre latérale collante de 220 px + colonne principale (max 1180 px) ; le même en-tête devient l'en-tête de page. */
+   ≥ 900 px : barre latérale collante de 220 px + colonne principale fluide (contenu borné à --content-max, centré au-delà, gouttières
+   de 32 / 40 / 48 px à 900 / 1440 / 1680 px) ; le même en-tête devient l'en-tête de page. */
 :root{--side-w:220px;--bbar-h:calc(var(--nav-h) + 4px + var(--bottom))}
 .app{min-height:100vh}
 .app>.side{display:none}
@@ -143,7 +150,7 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
 .brand [data-brand-icon]{display:inline-flex}
 .brand-ico{width:22px;height:22px;color:var(--brand)}
 .ico{width:20px;height:20px;flex:none}
-.main{min-width:0;max-width:1180px;display:flex;flex-direction:column;gap:var(--gap-cards);padding:0 var(--gutter) calc(var(--bbar-h) + var(--sp-6))}
+.main{min-width:0;width:100%;max-width:calc(var(--content-max) + 2 * var(--gutter));margin-inline:auto;display:flex;flex-direction:column;gap:var(--gap-cards);padding:0 var(--gutter) calc(var(--bbar-h) + var(--sp-6))}
 /* En-tête (collant, 56 px) : à gauche le titre de la destination et le point de fraîcheur ; à droite le périmètre, Claude et Compte. */
 .page-head{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:var(--sp-1);height:calc(var(--header-h) + var(--top));padding:var(--top) calc(var(--gutter) - 8px) 0 var(--gutter);margin:0 calc(var(--gutter) * -1);background:var(--bg)}
 .page-title{flex:1;min-width:0;display:flex;align-items:center;gap:var(--sp-1)}
@@ -259,6 +266,24 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
   .tabs-wrap{position:static;margin:0;padding:0}
   .subtabs{padding:0}
 }
+
+/* ---------- grille de 12 colonnes (UX3) ----------
+   .grid-12 : 12 colonnes, une seule en dessous de 600 px (chaque enfant prend toute la largeur). .col-N (≥ 900 px), .col-sm-N (≥ 600),
+   .col-xl-N (≥ 1440) et .col-xxl-N (≥ 1680) fixent la portée d'un enfant (3, 4, 5, 6, 7, 8, 9 ou 12 colonnes) ; le dernier point de
+   rupture déclaré l'emporte. .grid-fit : autant de colonnes de --fit (320 px par défaut) que la place le permet, sans point de rupture.
+   .stretch : cartes de même hauteur par rangée. Les cartes ne laissent jamais de vide : la portée de chaque rangée fait 12. */
+.grid-12{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--gap-cards);align-items:start;min-width:0}
+.grid-12>*{grid-column:span 12;min-width:0}
+.grid-12.stretch{align-items:stretch}
+.grid-fit{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--fit,320px)),1fr));gap:var(--gap-cards);align-items:start;min-width:0}
+.grid-fit.stretch{align-items:stretch}
+.grid-fit>*{min-width:0}
+@media (min-width:600px){.col-sm-3{grid-column:span 3}.col-sm-4{grid-column:span 4}.col-sm-5{grid-column:span 5}.col-sm-6{grid-column:span 6}.col-sm-7{grid-column:span 7}.col-sm-8{grid-column:span 8}.col-sm-9{grid-column:span 9}.col-sm-12{grid-column:span 12}}
+@media (min-width:900px){.col-3{grid-column:span 3}.col-4{grid-column:span 4}.col-5{grid-column:span 5}.col-6{grid-column:span 6}.col-7{grid-column:span 7}.col-8{grid-column:span 8}.col-9{grid-column:span 9}.col-12{grid-column:span 12}}
+@media (min-width:1440px){.col-xl-3{grid-column:span 3}.col-xl-4{grid-column:span 4}.col-xl-5{grid-column:span 5}.col-xl-6{grid-column:span 6}.col-xl-7{grid-column:span 7}.col-xl-8{grid-column:span 8}.col-xl-9{grid-column:span 9}.col-xl-12{grid-column:span 12}}
+@media (min-width:1680px){.col-xxl-3{grid-column:span 3}.col-xxl-4{grid-column:span 4}.col-xxl-5{grid-column:span 5}.col-xxl-6{grid-column:span 6}.col-xxl-7{grid-column:span 7}.col-xxl-8{grid-column:span 8}.col-xxl-9{grid-column:span 9}.col-xxl-12{grid-column:span 12}}
+/* texte courant : jamais plus de 72 caractères par ligne (zéro de spécificité, une règle de module peut la lever) */
+:where(.view p,.ui-panneau p){max-width:var(--measure)}
 
 /* ---------- composants communs ---------- */
 .seg{display:inline-flex;background:var(--sunk);border-radius:var(--r-ctl);padding:3px;gap:2px;flex-wrap:wrap}

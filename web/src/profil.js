@@ -1,6 +1,6 @@
 /* Compte › Données (module « profil ») : le profil du foyer en LECTURE SEULE (spec 2026-10-11-saisie-par-agent). La saisie se
    fait avec Claude (formulaires interactifs, documents déposés dans la conversation) ; Boussole affiche et fait valider les
-   propositions dans Agent › Propositions. Aucune écriture au store ici.
+   propositions dans Agent › À valider. Aucune écriture au store ici.
    En tête : taux de remplissage du bilan (BilanEtat, protection comprise), ce qui manque, récapitulatif, « Compléter avec Claude » (bilan).
    Puis six sections en accordéons fermés (Foyer, Revenus, Biens immobiliers, Crédits, Protection, Autres biens), chacune avec une
    ligne de résumé dans son titre (« 2 adultes, 1 enfant, TMI 30 % »), son contenu en lecture (valeurs renseignées, « non
@@ -18,7 +18,7 @@
   const prompts = () => glob("ClaudePrompts") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
 
-  /* Complétude : la fonction du bilan (BilanEtat, bilan-etat.js), la même que Agent › Connexion et l'outil etat_du_bilan du connecteur. */
+  /* Complétude : la fonction du bilan (BilanEtat, bilan-etat.js), la même que Compte › Connexion et l'outil etat_du_bilan du connecteur. */
   const bilanEtat = () => glob("BilanEtat") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./bilan-etat.js") : null);
 
@@ -62,7 +62,7 @@
   const aCredit = pr => creditsDe(pr).length > 0;
 
   /** Complétude du bilan : { pourcentage, incompletes: [titre de section, …] } d'après BilanEtat.etat (foyer, revenus, budget, placements,
-      immobilier et crédits, protection, objectifs, profil de risque), une seule définition pour Compte › Données, Agent › Connexion et le
+      immobilier et crédits, protection, objectifs, profil de risque), une seule définition pour Compte › Données, Compte › Connexion et le
       connecteur. S = état du store ; today = jour (AAAA-MM-JJ, défaut : aujourd'hui). Sans le module : { pourcentage: 0, incompletes: [] }. */
   function completude(S, today) {
     const B = bilanEtat();
@@ -259,7 +259,7 @@
       ["Revenus du foyer", eur(rev) + "/mois", "nets avant impôt, loyers compris"],
       ["Mensualités de crédit", eur(mens) + "/mois", rev > 0 ? Math.round(mens / rev * 100) + " % des revenus" : "—"],
     ].map(([l, v, s]) => '<div class="pf-kpi"><span>' + esc(l) + "</span><b>" + esc(v) + "</b><em>" + esc(s) + "</em></div>").join(""));
-    ecrire("pfClaude", claudeHtml(null, U));
+    /* « Compléter avec Claude » : le bouton Claude de l'en-tête (demande « Compléter mon bilan ») couvre la page ; seules les sections incomplètes gardent leur lien. */
     const r = resumes(pr, C);
     SECTIONS.forEach(s => {
       const k = CLES[s.id];

@@ -102,7 +102,7 @@ test("pistesPratiques : critères notés sous 20, liés à leur critère, sans �
   const P = A.pistesPratiques({ criteres: [
     { cle: "matelas", famille: "securite", titre: "Matelas de précaution", points: 20, sur: 20, texte: "t", piste: "p", lien: "patrimoine/budget" },
     { cle: "adequation", famille: "allocation", titre: "Adéquation au profil de risque", points: 9, sur: 20, texte: "8 points hors.", piste: "Rapprochez.", lien: "pilotage/risque" },
-    { cle: "frais", famille: "efficacite", titre: "Frais des fonds", points: 0, sur: 20, aCompleter: true, texte: "?", piste: "?", lien: "agent/connexion" },
+    { cle: "frais", famille: "efficacite", titre: "Frais des fonds", points: 0, sur: 20, aCompleter: true, texte: "?", piste: "?", lien: "compte/connexion" },
     { cle: "devises", famille: "allocation", titre: "Exposition hors euro", points: null, sur: 0, informatif: true, texte: "i", piste: "i", lien: "patrimoine/placements" },
     { cle: "geographie", famille: "allocation", titre: "Diversification géographique", points: 14, sur: 20, texte: "30 %.", piste: "Un socle monde.", lien: "patrimoine/placements" },
   ] });

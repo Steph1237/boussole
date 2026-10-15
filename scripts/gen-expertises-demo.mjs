@@ -94,7 +94,7 @@ export function bloc(sql) {
     "  /* Expertises du Copilote patrimonial (tables publiques expertises et expertises_versions, 0016 ; EX1), reprises de " + SOURCE + ".\n" +
     "     Les 8 expertises v1 publiées en liste, avec leurs points de contrôle ; détail complet (méthode, garde-fous, forme de la réponse)\n" +
     "     pour " + COMPLETES.join(" et ") + " seulement ; les autres ont un détail court (methode, garde_fous et format à null), signalé\n" +
-    "     par Agent › Expertises. Les textes s'adressent au Copilote (« tu ») et parlent de l'utilisateur à la troisième personne. */\n" +
+    "     par Agent › Savoir › Expertises. Les textes s'adressent au Copilote (« tu ») et parlent de l'utilisateur à la troisième personne. */\n" +
     "  const V1 = " + cl(xs[0].changelog) + ";\n" +
     "  const Ex = (slug, nom, quandConsulter, perimetre, o) => Object.assign({ slug, nom, quandConsulter, perimetre, version: " + xs[0].version +
     ", misAJourLe: " + s(xs[0].mis_a_jour_le) + ",\n" +

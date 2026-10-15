@@ -31,7 +31,8 @@
 
 /* familles */
 #view-comptes-view .cv-familles{display:flex;flex-direction:column;gap:var(--gap-cards)}
-@media (min-width:1100px){#view-comptes-view .cv-familles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}
+/* grand écran : les familles s'écoulent sur deux colonnes (pas de rangée à hauteur imposée, donc pas de vide sous une carte courte) */
+@media (min-width:1100px){#view-comptes-view .cv-familles{display:block;column-count:2;column-gap:var(--gap-cards)}#view-comptes-view .cv-familles>.cv-fam{break-inside:avoid;margin-bottom:var(--gap-cards)}}
 #view-comptes-view .cv-fam{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--e1);min-width:0}
 #view-comptes-view .cv-fam-h{margin:0;font:inherit}
 #view-comptes-view .cv-fam-btn{display:flex;align-items:center;gap:6px 12px;width:100%;min-height:var(--hit);padding:var(--sp-3) var(--sp-4);border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;border-radius:var(--r-card)}
@@ -180,3 +181,10 @@
 #view-comptes-view .cv-perime-i{flex:none}
 #view-comptes-view .cv-alerte.cv-perime-fiche{border-left-color:var(--warn);background:var(--warn-soft);color:var(--ink)}
 #view-comptes-view .cv-alerte.cv-perime-fiche > .cv-perime-i{color:var(--warn)}
+
+/* grand écran : le patrimoine net à gauche, les trois blocs à droite (pas de grand vide à droite du chiffre) */
+@media (min-width:1280px){
+  #view-comptes-view #cvTete{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);column-gap:var(--sp-10);align-items:center}
+  #view-comptes-view #cvTete>*{grid-column:1}
+  #view-comptes-view #cvTete>.cv-faits{grid-column:2;grid-row:1/span 6;margin:0}
+}

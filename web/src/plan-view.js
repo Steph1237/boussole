@@ -342,7 +342,7 @@
     if (scope !== "foyer") rows.push(["Dans cette vue", p === 0 ? "hors de cette vue" : pct(p) + " · " + eur(brut * p) + "/mois"]);
     const ctx = "la ligne « " + (plat(l.libelle) || "sans libellé") + " » (" + cat + ", " + eur(m) + (an ? "/an" : "/mois") + ")";
     return dl(rows) + '<div class="pv-acts">' + boutonClaude(opt.U, "budget", ctx, "Corriger avec Claude") + "</div>" +
-      '<p class="pv-note">Pour modifier ou retirer cette ligne, passe par Claude : il te propose le changement, que tu valides dans Agent › Propositions.</p>';
+      '<p class="pv-note">Pour modifier ou retirer cette ligne, passe par Claude : il te propose le changement, que tu valides dans Agent › À valider.</p>';
   }
 
   /** Détail d'une carte de l'en-tête : catégories du type (avec leurs lignes pour revenus et épargne ; dépenses en 5 puis

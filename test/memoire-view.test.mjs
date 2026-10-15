@@ -31,12 +31,12 @@ test("memoire-view.html : identifiants utilisés par le script, en-tête rassura
   const ids = [...js.matchAll(/\$\("(mv[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 5);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  assert.ok(html.includes("Ce que l'agent retient de toi"));
-  assert.ok(html.includes("Ils ne contiennent jamais d'identifiants bancaires ni de mots de passe."));
-  assert.ok(html.includes("stockés dans ton compte Boussole"));
-  assert.ok(html.includes("L'agent n'a encore rien retenu"));
+  assert.ok(html.includes("Ce que Claude retient de toi"));
+  assert.ok(html.includes("Privé, modifiable, effaçable à tout moment, sans identifiant bancaire ni mot de passe."));
+  assert.ok(!/assistant|Copilote/.test(html), "Claude, jamais « ton assistant »");
+  assert.ok(html.includes("Claude n'a encore rien retenu"));
   assert.ok(html.includes("Commence par ton bilan avec Claude."));
-  assert.match(html, /data-goto="agent\/connexion"/);
+  assert.match(html, /data-goto="compte\/connexion"/);
   assert.match(html, /id="mvMsg"[^>]*role="status"/);
 });
 

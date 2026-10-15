@@ -1,4 +1,4 @@
-/* Agent › Connexion : faire son bilan en discutant avec Claude (connecteur MCP Boussole).
+/* Compte › Connexion : faire son bilan en discutant avec Claude (connecteur MCP Boussole).
    Avancement par section (BilanEtat.etat), prochaines questions, ajout du connecteur (bloc partagé avec l'étape 3 de
    l'accueil : Accueil.connexion), « Revoir l'accueil » (App.accueil),
    parcours lançables (claude.ai/new?q=… ou copie de la demande), retour vers Propositions pour valider.
@@ -491,6 +491,9 @@
   }
 
   function mount(r) {
+    /* « Où en est ton bilan » : déplié sur grand écran, replié sur mobile (la jauge du haut dit déjà où l'on en est). */
+    const det = r.querySelector("#cgSecDet");
+    if (det && typeof window !== "undefined" && window.matchMedia && window.matchMedia("(min-width:900px)").matches) det.open = true;
     root = r;
     /* Étapes de connexion : le même bloc que l'étape 3 de l'accueil (accueil.js), valeurs à copier comprises. */
     if (window.Accueil && typeof Accueil.connexion === "function") Accueil.connexion($("cgConnexion"));

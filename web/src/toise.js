@@ -831,7 +831,7 @@ function renderPage(D){
   const r=resumeHypotheses(state,per);
   $('tsPour').textContent='Calculé pour : '+r.court+'.';
   ONGLETS.forEach(o=>{const e=$('tsSec-'+o.id);if(e)e.textContent=r.sections[o.id]});
-  if(u){ecrire('tsCartes',cartes(D,opts()).map(c=>u.carte(c)).join(''));ecrire('tsClaude',u.demanderAClaude(questionPage(D,per)));
+  if(u){ecrire('tsCartes',cartes(D,opts()).map(c=>u.carte(c)).join(''));
     ecrire('tsFpClaude',u.demanderAClaude(phraseRevenus(),'Complète tes données avec Claude'));}
   rafraichirPanneau(D);
 }

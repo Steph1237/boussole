@@ -1,4 +1,4 @@
-// Agent › Connexion (web/src/claude-guide.*) ; la carte « Faire mon bilan avec Claude » de l'ancien Bilan est couverte par l'accueil et cette page.
+// Compte › Connexion (web/src/claude-guide.*) ; la carte « Faire mon bilan avec Claude » de l'ancien Bilan est couverte par l'accueil et cette page.
 // Saisie par l'agent (spec 2026-10-11) : plus de « Je préfère remplir moi-même » ; la page explique la saisie avec Claude (formulaires
 // interactifs, fichiers déposés dans la conversation) et la veille ; tutoiement.
 import { test } from "node:test";
@@ -70,7 +70,7 @@ test("claude-guide.css : entièrement scopé sous #view-claude-guide", () => {
   assert.deepEqual(unscoped(css, "#view-claude-guide"), []);
 });
 
-test("Faire mon bilan avec Claude : plus dans Patrimoine › Immobilier et crédits, couvert par l'accueil et Agent › Connexion (BilanEtat)", () => {
+test("Faire mon bilan avec Claude : plus dans Patrimoine › Immobilier et crédits, couvert par l'accueil et Compte › Connexion (BilanEtat)", () => {
   assert.doesNotMatch(bilanHtml, /id="blClaude"|Faire mon bilan avec Claude/);
   assert.doesNotMatch(bilanJs, /BilanEtat/);
   assert.match(readFileSync("web/src/accueil.js", "utf8"), /BilanEtat\.etat\(S\)/);
@@ -99,7 +99,7 @@ test("claude-guide : la veille est expliquée ; la ligne « Veille » de la barr
   assert.match(texte, /La veille/);
   assert.match(texte, /ligne « Veille » de la barre latérale/);
   assert.match(texte, /8 jours/);
-  assert.match(readFileSync("web/src/shell.html", "utf8"), /id="veilleLine" href="#agent\/connexion" data-goto="agent\/connexion"/);
+  assert.match(readFileSync("web/src/shell.html", "utf8"), /id="veilleLine" href="#compte\/connexion" data-goto="compte\/connexion"/);
 });
 
 test("claude-guide : tutoiement — aucun « vous / votre / vos » ni impératif au vouvoiement", () => {

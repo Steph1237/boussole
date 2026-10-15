@@ -479,7 +479,7 @@
   /* Expertises du Copilote patrimonial (tables publiques expertises et expertises_versions, 0016 ; EX1), reprises de supabase/migrations/0017_expertises_contenu.sql.
      Les 8 expertises v1 publiées en liste, avec leurs points de contrôle ; détail complet (méthode, garde-fous, forme de la réponse)
      pour allocation-risque et etf-fonds seulement ; les autres ont un détail court (methode, garde_fous et format à null), signalé
-     par Agent › Expertises. Les textes s'adressent au Copilote (« tu ») et parlent de l'utilisateur à la troisième personne. */
+     par Agent › Savoir › Expertises. Les textes s'adressent au Copilote (« tu ») et parlent de l'utilisateur à la troisième personne. */
   const V1 = [{ version: 1, le: "2026-10-11", resume: "Première version : méthode, points de contrôle, garde-fous, format et cas d'évaluation (EX1)." }];
   const Ex = (slug, nom, quandConsulter, perimetre, o) => Object.assign({ slug, nom, quandConsulter, perimetre, version: 1, misAJourLe: "2026-10-11",
     marches: [], angles: [], themesSavoir: [], reperes: [], controles: [], methode: null, garde_fous: null, format: null, changelog: V1 }, o);

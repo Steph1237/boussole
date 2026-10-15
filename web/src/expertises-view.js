@@ -1,4 +1,4 @@
-/* Agent › Expertises : les méthodes d'analyse que le Copilote patrimonial consulte à la demande (spec
+/* Agent › Savoir › Expertises : les méthodes d'analyse que le Copilote patrimonial consulte à la demande (spec
    docs/superpowers/specs/2026-10-11-ex1-copilote-expertises.md § 3), en lecture seule : transparence sur ce que sait et fait Claude.
    S.expertises = [{ slug, nom, quandConsulter, perimetre, version, misAJourLe, marches, angles }] (liste, sans détail) ;
    Store.expertises.detail(slug) → { …, methode (markdown), controles (phrases), garde_fous (markdown), format (markdown), themesSavoir,
@@ -127,7 +127,7 @@
     if (vs.length) h += U.accordeon({ titre: "Historique des versions", contenu: '<ol class="xv-hist">' + vs.map(v => "<li>" +
       '<span class="xv-hist-d">' + esc("Version " + v.version + (v.le ? " · " + dateFr(v.le) : "")) + "</span>" +
       (plat(v.resume) ? '<span class="xv-hist-t">' + esc(v.resume) + "</span>" : "") + "</li>").join("") + "</ol>" });
-    h += '<p class="xv-legende">Ces textes s\'adressent à Claude : « tu » désigne le Copilote, « l\'utilisateur », c\'est toi. Contenu pédagogique, pas un conseil en investissement.</p>';
+    h += '<p class="xv-legende">Ces textes s\'adressent à Claude : « tu » désigne Claude, « l\'utilisateur », c\'est toi. Contenu pédagogique, pas un conseil en investissement.</p>';
     return h;
   }
 
