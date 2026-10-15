@@ -1235,7 +1235,7 @@
   /** Phrase du rétro-contrôle pour « Comment c'est calculé » (spec § 6.9). */
   function phraseRetro(c) {
     if (!c || !c.affichable) return "Pas encore assez d'historique pour vérifier la projection.";
-    const sur10 = Math.round(c.taux_p10_p90 * 10);
+    const sur10 = c.taux_p10_p90 >= 0.95 ? "plus de 9" : Math.round(c.taux_p10_p90 * 10) <= 0 ? "moins d'une" : String(Math.round(c.taux_p10_p90 * 10)); // jamais « 10 fois sur 10 » : rien n'est certain
     let t = "Rejouée depuis " + c.n + " dates passées, la projection à 1 an a encadré la valeur réelle " + sur10 + " fois sur 10 (attendu : 8 sur 10). Les dates se chevauchent : c'est indicatif.";
     if (c.taux_p10_p90 < 0.65) t += " Les bandes ont été trop étroites sur ton historique.";
     return t;

@@ -35,7 +35,7 @@
     el.className = "msg " + (kind || "err");
     el.hidden = !text;
   }
-  const RELAUNCH = "Relance la connexion de Boussole depuis ton assistant (Claude ou autre).";
+  const RELAUNCH = "Relance la connexion de Boussole depuis Claude.";
 
   /* ---------- erreurs Supabase → français ---------- */
   function isNetwork(e) {
@@ -227,7 +227,7 @@
   /* ---------- démarrage ---------- */
   function init() {
     if (!authId) {
-      return fail("Lien incomplet", "Cette page s'ouvre automatiquement quand tu connectes Boussole à un assistant. Il manque l'identifiant de la demande. " + RELAUNCH, null);
+      return fail("Lien incomplet", "Cette page s'ouvre automatiquement quand tu connectes Boussole à Claude. Il manque l'identifiant de la demande. " + RELAUNCH, null);
     }
     if (!window.supabase || !window.supabase.createClient || !cfg.supabaseUrl || !cfg.supabaseKey) {
       return fail("Chargement incomplet", "Un composant de la page n'a pas pu être chargé (bloqueur de contenu ou réseau). Recharge la page.", () => location.reload());

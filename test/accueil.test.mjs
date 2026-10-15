@@ -24,9 +24,9 @@ test("accueil : 4 étapes (plus de choix « sans assistant »), dans l'ordre, et
   assert.deepEqual(A.ETAPES, ["Bienvenue", "Connecter Claude", "Lancer l'entretien", "Suivre et valider"]);
   assert.match(js, /\[e1, e2, e3, e4\]\[etape - 1\]/);
   for (const t of ["Bienvenue dans Boussole", "pas du conseil en investissement réglementé", "Tes données ne sont visibles que par toi",
-    "Tu valides", "Ton assistant propose, tu valides.", "Environ 15 minutes, reprends quand tu veux.",
-    "Tes réponses transitent par ton assistant, selon ses propres conditions d\\'utilisation.",
-    "Boussole fonctionne avec ton assistant", "Disponible", "Bientôt", "ChatGPT",
+    "Tu valides", "Claude propose, tu valides.", "Environ 15 minutes, reprends quand tu veux.",
+    "Tes réponses transitent par Claude, selon ses propres conditions d\\'utilisation.",
+    "Boussole fonctionne avec Claude", "Disponible", "Bientôt", "ChatGPT",
     "<kbd>Paramètres</kbd> → <kbd>Connecteurs</kbd> → <kbd>Ajouter</kbd> → <kbd>Ajouter un connecteur personnalisé</kbd>",
     "Se connecter maintenant", "Utiliser votre propre client OAuth", "Laisse le secret vide.", "Pièges fréquents",
     "Ne mets pas ton e-mail comme identifiant", "vérifie ton compte", "authentifie-toi", "Se reconnecter", "<kbd>/mcp</kbd>",

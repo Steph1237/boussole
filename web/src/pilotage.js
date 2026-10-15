@@ -170,7 +170,7 @@
     const total = totaux(s, deps).total, v = C.val(x), compte = C.counted(x);
     const faits = [];
     if (x.mode === "market") {
-      faits.push(["Cours", x.price != null ? eur2(x.price) + (dateFr(x.priceDate) ? " · " + dateFr(x.priceDate) : "") : "à récupérer (ce soir par l'agent)"]);
+      faits.push(["Cours", x.price != null ? eur2(x.price) + (dateFr(x.priceDate) ? " · " + dateFr(x.priceDate) : "") : "à récupérer ce soir"]);
       faits.push(["Quantité", x.qty != null ? nfq.format(x.qty) + (x.qtyEstimated ? " (estimée)" : "") : "—"]);
       faits.push(["Prix de revient unitaire (PRU)", x.pru ? eur2(x.pru) : "non renseigné"]);
       const g = latente(x);
@@ -364,7 +364,7 @@
   /** Ordres à passer, en lecture (5 puis « Voir plus ») ; un ordre passé se signale à Claude. */
   function ordresHtml(S, U, deps) {
     const xs = ordres(S);
-    if (!xs.length) return '<p class="pl-muet">Aucun ordre en attente. Les ordres décidés avec ton assistant apparaîtront ici.</p>';
+    if (!xs.length) return '<p class="pl-muet">Aucun ordre en attente. Les ordres décidés avec Claude apparaîtront ici.</p>';
     return U.voirPlus(xs, 5, o => '<li><span class="pl-li-t' + (o.fait ? " pl-fait" : "") + '">' + esc(o.text) + (o.amount ? ' <span class="pl-muet">· ' + esc(o.amount) + "</span>" : "") + "</span>" +
       '<span class="pl-li-v">' + chip(o.fait ? { texte: "passé", ton: "bon" } : { texte: "à passer", ton: "attention" }) + "</span></li>", "Voir plus d'ordres", "ul", "pl-ordres") +
       '<div class="pl-acts pl-suivi-claude">' + lienClaude(U, phraseClaude("mouvement", "un ordre de ma liste « Ordres à passer » que j'ai passé", deps), "Signaler un ordre passé à Claude") + "</div>";
@@ -462,7 +462,7 @@
     $("plModeNote").textContent = NOTE_MODE[mode];
     ecrire("groupes", $("plGroupes"), groupesHtml(gs, mode, S, u, { ouverts: ouvertsDuMode(), today: jour() }));
     renderSuivi();
-    $("plAgent").textContent = S.status && S.status.summary ? "Dernier compte rendu de l'agent : " + plat(S.status.summary) : "";
+    $("plAgent").textContent = S.status && S.status.summary ? "Dernière mise à jour de nuit : " + plat(S.status.summary) : "";
   }
 
   /* Sous le total : variation sur 1 an (photos nocturnes + valeur en direct) et nombre de lignes. Le tracé est celui du graphe maître. */

@@ -65,7 +65,7 @@ test("memoire-view.js : agit par Store.memoire.modifier, .supprimer et .toutEffa
   assert.match(js, /\.modifier\(/);
   assert.match(js, /\.supprimer\(\[/);
   assert.match(js, /\.toutEffacer\(\)/);
-  assert.ok(js.includes(`"Effacer les " + n + " souvenirs de l'agent ? Cette action est définitive."`));
+  assert.ok(js.includes(`"Effacer les " + n + " souvenirs de Claude ? Cette action est définitive."`));
   assert.match(js, /if \(!confirm\(q\)\) return;/);
   const iConfirm = js.indexOf("confirm("), iClear = js.indexOf("api.toutEffacer()");
   assert.ok(iConfirm > 0 && iConfirm < iClear, "confirm() avant toutEffacer()");
@@ -120,7 +120,7 @@ test("meta : « retenu par Claude le … », échéance et libellé « à repren
   assert.equal(m3.echu, false);
   assert.match(sp(m3.echeance), /20 nov\. 2026/);
   const m4 = H.meta(M("s", "contexte", { source: "" }), "2026-10-10");
-  assert.match(sp(m4.texte), /^retenu par l'agent le /);
+  assert.match(sp(m4.texte), /^retenu par Claude le /);
   const m5 = H.meta(M("s", "contexte", { majLe: "2026-10-08T09:00:00.000Z" }), "2026-10-10");
   assert.match(sp(m5.texte), /modifié le 8 oct\. 2026/);
 });

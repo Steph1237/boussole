@@ -6,8 +6,9 @@
 //   dist/compte.html, dist/oauth/consent.html, dist/legal/*.html  copiés tels quels s'ils existent
 // Tous les chemins sont relatifs : GitHub Pages sert le site sous /boussole/.
 // `node build.mjs --dev` écrit dans dist-dev/ (même contenu, sortie séparée pour la prévisualisation).
+//   `--out=<dossier>` : sortie ailleurs (chemin relatif au dépôt, ou absolu).
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, copyFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -15,7 +16,7 @@ const WEB = join(ROOT, "web");
 const SRC = join(WEB, "src");
 const DEV = process.argv.includes("--dev");
 const outArg = process.argv.find(a => a.startsWith("--out="));
-const OUT = join(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist");
+const OUT = resolve(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist"); // resolve : un chemin absolu reste celui demandé, un chemin relatif part du dépôt
 
 // "actions" n'a plus de sous-vue (sa liste passe dans la boîte de réception d'Aujourd'hui) : son script reste chargé
 // pour window.Actions, son fragment n'est plus posé dans la coque.

@@ -91,7 +91,7 @@ function calcule(){
 const lienHtml=(l,cls)=>l?`<a class="${cls}" href="#${esc(l.route)}" data-goto="${esc(l.route)}">${esc(l.label)}</a>`:"";
 function render(){
   const lr=S.status&&S.status.veille&&S.status.veille.lastReport, t=lr?new Date(lr):null;
-  $("acVeille").textContent=t&&!isNaN(t)?"Veille : dernier rapport le "+t.toLocaleDateString("fr-FR",{day:"2-digit",month:"long"})+" — les signaux et opportunités déposés par ton Claude apparaîtront ici (bientôt).":"Veille : jamais lancée — ton Claude pourra déposer ici des signaux et opportunités (bientôt).";
+  $("acVeille").textContent=t&&!isNaN(t)?"Veille : dernier rapport le "+t.toLocaleDateString("fr-FR",{day:"2-digit",month:"long"})+" — les signaux et opportunités déposés par Claude apparaîtront ici (bientôt).":"Veille : jamais lancée — Claude pourra déposer ici des signaux et opportunités (bientôt).";
   const n={tout:items.length,urgent:items.filter(FILTRES.urgent).length,surveiller:items.filter(FILTRES.surveiller).length,pistes:items.filter(FILTRES.pistes).length};
   root.querySelectorAll("[data-ac-filtre]").forEach(b=>{const k=b.dataset.acFiltre; b.setAttribute("aria-pressed",String(k===filtre)); b.querySelector(".ac-n").textContent=n[k]?String(n[k]):"";});
   const u=urgents(items);
