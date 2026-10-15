@@ -23,7 +23,6 @@
 #view-aujourdhui .aj-boite .ui-voirplus{gap:0}
 #view-aujourdhui .aj-boite .ui-voirplus-liste{gap:0}
 #view-aujourdhui .aj-it{border-top:1px solid var(--line);padding-block:var(--sp-3);padding-left:var(--card-pad);padding-right:var(--card-pad)}
-#view-aujourdhui .aj-sep{display:inline-block;width:.2em;text-align:center;overflow:hidden}
 #view-aujourdhui .aj-pic{border-radius:var(--r-ctl)}
 #view-aujourdhui .aj-it[data-type="proposition"] .aj-pic,#view-aujourdhui .aj-it[data-type="routine"] .aj-pic{background:var(--brand-soft);color:var(--brand)}
 #view-aujourdhui .aj-ico{width:18px;height:18px}

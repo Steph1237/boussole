@@ -980,7 +980,7 @@ test("cartes : anneaux (chiffre en texte HTML centré, unité plus petite), obje
   assert.doesNotMatch(ech, /À venir|ui-badge/, "plus de puce « À venir » redondante");
   const net = carte("net");
   assert.doesNotMatch(net, /data-aj-count/, "plus de chiffre qui défile");
-  assert.match(net, /<span class="aj-k-val num">\d{1,3}(?:<span class="aj-sep">\u202f<\/span>\d{3})*\u00a0€<\/span>/, "valeur Fmt.fmtEUR en chiffres tabulaires, séparateur de milliers élargi à l'écran");
+  assert.match(net, /<span class="aj-k-val num">\d{1,3}(?:\u202f\d{3})*\u00a0€<\/span>/, "valeur Fmt.fmtEUR en chiffres tabulaires, séparateur de milliers élargi par la police « Boussole Sep » du thème (plus d'astuce locale)");
   assert.match(net, /<svg class="aj-spark"/, "mini-courbe");
   assert.match(net, /class="ui-tendance pos"><span class="ui-tendance-fleche" aria-hidden="true">▲<\/span><span class="ui-sr">En hausse : <\/span>\+[\d\u202f\u00a0 ]+€ · \+[\d,]+\u00a0%<\/span><span class="aj-k-per">sur 1 an<\/span>/, "variation Fmt.fmtDelta : signe, flèche, période en muted");
   // anneau à 100 % : chiffre à 3 chiffres → classe « long » (taille réduite, tient dans l'anneau)
@@ -1105,6 +1105,7 @@ test("vue : lectures en échec ou absentes — la page se dessine quand même (l
 test("lien profond : #aujourdhui?graphe=plein-ecran (App.parametres) demande l'ouverture du graphe en grand, une fois", () => {
   assert.match(js, /if \(p && p\.graphe === "plein-ecran"\) pleinDemande = true;/);
   assert.match(js, /pleinEcranQuandPret\(\)/);
+  assert.doesNotMatch(js + css, /aj-sep/, "l'espacement des milliers est réglé par la police du thème, plus par une astuce locale");
 });
 
 test("vue : les anneaux se tracent à la première apparition seulement, jamais avec prefers-reduced-motion ; aucun chiffre ne défile", () => {

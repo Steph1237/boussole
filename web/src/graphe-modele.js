@@ -161,7 +161,7 @@
       capacite: { base: resultat.capacite_base, par_periode: resultat.capacite_par_periode }, capacite_source: resultat.capacite_source, capacite_periode: resultat.capacite_periode,
       phrase: resultat.phrase, decomposition_phrase: resultat.decomposition_phrase, decomposition: resultat.decomposition, garde_fous: resultat.garde_fous,
       evenements_pris_en_compte: resultat.evenements_pris_en_compte, question_evenements: resultat.question_evenements, hypotheses: resultat.hypotheses, couverture: resultat.couverture,
-      avertissements: avert, a_completer: resultat.a_completer, retro: resultat.retro, version_modele: resultat.version_modele, graine: resultat.graine, chemins: resultat.chemins,
+      avertissements: avert, a_completer: resultat.a_completer, retro: resultat.retro, retro_raison: resultat.retro_raison, version_modele: resultat.version_modele, graine: resultat.graine, chemins: resultat.chemins,
       plan: x.plan || null, ajust: a });
   }
   function crisesDisponibles(deps) {

@@ -718,8 +718,12 @@
     h += '<p class="gp-sh-note">Couverture des données : ' + (fini(B.couverture) ? Math.round(B.couverture * 100) + " %" : "inconnue") + (fini(B.couverture) && B.couverture < 0.6 ? " (la projection reste provisoire)" : "") + ".</p>";
     if (manque.length) h += '<ul class="gp-liste">' + manque.map(x => li(esc(x.titre) + " : " + esc(x.effet) + (x.phrase_claude && o.claude ? " " + o.claude(x.phrase_claude, "Compléter avec Claude") : ""))).join("") + "</ul>";
     else h += '<p class="gp-sh-note">Rien d\'important ne manque.</p>';
-    tab(B.avertissements).forEach(a => { h += '<p class="gp-sh-note gp-av">' + esc(a) + "</p>"; });
-    if (B.retro) h += '<h3 class="gp-sec-t">Rétro-contrôle</h3><p class="gp-sh-note">' + (B.retro.affichable ? "Sur " + esc(String(B.retro.n)) + " dates de départ passées, le patrimoine réel est resté dans la bande 8 chances sur 10 " + esc(Math.round(B.retro.taux_p10_p90 * 100) + " %") + " du temps." : "Pas assez de dates de départ pour juger la fiabilité de la bande.") + "</p>";
+    if (tab(B.avertissements).length) h += '<h3 class="gp-sec-t">Hypothèses prises par défaut</h3><ul class="gp-liste gp-av">' + B.avertissements.map(a => li(esc(a))).join("") + "</ul>";
+    h += '<h3 class="gp-sec-t">Rétro-contrôle</h3>';
+    if (B.retro && B.retro.phrase) {
+      h += '<p class="gp-sh-note">' + esc(B.retro.phrase) + "</p>";
+      if (tab(B.retro.limites).length) h += '<ul class="gp-liste">' + B.retro.limites.map(l => li(esc(l))).join("") + "</ul>";
+    } else h += '<p class="gp-sh-note">' + esc(B.retro_raison || "Pas encore assez d'historique pour vérifier la projection sur le passé.") + "</p>";
     h += '<h3 class="gp-sec-t">Limites</h3><ul class="gp-liste">' +
       li("Le passé reconstitué suppose que tes lignes n'ont pas changé sans transaction ; un achat non enregistré le fausse.") +
       li("Aucun modèle des taux d'intérêt, de l'inflation ou de ta carrière au-delà de ce que tu as renseigné : seuls tes événements de vie sont pris en compte.") +

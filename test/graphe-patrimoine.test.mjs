@@ -311,6 +311,12 @@ test("« Comment c'est calculé » : méthode, passé reconstitué, base de l'é
   assert.match(h, /Inflation supposée : <strong>2 %<\/strong>/); assert.match(h, /vérifié le 25 sept\. 2026/);
   assert.match(h, /Prix de revient de « PER » : sans lui, l&#39;impôt à la sortie est sous-estimé <a class="ui-claude">Compléter avec Claude<\/a>/);
   assert.match(h, /Couverture des données : 80 %/);
+  assert.match(h, /Rétro-contrôle<\/h3><p class="gp-sh-note">Pas encore assez d&#39;historique/, "sans rétro-contrôle : la raison honnête, jamais un chiffre");
+  const r = donnees(); r.retro = { n: 30, phrase: "Sur 30 dates de départ passées, le patrimoine réel est resté 22 fois dans la bande 8 chances sur 10.", limites: ["Les périodes de 12 mois se chevauchent : c'est indicatif."], affichable: true }; r.avertissements = ["Prêt auto : assurance du crédit inconnue, supposée comprise dans la mensualité"];
+  const hr = G.calculHtml(G.normaliser(r), {});
+  assert.match(hr, /Sur 30 dates de départ passées/); assert.match(hr, /se chevauchent/);
+  assert.match(hr, /Hypothèses prises par défaut<\/h3><ul class="gp-liste gp-av"><li>Prêt auto : assurance du crédit inconnue/, "un avertissement de donnée est une hypothèse, pas une alarme");
+  assert.match(G.calculHtml(G.normaliser(Object.assign(donnees(), { retro_raison: "Aucune photo du patrimoine avec sa composition." })), {}), /Aucune photo du patrimoine avec sa composition\./);
   assert.match(h, /euros d'aujourd'hui/); assert.match(G.calculHtml(G.normaliser(Object.assign(donnees(), { euros: "courants" })), {}), /euros courants/);
   const hostile = donnees(); hostile.hypotheses[0].libelle = "<script>x</script>"; hostile.passe.drapeaux.viaTransactions = ["<b>y</b>"];
   assert.doesNotMatch(G.calculHtml(G.normaliser(hostile), {}), /<script>|<b>y<\/b>/);

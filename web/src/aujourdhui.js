@@ -562,7 +562,7 @@
     const sens = attente || v == null || n.vide ? null : Math.round(v) > 0 ? "hausse" : Math.round(v) < 0 ? "baisse" : "stable";
     const sous1 = n.vide ? "Lance ton bilan avec Claude" : attente ? "" : v == null ? "Première photo cette nuit" : "";
     const c1 = carteBtn("net", "aj-k-net", "Patrimoine net : " + (n.vide ? "pas encore de données" : eur(n.valeur) + (attente ? ", variation en cours de calcul" : sens ? ", " + { hausse: "en hausse de ", baisse: "en baisse de ", stable: "stable, " }[sens] + (sens === "stable" ? "" : eur(Math.abs(v))) + " " + periodeTxt(periode) : "")), "Patrimoine net",
-      '<span class="aj-k-val num">' + (n.vide ? "—" : esc(eur(n.valeur)).replace(/\u202f/g, '<span class="aj-sep">\u202f</span>')) + "</span>" +
+      '<span class="aj-k-val num">' + (n.vide ? "—" : esc(eur(n.valeur))) + "</span>" +
       '<span class="aj-k-pied">' + (attente ? '<span class="ui-skel" aria-hidden="true"></span>' : sens ? deltaHtml(v, n.variationPct, periode) : "") + (sous1 ? '<span class="aj-k-sous">' + esc(sous1) + "</span>" : "") + "</span>" +
       (n.vide || attente ? "" : '<span class="aj-k-courbe">' + spark(n.courbe) + "</span>"));
     // 2. Bonnes pratiques : anneau (note sur 100, unité sous le chiffre), puce de statut, une ligne

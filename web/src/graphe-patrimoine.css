@@ -240,7 +240,6 @@
 .gp-liste{margin:var(--sp-1) 0;padding-left:18px;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
 .gp-liste li{margin:3px 0}
 .gp-liste strong{color:var(--ink)}
-.gp-av{color:var(--st-watch)}
 .gp-lev{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);width:100%;min-height:52px;padding:8px 12px;margin-top:var(--sp-2);border:1px solid var(--line);border-radius:12px;font:400 var(--t-small)/var(--lh-small) var(--f-body)}
 .gp-lev span{display:flex;flex-direction:column}
 .gp-lev small{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
