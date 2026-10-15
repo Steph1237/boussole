@@ -151,32 +151,12 @@ describe("fusionner : l'observé gagne, reconstitué seulement avant la premièr
   });
 });
 
-describe("projeter : cône pessimiste / central / optimiste (moteur Plan, versements compris)", () => {
-  const P = [{ id: "a", owner: "p1", bloc: "Monde", mode: "manual", value: 10000, status: "actif" }, { id: "b", owner: "p1", bloc: "Épargne", mode: "manual", value: 2000, status: "actif" }];
-  test("un point par mois depuis aujourd'hui ; financier du moteur + horsFin ; l'ordre pessimiste ≤ central ≤ optimiste", () => {
-    const c = H.projeter({ today: T, positions: P, scope: "foyer", versementMensuel: 150, annees: 5, horsFin: 30000, Plan });
-    const ref = Plan.projection({ positions: P, scope: "foyer", versementMensuel: 150, annees: 5, mensuel: true });
-    assert.equal(c.points.length, 61);
-    assert.equal(c.points[0].date, T);
-    assert.equal(c.points[0].central, 12000 + 30000);
-    assert.equal(c.points[60].date, "2031-10-14");
-    assert.equal(c.points[60].central, ref.mensuel.central[60] + 30000);
-    assert.equal(c.points[12].optimiste, ref.mensuel.optimiste[12] + 30000);
-    assert.ok(c.points.every(p => p.pessimiste <= p.central && p.central <= p.optimiste));
-    assert.equal(c.versement, 150);
-    assert.equal(c.annees, 5);
-  });
-  test("fin de mois : le 31 janvier + 1 mois = 28 (ou 29) février, jamais un débordement", () => {
-    const c = H.projeter({ today: "2027-01-31", positions: P, scope: "foyer", versementMensuel: 0, annees: 1, Plan });
-    assert.equal(c.points[1].date, "2027-02-28");
-    assert.equal(c.points[2].date, "2027-03-31");
-    assert.equal(c.points[12].date, "2028-01-31");
-  });
-  test("horizon borné (1 à 40 ans) ; versement négatif ou absurde → 0 ; sans moteur : cône vide", () => {
-    assert.equal(H.projeter({ today: T, positions: P, annees: 99, Plan }).annees, 40);
-    assert.equal(H.projeter({ today: T, positions: P, annees: 0, Plan }).annees, 1);
-    assert.equal(H.projeter({ today: T, positions: P, annees: 1, versementMensuel: -5, Plan }).versement, 0);
-    assert.deepEqual(H.projeter({ today: T, positions: P, annees: 1, Plan: null }).points, []);
+describe("projeter : supprimé (un seul moteur : Projection)", () => {
+  test("Historique n'expose plus de cône de projection", () => assert.equal(H.projeter, undefined));
+  test("plusMois : fin de mois, le 31 janvier + 1 mois = 28 (ou 29) février, jamais un débordement", () => {
+    assert.equal(H.plusMois("2027-01-31", 1), "2027-02-28");
+    assert.equal(H.plusMois("2027-01-31", 2), "2027-03-31");
+    assert.equal(H.plusMois("2027-01-31", 12), "2028-01-31");
   });
 });
 

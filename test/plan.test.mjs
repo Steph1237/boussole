@@ -15,13 +15,9 @@ function simule(deja, versement, mois, tauxAnnuel) {
 const pos = (bloc, value, extra) => ({ owner: "p1", bloc, mode: "manual", value, status: "actif", ...extra });
 
 describe("constantes", () => {
-  test("rendements par poche (central / pessimiste / optimiste)", () => {
-    assert.deepEqual(Plan.RENDEMENTS.Monde, { central: 6, pessimiste: 3, optimiste: 8.5 });
-    assert.deepEqual(Plan.RENDEMENTS["Nasdaq 2x"], { central: 9, pessimiste: -2, optimiste: 16 });
-    assert.deepEqual(Plan.RENDEMENTS.Crypto, { central: 5, pessimiste: -20, optimiste: 25 });
-    assert.deepEqual(Plan.RENDEMENTS["Épargne"], { central: 2.4, pessimiste: 1.7, optimiste: 3 });
-    assert.deepEqual(Plan.RENDEMENTS._autre, { central: 4, pessimiste: 1.5, optimiste: 6 });
-    assert.equal(Object.keys(Plan.RENDEMENTS).filter(k => k !== "Convictions").length, 11);
+  test("la projection et les rendements par poche ont disparu (un seul moteur : Projection)", () => {
+    assert.equal(Plan.projection, undefined);
+    assert.equal(Plan.RENDEMENTS, undefined);
   });
   test("repères patrimoine net / revenus annuels par tranche d'âge", () => {
     assert.deepEqual(Plan.REPERES_AGE, { u30: 0.5, a30: 1, a40: 3, a50: 6, a60: 8, a70: 10 });
@@ -237,63 +233,6 @@ describe("repartirEpargne", () => {
   test("un objectif déjà atteint ne reçoit rien, le surplus va au dernier objectif en cours", () => {
     const r = Plan.repartirEpargne([...O, { id: "D", cible: 100, deja: 500, date_cible: "2029-01-01", priorite: 3 }], 2000, T);
     assert.deepEqual(r, { B: 500, C: 400, A: 1100, D: 0 });
-  });
-});
-
-describe("projection", () => {
-  const T = "2026-10-09";
-  test("une poche, sans versement : intérêts composés aux trois taux", () => {
-    const p = Plan.projection({ positions: [pos("Monde", 10000)], scope: "foyer", versementMensuel: 0, annees: 10, today: T });
-    assert.deepEqual(p.annees, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    assert.equal(p.central[0], 10000);
-    assert.equal(p.central[10], Math.round(10000 * 1.06 ** 10));
-    assert.equal(p.pessimiste[10], Math.round(10000 * 1.03 ** 10));
-    assert.equal(p.optimiste[10], Math.round(10000 * 1.085 ** 10));
-  });
-  test("versements mensuels capitalisés comme valeurFuture", () => {
-    const p = Plan.projection({ positions: [pos("Monde", 10000)], scope: "foyer", versementMensuel: 100, annees: 5, today: T });
-    assert.equal(p.central[5], Math.round(simule(10000, 100, 60, 6)));
-    assert.equal(p.pessimiste[3], Math.round(simule(10000, 100, 36, 3)));
-  });
-  test("versement réparti au prorata des poches, chacune à son taux", () => {
-    const P = [pos("Monde", 7500), pos("Épargne", 2500)];
-    const p = Plan.projection({ positions: P, scope: "foyer", versementMensuel: 100, annees: 8, today: T });
-    assert.equal(p.central[8], Math.round(simule(7500, 75, 96, 6) + simule(2500, 25, 96, 2.4)));
-    assert.equal(p.parBloc.Monde.capital, 7500);
-    near(p.parBloc.Monde.poids, 0.75);
-    assert.equal(p.parBloc["Épargne"].central[8], Math.round(simule(2500, 25, 96, 2.4)));
-  });
-  test("sans position : tout le versement en « autre » ; périmètre et statuts respectés ; 30 ans par défaut", () => {
-    const vide = Plan.projection({ positions: [], scope: "foyer", versementMensuel: 100, today: T });
-    assert.equal(vide.annees.length, 31);
-    assert.equal(vide.central[1], Math.round(simule(0, 100, 12, 4)));
-    const P = [pos("Monde", 10000), pos("SCPI", 5000, { owner: "p2" }), pos("Crypto", 9000, { status: "à recevoir" })];
-    const p1 = Plan.projection({ positions: P, scope: "p1", versementMensuel: 0, annees: 1, today: T });
-    assert.equal(p1.central[0], 10000);
-    assert.deepEqual(Object.keys(p1.parBloc), ["Monde"]);
-  });
-  test("rendements personnalisés et poche inconnue → taux « autre »", () => {
-    const R = { ...Plan.RENDEMENTS, Monde: { central: 0, pessimiste: 0, optimiste: 0 } };
-    const p = Plan.projection({ positions: [pos("Monde", 1000), pos("Bizarre", 1000)], scope: "foyer", versementMensuel: 0, annees: 2, rendements: R, today: T });
-    assert.equal(p.central[2], Math.round(1000 + 1000 * 1.04 ** 2));
-  });
-});
-
-describe("projection : pas mensuel (option mensuel)", () => {
-  const T = "2026-10-09";
-  test("absent par défaut ; avec mensuel : une valeur par mois et par scénario, alignée sur les points annuels", () => {
-    const P = [pos("Monde", 7500), pos("Épargne", 2500)];
-    const sans = Plan.projection({ positions: P, scope: "foyer", versementMensuel: 100, annees: 3, today: T });
-    assert.equal(sans.mensuel, undefined, "résultat inchangé sans l'option");
-    const p = Plan.projection({ positions: P, scope: "foyer", versementMensuel: 100, annees: 3, mensuel: true, today: T });
-    for (const s of ["central", "pessimiste", "optimiste"]) {
-      assert.equal(p.mensuel[s].length, 3 * 12 + 1, s);
-      assert.equal(p.mensuel[s][0], 10000, s + " : départ");
-      for (const a of [0, 1, 2, 3]) assert.ok(Math.abs(p.mensuel[s][a * 12] - p[s][a]) <= 1, s + " : mois " + a * 12 + " = année " + a);
-    }
-    assert.equal(p.mensuel.central[6], Math.round(simule(7500, 75, 6, 6) + simule(2500, 25, 6, 2.4)));
-    assert.deepEqual(p.annees, sans.annees);
-    assert.deepEqual(p.central, sans.central);
   });
 });
 

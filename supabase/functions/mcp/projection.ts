@@ -415,8 +415,9 @@ export async function probabilitesObjectifs(db: any, must: any, auj: string, ban
 export function resumeComparaison(c: any, nomA: string, nomB: string) {
   const ecarts = c.mois.map((m: string, i: number) => ({ date: m, p10: r0(c.ecarts.p10[i]), p50: r0(c.ecarts.p50[i]), p90: r0(c.ecarts.p90[i]), probabilite_mieux: r2(c.probabilite_mieux[i]) }));
   const h = c.horizon;
-  const k = (x: number) => (Math.abs(x) >= 1000 ? Math.round(x / 1000) + " k€" : Math.round(x) + " €");
-  const sur10 = Math.round(h.probabilite_mieux * 10);
+  const k = (x: number) => (x < 0 ? "−" : "") + (Math.abs(x) >= 1000 ? Math.round(Math.abs(x) / 1000) + " k€" : Math.round(Math.abs(x)) + " €"); // signe « − » typographique
+  const n10 = Math.round(h.probabilite_mieux * 10);
+  const sur10 = h.probabilite_mieux >= 0.95 ? "plus de 9" : n10 <= 0 ? "moins de 1" : String(n10); // jamais « 10 cas sur 10 » : rien n'est certain
   const phrase = `À l'horizon, « ${nomB} » fait ${h.mediane_des_ecarts >= 0 ? "mieux" : "moins bien"} que « ${nomA} » de ${k(Math.abs(h.mediane_des_ecarts))} en médiane (de ${k(h.p10)} à ${k(h.p90)}), et fait mieux dans ${sur10} cas sur 10.`;
   return { version_modele: c.version_modele, graine: c.graine, chemins: c.chemins, vue: c.vue, euros: c.euros, a: nomA, b: nomB, ecarts_par_annee: ecarts,
     a_l_horizon: { mediane_des_ecarts: r0(h.mediane_des_ecarts), p10: r0(h.p10), p90: r0(h.p90), probabilite_mieux: r2(h.probabilite_mieux) },

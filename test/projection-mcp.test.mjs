@@ -503,7 +503,8 @@ test("comparer_variantes : écart par année, probabilité de faire mieux et phr
   assert.equal(r.a_l_horizon.probabilite_mieux, Math.round(c.horizon.probabilite_mieux * 100) / 100);
   assert.equal(r.ecarts_par_annee.length, c.mois.length);
   assert.equal(r.ecarts_par_annee[r.ecarts_par_annee.length - 1].p50, Math.round(c.ecarts.p50[c.mois.length - 1]));
-  assert.match(r.phrase, /« 2ᵉ enfant » fait (moins bien|mieux) que « situation actuelle » de .* en médiane \(de .* à .*\), et fait mieux dans \d+ cas sur 10\./);
+  assert.match(r.phrase, /« 2ᵉ enfant » fait (moins bien|mieux) que « situation actuelle » de .* en médiane \(de .* à .*\), et fait mieux dans (?:\d+|plus de 9|moins de 1) cas sur 10\./);
+  assert.doesNotMatch(r.phrase, /-\d/, "signe moins typographique");
   assert.ok(r.evenements_b.some(x => /Enfant 2/.test(x)) && !r.evenements_a.some(x => /Enfant 2/.test(x)));
   assert.equal(r.version_modele, App.versionModele);
   assert.ok(taille(r) < 20000);
@@ -634,4 +635,14 @@ test("probabilitesObjectifs : une échéance au-delà de 25 ans ne fixe pas l'ho
   const s = App.simuler(App.preparer(data, { horizon_ans: 5, perimetre: "foyer", vue: "financier", euros: "constants" }), {});
   assert.equal(m.get("obj-proche").probabilite, Math.round(s.objectifs[0].probabilite * 100) / 100, "horizon de 5 ans (et non 25) : mêmes tirages que l'app");
   assert.match(srcIndex, /Promise\.all\(\[loadPlan\(true\), probabilitesObjectifs\(db, must, ref, lireBanqueCalcul\)\]\)/);
+});
+
+test("comparer_variantes : la phrase ne dit jamais « 10 cas sur 10 » ni « 0 cas sur 10 »", { skip: SANS_STRIP }, () => {
+  const comp = p => ({ version_modele: "t", graine: 1, chemins: 10, vue: "net", euros: "constants", mois: ["2036-10"],
+    ecarts: { p10: [1000], p50: [5000], p90: [9000] }, probabilite_mieux: [p], chaque_chemin_superieur_ou_egal: [false],
+    horizon: { mediane_des_ecarts: 5000, p10: 1000, p90: 9000, probabilite_mieux: p } });
+  assert.match(PM.resumeComparaison(comp(1), "A", "B").phrase, /fait mieux dans plus de 9 cas sur 10\./);
+  assert.match(PM.resumeComparaison(comp(0.97), "A", "B").phrase, /plus de 9 cas sur 10/);
+  assert.match(PM.resumeComparaison(comp(0.02), "A", "B").phrase, /fait mieux dans moins de 1 cas sur 10\./);
+  assert.match(PM.resumeComparaison(comp(0.7), "A", "B").phrase, /fait mieux dans 7 cas sur 10\./);
 });
