@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
-import { PlanGen } from "./helpers/moteur-gen.mjs";
+import { PlanGen, MoteurGen } from "./helpers/moteur-gen.mjs";
 
 const require = createRequire(import.meta.url);
 const path = rel => fileURLToPath(new URL("../" + rel, import.meta.url));
@@ -63,7 +63,7 @@ const chargerRoutines = (globaux = {}) => {
   const M = chargerModule(srcMemoire), S = chargerModule(srcSavoir), B = chargerModule(srcBanque, globaux);
   const Jn = chargerModule(srcJournal, { estSensible: M.estSensible, ...globaux }), Cal = chargerModule(srcCalendrier, globaux);
   return chargerModule(srcRoutines, { estSensible: M.estSensible, etatFige: Jn.etatFige, journalDeSession: Jn.journalDeSession,
-    lireConsentement: Jn.lireConsentement, JOURNAL: Jn.JOURNAL, REFUS_SENSIBLE: Jn.REFUS_SENSIBLE, nouveautes: S.nouveautes, banqueDeRoutine: B.banqueDeRoutine, echeancesDeRevue: Cal.echeancesDeRevue, ...globaux });
+    lireConsentement: Jn.lireConsentement, Calc: MoteurGen.Calc, JOURNAL: Jn.JOURNAL, REFUS_SENSIBLE: Jn.REFUS_SENSIBLE, nouveautes: S.nouveautes, banqueDeRoutine: B.banqueDeRoutine, echeancesDeRevue: Cal.echeancesDeRevue, ...globaux });
 };
 const calculFaux = (surcharge = {}) => ({
   charger: async () => ({ donnees: { positions: [], lignes: [] }, objectifs: [], risque: null, classes: null }),
@@ -704,6 +704,20 @@ test("argentQuiDort : même calcul que Calc.argentQuiDort (poches et enveloppes 
   // ligne de marché : valeur au cours (prix forcé, sinon cours de l'instrument)
   const marche = [{ ...POS_DORT[0], mode: "market", qty: 10, value: null, instrument: { price: 600 } }, POS_DORT[1]];
   assert.equal(R.argentQuiDort({ positions: marche, snapshots: cas[1].snapshots }, AUJ, dep).solde, 6000);
+});
+
+test("argentQuiDort : photos de production (by_bloc par personne, by_envelope à plat) = mêmes résultats que les photos à plat et que Calc.argentQuiDort", { skip: SANS_STRIP }, () => {
+  const Calc = require("../web/src/calc.js");
+  const R = chargerRoutines();
+  const AUJ = "2026-10-12", dep = { montant: 2000, source: "prevu" }, budget = { lignes: [{ type: "depense", montant: 2000 }] };
+  // la poche « Comptes courants » se partage entre les deux personnes ; l'épargne aussi
+  const nuit = PHOTOS_DORT.map(p => ({ ...p, by_bloc: Object.fromEntries(["p1", "p2"].map(o => [o, Object.fromEntries(Object.entries(p.by_bloc).map(([b, v]) => [b, o === "p1" ? Math.round(v * 0.75) : v - Math.round(v * 0.75)]))])) }));
+  assert.ok(nuit.every(p => p.by_bloc.p1 && p.by_bloc.p2 && !("Comptes courants" in p.by_bloc)), "forme de production");
+  const attendu = { montant: 1500, mois: 2, solde: 4500, seuil: 3000, depenses: 2000, source: "prevu" };
+  assert.deepEqual(J(R.argentQuiDort({ positions: POS_DORT, snapshots: PHOTOS_DORT }, AUJ, dep)), attendu, "à plat");
+  assert.deepEqual(J(R.argentQuiDort({ positions: POS_DORT, snapshots: nuit }, AUJ, dep)), attendu, "par personne");
+  const app = nuit.map(p => ({ date: p.date, byBloc: p.by_bloc, byEnvelope: p.by_envelope }));
+  assert.deepEqual(J(Calc.argentQuiDort({ positions: POS_DORT, snapshots: app, budget, profil: {}, config: {} }, AUJ)), attendu, "l'app lit la même photo");
 });
 
 test("depensesReference : dépenses réelles (budget_reel) d'abord, sinon budget prévu (lignes + mensualités), sinon matelas en mois", { skip: SANS_STRIP }, () => {

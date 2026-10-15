@@ -330,6 +330,49 @@ test("argent qui dort : mesuré sur les seules lignes des comptes courants (poch
     "photos sans poche ni enveloppe courante : rien de mesurable");
 });
 
+/* ---------- blocsPhoto : une seule lecture de snapshots.by_bloc (forme de production par personne, forme à plat) ---------- */
+// La fonction nocturne take_snapshots (migration 0003) écrit by_bloc par personne : { p1: { poche: valeur }, p2: { … } }.
+const PHOTO_NUIT = { date: "2026-09-30", foyer: 9000, p1: 6000, p2: 3000, byBloc: { p1: { Monde: 4500, "Comptes courants": 1500 }, p2: { "Épargne": 2500, Monde: 500 } } };
+test("blocsPhoto : forme de production par personne → foyer = somme des personnes, p1 / p2 = la leur", () => {
+  assert.deepEqual(Calc.blocsPhoto(PHOTO_NUIT, "foyer"), { Monde: 5000, "Comptes courants": 1500, "Épargne": 2500 });
+  assert.deepEqual(Calc.blocsPhoto(PHOTO_NUIT, "p1"), { Monde: 4500, "Comptes courants": 1500 });
+  assert.deepEqual(Calc.blocsPhoto(PHOTO_NUIT, "p2"), { "Épargne": 2500, Monde: 500 });
+  assert.deepEqual(Calc.blocsPhoto(PHOTO_NUIT), Calc.blocsPhoto(PHOTO_NUIT, "foyer"), "périmètre par défaut : foyer");
+  // ligne SQL brute (snake_case)
+  assert.deepEqual(Calc.blocsPhoto({ date: "2026-09-30", total: 9000, by_bloc: PHOTO_NUIT.byBloc }, "foyer"), { Monde: 5000, "Comptes courants": 1500, "Épargne": 2500 });
+  // une personne sans ligne : { p1: {…}, p2: {} } (cas réel d'un foyer d'une seule personne)
+  assert.deepEqual(Calc.blocsPhoto({ byBloc: { p1: { Monde: 10 }, p2: {} } }, "foyer"), { Monde: 10 });
+  assert.deepEqual(Calc.blocsPhoto({ byBloc: { p1: { Monde: 10 }, p2: {} } }, "p2"), {});
+  // une clé « commun » éventuelle compte pour le foyer, pas pour une personne
+  assert.deepEqual(Calc.blocsPhoto({ byBloc: { p1: { Monde: 10 }, commun: { Monde: 5 } } }, "foyer"), { Monde: 15 });
+  assert.deepEqual(Calc.blocsPhoto({ byBloc: { p1: { Monde: 10 }, commun: { Monde: 5 } } }, "p1"), { Monde: 10 });
+});
+test("blocsPhoto : forme à plat (ancienne démo, lignes migrées) → foyer seulement ; absent ou illisible → null", () => {
+  const plat = { date: "2026-09-30", byBloc: { Monde: 5000, "Épargne": 2500 } };
+  assert.deepEqual(Calc.blocsPhoto(plat, "foyer"), { Monde: 5000, "Épargne": 2500 });
+  assert.equal(Calc.blocsPhoto(plat, "p1"), null, "un relevé à plat ne se découpe pas par personne");
+  assert.deepEqual(Calc.blocsPhoto({ by_bloc: { Monde: 1 } }), { Monde: 1 });
+  for (const v of [null, undefined, {}, { byBloc: null }, { byBloc: {} }, { byBloc: "x" }, { byBloc: [] }]) assert.equal(Calc.blocsPhoto(v, "foyer"), null, JSON.stringify(v));
+  // valeurs non numériques écartées ; la copie ne modifie pas la photo
+  const sale = { byBloc: { p1: { Monde: "12", Crypto: null, Or: "abc" } } };
+  assert.deepEqual(Calc.blocsPhoto(sale, "foyer"), { Monde: 12 });
+  assert.deepEqual(sale, { byBloc: { p1: { Monde: "12", Crypto: null, Or: "abc" } } });
+});
+test("argent qui dort : photos de production (by_bloc par personne) ou à plat donnent le même résultat", () => {
+  const budget = { lignes: [{ type: "depense", montant: 2000 }] };   // seuil 3 000 €
+  const positions = [L("Banque", "Comptes courants", 6000), L("Livret A", "Épargne", 9000)];
+  const plat = (date, banque) => ({ date, byBloc: { "Comptes courants": banque, "Épargne": 9000 } });
+  // production : le compte courant est à p1, l'épargne se répartit entre p1 et p2 ; le compte courant d'une personne s'ajoute à celui de l'autre
+  const nuit = (date, banque) => ({ date, byBloc: { p1: { "Comptes courants": banque - 1000, "Épargne": 4000 }, p2: { "Comptes courants": 1000, "Épargne": 5000 } } });
+  const S = (photo, extra) => Object.assign({ positions, budget, profil: {}, config: {}, snapshots: [photo("2026-08-31", 5000), photo("2026-09-15", 9000), photo("2026-09-30", 4500), photo("2026-10-11", 100)] }, extra || {});
+  const attendu = { montant: 1500, mois: 2, solde: 4500, seuil: 3000, depenses: 2000, source: "prevu" };
+  assert.deepEqual(Calc.argentQuiDort(S(plat), AUJ), attendu);
+  assert.deepEqual(Calc.argentQuiDort(S(nuit), AUJ), attendu, "forme de production : les poches courantes de p1 et p2 sont additionnées");
+  // la poche n'existe que chez une personne : elle est quand même vue
+  const seulP2 = d => ({ date: d, byBloc: { p1: { "Épargne": 100 }, p2: { "Comptes courants": 4500 } } });
+  assert.deepEqual(Calc.argentQuiDort(S(seulP2, { snapshots: [seulP2("2026-08-31"), seulP2("2026-09-30")] }), AUJ).solde, 4500);
+});
+
 /* ---------- doublons probables (cas type : ligne « PEA DUPONT » qui recopie le total du PEA) ---------- */
 /** Cas type (montants fictifs) : 13 lignes de titres + « Espèces PEA » (≈ 51 500 € en tout) et une ligne manuelle « PEA DUPONT » de 51 230,50 €. */
 function peaType() {

@@ -339,18 +339,16 @@
   }
 
   /** Historique compact pour le rétro-contrôle (spec § 6.9) : { points: [{ date, byBloc, net }], flux: [{ date, montant }] }.
-      snapshots : photos du patrimoine financier avec leur composition, forme de l'app ({ date, foyer, byBloc }) ou ligne SQL ({ date, total, by_bloc }) ;
+      snapshots : photos du patrimoine financier avec leur composition, forme de l'app ({ date, foyer, byBloc }) ou ligne SQL ({ date, total, by_bloc }), by_bloc par personne
+      (production) ou à plat : les poches du foyer sont lues par Calc.blocsPhoto ;
       on garde la dernière photo de chaque mois (les dates de départ sont des fins de mois ; les photos de la nuit se chevauchent). tx : transactions
       (forme de l'app ou ligne SQL) ; seuls les versements, versements programmés (entrées) et retraits (sorties) franchissent la frontière du portefeuille,
       un achat ou une vente reste interne (flux = montant du mouvement ; sans montant, le mouvement est ignoré). */
   function historiquePourRetro(snapshots, tx) {
     const parMois = new Map();
     liste(snapshots).forEach(r => {
-      const date = r && String(r.date || "").slice(0, 10), bb = r && (r.byBloc || r.by_bloc);
-      if (!O.estDate(date) || !bb || typeof bb !== "object") return;
-      const byBloc = {};
-      Object.keys(bb).forEach(k => { const v = +bb[k]; if (Number.isFinite(v)) byBloc[k] = v; });
-      if (!Object.keys(byBloc).length) return;
+      const date = r && String(r.date || "").slice(0, 10), byBloc = Calc.blocsPhoto(r, "foyer");
+      if (!O.estDate(date) || !byBloc || !Object.keys(byBloc).length) return;
       const net = Number.isFinite(+(r.foyer != null ? r.foyer : r.total)) ? +(r.foyer != null ? r.foyer : r.total) : sum(Object.values(byBloc), x => x);
       const k = date.slice(0, 7), cur = parMois.get(k);
       if (!cur || cur.date < date) parMois.set(k, { date, byBloc, net });

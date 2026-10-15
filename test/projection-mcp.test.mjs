@@ -368,7 +368,7 @@ function historiqueSql(mois) {
   let monde = 40000, obl = 10000;
   for (let k = 0; k <= mois; k++) {
     const fin = require("../web/src/projection-outils.js").ajouterMois("2023-09-30", k);
-    for (const date of [fin.slice(0, 8) + "15", fin]) snaps.push({ date, total: monde + obl, by_bloc: { Monde: Math.round(monde), Obligations: Math.round(obl) } });
+    for (const date of [fin.slice(0, 8) + "15", fin]) snaps.push({ date, total: monde + obl, by_bloc: { p1: { Monde: Math.round(monde * 0.6), Obligations: Math.round(obl) }, p2: { Monde: Math.round(monde) - Math.round(monde * 0.6) } } }); // forme de production (take_snapshots) : par personne
     if (k > 0) tx.push({ date: fin, type: "versement", amount: 300 });
     monde = monde * (1 + rend[k % 12]) + 300; obl = obl * 1.003;
   }

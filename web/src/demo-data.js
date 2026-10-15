@@ -60,15 +60,17 @@
     P({ id: "prime-camille", name: "Prime annuelle", envelope: "À recevoir", owner: "p1", bloc: "Épargne", mode: "manual", value: 2500, valueDate: ago(0), status: "à recevoir", note: "Versée avec la paie de décembre." }), // non compté
   ];
 
+  // Photos de la nuit, dans la forme de production (take_snapshots, migration 0003) : byBloc PAR PERSONNE { p1: { poche: valeur }, p2: { … } }, byEnvelope à plat.
+  // La démo emprunte ainsi le même chemin de lecture que les vraies données (Calc.blocsPhoto) ; p1 + p2 = foyer, poche par poche.
   const snapshots = [
     { date: monthEnd(3), foyer: 90120, p1: 48900, p2: 41220, source: "nightly",
-      byBloc: { Monde: 23000, Europe: 8400, Convictions: 7800, Obligations: 18000, SCPI: 5300, "Épargne": 22300, "Comptes courants": 3000, Crypto: 2320 },
+      byBloc: { p1: { Monde: 17500, Europe: 6000, Convictions: 5780, "Épargne": 17300, Crypto: 2320 }, p2: { Monde: 5500, Europe: 2400, Convictions: 2020, Obligations: 18000, SCPI: 5300, "Épargne": 5000, "Comptes courants": 3000 } },
       byEnvelope: { "PEA Camille": 24100, "CTO Sam": 3900, "Assurance vie Sam": 23300, "Livrets Camille": 10800, "Livrets Sam": 11500, PER: 11200, Crypto: 2320, "Comptes courants": 3000 } },
     { date: monthEnd(2), foyer: 92340, p1: 50310, p2: 42030, source: "nightly",
-      byBloc: { Monde: 23600, Europe: 8700, Convictions: 8050, Obligations: 18100, SCPI: 5300, "Épargne": 22900, "Comptes courants": 3200, Crypto: 2490 },
+      byBloc: { p1: { Monde: 18000, Europe: 6250, Convictions: 5970, "Épargne": 17600, Crypto: 2490 }, p2: { Monde: 5600, Europe: 2450, Convictions: 2080, Obligations: 18100, SCPI: 5300, "Épargne": 5300, "Comptes courants": 3200 } },
       byEnvelope: { "PEA Camille": 24700, "CTO Sam": 4150, "Assurance vie Sam": 23400, "Livrets Camille": 11300, "Livrets Sam": 11700, PER: 11400, Crypto: 2490, "Comptes courants": 3200 } },
     { date: monthEnd(1), foyer: 94210, p1: 51380, p2: 42830, source: "nightly",
-      byBloc: { Monde: 24100, Europe: 8900, Convictions: 8200, Obligations: 18200, SCPI: 5300, "Épargne": 23700, "Comptes courants": 3250, Crypto: 2560 },
+      byBloc: { p1: { Monde: 18400, Europe: 6400, Convictions: 6070, "Épargne": 17950, Crypto: 2560 }, p2: { Monde: 5700, Europe: 2500, Convictions: 2130, Obligations: 18200, SCPI: 5300, "Épargne": 5750, "Comptes courants": 3250 } },
       byEnvelope: { "PEA Camille": 25200, "CTO Sam": 4300, "Assurance vie Sam": 23500, "Livrets Camille": 11800, "Livrets Sam": 11900, PER: 11700, Crypto: 2560, "Comptes courants": 3250 } },
   ];
 

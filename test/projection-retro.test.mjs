@@ -55,13 +55,16 @@ test("retroControle : rejeu depuis chaque photo passée avec les flux observés,
 /* ---------------------------------------------------------------- rétro-contrôle branché sur le résultat (champ retro) */
 const Dn = req("../web/src/projection-donnees.js");
 const Outils = req("../web/src/projection-outils.js");
-/** Photos nocturnes fictives (deux par mois : le 15 et la fin du mois) sur `mois` mois, et versements mensuels de 300 €. */
+const Calc = req("../web/src/calc.js");
+/** Photos nocturnes fictives (deux par mois : le 15 et la fin du mois) sur `mois` mois, et versements mensuels de 300 €.
+    by_bloc a la forme de production (take_snapshots, migration 0003) : par personne, { p1: { poche: valeur }, p2: { … } }. */
 function photosFictives(mois) {
   const snaps = [], tx = [], rend = [0.012, -0.008, 0.02, 0.005, -0.015, 0.01, 0.007, 0.018, -0.004, 0.011, 0.003, 0.009];
   let monde = 40000, obl = 10000;
   for (let k = 0; k <= mois; k++) {
     const fin = Outils.ajouterMois("2023-09-30", k), quinze = fin.slice(0, 8) + "15";
-    for (const date of [quinze, fin]) snaps.push({ date, foyer: monde + obl, p1: 0, p2: 0, byBloc: { Monde: Math.round(monde), Obligations: Math.round(obl) }, byEnvelope: {}, source: "nightly" });
+    for (const date of [quinze, fin]) snaps.push({ date, foyer: monde + obl, p1: Math.round(monde * 0.6) + Math.round(obl), p2: Math.round(monde) - Math.round(monde * 0.6), byEnvelope: {}, source: "nightly",
+      byBloc: { p1: { Monde: Math.round(monde * 0.6), Obligations: Math.round(obl) }, p2: { Monde: Math.round(monde) - Math.round(monde * 0.6) } } });
     if (k > 0) tx.push({ id: "t" + k, positionId: "p", date: fin, type: "versement", qty: null, price: null, amount: 300 });
     monde = monde * (1 + rend[k % 12]) + 300; obl = obl * 1.003;
   }
@@ -82,9 +85,26 @@ test("historiquePourRetro : une photo par mois (la dernière), formes de l'app e
   assert.deepEqual(h.flux, [{ date: "2026-02-03", montant: 300 }, { date: "2026-02-05", montant: 100 }, { date: "2026-02-10", montant: -50 }]);
   assert.deepEqual(Dn.historiquePourRetro(null, undefined), { points: [], flux: [] });
 });
+test("historiquePourRetro : by_bloc de production (par personne, p1 + p2) → poches du foyer à plat, comme la forme à plat de la démo", () => {
+  const nuit = { date: "2026-02-28", total: 120, p1: 70, p2: 50, by_bloc: { p1: { A: 40, B: 30 }, p2: { A: 30, C: 20 } } };
+  const app = { date: "2026-01-31", foyer: 110, byBloc: { p1: { A: 66 }, p2: { B: 44 } } };
+  const h = Dn.historiquePourRetro([app, nuit, { date: "2026-03-31", foyer: 1, byBloc: { p1: {}, p2: {} } }], []);
+  assert.deepEqual(h.points, [{ date: "2026-01-31", byBloc: { A: 66, B: 44 }, net: 110 }, { date: "2026-02-28", byBloc: { A: 70, B: 30, C: 20 }, net: 120 }]);
+  // sans total : le net est la somme des poches du foyer
+  assert.equal(Dn.historiquePourRetro([{ date: "2026-04-30", by_bloc: { p1: { A: 5 }, p2: { A: 7 } } }], []).points[0].net, 12);
+  // la photo de production et la photo à plat donnent le même rétro-contrôle
+  const plat = Dn.historiquePourRetro([{ date: "2026-02-28", total: 120, by_bloc: { A: 70, B: 30, C: 20 } }], []);
+  assert.deepEqual(Dn.historiquePourRetro([nuit], []), plat);
+});
+test("historiquePourRetro : sur les photos de production de photosFictives, les poches du rétro-contrôle sont Monde et Obligations (jamais p1 ou p2)", () => {
+  const { snaps } = photosFictives(36);
+  const h = Dn.historiquePourRetro(snaps, []);
+  assert.ok(h.points.length >= 36);
+  h.points.forEach(p => { assert.deepEqual(Object.keys(p.byBloc).sort(), ["Monde", "Obligations"]); assert.ok(p.byBloc.Monde > 0 && p.byBloc.Obligations > 0); });
+});
 test("retroControle : des photos rapprochées ne font qu'une date de départ par mois (même résultat avec deux photos par mois qu'avec une)", () => {
   const { snaps, tx } = photosFictives(36), d = entreeDe(cas("D-2"));
-  const brut = s => ({ points: s.map(x => ({ date: x.date, net: x.foyer, byBloc: x.byBloc })) });
+  const brut = s => ({ points: s.map(x => ({ date: x.date, net: x.foyer, byBloc: Calc.blocsPhoto(x, "foyer") })) });
   const flux = tx.map(t => ({ date: t.date, montant: t.amount }));
   const deux = P.retroControle(d, brut(snaps), { flux, chemins: 100 });
   const une = P.retroControle(d, brut(snaps.filter(x => x.date.slice(8) !== "15")), { flux, chemins: 100 });

@@ -84,6 +84,15 @@ test("démo : foyer de deux personnes, formes canoniques", async () => {
   assert.equal(S.snapshots.length, 3);
   S.snapshots.forEach(s => assert.deepEqual(Object.keys(s).sort(), ["byBloc", "byEnvelope", "date", "foyer", "p1", "p2", "source"]));
   S.snapshots.forEach(s => near(s.p1 + s.p2, s.foyer, "photo : p1 + p2 = foyer"));
+  // forme de production (take_snapshots) : byBloc par personne, byEnvelope à plat ; la démo passe par le même lecteur (Calc.blocsPhoto) que les vraies données
+  S.snapshots.forEach(s => {
+    assert.deepEqual(Object.keys(s.byBloc).sort(), ["p1", "p2"], "byBloc par personne, comme take_snapshots");
+    assert.ok(Object.values(s.byEnvelope).every(v => typeof v === "number"), "byEnvelope à plat");
+    ["p1", "p2"].forEach(o => near(Object.values(s.byBloc[o]).reduce((a, v) => a + v, 0), s[o], "poches de " + o + " = sa part"));
+    const foyer = Calc.blocsPhoto(s, "foyer");
+    near(Object.values(foyer).reduce((a, v) => a + v, 0), s.foyer, "poches du foyer = foyer");
+    assert.deepEqual(J(Calc.blocsPhoto(s, "p1")), J(s.byBloc.p1));
+  });
   assert.deepEqual(Object.keys(S.config).sort(), ["avis_impot", "cushion", "donations", "enveloppes_infos", "frais_enveloppes", "hypotheses", "milestones", "prets_infos", "projection", "recurring", "rules", "suivi", "targets", "todo"]);
   assert.deepEqual([J(S.config.avis_impot), Array.isArray(S.config.donations), typeof S.config.enveloppes_infos, typeof S.config.prets_infos], [{}, true, "object", "object"], "calendrier patrimonial (0029) : avis {}, donations [], infos d'enveloppes et de prêts");
   assert.deepEqual(J(S.config.frais_enveloppes), {}, "frais des contrats : objet vide par défaut (comme config.frais_enveloppes, 0026)");

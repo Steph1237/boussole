@@ -200,20 +200,11 @@
   /* ================================================================== depuis l'état du store */
   const NUM = x => (x != null && isFinite(+x) ? +x : 0);
   const estCourantBloc = (nom, classes) => { const C = CALC(); return !!(C && C.famille && C.famille({ bloc: nom, envelope: "" }, classes) === "courant"); };
-  /** Poches d'un relevé : { poche: montant } pour un périmètre. by_bloc est { p1: {…}, p2: {…} } (nuit) ou à plat (démo, foyer seulement). null si absent. */
+  /** Poches d'un relevé : { poche: montant } pour un périmètre, par l'unique lecteur de snapshots.by_bloc (Calc.blocsPhoto : { p1: {…}, p2: {…} } de la
+      nuit, ou à plat, foyer seulement). null si absent ou illisible. */
   function pochesDe(snap, scope) {
-    const bb = snap && (snap.byBloc || snap.by_bloc);
-    if (!bb || typeof bb !== "object") return null;
-    const vals = Object.values(bb);
-    if (!vals.length) return null;
-    const imbrique = vals.every(v => v && typeof v === "object");
-    const out = {};
-    const ajoute = m => Object.keys(m || {}).forEach(k => { out[k] = (out[k] || 0) + NUM(m[k]); });
-    if (imbrique) {
-      if (scope === "foyer") Object.keys(bb).forEach(o => ajoute(bb[o])); else ajoute(bb[scope]);
-    } else if (scope === "foyer") ajoute(bb);
-    else return null;
-    return out;
+    const C = CALC();
+    return C && C.blocsPhoto ? C.blocsPhoto(snap, scope) : null;
   }
   /** Relevés des placements, flux et allocations d'un état du store (S.snapshots, S.positions, S.tx, S.classes), pour un périmètre (foyer | p1 | p2).
       Valeur d'un relevé = valeur du périmètre − poches « comptes courants » ; point du jour = lignes vivantes hors comptes courants. flux : versements, versements programmés (entrées)

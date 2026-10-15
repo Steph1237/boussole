@@ -945,6 +945,30 @@ def("calc", function (module, exports, require) {
     return { epargne, courants, reserveMois: rm, depenses, reserve, courantsAuDela, total: epargne + courantsAuDela };
   }
 
+  /* ---------- poches d'une photo (snapshots.by_bloc) ---------- */
+  const objetSimple = v => !!v && typeof v === "object" && !Array.isArray(v);
+  const nombreOk = v => (typeof v === "number" || (typeof v === "string" && v.trim() !== "")) && isFinite(+v);
+  /** Poches d'une photo du patrimoine, à plat : { poche: valeur } pour un périmètre (foyer | p1 | p2). Lecteur UNIQUE de snapshots.by_bloc, utilisé par
+      l'app et par le connecteur (copies générées de ce module) : la fonction nocturne (take_snapshots, migration 0003) l'écrit PAR PERSONNE,
+      { p1: { poche: valeur }, p2: { … } } (forme de production) ; l'ancienne forme de la démo et des lignes migrées est à plat, { poche: valeur }.
+      Photo en forme de l'app ({ byBloc }) ou ligne SQL ({ by_bloc }). Foyer = somme de toutes les personnes (p1, p2, et « commun » s'il existe) ;
+      p1 / p2 = la leur ; une photo à plat ne se découpe pas par personne (null pour p1 / p2). Valeurs non numériques écartées ; la photo n'est
+      jamais modifiée. → objet (éventuellement vide) ou null si la photo n'a pas de poches lisibles. */
+  function blocsPhoto(photo, perimetre) {
+    const bb = photo && (photo.byBloc || photo.by_bloc), scope = perimetre || "foyer";
+    if (!objetSimple(bb)) return null;
+    const cles = Object.keys(bb);
+    if (!cles.length) return null;
+    const out = {};
+    const ajoute = m => Object.keys(m).forEach(k => { if (nombreOk(m[k])) out[k] = (out[k] || 0) + +m[k]; });
+    if (cles.every(k => objetSimple(bb[k]))) {
+      if (scope === "foyer") cles.forEach(o => ajoute(bb[o]));
+      else if (objetSimple(bb[scope])) ajoute(bb[scope]);
+    } else if (scope === "foyer") ajoute(bb);
+    else return null;
+    return out;
+  }
+
   /* ---------- argent qui dort (spec cp1 § 1) ---------- */
   const SEUIL_DORT = 1.5;
   const moisAvant = (m, k) => { const [y, mo] = m.split("-").map(Number), t = y * 12 + (mo - 1) - k; return Math.floor(t / 12) + "-" + String(t % 12 + 1).padStart(2, "0"); };
@@ -970,7 +994,7 @@ def("calc", function (module, exports, require) {
     const envs = [...new Set(courants.filter(p => !blocCourant(p) && p.envelope && !envsMelees.has(p.envelope)).map(p => p.envelope))];
     const mesurees = courants.filter(p => blocs.includes(p.bloc) || envs.includes(p.envelope));
     if (!mesurees.length) return null;
-    const parBloc = x => x && (x.byBloc || x.by_bloc), parEnv = x => x && (x.byEnvelope || x.by_envelope);
+    const parBloc = x => blocsPhoto(x, "foyer"), parEnv = x => x && (x.byEnvelope || x.by_envelope);
     const a = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
     const photos = {};
     (Array.isArray(s.snapshots) ? s.snapshots : []).forEach(x => {
@@ -1054,7 +1078,7 @@ def("calc", function (module, exports, require) {
     : (data, today, options) => root.Calendrier.calendrier(data, today, options);
 
   return { calendrier, CLASSES_LABELS, LIQUIDITE_LABELS, FAMILLES_LABELS, classe, liquidite, famille, horsCourants, parClasse, parLiquidite,
-    comptesCourants, moisCourants, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort,
+    comptesCourants, moisCourants, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort, blocsPhoto,
     val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites, creditsEnCours,
     autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, valider };
 });

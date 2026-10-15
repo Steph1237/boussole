@@ -21,6 +21,7 @@ import { etatFige, journalDeSession, lireConsentement, JOURNAL, REFUS_SENSIBLE }
 import { echeancesDeRevue } from "./calendrier.ts";
 import { nouveautes } from "./savoir.ts";
 import { banqueDeRoutine } from "./banque.ts";
+import { Calc } from "./projection-moteur.gen.js";
 
 export const TYPES_ROUTINE = ["revue_mensuelle"] as const;
 
@@ -235,7 +236,8 @@ export function depensesReference(budgetReel: any, totaux: any, config: any): { 
 }
 /** Argent qui dort (pur, port de Calc.argentQuiDort) : soldes des comptes courants supérieurs à SEUIL_DORT mois de dépenses (`d`)
     deux mois de suite. Points mesurés, du plus récent au plus ancien : fins des mois complets d'après les photos (snapshots
-    by_bloc / by_envelope, dernière photo de chaque mois), sur les poches courantes et sur les enveloppes courantes hors de ces poches
+    by_bloc / by_envelope, dernière photo de chaque mois ; by_bloc est écrit par personne par la fonction nocturne, lu par Calc.blocsPhoto
+    de la copie générée du moteur, comme dans l'app), sur les poches courantes et sur les enveloppes courantes hors de ces poches
     (jamais une enveloppe mixte) ; à défaut de photo deux mois en arrière : solde actuel de ces lignes puis fin du mois précédent.
     → { montant (dépassement le plus faible des deux derniers points, arrondi), mois (≥ 2), solde, seuil, depenses, source } ou null. */
 export function argentQuiDort(S: { positions?: any[]; snapshots?: any[] }, auj: string, d: { montant: number; source: string } | null) {
@@ -248,7 +250,7 @@ export function argentQuiDort(S: { positions?: any[]; snapshots?: any[] }, auj: 
   const envs = [...new Set(courants.filter((p) => !blocCourant(p) && p.envelope && !envsMelees.has(p.envelope)).map((p) => p.envelope))];
   const mesurees = courants.filter((p) => blocs.includes(p.bloc) || envs.includes(p.envelope));
   if (!mesurees.length) return null;
-  const parBloc = (x: any) => x && (x.by_bloc || x.byBloc), parEnv = (x: any) => x && (x.by_envelope || x.byEnvelope);
+  const parBloc = (x: any) => Calc.blocsPhoto(x, "foyer"), parEnv = (x: any) => x && (x.by_envelope || x.byEnvelope);
   const a = (o: any, k: unknown) => !!o && Object.prototype.hasOwnProperty.call(o, String(k));
   const photos: Record<string, any> = {};
   for (const x of Array.isArray(S?.snapshots) ? S.snapshots : []) {

@@ -54,7 +54,7 @@
    (marche aléatoire reproductible propre à chaque ISIN, qui finit au cours du jour), 5 ans au plus ; ISIN inconnu ou sans cours : absent.
    (formes détaillées dans l'en-tête de store-supabase.js).
    Vocabulaire canonique : scope ∈ foyer | p1 | p2 ; positions.owner ∈ p1 | p2 ; snapshots { date, foyer, p1, p2,
-   byBloc, byEnvelope, source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
+   byBloc (par personne : { p1: { poche: valeur }, p2: { … } }, comme take_snapshots ; à lire par Calc.blocsPhoto), byEnvelope (à plat), source } ; config.targets { p1, p2, tolerancePts } ; profil.personnes / autres { p1, p2 },
    biens[].part_p1, credits[].owner ∈ p1 | p2 | commun ; people = [{ id: "p1", nom }, { id: "p2", nom }?]. */
 (function () {
   const isDemo = window.BOUSSOLE_MODE === "demo" || /[?&]demo(?:=|&|$)/.test(String((window.location && window.location.search) || ""));
