@@ -43,7 +43,7 @@ test("bilan.js : se compile, s'enregistre sous « bilan », exporte ses fonction
 test("bilan : l'ancienne vue d'ensemble a disparu (carte Claude, composition, flux, allocation, évolution, à traiter)", () => {
   for (const id of ["blClaude", "blComp", "blFlux", "blAlloc", "blChart", "blEvoPer", "blTodo", "blSante", "blMatelas"]) assert.doesNotMatch(html + js, new RegExp('"' + id), id);
   for (const f of ["BilanEtat", "BilanCalc", "Rules.evaluate", "window.Actions", "sessionStorage", "localStorage"]) assert.ok(!js.includes(f), f);
-  assert.match(html, /Qu'est-ce que je possède en immobilier et que dois-je \?/);
+  assert.match(html, /<h2 id="blTitre"[^>]*>Immobilier et crédits<\/h2>/);
   assert.match(html, /<details class="ui-acc bl-how">/, "méthode en accordéon fermé");
   assert.doesNotMatch(html, /<details[^>]*\sopen/);
 });

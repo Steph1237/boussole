@@ -1246,7 +1246,7 @@ def("marche", function (module, exports, require) {
 
 /* ---------- web/src/plan.js ---------- */
 def("plan", function (module, exports, require) {
-/* Plan : budget, objectifs, projection et score de santé. Calculs purs, aucun accès au DOM.
+/* Plan : budget, objectifs et score de santé (la projection du patrimoine est dans projection.js). Calculs purs, aucun accès au DOM.
    S'appuie sur Calc (calc.js) pour les positions et le profil. */
 (function (root, factory) {
   const Calc = typeof module === "object" && module.exports ? require("./calc.js") : root.Calc;
@@ -1260,23 +1260,6 @@ def("plan", function (module, exports, require) {
   const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
   const EPS = 1e-9;
 
-  /** Rendements annuels attendus par poche, en % : central, pessimiste, optimiste (indicatifs). */
-  const RENDEMENTS = {
-    "Monde": { central: 6, pessimiste: 3, optimiste: 8.5 },
-    "Europe": { central: 5.5, pessimiste: 2.5, optimiste: 8 },
-    "Asie": { central: 6, pessimiste: 2, optimiste: 9 },
-    "Nasdaq 2x": { central: 9, pessimiste: -2, optimiste: 16 },
-    "Convictions tech": { central: 7, pessimiste: 0, optimiste: 12 },
-    "Crypto": { central: 5, pessimiste: -20, optimiste: 25 },
-    "SCPI": { central: 4, pessimiste: 2, optimiste: 5 },
-    "Protection": { central: 2.5, pessimiste: 1.5, optimiste: 3.5 },
-    "Obligations": { central: 3, pessimiste: 1.5, optimiste: 4 },
-    "Épargne": { central: 2.4, pessimiste: 1.7, optimiste: 3 },
-    "_autre": { central: 4, pessimiste: 1.5, optimiste: 6 },
-  };
-  /* Alias : les données de démonstration nomment la poche « Convictions ». */
-  RENDEMENTS["Convictions"] = RENDEMENTS["Convictions tech"];
-  const SCENARIOS = ["central", "pessimiste", "optimiste"];
 
   /** Repère de patrimoine net, en années de revenus, par tranche d'âge (clés de la toise). */
   const REPERES_AGE = { u30: 0.5, a30: 1, a40: 3, a50: 6, a60: 8, a70: 10 };
@@ -1462,48 +1445,6 @@ def("plan", function (module, exports, require) {
       out[dernier.o.id] += reste;
     }
     return out;
-  }
-
-  /** Projection du patrimoine financier sur N années, trois scénarios, versement réparti comme le portefeuille actuel.
-      Un point par année (annees, central, pessimiste, optimiste, parBloc). Option `mensuel: true` : ajoute `mensuel` = { central,
-      pessimiste, optimiste }, une valeur par mois de 0 à 12 × N (le mois 12 k est le point annuel k), pour les courbes lisses. */
-  function projection(opts) {
-    const o = opts || {}, scope = o.scope || "foyer", R = o.rendements || RENDEMENTS;
-    const N = Math.max(0, Math.floor(o.annees == null ? 30 : n(o.annees)));
-    const versement = n(o.versementMensuel);
-    const capital = {};
-    (o.positions || []).filter(p => Calc.inScope(p, scope) && Calc.counted(p)).forEach(p => {
-      const b = p.bloc || "_autre";
-      capital[b] = (capital[b] || 0) + Calc.val(p);
-    });
-    const total = sum(Object.values(capital), pos);
-    if (total <= 0) capital._autre = capital._autre || 0;
-    const blocs = Object.keys(capital);
-    const poids = b => (total > 0 ? pos(capital[b]) / total : b === "_autre" ? 1 : 0);
-    const taux = b => R[b] || R._autre || RENDEMENTS._autre;
-
-    const res = { annees: Array.from({ length: N + 1 }, (_, i) => i), parBloc: {} };
-    SCENARIOS.forEach(s => { res[s] = new Array(N + 1).fill(0); });
-    if (o.mensuel === true) { res.mensuel = {}; SCENARIOS.forEach(s => { res.mensuel[s] = new Array(N * 12 + 1).fill(0); }); }
-    blocs.forEach(b => {
-      const pb = { capital: capital[b], poids: poids(b) };
-      SCENARIOS.forEach(s => {
-        const r = tauxMensuel(taux(b)[s]), v = versement * pb.poids, serie = [];
-        let val = capital[b];
-        serie.push(val);
-        if (res.mensuel) res.mensuel[s][0] += val;
-        for (let k = 1; k <= N * 12; k++) {
-          val = val * (1 + r) + v;
-          if (k % 12 === 0) serie.push(val);
-          if (res.mensuel) res.mensuel[s][k] += val;
-        }
-        serie.forEach((x, i) => { res[s][i] += x; });
-        pb[s] = serie.map(Math.round);
-      });
-      res.parBloc[b] = pb;
-    });
-    SCENARIOS.forEach(s => { res[s] = res[s].map(Math.round); if (res.mensuel) res.mensuel[s] = res.mensuel[s].map(Math.round); });
-    return res;
   }
 
   /* ---------- score de santé ---------- */
@@ -1835,8 +1776,8 @@ def("plan", function (module, exports, require) {
     });
   }
 
-  return { SCORE_MIN_CRITERES, SEUIL_PROVISOIRE, RENDEMENTS, REPERES_AGE, BAREMES, REPERES, STATUTS_LABELS, mensuel, budgetTotaux, capaciteEpargne, affecterDeja,
-    effortMensuel, valeurFuture, moisEntre, dateAtteinte, dejaObjectif, titulaireObjectif, statutObjectif, repartirEpargne, projection, score, coutsPrincipaux,
+  return { SCORE_MIN_CRITERES, SEUIL_PROVISOIRE, REPERES_AGE, BAREMES, REPERES, STATUTS_LABELS, mensuel, budgetTotaux, capaciteEpargne, affecterDeja,
+    effortMensuel, valeurFuture, moisEntre, dateAtteinte, dejaObjectif, titulaireObjectif, statutObjectif, repartirEpargne, score, coutsPrincipaux,
     statutDe, zones, contrat, texteCouverture, expliqueMatelas, expliqueEpargne, expliqueEndettement, expliqueConcentration, frc, eurc, pctc };
 });
 });
@@ -4673,7 +4614,7 @@ def("projection", function (module, exports, require) {
   /** Phrase du rétro-contrôle pour « Comment c'est calculé » (spec § 6.9). */
   function phraseRetro(c) {
     if (!c || !c.affichable) return "Pas encore assez d'historique pour vérifier la projection.";
-    const sur10 = Math.round(c.taux_p10_p90 * 10);
+    const sur10 = c.taux_p10_p90 >= 0.95 ? "plus de 9" : Math.round(c.taux_p10_p90 * 10) <= 0 ? "moins d'une" : String(Math.round(c.taux_p10_p90 * 10)); // jamais « 10 fois sur 10 » : rien n'est certain
     let t = "Rejouée depuis " + c.n + " dates passées, la projection à 1 an a encadré la valeur réelle " + sur10 + " fois sur 10 (attendu : 8 sur 10). Les dates se chevauchent : c'est indicatif.";
     if (c.taux_p10_p90 < 0.65) t += " Les bandes ont été trop étroites sur ton historique.";
     return t;

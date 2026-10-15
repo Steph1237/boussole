@@ -61,7 +61,7 @@ test("fiches-view.js : contenu chargé à l'ouverture par Store.savoir.fiche, re
   assert.match(js, /Reperes\.aVerifier\(/);
   assert.match(js, /Reperes\.format\(/);
   assert.ok(js.includes("à vérifier"));
-  assert.ok(html.includes("Le savoir de l'agent arrive bientôt."), "état vide");
+  assert.ok(html.includes("Le savoir de Claude arrive bientôt."), "état vide");
   assert.match(js, /\$\("fvVide"\)\.hidden = ev !== "vide"/, "pas d'état vide pendant le chargement ni en cas d'erreur");
 });
 

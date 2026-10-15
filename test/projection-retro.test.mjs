@@ -99,7 +99,7 @@ test("retro dans le résultat : au moins 24 dates de départ → couverture P10�
   for (const k of ["taux_p10_p90", "taux_p25_p75"]) assert.ok(r.retro[k] >= 0 && r.retro[k] <= 1, k);
   assert.equal(r.retro.attendu_p10_p90, 0.8); assert.equal(r.retro.attendu_p25_p75, 0.5);
   assert.equal(r.retro.dans_p10_p90 + r.retro.sous_p10 + r.retro.au_dessus_p90, 25, "tout est dans la bande, dessous ou dessus");
-  assert.match(r.retro.phrase, /^Rejouée depuis 25 dates passées, la projection à 1 an a encadré la valeur réelle \d+ fois sur 10 \(attendu : 8 sur 10\)/);
+  assert.match(r.retro.phrase, /^Rejouée depuis 25 dates passées, la projection à 1 an a encadré la valeur réelle (?:\d+|plus de 9|moins d'une) fois sur 10 \(attendu : 8 sur 10\)/);
   assert.ok(r.retro.limites.length >= 2 && r.retro.limites.every(l => typeof l === "string"));
   /* identique à l'appel direct de retroControle (mêmes tirages, mêmes flux) et à un second calcul */
   const direct = P.retroControle(d, d.historique, { horizon_mois: 12, chemins: 2000, flux: d.historique.flux, min: 24 });
@@ -236,4 +236,13 @@ test("figerPlan : paramètres des événements limités aux clés connues de leu
   assert.equal("inconnu" in ev.params, false, JSON.stringify(ev.params).slice(0, 100));
   assert.ok(Object.keys(ev.params).length > 0);
   assert.equal(l.parametres.reductions, undefined, "rien n'est réduit quand tout tient");
+});
+
+test("phrase du rétro-contrôle : jamais « 10 fois sur 10 » ni « 0 fois sur 10 »", () => {
+  const base = { affichable: true, n: 30, taux_p10_p90: 1 };
+  assert.match(P.phraseRetro(base), /plus de 9 fois sur 10 \(attendu : 8 sur 10\)/);
+  assert.doesNotMatch(P.phraseRetro(base), /10 fois sur 10/);
+  assert.match(P.phraseRetro({ ...base, taux_p10_p90: 0.97 }), /plus de 9 fois sur 10/);
+  assert.match(P.phraseRetro({ ...base, taux_p10_p90: 0.02 }), /moins d'une fois sur 10/);
+  assert.match(P.phraseRetro({ ...base, taux_p10_p90: 0.8 }), /8 fois sur 10/);
 });

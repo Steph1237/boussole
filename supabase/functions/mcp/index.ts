@@ -3106,8 +3106,8 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
     depots: { profil: propositionProfil, risque: propositionRisque, protection: propositionProtection, deposer } });
 
   /* ---------- Prompts : parcours d'entretien lançables depuis Claude ---------- */
-  server.registerPrompt("onboarding", { title: "Onboarding Boussole", description: "Premier entretien guidé (ou reprise) : l'assistant appelle demarrer_onboarding et suit sa conduite." }, () => ({
-    description: "Premier entretien guidé (ou reprise) avec le Copilote patrimonial de Boussole.",
+  server.registerPrompt("onboarding", { title: "Onboarding Boussole", description: "Premier entretien guidé (ou reprise) : Claude appelle demarrer_onboarding et suit sa conduite." }, () => ({
+    description: "Premier entretien guidé (ou reprise) avec Claude.",
     messages: [{ role: "user" as const, content: { type: "text" as const, text: PROMPT_ONBOARDING } }],
   }));
   for (const p of PARCOURS) {

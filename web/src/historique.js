@@ -1,4 +1,4 @@
-/* Historique du patrimoine net : reconstitution du passé, fusion avec les photos observées, cône de projection. Calculs purs,
+/* Historique du patrimoine net : reconstitution du passé, fusion avec les photos observées. Calculs purs,
    aucun accès au DOM ni au réseau (les cours, transactions et opérations sont lus par les stores et passés en paramètres).
 
    Reconstitution (reconstituer) : le patrimoine financier de chaque jour, de la veille jusqu'au plus loin que les données permettent
@@ -16,11 +16,8 @@
 
    Fusion (fusionner) : l'observé (photos nocturnes + point du jour) l'emporte toujours ; le reconstitué n'est gardé que strictement
    avant la première photo, et décalé (recalage) pour rejoindre cette photo sans cassure — l'écart est rendu (decalage).
-   Projection (projeter) : DÉPRÉCIÉ, plus appelé par l'app (le graphe maître lit le moteur Projection) ; supprimé avec Plan.projection (spec PROJ § 13.4, étape 8).
-   Ancien calcul : Plan.projection (trois scénarios de rendement par poche, versement mensuel réparti comme le portefeuille),
-   un point par mois, net = patrimoine financier projeté + horsFin maintenu à sa valeur d'aujourd'hui (aucune hypothèse sur
-   l'immobilier ni sur l'amortissement des crédits). Une projection n'est pas une promesse.
-   Dépendances : Calc (calc.js) et Plan (plan.js), ou injectées (deps / Plan). */
+   La projection (cône pessimiste / central / optimiste) n'est plus ici : le graphe maître lit le moteur Projection (projection.js).
+   Dépendance : Calc (calc.js). */
 (function (root, factory) {
   const Calc = typeof module === "object" && module.exports ? require("./calc.js") : root.Calc;
   const api = factory(Calc);
@@ -146,23 +143,5 @@
     return { points, decalage, premiereObservee: premiere };
   }
 
-  /** Cône de projection du net : un point par mois de 0 (aujourd'hui) à 12 × annees.
-      o = { today, positions, scope, versementMensuel, annees (1 à 40), horsFin, Plan, rendements? }
-      → { points: [{ date, mois, pessimiste, central, optimiste }], versement, annees } ; points vides sans moteur. */
-  function projeter(o) {
-    const opt = o || {}, P = opt.Plan === undefined ? (typeof module === "object" && module.exports ? require("./plan.js") : (typeof self !== "undefined" ? self.Plan : null)) : opt.Plan;
-    const annees = Math.min(40, Math.max(1, Math.floor(fini(opt.annees) ? +opt.annees : 10))), versement = fini(opt.versementMensuel) ? Math.max(0, +opt.versementMensuel) : 0;
-    const today = isoOk(opt.today) ? jj(opt.today) : iso(Date.now()), horsFin = fini(opt.horsFin) ? +opt.horsFin : 0;
-    const res = { points: [], versement, annees, parBloc: {}, rendements: null };
-    if (!P || typeof P.projection !== "function") return res;
-    const r = P.projection({ positions: liste(opt.positions), scope: opt.scope || "foyer", versementMensuel: versement, annees, mensuel: true, rendements: opt.rendements });
-    if (!r.mensuel) return res;
-    res.parBloc = r.parBloc; res.rendements = opt.rendements || P.RENDEMENTS || null;
-    for (let k = 0; k <= annees * 12; k++) {
-      res.points.push({ date: plusMois(today, k), mois: k, pessimiste: Math.round(r.mensuel.pessimiste[k] + horsFin), central: Math.round(r.mensuel.central[k] + horsFin), optimiste: Math.round(r.mensuel.optimiste[k] + horsFin) });
-    }
-    return res;
-  }
-
-  return { reconstituer, fusionner, projeter, deltaTx, plusJours, plusMois, joursEntre, JOURS_MAX };
+  return { reconstituer, fusionner, deltaTx, plusJours, plusMois, joursEntre, JOURS_MAX };
 });

@@ -366,11 +366,11 @@ test("bandeau : mémorisé dans le stockage local, accès protégé (stockage in
   assert.equal(OV.bandeauVu(null), false);
 });
 
-test("aucun appel à Plan.projection ni à Plan.RENDEMENTS dans web/src (hors plan.js et historique.js, que le contrôleur reprend)", () => {
-  const exclus = new Set(["plan.js", "historique.js"]);
+test("aucune référence à Plan.projection, Plan.RENDEMENTS ni Historique.projeter dans web/src (supprimés : un seul moteur, Projection)", () => {
+  const exclus = new Set();
   const fautifs = readdirSync("web/src").filter(f => /\.(js|html)$/.test(f) && !exclus.has(f) && !/\.gen\.js$/.test(f)).filter(f => {
     const t = readFileSync("web/src/" + f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/[^\n]*/g, "$1");
-    return /\bPlan\.(projection|RENDEMENTS)\b|\.RENDEMENTS\b|\bP\(\)\.projection\b/.test(t);
+    return /\bPlan\.(projection|RENDEMENTS)\b|\.RENDEMENTS\b|\bP\(\)\.projection\b|\bHistorique\.projeter\b|\bfunction projeter\b/.test(t);
   });
   assert.deepEqual(fautifs, []);
 });
@@ -420,11 +420,10 @@ function vueDom(S0, o) {
   if (o && o.serieNet) c.SerieNet = o.serieNet;
   if (o && o.large) c.matchMedia = q => ({ matches: /min-width:\s*1440px/.test(q) });
   vm.runInContext(js, c, { filename: "objectifs-view.js" });
-  // Compteur d'analyses : Plan.affecterDeja est appelé une fois par analyse ; Plan.projection ne doit plus jamais être appelé.
-  const compte = { analyses: 0, projections: 0 };
-  const aff = c.Plan.affecterDeja, proj = c.Plan.projection;
+  // Compteur d'analyses : Plan.affecterDeja est appelé une fois par analyse (Plan.projection n'existe plus).
+  const compte = { analyses: 0 };
+  const aff = c.Plan.affecterDeja;
   c.Plan.affecterDeja = (...xs) => { compte.analyses++; return aff(...xs); };
-  c.Plan.projection = (...xs) => { compte.projections++; return proj(...xs); };
   const root = doc.body.appendChild(doc.createElement("section"));
   root.setAttribute("id", "view-objectifs-view");
   root.innerHTML = html;
@@ -493,7 +492,6 @@ test("vue (DOM) : analyser() une fois par émission du store (cartes, panneau, t
   assert.equal(v.compte.analyses, 1, "une seule analyse pour le rendu, le panneau et le titre");
   v.api.update(J(v.S()), true);
   assert.equal(v.compte.analyses, 2);
-  assert.equal(v.compte.projections, 0, "Plan.projection n'est jamais appelé");
 });
 
 test("vue (DOM) : l'accordéon monte le graphe maître (préréglage objectifs, vue financier) à la première ouverture, pas avant ; plus de champ versement ni de « réel »", () => {
@@ -514,7 +512,6 @@ test("vue (DOM) : l'accordéon monte le graphe maître (préréglage objectifs, 
   assert.equal(v.root.querySelector("#ovVers"), null);
   assert.equal(v.root.querySelector("#ovHorizon"), null);
   assert.doesNotMatch(sp(v.root.textContent), /Versement mensuel|scénario|simulation locale|\bréel\b|Hypothèses de rendement|Pessimiste/i);
-  assert.equal(v.compte.projections, 0);
   assert.deepEqual(v.acces, [], "le graphe n'écrit rien");
 });
 
