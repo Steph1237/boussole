@@ -43,14 +43,14 @@ Suivi.politique(data) → { revue: { reserve, coeur, satellite }, seuils, plafon
 Suivi.systeme(data) → { parts: { reserve, coeur, satellite }, plafond_satellite_pct, depasse, lignes_satellite: [...] }
 Suivi.constats(data, position_id) → [{ cle, statut, mesure, repere, pourquoi, calcul, donnees, manque, source_donnees, confiance }]
 Suivi.meteo(constats, role, revue) → { meteo: clair|eclaircies|a_regarder|a_completer, couverture: { calcules, applicables }, gelee_jusquau? }
-Suivi.declencheurs(data, today) → [{ cle, portee: ligne|classe|enveloppe|portefeuille|objectif, classe?, enveloppe?, position_ids, mesure, seuil, pourquoi, source, levier, verdict }]
-Suivi.vautLeCout(changement, data, options) → { verdict: vaut_le_cout|a_peser|ne_rien_faire, gain_annuel, cout_unique, point_mort_ans, horizon_ans, effet_risque?, alternative?, calcul, hypotheses, sources }
+Suivi.declencheurs(data, today) → [{ cle, portee: ligne|classe|enveloppe|portefeuille|objectif, classe?, enveloppe?, objectif?, constat?, position_ids, mesure, seuil, montant?, titre, pourquoi, source, levier, visible, raison_visibilite: revue_du_mois|seuil_franchi|aggravation|date|deja_vu|hors_revue, verdict: …|null }]
+Suivi.vautLeCout(changement, data, options) → { verdict: vaut_le_cout|a_peser|ne_rien_faire|null, gain_annuel, cout_unique, cout_detail: { impot, transaction }, point_mort_ans, horizon_ans, cloture?, perte_anciennete?, effet_risque?, alternative?, mois_pour_combler?, montant_a_orienter?, calcul, hypotheses, manque, sources }
 Suivi.exposition(data, evenement) → { concerne: bool, part_pct, raison, via: [...] }
 Suivi.maSemaine(data, evenements, today) → { cartes: [{ type, titre, chiffre?, texte, elements, sources }] }   // 4 à 7 cartes
 Suivi.habitudes(data, today) → [{ cle, mesure, palier, prochain_palier, texte }]
 ```
 
-`data = { positions, instruments, expositions, config, profil, objectifs, risque, transactions, cours, routines, reperes, calendrier }` (formes de l'app). `today` = `AAAA-MM-JJ` de Paris. `vautLeCout` appelle `projection-fiscalite.js` (impôt) et `Calendrier` (dates DAT1) ; l'effet sur le risque passe par `Projection` (`comparer_variantes`, mêmes tirages), hors du chemin synchrone.
+`data = { positions, instruments, expositions, config, profil, objectifs, risque, transactions, cours, routines, reperes, calendrier, sante }` (formes de l'app ; `routines = { passages, revue_coeur_faite_le, derniere_revue }` et `sante = { matelas_mois, frais_pct }`, formes exactes dans les conventions de la fixture). `today` = `AAAA-MM-JJ` de Paris. `vautLeCout` appelle `projection-fiscalite.js` (impôt) et `Calendrier` (dates DAT1) ; l'effet sur le risque passe par `Projection` (`comparer_variantes`, mêmes tirages), hors du chemin synchrone.
 
 **Règle de présentation** (spec § 9.1) : toute sortie destinée à l'affichage (`declencheurs`, leviers, verdicts) a un titre qui nomme **une classe et une enveloppe**, jamais un instrument ; les instruments figurent seulement dans `position_ids` et `donnees`.
 
@@ -81,22 +81,24 @@ Les phases 1 et 2 ne dépendent d'aucun fournisseur : elles livrent la doctrine,
 
 ## Phase 0 : cadrage chiffré
 
-### Tâche 0 — Repères, études et cas de référence (Opus, high, M)
-- [ ] Sourcer ou requalifier en « repère Boussole, prudent » : plafonds satellite par profil, seuil d'écart de 5 points, seuil de baisse de 25 %, 5 % par ligne satellite, 10 % par société, seuils d'encours (100 M€, 20 M€), écart de suivi, seuils de chevauchement (30 %, 60 %), seuils de croisement (5 %, 1 %). Chaque repère : valeur, unité, source, URL, date de vérification ; entrées prêtes pour `reperes` (thème `comportement`).
-- [ ] Revérifier les études du § 2.3 de la spec (références exactes, chiffres) et rédiger les fiches du savoir correspondantes (thème `comportement`).
-- [ ] Écrire `test/fixtures/suivi-cas.json` : au moins 40 cas fictifs couvrant le § 14.1 de la spec (rôles, politique, constats, météo, déclencheurs, `vautLeCout` avec assurance-vie, PEA de moins de 5 ans, compte-titres avec plus-value, `G = 0`, bords du point mort, alternative par les versements, croisement, « Ta semaine », habitudes), chaque cas calculé à la main.
-- [ ] Relire chaque texte affiché de la spec (§ 6.2, § 11.11) au regard du § 9.1 (faits sur la ligne, jugements sur la classe) et lister les formulations à risque.
-- **Critère d'arrêt** : repères et fiches prêts à migrer, cas de référence relus, liste des formulations validées.
+### Tâche 0 — Repères, études et cas de référence (Opus, high, M) — faite le 2026-10-15
+> Compte rendu : spec § 18 (repères, résolutions R1 à R18, cas, relecture des textes, points ouverts P1 à P10) et § 2.3 (études revérifiées : SPIVA Europe fin 2025, *Mind the Gap* à fin 2025, Bradshaw et al. 2013 chiffrés ; « Rational rebalancing » 2022 illisible, retiré). Décisions appliquées : D0, D2, D4 ; D1, D5, D6 ouvertes, sans effet sur les phases 1 et 2. Corrections de la spec : G sur le **haut** du repère de classe (R6), `frais_eleves` et `cout` sur le TER (R5, R10), réserve seulement pour l'argent sans risque (R2), règle « non classée » (rangement, règle 4), leviers de risque (R8), pas de verdict sans prix de revient ni repère fiscal (R9), exemples du § 11.8 recalculés (l'ancien 1 840 € comptait un courtage nul).
+- [x] Sourcer ou requalifier : 35 repères dans `test/fixtures/suivi-cas.json` (clé `reperes`, format de 0030) : 5 V (revue annuelle et semestrielle, Vanguard 2010 ; courtage AMF du 27 avril 2026 en trois niveaux), 30 CONV dits « repère Boussole » dans le libellé ; 11 repères fiscaux repris de 0029 et 0030 (champ `reprise`, à ne pas réinsérer). La table `reperes` n'a pas de thème : `comportement` vaut pour les fiches.
+- [x] Études du § 2.3 revérifiées, six fiches du savoir rédigées (clé `fiches` de la fixture, thème `comportement`, tutoiement, sources datées).
+- [x] `test/fixtures/suivi-cas.json` : 90 cas fictifs (RO 14, PO 5, SY 4, DE 14, SD 3, VC 22, CM 18, HA 3, EX 4, SE 3), conventions écrites dans la fixture ; attendus calculés à la main et recalculés par un moteur de référence indépendant (90 concordants, test de mutation positif).
+- [x] Textes du § 6.2, § 11.4, § 11.6, § 11.11 et § 4.2 relus au regard du § 9.1 : 7 formulations à risque avec une proposition, les autres validées (spec § 18.4).
+- **Critère d'arrêt** : atteint. La fixture fait foi ; un écart avec la spec se signale au contrôleur, il ne se corrige pas dans la fixture sans recalcul indépendant.
 
 ## Phase 1 : GOV1, rôles et politique de suivi
 
 ### Tâche 1 — Migration, partie A (Sonnet, medium, M)
-- [ ] `0032_suivi.sql` : `positions.role`, `positions.role_source` (contraintes), clé `suivi` dans la liste blanche de la cible `config` (bornes du § 3.2, source obligatoire, messages au format de 0027), champs `role` et `role_source` acceptés par la cible `position` ; repères de la tâche 0.
+- [ ] `0032_suivi.sql` : `positions.role`, `positions.role_source` (contraintes), clé `suivi` dans la liste blanche de la cible `config` (bornes du § 3.2, source obligatoire, messages au format de 0027), champs `role` et `role_source` acceptés par la cible `position` ; `frais_enveloppes` accepte `arbitrage_pct` et `courtage_pct` (0 à 5, R7) ; les 35 repères nouveaux de la fixture recopiés à l'identique (pas les 11 marqués `reprise`) ; les 6 fiches de la clé `fiches` dans `savoir_fiches` (modèle 0011).
+- [ ] **À trancher par le contrôleur avant de coder (spec § 18.5, P7)** : mémoire de la dernière revue dans une colonne privée `routines.etat_suivi` (jsonb, 20 Ko au plus, écrite par `cloturer_routine`, dans `export_all()`), ou dans le journal seulement (sans consentement au journal : ni gel ni « déjà vu »).
 - [ ] Tests PGlite : écriture seulement par `appliquer_propositions`, bornes, double authentification (`test/mfa-pglite.test.mjs`), `export_all()`, suppression du compte.
 - **Dépend de** : T0 (repères).
 
 ### Tâche 2 — Moteur `suivi.js`, partie A (Sonnet, medium, L ; relecture des calculs : Opus en T10)
-- [ ] TDD sur `suivi-cas.json` : `roleParDefaut`, `politique`, `systeme`, `declencheurs` (sans les familles qui demandent le fournisseur), `vautLeCout` (fiscalité par `projection-fiscalite.js`, dates par `Calendrier`, alternative par les versements avec la capacité constatée), `habitudes` (revue, matelas, frais, dates connues).
+- [ ] TDD sur `suivi-cas.json` (familles RO, PO, SY, DE, VC, HA ; conventions et résolutions R1 à R18 de la spec § 18) : `roleParDefaut`, `politique`, `systeme`, `declencheurs` (sans les familles qui demandent le fournisseur), `vautLeCout` (fiscalité par `projection-fiscalite.js`, dates par `Calendrier`, alternative par les versements avec la capacité constatée), `habitudes` (revue, matelas, frais, dates connues). Ajouter des cas d'effet sur le risque (`comparer_variantes`, graine fixe), absents de la fixture.
 - [ ] Règle de présentation des titres (classe et enveloppe) testée.
 - [ ] Ajout à `SCRIPTS` de `build.mjs` ; performance : 200 lignes en moins de 10 ms.
 - **Dépend de** : T0.
@@ -127,7 +129,7 @@ Les phases 1 et 2 ne dépendent d'aucun fournisseur : elles livrent la doctrine,
 ## Phase 2 : SCO2, la météo de chaque ligne
 
 ### Tâche 8 — Constats et météo (Sonnet, medium, M)
-- [ ] `constats` et `meteo` dans `suivi.js` avec les données déjà là (`cout`, `poids`, `classe_risque`, `enveloppe`, `devise` ; `chevauchement` et `solidite` « à compléter » sans fournisseur) ; gel de la météo du cœur entre deux revues ; déclencheur `sante_degradee`.
+- [ ] `constats` et `meteo` dans `suivi.js` (cas CM et SD de la fixture) avec les données déjà là (`cout`, `poids`, `classe_risque`, `enveloppe`, `devise` ; `chevauchement` et `solidite` « à compléter » sans fournisseur) ; gel de la météo du cœur entre deux revues ; déclencheur `sante_degradee`.
 - [ ] Parité (régénérer la copie), cas de référence.
 - **Dépend de** : T2.
 
@@ -241,9 +243,9 @@ Les phases 1 et 2 ne dépendent d'aucun fournisseur : elles livrent la doctrine,
 
 | # | Décision | Avant |
 |---|---|---|
-| D0 | Doctrine (rôles, test du coût, avis et événements sans effet sur les actions) | Phase 1 |
-| D2 | Météo sans note sur 20 | Phase 2 |
-| D4 | Seuils et plafonds par défaut (après la tâche 0) | Phase 1 |
+| D0 | Doctrine (rôles, test du coût, avis et événements sans effet sur les actions) — **prise le 2026-10-15** | Phase 1 |
+| D2 | Météo sans note sur 20 — **prise le 2026-10-15** | Phase 2 |
+| D4 | Seuils et plafonds par défaut (après la tâche 0) — **prise le 2026-10-15 : défauts du § 18.1 de la spec, ajustables** | Phase 1 |
 | **D1** | **Fournisseur et budget** (essai T11, devis, plafond 300 € par mois) | Phase 3 |
 | D6 | Remplacer Yahoo | Phase 3 |
 | D5 | Veille sur l'abonnement de Stéph ou en API | Phase 4 |

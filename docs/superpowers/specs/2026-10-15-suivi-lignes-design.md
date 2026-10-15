@@ -1,6 +1,6 @@
 # Suivi de mes lignes : politique de suivi, santé, avis tiers et événements (GOV1, SCO2, AVIS1, EVT1, EVT2)
 
-Date : 2026-10-15. Statut : **spec écrite, à valider par Stéph**.
+Date : 2026-10-15. Statut : **tâche 0 faite le 2026-10-15** (repères, études et 90 cas de référence, résolutions au § 18) ; décisions **D0, D2 et D4 prises** par Stéph (doctrine, météo sans note sur 20, seuils par défaut ajustables) ; **D1, D5 et D6 ouvertes** (fournisseur, veille, Yahoo) : les phases 1 et 2 n'en dépendent pas.
 - Demandé par Stéph le 2026-10-15 (roadmap privée, annexe G entière, dont G.5) : « trouve la meilleure façon de faire tout ça de manière cohérente financièrement avec un vrai conseil derrière ; UX simple, ludique, compréhensible, dynamique, à la pointe de la tech ».
 - Chantier « SUIVI » = **GOV1** (politique de suivi cœur et satellite) + **SCO2** (santé de chaque ligne) + **AVIS1** (avis du marché repris de tiers) + **EVT1** (calendrier commun des événements extérieurs) + **EVT2** (événements propres aux lignes détenues).
 - Jalon : GOV1 et SCO2 se rattachent à **J3 Je sais quoi changer** ; EVT1, AVIS1 et EVT2 demandent un fournisseur de données (décision D1, § 10) et la veille de l'annexe D (EX3).
@@ -88,14 +88,14 @@ Ta décision, avec Claude  (propositions, journal de décision RT1)
 
 ### 2.3 Pourquoi cette doctrine : ce que disent les études
 
-Ces sources fondent la doctrine ; elles sont reprises en fiches du savoir (thème `comportement`) et revérifiées en tâche 0. Les chiffres cités sont ceux des sources ; ceux marqués † sont à confirmer à la tâche 0.
+Ces sources fondent la doctrine ; elles sont reprises en six fiches du savoir (thème `comportement`, texte dans `test/fixtures/suivi-cas.json`, clé `fiches`). Revérifiées le 2026-10-15 (tâche 0) ; les références et chiffres ci-dessous sont ceux lus sur la source citée au § 16.
 
-- **Les frais sont le meilleur prédicteur connu de la performance future d'un fonds** : Morningstar l'écrit pour ses propres études (R. Kinnel, « Fund Fees Predict Future Success or Failure », Morningstar, 2016). Le cœur se juge donc d'abord sur son coût : c'est le seul critère prédictif, et il est dans notre santé.
-- **La majorité des fonds actifs fait moins bien que leur indice sur 10 ans**, en Europe aussi (S&P Dow Jones Indices, *SPIVA Europe Scorecard*, publication semestrielle †).
-- **Les transactions fréquentes coûtent de la performance** aux particuliers (B. Barber et T. Odean, « Trading Is Hazardous to Your Wealth », *Journal of Finance*, 2000) ; l'écart entre le rendement des fonds et celui de leurs porteurs, dû au calendrier des achats et des ventes, est de l'ordre d'un point par an (Morningstar, *Mind the Gap*, édition annuelle †).
-- **Regarder plus souvent fait voir plus de pertes** et pousse à des choix plus prudents ou émotionnels (S. Benartzi et R. Thaler, « Myopic Loss Aversion and the Equity Premium Puzzle », *Quarterly Journal of Economics*, 1995). D'où : peu de regards sur le cœur, un résumé par semaine, aucune alerte de cours.
-- **Le consensus des analystes rapporte peu une fois les coûts déduits** (B. Barber, R. Lehavy, M. McNichols et B. Trueman, « Can Investors Profit from the Prophets? », *Journal of Finance*, 2001) ; les objectifs de cours sont souvent manqués (M. Bradshaw, L. Brown et K. Huang, *Review of Accounting Studies*, 2013 †). D'où : les avis sont montrés, à part, avec cette mention.
-- **Rééquilibrer selon un calendrier annuel ou des seuils d'écart d'environ 5 points** suffit pour un portefeuille diversifié : plus souvent, on paie plus de coûts sans réduire beaucoup le risque (Vanguard, « Best practices for portfolio rebalancing », 2010, et « Rational rebalancing », 2022 †).
+- **Les frais sont le meilleur indice connu des résultats futurs d'un fonds** : R. Kinnel (Morningstar, mai 2016) trouve sur 2010-2015 un taux de réussite (fonds survivant et battant sa catégorie) de 62 % pour le cinquième le moins cher des fonds d'actions américaines, contre 20 % pour le plus cher (lu dans une reprise de FAnews du 9 mai 2016 ; la page de Morningstar redirige vers son accueil). Le cœur se juge donc d'abord sur son coût.
+- **La plupart des fonds actifs font moins bien que leur indice sur 10 ans, en Europe aussi** : *SPIVA Europe Year-End 2025* (S&P Dow Jones Indices, données au 31 déc. 2025, rapport 1a, fonds en euros) : 97,02 % des fonds d'actions européennes sous le S&P Europe 350, 98,44 % des fonds d'actions mondiales sous le S&P World, 98,11 % des fonds d'actions françaises sous le S&P France BMI.
+- **Les transactions fréquentes coûtent de la performance** : B. Barber et T. Odean, « Trading Is Hazardous to Your Wealth », *Journal of Finance* 55 (2), 2000, p. 773-806 : 66 465 foyers d'un courtier de 1991 à 1996, les plus actifs obtiennent 11,4 % par an quand le marché fait 17,9 %. L'écart entre le rendement des fonds et celui de leurs porteurs est de 1,2 point par an sur les 10 ans à fin 2025 pour les fonds d'actions américaines (8,7 % contre 9,9 %, Morningstar, *Mind the Gap*, repris par Morningstar Australie le 19 août 2026 ; le rapport complet n'a pas pu être lu).
+- **Regarder plus souvent fait voir plus de pertes** : S. Benartzi et R. Thaler, « Myopic Loss Aversion and the Equity Premium Puzzle », *Quarterly Journal of Economics* 110 (1), 1995, p. 73-92 (lu dans le document de travail NBER 4369) : la prime des actions s'explique si les épargnants, sensibles aux pertes, évaluent leur portefeuille environ une fois par an. D'où : peu de regards sur le cœur, un résumé par semaine, aucune alerte de cours.
+- **Le consensus des analystes rapporte peu une fois les coûts déduits** : Barber, Lehavy, McNichols et Trueman, *Journal of Finance* 56 (2), 2001, p. 531-563 : plus de 4 % par an avant frais, rien de fiablement positif après. Les objectifs de cours sont souvent manqués : Bradshaw, Brown et Huang, *Review of Accounting Studies* 18 (4), 2013, p. 930-955 (objectifs à 12 mois de 2000 à 2009) : 38 % atteints au bout de 12 mois, 64 % à un moment de la période, erreur absolue moyenne de 45 %. D'où : les avis sont montrés, à part, avec cette mention.
+- **Rééquilibrer une ou deux fois par an, avec un seuil d'environ 5 points**, suffit pour un portefeuille diversifié : Jaconetti, Kinniry et Zilbering, « Best practices for portfolio rebalancing », Vanguard, juillet 2010 (« annual or semiannual monitoring, with rebalancing at 5% thresholds »). « Rational rebalancing » (Vanguard, 2022) n'a pas pu être relu (lien mort) : il n'est plus cité.
 
 ### 2.4 Ce que Boussole ne fait jamais
 
@@ -184,12 +184,13 @@ Les colonnes `ter`, `ter_source`, `ter_le`, `zone`, `devise` (0006, 0026, 0027) 
 | **Satellite** | Convictions, diversification ciblée, part spéculative | Actions en direct, ETF sectoriels, thématiques ou d'un seul pays, small caps, levier, crypto | Part totale sous le plafond, poids de chaque ligne, baisse marquée, calendrier de la société |
 
 **Rangement proposé** (`Suivi.roleParDefaut(ligne, instrument, objectifs)`, déterministe) :
-1. Famille `courant` ou `epargne` (`Calc.famille`), ou ligne rattachée à un objectif dont l'échéance est à moins de 3 ans → **réserve**.
-2. `type_support` `action`, `crypto`, ou `levier` non nul, ou classe `crypto` → **satellite**.
-3. ETF ou fonds dont la catégorie ou l'indice est sectoriel, thématique, d'un seul pays hors zone euro, ou small caps → **satellite** (liste de motifs testée, comme `CLASSES` de `calc.js`).
-4. Sinon → **cœur**.
+1. Famille `courant` ou `epargne` (`Calc.famille`), ou ligne **sans risque de baisse** (classe `monetaire` ou `fonds_euros`) rattachée à un objectif dont l'échéance est à moins de 3 ans (ou de type matelas) → **réserve**. Une ligne d'une classe risquée rattachée à un objectif proche n'est jamais rangée en réserve : elle garde son rôle et lève le déclencheur `objectif_risque` (résolution R2, § 18).
+2. `type_support` `action`, action en direct reconnue (`Pratiques.natureFrais` = `direct`), `crypto`, `levier` non nul, ou classe `crypto` ou `levier` → **satellite**.
+3. ETF ou fonds dont le nom, le bloc, la catégorie ou l'indice est sectoriel, thématique, d'un seul pays hors zone euro (les États-Unis exceptés), ou small caps → **satellite** (motifs écrits dans les conventions de la fixture, testés).
+4. Classe `autres` sans aucune information sur l'instrument (ni frais ni type) → **non classée** (`null`).
+5. Sinon → **cœur**.
 
-Le rôle proposé est affiché avec la mention « proposé, à confirmer avec Claude » ; Claude le confirme ou le corrige par `definir_suivi` (une seule question à choix multiple pour toutes les lignes, § 12). Une ligne non classée est traitée en **cœur** pour les fréquences (prudent : le moins de bruit) et en **satellite** pour le plafond (prudent : on ne sous-estime pas le risque) [C].
+Le rôle proposé est affiché avec la mention « proposé, à confirmer avec Claude » ; Claude le confirme ou le corrige par `definir_suivi` (une seule question à choix multiple pour toutes les lignes, § 12). Une ligne non classée est traitée en **cœur** pour les fréquences (prudent : le moins de bruit) et en **satellite** pour le plafond (prudent : on ne sous-estime pas le risque) [C]. Le rôle effectif d'une ligne est `positions.role` s'il est renseigné, sinon le rôle proposé.
 
 ### 4.2 La politique de suivi, selon ton profil et tes horizons
 
@@ -226,7 +227,7 @@ Catalogue `DECLENCHEURS` de `suivi.js` ; chacun produit `{ cle, ligne|classe|env
 
 | Clé | Condition | Portée | Levier associé (§ 4.5) |
 |---|---|---|---|
-| `frais_eleves` | Coût annuel de la ligne (frais du fonds + frais d'enveloppe) au-dessus du haut du repère de sa classe (CP4) **et** au-dessus de 0,50 % | ligne | `frais_classe` |
+| `frais_eleves` | Frais courants du fonds (TER) au-dessus du haut du repère de sa classe (CP4) **et** au-dessus de 0,50 %, comme `auDessusRepere` de CP4 ; les frais d'enveloppe relèvent de `changer_enveloppe` (R5, § 18) | ligne | `frais_classe` |
 | `ecart_cible` | Écart absolu d'une classe à la borne la plus proche de sa fourchette cible > `seuil_ecart_pts` | classe | `versements_orientes`, `reequilibrer` |
 | `satellite_plafond` | Part satellite > plafond | portefeuille | `versements_orientes`, `reduire_satellite` |
 | `concentration` | Une société (en direct et par transparence des fonds) > 10 % du financier investi, ou une ligne satellite > 5 % | ligne | `reduire_satellite` |
@@ -246,7 +247,7 @@ Un déclencheur n'est montré que **le mois de la revue de son rôle**, sauf `ev
 
 **Entrées** : le changement (`levier`, classe, enveloppe, montant), les lignes concernées (valeur, prix de revient, date d'achat si connue), l'enveloppe (`enveloppes_infos` de DAT1 : type, date d'ouverture, versements), les frais (CP4), les repères fiscaux (`pfu_taux`, prélèvements sociaux, abattements de l'assurance-vie, règles du PEA), l'horizon de l'objectif.
 
-**Gain annuel certain `G`** : frais économisés = (coût actuel − coût repère bas de la classe) × montant, en €/an. Le coût repère est **le bas du repère de classe de CP4**, jamais un produit. Les dividendes et rendements attendus ne sont pas comptés (incertains).
+**Gain annuel certain `G`** : frais économisés = (coût actuel − coût repère de la classe) × montant, en €/an. Le coût repère est **le haut du repère de classe de CP4** (R6, § 18 : prudent, le gain n'est jamais surestimé, et c'est le surcoût que CP4 affiche déjà), jamais un produit. Les dividendes et rendements attendus ne sont pas comptés (incertains).
 
 **Coût certain `C`**, une fois :
 - **frais de transaction** : courtage (repère par type d'enveloppe, ou `frais_enveloppes` s'il est renseigné), frais d'arbitrage d'une assurance-vie, frais d'entrée d'un fonds s'ils sont connus ; écart achat-vente estimé (repère par type de support) ;
@@ -254,8 +255,9 @@ Un déclencheur n'est montré que **le mois de la revue de son rôle**, sauf `ev
 - **perte d'ancienneté** : si le changement suppose de sortir d'une enveloppe (ce que Boussole ne propose que si le levier l'exige, par exemple `changer_enveloppe`), la perte est chiffrée quand elle l'est (abattement annuel de l'assurance-vie de plus de 8 ans, exonération du PEA de plus de 5 ans), sinon écrite en mots (« tu repartirais de zéro pour les 8 ans de l'assurance-vie, le 16 juin 2031 au plus tôt »).
 
 **Verdict** :
+- coûts de transaction, impôt et cas sans verdict précisés en R7 à R9 (§ 18) : courtage renseigné ou repère de l'AMF (0,65 %, le plus élevé, prudent), demi-écart coté 0,10 % et frais d'arbitrage de 1 % supposés quand ils manquent (conventions écrites dans les hypothèses) ; prix de revient inconnu d'une ligne vendue hors PEA, ou repère fiscal manquant : **pas de verdict** (« à compléter »), jamais un coût supposé nul ;
 - point mort `N = C / G` années (∞ si `G = 0`) ;
-- **« ça vaut le coût »** si `N ≤ min(3, horizon / 2)` ans ; **« à peser »** si `N` est entre ce seuil et l'horizon ; **« ne rien faire est la meilleure option ici »** si `N` dépasse l'horizon, ou si `G = 0` et que le changement ne réduit pas un risque mesuré. Le verdict porte toujours sur **le levier** (une classe, une enveloppe, des versements), jamais sur le fait de garder ou de vendre un instrument nommé (§ 9.1) ;
+- **« ça vaut le coût »** si `N ≤ min(3, horizon / 2)` ans ; **« à peser »** si `N` est entre ce seuil et l'horizon ; **« ne rien faire est la meilleure option ici »** si `N` dépasse l'horizon, ou si `G = 0` et que le changement ne réduit pas un risque mesuré. Un levier qui réduit un risque mesuré (`reequilibrer`, `securiser_objectif`, `reduire_satellite`, `versements_orientes`) a `G = 0` : « ça vaut le coût » si `C = 0`, « à peser » sinon, avec l'effet sur le risque et l'alternative par les versements (R8, § 18). Le verdict porte toujours sur **le levier** (une classe, une enveloppe, des versements), jamais sur le fait de garder ou de vendre un instrument nommé (§ 9.1) ;
 - **effet sur le risque**, quand le levier en change (`reequilibrer`, `securiser_objectif`, `reduire_satellite`) : le moteur PROJ compare la situation et la variante **sur les mêmes tirages** (`comparer_variantes`) et donne la probabilité d'atteindre l'objectif avant et après (« 6 chances sur 10 → 8 chances sur 10 »). Cet effet n'est jamais converti en euros ajoutés à `G`.
 - **toujours une alternative sans coût** quand elle existe : orienter les prochains versements (`versements_orientes`) rééquilibre sans vendre ; le calcul dit en combien de mois l'écart serait comblé avec la capacité d'épargne constatée (PROJ, décision 12).
 
@@ -281,15 +283,15 @@ Chaque constat suit le contrat de critère de CP4 (`statut`, `mesure`, `repere`,
 
 | Clé | Pour | Mesure | Bon | À surveiller | À travailler | Source des données |
 |---|---|---|---|---|---|---|
-| `cout` | fonds, ETF, UC | Frais du fonds + frais d'enveloppe, % par an | ≤ repère bas de la classe + 0,10 | dans le repère de la classe | au-dessus du repère et > 0,50 % | `instruments.ter`, `config.frais_enveloppes`, repères CP4 |
+| `cout` | fonds, ETF, UC | Statut sur les frais du fonds (TER) ; la mesure affiche aussi le coût total avec l'enveloppe | ≤ repère bas de la classe + 0,10 | entre les deux (dont au-dessus du repère mais ≤ 0,50 %) ; classe sans repère : > 0,40 % | au-dessus du repère et > 0,50 % (jamais pour une classe sans repère) | `instruments.ter`, `config.frais_enveloppes`, repères CP4 |
 | `poids` | toutes | Part du financier investi | sous le seuil du rôle | 80 à 100 % du seuil | au-dessus (5 % pour un satellite, 10 % par société par transparence) | positions, `instrument_expositions` |
 | `chevauchement` | fonds, ETF | Part des 10 premières lignes en commun avec un autre fonds détenu, pondérée | < 30 % | 30 à 60 % | > 60 % (doublon : frais et complexité sans diversification) | `instrument_expositions` (axe `ligne`) |
-| `classe_risque` | toutes | **Fait** : classe de la ligne (`marche.js`), volatilité historique de sa classe, levier ; la comparaison avec ton profil et l'horizon de tes objectifs se fait **au niveau de la classe** (déclencheurs `satellite_plafond`, `objectif_risque`, critère d'adéquation de CP4) | classe sans levier | volatilité de sa classe au-dessus de 20 % | levier ou classe spéculative (crypto) | `marche.js`, `instruments.levier` |
-| `solidite` | fonds, ETF | Encours, ancienneté, écart de suivi (ETF) | encours ≥ 100 M€, > 3 ans, écart de suivi dans la moyenne de la catégorie † | un des trois en dehors | encours < 20 M€ (risque de fermeture plus élevé) † | `instruments` (fournisseur) |
+| `classe_risque` | toutes | **Fait** : classe de la ligne (`marche.js`), volatilité historique de sa classe, levier ; la comparaison avec ton profil et l'horizon de tes objectifs se fait **au niveau de la classe** (déclencheurs `satellite_plafond`, `objectif_risque`, critère d'adéquation de CP4) | classe sans levier | volatilité de sa classe de 20 % ou plus (small caps, émergents) | levier ou classe spéculative (crypto) | `marche.js`, `instruments.levier` |
+| `solidite` | fonds, ETF | Encours, ancienneté | encours ≥ 100 M€ et > 3 ans | un des deux en dehors, dont encours < 20 M€ | — (repères sans source publique : jamais « à travailler », R11) ; l'écart de suivi est retiré tant qu'aucun fournisseur ne le donne | `instruments` (fournisseur) |
 | `enveloppe` | toutes | **Fait** : l'enveloppe de la ligne, ses frais et sa fiscalité ; la question « une autre enveloppe serait-elle plus favorable pour cette classe ? » est posée au niveau de la classe (levier `changer_enveloppe`) | rien à dire | une enveloppe plus favorable existe pour sa classe et a de la place | — (jamais « à travailler » : c'est un levier, pas un défaut) | DAT1 (seuils, plafonds), repères fiscaux |
 | `devise` | toutes | Exposition à une devise autre que l'euro, non couverte | < 50 % du financier en devises | — | — (information seulement, sauf profil prudent : « à surveiller » au-delà de 30 %) | `instruments.devise`, expositions |
 
-Les seuils marqués † (encours, écart de suivi) sont des repères à sourcer en tâche 0 ; sans source, le constat reste « à surveiller » au plus, jamais « à travailler ».
+Tâche 0 : aucune source publique n'a été trouvée pour les seuils d'encours ; ils restent des repères Boussole (« à surveiller » au plus). Applicabilité, bornes et formule du chevauchement (Σ des minimums des poids communs des 10 premières lignes, rapportée aux 10 premières lignes du fonds) : conventions de la fixture et R10 à R12 (§ 18).
 
 **Ce que la santé n'utilise jamais** : les avis des tiers, les objectifs de cours, la performance passée de la ligne, les étoiles d'un fonds.
 
@@ -678,14 +680,16 @@ Coût     0 €               arbitrage interne, sans impôt
 ```
 
 ```
-Ramener tes actions vers ta cible sur ton compte-titres
-Gain     +95 €/an          certain : frais
-Coût     1 840 € une fois  impôt sur 5 860 € de plus-value + courtage
+Réduire les frais de la classe Actions de ton compte-titres
+Gain     +95 €/an          certain : frais (0,80 % → 0,30 % sur 19 000 €)
+Coût     2 106 € une fois  impôt sur 5 800 € de plus-value (1 821 €) + courtage et écart (285 €)
          ───────────────
-         Rentabilisé en 19 ans · ton horizon : 12 ans
+         Rentabilisé en 22 ans · ton horizon : 12 ans
          ○ Ne rien faire est la meilleure option ici
-Sans coût : oriente tes prochains versements vers les obligations, l'écart serait comblé en 7 mois.
+Sans coût : oriente tes prochains versements de cette classe vers une gestion à frais réduits.
 ```
+
+(Exemples alignés en tâche 0 sur les cas VC-1, à l'horizon près, et VC-3 de la fixture. L'ancien second exemple ajoutait 5 860 × 31,4 % = 1 840 € « + courtage » sans courtage. Le délai de 7 mois de l'alternative par les versements est celui de VC-14 et VC-18, un écart de classe.)
 
 - Une **balance** visuelle (deux barres horizontales sur le même axe en euros : gain cumulé sur l'horizon contre coût unique), le point mort marqué sur la barre du gain. Le verdict est un mot avec un pictogramme (point plein, demi-point, cercle vide), jamais une couleur seule.
 - « Comment c'est calculé » montre les étapes de `vautLeCout` avec les chiffres de l'utilisateur, les repères (frais de classe, taux d'imposition, dates DAT1) et leur source.
@@ -788,7 +792,7 @@ Rester en **A** pour tout le chantier SUIVI. À J5 (ouverture au public), comman
 
 ## 14. Tests et banc d'évaluation
 
-### 14.1 Calculs purs (`test/suivi.test.mjs`, cas de référence `test/fixtures/suivi-cas.json`, relus par Opus en tâche 0)
+### 14.1 Calculs purs (`test/suivi.test.mjs`, cas de référence `test/fixtures/suivi-cas.json` : 90 cas écrits en tâche 0, § 18.3)
 
 - **Rôles** : chaque règle de rangement (réserve par famille et par objectif proche, satellite par type, levier, motif de catégorie, cœur par défaut), ligne non classée (cœur pour la fréquence, satellite pour le plafond).
 - **Politique** : défauts par profil et par horizon ; mois de revue ; un déclencheur du cœur n'apparaît pas hors du mois de revue sauf seuil ; pas de répétition avant la revue suivante sauf aggravation de moitié.
@@ -881,26 +885,121 @@ Consultées le 2026-10-15, sauf mention.
 - Yahoo, conditions : https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html
 - BCE : https://www.ecb.europa.eu/services/disclaimer/html/index.en.html ; Eurostat : https://ec.europa.eu/eurostat/web/main/help/copyright-notice ; Insee : https://insee.fr/fr/information/2008466 ; Fed : https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
 
-**Études (doctrine, § 2.3, à revérifier en tâche 0)**
-- R. Kinnel, « Fund Fees Predict Future Success or Failure », Morningstar, 2016.
-- S&P Dow Jones Indices, *SPIVA Europe Scorecard*.
-- B. Barber et T. Odean, « Trading Is Hazardous to Your Wealth », *Journal of Finance*, 2000.
-- Morningstar, *Mind the Gap*, édition annuelle.
-- S. Benartzi et R. Thaler, « Myopic Loss Aversion and the Equity Premium Puzzle », *Quarterly Journal of Economics*, 1995.
-- B. Barber, R. Lehavy, M. McNichols et B. Trueman, « Can Investors Profit from the Prophets? », *Journal of Finance*, 2001.
-- M. Bradshaw, L. Brown et K. Huang, « Do sell-side analysts exhibit differential target price forecasting ability? », *Review of Accounting Studies*, 2013.
-- Vanguard, « Best practices for portfolio rebalancing » (2010) et « Rational rebalancing » (2022).
+**Études et repères (doctrine § 2.3 et repères § 18.1, relus le 2026-10-15)**
+- R. Kinnel (Morningstar, mai 2016), lu dans FAnews, 9 mai 2016 : https://www.fanews.co.za/article/surveys-reports-and-ratings/34/general/1195/study-by-morningstar-s-russel-kinnel-shows-fund-fees-are-proven-predictors-of-future-success/20252
+- S&P Dow Jones Indices, *SPIVA Europe Year-End 2025* : https://www.spglobal.com/spdji/en/documents/spiva/spiva-europe-year-end-2025.pdf
+- B. Barber et T. Odean, *Journal of Finance* 55 (2), 2000, p. 773-806 : https://ideas.repec.org/a/bla/jfinan/v55y2000i2p773-806.html
+- Morningstar, *Mind the Gap* (10 ans à fin 2025), repris par Morningstar Australie le 19 août 2026 : https://www.morningstar.com.au/personal-finance/young-invested-are-you-sabotaging-your-etf-returns
+- S. Benartzi et R. Thaler, *Quarterly Journal of Economics* 110 (1), 1995, p. 73-92 ; document de travail NBER 4369 : https://www.nber.org/system/files/working_papers/w4369/w4369.pdf
+- B. Barber, R. Lehavy, M. McNichols et B. Trueman, *Journal of Finance* 56 (2), 2001, p. 531-563 : https://ideas.repec.org/a/bla/jfinan/v56y2001i2p531-563.html
+- M. Bradshaw, L. Brown et K. Huang, *Review of Accounting Studies* 18 (4), 2013, p. 930-955 : https://ideas.repec.org/a/spr/reaccs/v18y2013i4d10.1007_s11142-012-9216-5.html
+- C. Jaconetti, F. Kinniry et Y. Zilbering, « Best practices for portfolio rebalancing », Vanguard, juillet 2010 (copie chez un tiers) : https://indexacapital.com/bundles/unaiadvisor/docs/papers/2010-Vanguard-Best-practices-for-portfolio-rebalancing.pdf
+- Directive 2009/65/CE (OPCVM), art. 52 : https://www.legislation.gov.uk/eudr/2009/65/article/52/adopted
+- AMF, « Les frais des placements financiers continuent de baisser » (27 avril 2026, courtage moyen de janvier 2026) : https://www.amf-france.org/fr/actualites-publications/actualites/les-frais-des-placements-financiers-continuent-de-baisser-en-particulier-ceux-des-fonds
 
 ## 17. Décisions pour Stéph
 
 | # | Décision | Recommandation | Quand |
 |---|---|---|---|
-| **D0** | Valider la doctrine (§ 0, § 2) : rôle réserve / cœur / satellite, « ça vaut le coût ? » avant toute alerte, avis et événements sans effet sur les actions | Oui | Avant la phase 1 |
+| **D0** | Valider la doctrine (§ 0, § 2) : rôle réserve / cœur / satellite, « ça vaut le coût ? » avant toute alerte, avis et événements sans effet sur les actions | **Pris le 2026-10-15 : oui** | Avant la phase 1 |
 | **D1** | **Fournisseur de données et budget** : demander un devis B2B à EODHD (questions du § 10.3), essai d'un mois sur le forfait All-in-One (99,99 € par mois, usage interne) sur tes propres lignes, mesure de la couverture (ISIN trouvés, consensus européen, frais, lignes des fonds) ; plafond de décision proposé : **300 € par mois** ; repli Twelve Data Venture (149 $ par mois) pour les cours, ou palier sans abonnement (§ 10.5) | EODHD si la couverture mesurée dépasse 80 % de tes ISIN et si le devis tient sous le plafond | Après la phase 2 (GOV1 et SCO2 n'en dépendent pas) |
-| **D2** | Météo par ligne **sans note sur 20** (écart avec l'annexe G.2) | Oui (« pas de note maison », G.5 ; prudence du § 9.1) | Avant la phase 2 |
+| **D2** | Météo par ligne **sans note sur 20** (écart avec l'annexe G.2) | **Pris le 2026-10-15 : oui** | Avant la phase 2 |
 | **D3** | Changements de recommandation **hors** de « Ta semaine » (écart avec la liste d'EVT2 de G.5) | Oui (ESMA ¶ 79 et 82) | Avant la phase 5 |
-| **D4** | Plafonds satellite par profil (5 à 25 %) et seuils (5 points d'écart, 25 % de baisse, 5 % par ligne satellite, 10 % par société) | Valider les défauts, sourcés en tâche 0 | Avant la phase 1 |
+| **D4** | Plafonds satellite par profil (5 à 25 %) et seuils (5 points d'écart, 25 % de baisse, 5 % par ligne satellite, 10 % par société) | **Pris le 2026-10-15 : défauts du § 18.1, ajustables par `config.suivi`** | Avant la phase 1 |
 | **D5** | Coût de la veille « marchés » (≈ 6 à 10 $ par mois, indépendant du nombre d'utilisateurs), en API ou sur ton abonnement | Sur ton abonnement tant que le volume le permet | Avant la phase 4 |
 | **D6** | Remplacer Yahoo (cours, frais) par le fournisseur retenu | Oui, dès la phase 3 | Avec D1 |
 | **D7** | Avis juridique (questions du § 9.5) avant l'ouverture au public | Oui, budget à prévoir à J5 | Avant J5 |
 | **D8** | **Option CIF** (§ 13) : rester hors du conseil (A), partenariat avec un CIF indépendant (B), ou statut propre (C) | A maintenant ; étudier B à J5 si la demande est mesurée | J5 ou après |
+
+## 18. Tâche 0 : repères, résolutions, cas de référence, relecture des textes (2026-10-15)
+
+Faite par Opus le 2026-10-15. Décisions de Stéph appliquées : **D0** (doctrine), **D2** (météo sans note sur 20), **D4** (seuils et plafonds par défaut ci-dessous, ajustables par `config.suivi`). **D1, D5 et D6 restent ouvertes** : rien dans les phases 1 et 2 n'en dépend (les constats `solidite` et `chevauchement` restent « à compléter » sans fournisseur ; les frais lus sont ceux déjà en base, quelle que soit leur source ; aucun nouvel usage de Yahoo). Chiffres fiscaux : uniquement les repères déjà vérifiés de DAT1 (0029) et de PROJ (0030), réutilisés par `ProjectionFiscalite` ; aucun nouveau taux fiscal.
+
+### 18.1 Repères
+
+Tous dans `test/fixtures/suivi-cas.json` (clé `reperes`) au format de 0030 (`cle, libelle, valeur, unite, dateEffet, dateFin, sourceTitre, sourceUrl, verifieLe, statut`), prêts pour la migration 0032 (tâche 1) ; **V** = valeur lue sur la source, **CONV** = repère Boussole, prudent, dit comme tel dans le libellé. La table `reperes` n'a pas de colonne de thème : le thème `comportement` vaut pour les fiches (§ 18.3). Les onze repères fiscaux repris (`ir_taux_forfaitaire`, `ps_taux_general`, `ps_taux_av_epargne_logement`, `av_taux_ir_reduit`, `av_seuil_versements`, `av_abattement_seul`, `av_abattement_couple`, `av_duree_ans`, `pea_duree_ans`, `pea_plafond`, `ps_taux_actifs_numeriques`) portent `reprise` : déjà en base, à ne pas réinsérer.
+
+| Repère | Valeur | Statut | Source |
+|---|---|---|---|
+| Plafond satellite : prudent · modéré (et profil à faire) · équilibré · dynamique · offensif | 5 · 10 · 15 · 20 · 25 % du financier investi | CONV | Aucune norme publique du « cœur-satellite » trouvée ; repère prudent |
+| Écart d'une classe à la borne la plus proche de sa fourchette | 5 points | CONV | Vanguard 2010 (« rebalancing at 5% thresholds », écart à la cible ; Boussole l'applique à la borne, plus tolérant) |
+| Revue du cœur | 12 mois (annuelle) ; 6 mois (semestrielle) | V | Vanguard 2010 (« annual or semiannual monitoring ») |
+| Horizon de la revue annuelle ; échéance de la réserve ; horizon supposé | 8 ans ; 3 ans ; 10 ans | CONV | Spec ; 3 ans comme le projet proche de CP4 |
+| Baisse d'une ligne satellite | 25 % | CONV | — |
+| Ligne satellite ; société (direct et transparence) | 5 % ; 10 % du financier investi | CONV | D'après la directive OPCVM, art. 52 (5 % par émetteur, porté à 10 % au plus) |
+| Plancher de frais d'un déclencheur ; marge du coût « bon » | 0,50 % ; bas du repère + 0,10 | CONV | CP4 (`fraisSupports`) |
+| Volatilité de classe « à surveiller » | ≥ 20 % | CONV | Volatilités de `marche.js` |
+| Devise : information ; profil prudent | 50 % ; 30 % | CONV | — |
+| Encours suffisant ; encours bas ; ancienneté | 100 M€ ; 20 M€ ; 3 ans | CONV | Aucune source publique : « à surveiller » au plus |
+| Chevauchement « à surveiller » ; « à travailler » | 30 % ; 60 % | CONV | — |
+| Croisement : devise, zone ou pays ; société par transparence | 5 % ; 1 % | CONV | — |
+| Couverture minimale de la météo | 60 % | CONV | — |
+| Point mort : plafond ; part de l'horizon ; aggravation qui fait remontrer | 3 ans ; 50 % ; 50 % | CONV | — |
+| Courtage moyen d'un ordre de 1 000 € (janvier 2026) : banques de réseau · en ligne · néo-courtiers | 0,65 · 0,45 · 0,15 % | V | AMF, 27 avril 2026 |
+| Demi-écart achat-vente par ordre coté ; frais d'arbitrage supposés | 0,10 % ; 1 % | CONV | Aucune source officielle (sources de place : arbitrage « rarement plus de 1 % ») |
+
+### 18.2 Résolutions (à appliquer à l'identique ; détail dans `conventions` de la fixture)
+
+- **R1. Bases.** T = lignes hors comptes courants ; I (financier investi) = T − réserve. Les parts du système sont en % de T ; le plafond satellite, la concentration, le poids, la devise et le croisement en % de I. Les lignes non classées comptent dans le satellite pour le plafond. L'affichage « Satellite x % sur p % » utilise la part de I (SY-1 : 9 % de T, 10,34 % de I).
+- **R2. Réserve.** L'échéance proche ne range en réserve que l'argent sans risque (monétaire, fonds en euros) ; une classe risquée rattachée à un objectif proche reste cœur ou satellite et lève `objectif_risque`, mesurée sur la classe, pas sur le rôle. Règle 4 : classe `autres` sans information d'instrument → non classée.
+- **R3. Motifs du satellite** (thématique, sectoriel, pays unique) écrits dans la fixture ; les États-Unis ne sont pas un « pays unique » (P3).
+- **R4. Politique.** Sans profil : plafond du profil Modéré (10 %), mention « profil à faire ». Revue du cœur semestrielle si une ligne du cœur a un objectif à moins de 8 ans, sinon annuelle. Mois de revue : `config.suivi`, sinon le mois de la première revue mensuelle close, sinon le mois courant (la première revue est due tout de suite) ; semestrielle : m et m + 6.
+- **R5. `frais_eleves`** sur le TER du fonds (comme `auDessusRepere` de CP4), regroupé par classe, enveloppe et rôle ; les frais d'enveloppe ne sont pas réduits par `frais_classe`.
+- **R6. Gain `G`** sur le **haut** du repère de classe (la spec disait le bas) : prudent et identique au surcoût de CP4.
+- **R7. Coûts de transaction.** Assurance-vie, capitalisation, PER : un arbitrage au taux du contrat, sinon 1 % supposé (hypothèse écrite). PEA et compte-titres : chaque ordre au courtage renseigné, sinon 0,65 % (AMF, le plus élevé, prudent), plus 0,10 % de demi-écart. `config.frais_enveloppes` accepte **`arbitrage_pct` et `courtage_pct`** (0 à 5, migration 0032). Frais sur versement d'une assurance-vie : non comptés, hypothèse écrite.
+- **R8. Leviers de risque** (`reequilibrer`, `securiser_objectif`, `reduire_satellite`, `versements_orientes`) : G = 0 ; « ça vaut le coût » si C = 0, « à peser » sinon. Montant : `satellite_plafond` → S − plafond × I ; `concentration` → v − 5 % × I. L'alternative par les versements donne un délai en mois pour un écart de classe (formules dans la fixture), aucun délai pour un levier de frais.
+- **R9. Pas de verdict** (null, « à compléter ») quand le prix de revient d'une ligne vendue hors PEA manque ou qu'un repère fiscal manque. Un retrait d'un PEA de moins de 5 ans clôture le plan : impôt sur tout le gain et vente de toutes ses lignes (VC-11). Une moins-value latente n'est pas comptée comme un gain.
+- **R10. Constat `cout`** jugé sur le TER ; une classe sans repère (fonds diversifié, `autres`) est « à surveiller » au plus.
+- **R11. `solidite`** jamais « à travailler » ; écart de suivi retiré (aucun fournisseur évalué ne le donne).
+- **R12. Applicabilité** : `cout` et `solidite` pour les fonds ; `poids` pour le satellite ; `chevauchement` pour les fonds quand le foyer en détient au moins deux, formule Σ min des poids communs des 10 premières lignes ÷ poids des 10 premières lignes du fonds ; `classe_risque`, `enveloppe`, `devise` pour toutes. `enveloppe` « à surveiller » seulement pour des actions sur un compte-titres quand un PEA a de la place.
+- **R13. Visibilité et mémoire.** Un déclencheur du cœur (et `ecart_cible`) n'est montré qu'au mois de revue du cœur, ou hors de ce mois s'il est nouveau depuis la dernière revue (`seuil_franchi`) ou aggravé de plus de moitié ; réserve et satellite : chaque mois ; déclencheurs datés : toujours. La mémoire est l'état figé à la dernière clôture de revue (`derniere_revue` : déclencheurs, constats, météo) ; sans mémoire, rien hors du mois de revue (`hors_revue`). Où la ranger : point P7.
+- **R14. `sante_degradee`** seulement pour un constat sans déclencheur propre (pas de doublon avec `frais_eleves` ou `concentration`).
+- **R15. Gel de la météo du cœur** : seule la météo est figée, les constats restent calculés (ce sont des faits) ; `gelee_jusquau` = prochaine revue.
+- **R16. Habitudes** : fenêtres de 3, 6 et 12 mois finissant au mois courant s'il a une revue, sinon au précédent ; « 5 sur les 6 derniers mois » sans remise à zéro ; la diversification porte sur les sociétés, pas sur les fonds.
+- **R17. Croisement** en % de I ; pour la zone euro, la devise EUR sert d'approximation tant que l'axe pays manque (mentionné).
+- **R18. Ta semaine** : à venir sur 7 jours, passé sur 7 jours ; « Rien à faire » quand aucun déclencheur visible n'a « ça vaut le coût » (ou un levier de risque « à peser »).
+
+### 18.3 Cas de référence et fiches
+
+`test/fixtures/suivi-cas.json` : **90 cas fictifs**, 35 nouveaux repères, 11 repères repris, 6 fiches du savoir (thème `comportement`, tutoiement, sourcées : `frais-meilleur-indice`, `moins-de-transactions`, `regarder-moins-souvent`, `avis-des-analystes`, `reequilibrer-sans-exces`, `coeur-et-satellite`).
+
+| Famille | Cas | Fonction |
+|---|---|---|
+| Rôles | RO-1 à RO-14 | `roleParDefaut` |
+| Politique | PO-1 à PO-5 | `politique` |
+| Système | SY-1 à SY-4 | `systeme` |
+| Déclencheurs | DE-1 à DE-14, SD-1 à SD-3 | `declencheurs` |
+| « Ça vaut le coût ? » | VC-1 à VC-22 (assurance-vie, compte-titres avec plus-value et moins-value, PEA de moins de 5 ans et clôture, assurance-vie de plus de 8 ans seul et en couple, G = 0, bords à 3 ans et à l'horizon, alternative par les versements, repère manquant, prix de revient inconnu) | `vautLeCout` |
+| Constats et météo | CM-1 à CM-18 (bords de frais, 60 % de couverture, gel) | `meteo` (avec `constats`) |
+| Habitudes | HA-1 à HA-3 | `habitudes` |
+| Croisement (phase 4) | EX-1 à EX-4 | `exposition` |
+| Ta semaine (phase 6) | SE-1 à SE-3 | `maSemaine` |
+
+Chaque attendu est calculé à la main (arithmétique écrite dans le champ `note`), puis recalculé par un moteur de référence indépendant qui applique les règles générales des conventions et réutilise `Calc`, `Marche`, `Risque`, `Pratiques` et `ProjectionFiscalite` (scripts jetables, non commités) : 90 cas concordants, et un test de mutation (trois attendus faussés) détecte les trois écarts. L'effet sur le risque (`comparer_variantes`) n'est pas dans la fixture : la tâche 2 l'ajoute avec une graine fixe.
+
+### 18.4 Relecture des textes affichés au regard du § 9.1
+
+| Texte | Risque | Proposition |
+|---|---|---|
+| § 11.11 « Ligne du cœur : prochaine revue en mars. D'ici là, rien à surveiller de près. » | Moyen : sur une ligne nommée, « rien à surveiller » se lit comme un jugement de garder l'instrument | « Rôle : cœur. Prochaine revue de ton cœur : mars. » |
+| § 11.11 « Regardé le 14 oct. : … Ne rien faire est la meilleure option ici. » sur « Ta ligne » | Moyen à élevé (§ 9.5, question 2 : « hold ») | Toujours sous le titre de classe et d'enveloppe, formulé sur le levier : « Classe Actions de ton compte-titres, regardée le 14 oct. : la changer coûterait 2 106 € pour 95 € par an ; sur ton horizon, ne rien changer à cette classe est l'option la moins coûteuse. » |
+| § 11.6, carte 4 : « ETF Monde A passe en éclaircies : frais passés de 0,20 % à 0,35 % » | Moyen : jugement de Boussole sur un instrument nommé, poussé dans un message hebdomadaire (ESMA ¶ 79 et 82) | Le fait seul : « Frais d'ETF Monde A passés de 0,20 % à 0,35 % le 3 oct. (source). » La météo reste sur « Ta ligne ». |
+| § 11.4 « analystes partagés », « analystes proches », « avis assez dispersés » | Moyen : qualification calculée par Boussole d'un avis de tiers (§ 2.4, art. 10 de 2016/958) | L'écart chiffré seul : « Objectifs de 38 à 71 € (écart de 33 €, soit {x} % du cours actuel) ». |
+| § 6.2, point 8, dernière phrase de la mention fixe (« Les études montrent… ») | Faible : commentaire de Boussole dans la section de l'avis, dans le sens d'une présentation objective (MAR art. 20) | Garder, avec un lien vers la fiche `avis-des-analystes` (références Barber et al. 2001, Bradshaw et al. 2013) ; à soumettre au juriste (§ 9.5, question 3) |
+| § 4.2 « Claude rappelle que la règle va contre une détention de long terme » | Moyen : avis sur la conduite à tenir avec un instrument nommé | « Claude rappelle le rôle de la ligne et la fréquence de revue que tu as choisie, et te demande si ta règle tient toujours. » |
+| § 5.1 et § 11.3 : chip « À travailler » du constat `poids` sur une action nommée | Moyen : peut se lire « allège cette valeur » | Chip factuelle « au-dessus du repère de 5 % » ; le levier `reduire_satellite` reste formulé sur la part satellite (§ 9.5, question 1) |
+
+**Validés** : « Rôle proposé : satellite (action en direct). Confirme-le avec Claude. » (règle de suivi, pas d'adéquation) ; « Jeudi, la BCE annonce ses taux… Ça n'appelle aucune action. » (événement, pas un instrument) ; « Le fonds de cette ligne fermera le 12 déc. … Voici ce que ça change dans ton PEA. » (fait daté, à condition qu'aucun remplaçant ne soit nommé ensuite, banc § 14.3) ; « un fonds indiciel de cette classe coûte souvent {repère} » (ESMA ¶ 48 et 58) ; les libellés des leviers du § 4.5 ; « Rien à faire cette semaine. C'est souvent la meilleure stratégie. » ; la mention fixe du § 6.2 (hors dernière phrase, ci-dessus) ; les titres des cartes de levier (§ 11.8), qui nomment une classe et une enveloppe.
+
+### 18.5 Points ouverts
+
+- **P1.** Sources lues de seconde main : l'étude de Kinnel (reprise FAnews ; la page de Morningstar redirige) et *Mind the Gap* (article de Morningstar Australie ; rapport complet illisible). Vanguard 2010 est lu dans une copie hébergée par un tiers. « Rational rebalancing » (2022) n'est plus cité.
+- **P2.** Aucune source publique pour les plafonds satellite, les seuils d'encours, de chevauchement, de croisement, le demi-écart et les frais d'arbitrage : repères Boussole (CONV), acceptés par D4.
+- **P3.** États-Unis exclus de la règle du pays unique ; un Nasdaq-100 reste au cœur. À confirmer par Stéph (beaucoup de PEA en détiennent comme cœur).
+- **P4.** Le courtage de l'AMF est mesuré sur un ordre de 1 000 € : il surestime le coût des gros ordres (prudent, penche vers « ne rien faire »). Claude doit demander `courtage_pct` quand un verdict est « à peser ».
+- **P5.** Frais d'arbitrage supposés à 1 % sans source officielle : à demander au contrat (`arbitrage_pct`).
+- **P6.** Le crédit à taux variable n'existe pas dans le modèle des crédits du profil : la règle BCE du § 7.3 ne peut pas l'utiliser (phase 4).
+- **P7.** Mémoire de la dernière revue (R13) : le journal ne l'a que si `consentement_journal` est vrai. Proposition pour la tâche 1 : une colonne privée `routines.etat_suivi` (jsonb, 20 Ko au plus) écrite par `cloturer_routine` (déclencheurs vus, constats, météo), dans `export_all()` et effacée avec le compte. Sans elle, ni gel ni « déjà vu » : tout déclencheur du cœur attend le mois de revue.
+- **P8.** Devise en phases 1 et 2 : celle de l'instrument (cotation), pas l'exposition réelle (un ETF Monde en euros est surtout exposé au dollar) ; constat d'information seulement, à refaire avec la transparence (phase 3).
+- **P9.** Le plafond de versements du PEA n'est pas vérifié pour `changer_enveloppe` vers un PEA (texte seulement) ; l'éligibilité d'une ligne au PEA n'est pas connue sans fournisseur (constat `enveloppe` : « si la ligne est éligible »).
+- **P10.** Les textes du § 18.4 sont des propositions : à trancher par Stéph avant la tâche 6, puis par le juriste (D7).
