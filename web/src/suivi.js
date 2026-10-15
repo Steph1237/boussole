@@ -816,16 +816,17 @@
     });
     /* sante_degradee : un constat passé de bon ou à surveiller à à travailler, sans déclencheur propre */
     {
-      const mem = objet(objet(ctx.d.routines).derniere_revue), constatsMem = objet(mem.constats);
+      const mem = objet(objet(ctx.d.routines).derniere_revue), constatsMem = objet(mem.constats), meteoMem = objet(mem.meteo);
       lignes.forEach(l => {
+        /* la ligne figurait à la dernière revue : un constat absent de la mémoire y était « bon » (la mémoire ne garde que les écarts) */
+        if (!(l.id in constatsMem) && !(l.id in meteoMem)) return;
         const avant = objet(constatsMem[l.id]);
-        if (!Object.keys(avant).length) return;
-        constatsDe(ctx, l).filter(c => !["cout", "poids"].includes(c.cle) && c.statut === "a_travailler" && ["bon", "a_surveiller"].includes(avant[c.cle])).forEach(c => {
+        constatsDe(ctx, l).filter(c => !["cout", "poids"].includes(c.cle) && c.statut === "a_travailler" && ["bon", "a_surveiller"].includes(avant[c.cle] || "bon")).forEach(c => {
           const mes = c.mesure && c.mesure.valeur != null ? c.mesure.valeur : null;
           const seuil = c.cle === "chevauchement" ? rep("suivi_chevauchement_travailler_pct") : c.cle === "classe_risque" ? rep("suivi_volatilite_surveiller_pct") : null;
           ajouter(base("sante_degradee", { portee: "ligne", classe: l.classe, enveloppe: l.enveloppe, constat: c.cle, position_ids: [l.id], mesure: mes, seuil, levier: c.cle === "classe_risque" && l.role === "satellite" ? "reduire_satellite" : null,
             montant: c.cle === "classe_risque" && l.role === "satellite" ? r2(l.valeur) : undefined,
-            titre: "Ta classe " + classeLib(l.classe) + " dans « " + l.enveloppe + " » : le constat « " + (CONSTATS_LIB[c.cle] || c.cle).toLowerCase() + " » est passé de « " + (STATUT_LIB[avant[c.cle]] || avant[c.cle]).toLowerCase() + " » à « au-dessus du repère »",
+            titre: "Ta classe " + classeLib(l.classe) + " dans « " + l.enveloppe + " » : le constat « " + (CONSTATS_LIB[c.cle] || c.cle).toLowerCase() + " » est passé de « " + (STATUT_LIB[avant[c.cle] || "bon"] || avant[c.cle]).toLowerCase() + " » à « au-dessus du repère »",
             pourquoi: c.pourquoi, source: "Constats de santé (SCO2)" }), roleFreq(l));
         });
       });
@@ -1064,17 +1065,47 @@
     return Object.assign(v, { leviers });
   }
 
+  /* ================================================================== mémoire de la revue (routines.etat_suivi, écrite par cloturer_routine) */
+  const TAILLE_ETAT_MAX = 19000;
+  /** État figé à la clôture d'une revue : déclencheurs existants (vus ou non), constats qui comptent pour « sante_degradee » (les écarts seulement : un constat
+      absent était « bon »), météo de chaque ligne, date de la revue du cœur. Aucun texte libre ; 20 Ko au plus (les constats puis la météo « au clair »
+      sont abandonnés les premiers au-delà de 19 000 octets). opts.coeur_revu : la revue du cœur vient d'être faite. */
+  function etatSuivi(data, today, opts) {
+    const ctx = contexte(data, today), o = objet(opts);
+    const decl = declencheursCtx(ctx, {}).map(d => ({ cle: d.cle, cible: d.cible, mesure: d.mesure == null ? null : r4(+d.mesure) }));
+    const constatsMem = {}, meteoMem = {};
+    ctx.lignes.forEach(l => {
+      const cs = constatsDe(ctx, l);
+      const ecarts = {};
+      cs.filter(c => ["chevauchement", "classe_risque"].includes(c.cle) && c.statut !== "bon" && c.statut !== "a_completer").forEach(c => { ecarts[c.cle] = c.statut; });
+      if (Object.keys(ecarts).length) constatsMem[l.id] = ecarts;
+      meteoMem[l.id] = meteoLigne(ctx, l, cs).meteo;
+    });
+    const rt = objet(ctx.d.routines);
+    const etat = { le: today, revue_coeur_faite_le: o.coeur_revu ? today : estDate(rt.revue_coeur_faite_le) ? rt.revue_coeur_faite_le : null, declencheurs: decl, constats: constatsMem, meteo: meteoMem };
+    const taille = () => JSON.stringify(etat).length;
+    if (taille() > TAILLE_ETAT_MAX) etat.constats = {};
+    if (taille() > TAILLE_ETAT_MAX) Object.keys(etat.meteo).forEach(id => { if (etat.meteo[id] === "clair") delete etat.meteo[id]; });
+    if (taille() > TAILLE_ETAT_MAX) etat.declencheurs = etat.declencheurs.slice(0, 40);
+    return etat;
+  }
+  /** Mémoire d'une revue (routines.etat_suivi) → routines de data : { passages, revue_coeur_faite_le, derniere_revue }. */
+  function routinesDe(etat, passages) {
+    const e = etat && typeof etat === "object" && !Array.isArray(etat) && estDate(etat.le) ? etat : null;
+    return { passages: liste(passages).filter(estDate), revue_coeur_faite_le: e && estDate(e.revue_coeur_faite_le) ? e.revue_coeur_faite_le : null, derniere_revue: e };
+  }
+
   /* ================================================================== phrases affichées (règles de présentation du § 18.4) */
   /** Phrase sur le verdict d'un levier : toujours sous le titre de la classe et de l'enveloppe, formulée sur le levier, jamais sur une ligne. */
   function phraseVerdict(res, quand) {
     if (!res || !res.verdict) return "Il manque une donnée pour chiffrer ce changement" + (res && res.manque && res.manque.length ? " : " + res.manque[0] + "." : ".");
     const regarde = quand ? "regardée le " + dateCourte(quand) : "regardée";
-    const sujet = "Classe " + classeLib(res.classe) + (res.enveloppe ? " dans « " + res.enveloppe + " »" : "");
+    const sujet = res.classe ? "Classe " + classeLib(res.classe) + (res.enveloppe ? " dans « " + res.enveloppe + " »" : "") : res.levier === "reduire_satellite" ? "Ta part satellite" : res.levier === "securiser_objectif" ? "L'argent de cet objectif" : "Ce levier";
     if (res.verdict === "vaut_le_cout") return sujet + ", " + regarde + " : le changement ne coûte " + (res.cout_unique > 0 ? "que " + eur(res.cout_unique) + " pour " + eur(res.gain_annuel) + " par an" : "rien") + " ; ça vaut le coût sur ton horizon.";
     if (res.verdict === "a_peser") return sujet + ", " + regarde + " : à peser, le changement coûte " + eur(res.cout_unique) + (res.gain_annuel > 0 ? " pour " + eur(res.gain_annuel) + " par an" : "") + ".";
     return sujet + ", " + regarde + " : la changer coûterait " + eur(res.cout_unique) + (res.gain_annuel > 0 ? " pour " + eur(res.gain_annuel) + " par an" : "") + " ; sur ton horizon, ne rien changer à cette classe est l'option la moins coûteuse.";
   }
 
   return { ROLES, ROLES_LIB, METEOS, METEO_LIB, STATUT_LIB, CONSTATS_LIB, VERDICT_LIB, CLASSE_LIB, LEVIERS, RAISON_LIB, DEFAUTS, classeLib, moisRevolus,
-    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
+    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, etatSuivi, routinesDe, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
 });
