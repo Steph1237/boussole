@@ -80,6 +80,7 @@ import { registerCalendrier, calendrierDeSession, typeDeduit as typeDeduitCalend
 import { registerProjection, projectionDeSession, probabilitesObjectifs, lireDonneesProjection } from "./projection.ts";
 import { registerSuivi, suiviDeSession, suiviDeRevue, etatSuiviDeCloture, planDuMois } from "./suivi.ts";
 import { Plan } from "./projection-moteur.gen.js";
+import { Calc } from "./projection-moteur.gen.js"; // HIS2 : série fusionnée des mois bancaires (Calc.budgetReel avec relevés importés)
 import { registerExpertises, listeExpertises } from "./expertises.ts";
 import { registerAnalyser } from "./analyser.ts";
 import { registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton } from "./banque.ts";
@@ -380,7 +381,7 @@ function viewPosition(p: any) {
 /* ------------------------------------------------------------------ */
 
 /* banque (facultatif) : { comptes, mois } lus par chargerDonnees quand l'interrupteur banque est actif (budget réel des bonnes pratiques). */
-type Donnees = { profil: any; biens: any[]; credits: any[]; positions: any[]; config: any; lignes: any[]; banque?: any };
+type Donnees = { profil: any; biens: any[]; credits: any[]; positions: any[]; config: any; lignes: any[]; banque?: any; historique?: any };
 
 const EPS = 1e-9;
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
@@ -925,7 +926,10 @@ const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
     épargne versée (versements d'épargne et d'investissement), tauxEpargne = épargne versée ÷ revenus (« Épargne versée » en %), capacité d'épargne réelle (capacite = revenus − dépenses, tauxCapacite =
     capacite ÷ revenus : capacité d'épargne de Santé, spec cp4 § 1.2) ; parCompte : chaque mois retenu détaillé par compte (sinon totaux de
     tous les comptes connectés) ; null sans mois complet. Parité testée avec Calc.budgetReel. */
-function budgetReel(banque: any, auj: string, nb = 3) {
+function budgetReel(banque: any, auj: string, nb = 3, historique?: any) {
+  /* HIS2 : avec des relevés importés (historique = { comptes, releves, banqueMois }), la série fusionnée Powens / import est celle de l'app
+     (Calc.moisBancaires, copie générée du moteur, jamais un port) ; sans eux, le calcul ci-dessous (parité testée avec Calc.budgetReel). */
+  if (historique && Array.isArray(historique.releves) && historique.releves.length) return Calc.budgetReel(banque, auj, nb, historique);
   if (!banque || banque.actif === false) return null;
   const k = Number.isInteger(nb) && nb > 0 ? nb : 3;
   const courant = moisIso(auj) as string;
@@ -1217,7 +1221,7 @@ const deviseDe = (p: any) => p.instrument?.devise ?? null;
 
 /** banque (facultatif) : { comptes, mois } de banque_comptes / banque_mois, pour le budget réel des comptes courants (matelas, argent
     dormant, capacité d'épargne) ; absente : celle des données chargées (d.banque, chargerDonnees). */
-type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string; banque?: any };
+type ContexteBP = { d: Donnees; scope: string; objectifs: any[]; risque: any; classes: Surcharge; ref: string; banque?: any; historique?: any };
 type DepRef = { montant: number; source: string; periode?: string } | null;
 
 function objectifsCourts(objectifs: any[], deja: Record<string, number>, ref: string) {
@@ -1799,7 +1803,7 @@ function bonnesPratiques(c: ContexteBP) {
   const cu = d.config?.cushion;
   const prevu = totaux.depensesLignes > 0 ? totaux.depenses : cu && typeof cu === "object" && cu.mode === "months" && pos(cu.depenses) > 0 ? pos(cu.depenses) : 0;
   /* Dépenses de référence (matelas, argent dormant) et capacité d'épargne : budget réel des comptes courants (foyer seulement), sinon budget prévu. */
-  const reel = scope === "foyer" ? budgetReel(c.banque ?? c.d.banque, c.ref) : null;
+  const reel = scope === "foyer" ? budgetReel(c.banque ?? c.d.banque, c.ref, 3, c.historique ?? c.d.historique) : null;
   const periode = reel ? periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
   const depRef: DepRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
   const deja = affecterDeja(c.objectifs, d.positions, scope);

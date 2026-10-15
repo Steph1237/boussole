@@ -120,8 +120,8 @@ Phases livrables séparément : **phase 1** (T0 à T9 : on peut importer, valide
 - **Dépend de** : T3.
 
 ### Tâche 5 — `Calc.moisBancaires` et budget réel (Sonnet, medium, M)
-- [ ] `web/src/calc.js` : `moisBancaires` (spec § 6.1) ; `budgetReel` le consomme (comportement inchangé sans import : tests existants verts) ; même changement dans le bloc de calcul du connecteur ; parité testée (cas B1, B1-powens).
-- [ ] `projection-donnees.js` (épargne constatée sur 12 mois) et la santé lisent la série fusionnée.
+- [x] `web/src/calc.js` : `moisBancaires` (spec § 6.1) ; `budgetReel` le consomme (comportement inchangé sans import : tests existants verts) ; même changement dans le bloc de calcul du connecteur ; parité testée (cas B1, B1-powens). Fait : `Calc.moisBancaires(banque, historique, auj)` et `Calc.budgetReel(banque, auj, nb, historique)` ; le connecteur (`index.ts`, `budgetReel(banque, auj, nb, historique)`) délègue au moteur copié (`projection-moteur.gen.js`) dès qu'il y a des relevés importés ; `test/his2-calc.test.mjs` (13 cas de la fixture, dont B1, B1-powens, B-carte) et parité dans `test/mcp.test.mjs`.
+- [x] `projection-donnees.js` (épargne constatée sur 12 mois) et la santé lisent la série fusionnée (`s.historique` / `S.historique`, alimentés par le store en T8).
 - **Dépend de** : T0. **Coordonner avec BUD1** (qui consommera `moisBancaires`).
 
 ### Tâche 6 — Outils MCP (Sonnet, medium, L)

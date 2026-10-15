@@ -38,7 +38,7 @@ const chainesJs = src => [...sansCommentaires(src).matchAll(/"((?:[^"\\\n]|\\.)*
 
 
 test("santé : la vue calcule les bonnes pratiques avec Pratiques.evaluer, dans le périmètre courant, et s'enregistre", () => {
-  assert.match(js, /window\.Pratiques\.evaluer\(\{positions:S\.positions,profil:S\.profil,config:S\.config,budget:S\.budget,objectifs:S\.objectifs,scope:S\.scope,risque:S\.risque,classes:S\.classes,banque:S\.banque\|\|null,today:/);
+  assert.match(js, /window\.Pratiques\.evaluer\(\{positions:S\.positions,profil:S\.profil,config:S\.config,budget:S\.budget,objectifs:S\.objectifs,scope:S\.scope,risque:S\.risque,classes:S\.classes,banque:S\.banque\|\|null,historique:S\.historique\|\|null,today:/);
   assert.match(js, /if\(!window\.Pratiques\|\|typeof window\.Pratiques\.evaluer!=="function"\) return null;/, "sans pratiques.js : pas de note, pas d'erreur");
   for (const k of ["scope", "profil", "budget", "objectifs", "risque", "classes", "banque"]) assert.match(js, new RegExp(k + ":snap\\." + k));
   assert.match(js, /last=calcule\(\)/, "recalculé à chaque mise à jour du store");

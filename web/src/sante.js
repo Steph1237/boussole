@@ -469,7 +469,7 @@ function scopeDe(){ return S.scope==="foyer"?"du foyer":window.Calc.deNom(nomOf(
 
 function calcule(){
   if(!window.Pratiques||typeof window.Pratiques.evaluer!=="function") return null;
-  try{ return window.Pratiques.evaluer({positions:S.positions,profil:S.profil,config:S.config,budget:S.budget,objectifs:S.objectifs,scope:S.scope,risque:S.risque,classes:S.classes,banque:S.banque||null,today:new Date()}); }
+  try{ return window.Pratiques.evaluer({positions:S.positions,profil:S.profil,config:S.config,budget:S.budget,objectifs:S.objectifs,scope:S.scope,risque:S.risque,classes:S.classes,banque:S.banque||null,historique:S.historique||null,today:new Date()}); }
   catch(e){ console.error("bonnes pratiques",e); return null; }
 }
 /* Rien n'est réécrit (ni focus perdu) quand le HTML n'a pas changé. */
@@ -592,7 +592,7 @@ function mount(r){
 function update(snap,visible){
   snap=snap||{};
   S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions||[],config:snap.config,profil:snap.profil||null,budget:snap.budget||null,
-    objectifs:snap.objectifs||[],risque:snap.risque||null,classes:snap.classes||{},banque:snap.banque||null};
+    objectifs:snap.objectifs||[],risque:snap.risque||null,classes:snap.classes||{},banque:snap.banque||null,historique:snap.historique||null};
   last=calcule(); dateDonneesS=dateDonnees(snap); dirty=true; recu=true;
   if(visible){ render(); dirty=false; appliquerLien(); } else lien=null;
 }

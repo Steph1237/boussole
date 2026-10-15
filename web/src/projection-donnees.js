@@ -1,7 +1,7 @@
 /* Données du moteur de projection (PROJ) : lecture des repères avec suivi des manques, hypothèses par classe d'actifs, compartiments
    (enveloppe × titulaire × classe) construits depuis les positions, capacité d'épargne de départ (constatée, prévue, programmée),
    crédits en cours. Pur, sans DOM. Global ProjectionDonnees ; copié tel quel dans le connecteur (npm run gen).
-   Entrée : data = { today, positions, instruments, config, profil, credits, biens, budget, banque, objectifs, foyer, reperes, classes?, calendrier? }. */
+   Entrée : data = { today, positions, instruments, config, profil, credits, biens, budget, banque, historique?, objectifs, foyer, reperes, classes?, calendrier? }. */
 (function (root, factory) {
   const noeud = typeof module === "object" && module.exports;
   const dep = (global, chemin) => (noeud ? require(chemin) : root[global]);
@@ -139,9 +139,10 @@
     const programmee = sum(rec, r => +r.amount);
     const mentions = [];
     let constatee = null, detail = null;
-    if (sc === "foyer" && d.banque) {
-      let r = Calc.budgetReel(d.banque, today, 12), courte = false;
-      if (!(r && r.n >= 6)) { r = Calc.budgetReel(d.banque, today, 3); courte = !!r; }
+    // HIS2 : la série fusionnée (Powens et relevés importés, Calc.moisBancaires) nourrit la capacité constatée, même sans banque connectée
+    if (sc === "foyer" && (d.banque || liste(objet(d.historique).releves).length)) {
+      let r = Calc.budgetReel(d.banque, today, 12, d.historique), courte = false;
+      if (!(r && r.n >= 6)) { r = Calc.budgetReel(d.banque, today, 3, d.historique); courte = !!r; }
       if (r) {
         constatee = r.capacite;
         detail = { montant: r.capacite, mois: r.n, revenus: r.revenus, depenses: r.depenses, periode: Calc.periodeReel(r), courte, du: r.du, au: r.au };
@@ -369,7 +370,7 @@
   function depuisEtat(S, today) {
     const s = objet(S), pr = objet(s.profil);
     return { today, positions: liste(s.positions), instruments: [], config: objet(s.config), profil: pr, credits: liste(pr.credits), biens: liste(pr.biens), budget: s.budget || { lignes: [] },
-      banque: s.banque || null, objectifs: liste(s.objectifs), foyer: { evenements: liste(objet(s.foyer).evenements), variantes: liste(objet(s.foyer).variantes) },
+      banque: s.banque || null, historique: s.historique || null, objectifs: liste(s.objectifs), foyer: { evenements: liste(objet(s.foyer).evenements), variantes: liste(objet(s.foyer).variantes) },
       reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes), historique: historiquePourRetro(s.snapshots, s.tx) };
   }
 
