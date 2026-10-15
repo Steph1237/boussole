@@ -34,6 +34,8 @@ export const IGNOREES = {
   historique_imports: "trace des imports validés (HIS2) : créée par appliquer_propositions, jamais chargée à la main",
   historique_releves: "en-têtes mensuels des relevés importés (HIS2) : créés par appliquer_propositions",
   historique_banque_mois: "totaux mensuels par catégorie des relevés importés (HIS2) : créés par appliquer_propositions",
+  banque_marchands_mois: "totaux mensuels par marchand nettoyé (BUD1, 0035) : recalculés par banque_recalculer_mois à partir des opérations, écrits par le service seulement",
+  budget_regles: "règles de classement écrites par le connecteur après l'accord de l'utilisateur (BUD1, 0035) : aucun foyer fictif n'en a au départ, le banc les crée lui-même",
   photos_reconstituees: "photos mensuelles reconstituées par la nuit à partir de l'historique importé (HIS2) : écrites par le service seulement",
 };
 
@@ -271,7 +273,7 @@ export function totaux({ positions = [], biens = [], credits = [], budgets = [],
 // ---------------------------------------------------------------------------------------------------------------------------
 const CONFLITS = {
   profiles: "user_id", config: "user_id", budgets: "user_id", status: "user_id", routines: "user_id,type", fonctionnalites: "user_id,cle",
-  snapshots: "user_id,date", banque_mois: "user_id,compte_id,mois,categorie",
+  snapshots: "user_id,date", banque_mois: "user_id,compte_id,mois,categorie,sous_categorie",
 };
 // Ordre d'écriture (clés étrangères) ; l'inverse sert à purger.
 const ORDRE = ["profiles", "config", "biens", "credits", "positions", "budgets", "objectifs", "foyer_variantes", "foyer_evenements", "snapshots", "status", "fonctionnalites",

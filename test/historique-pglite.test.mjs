@@ -102,7 +102,8 @@ async function ligne(nom, { isin = null, envelope = "PEA Exemple", mode = isin ?
 const nbTx = async imp => (await un(`select count(*)::int n from public.transactions where import_id = $1`, [imp])).n;
 
 before(async () => {
-  db = await baseComplete();
+  // HIS2 est testé tel que 0034 le livre (sous_categorie_budget_valide ne connaît que la sous-catégorie vide) : 0035 de BUD1, qui la redéfinit, est exercée par test/budget-pglite.test.mjs
+  db = await baseComplete("0034_historique.sql");
   await db.exec(`
     insert into auth.users (id) values ('${A}'), ('${B}'), ('${C}'), ('${D}');
     grant usage on schema auth to authenticated, service_role; grant execute on function auth.uid(), auth.jwt() to authenticated, service_role;

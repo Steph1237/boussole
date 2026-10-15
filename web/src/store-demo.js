@@ -771,10 +771,13 @@
       }
       case "config": {
         if (p.operation !== "modifier") throw bad("réglages : seule la modification est possible.");
-        const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot", "projection", "suivi"];
+        const CLES_CFG = ["cushion", "recurring", "frais_enveloppes", "enveloppes_infos", "prets_infos", "donations", "avis_impot", "projection", "suivi", "partage", "budget_cible", "budget_preferences"];
         const autre = Object.keys(v).find(k => !CLES_CFG.includes(k));
-        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, projection ou suivi seulement).");
-        if (!CLES_CFG.some(k => k in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, projection ou suivi).");
+        if (autre) throw bad("réglage « " + autre + " » non modifiable par proposition (cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, projection, suivi, partage, budget_cible ou budget_preferences seulement).");
+        if (!CLES_CFG.some(k => k in v)) throw bad("réglages : cushion ou recurring attendu (ou frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, projection, suivi, partage, budget_cible ou budget_preferences).");
+        /* BUD1 (0035) : le partage, la cible et les préférences du budget se valident dans la base ; la démonstration n'a pas de connecteur qui les propose (tâche « stores et démo » de BUD1) */
+        const budget = ["partage", "budget_cible", "budget_preferences"].find(k => k in v);
+        if (budget) throw bad("réglage « " + budget + " » indisponible dans la démonstration.");
         const cfg = Object.assign({}, C.config || {});
         if ("cushion" in v) cfg.cushion = normMatelas(v.cushion);
         if ("recurring" in v) cfg.recurring = normVersements(v.recurring, cfg.recurring);

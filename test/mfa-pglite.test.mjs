@@ -25,7 +25,10 @@ const TABLES_BANQUE = [...new Set(readdirSync(DIR).filter(f => /^\d{4}_.*\.sql$/
 /* HIS2 (0034) : quatre tables de relevés et d'imports de l'historique suivent le régime des tables banque_* (0033) ; photos_reconstituees,
    comme snapshots, celui de « aal2 si facteur ». */
 const TABLES_HISTORIQUE = ["historique_banque_mois", "historique_comptes", "historique_imports", "historique_releves"];
-const TABLES_REGIME_BANCAIRE = [...TABLES_BANQUE, ...TABLES_HISTORIQUE].sort();
+/* BUD1 (0035) : banque_marchands_mois (totaux par marchand, écrits par le service) est une table banque_* de la forme « banque_* » de 0033 ;
+   budget_regles (préférences sans montant, écrites par le connecteur après accord) suit « aal2 si facteur » comme les tables personnelles. */
+const TABLES_BUDGET_BANCAIRES = ["banque_marchands_mois"];
+const TABLES_REGIME_BANCAIRE = [...TABLES_BANQUE, ...TABLES_HISTORIQUE, ...TABLES_BUDGET_BANCAIRES].sort();
 const estBancaire = t => t.startsWith("banque_") || TABLES_HISTORIQUE.includes(t);
 
 /* Session simulée : role authenticated, utilisateur uid, niveau demandé. Un niveau aal2 n'est accordé que si un facteur est vérifié. */
@@ -74,6 +77,10 @@ before(async () => {
       ('${C}', 'c0000000-0000-4000-8000-00000000000c', '2024-01-01', true, 0, 5, 'c0000000-0000-4000-8000-00000000000c');
     insert into public.historique_banque_mois (user_id, compte_id, mois, categorie, sorties, nombre) values
       ('${A}', 'a0000000-0000-4000-8000-00000000000a', '2024-01-01', 'alimentation', 50, 1), ('${C}', 'c0000000-0000-4000-8000-00000000000c', '2024-01-01', 'divers', 5, 1);
+    -- BUD1 : un total par marchand pour A et pour C, une règle de classement pour A et pour C
+    insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, sorties, nombre) values
+      ('${A}', date_trunc('month', ${AUJ})::date, 10, 'carrefour market', 'courses', 50, 1), ('${C}', date_trunc('month', ${AUJ})::date, 10, 'marche c', 'a_classer', 5, 1);
+    insert into public.budget_regles (user_id, motif, sous_categorie) values ('${A}', 'xyz sarl', 'loisirs'), ('${C}', 'abc sarl', 'sport');
     insert into public.photos_reconstituees (user_id, mois, date, total, p1, p2, financier, net, qualite, part_estimee, methode) values
       ('${C}', '2024-01-01', '2024-01-31', 5, 5, 0, 5, 5, 'estime', 1, 'test');`);
 });
@@ -227,7 +234,7 @@ test("public.mfa_exigee() : security definer, stable, search_path vide, réserv�
 test("couverture : toute table de public avec un user_id a sa politique RESTRICTIVE (banque_* et relevés de l'historique : aal2 strict ; les autres : aal2 si facteur vérifié)", async () => {
   const tables = await tablesPersonnelles();
   assert.ok(tables.length >= 20, "les tables personnelles sont bien repérées : " + tables.join(", "));
-  for (const t of ["positions", "credits", "snapshots", "propositions", "budgets", "objectifs", "config", "profiles", "journal", "memoire_agent", "routines", "connexions_assistant", "fonctionnalites", "biens", "transactions", "status", "photos_reconstituees", ...TABLES_HISTORIQUE])
+  for (const t of ["positions", "credits", "snapshots", "propositions", "budgets", "objectifs", "config", "profiles", "journal", "memoire_agent", "routines", "connexions_assistant", "fonctionnalites", "biens", "transactions", "status", "photos_reconstituees", "budget_regles", ...TABLES_HISTORIQUE, ...TABLES_BUDGET_BANCAIRES])
     assert.ok(tables.includes(t), t + " repérée");
   for (const t of tables) {
     const r = await q(`select policyname, roles::text, cmd, qual, with_check from pg_policies where schemaname = 'public' and tablename = $1 and permissive = 'RESTRICTIVE' and cmd = 'ALL'`, [t]);
@@ -248,7 +255,7 @@ test("facteur vérifié + aal1 : A ne voit rien dans aucune table personnelle (p
   await superu();
   const garnies = [];
   for (const t of tables) if ((await q(`select 1 from public.${t} where user_id = '${A}'`)).length) garnies.push(t);
-  for (const t of ["positions", "snapshots", "propositions", "credits", "profiles", "config", "fonctionnalites"]) assert.ok(garnies.includes(t), t + " : donnée de test présente");
+  for (const t of ["positions", "snapshots", "propositions", "credits", "profiles", "config", "fonctionnalites", "budget_regles"]) assert.ok(garnies.includes(t), t + " : donnée de test présente");
   await session(A, "aal1");
   for (const t of tables) assert.deepEqual(await q(`select user_id from public.${t}`), [], t + " : fermée en aal1");
   await session(A, "aucun");

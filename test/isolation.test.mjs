@@ -6,7 +6,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
-  hasServiceKey, SKIP_REASON, adminClient, userClient, createTestUser, createTestUserAal2, deleteTestUser,
+  hasServiceKey, SKIP_REASON, adminClient, userClient, createTestUser, createTestUserAal2, deleteTestUser, erreurMasquee,
 } from "./helpers/supabase.mjs";
 
 const SKIP = !hasServiceKey;
@@ -621,6 +621,140 @@ describe("isolation RLS : tables de l'historique importé (comptes à double aut
       const { data: restant } = await admin.from("historique_comptes").select("id").eq("user_id", B.id);
       assert.equal(restant.length, 1, "les données de B sont intactes");
       A.id = null; // déjà supprimé : le nettoyage ne doit pas réessayer
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// BUD1 (migration 0035) : deux nouvelles tables. banque_marchands_mois (totaux par marchand, écrits par le service) suit le régime des tables
+// banque_* (0028, 0033) : fermée à toute session aal1, lue par son propriétaire en aal2, jamais écrite par un utilisateur. budget_regles (règles
+// personnelles de classement) suit « aal2 si facteur » : les comptes ci-dessous ont un facteur TOTP vérifié, donc la table est fermée en aal1.
+// ---------------------------------------------------------------------------------------------------------------------------------
+describe("isolation RLS : tables du budget (comptes à double authentification)", () => {
+  let admin, A, B;
+
+  /** Sème, par le service, un compte courant et un total par marchand ; par le client aal2 du compte, une règle de classement. */
+  async function seed(u) {
+    const steps = [
+      ["banque_connexions", { id: 1, user_id: u.id, etablissement: `Banque ${u.label}` }],
+      ["banque_comptes", { id: 10, user_id: u.id, connexion_id: 1, nom: `Courant ${u.label}`, type: "courant" }],
+      ["banque_marchands_mois", { user_id: u.id, mois: "2024-01-01", compte_id: 10, cle_marchand: `marche ${u.label.toLowerCase()}`, sous_categorie: "courses", entrees: 0, sorties: 40, nombre: 2 }],
+    ];
+    for (const [table, row] of steps) {
+      const { error } = await admin.from(table).insert(row);
+      assert.equal(error, null, `${table} : le service sème la ligne de ${u.label} (${error?.message})`);
+    }
+    const r = await u.client.from("budget_regles").insert({ motif: `regle ${u.label.toLowerCase()}`, sous_categorie: "loisirs", source: "essai d'isolation" });
+    assert.equal(r.error, null, `budget_regles : ${u.label} écrit ses propres règles en aal2 (${r.error?.message})`);
+  }
+
+  const T = [
+    { name: "banque_marchands_mois", match: u => ({ compte_id: 10, mois: "2024-01-01" }), field: "sorties", patch: { sorties: 999 },
+      foreign: b => ({ user_id: b.id, mois: "2024-02-01", compte_id: 10, cle_marchand: "intrus", sous_categorie: "courses", sorties: 1 }) },
+    { name: "budget_regles", match: u => ({ user_id: u.id }), field: "motif", patch: { motif: "piraté" },
+      foreign: b => ({ user_id: b.id, motif: "intrus", sous_categorie: "loisirs" }) },
+  ];
+
+  before(async () => {
+    if (SKIP) return;
+    admin = adminClient();
+    A = { label: "A", ...(await createTestUserAal2("bud-a")) };
+    B = { label: "B", ...(await createTestUserAal2("bud-b")) };
+    await seed(A);
+    await seed(B);
+  });
+
+  after(async () => {
+    if (SKIP) return;
+    const errors = [];
+    for (const u of [B, A]) {
+      if (!u?.id) continue;
+      try { await deleteTestUser(u.id); } catch (e) { errors.push(e.message); }
+    }
+    assert.deepEqual(errors, [], `nettoyage incomplet : ${errors.join(" ; ")}`);
+  });
+
+  for (const t of T) {
+    describe(t.name, () => {
+      it("A (aal2) ne lit que ses propres lignes", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const { data, error } = await A.client.from(t.name).select("*");
+        assert.equal(error, null, `${t.name} : la lecture de A ne doit pas échouer (${error?.message})`);
+        assert.equal(data.length, 1, `${t.name} : A doit voir exactement une ligne (la sienne)`);
+        assert.ok(data.every((r) => r.user_id === A.id), `${t.name} : toutes les lignes lues par A doivent porter user_id = A`);
+      });
+
+      it("A en aal1 (mot de passe seul, facteur vérifié) ne voit rien", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const c = await A.nouvelleSessionAal1();
+        const { data, error } = await c.from(t.name).select("*");
+        assert.equal(error, null, `${t.name} : la lecture en aal1 renvoie une liste vide, pas une erreur (${error?.message})`);
+        assert.deepEqual(data, [], `${t.name} : A en aal1 ne doit voir aucune ligne`);
+        const { data: adm } = await admin.from(t.name).select("user_id").eq("user_id", A.id);
+        assert.equal(adm.length, 1, `${t.name} : la ligne de A existe bien (le service la voit)`);
+      });
+
+      it("A ne peut pas modifier ni supprimer la ligne de B", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const upd = await withMatch(A.client.from(t.name).update(t.patch), { ...t.match(B), user_id: B.id }).select();
+        if (upd.error) assert.ok(isRlsError(upd.error), `${t.name} : erreur de droits attendue (${upd.error.message})`);
+        else assert.equal(upd.data.length, 0, `${t.name} : la mise à jour de A sur la ligne de B ne doit toucher aucune ligne`);
+        const del = await withMatch(A.client.from(t.name).delete(), { ...t.match(B), user_id: B.id }).select();
+        if (del.error) assert.ok(isRlsError(del.error), `${t.name} : erreur de droits attendue (${del.error.message})`);
+        else assert.equal(del.data.length, 0, `${t.name} : la suppression de A sur la ligne de B ne doit toucher aucune ligne`);
+        const { data } = await withMatch(admin.from(t.name).select("*"), { ...t.match(B), user_id: B.id }).single();
+        assert.ok(data, `${t.name} : la ligne de B existe encore`);
+        assert.notDeepEqual(data[t.field], t.patch[t.field], `${t.name} : ${t.field} de B n'a pas reçu la valeur de A`);
+      });
+
+      it("A ne peut pas insérer une ligne au nom de B", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const { error } = await A.client.from(t.name).insert(t.foreign(B)).select();
+        assert.ok(error, `${t.name} : l'insertion avec user_id = B par A doit échouer`);
+        assert.match(error.message, /row-level security|violates|permission/i, `${t.name} : l'erreur doit être un refus de droits`);
+      });
+    });
+  }
+
+  describe("banque_marchands_mois : écrite par le service seulement", () => {
+    it("A (aal2) ne peut ni insérer, ni modifier, ni supprimer ses propres totaux", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      const ins = await A.client.from("banque_marchands_mois").insert({ user_id: A.id, mois: "2024-03-01", compte_id: 10, cle_marchand: "x", sous_categorie: "courses", sorties: 1 });
+      assert.ok(ins.error, "l'insertion par un utilisateur doit échouer");
+      const upd = await A.client.from("banque_marchands_mois").update({ sorties: 1 }).eq("user_id", A.id).select();
+      assert.ok(upd.error || upd.data.length === 0, "la mise à jour par un utilisateur doit échouer");
+      const del = await A.client.from("banque_marchands_mois").delete().eq("user_id", A.id).select();
+      assert.ok(del.error || del.data.length === 0, "la suppression par un utilisateur doit échouer");
+      const { data } = await admin.from("banque_marchands_mois").select("sorties").eq("user_id", A.id);
+      assert.equal(Number(data[0].sorties), 40, "le total de A est intact");
+    });
+  });
+
+  describe("budget_regles : contraintes et droits de colonne par l'API", () => {
+    it("une règle vers « à classer » ou vers un relevé de carte est refusée ; la bascule active passe, pas le changement de propriétaire", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      for (const sc of ["a_classer", "releve_carte", "virement_interne", "inconnue"]) {
+        const { error } = await A.client.from("budget_regles").insert({ motif: "xyz sarl", sous_categorie: sc });
+        assert.ok(error, `une règle vers ${sc} doit être refusée`);
+      }
+      const off = await A.client.from("budget_regles").update({ active: false }).eq("user_id", A.id).select();
+      assert.equal(off.error, null, `la bascule active passe (${off.error?.message})`);
+      assert.equal(off.data[0].active, false);
+      const own = await A.client.from("budget_regles").update({ user_id: B.id }).eq("user_id", A.id).select();
+      assert.ok(own.error, "user_id n'est pas modifiable (droit de colonne)");
+      await A.client.from("budget_regles").update({ active: true }).eq("user_id", A.id);
+    });
+
+    it("300 règles au plus par utilisateur : la 301e est refusée (le masque de PostgREST sur 54000 est accepté, la ligne n'est pas écrite)", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      const lot = Array.from({ length: 299 }, (_, i) => ({ motif: `motif ${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`, sous_categorie: "loisirs" }));
+      const ins = await A.client.from("budget_regles").insert(lot);
+      assert.equal(ins.error, null, `299 règles de plus (300 avec la première) : ${ins.error?.message}`);
+      const de = await A.client.from("budget_regles").insert({ motif: "trois cent unième", sous_categorie: "loisirs" });
+      assert.ok(de.error && (/300 règles/.test(de.error.message) || erreurMasquee(de.error)), `la 301e est refusée (${de.error?.message})`);
+      const { data } = await admin.from("budget_regles").select("id").eq("user_id", A.id);
+      assert.equal(data.length, 300, "300 règles, pas une de plus");
+      await A.client.from("budget_regles").delete().like("motif", "motif %");
     });
   });
 });

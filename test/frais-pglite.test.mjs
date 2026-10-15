@@ -244,9 +244,9 @@ test("0026 repart exactement d'appliquer_propositions de 0019 : seules les ligne
   // ordre conservé : les lignes de 0019 gardées apparaissent dans le même ordre
   let j = 0;
   for (const l of avant.filter(l => apres.includes(l))) { j = apres.indexOf(l, j); assert.ok(j >= 0, l); j++; }
-  // aucune autre migration après 0019 ne redéfinit la fonction (hors 0026, 0027 qui repart exactement de 0026 : frais-suite-pglite, 0029 qui repart de 0027 : calendrier-pglite, 0031 qui repart de 0029 : projection-pglite, 0032 qui repart de 0031 : suivi-pglite, et 0034 qui repart de 0032 : historique-pglite)
+  // aucune autre migration après 0019 ne redéfinit la fonction (hors 0026, 0027 qui repart exactement de 0026 : frais-suite-pglite, 0029 qui repart de 0027 : calendrier-pglite, 0031 qui repart de 0029 : projection-pglite, 0032 qui repart de 0031 : suivi-pglite, 0034 qui repart de 0032 : historique-pglite, et 0035 qui repart de 0034 : budget-pglite)
   const dir = new URL("../supabase/migrations/", import.meta.url);
-  const redefinie = readdirSync(dir).filter(f => /^\d{4}_.*\.sql$/.test(f) && f > "0019" && !f.startsWith("0019") && !f.startsWith("0026") && !f.startsWith("0027") && !f.startsWith("0029") && !f.startsWith("0031") && !f.startsWith("0032") && !f.startsWith("0034"))
+  const redefinie = readdirSync(dir).filter(f => /^\d{4}_.*\.sql$/.test(f) && f > "0019" && !f.startsWith("0019") && !f.startsWith("0026") && !f.startsWith("0027") && !f.startsWith("0029") && !f.startsWith("0031") && !f.startsWith("0032") && !f.startsWith("0034") && !f.startsWith("0035"))
     .filter(f => /function\s+public\.appliquer_propositions\s*\(/.test(readFileSync(new URL(f, dir), "utf8")));
   assert.deepEqual(redefinie, []);
   await superu();

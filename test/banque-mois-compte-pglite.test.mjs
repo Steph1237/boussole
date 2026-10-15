@@ -65,7 +65,7 @@ test("PGlite : colonnes ajoutées, clé primaire (user_id, mois, compte_id, cate
   const m = Object.fromEntries((await cols("banque_mois")).map(r => [r.c, r]));
   assert.deepEqual([m.compte_id.t, m.compte_id.n, m.compte_id.d], ["bigint", "NO", "0"]);
   const pk = (await un(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = 'public.banque_mois'::regclass and contype = 'p'`)).d;
-  assert.equal(pk, "PRIMARY KEY (user_id, mois, compte_id, categorie)");
+  assert.equal(pk, "PRIMARY KEY (user_id, mois, compte_id, categorie, sous_categorie)", "0025 : (user_id, mois, compte_id, categorie) ; 0035 (budget) y ajoute sous_categorie");
 });
 
 test("PGlite : banque_recalculer_mois par compte — mêmes règles que 0024 (virements internes exclus, carte différée exclue), comptes séparés", async () => {

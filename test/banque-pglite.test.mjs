@@ -93,15 +93,15 @@ test("PGlite : structure — colonnes, clés primaires, clés étrangères, colo
   assert.deepEqual(await cols("public.banque_placements"), ["id", "user_id", "compte_id", "isin", "libelle", "quantite", "valeur", "prix_revient", "position_id",
     "ligne_creee_le", "maj_le"]);
   assert.deepEqual(await cols("public.banque_operations"), ["id", "user_id", "compte_id", "date", "montant", "libelle", "categorie",
-    "categorie_powens", "contrepartie_id", "type_powens"]); // + 0025
-  assert.deepEqual(await cols("public.banque_mois"), ["user_id", "mois", "categorie", "entrees", "sorties", "nombre", "compte_id"]); // + 0025
+    "categorie_powens", "contrepartie_id", "type_powens", "sous_categorie", "origine_categorie", "regle_id", "cle_marchand"]); // + 0025, + 0035 (budget)
+  assert.deepEqual(await cols("public.banque_mois"), ["user_id", "mois", "categorie", "entrees", "sorties", "nombre", "compte_id", "sous_categorie"]); // + 0025, + 0035 (budget)
   const pos = await cols("public.positions");
   assert.ok(pos.includes("source_auto") && pos.includes("source_auto_le"), "positions : source_auto, source_auto_le");
   const pk = async t => (await un(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = $1::regclass and contype = 'p'`, [t])).d;
   assert.equal(await pk("public.fonctionnalites"), "PRIMARY KEY (user_id, cle)");
   assert.equal(await pk("prive.powens_utilisateurs"), "PRIMARY KEY (user_id)");
   for (const t of ["banque_connexions", "banque_comptes", "banque_placements", "banque_operations"]) assert.equal(await pk("public." + t), "PRIMARY KEY (user_id, id)", t);
-  assert.equal(await pk("public.banque_mois"), "PRIMARY KEY (user_id, mois, compte_id, categorie)"); // 0025
+  assert.equal(await pk("public.banque_mois"), "PRIMARY KEY (user_id, mois, compte_id, categorie, sous_categorie)"); // 0025, puis 0035 (budget)
   const fks = async t => (await q(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = $1::regclass and contype = 'f'`, [t])).map(r => r.d);
   assert.ok((await fks("public.banque_comptes")).includes("FOREIGN KEY (user_id, connexion_id) REFERENCES banque_connexions(user_id, id) ON DELETE CASCADE"));
   assert.ok((await fks("public.banque_comptes")).includes("FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE SET NULL"));
@@ -419,8 +419,8 @@ test("PGlite : export_all — définition de 0020 + fonctionnalites et tables ba
   const cles = ["exported_at", "profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status", "budget",
     "objectifs", "propositions", "connexions_assistant", "memoire_agent", "journal", "routines",
     "fonctionnalites", "banque_connexions", "banque_comptes", "banque_placements", "banque_operations", "banque_mois", "foyer_evenements", "foyer_variantes", "plans_figes", "connecteurs_autorises",
-    "historique_comptes", "historique_imports", "historique_releves", "historique_banque_mois", "photos_reconstituees"];
-  assert.deepEqual(Object.keys(e).sort(), [...cles].sort(), "clés de 0020 + 6, puis foyer_evenements, foyer_variantes et plans_figes (0031), connecteurs_autorises (0033), les cinq tables de l'historique (0034)");
+    "historique_comptes", "historique_imports", "historique_releves", "historique_banque_mois", "photos_reconstituees", "budget_regles", "banque_marchands_mois"];
+  assert.deepEqual(Object.keys(e).sort(), [...cles].sort(), "clés de 0020 + 6, puis foyer_evenements, foyer_variantes et plans_figes (0031), connecteurs_autorises (0033), les cinq tables de l'historique (0034), budget_regles et banque_marchands_mois (0035)");
   for (const k of ["fonctionnalites", ...TABLES]) {
     assert.ok(Array.isArray(e[k]) && e[k].length >= 1, k);
     assert.ok(e[k].every(r => r.user_id === A), k + " : lignes de A seulement");
