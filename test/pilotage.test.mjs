@@ -1,4 +1,4 @@
-// Patrimoine › Placements (web/src/pilotage.*) : en-tête (total, variation sur la période, courbe), regroupements
+// Patrimoine › Placements (web/src/pilotage.*) : en-tête (total, variation sur 1 an), graphe maître (préréglage placements), regroupements
 // (enveloppe, poche, titulaire, disponibilité), panneau d'une ligne (détail en lecture, liens Claude), accordéons de suivi
 // (allocation, ordres, versements, hypothèses, journal des mouvements). Lecture seule : aucune écriture au store, la saisie passe
 // par Claude (« Compléter avec Claude », « Corriger avec Claude »), textes au tutoiement.
@@ -60,8 +60,9 @@ test("pilotage.html : identifiants utilisés par le script, en-tête, bascule, �
   const ids = [...js.matchAll(/\$\("(pl[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 12);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  for (const id of ["plTotal", "plSous", "plPeriode", "plCourbe", "plMode", "plGroupes", "plSuivi", "plVide", "plChargement", "plVideClaude"])
+  for (const id of ["plTotal", "plSous", "plGraphe", "plGrapheBloc", "plMode", "plGroupes", "plSuivi", "plVide", "plChargement", "plVideClaude"])
     assert.match(html, new RegExp('id="' + id + '"'), id);
+  assert.doesNotMatch(html, /plPeriode|plCourbe|plCourbeNote/, "plus de sélecteur de période ni de courbe du passé seul : le graphe maître a sa propre commande de temps");
   assert.doesNotMatch(html, /plCompleter|plMvtClaude|plClaude"/, "plus de bouton Claude empilé : le bouton de l'en-tête couvre les demandes de la page");
   assert.doesNotMatch(html, /<select|<table/, "plus de formulaire ni de tableau affichés d'un coup");
 });
@@ -101,17 +102,19 @@ test("pilotage : tutoiement — aucun « vous / votre / vos » dans le module", 
   }
 });
 
-test("pilotage.js : courbe filtrée par période et granularité (UI.periode + Periodes), choix mémorisés", () => {
-  assert.match(js, /u\.periode\(\$\("plPeriode"\), o\)/);
-  assert.match(js, /const pp = \$\("plPeriode"\)/);
-  assert.match(js, /Pe\.agreger\(pts, b, g, x => x\.v\)/);
-  assert.match(js, /Pe\.resume\(ag, pts, b, x => x\.v\)/);
-  assert.match(js, /Pe\.bornes\(/);
-  assert.match(js, /Pe\.auto\(b\)/);
-  assert.match(js, /EVO_KEY = "pilotage-evo"/);
-  assert.match(js, /localStorage\.setItem\(EVO_KEY/);
-  assert.match(js, /localStorage\.setItem\(CLE_MODE/);
-  assert.match(js, /if \(granChoisie\) o\.granularite = periode\.granularite;/, "granularité passée à UI.periode seulement si choisie");
+test("pilotage.js : la tête de page monte le graphe maître (préréglage placements), lit le passé reconstitué comme Aujourd'hui, plus de sélecteur de période", () => {
+  const code = sansCommentaires(js);
+  assert.match(code, /Mo\.brancher\(el, \{ preset: "placements", deps: \{ UI: u \}/);
+  assert.match(code, /today: \(\) => jour\(\), perimetre: \(\) => scopeLabel\(\)/);
+  assert.match(code, /liaison\.actualiser\(S\)/, "recalcul seulement si l'entrée a changé (GrapheModele)");
+  assert.match(code, /sn\.charger\(S, jour\(\), \{ id: "tout" \}, null\)/, "SerieNet.charger sur « tout » (cours, transactions, banque)");
+  assert.match(code, /sn\.abonner\(histPrete\)/, "la fin de la lecture relance le graphe");
+  assert.doesNotMatch(code, /u\.periode\(|plPeriode|plCourbe|courbeSvg|ctlPeriode|granChoisie|granEnCours|EVO_KEY|pilotage-evo|surPeriode|ResizeObserver/);
+  assert.doesNotMatch(code, /Periodes\.|Pe\.granularit|GRANULARITES/);
+  assert.equal(PL.courbeSvg, undefined);
+  assert.equal(PL.evolution, undefined);
+  assert.equal(PL.periodeTxt, undefined);
+  assert.doesNotMatch(code, /localStorage\.setItem\((?!CLE_MODE)/, "seul le regroupement des lignes est mémorisé : les réglages du graphe restent locaux");
 });
 
 /* ------------------------------------------------------------------ grouper ------------------------------------------------------------------ */
@@ -181,51 +184,32 @@ test("totaux et matelas : total compté, lignes, plus-values latentes, sommes à
   assert.equal(PL.matelas({ positions: [], config: {} }, DEPS).cible, "pas de cible définie");
 });
 
-/* ------------------------------------------------------------------ évolution ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ variation ------------------------------------------------------------------ */
 const SNAPS = [{ date: "2025-09-30", foyer: 100000, p1: 60000, p2: 40000 }, { date: "2026-03-31", foyer: 110000, p1: 66000, p2: 44000 },
   { date: "2026-09-30", foyer: 118000, p1: 70000, p2: 48000, source: "relevés" }];
 
-test("evolution : photos + valeur en direct en dernier point, agrégées sur la période ; variation depuis la dernière valeur avant la période", () => {
+test("variation : photos + valeur en direct, sur 1 an ; part de la dernière valeur avant la période", () => {
   const S = { scope: "foyer", positions: [POS("a", { qty: 1000, price: 120 })], snapshots: SNAPS };
-  const ev = PL.evolution(S, TODAY, { periode: "1a", granularite: "mois" }, DEPS);
-  assert.equal(ev.granularite, "mois");
-  assert.equal(ev.serie[ev.serie.length - 1].live, true);
-  assert.equal(ev.serie[ev.serie.length - 1].valeur, 120000);
-  assert.ok(ev.serie.slice(0, -1).every(p => !p.live));
+  const ev = PL.variation(S, TODAY, DEPS);
   assert.equal(ev.resume.variation, 120000 - 100000, "début = dernière photo avant la période");
+  assert.ok(Math.abs(ev.resume.variationPct - 20) < 1e-9);
+  assert.deepEqual(ev.bornes, Periodes.bornes("1a", TODAY, SNAPS[0].date));
   assert.equal(ev.historique, true);
   assert.equal(ev.reconstitue, true);
-  const p2 = PL.evolution(Object.assign({}, S, { scope: "p2" }), TODAY, { periode: "tout" }, DEPS);
-  assert.deepEqual(p2.serie.filter(p => !p.live).map(p => p.valeur), [40000, 44000, 48000]);
-  assert.equal(p2.serie[p2.serie.length - 1].valeur, 0, "aucune ligne de Sam dans S.positions");
+  const p2 = PL.variation(Object.assign({}, S, { scope: "p2" }), TODAY, DEPS);
+  assert.equal(p2.resume.variation, 0 - 40000, "aucune ligne de Sam dans S.positions : la valeur en direct est 0");
 });
 
-test("evolution : période personnalisée, période inconnue → 1 an, granularité automatique, sans photo, sans Periodes", () => {
+test("variation : sans photo, sans Periodes ; pure (aucun accès au DOM)", () => {
   const S = { scope: "foyer", positions: [POS("a", { qty: 1000, price: 120 })], snapshots: SNAPS };
-  const perso = PL.evolution(S, TODAY, { periode: "perso", du: "2026-01-01", au: "2026-06-30" }, DEPS);
-  assert.deepEqual(perso.bornes, { du: "2026-01-01", au: "2026-06-30" });
-  assert.equal(perso.serie.length, 1);
-  assert.deepEqual(PL.evolution(S, TODAY, { periode: "6m" }, DEPS).bornes, Periodes.bornes("1a", TODAY));
-  assert.equal(PL.evolution(S, TODAY, { periode: "1a" }, DEPS).granularite, Periodes.auto(Periodes.bornes("1a", TODAY)));
-  assert.equal(PL.evolution(S, TODAY, { periode: "tout" }, DEPS).granularite, Periodes.auto(Periodes.bornes("tout", TODAY, SNAPS[0].date)), "sans choix : granularité automatique selon la période");
-  const vide = PL.evolution({ scope: "foyer", positions: [], snapshots: [] }, TODAY, { periode: "1a" }, DEPS);
+  const vide = PL.variation({ scope: "foyer", positions: [], snapshots: [] }, TODAY, DEPS);
   assert.equal(vide.historique, false);
-  assert.equal(vide.serie.length, 1);
-  const brut = PL.evolution(S, TODAY, {}, { Calc, Periodes: null });
+  assert.equal(vide.reconstitue, false);
+  const brut = PL.variation(S, TODAY, { Calc, Periodes: null });
   assert.equal(brut.resume, null);
-  assert.equal(brut.serie.length, 4);
-});
-
-test("courbeSvg : état vide orienté, SVG accessible et échappé, tiret pour la valeur en direct", () => {
-  assert.match(PL.courbeSvg({ serie: [], historique: false }), /Pas encore d'historique : chaque nuit, Boussole prend une photo de tes placements/);
-  assert.match(PL.courbeSvg({ serie: [{ date: TODAY, valeur: 1, label: "x" }], historique: true }), /élargis la période ou choisis un pas plus fin/);
-  const ev = { serie: [{ date: "2026-08-01", valeur: 1000, label: XSS }, { date: "2026-09-01", valeur: 1100, label: "sept." }, { date: TODAY, valeur: 1200, label: "oct.", live: true }],
-    resume: { variation: 200 }, historique: true };
-  const svg = PL.courbeSvg(ev, { largeur: 600, scopeLabel: "du foyer" });
-  assert.match(svg, /^<svg class="pl-svg"[^>]*role="img"[^>]*aria-label="Évolution des placements du foyer/);
-  assert.match(svg, /class="pl-direct"/);
-  assert.doesNotMatch(svg, /<img/);
-  assert.match(svg, /\(en direct\)/);
+  assert.equal(brut.historique, true);
+  const fn = js.slice(js.indexOf("  function variation("), js.indexOf("  /* =============================================================== détail d'une ligne"));
+  assert.doesNotMatch(fn, /document|window|localStorage|querySelector|\$\(/);
 });
 
 /* ------------------------------------------------------------------ détail d'une ligne ------------------------------------------------------------------ */
@@ -418,7 +402,7 @@ test("groupesHtml : cartes dépliables (aria-expanded / aria-controls), lignes e
 const uiJs = readFileSync("web/src/ui.js", "utf8");
 /** Monte Placements (calc, periodes, ui, claude-prompts, pilotage) dans le mini-DOM. Le store n'expose aucune écriture : la vue est
     en lecture seule. stockage = contenu initial du localStorage simulé (clé → valeur). */
-function vueDom(S0, stockage) {
+function vueDom(S0, stockage, fakes) {
   const dom = miniDom(), { doc } = dom;
   let S = J(S0);
   const modules = {}, store = new Map(Object.entries(stockage || {}));
@@ -432,6 +416,7 @@ function vueDom(S0, stockage) {
   vm.runInContext(uiJs, ctx, { filename: "ui.js" });
   vm.runInContext(readFileSync("web/src/claude-prompts.js", "utf8"), ctx, { filename: "claude-prompts.js" });
   vm.runInContext(readFileSync("web/src/comptes-view.js", "utf8"), ctx, { filename: "comptes-view.js" }); // window.ComptesView (adresses des fiches)
+  Object.assign(ctx, fakes || {}); // GrapheModele / SerieNet factices (le vrai composant a ses propres tests)
   vm.runInContext(js, ctx, { filename: "pilotage.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.setAttribute("id", "view-pilotage");
@@ -465,7 +450,9 @@ test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de r
   assert.deepEqual($(root, "plSuivi").querySelectorAll(".ui-acc-titre").map(s => sp(s.textContent)).slice(1, 3), ["Ordres à passer · en attente", "Versements programmés · 500 € par mois"]);
   assert.equal($(root, "plVide").hidden, true);
   assert.equal($(root, "plChargement").hidden, true);
-  assert.equal(root.querySelectorAll("input").filter(i => !i.closest("#plPeriode")).length, 0, "aucun champ de saisie hors du sélecteur de période");
+  assert.equal(root.querySelectorAll("input").length, 0, "aucun champ de saisie");
+  assert.equal($(root, "plPeriode"), null, "plus de sélecteur de période ni de granularité");
+  assert.equal($(root, "plGrapheBloc").hidden, false);
 });
 
 test("vue (DOM) : bascule « Par disponibilité » (note limitée au financier) puis dépliage d'un groupe ; l'état déplié survit à une mise à jour du store", () => {
@@ -564,33 +551,60 @@ test("vue (DOM) : panneau d'une ligne rafraîchi quand le store émet, fermé pr
   assert.equal(dlg().hidden, true, "ligne hors du périmètre : panneau fermé");
 });
 
-test("vue (DOM) : granularité automatique tant qu'elle n'a pas été choisie ; seul un clic sur la bascule de granularité l'enregistre", () => {
-  // Ancien enregistrement (granularité « jour » posée automatiquement) : ignoré, la granularité suit la période.
-  const v = vueDom(demoS(), { "pilotage-evo": JSON.stringify({ periode: "1a", granularite: "jour" }) });
-  const pp = $(v.root, "plPeriode");
-  const actifG = () => pp.querySelector(".ui-periode-g").querySelector('[aria-checked="true"]').getAttribute("data-ui-id");
-  const radioP = id => pp.querySelector(".ui-periode-p").querySelector('[data-ui-id="' + id + '"]');
-  const radioG = id => pp.querySelector(".ui-periode-g").querySelector('[data-ui-id="' + id + '"]');
-  const memo = () => JSON.parse(v.store.get("pilotage-evo"));
-  assert.equal(actifG(), Periodes.auto(Periodes.bornes("1a", PL.jour())));
-  assert.notEqual(actifG(), "jour", "l'ancienne granularité automatique enregistrée n'est pas reprise");
-  radioP("1m").click();
-  assert.deepEqual(memo(), { periode: "1m" }, "changer de période n'enregistre pas de granularité");
-  assert.equal(actifG(), Periodes.auto(Periodes.bornes("1m", PL.jour())), "granularité automatique");
-  radioG("mois").click();
-  assert.deepEqual(memo(), { periode: "1m", granularite: "mois", gChoisie: true }, "choix explicite enregistré");
-  radioP("1a").click();
-  assert.notEqual(Periodes.auto(Periodes.bornes("1a", PL.jour())), "mois");
-  assert.equal(actifG(), "mois", "le choix explicite tient quand la période change");
-  assert.equal(memo().granularite, "mois");
-  // Rechargement : le choix explicite est rendu à UI.periode.
-  const w = vueDom(demoS(), { "pilotage-evo": JSON.stringify(memo()) });
-  assert.equal($(w.root, "plPeriode").querySelector(".ui-periode-g").querySelector('[aria-checked="true"]').getAttribute("data-ui-id"), "mois");
-  // Au clavier aussi.
-  const x = vueDom(demoS());
-  const g = $(x.root, "plPeriode").querySelector(".ui-periode-g").querySelector('[aria-checked="true"]');
-  x.dom.touche(g, "ArrowRight");
-  assert.equal(JSON.parse(x.store.get("pilotage-evo")).gChoisie, true);
+/** GrapheModele / SerieNet factices : enregistrent les appels de la tête de page. */
+function faux() {
+  const j = { brancher: [], actualiser: 0, lectures: [], abonnes: [] };
+  const GrapheModele = { brancher: (el, o) => { j.brancher.push({ el, o }); return { actualiser: snap => { j.actualiser++; j.dernier = snap; }, detruire() {} }; } };
+  const SerieNet = { charger: (S, t, per, d) => { j.lectures.push({ t, per, d }); }, abonner: fn => { j.abonnes.push(fn); return () => {}; } };
+  return { j, GrapheModele, SerieNet };
+}
+
+test("vue (DOM) : le graphe maître est monté une fois dans la tête (préréglage placements), actualisé à chaque émission du store, le passé lu sur « tout »", () => {
+  const f = faux(), v = vueDom(demoS(), null, { GrapheModele: f.GrapheModele, SerieNet: f.SerieNet });
+  assert.equal(f.j.brancher.length, 1, "monté une seule fois");
+  const { el, o } = f.j.brancher[0];
+  assert.equal(el, $(v.root, "plGraphe"));
+  assert.equal(o.preset, "placements");
+  assert.equal(o.deps.UI, v.ctx.UI, "UI passé en dépendance");
+  assert.equal(o.today(), PL.jour());
+  assert.equal(o.perimetre(), "du foyer");
+  assert.equal(f.j.actualiser, 1);
+  assert.deepEqual(J(f.j.lectures[0].per), { id: "tout" });
+  assert.equal(f.j.abonnes.length, 1, "abonnement à la fin de la lecture du passé");
+  v.rafraichir();
+  assert.equal(f.j.brancher.length, 1, "pas de second montage");
+  assert.equal(f.j.actualiser, 2, "actualiser appelé à chaque émission (il ne recalcule que si l'entrée a changé)");
+  v.rafraichir.avec(demoS({ scope: "p2" }));
+  assert.equal(f.j.brancher.length, 1);
+  assert.equal(f.j.dernier.scope, "p2");
+  // La fin d'une lecture du passé relance le graphe.
+  const n = f.j.actualiser; f.j.abonnes[0]();
+  assert.equal(f.j.actualiser, n + 1);
+  // Plus de sélecteur de période, aucune écriture du réglage de période.
+  assert.equal(v.root.querySelector(".ui-periode"), null);
+  assert.equal(v.store.has("pilotage-evo"), false);
+});
+
+test("vue (DOM) : pas de graphe sans placement ni pendant le chargement ; la page ne casse pas sans le composant", () => {
+  const f = faux();
+  const vide = vueDom(demoS({ positions: [], tx: [] }), null, { GrapheModele: f.GrapheModele, SerieNet: f.SerieNet });
+  assert.equal($(vide.root, "plGrapheBloc").hidden, true);
+  assert.equal(f.j.brancher.length, 0);
+  const g = faux(), c = vueDom(demoS({ ready: false, positions: [] }), null, { GrapheModele: g.GrapheModele, SerieNet: g.SerieNet });
+  assert.equal($(c.root, "plGrapheBloc").hidden, true);
+  assert.equal(g.j.brancher.length, 0);
+  const sans = vueDom(demoS()); // ni GrapheModele ni SerieNet
+  assert.equal(sp($(sans.root, "plTotal").textContent).includes("€"), true);
+  assert.equal($(sans.root, "plGraphe").children.length, 0);
+});
+
+test("vue (DOM) : la variation sous le total se lit sur 1 an, sans sélecteur", () => {
+  const S = demoS({ snapshots: SNAPS, positions: [POS("a", { qty: 1000, price: 120 })] });
+  const { root } = vueDom(S);
+  assert.equal($(root, "plTotal").textContent.replace(/\s/g, " "), "120 000 €".replace(/\s/g, " "));
+  assert.match(sp($(root, "plSous").textContent), /\+20\s?000 € · \+20 % sur 1 an · 1 ligne$/);
+  assert.match($(root, "plSous").innerHTML, /En hausse/);
+  assert.doesNotMatch($(root, "plSous").textContent, /1 mois|3 mois|depuis le début/);
 });
 
 test("vue (DOM) : l'accordéon ouvert le reste après une mise à jour du store ; ordres et hypothèses en lecture", () => {

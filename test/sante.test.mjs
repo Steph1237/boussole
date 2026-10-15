@@ -637,17 +637,11 @@ test("pilotage (Bilan › Placements) : plus de carte santé, d'alertes ni de r�
 });
 
 // Placements refait en CK3 : sélecteur commun UI.periode (période + granularité, dates libres incluses) ; détail dans test/pilotage.test.mjs.
-test("pilotage : courbe d'évolution filtrée par période et par pas (periodes.js), choix mémorisés", () => {
-  assert.match(pilotageJs, /const Pe = dep\(deps, "Periodes"\)/);
-  assert.match(pilotageJs, /Pe\.agreger\(pts, b, g, x => x\.v\)/);
-  assert.match(pilotageJs, /Pe\.resume\(ag, pts, b, x => x\.v\)/);
-  assert.match(pilotageJs, /Pe\.bornes\(/);
-  assert.match(pilotageJs, /Pe\.auto\(b\)/);
-  assert.match(pilotageJs, /EVO_KEY = "pilotage-evo"/);
-  assert.match(pilotageJs, /serie\[serie\.length - 1\]\.live = true/, "la valeur en direct reste le dernier point");
-  assert.match(pilotageJs, /sur la période/);
-  assert.match(pilotageJs, /u\.periode\(\$\("plPeriode"\)/, "sélecteur commun : 1 m · 3 m · 1 an · Tout · Personnalisée (Du / Au) et granularité");
-  assert.match(pilotageHtml, /id="plPeriode"/);
+test("pilotage : la courbe d'évolution est le graphe maître (préréglage placements, vue financier), plus de sélecteur de période propre", () => {
+  assert.match(pilotageJs, /preset: "placements"/);
+  assert.doesNotMatch(pilotageJs, /EVO_KEY|u\.periode\(/);
+  assert.match(pilotageHtml, /id="plGraphe"/);
+  assert.doesNotMatch(pilotageHtml, /id="plPeriode"/);
 });
 
 test("pilotage : CSS entièrement scopé sous #view-pilotage (et .ui-panneau .pl-… pour le panneau)", () => {

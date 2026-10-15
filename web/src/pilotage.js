@@ -2,9 +2,12 @@
    (docs/superpowers/specs/2026-10-11-saisie-par-agent.md). Toute saisie passe par Claude : boutons « Compléter avec Claude »,
    « Corriger avec Claude », « Enregistrer un mouvement avec Claude » (UI.demanderAClaude + ClaudePrompts.phrase, sections placements
    et mouvement, avec la ligne concernée en contexte). Aucune écriture au store depuis ce module.
-   - En-tête : total financier du périmètre, variation sur la période (UI.periode, défaut 1 an ; granularité automatique tant que
-     l'utilisateur ne l'a pas choisie lui-même), nombre de lignes, plus-values latentes, épargne de précaution (cible réglée dans
-     Compte › Règles) ; courbe d'évolution (photos nocturnes + point du jour).
+   - En-tête : total financier du périmètre, variation sur 1 an (photos nocturnes + valeur en direct), nombre de lignes, plus-values
+     latentes, épargne de précaution (cible réglée dans Compte › Règles) ; puis le graphe maître (GraphePatrimoine relié au moteur
+     par GrapheModele.brancher, préréglage « placements » : vue financier, passé observé et reconstitué + projection du moteur sur un
+     seul axe, une seule commande de temps 1 an · 5 ans · 10 ans · 20 ans · Tout, 5 ans sur mobile / 10 ans sur ordinateur, aucun
+     objectif). Les réglages du graphe sont locaux, jamais enregistrés. Le passé reconstitué est lu par SerieNet.charger (période
+     « tout »), comme sur Aujourd'hui ; la fin d'une lecture relance le graphe.
    - Bascule de regroupement (UI.bascule) : Par enveloppe · Par poche · Par titulaire · Par disponibilité (liquidité, Calc.liquidite) ;
      une carte par groupe (nom, montant, part, plus-value latente) qui se déplie en lignes compactes (5 puis « Voir plus ») ;
      une ligne ouvre UI.panneau (lecture) : cours et date, quantité, PRU, plus-value latente, poids, frais / zone / devise (avec
@@ -15,8 +18,8 @@
    - Accordéons fermés en bas : Allocation par poche, Ordres à passer, Versements programmés, Hypothèses à confirmer, Journal des
      mouvements (listes en 5 puis « Voir plus », dans le périmètre S.scope).
    Le score de santé est dans Pilotage › Santé, les alertes dans Aujourd'hui, les règles et la cible du matelas dans Compte › Règles.
-   Fonctions pures exportées pour les tests (module.exports) : grouper, totaux, matelas, evolution, etatDonnee, detailLigne, hypotheses,
-   versements, ordres, journalMouvements, allocation, phraseClaude, et les rendus HTML groupesHtml, detailHtml, courbeSvg,
+   Fonctions pures exportées pour les tests (module.exports) : grouper, totaux, matelas, variation, etatDonnee, detailLigne, hypotheses,
+   versements, ordres, journalMouvements, allocation, phraseClaude, et les rendus HTML groupesHtml, detailHtml,
    allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml (UI reçu en paramètre quand il en faut ; aucune ne touche
    au DOM). Dépendances injectées (deps) : { Calc, Periodes, ClaudePrompts }, window.* par défaut. */
 (function () {
@@ -45,7 +48,6 @@
   const dateFr = s => { const d = jj(s); return isoOk(d) ? FM().fmtDate(d) : ""; };
   const nf0 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
   const nf1 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const nf2 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const nfq = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 4 });
   const fini = v => v != null && v !== "" && isFinite(+v);
   const eur = v => (!fini(v) ? "—" : FM().fmtEUR(v));
@@ -53,7 +55,6 @@
   const eur2 = v => (!fini(v) ? "—" : FM().fmtEUR(v, { decimales: 2 }));
   const pct = v => (!fini(v) ? "—" : FM().fmtPct(v));
   const pctS = v => (!fini(v) ? "—" : FM().fmtPct(v, { signe: true }));
-  const kEur = v => FM().fmtEUR(v, { compact: "graphe" });
   const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
   const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
@@ -129,78 +130,23 @@
     return { montant: sum(ps.filter(C.counted), C.val), aRecevoir: sum(ps.filter(p => p.status === "à recevoir"), C.val), cible };
   }
 
-  /* =============================================================== évolution =============================================================== */
-  const PERIODES_OK = ["1m", "3m", "1a", "tout"];
-  const PERIODE_TXT = { "1m": "sur 1 mois", "3m": "sur 3 mois", "1a": "sur 1 an", tout: "depuis le début du suivi" };
-  const estPerso = p => !!p && p.periode === "perso" && isoOk(p.du) && isoOk(p.au);
-  const periodeTxt = p => (estPerso(p) ? "du " + dateFr(p.du) + " au " + dateFr(p.au) : PERIODE_TXT[p && p.periode] || PERIODE_TXT["1a"]);
+  /* =============================================================== variation =============================================================== */
+  const PERIODE_TXT = "sur 1 an";
 
-  /** Courbe des placements du périmètre : photos nocturnes (S.snapshots[scope]) + point du jour (valeur en direct), agrégées sur la
-      période par Periodes. per = { periode: 1m|3m|1a|tout|perso, du?, au?, granularite? } (forme de UI.periode).
-      → { serie: [{ date, valeur, label, live }], resume: { variation, variationPct } | null, bornes, granularite, historique, reconstitue } */
-  function evolution(S, today, per, deps) {
-    const Pe = dep(deps, "Periodes"), s = S || {}, sc = scopeDe(s), t = jour(today), p = per || {};
+  /** Variation des placements du périmètre sur 1 an : photos nocturnes (S.snapshots[scope]) + point du jour (valeur en direct), agrégées par Periodes ;
+      la variation part de la dernière valeur avant la période. Le tracé de la courbe n'est plus ici (graphe maître).
+      → { resume: { variation, variationPct } | null, historique (au moins une photo), reconstitue (une photo vient des relevés), bornes } */
+  function variation(S, today, deps) {
+    const Pe = dep(deps, "Periodes"), s = S || {}, sc = scopeDe(s), t = jour(today);
     const snaps = (s.snapshots || []).filter(x => x && fini(x[sc]) && isoOk(jj(x.date)))
       .map(x => ({ date: jj(x.date), v: +x[sc], src: x.source })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const pts = snaps.slice();
-    const avecDirect = !pts.length || pts[pts.length - 1].date < t;
-    if (avecDirect) pts.push({ date: t, v: totaux(s, deps).total, live: true });
+    if (!pts.length || pts[pts.length - 1].date < t) pts.push({ date: t, v: totaux(s, deps).total, live: true });
     const base = { historique: snaps.length > 0, reconstitue: snaps.some(x => x.src === "relevés") };
-    if (!Pe || typeof Pe.agreger !== "function")
-      return Object.assign(base, { serie: pts.map(x => ({ date: x.date, valeur: x.v, label: dateFr(x.date), live: !!x.live })), resume: null, bornes: null, granularite: null });
-    const id = estPerso(p) ? { du: p.du, au: p.au } : PERIODES_OK.includes(p.periode) ? p.periode : "1a";
-    const b = Pe.bornes(id, t, pts[0].date);
-    const g = p.granularite && p.granularite !== "auto" && (Pe.GRANULARITES || []).some(x => x.id === p.granularite) ? p.granularite : Pe.auto(b);
-    const ag = Pe.agreger(pts, b, g, x => x.v);
-    const serie = ag.map(a => ({ date: a.date, valeur: a.valeur, label: a.label, live: false }));
-    if (avecDirect && serie.length && serie[serie.length - 1].date === t) serie[serie.length - 1].live = true; // la valeur en direct reste le dernier point
+    if (!Pe || typeof Pe.agreger !== "function") return Object.assign(base, { resume: null, bornes: null });
+    const b = Pe.bornes("1a", t, pts[0].date), ag = Pe.agreger(pts, b, Pe.auto(b), x => x.v);
     const r = ag.length ? Pe.resume(ag, pts, b, x => x.v) : null;
-    return Object.assign(base, { serie, resume: r && fini(r.variation) ? { variation: r.variation, variationPct: fini(r.variationPct) ? r.variationPct : null } : null, bornes: b, granularite: g });
-  }
-
-  /** Courbe SVG (ev = evolution()) ; texte d'état vide sous deux points. */
-  function courbeSvg(ev, o) {
-    const opt = o || {}, rows = (ev && ev.serie) || [];
-    if (rows.length < 2) return '<p class="pl-vide-courbe">' + (ev && ev.historique
-      ? "Pas assez de points sur cette période pour tracer une courbe : élargis la période ou choisis un pas plus fin."
-      : "Pas encore d'historique : chaque nuit, Boussole prend une photo de tes placements ; la courbe se dessine au fil des jours.") + "</p>";
-    const W = Math.max(300, Math.min(1000, Math.round(+opt.largeur) || 720)), H = W < 480 ? 190 : 220, L = 60, R = 14, T = 16, B = 28;
-    const ts = rows.map(p => utc(p.date)), x0 = ts[0], x1 = ts[ts.length - 1];
-    let lo = Math.min(...rows.map(p => p.valeur)), hi = Math.max(...rows.map(p => p.valeur));
-    const marge = (hi - lo) * 0.2 || Math.abs(hi) * 0.05 || 1000;
-    lo = Math.max(0, lo - marge); hi += marge;
-    // graduations rondes (Fmt.graduations, 4 au plus) et libellés d'axe de même unité (Fmt.fmtAxe)
-    const tk = FM().graduations(lo, hi, 4), etiq = FM().fmtAxe(tk);
-    lo = Math.max(0, tk[0]); hi = tk[tk.length - 1];
-    const X = x => L + (x1 === x0 ? 0 : (x - x0) / (x1 - x0)) * (W - L - R), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-    let g = "";
-    tk.forEach((v, k) => {
-      const y = Y(v).toFixed(1);
-      g += '<line class="pl-grille" x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '"/><text class="pl-axe" x="' + (L - 8) + '" y="' + (+y + 4).toFixed(1) + '" text-anchor="end">' + esc(etiq[k]) + "</text>";
-    });
-    // Largeur estimée d'une étiquette (police chiffrée de 11 px) : les étiquettes longues (« sem. du 28 sept. ») ne se chevauchent pas.
-    const larg = s => Math.max(40, String(s || "").length * 6.6);
-    let droite = -Infinity; const xFin = X(x1), wFin = larg(rows[rows.length - 1].label);
-    rows.forEach((p, i) => {
-      const x = X(ts[i]), last = i === rows.length - 1, w = larg(p.label);
-      const a = i === 0 ? x : last ? x - w : x - w / 2, b = i === 0 ? x + w : last ? x : x + w / 2;
-      if (!last && (a < droite + 6 || b > xFin - wFin - 6)) return;
-      droite = b;
-      g += '<text class="pl-axe" x="' + x.toFixed(1) + '" y="' + (H - 7) + '" text-anchor="' + (i === 0 ? "start" : last ? "end" : "middle") + '">' + esc(p.label) + "</text>";
-    });
-    const fin = rows[rows.length - 1], direct = !!fin.live, reels = direct ? rows.slice(0, -1) : rows;
-    const d = reels.map((p, i) => (i ? "L" : "M") + X(ts[i]).toFixed(1) + "," + Y(p.valeur).toFixed(1)).join("");
-    const aire = reels.length > 1 ? d + "L" + X(ts[reels.length - 1]).toFixed(1) + "," + (H - B) + "L" + X(x0).toFixed(1) + "," + (H - B) + "Z" : "";
-    const tiret = direct && reels.length ? '<line class="pl-direct" x1="' + X(ts[reels.length - 1]).toFixed(1) + '" y1="' + Y(reels[reels.length - 1].valeur).toFixed(1) +
-      '" x2="' + X(x1).toFixed(1) + '" y2="' + Y(fin.valeur).toFixed(1) + '"/>' : "";
-    const pts = rows.map((p, i) => { const last = i === rows.length - 1;
-      return rows.length > 120 && !last ? "" : '<circle class="pl-pt' + (last ? " fin" : "") + '" cx="' + X(ts[i]).toFixed(1) + '" cy="' + Y(p.valeur).toFixed(1) + '" r="' + (last ? 4.5 : 2.6) + '">' +
-        "<title>" + esc(p.label + " : " + eur(p.valeur) + (p.live ? " (en direct)" : "")) + "</title></circle>"; }).join("");
-    const r = (ev && ev.resume) || {};
-    const lbl = "Évolution des placements " + plat(opt.scopeLabel || "") + " : " + eur(fin.valeur) + (fini(r.variation) ? ", " + eurS(r.variation) + " sur la période" : "") + ". " +
-      rows.map(p => p.label + " " + eur(p.valeur)).join(", ");
-    return '<svg class="pl-svg" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(plat(lbl)) + '">' + g +
-      (aire ? '<path class="pl-aire" d="' + aire + '"/>' : "") + (d ? '<path class="pl-ligne-c" d="' + d + '"/>' : "") + tiret + pts + "</svg>";
+    return Object.assign(base, { resume: r && fini(r.variation) ? { variation: r.variation, variationPct: fini(r.variationPct) ? r.variationPct : null } : null, bornes: b });
   }
 
   /* =============================================================== détail d'une ligne =============================================================== */
@@ -452,29 +398,18 @@
       "Voir plus de mouvements", "ul", "pl-journal") + signaler;
   }
 
-  const H = { MODES, lienFiche, ficheGroupe, grouper, totaux, matelas, evolution, courbeSvg, etatDonnee, detailLigne, detailHtml, hypotheses, versements, ordres, journalMouvements, allocation,
-    titresSuivi, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, periodeTxt, jour };
+  const H = { MODES, lienFiche, ficheGroupe, grouper, totaux, matelas, variation, etatDonnee, detailLigne, detailHtml, hypotheses, versements, ordres, journalMouvements, allocation,
+    titresSuivi, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
   /* =============================================================== vue =============================================================== */
-  const CLE_MODE = "pilotage-groupe", EVO_KEY = "pilotage-evo", GRANULARITES = ["jour", "semaine", "mois", "trimestre", "annee"];
-  let S = null, root = null, dirty = true, largeur = 0, ctlPeriode = null;
-  let mode = "enveloppe", periode = { periode: "1a" };
-  /* Granularité : automatique (selon la période) tant que l'utilisateur ne l'a pas choisie lui-même sur la bascule ; ce choix seul
-     est mémorisé (gChoisie). granEnCours vaut vrai pendant le traitement d'un clic ou d'une touche sur la bascule de granularité. */
-  let granChoisie = false, granEnCours = false;
+  const CLE_MODE = "pilotage-groupe";
+  let S = null, root = null, dirty = true, mode = "enveloppe";
   let ouverte = null, sigPanneau = ""; // ligne affichée dans le panneau et signature de son contenu
   const ouverts = new Set(); // groupes dépliés (clé « mode:groupe »)
   const sig = {};
   try { const m = localStorage.getItem(CLE_MODE); if (MODES.some(x => x.id === m)) mode = m; } catch (e) {}
-  try {
-    const o = JSON.parse(localStorage.getItem(EVO_KEY) || "null");
-    if (o && typeof o === "object" && ["1m", "3m", "1a", "tout", "perso"].includes(o.periode)) {
-      granChoisie = o.gChoisie === true && GRANULARITES.includes(o.granularite);
-      periode = { periode: o.periode, granularite: granChoisie ? o.granularite : undefined, du: o.du, au: o.au };
-    }
-  } catch (e) {}
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
   const scopeLabel = () => (!S || scopeDe(S) === "foyer" ? "du foyer" : window.Calc.deNom(nomDe(S, S.scope), S.scope === "p2" ? 2 : 1));
@@ -511,6 +446,8 @@
     $("plTitre").textContent = "Placements " + scopeLabel();
     $("plTotal").textContent = pret ? eur(t.total) : "—";
     renderEvolution(t);
+    $("plGrapheBloc").hidden = !pret || vide; // sans placement, rien à tracer : l'état vide orienté suffit
+    if (pret && !vide) { chargerHistorique(); lancerGraphe(); }
     if (!pret) return;
     // faits secondaires : plus-values latentes, épargne de précaution, sommes à recevoir
     const m = matelas(S);
@@ -528,17 +465,34 @@
     $("plAgent").textContent = S.status && S.status.summary ? "Dernier compte rendu de l'agent : " + plat(S.status.summary) : "";
   }
 
+  /* Sous le total : variation sur 1 an (photos nocturnes + valeur en direct) et nombre de lignes. Le tracé est celui du graphe maître. */
   function renderEvolution(t) {
-    const ev = evolution(S, jour(), periode), r = ev.resume;
-    const el = $("plCourbe");
-    largeur = el.clientWidth || 0;
-    ecrire("courbe", el, S.ready === false ? '<p class="pl-vide-courbe">Chargement de l\'historique…</p>' : courbeSvg(ev, { largeur, scopeLabel: scopeLabel() }));
-    const varTxt = r && ev.historique ? (() => { const per = periodeTxt(periode), d = FM().fmtDelta({ montant: r.variation, pct: r.variationPct, periode: per }), mv = d.texte.slice(0, d.texte.length - per.length).trim();
-      return '<span class="pl-var ' + (d.ton === "neutre" ? "" : d.ton === "pos" ? "pos" : "neg") + '"><span aria-hidden="true">' + esc(mv.charAt(0)) + "</span> " + '<span class="ui-sr">' + esc({ hausse: "En hausse", baisse: "En baisse", stable: "Stable" }[d.sens] + " : ") + "</span>" + esc(mv.slice(1).trim()) + "</span> " + esc(per); })()
+    const ev = variation(S, jour()), r = ev.resume;
+    const varTxt = r && ev.historique ? (() => { const d = FM().fmtDelta({ montant: r.variation, pct: r.variationPct, periode: PERIODE_TXT }), mv = d.texte.slice(0, d.texte.length - PERIODE_TXT.length).trim();
+      return '<span class="pl-var ' + (d.ton === "neutre" ? "" : d.ton === "pos" ? "pos" : "neg") + '"><span aria-hidden="true">' + esc(mv.charAt(0)) + "</span> " + '<span class="ui-sr">' + esc({ hausse: "En hausse", baisse: "En baisse", stable: "Stable" }[d.sens] + " : ") + "</span>" + esc(mv.slice(1).trim()) + "</span> " + esc(PERIODE_TXT); })()
       : ev.historique ? "" : "historique en cours de constitution";
     const n = t && t.nb ? pluriel(t.nb, "ligne") : "";
     ecrire("sous", $("plSous"), [varTxt, esc(n)].filter(Boolean).join(" · "));
-    $("plCourbeNote").textContent = [ev.reconstitue ? "Premiers points reconstitués depuis tes relevés." : "", ev.serie.length > 1 && ev.serie[ev.serie.length - 1].live ? "Pointillé : valeur en direct." : ""].filter(Boolean).join(" ");
+  }
+
+  /* ---------- graphe maître : composant GraphePatrimoine relié au moteur par GrapheModele.brancher (un seul moteur, Projection.executer) ---------- */
+  let liaison = null;
+  const SN = () => glob("SerieNet");
+  const GM = () => glob("GrapheModele");
+  /* Lit tout le passé utile au graphe (cours, transactions, opérations bancaires : SerieNet.charger, période « tout », 5 ans au plus) ; la fin d'une lecture
+     relance le graphe (abonnement posé au mount), comme sur Aujourd'hui. */
+  function chargerHistorique() { const sn = SN(); if (sn && typeof sn.charger === "function") sn.charger(S, jour(), { id: "tout" }, null); }
+  /* Monte le graphe une fois ; le recalcul n'a lieu que si ce qui compte a changé (store, périmètre, passé lu, réglages locaux) : une émission du store sans effet ne redessine rien. */
+  function lancerGraphe() {
+    const Mo = GM(), el = $("plGraphe"), u = U();
+    if (!root || !S || S.ready === false || !Mo || !el || !u) return;
+    if (!liaison) liaison = Mo.brancher(el, { preset: "placements", deps: { UI: u }, today: () => jour(), perimetre: () => scopeLabel(), store: window.Store || null });
+    if (liaison) liaison.actualiser(S);
+  }
+  /* Une lecture du passé vient de finir : le graphe est recalculé avec son passé (ou le sera à l'affichage). */
+  function histPrete() {
+    if (!root || !S) return;
+    if (!root.hidden) { if (S.ready !== false && totaux(S).lignes) lancerGraphe(); } else dirty = true;
   }
 
   function renderSuivi() {
@@ -557,16 +511,6 @@
     sig.suiviBrut = brut; sig.suivi = null;
     const ouvertsAcc = new Set(Array.from(el.querySelectorAll("[data-pl-acc]")).filter(x => { const d = x.querySelector("details"); return d && d.hasAttribute("open"); }).map(x => x.getAttribute("data-pl-acc")));
     ecrire("suivi", el, accs.map(([k, titre, contenu]) => '<div class="pl-acc" data-pl-acc="' + k + '">' + u.accordeon({ titre, contenu, ouvert: ouvertsAcc.has(k) }) + "</div>").join(""));
-  }
-
-  function surPeriode(v) {
-    if (granEnCours) granChoisie = true;
-    const perso = v.periode === "perso";
-    periode = { periode: v.periode, granularite: granChoisie ? v.granularite : undefined, du: perso ? v.du : undefined, au: perso ? v.au : undefined };
-    const memo = { periode: periode.periode, du: periode.du, au: periode.au };
-    if (granChoisie) { memo.granularite = v.granularite; memo.gChoisie = true; }
-    try { localStorage.setItem(EVO_KEY, JSON.stringify(memo)); } catch (e) {}
-    if (S && root) renderEvolution(totaux(S));
   }
 
   /* ---------- panneau d'une ligne (lecture) ---------- */
@@ -619,15 +563,7 @@
     if (!u) return;
     u.bascule($("plMode"), { label: "Regrouper les lignes", options: MODES.map(x => ({ id: x.id, label: x.label, aria: x.aria })), actif: mode,
       surChange: id => { mode = id; try { localStorage.setItem(CLE_MODE, id); } catch (e) {} if (S) render(); } });
-    const pp = $("plPeriode");
-    const surGranularite = e => !!(e.target && e.target.closest && e.target.closest(".ui-periode-g"));
-    ["click", "keydown"].forEach(type => {
-      pp.addEventListener(type, e => { granEnCours = surGranularite(e); }, true); // capture : avant le surChange de la bascule
-      pp.addEventListener(type, () => { granEnCours = false; });
-    });
-    const o = { periode: periode.periode, du: periode.du, au: periode.au, label: "Période de la courbe", surChange: surPeriode };
-    if (granChoisie) o.granularite = periode.granularite;
-    ctlPeriode = u.periode($("plPeriode"), o);
+    const sn = SN(); if (sn && typeof sn.abonner === "function") sn.abonner(histPrete); // fin d'une lecture du passé (déclenchée ici ou ailleurs)
     // Le bouton Claude de l'en-tête couvre les demandes de la page (enregistrer un mouvement, compléter) : plus de boutons Claude empilés ; seul l'état vide garde le sien.
     $("plVideClaude").innerHTML = u.demanderAClaude(phraseClaude("placements"), "Compléter avec Claude");
     u.brancher(root);
@@ -636,17 +572,9 @@
       const g = t.closest("[data-pl-groupe-btn]"); if (g) { basculerGroupe(g); return; }
       const l = t.closest("[data-pl-ligne]"); if (l) ouvrirLigne(l.getAttribute("data-pl-ligne"), l);
     });
-    if (typeof ResizeObserver === "function") new ResizeObserver(() => {
-      const w = $("plCourbe").clientWidth;
-      if (S && w && Math.abs(w - largeur) > 24) renderEvolution(totaux(S));
-    }).observe($("plCourbe"));
   }
   function update(snap, visible) {
     S = snap;
-    if (ctlPeriode && typeof ctlPeriode.premiere === "function") {
-      const sc = scopeDe(S), ds = (S.snapshots || []).filter(x => x && fini(x[sc])).map(x => jj(x.date)).filter(isoOk).sort();
-      ctlPeriode.premiere(ds[0]);
-    }
     dirty = true;
     if (visible) { render(); dirty = false; }
     rafraichirPanneau();

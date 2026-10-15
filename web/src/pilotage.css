@@ -1,11 +1,11 @@
-/* Patrimoine › Placements (module pilotage) : en-tête (total, variation, faits, période, courbe), groupes dépliables selon la bascule
+/* Patrimoine › Placements (module pilotage) : en-tête (total, variation, faits, graphe maître), groupes dépliables selon la bascule
    de regroupement, accordéons de suivi. Scopé #view-pilotage ; le contenu du panneau de détail vit dans .ui-panneau (injecté dans
    body par UI), d'où .ui-panneau .pl-…. Couleurs par variables du thème (clair et sombre). */
 #view-pilotage [hidden]{display:none!important}
 #view-pilotage .pl{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
 /* ≥ 1100 px : la courbe et le suivi à gauche, « Mes lignes » dans une colonne de droite */
-@media (min-width:1100px){#view-pilotage .pl{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"tete groupes" "suivi groupes" "agent agent";align-items:start;column-gap:var(--gap-sections)}
-  #view-pilotage .pl-tete{grid-area:tete}#view-pilotage .pl-groupes{grid-area:groupes}#view-pilotage .pl-suivi{grid-area:suivi}#view-pilotage .pl-agent{grid-area:agent}
+@media (min-width:1100px){#view-pilotage .pl{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"tete groupes" "graphe groupes" "suivi groupes" "agent agent";align-items:start;column-gap:var(--gap-sections)}
+  #view-pilotage .pl-tete{grid-area:tete}#view-pilotage .pl-graphe{grid-area:graphe}#view-pilotage .pl-groupes{grid-area:groupes}#view-pilotage .pl-suivi{grid-area:suivi}#view-pilotage .pl-agent{grid-area:agent}
   #view-pilotage .pl-chargement,#view-pilotage .pl-vide{grid-column:1/-1}}
 #view-pilotage .pos{color:var(--good)}
 #view-pilotage .neg{color:var(--crit)}
@@ -29,18 +29,7 @@
 #view-pilotage .pl-fait-v{font:700 var(--t-h3)/var(--lh-h3) var(--f-display);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
 #view-pilotage .pl-fait-s{font-size:var(--t-caption);color:var(--muted);line-height:var(--lh-caption);overflow-wrap:anywhere}
 #view-pilotage .pl-fait-s a{display:inline-flex;align-items:center;min-height:var(--hit);color:var(--brand);font-weight:600}
-#view-pilotage .pl-periode{margin:12px 0 8px;min-width:0}
-#view-pilotage .pl-courbe{min-width:0}
-#view-pilotage .pl-svg{display:block;width:100%;height:auto;overflow:visible}
-#view-pilotage .pl-grille{stroke:var(--line);stroke-width:1}
-#view-pilotage .pl-axe{fill:var(--muted);font:var(--t-caption) var(--f-body);font-variant-numeric:tabular-nums lining-nums}
-#view-pilotage .pl-ligne-c{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
-#view-pilotage .pl-aire{fill:var(--accent-soft);opacity:.6;stroke:none}
-#view-pilotage .pl-direct{stroke:var(--accent);stroke-width:2;stroke-dasharray:4 4}
-#view-pilotage .pl-pt{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
-#view-pilotage .pl-pt.fin{fill:var(--accent)}
-#view-pilotage .pl-vide-courbe{margin:8px 0;font-size:var(--t-small);line-height:1.5;color:var(--muted);max-width:620px}
-#view-pilotage .pl-pied{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-top:8px}
+#view-pilotage .pl-graphe{min-width:0}
 #view-pilotage .pl-note{margin:0;font-size:var(--t-caption);line-height:1.45;color:var(--muted);max-width:620px}
 #view-pilotage .pl-note:empty{display:none}
 #view-pilotage .pl-note a{position:relative;color:var(--brand);font-weight:600}
