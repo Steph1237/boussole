@@ -305,8 +305,10 @@ max_enrolled_factors = 10
 
 # Control MFA via App Authenticator (TOTP)
 [auth.mfa.totp]
-enroll_enabled = false
-verify_enabled = false
+# SEC2 est en ligne : la double authentification TOTP est activée en production. Ce fichier la reflète (décision D7,
+# 2026-10-16) pour qu'un futur `supabase config push` ne la désactive pas. Ne rien pousser sans avoir relu le tableau de bord.
+enroll_enabled = true
+verify_enabled = true
 
 # Configure MFA via Phone Messaging
 [auth.mfa.phone]
