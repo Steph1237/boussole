@@ -52,6 +52,82 @@ test("retroControle : rejeu depuis chaque photo passée avec les flux observés,
   assert.equal(JSON.stringify(P.retroControle(d, fusion, { flux, chemins: 100 })), JSON.stringify(P.retroControle(d, fusion, { flux, chemins: 100 })), "reproductible");
 });
 
+/* ---------------------------------------------------------------- rétro-contrôle branché sur le résultat (champ retro) */
+const Dn = req("../web/src/projection-donnees.js");
+const Outils = req("../web/src/projection-outils.js");
+/** Photos nocturnes fictives (deux par mois : le 15 et la fin du mois) sur `mois` mois, et versements mensuels de 300 €. */
+function photosFictives(mois) {
+  const snaps = [], tx = [], rend = [0.012, -0.008, 0.02, 0.005, -0.015, 0.01, 0.007, 0.018, -0.004, 0.011, 0.003, 0.009];
+  let monde = 40000, obl = 10000;
+  for (let k = 0; k <= mois; k++) {
+    const fin = Outils.ajouterMois("2023-09-30", k), quinze = fin.slice(0, 8) + "15";
+    for (const date of [quinze, fin]) snaps.push({ date, foyer: monde + obl, p1: 0, p2: 0, byBloc: { Monde: Math.round(monde), Obligations: Math.round(obl) }, byEnvelope: {}, source: "nightly" });
+    if (k > 0) tx.push({ id: "t" + k, positionId: "p", date: fin, type: "versement", qty: null, price: null, amount: 300 });
+    monde = monde * (1 + rend[k % 12]) + 300; obl = obl * 1.003;
+  }
+  return { snaps, tx };
+}
+const entreeRetro = (mois, extra) => { const d = entreeDe(cas("D-2")), { snaps, tx } = photosFictives(mois); d.historique = Dn.historiquePourRetro(snaps, tx); return Object.assign(d, extra || {}); };
+const simRetro = (d, opts) => P.simuler(P.preparer(d, { horizon_ans: 3, ...(opts || {}) }), { chemins: 500 });
+
+test("historiquePourRetro : une photo par mois (la dernière), formes de l'app et SQL, versements et retraits seuls comme flux", () => {
+  const h = Dn.historiquePourRetro([
+    { date: "2026-01-15", foyer: 100, byBloc: { A: 60, B: 40 } }, { date: "2026-01-31", foyer: 110, byBloc: { A: 66, B: 44 } },
+    { date: "2026-02-28", total: 120, by_bloc: { A: 70, B: 50 } }, { date: "2026-03-31", foyer: 1, byBloc: {} }, { date: "pas une date", byBloc: { A: 1 } }, null,
+  ], [
+    { date: "2026-02-03", type: "versement", amount: 300 }, { date: "2026-02-05", type: "programme", amount: 100 }, { date: "2026-02-10", type: "retrait", amount: 50 },
+    { date: "2026-02-11", type: "achat", amount: 999 }, { date: "2026-02-12", type: "vente", amount: 999 }, { date: "2026-02-13", type: "versement", amount: null }, { date: "2026-02-14", type: "versement", amount: 0 },
+  ]);
+  assert.deepEqual(h.points, [{ date: "2026-01-31", byBloc: { A: 66, B: 44 }, net: 110 }, { date: "2026-02-28", byBloc: { A: 70, B: 50 }, net: 120 }]);
+  assert.deepEqual(h.flux, [{ date: "2026-02-03", montant: 300 }, { date: "2026-02-05", montant: 100 }, { date: "2026-02-10", montant: -50 }]);
+  assert.deepEqual(Dn.historiquePourRetro(null, undefined), { points: [], flux: [] });
+});
+test("retroControle : des photos rapprochées ne font qu'une date de départ par mois (même résultat avec deux photos par mois qu'avec une)", () => {
+  const { snaps, tx } = photosFictives(36), d = entreeDe(cas("D-2"));
+  const brut = s => ({ points: s.map(x => ({ date: x.date, net: x.foyer, byBloc: x.byBloc })) });
+  const flux = tx.map(t => ({ date: t.date, montant: t.amount }));
+  const deux = P.retroControle(d, brut(snaps), { flux, chemins: 100 });
+  const une = P.retroControle(d, brut(snaps.filter(x => x.date.slice(8) !== "15")), { flux, chemins: 100 });
+  assert.equal(deux.origines.length, 25); assert.deepEqual(deux.origines, une.origines);
+  assert.ok(deux.origines.every(o => /-(28|29|30|31)$/.test(o.date)), "fins de mois");
+});
+test("retro dans le résultat : au moins 24 dates de départ → couverture P10–P90 et P25–P75, phrase et limites ; reproductible, indépendant du scénario", () => {
+  const d = entreeRetro(36), r = simRetro(d);
+  assert.equal(r.retro_raison, null);
+  assert.equal(r.retro.n, 25); assert.equal(r.retro.horizon_mois, 12); assert.equal(r.retro.affichable, true); assert.equal(r.retro.minimum, 24);
+  assert.equal(r.retro.premiere_date, "2023-09-30"); assert.equal(r.retro.derniere_date, "2025-09-30");
+  for (const k of ["taux_p10_p90", "taux_p25_p75"]) assert.ok(r.retro[k] >= 0 && r.retro[k] <= 1, k);
+  assert.equal(r.retro.attendu_p10_p90, 0.8); assert.equal(r.retro.attendu_p25_p75, 0.5);
+  assert.equal(r.retro.dans_p10_p90 + r.retro.sous_p10 + r.retro.au_dessus_p90, 25, "tout est dans la bande, dessous ou dessus");
+  assert.match(r.retro.phrase, /^Rejouée depuis 25 dates passées, la projection à 1 an a encadré la valeur réelle \d+ fois sur 10 \(attendu : 8 sur 10\)/);
+  assert.ok(r.retro.limites.length >= 2 && r.retro.limites.every(l => typeof l === "string"));
+  /* identique à l'appel direct de retroControle (mêmes tirages, mêmes flux) et à un second calcul */
+  const direct = P.retroControle(d, d.historique, { horizon_mois: 12, chemins: 2000, flux: d.historique.flux, min: 24 });
+  assert.equal(r.retro.dans_p10_p90, direct.couverture.dans_p10_p90); assert.equal(r.retro.dans_p25_p75, direct.couverture.dans_p25_p75);
+  assert.deepEqual(simRetro(d).retro, r.retro);
+  /* ne dépend ni des événements, ni de l'horizon : un autre scénario rend le même rétro-contrôle */
+  const autre = simRetro(entreeRetro(36, { foyer: { evenements: [], variantes: [] } }), { horizon_ans: 5 });
+  assert.deepEqual(autre.retro, r.retro);
+});
+test("retro dans le résultat : sous 24 dates, sans photo, hors foyer ou sans repère → null avec la raison, jamais un chiffre", () => {
+  const court = simRetro(entreeRetro(30)); // 31 photos mensuelles : 19 dates avec une valeur 12 mois plus tard
+  assert.equal(court.retro, null); assert.match(court.retro_raison, /^19 dates de départ avec une valeur réelle 12 mois plus tard sur 24 nécessaires : pas encore assez d'historique pour vérifier la projection\.$/);
+  const sans = simRetro(entreeDe(cas("D-2")));
+  assert.equal(sans.retro, null); assert.match(sans.retro_raison, /Aucune photo du patrimoine avec sa composition/);
+  const p1 = simRetro(entreeRetro(36), { perimetre: "p1" });
+  assert.equal(p1.retro, null); assert.match(p1.retro_raison, /foyer entier/);
+  const sansRepere = entreeRetro(36); sansRepere.reperes = sansRepere.reperes.filter(r => r.cle !== "retro_min_origines");
+  const m = simRetro(sansRepere);
+  assert.equal(m.retro, null); assert.match(m.retro_raison, /retro_min_origines/);
+  const off = P.simuler(P.preparer(entreeRetro(36), { horizon_ans: 3 }), { chemins: 100, retro: false });
+  assert.equal(off.retro, null); assert.match(off.retro_raison, /non demandé/);
+});
+test("depuisEtat : l'historique du rétro-contrôle vient des photos et des transactions de l'état du store", () => {
+  const { snaps, tx } = photosFictives(6), d = Dn.depuisEtat({ snapshots: snaps, tx }, "2026-10-14");
+  assert.equal(d.historique.points.length, 7); assert.equal(d.historique.flux.length, 6);
+  assert.deepEqual(Dn.depuisEtat({}, "2026-10-14").historique, { points: [], flux: [] });
+});
+
 /* ---------------------------------------------------------------- plans figés */
 function planDeDemo() {
   const c = cas("C-4"), d = entreeDe(c), options = { horizon_ans: 5, vue: "net", euros: "courants" };

@@ -338,14 +338,43 @@
     return out;
   }
 
+  /** Historique compact pour le rétro-contrôle (spec § 6.9) : { points: [{ date, byBloc, net }], flux: [{ date, montant }] }.
+      snapshots : photos du patrimoine financier avec leur composition, forme de l'app ({ date, foyer, byBloc }) ou ligne SQL ({ date, total, by_bloc }) ;
+      on garde la dernière photo de chaque mois (les dates de départ sont des fins de mois ; les photos de la nuit se chevauchent). tx : transactions
+      (forme de l'app ou ligne SQL) ; seuls les versements, versements programmés (entrées) et retraits (sorties) franchissent la frontière du portefeuille,
+      un achat ou une vente reste interne (flux = montant du mouvement ; sans montant, le mouvement est ignoré). */
+  function historiquePourRetro(snapshots, tx) {
+    const parMois = new Map();
+    liste(snapshots).forEach(r => {
+      const date = r && String(r.date || "").slice(0, 10), bb = r && (r.byBloc || r.by_bloc);
+      if (!O.estDate(date) || !bb || typeof bb !== "object") return;
+      const byBloc = {};
+      Object.keys(bb).forEach(k => { const v = +bb[k]; if (Number.isFinite(v)) byBloc[k] = v; });
+      if (!Object.keys(byBloc).length) return;
+      const net = Number.isFinite(+(r.foyer != null ? r.foyer : r.total)) ? +(r.foyer != null ? r.foyer : r.total) : sum(Object.values(byBloc), x => x);
+      const k = date.slice(0, 7), cur = parMois.get(k);
+      if (!cur || cur.date < date) parMois.set(k, { date, byBloc, net });
+    });
+    const points = [...parMois.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+    const flux = [];
+    liste(tx).forEach(r => {
+      const date = r && String(r.date || "").slice(0, 10), type = r && String(r.type || ""), m = r && +r.amount;
+      if (!O.estDate(date) || !Number.isFinite(m) || !m) return;
+      if (type === "versement" || type === "programme") flux.push({ date, montant: Math.abs(m) });
+      else if (type === "retrait") flux.push({ date, montant: -Math.abs(m) });
+    });
+    flux.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return { points, flux };
+  }
+
   /** Entrée du moteur depuis l'état S du store (positions, config, profil, budget, banque, objectifs, foyer, repères, indices) ; today = AAAA-MM-JJ (jour de Paris). */
   function depuisEtat(S, today) {
     const s = objet(S), pr = objet(s.profil);
     return { today, positions: liste(s.positions), instruments: [], config: objet(s.config), profil: pr, credits: liste(pr.credits), biens: liste(pr.biens), budget: s.budget || { lignes: [] },
       banque: s.banque || null, objectifs: liste(s.objectifs), foyer: { evenements: liste(objet(s.foyer).evenements), variantes: liste(objet(s.foyer).variantes) },
-      reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes) };
+      reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes), historique: historiquePourRetro(s.snapshots, s.tx) };
   }
 
-  return { ecarterIndisponibles, depuisEtat, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
+  return { ecarterIndisponibles, depuisEtat, historiquePourRetro, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
     creditsExistants, DISPO, TYPES_ENVELOPPE, personnesDe, objet, liste, sum };
 });
