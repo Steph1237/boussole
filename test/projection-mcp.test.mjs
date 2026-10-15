@@ -374,6 +374,22 @@ function historiqueSql(mois) {
   }
   return { snaps, tx };
 }
+test("projeter : le rendement des placements (attendu net de frais, médiane simulée et bande P10 à P90, année par année, nominal et réel) est celui du moteur de l'app, arrondi", { skip: SANS_STRIP }, async () => {
+  const r = await ok(T0.projeter.handler({}));
+  const a = App.simuler(App.preparer(entreeApp(), { horizon_ans: 10, perimetre: "foyer", vue: "net", euros: "constants" }), {}).rendement, d2 = x => Math.round(x * 100) / 100;
+  assert.equal(r.rendement.disponible, a.disponible); assert.equal(r.rendement.methode, "twr_net_de_frais"); assert.equal(r.rendement.avant_impots, true);
+  assert.match(r.rendement.perimetre, /comptes courants exclus/);
+  assert.deepEqual(J(r.rendement.attendu), { nominal_pct: d2(a.attendu.nominal_pct), reel_pct: d2(a.attendu.reel_pct), frais_moyens_pct: d2(a.attendu.frais_pct) });
+  assert.deepEqual(J(r.rendement.horizon), { annees: 10, nominal: { p10: d2(a.horizon.nominal.p10), p50: d2(a.horizon.nominal.p50), p90: d2(a.horizon.nominal.p90) }, reel: { p10: d2(a.horizon.reel.p10), p50: d2(a.horizon.reel.p50), p90: d2(a.horizon.reel.p90) } });
+  assert.equal(r.rendement.par_annee.length, 10); assert.equal(r.rendement.par_annee[0].annee, 1);
+  assert.equal(r.rendement.par_annee[0].nominal.p50, d2(a.par_annee.nominal.p50[0])); assert.equal(r.rendement.par_annee[9].reel.p90, d2(a.par_annee.reel.p90[9]));
+  assert.deepEqual(J(r.rendement.annualise_a_l_anniversaire.map(x => x.annees)), [1, 3, 5, 10]);
+  assert.equal(r.rendement.annualise_a_l_anniversaire[3].nominal.p50, d2(a.annualise.nominal.p50[120]), "à l'anniversaire de l'horizon, c'est le rendement annualisé de l'horizon");
+  assert.ok(r.rendement.hypotheses_de_classe.actions.rendement_pct > 0 && r.rendement.hypotheses_de_classe.courant.rendement_pct === 0);
+  assert.match(r.rendement.a_dire, /net de frais, avant impôts, sur les placements/);
+  assert.match(JSON.stringify(r.rendement), /^(?!.*mois)/s, "jamais les séries mensuelles");
+});
+
 test("projeter : rétro-contrôle (retro) du moteur quand 24 dates de départ au moins existent dans les photos ; null avec la raison sinon ; lecture impossible sans faire échouer l'outil", { skip: SANS_STRIP }, async () => {
   const { snaps, tx } = historiqueSql(36);
   const T = outils(faux({ snapshots: snaps, transactions: tx }));

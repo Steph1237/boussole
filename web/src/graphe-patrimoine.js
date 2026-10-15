@@ -22,7 +22,11 @@
        capacite: { base, par_periode: [{ debut, fin, montant_mensuel, raison, source, evenement_id? }] } | null,
        capacite_demain?: { mois, montant_empruntable, budget_achat_par_taux, taux, duree_ans, apport, phrase } (mode "capacite"),
        phrase, decomposition_phrase, garde_fous, evenements_pris_en_compte, question_evenements, hypotheses, couverture, avertissements, a_completer,
-       version_modele, graine, chemins, progressif?: bool, plans?: [{ id, cree_le, raison }], variantes?: [{ id, nom }], crises?: [{ cle, label }] }
+       version_modele, graine, chemins, progressif?: bool, plans?: [{ id, cree_le, raison }], variantes?: [{ id, nom }], crises?: [{ cle, label }],
+       rendement?: { projet: { disponible, raison?, attendu: { nominal_pct, reel_pct, frais_pct }, inflation_pct, annualise: { nominal, reel: { p10, p25, p50, p75, p90: [% par an, mois 0 = null] } },
+                               cumule: { nominal, reel: { …: [% sur la période] } } } | null,
+                     reel: { periodes: [{ id, libelle, statut, raison?, notes, annualise, twr_*_pct, xirr_*_pct, attendu?, comparaison?, source? }], donnees: { points, flux, versementsConnus, allocations },
+                             hypotheses: { courantes: { classes, frais_pct }, plans: [{ id, cree_le, classes }] }, notes } | null } }
    Tous les textes sont au tutoiement ; toute donnée est échappée. Une projection n'est pas une promesse.
 
    Polissage v3 : les objectifs portent la couleur de leur statut (atteint / en avance = vert, dans les temps = marque, en retard = ambre, hors de portée = rouge sourdine : jetons --ms-*), un
@@ -367,9 +371,21 @@
       futur = { t, p10: demain.budget.p10, p25: null, p50: demain.budget.p50, p75: null, p90: demain.budget.p90, n, existant: null, epargne: null, variante: null, crise: null, avenirs: null, pasMois: 12 };
     }
     const debutPasse = passe.t.length ? passe.t[0] : null, finFutur = futur ? futur.t[futur.n - 1] : today;
-    return { brut: D, mode, today, todayIso: isoDe(today), vue: D.vue || "net", euros: D.euros === "courants" ? "courants" : "constants", etat: D.etat || (futur || passe.t.length ? "pret" : "vide"),
+    return { brut: D, rendement: normaliserRendement(D.rendement, futur && !demain ? futur.n : 0), mode, today, todayIso: isoDe(today), vue: D.vue || "net", euros: D.euros === "courants" ? "courants" : "constants", etat: D.etat || (futur || passe.t.length ? "pret" : "vide"),
       titre: plat(D.titre), perimetre: plat(D.perimetre), passe, futur, valeurAuj: aujObs != null ? aujObs : futur && futur.p50 ? futur.p50[0] : null, ecartDepart, jalons, objectifs, capacite, demain,
       debutPasse, finFutur, plans: tab(D.plans), variantes: tab(D.variantes), crises: tab(D.crises), progressif: !!D.progressif, chemins: D.chemins || null };
+  }
+
+  /** Rendement (contrat `rendement`) : les séries de la projection n'ont de sens que si elles ont la longueur du futur (un point par mois, mois 0 = aujourd'hui) ; sinon la projection du rendement est ignorée. */
+  function normaliserRendement(r, nFutur) {
+    if (!r || typeof r !== "object") return null;
+    const pj = r.projet && typeof r.projet === "object" ? r.projet : null, re = r.reel && typeof r.reel === "object" ? r.reel : null;
+    const long = o => !!o && ["nominal", "reel"].every(k => o[k] && tab(o[k].p50).length === nFutur);
+    let projet = null;
+    if (pj && pj.disponible === false) projet = { disponible: false, raison: plat(pj.raison) };
+    else if (pj && pj.attendu && fini(pj.attendu.nominal_pct) && nFutur > 1 && long(pj.annualise) && long(pj.cumule)) projet = { disponible: true, attendu: pj.attendu, inflation_pct: fini(pj.inflation_pct) ? +pj.inflation_pct : null, annualise: pj.annualise, cumule: pj.cumule };
+    const reel = re && tab(re.periodes).length ? { periodes: re.periodes, donnees: re.donnees || null, hypotheses: re.hypotheses || null, notes: tab(re.notes), cache: new Map() } : null;
+    return projet || reel ? { projet, reel } : null;
   }
 
   /* ---------- séries affichées : échantillonnage selon la granularité ---------- */
@@ -519,6 +535,7 @@
         if (r.existant != null && r.p50 != null) { r.epargneFuture = r.p50 - r.existant; if (r.versements != null) r.croissance = r.epargneFuture - r.versements; }
         if (F.variante) { r.variante = { nom: F.variante.nom, p50: F.variante.p50[i], p25: F.variante.p25 ? F.variante.p25[i] : null, p75: F.variante.p75 ? F.variante.p75[i] : null }; }
         if (F.crise) r.crise = { label: F.crise.label, valeur: F.crise.valeurs[i] };
+        if (t > M.today) r.rend = rendementProjete(M, i);
       }
     }
     r.capacite = capaciteA(M, t);
@@ -638,9 +655,25 @@
       if (l.plan && !l.plan.avant) add("plan", "Prévu au plan", ap(l.plan.prevu), { sw: "plan" });
       const ef = effetEpargne(l);
       if (ef != null) add("effet", "Effet de ton épargne future", fSK(ef), { ton: ef < 0 ? "neg" : "pos" });
+      const rd = l.rend;
+      if (rd) {
+        add("rend", rd.annualise ? "Rendement annualisé (médiane)" : "Rendement médian sur " + dureeTxt(rd.mois), rd.annualise ? fRd(rd.p50) + "/an" : fRd(rd.p50, true));
+        add("rend80", "Rendement, 8 chances sur 10", fRdFourchette(rd.p10, rd.p90, 1));
+      }
     } else if (l.valeur != null) {
       add(l.nature === "reconstitue" ? "estime" : "observe", l.nature === "reconstitue" ? "Estimé" : l.nature === "aujourdhui" ? "Aujourd'hui" : "Observé", fEur(l.valeur), { gras: true, sw: "obs" });
       if (l.plan && !l.plan.avant) { add("plan", "Prévu au plan", fEur(l.plan.prevu), { sw: "plan" }); add("ecart", "Écart avec le plan", fSE(l.plan.ecart), { ton: l.plan.ecart < 0 ? "neg" : "pos" }); }
+      const d = l.nature === "observe" ? rendementPasse(M, l) : null;
+      if (d) {
+        const an = d.annualise, r = d.reel, apr = d.statut === "approche" ? " (approché)" : "";
+        add("rend_reel", an ? "Rendement réel depuis cette date" : "Rendement réel sur " + r.libelle, (an ? fRd(r.valeur_pct) + "/an" : fRd(r.valeur_pct, true)) + apr);
+        if (d.attendu && d.attendu.statut === "ok") {
+          const a = d.attendu, large = a.p90_pct - a.p10_pct >= 6;
+          add("rend_att", "Rendement attendu", an ? fRd(a.attendu_pct) + "/an" : fRd(a.attendu_pct, true));
+          add("rend_att80", "Fourchette 8 chances sur 10", fRdFourchette(a.p10_pct, a.p90_pct, large ? 0 : 1));
+          if (d.comparaison && d.comparaison.verdict) add("rend_verdict", "Réel et attendu", VERDICT_RD[d.comparaison.verdict]);
+        }
+      }
     }
     return rows;
   }
@@ -650,6 +683,63 @@
     if (!rows.length) return "";
     return rows.map(r => '<div class="gp-lt-r' + (r.ton ? " " + r.ton : "") + (r.gras ? " b" : "") + '" data-lt-r="' + esc(r.cle) + '"><span>' + swHtml(r.sw) + esc(r.label) + "</span><b>" + esc(r.valeur) + "</b></div>").join("");
   }
+  /* ---------- rendement ---------- */
+  const RD = () => glob("Rendement") || (noeud ? (() => { try { return require("./rendement.js"); } catch (e) { return null; } })() : null);
+  /** Rendement en % : « 4,8 % » (une décimale) ; signe: « +2,4 % » (rendement d'une période). Le moins est typographique. */
+  const fRd = (x, signe) => { const r = Math.round(Math.abs(x) * 10) / 10, neg = x < 0 && r !== 0; return (neg ? MOINS : signe && r !== 0 ? "+" : "") + r.toFixed(1).replace(".", ",") + NB + "%"; };
+  /** Fourchette de rendements : « 1,2 à 8,1 % » (deux bornes positives), « −3,8 à +14,2 % » (une borne négative : les deux signées). dec : décimales (1, ou 0 pour une fourchette large). */
+  function fRdFourchette(lo, hi, dec) {
+    const d = dec == null ? 1 : dec, nb = x => { const r = Math.round(Math.abs(x) * Math.pow(10, d)) / Math.pow(10, d); return r.toFixed(d).replace(".", ","); };
+    const sg = x => (Math.round(Math.abs(x) * Math.pow(10, d)) === 0 ? "" : x < 0 ? MOINS : "+");
+    return (lo < 0 ? sg(lo) : "") + nb(lo) + " à " + (lo < 0 ? sg(hi) : "") + nb(hi) + NB + "%";
+  }
+  const VERDICT_RD = { dans: "dans la fourchette", au_dessus: "au-dessus de la fourchette", en_dessous: "sous la fourchette" };
+  /** Rendement annualisé de la projection (loi du moteur) à l'indice `i` du futur : de la première année (12 mois) on annualise ; avant, c'est le rendement cumulé de la période. En euros d'aujourd'hui
+      (après inflation) ou courants selon l'euro choisi. → { mois, annualise, reel, p10, p50, p90 } ou null. */
+  function rendementProjete(M, i) {
+    const P = M.rendement && M.rendement.projet, F = M.futur;
+    if (!P || !P.disponible || !F || F.pasMois !== 1 || i < 1) return null;
+    const reel = M.euros !== "courants", src = (i >= 12 ? P.annualise : P.cumule)[reel ? "reel" : "nominal"], g = k => (src[k] ? src[k][i] : null);
+    const p10 = g("p10"), p50 = g("p50"), p90 = g("p90");
+    return [p10, p50, p90].every(fini) ? { mois: i, annualise: i >= 12, reel, p10: +p10, p50: +p50, p90: +p90 } : null;
+  }
+  /** Rendement réel depuis la date lue jusqu'à aujourd'hui et ce que le modèle en attendait pour l'allocation de ce jour-là (module Rendement.depuis) ; mémorisé par date. null sans données. */
+  function rendementPasse(M, l) {
+    const R = M.rendement && M.rendement.reel, mod = RD();
+    if (!R || !R.donnees || !mod || typeof mod.depuis !== "function" || !l || !l.iso) return null;
+    if (R.cache.has(l.iso)) return R.cache.get(l.iso);
+    let d = null;
+    try { d = mod.depuis(R.donnees, l.iso, M.todayIso, { hypotheses: R.hypotheses }); } catch (e) { d = null; }
+    if (d && d.statut === "insuffisant") d = null;
+    R.cache.set(l.iso, d);
+    return d;
+  }
+  /** Puce de l'en-tête de la carte : « Rendement attendu ≈ 4,8 %/an » (net de frais, avant impôts) ; le chiffre suit l'euro du graphique (après inflation en euros d'aujourd'hui, nominal en euros courants),
+      la bulle donne les deux. → { texte, titre, aria } ou null (mode capacité, pas de projection, aucun placement). */
+  function rendementChip(M) {
+    const P = M && M.rendement && M.rendement.projet;
+    if (!M || M.mode === "capacite" || !M.futur || !P || !P.disponible || !fini(P.attendu.nominal_pct) || !fini(P.attendu.reel_pct)) return null;
+    const reel = M.euros !== "courants", texte = "Rendement attendu ≈ " + fRd(reel ? P.attendu.reel_pct : P.attendu.nominal_pct) + "/an";
+    const titre = "Net de frais, avant impôts, sur tes placements (comptes courants exclus). " + fRd(P.attendu.reel_pct) + "/an après inflation, " + fRd(P.attendu.nominal_pct) + "/an avant inflation" +
+      (fini(P.inflation_pct) ? " (inflation supposée : " + fRd(P.inflation_pct) + ")" : "") + ". Ouvre le détail.";
+    return { texte, titre, aria: texte + ". " + titre };
+  }
+  /** Phrase d'un rendement projeté : « Rendement annualisé médian 4,8 % (8 chances sur 10 entre −3,8 % et 14,2 %), net de frais, après inflation. » */
+  function rendementPhrase(M, l) {
+    const rd = l && l.rend; if (!rd) return null;
+    const sg = !rd.annualise;
+    return (rd.annualise ? "Rendement annualisé médian " + fRd(rd.p50) : "Rendement médian sur " + dureeTxt(rd.mois) + " " + fRd(rd.p50, true)) + " (8 chances sur 10 entre " + fRd(rd.p10, sg) + " et " + fRd(rd.p90, sg) + "), net de frais, " +
+      (rd.reel ? "après inflation" : "avant inflation") + ".";
+  }
+
+  /** Rendement réel depuis une date passée, en phrase (« Réel 6,2 %/an contre 4,9 % attendu (fourchette 8 sur 10 : −3 % à +12 %) — dans la fourchette ») et d'où vient l'attendu ; "" sans mesure. */
+  function rendementPasseHtml(M, l, cls) {
+    const d = rendementPasse(M, l); if (!d) return "";
+    const phrase = d.comparaison && d.comparaison.phrase ? d.comparaison.phrase : (d.annualise ? "Rendement réel " + fRd(d.reel.valeur_pct) + "/an" : "Rendement réel " + fRd(d.reel.valeur_pct, true) + " sur " + d.reel.libelle);
+    const apr = d.statut === "approche" ? " (rendement approché : " + (d.notes && d.notes.length ? d.notes[0].replace(/ : rendement approché$/, "") : "mesure fragile") + ")" : "";
+    return '<div class="' + cls + '" data-rend-phrase>' + esc(phrase + apr) + "</div>" + (d.source ? '<div class="' + cls + ' gp-rd-src" data-rend-source>' + esc(cap1(d.source.texte) + ".") + "</div>" : "");
+  }
+
   /** Phrase prête « Compléter avec Claude » (ClaudePrompts.phrase), avec un repli identique si le module n'est pas chargé. */
   function phraseClaude(section, contexte) {
     const P = glob("ClaudePrompts") || (noeud ? (() => { try { return require("./claude-prompts.js"); } catch (e) { return null; } })() : null);
@@ -796,8 +886,13 @@
         }
         if (l.variante && l.variante.p50 != null) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-var"></i>Variante « ' + esc(l.variante.nom) + " » : <b>" + esc(fK(l.variante.p50)) + "</b> (" + esc(fSK(l.variante.p50 - l.p50)) + " en médiane).</div>";
         if (l.crise) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-cr"></i>Avec ' + esc(l.crise.label) + " rejouée : <b>" + esc(fK(l.crise.valeur)) + "</b> (" + esc(fSK(l.crise.valeur - l.p50)) + ").</div>";
+        const rp = rendementPhrase(M, l);
+        if (rp) h += '<div class="gp-ro-d" data-rend-phrase>' + esc(rp) + "</div>";
       } else if (l.nature === "reconstitue") h += '<div class="gp-ro-d">Reconstitué à partir de tes cours, transactions et soldes bancaires : une estimation, moins fiable qu\'une photo.</div>';
-      else if (l.nature === "observe") h += '<div class="gp-ro-d">Relevé sur tes comptes (photo nocturne).</div>';
+      else if (l.nature === "observe") {
+        h += '<div class="gp-ro-d">Relevé sur tes comptes (photo nocturne).</div>';
+        h += rendementPasseHtml(M, l, "gp-ro-d");
+      }
       else if (l.t === M.today) h += '<div class="gp-ro-d">Valeur d\'aujourd\'hui, d\'après tes lignes à jour.</div>';
     }
     if (l.capacite && M.mode !== "capacite") h += '<div class="gp-ro-d num">Capacité d\'épargne ' + (l.t <= M.today ? "constatée" : "ce mois-là") + " : <b>" + esc(fMoisU(l.capacite.montant)) + "</b>" + (l.capacite.raison ? " · " + esc(l.capacite.raison) : "") + "</div>";
@@ -825,6 +920,8 @@
     else if (l.nature === "observe") rows.push(kv("Nature", "relevé sur tes comptes"));
     if (l.capacite) rows.push(kv("Capacité d'épargne " + (l.t <= M.today ? "constatée" : "du mois"), esc(fMoisU(l.capacite.montant) + (l.capacite.montant < 0 ? " · négative" : "")), l.capacite.montant < 0 ? "neg" : ""));
     h += '<div class="gp-kvs">' + rows.join("") + "</div>";
+    const dp = l.nature === "observe" ? rendementPasse(M, l) : null;
+    if (dp && dp.source) h += '<p class="gp-sh-note gp-rd-src" data-rend-source>' + esc(cap1(dp.source.texte) + (dp.statut === "approche" ? " ; rendement approché." : ".")) + "</p>";
     l.objectifs.forEach(ob => { h += objectifLigne(M, ob); });
     if (def) { const n = prochainJalon(M); if (n) h += '<div class="gp-ro-cs"><button type="button" class="gp-evc" data-jalon="' + esc(n.id) + '">' + icone(n) + "Prochain : " + esc(n.titre) + " <span>" + esc(relatif(M.today, n.t)) + "</span></button></div>"; }
     else if (l.jalons.length) h += '<div class="gp-ro-cs">' + l.jalons.map(j => '<button type="button" class="gp-evc" data-jalon="' + esc(j.id) + '">' + icone(j) + esc(libelleJalonCourt(M, j)) + (effetMensuel(j) != null && !estObjectif(j) ? " <span>" + esc(fMois(effetMensuel(j))) + "</span>" : "") + "</button>").join("") + "</div>";
@@ -938,6 +1035,59 @@
   }
   const titreAccessible = M => (M.mode === "capacite" ? "Budget d'achat dans le temps" : M.vue === "financier" ? "Patrimoine financier " + M.perimetre : M.vue === "disponible" ? "Patrimoine disponible " + M.perimetre : "Patrimoine net " + M.perimetre).trim();
 
+  /* ---------- rendements : la feuille de la puce et la section de « Comment c'est calculé » ---------- */
+  /** Valeur d'une période de rendement réel, écrite : « 5,1 %/an » (à partir d'un an), « +0,6 % » (sur la période) ; « ≈ » devant une mesure approchée. null → « — ». */
+  function rdCellule(v, an, approche) {
+    if (!fini(v)) return "—";
+    return (approche ? "≈ " : "") + (an ? fRd(v) + "/an" : fRd(v, true));
+  }
+  /** Rendements : ce que le modèle attend (attendu, médiane annualisée et fourchette à 1, 5, 10, 20 ans), ce que tu as obtenu (ton rendement, celui de tes placements, par période, avec ce que le modèle
+      en attendait), les définitions (pondéré par l'argent ou par le temps, net de frais, avant impôts, euros d'aujourd'hui) et ce qui rend une mesure fragile. opt.feuille : sans le titre de section. */
+  function rendementsHtml(M, opt) {
+    const R = M && M.rendement; if (!R) return "";
+    const o = opt || {}, li = t => "<li>" + t + "</li>", P = R.projet, reel = M.euros !== "courants", mode = reel ? "reel" : "nominal";
+    let h = o.feuille ? "" : '<h3 class="gp-sec-t">Rendements</h3>';
+    if (P && P.disponible) {
+      const a = P.attendu;
+      h += '<p class="gp-sh-note"><strong>Rendement attendu</strong> : ' + esc(fRd(a.reel_pct)) + "/an après inflation (" + esc(fRd(a.nominal_pct)) + "/an avant), net de frais et avant impôts. C'est la moyenne des rendements supposés de chaque classe d'actifs de tes placements " +
+        "(comptes courants exclus), pondérée par ce que tu y détiens : une hypothèse sourcée (voir Hypothèses), pas une prévision.</p>";
+      const H = Math.floor((P.annualise[mode].p50.length - 1) / 12), ans = [1, 5, 10, 20].filter(y => y < H).concat(H > 0 ? [H] : []);
+      if (ans.length) h += '<div class="gp-sh-kvs">' + ans.map(y => {
+        const i = 12 * y, A = P.annualise[mode];
+        return cleLigne("Sur " + y + (y > 1 ? " ans" : " an"), esc(fRd(A.p50[i]) + "/an · " + fRdFourchette(A.p10[i], A.p90[i], 1)));
+      }).join("") + "</div>";
+      h += '<p class="gp-sh-note">Rendement annualisé médian et, à la suite, « 8 chances sur 10 » ' + (reel ? "après inflation (euros d'aujourd'hui)" : "avant inflation (euros courants)") + " : la fourchette se resserre quand l'horizon s'allonge.</p>";
+    } else if (P) h += '<p class="gp-sh-note">' + esc(cap1(P.raison || "rendement indisponible")) + ".</p>";
+    const RE = R.reel;
+    if (RE) {
+      h += '<p class="gp-sh-note"><strong>Ce que tu as obtenu</strong></p>';
+      const rows = RE.periodes.map(p => {
+        if (p.statut === "insuffisant" || p.statut == null) return '<tr data-rd="' + esc(p.id) + '"><th scope="row">' + esc(p.libelle) + '</th><td colspan="3">' + esc(p.raison || "pas assez d'historique") + "</td></tr>";
+        const ap = p.statut === "approche", an = !!p.annualise;
+        const a = p.attendu && p.attendu.statut === "ok" ? rdCellule(p.attendu.attendu_pct, an, false) : "—";
+        return '<tr data-rd="' + esc(p.id) + '"><th scope="row">' + esc(p.libelle) + "</th><td>" + esc(rdCellule(an ? p.xirr_annuel_pct : p.xirr_periode_pct, an, ap)) + "</td><td>" + esc(rdCellule(an ? p.twr_annuel_pct : p.twr_periode_pct, an, ap)) +
+          "</td><td>" + esc(a) + "</td></tr>";
+      });
+      h += '<div class="gp-rd-wrap" tabindex="0" role="region" aria-label="Rendements obtenus sur tes placements"><table class="gp-rd-tab"><caption class="ui-sr">Rendement obtenu, par période</caption><thead><tr><th scope="col">Période</th>' +
+        '<th scope="col">Ton rendement</th><th scope="col">Rendement de tes placements</th><th scope="col">Attendu</th></tr></thead><tbody>' + rows.join("") + "</tbody></table></div>";
+      const notes = [...new Set(RE.periodes.filter(p => p.statut === "approche").flatMap(p => tab(p.notes)).concat(tab(RE.notes)))];
+      if (notes.length) h += '<ul class="gp-liste gp-av">' + notes.map(n => li(esc(cap1(n)))).join("") + "</ul>";
+      const ordre = ["1a", "debut", "3m", "1m"], best = ordre.map(id => RE.periodes.find(p => p.id === id)).find(p => p && p.comparaison && p.comparaison.phrase);
+      if (best) h += '<p class="gp-sh-note" data-rend-phrase><strong>Réel contre attendu</strong> (' + esc(best.libelle.toLowerCase()) + ") : " + esc(best.comparaison.phrase) + (best.source ? ". " + esc(cap1(best.source.texte)) + "." : ".") + "</p>";
+    }
+    h += '<ul class="gp-liste">';
+    if (P && P.disponible) h += li("<strong>Rendement annualisé médian</strong> : sur chacune des " + esc(String(M.brut.chemins || 2000)) + " trajectoires simulées, le rendement de tes placements, sans l'effet de tes versements ni de tes retraits, ramené à un taux par an. " +
+      "On lit la médiane (une chance sur deux de faire mieux) et la fourchette « 8 chances sur 10 ». Elle peut s'écarter un peu du rendement attendu : mélanger plusieurs classes d'actifs, et tes versements qui rééquilibrent tes placements, jouent sur le résultat.");
+    if (RE) h += li("<strong>Ton rendement</strong> (pondéré par l'argent) : ce que toi tu as gagné, compte tenu de la date de chacun de tes versements. Un versement juste avant une baisse la pèse davantage.") +
+      li("<strong>Rendement de tes placements</strong> (pondéré par le temps) : ce que tes placements ont fait, sans l'effet de tes versements ni de tes retraits. C'est lui qui se compare à l'attendu.") +
+      li("<strong>Annualisé à partir d'un an</strong> ; en dessous, le rendement de la période, jamais un taux annuel tiré de quelques semaines. Calculés sur les valeurs de marché de tes placements relevées chaque nuit : " +
+        "net de frais par construction, avant impôts. Les comptes courants sont exclus : une dépense n'est pas une perte.");
+    h += li("<strong>Net de frais, avant impôts</strong> : les frais des fonds et des enveloppes sont retirés ; l'impôt à la sortie n'est pas compté.") +
+      li("<strong>Euros d'aujourd'hui</strong> : le rendement attendu et projeté est « après inflation » (l'inflation supposée est retirée) ; en euros courants, c'est le rendement avant inflation. Il suit le réglage du graphique. " +
+        "Le rendement que tu as obtenu est celui des valeurs relevées, avant inflation.") + "</ul>";
+    return h;
+  }
+
   /* ---------- feuille « Comment c'est calculé » ---------- */
   /** Contenu (HTML échappé) : méthode en cinq phrases, hypothèses (source et date), base de la capacité, données utilisées et manquantes, rétro-contrôle, limites, graine, tableau. */
   function calculHtml(M, opt) {
@@ -949,6 +1099,7 @@
       li("<strong>Projeté</strong> : " + esc(String(B.chemins || 2000)) + " trajectoires de marché simulées (graine fixe " + esc(String(B.graine || "")) + ", donc le même résultat à chaque lecture), net de frais, avec ta capacité d'épargne mois par mois et tes événements de vie.") +
       li("La ligne est la médiane : une chance sur deux de faire mieux. La bande foncée contient une trajectoire sur deux ; la bande claire, huit sur dix.") +
       li("Les montants futurs sont en " + (M.euros === "courants" ? "euros courants (tels qu'ils apparaîtront sur tes relevés)" : "euros d'aujourd'hui (l'inflation supposée est retirée)") + ".") + "</ol>";
+    h += rendementsHtml(M, {});
     if (M.brut && M.brut.passe && M.brut.passe.drapeaux) h += passeHtml(M.brut.passe);
     const cs = capaciteSourceTxt(B);
     if (M.mode !== "capacite") {
@@ -1620,6 +1771,7 @@
     api() {
       const g = this;
       return { mettreAJour: (d, info) => g.mettreAJour(d, info), pleinEcran: () => g.ouvrirPlein(), pleinEcranQuandPret: () => { g.pleinDemande = true; if (g.M && g.M.etat === "pret") { g.pleinDemande = false; g.lienFait = true; g.ouvrirPlein(); } }, fermerPleinEcran: () => g.fermerPlein(), detruire: () => g.detruire(), etat: g.etat, graphe: g,
+        rendement: () => (g.M && g.M.rendement && g.M.rendement.reel ? { periodes: g.M.rendement.reel.periodes } : null),
         reglages: () => g.etat.reglages, fenetre: id => { g.choisirFenetre(id); }, curseur: ms => { g.etat.curseur = ms; g.majCurseur(); }, reglagesAppliques: r => g.appliquerReglages(r) };
     }
     /* ---------- données ---------- */
@@ -1796,6 +1948,8 @@
     /** Honnêteté sur l'épargne, jamais cachée : dans la carte et en paysage, une petite puce ambre dans l'en-tête (« Hypothèse : épargne négative ⓘ ») qui ouvre une feuille ; en plein écran
         ordinateur (et portrait), une carte « À savoir » en tête de l'onglet Lecture, qui ne pousse pas le tracé. */
     alerteChip() { return '<button type="button" class="gp-chip-al" data-alerte data-act="alerte" aria-haspopup="dialog" hidden></button>'; }
+    /** Puce « Rendement attendu ≈ 4,8 %/an » de l'en-tête de la carte : neutre (ce n'est pas une alerte), ouvre la feuille des rendements. */
+    rendementChipEl() { return '<button type="button" class="gp-chip-rd" data-rendement data-act="rendement" aria-haspopup="dialog" hidden></button>'; }
     alerteCarte() { return '<section class="gp-asavoir" data-alerte role="group" aria-label="À savoir" hidden></section>'; }
     zmed() { return '<button type="button" class="gp-btn-q gp-zmed" data-act="zmed" aria-pressed="false" hidden>Zoom sur la médiane</button>'; }
     apercu() {
@@ -1808,7 +1962,7 @@
         h = '<section class="gp gp-carte' + (this.g.preset.mode === "capacite" ? " gp-capa" : "") + '" data-mode="carte" aria-labelledby="' + id + 't"><div class="gp-tete"><h2 id="' + id + 't">' + esc(t) + '</h2>' +
           '<button type="button" class="gp-eur sm" data-act="eur"><span data-eur></span></button>' +
           '<button type="button" class="gp-icon" data-act="reglages" aria-label="Réglages du graphique">' + ICO.reglages + "</button>" +
-          '<button type="button" class="gp-icon" data-act="plein" aria-label="Ouvrir en grand" title="Ouvrir en grand">' + ICO.plein + '</button><span class="gp-tete-br" aria-hidden="true"></span>' + this.alerteChip() + "</div>" +
+          '<button type="button" class="gp-icon" data-act="plein" aria-label="Ouvrir en grand" title="Ouvrir en grand">' + ICO.plein + '</button><span class="gp-tete-br" aria-hidden="true"></span>' + this.rendementChipEl() + this.alerteChip() + "</div>" +
           this.cadre(true) + this.bande() +
           '<button type="button" class="gp-ligne" data-act="lecture" aria-label="Lecture détaillée"><span class="gp-ligne-t num" data-roline aria-live="polite" aria-atomic="true"></span><span class="gp-chev" aria-hidden="true">›</span></button>' +
           '<div class="gp-lt" data-lt role="group" aria-label="Valeur de chaque courbe à cette date"></div>' +
@@ -1834,7 +1988,7 @@
       this.host.innerHTML = h;
       this.racine = this.host.firstElementChild || this.host.children[0] || this.host;
       this.cadreEl = this.q("[data-cadre]"); this.svg = this.q("[data-svg]"); this.hit = this.q("[data-hit]"); this.marks = this.q("[data-marks]");
-      this.ssvg = this.q("[data-ssvg]"); this.bsvg = this.q("[data-bsvg]"); this.roEl = this.q("[data-ro]"); this.whyEl = this.q("[data-why]"); this.planBar = this.q("[data-planbar]"); this.alerteEl = this.q("[data-alerte]"); this.ltEl = this.q("[data-lt]");
+      this.ssvg = this.q("[data-ssvg]"); this.bsvg = this.q("[data-bsvg]"); this.roEl = this.q("[data-ro]"); this.whyEl = this.q("[data-why]"); this.planBar = this.q("[data-planbar]"); this.alerteEl = this.q("[data-alerte]"); this.rdEl = this.q("[data-rendement]"); this.ltEl = this.q("[data-lt]");
       this.listEl = this.q("[data-list]"); this.tblEl = this.q("[data-table]"); this.notesEl = this.q("[data-notes]"); this.invEl = this.q("[data-invite]"); this.etatEl = this.q("[data-etat]");
       this.majOnglets();
       this.bind();
@@ -1897,6 +2051,7 @@
         else if (k === "zmed") { g.etat.zoomMediane = !g.etat.zoomMediane; g.etat.echelleY = null; g.rendreTout(); }
         else if (k === "bande") { g.etat.bandeOuverte = !g.etat.bandeOuverte; g.rendreTout(); }
         else if (k === "alerte") g.ouvrirAlerte(a);
+        else if (k === "rendement") g.ouvrirRendement(a);
         else if (k === "as-detail") { g.etat.asavoirDetail = !g.etat.asavoirDetail; this.rendreAlerte(); const b = this.q('[data-act="as-detail"]'); if (b && b.focus) b.focus(); }
         else if (k === "effacer") { g.etat.curseur = null; g.majCurseur(); }
         else if (k === "invite-off") { g.lsSet(CLES_LS.invitationOff, "1"); this.majInvitation(); }
@@ -2165,7 +2320,7 @@
       this.hit.setAttribute("aria-valuemin", String(Math.ceil(dom.debut / MS_JOUR))); this.hit.setAttribute("aria-valuemax", String(Math.floor(dom.fin / MS_JOUR)));
       this.svg.setAttribute("aria-label", phraseTitre(M, aFinFenetre(M, dom)));
       if (o.cadre) { this.majCurseur(); return; }
-      this.rendreMarqueurs(); this.rendreBande(dom); this.rendreAlerte(); this.rendreApercu(); this.rendreListes(dom, gran); this.rendrePourquoi();
+      this.rendreMarqueurs(); this.rendreBande(dom); this.rendreAlerte(); this.rendreRendement(); this.rendreApercu(); this.rendreListes(dom, gran); this.rendrePourquoi();
       this.majInvitation();
       tc(this.q("[data-sr]"), resumeAccessible(M, dom));
       this.majCurseur();
@@ -2201,6 +2356,15 @@
         el.innerHTML = alerteCarteHtml(a, { id: this.id + "as", ouvert: !!g.etat.asavoirDetail, claude: (q, l) => g.claudeLien(q, l) });
         el.setAttribute("data-al", a.cle);
       }
+    },
+    /** Puce du rendement attendu : visible quand la projection porte un rendement mesurable, sinon masquée (jamais « 0 % »). */
+    rendreRendement() {
+      const el = this.rdEl; if (!el) return;
+      const c = rendementChip(this.g.M);
+      if (!c) { el.hidden = true; el.innerHTML = ""; return; }
+      el.hidden = false;
+      el.innerHTML = '<span class="gp-chip-l">' + esc(c.texte) + '</span><span class="gp-chip-i" aria-hidden="true">' + ICO.info + "</span>";
+      el.setAttribute("aria-label", c.aria); el.setAttribute("title", c.titre);
     },
     rendreBande(dom) {
       if (!this.ssvg) return;
@@ -2489,6 +2653,12 @@
       const a = this.M && alerteEpargne(this.M); if (!a) return;
       this.feuille("À savoir", alerteFeuilleHtml(a, (q, l) => this.claudeLien(q, l)), opener, null);
     },
+    ouvrirRendement(opener) {
+      const M = this.M; if (!M || !M.rendement) return;
+      const U = this.UI();
+      this.feuille("Rendement attendu", rendementsHtml(M, { feuille: true }), opener, null,
+        { pied: U && U.demanderAClaude ? U.demanderAClaude("Dans Boussole, explique-moi simplement mon rendement attendu, ce que j'ai obtenu jusqu'ici et l'écart entre les deux, sans me recommander de produit.") : "" });
+    },
     ouvrirLecture(opener) {
       const M = this.M, vue = this.vue; if (!M || !vue || !vue.lec) return;
       const lec = vue.lec, def = vue.def, dom = this.domaineCourant();
@@ -2668,5 +2838,5 @@
   return { esc, plat, fK, fEur, fSK, fSE, fMois, fMoisU, fPct, kRange, kTiret, chancesTxt, motProba, placerEtiquettes, dureeTxt, relatif, dMois, dJour, FENETRES, domaine, fenetreContenant, granularite, clePas, graduations, domaineY, echelleYStable, valeurCreuse, pointsConnus,
     chemin, bande, cheminInverse, facteurPrix, normaliser, echantillons, besoinY, besoinFenetre, regrouperJalons, plusProcheGroupe, lecture, planA, capaciteA, phraseTitre, titreLecture, ligneLecture, lectureHtml, lectureKvHtml, enteteHtml,
     construireSvg, construireBande, tableauHtml, calculHtml, jalonDetailHtml, jalonsListeHtml, groupeHtml, parametresMode, MODES, PRESETS, msDe, isoDe, ajouterMois, moisEntre, capaciteSourceTxt, decompositionPhrase, objectifLigne,
-    etiquettesJalon, objectifSelectionSvg, statutObjectif, progressionObjectif, statutLigne, familleIcone, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel, effetEpargne, pointsCurseur, lectureLignes, lectureTableHtml, alerteEpargne, echelleBande, alerteCarteHtml, alerteFeuilleHtml, SEUIL_RELEVES_MOIS, phraseClaude, iconeDe, categorieJalon, CATEGORIES, TYPES_ICONE };
+    etiquettesJalon, objectifSelectionSvg, statutObjectif, progressionObjectif, statutLigne, familleIcone, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel, effetEpargne, pointsCurseur, lectureLignes, lectureTableHtml, rendementChip, rendementsHtml, rendementPhrase, fRd, fRdFourchette, alerteEpargne, echelleBande, alerteCarteHtml, alerteFeuilleHtml, SEUIL_RELEVES_MOIS, phraseClaude, iconeDe, categorieJalon, CATEGORIES, TYPES_ICONE };
 });

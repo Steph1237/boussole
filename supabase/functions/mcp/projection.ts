@@ -169,6 +169,27 @@ const cherche = (data: any, id: string) => (data.foyer.variantes as any[]).find(
 function exigerVariante(data: any, id: any, UserError: any) {
   if (id && !cherche(data, id)) throw new UserError(`variante : « ${id} » introuvable (lire_foyer donne les variantes et leurs identifiants).`);
 }
+const bandeRd = (o: any) => (o ? { p10: r2(o.p10), p50: r2(o.p50), p90: r2(o.p90) } : null);
+/** Rendement annualisé des placements (TWR : sans l'effet des versements, net de frais, avant impôts, comptes courants exclus) : rendement attendu de l'allocation actuelle (moyenne
+    pondérée des hypothèses de classe, nette de frais), médiane simulée et bande P10 à P90 sur tout l'horizon et à quelques anniversaires, année par année (10 premières), en nominal
+    et en euros d'aujourd'hui (réel, inflation supposée retirée). Pourcentages. null si la sortie n'en porte pas ; disponible: false sans placement. */
+export function resumeRendement(rd: any) {
+  if (!rd) return null;
+  const tete = { methode: rd.methode, unite: rd.unite, avant_impots: rd.avant_impots, perimetre: rd.perimetre, inflation_pct: r2(rd.inflation_pct) };
+  if (!rd.disponible) return { ...tete, disponible: false, raison: rd.raison };
+  const H = rd.horizon.ans, at = (a: any, t: number) => bandeRd(a ? { p10: a.p10[t], p50: a.p50[t], p90: a.p90[t] } : null);
+  const ancres = [1, 3, 5, 10, 15, 20, 25].filter((y) => y < H).concat([H]);
+  const k = Math.min(H, 10);
+  return {
+    ...tete, disponible: true,
+    a_dire: "Dis toujours « net de frais, avant impôts, sur les placements (comptes courants exclus) ». L'attendu est la moyenne pondérée des hypothèses de classe de l'allocation actuelle ; le médian simulé et la bande P10 à P90 sont ceux de la projection. Cite le réel (après inflation, en euros d'aujourd'hui) sauf si l'utilisateur parle en nominal. Une fourchette, jamais une promesse.",
+    attendu: { nominal_pct: r2(rd.attendu.nominal_pct), reel_pct: r2(rd.attendu.reel_pct), frais_moyens_pct: r2(rd.attendu.frais_pct) },
+    horizon: { annees: H, nominal: bandeRd(rd.horizon.nominal), reel: bandeRd(rd.horizon.reel) },
+    annualise_a_l_anniversaire: ancres.map((y) => ({ annees: y, nominal: at(rd.annualise.nominal, 12 * y), reel: at(rd.annualise.reel, 12 * y) })),
+    par_annee: Array.from({ length: k }, (_, i) => ({ annee: i + 1, date: rd.par_annee.dates[i], nominal: at(rd.par_annee.nominal, i), reel: at(rd.par_annee.reel, i) })),
+    hypotheses_de_classe: Object.fromEntries(Object.entries(rd.classes ?? {}).map(([c, v]: [string, any]) => [c, { rendement_pct: r2(v.rendement), volatilite_pct: r2(v.volatilite) }])),
+  };
+}
 /** Valeurs d'une série mensuelle aux années pleines (0, 12, 24…) : [{ annee, date, p10, p25, p50, p75, p90 }], arrondies à l'euro. */
 export function serieAnnuelle(sortie: any, vue: string) {
   const c = sortie.vues?.[vue] ?? sortie.vues?.[Object.keys(sortie.vues ?? {})[0]];
@@ -196,6 +217,7 @@ export function resumeProjection(sortie: any) {
     jalons_omis: Math.max(0, (sortie.jalons ?? []).length - 15),
     hypotheses: (sortie.hypotheses ?? []).map((h: any) => ({ cle: h.cle, valeur: h.valeur, unite: h.unite, source: h.source_titre, url: h.source_url, verifie_le: h.verifie_le, statut: h.statut })),
     hypotheses_classes: sortie.hypotheses_classes, a_completer: sortie.a_completer, couverture: r2(sortie.couverture), avertissements: sortie.avertissements,
+    rendement: resumeRendement(sortie.rendement),
     ...resumeRetro(sortie),
   };
 }
@@ -550,7 +572,7 @@ export function registerProjection(server: any, h: ProjectionDeps) {
   }
   server.registerTool("projeter", {
     title: "Projeter le patrimoine",
-    description: "Projection du patrimoine du foyer par le moteur de Boussole (le même que celui de l'app) : flux du foyer mois par mois, 2 000 trajectoires à graine fixe, toujours net de frais, euros d'aujourd'hui par défaut, événements de vie et variante pris en compte. Renvoie un résumé (jamais les trajectoires) : phrase, bande P10 à P90 par année, couches « patrimoine actuel sans nouveau versement » (existant) et « épargne future », capacité d'épargne retenue et par période, décomposition, garde-fous de vraisemblance, evenements_pris_en_compte (et question_evenements si aucun), objectifs avec leur probabilité, jalons, hypotheses sourcées (valeur, source, date, statut), données à compléter, avertissements, retro (rétro-contrôle : part des valeurs réelles à 12 mois encadrées par les bandes P10 à P90 et P25 à P75 quand la projection est rejouée depuis au moins 24 dates passées ; null avec retro_raison sinon, jamais de chiffre inventé) et conduite. net_impots: true donne la valeur nette d'impôts si tout était retiré à chaque date. crise rejoue une crise historique à la date debut (entre aujourd'hui et la fin de l'horizon). Lecture seule : pour garder la projection et la comparer plus tard à la réalité, utilise figer_projection. Une projection n'est pas une promesse : donne des ordres de grandeur arrondis, toujours avec la bande. Information générale, pas une recommandation.",
+    description: "Projection du patrimoine du foyer par le moteur de Boussole (le même que celui de l'app) : flux du foyer mois par mois, 2 000 trajectoires à graine fixe, toujours net de frais, euros d'aujourd'hui par défaut, événements de vie et variante pris en compte. Renvoie un résumé (jamais les trajectoires) : phrase, bande P10 à P90 par année, couches « patrimoine actuel sans nouveau versement » (existant) et « épargne future », capacité d'épargne retenue et par période, décomposition, garde-fous de vraisemblance, evenements_pris_en_compte (et question_evenements si aucun), objectifs avec leur probabilité, jalons, hypotheses sourcées (valeur, source, date, statut), données à compléter, avertissements, rendement (rendement annualisé des placements, net de frais, avant impôts, comptes courants exclus : attendu de l'allocation actuelle, médiane simulée et bande P10 à P90 sur l'horizon, à quelques anniversaires et année par année, en nominal et en euros d'aujourd'hui), retro (rétro-contrôle : part des valeurs réelles à 12 mois encadrées par les bandes P10 à P90 et P25 à P75 quand la projection est rejouée depuis au moins 24 dates passées ; null avec retro_raison sinon, jamais de chiffre inventé) et conduite. net_impots: true donne la valeur nette d'impôts si tout était retiré à chaque date. crise rejoue une crise historique à la date debut (entre aujourd'hui et la fin de l'horizon). Lecture seule : pour garder la projection et la comparer plus tard à la réalité, utilise figer_projection. Une projection n'est pas une promesse : donne des ordres de grandeur arrondis, toujours avec la bande. Information générale, pas une recommandation.",
     inputSchema: z.strictObject({
       ...OptionsProjection,
       crise: z.object({

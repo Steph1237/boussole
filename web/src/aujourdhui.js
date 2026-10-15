@@ -72,6 +72,7 @@
   const HIST = d => dep(d, "Historique") || voisin("Historique", "./historique.js");
   const GRAPHE = () => voisin("GraphePatrimoine", "./graphe-patrimoine.js");
   const OBJV = d => dep(d, "ObjectifsView") || voisin("ObjectifsView", "./objectifs-view.js");
+  const RDT = d => dep(d, "Rendement") || voisin("Rendement", "./rendement.js");
   /* Série du patrimoine net et variation : UNE définition pour toute l'app (serie-net.js), partagée avec Patrimoine › Comptes. */
   const SN = d => dep(d, "SerieNet") || voisin("SerieNet", "./serie-net.js");
 
@@ -463,7 +464,16 @@
     let composition = null;
     if (BC && typeof BC.composition === "function") { try { composition = BC.composition(positions, s.profil || null, scope); } catch (e) { composition = null; } }
     const courbe = f.points.map(x => x.valeur);
-    const net = { valeur: pat.net, financier: pat.financier, immobilier: pat.immobilier, autres: pat.usage + pat.entreprise, usage: pat.usage, entreprise: pat.entreprise,
+    /* rendement réel des placements (relevés + versements) : ton rendement, celui de tes placements ; null sans aucun relevé. Ce que le modèle en attendait vient du graphe (detail, 4e paramètre). */
+    let rendement = null;
+    const RD = RDT(deps);
+    if (RD && typeof RD.pointsEtFlux === "function") {
+      try {
+        const pf = RD.pointsEtFlux(s, scope, t);
+        if (pf.points.length > 1) rendement = { periodes: RD.periodes({ points: pf.points, flux: pf.flux, today: t, versementsConnus: pf.versementsConnus }), notes: pf.notes };
+      } catch (e) { rendement = null; }
+    }
+    const net = { rendement, valeur: pat.net, financier: pat.financier, immobilier: pat.immobilier, autres: pat.usage + pat.entreprise, usage: pat.usage, entreprise: pat.entreprise,
       dettes: pat.dettes, composition,
       vide: !positions.some(counted) && !pat.immobilier && !pat.dettes && !pat.usage && !pat.entreprise,
       variation: f.historique ? f.resume.variation : null, variationPct: f.historique ? f.resume.variationPct : null,
@@ -601,7 +611,35 @@
     '</span></summary><div class="ui-acc-corps">' + contenu + "</div></details>";
   /** « Ce que je possède, ce que je dois » (panneau de la carte Patrimoine net) : financier, immobilier, biens d'usage, parts d'entreprise,
       dettes, net ; puis le détail ligne par ligne de BilanCalc.composition (enveloppes, biens, autres biens, dettes) en accordéon fermé. */
-  function compositionHtml(n) {
+  /** Rendement réel du panneau « Patrimoine net » : la période la plus longue mesurable parmi 1 an, 3 mois, 1 mois — ton rendement (pondéré par l'argent), celui de tes placements (pondéré par le temps) et,
+      quand le graphe a calculé la projection, ce que le modèle en attendait avec la phrase « réel contre attendu ». extra : { periodes } (celles du graphe : attendu, comparaison, source). */
+  function rendementPanneau(rd, extra) {
+    if (!rd || !rd.periodes) return "";
+    const RD = RDT(null), graphe = extra && Array.isArray(extra.periodes) ? extra.periodes : [];
+    const parId = id => graphe.find(p => p.id === id) || rd.periodes.find(p => p.id === id);
+    const lib = { "1a": "1 an", "3m": "3 mois", "1m": "1 mois" };
+    const mesure = x => !!x && x.statut != null && x.statut !== "insuffisant";
+    /* 1 an si les relevés le permettent ; sinon la période la plus longue mesurable (3 mois, 1 mois ou depuis le premier relevé) */
+    const p = mesure(parId("1a")) ? parId("1a") : ["3m", "1m", "debut"].map(parId).filter(mesure).sort((a, b) => b.jours - a.jours)[0];
+    const pied = '<p class="aj-det-note">Net de frais, avant impôts, sur tes placements (comptes courants exclus). Ton rendement tient compte de la date de tes versements ; celui de tes placements non : c\'est lui qui se compare à l\'attendu.</p>';
+    if (!p) {
+      const rien = rd.periodes.find(x => x.id === "debut") || rd.periodes[0];
+      return '<p class="aj-det-note aj-det-rd">Rendement : ' + esc((rien && rien.raison) || "pas assez d'historique") + ".</p>";
+    }
+    const an = !!p.annualise, ap = p.statut === "approche", fmt = v => (v == null ? "—" : (ap ? "≈ " : "") + RD.pct(v, { signe: !an }) + (an ? "/an" : "")), qui = lib[p.id] || RD.dureeTxt(p.jours);
+    const li = (l, v) => '<li class="aj-det-rd"><span class="aj-det-l">' + esc(l) + '</span><span class="aj-det-v">' + esc(v) + "</span></li>";
+    let h = '<p class="aj-det-note aj-det-rd">' + (p.id === "debut" ? "Rendement depuis ton premier relevé (" + esc(qui) + ")" : "Rendement sur " + esc(qui)) + "</p><ul class=\"aj-det\">" + li("Ton rendement", fmt(an ? p.xirr_annuel_pct : p.xirr_periode_pct)) +
+      li("Rendement de tes placements", fmt(an ? p.twr_annuel_pct : p.twr_periode_pct));
+    const at = p.attendu && p.attendu.statut === "ok" ? p.attendu : null;
+    if (at) h += li("Attendu par le modèle", RD.pct(at.attendu_pct, { signe: !an }) + (an ? "/an" : "")) + li("Fourchette 8 chances sur 10", RD.pct(at.p10_pct, { signe: true, dec: at.p90_pct - at.p10_pct >= 6 ? 0 : 1 }).replace(/\u00a0%$/, "") + " à " + RD.pct(at.p90_pct, { signe: true, dec: at.p90_pct - at.p10_pct >= 6 ? 0 : 1 }));
+    h += "</ul>";
+    const notes = (p.notes || []).map(n => n.charAt(0).toUpperCase() + n.slice(1));
+    const unAn = parId("1a"), manque = p.id !== "1a" && unAn && unAn.statut === "insuffisant" ? ["Pas assez d'historique pour 1 an : la période la plus longue mesurable est de " + qui + (p.id === "debut" ? " (depuis ton premier relevé)" : "")] : [];
+    if (p.comparaison && p.comparaison.phrase) h += '<p class="aj-det-note aj-det-rd">' + esc(p.comparaison.phrase + (p.source ? ". " + p.source.texte.charAt(0).toUpperCase() + p.source.texte.slice(1) + "." : ".")) + "</p>";
+    if (notes.length || manque.length) h += '<p class="aj-det-note aj-det-rd">' + esc(manque.concat(notes).join(" ; ") + ".") + "</p>";
+    return h + pied;
+  }
+  function compositionHtml(n, rendementHtml) {
     const lignes = [["Placements financiers", eur(n.financier)], ["Immobilier", eur(n.immobilier)]];
     if (n.usage > 0) lignes.push(["Biens d'usage (voiture, meubles…)", eur(n.usage)]);
     if (n.entreprise > 0) lignes.push(["Parts d'entreprise", eur(n.entreprise)]);
@@ -610,12 +648,12 @@
     const groupe = (label, ls, fiche) => '<p class="aj-det-note">' + esc(label) + '</p><ul class="aj-det">' + ls.map(l => fiche ? ligneFiche(l.label, eur(l.montant)) : ligne(l.label, eur(l.montant))).join("") + "</ul>";
     const det = c ? c.actifs.filter(b => b.lignes.length).map(b => groupe(b.label + " · " + eur(b.total), b.lignes, b.cle === "financier")).join("") +
       (c.dettes.lignes.length ? groupe("Dettes · " + eur(-c.dettes.total), c.dettes.lignes.map(l => ({ label: l.label, montant: -l.montant }))) : "") : "";
-    return '<p class="aj-det-note">Ce que je possède, ce que je dois</p><ul class="aj-det">' + lignes.map(l => ligne(l[0], l[1])).join("") + "</ul>" +
+    return '<p class="aj-det-note">Ce que je possède, ce que je dois</p><ul class="aj-det">' + lignes.map(l => ligne(l[0], l[1])).join("") + "</ul>" + (rendementHtml || "") +
       (det ? accordeon("Le détail, ligne par ligne", det) : "");
   }
   /** Panneau d'une carte : { titre, contenu (HTML échappé : 2 à 4 lignes et une note), lien: { label, href } vers la page complète,
       question } — question préremplie pour « Demander à Claude » (pédagogique : expliquer, pas conseiller). */
-  function detail(id, ind, periode) {
+  function detail(id, ind, periode, extra) {
     const n = ind.net, pr = ind.pratiques, ec = ind.echeance;
     let titre, lignes = [], note = "", route, label, question;
     if (id === "net") {
@@ -659,7 +697,7 @@
       if (lignes.length < 2) lignes.push(["Objectifs datés", "dans Objectifs"]);
       note = "Dates tirées du calendrier de tes enveloppes, de tes objectifs, des échéances enregistrées et des points que Claude doit reprendre avec toi.";
     }
-    return { titre, contenu: (id === "net" ? compositionHtml(n) : '<ul class="aj-det">' + lignes.slice(0, 4).map(l => ligne(l[0], l[1])).join("") + "</ul>") +
+    return { titre, contenu: (id === "net" ? compositionHtml(n, rendementPanneau(n.rendement, extra && extra.rendement)) : '<ul class="aj-det">' + lignes.slice(0, 4).map(l => ligne(l[0], l[1])).join("") + "</ul>") +
       '<p class="aj-det-note">' + esc(note) + "</p>", lien: { label, href: "#" + route }, question };
   }
 
@@ -952,7 +990,7 @@
      ou à la carte du même id si un rendu l'a remplacée entre-temps. */
   function ouvrirCarte(id, el) {
     const u = U(); if (!u || !u.panneau || !ind) return;
-    const d = detail(id, ind, periode);
+    const d = detail(id, ind, periode, { rendement: liaison && typeof liaison.rendement === "function" ? liaison.rendement() : null });
     u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, lien: d.lien, pied: u.demanderAClaude(d.question), retour: el,
       surFermeture: () => { if (el && !el.isConnected) { const c = root.querySelector('[data-ui-carte="' + id + '"]'); if (c) c.focus(); } } });
   }

@@ -11,7 +11,9 @@
    - Le moteur compte lui-même les biens d'usage et d'entreprise dans le patrimoine net (compartiment « autres biens », 0 % réel, dit dans ses avertissements) : la courbe part du
      patrimoine net affiché sans décalage. Le recalage sur le dernier point observé ne subsiste que comme contrôle de cohérence (écart de plus de 1 €), et il est dit.
    - Les réglages du graphe sont locaux : rien n'est enregistré (lecture seule).
-   Dépendances (deps, sinon globales ou modules voisins sous Node) : Projection, Calc, BilanCalc, Historique, SerieNet, Marche, Store. */
+   Rendement (RDT) : rendementDonnees assemble, pour le composant, le rendement annualisé de la projection (centiles P10 à P90 mois par mois, nominal et en euros d'aujourd'hui, rendement attendu) et le
+   rendement réel des placements (relevés + versements : Rendement.periodes, avec ce que le modèle en attendait, plan figé du moment si on en a un, sinon les hypothèses d'aujourd'hui).
+   Dépendances (deps, sinon globales ou modules voisins sous Node) : Projection, Calc, BilanCalc, Historique, SerieNet, Marche, Rendement, Store. */
 (function (root, factory) {
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -28,6 +30,7 @@
   const SN = d => dep(d, "SerieNet", "./serie-net.js");
   const MARCHE = d => dep(d, "Marche", "./marche.js");
   const GP = d => dep(d, "GraphePatrimoine", "./graphe-patrimoine.js");
+  const RDT = d => dep(d, "Rendement", "./rendement.js");
 
   const isoOk = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}/.test(s);
   const tab = a => (Array.isArray(a) ? a : []);
@@ -163,6 +166,60 @@
     return plan;
   }
 
+  /* ---------- rendement ---------- */
+  /** Classe de risque d'une poche de relevé (le même rangement que les compartiments du moteur). null si inconnue. */
+  function classeDePoche(bloc, classes, deps) {
+    const M = MARCHE(deps);
+    if (!M || typeof M.classeRisque !== "function") return null;
+    try { return M.classeRisque({ bloc, name: bloc }, classes || {}); } catch (e) { return null; }
+  }
+  /** Hypothèses de classe d'un plan figé { classe: { rendement, volatilite } } : le bloc `rendement` des plans récents, sinon `allocation.classes` (rendement central) des anciens. */
+  function classesDuPlan(detail) {
+    const p = detail && detail.parametres, out = {};
+    if (p && p.rendement && p.rendement.classes && typeof p.rendement.classes === "object") {
+      Object.keys(p.rendement.classes).forEach(k => { const c = p.rendement.classes[k]; if (c && fini(c.rendement)) out[k] = { rendement: +c.rendement, volatilite: fini(c.volatilite) ? +c.volatilite : 0 }; });
+    } else if (p && p.allocation && Array.isArray(p.allocation.classes)) {
+      p.allocation.classes.forEach(c => { if (c && c.classe && fini(c.rendement_central)) out[c.classe] = { rendement: +c.rendement_central, volatilite: fini(c.volatilite) ? +c.volatilite : 0 }; });
+    }
+    return out;
+  }
+  const PLANS_LUS_MAX = 4;
+  /** Les hypothèses des plans figés les plus récents (quatre au plus, chargés à la demande, mémorisés dans `cache`) : [{ id, cree_le, classes }]. Un plan illisible est ignoré. */
+  async function hypothesesDesPlans(S, opt) {
+    if (typeof opt.chargerPlan !== "function") return [];
+    const liste = tab(S && S.plansFiges).filter(p => p && p.id != null && isoOk(p.cree_le)).sort((a, b) => (a.cree_le < b.cree_le ? 1 : a.cree_le > b.cree_le ? -1 : 0)).slice(0, PLANS_LUS_MAX), out = [];
+    for (const p of liste) {
+      let classes = opt.cachePlans && opt.cachePlans.get(p.id);
+      if (classes === undefined) {
+        try { classes = classesDuPlan(await opt.chargerPlan(p.id)); } catch (e) { classes = null; }
+        if (opt.cachePlans && classes) opt.cachePlans.set(p.id, classes);
+      }
+      if (classes && Object.keys(classes).length) out.push({ id: p.id, cree_le: p.cree_le, classes });
+    }
+    return out;
+  }
+  /** Bloc `rendement` du composant (voir le contrat de graphe-patrimoine.js) : projection du moteur (rendement annualisé P10 à P90 mois par mois, attendu) et rendement réel des placements
+      (périodes 1 mois, 3 mois, 1 an, depuis le début : ton rendement, celui de tes placements, ce que le modèle en attendait). x = { deps, hypPlans }. null s'il n'y a rien à montrer. */
+  function rendementDonnees(resultat, S, today, x) {
+    const o = x || {}, deps = o.deps || null, R = RDT(deps), rd = resultat && resultat.rendement ? resultat.rendement : null;
+    let projet = null, reel = null;
+    if (rd) projet = rd.disponible === false ? { disponible: false, raison: rd.raison } : { disponible: true, attendu: rd.attendu, inflation_pct: rd.inflation_pct, annualise: rd.annualise, cumule: rd.cumule };
+    if (R && S && isoOk(today)) {
+      const sc = S.scope === "p1" || S.scope === "p2" ? S.scope : "foyer", pf = R.pointsEtFlux(S, sc, today);
+      if (pf.points.length) {
+        const dr = { points: pf.points, flux: pf.flux, versementsConnus: pf.versementsConnus, allocations: R.classer(pf.allocations, b => classeDePoche(b, S.classes, deps)) };
+        const hyp = rd && rd.classes ? { courantes: { classes: rd.classes, frais_pct: rd.attendu && fini(rd.attendu.frais_pct) ? +rd.attendu.frais_pct : 0 }, plans: tab(o.hypPlans) } : null;
+        const periodes = R.periodes({ points: dr.points, flux: dr.flux, today, versementsConnus: dr.versementsConnus }).map(p => {
+          if (p.statut === "insuffisant" || !hyp) return p;
+          const d = R.depuis(dr, p.debut, today, { hypotheses: hyp, libelle: p.id === "debut" ? undefined : p.libelle.toLowerCase() });
+          return Object.assign({}, p, { attendu: d.attendu, comparaison: d.comparaison, source: d.source });
+        });
+        reel = { periodes, donnees: dr, hypotheses: hyp, notes: pf.notes };
+      }
+    }
+    return projet || reel ? { projet, reel } : null;
+  }
+
   /* ---------- construction des données du composant ---------- */
   const decal = (arr, a) => (Array.isArray(arr) ? arr.map(v => (v == null ? null : v + a)) : null);
   /** donnees (contrat de graphe-patrimoine.js) depuis un résultat du moteur, le passé et le store. extra = { variante, crise, avenirs, plan, comparaisonVariante, progressif, notes }. */
@@ -188,7 +245,7 @@
       phrase: resultat.phrase, decomposition_phrase: resultat.decomposition_phrase, decomposition: resultat.decomposition, garde_fous: resultat.garde_fous,
       evenements_pris_en_compte: resultat.evenements_pris_en_compte, question_evenements: resultat.question_evenements, hypotheses: resultat.hypotheses, couverture: resultat.couverture,
       avertissements: avert, a_completer: resultat.a_completer, retro: resultat.retro, retro_raison: resultat.retro_raison, version_modele: resultat.version_modele, graine: resultat.graine, chemins: resultat.chemins,
-      plan: x.plan || null, ajust: a });
+      plan: x.plan || null, ajust: a, rendement: rendementDonnees(resultat, S, base.today, x) });
   }
   function crisesDisponibles(deps) {
     const M = MARCHE(deps);
@@ -200,7 +257,7 @@
   function signature(S, reglages, today, deps) {
     const P = PJ(deps), sn = SN(deps), r = reglages || reglagesParDefaut(), snaps = tab(S && S.snapshots);
     const data = entree(S, today, deps), options = optionsMoteur(r, S);
-    return [P.empreinte(data, options), cleCalcul(r, S), sn && sn.hist ? sn.hist.version : 0, snaps.length, snaps.length ? snaps[snaps.length - 1].date : "", (S && S.plansFiges ? S.plansFiges.length : 0),
+    return [P.empreinte(data, options), cleCalcul(r, S), sn && sn.hist ? sn.hist.version : 0, snaps.length, snaps.length ? snaps[snaps.length - 1].date : "", (S && S.plansFiges ? S.plansFiges.length : 0), tab(S && S.tx).length + ":" + (tab(S && S.tx).length ? tab(S && S.tx)[tab(S && S.tx).length - 1].date : ""),
       tab(S && S.journal).map(e => e && e.id + ":" + e.statut + ":" + (e.dateDecision || "") + ":" + (e.revueLe || "")).join(",")].join("|");
   }
 
@@ -260,6 +317,7 @@
         for (let i = 0; i < 100; i++) { const t = new Array(N + 1); t[0] = dep0; for (let k = 1; k <= N; k++) t[k] = ch[k][i] * euro(k); avenirs.push(t); }
         out.avenirs = avenirs;
       }
+      try { out.hypPlans = await hypothesesDesPlans(S, opt); } catch (e) { out.hypPlans = []; }
       if (r.plan && typeof opt.chargerPlan === "function") {
         const detail = await opt.chargerPlan(r.plan);
         out.plan = planDe(detail, passe, a, deps);
@@ -319,6 +377,7 @@
     const perimetre = () => (typeof opt.perimetre === "function" ? opt.perimetre() : opt.perimetre || "");
     const store = opt.store || glob("Store");
     let ctl = null, chaud = "", minuteur = null, delaiPasse = false;
+    const cachePlans = new Map();
     /* Le passé est encore lu (Historique) : dessiner maintenant donnerait une courbe qui saute à l'arrivée du reconstitué. On garde le squelette, le moteur chauffe pendant ce temps. */
     const attend = () => { if (delaiPasse || capacite || typeof opt.enAttente !== "function") return false; try { return !!opt.enAttente(S); } catch (e) { return false; } };
     function prechauffer() {
@@ -333,7 +392,7 @@
     function calcul(r) {
       const n = ++seq;
       if (capacite) { const d = calculerCapacite(S, r, { today: jour(), perimetre: perimetre(), deps: opt.moteurDeps || null, chemins: opt.chemins }); if (n === seq && ctl) ctl.mettreAJour(d); return Promise.resolve(d); }
-      return calculer(S, r, { today: jour(), perimetre: perimetre(), deps: opt.moteurDeps || null, chargerPlan: id => (store && store.plansFiges ? store.plansFiges.detail(id) : Promise.resolve(null)),
+      return calculer(S, r, { today: jour(), perimetre: perimetre(), deps: opt.moteurDeps || null, cachePlans, chargerPlan: id => (store && store.plansFiges ? store.plansFiges.detail(id) : Promise.resolve(null)),
         rappel: (d, info) => { if (n === seq && ctl) ctl.mettreAJour(d, info); } });
     }
     ctl = G.monter(el, { preset: opt.preset || "aujourdhui", objectifId: opt.objectifId, titre: opt.titre, reglages, deps: Object.assign({ UI: U, window: win }, deps), lienProfond: !!opt.lienProfond,
@@ -360,10 +419,12 @@
       },
       /** Change des réglages du composant de l'extérieur (ex. : durée et type de bien de la carte IMMO1) ; relance le calcul si besoin. */
       definir(patch) { if (ctl) ctl.reglagesAppliques(patch); },
+      /** Rendement réel des placements tel que le graphe l'a calculé (périodes avec ce que le modèle en attendait) : { periodes } ou null avant le calcul. Lu par le panneau « Patrimoine net » d'Aujourd'hui. */
+      rendement: () => (ctl && typeof ctl.rendement === "function" ? ctl.rendement() : null),
       pleinEcranQuandPret: () => ctl.pleinEcranQuandPret && ctl.pleinEcranQuandPret(),
       detruire() { seq++; if (minuteur && typeof clearTimeout === "function") clearTimeout(minuteur); if (ctl && ctl.detruire) ctl.detruire(); ctl = null; },
     };
   }
 
-  return { HORIZON_ANS, HORIZON_CAPACITE_ANS, reglagesParDefaut, optionsMoteur, cleCalcul, passeDe, ajustementAutresBiens, jalonsDe, journalJalons, epargnePasseDe, objectifsDe, planDe, construire, entree, signature, calculer, calculerCapacite, effetSurMediane, brancher, crisesDisponibles };
+  return { HORIZON_ANS, HORIZON_CAPACITE_ANS, rendementDonnees, classesDuPlan, hypothesesDesPlans, reglagesParDefaut, optionsMoteur, cleCalcul, passeDe, ajustementAutresBiens, jalonsDe, journalJalons, epargnePasseDe, objectifsDe, planDe, construire, entree, signature, calculer, calculerCapacite, effetSurMediane, brancher, crisesDisponibles };
 });
