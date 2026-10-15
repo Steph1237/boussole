@@ -418,8 +418,9 @@ test("PGlite : export_all — définition de 0020 + fonctionnalites et tables ba
   const e = (await un(`select public.export_all() e`)).e;
   const cles = ["exported_at", "profile", "biens", "credits", "positions", "transactions", "snapshots", "config", "status", "budget",
     "objectifs", "propositions", "connexions_assistant", "memoire_agent", "journal", "routines",
-    "fonctionnalites", "banque_connexions", "banque_comptes", "banque_placements", "banque_operations", "banque_mois", "foyer_evenements", "foyer_variantes", "plans_figes", "connecteurs_autorises"];
-  assert.deepEqual(Object.keys(e).sort(), [...cles].sort(), "clés de 0020 + 6, puis foyer_evenements, foyer_variantes et plans_figes (0031), connecteurs_autorises (0033)");
+    "fonctionnalites", "banque_connexions", "banque_comptes", "banque_placements", "banque_operations", "banque_mois", "foyer_evenements", "foyer_variantes", "plans_figes", "connecteurs_autorises",
+    "historique_comptes", "historique_imports", "historique_releves", "historique_banque_mois", "photos_reconstituees"];
+  assert.deepEqual(Object.keys(e).sort(), [...cles].sort(), "clés de 0020 + 6, puis foyer_evenements, foyer_variantes et plans_figes (0031), connecteurs_autorises (0033), les cinq tables de l'historique (0034)");
   for (const k of ["fonctionnalites", ...TABLES]) {
     assert.ok(Array.isArray(e[k]) && e[k].length >= 1, k);
     assert.ok(e[k].every(r => r.user_id === A), k + " : lignes de A seulement");

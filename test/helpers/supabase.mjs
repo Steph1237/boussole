@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { assertLocal, assertCleLocale } from "../../scripts/preprod/garde.mjs";
+import { codeTotp, secretDepuisUri } from "../../scripts/preprod/totp.mjs";
 
 const CONFIG_PATH = fileURLToPath(new URL("../../web/config.js", import.meta.url));
 
@@ -78,7 +79,7 @@ export function userClient() {
 
 /**
  * Crée un utilisateur de test confirmé via l'API admin, puis renvoie un client connecté
- * avec son mot de passe : `{ id, email, client }`.
+ * avec son mot de passe : `{ id, email, password, client }`.
  */
 export async function createTestUser(label) {
   const admin = adminClient();
@@ -94,7 +95,44 @@ export async function createTestUser(label) {
     await admin.auth.admin.deleteUser(id).catch(() => {});
     throw new Error(`connexion de l'utilisateur ${label} impossible : ${signIn.error.message}`);
   }
-  return { id, email, client };
+  return { id, email, password, client };
+}
+
+/**
+ * Utilisateur de test à double authentification : compte confirmé, facteur TOTP enrôlé et vérifié avec un code calculé localement
+ * (RFC 6238), donc une session aal2 comme un vrai utilisateur. Sert aux tables du régime bancaire (0028, 0033 : historique_*), fermées
+ * à toute session aal1. Renvoie `{ id, email, client, nouvelleSessionAal1 }` : `client` est en aal2 ; `nouvelleSessionAal1()` ouvre une
+ * session par mot de passe seul (aal1, le facteur reste vérifié).
+ */
+export async function createTestUserAal2(label) {
+  const u = await createTestUser(label);
+  try {
+    const e = await u.client.auth.mfa.enroll({ factorType: "totp", friendlyName: "test" });
+    if (e.error) throw new Error(`enrôlement TOTP impossible : ${e.error.message}`);
+    const secret = e.data.totp.secret || secretDepuisUri(e.data.totp.uri);
+    let derniere = new Error("aucun essai");
+    for (const fenetre of [0, -1, 1]) {
+      const ch = await u.client.auth.mfa.challenge({ factorId: e.data.id });
+      if (ch.error) throw new Error(`challenge TOTP impossible : ${ch.error.message}`);
+      const v = await u.client.auth.mfa.verify({ factorId: e.data.id, challengeId: ch.data.id, code: codeTotp(secret, Date.now(), { fenetre }) });
+      derniere = v.error;
+      if (!derniere) break;
+    }
+    if (derniere) throw new Error(`vérification TOTP impossible : ${derniere.message}`);
+    const { email, password } = u;
+    return {
+      ...u,
+      async nouvelleSessionAal1() {
+        const c = userClient();
+        const r = await c.auth.signInWithPassword({ email, password });
+        if (r.error) throw new Error(`connexion impossible : ${r.error.message}`);
+        return c;
+      },
+    };
+  } catch (err) {
+    await deleteTestUser(u.id).catch(() => {});
+    throw err;
+  }
 }
 
 /** Supprime un utilisateur de test (cascade sur toutes ses tables). */

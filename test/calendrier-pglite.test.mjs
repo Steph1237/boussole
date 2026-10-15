@@ -100,9 +100,9 @@ test("migration 0029 : en-tête (non appliquée, apply_migration name = calendri
 test("0029 n'ajoute aucun droit de modification sur banque_comptes et ne redéfinit que appliquer_propositions", () => {
   assert.doesNotMatch(SQL, /grant\s+update/i);
   assert.deepEqual([...SQL.matchAll(/create (?:or replace )?function\s+([\w.]+)\s*\(/gi)].map(m => m[1]), ["public.appliquer_propositions"]);
-  const apres = readdirSync(DIR).filter(f => /^\d{4}_.*\.sql$/.test(f) && f > "0027_frais_suite.sql" && f !== "0029_calendrier.sql" && f !== "0031_projection.sql" && f !== "0032_suivi.sql")
+  const apres = readdirSync(DIR).filter(f => /^\d{4}_.*\.sql$/.test(f) && f > "0027_frais_suite.sql" && f !== "0029_calendrier.sql" && f !== "0031_projection.sql" && f !== "0032_suivi.sql" && f !== "0034_historique.sql")
     .filter(f => /function\s+public\.appliquer_propositions\s*\(/.test(readFileSync(new URL(f, DIR), "utf8")));
-  assert.deepEqual(apres, [], "ni 0028 ni une migration suivante (hors 0031, qui repart de 0029 : projection-pglite, et 0032, qui repart de 0031 : suivi-pglite) ne redéfinit la fonction : 0029 repart bien de la dernière définition (0027)");
+  assert.deepEqual(apres, [], "ni 0028 ni une migration suivante (hors 0031, qui repart de 0029 : projection-pglite, 0032, qui repart de 0031 : suivi-pglite, et 0034, qui repart de 0032 : historique-pglite) ne redéfinit la fonction : 0029 repart bien de la dernière définition (0027)");
 });
 
 /* ---------- colonnes de config ---------- */
