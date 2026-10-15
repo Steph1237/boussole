@@ -122,12 +122,18 @@ async function parcoursOauth(ctx) {
   const { clients, mcpUrl } = ctx;
   const auth = `${clients.url}/auth/v1`;
   const redirect = "http://127.0.0.1:9/callback";
-  // 1. enregistrement dynamique d'un client public
+  // 1. client public déclaré par l'administrateur (registration_type manual) : seul un tel client reçoit une autorisation liée au
+  //    second facteur (0033 ; un client inscrit dynamiquement est refusé, voir connecteur-mfa.mjs). L'enregistrement dynamique reste testé.
   const reg = await fetch(`${auth}/oauth/clients/register`, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_name: "Client de fumée (préproduction)", redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }) });
-  const client = await reg.json();
-  verite(reg.status < 300 && client.client_id, `enregistrement dynamique : ${reg.status} ${JSON.stringify(client).slice(0, 160)}`);
+    body: JSON.stringify({ client_name: "Client dynamique de fumée", redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }) });
+  const dyn = await reg.json();
+  verite(reg.status < 300 && dyn.client_id, `enregistrement dynamique : ${reg.status} ${JSON.stringify(dyn).slice(0, 160)}`);
+  await clients.admin.auth.admin.oauth.deleteClient(dyn.client_id).catch(() => {});
+  const cree = await clients.admin.auth.admin.oauth.createClient({ client_name: "Client de fumée (préproduction)", redirect_uris: [redirect], token_endpoint_auth_method: "none" });
+  verite(!cree.error && cree.data?.registration_type === "manual", `client déclaré : ${cree.error?.message ?? JSON.stringify(cree.data).slice(0, 120)}`);
+  const client = cree.data;
   const resultats = {};
+  try {
   for (const [libelle, slug, jetonSession] of [["compte sans facteur", "jeune-actif", "session"], ["compte à facteur, session aal2", "proprietaire-credit", "aal2"], ["compte à facteur, session aal1", "proprietaire-credit", "aal1"]]) {
     const compte = await compteNeuf(slug, { jeton: jetonSession, clients });
     try {
@@ -190,6 +196,7 @@ async function parcoursOauth(ctx) {
       }
     } finally { await compte.supprimer(); }
   }
+  } finally { await clients.admin.auth.admin.oauth.deleteClient(client.client_id).catch(() => {}); }
   return Object.entries(resultats).map(([k, v]) => `${k} : ${v}`).join(" ; ");
 }
 
@@ -229,7 +236,7 @@ async function parcoursConnecteur(ctx) {
 async function parcoursConnecteurMfa(ctx) {
   const r = await connecteurMfa({ clients: ctx.clients, mcpUrl: ctx.mcpUrl, journal: () => {} });
   verite(!r.echecs, r.lignes.filter(l => l.startsWith("ÉCHEC")).join(" ; "));
-  return `${r.lignes.length} étapes (aal1 refusé, code → lecture, rafraîchissement, autre session refusée, retrait, nouvelle autorisation, expiration, course)`;
+  return `${r.lignes.length} étapes (client dynamique refusé, aal1 refusé, code → lecture, export/suppression/mot de passe refusés au jeton OAuth, rafraîchissement, autre session refusée, retrait, nouvelle autorisation, expiration, course)`;
 }
 
 // ------------------------------------------------------------------------------------------------------------------ 5. Nuit

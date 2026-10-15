@@ -12,7 +12,9 @@
    D'où la migration 0033 : avec un facteur vérifié, « Autoriser » appelle d'abord la RPC autoriser_connecteur(authorization_id) avec la
    session aal2 (la base vérifie l'aal2 et lit le client dans la demande de GoTrue), puis approuve ; sans autorisation enregistrée, rien
    n'est approuvé. Même chose quand le consentement est déjà mémorisé (Supabase renvoie directement le retour) : code, autorisation, puis
-   redirection. Le connecteur lie ensuite l'autorisation à la session OAuth née de l'échange du code (lier_connecteur). Durée : 90 jours. */
+   redirection. Le connecteur lie ensuite l'autorisation à la session OAuth née de l'échange du code (lier_connecteur). Durée : 90 jours.
+   Code frais : la base exige un code de moins de 10 minutes (revendication amr) ; la page le redemande au-delà de 8 minutes, même en
+   aal2, et de nouveau si la base répond BOU02. Client non déclaré par Boussole (inscription dynamique) : BOU01, refus net. */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
@@ -43,6 +45,8 @@
   const RELAUNCH = "Relance la connexion de Boussole depuis Claude.";
   /* Durée d'une autorisation de connecteur (autoriser_connecteur, migration 0033 ; un test vérifie l'égalité). */
   const DUREE_AUTORISATION_JOURS = 90;
+  /* La base exige un code de moins de 10 minutes pour autoriser un connecteur (0033) : au-delà de 8 minutes, la page le redemande. */
+  const FRAICHEUR_CODE_S = 480;
   let accord = null; // réponse d'autoriser_connecteur : { id, client_id, client_nom, accorde_le, expire_le, duree_jours }
   function frDate(d) {
     try { return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" }); } catch (_) { return ""; }
@@ -92,6 +96,7 @@
     if (isNetwork(e)) return ["Serveur injoignable", "Impossible de joindre Boussole. Vérifie ta connexion puis réessaie.", true];
     if (e.code === "P0002") return ["Demande expirée ou introuvable", "Cette demande d'autorisation n'existe plus (elle expire au bout de quelques minutes). " + RELAUNCH, false];
     if (e.code === "42501") return ["Code à valider de nouveau", "Ta session ne porte plus ton code de double authentification. Recharge la page, valide ton code, puis autorise.", true];
+    if (e.code === "BOU01") return ["Application non reconnue", "Cette application n'est pas un connecteur déclaré par Boussole : elle ne peut pas recevoir un accès protégé par ton code. N'autorise que Claude, ajouté depuis ses réglages avec l'adresse indiquée dans Mon compte.", false];
     if (e.code === "54000") return ["Trop de connecteurs autorisés", e.message || "Retire un connecteur dans Mon compte › Connexion de Claude, puis réessaie.", false];
     if (e.code === "PGRST202") return ["Autorisation impossible", "Le serveur de Boussole n'est pas encore prêt pour les comptes à double authentification. Réessaie plus tard.", false];
     return ["Autorisation impossible", "Le serveur a répondu : « " + (e.message || "erreur inconnue") + " ». Réessaie ; si le problème continue, " + RELAUNCH.charAt(0).toLowerCase() + RELAUNCH.slice(1), true];
@@ -160,10 +165,11 @@
   }
 
   /* ---------- double authentification ---------- */
-  /* "code" : l'écran de code est affiché (loadDetails reprend une fois le code validé) ; "sans_facteur" | "ok" : rien à valider. */
-  async function exigerCode() {
+  /* "code" : l'écran de code est affiché (loadDetails reprend une fois le code validé) ; "sans_facteur" | "ok" : rien à valider.
+     Avec un facteur, un code de plus de FRAICHEUR_CODE_S secondes est redemandé même si la session est aal2 ; `forcer` : toujours. */
+  async function exigerCode(forcer) {
     let etat;
-    try { etat = await window.Mfa.etatConsentement(mfaApi); }
+    try { etat = forcer ? "code" : await window.Mfa.etatConsentement(mfaApi, { fraicheurS: FRAICHEUR_CODE_S }); }
     catch (e) {
       // Échec fermé : niveau illisible → ni demande affichée ni approbation ; le message et « Réessayer » reprennent depuis le début.
       show("mfa");
@@ -210,6 +216,7 @@
     if (!("authorization_id" in data)) {
       if (mfa === "ok") {
         const err = await autoriser();
+        if (err && err.code === "BOU02") return exigerCode(true);
         if (err) { const [t, x, retry] = explainAccord(err); return fail(t, x, retry ? loadDetails : null); }
       }
       return redirect(data.redirect_url || data.redirect_to, true);
@@ -250,6 +257,7 @@
       if (err) {
         setBusy(false);
         $("approveBtn").textContent = "Autoriser";
+        if (err.code === "BOU02") return exigerCode(true); // code jugé trop ancien par la base : on le redemande, rien n'est approuvé
         const [t, x, retry] = explainAccord(err);
         if (retry) return note($("consentMsg"), t + " : " + x);
         return fail(t, x, null);

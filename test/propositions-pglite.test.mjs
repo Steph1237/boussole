@@ -16,10 +16,10 @@ create schema auth; create schema extensions; create schema cron; create schema 
 create table auth.users (id uuid primary key, is_anonymous boolean default false, created_at timestamptz default now(), last_sign_in_at timestamptz);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 create function auth.jwt() returns jsonb language sql stable as $$ select jsonb_build_object('role', 'authenticated', 'aal', 'aal2') $$; -- requis par 0028 (SEC2) ; session pleinement connectée
-create table auth.mfa_factors (id uuid primary key default gen_random_uuid(), user_id uuid not null, factor_type text default 'totp', status text not null); -- lue par public.mfa_exigee() (0028), vide ici
+create table auth.mfa_factors (id uuid primary key default gen_random_uuid(), user_id uuid not null, factor_type text default 'totp', status text not null, created_at timestamptz default now()); -- lue par public.mfa_exigee() (0028), vide ici
 -- lues par public.connecteur_autorise() et les fonctions de 0033 (connecteurs autorisés), vides ici
 create table auth.sessions (id uuid primary key default gen_random_uuid(), user_id uuid not null, created_at timestamptz not null default now(), not_after timestamptz, oauth_client_id uuid);
-create table auth.oauth_clients (id uuid primary key default gen_random_uuid(), client_name text, deleted_at timestamptz);
+create table auth.oauth_clients (id uuid primary key default gen_random_uuid(), client_name text, deleted_at timestamptz, registration_type text not null default 'dynamic');
 create table auth.oauth_authorizations (id uuid primary key default gen_random_uuid(), authorization_id text not null unique, client_id uuid not null, user_id uuid, status text not null default 'pending', created_at timestamptz not null default now(), expires_at timestamptz not null, approved_at timestamptz);
 create function extensions.gen_random_bytes(int) returns bytea language sql as $$ select decode(md5(random()::text), 'hex') $$;
 create table cron.job (jobname text);

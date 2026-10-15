@@ -100,10 +100,10 @@ export async function connecteurMfa({ clients = clientsLocaux(), mcpUrl, journal
     journal(lignes[lignes.length - 1]);
   };
 
-  const reg = await fetch(`${clients.url}/auth/v1/oauth/clients/register`, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_name: "Claude (préproduction)", redirect_uris: [REDIRECTION], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }) });
-  const client = (await reg.json()).client_id;
-  verite(client, "enregistrement dynamique du client OAuth");
+  // client déclaré par l'administrateur (registration_type manual), comme Claude en production ; un client dynamique est testé à part (étape 0)
+  const cree = await clients.admin.auth.admin.oauth.createClient({ client_name: "Claude (préproduction)", redirect_uris: [REDIRECTION], token_endpoint_auth_method: "none" });
+  verite(!cree.error && cree.data?.registration_type === "manual", `client déclaré : ${cree.error?.message ?? JSON.stringify(cree.data)}`);
+  const client = cree.data.client_id;
   const compte = await compteNeuf("proprietaire-credit", { jeton: "aal2", clients }); // facteur TOTP vérifié, banque connectée (fictive)
   const ctx = {};
   try {
@@ -114,6 +114,22 @@ export async function connecteurMfa({ clients = clientsLocaux(), mcpUrl, journal
     const s1 = await mdp.auth.signInWithPassword(compte.identifiants());
     verite(!s1.error && claims(s1.data.session.access_token).aal === "aal1", "session aal1 (mot de passe seul)");
     const sessionAal1 = s1.data.session;
+
+    await etape("0. client inscrit dynamiquement (nommé « Claude ») : aucune autorisation, même avec un code frais", async () => {
+      const r = await fetch(`${clients.url}/auth/v1/oauth/clients/register`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_name: "Claude", redirect_uris: [REDIRECTION], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }) });
+      const dyn = (await r.json()).client_id;
+      verite(dyn, "enregistrement dynamique");
+      try {
+        const sb = await navigateur(clients, sessionAal2);
+        const d = await demander(clients, dyn, sb);
+        const g = await sb.rpc("autoriser_connecteur", { p_autorisation_id: d.authorizationId });
+        verite(g.error?.code === "BOU01", `autoriser_connecteur pour un client dynamique : ${JSON.stringify(g).slice(0, 160)}`);
+        const n = (await clients.admin.from("connecteurs_autorises").select("id").eq("user_id", compte.uid)).data ?? [];
+        verite(n.length === 0, "une autorisation a été créée");
+        return `refus BOU01 « ${g.error.message.slice(0, 70)}… »`;
+      } finally { await clients.admin.auth.admin.oauth.deleteClient(dyn).catch(() => {}); }
+    });
 
     await etape("1. mot de passe seul (aal1) : autoriser_connecteur refusé, le jeton OAuth obtenu par approveAuthorization ne lit rien", async () => {
       const sb = await navigateur(clients, sessionAal1);
@@ -135,6 +151,7 @@ export async function connecteurMfa({ clients = clientsLocaux(), mcpUrl, journal
       verite(!p.autorisation.error, `autoriser_connecteur : ${p.autorisation.error?.message}`);
       const jours = Math.round((new Date(p.autorisation.data.expire_le) - new Date(p.autorisation.data.accorde_le)) / 864e5);
       verite(jours === 90 && p.autorisation.data.client_id === client && p.autorisation.data.client_nom === "Claude (préproduction)", `autorisation : ${JSON.stringify(p.autorisation.data)}`);
+      // pas encore liée tant que le connecteur n'a pas appelé (Mon compte : « en attente de première connexion »)
       verite(p.revendications.aal === "aal1", `le jeton OAuth reste aal1 (constat SEC5) : ${p.revendications.aal}`);
       const r = await lireParConnecteur(mcpUrl, p.jeton);
       verite(!r.overview.erreur, `get_overview : ${r.overview.texte.slice(0, 160)}`);
@@ -152,6 +169,23 @@ export async function connecteurMfa({ clients = clientsLocaux(), mcpUrl, journal
       const n = (await clients.admin.from("connexions_assistant").select("client_id").eq("user_id", compte.uid)).data ?? [];
       Object.assign(ctx, { legitime: p });
       return `90 jours, liée à la session ${p.revendications.session_id.slice(0, 8)}…, get_overview + lire_banque + demarrer_session ok, 7 positions, écriture bancaire refusée par la RLS${n.some(x => x.client_id === client) ? ", connexion notée" : ""}`;
+    });
+
+    await etape("2 bis. jeton OAuth lié : ni export_all, ni delete_me, ni changement de mot de passe ou d'e-mail (GoTrue)", async () => {
+      const u = avecJeton(clients, ctx.legitime.jeton);
+      const ex = await u.rpc("export_all"), dm = await u.rpc("delete_me");
+      verite(ex.error?.code === "42501" && dm.error?.code === "42501", `export_all / delete_me : ${JSON.stringify([ex.error, dm.error]).slice(0, 200)}`);
+      const H = { apikey: clients.publiable, Authorization: `Bearer ${ctx.legitime.jeton}`, "Content-Type": "application/json" };
+      const res = [];
+      for (const [nom, corps] of [["mot de passe", { password: "Pp" + randomBytes(8).toString("hex") + "9" }], ["e-mail", { email: `autre-${randomBytes(3).toString("hex")}@preprod.boussole.test` }]]) {
+        const r = await fetch(`${clients.url}/auth/v1/user`, { method: "PUT", headers: H, body: JSON.stringify(corps) });
+        const j = await r.json().catch(() => ({}));
+        verite(r.status === 401 && j.error_code === "insufficient_aal", `PUT /auth/v1/user (${nom}) : ${r.status} ${JSON.stringify(j).slice(0, 120)}`);
+        res.push(`${nom} ${r.status} ${j.error_code}`);
+      }
+      const existe = (await clients.admin.auth.admin.getUserById(compte.uid)).data?.user;
+      verite(existe, "le compte doit exister");
+      return `export_all et delete_me 42501 ; PUT /user : ${res.join(", ")}`;
     });
 
     await etape("3. rafraîchissement du jeton OAuth : même session, toujours autorisé", async () => {
@@ -229,6 +263,7 @@ export async function connecteurMfa({ clients = clientsLocaux(), mcpUrl, journal
     });
   } finally {
     await compte.supprimer();
+    await clients.admin.auth.admin.oauth.deleteClient(client).catch(() => {});
   }
   return { echecs, lignes, revendications: ctx.claimsKeys };
 }

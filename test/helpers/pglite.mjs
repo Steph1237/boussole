@@ -54,18 +54,23 @@ create table auth.mfa_factors (id uuid primary key default gen_random_uuid(), us
 -- (une session par client OAuth, oauth_client_id renseigné ; une demande d'autorisation est supprimée par GoTrue à l'échange du code).
 create table auth.sessions (id uuid primary key default gen_random_uuid(), user_id uuid not null, created_at timestamptz not null default now(),
   not_after timestamptz, aal text default 'aal1', oauth_client_id uuid);
-create table auth.oauth_clients (id uuid primary key default gen_random_uuid(), client_name text, deleted_at timestamptz);
+create table auth.oauth_clients (id uuid primary key default gen_random_uuid(), client_name text, deleted_at timestamptz, registration_type text not null default 'dynamic');
 create table auth.oauth_authorizations (id uuid primary key default gen_random_uuid(), authorization_id text not null unique, client_id uuid not null,
   user_id uuid, status text not null default 'pending', created_at timestamptz not null default now(),
   expires_at timestamptz not null default now() + interval '10 minutes', approved_at timestamptz);
 -- auth.jwt() : revendications du jeton de la session simulée. Le niveau d'assurance (aal) vient du réglage test.aal : « aal2 » par défaut
 -- (les tests des autres migrations simulent un utilisateur pleinement connecté), « aal1 » ou « aucun » (revendication absente) pour la
 -- double authentification (test/mfa-pglite.test.mjs). Jeton OAuth (0033) : test.client_id et test.session_id ajoutent les revendications
--- client_id et session_id (absentes si le réglage est vide, comme pour un jeton de session ordinaire).
+-- client_id et session_id (absentes si le réglage est vide, comme pour un jeton de session ordinaire). amr (méthodes et instants, comme
+-- GoTrue) : en aal2, [{ method: "totp", timestamp }] avec l'instant du code dans test.totp_le (secondes epoch ; maintenant par défaut).
 create function auth.jwt() returns jsonb language sql stable
   as $$ select jsonb_strip_nulls(jsonb_build_object('role', 'authenticated',
                'aal', case coalesce(nullif(current_setting('test.aal', true), ''), 'aal2') when 'aucun' then null
                       else coalesce(nullif(current_setting('test.aal', true), ''), 'aal2') end,
+               'amr', case when coalesce(nullif(current_setting('test.aal', true), ''), 'aal2') = 'aal2'
+                      then jsonb_build_array(jsonb_build_object('method', 'totp', 'timestamp',
+                             coalesce(nullif(current_setting('test.totp_le', true), '')::bigint, extract(epoch from now())::bigint)),
+                           jsonb_build_object('method', 'password', 'timestamp', extract(epoch from now())::bigint - 60)) end,
                'client_id', nullif(current_setting('test.client_id', true), ''),
                'session_id', nullif(current_setting('test.session_id', true), ''))) $$;
 create function extensions.gen_random_bytes(int) returns bytea language sql as $$ select decode(md5(random()::text), 'hex') $$;

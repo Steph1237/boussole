@@ -17,29 +17,35 @@
 -- 2. autoriser_connecteur(authorization_id) : security definer. Exige (select auth.jwt())->>'aal' = 'aal2' de la session APPELANTE (la page
 --    de consentement l'appelle juste après le code à 6 chiffres, avant d'approuver) et refuse tout jeton qui porte un client_id (un
 --    connecteur ne s'autorise pas lui-même). Le client n'est PAS fourni par l'appelant : il est lu dans la demande d'autorisation de
---    GoTrue (auth.oauth_authorizations : à l'appelant, en attente ou approuvée, non expirée), nom lu dans auth.oauth_clients. Révoque
---    l'autorisation précédente du même client. 20 autorisations actives au plus par utilisateur.
+--    GoTrue (auth.oauth_authorizations : à l'appelant, en attente ou approuvée, non expirée), nom lu dans auth.oauth_clients. Exige un
+--    code FRAIS : revendication amr « totp » de moins de 10 minutes (BOU02 sinon), et un client DÉCLARÉ par l'administrateur
+--    (auth.oauth_clients.registration_type = manual, non supprimé ; BOU01 sinon) : un client inscrit tout seul (enregistrement dynamique)
+--    pourrait se nommer « Claude » et hameçonner un consentement de 90 jours. Révoque l'autorisation précédente du même client.
+--    20 autorisations actives au plus par utilisateur.
 -- 3. lier_connecteur() : security definer, appelée par le connecteur à chaque requête d'un compte à facteur (garde-mfa.ts). Lit client_id et
 --    session_id dans le jeton signé (jamais en paramètre). Si l'autorisation n'est pas encore liée, elle se lie à la session du jeton
 --    seulement si : la demande d'autorisation a disparu (son code a été échangé), la session est une session OAuth de ce client pour cet
 --    utilisateur, ouverte après l'autorisation et avant l'expiration de la demande, dans les 15 minutes, et c'est la SEULE session OAuth
 --    de ce client ouverte depuis l'autorisation (sinon « ambigu » : rien n'est lié, l'utilisateur reconnecte). Ensuite, seule cette
 --    session est acceptée. Réponses : autorise, sans_client, sans_facteur, absente, revoquee, expiree, autre_session, hors_delai,
---    en_attente, ambigu, non_liee.
+--    en_attente, ambigu, non_liee. Plus aucun facteur vérifié, ou facteur de l'autorisation retiré (seuls des facteurs plus récents
+--    restent) : les autorisations sont révoquées (revoque_le) et ne revivent pas à la réinscription.
 -- 4. connecteur_autorise() : security definer, stable ; vrai si le jeton (client_id, session_id) correspond à une autorisation liée, non
 --    révoquée, non expirée, de auth.uid(), dont la session OAuth existe encore (déconnexion ou révocation chez Supabase : fermé tout de
---    suite), et si l'utilisateur a toujours un facteur vérifié (facteur retiré par le support : fermé).
+--    suite), et si un facteur vérifié ANTÉRIEUR à l'autorisation existe encore (facteur retiré par le support : fermé ; réinscription : fermé).
 -- 5. revoquer_connecteur(client_id) : security definer ; révoque les autorisations actives de auth.uid() pour ce client, à tout niveau
 --    (retirer un accès ne fait que fermer).
 -- 6. Politiques (alter policy, mêmes noms ; aucune n'est retirée) :
 --    - « <table>: aal2 si facteur » (toutes les tables personnelles hors banque_*) : aal2, OU pas de facteur vérifié, OU connecteur
 --      autorisé, en lecture comme en écriture (le connecteur dépose propositions, mémoire, journal… comme avant 0028) ;
---    - « banque_*: aal2 » : lecture par aal2 OU connecteur autorisé ; écriture (with check) toujours aal2 seule ; nouvelle politique
---      restrictive « banque_*: suppression aal2 » (for delete). Le connecteur ne fait que lire la banque ; seules l'app (aal2) et le
---      service écrivent ;
+--    - « banque_*: aal2 » : lecture par aal2 OU connecteur autorisé ; écriture (with check) aal2 ET aucun client_id dans le jeton (même
+--      si GoTrue émettait un jour des jetons OAuth aal2) ; nouvelle politique restrictive « banque_*: suppression aal2 » (for delete, même
+--      condition). Le connecteur ne fait que lire la banque ; seules l'app (aal2) et le service écrivent ;
 --    - connecteurs_autorises : « aal2 si facteur » SANS le cas connecteur (un connecteur ne lit pas ses propres autorisations).
 --    Toutes écrites avec (select auth.jwt()) : corrige les 24 avertissements auth_rls_initplan du conseiller de base (SEC5 § 3.12).
--- 7. service_role : droits explicites sur toutes les tables, séquences et fonctions de public, et privilèges par défaut pour les objets
+-- 7. delete_me() (0001) et export_all() (0031) recréées à l'identique avec des gardes : jamais par un jeton OAuth (client_id, 42501) ;
+--    delete_me exige aal2 pour un compte à facteur ; export_all exporte aussi connecteurs_autorises (colonnes visibles).
+-- 8. service_role : droits explicites sur toutes les tables, séquences et fonctions de public, et privilèges par défaut pour les objets
 --    futurs (l'exposition automatique, api.auto_expose_new_tables du CLI, disparaît le 2026-10-30). anon et authenticated : inchangés.
 --
 -- Repli interdit (toujours) : laisser passer un jeton OAuth sur son seul client_id, sans autorisation. approveAuthorization n'exige
@@ -97,8 +103,11 @@ declare
   v_jwt    jsonb := coalesce(auth.jwt(), '{}'::jsonb);
   v_duree  constant interval := interval '90 days';   -- durée d'une autorisation (affichée par la page de consentement)
   v_max    constant int := 20;                         -- autorisations actives au plus par utilisateur
+  v_frais  constant int := 600;                        -- le code doit dater de 10 minutes au plus (secondes)
   v_client text;
   v_nom    text;
+  v_reg    text;
+  v_suppr  timestamptz;
   v_exp    timestamptz;
   v_ligne  public.connecteurs_autorises;
 begin
@@ -111,17 +120,30 @@ begin
   if coalesce(v_jwt->>'aal', '') <> 'aal2' or not public.mfa_exigee() then
     raise exception 'Double authentification requise : valide ton code à 6 chiffres avant d''autoriser un connecteur.' using errcode = '42501';
   end if;
+  -- code frais : la revendication amr (GoTrue) porte l'instant du dernier code TOTP validé ; une session aal2 ancienne ne suffit pas
+  if not exists (
+    select 1 from jsonb_array_elements(case when jsonb_typeof(v_jwt->'amr') = 'array' then v_jwt->'amr' else '[]'::jsonb end) e
+     where e->>'method' = 'totp' and (e->>'timestamp') ~ '^[0-9]+(\.[0-9]+)?$'
+       and (e->>'timestamp')::numeric >= extract(epoch from now()) - v_frais
+  ) then
+    raise exception 'Valide de nouveau ton code à 6 chiffres : il doit dater de moins de 10 minutes pour autoriser un connecteur.' using errcode = 'BOU02';
+  end if;
 
-  select a.client_id::text, a.expires_at, c.client_name
-    into v_client, v_exp, v_nom
+  select a.client_id::text, a.expires_at, c.client_name, c.registration_type::text, c.deleted_at
+    into v_client, v_exp, v_nom, v_reg, v_suppr
     from auth.oauth_authorizations a
-    left join auth.oauth_clients c on c.id = a.client_id and c.deleted_at is null
+    left join auth.oauth_clients c on c.id = a.client_id
    where a.authorization_id = p_autorisation_id
      and a.user_id = v_uid
      and a.status::text in ('pending', 'approved')
      and a.expires_at > now();
   if v_client is null then
     raise exception 'Demande d''autorisation introuvable ou expirée : relance la connexion du connecteur depuis Claude.' using errcode = 'P0002';
+  end if;
+  -- seul un client déclaré par l'administrateur (registration_type = manual, non supprimé) reçoit une autorisation : un client inscrit
+  -- tout seul (enregistrement dynamique) pourrait se nommer « Claude » et hameçonner un consentement de 90 jours
+  if v_reg is distinct from 'manual' or v_suppr is not null then
+    raise exception 'Cette application n''est pas autorisée à recevoir un accès protégé par ton code : seuls les connecteurs déclarés par Boussole le peuvent.' using errcode = 'BOU01';
   end if;
 
   update public.connecteurs_autorises
@@ -172,6 +194,8 @@ begin
     return 'sans_client';
   end if;
   if not public.mfa_exigee() then
+    -- plus aucun facteur vérifié : les autorisations accordées avec un code tombent (elles ne revivront pas à la réinscription)
+    update public.connecteurs_autorises set revoque_le = now() where user_id = v_uid and revoque_le is null;
     return 'sans_facteur';
   end if;
 
@@ -183,6 +207,11 @@ begin
   end if;
   if g.expire_le <= now() then
     return 'expiree';
+  end if;
+  -- le facteur qui a servi doit exister encore : un facteur réinscrit après l'autorisation ne la fait pas revivre
+  if not exists (select 1 from auth.mfa_factors f where f.user_id = v_uid and f.status::text = 'verified' and f.created_at <= g.accorde_le) then
+    update public.connecteurs_autorises set revoque_le = now() where id = g.id;
+    return 'revoquee';
   end if;
 
   -- session du jeton : session OAuth de ce client, pour cet utilisateur, encore ouverte
@@ -247,7 +276,9 @@ as $$
        and g.expire_le > now()
        and s.oauth_client_id::text = g.client_id
        and (s.not_after is null or s.not_after > now())
-  ) and public.mfa_exigee();
+       and exists (select 1 from auth.mfa_factors f
+                    where f.user_id = g.user_id and f.status::text = 'verified' and f.created_at <= g.accorde_le)
+  );
 $$;
 revoke all on function public.connecteur_autorise() from public, anon;
 grant execute on function public.connecteur_autorise() to authenticated;
@@ -282,26 +313,31 @@ grant execute on function public.revoquer_connecteur(text) to authenticated;
 -- 6. Politiques restrictives de 0028 et 0031 : connecteur autorisé accepté ; (select auth.jwt()) partout
 -- ---------------------------------------------------------------------------------------------------------------------------------
 alter policy "banque_connexions: aal2" on public.banque_connexions
-  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise())) with check (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise()))
+  with check (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 alter policy "banque_comptes: aal2" on public.banque_comptes
-  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise())) with check (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise()))
+  with check (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 alter policy "banque_placements: aal2" on public.banque_placements
-  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise())) with check (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise()))
+  with check (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 alter policy "banque_operations: aal2" on public.banque_operations
-  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise())) with check (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise()))
+  with check (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 alter policy "banque_mois: aal2" on public.banque_mois
-  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise())) with check (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' or (select public.connecteur_autorise()))
+  with check (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 
 create policy "banque_connexions: suppression aal2" on public.banque_connexions as restrictive for delete to authenticated
-  using (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 create policy "banque_comptes: suppression aal2" on public.banque_comptes as restrictive for delete to authenticated
-  using (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 create policy "banque_placements: suppression aal2" on public.banque_placements as restrictive for delete to authenticated
-  using (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 create policy "banque_operations: suppression aal2" on public.banque_operations as restrictive for delete to authenticated
-  using (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 create policy "banque_mois: suppression aal2" on public.banque_mois as restrictive for delete to authenticated
-  using (((select auth.jwt())->>'aal') = 'aal2');
+  using (((select auth.jwt())->>'aal') = 'aal2' and ((select auth.jwt())->>'client_id') is null);
 
 alter policy "biens: aal2 si facteur" on public.biens
   using (((select auth.jwt())->>'aal') = 'aal2' or not (select public.mfa_exigee()) or (select public.connecteur_autorise()))
@@ -362,7 +398,83 @@ alter policy "transactions: aal2 si facteur" on public.transactions
   with check (((select auth.jwt())->>'aal') = 'aal2' or not (select public.mfa_exigee()) or (select public.connecteur_autorise()));
 
 -- ---------------------------------------------------------------------------------------------------------------------------------
--- 7. service_role : droits explicites (plus d'exposition automatique), objets existants et futurs ; anon et authenticated inchangés
+-- 7. delete_me() et export_all() : jamais par un jeton OAuth ; delete_me exige aal2 pour un compte à facteur
+-- ---------------------------------------------------------------------------------------------------------------------------------
+-- delete_me : 0001 à l'identique, plus deux gardes. Un connecteur autorisé passe la RLS : sans garde, il pourrait supprimer le compte
+-- (security definer) ; et un mot de passe volé ne doit pas suffire à supprimer un compte protégé par un code.
+create or replace function public.delete_me()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'non authentifié';
+  end if;
+  if nullif(auth.jwt()->>'client_id', '') is not null then
+    raise exception 'Un connecteur ne peut pas supprimer le compte : fais-le depuis Boussole › Mon compte.' using errcode = '42501';
+  end if;
+  if public.mfa_exigee() and coalesce(auth.jwt()->>'aal', '') <> 'aal2' then
+    raise exception 'Double authentification requise : valide ton code à 6 chiffres avant de supprimer ton compte.' using errcode = '42501';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+revoke all on function public.delete_me() from public, anon;
+grant execute on function public.delete_me() to authenticated;
+
+-- export_all : 0031 à l'identique (même clés, même ordre, security invoker : la RLS borne tout), en plpgsql pour la garde « pas de
+-- jeton OAuth » (le connecteur ne peut pas exporter, promesse de Mon compte), plus connecteurs_autorises (colonnes visibles seulement).
+create or replace function public.export_all()
+returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path = public
+as $$
+begin
+  if nullif(auth.jwt()->>'client_id', '') is not null then
+    raise exception 'Un connecteur ne peut pas exporter tes données : fais-le depuis Boussole › Mon compte.' using errcode = '42501';
+  end if;
+  return jsonb_build_object(
+    'exported_at',  now(),
+    'profile',      (select to_jsonb(p) from public.profiles p where p.user_id = auth.uid()),
+    'biens',        (select coalesce(jsonb_agg(to_jsonb(b) order by b.created_at), '[]') from public.biens b where b.user_id = auth.uid()),
+    'credits',      (select coalesce(jsonb_agg(to_jsonb(c) order by c.created_at), '[]') from public.credits c where c.user_id = auth.uid()),
+    'positions',    (select coalesce(jsonb_agg(to_jsonb(x) order by x.created_at), '[]') from public.positions x where x.user_id = auth.uid()),
+    'transactions', (select coalesce(jsonb_agg(to_jsonb(t) order by t.date, t.created_at), '[]') from public.transactions t where t.user_id = auth.uid()),
+    'snapshots',    (select coalesce(jsonb_agg(to_jsonb(s) order by s.date), '[]') from public.snapshots s where s.user_id = auth.uid()),
+    'config',       (select coalesce(jsonb_agg(to_jsonb(k)), '[]') from public.config k where k.user_id = auth.uid()),
+    'status',       (select coalesce(jsonb_agg(to_jsonb(st)), '[]') from public.status st where st.user_id = auth.uid()),
+    'budget',       (select to_jsonb(bu) from public.budgets bu where bu.user_id = auth.uid()),
+    'objectifs',    (select coalesce(jsonb_agg(to_jsonb(o) order by o.priorite, o.created_at), '[]') from public.objectifs o where o.user_id = auth.uid()),
+    'propositions', (select coalesce(jsonb_agg(to_jsonb(pr) order by pr.cree_le), '[]') from public.propositions pr where pr.user_id = auth.uid()),
+    'connexions_assistant', (select coalesce(jsonb_agg(to_jsonb(ca) order by ca.premier_le), '[]') from public.connexions_assistant ca where ca.user_id = auth.uid()),
+    'memoire_agent', (select coalesce(jsonb_agg(to_jsonb(m) order by m.cree_le), '[]') from public.memoire_agent m where m.user_id = auth.uid()),
+    'journal',      (select coalesce(jsonb_agg(to_jsonb(j) order by j.cree_le), '[]') from public.journal j where j.user_id = auth.uid()),
+    'routines',     (select coalesce(jsonb_agg(to_jsonb(rt) order by rt.type), '[]') from public.routines rt where rt.user_id = auth.uid()),
+    'fonctionnalites',   (select coalesce(jsonb_agg(to_jsonb(fo) order by fo.cle), '[]') from public.fonctionnalites fo where fo.user_id = auth.uid()),
+    'banque_connexions', (select coalesce(jsonb_agg(to_jsonb(bc) order by bc.cree_le, bc.id), '[]') from public.banque_connexions bc where bc.user_id = auth.uid()),
+    'banque_comptes',    (select coalesce(jsonb_agg(to_jsonb(bk) order by bk.connexion_id, bk.id), '[]') from public.banque_comptes bk where bk.user_id = auth.uid()),
+    'banque_placements', (select coalesce(jsonb_agg(to_jsonb(bp) order by bp.compte_id, bp.id), '[]') from public.banque_placements bp where bp.user_id = auth.uid()),
+    'banque_operations', (select coalesce(jsonb_agg(to_jsonb(bo) order by bo.date, bo.compte_id, bo.id), '[]') from public.banque_operations bo where bo.user_id = auth.uid()),
+    'banque_mois',       (select coalesce(jsonb_agg(to_jsonb(bm) order by bm.mois, bm.categorie), '[]') from public.banque_mois bm where bm.user_id = auth.uid()),
+    'foyer_evenements',  (select coalesce(jsonb_agg(to_jsonb(fe) order by fe.date, fe.created_at, fe.id), '[]') from public.foyer_evenements fe where fe.user_id = auth.uid()),
+    'foyer_variantes',   (select coalesce(jsonb_agg(to_jsonb(fv) order by fv.created_at, fv.id), '[]') from public.foyer_variantes fv where fv.user_id = auth.uid()),
+    'plans_figes',       (select coalesce(jsonb_agg(to_jsonb(pf) order by pf.cree_le, pf.id), '[]') from public.plans_figes pf where pf.user_id = auth.uid()),
+    'connecteurs_autorises', (select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'client_id', g.client_id, 'client_nom', g.client_nom,
+                                'accorde_le', g.accorde_le, 'expire_le', g.expire_le, 'lie_le', g.lie_le, 'dernier_usage', g.dernier_usage,
+                                'revoque_le', g.revoque_le) order by g.accorde_le, g.id), '[]')
+                              from public.connecteurs_autorises g where g.user_id = auth.uid())
+  );
+end;
+$$;
+revoke all on function public.export_all() from public, anon;
+grant execute on function public.export_all() to authenticated;
+
+-- ---------------------------------------------------------------------------------------------------------------------------------
+-- 8. service_role : droits explicites (plus d'exposition automatique), objets existants et futurs ; anon et authenticated inchangés
 -- ---------------------------------------------------------------------------------------------------------------------------------
 grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;

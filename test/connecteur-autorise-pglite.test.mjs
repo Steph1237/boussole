@@ -13,7 +13,7 @@ const DIR = new URL("../supabase/migrations/", import.meta.url);
 const FICHIER = readdirSync(DIR).find(f => /^0033_.*\.sql$/.test(f));
 const SQL = FICHIER ? readFileSync(new URL(FICHIER, DIR), "utf8") : "";
 const A = "11111111-1111-1111-1111-111111111111", B = "22222222-2222-2222-2222-222222222222", C = "33333333-3333-3333-3333-333333333333";
-const CLAUDE = "aaaaaaaa-0000-4000-8000-000000000001", AUTRE = "aaaaaaaa-0000-4000-8000-000000000002";
+const CLAUDE = "aaaaaaaa-0000-4000-8000-000000000001", AUTRE = "aaaaaaaa-0000-4000-8000-000000000002", DYNAMIQUE = "aaaaaaaa-0000-4000-8000-000000000003";
 const AUJ = `(now() at time zone 'Europe/Paris')::date`;
 const BANQUE = ["banque_connexions", "banque_comptes", "banque_placements", "banque_operations", "banque_mois"];
 let db, n = 0;
@@ -24,10 +24,10 @@ const refuse = async (s, motif, m) => {
 };
 
 /** Superutilisateur (bouchons, préparation, vérifications). */
-const superu = () => db.exec(`reset role; set test.uid = ''; set test.aal = 'aal2'; set test.client_id = ''; set test.session_id = '';`);
+const superu = () => db.exec(`reset role; set test.uid = ''; set test.aal = 'aal2'; set test.client_id = ''; set test.session_id = ''; set test.totp_le = '';`);
 /** Jeton simulé : session de navigateur (sans client) ou jeton OAuth (client + session). */
-async function jeton(uid, aal, { client = "", session = "" } = {}) {
-  await db.exec(`reset role; set test.uid = '${uid}'; set test.aal = '${aal}'; set test.client_id = '${client}'; set test.session_id = '${session}'; set role authenticated;`);
+async function jeton(uid, aal, { client = "", session = "", totpLe = "" } = {}) {
+  await db.exec(`reset role; set test.uid = '${uid}'; set test.aal = '${aal}'; set test.client_id = '${client}'; set test.session_id = '${session}'; set test.totp_le = '${totpLe}'; set role authenticated;`);
 }
 /** Demande d'autorisation OAuth en attente (créée par GoTrue à /oauth/authorize, rattachée à l'utilisateur par getAuthorizationDetails). */
 async function demande(uid, client = CLAUDE, { status = "pending", expire = "now() + interval '10 minutes'" } = {}) {
@@ -56,7 +56,7 @@ const nb = async t => (await q(`select user_id from public.${t}`)).length;
 async function nettoyer() {
   await superu();
   await db.exec(`delete from public.connecteurs_autorises; delete from auth.sessions; delete from auth.oauth_authorizations;
-    insert into auth.mfa_factors (user_id, status) select '${A}', 'verified' where not exists (select 1 from auth.mfa_factors where user_id = '${A}' and status = 'verified');`);
+    insert into auth.mfa_factors (user_id, status, created_at) select '${A}', 'verified', now() - interval '1 day' where not exists (select 1 from auth.mfa_factors where user_id = '${A}' and status = 'verified');`);
 }
 
 before(async () => {
@@ -65,8 +65,10 @@ before(async () => {
     insert into auth.users (id) values ('${A}'), ('${B}'), ('${C}');
     grant usage on schema auth to authenticated, service_role; grant execute on function auth.uid(), auth.jwt() to authenticated, service_role;
     -- A et B : facteur vérifié ; C : aucun facteur
-    insert into auth.mfa_factors (user_id, status) values ('${A}', 'verified'), ('${B}', 'verified');
-    insert into auth.oauth_clients (id, client_name) values ('${CLAUDE}', 'Claude'), ('${AUTRE}', 'Autre client');
+    insert into auth.mfa_factors (user_id, status, created_at) values ('${A}', 'verified', now() - interval '1 day'), ('${B}', 'verified', now() - interval '1 day');
+    -- clients déclarés par l'administrateur (manual) ; un client inscrit tout seul (dynamic) ne reçoit jamais d'autorisation
+    insert into auth.oauth_clients (id, client_name, registration_type) values ('${CLAUDE}', 'Claude', 'manual'), ('${AUTRE}', 'Autre client', 'manual'),
+      ('${DYNAMIQUE}', 'Claude', 'dynamic');
     insert into public.positions (user_id, name, value) values ('${A}', 'Livret A', 8000), ('${B}', 'Livret B', 10), ('${C}', 'Livret C', 20);
     insert into public.snapshots (user_id, date, total) values ('${A}', ${AUJ}, 12345), ('${B}', ${AUJ}, 1);
     insert into public.fonctionnalites (user_id, cle, active) values ('${A}', 'banque', true), ('${B}', 'banque', true);
@@ -409,8 +411,9 @@ test("politiques : chaque « aal2 si facteur » accepte aussi le connecteur auto
     assert.match(tout.qual, /connecteur_autorise\(\)/, t + " : lecture par le connecteur autorisé");
     assert.doesNotMatch(tout.qual, /mfa_exigee/, t + " : jamais « sans facteur »");
     assert.doesNotMatch(tout.with_check, /connecteur_autorise/, t + " : écriture en aal2 seulement");
+    assert.match(tout.with_check, /client_id/, t + " : jamais par un jeton OAuth, même aal2");
     const sup = r.find(p => p.tablename === t && p.cmd === "DELETE");
-    assert.ok(sup && /aal2/.test(sup.qual) && !/connecteur_autorise/.test(sup.qual), t + " : suppression en aal2 seulement");
+    assert.ok(sup && /aal2/.test(sup.qual) && /client_id/.test(sup.qual) && !/connecteur_autorise/.test(sup.qual), t + " : suppression en aal2 seulement, hors jeton OAuth");
   }
 });
 
@@ -465,4 +468,102 @@ test("service_role : droits explicites sur toutes les tables, séquences et fonc
     has_function_privilege('service_role', 'public.fonction_future()', 'execute') fs`)).rows[0];
   assert.equal(f.s, true, "privilèges par défaut pour service_role"); assert.equal(f.fs, true);
   await avant.close();
+});
+
+/* ------------------------------------------------------------------------------------------------ revue de sécurité (2026-10-15) */
+test("client inscrit dynamiquement (hameçonnage du consentement) ou client supprimé : aucune autorisation, même en aal2 avec un code frais", async () => {
+  await nettoyer();
+  const dyn = await demande(A, DYNAMIQUE);
+  await jeton(A, "aal2");
+  await refuse(`select public.autoriser_connecteur('${dyn}')`, /n'est pas autorisé|déclaré/i, "client dynamique");
+  await superu();
+  assert.equal((await un(`select count(*)::int n from public.connecteurs_autorises`)).n, 0);
+  await db.exec(`update auth.oauth_clients set deleted_at = now() where id = '${AUTRE}'`);
+  const sup = await demande(A, AUTRE);
+  await jeton(A, "aal2");
+  await refuse(`select public.autoriser_connecteur('${sup}')`, /n'est pas autorisé|déclaré/i, "client supprimé");
+  await superu(); await db.exec(`update auth.oauth_clients set deleted_at = null where id = '${AUTRE}'`);
+  // code d'erreur distinct (la page de consentement l'explique)
+  const dyn2 = await demande(A, DYNAMIQUE);
+  await jeton(A, "aal2");
+  await assert.rejects(db.query(`select public.autoriser_connecteur('${dyn2}')`), e => e.code === "BOU01");
+  await superu();
+});
+
+test("code frais exigé : une session aal2 dont le code date de plus de 10 minutes ne crée rien ; 9 minutes passent", async () => {
+  await nettoyer();
+  const id = await demande(A);
+  const il = s => String(Math.floor(Date.now() / 1000) - s);
+  await jeton(A, "aal2", { totpLe: il(11 * 60) });
+  await assert.rejects(db.query(`select public.autoriser_connecteur('${id}')`), e => { assert.equal(e.code, "BOU02"); assert.match(e.message, /code/i); return true; });
+  await jeton(A, "aal2", { totpLe: il(9 * 60) });
+  const g = (await un(`select public.autoriser_connecteur($1) g`, [id])).g;
+  assert.equal(g.client_id, CLAUDE);
+  await superu();
+});
+
+test("facteur retiré puis réinscrit : l'autorisation ne revit pas (facteur plus récent que l'autorisation) ; lier_connecteur la révoque", async () => {
+  await nettoyer();
+  const { s } = await parcoursLegitime(A);
+  await superu();
+  await db.exec(`delete from auth.mfa_factors where user_id = '${A}'; insert into auth.mfa_factors (user_id, status, created_at) values ('${A}', 'verified', now() + interval '1 second')`);
+  await jeton(A, "aal1", { client: CLAUDE, session: s });
+  assert.equal((await un(`select public.connecteur_autorise() v`)).v, false);
+  for (const t of ["positions", ...BANQUE]) assert.equal(await nb(t), 0, t);
+  assert.equal((await un(`select public.lier_connecteur() e`)).e, "revoquee");
+  await superu();
+  assert.ok((await un(`select revoque_le from public.connecteurs_autorises`)).revoque_le, "révoquée en base");
+  // tous les facteurs retirés : lier_connecteur révoque aussi
+  await nettoyer();
+  const b = await parcoursLegitime(A);
+  await superu(); await db.exec(`delete from auth.mfa_factors where user_id = '${A}'`);
+  await jeton(A, "aal1", { client: CLAUDE, session: b.s });
+  assert.equal((await un(`select public.lier_connecteur() e`)).e, "sans_facteur");
+  await superu();
+  assert.equal((await un(`select count(*)::int n from public.connecteurs_autorises where revoque_le is null`)).n, 0, "plus aucune autorisation active");
+  await nettoyer();
+});
+
+test("banque : un jeton OAuth n'écrit jamais, même s'il se disait aal2 un jour (with check aal2 ET sans client_id)", async () => {
+  await nettoyer();
+  const { s } = await parcoursLegitime(A);
+  await jeton(A, "aal2", { client: CLAUDE, session: s });
+  await refuse(`update public.banque_comptes set ignore = true where id = 10`, /row-level security/, "jeton OAuth aal2 hypothétique");
+  await jeton(A, "aal2");
+  assert.equal((await db.query(`update public.banque_comptes set ignore = false where id = 10 returning id`)).rows.length, 1, "l'app (aal2) écrit toujours");
+});
+
+test("delete_me : refusé à tout jeton OAuth (même autorisé) et en aal1 pour un compte à facteur ; aal2 ou compte sans facteur : possible", async () => {
+  await nettoyer();
+  const E = "55555555-5555-5555-5555-555555555555";
+  await superu();
+  await db.exec(`insert into auth.users (id) values ('${E}'); insert into auth.mfa_factors (user_id, status) values ('${E}', 'verified')`);
+  const { s } = await parcoursLegitime(A);
+  await jeton(A, "aal1", { client: CLAUDE, session: s });
+  await assert.rejects(db.query(`select public.delete_me()`), e => e.code === "42501", "connecteur autorisé");
+  await jeton(A, "aal2", { client: CLAUDE, session: s });
+  await assert.rejects(db.query(`select public.delete_me()`), e => e.code === "42501", "jeton OAuth aal2 hypothétique");
+  await jeton(E, "aal1");
+  await assert.rejects(db.query(`select public.delete_me()`), e => { assert.equal(e.code, "42501"); assert.match(e.message, /double authentification/i); return true; }, "mot de passe seul, compte à facteur");
+  await superu();
+  assert.equal((await q(`select 1 from auth.users where id in ('${A}', '${E}')`)).length, 2, "rien de supprimé");
+  await jeton(E, "aal2");
+  await db.query(`select public.delete_me()`);
+  await superu();
+  assert.equal((await q(`select 1 from auth.users where id = '${E}'`)).length, 0, "aal2 : supprimé");
+});
+
+test("export_all : refusé à tout jeton OAuth ; en session, il exporte aussi connecteurs_autorises (colonnes visibles seulement)", async () => {
+  await nettoyer();
+  const { s } = await parcoursLegitime(A);
+  await jeton(A, "aal1", { client: CLAUDE, session: s });
+  await assert.rejects(db.query(`select public.export_all()`), e => e.code === "42501", "connecteur autorisé");
+  await jeton(A, "aal2");
+  const x = (await un(`select public.export_all() j`)).j;
+  assert.equal(x.connecteurs_autorises.length, 1);
+  assert.deepEqual(Object.keys(x.connecteurs_autorises[0]).sort(), ["accorde_le", "client_id", "client_nom", "dernier_usage", "expire_le", "id", "lie_le", "revoque_le"]);
+  for (const k of ["positions", "banque_comptes", "plans_figes", "connexions_assistant"]) assert.ok(k in x, k + " toujours exporté");
+  await jeton(C, "aal1");
+  assert.ok((await un(`select public.export_all() j`)).j.positions.length >= 1, "compte sans facteur : comme avant");
+  await superu();
 });

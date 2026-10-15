@@ -171,8 +171,16 @@
     busy(b, async () => {
       try {
         await run(oauth().revokeGrant({ clientId: b.dataset.revoke }));
-        // l'accès protégé par le code de ce client (0033) part avec lui ; sans effet s'il n'y en a pas
-        try { await run(client.rpc("revoquer_connecteur", { p_client_id: b.dataset.revoke })); } catch (x) { /* table absente : rien à retirer */ }
+        // l'accès protégé par le code de ce client (0033) part avec lui ; seule l'absence de la fonction (0033 pas encore appliquée) est
+        // ignorée : toute autre erreur est dite, jamais un faux « Accès retiré »
+        try { await run(client.rpc("revoquer_connecteur", { p_client_id: b.dataset.revoke })); }
+        catch (x) {
+          if (!x || x.code !== "PGRST202") {
+            say("grantMsg", "Application retirée chez Supabase, mais son accès protégé par ton code n'a pas pu être retiré : " + frError(x) + " Réessaie depuis la liste ci-dessous.");
+            await loadGrants(); await loadAccords();
+            return;
+          }
+        }
         say("grantMsg", "Accès retiré à " + b.dataset.name + ".", "ok");
         await loadGrants();
         await loadAccords();
@@ -197,7 +205,9 @@
         const expire = new Date(r.expire_le).getTime() <= maintenant;
         const etat = expire
           ? "expiré le " + frDate(r.expire_le) + " : reconnecte le connecteur et saisis ton code pour le rouvrir"
-          : "autorisé le " + frDate(r.accorde_le) + " · valable jusqu'au " + frDate(r.expire_le) + (r.dernier_usage ? " · dernier usage le " + frDate(r.dernier_usage) : "");
+          : !r.lie_le
+            ? "en attente de première connexion (code validé le " + frDate(r.accorde_le) + ")"
+            : "autorisé le " + frDate(r.accorde_le) + " · valable jusqu'au " + frDate(r.expire_le) + (r.dernier_usage ? " · dernier usage le " + frDate(r.dernier_usage) : "");
         return "<li><span><b>" + esc(name) + '</b><br><span class="muted small">' + esc(etat) + "</span></span>" +
           (expire ? "" : '<button type="button" class="btn ghost" data-retirer="' + esc(r.client_id) + '" data-name="' + esc(name) + '">Retirer</button>') + "</li>";
       }).join("") + "</ul>";

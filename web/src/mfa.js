@@ -15,7 +15,8 @@
      false : aucun document (tests, hors navigateur) et niveau illisible.
    - apresConnexion(api, conteneur, opts) : après la connexion par mot de passe, écran de code si nécessaire, sinon opts.onPret() tout de suite.
      Niveau illisible : message + « Réessayer » dans le conteneur, onPret n'est PAS appelé (échec fermé).
-   - etatConsentement(api) → "code" (code à valider avant d'autoriser) | "sans_facteur" (aucune double authentification) | "ok".
+   - etatConsentement(api, { fraicheurS }?) → "code" (code à valider avant d'autoriser ; avec fraicheurS, aussi quand le dernier code de la
+     session a plus de fraicheurS secondes, lu dans la revendication amr par api.codeIlYa()) | "sans_facteur" (aucune double authentification) | "ok".
      Niveau illisible : l'erreur est relancée (à l'appelant d'afficher monterErreur), jamais « ok » par défaut.
    - monterErreur(conteneur, message, onReessayer, opts) : message d'erreur et bouton « Réessayer » (et « Se déconnecter » si opts.onQuitter).
    - monterSecurite(conteneur, api, opts) : section Mon compte › Sécurité (liste des appareils, retrait ; « Activer » / « second appareil »
@@ -112,6 +113,19 @@
       },
       /** Abandon d'une inscription non vérifiée (sans erreur si elle n'existe plus). */
       async annuler(facteurId) { try { await mfa().unenroll({ factorId: facteurId }); } catch (e) { /* rien */ } },
+      /** Secondes écoulées depuis le dernier code TOTP validé dans cette session (revendication amr du jeton, méthode « totp ») ;
+          Infinity si illisible (pas de session, jeton illisible, aucun code). La base exige un code récent pour autoriser un connecteur (0033). */
+      async codeIlYa() {
+        try {
+          const r = await client.auth.getSession();
+          const jeton = r && r.data && r.data.session && r.data.session.access_token;
+          const b64 = String(jeton || "").split(".")[1];
+          if (!b64) return Infinity;
+          const charge = JSON.parse(atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (b64.length % 4)) % 4)));
+          const t = (Array.isArray(charge.amr) ? charge.amr : []).filter(a => a && a.method === "totp" && typeof a.timestamp === "number").map(a => a.timestamp);
+          return t.length ? Math.max(0, Date.now() / 1000 - Math.max(...t)) : Infinity;
+        } catch (e) { return Infinity; }
+      },
       /** Retrait d'un appareil (exige une session aal2), puis session renouvelée pour que le niveau suive. */
       async supprimer(facteurId) {
         await run(mfa().unenroll({ factorId: facteurId }));
@@ -326,12 +340,16 @@
     return true;
   }
 
-  /** Page de consentement : "code" (facteur vérifié, session encore aal1), "sans_facteur" (pas de double authentification), "ok".
+  /** Page de consentement : "code" (facteur vérifié, session encore aal1 ; ou, avec opts.fraicheurS, dernier code plus ancien que ce
+      nombre de secondes, même en aal2), "sans_facteur" (pas de double authentification), "ok".
       Niveau illisible : l'erreur est relancée (jamais « ok » par défaut) ; l'appelant affiche monterErreur avec « Réessayer ». */
-  async function etatConsentement(api) {
+  async function etatConsentement(api, opts) {
     const n = await api.niveau();
     if (besoinCode(n)) return "code";
-    return n && n.next === "aal2" ? "ok" : "sans_facteur";
+    if (!(n && n.next === "aal2")) return "sans_facteur";
+    const f = opts && opts.fraicheurS;
+    if (f && !((await api.codeIlYa()) <= f)) return "code";
+    return "ok";
   }
 
   /* ---------- bandeau « un appareil a été ajouté » ---------- */

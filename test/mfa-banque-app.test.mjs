@@ -225,7 +225,7 @@ test("store-supabase.js : la garde est avant loadAll au démarrage, et le drapea
 const RETOUR = "https://client.example.org/cb?code=abc";
 const ACCORD = { id: 7, client_id: "c-1", client_nom: "Claude", accorde_le: "2026-10-15T10:00:00Z", expire_le: "2027-01-13T10:00:00Z", duree_jours: 90 };
 function consentVm({ session = { user: { email: "camille@example.org", is_anonymous: false } }, current = "aal1", next = "aal2", codeJuste = "123456", approbation, niveauErreur = false,
-  autorisation, details } = {}) {
+  autorisation, details, codeIlYa = 60 } = {}) {
   const dom = miniDom(), { doc, Ev } = dom;
   doc.querySelectorAll = sel => doc.body.querySelectorAll(sel);
   doc.getElementById = id => doc.body.querySelector("#" + id);
@@ -235,11 +235,15 @@ function consentVm({ session = { user: { email: "camille@example.org", is_anonym
   const appels = [];
   let niveau = { currentLevel: current, nextLevel: next };
   let erreurNiveau = niveauErreur;
+  // jeton de la session : revendication amr avec l'instant du dernier code validé (0033 : code frais exigé pour autoriser un connecteur)
+  let codeLe = current === "aal2" ? Date.now() / 1000 - codeIlYa : null;
+  const jeton = () => ["e30", Buffer.from(JSON.stringify({ amr: codeLe === null ? [{ method: "password", timestamp: 1 }] : [{ method: "totp", timestamp: Math.floor(codeLe) }] })).toString("base64url"), "sig"].join(".");
+  const laSession = () => session && Object.assign({}, session, { access_token: jeton() });
   const sb = {
     // 0033 : autorisation du connecteur liée au second facteur (RPC autoriser_connecteur, session aal2 exigée côté base)
     rpc: async (nom, args) => { appels.push(["rpc", nom, J(args), niveau.currentLevel]); return autorisation ? autorisation(nom, args) : { data: ACCORD, error: null }; },
     auth: {
-      getSession: async () => ({ data: { session } }),
+      getSession: async () => ({ data: { session: laSession() } }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       signOut: async () => { appels.push(["signOut"]); return {}; },
       signInWithPassword: async () => ({ data: {}, error: null }),
@@ -251,6 +255,7 @@ function consentVm({ session = { user: { email: "camille@example.org", is_anonym
           appels.push(["verify", a.code]);
           if (a.code !== codeJuste) return { data: null, error: { code: "mfa_verification_failed", message: "Invalid TOTP code entered", status: 400 } };
           niveau = { currentLevel: "aal2", nextLevel: "aal2" };
+          codeLe = Date.now() / 1000;
           return { data: {}, error: null };
         },
       },
@@ -262,7 +267,7 @@ function consentVm({ session = { user: { email: "camille@example.org", is_anonym
     },
   };
   const loc = { search: "?authorization_id=auth-123", href: "https://x/oauth/consent.html?authorization_id=auth-123", assign: u => appels.push(["assign", u]), reload() {} };
-  const ctx = { console, setTimeout, clearTimeout, URL, URLSearchParams, document: doc, location: loc, BOUSSOLE: { supabaseUrl: "https://projet.supabase.co", supabaseKey: "cle-publique-factice", emails: false },
+  const ctx = { console, setTimeout, clearTimeout, URL, URLSearchParams, atob, document: doc, location: loc, BOUSSOLE: { supabaseUrl: "https://projet.supabase.co", supabaseKey: "cle-publique-factice", emails: false },
     supabase: { createClient: () => sb } };
   ctx.window = ctx;
   doc.readyState = "complete";
@@ -272,7 +277,7 @@ function consentVm({ session = { user: { email: "camille@example.org", is_anonym
   const $ = id => doc.body.querySelector("#" + id);
   const visible = () => doc.body.querySelectorAll("[data-state]").filter(s => !s.hidden).map(s => s.getAttribute("data-state"));
   const saisir = async code => { $("mfaCode").value = code; $("mfaCodeForm").dispatchEvent(new Ev("submit")); await tick(); };
-  return { appels, $, visible, saisir, doc, sb, setNiveau: n => { niveau = n; }, setErreurNiveau: b => { erreurNiveau = b; } };
+  return { appels, $, visible, saisir, doc, sb, setNiveau: n => { niveau = n; }, setErreurNiveau: b => { erreurNiveau = b; }, vieillir: sec => { codeLe = Date.now() / 1000 - sec; } };
 }
 
 test("consentement (exécuté) : compte avec facteur vérifié et session aal1 → écran de code AVANT toute demande ; bon code → demande affichée ; Autoriser avec aal2", async () => {
@@ -365,6 +370,51 @@ test("consentement (0033) : consentement déjà donné (Supabase renvoie directe
   await tick();
   assert.deepEqual(e.visible(), ["error"]);
   assert.ok(!e.appels.some(a => a[0] === "assign"), "pas de redirection sans autorisation");
+});
+
+test("consentement (0033, code frais) : session aal2 dont le code a 20 minutes → code redemandé AVANT la demande ; puis autorisation et approbation", async () => {
+  const v = consentVm({ current: "aal2", next: "aal2", codeIlYa: 20 * 60 });
+  await tick();
+  assert.deepEqual(v.visible(), ["mfa"], "code redemandé même en aal2");
+  assert.ok(!v.appels.some(a => a[0] === "details"));
+  await v.saisir("123456");
+  assert.deepEqual(v.visible(), ["consent"]);
+  v.$("approveBtn").click(); await tick();
+  const iRpc = v.appels.findIndex(a => a[0] === "rpc"), iApp = v.appels.findIndex(a => a[0] === "approve");
+  assert.ok(iRpc >= 0 && iRpc < iApp);
+});
+
+test("consentement (0033, code frais) : le code vieillit pendant la lecture (plus de 8 minutes) → redemandé au clic, rien d'enregistré avant", async () => {
+  const v = consentVm({ current: "aal2", next: "aal2" });
+  await tick();
+  assert.deepEqual(v.visible(), ["consent"]);
+  v.vieillir(9 * 60);
+  v.$("approveBtn").click(); await tick();
+  assert.deepEqual(v.visible(), ["mfa"]);
+  assert.ok(!v.appels.some(a => a[0] === "rpc" || a[0] === "approve"), "ni autorisation ni approbation");
+  await v.saisir("123456");
+  v.$("approveBtn").click(); await tick();
+  assert.ok(v.appels.some(a => a[0] === "rpc") && v.appels.some(a => a[0] === "approve"));
+});
+
+test("consentement (0033) : la base juge le code trop ancien (BOU02) → écran de code, puis « Autoriser » aboutit ; client non déclaré (BOU01) → refus net", async () => {
+  let n = 0;
+  const v = consentVm({ current: "aal2", next: "aal2", autorisation: () => (++n === 1 ? { data: null, error: { code: "BOU02", message: "Valide de nouveau ton code" } } : { data: ACCORD, error: null }) });
+  await tick();
+  v.$("approveBtn").click(); await tick();
+  assert.deepEqual(v.visible(), ["mfa"], "code redemandé");
+  assert.ok(!v.appels.some(a => a[0] === "approve"));
+  await v.saisir("123456");
+  assert.deepEqual(v.visible(), ["consent"]);
+  v.$("approveBtn").click(); await tick();
+  assert.ok(v.appels.some(a => a[0] === "approve"), "approuvé avec un code frais");
+  const d = consentVm({ current: "aal2", next: "aal2", autorisation: () => ({ data: null, error: { code: "BOU01", message: "Cette application n'est pas autorisée…" } }) });
+  await tick();
+  d.$("approveBtn").click(); await tick();
+  assert.deepEqual(d.visible(), ["error"]);
+  assert.match(d.$("errTitle").textContent, /Application non reconnue/);
+  assert.doesNotMatch(d.$("errText").textContent, VOUVOIEMENT);
+  assert.ok(!d.appels.some(a => a[0] === "approve"));
 });
 
 test("consentement (0033) : la durée affichée (90 jours) est celle de autoriser_connecteur dans la migration", () => {

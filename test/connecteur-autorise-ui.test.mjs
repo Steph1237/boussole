@@ -116,6 +116,25 @@ test("Compte › Connexion : retirer une application chez Supabase (revokeGrant)
   assert.deepEqual(J(v.appels[j][2]), { p_client_id: "c-claude" });
 });
 
+test("Compte › Connexion : accès pas encore lié → « en attente de première connexion », pas « autorisé » ni de dernier usage", async () => {
+  const v = await compteVm({ accords: [{ ...ACTIF, lie_le: null, dernier_usage: null }] });
+  const t = texte(v.el("accords").innerHTML);
+  assert.match(t, /en attente de première connexion/);
+  assert.doesNotMatch(t, /autorisé le/);
+  assert.match(v.el("accords").innerHTML, /data-retirer="c-claude"/, "retirable quand même");
+});
+
+test("Compte › Connexion : après revokeGrant, seul PGRST202 (0033 absente) est ignoré ; toute autre erreur de revoquer_connecteur est affichée, sans « Accès retiré »", async () => {
+  const g = [{ client: { id: "c-claude", name: "Claude" }, scopes: ["email"], granted_at: iso(-10 * JOUR) }];
+  const absente = await compteVm({ accords: [ACTIF], grants: g, revoquer: () => ({ data: null, error: { code: "PGRST202", message: "Could not find the function" } }) });
+  await absente.cliquer("grants", { revoke: "c-claude", name: "Claude" });
+  assert.match(absente.el("grantMsg").textContent, /Accès retiré à Claude/);
+  const panne = await compteVm({ accords: [ACTIF], grants: g, revoquer: () => ({ data: null, error: { code: "network", message: "Failed to fetch" } }) });
+  await panne.cliquer("grants", { revoke: "c-claude", name: "Claude" });
+  assert.doesNotMatch(panne.el("grantMsg").textContent, /Accès retiré/);
+  assert.match(panne.el("grantMsg").textContent, /Connexion au serveur impossible/);
+});
+
 test("Compte › Connexion : sans accès (compte sans code) ou table absente (0033 non appliquée) → section masquée, sans message d'erreur", async () => {
   for (const accords of [[], [RETIRE], Object.assign(new Error("relation absente"), { code: "PGRST205" })]) {
     const v = await compteVm({ accords });
