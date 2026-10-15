@@ -1,7 +1,8 @@
 // Projection du patrimoine (PROJ, docs/superpowers/specs/2026-10-14-proj-projection-design.md § 3, § 7, § 8) : outils MCP du Copilote.
 //   decrire_foyer       → propositions : événements de vie (cible evenement), variantes (variante) et réglages de projection (config.projection) ;
 //   lire_foyer          → lecture : événements, variantes, réglages, plans figés, catalogue des types et valeurs par défaut sourcées ;
-//   projeter            → lecture : résumé de la projection du moteur de l'app (jamais les chemins) ; figer: true dépose une proposition plan_fige ;
+//   projeter            → lecture : résumé de la projection du moteur de l'app (jamais les chemins) ;
+//   figer_projection    → proposition plan_fige : la projection rangée avec de quoi la rejouer, à comparer plus tard à la réalité ;
 //   comparer_variantes  → lecture : écart chemin par chemin entre la situation actuelle (ou une variante) et une variante ;
 //   capacite_emprunt    → lecture : capacité d'emprunt d'aujourd'hui (IMMO1) et, au choix, dans le temps.
 // Le calcul est celui de l'app : projection-moteur.gen.js est une copie des modules purs de web/src (npm run gen), jamais un portage. Ce
@@ -15,7 +16,7 @@ export const HORIZONS = [5, 10, 15, 20, 25];
 export const PERIMETRES = ["foyer", "p1", "p2"];
 export const VUES = ["net", "financier", "disponible"];
 export const PLANS_FIGES_MAX = 60;
-export const PLAN_MAX_OCTETS = 400000;
+export const PLAN_MAX_OCTETS = 400000, PLAN_PARAMETRES_MAX_OCTETS = 100000, PLAN_SERIE_MAX_OCTETS = 250000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const POS_SELECT = "*, instrument:instruments(price, price_date, ter, zone, devise)";
 const QUESTION_EVENEMENTS = "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?";
@@ -26,7 +27,7 @@ export const CONDUITE_PROJECTION = [
   "2. Pour un enfant, demande seulement la date (réelle ou prévue) et un libellé court ; jamais de prénom.",
   "3. Propose les événements avec decrire_foyer, ne les écris jamais : l'utilisateur valide dans Boussole › Agent › Propositions.",
   "4. Une projection n'est pas une promesse. Donne des ordres de grandeur arrondis, toujours avec la bande (P10 à P90), en euros d'aujourd'hui.",
-  "5. Quand l'utilisateur retient un scénario, consigne-le au journal (journaliser) avec version_modele ; pour pouvoir le comparer plus tard à la réalité, propose de figer la projection (projeter avec figer: true, qu'il valide dans Boussole).",
+  "5. Quand l'utilisateur retient un scénario, consigne-le au journal (journaliser) avec version_modele ; pour pouvoir le comparer plus tard à la réalité, propose de figer la projection (figer_projection, qu'il valide dans Boussole).",
   "6. Ne recommande jamais un produit ; parle d'enveloppes, de classes d'actifs et de leviers.",
   "7. Avant de montrer une projection, regarde les événements enregistrés (lire_foyer ; projeter les rend dans evenements_pris_en_compte). S'il n'y en a aucun, demande une fois : « Tu as des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ? » ; ne redemande pas dans la même session.",
   "8. Quand la capacité d'épargne prévue et la constatée diffèrent (garde-fou ecart_capacite), demande pourquoi avant de proposer de changer la base : période sans revenu, dépense exceptionnelle, nouvel emploi (à décrire en changement_emploi).",
@@ -37,6 +38,8 @@ export const CONDUITE_IMMO = [
   "Ne recommande ni établissement, ni produit, ni montant à emprunter : décris ce que les règles permettent.",
 ];
 
+/** Date AAAA-MM-JJ réelle (le 30 février n'existe pas). */
+export const dateReelle = (s: unknown) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s + "T00:00:00Z")) && new Date(s + "T00:00:00Z").toISOString().slice(0, 10) === s;
 const isObj = (x: unknown): x is Record<string, any> => !!x && typeof x === "object" && !Array.isArray(x);
 const nombre = (v: any) => (v == null || v === "" ? null : +v);
 const r0 = (x: any) => (x == null || !isFinite(+x) ? null : Math.round(+x));
@@ -86,7 +89,7 @@ export const varianteEnApp = (r: any) => ({
 export const indiceEnApp = (r: any) => ({ serie: r.serie, mois: String(r.mois).slice(0, 10), valeur: +r.valeur, source_titre: r.source_titre, source_url: r.source_url, verifie_le: r.verifie_le });
 
 /** Table pas encore créée (migration non appliquée) ou introuvable : lecture vide plutôt qu'un échec. */
-const tableAbsente = (e: any) => !!e && (e.code === "42P01" || e.code === "PGRST205" || /does not exist|schema cache/i.test(String(e.message ?? "")));
+const tableAbsente = (e: any) => !!e && e.code !== "42703" && (e.code === "42P01" || e.code === "PGRST205" || (!e.code && /relation .* does not exist|schema cache/i.test(String(e.message ?? ""))));
 async function lireOptionnelle(req: any, table: string, must: any): Promise<any[]> {
   const r = await req;
   if (r?.error && tableAbsente(r.error)) return [];
@@ -348,7 +351,9 @@ export async function projectionDeSession(db: any, must: any, auj: string) {
 export async function probabilitesObjectifs(db: any, must: any, auj: string, banque?: () => Promise<any>) {
   try {
     const data = await lireDonneesProjection(db, must, auj, banque);
-    const dates = data.objectifs.map((o: any) => o.dateCible).filter((d: any) => typeof d === "string" && d > auj);
+    /* seules les échéances à venir dans les 25 ans fixent l'horizon : au-delà, l'objectif est hors horizon (probabilité nulle) et ne ralentit pas le calcul des autres */
+    const limite = `${+auj.slice(0, 4) + 25}${auj.slice(4)}`;
+    const dates = data.objectifs.map((o: any) => o.dateCible).filter((d: any) => typeof d === "string" && d > auj && d <= limite);
     if (!dates.length) return new Map();
     const mois = Math.max(...dates.map((d: string) => (+d.slice(0, 4) - +auj.slice(0, 4)) * 12 + (+d.slice(5, 7) - +auj.slice(5, 7))));
     const horizon = HORIZONS.find((h) => h * 12 >= mois) ?? HORIZONS[HORIZONS.length - 1];
@@ -478,41 +483,71 @@ export function registerProjection(server: any, h: ProjectionDeps) {
     };
   }));
 
+  const auj = h.today();
+  const DateReelle = (champ: string, plancher?: string) => {
+    let t: any = z.string({ error: `${champ} : date AAAA-MM-JJ.` }).refine((x: string) => dateReelle(x), { error: `${champ} : date réelle AAAA-MM-JJ (le 30 février n'existe pas).` });
+    if (plancher) t = t.refine((x: string) => x >= plancher, { error: `${champ} : pas avant aujourd'hui (${plancher}).` });
+    return t;
+  };
   /* ---------- projeter ---------- */
-  server.registerTool("projeter", {
-    title: "Projeter le patrimoine",
-    description: "Projection du patrimoine du foyer par le moteur de Boussole (le même que celui de l'app) : flux du foyer mois par mois, 2 000 trajectoires à graine fixe, toujours net de frais, euros d'aujourd'hui par défaut, événements de vie et variante pris en compte. Renvoie un résumé (jamais les trajectoires) : phrase, bande P10 à P90 par année, couches « patrimoine actuel sans nouveau versement » (existant) et « épargne future », capacité d'épargne retenue et par période, décomposition, garde-fous de vraisemblance, evenements_pris_en_compte (et question_evenements si aucun), objectifs avec leur probabilité, jalons, hypotheses sourcées (valeur, source, date, statut), données à compléter, avertissements et conduite. net_impots: true donne la valeur nette d'impôts si tout était retiré à chaque date. crise rejoue une crise historique à la date debut. figer: true dépose une proposition « plan figé » (source obligatoire, raison : revue_mensuelle, objectif ou manuel) que l'utilisateur valide : la projection pourra ensuite être comparée à la réalité. Une projection n'est pas une promesse : donne des ordres de grandeur arrondis, toujours avec la bande. Information générale, pas une recommandation.",
-    inputSchema: z.strictObject({
-      horizon_ans: Horizon, perimetre: Perimetre, vue: Vue, euros: Euros, net_impots: z.boolean({ error: "net_impots : true ou false." }).optional().describe("true : valeur nette d'impôts si tout était retiré à la date (défaut false)."),
-      variante: Variante,
-      crise: z.object({
-        cle: (CRISES.length ? z.enum(CRISES as [string, ...string[]], { error: "crise.cle : " + CRISES.join(", ") + "." }) : z.string()).describe("Crise historique à rejouer : " + CRISES.join(", ") + "."),
-        debut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { error: "crise.debut : date AAAA-MM-JJ." }).optional().describe("Date de début de la crise (défaut : dans un an)."),
-      }).optional().describe("Rejoue une crise à une date choisie (un seul chemin, rendements attendus hors de la crise)."),
-      figer: z.boolean({ error: "figer : true ou false." }).optional().describe("true : dépose une proposition « plan figé » (source obligatoire) ; rien n'est écrit sans validation."),
-      raison: z.enum(["revue_mensuelle", "objectif", "manuel"], { error: "raison : revue_mensuelle, objectif ou manuel." }).optional().describe("Avec figer : pourquoi le plan est figé (défaut manuel)."),
-      source: optionnel("source"), justification: optionnel("justification"), lot: optionnel("lot"),
-    }),
-    annotations: RW,
-  }, wrap(async (a: any) => {
-    if (a.figer === true && !String(a.source ?? "").trim()) throw new UserError("source : obligatoire pour figer la projection (par exemple « Ce que tu as dit à Claude »).");
+  const OptionsProjection = {
+    horizon_ans: Horizon, perimetre: Perimetre, vue: Vue, euros: Euros, net_impots: z.boolean({ error: "net_impots : true ou false." }).optional().describe("true : valeur nette d'impôts si tout était retiré à la date (défaut false)."),
+    variante: Variante,
+  };
+  /** Calcul commun à projeter et figer_projection : données, modèle, simulation à 2 000 chemins. */
+  async function calculer(a: any) {
     const data = await lire();
     exigerVariante(data, a.variante, UserError);
     const options = optionsDe(a);
     const M = Projection.preparer(data, options);
-    const sortie = Projection.simuler(M, {});
+    return { data, options, M, sortie: Projection.simuler(M, {}) };
+  }
+  server.registerTool("projeter", {
+    title: "Projeter le patrimoine",
+    description: "Projection du patrimoine du foyer par le moteur de Boussole (le même que celui de l'app) : flux du foyer mois par mois, 2 000 trajectoires à graine fixe, toujours net de frais, euros d'aujourd'hui par défaut, événements de vie et variante pris en compte. Renvoie un résumé (jamais les trajectoires) : phrase, bande P10 à P90 par année, couches « patrimoine actuel sans nouveau versement » (existant) et « épargne future », capacité d'épargne retenue et par période, décomposition, garde-fous de vraisemblance, evenements_pris_en_compte (et question_evenements si aucun), objectifs avec leur probabilité, jalons, hypotheses sourcées (valeur, source, date, statut), données à compléter, avertissements et conduite. net_impots: true donne la valeur nette d'impôts si tout était retiré à chaque date. crise rejoue une crise historique à la date debut (entre aujourd'hui et la fin de l'horizon). Lecture seule : pour garder la projection et la comparer plus tard à la réalité, utilise figer_projection. Une projection n'est pas une promesse : donne des ordres de grandeur arrondis, toujours avec la bande. Information générale, pas une recommandation.",
+    inputSchema: z.strictObject({
+      ...OptionsProjection,
+      crise: z.object({
+        cle: (CRISES.length ? z.enum(CRISES as [string, ...string[]], { error: "crise.cle : " + CRISES.join(", ") + "." }) : z.string()).describe("Crise historique à rejouer : " + CRISES.join(", ") + "."),
+        debut: DateReelle("crise.debut", auj).optional().describe("Date de début de la crise, entre aujourd'hui et la fin de l'horizon (défaut : dans un an)."),
+      }).optional().describe("Rejoue une crise à une date choisie (un seul chemin, rendements attendus hors de la crise)."),
+    }),
+    annotations: RO,
+  }, wrap(async (a: any) => {
+    const { M, sortie } = await calculer(a);
     const sortieRes: any = { date: h.today(), ...resumeProjection(sortie) };
-    if (a.crise) sortieRes.crise = resumeCrise(Projection.crise(M, { cle: a.crise.cle, debut: a.crise.debut ?? 13 }), sortie);
-    if (a.figer === true) {
-      const plans = await lireOptionnelle(Promise.resolve(db.from("plans_figes").select("id")), "plans_figes", must);
-      if (plans.length >= PLANS_FIGES_MAX) throw new UserError(`Limite atteinte : ${PLANS_FIGES_MAX} plans figés au plus. Supprime un plan figé avant d'en ajouter un.`);
-      const { taille_octets: _t, ...apres } = Projection.figerPlan({ data, options }, sortie, a.raison ?? "manuel");
-      if (new TextEncoder().encode(JSON.stringify(apres)).length > PLAN_MAX_OCTETS) throw new UserError("Le plan figé est trop volumineux : réduis l'horizon.");
-      const depot = await deposer([{ cible: "plan_fige", operation: "creer", apres }], { source: String(a.source), justification: a.justification, lot: a.lot });
-      sortieRes.plan_fige = { ...depot, propositions: (depot.propositions ?? []).map(({ apres: _a, ...p }: any) => p) };
+    if (a.crise) {
+      const c = Projection.crise(M, { cle: a.crise.cle, debut: a.crise.debut });
+      if (c.indisponible) throw new UserError("crise.debut : " + (c.avertissements?.[0] ?? "date hors de l'horizon."));
+      sortieRes.crise = resumeCrise(c, sortie);
     }
     sortieRes.conduite = CONDUITE_PROJECTION;
     return sortieRes;
+  }));
+
+  /* ---------- figer_projection ---------- */
+  server.registerTool("figer_projection", {
+    title: "Figer une projection pour la comparer plus tard à la réalité",
+    description: "Dépose une proposition « plan figé » : la projection d'aujourd'hui (mêmes options que projeter, 2 000 trajectoires à graine fixe) est rangée avec de quoi la rejouer (graine, version du modèle, hypothèses sourcées, événements) et sa série P10 à P90, pour être comparée plus tard à la valeur réelle. Rien n'est écrit sans la validation de l'utilisateur dans Boussole › Agent › Propositions (60 plans figés au plus). Source obligatoire ; raison : revue_mensuelle, objectif ou manuel. Le plan n'est pas renvoyé, seulement la proposition déposée. À proposer quand l'utilisateur retient un scénario ou à la revue mensuelle.",
+    inputSchema: z.strictObject({
+      ...OptionsProjection,
+      raison: z.enum(["revue_mensuelle", "objectif", "manuel"], { error: "raison : revue_mensuelle, objectif ou manuel." }).optional().describe("Pourquoi le plan est figé (défaut manuel)."),
+      ...DEPOT,
+    }),
+    annotations: RW,
+  }, wrap(async (a: any) => {
+    if (!String(a.source ?? "").trim()) throw new UserError("source : obligatoire pour figer la projection (par exemple « Ce que tu as dit à Claude »).");
+    const plans = await lireOptionnelle(Promise.resolve(db.from("plans_figes").select("id")), "plans_figes", must);
+    if (plans.length >= PLANS_FIGES_MAX) throw new UserError(`Limite atteinte : ${PLANS_FIGES_MAX} plans figés au plus. Supprime un plan figé avant d'en ajouter un.`);
+    const { data, options, sortie } = await calculer(a);
+    const { taille_octets: _t, ...apres } = Projection.figerPlan({ data, options }, sortie, a.raison ?? "manuel");
+    /* tailles mesurées comme la base (octet_length(jsonb::text)) : le moteur réduit déjà ce qu'il peut, ce contrôle protège d'un refus à la validation */
+    const op = Projection.octetsJsonb(apres.parametres), os = Projection.octetsJsonb(apres.serie), ot = Projection.octetsJsonb(apres);
+    if (op > PLAN_PARAMETRES_MAX_OCTETS || os > PLAN_SERIE_MAX_OCTETS || ot > PLAN_MAX_OCTETS)
+      throw new UserError(`Le plan figé dépasse la taille acceptée par la base malgré la réduction automatique (paramètres ${op} octets pour ${PLAN_PARAMETRES_MAX_OCTETS} au plus, série ${os} pour ${PLAN_SERIE_MAX_OCTETS}, total ${ot} pour ${PLAN_MAX_OCTETS}) : dis-le à l'utilisateur, rien n'est déposé.`);
+    const depot = await deposer([{ cible: "plan_fige", operation: "creer", apres }], { source: String(a.source), justification: a.justification, lot: a.lot });
+    return { date: h.today(), version_modele: sortie.version_modele, phrase: sortie.phrase, ...depot, propositions: (depot.propositions ?? []).map(({ apres: _a, ...p }: any) => p),
+      rappel: "Rien n'est enregistré tant que l'utilisateur n'a pas validé la proposition dans Boussole › Agent › Propositions." };
   }));
 
   /* ---------- comparer_variantes ---------- */
@@ -549,11 +584,12 @@ export function registerProjection(server: any, h: ProjectionDeps) {
       neuf: z.boolean({ error: "neuf : true ou false." }).optional().describe("true : logement neuf (frais d'acquisition réduits)."),
       primo: z.boolean({ error: "primo : true ou false." }).optional().describe("true : primo-accédant (frais d'acquisition du primo-accédant)."),
       dans_le_temps: z.boolean({ error: "dans_le_temps : true ou false." }).optional().describe("true : ajoute la capacité année par année sur horizon_ans."),
-      horizon_ans: Horizon, date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { error: "date : AAAA-MM-JJ." }).optional().describe("Avec dans_le_temps : date de l'achat envisagé (point précis)."),
+      horizon_ans: Horizon, date: DateReelle("date", auj).optional().describe("Avec dans_le_temps : date de l'achat envisagé (point précis), entre aujourd'hui et la fin de l'horizon."),
       scenario: z.enum(["p10", "p50", "p90"], { error: "scenario : p10, p50 ou p90." }).optional().describe("Avec dans_le_temps et date : trajectoire d'apport retenue (défaut p50)."),
     }),
     annotations: RO,
   }, wrap(async (a: any) => {
+    if (a.date && a.dans_le_temps !== true) throw new UserError("date : à utiliser avec dans_le_temps: true (point précis de la capacité dans le temps).");
     const data = await lire();
     const opts = sansUndef({ perimetre: a.perimetre ?? "foyer", duree_ans: a.duree_ans, taux_pct: a.taux_pct, neuf: a.neuf, primo: a.primo });
     const capacite = Projection.capaciteEmprunt(data, opts);
@@ -561,7 +597,9 @@ export function registerProjection(server: any, h: ProjectionDeps) {
     if (a.dans_le_temps === true) {
       const M = Projection.preparer(data, { horizon_ans: a.horizon_ans ?? 10, perimetre: a.perimetre ?? "foyer", vue: "financier", euros: "constants" });
       const resultat = Projection.simuler(M, {});
-      sortie.dans_le_temps = resumeCapaciteTemps(Projection.capaciteDansLeTemps(M, resultat, sansUndef({ duree_ans: a.duree_ans, date: a.date, scenario: a.scenario, neuf: a.neuf, primo: a.primo })));
+      const c = Projection.capaciteDansLeTemps(M, resultat, sansUndef({ duree_ans: a.duree_ans, date: a.date, scenario: a.scenario, neuf: a.neuf, primo: a.primo }));
+      if (c.indisponible && a.date && /date de l'achat envisagé/.test(c.avertissements?.[0] ?? "")) throw new UserError("date : " + c.avertissements[0]);
+      sortie.dans_le_temps = resumeCapaciteTemps(c);
     }
     sortie.conduite = CONDUITE_IMMO;
     return sortie;

@@ -139,11 +139,11 @@ const taille = o => JSON.stringify(o).length;
 const entreeApp = () => App.depuisEtat(J({ positions: D.positions, config: D.config, profil: D.profil, budget: D.budget, banque: D.banque, objectifs: D.objectifs, foyer: D.foyer, savoir: D.savoir, indices: D.indices, classes: D.classes }), TODAY);
 
 /* ---------------------------------------------------------------- outils : liste, annotations, schémas */
-test("outils : decrire_foyer, lire_foyer, projeter, comparer_variantes, capacite_emprunt enregistrés ; annotations lecture / écriture", { skip: SANS_STRIP }, () => {
-  assert.deepEqual(Object.keys(T0).sort(), ["capacite_emprunt", "comparer_variantes", "decrire_foyer", "lire_foyer", "projeter"]);
+test("outils : decrire_foyer, figer_projection, lire_foyer, projeter, comparer_variantes, capacite_emprunt enregistrés ; projeter reste en lecture seule", { skip: SANS_STRIP }, () => {
+  assert.deepEqual(Object.keys(T0).sort(), ["capacite_emprunt", "comparer_variantes", "decrire_foyer", "figer_projection", "lire_foyer", "projeter"]);
   assert.equal(T0.decrire_foyer.def.annotations.readOnlyHint, false);
-  assert.equal(T0.projeter.def.annotations.readOnlyHint, false, "projeter peut déposer un plan figé");
-  for (const n of ["lire_foyer", "comparer_variantes", "capacite_emprunt"]) assert.equal(T0[n].def.annotations.readOnlyHint, true, n);
+  assert.equal(T0.figer_projection.def.annotations.readOnlyHint, false, "figer_projection dépose une proposition");
+  for (const n of ["lire_foyer", "comparer_variantes", "capacite_emprunt", "projeter"]) assert.equal(T0[n].def.annotations.readOnlyHint, true, n);
 });
 test("schémas : horizon, périmètre, vue, euros, variante, crise, figer ; DEPOT dans les outils qui proposent", () => {
   const src = srcProjection;
@@ -393,11 +393,11 @@ test("projeter : crise rejouée (valeurs annuelles avec et sans la crise)", { sk
   assert.ok(r.crise.ecart_final < 0, "une crise d'actions diminue le patrimoine final : " + r.crise.ecart_final);
   assert.equal(r.crise.annees[0].avec_la_crise, r.crise.annees[0].sans_la_crise);
 });
-test("projeter figer: true → une proposition plan_fige (source obligatoire), conforme à la base, sans renvoyer le plan", { skip: SANS_STRIP }, async () => {
+test("figer_projection → une proposition plan_fige (source obligatoire), conforme à la base, sans renvoyer le plan", { skip: SANS_STRIP }, async () => {
   depots.length = 0;
-  assert.match(await echec(T0.projeter.handler({ figer: true })), /source : obligatoire pour figer/);
+  assert.match(await echec(T0.figer_projection.handler({})), /source : obligatoire pour figer/);
   assert.equal(depots.length, 0);
-  const r = await ok(T0.projeter.handler({ figer: true, raison: "revue_mensuelle", ...SRC, justification: "Revue d'octobre" }));
+  const r = await ok(T0.figer_projection.handler({ raison: "revue_mensuelle", ...SRC, justification: "Revue d'octobre" }));
   assert.equal(depots.length, 1);
   const [it] = depots[0].items;
   assert.equal(it.cible, "plan_fige"); assert.equal(it.operation, "creer");
@@ -408,15 +408,56 @@ test("projeter figer: true → une proposition plan_fige (source obligatoire), c
   assert.ok(new TextEncoder().encode(JSON.stringify(it.apres.serie)).length <= 250000);
   assert.ok(new TextEncoder().encode(JSON.stringify(it.apres)).length <= 400000);
   assert.equal(it.apres.serie.p50.length, 121);
-  assert.ok(r.plan_fige.propositions.length === 1 && !("apres" in r.plan_fige.propositions[0]), "le plan n'est pas renvoyé dans la réponse");
+  assert.ok(r.propositions.length === 1 && !("apres" in r.propositions[0]), "le plan n'est pas renvoyé dans la réponse");
   assert.ok(taille(r) < 60000);
   const sans = await ok(T0.projeter.handler({}));
-  assert.ok(!("plan_fige" in sans)); assert.equal(depots.length, 1, "sans figer, aucun dépôt");
+  assert.ok(!("plan_fige" in sans)); assert.equal(depots.length, 1, "projeter ne dépose jamais rien");
   assert.equal(depots[0].d.source, SRC.source);
 });
-test("projeter figer: true → limite de 60 plans figés", { skip: SANS_STRIP }, async () => {
+test("figer_projection avec un foyer très chargé (1 200 lignes, 100 événements à paramètres énormes) : le plan déposé tient sous les limites de la base (octets de jsonb::text)", { skip: SANS_STRIP }, async () => {
+  const modele = D.positions[0];
+  const positions = Array.from({ length: 1200 }, (_, i) => positionEnLigne({ ...modele, id: "p-" + i, name: "Fonds numéro " + i + " (libellé long pour grossir)", envelope: "PEA Camille", bloc: "Monde" }));
+  const evenements = Array.from({ length: 100 }, (_, i) => ({ id: "e0000000-0000-4000-8000-" + String(i).padStart(12, "0"), variante_id: null, type: "retrait", personne: "foyer", libelle: "Retrait " + i, date: "2028-06-01", fin: null,
+    params: { montant: 10 + i, libelle: "Retrait " + i, inconnu: "x".repeat(15000) }, source: "s" }));
+  depots.length = 0;
+  await ok(outils(faux({ positions, foyer_evenements: evenements })).figer_projection.handler({ horizon_ans: 25, ...SRC }));
+  const [it] = depots[0].items, O2 = Gen.Projection.octetsJsonb;
+  assert.ok(O2(it.apres.parametres) <= 100000, "paramètres " + O2(it.apres.parametres));
+  assert.ok(O2(it.apres.serie) <= 250000, "série " + O2(it.apres.serie));
+  assert.ok(O2(it.apres) <= 400000, "total " + O2(it.apres));
+  assert.ok(it.apres.parametres.reductions.length > 0, "réductions dites");
+  assert.doesNotMatch(srcProjection, /réduis l'horizon/, "plus de message trompeur");
+});
+test("figer_projection → limite de 60 plans figés", { skip: SANS_STRIP }, async () => {
   const soixante = Array.from({ length: 60 }, (_, i) => ({ id: "p" + i }));
-  assert.match(await echec(outils(faux({ plans_figes: soixante })).projeter.handler({ figer: true, ...SRC })), /60 plans figés au plus/);
+  assert.match(await echec(outils(faux({ plans_figes: soixante })).figer_projection.handler({ ...SRC })), /60 plans figés au plus/);
+});
+
+test("projeter : lecture seule, sans option d'écriture ; dates de la crise contrôlées (date réelle, pas dans le passé, dans l'horizon)", { skip: SANS_STRIP }, async () => {
+  const sec = srcProjection.slice(srcProjection.indexOf('server.registerTool("projeter"'), srcProjection.indexOf('server.registerTool("figer_projection"'));
+  assert.doesNotMatch(sec, /figer:|\.\.\.DEPOT|deposer\(|source: optionnel/, "projeter n'écrit rien");
+  assert.match(sec, /annotations: RO/);
+  const cle = Object.keys(Gen.Marche.CRISES)[0];
+  assert.match(srcProjection, /DateReelle = \(champ: string, plancher\?: string\)/);
+  assert.match(srcProjection, /dateReelle\(x\)/);
+  assert.equal(PM.dateReelle("2027-02-30"), false); assert.equal(PM.dateReelle("2028-02-29"), true); assert.equal(PM.dateReelle("2027-13-01"), false); assert.equal(PM.dateReelle(20270101), false);
+  for (const debut of ["2032-01-01", "2026-09-01"]) {
+    const e = await echec(T0.projeter.handler({ horizon_ans: 5, crise: { cle, debut } }));
+    assert.match(e, /^crise\.debut : date de début de la crise absente ou hors de l'horizon : choisis une date entre le 14\/10\/2026 et le 14\/10\/2031\./, debut);
+  }
+  assert.ok((await ok(T0.projeter.handler({ horizon_ans: 5, crise: { cle, debut: "2028-03-01" } }))).crise.annees.length === 6);
+});
+test("capacite_emprunt : date hors horizon ou sans dans_le_temps refusée", { skip: SANS_STRIP }, async () => {
+  assert.match(await echec(T0.capacite_emprunt.handler({ dans_le_temps: true, horizon_ans: 5, date: "2040-01-01" })), /^date : date de l'achat envisagé absente ou hors de l'horizon/);
+  assert.match(await echec(T0.capacite_emprunt.handler({ date: "2028-01-01" })), /dans_le_temps: true/);
+  assert.ok((await ok(T0.capacite_emprunt.handler({ dans_le_temps: true, horizon_ans: 5, date: "2028-06-01" }))).dans_le_temps.point);
+});
+test("tableAbsente : une colonne manquante (42703) n'est jamais prise pour une table absente", { skip: SANS_STRIP }, async () => {
+  const colonne = { code: "42703", message: 'column "mode" does not exist' };
+  await assert.rejects(PM.lireDonneesProjection(faux({}, { erreurs: { foyer_evenements: colonne } }), must, TODAY), /mode/);
+  const absent = { code: "42P01", message: 'relation "x" does not exist' };
+  assert.deepEqual(J((await PM.lireDonneesProjection(faux({}, { erreurs: { foyer_evenements: absent } }), must, TODAY)).foyer.evenements), []);
+  assert.deepEqual(J((await PM.lireDonneesProjection(faux({}, { erreurs: { foyer_variantes: { code: "PGRST205", message: "Could not find the table in the schema cache" } } }), must, TODAY)).foyer.variantes), []);
 });
 
 /* ---------------------------------------------------------------- comparer_variantes */
@@ -549,4 +590,15 @@ test("tutoiement, aucun « conseiller », aucun produit ni établissement nommé
     assert.ok(o.def.title && o.def.description.length > 80, nom);
     assert.doesNotMatch(o.def.description, /(?<![\p{L}])(vous|votre|vos)(?![\p{L}])|conseill/i, nom);
   }
+});
+
+test("probabilitesObjectifs : une échéance au-delà de 25 ans ne fixe pas l'horizon (probabilité nulle pour elle, horizon choisi sur les autres) ; lectures en parallèle dans list_objectifs", { skip: SANS_STRIP }, async () => {
+  const loin = { ...objectifEnLigne(D.objectifs[0]), id: "obj-loin", nom: "Très loin", date_cible: "2070-01-01", cible: 1000000, deja: 0 };
+  const proche = { ...objectifEnLigne(D.objectifs[0]), id: "obj-proche", nom: "Proche", date_cible: "2028-03-01", cible: 30000 };
+  const m = await PM.probabilitesObjectifs(faux({ objectifs: [proche, loin] }), must, TODAY, async () => banqueDemo());
+  assert.equal(m.get("obj-loin").probabilite, null, "hors horizon");
+  const data = entreeApp(); data.objectifs = [{ ...D.objectifs[0], id: "obj-proche", dateCible: "2028-03-01", cible: 30000 }];
+  const s = App.simuler(App.preparer(data, { horizon_ans: 5, perimetre: "foyer", vue: "financier", euros: "constants" }), {});
+  assert.equal(m.get("obj-proche").probabilite, Math.round(s.objectifs[0].probabilite * 100) / 100, "horizon de 5 ans (et non 25) : mêmes tirages que l'app");
+  assert.match(srcIndex, /Promise\.all\(\[loadPlan\(true\), probabilitesObjectifs\(db, must, ref, lireBanqueCalcul\)\]\)/);
 });

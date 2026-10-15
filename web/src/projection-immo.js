@@ -130,7 +130,8 @@
       const per = detail.filter(x => x.type === "per").reduce((a, x) => a + x.net, 0);
       apport = { total: plan.net_obtenu, sans_per: plan.net_obtenu - per, per, detail, impots: plan.impots, matelas_exclu: matelas, impose: false, exclus: sep.exclus };
       if (per > 0) avertissements.push("le PER (" + O.eur(per) + ") n'est mobilisable que pour l'achat de la résidence principale (déblocage anticipé) : il est indiqué à part");
-      sep.gardes.filter(c => c.type === "pea" && c.v0 > 0 && c.prep.seuil && today < c.prep.seuil).forEach(c => avertissements.push("le PEA « " + c.enveloppe + " » a moins de 5 ans : il n'est pas compté (un retrait clôturerait le plan)"));
+      const LIB_PEA = { pea: "PEA", pea_pme: "PEA PME-ETI", pea_jeune: "PEA d'un majeur rattaché" };
+      sep.gardes.filter(c => LIB_PEA[c.type] && c.v0 > 0 && c.prep.seuil && today < c.prep.seuil).forEach(c => avertissements.push("le " + LIB_PEA[c.type] + " « " + c.enveloppe + " » a moins de 5 ans : il n'est pas compté (un retrait clôturerait le plan)"));
     }
     const fraisAcq = o.neuf ? "neuf" : o.primo ? "primo" : "ancien";
     const base = { mensualite_max: mensMax, duree_ans: dureeAmort, taux_pct: taux.valeur, assurance_pct: assPct, apport: apport.total, garantie_pct: gar, frais_dossier: dos, frais_acquisition: fa };

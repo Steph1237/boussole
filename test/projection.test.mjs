@@ -410,3 +410,18 @@ test("fonds immobilier coté (ISIN, cours) dans un compte-titres : jamais trait�
   d.positions = [{ id: "s2", name: "SCPI Exemple 2", envelope: "Compte-titres Exemple", owner: "p1", bloc: "Immobilier", mode: "manual", value: 100000, status: "actif", qty: 1, pru: 100000 }];
   assert.ok(P.preparer(d, opts).comps.some(c => c.type === "scpi_direct"));
 });
+
+/* ---- revue Opus, correctif 11 : statut d'un objectif — date passée = hors de portée (jamais « hors horizon »), échéance au-delà de l'horizon = hors horizon ---- */
+test("objectifs : échéance passée et non atteint → hors_portee ; au-delà de l'horizon → hors_horizon (probabilité nulle) ; atteint prime", () => {
+  const c = cas("D-2"), d = entreeDe(c);
+  d.objectifs = [
+    { id: "passe", nom: "Passé", type: "projet", cible: 50000, dateCible: "2026-01-01", deja: 0, source: "saisi", poches: [], enveloppes: [], rendement: 0, priorite: 1 },
+    { id: "loin", nom: "Loin", type: "retraite", cible: 500000, dateCible: "2046-01-01", deja: 0, source: "saisi", poches: [], enveloppes: [], rendement: 0, priorite: 2 },
+    { id: "fait", nom: "Fait", type: "projet", cible: 1000, dateCible: "2026-01-01", deja: 5000, source: "saisi", poches: [], enveloppes: [], rendement: 0, priorite: 3 },
+  ];
+  const r = P.simuler(P.preparer(d, { ...c.options, horizon_ans: 5 }), { volatilite: 0 });
+  const st = Object.fromEntries(r.objectifs.map(o => [o.id, o]));
+  assert.equal(st.passe.statut, "hors_portee");
+  assert.equal(st.loin.statut, "hors_horizon"); assert.equal(st.loin.probabilite, null); assert.equal(st.loin.mot, null);
+  assert.equal(st.fait.statut, "atteint");
+});

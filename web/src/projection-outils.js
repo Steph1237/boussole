@@ -58,6 +58,26 @@
     return a;
   }
 
+  /* ------------------------------------------------------------------ taille d'un document JSON comme la base la mesure */
+  /** Octets de `jsonb::text` (octet_length(v::jsonb::text) de PostgreSQL) : un espace après « : » et « , », texte en UTF-8, valeurs indéfinies absentes (objets)
+      ou nulles (tableaux). Sert à tenir les plans figés sous les limites de la base (paramètres 100 000 octets, série 250 000, proposition 400 000). */
+  function octetsJsonb(v) {
+    const enc = s => { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xd800 && c <= 0xdbff) { n += 4; i++; } else n += 3; } return n; };
+    const rec = x => {
+      if (x === null || x === undefined) return 4;
+      if (typeof x === "number") return isFinite(x) ? String(x).length : 4;
+      if (typeof x === "boolean") return x ? 4 : 5;
+      if (typeof x === "string") return enc(JSON.stringify(x));
+      if (Array.isArray(x)) { if (!x.length) return 2; let n = 2 + 2 * (x.length - 1); for (const y of x) n += rec(y); return n; }
+      const ks = Object.keys(x).filter(k => x[k] !== undefined);
+      if (!ks.length) return 2;
+      let n = 2 + 2 * (ks.length - 1);
+      for (const k of ks) n += enc(JSON.stringify(k)) + 2 + rec(x[k]);
+      return n;
+    };
+    return rec(v);
+  }
+
   /* ------------------------------------------------------------------ nombres et formats français (espaces simples, « − » typographique) */
   const n0 = v => (typeof v === "number" ? (isFinite(v) ? v : 0) : typeof v === "string" && v.trim() !== "" && isFinite(+v) ? +v : 0);
   const estNombre = v => (typeof v === "number" && isFinite(v)) || (typeof v === "string" && v.trim() !== "" && isFinite(+v));
@@ -209,7 +229,7 @@
     return centileTrie(t, p);
   }
 
-  return { ISO, pad, dernierJour, iso, estDate, ajouterMois, ajouterAns, ajouterJours, joursEntre, moisEntre, moisDe, moisFin, annee, age,
+  return { octetsJsonb, ISO, pad, dernierJour, iso, estDate, ajouterMois, ajouterAns, ajouterJours, joursEntre, moisEntre, moisDe, moisFin, annee, age,
     n0, estNombre, arrondi2, frc, frcFixe, eurFixe, eur, eurSigne, pct, indexReperes, splitmix32, initialiserEtat, uniforme, cholesky, valeursPropres,
     pluProcheDefiniePositive, centileTrie, centile };
 });

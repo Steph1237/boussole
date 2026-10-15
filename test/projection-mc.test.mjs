@@ -184,3 +184,36 @@ test("performance : 2 000 chemins × 300 mois sous le plafond large de 600 ms (c
   }
   assert.ok(ms < 600, "2 000 × 300 en " + Math.round(ms) + " ms de calcul");
 });
+
+/* ---- revue Opus, correctif 8 : une date de début de crise absente, invalide ou hors horizon n'est jamais ramenée au mois 1 en silence ---- */
+test("crise : début nul, non entier, avant aujourd'hui ou hors horizon → indisponible avec la fenêtre permise ; début valide ou absent (dans un an) → rejouée", () => {
+  const c = cas("MC-1") || cas("D-1");
+  const M = P.preparer(entreeDe(c), { ...c.options, horizon_ans: 3 });
+  const cle = Object.keys(Marche.CRISES)[0];
+  for (const debut of [null, 0, -3, 37, 2.5, "2026-10-13", "2030-01-01", "pas une date", "2027-02-30", NaN]) {
+    const r = P.crise(M, { cle, debut });
+    assert.equal(r.indisponible, true, "début " + debut);
+    assert.match(r.avertissements[0], /début de la crise.*entre le \d{2}\/\d{2}\/\d{4} et le \d{2}\/\d{2}\/\d{4}/, String(debut));
+  }
+  for (const debut of [1, 36, "2026-10-14", "2027-06-15", "2029-10-14"]) assert.ok(!P.crise(M, { cle, debut }).indisponible, "début " + debut);
+  assert.equal(P.crise(M, { cle }).debut_t, 13, "absent : dans un an");
+  const court = P.preparer(entreeDe(c), { ...c.options, horizon_ans: 1 });
+  assert.equal(P.crise(court, { cle }).debut_t, 12, "horizon d'un an : le dernier mois (jamais hors horizon)");
+});
+
+/* ---- revue Opus, correctif 12 : crise et immobilier physique, convention dite ---- */
+test("crise : l'immobilier physique subit le choc de la classe immobilier (mesuré sur les SCPI) — convention écrite dans la crise et dans les classes utilisées", () => {
+  const c = cas("D-2"), d = entreeDe(c);
+  const bien = { id: "bien-rp", nom: "Logement Exemple", usage: "rp", valeur: 400000, part_p1: 50, crd: 0, mensualite: 0, loyer: 0 };
+  d.profil.biens = [bien]; d.biens = [bien];
+  const M = P.preparer(d, { horizon_ans: 5, vue: "net", euros: "constants" });
+  const cr = P.crise(M, { cle: "gfc_2008", debut: 6 });
+  assert.ok(cr.avertissements.some(m => /Convention.*immobilier physique.*classe « immobilier ».*SCPI/.test(m)), cr.avertissements.join(" | "));
+  const r = P.simuler(M, { chemins: 50 });
+  const h = r.hypotheses_classes.find(x => x.classe === "immobilier_physique");
+  assert.ok(h && /convention/i.test(h.convention) && h.rendement_central != null && h.volatilite != null, JSON.stringify(h));
+  /* sans bien ni achat : ni mention ni ligne */
+  const sans = P.preparer(entreeDe(c), { horizon_ans: 5, vue: "net" });
+  assert.ok(!P.crise(sans, { cle: "gfc_2008", debut: 6 }).avertissements.some(m => /immobilier physique/.test(m)));
+  assert.ok(!P.simuler(sans, { chemins: 50 }).hypotheses_classes.some(x => x.classe === "immobilier_physique"));
+});

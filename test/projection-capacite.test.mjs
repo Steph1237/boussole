@@ -314,3 +314,27 @@ test("apport futur : une enveloppe de type inconnu de 50 000 € n'entre dans au
   proche(a.apport, a0.apport, 0.01, "apport de l'achat identique à celui du foyer sans l'enveloppe inconnue");
   assert.ok(r.avertissements.some(m => /Coffre Exemple.*(n'est pas comptée|impôt de sortie)/.test(m)), r.avertissements.join(" | "));
 });
+
+test("capaciteDansLeTemps : date de l'achat invalide, passée ou hors horizon → indisponible (jamais la dernière année en silence) ; date valide → point", () => {
+  const c = cas("I-5"), d = entreeDe(c);
+  const M = Proj.preparer(d, { horizon_ans: 3, vue: "financier" }), res = Proj.simuler(M, { chemins: 50 });
+  for (const date of ["2025-01-01", "2030-01-01", "2027-02-30", "demain", 12]) {
+    const k = Proj.capaciteDansLeTemps(M, res, { duree_ans: 25, date });
+    assert.equal(k.indisponible, true, String(date));
+    assert.match(k.avertissements[0], /date de l'achat envisagé.*entre le \d{2}\/\d{2}\/\d{4} et le \d{2}\/\d{2}\/\d{4}/);
+  }
+  const ok = Proj.capaciteDansLeTemps(M, res, { duree_ans: 25, date: "2028-06-15" });
+  assert.ok(!ok.indisponible && ok.point && ok.point.date.startsWith("2028"));
+});
+
+/* ---- revue Opus, correctif 14 : l'avertissement « moins de 5 ans » couvre aussi le PEA PME-ETI et le PEA d'un majeur rattaché ---- */
+test("apport mobilisable : PEA PME-ETI et PEA d'un majeur rattaché de moins de 5 ans exclus et signalés comme le PEA", () => {
+  for (const [type, libelle] of [["pea", "PEA"], ["pea_pme", "PEA PME-ETI"], ["pea_jeune", "PEA d'un majeur rattaché"]]) {
+    const d = donnees();
+    d.positions = [{ id: "pea", name: "ETF Exemple", envelope: "Plan Exemple", owner: "p1", bloc: "Monde", mode: "manual", value: 40000, status: "actif" }];
+    d.config = { cushion: { mode: "amount", min: 0 }, enveloppes_infos: { "Plan Exemple": { type, titulaire: "p1", date_ouverture: "2023-09-01", versements_cumules: 30000 } }, projection: { tmi_pct: 30, assurance_pct: 0.15 } };
+    const r = Immo.capaciteEmprunt(d, { taux_pct: 3.35 });
+    assert.equal(r.apport.total, 0, type + " : exclu de l'apport");
+    assert.ok(r.avertissements.some(m => m.includes("le " + libelle + " « Plan Exemple » a moins de 5 ans")), type + " : " + r.avertissements.join(" | "));
+  }
+});

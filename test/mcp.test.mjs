@@ -56,13 +56,13 @@ const TOOLS = [
   "consulter_expertise", "analyser",
   "lire_banque", "operations_recentes",
   "calendrier", "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot",
-  "decrire_foyer", "lire_foyer", "projeter", "comparer_variantes", "capacite_emprunt",
+  "decrire_foyer", "figer_projection", "lire_foyer", "projeter", "comparer_variantes", "capacite_emprunt",
 ];
 /* Outils d'écriture : tous déposent des propositions (source obligatoire), aucun n'écrit dans les tables du bilan. */
 const ECRITURE = ["update_profile", "upsert_biens", "upsert_credits", "delete_bien", "delete_credit", "upsert_positions", "record_transaction",
   "update_budget", "upsert_objectifs", "delete_objectif", "set_risk_answers", "set_protection",
   "regler_matelas", "regler_versements", "corriger_classe", "regler_frais_enveloppe",
-  "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot", "decrire_foyer"];
+  "regler_infos_enveloppe", "regler_infos_pret", "regler_donations", "regler_avis_impot", "decrire_foyer", "figer_projection"];
 const PROMPTS = ["bilan_complet", "profil_de_risque", "budget", "placements", "revue_mensuelle"];
 /** Section du code d'un outil (de son registerTool au suivant). delete_bien / delete_credit partagent une boucle. */
 function outil(nom) {

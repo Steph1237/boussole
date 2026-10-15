@@ -110,3 +110,54 @@ test("comparerPlanReel : par mois, médiane et bande du plan contre la valeur r�
   assert.equal(P.comparerPlanReel(ligne, []).n, 0);
   assert.equal(P.comparerPlanReel(ligne, [{ date: "1999-01-31", valeur: 1 }, { date: "n'importe quoi", valeur: 2 }]).n, 0);
 });
+
+/* ---- revue Opus, correctif 7 : taille d'un plan figé mesurée comme la base (octet_length(jsonb::text)), réduction automatique ---- */
+import { PGlite } from "@electric-sql/pglite";
+test("octetsJsonb : même mesure que octet_length(jsonb::text) de PostgreSQL (espaces après : et ,, accents, vides, nombres)", async () => {
+  const O = req("../web/src/projection-outils.js");
+  const db = new PGlite();
+  const echantillons = [{}, [], { a: 1 }, { a: 1, b: [1, 2.5, -3], c: { d: "é à ç « » ✓", e: null, f: true, g: false } }, [[], {}, [{ x: [] }]], "guillemet \" et antislash \\ et accent é", { "clé accentuée": "valeur", n: 1234567.89, z: 0, neg: -0.5 },
+    { tableau: Array.from({ length: 50 }, (_, i) => ({ id: "id-" + i, value: i * 100.25, ok: i % 2 === 0 })) }, { s: "tab\t et retour\n" }];
+  for (const v of echantillons) {
+    const r = await db.query("select octet_length($1::jsonb::text) as n", [JSON.stringify(v)]);
+    assert.equal(O.octetsJsonb(v), r.rows[0].n, JSON.stringify(v).slice(0, 80));
+  }
+  await db.close();
+});
+function gros() {
+  const { s, d } = planDeDemo();
+  const g = JSON.parse(JSON.stringify(d));
+  g.positions = Array.from({ length: 1500 }, (_, i) => ({ id: "6f1c2a9e-0000-4000-8000-" + String(i).padStart(12, "0"), name: "Fonds numéro " + i + " (libellé très long pour grossir)", envelope: "Enveloppe numéro " + i, owner: "p1", bloc: "Poche " + i, value: 1000.123456 + i, qty: 1.5, price: 1000.5 + i, pru: 900, isin: "FR0000000000", status: "actif" }));
+  g.foyer.evenements = Array.from({ length: 100 }, (_, i) => ({ id: "e0000000-0000-4000-8000-" + String(i).padStart(12, "0"), type: "retrait", personne: "foyer", libelle: "Retrait " + i, date: "2027-06-01", params: { montant: 1000 + i, libelle: "Retrait " + i, inconnu: "x".repeat(15000), autre: { a: "y".repeat(3000) } }, source: "s" }));
+  g.foyer.variantes = Array.from({ length: 10 }, (_, i) => ({ id: "a1b2c3d4-0000-4000-8000-" + String(i).padStart(12, "0"), nom: "Variante " + i, description: "d".repeat(300), retire: [], hypotheses: { epargne_delta_mensuel: 10 * i } }));
+  g.config.projection = { ...(g.config.projection || {}), biens: Object.fromEntries(Array.from({ length: 50 }, (_, i) => ["bien:b" + i, { prix_achat: 100000 + i, date_achat: "2015-01-01", source: "Acte " + "z".repeat(250), le: "2026-10-01" }])) };
+  g.credits = Array.from({ length: 200 }, (_, i) => ({ id: "c" + i, crd: 1000 + i, mensualite: 50, owner: "commun" }));
+  const gros = JSON.parse(JSON.stringify(s));
+  const N = 300; gros.mois = Array.from({ length: N + 1 }, (_, i) => P.ajouterMois ? "2026-10-14" : "2026-10-14");
+  ["p10", "p25", "p50", "p75", "p90"].forEach(k => { gros.vues.net[k] = Array.from({ length: N + 1 }, (_, i) => 123456.789012 + i * 1.123456); });
+  gros.existant = { p50: Array.from({ length: N + 1 }, () => 100000.123456) }; gros.epargne_future = { versements_cumules: Array.from({ length: N + 1 }, () => 5000.5678) };
+  gros.hypotheses = Array.from({ length: 80 }, (_, i) => ({ cle: "repere_" + i, valeur: i + 0.5, verifie_le: "2026-10-01", date_effet: "2026-01-01", date_fin: null }));
+  gros.capacite_par_periode = Array.from({ length: 300 }, (_, i) => ({ debut_t: i, fin_t: i + 1, montant_mensuel: 100 + i, source: "s", raison: "r".repeat(200) }));
+  return { d: g, s: gros };
+}
+test("figerPlan : un foyer très chargé (1 500 lignes, 100 événements à paramètres énormes, 50 biens, horizon 25 ans) reste sous les limites de la base, mesurées en octets de jsonb::text", () => {
+  const O = req("../web/src/projection-outils.js"), { d, s } = gros();
+  const l = P.figerPlan({ data: d, options: { horizon_ans: 25 } }, s, "manuel");
+  const par = O.octetsJsonb(l.parametres), ser = O.octetsJsonb(l.serie), tot = O.octetsJsonb({ raison: l.raison, horizon_mois: l.horizon_mois, parametres: l.parametres, serie: l.serie });
+  assert.ok(par <= 100000, "paramètres : " + par);
+  assert.ok(ser <= 250000, "série : " + ser);
+  assert.ok(tot <= 400000, "total : " + tot);
+  assert.ok(l.parametres.graine != null && l.parametres.version_modele && l.parametres.today, "de quoi rejouer : graine, version, date");
+  assert.ok(Array.isArray(l.parametres.reductions) && l.parametres.reductions.length > 0, "les réductions sont dites : " + JSON.stringify(l.parametres.reductions));
+  assert.equal(l.serie.p50.length, 301, "300 mois de série tiennent sans espacement");
+  assert.equal(l.serie.p50[l.serie.p50.length - 1] > 0, true);
+});
+test("figerPlan : paramètres des événements limités aux clés connues de leur type (jamais un objet libre), détail gardé quand la taille le permet", () => {
+  const { s, d } = planDeDemo();
+  d.foyer.evenements[0].params = { ...d.foyer.evenements[0].params, inconnu: "x".repeat(5000) };
+  const l = P.figerPlan({ data: d, options: { horizon_ans: 5 } }, s, "manuel");
+  const ev = l.parametres.evenements[0];
+  assert.equal("inconnu" in ev.params, false, JSON.stringify(ev.params).slice(0, 100));
+  assert.ok(Object.keys(ev.params).length > 0);
+  assert.equal(l.parametres.reductions, undefined, "rien n'est réduit quand tout tient");
+});

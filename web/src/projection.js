@@ -1029,6 +1029,7 @@
     });
     return out;
   }
+  const CONVENTION_BIEN_CRISE = "Convention : l'immobilier physique (résidence, biens loués) subit le choc de la classe « immobilier » de la crise, mesuré sur les SCPI (IEIF), faute de série dédiée ; le prix des logements varie en réalité plus lentement.";
   function classesUtilisees(M) {
     const vus = new Map();
     M.comps.forEach(c => {
@@ -1038,6 +1039,11 @@
       vus.set(k, { classe: k, rendement_central: p.rendement, rendement_historique: cl ? cl.rendementLong : null, volatilite: p.volatilite, source_historique: cl ? cl.source : null,
         sous_historique: !!(cl && p.rendement < cl.rendementLong - 1e-9), repli_historique: p.repli, surcharge: p.surcharge });
     });
+    if (M.bien0 > 0 || M.achats.some(x => !x.indisponible)) {
+      const pb = Dn.parametresClasse("immobilier_physique", M.ctx);
+      vus.set("immobilier_physique", { classe: "immobilier_physique", rendement_central: pb.rendement, rendement_historique: null, volatilite: pb.volatilite, source_historique: null, sous_historique: false,
+        repli_historique: pb.repli, surcharge: pb.surcharge, convention: CONVENTION_BIEN_CRISE });
+    }
     return [...vus.values()];
   }
 
@@ -1068,7 +1074,7 @@
       const prob = ob.t >= 1 && ob.t <= N ? run.objCompte[j] / P : null;
       let detV = null;
       if (ob.t >= 1 && ob.t <= N) detV = sum(ob.ref, b => det.valeurs[ob.t * M.B + b]) / M.infl[ob.t];
-      const statut = ob.deja >= ob.cible ? "atteint" : prob == null ? "hors_horizon" : ob.date < M.today ? "hors_portee" : detV >= ob.cible * 1.1 ? "avance" : detV >= ob.cible * 0.95 ? "dans_les_temps" : "retard";
+      const statut = ob.deja >= ob.cible ? "atteint" : ob.date < M.today ? "hors_portee" : prob == null ? "hors_horizon" : detV >= ob.cible * 1.1 ? "avance" : detV >= ob.cible * 0.95 ? "dans_les_temps" : "retard";
       const mot = prob == null ? null : prob >= 0.8 ? "probable" : prob >= 0.5 ? "incertain" : "peu probable";
       return { id: ob.id, nom: ob.nom, cible: ob.cible, date: ob.date, probabilite: prob, mot, statut, valeur_deterministe: detV };
     });
@@ -1122,8 +1128,17 @@
     if (!cr) return { indisponible: true, avertissements: ["crise inconnue : « " + o.cle + " »"] };
     assurerDet(M);
     const duree = Math.max(1, O.moisEntre(cr.debut + "-01", cr.fin + "-01"));
-    let t0 = typeof o.debut === "number" ? o.debut : o.debut_t != null ? o.debut_t : O.estDate(o.debut) ? O.moisDe(M.today, o.debut, M.N) : 13;
-    t0 = Math.max(1, Math.min(M.N, t0));
+    /* début : mois (entier de 1 à N) ou date de aujourd'hui à la fin de l'horizon ; absent : dans un an (ou le dernier mois) ; jamais ramené au mois 1 en silence */
+    const dd = o.debut_t != null ? o.debut_t : o.debut;
+    let t0;
+    if (dd === undefined) t0 = Math.min(13, M.N);
+    else if (typeof dd === "number") t0 = Number.isInteger(dd) ? dd : null;
+    else if (typeof dd === "string" && O.estDate(dd) && dd >= M.today) t0 = O.moisDe(M.today, dd, M.N);
+    else t0 = null;
+    if (t0 == null || t0 < 1 || t0 > M.N) {
+      const fr = x => x.slice(8, 10) + "/" + x.slice(5, 7) + "/" + x.slice(0, 4);
+      return { indisponible: true, avertissements: ["date de début de la crise absente ou hors de l'horizon : choisis une date entre le " + fr(M.today) + " et le " + fr(M.dates[M.N]) + "."] };
+    }
     const infl = Float64Array.from(M.infl);
     const avert = [];
     if (o.cle === "inflation_1973") {
@@ -1138,6 +1153,7 @@
     const run = derouler(M, { P: 1, det: true, trace: true, vue: M.options.vue, infl, crise: { t0, t1: t0 + duree, duree, chocs: cr.chocs } });
     const tr = run.trace, euros = M.options.euros, fx = echelle(M, euros, infl);
     avert.push("Après la crise, la projection reprend les rendements moyens ; dans l'histoire, les marchés sont remontés plus vite.");
+    if (M.bien0 > 0 || M.achats.some(x => !x.indisponible)) avert.push(CONVENTION_BIEN_CRISE);
     return { cle: o.cle, label: cr.label, debut_t: t0, debut: M.dates[t0], fenetre_mois: duree, mois: M.dates.slice(0, M.N + 1), euros, version_modele: versionModele,
       valeurs: { financier: versArray(t => tr.fin[t] * fx(t), M.N), disponible: versArray(t => tr.dispo[t] * fx(t), M.N), net: versArray(t => tr.net[t] * fx(t), M.N) },
       nominal: { financier: Array.from(tr.fin), net: Array.from(tr.net) }, log_rendement_mensuel_fenetre: Math.log(1 + (cr.chocs.actions) / 100) / duree, avertissements: avert, source: cr.source };
@@ -1268,6 +1284,10 @@
     assurerDet(M);
     const effort = rv("hcsf_taux_effort"), dureeMax = rv("hcsf_duree_max");
     const vide = pourquoi => ({ indisponible: true, avertissements: [pourquoi], mention: D.Immo.MENTION });
+    if (o.date != null && !(typeof o.date === "string" && O.estDate(o.date) && o.date >= M.today && O.moisDe(M.today, o.date, N) != null)) {
+      const fr = x => x.slice(8, 10) + "/" + x.slice(5, 7) + "/" + x.slice(0, 4);
+      return vide("date de l'achat envisagé absente ou hors de l'horizon : choisis une date entre le " + fr(M.today) + " et le " + fr(M.dates[N]) + ".");
+    }
     if (effort === undefined) return vide("repère manquant (hcsf_taux_effort) : plafond d'endettement indisponible");
     const duree = o.duree_ans != null ? Math.min(+o.duree_ans, dureeMax != null ? Math.max(dureeMax, 0) : +o.duree_ans) : dureeMax;
     if (!(duree > 0)) return vide("repère manquant (hcsf_duree_max)");
@@ -1331,9 +1351,12 @@
   }
 
   /* ---- plans figés (CK5) : de quoi rejouer une projection passée et la comparer au réel ---- */
-  const PLAN_MAX_OCTETS = 250000;
+  /* Limites de la base (appliquer_propositions, cible plan_fige), mesurées comme elle en octets de jsonb::text (octet_length) ; marge de 2 % pour les écarts de format des nombres */
+  const PLAN_MAX_OCTETS = 250000, PLAN_PARAMETRES_MAX_OCTETS = 100000, PLAN_TOTAL_MAX_OCTETS = 400000;
+  const PLAN_MARGE = 0.98;
   /** Ligne à ranger dans plans_figes : { raison, horizon_mois, parametres, serie }. entree = { data, options } ; sortie = résultat de simuler (même entrée). La série est
-      mensuelle (patrimoine net en euros courants : P10 à P90, couche « existant » aux années, versements cumulés) ; les paramètres suffisent à rejouer le calcul plus tard. */
+      mensuelle (patrimoine net en euros courants : P10 à P90, couche « existant » aux années, versements cumulés) ; les paramètres suffisent à rejouer le calcul plus tard.
+      Les tailles sont tenues sous les limites de la base : paramètres réduits par étapes (dites dans parametres.reductions), série espacée (serie.pas_mois). */
   function figerPlan(entree, sortie, raison) {
     const e = entree || {}, d = e.data || {}, o = e.options || {}, s = sortie || {};
     const r = raison || "manuel";
@@ -1343,29 +1366,51 @@
     const serie = { vue, euros: s.euros, mois: s.mois, p10: arr(cent && cent.p10), p25: arr(cent && cent.p25), p50: arr(cent && cent.p50), p75: arr(cent && cent.p75), p90: arr(cent && cent.p90),
       existant_p50: arr(s.existant && s.existant.p50), versements_cumules: arr(s.epargne_future && s.epargne_future.versements_cumules), objectifs: (s.objectifs || []).map(x => ({ id: x.id, cible: x.cible, date: x.date, probabilite: x.probabilite })) };
     const reperesUtilises = (s.hypotheses || []).map(h => ({ cle: h.cle, valeur: h.valeur, verifie_le: h.verifie_le, date_effet: h.date_effet, date_fin: h.date_fin }));
+    /* paramètres des événements : seulement les clés connues de leur type (jamais un objet libre de l'utilisateur) */
+    const cles = t => (E.ENTREES[t] && E.ENTREES[t].parametres) || [];
+    const paramsConnus = x => { const out = {}, p = objet(x.params); cles(x.type).forEach(k => { if (p[k] !== undefined) out[k] = p[k]; }); return out; };
+    const reglages = objet(d.config && d.config.projection);
     const parametres = {
       version_modele: s.version_modele || versionModele, graine: s.graine, chemins: s.chemins, today: s.today || d.today, options: { horizon_ans: o.horizon_ans, perimetre: o.perimetre || "foyer", vue: o.vue, euros: o.euros, net_impots: !!o.net_impots, variante: o.variante || null },
       capacite: { base: s.capacite_base ? { retenue: s.capacite_base.retenue, source: s.capacite_base.source, constatee: s.capacite_base.constatee, prevue: s.capacite_base.prevue, programmee: s.capacite_base.programmee, periode: s.capacite_base.periode } : null,
         par_periode: s.capacite_par_periode, versements_mensuels_initiaux: s.capacite_par_periode && s.capacite_par_periode[0] ? s.capacite_par_periode[0].montant_mensuel : null },
-      allocation: { classes: s.hypotheses_classes, reste_capacite: d.config && d.config.projection && d.config.projection.reste_capacite, cibles: d.config && d.config.targets },
-      evenements: (d.foyer && d.foyer.evenements || []).map(x => ({ id: x.id, type: x.type, personne: x.personne, libelle: x.libelle, date: x.date, fin: x.fin || null, params: x.params, variante_id: x.variante_id || null })),
+      allocation: { classes: s.hypotheses_classes, reste_capacite: reglages.reste_capacite, cibles: d.config && d.config.targets },
+      evenements: (d.foyer && d.foyer.evenements || []).map(x => ({ id: x.id, type: x.type, personne: x.personne, libelle: x.libelle, date: x.date, fin: x.fin || null, params: paramsConnus(x), variante_id: x.variante_id || null })),
       variantes: (d.foyer && d.foyer.variantes || []).map(x => ({ id: x.id, nom: x.nom, retire: x.retire, hypotheses: x.hypotheses })),
-      hypotheses: { reperes: reperesUtilises, classes: s.hypotheses_classes, reglages: d.config && d.config.projection },
+      hypotheses: { reperes: reperesUtilises, classes: s.hypotheses_classes, reglages },
       positions: (d.positions || []).filter(p => p && p.status !== "clôturé").map(p => ({ id: p.id, envelope: p.envelope, owner: p.owner, bloc: p.bloc, value: p.value, qty: p.qty, price: p.price, pru: p.pru, isin: p.isin })),
       credits: (d.credits || d.profil && d.profil.credits || []).map(c => ({ id: c.id, crd: c.crd, mensualite: c.mensualite, owner: c.owner })),
     };
-    /* la base limite les paramètres à 100 000 octets : les positions sont réduites à (id, valeur) puis les périodes de capacité abrégées si besoin */
-    if (JSON.stringify(parametres).length > 90000) parametres.positions = parametres.positions.map(p => ({ id: p.id, value: p.value }));
-    if (JSON.stringify(parametres).length > 90000 && parametres.capacite) parametres.capacite.par_periode = (parametres.capacite.par_periode || []).slice(0, 40).map(x => ({ debut_t: x.debut_t, fin_t: x.fin_t, montant_mensuel: x.montant_mensuel, source: x.source }));
-    const ligne = { raison: ["revue_mensuelle", "objectif", "manuel"].includes(r) ? r : "manuel", horizon_mois: N, parametres, serie };
-    const taille = JSON.stringify(parametres).length + JSON.stringify(serie).length;
-    ligne.taille_octets = taille;
-    if (JSON.stringify(serie).length > PLAN_MAX_OCTETS) {
-      /* série trop lourde : une valeur par trimestre au lieu de chaque mois */
-      const garde = (a) => a.filter((_, i) => i % 3 === 0 || i === a.length - 1);
-      ["mois", "p10", "p25", "p50", "p75", "p90", "existant_p50", "versements_cumules"].forEach(k => { serie[k] = garde(serie[k] || []); });
-      serie.pas_mois = 3;
+    /* réduction par étapes jusqu'à tenir sous la limite des paramètres ; chaque étape appliquée est dite */
+    const limP = Math.floor(PLAN_PARAMETRES_MAX_OCTETS * PLAN_MARGE), taillePar = () => O.octetsJsonb(parametres), reductions = [];
+    const etapes = [
+      ["positions_reduites", () => { parametres.positions = parametres.positions.map(p => ({ id: p.id, value: p.value })); }],
+      ["reperes_reduits", () => { parametres.hypotheses.reperes = parametres.hypotheses.reperes.map(h => ({ cle: h.cle, valeur: h.valeur })); }],
+      ["variantes_reduites", () => { parametres.variantes = parametres.variantes.map(v => ({ id: v.id, nom: v.nom, retire: liste(v.retire).slice(0, 20) })); }],
+      ["biens_des_reglages_retires", () => { const { biens: _b, ...reste } = parametres.hypotheses.reglages; parametres.hypotheses.reglages = reste; }],
+      ["periodes_de_capacite_abregees", () => { if (parametres.capacite.par_periode) parametres.capacite.par_periode = parametres.capacite.par_periode.slice(0, 40).map(x => ({ debut_t: x.debut_t, fin_t: x.fin_t, montant_mensuel: x.montant_mensuel, source: x.source })); }],
+      ["parametres_des_evenements_retires", () => { parametres.evenements = parametres.evenements.map(x => ({ id: x.id, type: x.type, personne: x.personne, libelle: x.libelle, date: x.date, fin: x.fin, variante_id: x.variante_id })); }],
+      ["credits_retires", () => { parametres.credits = []; }],
+      ["periodes_de_capacite_retirees", () => { if (parametres.capacite.par_periode) parametres.capacite.par_periode = []; }],
+      ["positions_retirees", () => { parametres.positions = []; }],
+      ["variantes_retirees", () => { parametres.variantes = []; }],
+      ["evenements_retires", () => { parametres.evenements = []; }],
+      ["reperes_retires", () => { parametres.hypotheses.reperes = []; }],
+    ];
+    for (const [nom, f] of etapes) {
+      if (taillePar() <= limP) break;
+      f(); reductions.push(nom);
     }
+    if (reductions.length) parametres.reductions = reductions;
+    /* série : espacée (un point sur 3, puis sur 6, 12…) jusqu'à tenir sous la limite */
+    const limS = Math.floor(PLAN_MAX_OCTETS * PLAN_MARGE), CHAMPS_SERIE = ["mois", "p10", "p25", "p50", "p75", "p90", "existant_p50", "versements_cumules"];
+    const brute = {}; CHAMPS_SERIE.forEach(k => { brute[k] = serie[k] || []; });
+    for (let pas = 3; O.octetsJsonb(serie) > limS && pas <= 120; pas *= 2) {
+      CHAMPS_SERIE.forEach(k => { serie[k] = brute[k].filter((_, i) => i % pas === 0 || i === brute[k].length - 1); });
+      serie.pas_mois = pas;
+    }
+    const ligne = { raison: ["revue_mensuelle", "objectif", "manuel"].includes(r) ? r : "manuel", horizon_mois: N, parametres, serie };
+    ligne.taille_octets = O.octetsJsonb({ raison: ligne.raison, horizon_mois: N, parametres, serie });
     return ligne;
   }
   /** Compare un plan figé à la série réelle ([{ date, valeur }] en euros courants) : par mois, médiane et bande du plan, valeur réelle, écart en € et en %. */
@@ -1453,7 +1498,7 @@
   const _executer = derouler;
 
   return {
-    GRAINE, versionModele, CLASSES_TIREES, HYPOTHESES, EVENEMENTS, PERCENTILES, PLAN_MAX_OCTETS,
+    GRAINE, versionModele, CLASSES_TIREES, HYPOTHESES, EVENEMENTS, PERCENTILES, PLAN_MAX_OCTETS, PLAN_PARAMETRES_MAX_OCTETS, PLAN_TOTAL_MAX_OCTETS, octetsJsonb: O.octetsJsonb,
     preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
     fiscaliteSortie: F.fiscaliteSortie, amortissement: C.amortissement, annuite: C.annuite, planPret: C.planPret, ptz: C.ptz, taeg: C.taeg,
     capaciteEmprunt: (data, opts) => D.Immo.capaciteEmprunt(data, opts), capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
