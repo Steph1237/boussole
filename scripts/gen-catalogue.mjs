@@ -9,6 +9,10 @@
 //                                                    tels quels dans un seul module ES (voir genererMoteur()). Le connecteur et l'app font
 //                                                    donc exactement les mêmes calculs (test/projection-mcp.test.mjs).
 //
+//   supabase/functions/mcp/suivi.gen.js            copie du moteur de suivi des lignes (SUIVI : web/src/suivi.js et ses dépendances, dont risque.js et
+//                                                    pratiques.js, que la copie du moteur de projection ne porte pas), recopiée de la même façon
+//                                                    (voir genererSuivi()). Parité testée par test/suivi-mcp.test.mjs.
+//
 // Usage : npm run gen (node scripts/gen-catalogue.mjs). test/formulaire.test.mjs et test/projection-mcp.test.mjs échouent si un fichier généré n'est plus à jour.
 //
 // Sources :
@@ -33,9 +37,13 @@ export const SORTIE_CATALOGUE = "supabase/functions/mcp/catalogue.gen.ts";
 export const SORTIE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.gen.ts";
 export const SOURCE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.js";
 export const SORTIE_MOTEUR = "supabase/functions/mcp/projection-moteur.gen.js";
+export const SORTIE_SUIVI = "supabase/functions/mcp/suivi.gen.js";
 /** Modules du moteur, dans l'ordre de définition (chacun ne dépend que des précédents) : nom → fichier de web/src. */
 export const MODULES_MOTEUR = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "projection-evenements",
   "projection-credit", "projection-donnees", "projection-immo", "projection"];
+/** Modules de la copie du moteur de suivi (SUIVI), dans l'ordre de définition : chacun ne dépend que des précédents. */
+export const MODULES_SUIVI = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "risque", "pratiques", "suivi"];
+export const EXPORTS_SUIVI = { Suivi: "suivi", Risque: "risque", Pratiques: "pratiques", Calc: "calc", Marche: "marche" };
 /** Valeurs exportées par la copie : nom exporté → module. */
 export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection" };
 
@@ -165,27 +173,34 @@ export function generer() {
 /** Copie du moteur de projection : chaque module UMD de web/src est recopié tel quel dans une fonction (module, exports, require) ;
     un petit chargeur résout les require par nom de fichier. Contenu du fichier (texte), sans écrire. */
 export function genererMoteur() {
-  const corps = MODULES_MOTEUR.map(nom => {
+  return copierModules(MODULES_MOTEUR, EXPORTS_MOTEUR, "Copie du moteur de projection de l'app (PROJ, docs/superpowers/specs/2026-10-14-proj-projection-design.md)", "projection-moteur");
+}
+/** Copie du moteur de suivi des lignes (SUIVI, docs/superpowers/specs/2026-10-15-suivi-lignes-design.md) : mêmes règles que genererMoteur(). */
+export function genererSuivi() {
+  return copierModules(MODULES_SUIVI, EXPORTS_SUIVI, "Copie du moteur de suivi des lignes de l'app (SUIVI, docs/superpowers/specs/2026-10-15-suivi-lignes-design.md)", "suivi-moteur");
+}
+function copierModules(MODULES, EXPORTS, titre, etiquette) {
+  const corps = MODULES.map(nom => {
     const src = readFileSync(racine("web/src/" + nom + ".js"), "utf8").replace(/\r\n/g, "\n").replace(/\s+$/, "");
     return "/* ---------- web/src/" + nom + ".js ---------- */\ndef(" + JSON.stringify(nom) + ", function (module, exports, require) {\n" + src + "\n});\n";
   }).join("\n");
   return "// Fichier généré par scripts/gen-catalogue.mjs (npm run gen) : ne pas modifier à la main.\n" +
-    "// Copie du moteur de projection de l'app (PROJ, docs/superpowers/specs/2026-10-14-proj-projection-design.md) : les modules purs de web/src\n" +
-    "// (" + MODULES_MOTEUR.join(", ") + ") recopiés tels quels, évalués dans cet ordre. Aucune modification : un écart avec l'app est un bug du générateur.\n" +
+    "// " + titre + " : les modules purs de web/src\n" +
+    "// (" + MODULES.join(", ") + ") recopiés tels quels, évalués dans cet ordre. Aucune modification : un écart avec l'app est un bug du générateur.\n" +
     "const definitions = {}, modules = {};\n" +
     "function def(nom, fabrique) { definitions[nom] = fabrique; }\n" +
     "function charger(nom) {\n" +
     "  if (modules[nom]) return modules[nom].exports;\n" +
     "  const fabrique = definitions[nom];\n" +
-    "  if (!fabrique) throw new Error(\"projection-moteur : module inconnu « \" + nom + \" »\");\n" +
+    "  if (!fabrique) throw new Error(\"" + etiquette + " : module inconnu « \" + nom + \" »\");\n" +
     "  const module = modules[nom] = { exports: {} };\n" +
     "  fabrique.call(globalThis, module, module.exports, chemin => charger(chemin.replace(/^.*\\//, \"\").replace(/\\.js$/, \"\")));\n" +
     "  return module.exports;\n" +
     "}\n\n" + corps + "\n" +
-    Object.entries(EXPORTS_MOTEUR).map(([n, m]) => "export const " + n + " = charger(" + JSON.stringify(m) + ");").join("\n") + "\n";
+    Object.entries(EXPORTS).map(([n, m]) => "export const " + n + " = charger(" + JSON.stringify(m) + ");").join("\n") + "\n";
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur() };
+  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi() };
   for (const [rel, txt] of Object.entries(fichiers)) { writeFileSync(racine(rel), txt); console.log("écrit : " + rel); }
 }
