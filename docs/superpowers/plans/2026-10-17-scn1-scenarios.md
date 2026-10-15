@@ -4,7 +4,7 @@
 
 **Goal :** une section Pilotage › Scénarios à deux onglets (« Pour toi », « Mes variantes ») ; un catalogue partagé et versionné (`scenarios`) ; cinq scénarios calculés sur les mêmes tirages que le moteur PROJ, en euros d'aujourd'hui, nets de frais et d'impôts de sortie, avec leur bande P10–P90, leurs hypothèses sourcées et « ce qui changerait la réponse » ; les parties jouées gardées dans une table privée (`scenarios_joues`) écrite seulement par des propositions validées dans l'app ; un scénario retenu devient une variante figée et un plan figé ; trois outils MCP (`lister_scenarios`, `jouer_scenario`, `lire_scenario`).
 
-**Spec :** `docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md`. À lire en entier avant de commencer, en particulier § 0 (décisions), § 5 (états), § 6 (module et formules), § 7 (les cinq scénarios et leurs cas), § 8 (repères), § 11 (migrations et sécurité), § 13 (tests) et § 15 (décisions D1 à D14, **à trancher par Stéph avant la phase 1**).
+**Spec :** `docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md`. À lire en entier avant de commencer, en particulier § 0 (décisions), § 5 (états), § 6 (module et formules), § 7 (les cinq scénarios et leurs cas), § 8 (repères), § 11 (migrations et sécurité), § 13 (tests) et § 15 (décisions D1 à D14, **tranchées le 2026-10-16 : recommandations retenues**).
 
 **Repères :**
 - Dépôt : `/Users/stephane/boussole`.
@@ -71,15 +71,15 @@ Phase 0 (cas chiffrés, repères)  ──►  Phase 1 (migration 0038 + revue s�
 ## Phase 0 : cas chiffrés à la main et repères
 
 ### Tâche 0 — Cas de référence et repères (Opus, high, M)
-- [ ] Recalculer **à la main ou par un script jetable indépendant** (jamais avec le futur module) les cas PEA-1, PEA-2, PEA-3, PER-1, PER-2, MAT-1, AV-1 du spec § 7, au centime, et noter tout écart (aucun admis) ; corriger le spec si un chiffre change.
-- [ ] Ajouter par scénario au moins un cas de plus (4 au moins par scénario) et les cas « manquant », « repère absent », « repère expiré », limites (horizon 4 ans 11 mois et 5 ans 1 mois, plafond PEA atteint, TMI 0 %, matelas nul, surplus nul, LEP au seuil 35 326 € et à 35 327 € pour 2 parts) ; un cas Monte-Carlo de contrôle par scénario (graine fixée, 2 000 chemins, valeurs P10 / P50 / P90 relevées après la tâche 6 et figées).
-- [ ] Vérifier sur la source primaire et dater les points du spec § 8.3 : plafonds des frais du PEA (CMF art. D221-109 et suivants, Légifrance) ; transfert d'assurance-vie chez le même assureur (Code des assurances, loi n° 2019-486, Légifrance) ; point de départ des 8 ans pour les primes versées après l'ouverture (BOFiP) ; ordre d'imputation des plafonds PER reportés (CGI art. 163 quatervicies, F14709) ; durée de l'épargne de précaution (mesquestionsdargent.fr, banque-france.fr, economie.gouv.fr). Pour chacun : valeur ou texte retenu avec source et date, ou le comportement prudent du spec appliqué et écrit.
-- [ ] Revérifier le jour même les trois repères nouveaux (`lep_rfr_demi_part_sup`, `lep_rfr_quart_part_sup`, `per_plafond_taux_revenus`) et les textes du § 8.2 (F2367, F14709, F2385, F22414, F34982) ; aucune valeur non vérifiée n'entre dans la fixture.
-- [ ] Rédiger `test/fixtures/scenarios-cas.json` (format du § « Fixture ») et les 5 entrées du catalogue v1 (questions, pertinence, données, repères, garde-fous, `ouverture`), au tutoiement, sans aucun nom d'établissement ni de produit.
-**Fini quand :** la fixture est complète, recalculée deux fois, chaque repère a sa source et sa date, le spec est cohérent avec la fixture.
+- [x] Recalculer **à la main ou par un script jetable indépendant** (jamais avec le futur module) les cas PEA-1, PEA-2, PEA-3, PER-1, PER-2, MAT-1, AV-1 du spec § 7, au centime, et noter tout écart (aucun admis) ; corriger le spec si un chiffre change.
+- [x] Ajouter par scénario au moins un cas de plus (4 au moins par scénario) et les cas « manquant », « repère absent », « repère expiré », limites (horizon 4 ans 11 mois et 5 ans 1 mois, plafond PEA atteint, TMI 0 %, matelas nul, surplus nul, LEP au seuil 35 326 € et à 35 327 € pour 2 parts) ; un cas Monte-Carlo de contrôle par scénario (graine fixée, 2 000 chemins, valeurs P10 / P50 / P90 relevées après la tâche 6 et figées).
+- [x] Vérifier sur la source primaire et dater les points du spec § 8.3 : plafonds des frais du PEA (CMF art. D221-109 et suivants, Légifrance) ; transfert d'assurance-vie chez le même assureur (Code des assurances, loi n° 2019-486, Légifrance) ; point de départ des 8 ans pour les primes versées après l'ouverture (BOFiP) ; ordre d'imputation des plafonds PER reportés (CGI art. 163 quatervicies, F14709) ; durée de l'épargne de précaution (mesquestionsdargent.fr, banque-france.fr, economie.gouv.fr). Pour chacun : valeur ou texte retenu avec source et date, ou le comportement prudent du spec appliqué et écrit.
+- [x] Revérifier le jour même les trois repères nouveaux (`lep_rfr_demi_part_sup`, `lep_rfr_quart_part_sup`, `per_plafond_taux_revenus`) et les textes du § 8.2 (F2367, F14709, F2385, F22414, F34982) ; aucune valeur non vérifiée n'entre dans la fixture.
+- [x] Rédiger `test/fixtures/scenarios-cas.json` (format du § « Fixture ») et les 5 entrées du catalogue v1 (questions, pertinence, données, repères, garde-fous, `ouverture`), au tutoiement, sans aucun nom d'établissement ni de produit.
+**Fait le 2026-10-16** (65 cas, 596 valeurs revérifiées, aucun écart, mutations toutes détectées ; décisions D1 à D14 reportées au § 15 du spec). **Fini quand :** la fixture est complète, recalculée deux fois, chaque repère a sa source et sa date, le spec est cohérent avec la fixture.
 
 ### Tâche 1 — Décisions de Stéph (Haiku, low, S)
-- [ ] Reporter les décisions D1 à D14 tranchées dans le spec (§ 15, statut et date) et, si une décision diffère de la recommandation, les sections touchées (liste dans la tâche).
+- [x] Reporter les décisions D1 à D14 tranchées dans le spec (§ 15, statut et date) et, si une décision diffère de la recommandation, les sections touchées (liste dans la tâche).
 
 ---
 
