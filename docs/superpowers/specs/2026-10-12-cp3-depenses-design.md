@@ -1,5 +1,7 @@
 # CP3 : onglet Dépenses (où va l'argent chaque mois, perso et commun séparés)
 
+> Remplacée par BUD1 (`2026-10-16-bud1-budget-design.md`) : voir son § 1.3 pour ce qui est repris.
+
 Date : 2026-10-12. Statut : demandé par Stéph (« un onglet dépense pour comprendre dans quoi on dépense le plus par mois, séparé compte perso et commun »). À construire avec CP2, dont il dépend : titulaire `commun`, `budget_historique`, partage.
 
 ## 1. Place et navigation

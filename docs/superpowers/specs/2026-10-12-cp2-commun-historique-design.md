@@ -1,5 +1,7 @@
 # CP2 : titulaire « commun » partagé selon les apports, et import de l'historique en totaux mensuels
 
+> Remplacée par BUD1 (`2026-10-16-bud1-budget-design.md`) : voir son § 1.3 pour ce qui est repris.
+
 Date : 2026-10-12. Statut : validé par Stéph (« Go all »). Partage par défaut selon les apports réels, réglable.
 
 ## 1. Titulaire « commun »

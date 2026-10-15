@@ -1,6 +1,6 @@
 # BUD1 : budget piloté par le réel
 
-Date : 2026-10-16. Statut : **spec écrite, à valider par Stéph** (décisions ouvertes en § 17).
+Date : 2026-10-16. Statut : **décisions D1 à D13 tranchées par Stéph le 2026-10-15** (recommandations retenues, D2 précisée : § 13.1 et § 17) ; **tâche 0 faite le 2026-10-15** : repères vérifiés (§ 12), cas chiffrés recalculés deux fois, table des marchands v1 (fixtures `test/fixtures/budget-cas.json` et `test/fixtures/budget-marchands.json`) ; points ouverts en § 17.1.
 Cadrage : roadmap privée `~/Finance/docs/boussole-roadmap.md`, annexe I, ligne 13b (BUD1), règles d'or (§ 2).
 **Remplace et fusionne** `2026-10-12-cp2-commun-historique-design.md` (CP2) et `2026-10-12-cp3-depenses-design.md` (CP3) : ce qui en est repris est dit en § 1.3, ce qui en sort est dit en § 16. Ces deux specs restent dans le dépôt pour l'histoire, avec en tête un renvoi vers celle-ci (tâche du plan).
 Plan : `docs/superpowers/plans/2026-10-16-bud1-budget.md`.
@@ -21,7 +21,7 @@ Toutes les données de ce document sont fictives (foyer « Camille et Sam », co
 8. **Le coach** est l'expertise `budget-epargne` **v3** (après la v2 de la migration 0032) : méthode en 10 étapes, contrôles, garde-fous (pas de morale, aucun produit ni fournisseur recommandé, taux d'épargne réaliste avec trois niveaux d'effort, orientation en cas de fragilité). Il s'appuie sur des **pistes détectées de façon déterministe** (`Budget.pistes`) : abonnements, frais bancaires, assurances en double possible, énergie, petits achats récurrents, dépenses annuelles. L'app les montre aussi, sans IA.
 9. **Outils MCP** : `lire_depenses`, `analyser_depenses` (le coach), `regler_categorie`, `proposer_budget_cible`, `importer_depenses` (import d'historique en totaux, CP2, partagé avec HIS2), `regler_partage` (CP2). Questionnaire par le **formulaire MCP Apps** (nouvelle section `budget` du catalogue).
 10. **Les visuels** : un **double anneau** réel (intérieur) contre cible (extérieur) sur les 3 blocs, avec la capacité d'épargne du mois et le score au centre ; des **barres « réel contre cible » (bullet bars)** par sous-catégorie ; un **historique mensuel empilé** avec la ligne de cible et le score au-dessus de chaque mois ; la bascule **Perso · Commun · Tout** ; un curseur **« et si j'épargnais X € de plus ? »** qui montre l'effet sur chaque objectif (probabilité et date à 8 sur 10), calculé par le moteur PROJ sur les mêmes tirages. Pas de camembert à 12 parts (§ 11.1).
-11. **Données** : migration **0034** (`0034_budget.sql`, ou le premier numéro libre), **0035** (repères, idempotente), **0036** (expertise v3). Nouvelles tables `budget_regles`, `budget_historique`, `banque_marchands_mois` ; colonnes `sous_categorie` sur `banque_operations` et `banque_mois` ; `banque_comptes.titulaire` accepte `commun`. RLS propriétaire, politiques restrictives de 0028 (**toujours aal2**, comme les données bancaires), `export_all` étendu, purge.
+11. **Données** : migrations **0035** (`0035_budget.sql`), **0036** (repères, idempotente), **0037** (expertise v3) ; **0034** est prise par HIS2 (décision du 2026-10-15 ; dernier numéro en production : 0033). Nouvelles tables `budget_regles`, `budget_historique`, `banque_marchands_mois` ; colonnes `sous_categorie` sur `banque_operations` et `banque_mois` ; `banque_comptes.titulaire` accepte `commun`. RLS propriétaire, politiques restrictives de double authentification **au modèle de 0033** (décision D2, § 13.1), `export_all` étendu, purge.
 12. **Conservation** : le détail des opérations reste purgé à **90 jours** (inchangé). Au-delà, les **totaux mensuels par compte et sous-catégorie** (`banque_mois`) sont gardés tant que le compte existe ; les **totaux mensuels par marchand nettoyé** (`banque_marchands_mois`) sont gardés **13 mois** (décision D1) pour reclasser l'historique après une nouvelle règle et repérer les dépenses annuelles. L'historique plus ancien arrive par import (HIS2 et `importer_depenses`).
 
 ---
@@ -62,7 +62,7 @@ Toutes les données de ce document sont fictives (foyer « Camille et Sam », co
 | Règle | Application |
 |---|---|
 | 1. MCP et IA d'abord, app en lecture seule | La cible et le partage arrivent par **propositions** ; les règles de classement sont des préférences sans montant écrites par le connecteur après ton accord dans la conversation (comme `update_config`, décision D3) ; l'app peut seulement **activer ou désactiver** une règle (bascule simple, autorisée par la doctrine) et explorer le curseur « et si », jamais enregistré. |
-| 2. Sécurité et confidentialité | Toutes les nouvelles tables en RLS propriétaire et **aal2 toujours** (0028, niveau 1). Libellés nettoyés (`nettoyerLibelle`), motifs de règle sans chiffres longs, aucun IBAN ni numéro. Détail à 90 jours inchangé ; agrégats par marchand à 13 mois (D1). Export complet. |
+| 2. Sécurité et confidentialité | Toutes les nouvelles tables en RLS propriétaire et double authentification exigée (D2) avec les formes de politiques de 0033 (§ 13.1). Libellés nettoyés (`nettoyerLibelle`), motifs de règle sans chiffres longs, aucun IBAN ni numéro. Détail à 90 jours inchangé ; agrégats par marchand à 13 mois (D1). Export complet. |
 | 3. Simple | Une réponse d'abord (anneau, capacité, score, une phrase), le détail en panneau, « Comment c'est calculé » replié. |
 | 4. Simulation comparable | Curseur et impact calculés par **le même moteur** que Objectifs et le connecteur, sur les mêmes tirages, en euros d'aujourd'hui, avec « 8 chances sur 10 ». |
 | 5. Des scores pertinents | Le score s'explique (points perdus par terme), affiche sa couverture (part « à classer »), n'existe pas sans cible ni sans données, et son barème est testé sur 12 cas chiffrés à la main (§ 15.3). |
@@ -95,7 +95,7 @@ Chaque sous-catégorie a une clé stable, un libellé, un bloc, une **catégorie
 | | `autres_credits` | Autres crédits | divers | crédit auto, crédit à la consommation |
 | | `impots` | Impôts et taxes | impots | acomptes, taxe foncière (annuelle probable) |
 | | `frais_bancaires` | Frais bancaires | divers | cotisation de carte, commissions, agios |
-| | `especes` | Retraits d'espèces | divers | DAB (bloc réglable, décision D6 : Envies par défaut) |
+| | `especes` | Retraits d'espèces | divers | DAB : **bloc Envies par défaut** (D6), réglable en Essentiels au questionnaire ; rangée ici pour la lecture, la fixture la met dans `envies` |
 | | `commun_non_detaille` | Versé au commun (non détaillé) | divers | apport vers un commun non observé (§ 4.4) |
 | **Envies** | `restaurants` | Restaurants et livraison | loisirs | restaurants, bars, livraison de repas |
 | | `sorties` | Sorties et culture | loisirs | cinéma, concerts, musées |
@@ -128,8 +128,8 @@ Pour chaque opération (libellé nettoyé, montant signé, compte, type Powens, 
 
 1. **Structure** (jamais surchargée par une règle) : si le rapprochement a apparié l'opération (contrepartie), sa sous-catégorie est `virement_interne`, `epargne_precaution`/`investissement` (côté courant d'un virement avec l'épargne, selon le type du compte d'en face), `apport_commun` (un côté sur un compte `commun`, l'autre sur un compte personnel) ou `transfert_foyer` (deux comptes personnels de titulaires différents). Un relevé de carte identifié devient `releve_carte` (§ 4.5). `epargneSansContrepartie` donne `investissement` (versement vers un placement non synchronisé) ou `epargne_precaution` (livret).
 2. **Tes règles** (`budget_regles`, actives) : la première qui correspond, dans l'ordre de **spécificité** (compte précisé, puis bornes de montant, puis motif le plus long), puis de date de création. Une règle ne peut pas viser une sous-catégorie « hors budget » sauf `apport_commun` et `transfert_foyer` (pour un compte d'en face non connecté) : refus en français sinon.
-3. **Table des marchands** (`MARCHANDS`, versionnée, `VERSION_MARCHANDS`) : suites de mots sur `cleLibelle` (minuscules, sans accents, sans chiffres, sans noms de mois, la même fonction qu'aujourd'hui), la plus longue suite gagne. Environ 400 enseignes et organismes français courants à la v1 (supermarchés, énergie, opérateurs, transport, plateformes de vidéo et de musique, salles de sport, assureurs et mutuelles, impôts). C'est une table de **reconnaissance**, jamais de recommandation : elle n'est affichée nulle part comme une liste.
-4. **Catégorie Powens** : la correspondance actuelle de `categories.ts`, étendue aux sous-catégories (`supermarket_and_groceries` → `courses`, `bars_restaurants` → `restaurants`, `energy` et `water` → `energie`, `phone_internet_tv` → `telecom`, `rent` → `loyer`, `mortgage_payment` → `credit_logement`, `bank_insurances` → `assurances`, etc. ; la table complète est un livrable de la tâche 0). Un code parent seul donne la sous-catégorie la plus probable du parent, ou rien.
+3. **Table des marchands** (`MARCHANDS`, versionnée, `VERSION_MARCHANDS`) : suites de mots sur `cleLibelle` (minuscules, sans accents, sans chiffres, sans noms de mois, la même fonction qu'aujourd'hui), la plus longue suite (en caractères) gagne, à égalité la première de la table ; une entrée peut porter un `sens` (les mutuelles de santé : sortie seulement, pour qu'un remboursement aille en santé par le motif « mutuelle »). La v1 (tâche 1, `test/fixtures/budget-marchands.json`, 885 entrées : enseignes, organismes et termes génériques comme « supermarche » ou « pharmacie ») couvre 99 % des montants hors structure des opérations de préproduction ; les prénoms et noms de famille courants en sont exclus (« jules », « picard », « boulanger »…), comme les motifs du point 5. Enseignes et organismes français courants (supermarchés, énergie, opérateurs, transport, plateformes de vidéo et de musique, salles de sport, assureurs et mutuelles, impôts). C'est une table de **reconnaissance**, jamais de recommandation : elle n'est affichée nulle part comme une liste.
+4. **Catégorie Powens** : la correspondance actuelle de `categories.ts`, étendue aux sous-catégories (`supermarket_and_groceries` → `courses`, `bars_restaurants` → `restaurants`, `energy` et `water` → `energie`, `phone_internet_tv` → `telecom`, `rent` → `loyer`, `mortgage_payment` → `credit_logement`, `insurances` → `assurances`, etc. ; table complète des 98 codes français et des 2 codes espagnols déjà lus dans `test/fixtures/budget-cas.json`, clé `powens`). Un code parent seul donne la sous-catégorie la plus probable du parent, ou rien (`bank_insurances` et `others` : rien). Quatre codes changent de catégorie large, d'une dépense à une autre (totaux de revenus, dépenses et capacité inchangés) : `kitchen_and_appliances` et `furniture_and_decoration` (logement → `shopping`, divers), `health_insurance_fees` (sante → `assurances`, divers), `plane_or_boat_travel` (transport → `voyages`, loisirs) ; `VERSION_CATEGORIES` change.
 5. **Motifs génériques** : `loyer` ; `prlv … dgfip` ou `impot` → `impots` ; `cotisation carte`, `commission intervention`, `agios`, `frais tenue de compte` → `frais_bancaires` ; `retrait dab` → `especes` ; `cpam` ou `mutuelle` en entrée → `sante` ; `caf` en entrée → `revenus_autres` ; `salaire`/`paie` en entrée → `salaires` ; `vir … permanent` vers soi → règle de `epargneSansContrepartie` (inchangée).
 6. **Revenus détectés** (`revenusDetectes`, inchangé) : une entrée stable retenue comme salaire → `salaires`.
 7. Sinon **`a_classer`**.
@@ -293,7 +293,7 @@ Une nouvelle cible validée s'applique **au mois suivant** (le mois en cours gar
 | Doublon d'abonnement de même famille | facile | le plus petit des deux, si tu confirmes |
 | Frais bancaires | facile | frais des 12 derniers mois ÷ 12, moins 5 €/mois de cotisation laissée (convention) |
 | Assurances en double possible | moyen | le plus petit montant, « à vérifier sur tes contrats » |
-| Assurances, énergie, télécoms : revoir les contrats | moyen | 10 % de la référence de la sous-catégorie (convention) |
+| Assurances, énergie, télécoms : revoir les contrats (trois pistes distinctes) | moyen | 10 % de la référence de la sous-catégorie, arrondi à l'euro (convention) |
 | Envies modulables (envies hors protégées et hors abonnements) | moyen | 10 % (convention) |
 | Envies modulables, effort fort | vrai_changement | 25 % (convention) |
 | Petits achats récurrents | moyen | la moitié de leur total (convention) |
@@ -310,7 +310,7 @@ Entrée : `{ perimetre, reference, capacite_constatee C, epargne_necessaire N (o
    - **ambitieuse** = tenable `+ Σ pistes moyennes hors « envies 10 % » + envies 25 %`.
    Chacune : montant, taux (÷ revenus de référence), effort, effet sur chaque objectif (§ 10.2).
 2. **Nécessaire** = `N + matelas_mensuel` (si `N` existe).
-3. **Retenue par défaut** : `max(tenable, min(nécessaire, ambitieuse))` ; sans objectif chiffré : équilibrée. Si nécessaire > ambitieuse : la retenue est l'ambitieuse **et** le coach dit, chiffres à l'appui, que les objectifs ne sont pas atteignables avec 8 chances sur 10 par l'épargne seule, puis présente les leviers (repousser une date, baisser un montant, accepter moins de chances, revenus) avec leur effet.
+3. **Retenue par défaut** : `max(tenable, min(nécessaire, ambitieuse))` ; sans objectif chiffré : équilibrée. Puis le **plancher** borne : si `R* − S*` passe sous le plancher de reste à vivre, `S* = ⌊R* − plancher⌋` et l'orientation du § 9.1 (étape 4) s'applique (cas T4). Si nécessaire > ambitieuse : la retenue est l'ambitieuse **et** le coach dit, chiffres à l'appui, que les objectifs ne sont pas atteignables avec 8 chances sur 10 par l'épargne seule, puis présente les leviers (repousser une date, baisser un montant, accepter moins de chances, revenus) avec leur effet.
 4. **Répartition** : l'écart `S* − C` est couvert par les pistes dans l'ordre (faciles, moyennes, puis le complément sur les envies modulables jusqu'à 25 %) ; une baisse d'envies se répartit **au prorata** des références des sous-catégories modulables, arrondie à l'euro par la méthode du plus fort reste (somme exacte). `Ess*` = référence des essentiels − pistes d'essentiels retenues ; `Env* = R* − Ess* − S*`.
 5. **Contrôles** (renvoyés, bloquants en gras) : **somme exacte** `Ess* + Env* + S* = R*` ; **protégées ≥ référence** ; **`Ess* + Env*` ≥ plancher** ; aucune sous-catégorie d'essentiels sous 90 % de sa référence hors piste acceptée ; taux d'épargne affiché avec son effort.
 
@@ -330,7 +330,7 @@ Quand une cible du foyer est en vigueur, `Projection.capaciteDeBase` prend `prev
 
 ## 9. Le coach et le connecteur
 
-### 9.1 L'expertise `budget-epargne` v3 (migration 0036)
+### 9.1 L'expertise `budget-epargne` v3 (migration 0037)
 Version = version publiée + 1 (3 si la 0032 a publié la v2) ; changelog « BUD1 : budget piloté par le réel ». `quand_consulter` élargi : « combien garder pour vivre, combien épargner, où rogner, mon budget est-il tenu, quel taux d'épargne viser ».
 
 **Méthode (10 étapes)**
@@ -464,28 +464,30 @@ Module `web/src/budget-view.js` (nouveau, lecture seule) ; `plan-view.js` est ga
 
 ## 12. Repères et sources
 
-Tous dans `test/fixtures/budget-cas.json` (clé `reperes`, format de 0030) puis migration 0035 ; statut V (vérifié sur une source primaire) ou CONV (convention de Boussole, dite comme telle). **Aucune valeur n'entre en base sans vérification** (tâche 0).
+Tous dans `test/fixtures/budget-cas.json` (clé `reperes`, format de 0030 ; les droits sans valeur chiffrée dans la clé `textes`) puis migration 0036 ; statut V (vérifié sur une source primaire) ou CONV (convention de Boussole, dite comme telle). **Aucune valeur n'entre en base sans vérification** (tâche 0).
 
 | Clé (préfixe) | Valeur | Statut au 2026-10-16 | Source |
 |---|---|---|---|
-| `insee_bdf2017_logement_personne_seule` · `_monoparentale` · `_couple_sans_enfant` · `_couple_avec_enfants` | 24,2 % · 19,7 % · 13,9 % · 12,5 % de la consommation | Vérifié (lu sur la publication) | Insee Focus n° 203, 15/09/2020, enquête Budget de famille 2017, figure 3 : https://www.insee.fr/fr/statistiques/4764315 |
-| `insee_bdf2017_alimentation_*` (même découpage) | 14,6 % · 15,0 % · 17,3 % · 16,0 % | Vérifié | idem |
-| `insee_bdf2017_transport_*` | 12,4 % · 15,0 % · 17,9 % · 17,8 % | Vérifié | idem |
-| `insee_bdf2017_logement_locataires_q1` · `_q5` | 29,3 % · 27,4 % | Vérifié | idem (locataires, 1er et 5e quintiles de niveau de vie) |
-| `insee_bdf2017_*` (autres postes et types de ménage) | à relever | À vérifier en tâche 0 | Tableaux TM201 à TM207 (structure des dépenses), Insee Résultats, 15/09/2020 : https://www.insee.fr/fr/statistiques/4648319 |
-| Définition | Logement = loyers, énergie, eau, charges, petit entretien ; **hors loyers imputés**, achats, remboursements de prêts, gros travaux ; la consommation exclut impôts et remboursements de crédits | Vérifié | Insee Focus n° 203 |
-| Millésime | 2017 est la dernière édition publiée ; une édition **2026** est annoncée | Vérifié | https://www.insee.fr/fr/metadonnees/source/serie/s1194 (mettre à jour les repères à sa publication) |
-| `insee_taux_epargne_menages` (contexte seulement, jamais une cible) | 17,2 % du revenu disponible brut au 2e trimestre 2026 (17,9 % au 1er) ; épargne financière 8,5 % | Vérifié | Insee, Informations rapides n° 212, 28/08/2026 : https://www.insee.fr/fr/statistiques/9039499 (au sens des comptes nationaux : comprend notamment le remboursement du capital des emprunts immobiliers, d'où une comparaison prudente, dite comme telle) |
-| `rsa_forfaitaire_seul`, `_couple`, `_par_enfant` (plancher de reste à vivre) | à relever (revalorisation d'avril 2026) | À vérifier en tâche 0 | Code de la consommation, art. L. 731-2 (part des ressources réservée aux dépenses courantes, jamais inférieure au montant forfaitaire du RSA, surendettement), Légifrance ; montants : service-public.fr ou caf.fr |
-| Convention de reste à vivre | Aucune norme légale hors surendettement ; le HCSF encadre le taux d'effort (repère existant `hcsf_taux_effort`) mais ne chiffre pas de reste à vivre ; les commissions de surendettement appliquent un barème de leur règlement intérieur (Banque de France) | À confirmer en tâche 0 | Légifrance (L. 731-2, R. 731-1 et suivants), pages Banque de France des commissions |
-| `frais_commission_intervention_max_op`, `_max_mois` (et clientèle fragile) | à relever | À vérifier en tâche 0 | Code monétaire et financier, art. R. 312-4-1 et suivants (Légifrance) |
-| `resiliation_assurance_infra_annuelle` | après un an, à tout moment (auto, habitation, affinitaires depuis 2015 ; santé depuis le 01/12/2020 ; autres contrats de personnes depuis le 01/07/2023) | À vérifier en tâche 0 sur le texte | Loi n° 2014-344 du 17/03/2014 et suivantes (Légifrance, service-public.fr) |
-| `resiliation_trois_clics` | depuis le 01/06/2023 | À vérifier en tâche 0 (numéro d'article et décret divergent selon les sources) | Loi n° 2022-1158 du 16/08/2022 ; https://www.info.gouv.fr/actualite/resilier-son-contrat-dassurance-en-trois-clics |
-| `assurance_emprunteur_resiliation` | à tout moment (loi du 28/02/2022) | À vérifier en tâche 0 | Légifrance |
-| Orientation | Point conseil budget (gratuit, confidentiel) ; Banque de France (surendettement) | Déjà dans l'expertise v1 | service-public.fr, banque-france.fr |
+| `insee_bdf2017_<poste>_<menage>` : 8 postes (alimentation, habillement, logement, transport, communications, loisirs_culture, restauration_hotels, biens_services_divers) × 5 ménages (personne_seule, monoparentale, couple_sans_enfant, couple_avec_enfants, ensemble) | ex. logement 24,3 · 19,8 · 13,9 · 12,6 · 16,3 % ; alimentation 14,6 · 15,0 · 17,4 · 16,0 · 16,1 % ; transport 12,3 · 15,0 · 17,9 · 17,7 · 16,3 % de la consommation | **V** (2026-10-15, lu dans le fichier) | Insee Résultats, 15/09/2020, Budget de famille 2017, **France métropolitaine**, tableau TM205 : https://www.insee.fr/fr/statistiques/4648319. Les chiffres de l'Insee Focus n° 203 (figure 3, champ France) diffèrent de 0,1 point sur quelques valeurs : les repères suivent TM205 et le disent |
+| `insee_bdf2017_logement_locataires` · `_q1` · `_q5` · `_proprietaires` | 29,0 · 29,3 · 27,4 · 9,6 % | **V** | Même publication, tableau TM207 (locataires de 27,4 % à 30,4 % selon le quintile) |
+| Définition | Logement = loyers, énergie, eau, charges, petit entretien ; **hors loyers imputés**, achats, remboursements de prêts (de l'épargne pour l'enquête), gros travaux | **V** | Insee Focus n° 203 : https://www.insee.fr/fr/statistiques/4764315 |
+| Millésime | 2017 est la dernière édition publiée ; une édition **2026** a lieu en 2026, date des résultats non annoncée | **V** | https://www.insee.fr/fr/metadonnees/source/serie/s1194 (mettre à jour les repères à sa publication) |
+| `insee_taux_epargne_menages`, `insee_taux_epargne_financiere` (contexte seulement, jamais une cible) | 17,2 % du revenu disponible brut au 2e trimestre 2026 (17,9 % au 1er) ; épargne financière 8,5 % | **V** | Insee, Informations rapides n° 212, 28/08/2026 : https://www.insee.fr/fr/statistiques/9039499 (au sens des comptes nationaux, d'où une comparaison prudente, dite comme telle) |
+| `rsa_forfaitaire_seul` (plancher de reste à vivre) | **651,69 €** par mois depuis le 01/04/2026 (hors Mayotte) | **V** | Décret n° 2026-220 du 30/03/2026, art. 1 (JORF n° 77 du 31/03/2026) : https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000053733826 |
+| `rsa_forfaitaire_couple` · `_seul_1_enfant` · `_seul_2_enfants` · `_couple_1_enfant` · `_couple_2_enfants` · `_personne_supplementaire` | 977,54 · 977,54 · 1 173,05 · 1 173,05 · 1 368,55 · 260,68 € | **V** | Service-public F19778 (vérifié le 01/04/2026) ; cohérents avec R. 262-1 du CASF à 0,01 € près. **Pas de montant unique « par enfant »** : +50 % pour la 2e personne, +30 % par personne à charge jusqu'au 2e enfant, +40 % à partir du 3e (`rsa_majoration_*`, R. 262-1, version du 01/01/2016). Le plancher de L. 731-2 renvoie au montant forfaitaire de L. 262-2 : la majoration pour parent isolé (L. 262-9) n'est pas reprise |
+| Reste à vivre (texte) | Surendettement : part des ressources réservée aux dépenses courantes jamais inférieure au montant forfaitaire du RSA du foyer ; elle intègre logement, énergie, eau, nourriture, scolarité, garde, déplacements professionnels, santé. La commission les apprécie au réel ou par un barème de son règlement intérieur ; aucune norme légale hors surendettement (le HCSF ne chiffre pas de reste à vivre) | **V** | Code de la consommation, art. L. 731-2 (en vigueur depuis le 01/07/2016) : https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032224470 ; art. R. 731-1 et suivants |
+| `frais_commission_intervention_max_op`, `_max_mois` | 8 € par opération, 80 € par mois et par compte (depuis le 01/01/2014) | **V** | Code monétaire et financier, art. R. 312-4-1 : https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028091604 |
+| `frais_commission_intervention_fragile_max_op`, `_max_mois` | 4 € et 20 € (offre clientèle fragile, services bancaires de base) | **V** | CMF, art. R. 312-4-2 (version du 23/06/2017) : https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033688443 |
+| `frais_incidents_fragile_max_mois` · `frais_incidents_offre_fragile_max_mois` · `_max_an` · `offre_clientele_fragile_prix_max_mois` | 25 € par mois (client détecté fragile) · 20 € par mois et 200 € par an (offre spécifique) · 3 € par mois | **V** en vigueur au 15/10/2026 ; **date d'origine non établie** : `dateEffet` = date du constat, dit dans le libellé | Banque de France, « Le plafonnement des frais bancaires et l'offre clientèle fragile » |
+| `resiliation_assurance_apres_mois`, `resiliation_sante_apres_mois`, `resiliation_assurance_effet_mois` | 12 mois puis à tout moment, sans frais, effet un mois après la notification : auto, habitation, affinitaires depuis le 01/01/2015 ; complémentaire santé individuelle depuis le 01/12/2020 (pas une adhésion obligatoire par l'employeur). « Autres contrats de personnes depuis le 01/07/2023 » : **non trouvé, retiré** | **V** | Code des assurances, art. L. 113-15-2 (loi n° 2014-344, décret n° 2014-1685 ; loi n° 2019-733) : https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038775140/ |
+| Résiliation en trois clics (texte, clé `resiliation_trois_clics` de `textes`) | Depuis le 01/06/2023, un contrat qu'on peut conclure en ligne se résilie en ligne (fonctionnalité gratuite) ; assurances, mutuelles, institutions de prévoyance : même droit à la même date | **V** | Code de la consommation, art. L. 215-1-1 (loi n° 2022-1158, **art. 15**) et décret n° 2023-417 du 31/05/2023 ; assurances : loi n° 2022-1158, **art. 17**, C. assur. L. 113-14, C. mutualité L. 221-10-3, CSS L. 932-12-2 et L. 932-21-3, décret n° 2023-182 du 16/03/2023 (art. 4) |
+| `assurance_emprunteur_delai_min_mois` | à tout moment : offres de prêt depuis le 01/06/2022, contrats en cours depuis le 01/09/2022 | **V** | C. assur., art. L. 113-12-2 (loi n° 2022-270 du 28/02/2022, art. 1 et 8) : https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000035731291 |
+| Orientation | Point conseil budget (gratuit, confidentiel, ouvert à tous) ; Banque de France (surendettement, procédure gratuite) | **V** | https://www.banque-france.fr/fr/a-votre-service/particuliers/faire-face-difficultes-financieres-ou-dettes |
 | `budget_matelas_reconstitution_mois` | 12 | CONV | Boussole |
-| `budget_piste_*` (10 %, 25 %, 50 %, 5 €) | § 8.2 | CONV | Boussole |
-| `budget_score_*` (poids 3, 2, 1 ; franchise 1 % ; seuils 85 et 60 ; à classer 15 % et 30 %) | § 7 | CONV (barème testé) | Boussole |
+| `budget_piste_*` (10 %, 25 %, 50 %, 5 €, 15 €, 8 achats), `budget_essentiel_plancher_pct` (90 %), `budget_annuelle_seuil` (150 €), `budget_recurrent_tolerance_pct` (10 %) | § 6.4, § 8.2 | CONV | Boussole |
+| `budget_score_*` (poids 3, 2, 1 ; franchise 1 % ; seuils 85 et 60 ; à classer 15 % et 30 % ; revenus incomplets 50 %) | § 7 | CONV (barème testé, D4 : revu après 3 mois de vrais relevés) | Boussole |
+
+88 repères dans la fixture : **68 V** (46 Insee, 10 RSA, 8 frais bancaires, 4 délais de résiliation) et **20 CONV** ; ce qui a été écarté est dans `reperes_non_retenus`, les droits sans valeur chiffrée dans `textes`. Les conventions sans unité (poids, seuils de note, nombre d'achats) prennent l'unité **`nombre`**, que la migration des repères ajoute à `reperes_unite_check` (comme 0030 pour UC, h, dates).
 
 Le « 50/30/20 » n'est pas un repère : il est cité dans l'expertise comme une règle populaire, sans source officielle, et jamais appliqué.
 
@@ -493,7 +495,7 @@ Le « 50/30/20 » n'est pas un repère : il est cité dans l'expertise comme une
 
 ## 13. Données (migrations)
 
-### 13.1 `0034_budget.sql` (ou le premier numéro libre ; après 0032 SUIVI et 0033)
+### 13.1 `0035_budget.sql` (0034 est HIS2 ; après 0033 en production)
 Repartir **exactement** des dernières définitions en vigueur de `appliquer_propositions`, `export_all`, `banque_recalculer_mois`, `banque_purger`.
 
 - `banque_comptes.titulaire` : contrainte remplacée par `titulaire in ('p1', 'p2', 'commun')` ; le déclencheur de rattachement accepte `commun` avec une enveloppe (règle de CP2).
@@ -504,16 +506,16 @@ Repartir **exactement** des dernières définitions en vigueur de `appliquer_pro
 - **`budget_regles`** `(id uuid, user_id, motif, sous_categorie, sens, compte_id bigint null, montant_min numeric null, montant_max numeric null, annuelle bool, active bool default true, source text ≤ 200, cree_le, maj_le)` ; contraintes du § 3.4 ; déclencheur « 300 au plus » ; `sous_categorie` contrôlée par `public.budget_sous_categorie_valide(text)` (liste figée de la taxonomie v1, remplacée à chaque version).
 - **`budget_historique`** (CP2) `(user_id, mois, compte text ≤ 40 sans chiffres longs, titulaire p1|p2|commun, compte_powens_id bigint null, sous_categorie, categorie (large, calculée), entrees ≥ 0, sorties ≥ 0, nombre ≥ 0, source text ≤ 200, importe_le)`, clé `(user_id, mois, compte, sous_categorie)`, montants ≤ 10 000 000, 5 000 lignes au plus par utilisateur.
 - **RLS** : propriétaire partout. `banque_marchands_mois` : `select` seul. `budget_regles` : `select`, `insert`, `delete` propriétaire ; `update` propriétaire avec droit de colonne `grant update (active, motif, sous_categorie, sens, compte_id, montant_min, montant_max, annuelle, source, maj_le)` (l'app n'utilise que `active` ; test de lecture seule sur le store). `budget_historique` : `select`, `insert`, `update`, `delete` propriétaire (le connecteur écrit avec ton jeton). `revoke all from anon`.
-- **0028** : politiques restrictives **aal2 toujours** (niveau 1, comme `banque_*`) sur les trois tables (décision D2) ; `test/mfa-pglite.test.mjs` les voit.
+- **Double authentification (D2, tranchée le 2026-10-15)** : politiques restrictives aux formes de **0033**, que `test/mfa-pglite.test.mjs` voit. `banque_marchands_mois` (détail bancaire, écrit par le service) : forme **« banque_* »** (lecture `aal2` OU `connecteur_autorise()` ; écriture `aal2` ET aucun `client_id` dans le jeton ; suppression idem). `budget_regles` (préférences sans montant, écrites par le connecteur après accord, D3) : forme **« aal2 si facteur »** (`aal2` OU pas de facteur vérifié OU `connecteur_autorise()`, en lecture comme en écriture). `budget_historique` : écrit par le connecteur (`importer_depenses`), donc pas la forme « banque_* » telle quelle (elle refuse toute écriture d'un jeton OAuth) : point ouvert § 17.1 (recouvrement avec `historique_banque_mois` de HIS2).
 - **`appliquer_propositions`** : cible `config`, clés `partage`, `budget_cible`, `budget_preferences` (validation § 5, § 8.4, § 9.4 ; messages en français).
 - **`export_all`** : `+ budget_regles`, `budget_historique`, `banque_marchands_mois` (et `banque_mois` déjà exporté, vérifié par test).
 - **`banque_purger`** : `+ delete from banque_marchands_mois where mois < date_trunc('month', aujourd'hui à Paris) − 13 mois`.
 - Fonction `budget_reclasser_historique(user)` (service seulement) : reconstruit `banque_mois` des mois de 90 jours à 13 mois à partir de `banque_marchands_mois` (reclassement par la fonction powens, puis somme), garde-fou : un mois n'est reconstruit que si la somme des agrégats par marchand égale l'ancien total du mois à 1 € près (sinon il reste figé et le connecteur le dit).
 
-### 13.2 `0035_reperes_budget.sql`
-Idempotente, sans table, repères du § 12 recopiés à l'identique de la fixture (parité testée), jamais une valeur non vérifiée.
+### 13.2 `0036_reperes_budget.sql`
+Idempotente, sans table, repères du § 12 recopiés à l'identique de la fixture (parité testée), jamais une valeur non vérifiée ; ajoute l'unité `nombre` à `reperes_unite_check`.
 
-### 13.3 `0036_expertise_budget_v3.sql`
+### 13.3 `0037_expertise_budget_v3.sql`
 Contenu de l'expertise (§ 9.1), `version` + 1, `changelog`, copie dans `expertises_versions` par le déclencheur existant ; validé par `expertise_eval_valide`.
 
 ### 13.4 Ce qui est gardé, et combien de temps
@@ -537,7 +539,7 @@ La page Confidentialité est mise à jour (tâche du plan). Suppression du compt
 ## 15. Tests
 
 ### 15.1 Catégorisation (`test/budget-categories.test.mjs`)
-Ordre de priorité (structure > règle > marchand > Powens > motif > à classer) ; suite de mots et pas sous-chaîne ; spécificité des règles ; refus d'une règle vers « hors budget » (sauf apport et transfert) ; motif sensible refusé ; libellé piégé (canari) classé à classer et jamais recopié ; versions changées quand une correspondance change ; copies générées à jour ; parité de `cleLibelle` avec `synchro.ts` et `banque.ts`. Jeu de **40 libellés fictifs** (tâche 0) au format :
+Ordre de priorité (structure > règle > marchand > Powens > motif > à classer) ; suite de mots et pas sous-chaîne ; spécificité des règles ; refus d'une règle vers « hors budget » (sauf apport et transfert) ; motif sensible refusé ; libellé piégé (canari) classé à classer et jamais recopié ; versions changées quand une correspondance change ; copies générées à jour ; parité de `cleLibelle` avec `synchro.ts` et `banque.ts`. Jeu de **40 libellés fictifs** (tâche 0, `libelles` de la fixture : opération, règles du cas, attendu `{ sous_categorie, origine, cle_marchand }`, raison) ; extraits :
 
 | Libellé (fictif) | Attendu | Origine |
 |---|---|---|
@@ -586,18 +588,18 @@ Ordre de priorité (structure > règle > marchand > Powens > motif > à classer)
 | **S10** Grand écart | Env 3 500 | P > 1 | **0 · à revoir** (borné) |
 | **S11** Taxe foncière lissée | Ess 3 100 dont taxe foncière 1 200 (annuelle), Env 1 000 ; Ess* inclut 100 de provision | Ess lissé 2 000, ΔS 0 | **100 · tenu**, repère « dépense annuelle lissée » ; capacité réelle du mois −100 affichée |
 | **S12** Revenus absents | R 0 (salaire en retard), dépenses à la cible | ΔS 0 ; R < 50 % R* | **100 · tenu, provisoire** (« revenus du mois incomplets ») |
-Plus : arrondi (0,5 vers le haut), mois en cours jamais noté, cible du mois suivant (§ 7.5), points par terme dont la somme fait l'écart, lexique (aucun mot de série).
+Plus (fixture) : **S13** arrondi (Env 1 060 → 97,5 → **98**, points 2 et 1 et ligne « arrondi » −1), **S14** mois en cours jamais noté, **S15** sans cible ; cible du mois suivant (`cible_en_vigueur`, § 7.5) ; points par terme dont la somme fait l'écart (sauf note bornée à 0, S10) ; lexique (aucun mot de série).
 
 ### 15.4 Cible (`test/budget-cible.test.mjs`), foyer fictif « Camille et Sam » (couple sans enfant, locataire)
 Référence (médianes lissées sur 12 mois) : revenus 4 800 ; Essentiels 2 700 (loyer 1 300, énergie 110, télécoms 60, courses 620, transport 230, assurances 140, santé 40, frais bancaires 20, autres crédits 180) ; Envies 1 450 (restaurants 380, sorties 120, sport 90 **protégé**, voyages 300, achats 340, abonnements 85, loisirs 75, cadeaux 60) ; capacité constatée **650** (13,5 %).
-Pistes : faciles 30 (frais bancaires −15, un abonnement non utilisé −15) ; moyennes : assurances −20 (convention : environ 10 % de 140, arrondi), énergie −10 (convention : environ 10 % de 110, arrondi), envies modulables (1 275 = envies − sport − abonnements) −10 % = −128.
+Pistes : faciles 30 (frais bancaires −15, un abonnement non utilisé −15) ; moyennes : contrats assurances −14, énergie −11, télécoms −6 (10 % de 140, 110 et 60, arrondis à l'euro ; **corrigé en tâche 0** : la version précédente donnait −20 et −10 et oubliait les télécoms), envies modulables (1 275 = envies − sport − abonnements) −10 % = −128 ; effort fort −25 % = −319.
 | Cas | Entrée | Attendu |
 |---|---|---|
-| **T1** Options | — | tenable 680 (14,2 %) ; équilibrée 650 + 30 + 20 + 10 + 128 = **838** (17,5 %) ; ambitieuse 650 + 30 + 20 + 10 + 319 = **1 029** (21,4 %) |
-| **T2** Nécessaire 900 (épargne nécessaire fournie par un bouchon du moteur) | N 900, matelas à 0 | Retenue **900** (18,75 %) ; écart 250 = 30 + 20 + 10 + envies 190 ; Ess* = 2 700 − 15 − 20 − 10 = **2 655** ; Env* = 1 450 − 15 − 190 = **1 245** ; envies modulables : restaurants 324, sorties 102, voyages 255, achats 289, loisirs 64, cadeaux 51 (somme 1 085, plus fort reste) ; sport 90 ; abonnements 70 ; contrôle 2 655 + 1 245 + 900 = 4 800 |
-| **T3** Nécessaire 1 200 | N 1 200 | Retenue ambitieuse 1 029, `atteignable_8_sur_10: false`, leviers listés |
-| **T4** Plancher | Revenus 1 300, foyer d'une personne, essentiels 1 150 | Aucune option ne passe sous le plancher RSA (repère vérifié) ; signal d'orientation |
-| **T5** Repère Insee | T2 | Part du logement (loyer + charges + énergie) dans la consommation (Essentiels + Envies − crédits − impôts) = 1 410 / 3 970 = **35,5 %** ; comparé aux locataires (27,4 à 29,3 %) : « au-dessus du repère », jamais une contrainte |
+| **T1** Options | — | tenable 680 (14,2 %) ; équilibrée 650 + 30 + 14 + 11 + 6 + 128 = **839** (17,5 %) ; ambitieuse 650 + 30 + 31 + 319 = **1 030** (21,5 %) |
+| **T2** Nécessaire 900 (épargne nécessaire fournie par un bouchon du moteur) | N 900, matelas à 0 | Retenue **900** (18,75 %) ; écart 250 = 30 + 31 + envies 189 ; Ess* = 2 700 − 15 − 14 − 11 − 6 = **2 654** ; Env* = 1 450 − 15 − 189 = **1 246** ; envies modulables : restaurants 324, sorties 102, voyages 255, achats 290, loisirs 64, cadeaux 51 (somme 1 086, plus fort reste sur les montants) ; sport 90 ; abonnements 70 ; contrôle 2 654 + 1 246 + 900 = 4 800 |
+| **T3** Nécessaire 1 200 | N 1 200 | Retenue ambitieuse **1 030**, `atteignable_8_sur_10: false`, leviers listés ; Env* 1 116 (restaurants 285, sorties 90, voyages 225, achats 255, loisirs 56, cadeaux 45) |
+| **T4** Plancher | Personne seule : revenus 800 ; essentiels 500 (loyer 350, courses 120, télécoms 30) ; envies 200 ; capacité 100 ; nécessaire 300 | Options 100 · 123 · 153 ; la retenue 153 laisserait 647 € < 651,69 € (`rsa_forfaitaire_seul`) : **S* = ⌊800 − 651,69⌋ = 148** ; télécoms 27, restaurants 78, achats 77 (reste égal : ordre de la taxonomie) ; orientation ; objectifs non atteignables à 8 sur 10 (**précisé en tâche 0** : l'ancien cas ne mettait jamais le plancher en jeu) |
+| **T5** Repère Insee | T2 | Part du logement (loyer + charges + énergie) dans la consommation (Essentiels + Envies − crédits − impôts) = 1 410 / 3 970 = **35,5 %** ; comparé à l'ensemble des locataires (29,0 %, de 27,4 à 30,4 % selon le quintile, TM207) : « au-dessus du repère », jamais une contrainte |
 
 ### 15.5 Moteur PROJ (`test/projection-epargne-necessaire.test.mjs`)
 Monotonie sur la grille ; dichotomie à 25 € ; mêmes tirages ; objectif déjà à ≥ 0,8 (d négatif) ; objectif inatteignable ; hors horizon exclu ; `d*` = max des `d_i` ; dates à 8 sur 10 (mode déterministe : date égale à celle d'`Plan.dateAtteinte` au mois près quand la volatilité est nulle) ; parité avec la copie générée ; `capaciteDeBase` prévue = cible ; durée sous 8 s sur la démo (500 chemins, 16 simulations au plus).
@@ -625,12 +627,14 @@ Monotonie sur la grille ; dichotomie à 25 € ; mêmes tirages ; objectif déj�
 
 ---
 
-## 17. Décisions ouvertes pour Stéph (recommandation en gras)
+## 17. Décisions pour Stéph (recommandation en gras) : **toutes tranchées le 2026-10-15, recommandations retenues**
+
+Précisions de Stéph : D2 suit les formes de politiques de 0033 (« aal2 si facteur » OU `connecteur_autorise()` ; tables de type bancaire : lecture aal2 ou connecteur, écriture aal2 et aucun `client_id`), voir § 13.1 ; D4 revu après 3 mois de vrais relevés ; numéros de migration 0035 à 0037 (0034 : HIS2).
 
 | # | Question | Options | Recommandation |
 |---|---|---|---|
 | D1 | Garder 13 mois de totaux par marchand nettoyé (`banque_marchands_mois`) ? | Oui 13 mois · 6 mois · non (reclassement limité à 90 jours, pas de détection d'annuel) | **Oui, 13 mois** : seul moyen de lisser une taxe foncière ou un abonnement annuel et de reclasser l'historique ; clé nettoyée sans chiffres, purgée, exportée |
-| D2 | Niveau de double authentification des nouvelles tables | Toujours aal2 (comme la banque) · aal2 si facteur | **Toujours aal2** : c'est du détail de dépenses ; conséquence : importer des relevés demande la double authentification |
+| D2 | Niveau de double authentification des nouvelles tables | Toujours aal2 (comme la banque) · aal2 si facteur | **Double authentification exigée, aux formes de 0033** (tranché) : forme « banque_* » pour `banque_marchands_mois`, « aal2 si facteur » pour `budget_regles` ; `budget_historique` : § 17.1 |
 | D3 | Règles de classement : écriture directe après accord, ou propositions ? | Directe (comme `update_config`, CP3) · proposition à valider | **Directe** : préférence sans montant, nombreuses, reclassement immédiat ; désactivable dans l'app ; la cible et le partage restent des propositions |
 | D4 | Barème du score | Poids 3/2/1, franchise 1 %, seuils 85 et 60 · autre | **3/2/1, 1 %, 85/60**, revus après 3 mois de vrais relevés |
 | D5 | Mensualité du crédit du logement | Essentiels (vue trésorerie), capital remboursé montré à part · capital compté en épargne | **Essentiels**, avec la ligne « dont X € de capital remboursé, qui enrichit ton patrimoine » |
@@ -644,6 +648,13 @@ Monotonie sur la grille ; dichotomie à 25 € ; mêmes tirages ; objectif déj�
 | D13 | Pistes chiffrées dans l'app sans Claude | Oui (calcul déterministe) · seulement via Claude | **Oui**, avec « En parler avec Claude » |
 
 ---
+
+### 17.1 Points ouverts après la tâche 0 (2026-10-15)
+1. **Import d'historique : `budget_historique` (BUD1) et `historique_banque_mois` (HIS2) se recouvrent.** HIS2 (0034) crée `historique_banque_mois (user_id, compte_id, mois, categorie, sous_categorie)`, écrit par `appliquer_propositions` (forme « banque_* », l'app valide en aal2), avec les fonctions `categorie_budget_valide` et `sous_categorie_budget_valide` que BUD1 doit redéfinir. Recommandation : BUD1 **abandonne `budget_historique` et l'outil `importer_depenses` en écriture directe** et lit `historique_banque_mois` (via `Calc.moisBancaires` de HIS2) ; `sous_categorie_budget_valide(categorie, sous_categorie)` est redéfinie dans 0035 à partir de la taxonomie de la fixture (paire catégorie large et sous-catégorie, `''` toujours accepté). À trancher avant la tâche 4.
+2. **Unité `nombre`** pour les repères de convention sans unité : à ajouter à `reperes_unite_check` dans 0036.
+3. **Frais d'incidents de la clientèle fragile (25 €, 20 €/200 €, 3 €)** : valeurs vérifiées en vigueur, date d'origine non établie ; `dateEffet` = date du constat. À dater si un texte primaire est retrouvé.
+4. **Table des marchands** : couverture mesurée sur un seul foyer de préproduction (libellés génériques) ; à remesurer quand la tâche 17 aura ajouté des opérations à `couple-enfants` et `endette`. Mots courts à surveiller à la relecture (tâche 6) : « orange », « action », « canal », « quick », « printemps ».
+5. **Règle vers `a_classer`** : la spec ne dit pas si `regleValide` la refuse ; la fixture ne la teste pas.
 
 ## 18. Risques
 - **Qualité de la table des marchands** sans Powens catégorisé : couverture visée ≥ 80 % des montants sur les relevés fictifs de préproduction ; la part « à classer » est toujours affichée et le score devient provisoire ou absent.
