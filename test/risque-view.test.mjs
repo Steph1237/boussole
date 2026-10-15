@@ -115,10 +115,10 @@ test("geometrie : bande cible et barre réelle bornées à 0-100 %", () => {
 });
 
 test("fpct : pourcentages à la française", () => {
-  assert.equal(V.fpct(43.707), "43,7 %");
-  assert.equal(V.fpct(-18.27, 0), "−18 %");
-  assert.equal(V.fpct(20), "20 %");
-  assert.equal(V.fpct(-0.01, 0), "0 %");
+  assert.equal(V.fpct(43.707), "43,7\u00a0%");
+  assert.equal(V.fpct(-18.27, 0), "−18\u00a0%");
+  assert.equal(V.fpct(20), "20\u00a0%");
+  assert.equal(V.fpct(-0.01, 0), "0\u00a0%");
   assert.equal(V.fpct(null), "—");
 });
 
@@ -182,7 +182,7 @@ function vueRisque(S0, o = {}) {
   ctx.App = { register: (n, api) => { modules[n] = api; } };
   ctx.Store = { db: { doc: () => ({ update: async patch => { if (o.echec) throw new Error("réseau coupé"); ecrits.push(patch); Object.assign(S, patch); } }) } };
   vm.createContext(ctx);
-  for (const f of ["calc.js", "plan.js", "marche.js", "risque.js", "ui.js", "claude-prompts.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
+  for (const f of ["format.js", "calc.js", "plan.js", "marche.js", "risque.js", "ui.js", "claude-prompts.js"]) vm.runInContext(read("web/src/" + f), ctx, { filename: f });
   vm.runInContext(js, ctx, { filename: "risque-view.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.innerHTML = html;
@@ -224,7 +224,10 @@ test("vue (DOM) : profil enregistré — cartes → panneaux (profil validé en 
   S0.positions[0].bloc = "<img src=x onerror=alert(1)>";
   const v = vueRisque(S0);
   assert.match(v.root.querySelector("#rvVerdict").textContent, /portefeuille se comporte comme un profil/);
-  assert.match(v.root.querySelector(".rv-hero").textContent, /Le revoir avec Claude/);
+  const hero = v.root.querySelector(".rv-hero");
+  assert.equal(hero.querySelector(".ui-claude"), null, "aucun bouton Claude dans la réponse : l'en-tête de la page porte la demande");
+  assert.match(hero.querySelector(".ui-puce").textContent, /ton profil$/, "écart en chip avec libellé");
+  assert.equal(v.root.querySelector("#rvMain").querySelectorAll(".ui-claude").length, 0, "aucun bouton Claude dans le contenu de la page quand le profil existe");
   assert.ok(v.root.querySelector(".rv-alloc"), "barres d'allocation");
   assert.notEqual(v.api.headline(), "À définir");
   const classes = v.root.querySelector("#rvClassesBody");
@@ -238,7 +241,7 @@ test("vue (DOM) : profil enregistré — cartes → panneaux (profil validé en 
   assert.match(v.doc.body.querySelector(".ui-panneau-titre").textContent, /^Profil /);
   assert.match(corps().innerHTML, /Tes réponses validées/);
   assert.match(corps().textContent, /8 à 15 ans/);
-  assert.match(corps().textContent, /1er octobre 2026|1 octobre 2026/);
+  assert.match(corps().textContent, /1er octobre 2026|1 octobre 2026|1 oct\. 2026/);
   assert.match(corps().textContent, /Le revoir avec Claude/);
   assert.equal(corps().querySelector("button[data-rv]"), null, "plus de « Refaire le questionnaire »");
   v.dom.touche(v.doc.activeElement, "Escape");

@@ -55,7 +55,7 @@ function geometrie(min,max,reel){
 function fpct(x,dec){
   if(!nb(x)) return "—";
   const v=+x, f=Math.abs(v).toFixed(dec==null?1:dec), s=(f.includes(".")?f.replace(/\.?0+$/,""):f).replace(".",",");
-  return (v<0&&s!=="0"?"−":"")+s+" %";
+  return (v<0&&s!=="0"?"−":"")+s+"\u00a0%";
 }
 /** Écart en niveaux entre le profil équivalent du portefeuille et le profil déclaré (rang dans PROFILS) ; null si l'un manque. */
 function ecartNiveaux(profils,declId,eqId){
@@ -124,8 +124,7 @@ const sig={main:"",classes:""};
 const accOuverts=new Set();
 const $=id=>root.querySelector("#"+id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const nf=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});
-const eur=v=>nf.format(Math.round(v))+" €";
+const eur=v=>(window.Fmt?window.Fmt.fmtEUR(v):Math.round(v)+"\u00a0€");
 const R=()=>window.Risque||null, M=()=>window.Marche||null, U=()=>window.UI||null;
 const QS=()=>(R()&&R().QUESTIONS)||[];
 const DEFAULT_NOMS={p1:"Moi",p2:"Conjoint(e)"};
@@ -143,7 +142,7 @@ function raison(g,ev){
 const profilDe=id=>(R()&&R().PROFILS.find(p=>p.id===id))||null;
 const labelProfil=id=>{ const p=profilDe(id); return p?p.label:id; };
 const CHEVRON='<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
-const dateFr=d=>d?new Date(String(d).slice(0,10)+"T12:00:00").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}):"";
+const dateFr=d=>d&&window.Fmt?window.Fmt.fmtDate(String(d).slice(0,10)):"";
 
 /* ---------- contexte de calcul ---------- */
 const pre=()=>prerempli(S,{Calc:window.Calc,Plan:window.Plan});
@@ -209,27 +208,38 @@ function cartesHtml(E){
   return out.length?`<div class="ui-cartes rv-cartes">${out.join("")}</div>`:"";
 }
 
+/* Chip de l'écart entre le profil déclaré et le comportement du portefeuille (statut avec libellé, jamais la couleur seule). */
+function ecartHtml(E){
+  const k=E.v.ecart;
+  if(k==null) return "";
+  const [c,t]=k===0?["bon","Conforme à ton profil"]:k>0?["travailler","Plus risqué que ton profil"]:["surveiller","Moins risqué que ton profil"];
+  return `<span class="ui-puce ${c}"><span class="ui-puce-point" aria-hidden="true"></span>${t}</span>`;
+}
+/* Sans profil : une carte d'état vide (la seule action Claude de la page : le questionnaire se fait dans Claude), à côté de ce qui se calcule déjà. */
 function introHtml(E){
-  return `<section class="panel rv-hero" aria-labelledby="rvTitre">
-    <h2 class="label" id="rvTitre">Mon portefeuille correspond-il à mon profil ?</h2>
+  const hero=`<section class="panel rv-hero" aria-labelledby="rvTitre">
+    <h2 class="rv-h2" id="rvTitre">Profil de risque</h2>
     <p class="rv-verdict" id="rvVerdict" tabindex="-1">Ton profil de risque n'est pas encore défini.</p>
     <p class="rv-lead">${QS().length||10} questions, 3 minutes, dans Claude : un formulaire interactif te les pose une à une. Ce profil sert à comparer ton portefeuille à ce que tu peux supporter.</p>
     <p class="rv-note">Horizon, réaction à une baisse, perte acceptable, connaissances, revenus : inspiré du questionnaire d'adéquation réglementaire (MiFID II). Claude dépose ensuite ton profil en proposition : tu le valides dans Agent › Propositions.</p>
     <div class="rv-actions">${lienFaire()}</div>
+    ${E.eq?`<p class="rv-sec-t">${esc("Ton portefeuille se comporte aujourd'hui comme un profil "+E.eq.label+" : le questionnaire dira si c'est le risque que tu peux supporter.")}</p>`:""}
     ${immoHtml()}
-  </section>
-  ${E.eq?`<p class="rv-sec-t">${esc("Ton portefeuille se comporte aujourd'hui comme un profil "+E.eq.label+" : le questionnaire dira si c'est le risque que tu peux supporter.")}</p>`:""}
-  ${cartesHtml(E)}
+  </section>`;
+  const cartes=cartesHtml(E);
+  return `<div class="rv-top${cartes?" deux":""}">${hero}${cartes}</div>
   ${E.eq?accordeonsHtml(E):""}`;
 }
 
+/* Avec profil : la réponse (statut en chip, phrase, fourchettes), les trois cartes, l'allocation et les explications. « Le revoir avec Claude »
+   et la question sur le profil sont dans les panneaux des cartes ; la demande de la page est le bouton Claude de l'en-tête. */
 function resultatHtml(E){
-  return `<section class="panel rv-hero" aria-labelledby="rvTitre">
-    <h2 class="label" id="rvTitre">Mon portefeuille correspond-il à mon profil ?</h2>
-    <p class="rv-verdict ${E.v.ton}" id="rvVerdict" tabindex="-1">${esc(E.v.phrase)}</p>
+  return `<section class="rv-hero rv-reponse" aria-labelledby="rvTitre">
+    <h2 class="ui-sr" id="rvTitre">Profil de risque</h2>
+    ${ecartHtml(E)}
+    <p class="rv-verdict" id="rvVerdict" tabindex="-1">${esc(E.v.phrase)}</p>
     ${E.v.allocation?`<p class="rv-note">${esc(E.v.allocation)}</p>`:""}
-    <div class="rv-actions">${E.decl?lienRevoir(E):lienFaire()}${lienQuestion(E)}</div>
-    ${immoHtml()}
+    ${E.decl?"":immoHtml()}
   </section>
   ${cartesHtml(E)}
   ${E.decl?sectionAllocation(E.sa,E.decl):""}
@@ -245,7 +255,7 @@ function sectionAllocation(sa,decl){
     const g=geometrie(e.min,e.max,e.reel);
     const ecart=e.statut==="dans"?"":` · écart ${e.ecartPts>0?"+":"−"}${String(Math.abs(Math.round(e.ecartPts*10)/10)).replace(".",",")} pt${Math.abs(e.ecartPts)>=2?"s":""}`;
     return `<div class="rv-arow">
-      <div class="rv-ahead"><span class="rv-al">${esc(e.label)}</span><span class="rv-st ${e.statut==="dans"?"ok":"off"}">${ST[e.statut]}</span></div>
+      <div class="rv-ahead"><span class="rv-al">${esc(e.label)}</span><span class="ui-puce ${e.statut==="dans"?"bon":"surveiller"}"><span class="ui-puce-point" aria-hidden="true"></span>${ST[e.statut].charAt(0).toUpperCase()+ST[e.statut].slice(1)}</span></div>
       <span class="rv-track" role="img" aria-label="${esc(e.label+" : "+fpct(e.reel)+", cible "+e.min+" à "+e.max+" %, "+ST[e.statut])}">
         <span class="rv-band${g.bandeLargeur?"":" zero"}" style="left:${g.bandeGauche}%;width:${g.bandeLargeur}%"></span>
         <span class="rv-real ${e.statut==="dans"?"ok":"off"}" style="width:${g.reel.toFixed(2)}%"></span>
@@ -256,10 +266,9 @@ function sectionAllocation(sa,decl){
   }).join("");
   const div=alloc.pct.diversifiants||0;
   return `<section class="panel rv-alloc" aria-labelledby="rvAllocT">
-    <h2 class="rv-h2" id="rvAllocT">Allocation par classe</h2>
-    <p class="rv-sub">Fourchette du profil ${esc(decl.label)} (bande) et répartition réelle ${esc(scopeDe())} (barre), sur ${eur(alloc.total)}${avecImmo&&immoPhysique()>0?" immobilier compris":""}.</p>
-    <div class="rv-arows">${rows}</div>
-    <p class="rv-div"><b>${esc((R().GROUPES_LABELS||{}).diversifiants||"Or et autres")}</b> : <span class="num">${fpct(div)}</span> <span class="muted">· à part : ils diversifient sans entrer dans les fourchettes.</span></p>
+    <div class="rv-ahd"><div><h2 class="rv-h2" id="rvAllocT">Allocation par classe</h2>
+    <p class="rv-sub">Fourchette du profil ${esc(decl.label)} (bande) et répartition réelle ${esc(scopeDe())} (barre), sur ${eur(alloc.total)}${avecImmo&&immoPhysique()>0?" immobilier compris":""}.</p></div>${immoHtml()}</div>
+    <div class="rv-arows">${rows}<p class="rv-div"><b>${esc((R().GROUPES_LABELS||{}).diversifiants||"Or et autres")}</b> : <span class="num">${fpct(div)}</span> <span class="muted">· à part : ils diversifient sans entrer dans les fourchettes.</span></p></div>
     <div class="rv-legend"><span><i class="lg-band"></i>fourchette cible</span><span><i class="lg-real"></i>réel dans la fourchette</span><span><i class="lg-off"></i>réel hors fourchette</span></div>
   </section>`;
 }
