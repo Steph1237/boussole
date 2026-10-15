@@ -10,6 +10,9 @@
      sourceAutoLe, ou compte bancaire rattaché ; sinon « Saisi le JJ/MM » d'après valueDate). Chaque carte est un lien (lignes sans
      enveloppe : une seule → sa fiche ligne, plusieurs → carte sans lien). Doublon probable (Calc.doublonsProbables : ligne saisie qui
      recopie le total de son enveloppe) : alerte sous la carte et en tête de la fiche enveloppe, « Demander à Claude » de la clôturer.
+   - Compte pas à jour (UX2) : plus de 35 jours (SEUIL_ANCIEN_JOURS) sans synchronisation, saisie ni cours (anciennete(), âge au jour de Paris passé par l'appelant) →
+     icône d'alerte et mot « À mettre à jour (N j) » sur la carte et alerte en tête de la fiche ; sans aucune date, rien n'est dit. Plus-value et performance sont
+     deux mots distincts, chacun avec sa définition dans le détail (DEF_PLUS_VALUE, DEF_PERF_COURS, DEF_PERF_VRAIE).
    - Fiches en pleine page dans la même vue, avec fil d'Ariane et adresse profonde (la coque garde les paramètres dans l'URL,
      PARAMS_DANS_URL d'app.js) : #patrimoine/comptes?enveloppe=<nom>&titulaire=<p1|p2>, ?ligne=<id>, ?courant=<id de ligne>.
      · enveloppe : courbe « valeur de tes lignes actuelles » (quantités actuelles × cours historiques, liquidités et lignes saisies à
@@ -30,7 +33,7 @@
    Graphiques en SVG maison (style de pilotage.js et aujourdhui.js) : role="img", <title> et <desc> reliés par aria-labelledby /
    aria-describedby, et tableau des données dans un accordéon fermé.
    Fonctions pures exportées (module.exports, et window.ComptesView dans le navigateur pour app.js, pilotage.js et aujourdhui.js) :
-   FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, etablissement, sourceDe, comptes, entete, debutPeriode, serieEnveloppe,
+   FAMILLES, PERIODES, SEUIL_ANCIEN_JOURS, anciennete, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, etablissement, sourceDe, comptes, entete, debutPeriode, serieEnveloppe,
    perfDepuis, vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, et les rendus HTML enteteHtml,
    famillesHtml, arianeHtml, ficheEnveloppeHtml, calendrierEnveloppeHtml, grapheEnveloppeHtml, calendrierEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg,
    barresSvg, donneesHtml (UI reçu en paramètre quand il en faut ; aucune ne touche au DOM). Dépendances injectées (deps) :
@@ -193,7 +196,24 @@
   /** Pastille de source d'un groupe de lignes : synchronisé (sourceAuto powens / binance, date sourceAutoLe ; ou compte bancaire
       rattaché, date de dernière synchronisation de sa connexion), sinon saisi (date de valeur la plus récente).
       → { texte, ton: bon | neutre, date, origine: powens | binance | manuel } */
-  function sourceDe(lignes, S) {
+  function sourceDe(lignes, S, today) {
+    const r = sourceBrute(lignes, S);
+    return today === undefined ? r : Object.assign(r, anciennete(lignes, r, today));
+  }
+  /** Seuil au-delà duquel un compte est dit « pas mis à jour » : plus de 35 jours sans synchronisation, saisie ni cours (un mois de relevé, plus marge). */
+  const SEUIL_ANCIEN_JOURS = 35;
+  /** Dernière mise à jour connue d'un groupe de lignes : la date de sa source (synchronisation ou saisie), ou le dernier cours d'une ligne cotée
+      (un fonds coté est tenu à jour par les cours de la nuit, pas par sa date de saisie). Âge au jour de Paris `today` (AAAA-MM-JJ, passé par l'appelant :
+      jamais l'horloge locale). → { misAJourLe, jours, ancien } ; sans aucune date : jours null et ancien faux (on ne dit pas ce qu'on ne sait pas). */
+  function anciennete(lignes, source, today) {
+    const t = isoOk(today) ? today : jour();
+    const dates = [source && source.date].concat(liste(lignes).filter(p => p && p.mode === "market").map(p => jj(p.priceDate))).filter(isoOk).sort();
+    const d = dates.pop();
+    if (!d || !isoOk(t)) return { misAJourLe: "", jours: null, ancien: false };
+    const jours = Math.max(0, joursEntre(d, t));
+    return { misAJourLe: d, jours, ancien: jours > SEUIL_ANCIEN_JOURS };
+  }
+  function sourceBrute(lignes, S) {
     const xs = liste(lignes).filter(Boolean);
     const auto = xs.filter(p => SOURCES_AUTO[p.sourceAuto]);
     if (auto.length) {
@@ -227,7 +247,7 @@
       → { familles: [{ id, label, vide, total, part, etablissements: [{ nom, origine, comptes: [carte] }], nb }], financier, dettes }
       carte = { cle, type: enveloppe | courant | dette, nom, sous, solde, part, plusValue, cout, source, href, nb, titulaire } */
   function comptes(S, today, deps) {
-    const C = calcDe(deps), s = S || {}, sc = scopeDe(s);
+    const C = calcDe(deps), s = S || {}, sc = scopeDe(s), t = jour(today);
     const ps = liste(s.positions).filter(p => p && compte(p) && dansScope(p, sc, C));
     const financier = sum(ps, p => valeur(p, C));
     const cartes = { courant: [], epargne: [], investissement: [], dettes: [] };
@@ -251,7 +271,7 @@
       const doublons = sansEnv ? [] : dbl.filter(d => g.lignes.some(p => String(p.id) === String(d.ligne))).map(d => ({ ligne: d.ligne, nom: plat(d.nom) || "sans nom", enveloppe: d.enveloppe }));
       return { cle: g.type === "courant" ? "courant:" + p0.id : "enveloppe:" + env + ":" + (p0.owner || ""), type: g.type, nom, sous, solde,
         part: financier ? solde / financier * 100 : 0, plusValue: lat.length ? sum(lat, v => v) : null, cout: lat.length ? sum(g.lignes.map(coutDe).filter(v => v != null), v => v) : null,
-        source: sourceDe(g.lignes, s), href: cible ? "#" + lien(cible) : null, nb: g.lignes.length, titulaire: p0.owner || null, etablissement: etablissement(g.lignes, s), doublons };
+        source: sourceDe(g.lignes, s, t), href: cible ? "#" + lien(cible) : null, nb: g.lignes.length, titulaire: p0.owner || null, etablissement: etablissement(g.lignes, s), doublons };
     };
     // Dettes : crédits immobiliers (capital restant dû des biens) et autres crédits du profil, à la quote-part du périmètre.
     const pr = s.profil || {}, part = (sc2, x) => (C && typeof C.part === "function" ? C.part(sc2, x) : 1), partCr = (sc2, o) => (C && typeof C.partCredit === "function" ? C.partCredit(sc2, o) : 1);
@@ -263,9 +283,11 @@
     const carteDette = d => {
       const cpt = b && d.id != null ? liste(b.comptes).find(c => c && !c.ignore && c.creditId != null && String(c.creditId) === String(d.id)) : null;
       const cx = cpt ? connexionDe(s, cpt) : null, dt = cx && cx.derniereSynchro;
+      const src = cx ? { texte: "Synchronisé" + (dateCourte(jourDe(dt)) ? " le " + dateCourte(jourDe(dt)) : ""), ton: "bon", date: jourDe(dt), origine: "powens" } : { texte: MANUEL, ton: "neutre", date: "", origine: "manuel" };
+      const sourceDette = Object.assign(src, anciennete([], src, t));
       return { cle: "dette:" + d.id, type: "dette", nom: d.nom, sous: d.credit && avecNom ? (d.credit.owner === "commun" ? "Commun" : nomDe(s, d.credit.owner)) : "",
         solde: -d.montant, part: totalDettes ? d.montant / totalDettes * 100 : 0, plusValue: null, cout: null,
-        source: cx ? { texte: "Synchronisé" + (dateCourte(jourDe(dt)) ? " le " + dateCourte(jourDe(dt)) : ""), ton: "bon", date: jourDe(dt), origine: "powens" } : { texte: MANUEL, ton: "neutre", date: "", origine: "manuel" },
+        source: sourceDette,
         href: "#patrimoine/immobilier", nb: 1, titulaire: null, etablissement: cx && plat(cx.etablissement) ? { nom: plat(cx.etablissement), origine: "banque" } : { nom: MANUEL, origine: "manuel" }, doublons: [] };
     };
     const familles = FAMILLES.map(F => {
@@ -422,7 +444,7 @@
     return { trouvee: true, nom: plat(c.enveloppe), titulaire: c.titulaire || (owners.length === 1 ? owners[0] : null),
       sous: [famLabel(famille(toutes[0], deps)), (c.titulaire || owners.length === 1) && deuxPersonnes(s) ? nomDe(s, c.titulaire || owners[0]) : ""].filter(Boolean).join(" · "),
       lignes, total, plusValue: lat.length ? sum(lat, v => v) : null, cout: lat.length ? sum(ls.map(coutDe).filter(v => v != null), v => v) : null,
-      repartition: repartition(ls, s, deps), source: sourceDe(toutes, s), etablissement: etablissement(toutes, s),
+      repartition: repartition(ls, s, deps), source: sourceDe(toutes, s, t), etablissement: etablissement(toutes, s),
       isins: [...new Set(ls.filter(p => p.mode === "market" && p.isin).map(p => String(p.isin)))], aRecevoir: toutes.filter(p => p.status === "à recevoir").map(p => plat(p.name)),
       vraie: vraiePerformance(s, c.enveloppe, toutes, t, deps),
       calendrier: calendrierEnveloppe(s, plat(c.enveloppe), c.titulaire || (owners.length === 1 ? owners[0] : null), t, deps),
@@ -480,7 +502,7 @@
         montant: fini(x.amount) ? +x.amount : null, note: plat(x.note), agent: x.source === "agent" || x.source === "nightly" }));
     return { trouvee: true, p, nom: plat(p.name) || "Ligne sans nom", sous: [env, plat(p.bloc), deuxPersonnes(s) ? nomDe(s, p.owner) : ""].filter(Boolean).join(" · "),
       valeur: v, poidsEnveloppe: tot && compte(p) ? v / tot * 100 : null, plusValue: g, plusValuePct: g != null ? (p.price / p.pru - 1) * 100 : null, cout: coutDe(p),
-      faits, mouvements, source: sourceDe([p], s), expertise: expertiseDe(p, s, deps), enveloppe: env, titulaire: p.owner || null,
+      faits, mouvements, source: sourceDe([p], s, jour(today)), expertise: expertiseDe(p, s, deps), enveloppe: env, titulaire: p.owner || null,
       enveloppeHref: "#" + lien({ enveloppe: env, titulaire: p.owner }), isin: p.mode === "market" && p.isin ? String(p.isin) : null, statut: p.status };
   }
 
@@ -561,7 +583,7 @@
     const premiere = L.map(o => jj(o.date)).filter(isoOk).sort()[0] || null;
     const court = etatOps === "ok" && (!premiere || premiere > plusJours(t, -55)); // moins de deux mois d'opérations : rien de fiable
     return { trouvee: true, p, nom: plat(p.name) || "Compte courant", sous: [plat(p.envelope), deuxPersonnes(s) ? nomDe(s, p.owner) : ""].filter(Boolean).join(" · "),
-      solde, source: sourceDe([p], s), etablissement: etablissement(p, s), connecte: !!(b && b.actif && cpts.length), banqueActive: !!(b && b.actif), compteIds, portee,
+      solde, source: sourceDe([p], s, jour(today)), etablissement: etablissement(p, s), connecte: !!(b && b.actif && cpts.length), banqueActive: !!(b && b.actif), compteIds, portee,
       flux: { mois: fs.slice(-6), enCours, moyenne }, operations: etatOps,
       plusBas: etatOps === "ok" ? plusBasSolde(soldeBanque, L, t) : null,
       prelevements: etatOps === "ok" && !court ? prelevementsRecurrents(L, t) : [], historiqueCourt: court };
@@ -666,12 +688,12 @@
   function carteHtml(c, U) {
     const fiche = c.type !== "dette", lienOk = !!c.href, route = lienOk ? c.href.replace(/^#/, "") : "";
     const lu = [c.nom, c.sous, (c.type === "dette" ? "reste dû " + eur(-c.solde) : "solde " + eur(c.solde)), pct0(c.part) + (c.type === "dette" ? " des dettes" : " du financier"),
-      c.plusValue != null ? (c.plusValue >= 0 ? "plus-value latente " : "moins-value latente ") + eurS(c.plusValue) : "", c.source.texte,
+      c.plusValue != null ? (c.plusValue >= 0 ? "plus-value latente " : "moins-value latente ") + eurS(c.plusValue) : "", c.source.texte, perimeLu(c.source),
       liste(c.doublons).length ? "doublon probable" : "", !lienOk ? "" : fiche ? "ouvrir la fiche" : "voir Immobilier et crédits"].filter(Boolean).join(", ");
     const corps = '<span class="cv-c-haut"><span class="cv-c-nom">' + esc(c.nom) + "</span>" + '<span class="cv-c-solde">' + esc(eur(c.solde)) + "</span></span>" +
       '<span class="cv-c-bas"><span class="cv-c-sous">' + esc([c.sous, pct0(c.part) + (c.type === "dette" ? " des dettes" : " du financier")].filter(Boolean).join(" · ")) + "</span>" +
       (c.plusValue != null ? tendance(c.plusValue, "latents") : "") + "</span>" +
-      '<span class="cv-c-pied">' + chip(c.source) + (lienOk ? '<span class="cv-c-ouvrir" aria-hidden="true">›</span>' : "") + "</span>";
+      '<span class="cv-c-pied"><span class="cv-c-etat">' + chip(c.source) + perimeHtml(c.source) + "</span>" + (lienOk ? '<span class="cv-c-ouvrir" aria-hidden="true">›</span>' : "") + "</span>";
     const cls = "cv-carte" + (c.type === "dette" ? " dette" : "") + (liste(c.doublons).length ? " doublon" : "");
     return '<li class="cv-li">' + (lienOk
       ? '<a class="' + cls + '" href="' + esc(c.href) + '" data-goto="' + esc(route) + '" data-cv-cle="' + esc(c.cle) + '" aria-label="' + esc(lu) + '">' + corps + "</a>"
@@ -706,7 +728,22 @@
   }
   const titreFiche = (titre, sous, droite) => '<header class="cv-f-tete"><div class="cv-f-tete-txt"><h2 class="cv-f-titre" id="cvFicheTitre" tabindex="-1">' + esc(titre) + "</h2>" +
     (sous ? '<p class="cv-f-sous">' + esc(sous) + "</p>" : "") + "</div>" + (droite || "") + "</header>";
-  const faitsHtml = fs => '<ul class="cv-det">' + fs.map(f => '<li><span class="cv-det-l">' + esc(f[0]) + '</span><span class="cv-det-v' + (f[2] ? " " + f[2] : "") + '">' + esc(f[1]) + "</span></li>").join("") + "</ul>";
+  /** Liste « libellé, valeur » ; f[3] (facultatif) : définition en une phrase sous la ligne (plus-value, performance). */
+  const faitsHtml = fs => '<ul class="cv-det">' + fs.map(f => '<li><span class="cv-det-l">' + esc(f[0]) + '</span><span class="cv-det-v' + (f[2] ? " " + f[2] : "") + '">' + esc(f[1]) + "</span>" +
+    (f[3] ? '<span class="cv-det-d">' + esc(f[3]) + "</span>" : "") + "</li>").join("") + "</ul>";
+  /* Définitions, dites pareil partout : une plus-value est ce que la ligne a gagné depuis l'achat ; une performance est ce que l'argent a rapporté sur une période. */
+  const DEF_PLUS_VALUE = "Gain ou perte non réalisé depuis ton achat : valeur d'aujourd'hui moins ce que tu as payé (prix de revient). Elle ne dit rien d'une période.";
+  const DEF_PERF_COURS = "Évolution du cours sur la période choisie, quel que soit ton prix d'achat.";
+  const DEF_PERF_VRAIE = "Ce que ton argent a rapporté sur la période, une fois tes versements et retraits enlevés : elle ne dépend pas de ce que tu as ajouté.";
+  /** Icône d'alerte (triangle) : forme et mot disent l'état, la couleur ne le porte pas seule. */
+  const ICONE_ALERTE = '<svg class="cv-perime-i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18.5v.01"/></svg>';
+  /** Mot d'alerte d'un compte pas mis à jour depuis plus de 35 jours (source.ancien, anciennete()) ; "" sinon. */
+  const perimeHtml = src => (src && src.ancien ? '<span class="cv-perime">' + ICONE_ALERTE + "<span>À mettre à jour (" + esc(src.jours) + "\u00a0j)</span></span>" : "");
+  const perimeLu = src => (src && src.ancien ? "pas mis à jour depuis " + src.jours + " jours" : "");
+  /** Alerte en tête d'une fiche : depuis combien de temps, et que faire (le board lit, l'agent écrit). */
+  const perimeFicheHtml = (src, U, quoi) => (src && src.ancien
+    ? '<p class="cv-alerte cv-perime-fiche" role="note">' + ICONE_ALERTE + "<span><strong>À mettre à jour</strong> : " + esc(quoi) + " n'a pas bougé depuis " + esc(src.jours) + " jours (dernière mise à jour le " + esc(dateFr(src.misAJourLe)) + ").</span>" +
+      lienClaude(U, "Aide-moi à mettre à jour " + quoi + " dans Boussole : sa valeur n'a pas été actualisée depuis " + src.jours + " jours.", "Demander à Claude") + "</p>" : "");
   const lienClaude = (U, q, lib) => (U && typeof U.demanderAClaude === "function" ? U.demanderAClaude(q, lib) : "");
   const RETOUR = { label: "Comptes", href: "#" + ROUTE };
   const introuvable = (quoi, U) => arianeHtml([RETOUR, { label: "Introuvable" }]) + titreFiche(quoi + " introuvable", "") +
@@ -751,17 +788,17 @@
       (grapheEnveloppeHtml), redessinés au changement de période sans toucher au sélecteur. */
   function ficheEnveloppeHtml(f, U, deps) {
     if (!f.trouvee) return introuvable("Compte « " + f.nom + " »", U);
-    const resume = [["Valeur", eur(f.total)], ["Plus-value latente", f.plusValue != null ? eurS(f.plusValue) + (f.cout ? " (" + pctS(f.plusValue / f.cout * 100) + ")" : "") : "non calculable sans prix de revient", f.plusValue != null ? (f.plusValue >= 0 ? "pos" : "neg") : ""],
-      ["Prix de revient total", f.cout != null ? eur(f.cout) : "—"], ["Établissement", f.etablissement.nom], ["Source", f.source.texte]];
+    const resume = [["Valeur", eur(f.total)], ["Plus-value latente", f.plusValue != null ? eurS(f.plusValue) + (f.cout ? " (" + pctS(f.plusValue / f.cout * 100) + ")" : "") : "non calculable sans prix de revient", f.plusValue != null ? (f.plusValue >= 0 ? "pos" : "neg") : "", DEF_PLUS_VALUE],
+      ["Prix de revient total", f.cout != null ? eur(f.cout) : "—"], ["Établissement", f.etablissement.nom], ["Source", f.source.texte + (f.source.ancien ? " · " + perimeLu(f.source) : "")]];
     const rep = f.repartition.length ? '<ul class="cv-rep">' + f.repartition.map(r => '<li><span class="cv-rep-l">' + esc(r.label) + '</span><span class="cv-rep-barre" aria-hidden="true"><span style="width:' + Math.max(1, Math.min(100, r.pct)).toFixed(1) + '%"></span></span><span class="cv-rep-v">' + esc(pct(r.pct)) + " · " + esc(eur(r.montant)) + "</span></li>").join("") + "</ul>" : '<p class="cv-muet">Aucune ligne comptée.</p>';
     const vp = f.vraie, vraie = vp.etat === "non_suivi" ? '<p class="cv-muet">Indisponible : les versements de ce compte ne sont pas suivis. Il est synchronisé avec ta banque : Boussole voit sa valeur, pas l\'argent que tu y verses ou en retires.</p>'
       : vp.etat === "titulaires" ? '<p class="cv-muet">Indisponible : plusieurs titulaires ont une enveloppe de ce nom, et les photos quotidiennes ne les distinguent pas.</p>'
       : vp.etat === "construction" ? '<p class="cv-construction"><strong>En construction :</strong> disponible à partir du ' + esc(dateFr(vp.dispoLe)) + ". Boussole a besoin de 90 jours de photos quotidiennes pour corriger la performance de tes versements.</p>"
-      : vp.etat === "ok" ? faitsHtml([["Gain hors versements", eurS(vp.gain), vp.gain >= 0 ? "pos" : "neg"], ["Performance", vp.pct != null ? pctS(vp.pct) : "—"], ["Période", "du " + dateFr(vp.depuis) + " au " + dateFr(vp.jusquA)], ["Versements nets", eurS(vp.flux)]]) +
+      : vp.etat === "ok" ? faitsHtml([["Gain hors versements", eurS(vp.gain), vp.gain >= 0 ? "pos" : "neg"], ["Performance", vp.pct != null ? pctS(vp.pct) : "—", "", DEF_PERF_VRAIE], ["Période", "du " + dateFr(vp.depuis) + " au " + dateFr(vp.jusquA)], ["Versements nets", eurS(vp.flux)]]) +
         '<p class="cv-note">Calcul : variation de valeur moins les versements et retraits enregistrés, rapportée au capital moyen engagé.</p>'
       : '<p class="cv-muet">Pas encore assez de photos de cette enveloppe pour la calculer.</p>';
     return arianeHtml([RETOUR, { label: f.nom }]) + titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.total)) + "</p>") +
-      liste(f.doublons).map(d => alerteDoublonHtml(d, U)).join("") + calendrierEnveloppeHtml(f.calendrier, U, deps) +
+      perimeFicheHtml(f.source, U, "ton compte « " + f.nom + " »") + liste(f.doublons).map(d => alerteDoublonHtml(d, U)).join("") + calendrierEnveloppeHtml(f.calendrier, U, deps) +
       '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Valeur de tes lignes actuelles</h3><div class="cv-periode" id="cvPeriode"></div></div>' +
       '<div id="cvGraphe" aria-live="polite"></div></section>' +
       '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(resume) +
@@ -794,10 +831,10 @@
       return '<li><a class="cv-ligne" href="' + esc(l.href) + '" data-goto="' + esc(l.href.replace(/^#/, "")) + '">' +
         '<span class="cv-l-txt"><span class="cv-l-nom">' + esc(plat(l.p.name) || "Ligne sans nom") + '</span><span class="cv-l-sous">' + esc(pct(l.poids) + " du compte" + (plat(l.p.bloc) ? " · " + plat(l.p.bloc) : "")) + "</span></span>" +
         '<span class="cv-l-chiffres"><span class="cv-l-val">' + esc(eur(l.valeur)) + "</span>" +
-        '<span class="cv-l-pv">' + (pv != null ? '<span class="' + (pv >= 0 ? "pos" : "neg") + '">' + esc(eurS(pv) + " (" + pctS(l.plusValuePct) + ")") + "</span>" : esc(l.p.mode === "market" ? "PRU non renseigné" : "valeur saisie")) + "</span>" +
-        '<span class="cv-l-perf">' + esc(per.label.replace(" ", "\u00a0")) + " : " + (pf != null ? '<span class="' + (pf >= 0 ? "pos" : "neg") + '">' + esc(pctS(pf)) + "</span>" : "—") + "</span></span>" +
+        '<span class="cv-l-pv">' + (pv != null ? esc(pv >= 0 ? "Plus-value " : "Moins-value ") + '<span class="' + (pv >= 0 ? "pos" : "neg") + '">' + esc(eurS(pv) + " (" + pctS(l.plusValuePct) + ")") + "</span>" : esc(l.p.mode === "market" ? "PRU non renseigné" : "valeur saisie")) + "</span>" +
+        '<span class="cv-l-perf">' + esc("Performance " + per.label.replace(" ", "\u00a0")) + " : " + (pf != null ? '<span class="' + (pf >= 0 ? "pos" : "neg") + '">' + esc(pctS(pf)) + "</span>" : "—") + "</span></span>" +
         '<span class="cv-l-ouvrir" aria-hidden="true">›</span></a></li>';
-    }).join("") + "</ul>" + '<p class="cv-note">Plus-value latente = quantité × (cours − prix de revient). Performance de la période : évolution du cours sur ' + esc(per.aria) + ".</p>";
+    }).join("") + "</ul>" + '<p class="cv-note"><strong>Plus-value</strong> (latente) : ce que la ligne a gagné ou perdu depuis ton achat, quantité × (cours − prix de revient). <strong>Performance ' + esc(per.txt) + '</strong> : l\'évolution du cours sur cette période, quel que soit ton prix d\'achat.</p>';
     return { graphe, lignes };
   }
 
@@ -806,13 +843,13 @@
     if (!f.trouvee) return introuvable("Ligne", U);
     const P = promptsDe();
     const q = P && typeof P.phrase === "function" ? P.phrase("expertise", f.expertise.nom) : "Boussole : consulte l'expertise " + f.expertise.nom + " sur ma situation.";
-    const chiffres = [["Valeur", eur(f.valeur)], ["Plus-value latente", f.plusValue != null ? eurS(f.plusValue) + " (" + pctS(f.plusValuePct) + ")" : "non calculable sans prix de revient", f.plusValue != null ? (f.plusValue >= 0 ? "pos" : "neg") : ""],
-      ["Poids dans le compte", f.poidsEnveloppe != null ? pct(f.poidsEnveloppe) : "non compté"], ["Source", f.source.texte + (f.source.origine === "manuel" ? "" : " (" + (SOURCES_AUTO[f.source.origine] || "banque") + ")")]];
+    const chiffres = [["Valeur", eur(f.valeur)], ["Plus-value latente", f.plusValue != null ? eurS(f.plusValue) + " (" + pctS(f.plusValuePct) + ")" : "non calculable sans prix de revient", f.plusValue != null ? (f.plusValue >= 0 ? "pos" : "neg") : "", DEF_PLUS_VALUE],
+      ["Poids dans le compte", f.poidsEnveloppe != null ? pct(f.poidsEnveloppe) : "non compté"], ["Source", f.source.texte + (f.source.origine === "manuel" ? "" : " (" + (SOURCES_AUTO[f.source.origine] || "banque") + ")") + (f.source.ancien ? " · " + perimeLu(f.source) : "")]];
     const mvts = f.mouvements.length ? '<ul class="cv-mvts">' + f.mouvements.map(x => '<li><span class="cv-m-t"><strong>' + esc(x.type) + "</strong>" + '<span class="cv-m-s">' + esc([dateFr(x.date), x.agent ? "agent" : "", x.note].filter(Boolean).join(" · ")) + "</span></span>" +
       '<span class="cv-m-v">' + esc((x.qty ? nfq.format(x.qty) + " × " + eur2(x.price) + " " : "") + (x.montant != null ? eur(x.montant) : "")) + "</span></li>").join("") + "</ul>"
       : '<p class="cv-muet">Aucun mouvement connu. Les achats, ventes et versements que tu signales à Claude apparaîtront ici.</p>';
     return arianeHtml([RETOUR, { label: f.enveloppe || "Compte", href: f.enveloppeHref }, { label: f.nom }]) +
-      titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.valeur)) + "</p>") +
+      titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.valeur)) + "</p>") + perimeFicheHtml(f.source, U, "ta ligne « " + f.nom + " »") +
       (f.isin ? '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Cours</h3><div class="cv-periode" id="cvPeriode"></div></div><div id="cvGraphe" aria-live="polite"></div></section>' : "") +
       '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" +
       '<section class="panel cv-f-bloc" aria-labelledby="cvDetailTitre"><h3 id="cvDetailTitre">Détail</h3>' + faitsHtml(f.faits) + "</section>" +
@@ -837,8 +874,8 @@
       desc: pts.length > 1 ? "De " + eur2(pts[0].valeur) + " le " + dateFr(pts[0].date) + " à " + eur2(pts[pts.length - 1].valeur) + " aujourd'hui" + (pru ? " ; prix de revient " + eur2(pru) + " (ligne horizontale)" : "") + "." : "" });
     if (!svg) return '<p class="cv-muet">Historique du cours pas encore disponible : Boussole le récupère la nuit, la courbe apparaîtra bientôt.</p>';
     const perf = pts.length > 1 ? (pts[pts.length - 1].valeur / pts[0].valeur - 1) * 100 : null;
-    return '<p class="cv-perf">' + esc(per.txt.charAt(0).toUpperCase() + per.txt.slice(1)) + " : " + (perf != null ? '<span class="' + (perf >= 0 ? "pos" : "neg") + '">' + esc(pctS(perf)) + "</span>" : "—") + "</p>" + svg +
-      (pru ? '<p class="cv-note">Trait pointillé : ton prix de revient unitaire (' + esc(eur2(pru)) + ").</p>" : "") + partiel + plafondHtml(e.plafond, [f.isin]) +
+    return '<p class="cv-perf">' + esc("Performance " + per.txt) + " : " + (perf != null ? '<span class="' + (perf >= 0 ? "pos" : "neg") + '">' + esc(pctS(perf)) + "</span>" : "—") + "</p>" + svg +
+      (pru ? '<p class="cv-note">Trait pointillé : ton prix de revient unitaire (' + esc(eur2(pru)) + ").</p>" : "") + '<p class="cv-note"><strong>Performance</strong> : ' + esc(DEF_PERF_COURS.charAt(0).toLowerCase() + DEF_PERF_COURS.slice(1)) + " <strong>Plus-value</strong> : " + esc(DEF_PLUS_VALUE.charAt(0).toLowerCase() + DEF_PLUS_VALUE.slice(1)) + "</p>" + partiel + plafondHtml(e.plafond, [f.isin]) +
       donneesHtml(U, "Cours de " + f.nom + ", " + per.txt, ["Date", "Cours"], echantillon(pts, 40).map(p => [dateFr(p.date), eur2(p.valeur)]));
   }
 
@@ -852,7 +889,7 @@
       : f.operations === "chargement" ? "chargement des opérations…" : f.operations === "indisponible" ? "opérations indisponibles pour le moment"
       : !pb ? "pas encore d'opérations synchronisées"
       : eur(pb.montant) + " le " + dateFr(pb.date) + (pb.complet ? "" : " (d'après les opérations depuis le " + dateFr(pb.depuis) + ")");
-    const chiffres = [["Solde", eur(f.solde)], ["Établissement", f.etablissement.nom], ["Source", f.source.texte],
+    const chiffres = [["Solde", eur(f.solde)], ["Établissement", f.etablissement.nom], ["Source", f.source.texte + (f.source.ancien ? " · " + perimeLu(f.source) : "")],
       ["Plus bas solde sur 90 jours", plusBas, pb && pb.montant < 0 ? "neg" : ""]];
     const flux = !f.banqueActive || !fl.mois.length
       ? '<p class="cv-muet">' + esc(!f.banqueActive ? "Connecte ta banque dans Agent › Connexion pour suivre les entrées et sorties de ce compte."
@@ -871,6 +908,7 @@
         '<p class="cv-note">Débits de même libellé au moins deux mois sur les 90 derniers jours, de montants proches.</p>'
       : '<p class="cv-muet">Aucun prélèvement récurrent détecté sur les 90 derniers jours.</p>';
     return arianeHtml([RETOUR, { label: f.nom }]) + titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.solde)) + "</p>") +
+      perimeFicheHtml(f.source, U, "ton compte « " + f.nom + " »") +
       '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" +
       '<section class="panel cv-f-bloc" aria-labelledby="cvFluxTitre"><h3 id="cvFluxTitre">Entrées et sorties</h3>' + flux +
       (svg ? '<div class="cv-legende" aria-hidden="true"><span class="cv-leg ent">Entrées</span><span class="cv-leg sor">Sorties</span></div>' + svg +
@@ -879,7 +917,7 @@
       '<div class="cv-acts">' + lienClaude(U, "Regarde avec moi les entrées et sorties de mon compte courant dans Boussole : y a-t-il de l'argent qui dort ou des dépenses qui dérapent ?", "Demander à Claude") + "</div>";
   }
 
-  const H = { jour, FAMILLES, PERIODES, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
+  const H = { jour, FAMILLES, PERIODES, SEUIL_ANCIEN_JOURS, anciennete, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
     vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, echantillon, enteteHtml, famillesHtml, carteHtml, arianeHtml, ficheEnveloppeHtml,
     grapheEnveloppeHtml, calendrierEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg, barresSvg, donneesHtml, jour };
   if (typeof module === "object" && module.exports) module.exports = H;

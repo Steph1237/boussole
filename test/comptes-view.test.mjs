@@ -349,7 +349,8 @@ test("ficheEnveloppeHtml / grapheEnveloppeHtml : fil d'Ariane, titre focalisable
   assert.match(g.graphe, /<th scope="col">Date<\/th><th scope="col" class="cv-num">Valeur<\/th>/);
   assert.match(sp(g.graphe), /Ce n'est pas ta performance réelle/);
   assert.equal((g.lignes.match(/<a class="cv-ligne" href="#patrimoine\/comptes\?ligne=/g) || []).length, 3);
-  assert.match(sp(g.lignes), /1 A : <span class="pos">\+10 %<\/span>/, "perf du cours sur la période");
+  assert.match(sp(g.lignes), /Performance 1 A : <span class="pos">\+10 %<\/span>/, "perf du cours sur la période, nommée");
+  assert.match(sp(g.lignes), /Plus-value <span class="(pos|neg)">[+−]/, "plus-value nommée à côté de la performance");
   const vide = CV.grapheEnveloppeHtml(f, { cours: {}, charge: "pret", periode: "1a", today: TODAY }, UI, { Calc });
   assert.match(sp(vide.graphe), /Historique des cours pas encore disponible/, "table cours vide ou absente : une phrase");
   assert.match(sp(vide.lignes), /1 A : —/);
@@ -378,7 +379,7 @@ test("ficheLigne / ficheLigneHtml : cours + PRU, quantité, valeur, plus-value, 
   const g = sp(CV.grapheLigneHtml(monde, { cours, charge: "pret", periode: "3m", today: TODAY, largeur: 400 }, UI));
   assert.match(g, /<line class="cv-ref"/); assert.match(g, /PRU 88,40 €/);
   assert.match(g, /<title id="cvCourbeLigne-t">Cours de ETF MSCI World, sur 3 mois<\/title>/);
-  assert.match(g, /Sur 3 mois : <span class="pos">\+9,7 %<\/span>/);
+  assert.match(g, /Performance sur 3 mois : <span class="pos">\+9,7 %<\/span>/, "libellé explicite : performance, pas plus-value");
   assert.match(sp(CV.grapheLigneHtml(monde, { cours: {}, charge: "pret", periode: "3m", today: TODAY }, UI)), /Historique du cours pas encore disponible/);
   // ligne saisie : pas de courbe ; ligne inconnue
   assert.doesNotMatch(CV.ficheLigneHtml(CV.ficheLigne(S, "livret-a", TODAY, { Calc }), UI), /id="cvGraphe"/);
@@ -637,4 +638,79 @@ test("vue : cours de la période choisie d'abord, période plus longue relue ; �
   assert.deepEqual(J(appelsOps.map(a => a[0])), [["1001"]]);
   assert.match(sp($("cvFiche").innerHTML), /echeance pret immo/);
   assert.doesNotMatch($("cvFiche").innerHTML, /Chargement des opérations/);
+});
+
+/* ------------------------------------------------ UX2 : compte pas mis à jour (> 35 jours), plus-value et performance nommées ------------------------------------------------ */
+const AUJ = "2026-10-14"; // jour de Paris passé en paramètre : aucune de ces assertions ne dépend de l'horloge ni du fuseau
+const manuel = (id, valueDate, o) => POS(id, Object.assign({ mode: "manual", isin: null, qty: null, pru: null, price: null, priceDate: null, value: 5000, valueDate, envelope: "Livret " + id, bloc: "Épargne" }, o));
+
+test("anciennete : plus de 35 jours sans mise à jour → ancien (35 j : non, 36 j : oui) ; le dernier cours d'une ligne cotée compte ; sans date, on ne dit rien", () => {
+  const S = S0();
+  const age = (lignes, extra) => CV.anciennete(lignes, CV.sourceDe(lignes, S), AUJ);
+  assert.deepEqual(J(age([manuel("a", "2026-09-09")])), { misAJourLe: "2026-09-09", jours: 35, ancien: false });
+  assert.deepEqual(J(age([manuel("a", "2026-09-08")])), { misAJourLe: "2026-09-08", jours: 36, ancien: true });
+  assert.equal(age([manuel("a", "2026-10-14")]).jours, 0);
+  assert.equal(age([manuel("a", "2026-10-20")]).jours, 0, "date future : jamais négatif");
+  assert.deepEqual(J(age([manuel("a", null)])), { misAJourLe: "", jours: null, ancien: false }, "sans date : ni alerte ni âge inventé");
+  /* ligne cotée saisie il y a longtemps mais dont le cours est de la nuit dernière : à jour */
+  assert.equal(age([POS("c", { valueDate: "2026-06-01", priceDate: "2026-10-13" })]).ancien, false);
+  assert.equal(age([POS("c", { valueDate: "2026-06-01", priceDate: "2026-08-01" })]).ancien, true);
+  /* synchronisée : date de sourceAutoLe */
+  assert.equal(age([POS("s", { sourceAuto: "powens", sourceAutoLe: "2026-08-01T02:00:00", priceDate: null })]).jours, 74);
+  /* la date vient du paramètre, jamais de l'horloge : même résultat quel que soit le fuseau du processus */
+  assert.equal(CV.anciennete([manuel("a", "2026-09-08")], CV.sourceDe([manuel("a", "2026-09-08")], S), "2026-10-14").jours, 36);
+  assert.equal(CV.sourceDe([manuel("a", "2026-09-08")], S).jours, undefined, "sans today, sourceDe garde sa forme d'origine");
+});
+
+test("comptes + carteHtml : icône d'alerte et mot « À mettre à jour (N j) » sur un compte pas à jour, dans l'étiquette lue ; rien sur un compte à jour", () => {
+  const S = S0({ positions: [manuel("vieux", "2026-08-23"), manuel("limite", "2026-09-09"), manuel("neuf", "2026-10-10")] });
+  const L = CV.comptes(S, AUJ, { Calc });
+  const cartes = L.familles.flatMap(F => F.etablissements.flatMap(E => E.comptes));
+  const vieux = cartes.find(c => c.nom === "Livret vieux"), limite = cartes.find(c => c.nom === "Livret limite"), neuf = cartes.find(c => c.nom === "Livret neuf");
+  assert.equal(vieux.source.ancien, true); assert.equal(vieux.source.jours, 52);
+  assert.equal(limite.source.ancien, false); assert.equal(neuf.source.ancien, false);
+  const hv = sp(CV.carteHtml(vieux, UI)), hl = CV.carteHtml(limite, UI);
+  assert.match(hv, /<span class="cv-perime"><svg class="cv-perime-i"[^>]*aria-hidden="true"[^>]*>.*<\/svg><span>À mettre à jour \(52 j\)<\/span><\/span>/);
+  assert.match(hv, /aria-label="[^"]*pas mis à jour depuis 52 jours/, "l'état est lu, pas seulement vu");
+  assert.doesNotMatch(hl, /cv-perime|pas mis à jour/);
+  assert.doesNotMatch(CV.carteHtml(neuf, UI), /cv-perime/);
+  /* le mot et l'icône portent l'état : pas de rouge, la couleur d'alerte du thème */
+  assert.match(css, /\.cv-perime\{[^}]*color:var\(--warn\)/);
+  /* dette synchronisée il y a longtemps */
+  const dette = CV.comptes(S0({ positions: [], profil: { credits: [{ id: "c1", nom: "Prêt auto", owner: "commun", crd: 4000, mensualite: 200 }], biens: [] },
+    banque: { actif: true, connexions: [{ id: "x1", etablissement: "Banque Test", derniereSynchro: "2026-08-01T10:00:00" }], comptes: [{ id: "k1", connexionId: "x1", creditId: "c1" }], mois: [] } }), AUJ, { Calc }).familles[3].etablissements[0].comptes[0];
+  assert.equal(dette.source.ancien, true); assert.equal(dette.source.jours, 74);
+  const sansDate = CV.comptes(S0({ positions: [], profil: { credits: [{ id: "c1", nom: "Prêt", owner: "commun", crd: 4000, mensualite: 200 }], biens: [] } }), AUJ, { Calc }).familles[3].etablissements[0].comptes[0];
+  assert.equal(sansDate.source.ancien, false); assert.equal(sansDate.source.jours, null);
+});
+
+test("fiches : alerte « À mettre à jour » en tête (enveloppe, ligne, compte courant) avec « Demander à Claude » ; absente pour un compte à jour", () => {
+  const S = S0({ positions: [manuel("vieux", "2026-08-23", { envelope: "Livret vieux" }), manuel("neuf", "2026-10-10", { envelope: "Livret neuf" }),
+    manuel("cc", "2026-08-23", { envelope: "Compte joint", bloc: "Comptes courants", name: "Compte joint" })] });
+  const env = sp(CV.ficheEnveloppeHtml(CV.ficheEnveloppe(S, { enveloppe: "Livret vieux" }, AUJ, { Calc }), UI));
+  assert.match(env, /<p class="cv-alerte cv-perime-fiche" role="note"><svg[^>]*aria-hidden="true"[^>]*>.*<\/svg><span><strong>À mettre à jour<\/strong> : ton compte « Livret vieux » n'a pas bougé depuis 52 jours \(dernière mise à jour le 23 août 2026\)\.<\/span>/);
+  assert.match(env, /href="https:\/\/claude\.ai\/new\?q=/);
+  assert.match(env, /Source<\/span><span class="cv-det-v">Saisi le 23 août · pas mis à jour depuis 52 jours/);
+  assert.doesNotMatch(sp(CV.ficheEnveloppeHtml(CV.ficheEnveloppe(S, { enveloppe: "Livret neuf" }, AUJ, { Calc }), UI)), /cv-perime/);
+  const lig = sp(CV.ficheLigneHtml(CV.ficheLigne(S, "vieux", AUJ, { Calc }), UI));
+  assert.match(lig, /cv-perime-fiche/); assert.match(lig, /ta ligne « Ligne vieux »/);
+  assert.doesNotMatch(sp(CV.ficheLigneHtml(CV.ficheLigne(S, "neuf", AUJ, { Calc }), UI)), /cv-perime/);
+  const cc = sp(CV.ficheCourantHtml(CV.ficheCourant(S, "cc", AUJ, { Calc }), UI, {}));
+  assert.match(cc, /cv-perime-fiche/); assert.match(cc, /ton compte « Compte joint »/);
+});
+
+test("plus-value et performance : deux mots, deux définitions dites dans le détail des fiches enveloppe et ligne ; jamais confondus", () => {
+  const S = demoS(), f = CV.ficheEnveloppe(S, { enveloppe: "PEA Camille", titulaire: "p1" }, AUJ, { Calc });
+  const h = CV.ficheEnveloppeHtml(f, UI), dec = x => sp(x).replace(/&#39;/g, "'");
+  assert.match(dec(h), /Plus-value latente<\/span><span class="cv-det-v pos">[^<]*<\/span><span class="cv-det-d">Gain ou perte non réalisé depuis ton achat : valeur d'aujourd'hui moins ce que tu as payé \(prix de revient\)\. Elle ne dit rien d'une période\.<\/span>/);
+  const vraie = CV.ficheEnveloppeHtml(Object.assign({}, f, { vraie: { etat: "ok", gain: 1200, pct: 4.2, depuis: "2025-10-14", jusquA: "2026-10-14", flux: 800 } }), UI);
+  assert.match(dec(vraie), /Performance<\/span><span class="cv-det-v">\+4,2 %<\/span><span class="cv-det-d">Ce que ton argent a rapporté sur la période, une fois tes versements et retraits enlevés/);
+  const g = CV.grapheEnveloppeHtml(f, { cours: {}, charge: "pret", periode: "1a", today: AUJ }, UI, { Calc });
+  assert.match(dec(g.lignes), /<strong>Plus-value<\/strong> \(latente\) : ce que la ligne a gagné ou perdu depuis ton achat/);
+  assert.match(dec(g.lignes), /<strong>Performance sur 1 an<\/strong> : l'évolution du cours sur cette période, quel que soit ton prix d'achat/);
+  const l = dec(CV.ficheLigneHtml(CV.ficheLigne(S, "pea-etf-monde", AUJ, { Calc }), UI));
+  assert.match(l, /Plus-value latente<\/span><span class="cv-det-v (pos|neg)">[^<]*<\/span><span class="cv-det-d">Gain ou perte non réalisé/);
+  const gl = dec(CV.grapheLigneHtml(CV.ficheLigne(S, "pea-etf-monde", AUJ, { Calc }), { cours: { IE00B4L5Y983: [{ date: "2026-07-14", cloture: 95 }, { date: "2026-09-14", cloture: 100 }] }, charge: "pret", periode: "3m", today: AUJ, largeur: 400 }, UI));
+  assert.match(gl, /<p class="cv-perf">Performance sur 3 mois :/); assert.match(gl, /<strong>Performance<\/strong> : évolution du cours sur la période choisie/);
+  assert.doesNotMatch(h + g.lignes + l + gl, /Vraie plus-value|performance latente/i);
 });
