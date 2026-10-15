@@ -3654,7 +3654,7 @@
   },
   {
    "id": "D7",
-   "titre": "Import puis synchronisation du même compte",
+   "titre": "Import puis synchronisation du même compte (règle de HIS2 § 6.1, qui fait référence)",
    "comptes": [
     {
      "id": "c1",
@@ -3663,6 +3663,7 @@
      "titulaire": "p1"
     }
    ],
+   "import_rattache_a": "c1",
    "banque_mois": {
     "2026-09": [
      {
@@ -3676,6 +3677,20 @@
       "sous_categorie": "courses",
       "entrees": 0,
       "sorties": 480
+     }
+    ],
+    "2026-10": [
+     {
+      "compte": "c1",
+      "sous_categorie": "salaires",
+      "entrees": 2000,
+      "sorties": 0
+     },
+     {
+      "compte": "c1",
+      "sous_categorie": "courses",
+      "entrees": 0,
+      "sorties": 470
      }
     ]
    },
@@ -3716,12 +3731,18 @@
      "revenus": 2000
     },
     "2026-09": {
+     "source": "import",
+     "ecarte": "premier_mois",
+     "courses": 520,
+     "revenus": 2000
+    },
+    "2026-10": {
      "source": "banque",
-     "courses": 480,
+     "courses": 470,
      "revenus": 2000
     }
    },
-   "calcul": "jamais les deux pour un compte et un mois : septembre est synchronisé, donc banque seule (480, pas 480 + 520)"
+   "calcul": "jamais les deux pour un compte et un mois ; import rattaché : Powens seulement si banque_mois a ce mois et qu'il est entièrement couvert ; le premier mois du compte dans banque_mois (septembre) est réputé entamé, donc septembre = import (520, ni 480 ni 480 + 520) ; octobre = banque (470) ; août = import (500)"
   },
   {
    "id": "D8",
