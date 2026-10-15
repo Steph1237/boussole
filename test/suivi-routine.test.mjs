@@ -98,7 +98,16 @@ test("planDuMois : à figer sans plan ni proposition ce mois-ci ; jamais deux fo
   p = await S.planDuMois(db({ plans: [{ id: "p0", cree_le: "2026-09-30T23:30:00+00:00" }] }), must, TODAY);
   assert.equal(p.existe, true, "01h30 à Paris le 1er octobre : plan d'octobre");
   const lu = db({}); await S.planDuMois(lu, must, TODAY);
-  assert.deepEqual(J(lu.appels.find(a => a.table === "plans_figes").ops.find(o => o[0] === "gte")), ["gte", "cree_le", "2026-10-01"]);
+  // la lecture démarre la veille (UTC) pour ne rien perdre entre minuit Paris et minuit UTC ; le tri par mois se fait en date de Paris
+  assert.deepEqual(J(lu.appels.find(a => a.table === "plans_figes").ops.find(o => o[0] === "gte")), ["gte", "cree_le", "2026-09-30"]);
+  // 00 h 30 à Paris le 1er octobre (22 h 30 UTC le 30 septembre) : plan d'octobre, pour un plan comme pour une proposition
+  p = await S.planDuMois(db({ plans: [{ id: "p00", cree_le: "2026-09-30T22:30:00+00:00" }] }), must, TODAY);
+  assert.equal(p.existe, true, "00h30 à Paris le 1er : le mois de Paris, pas celui d'UTC");
+  p = await S.planDuMois(db({ propositions: [{ id: "x", cree_le: "2026-09-30T22:30:00+00:00" }] }), must, TODAY);
+  assert.equal(p.en_attente, true);
+  // 23 h 59 à Paris le 30 septembre (21 h 59 UTC) : septembre ; et 00 h 30 à Paris le 1er novembre (23 h 30 UTC le 31 octobre) : novembre
+  p = await S.planDuMois(db({ plans: [{ id: "p99", cree_le: "2026-09-30T21:59:00+00:00" }], propositions: [{ id: "x", cree_le: "2026-10-31T23:30:00+00:00" }] }), must, TODAY);
+  assert.deepEqual([p.existe, p.en_attente, p.a_figer], [false, false, true]);
   // migration plans_figes absente : traité comme « aucun plan » ; panne : null sans lever
   const absente = fauxDb(r => (r.table === "plans_figes" ? { data: null, error: { code: "42P01", message: 'relation "plans_figes" does not exist' } } : { data: [], error: null }));
   assert.equal((await S.planDuMois(absente, must, TODAY)).a_figer, true);
@@ -145,6 +154,11 @@ test("cloturer_routine écrit routines.etat_suivi calculé par Boussole (jamais 
   const db2 = dbRoutines();
   await serveur(R.registerRoutines, db2, { calcul: calculFaux(), suivi: { etat } }).cloturer_routine.handler({ type: "revue_mensuelle", synthese: "Revue.", questions: [] });
   assert.equal(db2.appels.find(a => a.rpc === "cloturer_routine").args.p_etat_suivi.revue_coeur_faite_le, null);
+  // revue du cœur déclarée alors qu'elle n'est pas due ce mois-ci : la date n'avance pas (prochaine revue dans 5 mois)
+  const dHorsMois = donneesDe(CAS.find(x => x.id === "DE-1")); dHorsMois.config.suivi = { mois_revue_coeur: 3, source: "x", le: "2026-01-01" }; const dbMem = fauxDb(r => (r.table === "routines" ? { data: { dernier_passage: "2026-09-02T06:00:00+00:00", etat_suivi: { le: "2026-03-05", revue_coeur_faite_le: "2026-03-05", mois_revue_coeur: 3, declencheurs: [], constats: {}, meteo: {} } }, error: null } : { data: [], error: null }));
+  const dbHors = dbRoutines();
+  await serveur(R.registerRoutines, dbHors, { calcul: calculFaux(), suivi: { etat: c => S.etatSuiviDeCloture(dbMem, must, TODAY, async () => dHorsMois, c) } }).cloturer_routine.handler({ type: "revue_mensuelle", synthese: "Revue.", questions: [], revue_coeur_faite: true });
+  assert.equal(dbHors.appels.find(a => a.rpc === "cloturer_routine").args.p_etat_suivi.revue_coeur_faite_le, "2026-03-05", "pas due : la déclaration de l'agent ne compte pas");
   // migration 0032 pas encore appliquée : la RPC ne connaît pas p_etat_suivi → la clôture se refait sans, la revue n'échoue pas
   const db3 = dbRoutines({ rpcPremiere: { code: "PGRST202", message: "Could not find the function public.cloturer_routine(p_client, p_etat_suivi, p_questions, p_synthese, p_type) in the schema cache" } });
   const r3 = await serveur(R.registerRoutines, db3, { calcul: calculFaux(), suivi: { etat } }).cloturer_routine.handler({ type: "revue_mensuelle", synthese: "Revue.", questions: [] });
@@ -166,4 +180,19 @@ test("index.ts : le suivi est branché (outils, demarrer_session.suivi, revue : 
   assert.match(code, /"Suivi des lignes \(suivi_lignes, ligne, ca_vaut_le_cout, lecture ; definir_suivi, par proposition\)/);
   assert.match(code, /"21\. Suivi des lignes \(suivi : /);
   assert.match(code, /et suivi \(suivi des lignes : semaine \{ a_venir, a_faire \}/);
+});
+
+test("mois de revue du cœur : retenu à la première clôture (2027-09-10) puis lu depuis routines.etat_suivi, jamais depuis les passages (aujourd'hui 2027-10-12)", { skip: SANS_STRIP }, async () => {
+  const S = chargerSuivi(), d = donneesDe(CAS.find(x => x.id === "PO-5"));
+  const base = { ...d, config: { ...d.config, suivi: {} }, routines: undefined };
+  // première clôture : aucune revue avant, aucun mois choisi → le mois de cette clôture est retenu
+  const e = await S.etatSuiviDeCloture(fauxDb(), must, "2027-09-10", async () => base, true);
+  assert.equal(e.mois_revue_coeur, 9);
+  assert.equal(e.revue_coeur_faite_le, "2027-09-10");
+  // le 12 octobre : le journal n'a plus que des revues récentes, la mémoire de la dernière clôture porte le mois
+  const db = fauxDb(r => (r.table === "routines" ? { data: { dernier_passage: "2027-10-02T06:00:00+00:00", etat_suivi: e }, error: null } : r.table === "journal" ? { data: [{ cree_le: "2027-10-02T06:10:00+00:00" }, { cree_le: "2027-07-05T06:10:00+00:00" }], error: null } : { data: [], error: null }));
+  const donnees = await S.donneesSuivi(db, must, "2027-10-12", { ...base, today: "2027-10-12" });
+  assert.deepEqual(SuiviGen.politique(donnees, "2027-10-12").mois_revue_coeur, [9]);
+  const r = SuiviGen.prochaineRevueCoeur(donnees, "2027-10-12");
+  assert.deepEqual([r.mois, r.annee, r.due, r.en_retard], [9, 2028, false, false]);
 });

@@ -18,7 +18,7 @@ export const VUES = ["net", "financier", "disponible"];
 export const PLANS_FIGES_MAX = 60;
 export const PLAN_MAX_OCTETS = 400000, PLAN_PARAMETRES_MAX_OCTETS = 100000, PLAN_SERIE_MAX_OCTETS = 250000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const POS_SELECT = "*, instrument:instruments(price, price_date, ter, zone, devise)";
+const POS_SELECT = "*, instrument:instruments(price, price_date, symbol, ter, zone, devise)";
 const QUESTION_EVENEMENTS = "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?";
 
 /** Conduite du Copilote pour les projections (spec § 7.3), renvoyée par projeter et lire_foyer et reprise dans les INSTRUCTIONS. */
@@ -65,6 +65,8 @@ export function positionEnApp(r: any) {
     price: useOv ? +r.price_override : ins && ins.price != null ? +ins.price : null, priceDate: useOv ? r.value_date : insDate,
     value: nombre(r.value), valueDate: r.value_date || null, status: r.status, hypothesis: r.hypothesis || null, qtyEstimated: !!r.qty_estimated, note: r.note || null,
     ter: ins && ins.ter != null ? +ins.ter : null, zone: ins?.zone || null, devise: ins?.devise || null,
+    // Symbole de l'instrument (aide à reconnaître une action en direct) et rôle de la ligne (SUIVI, 0032) : comme dans le store de l'app.
+    symbol: ins?.symbol || null, role: r.role || null, roleSource: r.role_source || null,
   };
 }
 export function profilEnApp(p: any, biens: any[], credits: any[]) {

@@ -109,7 +109,7 @@ test("suivi.ts : 4 outils, annotations (lecture seule pour trois, écriture par 
   assert.equal(T.definir_suivi.def.annotations.readOnlyHint, false);
   assert.equal(S.CONDUITE_SUIVI.length, 8, "les 8 règles de la conduite (§ 12.3)");
   assert.match(S.CONDUITE_SUIVI.join("\n"), /ca_vaut_le_cout/);
-  assert.match(S.CONDUITE_SUIVI.join("\n"), /ne rien faire est la meilleure option ici/);
+  assert.match(S.CONDUITE_SUIVI.join("\n"), /ne rien changer à cette classe est l'option la moins coûteuse/);
 });
 
 test("suivi_lignes : rôles, système, météo, déclencheurs avec leur verdict, politique, conduite ; aucun nom de ligne dans un titre", { skip: SANS_STRIP }, async () => {
@@ -227,6 +227,72 @@ test("definir_suivi : rôles et politique déposés en propositions (position et
   assert.equal(T3.deposes[0].items.length, 0, "politique identique : rien à proposer");
 });
 
+test("definir_suivi : « semaine: { actif: false } » garde le jour déjà choisi, un jour seul garde l'état ; la politique est stricte (champ inconnu refusé)", { skip: SANS_STRIP }, async () => {
+  const S = chargerSuivi();
+  const dbAvec = semaine => fauxDb(r => (r.table === "config" ? { data: { suivi: { revue_coeur: "annuelle", ...(semaine ? { semaine } : {}), source: "x", le: "2026-01-01" } }, error: null } : { data: [], error: null }));
+  const lancer = async (semaine, politique) => { const T = serveur(S.registerSuivi, dbAvec(semaine), { lireDonnees: lireDonnees("SY-1") }); const r = await T.definir_suivi.handler({ politique, source: "x" }); return { r, items: T.deposes[0] ? T.deposes[0].items : [] }; };
+  let x = await lancer({ actif: true, jour: "jeudi" }, { semaine: { actif: false } });
+  assert.deepEqual(J(x.items[0].apres.suivi.semaine), { actif: false, jour: "jeudi" }, "le jour choisi est conservé");
+  x = await lancer({ actif: false, jour: "jeudi" }, { semaine: { jour: "mardi" } });
+  assert.deepEqual(J(x.items[0].apres.suivi.semaine), { actif: false, jour: "mardi" }, "un jour seul ne réactive pas la semaine");
+  x = await lancer(null, { semaine: { actif: false } });
+  assert.deepEqual(J(x.items[0].apres.suivi.semaine), { actif: false }, "aucun jour inventé");
+  x = await lancer({ actif: true, jour: "jeudi" }, { semaine: { actif: true } });
+  assert.equal(x.items.length, 0, "rien ne change");
+  assert.match((await lancer(null, { semaine: {} })).r.erreur, /indique actif et\/ou jour/);
+  assert.match((await lancer(null, { frequence: "x" })).r.erreur, /champ inconnu « frequence »/);
+  assert.match((await lancer(null, { semaine: { actif: true, couleur: "x" } })).r.erreur, /champ inconnu « couleur »/);
+  assert.match(SUIVI_TS, /politique: z\.strictObject\(/, "le schéma de l'outil refuse aussi tout champ inconnu");
+  assert.doesNotMatch(SUIVI_TS, /looseObject/);
+});
+
+test("positionEnApp (projection.ts) = posView (store-supabase.js) pour le suivi : symbole, rôle et source du rôle ; un fonds à ISIN français est un fonds, comme dans l'app", { skip: SANS_STRIP }, () => {
+  const sup = lire("web/src/store-supabase.js");
+  const m = sup.match(/const posView = r => \{[\s\S]*?\n  \};\n/);
+  assert.ok(m, "posView introuvable dans store-supabase.js");
+  const posView = vm.runInNewContext("(num => { " + m[0] + " return posView; })", {})(v => (v == null || v === "" ? null : +v));
+  const PM = chargerModule(lire("supabase/functions/mcp/projection.ts"), { Projection: MoteurGen.Projection, Evenements: MoteurGen.Evenements, Marche: MoteurGen.Marche, Reperes: MoteurGen.Reperes });
+  const ligne = (id, name, isin, symbol, extra = {}) => ({ id, name, envelope: "PEA Exemple", owner: "p1", bloc: "Actions", mode: "market", isin, qty: "10", pru: "100", status: "actif", price_override: null, value: null, value_date: null,
+    hypothesis: null, qty_estimated: false, note: null, role: null, role_source: null, ...extra, ins: { price: 120, price_date: "2026-10-14", symbol, ter: null, zone: null, devise: null, name } });
+  const lignes = [
+    ligne("a", "Société Exemple", "FR0000120073", "AI.PA"), // action en direct (ticker)
+    ligne("b", "Rendement France Exemple", "FR0010315770", "0P00008N9X.F"), // fonds à ISIN français, code de fonds : pas une action
+    ligne("c", "Fonds Actions Monde", "LU0000000001", null, { role: "coeur", role_source: "propose" }),
+    ligne("d", "Ligne sans instrument", null, null, { role: "satellite", role_source: "valide", ins: null }),
+  ];
+  for (const l of lignes) {
+    const sql = { ...l }; delete sql.ins;
+    const app = posView({ ...sql, instruments: l.ins }), conn = PM.positionEnApp({ ...sql, instrument: l.ins });
+    for (const k of ["id", "name", "envelope", "owner", "bloc", "mode", "isin", "qty", "pru", "price", "priceDate", "value", "status", "ter", "zone", "devise", "symbol", "role", "roleSource"]) assert.deepEqual(J(conn[k]), J(app[k]), l.id + " · " + k);
+  }
+  // même conséquence pour le moteur : même nature de frais et même rôle par défaut que dans l'app
+  const base = { instruments: [], expositions: [], config: { enveloppes_infos: {}, frais_enveloppes: {}, suivi: {} }, profil: {}, objectifs: [], risque: { profil: "equilibre" }, routines: {}, reperes: J(FIXTURE_REPERES), classes: {} };
+  const vue = fonc => Gen.vue({ ...base, positions: lignes.map(l => { const sql = { ...l }; delete sql.ins; return fonc({ ...sql }, l.ins); }) }, TODAY).lignes.map(x => [x.id, x.role, x.role_propose, x.raison_role_texte]);
+  assert.deepEqual(J(vue((r, i) => PM.positionEnApp({ ...r, instrument: i }))), J(vue((r, i) => posView({ ...r, instruments: i }))));
+  const b = PM.positionEnApp({ ...lignes[1], instrument: lignes[1].ins });
+  assert.equal(b.symbol, "0P00008N9X.F");
+  assert.equal(chargerSuiviGen().Pratiques.natureFrais(b, {}, null), "fonds", "ISIN FR, code de fonds : un fonds (sans le symbole, elle passait pour une action)");
+  assert.equal(chargerSuiviGen().Pratiques.natureFrais({ ...b, symbol: null }, {}, null), "direct");
+  assert.match(SOURCE_PROJECTION_TS(), /instruments?\(price, price_date, symbol,/);
+});
+const SOURCE_PROJECTION_TS = () => lire("supabase/functions/mcp/projection.ts");
+
+test("suivi_lignes : la santé (matelas, frais) est calculée comme dans l'app (Suivi.santeDe) et nourrit les habitudes, comme dans l'app", { skip: SANS_STRIP }, async () => {
+  const S = chargerSuivi();
+  const ctx = { console }; ctx.window = ctx; vm.createContext(ctx); vm.runInContext(lire("web/src/demo-data.js"), ctx);
+  const D = J(ctx.DEMO);
+  const base = { today: TODAY, positions: D.positions, instruments: [], config: D.config, profil: D.profil, budget: D.budget, objectifs: D.objectifs, classes: D.classes || {}, banque: null, reperes: J(FIXTURE_REPERES) };
+  const donnees = await S.donneesSuivi(dbSuivi(), must, TODAY, base);
+  const attendu = App.santeDe({ ...base, risque: { profil: "equilibre" } }, TODAY);
+  assert.ok(attendu.matelas_mois > 8, "la démo a un matelas calculé : " + JSON.stringify(attendu));
+  assert.deepEqual(J(donnees.sante), J(attendu), "même santé que l'app");
+  const T = serveur(S.registerSuivi, dbSuivi(), { lireDonnees: async () => base });
+  const r = (await T.suivi_lignes.handler({})).ok;
+  const app = App.habitudes({ ...donnees, risque: { profil: "equilibre" } }, TODAY);
+  assert.deepEqual(J(r.habitudes.map(h => [h.cle, h.palier, h.prochain_palier, h.mesure])), J(app.map(h => [h.cle, h.palier, h.prochain_palier, h.mesure])));
+  const matelas = r.habitudes.find(h => h.cle === "matelas");
+  assert.ok(matelas && matelas.palier, "l'habitude « matelas » lit la santé : " + JSON.stringify(r.habitudes.map(h => h.cle)));
+});
 test("definir_suivi : bornes de la politique (mêmes que la migration), ligne inconnue, ligne en double, rien à proposer", { skip: SANS_STRIP }, async () => {
   const S = chargerSuivi();
   for (const [p, motif] of [[{ plafond_satellite_pct: 31 }, /plafond_satellite_pct/], [{ plafond_satellite_pct: -1 }, /plafond_satellite_pct/], [{ seuil_ecart_pts: 2 }, /seuil_ecart_pts/], [{ seuil_ecart_pts: 11 }, /seuil_ecart_pts/],
