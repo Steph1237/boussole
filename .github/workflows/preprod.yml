@@ -1,0 +1,49 @@
+name: Préproduction
+
+# SEC5 : la suite complète, tests d'intégration compris, tourne sur une pile Supabase LOCALE (Docker du runner), jamais sur la production.
+# Aucun secret n'est lu par ce workflow. Le job Pages (pages.yml) reste rapide : il ne dépend pas de celui-ci. À rendre « requis pour
+# fusionner » dans les réglages du dépôt (branches protégées), pas pour publier.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preprod-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preprod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.107.0
+      - run: npm ci
+      # Voie rapide (PGlite, sans Docker, sans clé) : aussi sur les pull requests, que pages.yml ne voit pas.
+      - name: Suite PGlite
+        run: npm test
+      # Prépare .preprod/, démarre la pile (migrations + graine qui désarme pg_cron vers la production), écrit les variables locales
+      # et crée les comptes fictifs (TOTP compris).
+      - name: Démarrer la préproduction locale
+        run: npm run preprod:start
+      - name: Tests d'intégration sur la pile locale
+        run: npm run preprod:test
+      # Parcours de fumée (RLS, double authentification, OAuth 2.1, connecteur, nuit hors ligne). Non bloquant tant qu'il n'a pas tourné au vert
+      # sur GitHub : retirer continue-on-error après les premiers passages.
+      - name: Parcours de fumée
+        run: npm run preprod:fumee
+        continue-on-error: true
+      - name: Arrêter la pile
+        if: always()
+        run: npm run preprod:stop

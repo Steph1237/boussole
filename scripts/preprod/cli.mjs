@@ -2,11 +2,13 @@
 // `verifierArgs` est pure (testée) : elle refuse les sous-commandes et options qui pourraient atteindre un projet distant.
 //   node scripts/preprod/cli.mjs <sous-commande du CLI> [options]     ex. : node scripts/preprod/cli.mjs db reset --local
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertPasDeLien, RACINE } from "./garde.mjs";
 
-const SUPABASE = process.env.BOUSSOLE_SUPABASE_CLI || "/opt/homebrew/bin/supabase";
+// Chemin du CLI : BOUSSOLE_SUPABASE_CLI, sinon Homebrew (macOS), sinon « supabase » du PATH (CI : supabase/setup-cli).
+const SUPABASE = process.env.BOUSSOLE_SUPABASE_CLI || (existsSync("/opt/homebrew/bin/supabase") ? "/opt/homebrew/bin/supabase" : "supabase");
 
 // Sous-commandes qui parlent à un projet distant ou à un compte : jamais depuis la préproduction.
 const INTERDITES = [

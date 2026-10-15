@@ -5,7 +5,7 @@ import { verifierArgs } from "../scripts/preprod/cli.mjs";
 
 describe("verifierArgs", () => {
   for (const ok of [["start", "-x", "logflare,vector"], ["stop"], ["status", "-o", "env"], ["db", "reset", "--local"], ["db", "query", "--local", "select 1"],
-    ["db", "advisors", "--local"], ["functions", "serve", "--no-verify-jwt", "--env-file", ".preprod/fonctions.env"], ["test", "db"]]) {
+    ["db", "advisors", "--local"], ["functions", "serve", "--env-file", ".preprod/fonctions.env"], ["test", "db"]]) {
     it(`accepte ${ok.join(" ")}`, () => assert.deepEqual(verifierArgs(ok), ok));
   }
   for (const ko of [["link", "--project-ref", "x"], ["login"], ["db", "push"], ["db", "pull"], ["db", "dump"], ["config", "push"], ["functions", "deploy", "mcp"],

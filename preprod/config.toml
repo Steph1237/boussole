@@ -420,3 +420,17 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# PRÉPRODUCTION : vérification du JWT par fonction (la production la règle au déploiement, ces sections n'existent pas dans supabase/config.toml).
+# mcp, nightly et powens font leur propre contrôle (jeton OAuth, jeton du Vault, session) ; resolve-symbol exige un utilisateur connecté.
+[functions.mcp]
+verify_jwt = false
+
+[functions.nightly]
+verify_jwt = false
+
+[functions.powens]
+verify_jwt = false
+
+[functions.resolve-symbol]
+verify_jwt = true

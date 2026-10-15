@@ -1,5 +1,5 @@
 // Démarre `supabase functions serve` (fonctions mcp, nightly, powens) en arrière-plan pour un script, et l'arrête ensuite.
-// Sans --no-verify-jwt le runtime exigerait un JWT Supabase : mcp et nightly font leur propre contrôle (jeton OAuth, jeton du Vault).
+// verify_jwt est réglé par fonction dans preprod/config.toml : mcp, nightly et powens font leur propre contrôle (jeton OAuth, jeton du Vault).
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,7 @@ export async function fonctionsPretes(url) {
 /** Renvoie { arreter() } ; si les fonctions tournent déjà (npm run preprod:fonctions ailleurs), ne lance rien. */
 export async function demarrerFonctions(url, { racine = RACINE, delaiS = 120 } = {}) {
   if (await fonctionsPretes(url)) return { arreter: async () => {}, lancees: false };
-  const enfant = spawn(process.execPath, [SCRIPT_CLI, "functions", "serve", "--no-verify-jwt", "--env-file", join(racine, ".preprod/fonctions.env")], {
+  const enfant = spawn(process.execPath, [SCRIPT_CLI, "functions", "serve", "--env-file", join(racine, ".preprod/fonctions.env")], {
     cwd: racine, stdio: ["ignore", "ignore", "ignore"], detached: false,
   });
   for (let i = 0; i < delaiS / 2; i++) {

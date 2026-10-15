@@ -54,3 +54,13 @@ describe("reessayer", () => {
     assert.match(r.error.message, /timed out/);
   });
 });
+
+import { fichiersIntegration } from "../scripts/preprod/tester.mjs";
+describe("npm run preprod:test", () => {
+  it("lance les fichiers qui ont besoin de la pile, pas la suite PGlite", () => {
+    const f = fichiersIntegration();
+    for (const attendu of ["test/isolation.test.mjs", "test/journal-db.test.mjs", "test/savoir-db.test.mjs", "test/nightly.test.mjs", "test/preprod-graine.test.mjs", "test/mcp.test.mjs"]) assert.ok(f.includes(attendu), attendu);
+    assert.ok(!f.includes("test/projection.test.mjs") && !f.includes("test/calendrier-pglite.test.mjs"));
+    assert.ok(f.length < 15, `${f.length} fichiers`);
+  });
+});

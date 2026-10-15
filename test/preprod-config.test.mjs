@@ -30,6 +30,10 @@ export const DIFFERENCES_PERMISES = {
 // Clés présentes seulement en préproduction (la production les laisse en commentaire).
 export const CLES_AJOUTEES = {
   "api.auto_expose_new_tables": "les migrations comptent sur l'exposition automatique de la production (service_role sans GRANT explicite)",
+  "functions.mcp.verify_jwt": "la production règle verify_jwt au déploiement de chaque fonction",
+  "functions.nightly.verify_jwt": "idem",
+  "functions.powens.verify_jwt": "idem",
+  "functions.resolve-symbol.verify_jwt": "idem",
 };
 
 describe("parité preprod/config.toml ↔ supabase/config.toml", () => {
@@ -80,6 +84,11 @@ describe("parité preprod/config.toml ↔ supabase/config.toml", () => {
 
   it("exposition automatique des nouvelles tables, comme la production", () => {
     assert.equal(pre["api.auto_expose_new_tables"], "true");
+  });
+
+  it("verify_jwt par fonction : mcp, nightly et powens se contrôlent eux-mêmes, resolve-symbol exige un utilisateur connecté", () => {
+    for (const f of ["mcp", "nightly", "powens"]) assert.equal(pre[`functions.${f}.verify_jwt`], "false", f);
+    assert.equal(pre["functions.resolve-symbol.verify_jwt"], "true");
   });
 
   it("la graine est branchée", () => {
