@@ -57,13 +57,15 @@
 //   https://docs.powens.com/documentation/integration-guides/sca-and-connection-states ;
 // - compte (https://docs.powens.com/api-reference/products/data-aggregation/bank-accounts) : id, name, original_name, balance,
 //   currency.id, type (AccountTypeName, https://docs.powens.com/api-reference/products/data-aggregation/bank-account-types),
-//   disabled, deleted, last_update, loan.remaining_capital (si présent) ; le numéro et l'IBAN ne sont jamais lus ;
+//   disabled, deleted, last_update ; le numéro et l'IBAN ne sont jamais lus ;
 // - prêt imbriqué `loan` du même objet compte (tous champs nullables, aucune garantie de remplissage par banque) : subscription_date,
 //   maturity_date, start_repayment_date (dates AAAA-MM-JJ), rate, duration (mois), total_amount, insurance_rate, next_payment_date,
 //   type (mortgage | consumercredit | revolvingcredit | loan). Unités : `insurance_rate` est documenté « entre 0 et 1 » (ratio) →
 //   proposé en pourcentage (× 100, borné 0 à 5) ; l'échelle de `rate` n'est PAS documentée (« Rate of the loan ») → copié tel quel
-//   dans banque_comptes.pret, jamais proposé comme taux_pct tant que Powens ne la précise pas. Hors DAT1 : loan.remaining_capital,
-//   lu plus haut, n'existe pas dans l'objet `loan` documenté (le repli sur le solde du compte est ce qui fonctionne) ;
+//   dans banque_comptes.pret, jamais proposé comme taux_pct tant que Powens ne la précise pas. Capital restant dû (FIX3) :
+//   l'objet `loan` documenté n'en porte aucun (total_amount, available_amount, used_amount = montant déjà débloqué, pas le restant dû ;
+//   le capital restant dû n'existe que dans la ressource « amortizations », activée sur demande). Le CRD est donc le solde du compte
+//   de prêt (documenté, négatif), en valeur absolue (`capitalRestantDu`) ; `loan.remaining_capital`, non documenté, ne sert que de repli ;
 // - placement (https://docs.powens.com/api-reference/products/data-aggregation/investments) : id, code, code_type (ISIN | AMF),
 //   label, quantity, unitprice (prix de revient unitaire), valuation, deleted ;
 // - opération (https://docs.powens.com/api-reference/products/data-aggregation/bank-transactions) : id, date, value,
@@ -191,6 +193,15 @@ function nombreFini(v: unknown): number | null {
   if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v.trim())) { const n = Number(v); return Number.isFinite(n) ? n : null; }
   return null;
 }
+/** Capital restant dû d'un compte de prêt, en valeur absolue : solde du compte (champ documenté) d'abord, puis `loan.remaining_capital`
+ *  (non documenté par Powens, simple repli), sinon null. */
+export function capitalRestantDu(compte: any): number | null {
+  const solde = nombre(compte?.balance);
+  if (solde != null) return Math.abs(solde);
+  const repli = nombre(compte?.loan?.remaining_capital);
+  return repli == null ? null : Math.abs(repli);
+}
+
 /** Champs documentés de `compte.loan`, présents et valides, rien d'autre ; null si `loan` est absent, vide ou sans champ exploitable.
     Aucune date n'est inventée ni déduite. Ne lève pas. */
 export function pretDe(compte: any): Record<string, string | number> | null {
@@ -1157,7 +1168,7 @@ export function planifier(etat: Etat, d: Donnees) {
     if (actif && solde != null) {
       if (positionId) plan.positionsMaj.push({ id: positionId, patch: { value: solde, value_date: aujourdhui, ...auto } });
       if (creditId) {
-        const crd = nombre(c.loan?.remaining_capital) ?? solde;
+        const crd = capitalRestantDu(c) ?? solde;
         plan.creditsMaj.push({ id: creditId, crd: Math.round(Math.abs(crd) * 100) / 100 });
       }
       const lot = d.lots[String(id)], idProp = d.idsPropositions?.[String(id)];
@@ -1412,7 +1423,7 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
       comptes: lectures.map((l) => ({
         id: Number(l.compte.id), type: normaliserType(l.compte), typePowens: String(l.compte.type ?? ""),
         nom: nettoyerLibelle(l.compte.name ?? l.compte.original_name) || "Compte", solde: nombre(l.compte.balance),
-        crd: nombre(l.compte.loan?.remaining_capital), actif: !l.compte.disabled && !l.compte.deleted,
+        crd: capitalRestantDu(l.compte), actif: !l.compte.disabled && !l.compte.deleted,
         isins: l.placements ? [...new Set(l.placements.filter((inv: any) => inv && !inv.deleted).map(isinDe).filter(Boolean) as string[])] : null,
       })),
       etatComptes: tousComptes,
