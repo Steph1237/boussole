@@ -1,7 +1,7 @@
 // BQ1 (Powens), côté app (spec docs/superpowers/specs/2026-10-12-bq1-powens-design.md § 5, plan Task 4) :
 //   - banque-etat.js : table des états Powens en français, urgences, comptes à rattacher, réel moyen du budget, validation du
 //     rattachement (seule copie, partagée par les deux stores et les vues) ;
-//   - Agent › Connexion : section « Banques connectées » (banqueHtml, pure ; montage en vm : connecter, reconnecter, rattacher,
+//   - Compte › Connecter Claude : section « Banques connectées » (banqueHtml, pure ; montage en vm : connecter, reconnecter, rattacher,
 //     déconnecter avec confirmation dans la page) ;
 //   - Aujourd'hui : reconnexion et comptes à rattacher ; Patrimoine › Budget : « réel (moy. 3 mois) » par catégorie ;
 //   - app.js : retour de la page Powens (?connection_id=…, ?error=…) ; account.js : /powens/supprimer avant delete_me ;
@@ -149,7 +149,7 @@ test("BanqueEtat : adresse de redirection acceptée seulement chez Powens, en ht
     assert.equal(BE.urlPowensOk(u), false, String(u));
 });
 
-/* =================================================================== Agent › Connexion =================================================================== */
+/* =================================================================== Compte › Connecter Claude =================================================================== */
 
 test("banqueHtml : rien si l'interrupteur est éteint ou absent ; lecture en cours ; aucune banque", () => {
   assert.equal(G.banqueHtml(S0({ banque: { actif: false, lu: true, connexions: [], comptes: [], mois: [] } }), AUJ), "");
@@ -450,7 +450,7 @@ const vide = o => Object.assign({ ready: true, dbOk: true, positions: [], snapsh
   risque: null, classes: {}, propositions: [], connexions: [], memoire: [], scope: "foyer", people: [{ id: "p1", nom: "Camille" }], error: null }, o);
 const sansRegles = { Rules: null };
 
-test("Aujourd'hui : reconnexion (urgence 1 pour SCA, mot de passe…, sinon 2) et comptes à rattacher (urgence 2) vers Agent › Connexion", () => {
+test("Aujourd'hui : reconnexion (urgence 1 pour SCA, mot de passe…, sinon 2) et comptes à rattacher (urgence 2) vers Compte › Connecter Claude", () => {
   const b = A.boite(vide({ banque: banque({ connexions: [cx(1, null), cx(2, "SCARequired", { etablissement: "Néo Courtage" }), cx(3, "decoupled", { etablissement: "Banque B" }),
     cx(4, "websiteUnavailable", { etablissement: "Banque C" })], comptes: [cpt(10, 1), cpt(11, 1, { nom: "Livret" }), cpt(12, 1, { positionId: "x" })] }) }), AUJ, sansRegles)
     .filter(x => x.type === "banque");
@@ -462,7 +462,7 @@ test("Aujourd'hui : reconnexion (urgence 1 pour SCA, mot de passe…, sinon 2) e
   const r = par("2 comptes à rattacher");
   assert.equal(r.urgence, 2);
   assert.match(r.contexte, /Compte 10, Livret/);
-  for (const x of b) assert.equal(x.action.route, "agent/connexion");
+  for (const x of b) assert.equal(x.action.route, "compte/connexion");
   assert.equal(b.length, 3, "rien pour une connexion à jour ni pour un incident passager");
   assert.deepEqual(A.boite(vide({ banque: banque({ actif: false }) }), AUJ, sansRegles).filter(x => x.type === "banque"), [], "interrupteur éteint");
   assert.deepEqual(A.boite(vide(), AUJ, sansRegles).filter(x => x.type === "banque"), [], "store sans banque");
@@ -524,7 +524,7 @@ test("BanqueEtat.retourPowens : retour filtré par /powens/retour (?connection_i
     assert.ok(r.message && !r.message.includes(code), code + " : le code n'est jamais affiché");
     assert.doesNotMatch(r.message, VOUVOIEMENT, code);
   }
-  assert.equal(BE.retourPowens("?error=nouveau_code").message, "La connexion à ta banque n'a pas abouti. Réessaie depuis Agent › Connexion.", "message générique");
+  assert.equal(BE.retourPowens("?error=nouveau_code").message, "La connexion à ta banque n'a pas abouti. Réessaie depuis Compte › Connecter Claude.", "message générique");
   assert.match(BE.retourPowens("?error=server_error").message, /momentanément indisponible/);
   assert.equal(BE.retourPowens("?connection_id=7&error=access_denied").ok, false, "erreur prioritaire");
   // pas un retour Powens : valeurs hors format (le retour les filtre), ou retour d'authentification Supabase (laissé à supabase-js)
@@ -533,16 +533,16 @@ test("BanqueEtat.retourPowens : retour filtré par /powens/retour (?connection_i
     assert.equal(BE.retourPowens(q), null, String(q));
 });
 
-test("app.js : retour de Powens → message (BanqueEtat.retourPowens), paramètres retirés de l'URL, Agent › Connexion, rechargements", () => {
+test("app.js : retour de Powens → message (BanqueEtat.retourPowens), paramètres retirés de l'URL, Compte › Connecter Claude, rechargements", () => {
   assert.deepEqual(J(AppMod.retourBanque("?connection_id=42")), J(BE.retourPowens("?connection_id=42")));
   assert.equal(AppMod.retourBanque("?error=access_denied").message, "Connexion annulée.");
   assert.equal(AppMod.retourBanque("?error=access_denied&error_description=x"), null, "retour d'authentification : pas un message bancaire");
   assert.equal(AppMod.retourBanque(""), null);
   const app = src("app.js");
   assert.match(app, /const retour = retourBanque\(window\.BOUSSOLE_RETOUR_BANQUE \|\| location\.search\)/, "query d'origine gardée par auth.js");
-  assert.match(app, /history\.replaceState\(null, "", location\.pathname \+ retour\.recherche \+ "#agent\/connexion"\)/);
+  assert.match(app, /history\.replaceState\(null, "", location\.pathname \+ retour\.recherche \+ "#compte\/connexion"\)/);
   assert.match(app, /\[5000, 15000\]\.forEach\(ms => setTimeout\(\(\) => Store\.reload\(\), ms\)\)/);
-  assert.match(app, /route = resolve\("agent\/connexion"\)/);
+  assert.match(app, /route = resolve\("compte\/connexion"\)/);
   const shell = src("shell.html");
   assert.match(shell, /<div id="banqueBanner" class="banner retour" role="status" hidden><span id="banqueBannerTxt"><\/span><button type="button" class="banner-x" id="banqueBannerClose" aria-label="Masquer ce message">×<\/button><\/div>/);
   assert.match(app, /\$\("banqueBannerTxt"\)\.textContent = retour\.message/, "texte posé sans HTML");
@@ -551,7 +551,7 @@ test("app.js : retour de Powens → message (BanqueEtat.retourPowens), paramètr
 /* ---------- auth.js exécuté : l'URL du retour est nettoyée AVANT createClient (detectSessionInUrl) ---------- */
 function authRetour(search, avecBE = true) {
   const vu = [];
-  const location = { search, pathname: "/boussole/app.html", hash: "#agent/connexion", href: "https://ex.org/boussole/app.html" + search + "#agent/connexion" };
+  const location = { search, pathname: "/boussole/app.html", hash: "#compte/connexion", href: "https://ex.org/boussole/app.html" + search + "#compte/connexion" };
   const history = { state: { x: 1 }, replaceState(st, t, url) { const u = new URL(url, "https://ex.org"); location.search = u.search; location.hash = u.hash; location.href = u.href; vu.push([st, url]); } };
   const auth = { getSession: async () => ({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) };
   const window = { BOUSSOLE: { supabaseUrl: "https://x.supabase.co", supabaseKey: "k", base: "./" }, location, history,
@@ -566,7 +566,7 @@ function authRetour(search, avecBE = true) {
 test("auth.js (exécuté) : ?connection_id / ?error de Powens retirés de l'URL avant la création du client Supabase ; query d'origine gardée pour app.js", () => {
   const a = authRetour("?error=access_denied");
   assert.deepEqual(a.vu.map(x => x[0] === "createClient" ? x : "replaceState"), ["replaceState", ["createClient", ""]], "nettoyée avant createClient");
-  assert.equal(a.location.hash, "#agent/connexion", "ancre gardée");
+  assert.equal(a.location.hash, "#compte/connexion", "ancre gardée");
   assert.equal(a.window.BOUSSOLE_RETOUR_BANQUE, "?error=access_denied");
   const b = authRetour("?demo&connection_id=42");
   assert.equal(b.location.search, "?demo=");
@@ -988,7 +988,7 @@ test("Aujourd'hui (0022) : connexion en double (urgence 2, « Déconnecter ») ;
   assert.ok(d, JSON.stringify(b.map(x => x.titre)));
   assert.equal(d.urgence, 2);
   assert.equal(d.contexte, "Elle ne contient que des comptes déjà présents dans l'autre connexion LCL : déconnecte-la.");
-  assert.deepEqual(J(d.action), { label: "Déconnecter", route: "agent/connexion" });
+  assert.deepEqual(J(d.action), { label: "Déconnecter", route: "compte/connexion" });
   assert.equal(b.find(x => /à rattacher/.test(x.titre)).titre, "1 compte à rattacher", "le compte en double n'est pas compté");
 });
 

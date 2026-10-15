@@ -1,4 +1,4 @@
-/* Agent › Connexion : faire son bilan en discutant avec Claude (connecteur MCP Boussole).
+/* Compte › Connecter Claude : faire son bilan en discutant avec Claude (connecteur MCP Boussole).
    Avancement par section (BilanEtat.etat), prochaines questions, ajout du connecteur (bloc partagé avec l'étape 3 de
    l'accueil : Accueil.connexion), « Revoir l'accueil » (App.accueil),
    parcours lançables (claude.ai/new?q=… ou copie de la demande), retour vers Propositions pour valider.

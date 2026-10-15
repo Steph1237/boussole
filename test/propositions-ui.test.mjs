@@ -41,7 +41,7 @@ test("propositions.html : identifiants utilisés par le script, phrase d'en-têt
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
   assert.ok(html.includes("Claude a proposé ces changements. Rien n'est enregistré tant que tu ne les valides pas."));
   assert.match(html, /formulaires interactifs/, "l'état vide décrit la saisie avec Claude");
-  assert.match(html, /data-goto="agent\/connexion"/);
+  assert.match(html, /data-goto="compte\/connexion"/);
 });
 
 test("propositions.css : entièrement scopé (vue, pastille de la barre latérale), plus de règles #propBanner", () => {

@@ -53,7 +53,7 @@ test("journal-view.html : identifiants utilisés par le script, en-tête, consen
   assert.ok(ids.length >= 8);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
   assert.ok(html.includes("Journal des décisions"));
-  assert.ok(html.includes("Ce que l'agent peut enregistrer"));
+  assert.ok(html.includes("Ce que Claude peut enregistrer"));
   assert.match(html, /id="jvMsg"[^>]*role="status"/);
   assert.match(html, /id="jvConsentErr"[^>]*role="alert"/);
   assert.match(html, /id="jvVide"/);
@@ -299,7 +299,7 @@ test("expertisesDe et detailHtml : « Expertises consultées : Nom (v3), … »,
   const h = JV.detailHtml(e, S, UI, { deps: DEPS });
   const t = sp(h.replace(/<[^>]+>/g, ""));
   assert.ok(t.includes("Expertises consultées : Allocation et risque (v3), ETF &lt;et&gt; fonds (v1), retiree-&lt;x&gt; (v2), sans-version"), t);
-  assert.ok(h.includes('href="#agent/expertises?expertise=allocation-risque" data-goto="agent/expertises?expertise=allocation-risque"'), "lien vers l'expertise");
+  assert.ok(h.includes('href="#agent/savoir?expertise=allocation-risque" data-goto="agent/savoir?expertise=allocation-risque"'), "lien vers l'expertise");
   assert.ok(!h.includes("expertise=retiree"), "pas de lien pour une expertise inconnue");
   assert.ok(!/<et>|<x>/.test(h));
   assert.doesNotMatch(JV.detailHtml(E("x0"), S, UI, { deps: DEPS }), /Expertises consultées/);

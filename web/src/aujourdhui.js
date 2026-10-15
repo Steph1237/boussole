@@ -123,7 +123,7 @@
   /* ---------- liens ---------- */
   /* Lien profond vers une entrée du journal : la coque retient le paramètre et Agent › Journal ouvre l'entrée (app.js, journal-view.js). */
   const lienEntree = id => "agent/journal?entree=" + encodeURIComponent(String(id));
-  const R = { comptes: "patrimoine/comptes", propositions: "agent/propositions", journal: "agent/journal", connexion: "agent/connexion", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque", echeances: "aujourdhui?echeances=1" };
+  const R = { comptes: "patrimoine/comptes", propositions: "agent/propositions", journal: "agent/journal", connexion: "compte/connexion", placements: "patrimoine/placements", budget: "patrimoine/budget", objectifs: "patrimoine/objectifs", sante: "pilotage/sante", risque: "pilotage/risque", echeances: "aujourdhui?echeances=1" };
   /** Lien vers une nouvelle conversation Claude, question préremplie (même forme que UI.demanderAClaude). */
   function urlClaude(question) { return "https://claude.ai/new?q=" + encodeURIComponent(String(question ?? "")); }
   const httpsOk = u => /^https:\/\//.test(String(u || ""));
@@ -222,7 +222,7 @@
     return null;
   }
 
-  /** Éléments bancaires de la boîte (type « banque », vers Agent › Connexion). */
+  /** Éléments bancaires de la boîte (type « banque », vers Compte › Connecter Claude). */
   function elementsBanque(S, t) {
     const B = BE(), b = S && S.banque, out = [];
     if (!B || !b || !b.actif) return out;

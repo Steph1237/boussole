@@ -1,5 +1,5 @@
 // SEC2 : double authentification obligatoire dès qu'une banque est connectée — côté app.
-//   - carte bloquante « Active la double authentification pour voir ton détail bancaire » (Patrimoine › Comptes, Agent › Connexion) ;
+//   - carte bloquante « Active la double authentification pour voir ton détail bancaire » (Patrimoine › Comptes, Compte › Connecter Claude) ;
 //   - store Supabase exécuté : garde de démarrage (écran de code avant toute lecture), S.banque.mfaRequise sans aal2, rien de bancaire lu,
 //     connecter / gerer refusés sans appel réseau, réponse 403 mfa_requise de la fonction powens affichée ;
 //   - page de consentement des connecteurs exécutée (mini-DOM) : code exigé avant d'autoriser quand le compte a un facteur vérifié.
@@ -46,7 +46,7 @@ test("BanqueEtat.carteMfa (I2) : dit que les comptes restent masqués sans doubl
   assert.doesNotMatch(t, VOUVOIEMENT);
 });
 
-test("Agent › Connexion : sans aal2, la section « Banques connectées » devient la carte bloquante (ni bouton « Connecter », ni liste de comptes)", () => {
+test("Compte › Connecter Claude : sans aal2, la section « Banques connectées » devient la carte bloquante (ni bouton « Connecter », ni liste de comptes)", () => {
   const S = { ready: true, banque: { actif: true, lu: true, mfaRequise: true, connexions: [], comptes: [], mois: [] }, positions: [], profil: { credits: [] }, people: [] };
   const h = G.banqueHtml(S, AUJ);
   assert.equal(h, BE.carteMfa());

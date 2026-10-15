@@ -18,7 +18,7 @@
   const prompts = () => glob("ClaudePrompts") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
 
-  /* Complétude : la fonction du bilan (BilanEtat, bilan-etat.js), la même que Agent › Connexion et l'outil etat_du_bilan du connecteur. */
+  /* Complétude : la fonction du bilan (BilanEtat, bilan-etat.js), la même que Compte › Connecter Claude et l'outil etat_du_bilan du connecteur. */
   const bilanEtat = () => glob("BilanEtat") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./bilan-etat.js") : null);
 
@@ -62,7 +62,7 @@
   const aCredit = pr => creditsDe(pr).length > 0;
 
   /** Complétude du bilan : { pourcentage, incompletes: [titre de section, …] } d'après BilanEtat.etat (foyer, revenus, budget, placements,
-      immobilier et crédits, protection, objectifs, profil de risque), une seule définition pour Compte › Données, Agent › Connexion et le
+      immobilier et crédits, protection, objectifs, profil de risque), une seule définition pour Compte › Données, Compte › Connecter Claude et le
       connecteur. S = état du store ; today = jour (AAAA-MM-JJ, défaut : aujourd'hui). Sans le module : { pourcentage: 0, incompletes: [] }. */
   function completude(S, today) {
     const B = bilanEtat();

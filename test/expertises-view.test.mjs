@@ -1,4 +1,4 @@
-// Agent › Expertises (web/src/expertises-view.*) : les méthodes d'analyse que le Copilote patrimonial consulte à la demande
+// Agent › Savoir › Expertises (web/src/expertises-view.*) : les méthodes d'analyse que le Copilote patrimonial consulte à la demande
 // (spec docs/superpowers/specs/2026-10-11-ex1-copilote-expertises.md § 3), en lecture seule : cartes (nom, quand consulter,
 // version), panneau de détail (périmètre, marchés, méthode en markdown sûr, points de contrôle, garde-fous, forme de la réponse,
 // historique des versions en accordéon, « Demander à Claude » avec ClaudePrompts.phrase("expertise", nom)), lien profond
@@ -53,7 +53,7 @@ test("expertises-view.html : identifiants utilisés par le script, introduction 
   const ids = [...js.matchAll(/\$\("(xv[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 5);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  assert.match(html, /<h2[^>]*id="xvTitre"[^>]*>Les expertises du Copilote<\/h2>/);
+  assert.match(html, /<h2[^>]*id="xvTitre"[^>]*>Les expertises de Claude<\/h2>/);
   const intro = /<p class="xv-intro">([\s\S]*?)<\/p>/.exec(html);
   assert.ok(intro, "introduction");
   assert.equal(intro[1].split(/(?<=[.!?])\s+/).filter(Boolean).length, 2, "deux phrases : ce que sont les expertises, Claude les consulte pour toi");
@@ -77,10 +77,11 @@ test("expertises-view : lecture seule (aucune écriture, seule lecture Store.exp
   assert.match(js, /\.expertises\.detail\(slug\)/);
 });
 
-test("expertises-view : tutoiement et vocabulaire (« Copilote patrimonial », jamais « conseiller »)", () => {
+test("expertises-view : tutoiement et vocabulaire (« Claude », plus de « Copilote » dans l\'interface, jamais « conseiller »)", () => {
   const s = sansCommentaires(js + html);
   assert.doesNotMatch(s, /(?<![\p{L}])(vous|votre|vos)(?![\p{L}])/iu);
   assert.doesNotMatch(s, /conseiller/i);
+  assert.doesNotMatch(sansCommentaires(js).replace(/\/\*[\s\S]*?\*\//g, "") + html, /Copilote/, "le mot Copilote ne s'affiche plus");
 });
 
 /* ------------------------------------------------------------------ fonctions pures ------------------------------------------------------------------ */

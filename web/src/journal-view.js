@@ -11,7 +11,7 @@
    « Voir plus »), panneau de détail UI.panneau (synthèse, raisonnement, options, « au moment / aujourd'hui », liens, historique,
    actions selon le statut, « Reprendre avec Claude »).
    Expertises consultées (EX1, liens.expertises écrit par journaliser) : « Expertises consultées : Nom (v3), … » dans le panneau, nom
-   repris de S.expertises (lien vers Agent › Expertises), slug en repli.
+   repris de S.expertises (lien vers Agent › Savoir › Expertises), slug en repli.
    Fonctions pures exportées pour les tests : filtrer, grouperParMois, comparaison, libelleHistorique, rendreMarkdown, listeHtml,
    detailHtml, expertisesDe, actionsPour, questionClaude, patchCorrection, nARelire, statutParDefaut, typesPresents, optionsStatut, CONSENTEMENTS.
    Dépendances de calcul injectées (deps) : { Calc, Pratiques, Risque } ; window.* par défaut. */
@@ -258,7 +258,7 @@
   }
   function expertisesHtml(xs) {
     return '<section class="jv-d"><p class="jv-exp"><span class="jv-exp-l">Expertises consultées :</span> ' + xs.map(x => {
-      const r = "agent/expertises?expertise=" + encodeURIComponent(x.slug);
+      const r = "agent/savoir?expertise=" + encodeURIComponent(x.slug);
       const nom = x.connue ? '<a href="#' + esc(r) + '" data-goto="' + esc(r) + '">' + esc(x.nom) + "</a>" : esc(x.nom);
       return '<span class="jv-exp-x">' + nom + (x.version ? " (v" + x.version + ")" : "") + "</span>";
     }).join(", ") + "</p></section>";

@@ -169,7 +169,7 @@ const baseInitiale = (comptes = []) => ({
     { id: "pos-autre", user_id: AUTRE, name: "Livret de B", mode: "manual", value: 1, status: "actif" },
   ], instruments: [], credits: [{ id: "cred-1", user_id: U, nom: "Prêt immo", crd: 160000 }], propositions: [],
 });
-/** Rattachements posés par l'utilisateur (Agent › Connexion). */
+/** Rattachements posés par l'utilisateur (Compte › Connecter Claude). */
 const RATTACHES = [
   { user_id: U, id: 102, connexion_id: 7, position_id: "pos-livret", enveloppe: null, titulaire: null, credit_id: null },
   { user_id: U, id: 103, connexion_id: 7, position_id: null, enveloppe: "PEA", titulaire: "p2", credit_id: null },

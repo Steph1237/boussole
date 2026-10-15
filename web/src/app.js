@@ -24,17 +24,18 @@
       { id: "projections", label: "Projections", module: null },
       { id: "scenarios", label: "Scénarios", module: "simu" },
     ] },
+    /* Agent : 4 sous-vues (UX3). « Savoir » réunit les anciennes Fiches et Expertises (deux volets, modules fiches-view et expertises-view,
+       montés dans la section de savoir-view : `extras`). Connexion est passée dans Compte (« Connecter Claude »). */
     { space: "agent", label: "Agent", short: "Agent", icon: "agent", primary: true, desc: "Ce que Claude a fait, sait et te propose", subs: [
+      { id: "propositions", label: "À valider", module: "propositions" },
       { id: "journal", label: "Journal", module: "journal-view" },
-      { id: "propositions", label: "Propositions", module: "propositions" },
       { id: "memoire", label: "Mémoire", module: "memoire-view" },
-      { id: "fiches", label: "Fiches", module: "fiches-view" },
-      { id: "expertises", label: "Expertises", module: "expertises-view" },
-      { id: "connexion", label: "Connexion", module: "claude-guide" },
+      { id: "savoir", label: "Savoir", module: "savoir-view", extras: ["fiches-view", "expertises-view"] },
     ] },
-    { space: "compte", label: "Compte", short: "Compte", icon: "compte", primary: false, desc: "Tes données, tes règles et ton compte", subs: [
+    { space: "compte", label: "Compte", short: "Compte", icon: "compte", primary: false, desc: "Tes données, tes règles et la connexion de Claude", subs: [
       { id: "donnees", label: "Données", module: "profil" },
       { id: "regles", label: "Règles", module: "regles" },
+      { id: "connexion", label: "Connecter Claude", module: "claude-guide" },
     ] },
   ];
   /* Correspondance des anciennes routes (spec cockpit § Navigation cible) : anciennes sous-vues, anciens espaces seuls
@@ -42,13 +43,15 @@
      marque-pages, liens internes data-goto et liens des textes du connecteur continuent de marcher. */
   const LEGACY = {
     "bilan": "aujourdhui/vue", "bilan/vue": "aujourdhui/vue", "bilan/placements": "patrimoine/placements",
-    "recos": "aujourdhui/vue", "recos/actions": "aujourdhui/vue", "recos/fiches": "agent/fiches",
+    "recos": "aujourdhui/vue", "recos/actions": "aujourdhui/vue", "recos/fiches": "agent/savoir",
     "diagnostic": "pilotage/sante", "diagnostic/sante": "pilotage/sante", "diagnostic/risque": "pilotage/risque", "diagnostic/rang": "pilotage/rang",
     "decisions": "pilotage/scenarios", "decisions/acheter": "pilotage/scenarios", "decisions/autres": "pilotage/scenarios",
     "avenir": "patrimoine/budget", "avenir/plan": "patrimoine/budget", "avenir/projections": "pilotage/projections",
     "profil": "compte/donnees", "profil/donnees": "compte/donnees", "profil/regles": "compte/regles",
-    "profil/claude": "agent/connexion", "profil/memoire": "agent/memoire", "profil/propositions": "agent/propositions",
+    "profil/claude": "compte/connexion", "profil/memoire": "agent/memoire", "profil/propositions": "agent/propositions",
     "toise": "pilotage/rang", "simu": "pilotage/scenarios", "plan": "patrimoine/budget",
+    /* UX3 : Connexion est passée d'Agent à Compte ; Fiches et Expertises sont les deux volets d'Agent › Savoir (le paramètre ?expertise=<slug> est gardé). */
+    "agent/connexion": "compte/connexion", "agent/fiches": "agent/savoir", "agent/expertises": "agent/savoir", "fiches": "agent/savoir", "expertises": "agent/savoir",
   };
   /* Ancres de la toute première version (onglets et sous-onglets de la Toise et du Simulateur), en hash seulement :
      « #pilotage » nu garde son ancien sens dans un marque-page (Patrimoine › Placements), alors que App.go("pilotage")
@@ -154,7 +157,7 @@
     const BE = BanqueEtatMod();
     return BE && typeof BE.retourPowens === "function" ? BE.retourPowens(search) : null;
   }
-  const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name) return { space: sp.space, sub: s.id }; return null; };
+  const routeOfModule = name => { for (const sp of SPACES) for (const s of sp.subs) if (s.module === name || (s.extras || []).includes(name)) return { space: sp.space, sub: s.id }; return null; };
 
   /* ---------- en-tête : fraîcheur, demandes à Claude, périmètre (pur, testé par test/shell.test.mjs et test/ux1-coque.test.mjs) ---------- */
   const ModOuvert = (nom, fichier) => (typeof window !== "undefined" && window[nom]) ||
@@ -198,6 +201,7 @@
     "patrimoine/objectifs": [["Définir mes objectifs", "objectifs"], ["Établir mon budget", "budget"], ["Compléter mon bilan", "bilan"]],
     "pilotage": [["Compléter mon bilan", "bilan"], ["Remplir mon profil de risque", "risque"], ["Définir mes objectifs", "objectifs"]],
     "agent": [["Faire ma revue du mois", "revue"], ["Répondre aux questions de ma revue", "routine"], ["Consulter une expertise", "expertise"]],
+    "compte/connexion": [["Compléter mon bilan", "bilan"], ["Faire ma revue du mois", "revue"], ["Répondre aux questions de ma revue", "routine"]],
     "compte": [["Compléter mon foyer", "foyer"], ["Renseigner ma protection", "protection"], ["Régler mes règles d'alerte", "regles"]],
   };
   /** Les 3 demandes de la route : celles de « destination/sous-vue » si elles existent, sinon celles de la destination. */
@@ -278,6 +282,8 @@
         if (!lien || lien.cle !== key(route)) return {};
         const p = lien.params; lien = null; return p;
       },
+      /* Les mêmes paramètres, sans les consommer (savoir-view choisit son volet avant que expertises-view lise le sien). */
+      parametresActuels() { return lien && lien.cle === key(route) ? Object.assign({}, lien.params) : {}; },
     };
     window.App = App;
     /* Les modules chargés avant app.js ont mis leur enregistrement en attente. */
@@ -300,8 +306,11 @@
       if (o.push && (changed || PARAMS_DANS_URL.includes(key(r))) && location.hash !== h) history.pushState(null, "", h);
       document.querySelectorAll("section.view[data-space]").forEach(v => { v.hidden = !(v.dataset.space === r.space && v.dataset.sub === r.sub); });
       renderChrome();
-      const s = subOf(r.space, r.sub); const m = s && s.module && mounted.has(s.module) ? mods[s.module] : null;
-      if (m && m.show) try { m.show(); } catch (e) { console.error(s.module, e); }
+      const s = subOf(r.space, r.sub);
+      [s && s.module].concat((s && s.extras) || []).filter(Boolean).forEach(nom => {
+        const m = mounted.has(nom) ? mods[nom] : null;
+        if (m && m.show) try { m.show(); } catch (e) { console.error(nom, e); }
+      });
       refreshHeadlines();
       if (o.focus !== false && changed && focusApres(before, r, focusLost())) focusTitle();
       if (o.scroll && changed && window.scrollY > 0) window.scrollTo({ top: 0 });
@@ -442,7 +451,7 @@
       ouverte = "fraicheur";
       UI.panneau.ouvrir({ titre: "Sources et mises à jour", retour: $("freshBtn"), surFermeture: apresFermeture,
         contenu: '<p class="ui-panneau-note"><span class="ui-puce ' + (f.etat === "ok" ? "bon" : f.etat === "vieux" ? "surveiller" : "completer") + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(f.etat === "ok" ? "À jour" : f.etat === "vieux" ? "À rafraîchir" : "Inconnu") + "</span> " + esc(f.phrase) + "</p>" + UI.liste(lignes, { label: "Sources" }),
-        lien: { label: "Voir la connexion de Claude", href: "#agent/connexion" } });
+        lien: { label: "Voir la connexion de Claude", href: "#compte/connexion" } });
     }
     /* État de la veille : S.status.veille.lastReport (date ISO ou horodatage) ; alerte au-delà de 8 jours. */
     function veille(S) {
@@ -549,7 +558,7 @@
       let onboardingShown = false;
       /* Accueil (accueil.js) : bienvenue, connexion de Claude, entretien, suivi et validation. Aucune saisie dans l'app :
          Boussole fonctionne avec un assistant, la seule écriture est « onboarding terminé » (Store.markOnboarded, dans l'accueil).
-         Aussi rouvert depuis Agent › Connexion (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
+         Aussi rouvert depuis Compte › Connecter Claude (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
       App.accueil = o => {
         if (!window.Accueil) return false;
         Accueil.open(Object.assign({}, o || {}));
@@ -572,12 +581,12 @@
         mounted.forEach(k => { const m = mods[k]; if (m.update) try { m.update(S, isActive(k)); } catch (e) { console.error(k, e); } });
         refreshHeadlines();
       });
-      /* Retour de la page Powens : message (succès ou échec), Agent › Connexion ouvert, paramètres retirés de l'URL ; en cas de
+      /* Retour de la page Powens : message (succès ou échec), Compte › Connecter Claude ouvert, paramètres retirés de l'URL ; en cas de
          succès, le store est relu à 5 s puis à 15 s (la synchronisation se fait côté serveur, à la réception de la notification). */
       const retour = retourBanque(window.BOUSSOLE_RETOUR_BANQUE || location.search);
       if (retour) {
-        route = resolve("agent/connexion"); lastSubs.agent = "connexion";
-        history.replaceState(null, "", location.pathname + retour.recherche + "#agent/connexion");
+        route = resolve("compte/connexion"); lastSubs.compte = "connexion";
+        history.replaceState(null, "", location.pathname + retour.recherche + "#compte/connexion");
         const bb = $("banqueBanner");
         if (bb) {
           bb.setAttribute("role", retour.ok ? "status" : "alert");

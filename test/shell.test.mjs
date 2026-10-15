@@ -41,8 +41,8 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
   assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["comptes", "comptes-view"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
   assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["projections", null], ["scenarios", "simu"]]);
-  assert.deepEqual(subs("agent"), [["journal", "journal-view"], ["propositions", "propositions"], ["memoire", "memoire-view"], ["fiches", "fiches-view"], ["expertises", "expertises-view"], ["connexion", "claude-guide"]]);
-  assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"]]);
+  assert.deepEqual(subs("agent"), [["propositions", "propositions"], ["journal", "journal-view"], ["memoire", "memoire-view"], ["savoir", "savoir-view"]], "Agent : 4 sous-vues (UX3)");
+  assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"], ["connexion", "claude-guide"]], "Connexion est dans Compte (UX3)");
   const lab = (space, id) => SPACES.find(s => s.space === space).subs.find(s => s.id === id).label;
   assert.equal(lab("patrimoine", "comptes"), "Comptes", "Comptes en premier (spec CP1 § 2)");
   assert.equal(lab("patrimoine", "immobilier"), "Immobilier et crédits");
@@ -51,12 +51,16 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   assert.equal(lab("pilotage", "scenarios"), "Scénarios");
   assert.equal(lab("agent", "journal"), "Journal");
   assert.equal(lab("agent", "memoire"), "Mémoire");
-  assert.equal(lab("agent", "expertises"), "Expertises");
-  assert.equal(lab("agent", "connexion"), "Connexion");
+  assert.equal(lab("agent", "propositions"), "À valider");
+  assert.equal(lab("agent", "savoir"), "Savoir");
+  assert.equal(lab("compte", "connexion"), "Connecter Claude");
+  assert.deepEqual(SPACES.find(s => s.space === "agent").subs.find(s => s.id === "savoir").extras, ["fiches-view", "expertises-view"], "Fiches et Expertises : deux volets de Savoir");
+  assert.deepEqual([routeOfModule("fiches-view"), routeOfModule("expertises-view")], [{ space: "agent", sub: "savoir" }, { space: "agent", sub: "savoir" }]);
+  assert.equal(routeOfModule("claude-guide").space, "compte");
   assert.equal(lab("compte", "donnees"), "Données");
   assert.equal(lab("compte", "regles"), "Règles");
   assert.equal(routeOfModule("actions"), null, "Actions n'a plus de sous-vue (boîte de réception d'Aujourd'hui)");
-  const mods = SPACES.flatMap(sp => sp.subs.map(s => s.module)).filter(Boolean);
+  const mods = SPACES.flatMap(sp => sp.subs.flatMap(s => [s.module].concat(s.extras || []))).filter(Boolean);
   assert.equal(new Set(mods).size, mods.length, "un module n'occupe qu'une sous-vue");
 });
 
@@ -67,8 +71,10 @@ test("correspondance : chaque ancienne route de la spec mène à la nouvelle", (
     "diagnostic/sante": "pilotage/sante", "diagnostic/risque": "pilotage/risque", "diagnostic/rang": "pilotage/rang",
     "avenir/projections": "pilotage/projections",
     "decisions/acheter": "pilotage/scenarios", "decisions/autres": "pilotage/scenarios",
-    "profil/propositions": "agent/propositions", "profil/memoire": "agent/memoire", "profil/claude": "agent/connexion",
-    "recos/fiches": "agent/fiches",
+    "profil/propositions": "agent/propositions", "profil/memoire": "agent/memoire", "profil/claude": "compte/connexion",
+    "recos/fiches": "agent/savoir",
+    // UX3 : Connexion passe d'Agent à Compte ; Fiches et Expertises deviennent les volets d'Agent › Savoir
+    "agent/connexion": "compte/connexion", "agent/fiches": "agent/savoir", "agent/expertises": "agent/savoir",
     "profil/donnees": "compte/donnees", "profil/regles": "compte/regles",
   };
   for (const [old, neu] of Object.entries(spec)) {
@@ -87,6 +93,16 @@ test("correspondance : chaque ancienne route de la spec mène à la nouvelle", (
   assert.equal(key(resolve("profil")), "compte/donnees");
   assert.equal(key(resolve("profil/inconnu")), "compte/donnees");
   for (const [k, r] of Object.entries(LEGACY)) assert.ok(routes.includes(r), k + " → " + r + " (route existante)");
+  // anciens liens profonds : le paramètre est gardé pour la vue (l'URL est réécrite sans lui)
+  const e = resolveHash("#agent/expertises?expertise=etf-fonds");
+  assert.deepEqual([key(e), e.legacy, e.query], ["agent/savoir", true, "expertise=etf-fonds"], "#agent/expertises?expertise=… → Savoir, expertise retenue");
+  const c = resolveHash("#agent/connexion");
+  assert.deepEqual([key(c), c.legacy], ["compte/connexion", true]);
+  assert.equal(key(resolve("agent/connexion")), "compte/connexion", "App.go(\"agent/connexion\") et les liens data-goto");
+  assert.equal(key(resolve("agent/fiches")), "agent/savoir");
+  assert.equal(key(resolve("fiches")), "agent/savoir");
+  assert.equal(key(resolveHash("#agent/savoir")), "agent/savoir");
+  assert.equal(resolveHash("#agent/savoir").legacy, false, "route canonique");
 });
 
 test("correspondance : anciens onglets (App.go, data-goto-tab) et anciens hash de la première version", () => {
@@ -179,8 +195,11 @@ test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par
     assert.ok(existsSync(`web/src/${m}.html`), `web/src/${m}.html absent`);
     assert.ok(mods.includes(m), `${m} absent de MODULES (build.mjs)`);
   }
-  for (const [m, space, sub] of [["comptes-view", "patrimoine", "comptes"], ["fiches-view", "agent", "fiches"], ["expertises-view", "agent", "expertises"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"], ["objectifs-view", "patrimoine", "objectifs"]])
+  for (const [m, space, sub] of [["comptes-view", "patrimoine", "comptes"], ["memoire-view", "agent", "memoire"], ["journal-view", "agent", "journal"], ["objectifs-view", "patrimoine", "objectifs"]])
     assert.match(shell, new RegExp(`<section class="view" id="view-${m}" data-space="${space}" data-sub="${sub}" role="tabpanel" aria-labelledby="subtab-${space}-${sub}" hidden>\\s*<!--@${m}-->\\s*</section>`), m);
+  // Savoir : une section, deux volets (fiches et expertises) qui gardent leurs identifiants
+  assert.match(shell, /<section class="view" id="view-savoir-view" data-space="agent" data-sub="savoir" role="tabpanel" aria-labelledby="subtab-agent-savoir" hidden>[\s\S]*?id="view-fiches-view">\s*<!--@fiches-view-->[\s\S]*?id="view-expertises-view" hidden>\s*<!--@expertises-view-->/);
+  assert.match(shell, /<section class="view" id="view-claude-guide" data-space="compte" data-sub="connexion" role="tabpanel" aria-labelledby="subtab-compte-connexion" hidden>\s*<!--@claude-guide-->/);
   assert.match(shell, /<section class="view" id="view-aujourdhui" data-space="aujourdhui" data-sub="vue" hidden>\s*<!--@aujourdhui-->\s*<\/section>/);
   const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
   assert.ok(scripts.indexOf('"reperes"') >= 0 && scripts.indexOf('"reperes"') < scripts.indexOf('"plan"'), "reperes chargé avant plan");
@@ -242,12 +261,12 @@ test("theme.css : point de rupture à 900 px et barre basse à 4 entrées avec z
 
 /* ------------------------------------------------ revue finale CK1 ------------------------------------------------ */
 
-test("routage : sous-vue par défaut = première sous-vue branchée sur un module (Agent → Journal depuis CK2)", () => {
+test("routage : sous-vue par défaut = première sous-vue branchée sur un module (Agent → À valider depuis UX3)", () => {
   const { defSub } = require("../web/src/app.js");
   for (const sp of SPACES) assert.equal(defSub(sp), sp.subs.find(s => s.module).id, sp.space);
-  assert.deepEqual(resolve("agent"), { space: "agent", sub: "journal" });
-  assert.deepEqual(resolve("agent/inconnu"), { space: "agent", sub: "journal" });
-  assert.deepEqual(resolveHash("#agent"), { space: "agent", sub: "journal", legacy: true });
+  assert.deepEqual(resolve("agent"), { space: "agent", sub: "propositions" });
+  assert.deepEqual(resolve("agent/inconnu"), { space: "agent", sub: "propositions" });
+  assert.deepEqual(resolveHash("#agent"), { space: "agent", sub: "propositions", legacy: true });
   assert.deepEqual(resolve("agent", null, { agent: "propositions" }), { space: "agent", sub: "propositions" }, "dernière sous-vue visitée prioritaire");
   assert.deepEqual(resolve("profil/propositions"), { space: "agent", sub: "propositions" }, "les liens vers les propositions y mènent toujours");
   assert.deepEqual(resolveHash("#agent/journal"), { space: "agent", sub: "journal", legacy: false }, "le Journal reste accessible");
@@ -282,8 +301,8 @@ test("accessibilité : role=\"tabpanel\" seulement pour les destinations à plus
   assert.match(refresh, /s\.className = "ui-sr"/);
 });
 
-test("coque : « Veille » mène à Agent › Connexion ; libellés distincts de l'avatar et de l'engrenage", () => {
-  assert.match(shell, /id="veilleLine" href="#agent\/connexion" data-goto="agent\/connexion"/);
+test("coque : « Veille » mène à Compte › Connecter Claude ; libellés distincts de l'avatar et de l'engrenage", () => {
+  assert.match(shell, /id="veilleLine" href="#compte\/connexion" data-goto="compte\/connexion"/);
   assert.match(app, /labelM = anon \? "Sécuriser mon compte" : "Sécurité du compte"/);
   const guide = readFileSync("web/src/claude-guide.html", "utf8");
   assert.doesNotMatch(guide, /Compte › Données<\/a> <span class="muted">[^<]*placements/, "les placements ne sont plus dans Compte › Données");

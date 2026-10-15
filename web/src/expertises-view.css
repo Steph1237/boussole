@@ -1,4 +1,4 @@
-/* Agent › Expertises : méthodes du Copilote patrimonial (cartes UI.carte, panneau UI.panneau). Scopé #view-expertises-view ; le
+/* Agent › Savoir › Expertises : méthodes du Copilote patrimonial (cartes UI.carte, panneau UI.panneau). Scopé #view-expertises-view ; le
    contenu du panneau vit dans .ui-panneau (injecté dans body par UI), d'où .ui-panneau .xv-…. Couleurs de theme.css (clair et sombre). */
 #view-expertises-view [hidden]{display:none!important}
 #view-expertises-view .xv{display:flex;flex-direction:column;gap:14px;max-width:960px;min-width:0}

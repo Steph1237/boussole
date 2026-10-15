@@ -440,7 +440,7 @@ test("ficheCourant / ficheCourantHtml : flux du compte (banque_mois par compte),
   assert.deepEqual([fnr.connecte, fnr.portee, fnr.operations], [false, "aucun", "aucune"]);
   assert.match(sp(CV.ficheCourantHtml(fnr, UI)), /Rattache ce compte à un compte bancaire synchronisé/);
   const off = demoS(); off.banque = { actif: false, connexions: [], comptes: [], mois: [] };
-  assert.match(sp(CV.ficheCourantHtml(CV.ficheCourant(off, "compte-commun", TODAY, { Calc }), UI)), /Connecte ta banque dans Agent › Connexion/);
+  assert.match(sp(CV.ficheCourantHtml(CV.ficheCourant(off, "compte-commun", TODAY, { Calc }), UI)), /Connecte ta banque dans Compte › Connecter Claude/);
   // libellés échappés
   const x = CV.ficheCourant(S, "compte-commun", TODAY, { Calc }, [
     { compteId: 1001, date: CV.debutPeriode("1m", TODAY), montant: -42, libelle: "PRLV <b>X</b>" }, { compteId: 1001, date: CV.debutPeriode("3m", TODAY).replace(/-\d{2}$/, "-25"), montant: -42, libelle: "PRLV <b>X</b>" }]);

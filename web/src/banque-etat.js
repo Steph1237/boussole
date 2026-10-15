@@ -1,5 +1,5 @@
 /* Banques connectées (BQ1, Powens ; spec docs/superpowers/specs/2026-10-12-bq1-powens-design.md) : seule copie côté app des règles
-   partagées par les deux stores (validation du rattachement, adresse de redirection) et par les vues (Agent › Connexion, Aujourd'hui,
+   partagées par les deux stores (validation du rattachement, adresse de redirection) et par les vues (Compte › Connecter Claude, Aujourd'hui,
    Patrimoine › Budget). Fonctions pures, sans DOM ; window.BanqueEtat dans le navigateur (chargé par build.mjs avant les stores),
    module.exports sous Node (tests).
    - ETATS : états Powens d'une connexion → { libelle (ETATS_LIBELLES du connecteur), action (ETATS_RECONNEXION : l'utilisateur doit
@@ -27,7 +27,7 @@
      supabase-js). Lu par auth.js (URL nettoyée avant la création du client) et app.js (bandeau).
    - mfaRequise(banque) / carteMfa() (SEC2, migration 0028) : les tables banque_* exigent la double authentification (aal2). Store : S.banque.mfaRequise
      vrai quand l'interrupteur est actif mais la session n'a pas franchi le second facteur ; les vues de données bancaires (Patrimoine › Comptes,
-     Agent › Connexion) montrent alors la carte bloquante « Active la double authentification pour voir ton détail bancaire » (HTML pur,
+     Compte › Connecter Claude) montrent alors la carte bloquante « Active la double authentification pour voir ton détail bancaire » (HTML pur,
      bouton vers Mon compte › Sécurité) à la place des comptes.
    - heureParis(horodatage) : { jour, jjmm, heure } à l'heure de Paris (dernière synchronisation d'une connexion). */
 (function (root) {
@@ -190,12 +190,12 @@
   const MSG_RESEAU = "Connexion au serveur impossible. Vérifie ta connexion internet et réessaie.";
 
   /* ---------- retour de la page Powens (/powens/retour → app.html) ---------- */
-  const MSG_RETOUR_ECHEC = "La connexion à ta banque n'a pas abouti. Réessaie depuis Agent › Connexion.";
+  const MSG_RETOUR_ECHEC = "La connexion à ta banque n'a pas abouti. Réessaie depuis Compte › Connecter Claude.";
   const MSG_RETOUR = {
     access_denied: "Connexion annulée.",
-    wrongpass: "Identifiants refusés par ta banque. Réessaie depuis Agent › Connexion.",
-    server_error: "Powens est momentanément indisponible. Réessaie dans un instant depuis Agent › Connexion.",
-    temporarily_unavailable: "Powens est momentanément indisponible. Réessaie dans un instant depuis Agent › Connexion.",
+    wrongpass: "Identifiants refusés par ta banque. Réessaie depuis Compte › Connecter Claude.",
+    server_error: "Powens est momentanément indisponible. Réessaie dans un instant depuis Compte › Connecter Claude.",
+    temporarily_unavailable: "Powens est momentanément indisponible. Réessaie dans un instant depuis Compte › Connecter Claude.",
   };
   const PARAMS_RETOUR = ["connection_id", "error"];
   function retourPowens(search) {

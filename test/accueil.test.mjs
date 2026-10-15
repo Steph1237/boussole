@@ -33,7 +33,7 @@ test("accueil : 4 étapes (plus de choix « sans assistant »), dans l'ordre, et
     "En attente de la connexion de Claude…", "Claude est connecté", "J'ai terminé", "Sécurise d\\'abord ton compte", "compte.html#securiser",
     "formulaires interactifs", "Je préfère commencer plus tard", "Examiner les propositions",
     "Ta revue mensuelle s'activera à la fin de ton entretien avec Claude.", "Revue mensuelle active",
-    "Tu pourras relancer Claude à tout moment depuis Agent › Connexion.", "Reprendre plus tard"]) {
+    "Tu pourras relancer Claude à tout moment depuis Compte › Connecter Claude.", "Reprendre plus tard"]) {
     assert.ok(js.includes(t), "texte manquant : " + t);
   }
 });
@@ -227,7 +227,7 @@ test("accueil : la zone annoncée du voyant (role=status) n'est réécrite que s
   v.emettre({ routines: [r({ active: false })] });
   assert.equal(v.revue.ecritures, n + 1);
   assert.match(v.revue.innerHTML, /en pause/);
-  assert.equal(v.revue.dataset.sig, "false|Revue mensuelle en pause : tu peux la réactiver dans Agent › Connexion.");
+  assert.equal(v.revue.dataset.sig, "false|Revue mensuelle en pause : tu peux la réactiver dans Compte › Connecter Claude.");
   v.emettre({ routines: [r({ prochainPassage: "2020-01-01" })] });
   assert.match(v.revue.innerHTML, /Revue mensuelle en retard de \d+ jours/);
   assert.ok(v.revue.classes.has("retard") && !v.revue.classes.has("on"), "voyant « en retard »");

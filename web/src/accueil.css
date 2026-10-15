@@ -1,5 +1,5 @@
 /* Accueil (accueil.js) : assistant de bienvenue en 4 étapes. Jetons de theme.css ; tout est sous .accueil
-   (la fenêtre dialog.accueil, ou le bloc « Connecter Claude » réutilisé dans Agent › Connexion). */
+   (la fenêtre dialog.accueil, ou le bloc « Connecter Claude » réutilisé dans Compte › Connecter Claude). */
 dialog.accueil{width:min(780px,calc(100vw - 48px));max-width:none;height:min(860px,calc(100dvh - 48px));max-height:none;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:0 30px 80px -30px rgba(0,0,0,.5);font:var(--t-body)/1.5 var(--f-body);overflow:hidden}
 dialog.accueil::backdrop{background:rgba(18,24,29,.62)}
 .accueil [hidden]{display:none!important}

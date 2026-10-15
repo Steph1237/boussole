@@ -599,7 +599,7 @@ test("voirPlus : id stable d'un rendu à l'autre et état déplié conservé (si
 });
 
 /* ============================================================ markdown ============================================================ */
-/* Rendu partagé par Agent › Fiches, Journal et Expertises (UI.markdown) : échappement avant balisage, liens https seulement. */
+/* Rendu partagé par Agent › Savoir › Fiches, Journal et Expertises (UI.markdown) : échappement avant balisage, liens https seulement. */
 const md = (t, o) => UI.markdown(t, o);
 
 test("markdown : tout le HTML d'origine est échappé avant le balisage (balises, attributs, guillemets)", () => {

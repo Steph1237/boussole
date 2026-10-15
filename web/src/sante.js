@@ -424,9 +424,9 @@ function panneauHtml(c,U,o){
 
 /* ---------- liens ---------- */
 const LIEN_LABEL={"patrimoine/budget":"Voir le budget","patrimoine/objectifs":"Voir les objectifs","compte/donnees":"Voir tes données",
-  "patrimoine/placements":"Voir les placements","pilotage/risque":"Voir le profil de risque","aujourdhui/vue":"Voir Aujourd'hui","agent/connexion":"Connecter Claude"};
+  "patrimoine/placements":"Voir les placements","pilotage/risque":"Voir le profil de risque","aujourdhui/vue":"Voir Aujourd'hui","compte/connexion":"Connecter Claude"};
 const DESTINATION={"patrimoine/budget":"Patrimoine › Budget","patrimoine/objectifs":"Patrimoine › Objectifs","compte/donnees":"Compte › Données",
-  "patrimoine/placements":"Patrimoine › Placements","pilotage/risque":"Pilotage › Risque","aujourdhui/vue":"Aujourd'hui","agent/connexion":"Agent › Connexion"};
+  "patrimoine/placements":"Patrimoine › Placements","pilotage/risque":"Pilotage › Risque","aujourdhui/vue":"Aujourd'hui","compte/connexion":"Compte › Connecter Claude"};
 /** Lien du pied du panneau, vers la vue concernée ; aucun pour un critère au vert ou informatif. */
 function lienPanneau(c){
   const n=normaliser(c), r=n.lien;

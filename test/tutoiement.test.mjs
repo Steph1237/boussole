@@ -5,7 +5,7 @@
 //
 // Exceptions, explicites et commentées (toute autre occurrence fait échouer le test) :
 //   - libellés d'interfaces tierces cités tels quels : l'option « Utiliser votre propre client OAuth » du formulaire
-//     « Ajouter un connecteur personnalisé » de Claude (accueil.js, bloc « Connecter Claude » réutilisé dans Agent › Connexion) ;
+//     « Ajouter un connecteur personnalisé » de Claude (accueil.js, bloc « Connecter Claude » réutilisé dans Compte › Connecter Claude) ;
 //   - le nom commun « rendez-vous » (ni vouvoiement ni verbe), dans le texte d'une expertise repris tel quel pour la démo (demo-data.js).
 // Les exceptions prévues au départ pour les textes des moteurs (plan.js, pratiques.js, risque.js, bilan-etat.js, rules.js), le
 // bloc moteur de toise.js et le simulateur (simu.*) ne sont plus nécessaires : ces fichiers sont passés au tutoiement

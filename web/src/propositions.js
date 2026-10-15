@@ -550,7 +550,7 @@
     }).join("") + '<div class="pp-edit-act"><button type="button" class="pp-lnk" data-edit-done="' + esc(p.id) + '">Terminer</button>' + (mod ? '<button type="button" class="pp-lnk" data-edit-reset="' + esc(p.id) + '">Revenir à la proposition</button>' : "") + "</div></div>" : "";
     const editable = p.operation !== "supprimer" && ch.length;
     return '<li class="pp-row' + (mod ? " is-mod" : "") + '" data-id="' + esc(p.id) + '">' +
-      '<input type="checkbox" class="pp-chk" data-sel="' + esc(p.id) + '"' + (sel.get(p.id) !== false ? " checked" : "") + ' aria-label="Sélectionner : ' + esc(desc) + '">' +
+      '<label class="ui-case pp-case"><input type="checkbox" class="pp-chk" data-sel="' + esc(p.id) + '"' + (sel.get(p.id) !== false ? " checked" : "") + ' aria-label="Sélectionner : ' + esc(desc) + '"><span class="ui-case-boite" aria-hidden="true"></span></label>' +
       '<div class="pp-body">' +
         '<p class="pp-desc">' + (p.operation === "supprimer" ? '<span class="pp-op del">suppression</span> ' : p.operation === "creer" && CIBLES[p.cible] && CIBLES[p.cible].entite ? '<span class="pp-op add">ajout</span> ' : "") +
           '<span class="pp-txt">' + esc(plusieurs ? (sujet(p, c) || (p.cible === "risque" ? ch.length + " réponses au questionnaire" : ch.length + " informations")) : desc) + "</span>" + (mod ? ' <span class="pp-op mod">corrigé</span>' : "") + "</p>" +
@@ -573,8 +573,7 @@
       $("ppLots").innerHTML = lots().map(L => {
         const groupes = ORDRE_CIBLES.concat([...new Set(L.ps.map(p => p.cible))].filter(c => !ORDRE_CIBLES.includes(c)))
           .map(c => ({ c, ps: L.ps.filter(p => p.cible === c) })).filter(g => g.ps.length);
-        return '<section class="panel pp-lot" aria-label="Session du ' + esc(quand(L.date)) + '"><div class="pp-lot-head"><h2>Session du ' + esc(quand(L.date) || "—") + ' <span class="muted">· ' + pluriel(L.ps.length, "proposition") + "</span></h2>" +
-          '<button type="button" class="pp-btn ghost" data-lot="' + esc(L.lot) + '">Tout valider</button></div>' +
+        return '<section class="panel pp-lot" aria-label="Session du ' + esc(quand(L.date)) + '"><div class="pp-lot-head"><h2>Session du ' + esc(quand(L.date) || "—") + ' <span class="muted">· ' + pluriel(L.ps.length, "proposition") + "</span></h2></div>" +
           groupes.map(g => '<div class="pp-grp"><h3>' + svg(g.c) + "<span>" + esc((CIBLES[g.c] || { label: g.c }).label) + '</span></h3><ul class="pp-list">' + g.ps.map(rowHtml).join("") + "</ul></div>").join("") + "</section>";
       }).join("");
       $("ppHist").hidden = !hist.length;
@@ -590,7 +589,6 @@
     $("ppOk").textContent = "Valider la sélection (" + n + ")";
     $("ppOk").disabled = busy || !n || !P();
     $("ppNo").disabled = busy || !n || !P();
-    root.querySelectorAll("[data-lot]").forEach(b => { b.disabled = busy || !P(); });
   }
   function dire(m, ok) { const el = $("ppMsg"); el.textContent = m; el.className = "pp-msg " + (ok ? "ok" : "err"); el.hidden = !m; }
 
@@ -680,7 +678,6 @@
         return;
       }
       if (b.dataset.editReset) { delete saisies[b.dataset.editReset]; edition.delete(b.dataset.editReset); render(true); return; }
-      if (b.dataset.lot) { agir("ok", enAttente().filter(p => (p.lot || "sans-lot") === b.dataset.lot).map(p => p.id)); return; }
       if (b.id === "ppOk") { agir("ok", selection()); return; }
       if (b.id === "ppNo") { agir("no", selection()); return; }
     });

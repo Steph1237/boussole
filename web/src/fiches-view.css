@@ -91,6 +91,6 @@
   #view-fiches-view .fv-tab .fv-r-val{text-align:right}
   #view-fiches-view .fv-tab .fv-r-date,#view-fiches-view .fv-tab .fv-r-src{grid-column:1/-1;font-size:var(--t-caption);white-space:normal}
 }
-/* Rendu UI.markdown commun : sous-listes et code en ligne (mêmes styles qu'Agent › Expertises). */
+/* Rendu UI.markdown commun : sous-listes et code en ligne (mêmes styles qu'Agent › Savoir › Expertises). */
 #view-fiches-view .fv-md li>ul,#view-fiches-view .fv-md li>ol{margin:4px 0 2px}
 #view-fiches-view .fv-md code{font:500 var(--t-small) ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--sunk);border:1px solid var(--line);border-radius:4px;padding:0 4px;overflow-wrap:anywhere}
