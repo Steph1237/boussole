@@ -4,8 +4,9 @@
 // Sans elle, chaque test est sauté (jamais en échec) : la CI publique n'a pas la clé.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import {
-  hasServiceKey, SKIP_REASON, adminClient, userClient, createTestUser, deleteTestUser,
+  hasServiceKey, SKIP_REASON, adminClient, userClient, createTestUser, createTestUserAal2, deleteTestUser,
 } from "./helpers/supabase.mjs";
 
 const SKIP = !hasServiceKey;
@@ -436,6 +437,187 @@ describe("isolation RLS entre deux comptes", () => {
       const { data: bPos, error: eB } = await B.client.from("positions").select("id");
       assert.equal(eB, null, `positions : B doit pouvoir relire ses positions (${eB?.message})`);
       assert.deepEqual(bPos.map((r) => r.id), [B.positionId], "delete_me : les données de B doivent être intactes");
+      A.id = null; // déjà supprimé : le nettoyage ne doit pas réessayer
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// HIS2 (migration 0034) : les cinq tables de l'historique importé. Les quatre tables de relevés et d'imports suivent le régime des tables
+// banque_* (0028, 0033) : fermées à toute session aal1, ouvertes au propriétaire en aal2 ; photos_reconstituees suit « aal2 si facteur » et
+// n'est écrite que par le service. Les comptes ci-dessous ont donc un facteur TOTP vérifié (session aal2) : un compte sans facteur ne
+// pourrait ni lire ni écrire les tables du régime bancaire.
+// ---------------------------------------------------------------------------------------------------------------------------------
+describe("isolation RLS : tables de l'historique importé (comptes à double authentification)", () => {
+  let admin, A, B;
+  const empreinte = () => randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+
+  /** Sème, par le client aal2 du compte, un compte importé, son import, un mois et ses catégories ; par le service, une photo. */
+  async function seed(u) {
+    u.compteId = randomUUID(); u.importId = randomUUID();
+    const steps = [
+      ["historique_comptes", { id: u.compteId, libelle: `Compte ${u.label}`, etablissement: "lcl", type: "courant", titulaire: "p1", cle: `cle-${u.label}-${u.compteId}` }],
+      ["historique_imports", { id: u.importId, type: "releves", empreinte: empreinte(), etablissement: "lcl", compte_id: u.compteId, periode_du: "2024-01-01", periode_au: "2024-01-31", source: `essai ${u.label}` }],
+      ["historique_releves", { compte_id: u.compteId, mois: "2024-01-01", complet: true, total_entrees: 100, total_sorties: 40, nombre: 3, import_id: u.importId }],
+      ["historique_banque_mois", { compte_id: u.compteId, mois: "2024-01-01", categorie: "divers", sous_categorie: "", entrees: 0, sorties: 40, nombre: 3 }],
+    ];
+    for (const [table, row] of steps) {
+      const { error } = await u.client.from(table).insert(row);
+      assert.equal(error, null, `${table} : ${u.label} doit pouvoir écrire ses propres lignes en aal2 (${error?.message})`);
+    }
+    const ph = await admin.from("photos_reconstituees").insert({ user_id: u.id, mois: "2024-01-01", date: "2024-01-31", total: 1000, p1: 1000, p2: 0, financier: 1000, net: 1000,
+      qualite: "estime", part_estimee: 1, methode: "historique@2" });
+    assert.equal(ph.error, null, `photos_reconstituees : le service écrit (${ph.error?.message})`);
+  }
+
+  // Description de chaque table : comment retrouver la ligne d'un compte, le champ à observer, la modification tentée, une insertion au nom de l'autre.
+  const T = [
+    { name: "historique_comptes", match: u => ({ id: u.compteId }), field: "libelle", patch: { libelle: "piraté" },
+      foreign: b => ({ user_id: b.id, libelle: "intrus", etablissement: "lcl", type: "courant", titulaire: "p1", cle: `intrus-${randomUUID()}` }) },
+    { name: "historique_imports", match: u => ({ id: u.importId }), field: "source", patch: { source: "piraté" },
+      foreign: b => ({ user_id: b.id, type: "ordres", empreinte: empreinte(), etablissement: "lcl", periode_du: "2024-01-01", periode_au: "2024-01-02", source: "intrus" }) },
+    { name: "historique_releves", match: u => ({ compte_id: u.compteId, mois: "2024-01-01" }), field: "total_sorties", patch: { total_sorties: 999 },
+      foreign: b => ({ user_id: b.id, compte_id: b.compteId, mois: "2024-02-01", complet: true, total_entrees: 1, total_sorties: 1, import_id: b.importId }) },
+    { name: "historique_banque_mois", match: u => ({ compte_id: u.compteId, mois: "2024-01-01" }), field: "sorties", patch: { sorties: 999 },
+      foreign: b => ({ user_id: b.id, compte_id: b.compteId, mois: "2024-01-01", categorie: "logement", sorties: 1 }) },
+    { name: "photos_reconstituees", match: u => ({ user_id: u.id, mois: "2024-01-01" }), field: "total", patch: { total: 1 },
+      foreign: b => ({ user_id: b.id, mois: "2024-02-01", date: "2024-02-29", total: 1, p1: 1, p2: 0, financier: 1, net: 1, qualite: "estime", part_estimee: 1, methode: "x" }) },
+  ];
+
+  before(async () => {
+    if (SKIP) return;
+    admin = adminClient();
+    A = { label: "A", ...(await createTestUserAal2("his-a")) };
+    B = { label: "B", ...(await createTestUserAal2("his-b")) };
+    await seed(A);
+    await seed(B);
+  });
+
+  after(async () => {
+    if (SKIP) return;
+    const errors = [];
+    for (const u of [B, A]) {
+      if (!u?.id) continue;
+      try { await deleteTestUser(u.id); } catch (e) { errors.push(e.message); }
+    }
+    assert.deepEqual(errors, [], `nettoyage incomplet : ${errors.join(" ; ")}`);
+  });
+
+  for (const t of T) {
+    describe(t.name, () => {
+      it("A (aal2) ne lit que ses propres lignes", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const { data, error } = await A.client.from(t.name).select("*");
+        assert.equal(error, null, `${t.name} : la lecture de A ne doit pas échouer (${error?.message})`);
+        assert.equal(data.length, 1, `${t.name} : A doit voir exactement une ligne (la sienne)`);
+        assert.ok(data.every((r) => r.user_id === A.id), `${t.name} : toutes les lignes lues par A doivent porter user_id = A`);
+      });
+
+      it("A en aal1 (mot de passe seul, facteur vérifié) ne voit rien", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const c = await A.nouvelleSessionAal1();
+        const { data, error } = await c.from(t.name).select("*");
+        assert.equal(error, null, `${t.name} : la lecture en aal1 renvoie une liste vide, pas une erreur (${error?.message})`);
+        assert.deepEqual(data, [], `${t.name} : A en aal1 ne doit voir aucune ligne`);
+        const { data: adm } = await admin.from(t.name).select("user_id").eq("user_id", A.id);
+        assert.equal(adm.length, 1, `${t.name} : la ligne de A existe bien (le service la voit)`);
+      });
+
+      it("A ne peut pas modifier ni supprimer la ligne de B", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const upd = await withMatch(A.client.from(t.name).update(t.patch), t.match(B)).select();
+        if (upd.error) assert.ok(isRlsError(upd.error), `${t.name} : erreur de droits attendue (${upd.error.message})`);
+        else assert.equal(upd.data.length, 0, `${t.name} : la mise à jour de A sur la ligne de B ne doit toucher aucune ligne`);
+        const del = await withMatch(A.client.from(t.name).delete(), t.match(B)).select();
+        if (del.error) assert.ok(isRlsError(del.error), `${t.name} : erreur de droits attendue (${del.error.message})`);
+        else assert.equal(del.data.length, 0, `${t.name} : la suppression de A sur la ligne de B ne doit toucher aucune ligne`);
+        const { data } = await withMatch(admin.from(t.name).select("*"), t.match(B)).single();
+        assert.ok(data, `${t.name} : la ligne de B existe encore`);
+        const propre = await withMatch(B.client.from(t.name).select("*"), t.match(B)).single();
+        assert.equal(propre.error, null, `${t.name} : B relit sa ligne (${propre.error?.message})`);
+        assert.deepEqual(propre.data[t.field], data[t.field], `${t.name} : B relit la même valeur que le service`);
+        assert.notDeepEqual(data[t.field], t.patch[t.field], `${t.name} : ${t.field} de B n'a pas reçu la valeur de A`);
+      });
+
+      it("A ne peut pas insérer une ligne au nom de B", async (tc) => {
+        if (skipIfNoKey(tc)) return;
+        const { error } = await A.client.from(t.name).insert(t.foreign(B)).select();
+        assert.ok(error, `${t.name} : l'insertion avec user_id = B par A doit échouer`);
+        assert.match(error.message, /row-level security|violates|permission/i, `${t.name} : l'erreur doit être un refus de droits`);
+      });
+    });
+  }
+
+  describe("photos_reconstituees : écriture réservée au service", () => {
+    it("A (aal2) ne peut ni insérer, ni modifier, ni supprimer ses propres photos", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      const ins = await A.client.from("photos_reconstituees").insert({ user_id: A.id, mois: "2024-03-01", date: "2024-03-31", total: 1, p1: 1, p2: 0, financier: 1, net: 1, qualite: "estime", part_estimee: 1, methode: "x" });
+      assert.ok(ins.error, "photos_reconstituees : l'insertion par un utilisateur doit échouer");
+      const upd = await A.client.from("photos_reconstituees").update({ total: 1 }).eq("user_id", A.id).select();
+      assert.ok(upd.error || upd.data.length === 0, "photos_reconstituees : la mise à jour par un utilisateur doit échouer");
+      const del = await A.client.from("photos_reconstituees").delete().eq("user_id", A.id).select();
+      assert.ok(del.error || del.data.length === 0, "photos_reconstituees : la suppression par un utilisateur doit échouer");
+      const { data } = await admin.from("photos_reconstituees").select("total").eq("user_id", A.id);
+      assert.equal(Number(data[0].total), 1000, "la photo de A est intacte");
+    });
+  });
+
+  describe("appliquer_propositions() / retirer_import() sur la cible historique", () => {
+    it("A valide un import de relevés en aal2 (tout ou rien), B ne peut ni le voir ni le retirer ; A en aal1 ne peut pas le retirer", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      const ref = randomUUID();
+      const apres = {
+        type: "releves", empreinte: empreinte(), fichier: { format: "csv" }, etablissement: "lcl", periode: { du: "2024-05-01", au: "2024-05-31" },
+        compte: { libelle: "Compte validé", type: "courant", titulaire: "p1", cle: `valide-${ref}` },
+        donnees: { mois: [{ mois: "2024-05", complet: true, controle: { total_entrees: 100, total_sorties: 40 },
+          categories: [{ categorie: "revenus", sous_categorie: "", entrees: 100, sorties: 0, nombre: 1 }, { categorie: "divers", sous_categorie: "", entrees: 0, sorties: 40, nombre: 2 }] }] },
+        resume: {}, avertissements: [],
+      };
+      const dep = await A.client.from("propositions").insert({ cible: "historique", operation: "creer", ref, apres, source: "Export déposé dans la conversation" }).select("id").single();
+      assert.equal(dep.error, null, `la proposition se dépose (${dep.error?.message})`);
+      const ap = await A.client.rpc("appliquer_propositions", { p_ids: [dep.data.id], p_modifications: {} });
+      assert.equal(ap.error, null, `appliquer_propositions en aal2 (${ap.error?.message})`);
+      assert.equal(ap.data, 1);
+      const vu = await A.client.from("historique_banque_mois").select("categorie").eq("mois", "2024-05-01");
+      assert.equal(vu.data.length, 2, "les deux catégories du mois sont écrites");
+      const vuB = await B.client.from("historique_imports").select("id").eq("id", ref);
+      assert.deepEqual(vuB.data, [], "B ne voit pas l'import de A");
+      const retB = await B.client.rpc("retirer_import", { p_id: ref });
+      assert.ok(retB.error && /introuvable/.test(retB.error.message), `B ne retire pas l'import de A (${retB.error?.message})`);
+      const c1 = await A.nouvelleSessionAal1();
+      const ret1 = await c1.rpc("retirer_import", { p_id: ref });
+      assert.ok(ret1.error && /Double authentification requise/.test(ret1.error.message), `A en aal1 ne retire pas (${ret1.error?.message})`);
+      const ret = await A.client.rpc("retirer_import", { p_id: ref });
+      assert.equal(ret.error, null, `A retire en aal2 (${ret.error?.message})`);
+      const apres2 = await A.client.from("historique_banque_mois").select("categorie").eq("mois", "2024-05-01");
+      assert.deepEqual(apres2.data, [], "les catégories du mois partent avec l'import");
+      await A.client.from("propositions").delete().eq("id", dep.data.id); // export_all : pas de proposition en trop
+    });
+  });
+
+  describe("export_all() et delete_me()", () => {
+    it("l'export de A contient ses cinq tables et rien de B ; delete_me (aal2) emporte tout et laisse B intact", async (tc) => {
+      if (skipIfNoKey(tc)) return;
+      const { data, error } = await A.client.rpc("export_all");
+      assert.equal(error, null, `export_all : l'appel par A en aal2 doit réussir (${error?.message})`);
+      for (const t of T) {
+        assert.ok(Array.isArray(data[t.name]), `export_all : ${t.name} doit être un tableau`);
+        assert.ok(data[t.name].length >= 1 && data[t.name].every((r) => r.user_id === A.id), `export_all : ${t.name} ne contient que des lignes de A`);
+      }
+      const json = JSON.stringify(data);
+      assert.ok(!json.includes(B.id) && !json.includes(B.compteId) && !json.includes(B.importId), "export_all : rien de B dans l'export de A");
+      const c1 = await A.nouvelleSessionAal1();
+      const del1 = await c1.rpc("delete_me");
+      assert.ok(del1.error, "delete_me : refusé en aal1 pour un compte à double authentification");
+      const del = await A.client.rpc("delete_me");
+      assert.equal(del.error, null, `delete_me : l'appel par A en aal2 doit réussir (${del.error?.message})`);
+      for (const t of T) {
+        const { data: rows, error: e } = await admin.from(t.name).select("user_id").eq("user_id", A.id);
+        assert.equal(e, null);
+        assert.equal(rows.length, 0, `${t.name} : aucune ligne de A après delete_me (cascade)`);
+      }
+      const { data: restant } = await admin.from("historique_comptes").select("id").eq("user_id", B.id);
+      assert.equal(restant.length, 1, "les données de B sont intactes");
       A.id = null; // déjà supprimé : le nettoyage ne doit pas réessayer
     });
   });

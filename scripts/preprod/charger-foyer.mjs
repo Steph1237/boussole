@@ -30,6 +30,11 @@ export const IGNOREES = {
   connexions_assistant: "écrite par le connecteur à chaque appel (noter_connexion) ; le voyant « Claude est connecté » se déclenche seul",
   connecteurs_autorises: "créée seulement par la page de consentement (autoriser_connecteur, session aal2) puis liée par le connecteur : jamais chargée à la main",
   banque_placements: "positions détaillées d'un compte-titres synchronisé : non utilisées par les cas",
+  historique_comptes: "relevés que l'utilisateur dépose dans la conversation puis valide (HIS2, 0034) : aucun foyer fictif n'en a, le banc les importe lui-même",
+  historique_imports: "trace des imports validés (HIS2) : créée par appliquer_propositions, jamais chargée à la main",
+  historique_releves: "en-têtes mensuels des relevés importés (HIS2) : créés par appliquer_propositions",
+  historique_banque_mois: "totaux mensuels par catégorie des relevés importés (HIS2) : créés par appliquer_propositions",
+  photos_reconstituees: "photos mensuelles reconstituées par la nuit à partir de l'historique importé (HIS2) : écrites par le service seulement",
 };
 
 // ---------------------------------------------------------------------------------------------------------------------------
