@@ -1,8 +1,8 @@
 // UX4 (brief docs/boussole-ux-mobile.md, P7 et vague 4) : un seul nom pour l'acteur dans l'interface, « Claude » ; « Agent » seulement pour
 // l'onglet ; plus de « Copilote », de « ton assistant » ni de « l'agent » à l'écran. « Copilote patrimonial » reste l'auto-description du
 // connecteur (conduite de demarrer_session, INSTRUCTIONS), que Claude lit mais que l'utilisateur ne voit pas.
-// Exceptions explicites : le bloc généré des expertises de démo (copie de la migration 0017, qui s'adresse au « Copilote » : sa reformulation
-// demande une migration) et la section « Assistants (Claude, ChatGPT…) » de la politique de confidentialité (sous-traitants tiers).
+// Exception explicite : la section « Assistants (Claude, ChatGPT…) » de la politique de confidentialité (sous-traitants tiers). Le bloc généré
+// des expertises de démo s'adresse à « Claude » depuis la migration 0032 : il est balayé comme le reste.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -13,7 +13,6 @@ const EXEMPTES = new Set(["web/legal/confidentialite.html"]);
 const sansCommentaires = s => s.replace(/<!--[\s\S]*?-->/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/[^\n]*/g, "$1");
 function texte(f) {
   let s = readFileSync(f, "utf8");
-  if (f === "web/src/demo-data.js") s = s.replace(/\/\* @genere:expertises — début[\s\S]*?\/\* @genere:expertises — fin \*\//, "");
   return sansCommentaires(s);
 }
 const INTERDIT = /\b(?:ton|un|cet|les|des) assistants?\b|\bl['’](?:assistant|agent)\b|\bton agent\b|\bton Claude\b|Copilote/gi;

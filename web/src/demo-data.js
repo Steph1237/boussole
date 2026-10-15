@@ -476,13 +476,13 @@
   }];
 
   /* @genere:expertises — début (scripts/gen-expertises-demo.mjs, npm run gen ; ne pas modifier à la main) */
-  /* Expertises du Copilote patrimonial (tables publiques expertises et expertises_versions, 0016 ; EX1), reprises de supabase/migrations/0017_expertises_contenu.sql.
-     Les 8 expertises v1 publiées en liste, avec leurs points de contrôle ; détail complet (méthode, garde-fous, forme de la réponse)
+  /* Expertises de Boussole que Claude consulte (tables publiques expertises et expertises_versions, 0016 ; EX1), reprises de supabase/migrations/0017_expertises_contenu.sql
+     puis de la reformulation de supabase/migrations/0032_suivi.sql. Les 8 expertises publiées en liste, avec leurs points de contrôle ; détail complet (méthode, garde-fous, forme de la réponse)
      pour allocation-risque et etf-fonds seulement ; les autres ont un détail court (methode, garde_fous et format à null), signalé
-     par Agent › Savoir › Expertises. Les textes s'adressent au Copilote (« tu ») et parlent de l'utilisateur à la troisième personne. */
-  const V1 = [{ version: 1, le: "2026-10-11", resume: "Première version : méthode, points de contrôle, garde-fous, format et cas d'évaluation (EX1)." }];
-  const Ex = (slug, nom, quandConsulter, perimetre, o) => Object.assign({ slug, nom, quandConsulter, perimetre, version: 1, misAJourLe: "2026-10-11",
-    marches: [], angles: [], themesSavoir: [], reperes: [], controles: [], methode: null, garde_fous: null, format: null, changelog: V1 }, o);
+     par Agent › Savoir › Expertises. Les textes s'adressent à Claude (« tu ») et parlent de l'utilisateur à la troisième personne. */
+  const JOURNAL = [{ version: 1, le: "2026-10-11", resume: "Première version : méthode, points de contrôle, garde-fous, format et cas d'évaluation (EX1)." }, { version: 2, le: "2026-10-15", resume: "Reformulation : le texte s'adresse à Claude et le statut réglementé des professionnels du conseil est mieux dit ; le sens ne change pas." }];
+  const Ex = (slug, nom, quandConsulter, perimetre, o) => Object.assign({ slug, nom, quandConsulter, perimetre, version: 2, misAJourLe: "2026-10-15",
+    marches: [], angles: [], themesSavoir: [], reperes: [], controles: [], methode: null, garde_fous: null, format: null, changelog: JOURNAL }, o);
   const expertises = [
     Ex("allocation-risque", "Allocation et risque",
       "Répartition du patrimoine financier entre classes d'actifs, adéquation au profil de risque, capacité à encaisser une baisse, part spéculative, horizon des objectifs, rééquilibrage. Point d'entrée de « mon portefeuille est-il bien réparti ? ».",
@@ -532,8 +532,8 @@
       ].join("\n"),
       garde_fous: [
         "## Posture",
-        "- Tu es le Copilote patrimonial de Boussole, pas un conseiller en investissement : tu expliques, tu compares et tu montres les risques ; la décision revient toujours à l'utilisateur.",
-        "- Pour un conseil personnalisé (choix d'un produit, montage, arbitrage engageant), renvoie l'utilisateur vers un professionnel réglementé : conseiller en investissements financiers inscrit à l'ORIAS, notaire, avocat fiscaliste ou expert-comptable selon le sujet.",
+        "- Tu es Claude, appuyé sur les expertises de Boussole, et non un professionnel du conseil réglementé : tu expliques, tu compares et tu montres les risques ; la décision revient toujours à l'utilisateur.",
+        "- Pour un conseil personnalisé (choix d'un produit, montage, arbitrage engageant), renvoie l'utilisateur vers un professionnel réglementé : cabinet de conseil en investissements financiers inscrit à l'ORIAS, notaire, avocat fiscaliste ou expert-comptable selon le sujet.",
         "",
         "## Interdits",
         "- Aucun produit, fonds, code ISIN, émetteur, société de gestion, banque, assureur, courtier ni plateforme recommandé ou cité en exemple à suivre. Si l'utilisateur demande « lequel choisir », refuse avec tact et donne-lui les critères pour comparer lui-même.",
@@ -633,8 +633,8 @@
       ].join("\n"),
       garde_fous: [
         "## Posture",
-        "- Tu es le Copilote patrimonial de Boussole, pas un conseiller en investissement : tu expliques, tu compares et tu montres les risques ; la décision revient toujours à l'utilisateur.",
-        "- Pour un conseil personnalisé (choix d'un produit, montage, arbitrage engageant), renvoie l'utilisateur vers un professionnel réglementé : conseiller en investissements financiers inscrit à l'ORIAS, notaire, avocat fiscaliste ou expert-comptable selon le sujet.",
+        "- Tu es Claude, appuyé sur les expertises de Boussole, et non un professionnel du conseil réglementé : tu expliques, tu compares et tu montres les risques ; la décision revient toujours à l'utilisateur.",
+        "- Pour un conseil personnalisé (choix d'un produit, montage, arbitrage engageant), renvoie l'utilisateur vers un professionnel réglementé : cabinet de conseil en investissements financiers inscrit à l'ORIAS, notaire, avocat fiscaliste ou expert-comptable selon le sujet.",
         "",
         "## Interdits",
         "- Aucun produit, fonds, code ISIN, émetteur, société de gestion, banque, assureur, courtier ni plateforme recommandé ou cité en exemple à suivre. Si l'utilisateur demande « lequel choisir », refuse avec tact et donne-lui les critères pour comparer lui-même.",
@@ -710,7 +710,7 @@
       }),
     Ex("fiscalite-enveloppes", "Fiscalité et enveloppes",
       "Choix et usage des enveloppes (PEA, assurance-vie, PER, compte-titres, livrets) et leur fiscalité : tranche marginale, prélèvement forfaitaire, abattements, ordre d'utilisation, coût d'un retrait ou d'un changement, bases de la transmission.",
-      "Fiscalité des enveloppes d'épargne d'un particulier résident de France : PEA, assurance-vie, PER individuel, compte-titres, livrets ; impôt sur le revenu et tranche marginale, prélèvement forfaitaire unique, prélèvements sociaux, abattements ; bases de la donation et de la transmission. Hors périmètre : montage sur mesure (notaire, avocat fiscaliste, conseiller réglementé), choix des supports (etf-fonds, actions).",
+      "Fiscalité des enveloppes d'épargne d'un particulier résident de France : PEA, assurance-vie, PER individuel, compte-titres, livrets ; impôt sur le revenu et tranche marginale, prélèvement forfaitaire unique, prélèvements sociaux, abattements ; bases de la donation et de la transmission. Hors périmètre : montage sur mesure (notaire, avocat fiscaliste, professionnel réglementé du conseil), choix des supports (etf-fonds, actions).",
       {
       angles: ["enveloppes", "frais", "liquidite"],
       themesSavoir: ["enveloppes", "fiscalite", "retraite", "epargne"],

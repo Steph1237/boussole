@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { miniDom } from "./helpers/mini-dom.mjs";
-import { generer, lireExpertises, COMPLETES } from "../scripts/gen-expertises-demo.mjs";
+import { generer, lireExpertises, lireExpertisesAJour, COMPLETES } from "../scripts/gen-expertises-demo.mjs";
 
 const require = createRequire(import.meta.url);
 const js = readFileSync("web/src/expertises-view.js", "utf8");
@@ -223,25 +223,32 @@ test("etatVide : chargement, erreur, vide, ou rien si la liste a des expertises"
   assert.equal(XV.etatVide({ ready: true }, 3), null);
 });
 
-test("démo : les 8 expertises publiées, détail complet pour allocation-risque et etf-fonds (repris de 0017), détail court pour les autres", () => {
-  const M17 = readFileSync("supabase/migrations/0017_expertises_contenu.sql", "utf8");
+test("démo : les 8 expertises publiées, détail complet pour allocation-risque et etf-fonds (0017 puis la reformulation de 0032), détail court pour les autres", () => {
+  const xs = lireExpertisesAJour(readFileSync("supabase/migrations/0017_expertises_contenu.sql", "utf8"), readFileSync("supabase/migrations/0032_suivi.sql", "utf8"));
   assert.deepEqual(DEMO.expertises.map(e => e.slug).sort(), ["actions", "allocation-risque", "budget-epargne", "crypto", "etf-fonds", "fiscalite-enveloppes", "immobilier-credit", "taux-obligations"]);
   for (const e of DEMO.expertises) {
-    assert.ok(M17.includes("('" + e.slug + "', $f$" + e.nom + "$f$"), e.slug + " : nom repris de 0017");
-    assert.ok(M17.includes("$f$" + e.quandConsulter + "$f$"), e.slug + " : quand consulter repris de 0017");
-    assert.ok(M17.includes("$f$" + e.perimetre + "$f$"), e.slug + " : périmètre repris de 0017");
+    const x = xs.find(y => y.slug === e.slug);
+    assert.equal(e.nom, x.nom, e.slug + " : nom");
+    assert.equal(e.quandConsulter, x.quand_consulter, e.slug + " : quand consulter");
+    assert.equal(e.perimetre, x.perimetre, e.slug + " : périmètre");
     assert.ok(e.controles.length >= 3);
     const complet = ["allocation-risque", "etf-fonds"].includes(e.slug);
     assert.equal(!!e.methode, complet, e.slug + " : méthode");
     assert.equal(!!e.garde_fous, complet, e.slug + " : garde-fous");
-    if (complet) for (const k of ["methode", "garde_fous", "format"]) assert.ok(M17.includes("$f$" + e[k] + "$f$"), e.slug + " : " + k + " repris tel quel de 0017");
+    if (complet) for (const k of ["methode", "garde_fous", "format"]) assert.equal(e[k], x[k], e.slug + " : " + k + " (texte le plus récent)");
+    assert.equal(e.version, 2, e.slug + " : version 2 (reformulation de 0032)");
+    assert.equal(e.misAJourLe, "2026-10-15");
+    assert.deepEqual(e.changelog.map(c => c.version), [1, 2]);
   }
+  // la démo ne dit plus « Copilote » ni « conseiller » (garde-fous des deux expertises complètes)
+  const complets = DEMO.expertises.filter(e => e.garde_fous).map(e => e.garde_fous + e.methode + e.format).join("\n");
+  assert.doesNotMatch(complets, /Copilote|conseiller/i);
 });
 
-test("démo : bloc expertises de demo-data.js à jour avec 0017 (npm run gen), évaluations jamais reprises", () => {
+test("démo : bloc expertises de demo-data.js à jour avec 0017 puis 0032 (npm run gen), évaluations jamais reprises", () => {
   assert.equal(readFileSync("web/src/demo-data.js", "utf8"), generer(), "bloc @genere:expertises périmé : lancer npm run gen");
   assert.match(readFileSync("package.json", "utf8"), /"gen": "[^"]*node scripts\/gen-expertises-demo\.mjs/);
-  const xs = lireExpertises(readFileSync("supabase/migrations/0017_expertises_contenu.sql", "utf8"));
+  const xs = lireExpertisesAJour(readFileSync("supabase/migrations/0017_expertises_contenu.sql", "utf8"), readFileSync("supabase/migrations/0032_suivi.sql", "utf8"));
   assert.equal(xs.length, 8);
   for (const x of xs) {
     assert.ok(x.evals.length >= 10 && x.controles.length >= 3 && x.methode.length > 200, x.slug + " : lu en entier");
@@ -249,6 +256,7 @@ test("démo : bloc expertises de demo-data.js à jour avec 0017 (npm run gen), �
     assert.deepEqual(d.controles, x.controles, x.slug + " : points de contrôle");
     assert.ok(!("evals" in d), x.slug + " : pas de cas d'évaluation dans la démo");
   }
+  assert.equal(lireExpertises(readFileSync("supabase/migrations/0017_expertises_contenu.sql", "utf8")).length, 8);
   assert.deepEqual(COMPLETES, ["allocation-risque", "etf-fonds"]);
 });
 

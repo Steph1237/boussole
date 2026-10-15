@@ -3,11 +3,9 @@
 // Ce test balaie les textes de l'app (web/src, pages annexes de web/) et du connecteur (supabase/functions/mcp) : html, js, css, ts.
 // Les commentaires du code ne sont pas des textes affichés : ils sont retirés avant la recherche (ils peuvent expliquer la règle).
 //
-// Exceptions, explicites (toute autre occurrence fait échouer le test) : le texte des expertises de démo (web/src/demo-data.js) est la
-// copie de la migration 0017, déjà appliquée ; il dit ce que Boussole n'est PAS (« pas un conseiller en investissement ») et renvoie vers
-// un professionnel réglementé. Sa reformulation (« pas un professionnel du conseil réglementé ») est prévue avec la vague UX4 (tâche 4.2),
-// en même temps qu'une nouvelle migration pour que la base et la démo restent identiques. De même, la mention légale (web/legal/mentions.html)
-// dit ce que Boussole n'est pas, comme l'impose le cadre réglementaire.
+// Exception, explicite (toute autre occurrence fait échouer le test) : la mention légale (web/legal/mentions.html) dit ce que Boussole n'est pas,
+// comme l'impose le cadre réglementaire. Le texte des expertises de démo (bloc généré de web/src/demo-data.js) ne dit plus « conseiller » depuis
+// la migration 0032 (« professionnel du conseil réglementé »).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -18,7 +16,6 @@ const FICHIERS = [...dans("web/src", /\.(html|js|css)$/), ...dans("web", /\.(htm
 
 const EXCEPTIONS = {
   "web/legal/mentions.html": ["n'est pas un conseiller financier, ni un conseiller en investissements financiers"],
-  "web/src/demo-data.js": ["pas un conseiller en investissement", "conseiller en investissements financiers inscrit à l'ORIAS", "conseiller réglementé"],
 };
 /* « conseiller », « conseillère », leurs pluriels et le verbe ; « conseil financier » ; (« conseil en investissement » seul reste permis dans un avertissement). */
 const INTERDIT = /conseill(?:er|ers|ère|ères|ez)(?![\p{L}])|conseil(?:s)? financier/giu;

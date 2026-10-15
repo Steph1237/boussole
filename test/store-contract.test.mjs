@@ -538,7 +538,7 @@ test("démo : Store.expertises.detail(slug) → détail complet (allocation-risq
     assert.deepEqual(Object.keys(d).sort(), EXP_DETAIL_KEYS, slug);
     assert.ok(d.methode.length > 1000 && d.garde_fous.length > 500 && d.format.length > 100, slug + " : méthode, garde-fous et forme complets");
     assert.ok(d.controles.length >= 3 && d.controles.every(c => typeof c === "string"));
-    assert.deepEqual(J(d.versions), [{ version: 1, le: "2026-10-11", resume: d.changelog[0].resume }], slug + " : historique des versions");
+    assert.deepEqual(J(d.versions), [{ version: 2, le: "2026-10-15", resume: d.changelog[1].resume }, { version: 1, le: "2026-10-11", resume: d.changelog[0].resume }], slug + " : historique des versions (la reformulation de 0032 est la version 2)");
     assert.equal(d.nom, S.expertises.find(e => e.slug === slug).nom);
   }
   const c = await ctx.Store.expertises.detail("crypto");
@@ -704,7 +704,8 @@ test("démo : journal au contrat (5 entrées cohérentes avec le foyer, plus ré
   exps.forEach(e => e.liens.expertises.forEach(x => {
     const ex = S.expertises.find(y => y.slug === x.slug);
     assert.ok(ex, `${e.id} : expertise ${x.slug}`);
-    assert.equal(x.version, ex.version, `${e.id} : version de ${x.slug}`);
+    // une entrée du journal garde la version consultée à son époque : une version entière, au plus la version actuelle (0032 a publié la version 2)
+    assert.ok(Number.isInteger(x.version) && x.version >= 1 && x.version <= ex.version, `${e.id} : version de ${x.slug}`);
   }));
   for (const k of ["confirmer", "modifier", "supprimer", "consentement"]) assert.equal(typeof ctx.Store.journal[k], "function", "Store.journal." + k);
 });
