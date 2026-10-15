@@ -3,6 +3,10 @@
    Scopé #view-objectifs-view ; le contenu du panneau de détail (UI.panneau, injecté dans body) sous .ui-panneau .ov-…. */
 #view-objectifs-view [hidden]{display:none!important}
 #view-objectifs-view .ov{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+/* ≥ 1440 px : les cartes d'objectifs à gauche (5 colonnes sur 12), la projection (le graphe maître) à droite (7 colonnes) ; l'en-tête et le bandeau sur toute la largeur */
+@media (min-width:1440px){#view-objectifs-view .ov{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-areas:"tete tete tete tete tete tete tete tete tete tete tete tete" "band band band band band band band band band band band band" "cartes cartes cartes cartes cartes proj proj proj proj proj proj proj";align-items:start;column-gap:var(--gap-sections)}
+  #view-objectifs-view .ov>.ov-tete{grid-area:tete}#view-objectifs-view .ov>.ov-bandeau{grid-area:band}
+  #view-objectifs-view .ov>section[aria-label="Mes objectifs"]{grid-area:cartes}#view-objectifs-view .ov>.ov-proj{grid-area:proj}}
 #view-objectifs-view .ov-num{font-variant-numeric:tabular-nums lining-nums}
 #view-objectifs-view .ov-note{margin:0;font-size:var(--t-small);line-height:1.45;color:var(--muted)}
 

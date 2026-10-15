@@ -16,7 +16,8 @@
 
    Fusion (fusionner) : l'observé (photos nocturnes + point du jour) l'emporte toujours ; le reconstitué n'est gardé que strictement
    avant la première photo, et décalé (recalage) pour rejoindre cette photo sans cassure — l'écart est rendu (decalage).
-   Projection (projeter) : Plan.projection (trois scénarios de rendement par poche, versement mensuel réparti comme le portefeuille),
+   Projection (projeter) : DÉPRÉCIÉ, plus appelé par l'app (le graphe maître lit le moteur Projection) ; supprimé avec Plan.projection (spec PROJ § 13.4, étape 8).
+   Ancien calcul : Plan.projection (trois scénarios de rendement par poche, versement mensuel réparti comme le portefeuille),
    un point par mois, net = patrimoine financier projeté + horsFin maintenu à sa valeur d'aujourd'hui (aucune hypothèse sur
    l'immobilier ni sur l'amortissement des crédits). Une projection n'est pas une promesse.
    Dépendances : Calc (calc.js) et Plan (plan.js), ou injectées (deps / Plan). */

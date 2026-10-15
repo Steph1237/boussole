@@ -7,6 +7,12 @@
 @media (min-width:1100px){#view-pilotage .pl{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"tete groupes" "graphe groupes" "suivi groupes" "agent agent";align-items:start;column-gap:var(--gap-sections)}
   #view-pilotage .pl-tete{grid-area:tete}#view-pilotage .pl-graphe{grid-area:graphe}#view-pilotage .pl-groupes{grid-area:groupes}#view-pilotage .pl-suivi{grid-area:suivi}#view-pilotage .pl-agent{grid-area:agent}
   #view-pilotage .pl-chargement,#view-pilotage .pl-vide{grid-column:1/-1}}
+/* ≥ 1440 px : grille de 12 colonnes (tête, graphe maître et suivi sur 8 colonnes ; « Mes lignes » sur 4) ; le suivi (versements, ordres, hypothèses, journal) se range en deux colonnes au lieu de s'empiler */
+@media (min-width:1440px){#view-pilotage .pl{grid-template-columns:repeat(12,minmax(0,1fr));grid-template-areas:none}
+  #view-pilotage .pl-tete,#view-pilotage .pl-graphe,#view-pilotage .pl-suivi{grid-area:auto;grid-column:1/9}
+  #view-pilotage .pl-groupes{grid-area:auto;grid-column:9/13;grid-row:1/4}
+  #view-pilotage .pl-agent{grid-area:auto;grid-column:1/-1}
+  #view-pilotage .pl-suivi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap-cards);align-items:start}}
 #view-pilotage .pos{color:var(--good)}
 #view-pilotage .neg{color:var(--crit)}
 

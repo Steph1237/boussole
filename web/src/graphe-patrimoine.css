@@ -11,7 +11,7 @@
 :where(.gp,.gp-fsv,.gp-plein,.gp-offre,.gp-evrow,.gp-jdet,.gp-evc,.gp-ro-x,.gp-btn,.gp-lien,.gp-btn-q,.gp-jal,.gp-hopbar button) button,:where(button.gp-evrow,button.gp-jdet,button.gp-evc,button.gp-ro-x,button.gp-btn,button.gp-lien,button.gp-btn-q,button.gp-jal){font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 .gp-carte{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--e1);padding:var(--sp-4) var(--sp-4) var(--sp-3);min-width:0}
 .gp-tete{display:flex;align-items:center;gap:0;margin:0 -10px 0 0}
-.gp-tete h2{flex:1;min-width:0;margin:0;font:700 var(--t-h3)/var(--lh-h3) var(--f-display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gp-tete h2{flex:1;min-width:0;margin:0;font:700 var(--t-h3)/var(--lh-h3) var(--f-display);overflow-wrap:anywhere}
 .gp-icon{width:var(--hit);height:var(--hit);display:inline-grid;place-items:center;border-radius:12px;color:var(--ink);flex:none}
 .gp-icon:hover{background:var(--sunk)}
 .gp-eur{min-height:var(--hit);display:inline-flex;align-items:center;margin:0 2px 0 0}
@@ -39,7 +39,8 @@
 .gp-planbar .k{flex:none}
 .gp-planbar button{margin-left:auto;width:32px;height:32px;display:inline-grid;place-items:center;border-radius:8px;color:var(--muted)}
 /* bande « capacité d'épargne » et lecture en une ligne */
-.gp-bande{display:block;width:100%;margin:0;border-radius:6px;text-align:left}
+.gp-bande{position:relative;display:block;width:100%;margin:0;border-radius:6px;text-align:left}
+.gp-bande::after{content:"";position:absolute;inset:-8px 0}
 .gp-bande[hidden]{display:none}
 .gp-bande-h{display:flex;justify-content:space-between;align-items:baseline;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 .gp-bande-h b{color:var(--ink);font-weight:700}
@@ -55,14 +56,14 @@
 .gp-seg button{flex:1;min-width:0;min-height:38px;padding:0 2px;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap}
 .gp-jal{min-height:var(--hit);padding:0 12px;border-radius:var(--r-ctl);background:var(--sunk)!important;font:700 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex:none}
 .gp-jal[hidden]{display:none}
-.gp-invite{display:flex;align-items:center;gap:var(--sp-2);margin:var(--sp-2) 0 0;padding:4px 4px 4px 12px;border-radius:12px;background:var(--brand-soft);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--ink)}
+.gp-invite{display:flex;align-items:center;gap:var(--sp-2);margin:var(--sp-2) 0 0;padding:0 0 0 12px;border-radius:12px;background:var(--brand-soft);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--ink)}
 .gp-invite[hidden]{display:none}
 .gp-invite span{flex:1}
-.gp-invite .go{min-height:32px;padding:0 10px;border-radius:8px;background:var(--brand)!important;color:var(--brand-ink)!important;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap}
-.gp-invite .x{width:32px;height:32px;display:inline-grid;place-items:center;border-radius:8px;color:var(--muted)}
+.gp-invite .go{min-height:var(--hit);padding:0 10px;border-radius:8px;background:var(--brand)!important;color:var(--brand-ink)!important;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap}
+.gp-invite .x{width:var(--hit);height:var(--hit);display:inline-grid;place-items:center;border-radius:8px;color:var(--muted)}
 .gp-notes{margin:var(--sp-2) 0 0}
 .gp-notes:empty{display:none}
-.gp-notes p{margin:var(--sp-1) 0 0;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+.gp-notes p{max-width:72ch;margin:var(--sp-1) 0 0;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 .gp-carte .gp-notes{display:none}
 @media (min-width:600px){.gp-carte .gp-notes{display:block}}
 .gp-carte .gp-pied{display:none}

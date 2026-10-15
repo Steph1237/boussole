@@ -92,6 +92,7 @@
   /** Chances « sur 10 » : 0,8 → « 8 chances sur 10 », 0,05 → « moins de 1 chance sur 10 », 1 → « 10 chances sur 10 ». */
   function chancesTxt(p) {
     const n = Math.round(p * 10);
+    if (p < 1 && n >= 10) return "plus de 9 chances sur 10";
     if (n <= 0) return "moins de 1 chance sur 10";
     return n + (n > 1 ? " chances" : " chance") + " sur 10";
   }
@@ -525,7 +526,7 @@
       const d = l.demain;
       k = def && d.t > M.today ? "Dans " + dureeTxt(moisEntre(M.today, d.t)) + " · " + dMois(d.t) : t === M.today ? "Aujourd'hui · " + dJour(t) : cap1(dMois(d.t)) + " · dans " + dureeTxt(moisEntre(M.today, d.t));
       v = "≈" + NB + fK(d.p50);
-      s = "Montant empruntable " + fK(d.empruntable) + (d.apport ? " · apport " + kRange(d.apport.p10, d.apport.p90) : "");
+      s = "Montant empruntable " + fK(d.empruntable) + (d.apport ? " · apport entre " + kRange(d.apport.p10, d.apport.p90) : "");
       return { k, v, s };
     }
     const pl = l.plan && !l.plan.avant ? l.plan : null;
@@ -816,7 +817,7 @@
   /** Paramètres d'un mode pour une largeur donnée (une carte large gagne en hauteur de tracé, en graduations et en survol). */
   function parametresMode(nom, W, opt) {
     const p = Object.assign({ nom }, MODES[nom] || MODES.carte), o = opt || {};
-    if (nom === "carte" && W >= 600) { p.gutter = 58; p.yTicks = 5; p.plotH = 330; p.hover = o.souris !== false; p.stripH = 32; }
+    if (nom === "carte" && W >= 600) { p.gutter = 58; p.yTicks = 5; p.plotH = W >= 1100 ? 440 : W >= 800 ? 380 : 330; p.hover = o.souris !== false; p.stripH = 32; }
     if (nom === "carte") p.hover = p.hover || o.souris === true;
     if (nom === "portrait") p.plotH = Math.round(clamp((o.hauteurFenetre || 800) * 0.42, 220, 420));
     return p;
@@ -856,7 +857,7 @@
     const bottom = railH + labH;
     let plotH = P.plotH;
     if (P.fill && P.H) plotH = Math.max(64, P.H - topX - bottom);
-    const T = topX, B = topX + plotH, H = B + bottom, DT = P.compact ? T + 76 : T;
+    const T = topX, B = topX + plotH, H = B + bottom, DT = P.compact ? T + 80 : T;
     const Y = v => DT + (1 - (v - lo) / (hi - lo)) * (B - DT);
     const f1 = v => v.toFixed(1), cid = id + "c", hid = id + "h";
     let s = '<defs><clipPath id="' + cid + '"><rect x="' + L + '" y="' + (DT - 2) + '" width="' + (R - L) + '" height="' + (B - DT + 4) + '"/></clipPath>' +
@@ -879,7 +880,7 @@
       if (y < DT - 1 || y > B + 1) return;
       ticks.push({ v, y, label: grad.libelles[k] });
       s += '<line class="gp-gr" x1="' + L + '" x2="' + f1(R) + '" y1="' + f1(y) + '" y2="' + f1(y) + '"/>';
-      if (!(pillY != null && Math.abs(y - pillY) < 15)) s += '<text class="gp-ytk" data-y="' + f1(y) + '" x="' + (W - 2) + '" y="' + f1(y + 4) + '" text-anchor="end">' + esc(grad.libelles[k]) + "</text>";
+      if (!(pillY != null && Math.abs(y - pillY) < 20)) s += '<text class="gp-ytk" data-y="' + f1(y) + '" x="' + (W - 2) + '" y="' + f1(y + 4) + '" text-anchor="end">' + esc(grad.libelles[k]) + "</text>";
       else s += '<text class="gp-ytk" data-y="' + f1(y) + '" x="' + (W - 2) + '" y="' + f1(y + 4) + '" text-anchor="end" style="display:none">' + esc(grad.libelles[k]) + "</text>";
     });
     /* zone estimée (reconstituée), hachurée */
@@ -890,7 +891,7 @@
         s += '<rect x="' + f1(xa) + '" y="' + f1(DT) + '" width="' + f1(Math.max(0, xb - xa)) + '" height="' + f1(B - DT) + '" fill="url(#' + hid + ')"/>';
         const jr = new Date(finRec), lib = "Estimé avant le " + jr.getUTCDate() + " " + MOIS[jr.getUTCMonth()], libC = "Estimé";
         const txt = mesurer(lib, 400) + 8 <= xb - xa ? lib : mesurer(libC, 400) + 8 <= xb - xa ? libC : "";
-        if (txt) s += '<text x="' + f1(xa + 4) + '" y="' + f1(DT + 14) + '" class="gp-halo">' + esc(txt) + "</text>";
+        if (txt) s += '<text x="' + f1(xa + 4) + '" y="' + f1(DT + 16) + '" class="gp-halo">' + esc(txt) + "</text>";
       }
     }
     /* séries (clipées au tracé) */
@@ -1239,7 +1240,7 @@
       if (this._mes) return this._mes;
       let ctx = null;
       try { ctx = this.doc.createElement("canvas").getContext("2d"); } catch (e) { ctx = null; }
-      this._mes = ctx && typeof ctx.measureText === "function" ? (t, p) => { ctx.font = (p || 400) + ' 12px "Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif'; return ctx.measureText(String(t)).width; } : mesureApprox;
+      this._mes = ctx && typeof ctx.measureText === "function" ? (t, p) => { ctx.font = (p || 400) + ' 12px "Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif'; return ctx.measureText(String(t)).width * 1.06; } : mesureApprox;
       return this._mes;
     }
     claudeLien(question, libelle) {
@@ -1413,7 +1414,7 @@
     cadre(avecHl) {
       return '<div class="gp-planbar" data-planbar hidden></div><div class="gp-cadre" data-cadre><svg class="gp-svg" data-svg role="img" aria-label=""></svg>' + (avecHl ? this.hl() : "") +
         '<div class="gp-marks" data-marks></div><div class="gp-hit" data-hit role="slider" tabindex="0" aria-label="Lire le graphique à une date. Flèches pour se déplacer, plus et moins pour zoomer, zéro pour réinitialiser"></div>' +
-        '<button type="button" class="gp-zre" data-act="zreset" hidden>Réinitialiser le zoom</button><div class="gp-etat" data-etat hidden></div></div>';
+        (avecHl ? '<button type="button" class="gp-zre" data-act="zreset" hidden>Réinitialiser le zoom</button>' : "") + '<div class="gp-etat" data-etat hidden></div></div>';
     }
     bande() {
       return '<button type="button" class="gp-bande" data-act="bande" aria-expanded="false"><span class="gp-bande-h" data-bandeh hidden><span>Capacité d\'épargne</span><span class="num" data-stripv></span></span><svg class="gp-s-svg" data-ssvg aria-hidden="true"></svg><span class="ui-sr">Capacité d\'épargne : afficher ou masquer le détail</span></button>';
@@ -1831,6 +1832,7 @@
     tempsParDefaut() {
       const g = this.g, M = g.M, dom = g.domaineCourant();
       if (g.etat.plan && dom.debut <= M.today && M.today <= dom.fin) return M.today;
+      if (M.mode === "capacite" && M.futur) { const t3 = ajouterMois(M.today, 36); if (t3 <= dom.fin) { const i = plusProche(M.futur.t, t3); return M.futur.t[i]; } }
       if (M.futur && dom.fin > M.today) return aFinFenetre(M, dom);
       return M.passe.t.length ? Math.min(M.today, M.passe.t[M.passe.t.length - 1]) : M.today;
     },
@@ -1862,7 +1864,7 @@
         if (xh) setStyle(xh, { opacity: "0" });
         if (pill) setStyle(pill, { display: "" });
       }
-      this.svg.querySelectorAll(".gp-ytk").forEach(n => { setStyle(n, { display: py != null && Math.abs(+n.getAttribute("data-y") - py) < 15 ? "none" : "" }); });
+      this.svg.querySelectorAll(".gp-ytk").forEach(n => { setStyle(n, { display: py != null && Math.abs(+n.getAttribute("data-y") - py) < 20 ? "none" : "" }); });
       /* titre qui suit le doigt */
       const T = titreLecture(M, e, lec, def);
       const hl = (k, v) => { const n = this.q('[data-hl="' + k + '"]'); tc(n, v); };
