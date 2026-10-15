@@ -367,7 +367,7 @@
   /* ---------- liaison d'un écran avec le graphe ---------- */
   /** Monte le graphe maître dans `el` et le relie au moteur : un seul code pour Aujourd'hui, Placements, Objectifs et « Ta capacité demain » (preset "capacite").
       o = { preset, S: () => état du store (ou passé à actualiser), today?: () => AAAA-MM-JJ, perimetre?: () => « du foyer », deps?: { UI, … }, objectifId?, titre?, reglages?, lienProfond?,
-      claude?(question, libelle) → HTML, store?: Store (plans figés), chemins? }. → { ctl (composant), actualiser(S) (recalcule seulement si ce qui compte a changé), reglages(), pleinEcranQuandPret(), detruire() } ; null sans composant. */
+      claude?(question, libelle) → HTML, store?: Store (plans figés), chemins?, surRendement?(rendement { projet, reel } | null, info) : appelé à chaque dessin du graphe (Placements en tire sa ligne de rendement) }. → { ctl (composant), actualiser(S) (recalcule seulement si ce qui compte a changé), reglages(), pleinEcranQuandPret(), detruire() } ; null sans composant. */
   function brancher(el, o) {
     const opt = o || {}, deps = opt.deps || {}, G = GP(deps), U = deps.UI || glob("UI"), win = typeof window !== "undefined" ? window : null;
     if (!el || !G || typeof G.monter !== "function") return null;
@@ -393,7 +393,7 @@
       const n = ++seq;
       if (capacite) { const d = calculerCapacite(S, r, { today: jour(), perimetre: perimetre(), deps: opt.moteurDeps || null, chemins: opt.chemins }); if (n === seq && ctl) ctl.mettreAJour(d); return Promise.resolve(d); }
       return calculer(S, r, { today: jour(), perimetre: perimetre(), deps: opt.moteurDeps || null, cachePlans, chargerPlan: id => (store && store.plansFiges ? store.plansFiges.detail(id) : Promise.resolve(null)),
-        rappel: (d, info) => { if (n === seq && ctl) ctl.mettreAJour(d, info); } });
+        rappel: (d, info) => { if (n === seq && ctl) { ctl.mettreAJour(d, info); if (typeof opt.surRendement === "function") { try { opt.surRendement(d.rendement || null, info); } catch (e) { /* l'écran qui écoute ne casse pas le graphe */ } } } } });
     }
     ctl = G.monter(el, { preset: opt.preset || "aujourdhui", objectifId: opt.objectifId, titre: opt.titre, reglages, deps: Object.assign({ UI: U, window: win }, deps), lienProfond: !!opt.lienProfond,
       claude: opt.claude || ((q, l) => (U && U.demanderAClaude ? U.demanderAClaude(q, l) : "")),

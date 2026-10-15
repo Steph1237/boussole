@@ -2,7 +2,8 @@
    (docs/superpowers/specs/2026-10-11-saisie-par-agent.md). Toute saisie passe par Claude : boutons « Compléter avec Claude »,
    « Corriger avec Claude », « Enregistrer un mouvement avec Claude » (UI.demanderAClaude + ClaudePrompts.phrase, sections placements
    et mouvement, avec la ligne concernée en contexte). Aucune écriture au store depuis ce module.
-   - En-tête : total financier du périmètre, variation sur 1 an (photos nocturnes + valeur en direct), nombre de lignes, plus-values
+   - En-tête : total financier du périmètre, variation sur 1 an (photos nocturnes + valeur en direct), nombre de lignes, ligne « Rendement réel 1 an : X % · attendu Y %/an
+     (fourchette 8 sur 10 : a à b) » tirée du graphe maître (surRendement ; détail dépliable : les 4 périodes, rendementLigne / rendementHtml), plus-values
      latentes, épargne de précaution (cible réglée dans Compte › Règles) ; puis le graphe maître (GraphePatrimoine relié au moteur
      par GrapheModele.brancher, préréglage « placements » : vue financier, passé observé et reconstitué + projection du moteur sur un
      seul axe, une seule commande de temps 1 an · 5 ans · 10 ans · 20 ans · Tout, 5 ans sur mobile / 10 ans sur ordinateur, aucun
@@ -422,8 +423,64 @@
       "Voir plus de mouvements", "ul", "pl-journal") + signaler;
   }
 
+  /* =============================================================== rendement réel =============================================================== */
+  /* Ligne de l'en-tête « Rendement réel 1 an : X % · attendu Y %/an (fourchette 8 sur 10 : a à b) », avec le tableau des 4 périodes en détail. Données du graphe maître
+     (GrapheModele.rendementDonnees → { projet, reel }) : mêmes chiffres que la feuille « Rendements » du graphe et que le panneau d'Aujourd'hui. X est le rendement de tes placements
+     (pondéré par le temps), la mesure qui se compare à l'attendu ; le tableau donne aussi ton rendement (pondéré par l'argent). Honnêteté : moins d'un an de relevés, on prend la
+     période la plus longue mesurable et on la dit (« sur 5 mois », jamais annualisée) ; mesure fragile : « ≈ » et « approché » ; trop peu de relevés : « pas assez d'historique »,
+     aucun chiffre ; sans le calcul de la projection : pas d'attendu. */
+  const rendementMod = deps => dep(deps, "Rendement") || (typeof module === "object" && module.exports && typeof require === "function" ? require("./rendement.js") : null);
+  const maj1 = t => { const x = String(t || ""); return x.charAt(0).toUpperCase() + x.slice(1); };
+  const unique = l => [...new Set(l)];
+  const ptsRd = p => p && p.statut != null && p.statut !== "insuffisant";
+  function rendementLigne(rd, deps) {
+    const RDm = rendementMod(deps), periodes = rd && rd.reel && Array.isArray(rd.reel.periodes) ? rd.reel.periodes.filter(Boolean) : [];
+    if (!RDm || !periodes.length) return null;
+    const parId = id => periodes.find(p => p.id === id);
+    const p = ptsRd(parId("1a")) ? parId("1a") : ["3m", "1m", "debut"].map(parId).filter(ptsRd).sort((a, b) => b.jours - a.jours)[0] || null;
+    const cellule = (v, an, ap) => (!fini(v) ? "—" : (ap ? "≈ " : "") + RDm.pct(v, { signe: !an }) + (an ? "/an" : ""));
+    const lignes = periodes.map(q => {
+      if (!ptsRd(q)) return '<tr data-rd="' + esc(q.id) + '"><th scope="row">' + esc(q.libelle) + '</th><td colspan="3">' + esc(q.raison || "pas assez d'historique") + "</td></tr>";
+      const an = !!q.annualise, ap = q.statut === "approche", at = q.attendu && q.attendu.statut === "ok" ? q.attendu : null;
+      return '<tr data-rd="' + esc(q.id) + '"><th scope="row">' + esc(q.libelle) + "</th><td>" + esc(cellule(an ? q.xirr_annuel_pct : q.xirr_periode_pct, an, ap)) + "</td><td>" + esc(cellule(an ? q.twr_annuel_pct : q.twr_periode_pct, an, ap)) +
+        '</td><td class="pl-rd-at">' + esc(at ? cellule(at.attendu_pct, an, false) : "—") + "</td></tr>";
+    });
+    const tableau = '<div class="pl-rd-wrap" tabindex="0" role="region" aria-label="Rendements obtenus sur tes placements"><table class="pl-rd-tab"><caption class="ui-sr">Rendement obtenu, par période</caption><thead><tr>' +
+      '<th scope="col">Période</th><th scope="col">Ton rendement</th><th scope="col">Rendement de tes placements</th><th scope="col">Attendu</th></tr></thead><tbody>' + lignes.join("") + "</tbody></table></div>";
+    const notes = [];
+    let texte, approche = false;
+    if (!p) {
+      const rien = parId("debut") || periodes[0], raison = String((rien && rien.raison) || "pas assez d'historique");
+      texte = "Rendement réel : " + raison.replace(/^(pas assez d'historique)\s*:\s*(.*)$/, "$1 ($2)");
+    } else {
+      const an = !!p.annualise, ap = p.statut === "approche", qui = p.id === "1a" ? "1 an" : RDm.dureeTxt(p.jours), v = an ? p.twr_annuel_pct : p.twr_periode_pct;
+      approche = ap;
+      texte = (p.id === "1a" ? "Rendement réel 1 an" : "Rendement réel sur " + qui) + " : " + (fini(v) ? (ap ? "≈ " : "") + RDm.pct(v, { signe: !an }) : "non calculable") + (ap ? " (approché)" : "");
+      const at = p.attendu && p.attendu.statut === "ok" ? p.attendu : null;
+      if (at) {
+        const dec = at.p90_pct - at.p10_pct >= 6 ? 0 : 1;
+        texte += " · attendu " + RDm.pct(at.attendu_pct, { signe: !an }) + (an ? "/an" : "") + " (fourchette 8 sur 10 : " + RDm.pct(at.p10_pct, { signe: true, dec }).replace(/\u00a0%$/, "") + " à " + RDm.pct(at.p90_pct, { signe: true, dec }) + ")";
+      }
+      const un = parId("1a");
+      if (p.id !== "1a" && un && !ptsRd(un)) notes.push("Pas assez d'historique pour 1 an : la période la plus longue mesurable est de " + qui + (p.id === "debut" ? " (depuis ton premier relevé)" : ""));
+      if (p.comparaison && p.comparaison.phrase) notes.push(p.comparaison.phrase + (p.source && p.source.texte ? ". " + maj1(p.source.texte) : ""));
+    }
+    const fragiles = unique(periodes.filter(q => q.statut === "approche").flatMap(q => (Array.isArray(q.notes) ? q.notes : [])).concat(Array.isArray(rd.reel.notes) ? rd.reel.notes : [])).map(maj1);
+    const tous = fragiles.concat(notes).map(n => (/[.!?]$/.test(n) ? n : n + "."));
+    tous.push("Net de frais, avant impôts, sur tes placements (comptes courants exclus). Ton rendement tient compte de la date de tes versements ; celui de tes placements non : c'est lui qui se compare à l'attendu.");
+    return { texte, periode: p ? p.id : null, approche, tableau, notes: tous };
+  }
+  const CHEVRON_RD = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
+  /** La ligne de rendement, dépliable (details fermé) : résumé = la phrase, détail = tableau des 4 périodes et notes. "" sans rendement à montrer. */
+  function rendementHtml(rd, deps) {
+    const l = rendementLigne(rd, deps);
+    if (!l) return "";
+    return '<details class="pl-rd-det"><summary class="pl-rd-ligne"><span class="pl-rd-txt">' + esc(l.texte) + '</span><span class="pl-rd-chev">' + CHEVRON_RD + "</span></summary>" +
+      '<div class="pl-rd-corps">' + l.tableau + l.notes.map(n => '<p class="pl-rd-note">' + esc(n) + "</p>").join("") + "</div></details>";
+  }
+
   const H = { MODES, lienFiche, ficheGroupe, grouper, totaux, matelas, variation, etatDonnee, detailLigne, detailHtml, hypotheses, versements, ordres, journalMouvements, allocation,
-    titresSuivi, vueSuivi, rolesDe, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, jour };
+    titresSuivi, vueSuivi, rolesDe, rendementLigne, rendementHtml, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -471,6 +528,7 @@
     $("plTitre").textContent = "Placements " + scopeLabel();
     $("plTotal").textContent = pret ? eur(t.total) : "—";
     renderEvolution(t);
+    renderRendement();
     $("plGrapheBloc").hidden = !pret || vide; // sans placement, rien à tracer : l'état vide orienté suffit
     if (pret && !vide) { chargerHistorique(); lancerGraphe(); }
     if (!pret) return;
@@ -504,6 +562,19 @@
     ecrire("sous", $("plSous"), [varTxt, esc(n)].filter(Boolean).join(" · "));
   }
 
+  /* Ligne « Rendement réel » sous la variation : alimentée par le graphe maître (surRendement), à chaque dessin ; masquée tant que le graphe n'a pas calculé, sans relevé, ou quand le
+     périmètre a changé depuis ce calcul. Le détail ouvert le reste tant que le texte ne change pas. */
+  let rendementGraphe = null;
+  function renderRendement() {
+    const el = $("plRd");
+    if (!el) return;
+    let h = "";
+    try { h = rendementGraphe && rendementGraphe.scope === scopeDe(S) ? rendementHtml(rendementGraphe.rd) : ""; } catch (e) { h = ""; }
+    const ouvert = !!el.querySelector("details[open]");
+    el.hidden = !h;
+    if (ecrire("rd", el, h) && ouvert) { const d = el.querySelector("details"); if (d) d.setAttribute("open", ""); }
+  }
+
   /* ---------- graphe maître : composant GraphePatrimoine relié au moteur par GrapheModele.brancher (un seul moteur, Projection.executer) ---------- */
   let liaison = null;
   const SN = () => glob("SerieNet");
@@ -516,7 +587,8 @@
     const Mo = GM(), el = $("plGraphe"), u = U();
     if (!root || !S || S.ready === false || !Mo || !el || !u) return;
     if (!liaison) liaison = Mo.brancher(el, { preset: "placements", deps: { UI: u }, today: () => jour(), perimetre: () => scopeLabel(), store: window.Store || null,
-      enAttente: snap => { const sn = SN(); return !!(sn && typeof sn.enAttente === "function" && sn.enAttente(snap, null)); } });
+      enAttente: snap => { const sn = SN(); return !!(sn && typeof sn.enAttente === "function" && sn.enAttente(snap, null)); },
+      surRendement: rd => { rendementGraphe = rd ? { rd, scope: scopeDe(S) } : null; renderRendement(); } });
     if (liaison) liaison.actualiser(S);
   }
   /* Une lecture du passé vient de finir : le graphe est recalculé avec son passé (ou le sera à l'affichage). */

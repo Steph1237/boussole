@@ -204,3 +204,18 @@ test("graphe-modele.js : tutoiement, aucune écriture (lecture seule), aucun acc
   const src = readFileSync("web/src/graphe-modele.js", "utf8");
   assert.doesNotMatch(src, /\b(vous|votre|vos)\b/i); assert.doesNotMatch(src.replace(/\/\*[\s\S]*?\*\//g, ""), /localStorage|\.insert\(|\.upsert\(|\.update\(|\.delete\(|fetch\(|document\./);
 });
+
+test("liaison : surRendement reçoit le bloc rendement ({ projet, reel }) à chaque dessin du graphe, jamais un calcul périmé ; sans fonction, rien ne change", async () => {
+  const S = etat(), recus = [], vus = [];
+  const faux = { PRESETS: { placements: { vue: "financier" } }, monter: () => ({ mettreAJour: d => vus.push(d.etat), reglagesAppliques() {}, detruire() {} }) };
+  const l = GM.brancher({}, { preset: "placements", deps: { GraphePatrimoine: faux }, today: () => AUJ, surRendement: (r, info) => recus.push([r, info && info.etape]), moteurDeps: { Projection: Object.assign({}, P, { executer: sync(150) }) } });
+  l.actualiser(S); await new Promise(r => setTimeout(r, 80));
+  assert.ok(recus.length >= 1, "appelé au dessin");
+  const [r, etape] = recus.at(-1);
+  assert.equal(etape, "complet");
+  assert.ok(r && r.projet && r.reel && Array.isArray(r.reel.periodes) && r.reel.periodes.length === 4, "bloc rendement du modèle");
+  assert.equal(recus.length, vus.length, "un appel par dessin");
+  const sans = GM.brancher({}, { preset: "placements", deps: { GraphePatrimoine: faux }, today: () => AUJ, moteurDeps: { Projection: Object.assign({}, P, { executer: sync(100) }) } });
+  assert.doesNotThrow(() => sans.actualiser(S));
+  await new Promise(r => setTimeout(r, 60));
+});

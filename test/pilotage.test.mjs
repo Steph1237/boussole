@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { miniDom } from "./helpers/mini-dom.mjs";
+import { cas, entreeDe } from "./helpers/projection-cas.mjs";
 
 const require = createRequire(import.meta.url);
 const js = readFileSync("web/src/pilotage.js", "utf8");
@@ -746,4 +747,123 @@ test("suivi (DOM) : « Grouper par Rôle » : cœur, satellite, réserve dans ce
 test("suivi (DOM) : sans moteur de suivi chargé, Placements reste utilisable (bloc du système masqué, lignes sans météo)", () => {
   const { root } = vueDom(demoS(), undefined, { SuiviView: null });
   assert.equal($(root, "plSysteme").hidden, true);
+});
+
+
+/* ------------------------------------------------------------------ ligne « Rendement réel » de l'en-tête ------------------------------------------------------------------ */
+// « Rendement réel 1 an : X % · attendu Y %/an (fourchette 8 sur 10 : a à b) », données du graphe maître (GrapheModele.rendementDonnees : relevés de production, by_bloc par personne).
+const RD = require("../web/src/rendement.js"), GM = require("../web/src/graphe-modele.js"), PJ = require("../web/src/projection.js");
+const AUJ_RD = "2026-10-14";
+const isoRd = t => new Date(t).toISOString().slice(0, 10);
+/** Foyer fictif du cas C-4, relevés quotidiens (+0,02 % par jour) dans la forme de production (by_bloc par personne), un versement de 100 € par mois ; jours = longueur de l'historique. */
+function etatRd(o) {
+  const opt = o || {}, d = entreeDe(cas("C-4")), jours = opt.jours == null ? 400 : opt.jours, snaps = [], tx = [];
+  const poches = { p1: {}, p2: {} };
+  d.positions.filter(p => Calc.counted(p)).forEach(p => { if (poches[p.owner]) poches[p.owner][p.bloc] = (poches[p.owner][p.bloc] || 0) + Calc.val(p); });
+  const tot = k => Object.values(poches[k]).reduce((a, v) => a + v, 0);
+  for (let k = jours; k >= 1; k--) {
+    const f = Math.pow(1.0002, -k), by = { p1: {}, p2: {} };
+    ["p1", "p2"].forEach(w => Object.keys(poches[w]).forEach(b => { by[w][b] = poches[w][b] * f; }));
+    snaps.push({ date: isoRd(Date.UTC(2026, 9, 14) - k * 864e5), foyer: (tot("p1") + tot("p2")) * f, p1: tot("p1") * f, p2: tot("p2") * f, byBloc: by, byEnvelope: {} });
+  }
+  if (!opt.sansTx) tx.push({ id: "t0", date: "2025-01-02", type: "versement", positionId: d.positions[0].id, amount: 100 });
+  return { today: AUJ_RD, scope: "foyer", positions: d.positions, config: d.config, profil: d.profil, budget: d.budget, banque: d.banque, objectifs: d.objectifs, foyer: d.foyer, savoir: { reperes: d.reperes },
+    indices: [], classes: {}, snapshots: snaps, plansFiges: [], tx };
+}
+const syncRd = chemins => (data, options, rappel) => { const M = PJ.preparer(data, options), r = PJ.simuler(M, { chemins }); rappel && rappel(r, { etape: "complet", chemins: r.chemins }); return Promise.resolve(r); };
+const rdDe = async o => (await GM.calculer(etatRd(o), GM.reglagesParDefaut({ vue: "financier" }), { today: AUJ_RD, executer: syncRd(200), reconstitue: null })).rendement;
+const pcRd = (v, o) => sp(RD.pct(v, o));
+
+test("rendementLigne : 1 an mesuré — « Rendement réel 1 an : X % · attendu Y %/an (fourchette 8 sur 10 : a à b) », chiffres du modèle, sur des relevés de production", async () => {
+  const rd = await rdDe(), un = rd.reel.periodes.find(p => p.id === "1a");
+  assert.equal(un.statut, "ok");
+  const l = PL.rendementLigne(rd);
+  assert.equal(l.periode, "1a"); assert.equal(l.approche, false);
+  const a = un.attendu, dec = a.p90_pct - a.p10_pct >= 6 ? 0 : 1;
+  assert.equal(sp(l.texte), "Rendement réel 1 an : " + pcRd(un.twr_annuel_pct) + " · attendu " + pcRd(a.attendu_pct) + "/an (fourchette 8 sur 10 : " + pcRd(a.p10_pct, { signe: true, dec }).replace(/ %$/, "") + " à " + pcRd(a.p90_pct, { signe: true, dec }) + ")");
+  assert.match(sp(l.texte), /^Rendement réel 1 an : [\d,]+ % · attendu [\d,]+ %\/an \(fourchette 8 sur 10 : [−+\d, ]+ à [−+\d, ]+ %\)$/);
+  assert.ok(un.twr_annuel_pct > 6 && un.twr_annuel_pct < 9, "0,02 % par jour ≈ 7,6 %/an : " + un.twr_annuel_pct);
+});
+test("rendementLigne : le détail donne les 4 périodes (1 mois, 3 mois, 1 an, depuis le début) — ton rendement, rendement de tes placements, attendu — net de frais, avant impôts", async () => {
+  const rd = await rdDe(), l = PL.rendementLigne(rd), t = sp(l.tableau);
+  assert.match(t, /<table class="pl-rd-tab"/);
+  assert.deepEqual([...t.matchAll(/<th scope="row">([^<]*)<\/th>/g)].map(m => m[1]), ["1 mois", "3 mois", "1 an", "Depuis le début"]);
+  assert.deepEqual([...t.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map(m => m[1]), ["Période", "Ton rendement", "Rendement de tes placements", "Attendu"]);
+  const un = rd.reel.periodes.find(p => p.id === "1a");
+  assert.ok(t.includes(pcRd(un.xirr_annuel_pct) + "/an") && t.includes(pcRd(un.twr_annuel_pct) + "/an") && t.includes(pcRd(un.attendu.attendu_pct) + "/an"));
+  assert.match(sp(l.notes.join(" ")), /net de frais, avant impôts/i); assert.match(sp(l.notes.join(" ")), /comptes courants/);
+  assert.match(sp(l.notes.join(" ")), /Réel [\d,]+ %\/an contre [\d,]+ % attendu/, "phrase réel contre attendu du modèle");
+  assert.match(t, /<div class="pl-rd-wrap" tabindex="0" role="region" aria-label="[^"]+">/, "tableau défilant au clavier sur mobile");
+});
+test("rendementLigne : moins d'un an d'historique — la plus longue période mesurable est dite (« sur 5 mois »), jamais annualisée, avec la raison", async () => {
+  const rd = await rdDe({ jours: 150 }), l = PL.rendementLigne(rd), p = rd.reel.periodes.find(x => x.id === "debut");
+  assert.equal(l.periode, "debut");
+  assert.match(sp(l.texte), /^Rendement réel sur 5 mois : \+[\d,]+ %/);
+  assert.doesNotMatch(sp(l.texte), /%\/an \(fourchette|Rendement réel 1 an/);
+  assert.ok(sp(l.texte).includes(pcRd(p.twr_periode_pct, { signe: true })), "rendement de la période");
+  assert.match(sp(l.notes.join(" ")), /Pas assez d'historique pour 1 an : la période la plus longue mesurable est de 5 mois/);
+});
+test("rendementLigne : versements inconnus — « ≈ » et « approché », la raison est dite dans le détail", async () => {
+  const rd = await rdDe({ sansTx: true }), l = PL.rendementLigne(rd);
+  assert.equal(l.approche, true);
+  assert.match(sp(l.texte), /^Rendement réel 1 an : ≈ [\d,]+ % \(approché\)/);
+  assert.match(sp(l.notes.join(" ")), /versements inconnus/i);
+});
+test("rendementLigne : historique trop court — « pas assez d'historique » avec la durée des relevés, aucun chiffre ; sans relevé ou sans bloc : null", async () => {
+  const rd = await rdDe({ jours: 12 }), l = PL.rendementLigne(rd);
+  assert.equal(sp(l.texte), "Rendement réel : pas assez d'historique (12 jours de relevés)");
+  assert.equal(l.periode, null); assert.doesNotMatch(l.texte, /\d,\d/);
+  assert.equal(PL.rendementLigne(null), null); assert.equal(PL.rendementLigne({ projet: null, reel: null }), null); assert.equal(PL.rendementLigne(undefined), null);
+});
+test("rendementLigne : sans le calcul de la projection (attendu absent ou indisponible), le rendement réel est donné seul — jamais d'attendu inventé", async () => {
+  const rd = await rdDe(), sans = J(rd);
+  sans.reel.periodes = sans.reel.periodes.map(p => { const { attendu, comparaison, source, ...r } = p; return r; });
+  const l = PL.rendementLigne(sans);
+  assert.match(sp(l.texte), /^Rendement réel 1 an : [\d,]+ %$/);
+  assert.doesNotMatch(sp(l.tableau), /pl-rd-at">[\d]/, "colonne Attendu : tiret");
+  const indispo = J(rd); indispo.reel.periodes.forEach(p => { p.attendu = { statut: "indisponible", raison: "hypothèses manquantes" }; });
+  assert.doesNotMatch(sp(PL.rendementLigne(indispo).texte), /attendu/);
+});
+test("rendementHtml : une ligne dépliable (details) — résumé = la phrase, détail = tableau ; échappé, tutoiement, aucun conseil", async () => {
+  const rd = await rdDe(), h = PL.rendementHtml(rd);
+  assert.match(h, /^<details class="pl-rd-det"><summary class="pl-rd-ligne">/);
+  assert.ok(sp(h).includes("Rendement réel 1 an :")); assert.match(h, /<table class="pl-rd-tab"/);
+  assert.doesNotMatch(h, /<details[^>]*open/);
+  assert.equal(PL.rendementHtml(null), "");
+  assert.doesNotMatch(h, /\b(?:vous|votre|vos)\b|conseill|il faut investir|tu devrais|assistant|agent/i);
+  const xss = J(rd); xss.reel.periodes.forEach(p => { p.notes = ['<img src=x onerror="alert(1)">']; p.statut = "approche"; });
+  assert.doesNotMatch(PL.rendementHtml(xss), /<img/);
+});
+
+test("pilotage.html / css : la ligne de rendement est dans l'en-tête (plRd), scopée et sans couleur en dur, tableau défilant sur mobile", () => {
+  assert.match(html, /<div class="pl-rd" id="plRd" hidden><\/div>/);
+  assert.ok(html.indexOf('id="plSous"') < html.indexOf('id="plRd"') && html.indexOf('id="plRd"') < html.indexOf('id="plFaits"'), "sous la variation, avant les faits");
+  assert.match(css, /#view-pilotage \.pl-rd-det/); assert.match(css, /#view-pilotage \.pl-rd-wrap\{[^}]*overflow-x:auto/);
+});
+
+test("vue (DOM) : la ligne « Rendement réel » apparaît quand le graphe a calculé (surRendement), reste fermée, survit aux émissions du store, disparaît sans relevé", async () => {
+  const f = faux(), v = vueDom(demoS(), null, { GrapheModele: f.GrapheModele, SerieNet: f.SerieNet, Rendement: RD });
+  const o = f.j.brancher[0].o;
+  assert.equal(typeof o.surRendement, "function", "la page écoute le graphe");
+  assert.equal($(v.root, "plRd").hidden, true, "rien tant que le graphe n'a pas calculé");
+  const rd = await rdDe();
+  o.surRendement(rd, { etape: "complet" });
+  assert.equal($(v.root, "plRd").hidden, false);
+  assert.ok(sp($(v.root, "plRd").querySelector(".pl-rd-ligne").textContent).startsWith("Rendement réel 1 an : "));
+  assert.equal($(v.root, "plRd").querySelectorAll("tr[data-rd]").length, 4);
+  const det = $(v.root, "plRd").querySelector("details"); det.setAttribute("open", "");
+  v.rafraichir(); o.surRendement(rd, { etape: "complet" });
+  assert.ok($(v.root, "plRd").querySelector("details").hasAttribute("open"), "un dessin identique ne referme pas le détail");
+  v.rafraichir.avec(demoS({ scope: "p2" }));
+  assert.equal($(v.root, "plRd").hidden, true, "le périmètre a changé depuis ce calcul : la ligne attend le nouveau calcul du graphe");
+  o.surRendement(rd, { etape: "complet" });
+  assert.equal($(v.root, "plRd").hidden, false);
+  o.surRendement(null, { etape: "complet" });
+  assert.equal($(v.root, "plRd").hidden, true);
+  assert.equal($(v.root, "plRd").innerHTML, "");
+});
+test("vue (DOM) : sans module Rendement ou avec une erreur, la page ne casse pas (ligne masquée)", () => {
+  const f = faux(), v = vueDom(demoS(), null, { GrapheModele: f.GrapheModele, SerieNet: f.SerieNet });
+  assert.doesNotThrow(() => f.j.brancher[0].o.surRendement({ projet: null, reel: { periodes: "x" } }, {}));
+  assert.equal($(v.root, "plRd").hidden, true);
 });

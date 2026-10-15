@@ -27,6 +27,27 @@
 #view-pilotage .pl-total{margin:4px 0 2px;font:700 var(--t-hero)/var(--lh-hero) var(--f-display);letter-spacing:-.015em;font-variant-numeric:tabular-nums lining-nums}
 #view-pilotage .pl-sous{margin:0;font-size:var(--t-small);color:var(--muted);line-height:var(--lh-small)}
 #view-pilotage .pl-var{font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+/* Rendement réel (ligne dépliable sous la variation) : la phrase est le résumé, le tableau des 4 périodes est le détail ; zone tactile de 44 px, retour à la ligne sur mobile */
+#view-pilotage .pl-rd{margin:var(--sp-2) 0 0;min-width:0}
+#view-pilotage .pl-rd-det{min-width:0}
+#view-pilotage .pl-rd-ligne{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);min-height:var(--hit);padding:var(--sp-1) 0;cursor:pointer;list-style:none;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink);border-radius:var(--r-ctl)}
+#view-pilotage .pl-rd-ligne::-webkit-details-marker{display:none}
+#view-pilotage .pl-rd-ligne:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+#view-pilotage .pl-rd-txt{min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums lining-nums}
+#view-pilotage .pl-rd-chev{flex:none;display:grid;place-items:center;color:var(--muted);transition:transform .15s ease}
+#view-pilotage .pl-rd-det[open] .pl-rd-chev{transform:rotate(180deg)}
+#view-pilotage .pl-rd-corps{display:flex;flex-direction:column;gap:var(--sp-2);padding:var(--sp-1) 0 var(--sp-2);min-width:0}
+#view-pilotage .pl-rd-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-ctl)}
+#view-pilotage .pl-rd-wrap:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+#view-pilotage .pl-rd-tab{width:100%;border-collapse:collapse;font:400 var(--t-caption)/var(--lh-caption) var(--f-body)}
+#view-pilotage .pl-rd-tab th,#view-pilotage .pl-rd-tab td{padding:var(--sp-2);text-align:right;vertical-align:top;border-bottom:1px solid var(--line)}
+#view-pilotage .pl-rd-tab tbody tr:last-child th,#view-pilotage .pl-rd-tab tbody tr:last-child td{border-bottom:0}
+#view-pilotage .pl-rd-tab th:first-child,#view-pilotage .pl-rd-tab td[colspan]{text-align:left}
+#view-pilotage .pl-rd-tab thead th{color:var(--muted);font-weight:600}
+#view-pilotage .pl-rd-tab tbody th{font-weight:600;white-space:nowrap}
+#view-pilotage .pl-rd-tab td{font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
+#view-pilotage .pl-rd-tab td[colspan]{white-space:normal;color:var(--muted)}
+#view-pilotage .pl-rd-note{margin:0;font-size:var(--t-caption);line-height:var(--lh-caption);color:var(--muted);max-width:620px}
 #view-pilotage .pl-tete-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 #view-pilotage .pl-tete-acts > span{display:contents}
 /* 3 mini-indicateurs en une rangée : plus-values latentes, épargne de précaution, à recevoir */
@@ -160,7 +181,7 @@
   #view-pilotage .pl-mode{width:100%}
   #view-pilotage .pl-faits li{padding:var(--sp-3) var(--sp-2)}
 }
-@media (prefers-reduced-motion:reduce){#view-pilotage .pl-g-chev{transition:none}}
+@media (prefers-reduced-motion:reduce){#view-pilotage .pl-g-chev,#view-pilotage .pl-rd-chev{transition:none}}
 
 /* Suivi des lignes (suivi-view.css) : rôle sous le nom, météo sous le montant, bloc du système */
 #view-pilotage .pl-systeme h2{margin:0 0 var(--sp-3);font:650 var(--t-h2)/var(--lh-h2) var(--f-display)}
