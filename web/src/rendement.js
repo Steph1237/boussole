@@ -207,8 +207,9 @@
     return C && C.blocsPhoto ? C.blocsPhoto(snap, scope) : null;
   }
   /** Relevés des placements, flux et allocations d'un état du store (S.snapshots, S.positions, S.tx, S.classes), pour un périmètre (foyer | p1 | p2).
-      Valeur d'un relevé = valeur du périmètre − poches « comptes courants » ; point du jour = lignes vivantes hors comptes courants. flux : versements, versements programmés (entrées)
-      et retraits (sorties) des lignes de placement ; un achat, une vente ou un nouveau solde reste interne. → { points, flux, versementsConnus, allocations: [{ date, poche }], notes }. */
+      Valeur d'un relevé = valeur du périmètre − poches « comptes courants » ; point du jour = lignes vivantes hors comptes courants. flux : versements, versements programmés (entrées),
+      retraits et rachats (sorties) des lignes de placement ; un achat ou une vente est un flux (+ montant + frais, − [montant − frais]) seulement sur une ligne cotée dont l'enveloppe n'a pas de ligne
+      d'espèces (les titres seuls sont mesurés), sinon interne ; un nouveau solde, un relevé, des frais, un dividende : jamais ; une transaction qui a un doublon_de est ignorée. → { points, flux, versementsConnus, allocations: [{ date, poche }], notes }. */
   function pointsEtFlux(S, scope, today) {
     const s = S || {}, sc = scope || s.scope || "foyer", C = CALC(), classes = s.classes || {};
     const out = { points: [], flux: [], versementsConnus: false, allocations: [], notes: [] };
@@ -236,13 +237,32 @@
     if (sansPoches) out.notes.push("composition des relevés inconnue : les comptes courants n'ont pas pu être retirés des anciens relevés");
     const parId = new Map(positions.map(p => [p && p.id, p]));
     const tx = Array.isArray(s.tx) ? s.tx : [];
+    /* Espèces d'une enveloppe « suivies » = une ligne d'espèces (drapeau especes, ou nom « Espèces », « Liquidités », « Cash ») parmi les placements ; le périmètre mesure alors titres + espèces
+       et un achat reste interne. Sinon (défaut, D6) il ne mesure que les titres : un achat y fait entrer de l'argent (+ montant + frais), une vente en fait sortir (− [montant − frais]) ;
+       un versement ou un retrait d'espèces sur l'enveloppe, lui, n'entre pas dans la mesure. owner null : toute personne du périmètre. */
+    const ligneEspeces = p => p.especes === true || /\b(especes|liquidites?|cash)\b/.test(String(p.name == null ? "" : p.name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
+    const especesSuivies = (env, owner) => positions.some(q => q && q.envelope === env && (owner == null || q.owner === owner) && C.inScope(q, sc) && C.counted(q) && !courante(q) && ligneEspeces(q));
     tx.forEach(t => {
       if (!t || !isoOk(t.date) || !fini(t.amount) || +t.amount === 0) return;
-      const sens = t.type === "versement" || t.type === "programme" ? 1 : t.type === "retrait" ? -1 : 0;
-      if (!sens) return;
+      if ((t.doublonDe != null ? t.doublonDe : t.doublon_de) != null) return; /* remplacée par un import : ignorée partout (spec § 4.4) */
+      const m = Math.abs(+t.amount), frais = fini(t.frais) ? Math.max(0, +t.frais) : 0, type = t.type;
+      const entree = type === "versement" || type === "programme", sortie = type === "retrait" || type === "rachat";
       const p = parId.get(t.positionId);
-      if (p ? !C.inScope(p, sc) || courante(p) : sc !== "foyer") return;
-      out.flux.push({ date: String(t.date).slice(0, 10), montant: sens * Math.abs(+t.amount) });
+      let montant = 0;
+      if (p) {
+        if (!C.inScope(p, sc) || courante(p)) return;
+        if (entree) montant = m;
+        else if (sortie) montant = -m;
+        else if (p.mode === "market" && !especesSuivies(p.envelope, p.owner)) montant = type === "achat" ? m + frais : type === "vente" ? -(m - frais) : 0;
+      } else if (t.enveloppe != null && t.enveloppe !== "") {
+        /* mouvement d'enveloppe sans ligne (versement d'espèces) : flux seulement si les espèces sont suivies */
+        if (!especesSuivies(t.enveloppe, null)) return;
+        montant = entree ? m : sortie ? -m : 0;
+      } else {
+        if (sc !== "foyer") return;
+        montant = entree ? m : type === "retrait" ? -m : 0;
+      }
+      if (montant) out.flux.push({ date: String(t.date).slice(0, 10), montant });
     });
     out.flux.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     out.versementsConnus = tx.length > 0;
