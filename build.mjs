@@ -7,6 +7,8 @@
 // Tous les chemins sont relatifs : GitHub Pages sert le site sous /boussole/.
 // `node build.mjs --dev` écrit dans dist-dev/ (même contenu, sortie séparée pour la prévisualisation).
 //   `--out=<dossier>` : sortie ailleurs (chemin relatif au dépôt, ou absolu).
+//   `--config=preprod` : préproduction locale (SEC5). config.js vient de .preprod/web-config.js (généré par scripts/preprod/env.mjs,
+//   ou `--config-file=<chemin>`), la sortie va dans dist-preprod/. Une configuration qui nomme la production est refusée.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, copyFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +18,17 @@ const WEB = join(ROOT, "web");
 const SRC = join(WEB, "src");
 const DEV = process.argv.includes("--dev");
 const outArg = process.argv.find(a => a.startsWith("--out="));
-const OUT = resolve(ROOT, outArg ? outArg.slice(6) : DEV ? "dist-dev" : "dist"); // resolve : un chemin absolu reste celui demandé, un chemin relatif part du dépôt
+const configArg = process.argv.find(a => a.startsWith("--config="));
+const PREPROD = configArg === "--config=preprod";
+if (configArg && !PREPROD) { console.error(`build : --config accepte seulement « preprod » (reçu ${configArg.slice(9)}).`); process.exit(1); }
+const configFileArg = process.argv.find(a => a.startsWith("--config-file="));
+const OUT = resolve(ROOT, outArg ? outArg.slice(6) : PREPROD ? "dist-preprod" : DEV ? "dist-dev" : "dist");
+// Fichier de configuration du front : web/config.js (production) ou, en préproduction, celui que génère scripts/preprod/env.mjs.
+const CONFIG_JS = PREPROD ? resolve(ROOT, configFileArg ? configFileArg.slice(14) : ".preprod/web-config.js") : join(WEB, "config.js");
+if (PREPROD) {
+  if (!existsSync(CONFIG_JS)) { console.error(`build : ${CONFIG_JS} introuvable. Démarre la préproduction (npm run preprod:start) ou lance node scripts/preprod/env.mjs.`); process.exit(1); }
+  if (/oapcewpqsbbjdlcdeizi|supabase\.co/i.test(readFileSync(CONFIG_JS, "utf8"))) { console.error(`build : ${CONFIG_JS} nomme la production ou un projet supabase.co : refus.`); process.exit(1); }
+} // resolve : un chemin absolu reste celui demandé, un chemin relatif part du dépôt
 
 // "actions" n'a plus de sous-vue (sa liste passe dans la boîte de réception d'Aujourd'hui) : son script reste chargé
 // pour window.Actions, son fragment n'est plus posé dans la coque.
@@ -63,7 +75,7 @@ writeFileSync(join(OUT, "index.html"), wrap(read(join(WEB, "index.html")) || "<t
 for (const s of scripts) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
 // Scripts des pages autonomes (hors app.html) : copiés sans être injectés dans l'application.
 for (const s of ["consent", "landing", "account", "projection-worker"]) if (existsSync(join(SRC, `${s}.js`))) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
-if (existsSync(join(WEB, "config.js"))) copyFileSync(join(WEB, "config.js"), join(OUT, "config.js"));
+if (existsSync(CONFIG_JS)) copyFileSync(CONFIG_JS, join(OUT, "config.js"));
 
 const extra = [];
 const copyIf = rel => { const p = join(WEB, rel); if (existsSync(p)) { mkdirSync(dirname(join(OUT, rel)), { recursive: true }); copyFileSync(p, join(OUT, rel)); extra.push(rel); } };

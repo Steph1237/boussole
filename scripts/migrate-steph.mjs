@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Migre les données de l'artefact « Pilotage patrimoine » (copie locale) vers un compte Boussole.
 //
-//   SUPABASE_SERVICE_KEY=… node scripts/migrate-steph.mjs --email vous@exemple.fr               (aperçu, n'écrit rien)
-//   SUPABASE_SERVICE_KEY=… node scripts/migrate-steph.mjs --email vous@exemple.fr --appliquer   (écrit)
+//   BOUSSOLE_PROD=1 SUPABASE_SERVICE_KEY=… node scripts/migrate-steph.mjs --email vous@exemple.fr               (aperçu, n'écrit rien)
+//   BOUSSOLE_PROD=1 SUPABASE_SERVICE_KEY=… node scripts/migrate-steph.mjs --email vous@exemple.fr --appliquer   (écrit)
+// SEC5 : c'est le seul outil qui vise la PRODUCTION (URL lue dans web/config.js) ; BOUSSOLE_PROD=1 doit être posé explicitement, sinon il refuse.
+// Tous les tests et la CI visent la préproduction locale (voir test/helpers/supabase.mjs).
 //   options : --source <dossier>  (défaut ~/Finance/sources/db) · --remplacer (efface d'abord les placements du compte)
 //
 // Le compte doit exister (inscription sur Boussole, e-mail confirmé). La clé de service n'est lue que dans l'environnement.
@@ -23,6 +25,7 @@ const EMAIL = (opt("--email") || "").trim().toLowerCase();
 const eur = v => new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v) + " €";
 const die = m => { console.error("✖ " + m); process.exit(1); };
 
+if (process.env.BOUSSOLE_PROD !== "1") die("Cet outil écrit dans la base de PRODUCTION. Pose BOUSSOLE_PROD=1 pour confirmer (et SUPABASE_SERVICE_KEY de production, dans l'environnement seulement).");
 if (!hasServiceKey) die("SUPABASE_SERVICE_KEY absente de l'environnement.");
 if (!EMAIL) die("Indiquez --email <adresse du compte Boussole>.");
 if (!existsSync(join(SOURCE, "positions"))) die("Dossier source introuvable : " + SOURCE);

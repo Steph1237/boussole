@@ -31,11 +31,13 @@
 // les cours du jour, 125 s pendant les frais des fonds). Le compte rendu sépare les erreurs (job_runs.errors, job_runs.ok faux)
 // des avertissements (réponse et journaux seulement : ils ne rendent pas la nuit fautive).
 // Variables d'environnement : SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY (fournies par la plateforme) ; BINANCE_API_KEY et
-// BINANCE_API_SECRET (facultatives, secrets du projet, jamais journalisées).
+// BINANCE_API_SECRET (facultatives, secrets du projet, jamais journalisées). Préproduction locale (SEC5) : BOUSSOLE_HORS_LIGNE=1 coupe
+// tout appel externe (Yahoo, Euronext, Binance, frais des fonds, rattrapage) et lit les cours dans BOUSSOLE_COURS_FIGES
+// (« ISIN=prix,ISIN=prix ») ; sans cette variable, rien ne change.
 // Le client Supabase a la clé de service : toute lecture ou écriture de données personnelles filtre user_id.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  arrondi6, convertir, convertirAvecSerie, decalerDate, devise, lignesCours, paquets, parisDate, serieEuronext, serieYahoo,
+  arrondi6, convertir, convertirAvecSerie, coursFiges, decalerDate, devise, lignesCours, paquets, parisDate, serieEuronext, serieYahoo,
 } from "./cours.ts";
 import type { LigneCours, Point } from "./cours.ts";
 import { actifDeIsin, agreger, BinanceErreur, client as clientBinance, ENVELOPPE_BINANCE, memeEnveloppe, nomActif, planBinance } from "./binance.ts";
@@ -70,6 +72,9 @@ export const deps = {
   attendre: (ms: number) => new Promise((r) => setTimeout(r, ms)),
 };
 
+// Mode hors ligne du passage en cours (BOUSSOLE_HORS_LIGNE=1, préproduction seulement) : tout appel externe est refusé.
+let horsLigne = false;
+
 // Budget du passage en cours : début (horloge) et limite des appels réseau (ms écoulées).
 let debut = 0;
 let finAppels = APPELS_FIN_MS;
@@ -82,6 +87,7 @@ function signalAppel(ms = DELAI_APPEL_MS): AbortSignal {
 
 /** fetch sous délai ; un abandon devient « délai dépassé ». */
 async function appel(url: string, init: Record<string, unknown> = {}): Promise<Response> {
+  if (horsLigne) throw new Error("hors ligne : appel externe refusé");
   try {
     return await deps.fetch(url, { ...init, signal: signalAppel() });
   } catch (e) {
@@ -449,6 +455,8 @@ Deno.serve(async (req) => {
   if (check.data !== true) return json({ ok: false, error: "non autorisé" }, 401);
 
   fxCache.clear(); fxSerieCache.clear(); micCache.clear(); yahooSession = null;
+  horsLigne = deps.env("BOUSSOLE_HORS_LIGNE") === "1";
+  const figes = horsLigne ? coursFiges(deps.env("BOUSSOLE_COURS_FIGES")) : null;
   const started = deps.maintenant();
   debut = deps.horloge();
   const errors: RunError[] = [];
@@ -497,6 +505,15 @@ Deno.serve(async (req) => {
             const { error } = await admin.from("instruments").update(row).eq("isin", isin);
             if (error) errors.push({ isin, error: `mise à jour : ${error.message}` });
             else { updated++; coursDuJour.push({ isin, date: row.price_date, cloture: 1, source: "fixe" }); }
+            continue;
+          }
+          if (figes) { // hors ligne : cours figés du fichier fourni, aucun appel externe
+            const prix = figes.get(isin);
+            if (prix === undefined) continue;
+            const row = { price: arrondi6(prix), price_date: aujourdhui(), source: "fige" };
+            const { error } = await admin.from("instruments").update(row).eq("isin", isin);
+            if (error) errors.push({ isin, error: `mise à jour : ${error.message}` });
+            else { updated++; coursDuJour.push({ isin, date: row.price_date, cloture: row.price, source: "fige" }); }
             continue;
           }
           const canFallback = REAL_ISIN.test(isin) && String(ins.currency || "EUR").toUpperCase() === "EUR";
@@ -560,7 +577,7 @@ Deno.serve(async (req) => {
     // 4. Binance (lecture seule), si le temps restant le permet : une erreur n'arrête pas la nuit.
     finAppels = APPELS_FIN_MS;
     try {
-      binance = await synchroniserBinance(admin, errors, avertissements);
+      binance = horsLigne ? { etat: "hors ligne" } : await synchroniserBinance(admin, errors, avertissements);
     } catch {
       errors.push({ error: "binance : erreur inattendue, synchronisation interrompue." });
       binance = { etat: "erreur" };
@@ -568,7 +585,9 @@ Deno.serve(async (req) => {
 
     // 5. Rattrapage de l'historique (au plus 10 ISIN) ; aucun nouveau rattrapage après ~110 s.
     try {
-      if (ecoule() > RATTRAPAGE_FIN_MS) {
+      if (horsLigne) {
+        avertissements.push("rattrapage : hors ligne, aucun appel externe.");
+      } else if (ecoule() > RATTRAPAGE_FIN_MS) {
         avertissements.push("rattrapage : temps écoulé, reporté à la prochaine nuit.");
       } else {
         const aRattraper = await admin.rpc("cours_a_rattraper", { p_limite: RATTRAPAGES_MAX });
@@ -608,7 +627,9 @@ Deno.serve(async (req) => {
     // est un avertissement. Le TER n'est écrit que s'il est absent ou de source Yahoo ; un TER tiré d'un DIC passe avant, sauf s'il a
     // plus de 365 jours et s'écarte de plus de 50 % du chiffre Yahoo (remplaceTerDic).
     try {
-      if (ecoule() > FRAIS_FIN_MS) {
+      if (horsLigne) {
+        avertissements.push("frais des fonds : hors ligne, aucun appel externe.");
+      } else if (ecoule() > FRAIS_FIN_MS) {
         avertissements.push("frais des fonds : temps écoulé, reportés à la prochaine nuit.");
       } else {
         finAppels = FRAIS_APPELS_FIN_MS;
@@ -677,6 +698,6 @@ Deno.serve(async (req) => {
   console.log(`nightly: ${users} utilisateur(s), ${recurring} versement(s), ${errors.length} erreur(s), ${avertissements.length} avertissement(s), ${ecoule()} ms`);
   return json({
     ok: !fin.error, instruments_updated: updated, cours_enregistres: coursEnregistres, rattrapages, frais, binance,
-    users, recurring_applied: recurring, errors, avertissements,
+    users, recurring_applied: recurring, errors, avertissements, ...(horsLigne ? { hors_ligne: true } : {}),
   });
 });

@@ -2,7 +2,7 @@
 //
 // POST {isin} → 200 {symbol, name, exchange, currency?} | 404 {error:"introuvable"}
 //             | 502 {error:"source indisponible"}.
-// Déployée avec verify_jwt = true (utilisateur connecté requis). CORS limité à
+// Déployée avec verify_jwt = true (utilisateur connecté requis ; en préproduction locale, [functions.resolve-symbol] de preprod/config.toml). CORS limité à
 // https://steph1237.github.io et http://localhost:<port>.
 // Les places en euros (Paris, Amsterdam, Xetra/Francfort, Milan) sont préférées.
 
@@ -84,6 +84,8 @@ Deno.serve(async (req) => {
     return json({ error: "corps JSON attendu" }, 400);
   }
   if (!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin)) return json({ error: "ISIN invalide" }, 400);
+  // SEC5 : préproduction locale hors ligne (BOUSSOLE_HORS_LIGNE=1) → aucun appel à Yahoo ; sans la variable, rien ne change.
+  if (Deno.env.get("BOUSSOLE_HORS_LIGNE") === "1") return json({ error: "source indisponible" }, 502);
 
   let quotes: Record<string, unknown>[] = [];
   try {

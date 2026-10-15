@@ -213,6 +213,38 @@ Des tests unitaires couvrent chaque refus.
 - **Flux sortants.** Préproduction : aucun (nuit hors ligne, Powens sans secret, tâches vers la production désarmées). Banc : seulement `api.anthropic.com`, avec des données fictives. Le lanceur vérifie au démarrage que la cible MCP est locale.
 - **Accès administrateur de Claude Code.** Avec la préproduction, le développement n'a plus besoin du connecteur Supabase de production : il est coupé par défaut dans les sessions de développement, rebranché seulement pour une opération de production écrite (migration vérifiée par md5, déploiement). Décision de Stéph (D5).
 
+### 3.12 Constats de la mise en œuvre (phases 1 à 4, 2026-10-15, CLI 2.107.0, GoTrue v2.190.0, PostgREST v14.13, PostgreSQL 17.6)
+
+**Mode d'emploi** : `colima start` ; `npm run preprod:start` (préparer, démarrer, variables, comptes) ; `npm run preprod:fonctions` (autre terminal) ;
+`npm run preprod:fumee` ; `npm run preprod:test` (suite complète, tests d'intégration compris) ; `npm run preprod:app` (http://localhost:8780/app.html) ;
+`npm run preprod:reset` (base neuve + comptes) ; `npm run preprod:stop`. `PREPROD_STUDIO=1` ajoute Studio et postgres-meta (≈ 300 Mo).
+
+**Ce qui diffère du plan, et pourquoi**
+
+| Plan / spec | Réalité | Traitement |
+|---|---|---|
+| `-x analytics,vector,imgproxy,inbucket` | Noms de conteneurs du CLI 2.107.0 : `logflare,vector,imgproxy,mailpit` ; `analytics` et `inbucket` sont ignorés avec un avertissement et l'analytique démarre (non saine sous charge) | `-x logflare,vector,imgproxy,mailpit,realtime,storage-api` (+ `studio,postgres-meta` par défaut) : Boussole n'utilise ni realtime ni le stockage ; mémoire de la pile ≈ 0,4 Go (base, Kong, PostgREST, GoTrue, fonctions) au lieu de ≈ 1,0 Go avec tous les services |
+| Ports 54321 à 54329 | D'autres piles locales de la machine (autres projets) occupent 54321-54324 et 54421-54424 : `Bind … port is already allocated` | `preprod/config.toml` : ports 545xx (api 54521, base 54522, studio 54523…), testés par la parité |
+| URL locale `http://127.0.0.1:54321` | `http://127.0.0.1:54521` | lue partout dans `supabase status`, jamais codée |
+| `service_role` écrit dans les tables | Le CLI 2.107.0 n'accorde rien à `service_role` sur les tables créées par les migrations (`permission denied for table instruments`) ; les migrations comptent sur l'exposition automatique de la production | `auto_expose_new_tables = true` dans `preprod/config.toml` (clé ajoutée, testée). **Le champ disparaît du CLI le 2026-10-30** (commentaire du `config.toml`) : après cette date, vérifier que les migrations s'appliquent encore (GRANT explicites à prévoir par une migration, à décider) |
+| Clés locales `sb_secret_…` | Le début des clés `sb_publishable_` et `sb_secret_` est celui des clés par défaut du CLI ; les JWT locaux portent `iss = supabase-demo` | `assertCleLocale` les reconnaît ; l'API d'administration est appelée avec le JWT `service_role` |
+| 31 migrations sur une base neuve | Toutes s'appliquent, sans erreur ni correction, et `db reset` rejoue migrations + graine | rien à corriger |
+| Avertissements `db advisors` | 24 × `auth_rls_initplan` (WARN, performance) : les politiques « aal2 si facteur » de la migration 0028 appellent `auth.jwt()` sans `(select …)` ; aucun avertissement de sécurité | à reprendre dans une future migration (ne rien modifier ici) |
+| Lien symbolique pour `functions/` | Rechargement à chaud vérifié (≈ 6 s) | lien par défaut, `--copie` en repli |
+| Libellé bancaire « avec un faux numéro de compte » | `banque_operations.libelle` est protégé par `contenu_sensible` (CHECK) : un tel libellé ne peut pas exister en base (testé) | le faux numéro de compte ne vient jamais d'une opération : il se teste dans un message de l'utilisateur ; le libellé piégé porte la consigne et le canari |
+| `tools/list` = 57 outils | 59 outils, dont 58 visibles par le modèle (`soumettre_formulaire` est réservé à la page) | la fumée exige au moins 57 et affiche le nombre |
+| Tests de limite (journal 2 000, mémoire 200) | PostgREST 14 répond HTTP 500 « Something went wrong » à l'exception SQL de code 54000, au lieu de son message | les tests acceptent le masque et relisent le compte (export_all) qui prouve le refus ; **à vérifier** : la production a-t-elle la même version de PostgREST (le texte « Journal plein… » est-il affiché dans l'app ?) |
+
+**Réseau (§ 3.10 mesuré)** : Docker (colima, Virtualization.Framework) publie les ports de la pile sur toutes les interfaces : `lsof` montre `*:54521`,
+`*:54522`, … tenus par le processus `ssh` du transfert de ports de colima ; l'API répond sur l'adresse du réseau local de la machine (vérifié) et le
+pare-feu macOS était désactivé. Le CLI l'affiche lui-même (« All services bind to 0.0.0.0 »). Atténuations : `npm run preprod:start` détecte et affiche l'avertissement
+(`exposition.mjs`) ; réseau de confiance seulement ; `npm run preprod:stop` après usage ; aucun tunnel ; données fictives. Pistes non appliquées (elles touchent
+aux réglages système ou à colima, partagé avec d'autres projets) : activer le pare-feu macOS ; configurer l'adresse d'écoute des redirections de ports de colima
+(Lima `portForwards` avec `hostIP: 127.0.0.1`) ; `"ip": "127.0.0.1"` dans la configuration du démon Docker de colima.
+
+**SEC2** : voir `2026-10-14-sec2-mfa-design.md` : `mfa.enroll` à `aal1` avec un facteur vérifié est refusé (403 `insufficient_aal`) ; le jeton OAuth est toujours `aal1`, même
+après un consentement en session `aal2` (le connecteur et la RLS le refusent bien : un compte à double authentification ne peut pas ouvrir le connecteur).
+
 ### 3.11 Option : projet cloud de préproduction (non retenue par défaut)
 
 | | Local (retenu) | Projet cloud séparé | Branches Supabase |

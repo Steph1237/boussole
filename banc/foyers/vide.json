@@ -1,0 +1,13 @@
+{
+  "slug": "vide",
+  "titre": "Compte neuf, rien de saisi",
+  "description": "Un compte qui vient d'être créé : aucune donnée, onboarding à faire. Sert à l'onboarding de bout en bout.",
+  "mfa": false,
+  "jeton": "session",
+  "profil": { "onboarding_done": false },
+  "biens": [],
+  "credits": [],
+  "positions": [],
+  "budget": [],
+  "objectifs": []
+}

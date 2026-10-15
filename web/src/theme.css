@@ -21,6 +21,9 @@
   --dv-observed:var(--ink); --dv-recon:var(--muted); --dv-median:var(--brand); --dv-grid:var(--line); --dv-today:rgb(22 32 42 / .6);
   --fan-in:rgb(22 88 94 / .22); --fan-out:rgb(22 88 94 / .10); --fan-edge:rgb(22 88 94 / .40);
   --ms-goal:#9C5C00; --ms-credit:#3D5A99; --ms-life:#6B4FA0;
+  /* statut d'un objectif (anneau de progression, ligne de cible, halo) : atteint = vert, dans les temps = marque, en retard = ambre, hors de portée = rouge sourdine, sans verdict = muted ;
+     jamais la couleur seule (le mot est dans l'info-bulle et la liste) ; texte ≥ 4,5:1 et trait ≥ 3:1 sur la surface et le fond */
+  --ms-ok:var(--pos); --ms-track:var(--brand); --ms-late:var(--ms-goal); --ms-off:#A64B42; --ms-idle:var(--muted);
   --s1:var(--brand); --s2:#4C6FB8; --s3:#9C6A1E; --s4:#7A4E8C; --s5:#287A89; --s6:#9C4A3A; --s7:#6D7F36; --s8:#6F767E; --s9:#B08A1F;
   --s1-soft:var(--brand-soft); --s2-soft:#E1E7F3; --s4-soft:#EEE4F1;
   /* rampe séquentielle (classes sociales, niveaux de patrimoine), du plus modeste au plus aisé, teinte pétrole */
@@ -45,6 +48,7 @@
   --dv-today:rgb(232 237 234 / .6);
   --fan-in:rgb(98 199 190 / .26); --fan-out:rgb(98 199 190 / .12); --fan-edge:rgb(98 199 190 / .45);
   --ms-goal:#F0B44C; --ms-credit:#8EA8E8; --ms-life:#B79BE6;
+  --ms-off:#E8897D;
   --s2:#7E9BDB; --s3:#DDA55A; --s4:#B88BCB; --s5:#5CC0CF; --s6:#DB8574; --s7:#A9BC6A; --s8:#9AA3AB; --s9:#E2C660;
   --s2-soft:#212B44; --s4-soft:#33243B;
   --q0:#1E2D2F; --q1:#23393B; --q2:#2B4A4D; --q3:#345D61; --q4:#3F7176; --q5:#4F868D; --q6:#659EA4; --q7:#87B9BE; --q8:#B3D6DA;
@@ -65,6 +69,7 @@
   --dv-today:rgb(232 237 234 / .6);
   --fan-in:rgb(98 199 190 / .26); --fan-out:rgb(98 199 190 / .12); --fan-edge:rgb(98 199 190 / .45);
   --ms-goal:#F0B44C; --ms-credit:#8EA8E8; --ms-life:#B79BE6;
+  --ms-off:#E8897D;
   --s2:#7E9BDB; --s3:#DDA55A; --s4:#B88BCB; --s5:#5CC0CF; --s6:#DB8574; --s7:#A9BC6A; --s8:#9AA3AB; --s9:#E2C660;
   --s2-soft:#212B44; --s4-soft:#33243B;
   --q0:#1E2D2F; --q1:#23393B; --q2:#2B4A4D; --q3:#345D61; --q4:#3F7176; --q5:#4F868D; --q6:#659EA4; --q7:#87B9BE; --q8:#B3D6DA;

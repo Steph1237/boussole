@@ -5,3 +5,7 @@ node_modules/
 .DS_Store
 tmp/
 dist-*/
+.preprod/
+dist-preprod/
+banc/resultats/
+banc/porte.json

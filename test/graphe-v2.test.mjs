@@ -154,16 +154,20 @@ test("honnêteté : la médiane qui finit sous « sans versement » et une épar
   assert.equal(G.alerteEpargne(G.normaliser(donnees({ sansFutur: true }))), null); const cap = G.normaliser(Object.assign(donnees(), { mode: "capacite" })); assert.equal(G.alerteEpargne(cap), null);
 });
 
-test("honnêteté (DOM) : le bandeau est sous le tracé de la carte et du plein écran, avec le lien « Compléter avec Claude » (ClaudePrompts) ; absent quand tout va bien", () => {
+test("honnêteté (DOM) : la carte et le paysage ont une puce ambre dans l'en-tête, le plein écran ordinateur une carte « À savoir » dans le panneau (le tracé n'est pas poussé) ; absent quand tout va bien", () => {
+  /* v3 : le bandeau sous le tracé est remplacé (puce d'en-tête et carte du panneau, voir test/graphe-v3.test.mjs pour le détail de chaque mise en page) ; « Compléter avec Claude » reste partout */
   const t = monter({ donnees: donnees({ capaciteNegative: true }) }), el = t.q("[data-alerte]");
-  assert.equal(el.hidden, false); assert.equal(el.getAttribute("role"), "status");
-  assert.match(sp(el.textContent), /Ton épargne constatée sur 12 mois est négative/); assert.match(sp(el.textContent), /Compléter avec Claude/);
-  const lien = el.querySelector("a"); assert.match(decodeURIComponent(lien.getAttribute("href")), /Boussole : aide-moi à compléter mes revenus\. Concerne : mon nouvel emploi/, "phrase prête de ClaudePrompts (section revenus)");
+  assert.equal(el.hidden, false); assert.match(sp(el.textContent), /Hypothèse : épargne négative/); assert.ok(el.closest(".gp-tete"), "carte : dans l'en-tête");
+  assert.equal(t.qa(".gp-alerte").length, 0, "plus de bandeau sous le tracé");
+  t.q("[data-alerte]").click();
+  assert.match(sp(t.UI.st.corps.textContent), /Ton épargne constatée sur 12 mois est négative/); assert.match(sp(t.UI.st.corps.textContent), /Compléter avec Claude/);
+  const lien = t.UI.st.corps.querySelector("a"); assert.match(decodeURIComponent(lien.getAttribute("href")), /Boussole : aide-moi à compléter mes revenus\. Concerne : mon nouvel emploi/, "phrase prête de ClaudePrompts (section revenus)");
   const p = monter({ donnees: donnees({ capaciteNegative: true }), window: fenetre(1440, 900) }); p.api.pleinEcran();
   const bu = p.doc.body.querySelector(".gp-fsv-bureau"); assert.equal(bu.querySelector("[data-alerte]").hidden, false); assert.match(sp(bu.querySelector("[data-alerte]").textContent), /Compléter avec Claude/);
+  assert.ok(bu.querySelector("[data-alerte]").closest(".gp-fs-side"), "ordinateur : dans le panneau latéral");
   p.api.fermerPleinEcran();
   const pa = monter({ donnees: donnees({ capaciteNegative: true }), window: fenetre(844, 390) }); pa.api.pleinEcran();
-  assert.ok(pa.doc.body.querySelector(".gp-fsv-paysage").querySelector("[data-alerte]").closest(".gp-fs-side"), "paysage : le bandeau est dans le panneau, le tracé garde sa hauteur");
+  assert.ok(pa.doc.body.querySelector(".gp-fsv-paysage").querySelector("[data-alerte]").closest(".gp-fs-bar"), "paysage : une puce dans la barre, le tracé garde sa hauteur");
   pa.api.fermerPleinEcran();
   assert.equal(monter().q("[data-alerte]").hidden, true);
   const lect = monter({ donnees: donnees({ capaciteNegative: true }) }); lect.api.curseur(ms(plusMois(AUJ, 1)));

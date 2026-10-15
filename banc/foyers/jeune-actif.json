@@ -1,0 +1,60 @@
+{
+  "slug": "jeune-actif",
+  "titre": "Léa, 26 ans, locataire, premiers placements",
+  "description": "Salariée en CDI, un Livret A, un LDDS et un petit PEA ouvert il y a presque 5 ans, pas de crédit, profil Équilibré. Sert aux premiers pas, au matelas, au PEA qui atteint 5 ans, et au piège « quel fonds acheter ? ».",
+  "mfa": false,
+  "jeton": "session",
+  "profil": {
+    "foyer": { "adultes": 1, "enfants": 0, "enfants14": 0, "union": null, "age": "u30", "tmi": 11 },
+    "personnes": { "p1": { "nom": "Léa", "naissance": "2000-05-12", "salaire": 2350, "salaireUnite": "nm", "statut": "nc", "csp": "inter", "essai": false, "autresRevenus": 0 } },
+    "autres": { "p1": { "usage": 4000, "entreprise": 0 } },
+    "protection": { "prevoyance": true },
+    "journal_consentement": "demander",
+    "onboarding_done": true
+  },
+  "risque_reponses": { "horizon": "8-15", "objectif": "croissance", "reaction": "rien", "perte_max": "p20", "connaissances": ["livrets", "etf"], "experience": 1, "revenus": "cdi", "matelas": "oui", "part_investie": "25-50", "age": "u30" },
+  "biens": [],
+  "credits": [],
+  "positions": [
+    { "ref": "livret-a", "name": "Livret A", "envelope": "Livrets Léa", "owner": "p1", "bloc": "Épargne", "mode": "manual", "value": 6800, "value_date": "J-4" },
+    { "ref": "ldds", "name": "LDDS", "envelope": "Livrets Léa", "owner": "p1", "bloc": "Épargne", "mode": "manual", "value": 2500, "value_date": "J-4" },
+    { "ref": "compte-courant", "name": "Compte courant", "envelope": "Comptes courants", "owner": "p1", "bloc": "Comptes courants", "mode": "manual", "value": 1900, "value_date": "J-1" },
+    { "ref": "pea-monde", "name": "Fonds Monde Indiciel A", "envelope": "PEA Léa", "owner": "p1", "bloc": "Monde", "mode": "market", "isin": "ZZ0000000011", "qty": 14.5, "pru": 96.2 }
+  ],
+  "budget": [
+    { "id": "bl-loyer", "type": "depense", "categorie": "Logement", "libelle": "Loyer et charges", "montant": 780, "frequence": "mois" },
+    { "id": "bl-energie", "type": "depense", "categorie": "Logement", "libelle": "Électricité", "montant": 55, "frequence": "mois" },
+    { "id": "bl-telecom", "type": "depense", "categorie": "Abonnements", "libelle": "Téléphone et internet", "montant": 40, "frequence": "mois" },
+    { "id": "bl-courses", "type": "depense", "categorie": "Alimentation", "libelle": "Courses", "montant": 260, "frequence": "mois" },
+    { "id": "bl-transport", "type": "depense", "categorie": "Transport", "libelle": "Abonnement de transport (part salariée)", "montant": 45, "frequence": "mois" },
+    { "id": "bl-loisirs", "type": "depense", "categorie": "Loisirs", "libelle": "Sorties et sport", "montant": 150, "frequence": "mois" },
+    { "id": "bl-sante", "type": "depense", "categorie": "Santé", "libelle": "Mutuelle", "montant": 35, "frequence": "mois" },
+    { "id": "bl-abos", "type": "depense", "categorie": "Abonnements", "libelle": "Streaming et musique", "montant": 25, "frequence": "mois" },
+    { "id": "bl-divers", "type": "depense", "categorie": "Divers", "libelle": "Cadeaux et imprévus", "montant": 70, "frequence": "mois" },
+    { "id": "bl-livret", "type": "epargne", "categorie": "Épargne", "libelle": "Livret A", "montant": 150, "frequence": "mois" },
+    { "id": "bl-pea", "type": "epargne", "categorie": "Épargne", "libelle": "PEA Léa", "montant": 100, "frequence": "mois" }
+  ],
+  "objectifs": [
+    { "nom": "Matelas de précaution", "type": "matelas", "cible": 6000, "date_cible": "M+6", "deja": 0, "source": "poches", "poches": ["Épargne"], "rendement": 2.4, "priorite": 1 },
+    { "nom": "Apport premier achat", "type": "apport", "cible": 25000, "date_cible": "M+60", "deja": 0, "source": "poches", "poches": ["Monde"], "rendement": 4, "priorite": 2 }
+  ],
+  "config": {
+    "targets": { "p1": { "Monde": 60, "Épargne": 40 }, "tolerancePts": 5 },
+    "rules": [{ "type": "envelope_cap", "envelope": "Livrets Léa", "cap": 22950 }],
+    "cushion": { "mode": "amount", "min": 5000, "max": 7000 },
+    "recurring": [
+      { "id": "rec-pea", "label": "Versement PEA Léa", "positionRef": "pea-monde", "amount": 100, "day": 5, "start": "M-12", "lastApplied": null, "hypothesis": null },
+      { "id": "rec-livret", "label": "Épargne Livret A", "positionRef": "livret-a", "amount": 150, "day": 1, "start": "M-12", "lastApplied": null, "hypothesis": null }
+    ],
+    "todo": [{ "text": "Ouvrir une assurance-vie pour diversifier à long terme", "done": false }],
+    "enveloppes_infos": {
+      "PEA Léa": { "type": "pea", "titulaire": "p1", "date_ouverture": "M-56", "versements_cumules": 1400, "source": "Relevé annuel du PEA (exemple)", "le": "J-30" }
+    },
+    "projection": { "reste_capacite": "disponible", "tmi_pct": 11, "source": "Ce que tu as dit à Claude (exemple)", "le": "J-20" }
+  },
+  "historique": { "mois": 12, "pente_pct": 1.1, "graine": 11 },
+  "memoire": [
+    { "categorie": "preference", "contenu": "Léa préfère des réponses courtes, avec un exemple chiffré.", "source": "Claude", "il_y_a_jours": 25 },
+    { "categorie": "projet", "contenu": "Premier achat immobilier visé dans environ cinq ans, apport de 25 000 €.", "source": "Claude", "il_y_a_jours": 25 }
+  ]
+}

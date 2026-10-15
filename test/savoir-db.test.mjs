@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { hasServiceKey, SKIP_REASON, adminClient, userClient, createTestUser, deleteTestUser } from "./helpers/supabase.mjs";
+import { hasServiceKey, SKIP_REASON, erreurMasquee, adminClient, userClient, createTestUser, deleteTestUser } from "./helpers/supabase.mjs";
 
 const sql = readFileSync("supabase/migrations/0009_savoir_memoire.sql", "utf8");
 
@@ -88,7 +88,8 @@ test("intégration : mémoire privée, filtre sensible, limite, marquer_savoir_v
     const rows = Array.from({ length: 199 }, (_, i) => ({ categorie: "explique", contenu: "Notion " + i }));
     assert.equal((await a.client.from("memoire_agent").insert(rows)).error, null);
     const trop = await a.client.from("memoire_agent").insert({ categorie: "explique", contenu: "201e" });
-    assert.match(String(trop.error?.message), /200 souvenirs/);
+    assert.ok(trop.error, "201e souvenir refusé");
+    assert.ok(erreurMasquee(trop.error) || /200 souvenirs/.test(String(trop.error.message)), String(trop.error.message)); // le compte relu plus bas (200) prouve le refus
     const v1 = await a.client.rpc("marquer_savoir_vu", { p_client_id: "test" });
     assert.equal(v1.error, null); assert.equal(v1.data, null);
     const v2 = await a.client.rpc("marquer_savoir_vu", { p_client_id: "test" });
