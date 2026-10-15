@@ -337,7 +337,7 @@
     if (estFonds) {
       const rf = REPERE_CLASSE(l.classe), total = l.ter != null ? l.ter + fraisTotal(ctx, l) : null;
       if (l.ter == null) base("cout", "a_completer", { repere: rf ? { texte: rf.texte, bas: rf.bas, haut: rf.haut } : null, manque: ["Les frais courants de ce fonds (DIC)"],
-        pourquoi: "Pas de constat sur le coût : les frais courants du fonds ne sont pas renseignés.", source_donnees: "instruments.ter" });
+        pourquoi: "Pas de constat sur le coût : les frais courants du fonds ne sont pas renseignés.", source_donnees: "frais courants du fonds (DIC)" });
       else {
         let statut;
         if (!rf) statut = r6(l.ter) <= 0.4 ? "bon" : "a_surveiller";
@@ -346,7 +346,7 @@
         else statut = "a_surveiller";
         const texteRepere = rf ? rf.texte : "pas de repère de frais pour cette classe : au plus « à surveiller » au-delà de 0,40 % par an";
         base("cout", statut, { mesure: { valeur: l.ter, unite: "%", texte: pct(l.ter, 2) + " de frais courants par an" + (total != null && total > l.ter ? " (" + pct(total, 2) + " avec les frais d'enveloppe)" : "") },
-          repere: rf ? { texte: texteRepere, bas: rf.bas, haut: rf.haut } : { texte: texteRepere }, source_donnees: "instruments.ter, repères de frais de CP4",
+          repere: rf ? { texte: texteRepere, bas: rf.bas, haut: rf.haut } : { texte: texteRepere }, source_donnees: "frais courants du fonds (DIC), repères de frais de classe",
           pourquoi: statut === "bon" ? "Les frais courants de la ligne sont dans le bas du repère de leur classe." : statut === "a_surveiller" ? "Les frais courants sont au-dessus du bas du repère de leur classe." : "Les frais courants dépassent le haut du repère de leur classe et 0,50 % par an.",
           calcul: ["Frais courants : " + pct(l.ter, 2), rf ? "Repère de la classe : " + frc(rf.bas, 2) + " à " + frc(rf.haut, 2) + " % par an" : "Classe sans repère de frais", "Seuil du « bon » : bas du repère + " + frc(marge, 2) + " point"],
           donnees: [donnee({ ter: l.ter })] });
@@ -358,18 +358,18 @@
       const statut = r6(poids) > maxPct ? "a_travailler" : r6(poids) >= r6(maxPct * 0.8) ? "a_surveiller" : "bon";
       base("poids", statut, { mesure: { valeur: r4(poids), unite: "%", texte: pct(poids, 1) + " de ton financier investi" }, repere: { texte: "Une ligne du satellite pèse au plus " + frc(maxPct, 0) + " % du financier investi" },
         pourquoi: statut === "a_travailler" ? "Au-dessus du repère de " + frc(maxPct, 0) + " % du financier investi." : statut === "a_surveiller" ? "Proche du repère de " + frc(maxPct, 0) + " % (de 80 à 100 %)." : "Sous le repère de " + frc(maxPct, 0) + " %.",
-        calcul: [eur(l.valeur) + " ÷ " + eur(ctx.I) + " = " + pct(poids, 2)], source_donnees: "positions", donnees: [donnee({ poids_pct: r4(poids) })] });
+        calcul: [eur(l.valeur) + " ÷ " + eur(ctx.I) + " = " + pct(poids, 2)], source_donnees: "tes lignes", donnees: [donnee({ poids_pct: r4(poids) })] });
     }
     /* chevauchement */
     if (estFonds && ctx.nbFonds >= 2) {
       const ch = chevauchementDe(ctx, l);
-      if (!ch) base("chevauchement", "a_completer", { manque: ["Les 10 premières lignes de chaque fonds (données du fournisseur, à venir)"], pourquoi: "Le chevauchement avec tes autres fonds se calcule avec leur composition, pas encore disponible.", source_donnees: "instrument_expositions" });
+      if (!ch) base("chevauchement", "a_completer", { manque: ["Les 10 premières lignes de chaque fonds (pas encore disponibles)"], pourquoi: "Le chevauchement avec tes autres fonds se calcule avec leur composition, pas encore disponible.", source_donnees: "composition des fonds" });
       else {
         const sv = rep("suivi_chevauchement_surveiller_pct"), tr = rep("suivi_chevauchement_travailler_pct"), v = ch.valeur;
         const statut = r6(v) > tr ? "a_travailler" : r6(v) >= sv ? "a_surveiller" : "bon";
         base("chevauchement", statut, { mesure: { valeur: r4(v), unite: "%", texte: pct(v, 1) + " des 10 premières lignes en commun avec un autre de tes fonds" }, repere: { texte: "Moins de " + frc(sv, 0) + " % : bon ; au-delà de " + frc(tr, 0) + " % : doublon" },
           pourquoi: statut === "a_travailler" ? "Un doublon : des frais et de la complexité sans diversification en plus." : statut === "a_surveiller" ? "Une partie notable des principales lignes est la même." : "Peu de lignes en commun.",
-          calcul: ["Poids communs des 10 premières lignes (minimum des deux poids) : " + frc(ch.commun, 2) + " %", "Poids des 10 premières lignes du fonds : " + frc(ch.totA, 2) + " %", "Rapport : " + pct(v, 2)], source_donnees: "instrument_expositions", donnees: [donnee()] });
+          calcul: ["Poids communs des 10 premières lignes (minimum des deux poids) : " + frc(ch.commun, 2) + " %", "Poids des 10 premières lignes du fonds : " + frc(ch.totA, 2) + " %", "Rapport : " + pct(v, 2)], source_donnees: "composition des fonds", donnees: [donnee()] });
       }
     }
     /* classe_risque */
@@ -380,12 +380,12 @@
       base("classe_risque", statut, { mesure: { valeur: vol, unite: "%", texte: "Classe : " + classeLib(l.classe) + ", volatilité historique d'environ " + frc(vol, 0) + " % par an" },
         repere: { texte: "À surveiller dès " + frc(seuilVol, 0) + " % de volatilité ; levier et crypto sont des classes spéculatives" },
         pourquoi: statut === "a_travailler" ? "Classe spéculative : les pertes peuvent dépasser 50 % en quelques mois." : statut === "a_surveiller" ? "Classe plus volatile que les actions du monde développé." : "Classe sans levier ni volatilité extrême.",
-        calcul: ["Volatilité historique de la classe : " + frc(vol, 0) + " % par an (marche.js)"], source_donnees: "marche.js, instruments.levier", donnees: [donnee()] });
+        calcul: ["Volatilité historique de la classe : " + frc(vol, 0) + " % par an (marche.js)"], source_donnees: "statistiques historiques de la classe", donnees: [donnee()] });
     }
     /* solidité */
     if (estFonds) {
       const ins = l.ins || {}, enc = connu(ins.encours_eur) ? +ins.encours_eur : null, dc = ins.date_creation && estDate(ins.date_creation) ? ins.date_creation : null;
-      if (enc == null && !dc) base("solidite", "a_completer", { manque: ["L'encours et la date de création du fonds (données du fournisseur, à venir)"], pourquoi: "Pas de constat sur la solidité du support : encours et ancienneté inconnus.", source_donnees: "instruments (fournisseur)" });
+      if (enc == null && !dc) base("solidite", "a_completer", { manque: ["L'encours et la date de création du fonds (pas encore disponibles)"], pourquoi: "Pas de constat sur la solidité du support : encours et ancienneté inconnus.", source_donnees: "données du fonds (encours, ancienneté)" });
       else {
         const encBon = rep("suivi_encours_bon_eur"), encBas = rep("suivi_encours_bas_eur"), anc = rep("suivi_anciennete_fonds_ans");
         const ans = dc ? moisRevolus(dc, ctx.today) / 12 : null;
@@ -393,7 +393,7 @@
         base("solidite", hors ? "a_surveiller" : "bon", { mesure: { valeur: enc, unite: "€", texte: [enc != null ? "Encours " + eur(enc) : null, ans != null ? "Ancienneté " + frc(ans, 0) + " ans" : null].filter(Boolean).join(", ") },
           repere: { texte: "Encours d'au moins " + eur(encBon) + " et plus de " + frc(anc, 0) + " ans (repères Boussole, sans source publique : jamais au-delà de « à surveiller »)" },
           pourquoi: hors ? (enc != null && enc < encBas ? "Encours bas : un petit fonds peut fermer ou fusionner." : "L'encours ou l'ancienneté sont sous les repères.") : "Encours et ancienneté au-dessus des repères.",
-          calcul: ["Encours : " + (enc != null ? eur(enc) : "inconnu"), "Ancienneté : " + (ans != null ? frc(ans, 1) + " ans" : "inconnue")], source_donnees: "instruments (fournisseur)", confiance: enc != null && dc ? "complete" : "partielle", donnees: [donnee()] });
+          calcul: ["Encours : " + (enc != null ? eur(enc) : "inconnu"), "Ancienneté : " + (ans != null ? frc(ans, 1) + " ans" : "inconnue")], source_donnees: "données du fonds (encours, ancienneté)", confiance: enc != null && dc ? "complete" : "partielle", donnees: [donnee()] });
       }
     }
     /* enveloppe */
@@ -403,7 +403,7 @@
       base("enveloppe", surveille ? "a_surveiller" : "bon", { mesure: { valeur: null, texte: "Enveloppe : " + (l.enveloppe || "non précisée") },
         repere: { texte: "Une enveloppe plus favorable existe-t-elle pour cette classe ? Question posée au niveau de la classe, pas de la ligne" },
         pourquoi: surveille ? "Un PEA du foyer a encore de la place : pour les actions, il est en général plus favorable qu'un compte-titres (si la ligne est éligible au PEA)." : "Rien à dire sur l'enveloppe de cette ligne.",
-        calcul: surveille ? ["Compte-titres, classe " + classeLib(l.classe) + ", et un PEA du foyer sous son plafond de versements"] : [], source_donnees: "DAT1 (enveloppes), repères fiscaux", donnees: [donnee()] });
+        calcul: surveille ? ["Compte-titres, classe " + classeLib(l.classe) + ", et un PEA du foyer sous son plafond de versements"] : [], source_donnees: "calendrier de tes enveloppes, repères fiscaux", donnees: [donnee()] });
     }
     /* devise */
     {
@@ -413,7 +413,7 @@
       base("devise", surveille ? "a_surveiller" : "bon", { mesure: { valeur: r4(partDev), unite: "%", texte: euro ? "En euros" : "En " + l.devise + " : " + pct(partDev, 1) + " de ton financier investi" },
         repere: { texte: "Information : à surveiller seulement pour un profil Prudent au-delà de " + frc(rep("suivi_devise_prudent_pct"), 0) + " % en devises" },
         pourquoi: surveille ? "Plus de " + frc(seuil, 0) + " % de ton financier investi dans une devise autre que l'euro, pour un profil Prudent." : euro ? "Ligne en euros." : "Exposition au change : une information, pas un défaut.",
-        calcul: euro ? [] : [eur(montantDev) + " en " + l.devise + " ÷ " + eur(ctx.I) + " = " + pct(partDev, 1)], source_donnees: "instruments.devise", donnees: [donnee()] });
+        calcul: euro ? [] : [eur(montantDev) + " en " + l.devise + " ÷ " + eur(ctx.I) + " = " + pct(partDev, 1)], source_donnees: "devise du support", donnees: [donnee()] });
     }
     return out;
   }

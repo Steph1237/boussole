@@ -416,6 +416,8 @@ function vueDom(S0, stockage, fakes) {
   vm.runInContext(uiJs, ctx, { filename: "ui.js" });
   vm.runInContext(readFileSync("web/src/claude-prompts.js", "utf8"), ctx, { filename: "claude-prompts.js" });
   vm.runInContext(readFileSync("web/src/comptes-view.js", "utf8"), ctx, { filename: "comptes-view.js" }); // window.ComptesView (adresses des fiches)
+  for (const f of ["reperes.js", "calendrier.js", "plan.js", "marche.js", "projection-outils.js", "projection-fiscalite.js", "risque.js", "pratiques.js", "suivi.js", "suivi-view.js"]) // SUIVI : rôle et météo des lignes
+    vm.runInContext(readFileSync("web/src/" + f, "utf8"), ctx, { filename: f });
   Object.assign(ctx, fakes || {}); // GrapheModele / SerieNet factices (le vrai composant a ses propres tests)
   vm.runInContext(js, ctx, { filename: "pilotage.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
@@ -431,7 +433,7 @@ function vueDom(S0, stockage, fakes) {
 }
 const $ = (root, id) => root.querySelector("#" + id);
 
-test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de regroupement à 4 options, groupes repliés, suivi en accordéons fermés", () => {
+test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de regroupement à 5 options, groupes repliés, suivi en accordéons fermés", () => {
   const { root, api } = vueDom(demoS());
   const total = Calc.financier(DEMO.positions, "foyer");
   assert.equal(sp($(root, "plTotal").textContent), sp(new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.round(total)) + " €"));
@@ -440,7 +442,7 @@ test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de r
   assert.match($(root, "plSous").textContent, /\d+ lignes/);
   assert.equal(root.querySelectorAll(".ui-claude").filter(b => b.closest(".pl-tete")).length, 0, "pas de bouton Claude empilé sous le total (celui de l'en-tête de la coque les couvre)");
   const radios = $(root, "plMode").querySelectorAll('[role="radio"]');
-  assert.deepEqual(radios.map(r => r.textContent), ["Enveloppe", "Poche", "Titulaire", "Disponibilité"]);
+  assert.deepEqual(radios.map(r => r.textContent), ["Enveloppe", "Poche", "Titulaire", "Disponibilité", "Rôle"]);
   assert.ok(root.querySelectorAll("[data-pl-groupe-btn]").length >= 6);
   assert.ok(root.querySelectorAll("[data-pl-groupe-btn]").every(b => b.getAttribute("aria-expanded") === "false"));
   assert.ok(root.querySelectorAll(".pl-g-corps").every(c => c.hidden));
@@ -660,4 +662,88 @@ test("fiches : groupe « Par enveloppe » → « Ouvrir la fiche du compte » ; 
   assert.ok(a, "lien en pied du panneau");
   assert.equal(a.getAttribute("href"), "#patrimoine/comptes?ligne=pea-etf-europe");
   assert.match(a.textContent, /Voir la fiche de la ligne/);
+});
+
+/* ------------------------------------------------------------------ SUIVI : système cœur et satellite, rôle et météo de chaque ligne ------------------------------------------------------------------ */
+test("suivi (DOM) : le système cœur et satellite est lisible (phrase, aria-label, graduation du plafond, tableau équivalent) et propose de confirmer les rôles avec Claude", () => {
+  const { root } = vueDom(demoS());
+  const sys = $(root, "plSysteme");
+  assert.equal(sys.hidden, false);
+  assert.match(sys.querySelector("h2").textContent, /^Cœur et satellite$/);
+  const visuel = sys.querySelector(".sv-sys-visuel");
+  assert.equal(visuel.getAttribute("role"), "img");
+  assert.match(sp(visuel.getAttribute("aria-label")), /^Cœur \d+ % · Satellite \d+(,\d)? % sur 15 % · Réserve \d+ %/);
+  assert.match(sp(visuel.getAttribute("aria-label")), /Rôles à confirmer avec Claude/);
+  assert.equal(visuel.querySelectorAll("circle.sv-arc").length >= 3, true, "arcs du cœur, du satellite et de la réserve");
+  assert.equal(visuel.querySelectorAll("line.sv-tick").length, 1, "graduation du plafond satellite");
+  assert.match(sp(sys.querySelector(".sv-plafond-etiq").textContent), /^plafond 15 %$/);
+  assert.match(sp(sys.querySelector(".sv-sys-phrase").textContent), /Satellite \d+(,\d)? % sur 15 %/);
+  assert.match(sp(sys.querySelector(".sv-sys-etat").textContent), /À confirmer avec Claude/, "des rôles sont à confirmer");
+  const tab = sys.querySelector("details.sv-donnees");
+  assert.equal(tab.hasAttribute("open"), false);
+  assert.deepEqual(tab.querySelectorAll("th").map(t => t.textContent).slice(3), ["Cœur", "Satellite", "Réserve"]);
+  assert.match(sp(tab.textContent), /Plafond satellite : 15 % de ton financier investi/);
+  assert.equal(sys.querySelectorAll("input, form").length, 0, "lecture seule");
+});
+
+test("suivi (DOM) : l'orbite du satellite se déplie et se replie (aria-expanded, hidden) ; chaque pastille ouvre la ligne et porte sa météo", () => {
+  const { root, rafraichir, dlg } = vueDom(demoS());
+  const btn = () => root.querySelector("[data-sv-orbite]"), zone = () => root.querySelector("[data-sv-orbite-zone]");
+  assert.equal(btn().getAttribute("aria-expanded"), "false");
+  assert.equal(zone().hidden, true);
+  btn().click();
+  assert.equal(btn().getAttribute("aria-expanded"), "true");
+  assert.equal(zone().hidden, false);
+  const bulles = zone().querySelectorAll(".sv-bulle");
+  assert.ok(bulles.length >= 2);
+  assert.ok(bulles.every(b => /, météo : /.test(b.getAttribute("aria-label")) && b.getAttribute("data-pl-ligne")));
+  rafraichir();
+  assert.equal(btn().getAttribute("aria-expanded"), "true", "l'état déplié survit à un rendu");
+  zone().querySelector(".sv-bulle").click();
+  assert.equal(dlg().hidden, false, "une pastille ouvre le panneau de la ligne");
+  btn().click();
+  assert.equal(btn().getAttribute("aria-expanded"), "false");
+});
+
+test("suivi (DOM) : chaque ligne comptée porte son rôle (chip) et sa météo (icône ET mot), jamais une note chiffrée ; un rôle proposé le dit", () => {
+  const { root } = vueDom(demoS());
+  root.querySelectorAll("[data-pl-groupe-btn]").forEach(b => b.click());
+  const lignes = root.querySelectorAll("[data-pl-ligne]").filter(l => l.closest(".pl-groupe"));
+  assert.ok(lignes.length >= 10);
+  for (const l of lignes) {
+    const compte = !/non compté/.test(l.textContent);
+    if (["compte-commun", "prime-camille"].includes(l.getAttribute("data-pl-ligne"))) { assert.equal(l.querySelector(".sv-role"), null, "hors suivi : compte courant, à recevoir"); continue; }
+    assert.ok(l.querySelector(".sv-role"), "rôle de " + l.getAttribute("data-pl-ligne"));
+    if (compte) {
+      const m = l.querySelector(".sv-meteo");
+      assert.ok(m && m.querySelector("svg.sv-ico") && sp(m.querySelector(".sv-meteo-mot").textContent).length > 2, "icône et mot : " + l.getAttribute("data-pl-ligne"));
+      assert.ok(m.querySelector(".sv-meteo-mot"), l.getAttribute("data-pl-ligne"));
+      assert.match(m.querySelector(".sv-meteo-mot").textContent, /^(Au clair|Éclaircies|À regarder à ta revue|À compléter)$/);
+    }
+  }
+  assert.doesNotMatch(root.querySelector("#plGroupes").textContent, /\/\s?20|\b\d+\s?\/\s?100\b|score|note de/i, "aucune note chiffrée");
+  const chips = lignes.filter(l => l.querySelector(".sv-role")).map(l => sp(l.querySelector(".sv-role").textContent));
+  assert.ok(chips.some(c => /· proposé$/.test(c)) && chips.some(c => c === "Cœur") && chips.some(c => c === "Satellite" || /Satellite · proposé/.test(c)));
+  assert.ok(chips.includes("Réserve"), "rôle validé de la réserve (livrets)");
+});
+
+test("suivi (DOM) : « Grouper par Rôle » : cœur, satellite, réserve dans cet ordre ; le panneau d'une ligne dit son rôle, sa météo et sa prochaine revue", () => {
+  const { root, dlg } = vueDom(demoS());
+  const radio = $(root, "plMode").querySelectorAll('[role="radio"]')[4];
+  radio.click();
+  assert.equal(radio.getAttribute("aria-checked"), "true");
+  assert.match($(root, "plModeNote").textContent, /Un rôle proposé se confirme avec Claude/);
+  assert.deepEqual(root.querySelectorAll(".pl-g-nom").map(x => x.textContent), ["Cœur", "Satellite", "Réserve", "Hors suivi (comptes courants, à recevoir)"]);
+  assert.equal(root.querySelectorAll(".pl-l-role").length, 0, "pas de chip de rôle redondant dans un groupe de rôle");
+  root.querySelector("[data-pl-groupe-btn]").click();
+  root.querySelector('[data-pl-ligne="pea-etf-monde"]').click();
+  const corps = dlg().querySelector(".ui-panneau-corps");
+  const suiviP = corps.querySelector(".pl-d-suivi");
+  assert.ok(suiviP.querySelector(".sv-role") && suiviP.querySelector(".sv-meteo"));
+  assert.match(corps.querySelector(".pl-d-revue").textContent, /Ton cœur est à revoir ce mois-ci|Prochaine revue de ton cœur/);
+});
+
+test("suivi (DOM) : sans moteur de suivi chargé, Placements reste utilisable (bloc du système masqué, lignes sans météo)", () => {
+  const { root } = vueDom(demoS(), undefined, { SuiviView: null });
+  assert.equal($(root, "plSysteme").hidden, true);
 });

@@ -405,6 +405,8 @@ function panneauHtml(c,U,o){
     return `<li><span class="st-d-lib">${esc(d.libelle)}${d.note?`<span class="st-d-note">${esc(d.note)}</span>`:""}</span><span class="st-d-val num">${esc(d.valeur)}</span>`+
       (h?`<a class="st-d-lien" href="${esc(h)}">Voir la fiche${sr(" "+d.libelle)}</a>`:"")+"</li>";
   }).join("")+"</ul>":"";
+  /* SUIVI (§ 5.3) : « Frais des supports » et « Adéquation au profil » renvoient aux lignes concernées (météo, constats, leviers de leur classe). */
+  const versLignes=["frais","adequation"].includes(n.cle)?'<p class="st-p-txt">Ligne par ligne, la météo, les constats et les leviers de la classe sont sur la fiche de chaque ligne et dans <a href="#patrimoine/placements" data-goto="patrimoine/placements">Patrimoine › Placements</a>.</p>':"";
   // 5. Pour progresser : actions et points gagnés (sinon la piste).
   const prog=n.ameliorer.length?'<ul class="st-p-ameliorer">'+n.ameliorer.map(a=>`<li><span>${esc(a.action)}</span>`+
       (a.gain_points!=null&&a.gain_points>0?`<span class="st-gain num">+${esc(fr(a.gain_points,a.gain_points>=10?0:1))} pts</span>`+
@@ -419,7 +421,7 @@ function panneauHtml(c,U,o){
     ?`<p class="st-p-txt">Claude te pose les questions dans un formulaire, puis tu valides ses propositions dans Agent › À valider.</p><div class="st-p-claude">${U.demanderAClaude(phraseCompleter(sectionDe(n),contexteCompleter(n)),"Compléter avec Claude")}</div>`
     :`<p class="st-p-txt">Claude consulte l'expertise « ${esc(EXPERTISES[slug])} » avec tes chiffres et t'explique cette note.</p><div class="st-p-claude">${U.demanderAClaude(questionClaude(n))}</div>`):"";
   return sec("Ta situation",situ)+sec("Pourquoi cette note",pourquoi||'<p class="st-p-txt">Pas d\'explication disponible pour ce critère.</p>')+
-    sec("Le calcul",calcul)+sec("Données utilisées",donnees)+sec("Pour progresser",prog)+sec("Ce qui manque",manque)+sec("Demander à Claude",claude);
+    sec("Le calcul",calcul)+sec("Données utilisées",donnees+versLignes)+sec("Pour progresser",prog)+sec("Ce qui manque",manque)+sec("Demander à Claude",claude);
 }
 
 /* ---------- liens ---------- */

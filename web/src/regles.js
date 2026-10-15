@@ -122,10 +122,10 @@ if(typeof module==="object"&&module.exports){ module.exports=PURE; }
 if(typeof document==="undefined") return;
 
 /* ---------- vue ---------- */
-let S={scope:"foyer",people:[],positions:[],config:null,status:null,db:null};
+let S={scope:"foyer",people:[],positions:[],config:null,status:null,db:null,snap:null};
 let root=null,dirty=true;
 let ouvert=null; // panneau ouvert : { genre: "regle" | "matelas", index?, retour }
-const sig={liste:"",matelas:"",claude:""};
+const sig={liste:"",matelas:"",claude:"",suivi:""};
 const $=id=>root.querySelector("#"+id);
 const U=()=>window.UI||null;
 const R=()=>window.Rules||null;
@@ -142,6 +142,10 @@ function render(){
   $("ruleCount").textContent=compteRegles(rules);
   const items=rules.map((r,i)=>({i,res:resumeRegle(r,ctx,Rl)}));
   ecrire("ruleList","liste",listeHtml(items,u)); // « Voir plus » à clé fixe : l'état déplié est conservé par UI
+  /* Politique de suivi des lignes (SUIVI) : en lecture, réglée avec Claude (definir_suivi) */
+  const SV=window.SuiviView, vs=SV&&S.snap?SV.vue(S.snap,new Date().toISOString().slice(0,10)):null;
+  $("rgSuiviBloc").hidden=!vs;
+  if(vs) ecrire("rgSuivi","suivi",SV.politiqueHtml(vs.politique,u));
   if(u&&C){ const m=resumeMatelas(S.config,epargneDisponible(S.positions,C),C);
     ecrire("rgMatelas","matelas",'<div class="rg-cartes">'+u.carte({id:"matelas",titre:"Cible du matelas",valeur:m.valeur,sous:m.sous,badge:m.badge})+"</div>"); }
 }
@@ -206,7 +210,7 @@ function mount(r){
   });
 }
 function update(snap,visible){
-  S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions||[],config:snap.config,status:snap.status,db:window.Store.db};
+  S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions||[],config:snap.config,status:snap.status,db:window.Store.db,snap};
   dirty=true; if(visible){render();dirty=false;}
 }
 function show(){ if(dirty){render();dirty=false;} }

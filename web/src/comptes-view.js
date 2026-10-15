@@ -839,8 +839,9 @@
   }
 
   /** Fiche ligne (f = ficheLigne()). */
-  function ficheLigneHtml(f, U) {
+  function ficheLigneHtml(f, U, o) {
     if (!f.trouvee) return introuvable("Ligne", U);
+    const suivi = (o && o.suiviHtml) || ""; // « Ta ligne » (SUIVI) : rôle, météo, constats et leviers, calculés par Suivi et rendus par SuiviView
     const P = promptsDe();
     const q = P && typeof P.phrase === "function" ? P.phrase("expertise", f.expertise.nom) : "Boussole : consulte l'expertise " + f.expertise.nom + " sur ma situation.";
     const chiffres = [["Valeur", eur(f.valeur)], ["Plus-value latente", f.plusValue != null ? eurS(f.plusValue) + " (" + pctS(f.plusValuePct) + ")" : "non calculable sans prix de revient", f.plusValue != null ? (f.plusValue >= 0 ? "pos" : "neg") : "", DEF_PLUS_VALUE],
@@ -852,6 +853,7 @@
       titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.valeur)) + "</p>") + perimeFicheHtml(f.source, U, "ta ligne « " + f.nom + " »") +
       (f.isin ? '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Cours</h3><div class="cv-periode" id="cvPeriode"></div></div><div id="cvGraphe" aria-live="polite"></div></section>' : "") +
       '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" +
+      (suivi ? '<section class="panel cv-f-bloc cv-f-suivi">' + suivi + "</section>" : "") +
       '<section class="panel cv-f-bloc" aria-labelledby="cvDetailTitre"><h3 id="cvDetailTitre">Détail</h3>' + faitsHtml(f.faits) + "</section>" +
       '<section class="panel cv-f-bloc" aria-labelledby="cvMvtsTitre"><h3 id="cvMvtsTitre">Mouvements connus</h3>' + mvts + "</section>" +
       '<div class="cv-acts">' + lienClaude(U, q, "Demander à Claude") + '<span class="cv-note">Active l\'expertise ' + esc(f.expertise.nom) + ".</span></div>";
@@ -982,7 +984,11 @@
     if (!pret()) { if (sigFiche !== "chargement") { sigFiche = "chargement"; zone.innerHTML = '<p class="cv-chargement" role="status">Chargement du compte…</p>'; } return; }
     let html, f = null;
     if (vue.type === "enveloppe") { f = ficheEnveloppe(S, vue, jour()); html = ficheEnveloppeHtml(f, u); vue.isins = f.trouvee ? f.isins : []; }
-    else if (vue.type === "ligne") { f = ficheLigne(S, vue.id, jour()); html = ficheLigneHtml(f, u); vue.isins = f.trouvee && f.isin ? [f.isin] : []; }
+    else if (vue.type === "ligne") {
+      f = ficheLigne(S, vue.id, jour());
+      const SV = window.SuiviView, sv = f.trouvee && SV ? SV.ligne(S, vue.id, jour()) : null;
+      html = ficheLigneHtml(f, u, { suiviHtml: sv && SV ? SV.ligneSuiviHtml(sv, { U: u, today: jour() }) : "" });
+      vue.isins = f.trouvee && f.isin ? [f.isin] : []; }
     else {
       const f0 = ficheCourant(S, vue.id, jour());
       f = f0.trouvee && f0.compteIds.length ? ficheCourant(S, vue.id, jour(), undefined, ops[f0.compteIds.join(",")]) : f0;

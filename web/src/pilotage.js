@@ -15,6 +15,10 @@
    - Fiches de Patrimoine › Comptes (spec CP1 § 3) : chaque groupe « Par enveloppe » a un lien « Ouvrir la fiche du compte »
      (#patrimoine/comptes?enveloppe=…) et le panneau d'une ligne un lien « Voir la fiche de la ligne » (?ligne=…), adresses de
      ComptesView.lien (comptes-view.js), comme App.ouvrir.
+   - Suivi des lignes (SUIVI, suivi-view.js) : en tête de « Mes lignes », le système cœur et satellite (anneau à trois arcs, graduation du plafond
+     satellite, orbite des lignes du satellite, tableau équivalent) ; sur chaque ligne, son rôle (chip neutre, « proposé » tant qu'il n'est pas confirmé
+     avec Claude) et sa météo (icône et mot, jamais une note) ; « Rôle » s'ajoute aux regroupements. Le détail d'une ligne (« Ta ligne ») est sur sa fiche de
+     Patrimoine › Comptes. Lecture seule : les rôles et la politique de suivi se règlent avec Claude (definir_suivi).
    - Accordéons fermés en bas : Allocation par poche, Ordres à passer, Versements programmés, Hypothèses à confirmer, Journal des
      mouvements (listes en 5 puis « Voir plus », dans le périmètre S.scope).
    Le score de santé est dans Pilotage › Santé, les alertes dans Aujourd'hui, les règles et la cible du matelas dans Compte › Règles.
@@ -73,17 +77,30 @@
   const MODES = [
     { id: "enveloppe", label: "Enveloppe", aria: "Regrouper par enveloppe" }, { id: "poche", label: "Poche", aria: "Regrouper par poche" },
     { id: "titulaire", label: "Titulaire", aria: "Regrouper par titulaire" }, { id: "disponibilite", label: "Disponibilité", aria: "Regrouper par disponibilité" },
+    { id: "role", label: "Rôle", aria: "Regrouper par rôle (cœur, satellite, réserve)" },
   ];
+  const ORDRE_ROLE = ["coeur", "satellite", "reserve", "nc", "hors"];
   const ORDRE_LIQ = ["immediate", "jours", "semaines", "bloque"];
   const NOTE_MODE = {
     enveloppe: "Un compte ou un contrat par ligne.",
     poche: "Les poches regroupent tes lignes par usage ou par thème ; l'écart aux cibles est dans « Allocation par poche ».",
     titulaire: "Une ligne par personne du foyer.",
+    role: "Cœur, satellite ou réserve : le rôle de chaque ligne fixe sa fréquence de revue. Un rôle proposé se confirme avec Claude.",
     disponibilite: "Délai pour récupérer l'argent placé, estimé d'après l'enveloppe (livrets : tout de suite ; assurance-vie : quelques semaines ; PER, SCPI : bloqué). Vue limitée aux placements financiers : ton immobilier en direct est dans Immobilier et crédits.",
   };
   /** Cibles d'allocation par poche de la personne affichée (config.targets[p]) ; null pour le foyer. */
   function ciblesPoche(S) { const t = (S && S.config && S.config.targets) || {}; const sc = scopeDe(S); return sc === "foyer" ? null : t[sc] || null; }
 
+  /* Suivi des lignes (SUIVI) : rendus de suivi-view.js (global du navigateur, sinon le module voisin sous Node) et rôle effectif de chaque ligne. */
+  const suiviView = deps => dep(deps, "SuiviView") || (typeof module === "object" && module.exports && typeof require === "function" ? require("./suivi-view.js") : null);
+  /** Vue du suivi (Suivi.vue) du périmètre affiché, ou null si le moteur manque. */
+  function vueSuivi(S, today, deps) { const V = suiviView(deps); return V ? V.vue(S, today) : null; }
+  /** Rôle effectif de chaque ligne du périmètre : Map id → reserve | coeur | satellite | nc. */
+  function rolesDe(S, deps) {
+    const v = vueSuivi(S, jour(), deps), m = new Map();
+    if (v) v.lignes.forEach(l => m.set(l.id, l.role || "nc"));
+    return m;
+  }
   /** Groupes de lignes selon le mode (enveloppe | poche | titulaire | disponibilite), dans le périmètre S.scope, hors clôturées :
       [{ cle, label, montant (lignes comptées), part (% du total compté), plusValue (null si aucune ligne cotée avec PRU),
          aRecevoir, nb, cible (% de la poche pour une personne, sinon null), lignes (valeur décroissante, « à recevoir » à la fin) }].
@@ -93,9 +110,11 @@
     const m = MODES.some(x => x.id === mode) ? mode : "enveloppe";
     const ps = (Array.isArray(positions) ? positions : []).filter(p => p && C.inScope(p, sc) && p.status !== "clôturé");
     const total = sum(ps.filter(C.counted), C.val);
+    const roles = m === "role" ? rolesDe(s, deps) : null;
     const cle = { enveloppe: p => plat(p.envelope) || "Sans enveloppe", poche: p => plat(p.bloc) || "Sans poche", titulaire: p => p.owner || "p1",
-      disponibilite: p => C.liquidite(p.envelope) }[m];
-    const lab = { enveloppe: k => k, poche: k => k, titulaire: k => nomDe(s, k), disponibilite: k => (C.LIQUIDITE_LABELS && C.LIQUIDITE_LABELS[k]) || k }[m];
+      disponibilite: p => C.liquidite(p.envelope), role: p => (roles && roles.get(p.id)) || "hors" }[m];
+    const lab = { enveloppe: k => k, poche: k => k, titulaire: k => nomDe(s, k), disponibilite: k => (C.LIQUIDITE_LABELS && C.LIQUIDITE_LABELS[k]) || k,
+      role: k => ({ coeur: "Cœur", satellite: "Satellite", reserve: "Réserve", nc: "Non classées", hors: "Hors suivi (comptes courants, à recevoir)" }[k] || k) }[m];
     const tg = m === "poche" ? ciblesPoche(s) : null;
     const map = new Map();
     ps.forEach(p => { const k = String(cle(p)); if (!map.has(k)) map.set(k, []); map.get(k).push(p); });
@@ -107,6 +126,7 @@
         lignes: ls.slice().sort(ordreLigne) };
     });
     if (m === "disponibilite") return gs.sort((a, b) => ORDRE_LIQ.indexOf(a.cle) - ORDRE_LIQ.indexOf(b.cle));
+    if (m === "role") return gs.sort((a, b) => ORDRE_ROLE.indexOf(a.cle) - ORDRE_ROLE.indexOf(b.cle));
     return gs.sort((a, b) => b.montant - a.montant || a.label.localeCompare(b.label, "fr"));
   }
 
@@ -286,17 +306,19 @@
   const chip = c => '<span class="pl-chip ' + esc(c.ton) + '">' + esc(c.texte) + "</span>";
 
   /** Ligne compacte d'un groupe : bouton qui ouvre le panneau de la ligne. */
-  function ligneHtml(p, S, total, mode, today, deps) {
-    const C = dep(deps, "Calc"), s = S || {}, v = C.val(p), compte = C.counted(p);
+  function ligneHtml(p, S, total, mode, today, deps, sv) {
+    const C = dep(deps, "Calc"), s = S || {}, v = C.val(p), compte = C.counted(p), V = sv && suiviView(deps), ls = sv && sv.get(p.id);
     const sous = [mode === "enveloppe" ? plat(p.bloc) : plat(p.envelope), mode !== "poche" && mode !== "enveloppe" ? plat(p.bloc) : ""].filter(Boolean);
     if (mode !== "titulaire" && scopeDe(s) === "foyer" && (s.people || []).length > 1) sous.push(nomDe(s, p.owner));
     const g = latente(p);
     return '<li class="pl-li' + (compte ? "" : " pl-attente") + '"><button type="button" class="pl-ligne" data-pl-ligne="' + esc(p.id) + '" aria-haspopup="dialog">' +
       '<span class="pl-l-txt"><span class="pl-l-nom">' + esc(plat(p.name) || "Ligne sans nom") + "</span>" +
-      '<span class="pl-l-sous">' + esc(sous.join(" · ")) + (sous.length ? " " : "") + etatDonnee(p, today).map(chip).join(" ") + "</span></span>" +
+      '<span class="pl-l-sous">' + esc(sous.join(" · ")) + (sous.length ? " " : "") + etatDonnee(p, today).map(chip).join(" ") + "</span>" +
+      (ls && V && mode !== "role" ? '<span class="pl-l-role">' + V.roleChipHtml(ls) + "</span>" : "") + "</span>" +
       '<span class="pl-l-chiffres"><span class="pl-l-val">' + esc(eur(v)) + "</span>" +
       '<span class="pl-l-part">' + (compte ? esc(pct(total ? v / total * 100 : 0)) : "non compté") +
-      (g != null ? ' · <span class="' + (g >= 0 ? "pos" : "neg") + '">' + esc(eurS(g)) + "</span>" : "") + "</span></span>" +
+      (g != null ? ' · <span class="' + (g >= 0 ? "pos" : "neg") + '">' + esc(eurS(g)) + "</span>" : "") + "</span>" +
+      (ls && V && compte ? '<span class="pl-l-meteo">' + V.meteoHtml(ls.meteo, ls.meteo_libelle) + "</span>" : "") + "</span>" +
       '<span class="pl-l-ouvrir" aria-hidden="true">›</span></button></li>';
   }
 
@@ -326,7 +348,7 @@
         '<span class="pl-g-chev" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span>' +
         '<span class="pl-g-barre" aria-hidden="true"><span style="width:' + Math.min(100, total ? g.montant / total * 100 : 0).toFixed(1) + '%"></span></span></button></h3>' +
         '<div class="pl-g-corps" id="' + id + '"' + (ouvert ? "" : " hidden") + ' data-pl-vp="' + esc(mode + ":" + g.cle) + '">' + ficheGroupe(g, mode) +
-        U.voirPlus(g.lignes, 5, p => ligneHtml(p, S, total, mode, today, opt.deps), "Voir plus de lignes", "ul", "pl-lignes:" + mode + ":" + g.cle) + "</div></li>";
+        U.voirPlus(g.lignes, 5, p => ligneHtml(p, S, total, mode, today, opt.deps, opt.suivi), "Voir plus de lignes", "ul", "pl-lignes:" + mode + ":" + g.cle) + "</div></li>";
     };
     return '<div class="pl-groupes-vp" data-pl-vp="' + esc("groupes:" + mode) + '">' + U.voirPlus(groupes, 5, carte, "Voir plus de groupes", "ul", "pl-groupes:" + mode) + "</div>";
   }
@@ -334,9 +356,11 @@
   /** Contenu du panneau d'une ligne (d = detailLigne()), en lecture : chiffres, pastilles, hypothèse, note, source, et les liens
       « Corriger avec Claude » / « Enregistrer un mouvement avec Claude » qui portent la ligne en contexte. o = { deps }. */
   function detailHtml(d, U, o) {
-    const deps = (o || {}).deps;
+    const deps = (o || {}).deps, ls = (o || {}).suivi, V = ls && suiviView(deps);
     return '<div class="pl-d">' +
       (d.meta ? '<p class="pl-d-meta">' + esc(d.meta) + "</p>" : "") +
+      (ls && V ? '<p class="pl-d-suivi">' + V.roleChipHtml(ls) + " " + V.meteoHtml(ls.meteo, ls.meteo_libelle) + "</p>" +
+        '<p class="pl-d-revue">' + esc(ls.revue.texte) + (ls.a_confirmer ? " Rôle proposé (" + esc(ls.raison_role_texte) + ") : confirme-le avec Claude." : "") + "</p>" : "") +
       '<p class="pl-d-val">' + esc(d.valeur) + (d.poids != null ? '<span class="pl-d-poids"> · ' + esc(pct(d.poids)) + " des placements</span>" : "") + "</p>" +
       '<p class="pl-d-chips">' + d.chips.map(chip).join(" ") + "</p>" +
       (d.hypothese ? '<p class="pl-d-hyp"><strong>Hypothèse à confirmer :</strong> ' + esc(d.hypothese) + "</p>" : "") +
@@ -399,7 +423,7 @@
   }
 
   const H = { MODES, lienFiche, ficheGroupe, grouper, totaux, matelas, variation, etatDonnee, detailLigne, detailHtml, hypotheses, versements, ordres, journalMouvements, allocation,
-    titresSuivi, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, jour };
+    titresSuivi, vueSuivi, rolesDe, groupesHtml, allocationHtml, ordresHtml, versementsHtml, hypothesesHtml, journalHtml, phraseClaude, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -407,6 +431,7 @@
   const CLE_MODE = "pilotage-groupe";
   let S = null, root = null, dirty = true, mode = "enveloppe";
   let ouverte = null, sigPanneau = ""; // ligne affichée dans le panneau et signature de son contenu
+  let vueSv = null, orbiteOuverte = false; // vue du suivi des lignes (SUIVI) calculée au rendu ; orbite du satellite dépliée
   const ouverts = new Set(); // groupes dépliés (clé « mode:groupe »)
   const sig = {};
   try { const m = localStorage.getItem(CLE_MODE); if (MODES.some(x => x.id === m)) mode = m; } catch (e) {}
@@ -458,9 +483,13 @@
     if (t.aRecevoir.length) faits.push('<li><span class="pl-fait-l">À recevoir (non compté)</span><span class="pl-fait-v">' + esc(eur(sum(t.aRecevoir, x => x.montant))) + '</span><span class="pl-fait-s">' + esc(t.aRecevoir.map(x => x.nom).join(", ")) + "</span></li>");
     ecrire("faits", $("plFaits"), vide ? "" : faits.join(""));
     if (vide) return;
+    vueSv = vueSuivi(S, jour());
+    const parId = vueSv ? new Map(vueSv.lignes.map(l => [l.id, l])) : null, V = suiviView();
+    $("plSysteme").hidden = !vueSv || !vueSv.lignes.length;
+    if (vueSv && V) ecrire("systeme", $("plSysteme"), '<h2 id="plSystemeTitre">Cœur et satellite</h2>' + V.systemeHtml(vueSv, { U: u, ouvert: orbiteOuverte }));
     const gs = grouper(S.positions, mode, S);
     $("plModeNote").textContent = NOTE_MODE[mode];
-    ecrire("groupes", $("plGroupes"), groupesHtml(gs, mode, S, u, { ouverts: ouvertsDuMode(), today: jour() }));
+    ecrire("groupes", $("plGroupes"), groupesHtml(gs, mode, S, u, { ouverts: ouvertsDuMode(), today: jour(), suivi: parId }));
     renderSuivi();
     $("plAgent").textContent = S.status && S.status.summary ? "Dernière mise à jour de nuit : " + plat(S.status.summary) : "";
   }
@@ -518,7 +547,8 @@
   const ligneVisible = id => (S && window.Calc ? visibles(S, window.Calc).find(p => p.id === id) : null) || null;
   function optionsLigne(p, u) {
     const d = detailLigne(p, S, jour());
-    const contenu = '<div class="pl-p">' + detailHtml(d, u) + "</div>";
+    const ls = vueSv ? vueSv.lignes.find(l => l.id === p.id) : null;
+    const contenu = '<div class="pl-p">' + detailHtml(d, u, { suivi: ls }) + "</div>";
     return { titre: d.titre, contenu, sig: d.titre + "|" + contenu, lien: { label: "Voir la fiche de la ligne", href: "#" + lienFiche({ ligne: p.id }) },
       pied: u.demanderAClaude("Explique-moi ma ligne « " + d.titre + " »" + (d.meta ? " (" + d.meta + ")" : "") + " dans Boussole : ce qu'elle contient, ses frais et son poids dans mes placements.") };
   }
@@ -548,6 +578,19 @@
     u.panneau.ouvrir({ titre: o.titre, contenu: o.contenu, lien: o.lien, pied: o.pied }); // sans retour ni surFermeture : ceux de l'ouverture sont gardés
   }
 
+  /* Orbite du satellite : se déplie en 220 ms (le CSS le supprime avec prefers-reduced-motion) ; l'état est retenu pour les rendus suivants. */
+  function basculerOrbite(b) {
+    orbiteOuverte = b.getAttribute("aria-expanded") !== "true";
+    b.setAttribute("aria-expanded", String(orbiteOuverte));
+    b.textContent = orbiteOuverte ? "Replier le satellite" : "Voir ton satellite en orbite";
+    const zone = root.querySelector("[data-sv-orbite-zone]");
+    if (zone) {
+      if (orbiteOuverte) { zone.hidden = false; (typeof requestAnimationFrame === "function" ? requestAnimationFrame : setTimeout)(() => zone.classList.add("ouvert")); }
+      else { zone.classList.remove("ouvert"); setTimeout(() => { if (!orbiteOuverte) zone.hidden = true; }, 230); }
+    }
+    sig.systeme = null; // le prochain rendu reprendra l'état
+  }
+
   function basculerGroupe(b) {
     const cle = b.getAttribute("data-pl-groupe-btn"), k = mode + ":" + cle, ouvrir = b.getAttribute("aria-expanded") !== "true";
     if (ouvrir) ouverts.add(k); else ouverts.delete(k);
@@ -570,6 +613,7 @@
     u.brancher(root);
     root.addEventListener("click", e => {
       const t = e.target; if (!t || !t.closest) return;
+      const ob = t.closest("[data-sv-orbite]"); if (ob) { basculerOrbite(ob); return; }
       const g = t.closest("[data-pl-groupe-btn]"); if (g) { basculerGroupe(g); return; }
       const l = t.closest("[data-pl-ligne]"); if (l) ouvrirLigne(l.getAttribute("data-pl-ligne"), l);
     });

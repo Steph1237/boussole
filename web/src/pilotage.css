@@ -4,13 +4,14 @@
 #view-pilotage [hidden]{display:none!important}
 #view-pilotage .pl{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
 /* ≥ 1100 px : la courbe et le suivi à gauche, « Mes lignes » dans une colonne de droite */
-@media (min-width:1100px){#view-pilotage .pl{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"tete groupes" "graphe groupes" "suivi groupes" "agent agent";align-items:start;column-gap:var(--gap-sections)}
-  #view-pilotage .pl-tete{grid-area:tete}#view-pilotage .pl-graphe{grid-area:graphe}#view-pilotage .pl-groupes{grid-area:groupes}#view-pilotage .pl-suivi{grid-area:suivi}#view-pilotage .pl-agent{grid-area:agent}
+@media (min-width:1100px){#view-pilotage .pl{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"tete groupes" "systeme groupes" "graphe groupes" "suivi groupes" "agent agent";align-items:start;column-gap:var(--gap-sections)}
+  #view-pilotage .pl-tete{grid-area:tete}#view-pilotage .pl-systeme{grid-area:systeme}#view-pilotage .pl-graphe{grid-area:graphe}#view-pilotage .pl-groupes{grid-area:groupes}#view-pilotage .pl-suivi{grid-area:suivi}#view-pilotage .pl-agent{grid-area:agent}
   #view-pilotage .pl-chargement,#view-pilotage .pl-vide{grid-column:1/-1}}
 /* ≥ 1440 px : grille de 12 colonnes (tête, graphe maître et suivi sur 8 colonnes ; « Mes lignes » sur 4) ; le suivi (versements, ordres, hypothèses, journal) se range en deux colonnes au lieu de s'empiler */
 @media (min-width:1440px){#view-pilotage .pl{grid-template-columns:repeat(12,minmax(0,1fr));grid-template-areas:none}
   #view-pilotage .pl-tete,#view-pilotage .pl-graphe,#view-pilotage .pl-suivi{grid-area:auto;grid-column:1/9}
-  #view-pilotage .pl-groupes{grid-area:auto;grid-column:9/13;grid-row:1/4}
+  #view-pilotage .pl-systeme{grid-area:auto;grid-column:1/9}
+  #view-pilotage .pl-groupes{grid-area:auto;grid-column:9/13;grid-row:1/5}
   #view-pilotage .pl-agent{grid-area:auto;grid-column:1/-1}
   #view-pilotage .pl-suivi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap-cards);align-items:start}}
 #view-pilotage .pos{color:var(--good)}
@@ -159,3 +160,12 @@
   #view-pilotage .pl-faits li{padding:var(--sp-3) var(--sp-2)}
 }
 @media (prefers-reduced-motion:reduce){#view-pilotage .pl-g-chev{transition:none}}
+
+/* Suivi des lignes (suivi-view.css) : rôle sous le nom, météo sous le montant, bloc du système */
+#view-pilotage .pl-systeme h2{margin:0 0 var(--sp-3);font:650 var(--t-h2)/var(--lh-h2) var(--f-display)}
+#view-pilotage .pl-l-role{display:inline-flex;margin-top:2px}
+#view-pilotage .pl-l-meteo{display:inline-flex;margin-top:2px}
+.ui-panneau .pl-d-suivi{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3);margin:var(--sp-2) 0 0}
+.ui-panneau .pl-d-revue{margin:var(--sp-1) 0 var(--sp-2);font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
+#view-pilotage .pl-l-chiffres{min-width:0;flex:0 1 150px}
+#view-pilotage .pl-l-meteo .sv-meteo{white-space:normal;justify-content:flex-end;text-align:right}

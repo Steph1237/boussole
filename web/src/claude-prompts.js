@@ -32,6 +32,7 @@
     revue: "faisons ma revue du mois (demarrer_routine, type revue_mensuelle).",
     routine: "réponds avec moi aux questions de ma revue mensuelle (demarrer_routine, puis le formulaire, puis questions_routine).",
     expertise: "consulte l'expertise adaptée à ma question sur ma situation.",
+    suivi: "aide-moi avec le suivi de mes lignes (suivi_lignes) : le rôle de chaque ligne, ma politique de suivi et le test « ça vaut le coût ? » avant tout changement.",
     calendrier: "aide-moi à compléter mon calendrier patrimonial (calendrier) : les dates d'ouverture de mes enveloppes, ma date de naissance, la fin de mes prêts. Pars de mes documents et demande-moi seulement ce qui manque, une seule fois.",
   };
   /* Sections dont le contexte fait partie de la demande elle-même (plutôt qu'un « Concerne : … » ajouté). */
