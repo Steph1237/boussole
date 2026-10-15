@@ -359,6 +359,25 @@ test("etatConsentement (échec fermé) : niveau illisible → erreur relancée, 
   assert.equal(await Mfa.etatConsentement(Mfa.adapter(fauxClient({ current: "aal2", verifies: [F1] }).client)), "ok");
 });
 
+/** Jeton factice (en-tête.charge.signature) dont la revendication amr porte un code TOTP validé il y a `ilYa` secondes. */
+const jetonAvecCode = ilYa => ["e30", Buffer.from(JSON.stringify({ aal: "aal2", amr: [{ method: "totp", timestamp: Math.floor(Date.now() / 1000) - ilYa }, { method: "password", timestamp: 1 }] })).toString("base64url"), "sig"].join(".");
+test("codeIlYa / etatConsentement (0033) : un code de plus de `fraicheurS` secondes, même en aal2, redemande le code ; jeton illisible → code", async () => {
+  const avec = (jeton, o = {}) => { const f = fauxClient({ current: "aal2", verifies: [F1], ...o }); f.client.auth.getSession = async () => ({ data: { session: jeton === null ? null : { access_token: jeton } }, error: null }); return Mfa.adapter(f.client); };
+  const api = avec(jetonAvecCode(120));
+  const age = await api.codeIlYa();
+  assert.ok(age >= 119 && age <= 125, String(age));
+  assert.equal(await Mfa.etatConsentement(api, { fraicheurS: 480 }), "ok", "code de 2 minutes");
+  assert.equal(await Mfa.etatConsentement(avec(jetonAvecCode(20 * 60)), { fraicheurS: 480 }), "code", "code de 20 minutes");
+  assert.equal(await Mfa.etatConsentement(avec(jetonAvecCode(20 * 60))), "ok", "sans exigence de fraîcheur : inchangé");
+  for (const j of [null, "pas-un-jwt", ["e30", Buffer.from('{"amr":[{"method":"password","timestamp":1}]}').toString("base64url"), "s"].join(".")])
+    assert.equal(await Mfa.etatConsentement(avec(j), { fraicheurS: 480 }), "code", "illisible ou sans totp : " + j);
+  assert.equal(await avec("pas-un-jwt").codeIlYa(), Infinity);
+  // compte sans facteur : rien à redemander
+  const sf = fauxClient({ current: "aal1", next: "aal1" });
+  sf.client.auth.getSession = async () => ({ data: { session: { access_token: "x" } }, error: null });
+  assert.equal(await Mfa.etatConsentement(Mfa.adapter(sf.client), { fraicheurS: 480 }), "sans_facteur");
+});
+
 test("accueil : après le mot de passe, goApp passe par apresConnexion ; panneau de code prévu ; mfa.js chargé avant auth.js", () => {
   const js = src("landing.js"), html = page("index.html");
   assert.match(js, /await A\.signInPassword\(em, p\);\s*await ouvrirApresConnexion\(\);\s*return;/);

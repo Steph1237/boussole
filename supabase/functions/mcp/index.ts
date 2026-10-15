@@ -2187,7 +2187,8 @@ const ObjectifRow = z.strictObject({
 /* Serveur MCP (un par requête, lié au client de l'utilisateur)        */
 /* ------------------------------------------------------------------ */
 
-/* aal : niveau d assurance du jeton (aalDuJeton, banque.ts) ; les données bancaires exigent "aal2" (SEC2, migration 0028). */
+/* aal : niveau d assurance du jeton (aalDuJeton, banque.ts) ; les données bancaires exigent "aal2" (SEC2, migration 0028).
+   mfa : verdict de garde-mfa.ts ; "autorise" (connecteur autorisé par un second facteur, migration 0033) fait lire comme en aal2. */
 type Ctx = { db: any; user: { id: string; email?: string }; client?: { id: string; nom: string }; aal?: string; mfa?: VerdictMfa };
 
 function wrap<A>(fn: (args: A) => Promise<unknown>) {
@@ -2210,7 +2211,11 @@ async function loadPeople(db: any) {
   return people;
 }
 
-export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
+export function buildServer({ db, user, client, aal: aalJeton, mfa }: Ctx): McpServer {
+  // Niveau effectif pour les données : un jeton OAuth est toujours aal1 (SEC5 § 3.12) ; quand son autorisation, accordée par une session
+  // aal2 sur la page de consentement, est liée à sa session (lier_connecteur, 0033), la RLS lui ouvre les données comme en aal2 (la banque
+  // en lecture seulement). Les outils bancaires et le budget réel suivent donc ce niveau ; la RLS reste la barrière.
+  const aal = mfa === "autorise" ? "aal2" : aalJeton;
   const server = new McpServer({ name: "boussole", version: "1.1.0" }, { instructions: INSTRUCTIONS });
   // Erreurs de validation des paramètres : message français lisible (isError: true) au lieu du JSON brut du SDK.
   (server as any).validateToolInput = async (tool: any, args: unknown, name: string) => {
@@ -3203,13 +3208,15 @@ async function handleMcp(c: any) {
   if (c.req.method !== "POST") {
     return c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Méthode non autorisée : utilise POST." }, id: null }, 405, { Allow: "POST" });
   }
-  // Écriture de connexion en parallèle de l'appel, sans le bloquer (noterConnexion ne lève jamais) ; le runtime la laisse
-  // finir après la réponse (EdgeRuntime.waitUntil), sinon on l'attend avant de rendre la main.
-  const connexion = noterConnexion(db, token);
-  // SEC2 : aal du jeton (déjà validé par getUser) et, hors aal2, double authentification lue par la RPC mfa_exigee() (migration 0028)
-  // avec le client de l'utilisateur, sans clé de service ; échec de lecture : refus des outils de données personnelles (garde-mfa.ts).
+  // SEC2 : aal du jeton (déjà validé par getUser) et, hors aal2, double authentification lue par la RPC mfa_exigee() (migration 0028),
+  // puis autorisation du connecteur liée au second facteur (RPC lier_connecteur, migration 0033 : liaison à la session OAuth au premier
+  // appel), avec le client de l'utilisateur, sans clé de service ; échec de lecture : refus des outils de données personnelles (garde-mfa.ts).
   const aal = aalDuJeton(token);
   const mfa = await verdictMfa(db, aal);
+  // Écriture de connexion en parallèle de l'appel, sans le bloquer (noterConnexion ne lève jamais) ; le runtime la laisse
+  // finir après la réponse (EdgeRuntime.waitUntil), sinon on l'attend avant de rendre la main. Lancée après le verdict : au premier appel
+  // d'un connecteur autorisé, la liaison (0033) précède l'écriture, que la RLS accepte alors.
+  const connexion = noterConnexion(db, token);
   const runtime = (globalThis as any).EdgeRuntime;
   const server = buildServer({ db, user: { id: data.user.id, email: data.user.email }, client: clientDuJeton(token), aal, mfa });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

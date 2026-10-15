@@ -2,6 +2,7 @@
 //   1. RLS entre deux comptes, inscription par mot de passe
 //   2. double authentification : aal1 / aal2, connecteur, et la question ouverte de SEC2 (mfa.enroll à aal1 avec un facteur vérifié)
 //   3. OAuth 2.1 : enregistrement dynamique, PKCE, approbation, échange du code, claim client_id, appel du connecteur
+//   3 bis. connecteur et second facteur (0033) : scripts/preprod/connecteur-mfa.mjs
 //   4. connecteur : initialize, tools/list, demarrer_session, proposition puis appliquer_propositions
 //   5. nuit locale (preprod.lancer_nuit) avec cours figés, sans appel externe
 //   node scripts/preprod/fumee.mjs         npm run preprod:fumee
@@ -17,6 +18,7 @@ import { demarrerFonctions } from "./fonctions.mjs";
 import { demarrerServeur } from "./servir.mjs";
 import { supabase } from "./cli.mjs";
 import { reessayer } from "./charger-foyer.mjs";
+import { connecteurMfa } from "./connecteur-mfa.mjs";
 
 const SANS_SESSION = { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } };
 const attendre = ms => new Promise(r => setTimeout(r, ms));
@@ -120,12 +122,18 @@ async function parcoursOauth(ctx) {
   const { clients, mcpUrl } = ctx;
   const auth = `${clients.url}/auth/v1`;
   const redirect = "http://127.0.0.1:9/callback";
-  // 1. enregistrement dynamique d'un client public
+  // 1. client public déclaré par l'administrateur (registration_type manual) : seul un tel client reçoit une autorisation liée au
+  //    second facteur (0033 ; un client inscrit dynamiquement est refusé, voir connecteur-mfa.mjs). L'enregistrement dynamique reste testé.
   const reg = await fetch(`${auth}/oauth/clients/register`, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_name: "Client de fumée (préproduction)", redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }) });
-  const client = await reg.json();
-  verite(reg.status < 300 && client.client_id, `enregistrement dynamique : ${reg.status} ${JSON.stringify(client).slice(0, 160)}`);
+    body: JSON.stringify({ client_name: "Client dynamique de fumée", redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }) });
+  const dyn = await reg.json();
+  verite(reg.status < 300 && dyn.client_id, `enregistrement dynamique : ${reg.status} ${JSON.stringify(dyn).slice(0, 160)}`);
+  await clients.admin.auth.admin.oauth.deleteClient(dyn.client_id).catch(() => {});
+  const cree = await clients.admin.auth.admin.oauth.createClient({ client_name: "Client de fumée (préproduction)", redirect_uris: [redirect], token_endpoint_auth_method: "none" });
+  verite(!cree.error && cree.data?.registration_type === "manual", `client déclaré : ${cree.error?.message ?? JSON.stringify(cree.data).slice(0, 120)}`);
+  const client = cree.data;
   const resultats = {};
+  try {
   for (const [libelle, slug, jetonSession] of [["compte sans facteur", "jeune-actif", "session"], ["compte à facteur, session aal2", "proprietaire-credit", "aal2"], ["compte à facteur, session aal1", "proprietaire-credit", "aal1"]]) {
     const compte = await compteNeuf(slug, { jeton: jetonSession, clients });
     try {
@@ -147,6 +155,11 @@ async function parcoursOauth(ctx) {
       verite(!ss.error, `session : ${ss.error?.message}`);
       const det = await sb.auth.oauth.getAuthorizationDetails(authorizationId);
       verite(!det.error && det.data?.client?.name, `getAuthorizationDetails : ${det.error?.message}`);
+      // compte à facteur, session aal2 : comme consent.js (migration 0033), autorisation du connecteur avant d'approuver
+      if (jetonSession === "aal2") {
+        const g = await sb.rpc("autoriser_connecteur", { p_autorisation_id: authorizationId });
+        verite(!g.error && g.data?.client_id === client.client_id, `autoriser_connecteur : ${g.error?.message ?? JSON.stringify(g.data)}`);
+      }
       const ap = await sb.auth.oauth.approveAuthorization(authorizationId, { skipBrowserRedirect: true });
       if (ap.error) { resultats[libelle] = `approbation refusée par le serveur (${ap.error.status ?? ""} ${ap.error.code ?? ap.error.message})`; continue; }
       const retour = new URL(ap.data.redirect_url ?? ap.data.redirect_to);
@@ -167,11 +180,12 @@ async function parcoursOauth(ctx) {
       const ov = await m.appeler("get_overview");
       resultats[libelle] = `jeton aal=${c.aal ?? "?"}, client_id présent, get_overview ${ov.erreur ? "REFUSÉ (" + ov.texte.slice(0, 40) + "…)" : "ok"}`;
       if (slug === "proprietaire-credit") {
-        // Propriété de sécurité : un jeton aal1 d'un compte à facteur vérifié ne lit rien ; un jeton aal2 est accepté.
-        if (c.aal === "aal2") verite(!ov.erreur, "jeton OAuth aal2 refusé par le connecteur");
-        else verite(ov.erreur && /Double authentification requise/.test(ov.texte), "un jeton OAuth aal1 d'un compte à facteur doit être refusé par le connecteur");
-        // Constat (question ouverte de SEC2, § « Connecteur MCP : que contient le jeton OAuth ? ») : l'aal du jeton suit-il celui de la session qui approuve ?
-        if (jetonSession === "aal2") ctx.constats.push(`jeton OAuth émis après approbation en session aal2 : aal=${c.aal}, amr=${JSON.stringify(c.amr?.map(a => a.method))} (GoTrue ${ctx.versionAuth}) → le connecteur ${ov.erreur ? "REFUSE" : "accepte"} ce jeton`);
+        // Propriété de sécurité (0033) : le jeton OAuth est aal1 ; approuvé par une session aal2 qui a enregistré l'autorisation du connecteur,
+        // il lit ; approuvé par une session aal1 (mot de passe seul), il ne lit rien.
+        if (jetonSession === "aal2") verite(!ov.erreur, `jeton OAuth autorisé avec le code refusé par le connecteur : ${ov.texte.slice(0, 120)}`);
+        else verite(ov.erreur && /Double authentification requise/.test(ov.texte), "un jeton OAuth approuvé en aal1 d'un compte à facteur doit être refusé par le connecteur");
+        // Constat (SEC2, § « Connecteur MCP : que contient le jeton OAuth ? ») : l'aal du jeton suit-il celui de la session qui approuve ?
+        if (jetonSession === "aal2") ctx.constats.push(`jeton OAuth émis après approbation en session aal2 : aal=${c.aal}, amr=${JSON.stringify(c.amr?.map(a => a.method))} (GoTrue ${ctx.versionAuth}) → le connecteur ${ov.erreur ? "REFUSE" : "accepte"} ce jeton (autorisation liée au second facteur, 0033)`);
       }
       if (slug === "jeune-actif") {
         verite(!ov.erreur, "compte sans facteur : le jeton OAuth doit être accepté");
@@ -182,6 +196,7 @@ async function parcoursOauth(ctx) {
       }
     } finally { await compte.supprimer(); }
   }
+  } finally { await clients.admin.auth.admin.oauth.deleteClient(client.client_id).catch(() => {}); }
   return Object.entries(resultats).map(([k, v]) => `${k} : ${v}`).join(" ; ");
 }
 
@@ -215,6 +230,13 @@ async function parcoursConnecteur(ctx) {
     verite(JSON.stringify(final) !== JSON.stringify(avant), "la protection n'a pas changé après validation");
     return `${outils.length} outils (${visibles.length} visibles pour le modèle), demarrer_session, proposition déposée puis appliquée`;
   } finally { await c.supprimer(); }
+}
+
+// ------------------------------------------------------------------------------------------------------------------ 3 bis. Connecteur et second facteur
+async function parcoursConnecteurMfa(ctx) {
+  const r = await connecteurMfa({ clients: ctx.clients, mcpUrl: ctx.mcpUrl, journal: () => {} });
+  verite(!r.echecs, r.lignes.filter(l => l.startsWith("ÉCHEC")).join(" ; "));
+  return `${r.lignes.length} étapes (client dynamique refusé, aal1 refusé, code → lecture, export/suppression/mot de passe refusés au jeton OAuth, rafraîchissement, autre session refusée, retrait, nouvelle autorisation, expiration, course)`;
 }
 
 // ------------------------------------------------------------------------------------------------------------------ 5. Nuit
@@ -255,7 +277,7 @@ export async function fumee({ racine = RACINE } = {}) {
   const fonctions = await demarrerFonctions(clients.url);
   const lignes = [];
   let echecs = 0;
-  for (const [nom, f] of [["rls", parcoursRls], ["mfa", parcoursMfa], ["oauth", parcoursOauth], ["connecteur", parcoursConnecteur], ["nuit", parcoursNuit]]) {
+  for (const [nom, f] of [["rls", parcoursRls], ["mfa", parcoursMfa], ["oauth", parcoursOauth], ["connecteur-mfa", parcoursConnecteurMfa], ["connecteur", parcoursConnecteur], ["nuit", parcoursNuit]]) {
     const t0 = Date.now();
     try { lignes.push(`ok      ${nom} : ${await f(ctx)} (${Math.round((Date.now() - t0) / 1000)} s)`); }
     catch (e) { echecs++; lignes.push(`ÉCHEC   ${nom} : ${e.message}`); }

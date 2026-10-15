@@ -1,6 +1,7 @@
 # SEC2 : double authentification (TOTP), obligatoire dès qu'une banque est connectée
 
-Date : 2026-10-14. Statut : livré (SEC2 puis correctifs de la revue de sécurité), migration 0028 non appliquée.
+Date : 2026-10-14. Statut : livré (SEC2 puis correctifs de la revue de sécurité), migration 0028 non appliquée. Complété le 2026-10-15
+par l'autorisation du connecteur liée au second facteur (migration 0033, section « Connecteur MCP : autorisation liée au second facteur »).
 
 ## Décision
 
@@ -21,7 +22,7 @@ Pas de SMS, pas de codes de récupération (Supabase n'en propose pas) : l'app c
 | --- | --- |
 | Base (0028) | `banque_*` : politique RESTRICTIVE `aal2` ; toutes les autres tables avec `user_id` : politique RESTRICTIVE `aal2` OU pas de facteur vérifié (`public.mfa_exigee()`) |
 | Fonction `powens` | `/connecter` : 403 `{ erreur, code: "mfa_requise" }` sans `aal2`, avant tout appel Powens. `/deconnecter`, `/synchroniser`, `/supprimer` : même 403 sans `aal2` si l'utilisateur a un facteur vérifié (lu côté serveur par l'API admin) |
-| Connecteur MCP | garde globale (`garde-mfa.ts`) : jeton `aal1` + facteur vérifié (lu côté serveur) → tout outil de données personnelles répond « Double authentification requise… Reconnecte le connecteur Boussole dans Claude » au lieu de s'exécuter ; savoir commun (`consulter_savoir`, `reperes`, `consulter_expertise`) inchangé ; la RLS reste la barrière (voir plus bas) |
+| Connecteur MCP | garde globale (`garde-mfa.ts`) : jeton `aal1` + facteur vérifié (lu côté serveur) → tout outil de données personnelles répond « Double authentification requise… Reconnecte le connecteur Boussole dans Claude » au lieu de s'exécuter, sauf autorisation du connecteur liée au second facteur (0033) ; savoir commun (`consulter_savoir`, `reperes`, `consulter_expertise`) inchangé ; la RLS reste la barrière (voir plus bas) |
 | App | écran de code, section Compte › Sécurité, carte bloquante, page de consentement, bandeau « appareil ajouté » |
 
 ## Base de données (0028_mfa.sql)
@@ -161,7 +162,114 @@ vérifié (pas seulement la banque) : c'est le comportement voulu tant que l'`aa
 de consentement a exigé `aal2`. Le contrôle de la page de consentement n'existe que dans le navigateur (`consent.js`) : un attaquant qui
 a un jeton de session `aal1` appelle `approveAuthorization` directement, sans passer par la page, et obtient un jeton OAuth qui
 contournerait alors la double authentification. Si les jetons OAuth restent `aal1`, la seule voie acceptable est d'obtenir un jeton
-`aal2` côté Supabase, pas d'affaiblir la RLS.
+`aal2` côté Supabase, ou une preuve `aal2` vérifiée **côté serveur** et liée à une session précise (section suivante), jamais d'affaiblir
+la RLS sur la seule foi d'un `client_id`.
+
+## Connecteur MCP : autorisation liée au second facteur (SEC2 bis, migration 0033)
+
+Date : 2026-10-15. Statut : livré sur la branche `mcp-mfa`, migration 0033 non appliquée, vérifié de bout en bout en préproduction locale.
+
+**Problème.** Mesuré en préproduction (ci-dessus) : le jeton OAuth est toujours `aal1`. Le propriétaire du produit a la double
+authentification : son connecteur Claude ne lisait rien, et le message « reconnecte et saisis ton code » ne pouvait pas aboutir.
+
+**Ce que contient le jeton (mesuré, GoTrue v2.190.0)** : `aal: "aal1"`, `amr: [{ method: "oauth_provider/authorization_code" }]`,
+`client_id` (uuid du client OAuth, signé), `session_id` (session OAuth **neuve**, ouverte à l'échange du code, `auth.sessions.oauth_client_id`
+renseigné, conservée au rafraîchissement), `scope`. GoTrue **supprime** la demande (`auth.oauth_authorizations`) à l'échange de son code ;
+avec un consentement mémorisé, `getAuthorizationDetails` approuve tout seul et renvoie directement l'adresse de retour (la demande existe
+encore, `approved`, jusqu'à l'échange).
+
+**Décision : une autorisation du connecteur, créée par une preuve `aal2` côté serveur et liée à une seule session OAuth.**
+
+1. Table `public.connecteurs_autorises` (une active par utilisateur et client ; `accorde_aal` ne peut valoir que `aal2` ; 90 jours ;
+   `revoque_le` ; `session_id` lié au premier usage ; `dernier_usage`). Aucun droit d'écriture pour `authenticated` ; lecture par le
+   propriétaire, sans `session_id` ni `autorisation_id`.
+2. `autoriser_connecteur(authorization_id)` (security definer) : exige `aal = aal2` **de la session appelante** dans le JWT signé, refuse un
+   jeton qui porte un `client_id`, lit le client dans la demande de GoTrue (à l'appelant, en attente ou approuvée, non expirée) au lieu de
+   le recevoir de la page. La page de consentement l'appelle juste après le code, **avant** `approveAuthorization` (et avant la redirection
+   quand le consentement est mémorisé) ; sans autorisation enregistrée, elle n'approuve pas. **Code frais** : la revendication `amr`
+   doit porter un `totp` de moins de 10 minutes (sinon `BOU02`) ; la page redemande le code au-delà de 8 minutes, même en session `aal2`
+   (mesuré : une nouvelle vérification en `aal2` rafraîchit l'instant `totp` de `amr`). **Client déclaré seulement** :
+   `auth.oauth_clients.registration_type = manual`, non supprimé (sinon `BOU01`, « Application non reconnue »). Écart avec la consigne initiale
+   (`autoriser_connecteur(client_id)`) : un identifiant de demande prouve que l'appelant a bien une demande en cours pour ce client et
+   ne laisse pas la page choisir le client.
+3. `lier_connecteur()` (security definer, appelée par le connecteur à chaque requête d'un compte à facteur) : lit `client_id` et
+   `session_id` dans le jeton signé. Liaison au premier usage seulement si la demande a disparu (code échangé), si la session est une session
+   OAuth de ce client pour cet utilisateur, ouverte après l'autorisation, avant l'expiration de la demande et dans les 15 minutes, et si
+   c'est la **seule** session OAuth de ce client ouverte depuis l'autorisation. Ensuite, seule cette session passe.
+4. `connecteur_autorise()` (security definer, stable) dans les politiques : autorisation liée, non révoquée, non expirée, session encore
+   ouverte dans `auth.sessions`, et un facteur vérifié **antérieur à l'autorisation** existe encore (retrait puis réinscription d'un facteur :
+   l'autorisation ne revit pas). `lier_connecteur` révoque en base les autorisations quand plus aucun facteur ne les couvre.
+5. Politiques (même noms, `alter policy`) : « aal2 si facteur » accepte aussi le connecteur autorisé, en lecture et en écriture (le
+   connecteur dépose propositions, mémoire, journal) ; `banque_*` : **lecture** par le connecteur autorisé, **écriture jamais** (with check
+   `aal2` ET pas de `client_id`, même si GoTrue émettait un jour des jetons OAuth `aal2` ; nouvelle politique restrictive de suppression,
+   même condition) : seules l'app en `aal2` et le service écrivent la banque, le
+   connecteur n'en a pas besoin. Toutes en `(select auth.jwt())` : les 24 avertissements `auth_rls_initplan` tombent à 0 (mesuré).
+6. Connecteur : `garde-mfa.ts` ajoute les verdicts `autorise` (outils ouverts, niveau effectif `aal2` pour les outils bancaires) et
+   `expiree` (message « l'autorisation … a expiré (elle vaut 90 jours) ») ; tout autre refus garde « Double authentification requise… » ;
+   lecture impossible : échec fermé. App : durée annoncée sur la page de consentement et à la redirection ; Mon compte › Connexion de Claude
+   liste les accès protégés par le code et les retire (`revoquer_connecteur`) ; retirer une application chez Supabase les retire aussi.
+7. `delete_me()` et `export_all()` recréées à l'identique avec des gardes : jamais par un jeton OAuth (42501), même autorisé (sinon la
+   RLS ouverte au connecteur lui laisserait exporter tout et supprimer le compte, contrairement à la promesse de Mon compte) ;
+   `delete_me` exige `aal2` pour un compte à facteur (un mot de passe volé ne supprime plus le compte) ; `export_all` exporte aussi
+   `connecteurs_autorises` (colonnes visibles). Mon compte dit « en attente de première connexion » pour une autorisation pas encore liée.
+8. Même migration : droits explicites de `service_role` sur toutes les tables, séquences et fonctions de `public`, et privilèges par
+   défaut pour les objets futurs (fin de `auto_expose_new_tables` le 2026-10-30) ; `anon` et `authenticated` inchangés (test).
+
+**Modèle de menace**
+
+| Menace | Ce qui l'arrête |
+| --- | --- |
+| Hameçonnage du consentement : un client inscrit dynamiquement, nommé « Claude », envoie à l'utilisateur un lien d'autorisation ; l'utilisateur saisit son code | `autoriser_connecteur` n'accepte que les clients déclarés par l'administrateur (`registration_type = manual`) : `BOU01`, aucune autorisation (testé et mesuré). L'utilisateur peut encore approuver un jeton `aal1` sans autorisation, qui ne lit rien d'un compte à facteur. **À décider** : couper l'enregistrement dynamique en production (`allow_dynamic_registration`) si Claude n'en a pas besoin (le seul client de production est déclaré à la main et confidentiel). |
+| Mot de passe volé seul (`aal1`) : créer une autorisation | `autoriser_connecteur` vérifie `aal2` dans le JWT **signé** de l'appelant, côté base : refus « Double authentification requise » (mesuré). L'attaquant ne peut pas atteindre `aal2` (`mfa.enroll` refusé à `aal1`, mesuré : 403 `insufficient_aal`). |
+| Mot de passe volé : `approveAuthorization` direct, sans la page | Le jeton obtenu est `aal1` sans autorisation pour sa session : `lier_connecteur` → `absente`, RLS fermée (mesuré). |
+| Mot de passe volé **après** une autorisation légitime, même `client_id` (client public partagé, redirection de bouclage, ou le même client que Claude) | L'autorisation est liée à la session OAuth de la victime ; la session de l'attaquant est une autre `session_id` → `autre_session`, rien de lisible, refus journalisé (mesuré). C'est ce qui manquait à une autorisation par `client_id` seul : le `client_id` d'un client public n'est pas un secret, et n'importe quel détenteur du mot de passe peut obtenir un jeton signé pour ce client. |
+| Course : l'attaquant échange son propre code **entre** l'autorisation de la victime et l'échange légitime | Tant que la demande de la victime existe, rien ne se lie (`en_attente`) ; après l'échange légitime, deux sessions OAuth depuis l'autorisation → `ambigu`, rien n'est lié, la victime reconnecte (mesuré). |
+| Usurpation du `client_id` ou de la `session_id` | Les deux viennent du JWT signé par GoTrue (`auth.jwt()`), jamais d'un paramètre ; la session doit exister dans `auth.sessions` pour cet utilisateur et ce client. |
+| Vol du jeton OAuth (ou de son jeton de rafraîchissement) chez le client | Borné : 90 jours au plus ; retrait immédiat dans Mon compte › Connexion de Claude ; fermeture de la session OAuth (révocation chez Supabase, déconnexion) → fermé tout de suite ; facteur retiré par le support → fermé. Le jeton ne donne jamais d'écriture bancaire. |
+| Autorisation d'un autre utilisateur | Toutes les fonctions et politiques filtrent par `auth.uid()` ; la session doit appartenir au même utilisateur (testé). |
+| Un connecteur qui s'autorise lui-même | Refus si le JWT appelant porte un `client_id` ; un jeton OAuth est de toute façon `aal1`. |
+| Session de navigateur `aal2` ancienne (ordinateur partagé, onglet resté ouvert) | Code frais exigé par la base (moins de 10 minutes) : une session `aal2` d'hier ne crée pas d'autorisation. |
+| Un connecteur autorisé qui exporte tout, supprime le compte ou change le mot de passe | `export_all` et `delete_me` refusent tout jeton OAuth (mesuré : 42501) ; GoTrue refuse au jeton OAuth (`aal1`) d'un compte à facteur le changement de mot de passe et d'e-mail (`PUT /auth/v1/user` : 401 `insufficient_aal`, mesuré). |
+
+**Pourquoi le repli interdit reste interdit.** « Laisser passer `client_id` » sans autorisation ouvrirait les données à tout jeton OAuth,
+donc à tout détenteur du mot de passe (`approveAuthorization` n'exige qu'`aal1`), et la page de consentement ne serait qu'un contrôle de
+navigateur contournable. Ici, la preuve `aal2` est vérifiée par la base au moment où l'autorisation est créée, et l'autorisation ne vaut
+que pour une session précise, née de l'échange du code de cette demande.
+
+**Risques résiduels** : (1) le vol d'une session de navigateur **`aal2`** (logiciel malveillant, XSS) dans les 10 minutes qui suivent un
+code permet de créer une autorisation : mais une telle session donne déjà tout dans l'app. (2) La liaison
+repose sur deux comportements de GoTrue mesurés en v2.190.0 (demande supprimée à l'échange ; `oauth_client_id` et `session_id` dans
+`auth.sessions` et le jeton) et sur le schéma interne `auth` : **à revérifier sur la version de GoTrue de la production avant d'appliquer
+0033** (requête en lecture des colonnes de `auth.sessions`, `auth.oauth_authorizations`, `auth.oauth_clients` ; `npm run preprod:connecteur`
+reste la référence). Si GoTrue changeait ces comportements, la conséquence est un refus (jamais une ouverture) : la liaison n'aboutit
+pas. (3) Pendant la durée de vie d'un jeton d'accès (1 h), un retrait de facteur ou une révocation est pris en compte tout de suite
+par la RLS (pas d'attente d'expiration). (4) `export_all` n'inclut pas encore `connecteurs_autorises` (liste visible dans Mon compte).
+(5) Un attaquant qui n'a que le mot de passe peut **retirer** une autorisation (`revoquer_connecteur` à tout niveau) : déni de service
+seulement, l'utilisateur reconnecte avec son code. (6) Cas limite de la liaison : si la session OAuth légitime disparaît (déconnexion côté client) avant le
+premier appel du connecteur, et qu'un détenteur du mot de passe ouvre alors sa propre session du même client dans les 10 minutes de
+validité de la demande légitime, sa session devient la seule et peut être liée. Il faut à la fois le mot de passe, savoir que la victime
+vient d'autoriser, et que la session légitime soit fermée avant tout appel : jugé négligeable ; le retrait dans Mon compte et
+l'expiration le bornent. (7) **Mesuré, hors 0033, pour les comptes SANS double authentification** : un jeton OAuth (n'importe quel
+connecteur) peut changer le mot de passe (`PUT /auth/v1/user` : 200) : un connecteur malveillant ou un jeton volé prend alors le compte.
+Changement d'e-mail : non concluant en local (500, envoi du courriel de confirmation impossible, mailpit exclu de la préproduction) ; en
+production, il dépend de la configuration des e-mails (`double_confirm_changes = false`, pas de service d'e-mail) : à vérifier. Il peut aussi modifier
+`user_metadata` (200 ; Boussole n'en dépend pas) et déconnecter les autres sessions (`POST /logout?scope=others` : 204, mesuré avec un compte
+à facteur : nuisance seulement). On ne peut pas modifier GoTrue ; options : (a) `secure_password_change = true` (réauthentification récente ;
+mais le nonce part par e-mail, absent aujourd'hui) ; (b) n'ouvrir le connecteur qu'aux comptes à double authentification (le jeton OAuth y est
+`aal1`, refusé par GoTrue), ou le recommander fortement sur la page de consentement ; (c) ne déclarer que des clients de confiance (Claude) et
+couper l'enregistrement dynamique ; (d) surveiller les journaux d'audit `user_updated_password` dont la session est OAuth. À décider.
+
+**Vérification de bout en bout (préproduction locale, 2026-10-15, GoTrue v2.190.0, PostgREST v14.13, PostgreSQL 17.6)** :
+`npm run preprod:connecteur` (10 étapes après la revue de sécurité, toutes conformes, client déclaré par l'API d'administration ;
+étape 0 : client dynamique refusé `BOU01` ; étape 2 bis : `export_all` et `delete_me` 42501, `PUT /user` 401 `insufficient_aal`) et la fumée (`npm run preprod:fumee`, parcours `connecteur-mfa`) : mot de passe
+seul → `autoriser_connecteur` refusé et jeton OAuth sans lecture ; code validé → autorisation de 90 jours, liaison à la session, `get_overview`,
+`lire_banque` et `demarrer_session` lisent (7 positions), écriture bancaire refusée par la RLS ; rafraîchissement : même session, toujours
+lu ; mot de passe volé après coup (consentement mémorisé) → autre session refusée, session légitime intacte ; retrait → refus immédiat ;
+nouvelle autorisation → nouveau jeton lu, ancien refusé ; expiration → message « a expiré » ; course → rien de lié, personne ne lit.
+Conseiller de base : `auth_rls_initplan` 24 → 0, aucun avertissement de sécurité. Vraie page dans un navigateur (`npm run preprod:app`) :
+connexion par mot de passe, écran de code, demande avec la durée de 90 jours, « Autoriser » → autorisation `aal2` enregistrée avant
+l'approbation, jeton OAuth `aal1` qui lit `get_overview` et `lire_banque` ; Mon compte › Connexion de Claude liste l'accès et « Retirer »
+le révoque (le facteur reste intact). `npm run preprod:test` : 166 tests d'intégration conformes.
 
 ## Ajout d'un facteur quand un facteur existe déjà (M3)
 
@@ -185,7 +293,7 @@ bandeau, code avant la page Sécurité) restent utiles mais ne portent plus seul
 ## Tests
 
 `test/mfa-pglite.test.mjs` (PGlite : politiques, aal1 / aal2 / absent, facteur vérifié / non vérifié / aucun, écritures, `export_all`,
-`delete_me`, `mfa_exigee`, énumération de toutes les tables avec `user_id`, fonctions `security definer`, `service_role`), `test/powens-fonction.test.mjs` (403 `mfa_requise` ; facteurs lus par l'API admin ; échec fermé), `test/banque-mcp.test.mjs` (outils,
+`delete_me`, `mfa_exigee`, énumération de toutes les tables avec `user_id`, fonctions `security definer`, `service_role`), `test/connecteur-autorise-pglite.test.mjs` (0033 : création seulement en `aal2`, liaison, autre session, course, expiration, révocation, session fermée, facteur retiré, autre utilisateur, politiques, `auth_rls_initplan`, droits de `service_role` sans exposition automatique), `test/connecteur-autorise-ui.test.mjs` (Mon compte › Connexion de Claude), `test/powens-fonction.test.mjs` (403 `mfa_requise` ; facteurs lus par l'API admin ; échec fermé), `test/banque-mcp.test.mjs` (outils,
 session, routine, `aalDuJeton`), `test/mfa-connecteur.test.mjs` (garde MFA du connecteur : aal1 + facteur, aal2, sans facteur, échec fermé, savoir commun), `test/mfa-ui.test.mjs` (adaptateur, écran de code, garde, Sécurité, assistant d'activation en 4 étapes : navigation, focus, nettoyage à la fermeture, envoi automatique, bouton `otpauth://`), `test/mfa-banque-app.test.mjs`
 (carte, store exécuté, page de consentement exécutée). `auth.jwt()` est simulé dans `test/helpers/pglite.mjs` (aal2 par défaut, réglable
 par `test.aal`).

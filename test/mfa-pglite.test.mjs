@@ -80,8 +80,10 @@ test("les tables banque_* sont bien celles de 0021 : connexions, comptes, placem
 test("pg_policies : chaque table banque_* a une politique RESTRICTIVE pour authenticated exigeant aal2 ; les politiques existantes sont intactes", async () => {
   await superu();
   for (const t of TABLES_BANQUE) {
-    const r = await q(`select policyname, permissive, roles::text, cmd, qual, with_check from pg_policies where schemaname = 'public' and tablename = '${t}' and permissive = 'RESTRICTIVE'`);
-    assert.equal(r.length, 1, t + " : une politique restrictive");
+    const r = await q(`select policyname, permissive, roles::text, cmd, qual, with_check from pg_policies where schemaname = 'public' and tablename = '${t}' and permissive = 'RESTRICTIVE' order by cmd`);
+    // « <table>: aal2 » (0028, toutes commandes ; 0033 y ajoute la lecture par un connecteur autorisé) et « <table>: suppression aal2 » (0033)
+    assert.deepEqual(r.map(p => p.policyname), [t + ": aal2", t + ": suppression aal2"], t + " : politiques restrictives");
+    assert.match(r[0].with_check, /aal2/, t); assert.doesNotMatch(r[0].with_check, /connecteur_autorise|mfa_exigee/, t + " : écriture en aal2 seulement");
     assert.match(r[0].roles, /authenticated/, t);
     assert.equal(r[0].cmd, "ALL", t + " : toutes les commandes");
     assert.match(r[0].qual, /aal/, t); assert.match(r[0].qual, /aal2/, t);
@@ -207,7 +209,7 @@ test("couverture : toute table de public avec un user_id a sa politique RESTRICT
   for (const t of ["positions", "credits", "snapshots", "propositions", "budgets", "objectifs", "config", "profiles", "journal", "memoire_agent", "routines", "connexions_assistant", "fonctionnalites", "biens", "transactions", "status"])
     assert.ok(tables.includes(t), t + " repérée");
   for (const t of tables) {
-    const r = await q(`select policyname, roles::text, cmd, qual, with_check from pg_policies where schemaname = 'public' and tablename = $1 and permissive = 'RESTRICTIVE'`, [t]);
+    const r = await q(`select policyname, roles::text, cmd, qual, with_check from pg_policies where schemaname = 'public' and tablename = $1 and permissive = 'RESTRICTIVE' and cmd = 'ALL'`, [t]);
     assert.ok(r.length >= 1, t + " : politique restrictive MFA manquante (migration 0028)");
     assert.match(r[0].roles, /authenticated/, t); assert.equal(r[0].cmd, "ALL", t);
     for (const e of [r[0].qual, r[0].with_check]) {

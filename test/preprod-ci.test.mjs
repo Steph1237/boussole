@@ -56,7 +56,7 @@ describe("scripts et commandes npm", () => {
     for (const n of ["preprod:start", "preprod:stop", "preprod:seed", "preprod:test", "preprod:reset", "preprod:sync"]) assert.ok(n in sc, n);
   });
   it("les tests et la fumée ne contiennent aucune URL de production exécutable", () => {
-    for (const f of ["test/helpers/supabase.mjs", "scripts/preprod/fumee.mjs", "scripts/preprod/graine.mjs", "scripts/preprod/env.mjs"]) {
+    for (const f of ["test/helpers/supabase.mjs", "scripts/preprod/fumee.mjs", "scripts/preprod/connecteur-mfa.mjs", "scripts/preprod/graine.mjs", "scripts/preprod/env.mjs"]) {
       const t = sansCommentairesJs(lire(f));
       assert.ok(!/https?:\/\/[a-z0-9]+\.supabase\.co/.test(t), `${f} : URL supabase.co`);
     }
