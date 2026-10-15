@@ -259,7 +259,7 @@
       ["Revenus du foyer", eur(rev) + "/mois", "nets avant impôt, loyers compris"],
       ["Mensualités de crédit", eur(mens) + "/mois", rev > 0 ? Math.round(mens / rev * 100) + " % des revenus" : "—"],
     ].map(([l, v, s]) => '<div class="pf-kpi"><span>' + esc(l) + "</span><b>" + esc(v) + "</b><em>" + esc(s) + "</em></div>").join(""));
-    ecrire("pfClaude", claudeHtml(null, U));
+    /* « Compléter avec Claude » : le bouton Claude de l'en-tête (demande « Compléter mon bilan ») couvre la page ; seules les sections incomplètes gardent leur lien. */
     const r = resumes(pr, C);
     SECTIONS.forEach(s => {
       const k = CLES[s.id];

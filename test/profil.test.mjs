@@ -69,7 +69,7 @@ test("données : six sections en accordéons fermés, résumé dans chaque titre
   assert.doesNotMatch(html, /<details[^>]*\sopen/, "rien n'est déplié d'office");
   for (const k of ["Foyer", "Revenus", "Biens", "Credits", "Protection", "Autres"])
     for (const p of ["pfRes", "pfLu", "pfClaude"]) assert.match(html, new RegExp(`id="${p}${k}"`), p + k);
-  for (const id of ["pfPct", "pfBar", "pfMissing", "pfRecap", "pfClaude"]) assert.match(html, new RegExp(`id="${id}"`), id);
+  for (const id of ["pfPct", "pfBar", "pfMissing", "pfRecap"]) assert.match(html, new RegExp(`id="${id}"`), id);
   for (const t of [">Foyer<", ">Revenus<", ">Biens immobiliers<", ">Crédits<", ">Protection<", ">Autres biens<"]) assert.ok(html.includes(t), t);
   assert.match(html, /formulaires interactifs/, "la page explique que la saisie se fait avec Claude");
   assert.match(html, /data-goto="agent\/propositions"/);
@@ -252,7 +252,7 @@ test("vue (DOM) : résumés dans les titres, contenu en lecture, « Compléter a
   assert.match(sp(v.$("pfLuFoyer").innerHTML), /<dt>Tranche marginale d'imposition<\/dt><dd>30 %<\/dd>/);
   assert.match(v.$("pfPct").textContent, /^\d+ %$/);
   assert.match(sp(v.$("pfRecap").textContent), /suivis dans tes placements/);
-  assert.deepEqual(questions(v.$("pfClaude").innerHTML), [sp(ClaudePrompts.phrase("bilan"))]);
+  assert.equal(v.root.querySelector("#pfClaude"), null, "plus de bouton Claude dans l'en-tête de la page : celui de la coque le porte");
   for (const k of ["Foyer", "Revenus", "Biens", "Credits", "Protection", "Autres"])
     assert.match(v.$("pfClaude" + k).innerHTML, /Compléter avec Claude/, k);
   assert.equal(v.root.querySelectorAll("input,select,textarea,form,dialog").length, 0, "aucun champ de saisie");

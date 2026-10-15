@@ -140,7 +140,6 @@ function annoncer(t){ const m=$("rgMsg"); if(m) m.textContent=t||""; }
 function render(){
   const rules=rulesOf(), u=U(), Rl=R(), C=window.Calc, ctx=ruleCtx();
   $("ruleCount").textContent=compteRegles(rules);
-  if(u) ecrire("rgClaude","claude",regler(u,phraseRegles()));
   const items=rules.map((r,i)=>({i,res:resumeRegle(r,ctx,Rl)}));
   ecrire("ruleList","liste",listeHtml(items,u)); // « Voir plus » à clé fixe : l'état déplié est conservé par UI
   if(u&&C){ const m=resumeMatelas(S.config,epargneDisponible(S.positions,C),C);

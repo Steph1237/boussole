@@ -62,7 +62,7 @@ test("règles : plus de formulaire ni d'« Ajouter une règle » ; « Régler av
     assert.doesNotMatch(src, /Ajouter une règle|Ajouter la règle|Enregistrer les modifications|Enregistrer le matelas|Supprimer la règle|rgAjouter|ruleForm|cushForm|rfType|cuMode/);
   }
   for (const f of ["formRegleHtml", "regleDepuisSaisie", "questionPage", "questionRegle", "questionMatelas"]) assert.equal(RG[f], undefined, f);
-  for (const id of ["ruleList", "ruleCount", "rgMatelas", "rgClaude", "rgMsg"]) assert.match(html, new RegExp(`id="${id}"`), id);
+  for (const id of ["ruleList", "ruleCount", "rgMatelas", "rgMsg"]) assert.match(html, new RegExp(`id="${id}"`), id);
   assert.ok(html.includes("Ces règles alimentent tes alertes dans "), "phrase d'introduction (tutoiement)");
   assert.match(html, /data-goto="aujourdhui\/vue"/);
   assert.ok(html.includes("Toujours actifs, sans réglage"), "contrôles intégrés rappelés");
@@ -209,9 +209,7 @@ test("vue (DOM) : une carte par règle (5 puis « Voir plus »), bascule → act
   assert.equal(v.$("ruleCount").textContent, "6 règles");
   assert.equal(v.root.querySelectorAll(".rg-regle").length, 6);
   assert.match(v.$("ruleList").innerHTML, /Voir les autres règles \(1\)/);
-  assert.match(v.$("rgClaude").innerHTML, /claude\.ai\/new\?q=/);
-  assert.match(v.$("rgClaude").innerHTML, /Régler avec Claude/);
-  assert.deepEqual(questions(v.$("rgClaude").innerHTML), [sp(ClaudePrompts.phrase("regles"))]);
+  assert.equal(v.root.querySelector("#rgClaude"), null, "plus de bouton Claude dans la page : celui de la coque (« Régler mes règles d'alerte ») le porte");
   assert.match(v.$("rgMatelas").innerHTML, /data-ui-carte="matelas"/);
   const sw = v.root.querySelector('[data-rg-bascule="0"]');
   assert.equal(sw.getAttribute("aria-checked"), "true");
