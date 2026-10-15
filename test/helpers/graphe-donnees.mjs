@@ -12,7 +12,7 @@ const iso = t => new Date(t).toISOString().slice(0, 10);
 const plusMois = (s, k) => { const d = new Date(ms(s)), y = d.getUTCFullYear(), m = d.getUTCMonth() + k; const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12; return iso(Date.UTC(yy, mm, Math.min(d.getUTCDate(), new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate()))); };
 export { plusMois };
 
-/** Jeu de données complet. opts : { passeMois (36), derniereValeur (193490), horizonMois (120), sansPasse, sansFutur, sansEvenement, existantNegatif }. */
+/** Jeu de données complet. opts : { passeMois (36), derniereValeur (193490), horizonMois (120), sansPasse, sansFutur, sansEvenement, existantNegatif, capaciteNegative, medianeSousExistant }. */
 export function donnees(opts) {
   const o = Object.assign({ passeMois: 36, derniereValeur: 193490, horizonMois: 120 }, opts || {});
   const V0 = o.derniereValeur, passe = [];
@@ -52,11 +52,14 @@ export function donnees(opts) {
     { debut: plusMois(AUJ, 3), fin: plusMois(AUJ, 7), montant_mensuel: 1400, raison: "nouvel emploi de Sam : +450 €/mois d'épargne", source: "evenement", evenement_id: "e-emploi" },
     { debut: plusMois(AUJ, 8), fin: plusMois(AUJ, 9), montant_mensuel: 1150, raison: "naissance : −250 €/mois", source: "evenement", evenement_id: "e-naissance" },
     { debut: plusMois(AUJ, 10), fin: plusMois(AUJ, N), montant_mensuel: 1360, raison: "fin du prêt étudiant : +210 €/mois", source: "credit" }];
+  if (o.medianeSousExistant) { for (let t = 0; t <= N; t++) { p.p50[t] = Math.round(V0 * Math.pow(1.0045, t) - 900 * t); ["p10", "p25", "p75", "p90"].forEach(k => { p[k][t] = Math.round(p.p50[t] * Math.exp(Z[k] * 0.075 * Math.sqrt(t / 12))); }); } }
   return {
     today: AUJ, vue: "net", euros: "constants", mode: "patrimoine", etat: "pret", perimetre: "du foyer",
     passe: o.sansPasse ? null : { points: passe, drapeaux: { viaTransactions: ["ETF Monde"], compositionActuelle: [], bancaires: [], constantes: { noms: ["Livret A"], montant: 12000 }, courteHistoire: [] }, decalage: -1500, euros_constants: true },
     futur: o.sansFutur ? null : { mois, p10: p.p10, p25: p.p25, p50: p.p50, p75: p.p75, p90: p.p90, existant: { p25: ex.p25, p50: ex.p50, p75: ex.p75 }, epargne_future: { versements_cumules: vers, croissance: crois, p50: epf } },
-    jalons, objectifs, capacite: { base: { retenue: 950, source: "reel", constatee: 950, prevue: 1500, periode: "avril à septembre 2026" }, par_periode: periodes }, capacite_source: "reel", capacite_periode: "avril à septembre 2026",
+    jalons, objectifs, capacite: { base: o.capaciteNegative ? { retenue: -420, source: "reel", constatee: -420, prevue: 1500, periode: "octobre 2025 à septembre 2026", constatee_detail: { montant: -420, mois: 12, revenus: 300, depenses: 1120, periode: "octobre 2025 à septembre 2026" } } : { retenue: 950, source: "reel", constatee: 950, prevue: 1500, periode: "avril à septembre 2026" },
+      par_periode: o.capaciteNegative ? periodes.map((p, i) => (i === 0 ? Object.assign({}, p, { montant_mensuel: -420 }) : p)) : periodes,
+      passe: Array.from({ length: 12 }, (_, k) => ({ debut: plusMois(AUJ.slice(0, 8) + "01", k - 12), montant: o.capaciteNegative ? -380 - 10 * k : 800 + 25 * k })) }, capacite_source: "reel", capacite_periode: "avril à septembre 2026",
     phrase: "Aujourd'hui : 193 k€", decomposition: [{ date: plusMois(AUJ, 120), frais: 20000, total: 400000, depart: V0, versements: 84000, marches: 120000, impots: 0 }],
     garde_fous: [{ cle: "ecart_capacite", niveau: "info", texte: "Ta capacité d'épargne constatée est de 950 € par mois (avril à septembre 2026), contre 1 500 € prévus au budget : la projection part de la capacité constatée." }],
     evenements_pris_en_compte: o.sansEvenement ? [] : ["Nouvel emploi de Sam", "Naissance", "Crèche", "Achat de la résidence principale"],

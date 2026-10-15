@@ -200,8 +200,8 @@ test("jalons : regroupés quand leurs pastilles se touchent (compte « 4 »), ob
   const groupes = geo.marqueurs.filter(m => m.type === "groupe");
   const gros = groupes.find(m => m.jalons.length > 1);
   assert.ok(gros && gros.jalons.length === 5, "les événements des 14 prochains mois sont regroupés (repères à 44 px l'un de l'autre) : " + groupes.map(g => g.jalons.length).join(","));
-  assert.match(svg, /<g class="gp-mkc gp-mkn"[^>]*><circle[^>]*r="7\.5"\/><text[^>]*>5<\/text>/, "le compte est écrit dans la pastille");
-  assert.match(svg, /<circle class="gp-mkc"[^>]*r="4"\/>/, "un jalon seul : un point de 8 px sur la ligne de base");
+  assert.match(svg, /<g class="gp-pin gp-pin-i gp-pin-g"[^>]*>[\s\S]*?<g class="gp-badge"><circle[^>]*r="6\.5"\/><text[^>]*>5<\/text>/, "le compte est écrit dans la pastille de l'icône");
+  assert.match(svg, /<g class="gp-pin gp-pin-i" data-ev="[^"]+" data-icone="[a-z]+">/, "un jalon seul : sa petite icône sur la ligne de base, sans pastille de nombre");
   assert.equal(geo.marqueurs.filter(m => m.type === "objectif").length, 3, "trois objectifs en petites cibles");
   assert.equal((svg.match(/class="gp-tg"/g) || []).length, 3);
   geo.marqueurs.filter(m => m.type === "objectif").forEach(o => assert.ok(o.y < geo.B, "sur la médiane, au-dessus de la ligne de base"));
@@ -235,7 +235,7 @@ test("lecture : date, valeur, nature (observé, reconstitué, aujourd'hui, proje
   const txt = G.ligneLecture(M, null, emploi, false).replace(/<[^>]+>/g, "").replace(/[  ]/g, " ");
   assert.match(txt, /^Déc\. 2026 · ≈ \d+ k€ · \d+–\d+ k€ · Nouvel emploi de Sam$/);
   const html = G.lectureHtml(M, null, fut, { def: false }).replace(/[  ]/g, " ");
-  assert.match(html, /projection/); assert.match(html, /1 chance sur 2/); assert.match(html, /sans nouveau versement/); assert.match(html, /\+ ton épargne future et tes projets/);
+  assert.match(html, /projection/); assert.match(html, /1 chance sur 2/); assert.match(html, /sans nouveau versement/); assert.match(html, /Effet de ton épargne future et de tes projets/);
   assert.match(html, /Capacité d'épargne ce mois-là/);
   assert.match(G.lectureHtml(M, null, passeR, { def: false }), /Reconstitué à partir de tes cours/);
   assert.match(G.lectureHtml(M, null, passeO, { def: false }), /Relevé sur tes comptes/);
@@ -273,22 +273,33 @@ test("en-tête : phrase de titre, décomposition, « Événements pris en compte
   assert.match(G.capaciteSourceTxt({ capacite_source: null }), /Pas encore de capacité d'épargne connue : la projection suppose 0 € par mois/);
 });
 
-test("bande « capacité d'épargne » : une marche par période (sa raison, son montant), à partir d'aujourd'hui, le zéro marqué ; négative = alerte ET le mot", () => {
+test("bande « épargne par mois » : de vraies barres (passé constaté, futur par période), une marche par période avec son icône, le zéro marqué, repères min / max ; négative = ton ET le mot", () => {
   const M = M0(), { geo } = svgDe(M, "10", "bureau", 1000);
   const b = G.construireBande(M, { dom: geo.dom }, geo, geo.P, false);
   assert.equal(b.marches.length, M.capacite.periodes.length - 1, "une marche entre deux périodes consécutives");
   assert.deepEqual(b.marches.map(m => Math.round(m.dv)), [450, -250, 210]);
   assert.ok(b.marches.every(m => m.raison.length > 5), "chaque marche porte sa raison");
-  assert.match(b.svg, /<path class="gp-st-l"/); assert.match(b.svg, /class="gp-st-z"/, "ligne du zéro");
-  assert.doesNotMatch(b.svg, />[+−]\d+<\/text>/, "plein écran : aucune valeur flottante sur la bande, elle se lit au réticule");
-  assert.match(b.svg, />Épargne par mois</, "la bande est nommée");
-  const carte = svgDe(M, "10", "carte", 358).geo, ouverte = G.construireBande(M, { dom: carte.dom }, carte, carte.P, true);
-  assert.match(ouverte.svg, />\+450<\/text>/, "carte dépliée : les montants des marches, sans se chevaucher");
-  const neg = donnees(); neg.capacite.par_periode[2].montant_mensuel = -300;
-  const Mn = G.normaliser(neg), gn = svgDe(Mn, "10", "bureau", 1000).geo;
-  assert.match(G.construireBande(Mn, { dom: gn.dom }, gn, gn.P, false).svg, /class="gp-tneg"[^>]*>négative<\/text>/);
+  assert.equal(b.H, geo.P.stripH); assert.ok(b.H >= 72 && b.H <= 96, "plein écran ordinateur : 72 à 96 px, " + b.H);
+  assert.equal((b.svg.match(/class="gp-sb p pas"/g) || []).length, 12, "passé : une barre par mois constaté (12 mois)");
+  assert.ok((b.svg.match(/class="gp-sb p"/g) || []).length >= 4, "futur : une barre par période");
+  assert.match(b.svg, /class="gp-st-z"/, "ligne du zéro");
+  assert.match(b.svg, /class="gp-sy"[^>]*>0<\/text>/, "repère du zéro dans la marge"); assert.match(b.svg, /class="gp-sy"[^>]*>1 400 €\/mois<\/text>/, "repère du maximum, en €/mois");
+  assert.match(b.svg, /<g class="gp-mar"[^>]*><g class="gp-i"[\s\S]*?\+450/, "plein écran : l'icône de l'événement et son effet à la marche");
+  assert.doesNotMatch(b.svg, />Épargne par mois</, "le titre est dans l'en-tête de la bande, pas dans le dessin");
+  const carte = svgDe(M, "10", "carte", 358).geo, ouverte = G.construireBande(M, { dom: carte.dom }, carte, carte.P, true), repliee = G.construireBande(M, { dom: carte.dom }, carte, carte.P, false);
+  assert.ok(ouverte.H >= 48, "carte dépliée : au moins 48 px (" + ouverte.H + ")"); assert.ok(carte.P.stripH >= 48);
+  assert.match(ouverte.svg, /gp-mar/, "carte : l'icône des marches"); assert.match(G.construireBande(M, { dom: carte.dom }, carte, Object.assign({}, carte.P, { compact: true }), false).svg, /gp-sb/);
+  void repliee;
+  const neg = donnees({ capaciteNegative: true }), Mn = G.normaliser(neg), gn = svgDe(Mn, "10", "bureau", 1000).geo, bn = G.construireBande(Mn, { dom: gn.dom }, gn, gn.P, false);
+  assert.match(bn.svg, /class="gp-sb n"/); assert.match(bn.svg, /class="gp-sb n pas"/, "mois passés négatifs : même ton, plus léger");
+  assert.match(bn.svg, /class="gp-tneg gp-halo"[^>]*>négative<\/text>/, "le mot, pas la couleur seule");
+  assert.match(bn.svg, /class="gp-sy"[^>]*>−\d[\d ]* €\/mois<\/text>/, "repère du minimum, signé");
   const sans = donnees(); sans.capacite = null;
   assert.equal(G.construireBande(G.normaliser(sans), { dom: geo.dom }, geo, geo.P, false).vide, true, "aucune capacité connue : pas de bande inventée");
+  const sansPasse = donnees(); sansPasse.capacite.passe = [];
+  assert.equal((G.construireBande(G.normaliser(sansPasse), { dom: geo.dom }, geo, geo.P, false).svg.match(/gp-sb p pas/g) || []).length, 0, "pas de comptes connectés : pas de passé inventé");
+  assert.equal(G.capaciteA(M, M.today - 20 * 864e5).source, "constatee"); assert.equal(G.capaciteA(M, M.today - 20 * 864e5).passe, true, "au passé : l'épargne constatée de ce mois-là");
+  assert.match(G.fMoisU(-420), /^−420 €\/mois$/, "le signe n'est jamais perdu");
 });
 
 test("mode capacité (IMMO1) : éventail du budget d'achat P10–P90, médiane, ligne du montant empruntable, bande de taux, phrase de titre, jalons", () => {
@@ -350,21 +361,19 @@ test("étiquettes directes (plein écran) : jamais deux étiquettes de la colonn
   }
 });
 
-test("plein écran : piste des jalons sous l'axe, de petits ronds numérotés sur une ou deux voies, aucun texte, dans le cadre, regroupés en « +N » quand les voies sont prises", () => {
+test("plein écran : piste des événements sous l'axe, une icône par type sur une seule voie, aucun texte ni numéro, dans le cadre, fusionnées avec leur nombre quand elles se touchent", () => {
   const base = donnees(), longs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => ({ id: "ev:l" + k, date: plusMois(AUJ, 20 + k * 1), titre: "Un événement au titre vraiment très long numéro " + k, type: "autre", source: "evenement", icone: "calendrier", evenement_id: "e-l" + k, effet: { texte: "", montants: {} } }));
   const M = G.normaliser(Object.assign(base, { jalons: base.jalons.concat(longs) }));
-  for (const [mode, W, voies] of [["bureau", 760, 2], ["paysage", 640, 1], ["portrait", 358, 1]]) {
-    const r = svgDe(M, "tout", mode, W), ronds = [...r.svg.matchAll(/<circle class="gp-bd" cx="([\d.-]+)" cy="([\d.-]+)" r="9"/g)].map(m => ({ x: +m[1], y: +m[2] }));
-    assert.ok(ronds.length >= 2, mode + " : " + ronds.length + " ronds");
-    assert.doesNotMatch(r.svg, /class="lb"/, mode + " : aucun libellé de pastille, ni rectangle de pastille");
-    assert.doesNotMatch(r.svg, /gp-chipbg/);
-    ronds.forEach(a => assert.ok(a.x >= 0 && a.x <= W, mode + " : rond dans le cadre (" + a.x + ")"));
-    const ys = [...new Set(ronds.map(a => a.y))].sort((a, b) => a - b);
-    assert.ok(ys.length <= voies, mode + " : " + voies + " voie(s) au plus, " + ys.join(","));
-    assert.ok(ys[0] > r.geo.B + 22, mode + " : la piste est sous l'axe du temps");
-    ys.forEach(y => { const xs = ronds.filter(a => a.y === y).map(a => a.x).sort((a, b) => a - b); for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 24 - 1e-6, mode + " : 24 px entre deux ronds d'une voie"); });
-    assert.match(r.svg, /class="n"[^>]*>\+\d+</, mode + " : les jalons en trop sont regroupés en « +N »");
-    assert.ok(r.geo.H >= ys[ys.length - 1] + 12, mode + " : le cadre contient la piste");
+  for (const [mode, W] of [["bureau", 760], ["paysage", 640], ["portrait", 358]]) {
+    const r = svgDe(M, "tout", mode, W), pins = [...r.svg.matchAll(/<g class="gp-pin gp-pin-i[^"]*" data-ev="[^"]*" data-icone="([a-z]+)"><circle class="gp-pin-bg plein" cx="([\d.-]+)" cy="([\d.-]+)"/g)].map(m => ({ ic: m[1], x: +m[2], y: +m[3] }));
+    assert.ok(pins.length >= 1, mode + " : " + pins.length + " icônes");
+    assert.doesNotMatch(r.svg, /class="lb"/, mode + " : aucun libellé sur la piste"); assert.doesNotMatch(r.svg, /gp-chipbg|class="n"/, mode + " : aucun numéro");
+    pins.forEach(a => assert.ok(a.x >= 0 && a.x <= W, mode + " : icône dans le cadre (" + a.x + ")"));
+    assert.equal(new Set(pins.map(a => a.y)).size, 1, mode + " : une seule voie");
+    assert.ok(pins[0].y > r.geo.B + 22, mode + " : la piste est sous l'axe du temps");
+    const xs = pins.map(a => a.x).sort((a, b) => a - b); if (mode === "bureau") assert.ok(pins.length >= 2, "bureau : plusieurs icônes"); for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 20 - 1e-6, mode + " : 20 px entre deux icônes");
+    assert.match(r.svg, /<g class="gp-badge"><circle[^>]*r="6\.5"\/><text[^>]*>\d+<\/text>/, mode + " : les événements rapprochés fusionnent avec leur nombre");
+    assert.ok(r.geo.H >= pins[0].y + 12, mode + " : le cadre contient la piste");
   }
   assert.match(svgDe(M0(), "5", "bureau", 1000).svg, /<g class="gp-puce"[^>]*><rect[^>]*\/><text[^>]*>estimé<\/text>/, "une puce « estimé » au début du segment reconstitué");
   const peu = svgDe(G.normaliser(donnees()), "5", "bureau", 1000), tx = [...peu.svg.matchAll(/<text x="[\d.]+" y="([\d.]+)" text-anchor="middle"[^>]*>(\d{4})</g)];

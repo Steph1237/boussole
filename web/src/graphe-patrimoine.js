@@ -104,12 +104,12 @@
   }
   const fSE = n => (n >= 0 ? "+" : MOINS) + fInt(n) + NB + "€";
   const fMois = n => (n > 0 ? "+" : n < 0 ? MOINS : "") + fInt(n) + NB + "€/mois";
-  const fMoisU = n => fInt(n) + NB + "€/mois";
+  const fMoisU = n => (Math.round(n) < 0 ? MOINS : "") + fInt(n) + NB + "€/mois";
   /** Pourcentage signé : une décimale sous 10 %, entier au-delà (règle de Fmt.fmtPct : « +397 % », pas « +397,0 % »). */
   const fPct = x => { const a = Math.abs(x * 100), d = Math.round(a * 10) / 10 < 10 && Math.round(a * 10) !== 0 ? 1 : 0; return (x >= 0 ? "+" : MOINS) + a.toFixed(d).replace(".", ",") + NB + "%"; };
   /** « 300 et 560 k€ » : la fourchette en deux nombres, l'unité une seule fois quand elle est la même. */
   const kRange = (a, b) => (Math.max(Math.abs(a), Math.abs(b)) < 1e6 && Math.min(Math.abs(a), Math.abs(b)) >= 1000 ? Math.round(a / 1000) + " et " + fK(b) : fK(a) + " et " + fK(b));
-  const kTiret = (a, b) => (Math.max(Math.abs(a), Math.abs(b)) < 1e6 && Math.min(Math.abs(a), Math.abs(b)) >= 1000 ? Math.round(a / 1000) + "–" + fK(b) : fK(a) + "–" + fK(b));
+  const kTiret = (a, b) => { const sep = a < 0 || b < 0 ? " à " : "–"; return Math.max(Math.abs(a), Math.abs(b)) < 1e6 && Math.min(Math.abs(a), Math.abs(b)) >= 1000 ? (a < 0 ? MOINS : "") + Math.round(Math.abs(a) / 1000) + sep + fK(b) : fK(a) + sep + fK(b); };
   /** Chances « sur 10 » : 0,8 → « 8 chances sur 10 », 0,05 → « moins de 1 chance sur 10 », dès 95 % (jamais « 10 sur 10 », rien n'est certain) → « plus de 9 chances sur 10 ». */
   function chancesTxt(p) {
     const n = Math.round(p * 10);
@@ -333,7 +333,7 @@
       .sort((a, b) => a.t - b.t || (a.id < b.id ? -1 : 1));
     const objectifs = tab(D.objectifs).filter(o => o && o.id != null && isoOk(o.date)).map(o => Object.assign({}, o, { id: String(o.id), t: msDe(o.date) }));
     const cap = D.capacite && tab(D.capacite.par_periode).length ? D.capacite : null;
-    const capacite = cap ? { base: cap.base || null, periodes: cap.par_periode.filter(p => p && isoOk(p.debut)).map(p => ({ t0: msDe(p.debut), t1: isoOk(p.fin) ? msDe(p.fin) : null, montant: +p.montant_mensuel, raison: plat(p.raison), source: p.source || "", evenementId: p.evenement_id || null })) } : null;
+    const capacite = cap ? { base: cap.base || null, passe: tab(cap.passe).filter(p => p && isoOk(p.debut) && fini(p.montant)).map(p => ({ t: msDe(p.debut), montant: +p.montant })).sort((a, b) => a.t - b.t), periodes: cap.par_periode.filter(p => p && isoOk(p.debut)).map(p => ({ t0: msDe(p.debut), t1: isoOk(p.fin) ? msDe(p.fin) : null, montant: +p.montant_mensuel, raison: plat(p.raison), source: p.source || "", evenementId: p.evenement_id || null })) } : null;
     const demRaw = mode === "capacite" && D.capacite_demain && tab(D.capacite_demain.mois).length > 1 ? D.capacite_demain : null;
     let demain = null;
     if (demRaw) {
@@ -400,10 +400,12 @@
     if (F) {
       ech.futur.forEach(i => {
         if (F.t[i] < dom.debut || F.t[i] > dom.fin) return;
-        voir(F.p10 ? F.p10[i] : F.p50[i]); voir(F.p90 ? F.p90[i] : F.p50[i]); voir(F.p50[i]);
-        if (C.existant && F.existant && F.existant.p50) { voir(F.existant.p50[i]); if (F.existant.p25) voir(F.existant.p25[i]); if (F.existant.p75) voir(F.existant.p75[i]); }
-        if (F.variante) { voir(F.variante.p50[i]); if (F.variante.p25) voir(F.variante.p25[i]); if (F.variante.p75) voir(F.variante.p75[i]); }
-        if (F.crise) voir(F.crise.valeurs[i]);
+        /* « Zoom sur la médiane » : la bande « 1 chance sur 2 » (P25–P75) fixe l'échelle, les extrêmes sortent du cadre (une ligne à levier fait dominer le P90) */
+        if (C.zoomMediane) { voir(F.p25 ? F.p25[i] : F.p50[i]); voir(F.p75 ? F.p75[i] : F.p50[i]); } else { voir(F.p10 ? F.p10[i] : F.p50[i]); voir(F.p90 ? F.p90[i] : F.p50[i]); }
+        voir(F.p50[i]);
+        if (C.existant && F.existant && F.existant.p50) { voir(F.existant.p50[i]); if (!C.zoomMediane) { if (F.existant.p25) voir(F.existant.p25[i]); if (F.existant.p75) voir(F.existant.p75[i]); } }
+        if (F.variante) { voir(F.variante.p50[i]); if (!C.zoomMediane) { if (F.variante.p25) voir(F.variante.p25[i]); if (F.variante.p75) voir(F.variante.p75[i]); } }
+        if (F.crise && !C.zoomMediane) voir(F.crise.valeurs[i]);
       });
     }
     if (M.demain && C.demain) C.demain.forEach(voir);
@@ -459,6 +461,10 @@
   function capaciteA(M, t) {
     const C = M.capacite;
     if (!C || !C.periodes.length) return null;
+    if (t <= M.today && C.passe && C.passe.length) {
+      const p = C.passe.find(x => x.t <= t && t < ajouterMois(x.t, 1));
+      return p ? { montant: p.montant, raison: "constatée sur tes comptes ce mois-là", source: "constatee", passe: true } : null;
+    }
     if (t <= M.today) return C.base && fini(C.base.retenue) ? { montant: +C.base.retenue, raison: C.base.source === "reel" ? "constatée sur tes comptes" : C.base.source === "montant" ? "montant fixé" : "prévue au budget", source: C.base.source || "", passe: true } : null;
     let r = null;
     C.periodes.forEach(p => { if (p.t0 <= t) r = p; });
@@ -577,6 +583,90 @@
     if (pl) s = (pl.attendu ? "Écart attendu avec le plan : " : "Écart avec le plan : ") + (pl.attendu ? fSK(pl.ecart) : fSE(pl.ecart));
     return { k, v, s };
   }
+  /** Effet de ton épargne future à une date : médiane − patrimoine actuel sans nouveau versement, arrondis comme ils s'écrivent (k€) ; null sans la couche « sans versement ». */
+  function effetEpargne(l) { const pa = partsAffichees(l); return pa && l.epargneFuture != null ? pa.futur : null; }
+  /** Courbes lues à une date, une par série visible : { cle, v, principal? } (cle : observe | estime | p50 | p90 | p75 | p25 | p10 | sv | var | crise | plan). C = couches affichées
+      (existant : la ligne « sans versement » est dessinée ; avenirs : les bandes ne le sont pas, seuls les trajectoires et la médiane le sont). Sert aux points du réticule. */
+  function pointsCurseur(M, l, C) {
+    const out = [], c = C || {};
+    if (l.valeur != null) out.push({ cle: l.nature === "projete" ? "p50" : l.nature === "reconstitue" ? "estime" : "observe", v: l.valeur, principal: true });
+    if (l.nature === "projete") {
+      if (!c.avenirs) ["p90", "p75", "p25", "p10"].forEach(k => { if (l[k] != null && fini(l[k])) out.push({ cle: k, v: l[k] }); });
+      if (c.existant && l.existant != null) out.push({ cle: "sv", v: l.existant });
+      if (l.variante && l.variante.p50 != null) out.push({ cle: "var", v: l.variante.p50 });
+      if (l.crise && l.crise.valeur != null) out.push({ cle: "crise", v: l.crise.valeur });
+    }
+    if (l.plan && !l.plan.avant && l.plan.prevu != null) out.push({ cle: "plan", v: l.plan.prevu });
+    return out;
+  }
+  /** Lecture d'une date en lignes « libellé · valeur », de la même façon pour la carte et l'onglet Lecture : 8 chances sur 10, 1 chance sur 2, médiane, sans versement, variante, crise rejouée,
+      plan, et l'effet de ton épargne future (médiane − sans versement). Au passé : observé ou estimé, et ce que disait le plan. → [{ cle, label, valeur, sw?, gras?, ton? }]. */
+  function lectureLignes(M, l) {
+    const rows = [], add = (cle, label, valeur, o) => rows.push(Object.assign({ cle, label, valeur }, o || {}));
+    if (!l || M.mode === "capacite") return rows;
+    if (l.nature === "projete") {
+      if (distinctes(l.p10, l.p90)) add("p90", chancesTxt(0.8), kTiret(l.p10, l.p90), { sw: "in0" });
+      if (distinctes(l.p25, l.p75)) add("p75", "1 chance sur 2", kTiret(l.p25, l.p75), { sw: "in" });
+      add("p50", "Médiane", fK(l.p50), { gras: true, sw: "med" });
+      if (l.existant != null) add("sv", "Sans versement", fK(l.existant), { sw: "sv" });
+      if (l.variante && l.variante.p50 != null) add("var", "Variante « " + l.variante.nom + " »", fK(l.variante.p50), { sw: "var" });
+      if (l.crise && l.crise.valeur != null) add("crise", cap1(l.crise.label) + " rejouée", fK(l.crise.valeur), { sw: "cr" });
+      if (l.plan && !l.plan.avant) add("plan", "Prévu au plan", ap(l.plan.prevu), { sw: "plan" });
+      const ef = effetEpargne(l);
+      if (ef != null) add("effet", "Effet de ton épargne future", fSK(ef), { ton: ef < 0 ? "neg" : "pos" });
+    } else if (l.valeur != null) {
+      add(l.nature === "reconstitue" ? "estime" : "observe", l.nature === "reconstitue" ? "Estimé" : l.nature === "aujourdhui" ? "Aujourd'hui" : "Observé", fEur(l.valeur), { gras: true, sw: "obs" });
+      if (l.plan && !l.plan.avant) { add("plan", "Prévu au plan", fEur(l.plan.prevu), { sw: "plan" }); add("ecart", "Écart avec le plan", fSE(l.plan.ecart), { ton: l.plan.ecart < 0 ? "neg" : "pos" }); }
+    }
+    return rows;
+  }
+  const swHtml = sw => (sw ? '<i class="gp-sw gp-sw-' + sw + '"></i>' : "");
+  /** Tableau de lecture compact et aligné (libellés à gauche, valeurs à droite) : carte et plein écran. */
+  function lectureTableHtml(rows) {
+    if (!rows.length) return "";
+    return rows.map(r => '<div class="gp-lt-r' + (r.ton ? " " + r.ton : "") + (r.gras ? " b" : "") + '" data-lt-r="' + esc(r.cle) + '"><span>' + swHtml(r.sw) + esc(r.label) + "</span><b>" + esc(r.valeur) + "</b></div>").join("");
+  }
+  /** Phrase prête « Compléter avec Claude » (ClaudePrompts.phrase), avec un repli identique si le module n'est pas chargé. */
+  function phraseClaude(section, contexte) {
+    const P = glob("ClaudePrompts") || (noeud ? (() => { try { return require("./claude-prompts.js"); } catch (e) { return null; } })() : null);
+    if (P && typeof P.phrase === "function") return P.phrase(section, contexte);
+    return "Boussole : aide-moi à compléter mes " + (section === "revenus" ? "revenus" : section) + ". Concerne : " + contexte + " Commence par demarrer_session, puis utilise les formulaires interactifs Boussole plutôt que des questions en texte.";
+  }
+  /** Honnêteté sur l'épargne projetée : jamais un futur d'épargne négative en silence. Trois cas, du plus grave au moins grave :
+      1. la capacité d'épargne de départ est négative ou nulle (la projection suppose qu'elle continue) ;
+      2. la médiane finit sous la ligne « sans versement » (les événements prévus coûtent plus que l'épargne ne rapporte) ;
+      3. l'épargne par mois passe sous zéro plus tard (événement prévu).
+      → { cle, niveau: "alerte", texte, detail?, section, contexte } ou null. */
+  function alerteEpargne(M) {
+    if (!M || M.mode === "capacite" || !M.futur) return null;
+    const B = M.brut || {}, cb = M.capacite && M.capacite.base ? M.capacite.base : null, retenue = cb && fini(cb.retenue) ? +cb.retenue : null;
+    const emploi = M.jalons.filter(j => j.t > M.today && /emploi/.test(String(j.type))).sort((a, b) => a.t - b.t)[0] || null;
+    const gf = tab(B.garde_fous).find(g => g && g.cle === "ecart_capacite" && g.texte);
+    if (retenue != null && retenue <= 0) {
+      const mot = retenue < 0 ? "négative" : "nulle", det = cb.constatee_detail || null;
+      const suite = emploi ? " Ton changement d'emploi de " + dMois(emploi.t) + " est pris en compte à partir de cette date." : "";
+      if (cb.source === "reel") {
+        const mois = det && fini(det.mois) ? +det.mois : 12;
+        const cause = det && fini(det.revenus) && fini(det.depenses) && det.depenses > 0 ? (det.revenus < 0.5 * det.depenses ? " (période sans salaire)" : " (dépenses supérieures aux revenus)") : "";
+        return { cle: "epargne_negative", niveau: "alerte", texte: "Ton épargne constatée sur " + mois + " mois est " + mot + cause + ". La projection suppose qu'elle continue ainsi." + (emploi ? suite : " Déclare ton nouvel emploi à Claude pour la corriger."),
+          detail: gf ? gf.texte : null, section: "revenus", contexte: "mon nouvel emploi (date de début et salaire net) et mes revenus actuels" };
+      }
+      return { cle: "epargne_negative", niveau: "alerte", texte: "Ton épargne " + (cb.source === "montant" ? "fixée" : "prévue au budget") + " est " + mot + ". La projection suppose qu'elle continue ainsi." + (emploi ? suite : " Complète tes revenus et ton budget avec Claude pour la corriger."),
+        detail: null, section: "revenus", contexte: "mes revenus et mon budget mensuel" };
+    }
+    const F = M.futur, ex = F.existant && F.existant.p50;
+    if (ex) {
+      let k = -1; for (let i = ex.length - 1; i >= 0; i--) if (ex[i] != null) { k = i; break; }
+      if (k > 0 && F.p50[k] != null && F.p50[k] < ex[k] - 1000) {
+        return { cle: "mediane_sous_sans_versement", niveau: "alerte", texte: "À l'horizon, ta médiane (" + fK(F.p50[k]) + ") finit sous la ligne « sans versement » (" + fK(ex[k]) + ") : les événements prévus coûtent plus que ton épargne ne rapporte. Vérifie-les avec Claude.",
+          detail: null, section: "foyer", contexte: "mes événements de vie à venir (changement d'emploi, enfant, achat)" };
+      }
+    }
+    const neg = M.capacite && M.capacite.periodes.find(p => p.t0 >= M.today && p.montant < 0);
+    if (neg) return { cle: "epargne_future_negative", niveau: "alerte", texte: "À partir de " + dMois(neg.t0) + ", ton épargne par mois passe sous zéro (" + fMoisU(neg.montant) + (neg.raison ? " : " + neg.raison : "") + ").",
+      detail: null, section: "foyer", contexte: "mes événements de vie à venir et mes revenus" };
+    return null;
+  }
   /** Le jalon suivant aujourd'hui (le plus proche dans le futur) : null s'il n'y en a pas. */
   const prochainJalon = M => M.jalons.find(j => j.t > M.today && !estObjectif(j)) || M.jalons.find(j => j.t > M.today) || null;
   const libelleJalonCourt = (M, j) => {
@@ -636,7 +726,7 @@
         if (pa) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-sv"></i>Ton patrimoine actuel, sans nouveau versement : <b>' + esc(fK(pa.existant)) + "</b></div>";
         if (pa && l.epargneFuture != null) {
           const vers = l.versements != null && l.croissance != null ? arrK(l.versements) : null;
-          h += '<div class="gp-ro-d num">+ ton épargne future et tes projets : <b>' + esc(fSK(pa.futur)) + "</b>" + (vers != null ? " (dont <b>" + esc(fSK(vers)) + "</b> versés et <b>" + esc(fSK(pa.futur - vers)) + "</b> de croissance)" : "") + "</div>";
+          h += '<div class="gp-ro-d num">Effet de ton épargne future et de tes projets : <b>' + esc(fSK(pa.futur)) + "</b>" + (vers != null ? " (dont <b>" + esc(fSK(vers)) + "</b> versés et <b>" + esc(fSK(pa.futur - vers)) + "</b> de croissance)" : "") + "</div>";
         }
         if (l.variante && l.variante.p50 != null) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-var"></i>Variante « ' + esc(l.variante.nom) + " » : <b>" + esc(fK(l.variante.p50)) + "</b> (" + esc(fSK(l.variante.p50 - l.p50)) + " en médiane).</div>";
         if (l.crise) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-cr"></i>Avec ' + esc(l.crise.label) + " rejouée : <b>" + esc(fK(l.crise.valeur)) + "</b> (" + esc(fSK(l.crise.valeur - l.p50)) + ").</div>";
@@ -663,21 +753,11 @@
       const d = l.valeur - M.valeurAuj;
       rows.push(kv("Écart avec aujourd'hui", esc(fSK(d) + (M.valeurAuj ? " (" + fPct(d / M.valeurAuj) + ")" : "")), d < 0 ? "neg" : "pos"));
     }
-    if (l.plan && !l.plan.avant) rows.push(kv("Prévu au plan", esc(l.plan.attendu ? ap(l.plan.prevu) : fEur(l.plan.prevu))), kv(l.plan.attendu ? "Écart attendu" : "Écart avec le plan", esc((l.plan.attendu ? fSK(l.plan.ecart) : fSE(l.plan.ecart)) + (l.plan.pct != null ? " (" + fPct(l.plan.pct) + ")" : "")), l.plan.ecart < 0 ? "neg" : "pos"));
-    else if (l.plan && l.plan.avant) rows.push(kv("Plan", "pas encore figé"));
-    if (l.nature === "projete") {
-      if (distinctes(l.p10, l.p90)) rows.push(kv("8 chances sur 10", esc(kTiret(l.p10, l.p90))));
-      if (distinctes(l.p25, l.p75)) rows.push(kv("1 chance sur 2", esc(kTiret(l.p25, l.p75))));
-      const pa = partsAffichees(l);
-      if (pa) {
-        rows.push(kv('<i class="gp-sw gp-sw-sv"></i>Patrimoine actuel, sans versement', esc(fK(pa.existant))));
-        if (l.epargneFuture != null) rows.push(kv("Épargne future et projets", esc(fSK(pa.futur))));
-      }
-      if (l.variante && l.variante.p50 != null) rows.push(kv('<i class="gp-sw gp-sw-var"></i>Variante « ' + esc(l.variante.nom) + " »", esc(fK(l.variante.p50) + " (" + fSK(l.variante.p50 - l.p50) + ")")));
-      if (l.crise) rows.push(kv('<i class="gp-sw gp-sw-cr"></i>' + esc(cap1(l.crise.label)) + " rejouée", esc(fK(l.crise.valeur) + " (" + fSK(l.crise.valeur - l.p50) + ")")));
-    } else if (l.nature === "reconstitue") rows.push(kv("Nature", "estimé à partir de tes relevés"));
+    lectureLignes(M, l).filter(r => r.cle !== "observe" && r.cle !== "estime").forEach(r => rows.push(kv(swHtml(r.sw) + esc(r.label), esc(r.valeur), r.ton || (r.cle === "p50" ? "med" : ""))));
+    if (l.plan && l.plan.avant) rows.push(kv("Plan", "pas encore figé"));
+    if (l.nature === "reconstitue") rows.push(kv("Nature", "estimé à partir de tes relevés"));
     else if (l.nature === "observe") rows.push(kv("Nature", "relevé sur tes comptes"));
-    if (l.capacite) rows.push(kv("Capacité d'épargne " + (l.t <= M.today ? "constatée" : "du mois"), esc(fMoisU(l.capacite.montant))));
+    if (l.capacite) rows.push(kv("Capacité d'épargne " + (l.t <= M.today ? "constatée" : "du mois"), esc(fMoisU(l.capacite.montant) + (l.capacite.montant < 0 ? " · négative" : "")), l.capacite.montant < 0 ? "neg" : ""));
     h += '<div class="gp-kvs">' + rows.join("") + "</div>";
     l.objectifs.forEach(ob => { h += objectifLigne(M, ob); });
     if (def) { const n = prochainJalon(M); if (n) h += '<div class="gp-ro-cs"><button type="button" class="gp-evc" data-jalon="' + esc(n.id) + '">' + icone(n) + "Prochain : " + esc(n.titre) + " <span>" + esc(relatif(M.today, n.t)) + "</span></button></div>"; }
@@ -730,8 +810,28 @@
     crise: '<path d="M0 -7l7.5 13h-15z"/><path d="M0 -2v4"/><path d="M0 4.2v0.2"/>',
     cible: '<circle r="7.5"/><circle r="4"/><circle r="0.8"/>',
     etincelle: '<path d="M0 -7.5l1.9 5.6 5.6 1.9 -5.6 1.9 -1.9 5.6 -1.9 -5.6 -5.6 -1.9 5.6 -1.9z"/>',
+    credit: '<path d="M-8 -4.5h16v9h-16z"/><circle r="2.3"/><path d="M-5.2 -1.4v2.8M5.2 -1.4v2.8"/>',
+    fiscal: '<path d="M-5.5 -7.5h7l4 4v11h-11z"/><path d="M1.5 -7.5v4h4"/><path d="M-2.4 3.6l4.8 -5.2"/><circle cx="-2.2" cy="-0.6" r="0.9"/><circle cx="2.2" cy="3.4" r="0.9"/>',
+    journal: '<path d="M-5.5 -7.5h10.5v14.5h-10.5a1.5 1.5 0 0 1 -1.5 -1.5v-11.5a1.5 1.5 0 0 1 1.5 -1.5z"/><path d="M-2.5 -3h5M-2.5 0.5h5"/>',
   };
-  const iconeDe = j => (estObjectif(j) ? "cible" : ICONES_JALON[j.icone] ? j.icone : ICONES_JALON[j.type] ? j.type : j.source === "calendrier" ? "calendrier" : j.source === "credit" ? "cle" : "etincelle");
+  /** Libellé court du type d'un événement (info-bulle, lecteurs d'écran) : le même alphabet que les icônes. */
+  const TYPES_ICONE = { enfant: "Enfant", emploi: "Emploi", maison: "Logement", credit: "Crédit", fiscal: "Fiscal", cible: "Objectif", crise: "Crise", journal: "Journal", etincelle: "Événement" };
+  /** Icône d'un événement : selon son TYPE (objectif, journal, crédit, fiscal, enfant, emploi, logement, crise), jamais selon l'icône fournie quand le type parle ; « étincelle » sinon. */
+  function iconeDe(j) {
+    if (estObjectif(j)) return "cible";
+    if (j.source === "journal") return "journal";
+    const t = String(j.type || "");
+    if (j.source === "credit" || /credit|pret/.test(t)) return "credit";
+    if (j.source === "calendrier") return "fiscal";
+    if (/naissance|enfant|creche|conge_parental|scolarite/.test(t)) return "enfant";
+    if (/emploi|revenu|salaire|retraite/.test(t)) return "emploi";
+    if (/immobilier|achat|vente|logement|demenagement/.test(t)) return "maison";
+    if (/crise/.test(t)) return "crise";
+    return ICONES_JALON[j.icone] ? j.icone : ICONES_JALON[t] ? t : "etincelle";
+  }
+  /** Catégorie d'un événement pour les filtres de l'onglet Événements : toi (vie, crédits), objectifs, fiscal (calendrier des enveloppes), journal. */
+  const categorieJalon = j => (estObjectif(j) ? "objectifs" : j.source === "journal" ? "journal" : j.source === "calendrier" ? "fiscal" : "toi");
+  const CATEGORIES = [["toi", "Toi"], ["objectifs", "Objectifs"], ["fiscal", "Fiscal"], ["journal", "Journal"]];
   const icoH = (nom, sz) => '<svg class="gp-i" width="' + (sz || 16) + '" height="' + (sz || 16) + '" viewBox="-10 -10 20 20" aria-hidden="true" focusable="false">' + (ICONES_JALON[nom] || "") + "</svg>";
   const icone = j => icoH(iconeDe(j), 16);
   const icoG = (nom, x, y, sc) => '<g class="gp-i" transform="translate(' + x.toFixed(1) + " " + y.toFixed(1) + ") scale(" + (sc || 0.6) + ')">' + (ICONES_JALON[nom] || "") + "</g>";
@@ -741,6 +841,7 @@
     x: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
     plus: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
     aide: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.6 2.2c-.8.5-1.2 1-1.2 1.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>',
+    alerte: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l9.5 16.5h-19z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>',
     moins: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M3 9h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
   };
 
@@ -831,12 +932,12 @@
   function jalonDetailHtml(M, j, extra) {
     const x = extra || {}, rel = relatif(M.today, j.t);
     const date = j.tFin ? dMois(j.t) + " → " + dMois(j.tFin) : dMois(j.t);
-    let h = '<p class="gp-sh-meta num">' + esc(estObjectif(j) ? "échéance " + dMois(j.t) : date) + " · " + esc(rel) + (j.source === "calendrier" ? " · repère du calendrier de tes enveloppes" : "") + "</p>";
+    let h = '<p class="gp-sh-meta num">' + esc(estObjectif(j) ? "échéance " + dMois(j.t) : date) + " · " + esc(rel) + (j.source === "calendrier" ? " · repère du calendrier de tes enveloppes" : j.source === "journal" ? " · entrée de ton journal des décisions" : "") + "</p>";
     const e = effetMensuel(j), E = j.effet || {};
     if (!estObjectif(j)) {
       if (e != null && j.source !== "calendrier") h += cleLigne("Effet sur ta capacité d'épargne", esc(fMois(e)));
       const avant = capaciteA(M, ajouterMois(j.t, -1)), apres = capaciteA(M, ajouterMois(j.t, 1));
-      if (avant && apres && !avant.passe && Math.abs(avant.montant - apres.montant) >= 1) h += cleLigne("Capacité avant → après", esc(fInt(avant.montant) + " → " + fMoisU(apres.montant)));
+      if (avant && apres && !avant.passe && Math.abs(avant.montant - apres.montant) >= 1) h += cleLigne("Capacité avant → après", esc((Math.round(avant.montant) < 0 ? MOINS : "") + fInt(avant.montant) + " → " + fMoisU(apres.montant)));
       const mt = E.montants || {};
       if (fini(mt.frais_acquisition) && +mt.frais_acquisition > 0) h += cleLigne("Effet immédiat sur le patrimoine net", esc(fSK(-mt.frais_acquisition)) + " (frais d'acquisition)");
       if (x.impact === "calcul") h += cleLigne("Effet sur la médiane à l'horizon", '<span data-impact>calcul en cours…</span>');
@@ -883,18 +984,18 @@
   const mesureApprox = (t, poids) => String(t).length * (poids >= 600 ? 6.9 : 6.4);
   const MODES = {
     /* carte : mobile (≈ 390 px) et ordinateur ; le titre flotte dans le tracé, jalons presque invisibles, une seule étiquette */
-    carte: { compact: true, gutter: 50, yTicks: 4, plotH: 284, labelsAll: false, pins: false, clusterPx: 44, stripH: 28, hover: false, select: false, brush: false, plein: false },
+    carte: { compact: true, gutter: 50, yTicks: 4, plotH: 284, labelsAll: false, pins: false, clusterPx: 44, stripH: 56, hover: false, select: false, brush: false, plein: false },
     /* plein écran, téléphone en paysage : barre fine, courbe sur toute la largeur, lecture à droite, pastilles numérotées et libellées */
-    paysage: { compact: false, gutter: 112, yTicks: 4, labelsAll: true, pins: true, railRows: 1, clusterPx: 0, stripH: 26, hover: false, select: false, brush: true, fill: true, plein: true },
+    paysage: { compact: false, gutter: 112, yTicks: 4, labelsAll: true, pins: true, railRows: 1, clusterPx: 20, stripH: 44, hover: false, select: false, brush: true, fill: true, plein: true },
     /* plein écran, ordinateur : grande courbe, axe jusqu'à 8 graduations, tous les libellés, panneau latéral */
-    bureau: { compact: false, gutter: 136, yTicks: 6, labelsAll: true, pins: true, railRows: 2, clusterPx: 0, stripH: 40, hover: true, select: true, brush: true, fill: true, plein: true },
+    bureau: { compact: false, gutter: 136, yTicks: 6, labelsAll: true, pins: true, railRows: 1, clusterPx: 20, stripH: 76, hover: true, select: true, brush: true, fill: true, plein: true },
     /* plein écran, téléphone en portrait : la carte agrandie, avec l'aperçu */
-    portrait: { compact: false, gutter: 50, yTicks: 4, labelsAll: false, pins: true, railRows: 1, clusterPx: 0, stripH: 38, hover: false, select: false, brush: true, plein: true },
+    portrait: { compact: false, gutter: 50, yTicks: 4, labelsAll: false, pins: true, railRows: 1, clusterPx: 20, stripH: 72, hover: false, select: false, brush: true, plein: true },
   };
   /** Paramètres d'un mode pour une largeur donnée (une carte large gagne en hauteur de tracé, en graduations et en survol). */
   function parametresMode(nom, W, opt) {
     const p = Object.assign({ nom }, MODES[nom] || MODES.carte), o = opt || {};
-    if (nom === "carte" && W >= 600) { p.gutter = 58; p.yTicks = 5; p.plotH = W >= 1100 ? 440 : W >= 800 ? 380 : 330; p.hover = o.souris !== false; p.stripH = 32; }
+    if (nom === "carte" && W >= 600) { p.gutter = 58; p.yTicks = 5; p.plotH = W >= 1100 ? 440 : W >= 800 ? 380 : 330; p.hover = o.souris !== false; p.stripH = 64; }
     if (nom === "carte") p.hover = p.hover || o.souris === true;
     if (nom === "portrait") p.plotH = Math.round(clamp((o.hauteurFenetre || 800) * 0.42, 220, 420));
     return p;
@@ -927,11 +1028,11 @@
     const ech = echantillons(M, dom, gran), F = M.futur;
     const planSerie = C.plan || null;
     /* échelle des y : mémorisée entre l'aperçu (500 chemins) et le résultat complet */
-    const besoin = besoinY(M, dom, ech, { existant: C.existant, plan: planSerie && planSerie.valeurs, demain: M.demain && M.demain.serie ? M.demain.serie.emprunt : M.demain ? M.demain.empruntable : null });
+    const besoin = besoinY(M, dom, ech, { existant: C.existant, zoomMediane: C.zoomMediane, plan: planSerie && planSerie.valeurs, demain: M.demain && M.demain.serie ? M.demain.serie.emprunt : M.demain ? M.demain.empruntable : null });
     const dy = etat.echelleY ? etat.echelleY : domaineY(besoin.lo, besoin.hi), lo = dy.lo, hi = dy.hi;
     let grad = graduations(lo, hi, P.yTicks);
     /* plein écran : de haut en bas le tracé, l'axe du temps juste dessous, puis la piste des jalons (une à deux voies) ; carte : le tracé, une ligne de base et l'axe */
-    const topX = P.compact ? 24 : 10, AXE = 22, ECART_PISTE = 10, railH = P.compact ? 6 : P.pins ? AXE + ECART_PISTE + P.railRows * 24 + 4 : 0, labH = P.pins ? 0 : 22;
+    const topX = P.compact ? 24 : 10, AXE = 22, ECART_PISTE = 10, railH = P.compact ? 6 : P.pins ? AXE + ECART_PISTE + (P.railRows || 1) * 24 + 4 : 0, labH = P.pins ? 0 : 24;
     const bottom = railH + labH;
     let plotH = P.plotH;
     if (P.fill && P.H) plotH = Math.max(64, P.H - topX - bottom);
@@ -940,7 +1041,8 @@
     const f1 = v => v.toFixed(1), cid = id + "c";
     let s = '<defs><clipPath id="' + cid + '"><rect x="' + L + '" y="' + (DT - 2) + '" width="' + (R - L) + '" height="' + (B - DT + 4) + '"/></clipPath>' +
       '<linearGradient id="' + id + 'g1" x1="0" x2="1" y1="0" y2="0"><stop offset="0" class="gs-a"/><stop offset="1" class="gs-b"/></linearGradient>' +
-      '<linearGradient id="' + id + 'g2" x1="0" x2="1" y1="0" y2="0"><stop offset="0" class="gs-c"/><stop offset="1" class="gs-d"/></linearGradient></defs>';
+      '<linearGradient id="' + id + 'g2" x1="0" x2="1" y1="0" y2="0"><stop offset="0" class="gs-c"/><stop offset="1" class="gs-d"/></linearGradient>' +
+      '<linearGradient id="' + id + 'gr" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="gs-r1"/><stop offset="1" class="gs-r2"/></linearGradient></defs>';
     /* pastille de fin : valeur de la médiane au dernier point visible */
     const aFutur = !!F && dom.fin > M.today;
     let pill = null;
@@ -973,7 +1075,7 @@
       const xa = X(Math.max(dom.debut, M.passe.t[0])), xb = X(Math.min(finRec, dom.fin));
       if (xb - xa > 2) {
         const pr = ech.passe.filter(p => p.nature === "reconstitue" && p.t <= M.today);
-        if (pr.length > 1) s += '<path class="gp-recon-f" d="' + chemin(pr.map(p => [X(p.t), Y(p.v)])) + "L" + f1(X(pr[pr.length - 1].t)) + " " + f1(B) + "L" + f1(X(pr[0].t)) + " " + f1(B) + 'Z"/>';
+        if (pr.length > 1) s += '<path class="gp-recon-f" fill="url(#' + id + 'gr)" d="' + chemin(pr.map(p => [X(p.t), Y(p.v)])) + "L" + f1(X(pr[pr.length - 1].t)) + " " + f1(B) + "L" + f1(X(pr[0].t)) + " " + f1(B) + 'Z"/>';
         const lib = "estimé", wl = mesurer(lib, 600) + 14;
         if (xb - xa >= wl + 8 && pr.length) { const py = clamp(Y(pr[0].v) - 22, DT + 2, B - 22); puceEstime = '<g class="gp-puce" aria-hidden="true"><rect x="' + f1(xa + 4) + '" y="' + f1(py) + '" width="' + f1(wl) + '" height="18" rx="9"/><text x="' + f1(xa + 4 + wl / 2) + '" y="' + f1(py + 12.5) + '" text-anchor="middle">' + lib + "</text></g>"; }
       }
@@ -1079,6 +1181,7 @@
     /* étiquettes directes des séries (plein écran) */
     if (gout) s += '<g class="after" aria-hidden="true">' + gout.svg + "</g>";
     if (C.plan && planSerie) s += '<g class="after">' + etiquettesPlan(M, planSerie, dom, X, Y, L, R, DT, T, mesurer, P) + "</g>";
+    if (P.pins && C.zoomMediane && F) s += '<text x="' + f1(R - 6) + '" y="' + f1(DT + 11) + '" text-anchor="end" class="gp-halo gp-ti gp-zmed-t">Échelle centrée sur la médiane</text>';
     /* axe du temps : juste sous le tracé en plein écran (« Aujourd'hui » y est écrit en haut de son trait), au pied de la carte sinon */
     libellesTemps(dom, X, W, mesurer, M.today, !P.pins).forEach(o => { s += '<text x="' + f1(o.x) + '" y="' + (P.pins ? B + 16 : H - 6) + '" text-anchor="middle"' + (o.b ? ' class="gp-tb"' : "") + ">" + esc(o.t) + "</text>"; });
     s += "</g>";
@@ -1092,7 +1195,7 @@
     s += geoJ.svg;
     if (P.compact && C.avenirs && hopDots) s += '<g aria-hidden="true">' + hopDots + "</g>";
     s += '<g data-hop aria-hidden="true"></g><g data-sel></g>';
-    s += '<g class="gp-xh" data-xh aria-hidden="true" style="opacity:0"><g data-xv><line class="gp-xh-v" x1="0" x2="0" y1="' + T + '" y2="' + (B + (P.pins ? railH : 0)) + '"/></g><g data-xhh><line class="gp-xh-h" x1="' + L + '" x2="' + f1(R) + '" y1="0" y2="0"/></g><g data-xd><circle r="11" class="gp-glow"/><circle data-xdot class="gp-dot-brand" r="5"/></g><g data-xp><g class="gp-pill" data-xpill><rect x="' + (R + 3) + '" y="-10" width="' + (W - R - 3) + '" height="20" rx="10"/><text x="' + f1((R + 3 + W) / 2) + '" y="4" text-anchor="middle"></text></g></g></g>';
+    s += '<g class="gp-xh" data-xh aria-hidden="true" style="opacity:0"><g data-xv><line class="gp-xh-v" x1="0" x2="0" y1="' + T + '" y2="' + (B + (P.pins ? railH : 0)) + '"/></g><g data-xhh><line class="gp-xh-h" x1="' + L + '" x2="' + f1(R) + '" y1="0" y2="0"/></g><g data-xs></g><g data-xd><circle r="11" class="gp-glow"/><circle data-xdot class="gp-dot-brand" r="5"/></g><g data-xp><g class="gp-pill" data-xpill><rect x="' + (R + 3) + '" y="-10" width="' + (W - R - 3) + '" height="20" rx="10"/><text x="' + f1((R + 3 + W) / 2) + '" y="4" text-anchor="middle"></text></g></g></g>';
     const geo = { W, H, L, R, T, B, DT, X, Y, lo, hi, dom, gran, ech, ticks, pill, pillY, marqueurs: geoJ.marqueurs, groupes: geoJ.groupes || [], hopHors, besoin, plotH, P, planTop: !!planTop };
     return { svg: s, geo };
   }
@@ -1167,8 +1270,20 @@
     return s;
   }
 
-  /* ---------- jalons : marqueurs compacts (carte) et pastilles numérotées (plein écran) ---------- */
-  /** Carte : points de 8 px sur la ligne de base (fusionnés en « N » quand ils se touchent) et petites cibles sur la médiane pour les objectifs. */
+  /* ---------- jalons : une petite icône par événement (carte et plein écran) ---------- */
+  /** Icône d'un événement ou d'un groupe d'événements rapprochés, posée en (x, y) : l'icône du TYPE (1,5 px de trait, encre ; pétrole au survol et à la sélection), un anneau de
+      couleur pour un objectif seul, une petite pastille du nombre pour un groupe. Aucun numéro, aucun texte : le lien avec la liste se fait par la même icône et par la synchro du réticule. */
+  function pinSvg(M, g, x, y, sc, fond) {
+    const n = g.jalons.length, j = g.jalons[0], ids = g.jalons.map(z => z.id).join(" "), o = n === 1 && estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null;
+    const mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut], ton = o ? (mot ? TON_MOT[mot] : st ? st[1] : "todo") : null, rr = Math.round(10 * sc + 3);
+    let s = '<g class="gp-pin gp-pin-i' + (n > 1 ? " gp-pin-g" : "") + '" data-ev="' + esc(ids) + '" data-icone="' + iconeDe(j) + '">';
+    s += '<circle class="gp-pin-bg' + (fond ? " plein" : "") + '" cx="' + F1(x) + '" cy="' + F1(y) + '" r="' + rr + '"/>';
+    if (o) s += '<circle class="gp-ring ' + ton + '" cx="' + F1(x) + '" cy="' + F1(y) + '" r="' + (rr + 2) + '"/>';
+    s += icoG(iconeDe(j), x, y, sc);
+    if (n > 1) s += '<g class="gp-badge"><circle cx="' + F1(x + rr * 0.8) + '" cy="' + F1(y - rr * 0.8) + '" r="6.5"/><text x="' + F1(x + rr * 0.8) + '" y="' + F1(y - rr * 0.8 + 3.5) + '" text-anchor="middle">' + (n > 99 ? "99+" : n) + "</text></g>";
+    return s + "</g>";
+  }
+  /** Carte : une icône de 12 px par événement sur la ligne de base (fusionnées avec leur nombre quand elles se touchent) et petites cibles sur la médiane pour les objectifs. */
   function marqueursCompacts(M, jalons, dom, X, Y, ctx) {
     const { B, P, F, aFutur } = ctx;
     const evs = jalons.filter(j => !estObjectif(j) && j.t >= dom.debut && j.t <= dom.fin), buts = jalons.filter(j => estObjectif(j) && j.t >= dom.debut && j.t <= dom.fin && j.t >= M.today);
@@ -1176,10 +1291,8 @@
     let s = '<g aria-hidden="true"><line class="gp-base" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + B + '" y2="' + B + '"/>';
     const marqueurs = [];
     groupes.forEach(g => {
-      const ids = g.jalons.map(j => j.id).join(" ");
-      s += g.jalons.length === 1 ? '<circle class="gp-mkc" data-ev="' + esc(ids) + '" cx="' + F1(g.x) + '" cy="' + B + '" r="4"/>'
-        : '<g class="gp-mkc gp-mkn" data-ev="' + esc(ids) + '"><circle cx="' + F1(g.x) + '" cy="' + B + '" r="7.5"/><text x="' + F1(g.x) + '" y="' + (B + 4) + '" text-anchor="middle">' + g.jalons.length + "</text></g>";
-      marqueurs.push({ x: g.x, y: B, jalons: g.jalons, type: "groupe", r: g.jalons.length > 1 ? 7.5 : 4 });
+      s += pinSvg(M, g, g.x, B, 0.62, true);
+      marqueurs.push({ x: g.x, y: B, jalons: g.jalons, type: "groupe", r: 8 });
     });
     buts.forEach(j => {
       const i = aFutur ? plusProche(F.t, j.t) : -1, v = i >= 0 ? F.p50[i] : M.valeurAuj, x = X(j.t), y = v != null ? Y(v) : B - 20;
@@ -1189,42 +1302,24 @@
     s += '<g data-flab></g></g>';
     return { svg: s, marqueurs, groupes: groupes.map(g => ({ x: g.x, jalons: g.jalons })).concat(buts.map(j => ({ x: X(j.t), jalons: [j] }))) };
   }
-  /** Plein écran : piste des jalons sous l'axe du temps, d'une à deux voies, de petits ronds numérotés (le numéro est celui de la liste chronologique), jamais de texte :
-      chaque rond est à la date de son jalon, décalé de voie quand il en gênerait un autre (24 px de pas), regroupé en « +N » quand les deux voies sont prises. Les durées sont un
-      trait fin derrière le rond ; un anneau de couleur (et le mot dans la liste) pour les objectifs ; l'étiquette d'un seul jalon, celui du réticule, flotte dans le tracé (data-flab). */
+  /** Plein écran : la piste des événements sous l'axe du temps, une seule voie, une icône de 16 px par événement à sa date (le TYPE se lit à l'icône), fusionnées avec leur nombre quand
+      elles se toucheraient (24 px). Les durées sont un trait fin derrière l'icône ; un anneau de couleur pour les objectifs ; l'étiquette d'un seul événement, celui du réticule, flotte dans le
+      tracé (data-flab). Pas de texte sur la piste : le détail est dans l'onglet Événements, relié par la même icône. */
   function rail(M, jalons, dom, X, Y, ctx) {
-    const { B, P, railTop } = ctx, rows = P.railRows || 1, PAS = 24;
-    const numero = new Map(M.jalons.map((j, i) => [j.id, i + 1]));
-    const vis = jalons.filter(j => j.t >= dom.debut && j.t <= dom.fin).sort((a, b) => a.t - b.t);
-    const voies = Array.from({ length: rows }, () => []), elems = [];
-    vis.forEach(j => {
-      const x = X(j.t);
-      let k = voies.findIndex(v => !v.length || x - v[v.length - 1].x >= PAS);
-      if (k < 0) { /* les voies sont prises : le jalon rejoint le rond le plus proche (regroupement) */
-        let best = null; voies.forEach(v => { const d = Math.abs(x - v[v.length - 1].x); if (!best || d < best.d) best = { v, d }; });
-        best.v[best.v.length - 1].jalons.push(j); return;
-      }
-      const el = { x, voie: k, jalons: [j] }; voies[k].push(el); elems.push(el);
-    });
-    const cy = voie => railTop + 12 + voie * PAS;
-    let s = '<g aria-hidden="true"><line class="gp-base" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + B + '" y2="' + B + '"/>';
-    vis.forEach(j => { s += '<line class="gp-lead" x1="' + F1(X(j.t)) + '" x2="' + F1(X(j.t)) + '" y1="' + B + '" y2="' + (B + 4) + '"/>'; });
-    /* durées : un trait fin à la hauteur du rond, de la date de début à celle de fin */
-    elems.forEach(el => {
-      if (el.jalons.length !== 1 || !el.jalons[0].tFin || el.jalons[0].tFin <= dom.debut) return;
-      const j = el.jalons[0], x2 = X(Math.min(j.tFin, dom.fin)), y = cy(el.voie);
-      if (x2 - el.x > 12) s += '<g class="gp-dur" data-ev="' + esc(j.id) + '"><line x1="' + F1(el.x + 10) + '" x2="' + F1(x2) + '" y1="' + y + '" y2="' + y + '"/>' + (j.tFin <= dom.fin ? '<line x1="' + F1(x2) + '" x2="' + F1(x2) + '" y1="' + (y - 3) + '" y2="' + (y + 3) + '"/>' : "") + "</g>";
+    const { B, P, railTop } = ctx, cy = railTop + 12;
+    const vis = jalons.filter(j => j.t >= dom.debut && j.t <= dom.fin).sort((a, b) => a.t - b.t), groupes = regrouperJalons(vis, X, P.clusterPx || 20);
+    let s = '<g aria-hidden="true"><line class="gp-base" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + B + '" y2="' + B + '"/><line class="gp-rail-l" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + cy + '" y2="' + cy + '"/>';
+    groupes.forEach(g => {
+      if (g.jalons.length !== 1 || !g.jalons[0].tFin || g.jalons[0].tFin <= dom.debut) return;
+      const j = g.jalons[0], x2 = X(Math.min(j.tFin, dom.fin));
+      if (x2 - g.x > 14) s += '<g class="gp-dur" data-ev="' + esc(j.id) + '"><line x1="' + F1(g.x + 12) + '" x2="' + F1(x2) + '" y1="' + cy + '" y2="' + cy + '"/>' + (j.tFin <= dom.fin ? '<line x1="' + F1(x2) + '" x2="' + F1(x2) + '" y1="' + (cy - 3) + '" y2="' + (cy + 3) + '"/>' : "") + "</g>";
     });
     s += "</g>";
     const marqueurs = [];
-    elems.forEach(el => {
-      const y = cy(el.voie), grp = el.jalons.length > 1, j = el.jalons[0], o = !grp && estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null;
-      const mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut], ton = o ? (mot ? TON_MOT[mot] : st ? st[1] : "todo") : null;
-      const ids = el.jalons.map(z => z.id).join(" ");
-      s += '<g class="gp-pin' + (grp ? " gp-pin-g" : "") + '" data-ev="' + esc(ids) + '">';
-      if (o) s += '<circle class="gp-ring ' + ton + '" cx="' + F1(el.x) + '" cy="' + y + '" r="12"/>';
-      s += '<circle class="gp-bd" cx="' + F1(el.x) + '" cy="' + y + '" r="9"/><text class="n" x="' + F1(el.x) + '" y="' + (y + 4) + '" text-anchor="middle">' + (grp ? "+" + el.jalons.length : numero.get(j.id)) + "</text></g>";
-      marqueurs.push({ x: el.x, y, jalons: el.jalons, type: grp ? "groupe" : o ? "objectif" : "pastille", r: 13, numero: grp ? null : numero.get(j.id) });
+    groupes.forEach(g => {
+      s += pinSvg(M, g, g.x, cy, 0.8, true);
+      const o = g.jalons.length === 1 && estObjectif(g.jalons[0]);
+      marqueurs.push({ x: g.x, y: cy, jalons: g.jalons, type: g.jalons.length > 1 ? "groupe" : o ? "objectif" : "icone", r: 13 });
     });
     /* cibles des objectifs sur la médiane */
     jalons.filter(j => estObjectif(j) && j.t >= M.today && j.t >= dom.debut && j.t <= dom.fin && ctx.aFutur).forEach(j => {
@@ -1232,49 +1327,71 @@
       s += '<g class="gp-tg" aria-hidden="true"><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="5"/><circle cx="' + F1(x) + '" cy="' + F1(y) + '" r="1.8"/></g>';
     });
     s += '<g data-flab></g>';
-    return { svg: s, marqueurs, groupes: elems.map(el => ({ x: el.x, jalons: el.jalons })) };
+    return { svg: s, marqueurs, groupes: groupes.map(g => ({ x: g.x, jalons: g.jalons })) };
   }
 
-  /* ---------- bande « capacité d'épargne » ---------- */
-  /** Escalier de la capacité mensuelle sur le même axe du temps, à partir d'aujourd'hui (le passé n'a pas de capacité prévue) ; le zéro est marqué, une capacité négative est
-      en couleur d'alerte ET portée par le mot « négative ». ouverte : montants des marches affichés. → { svg, H, Ys, marches } ; vide sans capacité. */
+  /* ---------- bande « épargne par mois » ---------- */
+  /** Épargne par mois sur le même axe du temps : de vraies barres (passé : épargne constatée mois par mois quand les comptes sont connectés ; futur : l'escalier de la capacité prévue, une
+      marche à chaque événement), une ligne de zéro, des repères min / max dans la marge de droite, l'icône de l'événement à chaque marche (la même que sur la piste), et le mot « négative »
+      en toutes lettres pour les mois négatifs, d'un ton d'avertissement calme (jamais la couleur seule). ouverte : sur la carte, la bande repliée ne fait que 28 px.
+      → { svg, H, Ys, marches, periodes, mn, mx, y0, valeurA(t) } ; vide sans capacité. */
   function construireBande(M, etat, geo, P, ouverte) {
     const C = M.capacite;
     if (!C || !C.periodes.length) return { svg: "", H: 0, vide: true };
-    const { dom, X, W } = geo, compactRepli = P.compact && !ouverte, valeurs = P.compact && !!ouverte;
-    /* les montants des marches ne s'écrivent que sur la carte dépliée ; en plein écran, la bande est un dessin et sa valeur se lit au réticule (ligne de lecture et panneau) */
-    const H = compactRepli ? 28 : P.stripH + (valeurs ? 14 : 0), top = valeurs ? 16 : compactRepli ? 14 : 3, bot = H - 2;
+    const { dom, X, W, R } = geo, mes = P.mesurer || mesureApprox, repliee = P.compact && !ouverte;
+    const H = repliee ? 28 : P.stripH, top = repliee ? 4 : 17, bot = H - 3;
     const periodes = C.periodes.filter(p => p.t0 >= M.today || p.t1 == null || p.t1 > M.today);
-    const montants = periodes.map(p => p.montant);
-    let mn = Math.min(0, ...montants), mx = Math.max(0, ...montants);
-    if (mx - mn < 1) mx = mn + 1;
-    const pad = (mx - mn) * 0.12;
-    const Ys = v => bot - ((v - (mn - pad * 0)) / (mx + pad - mn)) * (bot - top);
-    let d = "", prev = null, x0 = null;
-    const xa = X(clamp(Math.max(M.today, dom.debut), dom.debut, dom.fin));
+    /* segments : passé (un par mois constaté), futur (un par période, la dernière court jusqu'à l'horizon) */
+    const seg = [];
+    C.passe.forEach(p => { const t1 = Math.min(ajouterMois(p.t, 1), M.today); if (t1 > p.t) seg.push({ t0: p.t, t1, v: p.montant, passe: true }); });
     periodes.forEach((p, k) => {
-      const debut = k === 0 ? Math.max(M.today, dom.debut) : p.t0, x = X(clamp(debut, dom.debut, dom.fin));
-      if (p.t0 > dom.fin) return;
-      if (prev === null) { d += "M" + F1(x) + " " + F1(Ys(p.montant)); x0 = x; }
-      else if (p.montant !== prev) d += "L" + F1(x) + " " + F1(Ys(prev)) + "L" + F1(x) + " " + F1(Ys(p.montant));
-      prev = p.montant;
+      const t0 = k === 0 ? Math.max(M.today, p.t0) : p.t0, suiv = periodes[k + 1], t1 = suiv ? suiv.t0 : Math.max(dom.fin, t0);
+      if (t1 > t0) seg.push({ t0, t1, v: p.montant, passe: false });
     });
-    if (prev === null) return { svg: "", H: 0, vide: true };
-    const xf = X(dom.fin);
-    d += "L" + F1(xf) + " " + F1(Ys(prev));
-    let s = '<path class="gp-st-a" d="' + d + "L" + F1(xf) + " " + F1(Ys(0)) + "L" + F1(x0) + " " + F1(Ys(0)) + 'Z"/>';
-    s += '<line class="gp-st-z" x1="' + F1(xa) + '" x2="' + F1(xf) + '" y1="' + F1(Ys(0)) + '" y2="' + F1(Ys(0)) + '"/><path class="gp-st-l" d="' + d + '"/>';
-    if (dom.debut <= M.today && dom.fin >= M.today) s += '<line class="gp-tdy" x1="' + F1(X(M.today)) + '" x2="' + F1(X(M.today)) + '" y1="' + (top - 2) + '" y2="' + bot + '"/>';
+    const vus = seg.filter(g => g.t1 > dom.debut && g.t0 < dom.fin);
+    if (!vus.length) return { svg: "", H: 0, vide: true };
+    const valeurs = vus.map(g => g.v);
+    const mn = Math.min(0, ...valeurs), mx = Math.max(0, ...valeurs), ampl = Math.max(1, mx - mn);
+    const Ys = v => bot - ((v - mn) / ampl) * (bot - top), y0 = Ys(0), f = F1;
+    let s = "";
+    vus.forEach(g => {
+      const xa = X(Math.max(g.t0, dom.debut)), xb = X(Math.min(g.t1, dom.fin));
+      if (xb - xa < 0.3) return;
+      const wide = g.passe && xb - xa >= 4, x = xa + (wide ? 0.5 : 0), w = xb - xa - (wide ? 1 : 0), y = Ys(g.v), neg = g.v < 0;
+      s += '<rect class="gp-sb ' + (neg ? "n" : "p") + (g.passe ? " pas" : "") + '" x="' + f(x) + '" y="' + f(neg ? y0 : Math.min(y, y0)) + '" width="' + f(Math.max(0.6, w)) + '" height="' + f(Math.max(neg || g.v > 0 ? 1 : 0, Math.abs(y - y0))) + '"/>';
+    });
+    s += '<line class="gp-st-z" x1="0" x2="' + f(R) + '" y1="' + f(y0) + '" y2="' + f(y0) + '"/>';
+    if (dom.debut <= M.today && dom.fin >= M.today) s += '<line class="gp-tdy" x1="' + f(X(M.today)) + '" x2="' + f(X(M.today)) + '" y1="' + (top - 2) + '" y2="' + bot + '"/>';
+    /* repères min / max / zéro dans la marge de droite : le zéro et la valeur la plus éloignée, l'autre extrême quand la place le permet ; l'unité quand la marge la contient */
+    const unite = W - R >= 90 ? "/mois" : "", ecr = v => (Math.round(v) < 0 ? MOINS : "") + fInt(v) + NB + "€" + unite;
+    const reperes = [{ v: 0, t: "0", y: y0 }];
+    if (mx > 0) reperes.push({ v: mx, t: ecr(mx), y: Ys(mx) });
+    if (mn < 0) reperes.push({ v: mn, t: ecr(mn), y: Ys(mn) });
+    const places = [];
+    reperes.sort((a, b) => (b.v === 0) - (a.v === 0) || Math.abs(b.v) - Math.abs(a.v)).forEach(r => { if (places.every(p => Math.abs(p.y - r.y) >= 12)) places.push(r); });
+    places.forEach(r => { s += '<text class="gp-sy" x="' + (W - 2) + '" y="' + f(clamp(r.y + 4, 10, H - 1)) + '" text-anchor="end">' + esc(r.t) + "</text>"; });
+    /* marches : l'icône de l'événement et son effet, au-dessus de la marche (pas sur la carte repliée) */
     const marches = [];
     periodes.forEach((p, k) => { if (!k) return; const dv = p.montant - periodes[k - 1].montant; if (Math.abs(dv) >= 1 && p.t0 >= dom.debut && p.t0 <= dom.fin) marches.push({ t: p.t0, dv, raison: p.raison, evenementId: p.evenementId, x: X(p.t0) }); });
-    if (valeurs) {
-      const posees = [], mes = P.mesurer || mesureApprox;
-      marches.forEach(m => { const txt = (m.dv > 0 ? "+" : MOINS) + fInt(m.dv), w = mes(txt, 400); if (posees.some(p => Math.abs(p - m.x) < w + 6)) return; posees.push(m.x); s += '<text x="' + F1(m.x) + '" y="11" text-anchor="middle" class="gp-ti">' + esc(txt) + "</text>"; });
+    const trouver = m => M.jalons.find(j => (m.evenementId && j.evenementId === m.evenementId)) || M.jalons.filter(j => j.source === "credit" && Math.abs(j.t - m.t) < 45 * MS_JOUR).sort((a, b) => Math.abs(a.t - m.t) - Math.abs(b.t - m.t))[0] || null;
+    if (!repliee) {
+      let dernier = -1e9;
+      marches.forEach(m => {
+        if (m.x - dernier < 15) return;
+        const j = trouver(m), txt = (m.dv > 0 ? "+" : MOINS) + fInt(m.dv), wt = mes(txt, 600), plein = P.pins || ouverte;
+        s += '<g class="gp-mar" data-marche="' + m.t + '">' + (j ? icoG(iconeDe(j), m.x + 6, 7, 0.55) : "") + (plein && m.x + 14 + wt < R ? '<text x="' + f(m.x + 14) + '" y="11">' + esc(txt) + "</text>" : "") + "<title>" + esc((j ? j.titre + " · " : "") + fMois(m.dv)) + "</title></g>";
+        dernier = m.x + (plein ? 14 + wt : 14);
+      });
     }
-    if (montants.some(v => v < 0)) { const neg = periodes.find(p => p.montant < 0); if (neg) s += '<text x="' + F1(clamp(X(Math.max(neg.t0, dom.debut)) + 4, 4, geo.R - 70)) + '" y="' + (bot - 2) + '" class="gp-tneg">négative</text>'; }
-    if (!valeurs) s += '<text x="4" y="11" class="gp-halo gp-ti-m">Épargne par mois</text>';
+    /* « négative » : le mot, une fois, au début du premier stretch négatif visible */
+    const neg = vus.filter(g => g.v < 0).sort((a, b) => (a.passe - b.passe) || ((Math.min(b.t1, dom.fin) - Math.max(b.t0, dom.debut)) - (Math.min(a.t1, dom.fin) - Math.max(a.t0, dom.debut))))[0];
+    if (neg) {
+      const xa = X(Math.max(neg.t0, dom.debut)), ty = y0 + 12 <= bot + 2 && Ys(neg.v) - y0 > 8 ? y0 + 11 : Math.max(top + 9, y0 - 4), xt = clamp(xa + 4, 2, R - 52);
+      s += '<text class="gp-tneg gp-halo" x="' + f(xt) + '" y="' + f(ty) + '">négative</text>';
+    }
     s += "<g data-sxh></g>";
-    return { svg: s, H, Ys, marches, periodes };
+    const valeurA = t => { const cap = capaciteA(M, t); return cap ? cap.montant : null; };
+    return { svg: s, H, Ys, marches, periodes, mn, mx, y0, valeurA };
   }
 
   /* ================================================================ 2. CONTRÔLEUR DOM ================================================================ */
@@ -1330,7 +1447,7 @@
       this.vues = new Set(); this.plein = null; this.M = null; this.donnees = null; this.detruit = false;
       const large = this.large();
       const r = Object.assign({ vue: this.preset.vue, euros: "constants", net_impots: false, variante: null, crise: { on: false, cle: null, debut: null }, existant: null, avenirs: false, plan: null, periode: null, duree: 25, neuf: false, primo: false }, o.reglages || {});
-      this.etat = { fenetre: o.fenetre || null, zoom: null, curseur: null, reglages: r, bandeOuverte: false, hopI: 0, hopJoue: false, echelleY: null, cleY: "", anim: null, plan: null, selection: null, chargement: !o.donnees };
+      this.etat = { fenetre: o.fenetre || null, zoom: null, curseur: null, reglages: r, bandeOuverte: true, zoomMediane: false, filtres: null, hopI: 0, hopJoue: false, echelleY: null, cleY: "", anim: null, plan: null, selection: null, chargement: !o.donnees };
       if (!this.etat.fenetre) this.etat.fenetre = fenetreDefaut(this.preset, large, null, o.objectifId);
       this.build();
       if (o.donnees) this.mettreAJour(o.donnees, { initial: true }); else this.rendreTout();
@@ -1370,7 +1487,7 @@
       if (donnees && donnees.plan !== undefined) e.plan = planNormalise(donnees.plan); else if (donnees && !e.reglages.plan) e.plan = null;
       const M = donnees ? normaliser(donnees) : null, avant = this.M;
       this.M = M;
-      if (M) M.jalons = this.jalonsVisibles();
+      if (M) { M.tousJalons = M.jalons; M.jalons = this.jalonsVisibles(); }
       e.chargement = !M || M.etat === "calcul";
       if (M && !avant && !e.fenetreChoisie) e.fenetre = this.o.fenetre || fenetreDefaut(this.preset, this.large(), M, this.o.objectifId);
       /* échelle mémorisée : seulement tant que la fenêtre et les couches sont les mêmes (aperçu → complet sans saut) */
@@ -1454,7 +1571,7 @@
     couches() {
       const r = this.etat.reglages, plein = this.vues && [...this.vues].some(v => v.plein);
       const existant = r.existant == null ? !!plein : !!r.existant;
-      return { existant, avenirs: !!r.avenirs, plan: this.etat.plan || null, demain: true };
+      return { existant, avenirs: !!r.avenirs, plan: this.etat.plan || null, demain: true, zoomMediane: !!this.etat.zoomMediane };
     }
     /** Réglages qui changent le calcul : on relance le calcul (surReglages), le reste est local. */
     appliquerReglages(nouveau) {
@@ -1481,15 +1598,20 @@
       this.el.innerHTML = "";
       this.vue = new Vue(this, this.el, { mode: "carte" });
     }
-    /** Jalons affichés : les objectifs selon le préréglage (tous, aucun ou un seul). */
-    jalonsVisibles() {
+    /** Jalons du préréglage (les objectifs : tous, aucun ou un seul), sans les filtres de catégorie. */
+    jalonsPreset() {
       const M = this.M; if (!M) return [];
       const p = this.preset.objectifs, id = this.o.objectifId;
-      return M.jalons.filter(j => {
+      return (M.tousJalons || M.jalons).filter(j => {
         if (!estObjectif(j)) return true;
         if (p === "aucun") return false;
         return !id || j.objectifId === String(id);
       });
+    }
+    /** Jalons affichés : ceux du préréglage, moins les catégories masquées dans l'onglet Événements (Toi, Objectifs, Fiscal, Journal). */
+    jalonsVisibles() {
+      const f = this.etat.filtres;
+      return this.jalonsPreset().filter(j => !(f && f[categorieJalon(j)] === false));
     }
   }
 
@@ -1525,8 +1647,10 @@
         (avecHl ? '<button type="button" class="gp-zre" data-act="zreset" hidden>Réinitialiser le zoom</button>' : "") + '<div class="gp-etat" data-etat hidden></div></div>';
     }
     bande() {
-      return '<button type="button" class="gp-bande" data-act="bande" aria-expanded="false"><span class="gp-bande-h" data-bandeh hidden><span>Capacité d\'épargne</span><span class="num" data-stripv></span></span><svg class="gp-s-svg" data-ssvg aria-hidden="true"></svg><span class="ui-sr">Capacité d\'épargne : afficher ou masquer le détail</span></button>';
+      return '<button type="button" class="gp-bande" data-act="bande" aria-expanded="false"><span class="gp-bande-h" data-bandeh><span>Épargne par mois</span><span class="num" data-stripv></span></span><svg class="gp-s-svg" data-ssvg aria-hidden="true"></svg><span class="ui-sr">Épargne par mois : afficher ou masquer le détail</span></button>';
     }
+    alerte() { return '<div class="gp-alerte" data-alerte role="status" hidden></div>'; }
+    zmed() { return '<button type="button" class="gp-btn-q gp-zmed" data-act="zmed" aria-pressed="false" hidden>Zoom sur la médiane</button>'; }
     apercu() {
       return '<div class="gp-apercu"><div class="gp-apercu-h"><span>Aperçu complet</span><span class="num" data-brushv></span></div><svg class="gp-b-svg" data-bsvg role="slider" tabindex="0" aria-label="Période affichée sur l\'aperçu complet. Flèches pour déplacer, plus et moins pour zoomer"></svg></div>';
     }
@@ -1538,8 +1662,9 @@
           '<button type="button" class="gp-eur sm" data-act="eur"><span data-eur></span></button>' +
           '<button type="button" class="gp-icon" data-act="reglages" aria-label="Réglages du graphique">' + ICO.reglages + "</button>" +
           '<button type="button" class="gp-icon" data-act="plein" aria-label="Ouvrir en grand" title="Ouvrir en grand">' + ICO.plein + "</button></div>" +
-          this.cadre(true) + this.bande() +
+          this.cadre(true) + this.alerte() + this.bande() +
           '<button type="button" class="gp-ligne" data-act="lecture" aria-label="Lecture détaillée"><span class="gp-ligne-t num" data-roline aria-live="polite" aria-atomic="true"></span><span class="gp-chev" aria-hidden="true">›</span></button>' +
+          '<div class="gp-lt" data-lt role="group" aria-label="Valeur de chaque courbe à cette date"></div>' +
           '<div class="gp-ctl">' + this.seg() + '<button type="button" class="gp-jal" data-act="jalons"><span data-njal></span></button></div>' +
           '<div class="gp-invite" data-invite hidden></div><div class="gp-notes" data-notes></div><div data-why></div>' +
           '<div class="gp-pied"><span class="gp-pied-t">Projection, pas une promesse.</span><button type="button" class="gp-lien" data-act="calcul">Comment c\'est calculé</button></div><p class="ui-sr" data-sr></p></section>';
@@ -1548,11 +1673,11 @@
         /* en-tête : titre, fenêtre, puces ; puis, de haut en bas, le titre vivant, le tracé (axe et piste des jalons dedans), la bande d'épargne, l'aperçu ; à droite, un panneau à onglets */
         h = '<div class="gp-fsv gp-fsv-' + m + '"><div class="gp-fs-bar"><button type="button" class="gp-icon" data-act="plein" aria-label="Quitter le plein écran">' + ICO.x + "</button>" +
           '<div class="gp-ttl">' + esc(L ? t : t + ", passé et futur") + "</div>" + this.seg() + '<button type="button" class="gp-btn-q ink" data-act="zreset" hidden>Réinitialiser le zoom</button>' +
-          (L || m === "portrait" ? "" : '<button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button>') +
+          (m === "portrait" ? "" : this.zmed()) + (L || m === "portrait" ? "" : '<button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button>') +
           '<button type="button" class="gp-icon gp-aide" data-act="aide" aria-label="Aide : lire, sélectionner, zoomer" title="Aide : lire, sélectionner, zoomer">' + ICO.aide + "</button>" +
           '<button type="button" class="gp-icon" data-act="reglages" aria-label="Réglages du graphique">' + ICO.reglages + "</button></div>" +
-          '<div class="gp-fs-body"><div class="gp-fs-main">' + (m === "portrait" ? '<div class="gp-fs-eur"><button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button></div>' : "") + (L ? "" : this.hl()) + this.cadre(false) + '<div class="gp-hopbar" data-hopbar hidden></div>' + this.bande() + this.apercu() + "</div>" +
-          '<aside class="gp-fs-side" aria-label="Lecture">' + (L ? '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied :
+          '<div class="gp-fs-body"><div class="gp-fs-main">' + (m === "portrait" ? '<div class="gp-fs-eur">' + this.zmed() + '<button type="button" class="gp-eur" data-act="eur"><span data-eur></span></button></div>' : "") + (L ? "" : this.hl()) + this.cadre(false) + (L ? "" : this.alerte()) + '<div class="gp-hopbar" data-hopbar hidden></div>' + this.bande() + this.apercu() + "</div>" +
+          '<aside class="gp-fs-side" aria-label="Lecture">' + (L ? this.alerte() + '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied :
             '<div class="gp-onglets" role="tablist" aria-label="Panneau de lecture">' + ONGLETS.map(o => '<button type="button" role="tab" id="' + id + "o" + o[0] + '" data-tab="' + o[0] + '" aria-controls="' + id + "p" + o[0] + '" aria-selected="false" tabindex="-1">' + o[1] + "</button>").join("") + "</div>" +
             ONGLETS.map(o => '<div class="gp-panneau" role="tabpanel" id="' + id + "p" + o[0] + '" aria-labelledby="' + id + "o" + o[0] + '" data-panel="' + o[0] + '" hidden>' +
               (o[0] === "lecture" ? '<div class="gp-ro" data-ro></div><div data-notes class="gp-notes"></div><div data-why></div>' + pied : o[0] === "evenements" ? '<div data-list></div>' : '<div class="gp-tbl-w" data-table></div>') + "</div>").join("")) +
@@ -1562,7 +1687,7 @@
       this.host.innerHTML = h;
       this.racine = this.host.firstElementChild || this.host.children[0] || this.host;
       this.cadreEl = this.q("[data-cadre]"); this.svg = this.q("[data-svg]"); this.hit = this.q("[data-hit]"); this.marks = this.q("[data-marks]");
-      this.ssvg = this.q("[data-ssvg]"); this.bsvg = this.q("[data-bsvg]"); this.roEl = this.q("[data-ro]"); this.whyEl = this.q("[data-why]"); this.planBar = this.q("[data-planbar]");
+      this.ssvg = this.q("[data-ssvg]"); this.bsvg = this.q("[data-bsvg]"); this.roEl = this.q("[data-ro]"); this.whyEl = this.q("[data-why]"); this.planBar = this.q("[data-planbar]"); this.alerteEl = this.q("[data-alerte]"); this.ltEl = this.q("[data-lt]");
       this.listEl = this.q("[data-list]"); this.tblEl = this.q("[data-table]"); this.notesEl = this.q("[data-notes]"); this.invEl = this.q("[data-invite]"); this.etatEl = this.q("[data-etat]");
       this.majOnglets();
       this.bind();
@@ -1592,6 +1717,15 @@
       const surMarque = e => { const b = e.target && e.target.closest ? e.target.closest(".gp-mk-b") : null; if (b) this.survolMarqueur(b); };
       this.ecoute(this.marks, "pointerover", e => { if (e.pointerType === "mouse" && this.P && this.P.hover) surMarque(e); });
       this.ecoute(this.marks, "focusin", surMarque);
+      /* une ligne de l'onglet Événements (survol ou focus) : le réticule se pose sur sa date et l'icône correspondante s'allume */
+      const surLigne = e => {
+        const r = e.target && e.target.closest ? e.target.closest(".gp-evrow") : null; if (!r || !r.dataset.ev || !g.M) return;
+        const j = g.M.jalons.find(x => x.id === r.dataset.ev), d = g.domaineCourant();
+        if (!j || j.t < d.debut || j.t > d.fin || g.etat.curseur === j.t) return;
+        this.depuisListe = true; g.etat.curseur = j.t; g.majCurseur(); this.depuisListe = false;
+      };
+      this.ecoute(this.listEl, "pointerover", e => { if (e.pointerType === "mouse") surLigne(e); });
+      this.ecoute(this.listEl, "focusin", surLigne);
       const ObsR = g.win && g.win.ResizeObserver;
       if (typeof ObsR === "function" && this.cadreEl) { this.ro = new ObsR(() => { if (this.raf && g.win.cancelAnimationFrame) g.win.cancelAnimationFrame(this.raf); this.raf = g.win.requestAnimationFrame ? g.win.requestAnimationFrame(() => this.render({})) : 0; }); this.ro.observe(this.cadreEl); }
     }
@@ -1600,6 +1734,7 @@
       const w = c("[data-win]"); if (w) { g.choisirFenetre(w.dataset.win); return; }
       const j = c("[data-jalons]"); if (j) { this.clicMarqueur(j); return; }
       const tb = c("[data-tab]"); if (tb) { this.choisirOnglet(tb.dataset.tab); return; }
+      const fl = c("[data-filtre]"); if (fl) { const k = fl.dataset.filtre, f = g.etat.filtres = Object.assign({}, g.etat.filtres); f[k] = f[k] === false; g.M.jalons = g.jalonsVisibles(); g.rendreTout(); const nv = this.q('[data-filtre="' + k + '"]'); if (nv && nv.focus) nv.focus(); return; }
       const a = c("[data-act]");
       if (a) {
         const k = a.dataset.act;
@@ -1612,6 +1747,7 @@
         else if (k === "calcul") g.ouvrirCalcul(a);
         else if (k === "jalons") g.ouvrirJalons(a);
         else if (k === "lecture") g.ouvrirLecture(a);
+        else if (k === "zmed") { g.etat.zoomMediane = !g.etat.zoomMediane; g.etat.echelleY = null; g.rendreTout(); }
         else if (k === "bande") { g.etat.bandeOuverte = !g.etat.bandeOuverte; g.rendreTout(); }
         else if (k === "effacer") { g.etat.curseur = null; g.majCurseur(); }
         else if (k === "invite-off") { g.lsSet(CLES_LS.invitationOff, "1"); this.majInvitation(); }
@@ -1816,6 +1952,8 @@
       const g = this.g, M = g.M, e = g.etat, r = e.reglages;
       this.host.querySelectorAll("[data-win]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.win === String(e.fenetre) && !e.zoom && !r.periode)));
       this.host.querySelectorAll('[data-act="zreset"]').forEach(b => { b.hidden = !e.zoom; });
+      const peutZoomer = !!(M && M.futur && M.futur.p25 && M.futur.p75 && M.mode !== "capacite");
+      this.host.querySelectorAll('[data-act="zmed"]').forEach(b => { b.hidden = !peutZoomer; b.setAttribute("aria-pressed", String(!!e.zoomMediane)); });
       const eurTxt = r.euros === "courants" ? (this.mode === "carte" ? "€ courants" : "en euros courants") : (this.mode === "carte" ? "€ d'aujourd'hui" : "en euros d'aujourd'hui");
       this.host.querySelectorAll("[data-eur]").forEach(b => tc(b, eurTxt));
       const n = M ? g.jalonsVisibles().length : 0, nj = this.q("[data-njal]");
@@ -1850,6 +1988,7 @@
         setStyle(this.hit, { display: "none" });
         const hlk = this.q('[data-hl="k"]'), hlv = this.q('[data-hl="v"]'), hls = this.q('[data-hl="s"]');
         tc(hlk, ""); tc(hlv, ""); tc(hls, ""); tc(this.q("[data-roline]"), "");
+        if (this.alerteEl) { this.alerteEl.hidden = true; this.alerteEl.innerHTML = ""; } if (this.ltEl) this.ltEl.innerHTML = "";
         if (this.roEl) this.roEl.innerHTML = ""; if (this.notesEl) this.notesEl.innerHTML = ""; if (this.whyEl) this.whyEl.innerHTML = "";
         this.geo = null;
         return;
@@ -1859,7 +1998,7 @@
       const dom = g.domaineCourant(), gran = granularite(dom.fin - dom.debut, !!P.plein && this.mode !== "portrait");
       const C = g.couches();
       /* échelle des y : mémorisée entre l'aperçu (500 chemins) et le résultat complet ; recalculée à chaque image pendant une transition */
-      const cle = [M.vue, M.euros, M.mode, Math.round(dom.debut / MS_JOUR), Math.round(dom.fin / MS_JOUR), C.existant ? 1 : 0, C.plan ? C.plan.id : "", this.mode].join("|");
+      const cle = [M.vue, M.euros, M.mode, Math.round(dom.debut / MS_JOUR), Math.round(dom.fin / MS_JOUR), C.existant ? 1 : 0, C.zoomMediane ? 1 : 0, C.plan ? C.plan.id : "", this.mode].join("|");
       const besoin = besoinFenetre(M, dom, gran, C);
       let y;
       if (e.anim) y = domaineY(besoin.lo, besoin.hi);
@@ -1877,7 +2016,7 @@
       this.hit.setAttribute("aria-valuemin", String(Math.ceil(dom.debut / MS_JOUR))); this.hit.setAttribute("aria-valuemax", String(Math.floor(dom.fin / MS_JOUR)));
       this.svg.setAttribute("aria-label", phraseTitre(M, aFinFenetre(M, dom)));
       if (o.cadre) { this.majCurseur(); return; }
-      this.rendreMarqueurs(); this.rendreBande(dom); this.rendreApercu(); this.rendreListes(dom, gran); this.rendrePourquoi();
+      this.rendreMarqueurs(); this.rendreBande(dom); this.rendreAlerte(); this.rendreApercu(); this.rendreListes(dom, gran); this.rendrePourquoi();
       this.majInvitation();
       tc(this.q("[data-sr]"), resumeAccessible(M, dom));
       this.majCurseur();
@@ -1897,16 +2036,23 @@
       this.marks.innerHTML = h;
       void g;
     },
+    /** Bandeau d'honnêteté sur l'épargne projetée (épargne constatée négative, médiane sous la ligne « sans versement », épargne qui passe sous zéro) : jamais en silence. */
+    rendreAlerte() {
+      const el = this.alerteEl; if (!el) return;
+      const a = alerteEpargne(this.g.M);
+      if (!a) { el.hidden = true; el.innerHTML = ""; return; }
+      el.hidden = false;
+      el.innerHTML = '<span class="gp-al-i" aria-hidden="true">' + ICO.alerte + '</span><div class="gp-al-t"><p data-al="' + esc(a.cle) + '">' + esc(a.texte) + "</p>" + (a.detail ? '<p class="gp-al-d">' + esc(a.detail) + "</p>" : "") +
+        '</div><div class="gp-al-a">' + this.g.claudeLien(phraseClaude(a.section, a.contexte), "Compléter avec Claude") + "</div>";
+    },
     rendreBande(dom) {
       if (!this.ssvg) return;
       const g = this.g, M = g.M, bt = this.q('[data-act="bande"]');
-      const ouverte = !!g.etat.bandeOuverte || this.mode !== "carte";
       const b = construireBande(M, { dom }, this.geo, this.P, g.etat.bandeOuverte);
       if (bt) bt.hidden = !!b.vide;
-      if (b.vide) { this.ssvg.innerHTML = ""; return; }
+      if (b.vide) { this.ssvg.innerHTML = ""; this.bande = b; return; }
       this.ssvg.setAttribute("viewBox", "0 0 " + this.geo.W + " " + b.H); this.ssvg.setAttribute("height", b.H); this.ssvg.innerHTML = b.svg; this.bande = b;
-      if (bt && this.mode === "carte") { bt.setAttribute("aria-expanded", String(!!g.etat.bandeOuverte)); const h = this.q("[data-bandeh]"); if (h) h.hidden = !g.etat.bandeOuverte; }
-      void ouverte;
+      if (bt && this.mode === "carte") bt.setAttribute("aria-expanded", String(!!g.etat.bandeOuverte));
     },
     rendreApercu() {
       if (!this.bsvg) return;
@@ -1943,13 +2089,17 @@
     rendreListes(dom, gran) {
       const g = this.g, M = g.M;
       if (this.listEl) {
-        const sel = this.jalonsAuCurseur().map(j => j.id);
-        this.listEl.innerHTML = '<ol class="gp-evl" aria-label="Événements de la projection">' + M.jalons.filter(j => g.jalonsVisibles().includes(j)).map(j => {
+        const sel = this.jalonsAuCurseur().map(j => j.id), tous = g.jalonsPreset(), f = g.etat.filtres || {};
+        const chips = '<div class="gp-filtres" role="group" aria-label="Filtrer les événements">' + CATEGORIES.map(([k, lib]) => {
+          const n = tous.filter(j => categorieJalon(j) === k).length;
+          return n ? '<button type="button" class="gp-fchip" data-filtre="' + k + '" aria-pressed="' + (f[k] !== false) + '">' + esc(lib) + ' <span class="num">' + n + "</span></button>" : "";
+        }).join("") + "</div>";
+        this.listEl.innerHTML = chips + '<ol class="gp-evl" aria-label="Événements de la projection">' + M.jalons.map(j => {
           const o = estObjectif(j) ? M.objectifs.find(z => z.id === j.objectifId) : null, mot = o ? motProba(o.probabilite) : null, st = o && STATUT_OBJ[o.statut];
-          const dedans = j.t >= dom.debut && j.t <= dom.fin, num = M.jalons.indexOf(j) + 1;
+          const dedans = j.t >= dom.debut && j.t <= dom.fin;
           const date = estObjectif(j) ? "échéance " + dMois(j.t) + (o && o.probabilite != null ? " · " + chancesTxt(o.probabilite) : "") : (j.tFin ? dMois(j.t) + " → " + dMois(j.tFin) : dMois(j.t) + " · " + relatif(M.today, j.t));
           const eff = estObjectif(j) ? chip(cap1(mot || (st ? st[0] : "—")), mot ? TON_MOT[mot] : st ? st[1] : "todo") : effetMensuel(j) != null && j.source !== "calendrier" ? esc(fMois(effetMensuel(j))) : "";
-          return '<li><button type="button" class="gp-evrow' + (dedans ? "" : " out") + '" data-ev="' + esc(j.id) + '" aria-current="' + sel.includes(j.id) + '"><span class="gp-pn' + (o ? " gl " + (mot ? TON_MOT[mot] : st ? st[1] : "todo") : "") + '">' + num + '</span><span class="gp-ev-m"><span class="gp-ev-t">' + esc(j.titre) +
+          return '<li><button type="button" class="gp-evrow' + (dedans ? "" : " out") + '" data-ev="' + esc(j.id) + '" aria-current="' + sel.includes(j.id) + '"><span class="gp-pn ic' + (o ? " gl " + (mot ? TON_MOT[mot] : st ? st[1] : "todo") : "") + '" title="' + esc(TYPES_ICONE[iconeDe(j)] || "") + '">' + icoH(iconeDe(j), 14) + '</span><span class="gp-ev-m"><span class="gp-ev-t">' + esc(j.titre) +
             '</span><span class="gp-ev-d num">' + esc(date) + (dedans ? "" : " · hors fenêtre") + '</span></span><span class="gp-ev-e num">' + eff + "</span></button></li>";
         }).join("") + "</ol>";
       }
@@ -2006,12 +2156,16 @@
         const x = gg.X(tt), v = lec.valeur, yv = gg.Y(v); py = clamp(yv, gg.T + 10, gg.B - 10);
         const tr = (sel, tx, ty) => { const n = xh.querySelector(sel); if (n) n.setAttribute("transform", "translate(" + tx.toFixed(1) + " " + ty.toFixed(1) + ")"); };
         tr("[data-xv]", x, 0); tr("[data-xhh]", 0, yv); tr("[data-xd]", x, yv); tr("[data-xp]", 0, py);
-        const dot = xh.querySelector("[data-xdot]"); if (dot) dot.setAttribute("class", lec.nature === "projete" ? "gp-dot-brand" : "gp-dot-ink");
+        const dot = xh.querySelector("[data-xdot]"); if (dot) dot.setAttribute("class", lec.nature === "projete" ? "gp-dot-brand" : lec.nature === "reconstitue" ? "gp-dot-ink gp-dot-est" : "gp-dot-ink");
+        /* un point sur chaque courbe visible à cette date (P10, P25, P75, P90, sans versement, variante, crise rejouée, plan) ; hors du cadre (zoom sur la médiane), pas de point */
+        const xs = xh.querySelector("[data-xs]");
+        if (xs) xs.innerHTML = pointsCurseur(M, lec, g.couches()).filter(p => !p.principal).map(p => ({ p, y: gg.Y(p.v) })).filter(o => o.y >= gg.DT - 1 && o.y <= gg.B + 1)
+          .map(o => '<circle class="gp-xs gp-xs-' + o.p.cle + '" data-xs-k="' + o.p.cle + '" cx="' + x.toFixed(1) + '" cy="' + o.y.toFixed(1) + '" r="' + (o.p.cle === "p10" || o.p.cle === "p90" || o.p.cle === "p25" || o.p.cle === "p75" ? 3 : 4) + '"/>').join("");
         const pl = xh.querySelector("[data-xpill]"); if (pl) { pl.setAttribute("class", "gp-pill" + (lec.nature === "projete" ? "" : " ink")); const tx = pl.querySelector("text"); if (tx) tx.textContent = fK(v, tt <= M.today && v < 1e5 && v >= 1e4 ? 1 : 0); }
         setStyle(xh, { opacity: "1" });
         if (pill) setStyle(pill, { display: "none" });
       } else {
-        if (xh) setStyle(xh, { opacity: "0" });
+        if (xh) { const xs = xh.querySelector("[data-xs]"); if (xs) xs.innerHTML = ""; setStyle(xh, { opacity: "0" }); }
         if (pill) setStyle(pill, { display: "" });
       }
       this.svg.querySelectorAll(".gp-ytk").forEach(n => { setStyle(n, { display: n.getAttribute("data-cache") || (py != null && Math.abs(+n.getAttribute("data-y") - py) < 20) ? "none" : "" }); });
@@ -2022,22 +2176,27 @@
       const hit = this.hit;
       hit.setAttribute("aria-valuenow", String(Math.round(tt / MS_JOUR)));
       hit.setAttribute("aria-valuetext", dMois(tt) + " : " + (lec.valeur == null ? "pas de valeur" : lec.nature === "projete" ? "environ " + fK(lec.valeur) : fEur(lec.valeur)));
+      if (this.ltEl) this.ltEl.innerHTML = lectureTableHtml(lectureLignes(M, lec));
       const rl = this.q("[data-roline]"); if (rl) rl.innerHTML = ligneLecture(M, e, lec, def) + (e.reglages.avenirs && gg.hopHors ? " · " + gg.hopHors + " avenirs hors cadre" : "");
       /* plein écran : lecture compacte (lignes « libellé · valeur »), une fois ; les explications (base de l'épargne, événements pris en compte, décomposition) sont dans « Comment c'est calculé » */
       const compact = this.plein && M.mode !== "capacite";
       if (this.roEl) this.roEl.innerHTML = compact ? lectureKvHtml(M, e, lec, { def, effacer: true }) : lectureHtml(M, e, lec, { def, effacer: true, survol: !!(this.P && this.P.hover) });
       if (this.notesEl) this.notesEl.innerHTML = enteteHtml(M, lec.nature === "projete" ? lec : lecture(M, e, aFinFenetre(M, dom), { demi }), { gardeFousSeuls: compact, carte: this.mode === "carte" });
       /* bande d'épargne : curseur et montant du mois */
-      const sx = this.ssvg && this.ssvg.querySelector("[data-sxh]"), sv = this.q("[data-stripv]"), cap = def ? capaciteA(M, M.today) : lec.capacite || capaciteA(M, M.today);
+      const sx = this.ssvg && this.ssvg.querySelector("[data-sxh]"), sv = this.q("[data-stripv]"), cap = def ? capaciteA(M, M.today) || capaciteA(M, ajouterMois(M.today, 1)) : lec.capacite || capaciteA(M, M.today) || capaciteA(M, ajouterMois(M.today, 1));
       if (sx && this.bande && !this.bande.vide) {
         if (!def && cap) { const x = gg.X(tt); sx.innerHTML = '<line class="gp-xh-v" x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="0" y2="' + this.bande.H + '"/><circle class="gp-dot-ink" cx="' + x.toFixed(1) + '" cy="' + this.bande.Ys(cap.montant).toFixed(1) + '" r="3.5"/>'; } else sx.innerHTML = "";
       }
-      if (sv) sv.innerHTML = cap ? "<b>" + esc(fMoisU(cap.montant)) + "</b> " + esc(def ? "aujourd'hui" : "en " + dMois(tt)) + (cap.montant < 0 ? " · négative" : "") : "";
+      if (sv) sv.innerHTML = cap ? "<b>" + esc(fMoisU(cap.montant)) + "</b> " + esc(def ? (cap.passe ? "le mois dernier" : "aujourd'hui") : "en " + dMois(tt)) + (cap.montant < 0 ? " · négative" : "") : "";
       /* jalons : neutres, colorés seulement à la sélection ; une seule étiquette flottante */
       const sel = this.jalonsAuCurseur().map(j => j.id);
       this.svg.querySelectorAll("[data-ev]").forEach(n => classe(n, "is-sel", String(n.getAttribute("data-ev")).split(" ").some(i => sel.includes(i))));
       this.majEtiquette(def ? null : tt);
-      if (this.listEl) this.listEl.querySelectorAll(".gp-evrow").forEach(r => r.setAttribute("aria-current", String(sel.includes(r.getAttribute("data-ev")))));
+      if (this.listEl) {
+        let premier = null;
+        this.listEl.querySelectorAll(".gp-evrow").forEach(r => { const on = sel.includes(r.getAttribute("data-ev")); r.setAttribute("aria-current", String(on)); if (on && !premier) premier = r; });
+        if (premier && !this.depuisListe && !def && premier.scrollIntoView && !(this.listEl.closest && this.listEl.closest("[hidden]"))) premier.scrollIntoView({ block: "nearest" });
+      }
       if (this.tblEl) { this.tblEl.querySelectorAll("tr.cur").forEach(r => classe(r, "cur", false)); const row = this.tblEl.querySelector('tr[data-t="' + tt + '"]'); if (row) classe(row, "cur", true); }
       this.majAvenir();
     },
@@ -2045,7 +2204,7 @@
       const fl = this.svg && this.svg.querySelector("[data-flab]"); if (!fl) return;
       const g = this.g, gg = this.geo;
       if (tt == null) { fl.innerHTML = ""; return; }
-      const x = gg.X(tt), groupe = plusProcheGroupe(gg.groupes, x, 24);
+      const x = gg.X(tt), groupe = gg.groupes.find(gr => gr.jalons.some(j => Math.abs(j.t - tt) < 1)) || plusProcheGroupe(gg.groupes, x, 24);
       if (!groupe) { fl.innerHTML = ""; return; }
       const ts = etiquettesJalon(g.M, groupe), mes = g.mesurer();
       /* une seule étiquette, bornée au tracé (jamais dans la marge de droite) ; en plein écran elle flotte en haut du tracé, sous le nom du trait d'aujourd'hui */
@@ -2077,7 +2236,7 @@
   /** Besoin vertical d'une fenêtre (mêmes données que construireSvg) : sert à mémoriser l'échelle entre l'aperçu et le résultat complet. */
   function besoinFenetre(M, dom, gran, C) {
     const ech = echantillons(M, dom, gran);
-    return besoinY(M, dom, ech, { existant: C.existant, plan: C.plan && C.plan.valeurs, demain: M.demain && M.demain.serie ? M.demain.serie.emprunt : M.demain ? M.demain.empruntable : null });
+    return besoinY(M, dom, ech, { existant: C.existant, zoomMediane: C.zoomMediane, plan: C.plan && C.plan.valeurs, demain: M.demain && M.demain.serie ? M.demain.serie.emprunt : M.demain ? M.demain.empruntable : null });
   }
   /** Résumé pour les lecteurs d'écran : valeur du jour, projection à l'horizon visible, événements. */
   function resumeAccessible(M, dom) {
@@ -2338,5 +2497,5 @@
   return { esc, plat, fK, fEur, fSK, fSE, fMois, fMoisU, fPct, kRange, kTiret, chancesTxt, motProba, placerEtiquettes, dureeTxt, relatif, dMois, dJour, FENETRES, domaine, fenetreContenant, granularite, clePas, graduations, domaineY, echelleYStable, valeurCreuse, pointsConnus,
     chemin, bande, cheminInverse, facteurPrix, normaliser, echantillons, besoinY, besoinFenetre, regrouperJalons, plusProcheGroupe, lecture, planA, capaciteA, phraseTitre, titreLecture, ligneLecture, lectureHtml, lectureKvHtml, enteteHtml,
     construireSvg, construireBande, tableauHtml, calculHtml, jalonDetailHtml, jalonsListeHtml, groupeHtml, parametresMode, MODES, PRESETS, msDe, isoDe, ajouterMois, moisEntre, capaciteSourceTxt, decompositionPhrase, objectifLigne,
-    etiquettesJalon, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel };
+    etiquettesJalon, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel, effetEpargne, pointsCurseur, lectureLignes, lectureTableHtml, alerteEpargne, phraseClaude, iconeDe, categorieJalon, CATEGORIES, TYPES_ICONE };
 });

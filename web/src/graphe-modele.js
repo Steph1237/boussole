@@ -118,6 +118,31 @@
     });
   }
 
+  /** Entrées du journal des décisions (source « journal ») : une par entrée non abandonnée ni archivée, à sa date de décision (sinon sa date de création), et, pour une
+      revue encore à venir, une seconde à la date de revue. Les plus récentes d'abord, au plus 15 entrées (le graphe n'est pas un journal). */
+  function journalJalons(S, today) {
+    const jour = v => (isoOk(v) ? String(v).slice(0, 10) : null), out = [];
+    tab(S && S.journal).filter(e => e && e.id != null && e.statut !== "abandonne" && e.statut !== "archive").forEach(e => {
+      const date = jour(e.dateDecision) || jour(e.creeLe), titre = plat(e.titre) || "Entrée du journal", base = { type: "journal_" + (e.type || "decision"), source: "journal", icone: "journal", journal_id: e.id };
+      if (date) out.push(Object.assign({ id: "journal:" + e.id, date, titre, effet: { texte: plat(e.synthese).slice(0, 240), montants: {} } }, base));
+      const revue = jour(e.revueLe);
+      if (revue && today && revue > today) out.push(Object.assign({ id: "journal:" + e.id + ":revue", date: revue, titre: "Revue : " + titre, effet: { texte: "Revue prévue de cette décision.", montants: {} } }, base));
+    });
+    return out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 15).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
+  }
+  /** Épargne constatée mois par mois (12 derniers mois complets, foyer seulement : les comptes ne sont pas répartis par personne) : capacité du mois = revenus − dépenses, comme
+      la capacité de départ du moteur (Calc.budgetReel sur un seul mois). → [{ debut: "AAAA-MM-01", montant }] du plus ancien au plus récent ; [] sans comptes connectés. */
+  function epargnePasseDe(S, today, deps) {
+    const C = CALC(deps);
+    if (!C || typeof C.budgetReel !== "function" || !S || !S.banque || (S.scope && S.scope !== "foyer") || !isoOk(today)) return [];
+    const out = [], premier = msDe(today.slice(0, 8) + "01");
+    for (let k = 1; k <= 12; k++) {
+      const m = ajouterMois(premier, -k), debut = isoDe(m), r = C.budgetReel(S.banque, isoDe(ajouterMois(m, 1)), 1);
+      if (r && r.du === debut && fini(r.capacite)) out.push({ debut, montant: Math.round(r.capacite) });
+    }
+    return out.reverse();
+  }
+
   /* ---------- plans figés (« Prévu vs réel ») ---------- */
   /** Plan figé (détail du store) en série du composant : valeurs en euros courants, décalées comme la courbe (biens d'usage) ; comparaison au réel par Projection.comparerPlanReel. */
   function planDe(detail, passe, ajust, deps) {
@@ -158,8 +183,8 @@
     const avert = tab(resultat.avertissements).concat(tab(x.notes));
     if (a && vue === "net") avert.push("Contrôle de cohérence : le patrimoine net du moteur différait de " + Math.round(Math.abs(a)).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ") + " € du patrimoine net affiché ; la courbe a été recalée sur ce dernier.");
     if (x.crise && x.crise.indisponible) avert.push(...tab(x.crise.avertissements));
-    return Object.assign(base, { etat: "pret", futur, jalons: jalonsDe(resultat, S), objectifs: objectifsDe(resultat, S),
-      capacite: { base: resultat.capacite_base, par_periode: resultat.capacite_par_periode }, capacite_source: resultat.capacite_source, capacite_periode: resultat.capacite_periode,
+    return Object.assign(base, { etat: "pret", futur, jalons: jalonsDe(resultat, S).concat(journalJalons(S, base.today)), objectifs: objectifsDe(resultat, S),
+      capacite: { base: resultat.capacite_base, par_periode: resultat.capacite_par_periode, passe: epargnePasseDe(S, base.today, x.deps) }, capacite_source: resultat.capacite_source, capacite_periode: resultat.capacite_periode,
       phrase: resultat.phrase, decomposition_phrase: resultat.decomposition_phrase, decomposition: resultat.decomposition, garde_fous: resultat.garde_fous,
       evenements_pris_en_compte: resultat.evenements_pris_en_compte, question_evenements: resultat.question_evenements, hypotheses: resultat.hypotheses, couverture: resultat.couverture,
       avertissements: avert, a_completer: resultat.a_completer, retro: resultat.retro, retro_raison: resultat.retro_raison, version_modele: resultat.version_modele, graine: resultat.graine, chemins: resultat.chemins,
@@ -175,7 +200,8 @@
   function signature(S, reglages, today, deps) {
     const P = PJ(deps), sn = SN(deps), r = reglages || reglagesParDefaut(), snaps = tab(S && S.snapshots);
     const data = entree(S, today, deps), options = optionsMoteur(r, S);
-    return [P.empreinte(data, options), cleCalcul(r, S), sn && sn.hist ? sn.hist.version : 0, snaps.length, snaps.length ? snaps[snaps.length - 1].date : "", (S && S.plansFiges ? S.plansFiges.length : 0)].join("|");
+    return [P.empreinte(data, options), cleCalcul(r, S), sn && sn.hist ? sn.hist.version : 0, snaps.length, snaps.length ? snaps[snaps.length - 1].date : "", (S && S.plansFiges ? S.plansFiges.length : 0),
+      tab(S && S.journal).map(e => e && e.id + ":" + e.statut + ":" + (e.dateDecision || "") + ":" + (e.revueLe || "")).join(",")].join("|");
   }
 
   /* ---------- exécution ---------- */
@@ -339,5 +365,5 @@
     };
   }
 
-  return { HORIZON_ANS, HORIZON_CAPACITE_ANS, reglagesParDefaut, optionsMoteur, cleCalcul, passeDe, ajustementAutresBiens, jalonsDe, objectifsDe, planDe, construire, entree, signature, calculer, calculerCapacite, effetSurMediane, brancher, crisesDisponibles };
+  return { HORIZON_ANS, HORIZON_CAPACITE_ANS, reglagesParDefaut, optionsMoteur, cleCalcul, passeDe, ajustementAutresBiens, jalonsDe, journalJalons, epargnePasseDe, objectifsDe, planDe, construire, entree, signature, calculer, calculerCapacite, effetSurMediane, brancher, crisesDisponibles };
 });

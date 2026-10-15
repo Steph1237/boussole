@@ -139,14 +139,16 @@ test("objectifs : cibles sur la médiane (boutons), statut en mots et probabilit
   assert.match(t.q("[data-flab]").innerHTML, /probable/);
 });
 
-test("bande « capacité d'épargne » : repliée (28 px), un toucher la déplie avec le montant du mois ; la lecture suit le curseur", () => {
+test("bande « épargne par mois » : visible d'emblée (barres, en-tête avec la valeur), se replie à 28 px d'un toucher ; la lecture suit le curseur, signée", () => {
   const t = monter(), b = t.q('[data-act="bande"]');
-  assert.equal(b.getAttribute("aria-expanded"), "false"); assert.equal(t.q("[data-bandeh]").hidden, true);
-  b.click();
-  assert.equal(t.q('[data-act="bande"]').getAttribute("aria-expanded"), "true"); assert.equal(t.q("[data-bandeh]").hidden, false);
+  assert.equal(b.getAttribute("aria-expanded"), "true"); assert.equal(t.q("[data-bandeh]").hidden, false); assert.match(sp(t.texte("[data-bandeh]")), /^Épargne par mois/);
+  assert.ok(+t.q("[data-ssvg]").getAttribute("height") >= 48, "au moins 48 px sur la carte dépliée");
   assert.match(sp(t.texte("[data-stripv]")), /950 €\/mois aujourd'hui/);
   t.api.curseur(G.msDe(plusMois(AUJ, 4))); assert.match(sp(t.texte("[data-stripv]")), /1 400 €\/mois en févr\. 2027/);
   assert.ok(t.q("[data-sxh]").innerHTML.includes("gp-xh-v"), "curseur sur la bande, au même axe du temps");
+  b.click(); assert.equal(t.q('[data-act="bande"]').getAttribute("aria-expanded"), "false"); assert.equal(+t.q("[data-ssvg]").getAttribute("height"), 28);
+  const neg = monter({ donnees: donnees({ capaciteNegative: true }) });
+  assert.match(sp(neg.texte("[data-stripv]")), /^−420 €\/mois .*négative$/, "valeur signée ET le mot");
   const sans = donnees(); sans.capacite = null; const t2 = monter({ donnees: sans });
   assert.equal(t2.q('[data-act="bande"]').hidden, true, "aucune capacité connue : pas de bande inventée");
 });
@@ -344,11 +346,11 @@ test("plein écran (API Fullscreen) : requestFullscreen appelé, la sortie par l
   const sans = monter(); sans.api.pleinEcran(); assert.ok(sans.doc.body.querySelector(".gp-plein"), "variante en couche, sans API"); sans.api.fermerPleinEcran();
 });
 
-test("plein écran : mises en page selon la fenêtre : paysage (lecture ancrée à droite, ronds numérotés, aperçu) et ordinateur (panneau latéral avec lecture, liste des événements, tableau)", () => {
+test("plein écran : mises en page selon la fenêtre : paysage (lecture ancrée à droite, icônes d'événements, aperçu) et ordinateur (panneau latéral avec lecture, liste des événements, tableau)", () => {
   const fen = (w, h) => ({ innerWidth: w, innerHeight: h, matchMedia: () => ({ matches: false, addEventListener() {} }), addEventListener() {}, removeEventListener() {}, location: { hash: "" } });
   const p = monter({ window: fen(844, 390) }); p.api.pleinEcran();
   const pa = p.doc.body.querySelector(".gp-fsv-paysage"); assert.ok(pa, "paysage 844 × 390");
-  assert.ok(pa.querySelector(".gp-fs-side").querySelector("[data-ro]")); assert.ok(pa.querySelectorAll(".gp-pin").length >= 2, "ronds numérotés"); assert.doesNotMatch(pa.querySelector("[data-svg]").innerHTML, /class="lb"/, "aucun texte sur la piste des jalons");
+  assert.ok(pa.querySelector(".gp-fs-side").querySelector("[data-ro]")); assert.ok(pa.querySelectorAll(".gp-pin").length >= 1, "icônes d'événements"); assert.doesNotMatch(pa.querySelector("[data-svg]").innerHTML, /class="lb"/, "aucun texte sur la piste des jalons");
   assert.ok(pa.querySelector("[data-bsvg]"), "aperçu complet"); assert.equal(pa.querySelector("[data-list]"), null);
   p.api.fermerPleinEcran();
   const b = monter({ window: fen(1440, 900) }); b.api.pleinEcran();
@@ -393,7 +395,7 @@ test("plein écran ordinateur : onglets au clavier, aide en feuille, lecture com
   bu.querySelector('[data-act="aide"]').click();
   assert.equal(b.UI.st.titre, "Lire et zoomer le graphique"); assert.match(sp(b.UI.st.corps.textContent), /survole la courbe/); b.UI.panneau.fermer();
   // survol d'un repère : le réticule se place à sa date, une seule étiquette flotte dans le tracé
-  const marque = bu.querySelectorAll(".gp-mk-b").find(m => !/rapprochés/.test(m.getAttribute("aria-label")));
+  const marque = bu.querySelectorAll(".gp-mk-b")[0];
   marque.dispatchEvent(new b.Ev("pointerover", { pointerType: "mouse", bubbles: true }));
   assert.ok(b.api.etat.curseur != null, "le réticule suit le repère survolé"); assert.match(bu.querySelector("[data-flab]").innerHTML, /gp-flab/);
   // passé : pas d'aplat hachuré, un voile léger, une puce « estimé »
