@@ -379,7 +379,7 @@
   }
 
   /* ---------- Mon compte › Sécurité ---------- */
-  const frDate = d => { try { const x = new Date(d); return isFinite(x) ? x.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : ""; } catch (e) { return ""; } };
+  const frDate = d => { try { const x = new Date(d); return isFinite(x) ? x.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "numeric", month: "long", year: "numeric" }) : ""; } catch (e) { return ""; } };
   const QR_OK = /^data:image\/(svg\+xml|png)[;,]/;
   const SECOURS = "Boussole ne propose pas de codes de secours : ajoute un second appareil (autre téléphone ou autre application) pour ne pas perdre l'accès si tu perds le premier.";
   const MSG_ANON = "Pour activer la double authentification, sécurise d'abord ton compte avec un e-mail et un mot de passe.";
