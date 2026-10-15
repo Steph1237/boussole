@@ -52,8 +52,8 @@
 .gp-ligne-t b,.gp-ligne b{color:var(--ink);font-weight:700}
 .gp-chev{color:var(--brand);font-weight:700;font-size:var(--t-h3)}
 .gp-ctl{display:flex;gap:var(--sp-2);align-items:center;margin-top:2px}
-.gp-seg{flex:1;display:flex;flex-wrap:nowrap;gap:0;padding:3px;min-width:0}
-.gp-seg button{flex:1;min-width:0;min-height:38px;padding:0 2px;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap}
+.gp-seg{flex:1;display:flex;flex-wrap:nowrap;gap:0;padding:2px 3px;min-width:0}
+.gp-seg button{flex:1;min-width:0;min-height:var(--hit);padding:0 2px;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap}
 .gp-jal{min-height:var(--hit);padding:0 12px;border-radius:var(--r-ctl);background:var(--sunk)!important;font:700 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex:none}
 .gp-jal[hidden]{display:none}
 .gp-invite{display:flex;align-items:center;gap:var(--sp-2);margin:var(--sp-2) 0 0;padding:0 0 0 12px;border-radius:12px;background:var(--brand-soft);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--ink)}
@@ -181,7 +181,7 @@
 .gp-rb .o{background:var(--fan-out);box-shadow:inset 0 0 0 1px var(--fan-edge)}
 .gp-rb .n{background:var(--fan-in)}
 .gp-rb .md{width:2px;margin-left:-1px;background:var(--brand);top:-3px;bottom:-3px;border-radius:1px}
-.gp-rb-l{display:flex;justify-content:space-between;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+.gp-rb-l{display:flex;justify-content:space-between;white-space:nowrap;gap:6px;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 .gp-rb-l b{color:var(--ink);font-weight:600}
 .gp-ro-d{color:var(--muted);margin-top:var(--sp-2);font:400 var(--t-caption)/var(--lh-caption) var(--f-body)}
 .gp-ro-d b{color:var(--ink);font-weight:600}
@@ -270,7 +270,7 @@ body.gp-bloque{overflow:hidden}
 .gp-fs-bar{display:flex;align-items:center;gap:var(--sp-2);padding:2px 8px;min-height:48px;border-bottom:1px solid var(--line);background:var(--surface)}
 .gp-ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:700 var(--t-body)/var(--lh-body) var(--f-display)}
 .gp-fs-bar .gp-seg{flex:none;min-width:260px}
-.gp-fs-bar .gp-seg button{min-height:32px;padding:0 10px}
+.gp-fs-bar .gp-seg button{min-height:var(--hit);padding:0 10px}
 .gp-fs-body{flex:1;min-height:0;display:flex}
 .gp-fs-main{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;padding:6px 12px}
 .gp-fsv-paysage .gp-fs-main .gp-cadre,.gp-fsv-bureau .gp-fs-main .gp-cadre{flex:1;min-height:0}

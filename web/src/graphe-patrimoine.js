@@ -838,7 +838,7 @@
   const mesureApprox = (t, poids) => String(t).length * (poids >= 600 ? 6.9 : 6.4);
   const MODES = {
     /* carte : mobile (≈ 390 px) et ordinateur ; le titre flotte dans le tracé, jalons presque invisibles, une seule étiquette */
-    carte: { compact: true, gutter: 50, yTicks: 4, plotH: 284, labelsAll: false, pins: false, clusterPx: 12, stripH: 28, hover: false, select: false, brush: false, plein: false },
+    carte: { compact: true, gutter: 50, yTicks: 4, plotH: 284, labelsAll: false, pins: false, clusterPx: 44, stripH: 28, hover: false, select: false, brush: false, plein: false },
     /* plein écran, téléphone en paysage : barre fine, courbe sur toute la largeur, lecture à droite, pastilles numérotées et libellées */
     paysage: { compact: false, gutter: 56, yTicks: 5, labelsAll: true, pins: true, pinLabels: true, railRows: 2, clusterPx: 0, stripH: 30, hover: false, select: false, brush: true, fill: true, plein: true },
     /* plein écran, ordinateur : grande courbe, axe jusqu'à 8 graduations, tous les libellés, panneau latéral */
@@ -1000,10 +1000,13 @@
       const x = X(M.today), y0 = Y(M.valeurAuj);
       s += '<line class="gp-tdy" x1="' + f1(x) + '" x2="' + f1(x) + '" y1="' + f1(DT) + '" y2="' + f1(B) + '" opacity=".35"/><circle class="gp-glow' + (P.reduit ? "" : " pulse") + '" cx="' + f1(x) + '" cy="' + f1(y0) + '" r="10"/><circle class="gp-dot-ink" data-today cx="' + f1(x) + '" cy="' + f1(y0) + '" r="4.5"/>';
     }
-    /* annotations des inflexions : l'achat (frais d'acquisition), écrites là où elles se voient */
+    /* annotations des inflexions : l'achat, écrite là où elle se voit, avec la vraie baisse de la vue : en patrimoine net l'apport devient du bien (seuls les frais
+       d'acquisition sortent) ; en vue financière ou disponible l'apport sort (impôts de sortie compris) */
     const labs = [];
-    M.jalons.filter(j => j.type === "achat_immobilier" && j.t > dom.debut && j.t < dom.fin && j.effet && j.effet.montants && +j.effet.montants.frais_acquisition > 0 && aFutur && !C.avenirs && !C.plan).forEach(j => {
-      const i = plusProche(F.t, j.t), x = X(j.t), y = Y(F.p50[i]), txt = P.compact ? MOINS + fK(j.effet.montants.frais_acquisition) : "Achat : " + MOINS + fK(j.effet.montants.frais_acquisition) + " de frais";
+    M.jalons.filter(j => j.type === "achat_immobilier" && j.t > dom.debut && j.t < dom.fin && j.effet && j.effet.montants && aFutur && !C.avenirs && !C.plan).forEach(j => {
+      const mt = j.effet.montants, net = M.vue === "net", baisse = net ? +mt.frais_acquisition : Math.abs(+mt.apport || 0) + Math.max(0, +mt.impots || 0);
+      if (!(baisse > 0)) return;
+      const i = plusProche(F.t, j.t), x = X(j.t), y = Y(F.p50[i]), txt = P.compact ? MOINS + fK(baisse) : "Achat : " + MOINS + fK(baisse) + (net ? " de frais" : " d'apport");
       labs.push({ x: x + 6 + mesurer(txt, 400) / 2, y: y + 20, t: txt, up: 0 });
     });
     const placed = [];
@@ -1053,15 +1056,24 @@
     });
     return { dots, hors, valeurs: vals };
   }
+  /** Étiquettes d'une même colonne : par priorité croissante (1 = la plus importante), on garde celles qui ne sont pas à moins de `ecart` px verticalement d'une déjà gardée. */
+  function placerEtiquettes(cand, ecart) {
+    const gardees = [];
+    cand.slice().sort((a, b) => a.prio - b.prio).forEach(l => { if (!gardees.some(g => Math.abs(g.y - l.y) < ecart)) gardees.push(l); });
+    return gardees.sort((a, b) => a.y - b.y);
+  }
   function etiquettesDirectes(M, F, dom, X, Y, R, mesurer, C, aFutur, ech) {
     let s = "";
     const i = Math.max(0, indexAvant(F.t, dom.fin)), x = R - 6;
     const yM = Y(F.p50[i]), y75 = F.p75 ? Y(F.p75[i]) : null, y90 = F.p90 ? Y(F.p90[i]) : null, y25 = F.p25 ? Y(F.p25[i]) : null;
-    if (y90 != null && y75 != null && y75 - y90 >= 17) s += '<text x="' + x + '" y="' + F1(y90 + 13) + '" text-anchor="end" class="gp-halo gp-tbr">8 chances sur 10</text>';
-    if (y75 != null && yM - y75 >= 17) s += '<text x="' + x + '" y="' + F1(y75 + 13) + '" text-anchor="end" class="gp-halo gp-tbr">1 chance sur 2</text>';
-    if (y25 != null && y25 - yM >= 17) s += '<text x="' + x + '" y="' + F1(yM + 14) + '" text-anchor="end" class="gp-halo gp-tbr">médiane</text>';
-    else s += '<text x="' + x + '" y="' + F1(yM - 7) + '" text-anchor="end" class="gp-halo gp-tbr">médiane</text>';
-    if (C.existant && F.existant && F.existant.p50) s += '<text x="' + x + '" y="' + F1(Y(F.existant.p50[i]) + 15) + '" text-anchor="end" class="gp-halo">sans nouveau versement</text>';
+    /* étiquettes alignées à droite sur la même colonne : chacune a sa place voulue et une priorité ; celle qui en gênerait une plus importante (moins de 14 px) est omise,
+       jamais superposée (« 1 chance sur 2 » et « médiane » ne se touchent plus) */
+    const cand = [];
+    if (y90 != null && y75 != null && y75 - y90 >= 17) cand.push({ y: y90 + 13, t: "8 chances sur 10", prio: 3, c: "gp-halo gp-tbr" });
+    if (y75 != null && yM - y75 >= 17) cand.push({ y: y75 + 13, t: "1 chance sur 2", prio: 2, c: "gp-halo gp-tbr" });
+    cand.push({ y: y25 != null && y25 - yM >= 17 ? yM + 14 : yM - 7, t: "médiane", prio: 1, c: "gp-halo gp-tbr" });
+    if (C.existant && F.existant && F.existant.p50) cand.push({ y: Y(F.existant.p50[i]) + 15, t: "sans nouveau versement", prio: 4, c: "gp-halo" });
+    placerEtiquettes(cand, 14).forEach(l => { s += '<text x="' + x + '" y="' + F1(l.y) + '" text-anchor="end" class="' + l.c + '">' + l.t + "</text>"; });
     void aFutur; void ech;
     if (M.passe.t.length && dom.debut < M.today - (dom.fin - dom.debut) * 0.05) {
       const dx = X(Math.min(M.today, dom.fin)) - X(Math.max(dom.debut, M.passe.t[Math.max(0, M.passe.nature.indexOf("observe"))] || dom.debut));
@@ -1089,7 +1101,7 @@
   function marqueursCompacts(M, jalons, dom, X, Y, ctx) {
     const { B, P, F, aFutur } = ctx;
     const evs = jalons.filter(j => !estObjectif(j) && j.t >= dom.debut && j.t <= dom.fin), buts = jalons.filter(j => estObjectif(j) && j.t >= dom.debut && j.t <= dom.fin && j.t >= M.today);
-    const groupes = regrouperJalons(evs, X, P.clusterPx || 12);
+    const groupes = regrouperJalons(evs, X, P.clusterPx || 44);
     let s = '<g aria-hidden="true"><line class="gp-base" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + B + '" y2="' + B + '"/>';
     const marqueurs = [];
     groupes.forEach(g => {
@@ -1109,28 +1121,41 @@
   /** Plein écran : pastilles numérotées sous la courbe (numéro = rang dans la liste chronologique), reliées à leur date par un trait ; durées en traits fins ; anneau de couleur
       (et mot dans la liste) pour les objectifs. Placement sans chevauchement sur 1 à 2 rangées. */
   function rail(M, jalons, dom, X, Y, ctx) {
-    const { B, W, P, mesurer, railH } = ctx, rows = P.railRows || 1, lab = !!P.pinLabels;
+    const { B, W, P, mesurer, railH } = ctx, rows = P.railRows || 1;
+    let lab = !!P.pinLabels;
     const numero = new Map(M.jalons.map((j, i) => [j.id, i + 1]));
-    const its = jalons.filter(j => j.t >= dom.debut && j.t <= dom.fin).map(j => { const t = P.fullLabels ? j.titre : (j.titre.length > 22 ? j.titre.slice(0, 21) + "…" : j.titre); return { j, t, x: X(j.t), w: lab ? 28 + mesurer(t, 600) + 2 : estObjectif(j) ? 24 : 20 }; });
-    const end = Array(rows).fill(-Infinity);
-    its.forEach(it => {
-      const want = it.x - 10; let best = null;
-      for (let r = 0; r < rows; r++) { const l = Math.max(want, end[r] + 4), c = l - want; if (!best || c < best.c - 0.5) best = { r, l, c }; }
-      it.r = best.r; it.l = best.l; it.want = want; end[best.r] = best.l + it.w;
-    });
-    for (let r = 0; r < rows; r++) {
-      const ri = its.filter(i => i.r === r);
-      let i = 0;
-      while (i < ri.length) {
-        let j = i;
-        while (j + 1 < ri.length && ri[j + 1].l > ri[j + 1].want + 0.5 && ri[j + 1].l <= ri[j].l + ri[j].w + 4.5) j++;
-        if (j > i) { const grp = ri.slice(i, j + 1), mean = grp.reduce((a, b) => a + (b.l - b.want), 0) / grp.length, prevEnd = i > 0 ? ri[i - 1].l + ri[i - 1].w + 4 : 0, sh = Math.min(mean, grp[0].l - prevEnd); grp.forEach(x => { x.l -= Math.max(0, sh); }); }
-        i = j + 1;
+    /* Les libellés des pastilles sont tronqués (« … ») à une largeur maximale, resserrée jusqu'à ce que toutes tiennent dans la largeur du graphique sur leurs rangées :
+       jamais de pastille coupée par le bord ni superposée à sa voisine. */
+    const tronque = (txt, maxW) => { if (mesurer(txt, 600) <= maxW) return txt; let t = txt; while (t.length > 1 && mesurer(t + "…", 600) > maxW) t = t.slice(0, -1); return t.replace(/\s+$/, "") + "…"; };
+    const visibles = jalons.filter(j => j.t >= dom.debut && j.t <= dom.fin);
+    let its = [], cap = P.fullLabels ? 190 : 150;
+    for (let essai = 0; essai < 16; essai++) {
+      its = visibles.map(j => { const t = lab ? tronque(j.titre, cap) : j.titre; return { j, t, x: X(j.t), w: lab ? 28 + mesurer(t, 600) + 2 : estObjectif(j) ? 24 : 20 }; });
+      const end = Array(rows).fill(-Infinity);
+      its.forEach(it => {
+        const want = it.x - 10; let best = null;
+        for (let r = 0; r < rows; r++) { const l = Math.max(want, end[r] + 4), c = l - want; if (!best || c < best.c - 0.5) best = { r, l, c }; }
+        it.r = best.r; it.l = best.l; it.want = want; end[best.r] = best.l + it.w;
+      });
+      let deborde = false;
+      for (let r = 0; r < rows; r++) {
+        const ri = its.filter(i => i.r === r);
+        let i = 0;
+        while (i < ri.length) {
+          let j = i;
+          while (j + 1 < ri.length && ri[j + 1].l > ri[j + 1].want + 0.5 && ri[j + 1].l <= ri[j].l + ri[j].w + 4.5) j++;
+          if (j > i) { const grp = ri.slice(i, j + 1), mean = grp.reduce((a, b) => a + (b.l - b.want), 0) / grp.length, prevEnd = i > 0 ? ri[i - 1].l + ri[i - 1].w + 4 : 0, sh = Math.min(mean, grp[0].l - prevEnd); grp.forEach(x => { x.l -= Math.max(0, sh); }); }
+          i = j + 1;
+        }
+        let lim = W;
+        for (let k = ri.length - 1; k >= 0; k--) { if (ri[k].l + ri[k].w > lim) ri[k].l = lim - ri[k].w; lim = ri[k].l - 4; }
+        let mn = 0;
+        ri.forEach(x => { if (x.l < mn) x.l = mn; mn = x.l + x.w + 4; if (x.l + x.w > W + 0.5) deborde = true; });
       }
-      let lim = W;
-      for (let k = ri.length - 1; k >= 0; k--) { if (ri[k].l + ri[k].w > lim) ri[k].l = lim - ri[k].w; lim = ri[k].l - 4; }
-      let mn = 0;
-      ri.forEach(x => { if (x.l < mn) x.l = mn; mn = x.l + x.w + 4; });
+      if (!deborde) break;
+      if (!lab) break;
+      if (cap <= 44) { lab = false; cap = 0; continue; } /* même tronquées, trop de pastilles : numéros seuls (les titres restent dans la liste) */
+      cap -= 16;
     }
     let s = '<g aria-hidden="true"><line class="gp-base" x1="0" x2="' + F1(X(dom.fin)) + '" y1="' + B + '" y2="' + B + '"/>';
     /* durées en traits fins sous la courbe */
@@ -1151,7 +1176,7 @@
       s += '<circle class="gp-bd" cx="' + F1(cx) + '" cy="' + cy + '" r="9"/><text class="n" x="' + F1(cx) + '" y="' + (cy + 4) + '" text-anchor="middle">' + numero.get(j.id) + "</text>";
       if (lab) s += '<text class="lb" x="' + F1(cx + 14) + '" y="' + (cy + 4) + '">' + esc(it.t) + "</text>";
       s += "</g>";
-      marqueurs.push({ x: cx, y: cy, jalons: [j], type: o ? "objectif" : "pastille", r: 13, numero: numero.get(j.id) });
+      marqueurs.push({ x: cx, y: cy, jalons: [j], type: o ? "objectif" : "pastille", r: 13, numero: numero.get(j.id), gauche: lab ? it.l : null, largeur: lab ? it.w : null });
     });
     /* cibles des objectifs sur la médiane */
     jalons.filter(j => estObjectif(j) && j.t >= M.today && j.t >= dom.debut && j.t <= dom.fin && ctx.aFutur).forEach(j => {
@@ -1777,10 +1802,12 @@
       const gg = this.geo, ms = gg.marqueurs.slice().sort((a, b) => a.x - b.x), g = this.g;
       let h = "";
       ms.forEach((m, i) => {
-        const dx = Math.min(i > 0 ? m.x - ms[i - 1].x : 44, i < ms.length - 1 ? ms[i + 1].x - m.x : 44), w = clamp(dx, 20, 44), ids = m.jalons.map(j => j.id).join(" ");
+        /* zone cliquable d'au moins 44 × 44 px (la hauteur est dans le CSS) : deux repères voisins sont à 44 px l'un de l'autre sur la carte (regroupés sinon), à 24 px au moins
+           sur le rail du plein écran où leurs centres restent chacun dans leur zone ; une pastille à libellé est cliquable sur toute sa largeur */
+        const w = Math.max(44, m.largeur || 0), left = m.largeur ? m.gauche - (w - m.largeur) / 2 : m.x - w / 2, ids = m.jalons.map(j => j.id).join(" ");
         const lab = m.jalons.length > 1 ? m.jalons.length + " jalons rapprochés, " + dMois(m.jalons[0].t) + " à " + dMois(m.jalons[m.jalons.length - 1].t) + ". Ouvrir la liste"
           : m.jalons[0].titre + ", " + (estObjectif(m.jalons[0]) ? "échéance " : "") + dMois(m.jalons[0].t) + ". Ouvrir le détail";
-        h += '<button type="button" class="gp-mk-b" data-jalons="' + esc(ids) + '" style="left:' + (m.x - w / 2).toFixed(1) + "px;top:" + (m.y - 22).toFixed(1) + "px;width:" + w.toFixed(1) + 'px" aria-label="' + esc(lab) + '"></button>';
+        h += '<button type="button" class="gp-mk-b" data-jalons="' + esc(ids) + '" style="left:' + left.toFixed(1) + "px;top:" + (m.y - 22).toFixed(1) + "px;width:" + w.toFixed(1) + 'px" aria-label="' + esc(lab) + '"></button>';
       });
       this.marks.innerHTML = h;
       void g;
@@ -2205,7 +2232,7 @@
   });
 
 
-  return { esc, plat, fK, fEur, fSK, fSE, fMois, fMoisU, fPct, kRange, kTiret, chancesTxt, motProba, dureeTxt, relatif, dMois, dJour, FENETRES, domaine, fenetreContenant, granularite, clePas, graduations, domaineY, echelleYStable, valeurCreuse, pointsConnus,
+  return { esc, plat, fK, fEur, fSK, fSE, fMois, fMoisU, fPct, kRange, kTiret, chancesTxt, motProba, placerEtiquettes, dureeTxt, relatif, dMois, dJour, FENETRES, domaine, fenetreContenant, granularite, clePas, graduations, domaineY, echelleYStable, valeurCreuse, pointsConnus,
     chemin, bande, cheminInverse, facteurPrix, normaliser, echantillons, besoinY, besoinFenetre, regrouperJalons, plusProcheGroupe, lecture, planA, capaciteA, phraseTitre, titreLecture, ligneLecture, lectureHtml, enteteHtml,
     construireSvg, construireBande, tableauHtml, calculHtml, jalonDetailHtml, jalonsListeHtml, groupeHtml, parametresMode, MODES, PRESETS, msDe, isoDe, ajouterMois, moisEntre, capaciteSourceTxt, decompositionPhrase, objectifLigne,
     etiquettesJalon, modePleinEcran, fenetreDefaut, invitationVisible, planNormalise, resumeAccessible, demiPas, monter, STATUT_OBJ, NATURE, libellesTemps, effetMensuel };

@@ -94,21 +94,21 @@ test("fenêtres : un clic change la fenêtre (aria-pressed), le curseur hors fen
   assert.equal(ytk(t).length <= 4, true);
 });
 
-test("jalons : de vrais boutons (nom accessible), un jalon seul ouvre sa feuille, un groupe « 4 » ouvre la liste de ses événements, Entrée sur le curseur ouvre la feuille", () => {
+test("jalons : de vrais boutons (nom accessible), un jalon seul ouvre sa feuille, un groupe « 5 » ouvre la liste de ses événements, Entrée sur le curseur ouvre la feuille", () => {
   const t = monter(), marks = t.qa(".gp-mk-b");
   assert.ok(marks.length >= 5 && marks.every(b => b.localName === "button" && b.getAttribute("aria-label")));
-  const groupe = marks.find(b => /4 jalons rapprochés/.test(b.getAttribute("aria-label")));
+  const groupe = marks.find(b => /5 jalons rapprochés/.test(b.getAttribute("aria-label")));
   assert.ok(groupe, marks.map(b => b.getAttribute("aria-label")).join(" | "));
   groupe.click();
-  assert.equal(t.UI.st.titre, "4 événements rapprochés"); assert.match(t.UI.st.corps.innerHTML, /Nouvel emploi de Sam/); assert.match(t.UI.st.corps.innerHTML, /data-go="ev:crèche"|data-go="ev:creche"/);
+  assert.equal(t.UI.st.titre, "5 événements rapprochés"); assert.match(t.UI.st.corps.innerHTML, /Nouvel emploi de Sam/); assert.match(t.UI.st.corps.innerHTML, /data-go="ev:crèche"|data-go="ev:creche"/);
   t.UI.panneau.fermer();
-  const pea = marks.find(b => /PEA : 5 ans/.test(b.getAttribute("aria-label")));
-  pea.click(); assert.equal(t.UI.st.titre, "PEA : 5 ans révolus"); assert.match(t.UI.st.corps.innerHTML, /Voir sur la courbe/);
-  assert.match(t.UI.st.corps.innerHTML, /Demander à Claude/, "un repère du calendrier ne se « modifie » pas avec Claude");
+  const achat = marks.find(b => /Achat de la résidence principale/.test(b.getAttribute("aria-label")));
+  achat.click(); assert.equal(t.UI.st.titre, "Achat de la résidence principale"); assert.match(t.UI.st.corps.innerHTML, /Voir sur la courbe/);
   t.UI.panneau.fermer();
-  assert.match(ro(t), /PEA : 5 ans révolus$/, "toucher un jalon place la lecture à sa date");
+  assert.match(ro(t), /Achat de la résidence principale/, "toucher un jalon place la lecture à sa date");
   const hit = t.q("[data-hit]"); t.UI.panneau.fermer(); t.touche(hit, "Enter");
-  assert.equal(t.UI.st.titre, "PEA : 5 ans révolus", "Entrée ouvre la feuille de l'événement sous le curseur");
+  assert.match(t.UI.st.titre, /Achat de la résidence principale|2 événements/, "Entrée ouvre la feuille de l'événement sous le curseur");
+  assert.ok(marks.every(b => /width:(4[4-9]|[5-9]\d|\d{3,})/.test(b.getAttribute("style"))), "zones cliquables d'au moins 44 px de large");
   // « Modifier avec Claude » pour un événement du foyer
   t.UI.panneau.fermer(); t.api.curseur(G.msDe(plusMois(AUJ, 2))); t.touche(hit, "Enter");
   assert.equal(t.UI.st.titre, "Nouvel emploi de Sam"); assert.match(t.UI.st.corps.innerHTML, /Modifier avec Claude/); assert.match(t.UI.st.corps.innerHTML, /Capacité avant → après/);

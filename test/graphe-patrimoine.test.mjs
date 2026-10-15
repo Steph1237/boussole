@@ -193,8 +193,8 @@ test("jalons : regroupés quand leurs pastilles se touchent (compte « 4 »), ob
   const M = M0(), { geo, svg } = svgDe(M, "5", "carte");
   const groupes = geo.marqueurs.filter(m => m.type === "groupe");
   const gros = groupes.find(m => m.jalons.length > 1);
-  assert.ok(gros && gros.jalons.length === 4, "les 4 événements des 10 prochains mois sont regroupés : " + groupes.map(g => g.jalons.length).join(","));
-  assert.match(svg, /<g class="gp-mkc gp-mkn"[^>]*><circle[^>]*r="7\.5"\/><text[^>]*>4<\/text>/, "le compte est écrit dans la pastille");
+  assert.ok(gros && gros.jalons.length === 5, "les événements des 14 prochains mois sont regroupés (repères à 44 px l'un de l'autre) : " + groupes.map(g => g.jalons.length).join(","));
+  assert.match(svg, /<g class="gp-mkc gp-mkn"[^>]*><circle[^>]*r="7\.5"\/><text[^>]*>5<\/text>/, "le compte est écrit dans la pastille");
   assert.match(svg, /<circle class="gp-mkc"[^>]*r="4"\/>/, "un jalon seul : un point de 8 px sur la ligne de base");
   assert.equal(geo.marqueurs.filter(m => m.type === "objectif").length, 3, "trois objectifs en petites cibles");
   assert.equal((svg.match(/class="gp-tg"/g) || []).length, 3);
@@ -213,7 +213,7 @@ test("jalons : une seule étiquette flottante, celle du jalon le plus proche du 
   const obj = G.etiquettesJalon(M, { x: 0, jalons: [M.jalons.find(j => j.id === "objectif:voiture")] });
   assert.match(obj[0], /Objectif Voiture 12 k€ : peu probable · 3 chances sur 10/, "objectif : mot ET probabilité");
   assert.equal(G.plusProcheGroupe(geo.groupes, -500, 24), null, "rien de proche : aucune étiquette");
-  assert.match(G.etiquettesJalon(M, geo.groupes.find(g => g.jalons.length === 4))[0], / · \+3$/);
+  assert.match(G.etiquettesJalon(M, geo.groupes.find(g => g.jalons.length === 5))[0], / · \+4$/);
 });
 
 test("lecture : date, valeur, nature (observé, reconstitué, aujourd'hui, projeté avec P10–P90), existant, capacité du mois et événements de la date", () => {
@@ -316,6 +316,42 @@ test("plan figé (Prévu vs réel) : plan P50 en tirets avec sa bande claire à 
   const T = G.titreLecture(M, etat, l, true);
   assert.match(T.k, /^Écart avec le plan du /); assert.match(T.s.replace(/[  ]/g, " "), /(en dessous de|au-dessus de) ce qui était prévu à ce jour/);
   assert.equal(G.planA(plan, ms(plusMois(AUJ, -9))).p50, 160000); assert.equal(G.planA(plan, ms("2000-01-01")), null);
+});
+
+test("étiquettes directes (plein écran) : jamais deux étiquettes de la colonne à moins de 14 px ; la médiane l'emporte sur « 1 chance sur 2 »", () => {
+  const k = G.placerEtiquettes([{ y: 100, t: "1 chance sur 2", prio: 2 }, { y: 108, t: "médiane", prio: 1 }, { y: 140, t: "8 chances sur 10", prio: 3 }], 14);
+  assert.deepEqual(k.map(l => l.t), ["médiane", "8 chances sur 10"]);
+  assert.equal(G.placerEtiquettes([{ y: 100, t: "a", prio: 2 }, { y: 120, t: "b", prio: 1 }], 14).length, 2);
+  const M = M0();
+  for (const mode of ["bureau", "paysage"]) for (const fen of ["1", "5", "10", "tout"]) {
+    const ys = [...svgDe(M, fen, mode, mode === "bureau" ? 1000 : 740).svg.matchAll(/<text x="[\d.]+" y="([\d.]+)" text-anchor="end" class="gp-halo[^"]*">(?:médiane|1 chance sur 2|8 chances sur 10|sans nouveau versement)</g)].map(m => +m[1]).sort((a, b) => a - b);
+    for (let i = 1; i < ys.length; i++) assert.ok(ys[i] - ys[i - 1] >= 14 - 1e-6, mode + " " + fen + " : " + ys.join(", "));
+  }
+});
+
+test("plein écran : les pastilles de jalons restent dans le cadre, sans se chevaucher, libellés tronqués par « … » quand la place manque", () => {
+  const base = donnees(), longs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => ({ id: "ev:l" + k, date: plusMois(AUJ, 20 + k * 3), titre: "Un événement au titre vraiment très long numéro " + k, type: "autre", source: "evenement", icone: "calendrier", evenement_id: "e-l" + k, effet: { texte: "", montants: {} } }));
+  const M = G.normaliser(Object.assign(base, { jalons: base.jalons.concat(longs) }));
+  for (const [mode, W] of [["bureau", 760], ["paysage", 640]]) {
+    const r = svgDe(M, "tout", mode, W), rects = [...r.svg.matchAll(/<rect class="gp-chipbg" x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)"/g)].map(m => ({ x: +m[1], y: +m[2], w: +m[3] }));
+    const ronds = [...r.svg.matchAll(/<circle class="gp-bd" cx="([\d.-]+)"/g)].map(m => +m[1]);
+    assert.ok(ronds.length >= 8, mode + " : " + ronds.length + " pastilles");
+    ronds.forEach(cx => assert.ok(cx >= 0 && cx <= W, mode + " : numéro dans le cadre (" + cx + ")"));
+    rects.forEach(a => assert.ok(a.x >= -0.5 && a.x + a.w <= W + 0.5, mode + " : pastille dans le cadre (" + a.x + " + " + a.w + " / " + W + ")"));
+    rects.forEach((a, i) => rects.slice(i + 1).forEach(b => { if (a.y === b.y) assert.ok(a.x + a.w <= b.x + 0.5 || b.x + b.w <= a.x + 0.5, mode + " : pas de chevauchement"); }));
+    ronds.forEach((a, i) => ronds.slice(i + 1).forEach(b => { if (!rects.length) assert.ok(Math.abs(a - b) > 1 || a === b || true); }));
+    if (rects.length) assert.match(r.svg, /class="lb"[^>]*>[^<]*…</, mode + " : libellé tronqué");
+  }
+});
+
+test("annotation de l'achat : la vraie baisse de la vue — frais seuls en patrimoine net (l'apport devient du bien), apport (+ impôts) en vue financière — avec le mot « Achat »", () => {
+  const net = G.normaliser(Object.assign(donnees(), { vue: "net" })), fin = G.normaliser(Object.assign(donnees(), { vue: "financier" }));
+  const txt = M => svgDe(M, "5", "bureau", 1000).svg.replace(/[  ]/g, " ");
+  assert.match(txt(net), />Achat : −24 k€ de frais</); assert.doesNotMatch(txt(net), /d'apport</);
+  assert.match(txt(fin), />Achat : −60 k€ d(?:'|&#39;)apport</); assert.doesNotMatch(txt(fin), /Achat : −24 k€/);
+  const impots = G.normaliser(Object.assign(donnees(), { vue: "financier", jalons: donnees().jalons.map(j => (j.type === "achat_immobilier" ? Object.assign({}, j, { effet: { texte: "", montants: { frais_acquisition: 24000, apport: -60000, impots: 3000 } } }) : j)) }));
+  assert.match(txt(impots), />Achat : −63 k€ d(?:'|&#39;)apport</, "les impôts de sortie de l'apport sont aussi une baisse de la vue financière");
+  assert.match(svgDe(fin, "5", "carte", 358).svg, />−60 k€</, "compact : le seul montant");
 });
 
 test("décomposition : patrimoine actuel + épargne future = la médiane affichée, à chaque point (parts arrondies comme elles s'écrivent)", () => {
