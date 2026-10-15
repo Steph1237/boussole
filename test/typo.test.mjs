@@ -11,7 +11,6 @@ const FEUILLES = readdirSync("web/src").filter(f => f.endsWith(".css"));
 /** Exceptions documentées : taille relative à l'élément parent (sans pixel en dur), pas une taille de l'échelle. */
 const EXCEPTIONS = [
   { fichier: "accueil.css", valeur: ".92em", raison: "mot en capitales dans un titre de bienvenue : proportionnel au titre qui l'entoure" },
-  { fichier: "sante.css", valeur: ".42em", raison: "« /100 » à côté de la note : proportionnel à la note, qui est elle-même au jeton --t-hero" },
 ];
 const exception = (f, v) => EXCEPTIONS.some(e => e.fichier === f && e.valeur === v);
 

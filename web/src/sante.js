@@ -3,8 +3,8 @@
 /* Pilotage › Santé — « Ma situation est-elle saine ? » : bonnes pratiques notées (Pratiques.evaluer, pratiques.js), spec
    docs/superpowers/specs/2026-10-12-cp4-sante-design.md § 3-4.
    En-tête : note globale dans un anneau (role="img"), phrase de synthèse, couverture (« calculée sur 7 critères sur 11 »,
-   « provisoire » sous 60 %), date des données (dernière photo ou dernière synchronisation, dateDonnees), « Demander à Claude », puis
-   « Ce qui te coûte le plus » : les 3 plus gros points perdus (« N points de ta note globale »), en lignes cliquables qui ouvrent le
+   « provisoire » sous 60 %), date des données (dernière photo ou dernière synchronisation, dateDonnees), puis
+   « Ce qui te coûte le plus » : les 3 plus gros points perdus (chip « −6,7 pts »), en lignes cliquables qui ouvrent le
    critère. Familles en onglets ARIA (Sécurité, Effort, Allocation, Efficacité) : note, couverture,
    cartes de critère ; poids rappelés une seule fois au-dessus des onglets. Carte : nom, état en mots (bon · à surveiller · à
    travailler · à compléter), jauge horizontale à zones (repere.zones) avec la position de l'utilisateur, mesure en clair, note /20,
@@ -18,7 +18,7 @@
    regle, source, details, aCompleter, informatif). Lecture seule, au tutoiement, tout texte des données échappé.
    Fonctions pures exportées (module.exports) : normaliser, ETATS, geometrieJauge, texteJauge, jaugeSvg, carteHtml, couvertureDe,
    verdict, resumeFamille, coutsPrincipaux, enteteHtml, ongletsHtml, panneauHtml, expertiseDe, questionCritere, questionClaude,
-   questionPage, phraseCompleter, sectionDe, lienPanneau, hashSante, cibleLien, dateDonnees. */
+   phraseCompleter, sectionDe, lienPanneau, hashSante, cibleLien, dateDonnees. */
 
 /* ---------- outils ---------- */
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -27,18 +27,20 @@ const num=v=>typeof v==="number"?(isFinite(v)?v:null):(v!=null&&v!==""&&typeof v
 const NOMBRES=["aucun","un","deux","trois","quatre","cinq","six","sept","huit","neuf","dix"];
 const nombre=n=>NOMBRES[n]||String(n);
 const s_=n=>n>1?"s":"";
+const FmtM=()=>(typeof window!=="undefined"&&window.Fmt)||(typeof module==="object"&&module.exports&&typeof require==="function"?(()=>{ try{ return require("./format.js"); }catch(e){ return null; } })():null);
+/** Nombre au format de l'app (Fmt.fmtNombre : milliers en espace fine, « − » typographique) ; décimales nulles retirées (« 7,5 », « 15 »). */
 function fr(x,dec){
   if(x==null||!isFinite(x)) return "—";
-  let s=Math.abs(x).toFixed(dec==null?1:dec);
-  if(s.indexOf(".")>=0) s=s.replace(/\.?0+$/,"");
-  s=s.replace(".",",").replace(/^(\d+)/,m=>m.replace(/\B(?=(\d{3})+(?!\d))/g," "));
-  return (x<0&&s!=="0"?"−":"")+s;
+  const F=FmtM(), d=dec==null?1:dec;
+  let s=F?F.fmtNombre(x,{decimales:d}):String(Math.round(x*Math.pow(10,d))/Math.pow(10,d)).replace(".",",");
+  if(s.indexOf(",")>=0) s=s.replace(/,?0+$/,"");
+  return s==="−0"?"0":s;
 }
-const MOIS=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+/** Date au format de l'app (« 15 oct. 2026 ») ; "" si illisible. */
 function dateFr(d){
-  const j=typeof d==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(d)?d.split("-").map(Number):null; // jour seul : date locale, sans fuseau
-  const x=j?new Date(j[0],j[1]-1,j[2]):d instanceof Date?d:d?new Date(d):null;
-  return x&&!isNaN(x)?x.getDate()+(x.getDate()===1?"er":"")+" "+MOIS[x.getMonth()]+" "+x.getFullYear():"";
+  const F=FmtM(); if(!F||!d) return "";
+  const t=F.fmtDate(d);
+  return t==="—"?"":t;
 }
 const CHEVRON='<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg>';
 const sr=t=>'<span class="ui-sr">'+esc(t)+"</span>";
@@ -46,12 +48,19 @@ const sr=t=>'<span class="ui-sr">'+esc(t)+"</span>";
 /* ---------- états ---------- */
 /** État d'un critère : mot (jamais la couleur seule), ton (couleur), badge (UI.badge), zone (couleur dite dans le texte de la jauge). */
 const ETATS={
-  bon:{mot:"bon",ton:"good",badge:"bon",zone:"verte"},
-  surveiller:{mot:"à surveiller",ton:"warn",badge:"attention",zone:"orange"},
-  travailler:{mot:"à travailler",ton:"crit",badge:"critique",zone:"rouge"},
-  a_completer:{mot:"à compléter",ton:"na",badge:"neutre",zone:"grise"},
-  info:{mot:"information",ton:"info",badge:"info",zone:"grise"},
+  bon:{mot:"bon",ton:"good",badge:"bon",puce:"bon",zone:"verte"},
+  surveiller:{mot:"à surveiller",ton:"warn",badge:"attention",puce:"surveiller",zone:"orange"},
+  travailler:{mot:"à travailler",ton:"crit",badge:"critique",puce:"travailler",zone:"rouge"},
+  a_completer:{mot:"à compléter",ton:"na",badge:"neutre",puce:"completer",zone:"grise"},
+  info:{mot:"information",ton:"info",badge:"info",puce:null,zone:"grise"},
 };
+const maj1=t=>t.charAt(0).toUpperCase()+t.slice(1);
+/** Statut en chip avec libellé (point de couleur plus mot, jamais la couleur seule) ; « information » reste un badge. */
+function etatHtml(e,cls){
+  const c=cls?" "+cls:"";
+  return e.puce?`<span class="ui-puce ${e.puce}${c}"><span class="ui-puce-point" aria-hidden="true"></span>${esc(maj1(e.mot))}</span>`
+    :`<span class="ui-badge ${e.badge}${c}">${esc(maj1(e.mot))}</span>`;
+}
 const ALIAS={good:"bon",warn:"surveiller",crit:"travailler",na:"a_completer",a_surveiller:"surveiller",a_travailler:"travailler",
   acompleter:"a_completer","à compléter":"a_completer","a-completer":"a_completer",informatif:"info",information:"info"};
 const statutConnu=s=>{ const k=ALIAS[s]||s; return typeof k==="string"&&ETATS[k]?k:null; };
@@ -73,7 +82,7 @@ function valeurDonnee(d){
   if(typeof v!=="number") return plat(v);
   if(!isFinite(v)) return "";
   const unite=u||"€", dec=/€/.test(unite)&&Math.abs(v)>=100?0:2;
-  return fr(v,dec)+(unite==="%"?"\u00a0%":" "+unite);
+  return fr(v,dec)+"\u00a0"+unite;
 }
 /** Critère lu au contrat CP4, avec repli sur les anciens champs. Idempotent. */
 function normaliser(c){
@@ -279,27 +288,31 @@ function dateDonnees(S){
 function anneauHtml(v){
   const R=52,C=2*Math.PI*R, pct=v.note==="—"?0:Math.max(0,Math.min(100,+v.note)), ton=v.ton||"na";
   const label=v.note==="—"?"Note globale : pas encore calculée":"Note globale : "+v.note+" sur 100"+(v.label?", "+v.label.toLowerCase():"");
+  /* La note et « /100 » sont empilées au centre de l'anneau (jamais côte à côte : « 80/100 » débordait de l'anneau). */
   return `<div class="st-anneau" role="img" aria-label="${esc(label)}"><svg class="st-anneau-svg" viewBox="0 0 120 120" aria-hidden="true" focusable="false">`+
     `<circle class="st-anneau-fond" cx="60" cy="60" r="${R}"/>`+
     (pct>0?`<circle class="st-anneau-arc ${ton}" cx="60" cy="60" r="${R}" stroke-dasharray="${(C*pct/100).toFixed(2)} ${C.toFixed(2)}" transform="rotate(-90 60 60)"/>`:"")+
-    `</svg><span class="st-anneau-val" aria-hidden="true"><span><span class="st-big num">${esc(v.note)}</span>${v.note==="—"?"":'<span class="st-sur">/100</span>'}</span></span></div>`;
+    `</svg><span class="st-anneau-val" aria-hidden="true"><span class="st-big num">${esc(v.note)}</span>${v.note==="—"?"":'<span class="st-sur">/100</span>'}</span></div>`;
 }
 const TON_BADGE={good:"bon",warn:"attention",crit:"critique"};
+const TON_PUCE={good:"bon",warn:"surveiller",crit:"travailler"};
 /** En-tête : anneau, verdict, couverture (provisoire), date des données (« données du … »), Claude, puis « Ce qui te coûte le plus »
     (3 lignes → panneau, chacune avec les points de la note globale en jeu). o = { date (dateDonnees), P (module Pratiques ; null : calcul
     local des pertes) }. */
 function enteteHtml(r,U,o){
   o=o||{};
   const v=verdict(r), cov=couvertureDe(r), date=dateFr(r&&(r.calcule_le||r.date)||o.date);
-  const badge=v.label&&!v.provisoire?`<span class="ui-badge ${TON_BADGE[v.ton]||"neutre"}">${esc(v.label)}</span>`:"";
-  const couv=aNote(r)?`<p class="st-couv">${esc(cov.texte.charAt(0).toUpperCase()+cov.texte.slice(1))}${v.provisoire?' <span class="ui-badge attention">provisoire</span>':""}${date?'<span class="st-date"> · données du '+esc(date)+"</span>":""}</p>`:"";
-  const claude=r&&U?`<div class="st-claude">${U.demanderAClaude(questionPage(r))}</div>`:"";
-  const tete=`<div class="st-tete">${anneauHtml(v)}<div class="st-tete-txt"><p class="st-question">Ma situation est-elle saine ? ${badge}</p>`+
-    `<p class="st-verdict ${v.ton}" id="santeVerdict" tabindex="-1">${esc(v.phrase)}</p>${couv}${claude}</div></div>`;
+  const puce=v.label&&!v.provisoire?etatHtml({puce:TON_PUCE[v.ton]||"completer",mot:v.label.toLowerCase()}):"";
+  const nbManque=r&&aNote(r)?comptes(r).filter(n=>n.statut==="a_completer").length:0;
+  const manque=nbManque?`<span class="ui-puce completer"><span class="ui-puce-point" aria-hidden="true"></span>À compléter : ${nbManque}</span>`:"";
+  const couv=aNote(r)?`<p class="st-couv">${esc(cov.texte.charAt(0).toUpperCase()+cov.texte.slice(1))}${v.provisoire?" "+etatHtml({puce:"surveiller",mot:"provisoire"}):""}${date?'<span class="st-date">, données du '+esc(date)+"</span>":""}${manque?" "+manque:""}</p>`:"";
+  /* Réponse d'abord (statut, phrase, couverture) ; « Demander à Claude » est dans l'en-tête de la page, pas dans la carte. */
+  const tete=`<div class="st-tete">${anneauHtml(v)}<div class="st-tete-txt">${puce}`+
+    `<p class="st-verdict ${v.ton}" id="santeVerdict" tabindex="-1">${esc(v.phrase)}</p>${couv}</div></div>`;
   if(!aNote(r)) return tete;
   const cs=coutsPrincipaux(r,o.P);
   const corps=cs.length?'<ol class="st-couts-liste">'+cs.map(x=>`<li><button type="button" class="st-cout" data-ui-carte="${esc(x.cle)}" data-st-cout="${esc(x.cle)}" aria-haspopup="dialog">`+
-      `<span class="st-cout-haut"><span class="st-cout-nom">${esc(x.nom)}</span><span class="st-cout-pts num">${esc(fr(x.points,x.points>=10?0:1))} point${x.points>=2?"s":""} de ta note globale</span></span>`+
+      `<span class="st-cout-haut"><span class="st-cout-nom">${esc(x.nom)}</span><span class="st-cout-pts num">−${esc(fr(x.points,x.points>=10?0:1))}\u00a0pt${x.points>=2?"s":""}${sr(" de ta note globale")}</span></span>`+
       (x.action?`<span class="st-cout-action">${esc(x.action)}</span>`:"")+`<span class="st-cout-ouvrir">${CHEVRON}</span></button></li>`).join("")+"</ol>"
     :'<p class="st-vide">Rien ne te coûte de points pour le moment : tes critères calculés sont tous au maximum.</p>';
   return tete+`<div class="st-couts"><h3 class="st-h3" id="santeCoutsT">Ce qui te coûte le plus</h3>${corps}</div>`;
@@ -310,7 +323,7 @@ const noteHtml=n=>n.points==null?"":`<span class="st-note num">${sr("Note : ")}$
 /** Carte d'un critère : bouton (data-ui-carte) qui ouvre le panneau ; « Compléter avec Claude » hors du bouton pour une carte grise. */
 function carteHtml(c,U){
   const n=normaliser(c), e=ETATS[n.statut], cle=esc(n.cle);
-  const tete=`<span class="st-carte-tete"><span class="st-carte-nom">${esc(n.nom)}</span><span class="ui-badge ${e.badge} st-etat">${esc(e.mot)}</span></span>`;
+  const tete=`<span class="st-carte-tete"><span class="st-carte-nom">${esc(n.nom)}</span>${etatHtml(e,"st-etat")}</span>`;
   const btn=`<button type="button" class="st-carte-btn" data-ui-carte="${cle}" data-st-carte="${cle}" aria-haspopup="dialog">`;
   const ouvrirIco=`<span class="st-carte-ouvrir">${CHEVRON}</span>`;
   if(n.statut==="a_completer"){
@@ -333,14 +346,14 @@ function ongletsHtml(r,actif,U){
     return `<button type="button" role="tab" class="st-onglet" id="st-tab-${k}" aria-controls="st-pan-${k}" aria-selected="${on}" tabindex="${on?0:-1}" data-st-onglet="${k}">`+
       `<span class="st-onglet-nom">${esc(f.titre)}</span><span class="st-onglet-note num ${rf.ton}">${esc(rf.note)}${rf.note==="—"?sr(" pas de note"):sr(" sur 100")}</span></button>`;
   }).join("");
-  const poids=`<p class="st-poids">Poids de chaque famille dans la note globale : ${fams.map(f=>esc(f.titre)+" "+esc(f.poids)+"\u00a0%").join(" · ")}.</p>`;
+  const poids=`<p class="st-poids">Poids dans la note globale : ${fams.map(f=>esc(f.titre)+" "+esc(f.poids)+"\u00a0%").join(" · ")}.</p>`;
   const pans=fams.map(f=>{
     const on=f.cle===a, k=esc(f.cle), rf=resumeFamille(f), cs=(f.criteres||[]).map(normaliser);
     const ordre=cs.filter(n=>n.statut!=="a_completer").concat(cs.filter(n=>n.statut==="a_completer"));
     const cartes=ordre.length?`<div class="st-cartes">${ordre.map(n=>carteHtml(n,U)).join("")}</div>`:'<p class="st-vide">Aucun critère pour le moment.</p>';
-    return `<div role="tabpanel" class="st-fam" id="st-pan-${k}" aria-labelledby="st-tab-${k}" tabindex="0" data-st-fam="${k}"${on?"":" hidden"}>`+
+    return `<div role="tabpanel" class="st-fam" id="st-pan-${k}" aria-labelledby="st-tab-${k}" tabindex="0" data-st-fam="${k}" data-n="${Math.min(cs.length+1,6)}"${on?"":" hidden"}>`+
       `<div class="st-fam-tete"><p class="st-fam-note num ${rf.ton}">${esc(rf.note)}${rf.note==="—"?"":'<span class="st-sur">/100</span>'}</p>`+
-      `<p class="st-fam-sous"><span class="ui-badge ${rf.ton==="na"?"neutre":TON_BADGE[rf.ton]}">${esc(rf.mot)}</span> ${esc(rf.couverture.texte)}</p></div>${cartes}</div>`;
+      `<p class="st-fam-sous">${etatHtml({puce:rf.ton==="na"?"completer":TON_PUCE[rf.ton],mot:rf.mot})} <span>${esc(maj1(rf.couverture.texte))}</span></p></div>${cartes}</div>`;
   }).join("");
   return `<div class="st-onglets" role="tablist" aria-label="Familles de critères">${tabs}</div>${poids}${pans}`;
 }
@@ -367,10 +380,10 @@ function panneauHtml(c,U,o){
   const sec=(t,h)=>h?`<section class="st-p-sec"><h3 class="st-p-h">${esc(t)}</h3>${h}</section>`:"";
   // 1. Ta situation : mesure, note, état, jauge.
   let situ;
-  if(n.statut==="a_completer") situ=`<div class="st-p-tete">${n.mesure.texte?`<span class="st-p-mesure">${esc(n.mesure.texte)}</span>`:""}<span class="ui-badge neutre">${esc(e.mot)}</span></div>${n.pourquoi?"":'<p class="st-p-txt">Pas encore de note : il manque des données.</p>'}`;
+  if(n.statut==="a_completer") situ=`<div class="st-p-tete">${n.mesure.texte?`<span class="st-p-mesure">${esc(n.mesure.texte)}</span>`:""}${etatHtml(e)}</div>${n.pourquoi?"":'<p class="st-p-txt">Pas encore de note : il manque des données.</p>'}`;
   else situ=`<div class="st-p-tete">${n.mesure.texte?`<span class="st-p-mesure">${esc(n.mesure.texte)}</span>`:""}`+
     (n.points!=null?`<span class="st-p-note num">${sr("Note : ")}${esc(fr(n.points,0))}<span class="st-sur">/${esc(n.max)}</span></span>`:"")+
-    `<span class="ui-badge ${e.badge}">${esc(e.mot)}</span></div>`+jaugeSvg(n);
+    `${etatHtml(e)}</div>`+jaugeSvg(n);
   const meta=[n.source_donnees?"Source : "+n.source_donnees:"",CONFIANCE[n.confiance]||""].filter(Boolean);
   if(meta.length) situ+=`<p class="st-p-meta">${esc(meta.join(" · "))}</p>`;
   // 2. Pourquoi cette note : la raison, les points d'attention, le repère (barème) et sa source.
@@ -420,12 +433,6 @@ function lienPanneau(c){
   if(!r||!(n.statut==="a_completer"||n.statut==="surveiller"||n.statut==="travailler")) return null;
   return {label:n.statut==="a_completer"?(LIEN_LABEL[r]||"Voir le détail"):"Où agir : "+(DESTINATION[r]||r),href:"#"+r};
 }
-/** Question de la page. */
-function questionPage(r){
-  const v=verdict(r);
-  if(v.note==="—") return "Aide-moi à compléter mon bilan dans Boussole pour calculer ma note de bonnes pratiques.";
-  return "Ma note de bonnes pratiques dans Boussole est de "+v.note+"/100"+(v.provisoire?" (provisoire)":"")+" : explique-la-moi simplement et dis-moi ce que je devrais travailler en premier.";
-}
 /** Hash du lien profond : #pilotage/sante?famille=<clé>&critere=<clé>. */
 function hashSante(famille,critere){
   const p=[];
@@ -444,7 +451,7 @@ function cibleLien(r,p){
 }
 
 const PURE={normaliser,ETATS,geometrieJauge,texteJauge,jaugeSvg,carteHtml,couvertureDe,verdict,resumeFamille,coutsPrincipaux,enteteHtml,ongletsHtml,
-  panneauHtml,expertiseDe,questionCritere,questionClaude,questionPage,phraseCompleter,sectionDe,lienPanneau,hashSante,cibleLien,dateDonnees};
+  panneauHtml,expertiseDe,questionCritere,questionClaude,phraseCompleter,sectionDe,lienPanneau,hashSante,cibleLien,dateDonnees};
 if(typeof module==="object"&&module.exports){ module.exports=PURE; }
 if(typeof document==="undefined") return;
 
