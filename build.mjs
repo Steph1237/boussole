@@ -28,7 +28,9 @@ const read = p => (existsSync(p) ? readFileSync(p, "utf8") : "");
 
 // Enveloppe un fragment (title/meta/link/style en tête, le reste dans <body>) dans un document complet.
 // Un fichier qui commence déjà par <!doctype est rendu tel quel.
-const HEAD = '<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n';
+// Icône de l'onglet, en data: URI (aucun fichier à servir : sans elle le navigateur réclame /favicon.ico, qui n'existe pas).
+const ICONE = '<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%3E%3Crect%20width=%2232%22%20height=%2232%22%20rx=%227%22%20fill=%22%231f4d4a%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%229%22%20fill=%22none%22%20stroke=%22%23fff%22%20stroke-width=%222.4%22/%3E%3Cpath%20d=%22M16%209.5l3.2%208.2-3.2-1.8-3.2%201.8z%22%20fill=%22%23fff%22/%3E%3C/svg%3E">';
+const HEAD = '<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' + ICONE + "\n";
 function wrap(fragment) {
   if (/^\s*<!doctype/i.test(fragment)) return fragment;
   const head = [];

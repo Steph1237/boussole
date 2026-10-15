@@ -2,6 +2,7 @@
 // boutons, feuilles (réglages, liste, détail), états (squelette, erreur, vide, progressif), plein écran (API Fullscreen et couche role="dialog"), zoom, comparaison à
 // un plan, 100 avenirs, invitation, lecture seule. Les 12 tests d'acceptation de l'interface (spec § 10.8) sont répartis ici et dans graphe-patrimoine.test.mjs.
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { G, donnees, monter, AUJ, plusMois } from "./helpers/graphe-donnees.mjs";
 
@@ -255,6 +256,33 @@ test("100 avenirs : désactivé par défaut ; activé : 100 trajectoires fines, 
   assert.ok((t.q("[data-svg]").innerHTML.match(/class="gp-qd"/g) || []).length > 50, "points de l'horizon dans la marge");
   assert.equal(ytk(t).map(n => n.getAttribute("data-y")).join(","), avant, "aucun changement d'échelle");
   assert.doesNotMatch(t.q("[data-svg]").innerHTML, /class="gp-med"[^>]*d="M[^"]*"\/>.*class="gp-hopp"/s);
+});
+
+test("invitation : en paysage sur téléphone, elle ne propose pas de tourner l'appareil ; l'étiquette de la carte ne promet pas les touches de zoom", () => {
+  const fen = (w, h) => ({ innerWidth: w, innerHeight: h, matchMedia: () => ({ matches: false, addEventListener() {} }), addEventListener() {}, removeEventListener() {}, location: { hash: "" } });
+  const p = monter({ window: fen(844, 390) }), v = monter({ window: fen(390, 844) });
+  assert.match(sp(p.q("[data-invite]").textContent), /^Plus de détail en grand\./); assert.doesNotMatch(sp(p.q("[data-invite]").textContent), /tournant/);
+  assert.match(sp(v.q("[data-invite]").textContent), /en tournant ton téléphone/);
+  assert.doesNotMatch(v.q("[data-hit]").getAttribute("aria-label"), /zoomer/); assert.match(v.q("[data-hit]").getAttribute("aria-label"), /Flèches pour se déplacer/);
+  v.api.pleinEcran(); assert.match(v.doc.body.querySelector(".gp-fsv").querySelector("[data-hit]").getAttribute("aria-label"), /plus et moins pour zoomer/, "en plein écran, la promesse est tenue");
+  v.api.fermerPleinEcran();
+});
+
+test("carte IMMO1 : marquée pour que son titre tienne sur une ligne au téléphone (puce des euros repliée dans les réglages) ; les autres cartes gardent la puce", () => {
+  const capa = monter({ opt: { preset: "capacite" } });
+  assert.ok(capa.q(".gp-carte").getAttribute("class").includes("gp-capa"), "classe de la carte capacité");
+  assert.ok(!monter().q(".gp-carte").getAttribute("class").includes("gp-capa"));
+  assert.match(readFileSync("web/src/graphe-patrimoine.css", "utf8"), /@media \(max-width:430px\)\{\.gp-capa \.gp-tete \.gp-eur\{display:none\}\}/);
+});
+
+test("sous la carte : une seule ligne de décomposition et les alertes ; événements pris en compte et base de l'épargne vont dans « Comment c'est calculé », une seule phrase sur la capacité", () => {
+  const t = monter(), notes = sp(t.q("[data-notes]").textContent);
+  assert.doesNotMatch(notes, /Événements pris en compte|Épargne mensuelle projetée/);
+  assert.ok(notes.length < 400, "pied de carte court : " + notes.length);
+  const M = G.normaliser(donnees()), h = G.calculHtml(M, {});
+  assert.match(sp(h), /Événements pris en compte/);
+  const full = G.enteteHtml(M, null, {}), nb = (full.match(/capacité d.épargne/gi) || []).length; assert.ok(nb <= 1, "la capacité n'est dite qu'une fois dans la feuille de lecture : " + nb);
+  assert.ok((sp(h).match(/Épargne mensuelle projetée|capacité d.épargne constatée sur tes comptes/g) || []).length <= 1, "calcul : une phrase sur la base de l'épargne");
 });
 
 test("invitation « ouvrir en grand » : à la première visite ou quand c'est dense, fermable, mémorisée (localStorage en try/catch), jamais bloquante", () => {

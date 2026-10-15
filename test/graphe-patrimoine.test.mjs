@@ -257,8 +257,10 @@ test("en-tête : phrase de titre, décomposition, « Événements pris en compte
   assert.match(h, /Dont \d+ k€ de ton patrimoine actuel et \d+ k€ de ton épargne future, après 20 k€ de frais\./);
   assert.match(h, /Événements pris en compte : Nouvel emploi de Sam, Naissance, Crèche, Achat de la résidence principale\./);
   assert.match(h, /data-gf="ecart_capacite"[^>]*>Ta capacité d&#39;épargne constatée est de 950 €/);
-  assert.match(h, /Épargne mensuelle projetée : 950 € — ta capacité d&#39;épargne constatée \(avril à septembre 2026, comptes courants\)\./);
+  assert.doesNotMatch(h, /Épargne mensuelle projetée/, "la phrase sur l'écart de capacité dit déjà d'où part l'épargne : jamais deux phrases sur le même sujet");
   assert.doesNotMatch(h, /prévue au budget \(pas encore/, "jamais deux sources à la fois");
+  const sansEcart = Object.assign(donnees(), { garde_fous: [] }), h3 = G.enteteHtml(G.normaliser(sansEcart), G.lecture(G.normaliser(sansEcart), null, G.normaliser(sansEcart).futur.t[120])).replace(/[  ]/g, " ");
+  assert.match(h3, /Épargne mensuelle projetée : 950 € — ta capacité d&#39;épargne constatée \(avril à septembre 2026, comptes courants\)\./, "sans phrase d'écart, la source de l'épargne est dite");
   const vide = G.normaliser(donnees({ sansEvenement: true })), h2 = G.enteteHtml(vide, G.lecture(vide, null, vide.futur.t[60]));
   assert.match(h2, /gp-en-q[^>]*>Aucun événement renseigné — as-tu des changements prévus \?/);
   const prevu = Object.assign(donnees(), { capacite_source: "prevu" }); prevu.capacite.base.source = "prevu"; prevu.capacite.base.retenue = 1500;
@@ -303,6 +305,16 @@ test("mode capacité (IMMO1) : éventail du budget d'achat P10–P90, médiane, 
   assert.equal(l.demain.p50, 346000);
   assert.match(G.lectureHtml(M, null, l, { def: false }).replace(/[  ]/g, " "), /Montant empruntable : <b>224 000 €<\/b>/);
   assert.match(G.lectureHtml(M, null, l, { def: false }), /1 point plus bas/);
+  /* lisibilité : légende de la ligne fine, point d'aujourd'hui entier, aucune fourchette réduite à un point, au moins deux graduations lisibles */
+  assert.match(svg, /class="gp-halo gp-ti gp-leg-e">montant empruntable</, "la ligne du montant empruntable est nommée");
+  assert.ok(geo.L >= 10, "marge à gauche : le point et son halo d'aujourd'hui ne sont pas rognés"); assert.match(svg, new RegExp('data-today cx="' + (geo.X(M.today)).toFixed(1)));
+  assert.ok(geo.X(M.today) - 10 >= 0, "le halo de 10 px reste dans le dessin");
+  assert.ok((svg.match(/class="gp-ytk"(?![^>]*display:none)/g) || []).length >= 2, "au moins deux graduations lisibles");
+  const auj = G.lecture(M, null, M.today), Ma = G.normaliser(Object.assign(JSON.parse(JSON.stringify(d)), { capacite_demain: Object.assign({}, d.capacite_demain, { apport: { p10: mois.map(() => 57000), p50: mois.map(() => 57000), p90: mois.map(() => 57000) }, budget_achat: { p10: mois.map(() => 300000), p50: mois.map(() => 300000), p90: mois.map(() => 300000) } }) }));
+  const la = G.lecture(Ma, null, Ma.today), T = G.titreLecture(Ma, null, la, false);
+  assert.doesNotMatch(T.s, /entre/, "aujourd'hui, l'apport n'est pas une fourchette : " + T.s); assert.match(T.s.replace(/[  ]/g, " "), /apport 57 k€/);
+  assert.doesNotMatch(G.ligneLecture(Ma, null, la, false), /57[–-]57/); assert.doesNotMatch(G.lectureHtml(Ma, null, la, { def: false }), /gp-rb"/, "pas de barre de fourchette réduite à un point");
+  assert.doesNotMatch(G.phraseTitre(Ma, Ma.today), /9 chances sur 10/); void auj;
 });
 
 test("plan figé (Prévu vs réel) : plan P50 en tirets avec sa bande claire à partir de sa date, écart teinté et écrit ; avant sa date, il n'existait pas", () => {
@@ -363,7 +375,7 @@ test("annotation de l'achat : la vraie baisse de la vue — frais seuls en patri
   assert.match(txt(fin), />Achat : −60 k€ d(?:'|&#39;)apport</); assert.doesNotMatch(txt(fin), /Achat : −24 k€/);
   const impots = G.normaliser(Object.assign(donnees(), { vue: "financier", jalons: donnees().jalons.map(j => (j.type === "achat_immobilier" ? Object.assign({}, j, { effet: { texte: "", montants: { frais_acquisition: 24000, apport: -60000, impots: 3000 } } }) : j)) }));
   assert.match(txt(impots), />Achat : −63 k€ d(?:'|&#39;)apport</, "les impôts de sortie de l'apport sont aussi une baisse de la vue financière");
-  assert.match(svgDe(fin, "5", "carte", 358).svg, />−60 k€</, "compact : le seul montant");
+  assert.match(svgDe(fin, "5", "carte", 358).svg, />Achat −60 k€</, "compact : le mot et le montant");
 });
 
 test("décomposition : patrimoine actuel + épargne future = la médiane affichée, à chaque point (parts arrondies comme elles s'écrivent)", () => {

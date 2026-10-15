@@ -16,8 +16,9 @@
     "(?<![0-9])[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{1,7}(?![0-9])",
     "mot de passe|password|code secret|code pin|identifiant de connexion",
   ];
+  /* le motif partagé avec le SQL et le connecteur reste identique (lookbehind) ; côté navigateur il est lu sans lookbehind (Safari < 16.4 refuse la syntaxe) : « pas de chiffre juste avant » devient « début ou non-chiffre » */
   const IBAN_CHIFFRES_MIN = 12;
-  const RE_IBAN = new RegExp(SENSIBLE[0], "g"), RE_CARTE = new RegExp(SENSIBLE[1]), RE_MOTS = new RegExp(SENSIBLE[2], "i");
+  const RE_IBAN = new RegExp(SENSIBLE[0], "g"), RE_CARTE = new RegExp(SENSIBLE[1].replace("(?<![0-9])", "(?:^|[^0-9])")), RE_MOTS = new RegExp(SENSIBLE[2], "i");
   const chiffres = s => s.replace(/[^0-9]/g, "").length;
   /** Vrai si le texte ressemble à un IBAN, un numéro de carte ou contient un mot interdit. */
   function estSensible(t) {

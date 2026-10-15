@@ -116,6 +116,8 @@
     if (n <= 0) return "moins de 1 chance sur 10";
     return n + (n > 1 ? " chances" : " chance") + " sur 10";
   }
+  /** Deux bornes qui s'écrivent pareil ne font pas une fourchette (aujourd'hui, la plage est réduite à un point) : on n'écrit alors qu'une valeur. */
+  const distinctes = (a, b) => a != null && b != null && fK(a) !== fK(b);
   /** Mot de probabilité d'un objectif (« probable » ≥ 80 %, « incertain » 50 à 80 %, « peu probable » < 50 %) ; null sans probabilité. */
   const motProba = p => (p == null || !fini(p) ? null : p >= 0.8 ? "probable" : p >= 0.5 ? "incertain" : "peu probable");
   const TON_MOT = { "probable": "good", "incertain": "watch", "peu probable": "work" };
@@ -535,7 +537,7 @@
     const d = l.demain;
     if (!d) return "";
     const an = new Date(d.t).getUTCFullYear(), e = (d.t <= M.today ? "Aujourd'hui" : "En " + an);
-    const ap0 = d.apport ? " avec " + fEur(Math.round(d.apport.p50 / 1000) * 1000) + " d'apport (9 chances sur 10 d'avoir au moins " + fEur(Math.round(d.apport.p10 / 1000) * 1000) + ")" : "";
+    const ap0 = d.apport ? " avec " + fEur(Math.round(d.apport.p50 / 1000) * 1000) + " d'apport" + (distinctes(d.apport.p10, d.apport.p50) ? " (9 chances sur 10 d'avoir au moins " + fEur(Math.round(d.apport.p10 / 1000) * 1000) + ")" : "") : "";
     return e + ", budget d'achat médian " + fEur(Math.round(d.p50 / 1000) * 1000) + ap0 + ".";
   }
   /** Phrase de décomposition à un point futur : « Dont 190 k€ de ton patrimoine actuel et 210 k€ de ton épargne future, après 20 k€ de frais. » ; null sans les couches. */
@@ -554,7 +556,7 @@
       const d = l.demain;
       k = def && d.t > M.today ? "Dans " + dureeTxt(moisEntre(M.today, d.t)) + " · " + dMois(d.t) : t === M.today ? "Aujourd'hui · " + dJour(t) : cap1(dMois(d.t)) + " · dans " + dureeTxt(moisEntre(M.today, d.t));
       v = "≈" + NB + fK(d.p50);
-      s = "Montant empruntable " + fK(d.empruntable) + (d.apport ? " · apport entre " + kRange(d.apport.p10, d.apport.p90) : "");
+      s = "Montant empruntable " + fK(d.empruntable) + (d.apport ? (distinctes(d.apport.p10, d.apport.p90) ? " · apport entre " + kRange(d.apport.p10, d.apport.p90) : " · apport " + fK(d.apport.p50)) : "");
       return { k, v, s };
     }
     const pl = l.plan && !l.plan.avant ? l.plan : null;
@@ -567,7 +569,8 @@
     }
     k = t === M.today ? "Aujourd'hui · " + dJour(t) : def && t > M.today ? "Dans " + dureeTxt(moisEntre(M.today, t)) + " · " + dMois(t) : cap1(dMois(t)) + " · " + relatif(M.today, t);
     v = montantLu(l);
-    if (l.nature === "projete" && l.p10 != null && l.p90 != null) s = chancesTxt(0.8) + " entre " + kRange(l.p10, l.p90) + (provisoire(M) ? " · provisoire" : "");
+    if (l.nature === "projete" && distinctes(l.p10, l.p90)) s = chancesTxt(0.8) + " entre " + kRange(l.p10, l.p90) + (provisoire(M) ? " · provisoire" : "");
+    else if (l.nature === "projete") s = provisoire(M) ? "provisoire" : "";
     else if (l.nature === "reconstitue") s = "Estimé à partir de tes relevés";
     else s = pl ? "" : "Observé sur tes comptes";
     if (pl) s = (pl.attendu ? "Écart attendu avec le plan : " : "Écart avec le plan : ") + (pl.attendu ? fSK(pl.ecart) : fSE(pl.ecart));
@@ -585,7 +588,7 @@
     const d = l.t === M.today ? "Aujourd'hui" : cap1(dMois(l.t));
     parts.push("<b>" + esc(d) + "</b>", "<b>" + esc(montantLu(l)) + "</b>");
     if (l.plan && !l.plan.avant) parts.push("écart " + esc(l.plan.attendu ? fSK(l.plan.ecart) : fSE(l.plan.ecart)));
-    else if (l.nature === "projete" && l.p10 != null && l.p90 != null) parts.push(esc(kTiret(l.p10, l.p90)));
+    else if (l.nature === "projete" && distinctes(l.p10, l.p90)) parts.push(esc(kTiret(l.p10, l.p90)));
     else if (l.demain) parts.push(esc("emprunt " + fK(l.demain.empruntable)));
     else if (l.nature === "reconstitue") parts.push("estimé");
     const ev = l.jalons.concat(l.objectifs.length ? [] : []);
@@ -614,9 +617,9 @@
     if (M.mode === "capacite" && l.demain) {
       const d = l.demain;
       h += '<div class="gp-ro-v"><b>' + esc(montantLu(l)) + '</b><span class="gp-ro-dl">budget d\'achat médian</span></div>';
-      h += rangeBar(d.p10, d.p50, d.p90, null, null, "8 chances sur 10");
+      if (distinctes(d.p10, d.p90)) h += rangeBar(d.p10, d.p50, d.p90, null, null, "8 chances sur 10");
       h += '<div class="gp-ro-d">Montant empruntable : <b>' + esc(fEur(Math.round(d.empruntable / 1000) * 1000)) + "</b>" + (d.mensualite != null ? ", mensualité maximale <b>" + esc(fEur(Math.round(d.mensualite))) + "</b>" : "") + ".</div>";
-      if (d.apport) h += '<div class="gp-ro-d">Apport mobilisable : <b>' + esc(fK(d.apport.p50)) + "</b> au milieu des scénarios (9 chances sur 10 d'avoir au moins <b>" + esc(fK(d.apport.p10)) + "</b>).</div>";
+      if (d.apport) h += '<div class="gp-ro-d">Apport mobilisable : <b>' + esc(fK(d.apport.p50)) + "</b>" + (distinctes(d.apport.p10, d.apport.p50) ? " au milieu des scénarios (9 chances sur 10 d'avoir au moins <b>" + esc(fK(d.apport.p10)) + "</b>)" : "") + ".</div>";
       if (d.bas != null && d.haut != null) h += '<div class="gp-ro-d">Si le taux est 1 point plus bas : <b>' + esc(fK(d.bas)) + "</b> ; 1 point plus haut : <b>" + esc(fK(d.haut)) + "</b> (taux du jour supposé constant).</div>";
     } else {
       const dl = l.t === M.today ? "" : M.valeurAuj != null && l.valeur != null ? esc(fSK(l.valeur - M.valeurAuj)) + " par rapport à aujourd'hui" : "";
@@ -661,9 +664,9 @@
     }
     if (l.plan && !l.plan.avant) rows.push(kv("Prévu au plan", esc(l.plan.attendu ? ap(l.plan.prevu) : fEur(l.plan.prevu))), kv(l.plan.attendu ? "Écart attendu" : "Écart avec le plan", esc((l.plan.attendu ? fSK(l.plan.ecart) : fSE(l.plan.ecart)) + (l.plan.pct != null ? " (" + fPct(l.plan.pct) + ")" : "")), l.plan.ecart < 0 ? "neg" : "pos"));
     else if (l.plan && l.plan.avant) rows.push(kv("Plan", "pas encore figé"));
-    if (l.nature === "projete" && l.p10 != null && l.p90 != null) {
-      rows.push(kv("8 chances sur 10", esc(kTiret(l.p10, l.p90))));
-      if (l.p25 != null && l.p75 != null) rows.push(kv("1 chance sur 2", esc(kTiret(l.p25, l.p75))));
+    if (l.nature === "projete") {
+      if (distinctes(l.p10, l.p90)) rows.push(kv("8 chances sur 10", esc(kTiret(l.p10, l.p90))));
+      if (distinctes(l.p25, l.p75)) rows.push(kv("1 chance sur 2", esc(kTiret(l.p25, l.p75))));
       const pa = partsAffichees(l);
       if (pa) {
         rows.push(kv('<i class="gp-sw gp-sw-sv"></i>Patrimoine actuel, sans versement', esc(fK(pa.existant))));
@@ -688,18 +691,20 @@
   }
   /** En-tête sous la lecture : phrase de décomposition, événements pris en compte (ou la question), garde-fous (une ligne chacun). */
   function enteteHtml(M, l, opt) {
-    const o = opt || {}, B = M.brut || {};
+    const o = opt || {}, B = M.brut || {}, gf = tab(B.garde_fous);
     let h = "";
     const dp = l && !o.gardeFousSeuls ? decompositionPhrase(M, l) : null;
     if (dp) h += '<p class="gp-en-dec">' + esc(dp) + "</p>";
-    const evs = tab(B.evenements_pris_en_compte);
+    const evs = tab(B.evenements_pris_en_compte), detail = !o.gardeFousSeuls && !o.carte;
     if (M.mode !== "capacite" && !o.gardeFousSeuls) {
-      if (evs.length) h += '<p class="gp-en-ev">Événements pris en compte : ' + esc(evs.join(", ")) + ".</p>";
+      if (evs.length) { if (detail) h += '<p class="gp-en-ev">Événements pris en compte : ' + esc(evs.join(", ")) + ".</p>"; }
       else if (M.futur) h += '<p class="gp-en-ev gp-en-q">' + esc(B.question_evenements || "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?") + "</p>";
     }
-    tab(B.garde_fous).forEach(g => { if (g && g.texte && !(o.gardeFousSeuls && g.cle === "ecart_capacite")) h += '<p class="gp-en-gf" data-gf="' + esc(g.cle || "") + '">' + esc(g.texte) + "</p>"; });
-    if (M.mode !== "capacite" && B.capacite_source && !o.gardeFousSeuls) h += '<p class="gp-en-cap">' + esc(capaciteSourceTxt(B)) + "</p>";
-    void o;
+    /* carte : seules les alertes restent sous le graphe ; le reste (événements pris en compte, base de l'épargne) est dans « Comment c'est calculé » */
+    gf.forEach(g => { if (g && g.texte && !(o.gardeFousSeuls && g.cle === "ecart_capacite") && !(o.carte && g.niveau !== "alerte")) h += '<p class="gp-en-gf" data-gf="' + esc(g.cle || "") + '">' + esc(g.texte) + "</p>"; });
+    /* la phrase sur l'écart de capacité dit déjà d'où part l'épargne : jamais deux phrases sur le même sujet */
+    const dit = gf.some(g => g && g.cle === "ecart_capacite" && g.texte);
+    if (M.mode !== "capacite" && B.capacite_source && detail && !dit) h += '<p class="gp-en-cap">' + esc(capaciteSourceTxt(B)) + "</p>";
     return h;
   }
   /** « Épargne mensuelle projetée : 300 € — ta capacité d'épargne constatée (avril à septembre 2026, comptes courants) » ; jamais deux sources à la fois. */
@@ -774,8 +779,8 @@
     if (M.brut && M.brut.passe && M.brut.passe.drapeaux) h += passeHtml(M.brut.passe);
     const cs = capaciteSourceTxt(B);
     if (M.mode !== "capacite") {
-      h += '<h3 class="gp-sec-t">Base de l\'épargne</h3><p class="gp-sh-note">' + esc(cs) + "</p>";
-      tab(B.garde_fous).filter(g => g && g.cle === "ecart_capacite" && g.texte).forEach(g => { h += '<p class="gp-sh-note">' + esc(g.texte) + "</p>"; });
+      const gfc = tab(B.garde_fous).find(g => g && g.cle === "ecart_capacite" && g.texte);
+      h += '<h3 class="gp-sec-t">Base de l\'épargne</h3><p class="gp-sh-note">' + esc(gfc ? gfc.texte : cs) + "</p>";
       const evs = tab(B.evenements_pris_en_compte);
       h += '<h3 class="gp-sec-t">Événements pris en compte</h3><p class="gp-sh-note">' + esc(evs.length ? evs.join(", ") + "." : B.question_evenements || "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?") + "</p>";
     }
@@ -916,14 +921,14 @@
   /** Construit le graphe : { svg, geo }. M = normaliser(donnees) ; etat = { dom, gran, couches: { existant, avenirs, plan, ... }, ... } ; P = paramètres du mode + { W, H? }. */
   function construireSvg(M, etat, P) {
     const mesurer = P.mesurer || mesureApprox, W = Math.max(200, P.W | 0), dom = etat.dom, gran = etat.gran, C = etat.couches || {};
-    const id = P.id || "gp", R = W - P.gutter, L = 0, span = dom.fin - dom.debut;
+    const id = P.id || "gp", R = W - P.gutter, L = M.mode === "capacite" ? 12 : 0, span = dom.fin - dom.debut;
     const X = t => L + (t - dom.debut) / span * (R - L);
     const ech = echantillons(M, dom, gran), F = M.futur;
     const planSerie = C.plan || null;
     /* échelle des y : mémorisée entre l'aperçu (500 chemins) et le résultat complet */
     const besoin = besoinY(M, dom, ech, { existant: C.existant, plan: planSerie && planSerie.valeurs, demain: M.demain && M.demain.serie ? M.demain.serie.emprunt : M.demain ? M.demain.empruntable : null });
     const dy = etat.echelleY ? etat.echelleY : domaineY(besoin.lo, besoin.hi), lo = dy.lo, hi = dy.hi;
-    const grad = graduations(lo, hi, P.yTicks);
+    let grad = graduations(lo, hi, P.yTicks);
     /* plein écran : de haut en bas le tracé, l'axe du temps juste dessous, puis la piste des jalons (une à deux voies) ; carte : le tracé, une ligne de base et l'axe */
     const topX = P.compact ? 24 : 10, AXE = 22, ECART_PISTE = 10, railH = P.compact ? 6 : P.pins ? AXE + ECART_PISTE + P.railRows * 24 + 4 : 0, labH = P.pins ? 0 : 22;
     const bottom = railH + labH;
@@ -944,7 +949,12 @@
     } else if (M.passe.t.length) { const i = Math.max(0, indexAvant(M.passe.t, dom.fin)); pill = { v: M.passe.v[i], t: M.passe.t[i], futur: false }; }
     const pillY = pill ? clamp(Y(pill.v), T + 10, B - 10) : null;
     const gout = P.labelsAll && aFutur && !C.plan && !C.avenirs ? etiquettesGouttiere(M, F, dom, Y, R, W, mesurer, C, pillY, DT, B) : null;
-    /* grille et graduations (celle qui tombe sur la pastille ou sur une étiquette de la marge est masquée) */
+    /* grille et graduations (celle qui tombe sur la pastille ou sur une étiquette de la marge est masquée) ; au moins deux restent lisibles : sinon un pas plus fin */
+    const gene = v => { const y = Y(v); return (pillY != null && Math.abs(y - pillY) < 20) || !!(gout && gout.ys.some(gy => Math.abs(y - gy) < 15)); };
+    for (let extra = 1; extra <= 4; extra++) {
+      if (grad.valeurs.filter(v => { const y = Y(v); return y >= DT - 1 && y <= B + 1 && !gene(v); }).length >= 2) break;
+      grad = graduations(lo, hi, P.yTicks + extra);
+    }
     const ticks = [];
     s += '<g aria-hidden="true">';
     grad.valeurs.forEach((v, k) => {
@@ -987,7 +997,7 @@
       }
     }
     s += C.plan ? '<g class="gp-dim">' : "<g>";
-    let hopDots = "", hopHors = 0;
+    let hopDots = "", hopHors = 0, legEmprunt = "";
     if (aFutur && fi.length > 1) {
       const fut = fi.filter(i => F.t[i] >= M.today || i === 0);
       const futPts = idx => idx.map(i => [X(F.t[i]), 0]);
@@ -1024,7 +1034,12 @@
         const pts = serie ? serie.t.map((t, i) => [X(t), Y(serie.emprunt[i])]).filter((p, i) => serie.t[i] >= dom.debut - span * 0.05 && serie.t[i] <= dom.fin + span * 0.05)
           : fi.map(i => [X(D.t[i]), Y(D.empruntable[i])]);
         const echant = pts.length > 60 ? pts.filter((p, i) => i % Math.ceil(pts.length / 60) === 0 || i === pts.length - 1) : pts;
-        if (echant.length > 1) s += '<path class="gp-emprunt" d="' + chemin(echant) + '"/>';
+        if (echant.length > 1) {
+          s += '<path class="gp-emprunt" d="' + chemin(echant) + '"/>';
+          /* légende directe : la ligne fine est le montant empruntable (le reste du dessin est le budget d'achat) */
+          const fin = echant[echant.length - 1], tl = "montant empruntable";
+          legEmprunt = '<text x="' + f1(Math.min(R - 4, fin[0] - 4)) + '" y="' + f1(clamp(fin[1] - 7, DT + 12, B - 4)) + '" text-anchor="end" class="gp-halo gp-ti gp-leg-e">' + tl + "</text>";
+        }
       }
       const md = chemin(ptsF(i => F.p50[i]));
       s += '<path class="gp-med-h" d="' + md + '"/><path class="gp-med" d="' + md + '"/>';
@@ -1035,7 +1050,7 @@
     const pp = ech.passe.filter(p => p.t <= M.today), recon = pp.filter(p => p.nature === "reconstitue"), obs = pp.filter(p => p.nature === "observe");
     if (recon.length) { const avecJonction = recon.concat(obs.slice(0, 1)); if (avecJonction.length > 1) s += '<path class="gp-recon" d="' + chemin(avecJonction.map(p => [X(p.t), Y(p.v)])) + '"/>'; }
     if (obs.length > 1) s += '<path class="gp-obs" d="' + chemin(obs.map(p => [X(p.t), Y(p.v)])) + '"/>';
-    s += "</g></g>" + puceEstime;
+    s += "</g></g>" + puceEstime + legEmprunt;
     /* aujourd'hui : trait fin, halo, pastille d'encre sur la dernière valeur observée */
     if (dom.debut <= M.today && dom.fin >= M.today && M.valeurAuj != null) {
       const x = X(M.today), y0 = Y(M.valeurAuj);
@@ -1049,7 +1064,7 @@
     M.jalons.filter(j => j.type === "achat_immobilier" && j.t > dom.debut && j.t < dom.fin && j.effet && j.effet.montants && aFutur && !C.avenirs && !C.plan).forEach(j => {
       const mt = j.effet.montants, net = M.vue === "net", baisse = net ? +mt.frais_acquisition : Math.abs(+mt.apport || 0) + Math.max(0, +mt.impots || 0);
       if (!(baisse > 0)) return;
-      const i = plusProche(F.t, j.t), x = X(j.t), y = Y(F.p50[i]), txt = P.compact ? MOINS + fK(baisse) : "Achat : " + MOINS + fK(baisse) + (net ? " de frais" : " d'apport");
+      const i = plusProche(F.t, j.t), x = X(j.t), y = Y(F.p50[i]), txt = P.compact ? "Achat " + MOINS + fK(baisse) : "Achat : " + MOINS + fK(baisse) + (net ? " de frais" : " d'apport");
       labs.push({ x: x + 6 + mesurer(txt, 400) / 2, y: y + 20, t: txt, up: 0 });
     });
     const placed = [];
@@ -1320,6 +1335,8 @@
       if (o.donnees) this.mettreAJour(o.donnees, { initial: true }); else this.rendreTout();
     }
     large() { try { return !!(this.win && this.win.matchMedia && this.win.matchMedia("(min-width: 900px)").matches); } catch (e) { return false; } }
+    /** Écran plus large que haut (téléphone tenu en paysage) : inutile de proposer de tourner l'appareil. */
+    paysage() { try { return !!(this.win && this.win.innerWidth > this.win.innerHeight); } catch (e) { return false; } }
     reduit() { try { return !!(this.win && this.win.matchMedia && this.win.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { return false; } }
     lsGet(k) { try { return (this.deps.localStorage || (typeof localStorage !== "undefined" ? localStorage : null)).getItem(k); } catch (e) { return (this.mem || {})[k] || null; } }
     lsSet(k, v) { try { (this.deps.localStorage || localStorage).setItem(k, v); } catch (e) { (this.mem = this.mem || {})[k] = v; } }
@@ -1503,7 +1520,7 @@
     hl() { return '<div class="gp-hl" aria-hidden="true"><div class="gp-hl-k" data-hl="k"></div><div class="gp-hl-v num" data-hl="v"></div><div class="gp-hl-s num" data-hl="s"></div></div>'; }
     cadre(avecHl) {
       return '<div class="gp-planbar" data-planbar hidden></div><div class="gp-cadre" data-cadre><svg class="gp-svg" data-svg role="img" aria-label=""></svg>' + (avecHl ? this.hl() : "") +
-        '<div class="gp-marks" data-marks></div><div class="gp-hit" data-hit role="slider" tabindex="0" aria-label="Lire le graphique à une date. Flèches pour se déplacer, plus et moins pour zoomer, zéro pour réinitialiser"></div>' +
+        '<div class="gp-marks" data-marks></div><div class="gp-hit" data-hit role="slider" tabindex="0" aria-label="' + (this.plein ? "Lire le graphique à une date. Flèches pour se déplacer, plus et moins pour zoomer, zéro pour réinitialiser" : "Lire le graphique à une date. Flèches pour se déplacer") + '"></div>' +
         (avecHl ? '<button type="button" class="gp-zre" data-act="zreset" hidden>Réinitialiser le zoom</button>' : "") + '<div class="gp-etat" data-etat hidden></div></div>';
     }
     bande() {
@@ -1516,7 +1533,7 @@
       const id = this.id, t = this.g.preset.titre, m = this.mode;
       let h;
       if (m === "carte") {
-        h = '<section class="gp gp-carte" data-mode="carte" aria-labelledby="' + id + 't"><div class="gp-tete"><h2 id="' + id + 't">' + esc(t) + '</h2>' +
+        h = '<section class="gp gp-carte' + (this.g.preset.mode === "capacite" ? " gp-capa" : "") + '" data-mode="carte" aria-labelledby="' + id + 't"><div class="gp-tete"><h2 id="' + id + 't">' + esc(t) + '</h2>' +
           '<button type="button" class="gp-eur sm" data-act="eur"><span data-eur></span></button>' +
           '<button type="button" class="gp-icon" data-act="reglages" aria-label="Réglages du graphique">' + ICO.reglages + "</button>" +
           '<button type="button" class="gp-icon" data-act="plein" aria-label="Ouvrir en grand" title="Ouvrir en grand">' + ICO.plein + "</button></div>" +
@@ -1951,7 +1968,7 @@
       const off = !!g.lsGet(CLES_LS.invitationOff), vue = !!g.lsGet(CLES_LS.invitationVue);
       const montrer = invitationVisible(n, g.etat.fenetre, vue, off) && !!g.M.futur;
       if (montrer && el.hidden) {
-        el.innerHTML = "<span>" + (g.large() ? "Ouvre le graphique en grand pour voir tous les détails." : "Plus de détail en grand, ou en tournant ton téléphone.") + '</span><button type="button" class="go" data-act="plein">Ouvrir</button><button type="button" class="x" data-act="invite-off" aria-label="Ne plus afficher cette invitation">' + ICO.x + "</button>";
+        el.innerHTML = "<span>" + (g.large() ? "Ouvre le graphique en grand pour voir tous les détails." : g.paysage() ? "Plus de détail en grand." : "Plus de détail en grand, ou en tournant ton téléphone.") + '</span><button type="button" class="go" data-act="plein">Ouvrir</button><button type="button" class="x" data-act="invite-off" aria-label="Ne plus afficher cette invitation">' + ICO.x + "</button>";
         g.lsSet(CLES_LS.invitationVue, "1");
       }
       el.hidden = !montrer;
@@ -2004,7 +2021,7 @@
       /* plein écran : lecture compacte (lignes « libellé · valeur »), une fois ; les explications (base de l'épargne, événements pris en compte, décomposition) sont dans « Comment c'est calculé » */
       const compact = this.plein && M.mode !== "capacite";
       if (this.roEl) this.roEl.innerHTML = compact ? lectureKvHtml(M, e, lec, { def, effacer: true }) : lectureHtml(M, e, lec, { def, effacer: true, survol: !!(this.P && this.P.hover) });
-      if (this.notesEl) this.notesEl.innerHTML = enteteHtml(M, lec.nature === "projete" ? lec : lecture(M, e, aFinFenetre(M, dom), { demi }), { gardeFousSeuls: compact });
+      if (this.notesEl) this.notesEl.innerHTML = enteteHtml(M, lec.nature === "projete" ? lec : lecture(M, e, aFinFenetre(M, dom), { demi }), { gardeFousSeuls: compact, carte: this.mode === "carte" });
       /* bande d'épargne : curseur et montant du mois */
       const sx = this.ssvg && this.ssvg.querySelector("[data-sxh]"), sv = this.q("[data-stripv]"), cap = def ? capaciteA(M, M.today) : lec.capacite || capaciteA(M, M.today);
       if (sx && this.bande && !this.bande.vide) {

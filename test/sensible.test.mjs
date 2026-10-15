@@ -51,3 +51,13 @@ test("estSensible : l'IBAN n'est refusé que si la correspondance porte au moins
   assert.equal(S.estSensible("ETF IE00B4L5Y983 MSCI World"), false);
   assert.equal(S.estSensible("GB29 NWBK 6016 1331 9268 19"), true);
 });
+
+test("navigateur : aucun lookbehind dans les expressions compilées (Safari < 16.4) et même comportement que le motif partagé", () => {
+  const compile = [];
+  const ctx = { RegExp: class extends RegExp { constructor(p, f) { compile.push(String(p)); super(p, f); } }, module: { exports: {} } };
+  vm.createContext(ctx); vm.runInContext(js, ctx, { filename: "sensible.js" });
+  assert.ok(compile.length >= 3); compile.forEach(p => assert.doesNotMatch(p, /\(\?<[!=]/, "lookbehind : " + p));
+  const partage = new RegExp(S.SENSIBLE[1]);
+  for (const t of ["carte 1234 5678 9012 3456", "1234567890123456", "x1234 5678 9012 3456", "9 1234 5678 9012 3456", "1234 5678 9012 3456 7", "ref 12345 5678 9012 3456", "12 345 678", "n°1234 5678 9012 34567890"])
+    assert.equal(S.estSensible(t), partage.test(t), t);
+});
