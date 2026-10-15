@@ -22,6 +22,12 @@ const refuse = async (s, motif, m) => {
 const TABLES_BANQUE = [...new Set(readdirSync(DIR).filter(f => /^\d{4}_.*\.sql$/.test(f) && f < "0028")
   .flatMap(f => [...readFileSync(new URL(f, DIR), "utf8").matchAll(/create table public\.(banque_\w+)/g)].map(m => m[1])))].sort();
 
+/* HIS2 (0034) : quatre tables de relevés et d'imports de l'historique suivent le régime des tables banque_* (0033) ; photos_reconstituees,
+   comme snapshots, celui de « aal2 si facteur ». */
+const TABLES_HISTORIQUE = ["historique_banque_mois", "historique_comptes", "historique_imports", "historique_releves"];
+const TABLES_REGIME_BANCAIRE = [...TABLES_BANQUE, ...TABLES_HISTORIQUE].sort();
+const estBancaire = t => t.startsWith("banque_") || TABLES_HISTORIQUE.includes(t);
+
 /* Session simulée : role authenticated, utilisateur uid, niveau demandé. Un niveau aal2 n'est accordé que si un facteur est vérifié. */
 async function session(uid, aal) {
   await db.exec(`reset role;`);
@@ -56,7 +62,20 @@ before(async () => {
     insert into public.banque_operations (id, user_id, compte_id, date, montant, libelle, categorie) values
       (1000, '${A}', 10, ${AUJ}, -50, 'CARTE SUPERMARCHE', 'alimentation'), (1000, '${C}', 10, ${AUJ}, -5, 'CARTE C', 'divers');
     insert into public.banque_mois (user_id, mois, categorie, entrees, sorties, nombre) values
-      ('${A}', date_trunc('month', ${AUJ})::date, 'alimentation', 0, 50, 1), ('${C}', date_trunc('month', ${AUJ})::date, 'divers', 0, 5, 1);`);
+      ('${A}', date_trunc('month', ${AUJ})::date, 'alimentation', 0, 50, 1), ('${C}', date_trunc('month', ${AUJ})::date, 'divers', 0, 5, 1);
+    -- HIS2 : un compte importé, son import, un mois et ses catégories pour A et pour C
+    insert into public.historique_comptes (id, user_id, libelle, etablissement, type, titulaire, cle) values
+      ('a0000000-0000-4000-8000-00000000000a', '${A}', 'Compte importé A', 'lcl', 'courant', 'p1', 'a'), ('c0000000-0000-4000-8000-00000000000c', '${C}', 'Compte importé C', 'lcl', 'courant', 'p1', 'c');
+    insert into public.historique_imports (id, user_id, type, empreinte, etablissement, compte_id, periode_du, periode_au, source) values
+      ('a0000000-0000-4000-8000-00000000000a', '${A}', 'releves', repeat('a', 64), 'lcl', 'a0000000-0000-4000-8000-00000000000a', '2024-01-01', '2024-01-31', 'test'),
+      ('c0000000-0000-4000-8000-00000000000c', '${C}', 'releves', repeat('c', 64), 'lcl', 'c0000000-0000-4000-8000-00000000000c', '2024-01-01', '2024-01-31', 'test');
+    insert into public.historique_releves (user_id, compte_id, mois, complet, total_entrees, total_sorties, import_id) values
+      ('${A}', 'a0000000-0000-4000-8000-00000000000a', '2024-01-01', true, 0, 50, 'a0000000-0000-4000-8000-00000000000a'),
+      ('${C}', 'c0000000-0000-4000-8000-00000000000c', '2024-01-01', true, 0, 5, 'c0000000-0000-4000-8000-00000000000c');
+    insert into public.historique_banque_mois (user_id, compte_id, mois, categorie, sorties, nombre) values
+      ('${A}', 'a0000000-0000-4000-8000-00000000000a', '2024-01-01', 'alimentation', 50, 1), ('${C}', 'c0000000-0000-4000-8000-00000000000c', '2024-01-01', 'divers', 5, 1);
+    insert into public.photos_reconstituees (user_id, mois, date, total, p1, p2, financier, net, qualite, part_estimee, methode) values
+      ('${C}', '2024-01-01', '2024-01-31', 5, 5, 0, 5, 5, 'estime', 1, 'test');`);
 });
 after(async () => { await db.close(); });
 
@@ -77,9 +96,9 @@ test("les tables banque_* sont bien celles de 0021 : connexions, comptes, placem
   assert.deepEqual(TABLES_BANQUE, ["banque_comptes", "banque_connexions", "banque_mois", "banque_operations", "banque_placements"]);
 });
 
-test("pg_policies : chaque table banque_* a une politique RESTRICTIVE pour authenticated exigeant aal2 ; les politiques existantes sont intactes", async () => {
+test("pg_policies : chaque table banque_* et chaque table de relevés de l'historique (0034) a une politique RESTRICTIVE pour authenticated exigeant aal2 ; les politiques existantes sont intactes", async () => {
   await superu();
-  for (const t of TABLES_BANQUE) {
+  for (const t of TABLES_REGIME_BANCAIRE) {
     const r = await q(`select policyname, permissive, roles::text, cmd, qual, with_check from pg_policies where schemaname = 'public' and tablename = '${t}' and permissive = 'RESTRICTIVE' order by cmd`);
     // « <table>: aal2 » (0028, toutes commandes ; 0033 y ajoute la lecture par un connecteur autorisé) et « <table>: suppression aal2 » (0033)
     assert.deepEqual(r.map(p => p.policyname), [t + ": aal2", t + ": suppression aal2"], t + " : politiques restrictives");
@@ -90,27 +109,27 @@ test("pg_policies : chaque table banque_* a une politique RESTRICTIVE pour authe
     const perm = await q(`select policyname from pg_policies where schemaname = 'public' and tablename = '${t}' and permissive = 'PERMISSIVE'`);
     assert.ok(perm.length >= 1 && perm.some(p => /select/.test(p.policyname)), t + " : politique de propriétaire conservée");
   }
-  const rls = await q(`select relname, relrowsecurity from pg_class where relname = any($1)`, [TABLES_BANQUE]);
+  const rls = await q(`select relname, relrowsecurity from pg_class where relname = any($1)`, [TABLES_REGIME_BANCAIRE]);
   assert.ok(rls.every(r => r.relrowsecurity), "RLS toujours activée");
 });
 
-test("aal2 + facteur vérifié : A lit toutes ses données bancaires (et rien d'autre que les siennes)", async () => {
+test("aal2 + facteur vérifié : A lit toutes ses données bancaires, relevés importés compris (et rien d'autre que les siennes)", async () => {
   await session(A, "aal2");
-  for (const t of TABLES_BANQUE) {
+  for (const t of TABLES_REGIME_BANCAIRE) {
     const rows = await q(`select user_id from public.${t}`);
     assert.ok(rows.length >= 1, t + " : A lit ses lignes");
     assert.ok(rows.every(r => r.user_id === A), t + " : seulement les siennes");
   }
 });
 
-test("aal1 (même avec un facteur vérifié) : A ne voit rien dans aucune table banque_*", async () => {
+test("aal1 (même avec un facteur vérifié) : A ne voit rien dans aucune table banque_* ni de relevés importés", async () => {
   await session(A, "aal1");
-  for (const t of TABLES_BANQUE) assert.deepEqual(await q(`select user_id from public.${t}`), [], t);
+  for (const t of TABLES_REGIME_BANCAIRE) assert.deepEqual(await q(`select user_id from public.${t}`), [], t);
 });
 
 test("revendication aal absente : traitée comme aal1 (rien de lisible)", async () => {
   await session(C, "aucun");
-  for (const t of TABLES_BANQUE) assert.deepEqual(await q(`select user_id from public.${t}`), [], t);
+  for (const t of TABLES_REGIME_BANCAIRE) assert.deepEqual(await q(`select user_id from public.${t}`), [], t);
 });
 
 test("sans facteur (C) ou facteur non vérifié (B) : aal2 inatteignable, donc rien tant qu'il n'a pas activé la double authentification", async () => {
@@ -118,13 +137,15 @@ test("sans facteur (C) ou facteur non vérifié (B) : aal2 inatteignable, donc r
     await superu();
     await assert.rejects(session(uid, "aal2"), /aal2 impossible sans facteur vérifié/, nom);
     await session(uid, "aal1");
-    for (const t of TABLES_BANQUE) assert.deepEqual(await q(`select user_id from public.${t}`), [], nom + " : " + t);
+    for (const t of TABLES_REGIME_BANCAIRE) assert.deepEqual(await q(`select user_id from public.${t}`), [], nom + " : " + t);
   }
   // même un jeton forgé aal2 ne contourne pas la RLS de propriétaire : la restrictive s'ajoute, elle ne remplace pas
   await superu();
   await db.exec(`set test.uid = '${C}'; set test.aal = 'aal2'; set role authenticated;`);
-  const mine = await q(`select user_id from public.banque_comptes`);
-  assert.ok(mine.every(r => r.user_id === C), "aal2 ne donne accès qu'à ses propres lignes");
+  for (const t of ["banque_comptes", "historique_comptes", "historique_banque_mois"]) {
+    const mine = await q(`select user_id from public.${t}`);
+    assert.ok(mine.length >= 1 && mine.every(r => r.user_id === C), t + " : aal2 ne donne accès qu'à ses propres lignes");
+  }
 });
 
 test("écritures : le rattachement d'un compte (update des 5 colonnes) exige aussi aal2", async () => {
@@ -142,10 +163,10 @@ test("écritures : le rattachement d'un compte (update des 5 colonnes) exige aus
 test("export_all() (security invoker) : sans aal2, les sections banque_* sortent vides ; avec aal2, elles contiennent les données", async () => {
   await session(A, "aal1");
   const sans = (await q(`select public.export_all() j`))[0].j;
-  for (const t of TABLES_BANQUE) assert.deepEqual(sans[t], [], t + " : vide en aal1");
+  for (const t of TABLES_REGIME_BANCAIRE) assert.deepEqual(sans[t], [], t + " : vide en aal1");
   await session(A, "aal2");
   const avec = (await q(`select public.export_all() j`))[0].j;
-  for (const t of TABLES_BANQUE) assert.ok(avec[t].length >= 1, t + " : présent en aal2");
+  for (const t of TABLES_REGIME_BANCAIRE) assert.ok(avec[t].length >= 1, t + " : présent en aal2");
 });
 
 test("aucune fonction security definer exécutable par authenticated ne lit une table banque_* (sinon elle contournerait la RLS)", async () => {
@@ -203,10 +224,10 @@ test("public.mfa_exigee() : security definer, stable, search_path vide, réserv�
   await superu();
 });
 
-test("couverture : toute table de public avec un user_id a sa politique RESTRICTIVE (banque_* : aal2 strict ; les autres : aal2 si facteur vérifié)", async () => {
+test("couverture : toute table de public avec un user_id a sa politique RESTRICTIVE (banque_* et relevés de l'historique : aal2 strict ; les autres : aal2 si facteur vérifié)", async () => {
   const tables = await tablesPersonnelles();
   assert.ok(tables.length >= 20, "les tables personnelles sont bien repérées : " + tables.join(", "));
-  for (const t of ["positions", "credits", "snapshots", "propositions", "budgets", "objectifs", "config", "profiles", "journal", "memoire_agent", "routines", "connexions_assistant", "fonctionnalites", "biens", "transactions", "status"])
+  for (const t of ["positions", "credits", "snapshots", "propositions", "budgets", "objectifs", "config", "profiles", "journal", "memoire_agent", "routines", "connexions_assistant", "fonctionnalites", "biens", "transactions", "status", "photos_reconstituees", ...TABLES_HISTORIQUE])
     assert.ok(tables.includes(t), t + " repérée");
   for (const t of tables) {
     const r = await q(`select policyname, roles::text, cmd, qual, with_check from pg_policies where schemaname = 'public' and tablename = $1 and permissive = 'RESTRICTIVE' and cmd = 'ALL'`, [t]);
@@ -214,7 +235,7 @@ test("couverture : toute table de public avec un user_id a sa politique RESTRICT
     assert.match(r[0].roles, /authenticated/, t); assert.equal(r[0].cmd, "ALL", t);
     for (const e of [r[0].qual, r[0].with_check]) {
       assert.match(e, /aal2/, t);
-      if (t.startsWith("banque_")) assert.doesNotMatch(e, /mfa_exigee/, t + " : toujours aal2, même sans facteur");
+      if (estBancaire(t)) assert.doesNotMatch(e, /mfa_exigee/, t + " : toujours aal2, même sans facteur");
       else assert.match(e, /mfa_exigee/, t + " : aal2 seulement si un facteur est vérifié");
     }
     const rls = await q(`select relrowsecurity from pg_class where oid = ('public.' || $1)::regclass`, [t]);
@@ -223,7 +244,7 @@ test("couverture : toute table de public avec un user_id a sa politique RESTRICT
 });
 
 test("facteur vérifié + aal1 : A ne voit rien dans aucune table personnelle (positions, snapshots, propositions, crédits, profil…)", async () => {
-  const tables = (await tablesPersonnelles()).filter(t => !t.startsWith("banque_"));
+  const tables = (await tablesPersonnelles()).filter(t => !estBancaire(t));
   await superu();
   const garnies = [];
   for (const t of tables) if ((await q(`select 1 from public.${t} where user_id = '${A}'`)).length) garnies.push(t);
@@ -244,7 +265,7 @@ test("facteur vérifié + aal1 : aucune écriture non plus (insert, update, dele
 });
 
 test("facteur vérifié + aal2 : A lit ses lignes dans chaque table personnelle, et seulement les siennes", async () => {
-  const tables = (await tablesPersonnelles()).filter(t => !t.startsWith("banque_"));
+  const tables = (await tablesPersonnelles()).filter(t => !estBancaire(t));
   await session(A, "aal2");
   let n = 0;
   for (const t of tables) {
@@ -269,7 +290,7 @@ test("sans facteur (C) ou facteur non vérifié (B) : aal1 suffit pour leurs don
     assert.equal((await q(`select total::int t from public.snapshots`)).length, 1, nom + " : snapshots");
     assert.equal((await q(`select 1 from public.profiles`)).length, 1, nom + " : profil");
     assert.equal((await q(`select 1 from public.fonctionnalites where cle = 'banque'`)).length, 1, nom + " : interrupteur lisible (carte « active la double authentification »)");
-    for (const t of TABLES_BANQUE) assert.deepEqual(await q(`select 1 from public.${t}`), [], nom + " : " + t + " fermée");
+    for (const t of TABLES_REGIME_BANCAIRE) assert.deepEqual(await q(`select 1 from public.${t}`), [], nom + " : " + t + " fermée");
     // et il peut écrire, comme avant
     await db.exec(`update public.positions set note = 'ok' where user_id = '${uid}'`);
     assert.equal((await q(`select note from public.positions`))[0].note, "ok");
