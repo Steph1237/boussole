@@ -162,6 +162,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
         <span>Application&nbsp;: <b id="clientInfo"></b></span>
         <span>Retour vers&nbsp;: <b id="redirectHost"></b></span>
       </div>
+      <p class="msg info" id="grantNote" hidden>Avec ton code, cet accès vaut 90 jours (jusqu'au <span id="grantJusquau"></span>) : l'application pourra aussi lire tes comptes bancaires, sans jamais pouvoir les modifier. Tu pourras le retirer à tout moment dans <a href="../compte.html">Mon compte › Connexion de Claude</a> ; passé ce délai, reconnecte le connecteur et saisis ton code.</p>
       <p class="msg info" id="mfaNote" hidden>Tu n'as pas activé la double authentification : l'application ne pourra pas lire tes comptes bancaires. Active-la dans <a href="../compte.html#securite">Mon compte › Sécurité</a>, puis relance la connexion du connecteur.</p>
       <p class="muted small" style="margin-top:12px">N'autorise que les applications que tu as toi-même connectées. Tu pourras retirer cet accès à tout moment depuis <a href="../compte.html">Mon compte</a>.</p>
       <div class="actions">

@@ -23,11 +23,23 @@ function charger(journal = []) {
   const js = strip(srcGarde, { mode: "strip" }).replace(/^export (const|function|async function)/gm, "$1");
   return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { Array, Set, Error, Promise, console: { error: (...a) => journal.push(a.join(" ")), warn() {}, log() {} } });
 }
-/** Faux client utilisateur : rpc("mfa_exigee") → réponse donnée (ou rejet). */
+/** Faux client utilisateur : rpc(nom) → réponse donnée (ou rejet). `reponse` vaut pour toutes les RPC, ou { mfa_exigee, lier_connecteur }
+    pour une réponse par RPC (0033 : lier_connecteur après mfa_exigee). */
+const parRpc = r => r && typeof r === "object" && !(r instanceof Error) && ("mfa_exigee" in r || "lier_connecteur" in r);
 const fauxDb = (reponse, appels = []) => ({
-  rpc: async (nom, args) => { appels.push([nom, ...(args === undefined ? [] : [args])]); const r = typeof reponse === "function" ? reponse() : reponse; if (r instanceof Error) throw r; return r; },
+  rpc: async (nom, args) => {
+    appels.push([nom, ...(args === undefined ? [] : [args])]);
+    const choisie = parRpc(reponse) ? reponse[nom] : reponse;
+    const r = typeof choisie === "function" ? choisie() : choisie;
+    if (r instanceof Error) throw r;
+    if (r === undefined) throw new Error("RPC inattendue : " + nom);
+    return r;
+  },
 });
 const exigee = valeur => ({ data: valeur, error: null });
+/** Compte à facteur vérifié, jeton aal1 ; lier_connecteur répond `etat` (0033). */
+const lie = etat => ({ mfa_exigee: exigee(true), lier_connecteur: { data: etat, error: null } });
+const MSG_EXPIREE = "Double authentification requise : l'autorisation du connecteur Boussole, accordée avec ton code, a expiré (elle vaut 90 jours). Reconnecte le connecteur Boussole dans Claude (Réglages › Connecteurs) et saisis ton code à 6 chiffres sur la page d'autorisation.";
 
 /** Faux McpServer : registerTool + validateToolInput comme le SDK ; appeler(nom, args) = validation puis gestionnaire. */
 function fauxServeur(journal) {
@@ -60,11 +72,47 @@ test("verdict : aal2 → ok sans aucun appel à la base", async t => {
   assert.equal(appels.length, 0, "mfa_exigee n'est même pas appelée en aal2");
 });
 
-test("verdict : aal1 + double authentification exigée → requise (RPC mfa_exigee sans paramètre, client de l'utilisateur)", async t => {
+test("verdict : aal1 + double authentification exigée, sans autorisation de connecteur → requise (RPC mfa_exigee puis lier_connecteur, sans paramètre)", async t => {
   if (SANS_STRIP) return t.skip(SANS_STRIP);
   const G = charger(), appels = [];
-  assert.equal(await G.verdictMfa(fauxDb(exigee(true), appels), "aal1"), "requise");
-  assert.deepEqual(JSON.parse(JSON.stringify(appels)), [["mfa_exigee"]]);
+  assert.equal(await G.verdictMfa(fauxDb(lie("absente"), appels), "aal1"), "requise");
+  assert.deepEqual(JSON.parse(JSON.stringify(appels)), [["mfa_exigee"], ["lier_connecteur"]], "client_id et session_id sont lus par la base dans le jeton signé, jamais passés en paramètre");
+});
+
+test("verdict (0033) : autorisation liée au second facteur → autorise ; expirée → expiree ; tout autre refus → requise", async t => {
+  if (SANS_STRIP) return t.skip(SANS_STRIP);
+  const journal = [], G = charger(journal);
+  assert.equal(await G.verdictMfa(fauxDb(lie("autorise")), "aal1"), "autorise");
+  assert.equal(await G.verdictMfa(fauxDb(lie("expiree")), "aal1"), "expiree");
+  for (const e of ["sans_client", "absente", "revoquee", "autre_session", "hors_delai", "en_attente", "ambigu", "non_liee"])
+    assert.equal(await G.verdictMfa(fauxDb(lie(e)), "aal1"), "requise", e);
+  assert.ok(journal.some(l => /autre_session/.test(l)) && journal.some(l => /ambigu/.test(l)), "une autre session ou une liaison ambiguë est journalisée (signal d'un mot de passe volé)");
+  assert.ok(!journal.some(l => /absente|en_attente/.test(l)), "les cas ordinaires ne sont pas journalisés");
+});
+
+test("verdict (0033) : lier_connecteur illisible → incertain (échec fermé) ; fonction absente (0033 pas encore appliquée) → requise comme avant", async t => {
+  if (SANS_STRIP) return t.skip(SANS_STRIP);
+  const G = charger();
+  for (const [r, m] of [[{ data: null, error: { message: "panne" } }, "erreur"], [new Error("réseau"), "rejet"], [{ data: null, error: null }, "vide"], [{ data: true, error: null }, "booléen"],
+    [{ data: "inconnu", error: null }, "état inconnu"], [{ data: ["autorise"], error: null }, "liste"], [{ data: "sans_facteur", error: null }, "facteur disparu entre les deux appels"]])
+    assert.equal(await G.verdictMfa(fauxDb({ mfa_exigee: exigee(true), lier_connecteur: r }), "aal1"), "incertain", m);
+  assert.equal(await G.verdictMfa(fauxDb({ mfa_exigee: exigee(true), lier_connecteur: { data: null, error: { code: "PGRST202", message: "Could not find the function public.lier_connecteur" } } }), "aal1"), "requise");
+});
+
+test("garde (0033) : connecteur autorisé → tous les outils tournent ; autorisation expirée → message dédié, rien n'est exécuté", async t => {
+  if (SANS_STRIP) return t.skip(SANS_STRIP);
+  const G = charger();
+  const a = monter(G, await G.verdictMfa(fauxDb(lie("autorise")), "aal1"));
+  for (const nom of TOUS) assert.equal(texte(await a.s.appeler(nom)), "données de " + nom);
+  assert.deepEqual(a.executes, TOUS);
+  const e = monter(G, "expiree");
+  for (const nom of ["get_overview", "demarrer_session", "lire_banque"]) {
+    const r = await e.s.appeler(nom);
+    assert.equal(r.isError, true); assert.equal(texte(r), MSG_EXPIREE);
+  }
+  assert.deepEqual(e.executes, []);
+  assert.equal(G.MSG_MFA_EXPIREE, MSG_EXPIREE);
+  assert.equal(texte(await e.s.appeler("reperes")), "données de reperes", "savoir commun toujours ouvert");
 });
 
 test("verdict : aal1 sans facteur vérifié (mfa_exigee faux) → ok (comportement inchangé)", async t => {
@@ -162,6 +210,10 @@ test("garde : aucun message ne vouvoie, et les messages guident vers le connecte
   assert.match(MSG, /Réglages › Connecteurs/);
   assert.match(MSG, /6 chiffres/);
   assert.doesNotMatch(srcGarde.match(/MSG_MFA_INCERTAIN = "([^"]*)"/)[1], VOUS);
+  const expiree = srcGarde.match(/MSG_MFA_EXPIREE = "([^"]*)"/)[1];
+  assert.doesNotMatch(expiree, VOUS);
+  assert.match(expiree, /^Double authentification requise/, "même début : la règle 19 du Copilote s'applique");
+  assert.match(expiree, /Réglages › Connecteurs/); assert.match(expiree, /90 jours/);
 });
 
 test("index.ts : branchement (verdict après getUser, avant buildServer ; garde avant tout outil ; conduite et instructions)", () => {
@@ -175,15 +227,21 @@ test("index.ts : branchement (verdict après getUser, avant buildServer ; garde 
   const b = code.slice(code.indexOf("export function buildServer("), code.indexOf("registerSavoir(server, h)"));
   assert.match(b, /gardeOutils\(server, mfa \?\? "ok"\)/, "garde appliquée avant l'enregistrement du premier outil");
   assert.ok(b.indexOf("validateToolInput =") < b.indexOf("gardeOutils("), "garde appliquée après la validation française des paramètres");
+  // 0033 : un connecteur autorisé lit comme une session aal2 (la RLS le permet ; la banque en lecture seulement)
+  assert.match(code, /export function buildServer\(\{ db, user, client, aal: aalJeton, mfa \}: Ctx\)/);
+  assert.match(b, /const aal = mfa === "autorise" \? "aal2" : aalJeton;/);
+  assert.ok(b.indexOf('const aal = mfa === "autorise"') < b.indexOf("const h = {"), "niveau effectif fixé avant les outils");
   const conduite = src.slice(src.indexOf("const CONDUITE_COPILOTE"), src.indexOf("const PROMPT_ONBOARDING"));
   assert.match(conduite, /"19\. Double authentification du connecteur[^"]*Ne conclus jamais qu'il n'a rien/);
   const instr = src.slice(src.indexOf("const INSTRUCTIONS"), src.indexOf("/* Parcours d'entretien"));
   assert.match(instr, /Double authentification du connecteur[^"]*N'en conclus jamais que l'utilisateur n'a rien/);
 });
 
-test("garde-mfa.ts : seule la RPC mfa_exigee est appelée, sans clé de service ni API admin Auth", () => {
+test("garde-mfa.ts : seules les RPC mfa_exigee et lier_connecteur (sans paramètre) sont appelées, sans clé de service ni API admin Auth", () => {
   const code = sansCommentaires(srcGarde);
   assert.match(code, /db\.rpc\("mfa_exigee"\)/);
+  assert.match(code, /db\.rpc\("lier_connecteur"\)/);
+  assert.deepEqual([...code.matchAll(/db\.rpc\("(\w+)"/g)].map(m => m[1]).sort(), ["lier_connecteur", "mfa_exigee"]);
   assert.doesNotMatch(code, /\.from\(|deleteUser|createUser|updateUserById|SERVICE_ROLE|service_role|auth\.admin|listFactors/);
   assert.doesNotMatch(code, /sb_secret_|eyJ/);
 });

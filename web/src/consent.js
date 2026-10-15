@@ -5,9 +5,14 @@
    Sans service d'e-mail (BOUSSOLE.emails !== true) : connexion par mot de passe uniquement (pas de lien magique).
    Un compte anonyme (« Commencer sans e-mail ») ne peut pas autoriser de connecteur : il doit d'abord être sécurisé.
    Double authentification (SEC2, mfa.js) : si le compte a un facteur vérifié et que la session est encore aal1, l'état « mfa » demande le code
-   avant d'afficher la demande, et de nouveau avant d'approuver (session retombée à aal1) : le jeton émis au connecteur porte alors aal2, que
-   les tables bancaires exigent (RLS, migration 0028). Sans double authentification, la demande reste possible mais un avertissement dit que
-   le connecteur ne lira pas les comptes bancaires. */
+   avant d'afficher la demande, et de nouveau avant d'approuver (session retombée à aal1) : seule une session aal2 approuve (et enregistre
+   l'autorisation du connecteur, voir plus bas). Sans double authentification, la demande reste possible mais un avertissement dit que
+   le connecteur ne lira pas les comptes bancaires.
+   Constat de la préproduction (SEC5 § 3.12) : le jeton OAuth émis est toujours aal1, quel que soit le niveau de la session qui approuve.
+   D'où la migration 0033 : avec un facteur vérifié, « Autoriser » appelle d'abord la RPC autoriser_connecteur(authorization_id) avec la
+   session aal2 (la base vérifie l'aal2 et lit le client dans la demande de GoTrue), puis approuve ; sans autorisation enregistrée, rien
+   n'est approuvé. Même chose quand le consentement est déjà mémorisé (Supabase renvoie directement le retour) : code, autorisation, puis
+   redirection. Le connecteur lie ensuite l'autorisation à la session OAuth née de l'échange du code (lier_connecteur). Durée : 90 jours. */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
@@ -36,6 +41,12 @@
     el.hidden = !text;
   }
   const RELAUNCH = "Relance la connexion de Boussole depuis Claude.";
+  /* Durée d'une autorisation de connecteur (autoriser_connecteur, migration 0033 ; un test vérifie l'égalité). */
+  const DUREE_AUTORISATION_JOURS = 90;
+  let accord = null; // réponse d'autoriser_connecteur : { id, client_id, client_nom, accorde_le, expire_le, duree_jours }
+  function frDate(d) {
+    try { return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" }); } catch (_) { return ""; }
+  }
 
   /* ---------- erreurs Supabase → français ---------- */
   function isNetwork(e) {
@@ -76,6 +87,24 @@
     return "Connexion impossible : " + (e.message || "erreur inconnue") + ".";
   }
 
+  /* ---------- autorisation du connecteur liée au second facteur (0033) ---------- */
+  function explainAccord(e) {
+    if (isNetwork(e)) return ["Serveur injoignable", "Impossible de joindre Boussole. Vérifie ta connexion puis réessaie.", true];
+    if (e.code === "P0002") return ["Demande expirée ou introuvable", "Cette demande d'autorisation n'existe plus (elle expire au bout de quelques minutes). " + RELAUNCH, false];
+    if (e.code === "42501") return ["Code à valider de nouveau", "Ta session ne porte plus ton code de double authentification. Recharge la page, valide ton code, puis autorise.", true];
+    if (e.code === "54000") return ["Trop de connecteurs autorisés", e.message || "Retire un connecteur dans Mon compte › Connexion de Claude, puis réessaie.", false];
+    if (e.code === "PGRST202") return ["Autorisation impossible", "Le serveur de Boussole n'est pas encore prêt pour les comptes à double authentification. Réessaie plus tard.", false];
+    return ["Autorisation impossible", "Le serveur a répondu : « " + (e.message || "erreur inconnue") + " ». Réessaie ; si le problème continue, " + RELAUNCH.charAt(0).toLowerCase() + RELAUNCH.slice(1), true];
+  }
+  /* Enregistre l'autorisation (session aal2 exigée par la base) → null si c'est fait, sinon l'erreur. */
+  async function autoriser() {
+    let res;
+    try { res = await sb.rpc("autoriser_connecteur", { p_autorisation_id: authId }); } catch (e) { res = { data: null, error: e }; }
+    if (res && res.error) return res.error;
+    accord = (res && res.data) || {};
+    return null;
+  }
+
   /* ---------- droits demandés ---------- */
   const SCOPES = {
     email: "connaître ton adresse e-mail",
@@ -114,6 +143,8 @@
     if (last) last.textContent = last.textContent.replace(/ ;$/, ".");
     note($("consentMsg"), "");
     $("mfaNote").hidden = mfa !== "sans_facteur";
+    $("grantNote").hidden = mfa !== "ok";
+    $("grantJusquau").textContent = frDate(Date.now() + DUREE_AUTORISATION_JOURS * 864e5);
     setBusy(false);
     show("consent");
     $("approveBtn").focus({ preventScroll: true });
@@ -121,7 +152,8 @@
   function redirect(url, approved) {
     if (!url) return fail("Redirection impossible", "Le serveur n'a pas renvoyé d'adresse de retour. " + RELAUNCH, false);
     $("doneTitle").textContent = approved === false ? "Accès refusé" : "Accès autorisé";
-    $("doneText").textContent = "Retour vers " + host(url) + "…";
+    $("doneText").textContent = "Retour vers " + host(url) + "…" +
+      (approved !== false && accord && accord.expire_le ? " Accès valable " + (accord.duree_jours || DUREE_AUTORISATION_JOURS) + " jours, jusqu'au " + frDate(accord.expire_le) + "." : "");
     $("doneLink").href = url;
     show("done");
     location.assign(url);
@@ -173,8 +205,15 @@
       return fail(t, x, retry ? loadDetails : null);
     }
     if (!data) return fail("Demande introuvable", RELAUNCH, false);
-    // Consentement déjà donné : Supabase renvoie directement l'adresse de retour.
-    if (!("authorization_id" in data)) return redirect(data.redirect_url || data.redirect_to, true);
+    // Consentement déjà donné : Supabase renvoie directement l'adresse de retour. Avec un facteur vérifié, l'autorisation du connecteur
+    // (0033) est enregistrée avant de rendre le code au client ; sans elle, pas de redirection (le jeton ne lirait rien).
+    if (!("authorization_id" in data)) {
+      if (mfa === "ok") {
+        const err = await autoriser();
+        if (err) { const [t, x, retry] = explainAccord(err); return fail(t, x, retry ? loadDetails : null); }
+      }
+      return redirect(data.redirect_url || data.redirect_to, true);
+    }
     renderConsent(data, session, mfa);
   }
 
@@ -195,14 +234,27 @@
 
   async function decide(approve) {
     if (busy) return;
+    let mfa = null;
     if (approve) {
       const { data: s } = await sb.auth.getSession().catch(() => ({ data: null }));
       if (isAnon(s && s.session)) return show("anon");
       // La session peut être retombée à aal1 depuis l'affichage : le code est redemandé, rien n'est approuvé.
-      if ((await exigerCode()) === "code") return;
+      mfa = await exigerCode();
+      if (mfa === "code") return;
     }
     setBusy(true);
     $(approve ? "approveBtn" : "denyBtn").textContent = approve ? "Autorisation…" : "Refus…";
+    // 0033 : compte à double authentification → autorisation du connecteur enregistrée (session aal2) AVANT l'approbation ; sinon rien.
+    if (approve && mfa === "ok") {
+      const err = await autoriser();
+      if (err) {
+        setBusy(false);
+        $("approveBtn").textContent = "Autoriser";
+        const [t, x, retry] = explainAccord(err);
+        if (retry) return note($("consentMsg"), t + " : " + x);
+        return fail(t, x, null);
+      }
+    }
     let res;
     try {
       res = approve

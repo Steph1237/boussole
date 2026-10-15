@@ -2,6 +2,7 @@
 //   1. RLS entre deux comptes, inscription par mot de passe
 //   2. double authentification : aal1 / aal2, connecteur, et la question ouverte de SEC2 (mfa.enroll à aal1 avec un facteur vérifié)
 //   3. OAuth 2.1 : enregistrement dynamique, PKCE, approbation, échange du code, claim client_id, appel du connecteur
+//   3 bis. connecteur et second facteur (0033) : scripts/preprod/connecteur-mfa.mjs
 //   4. connecteur : initialize, tools/list, demarrer_session, proposition puis appliquer_propositions
 //   5. nuit locale (preprod.lancer_nuit) avec cours figés, sans appel externe
 //   node scripts/preprod/fumee.mjs         npm run preprod:fumee
@@ -17,6 +18,7 @@ import { demarrerFonctions } from "./fonctions.mjs";
 import { demarrerServeur } from "./servir.mjs";
 import { supabase } from "./cli.mjs";
 import { reessayer } from "./charger-foyer.mjs";
+import { connecteurMfa } from "./connecteur-mfa.mjs";
 
 const SANS_SESSION = { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } };
 const attendre = ms => new Promise(r => setTimeout(r, ms));
@@ -147,6 +149,11 @@ async function parcoursOauth(ctx) {
       verite(!ss.error, `session : ${ss.error?.message}`);
       const det = await sb.auth.oauth.getAuthorizationDetails(authorizationId);
       verite(!det.error && det.data?.client?.name, `getAuthorizationDetails : ${det.error?.message}`);
+      // compte à facteur, session aal2 : comme consent.js (migration 0033), autorisation du connecteur avant d'approuver
+      if (jetonSession === "aal2") {
+        const g = await sb.rpc("autoriser_connecteur", { p_autorisation_id: authorizationId });
+        verite(!g.error && g.data?.client_id === client.client_id, `autoriser_connecteur : ${g.error?.message ?? JSON.stringify(g.data)}`);
+      }
       const ap = await sb.auth.oauth.approveAuthorization(authorizationId, { skipBrowserRedirect: true });
       if (ap.error) { resultats[libelle] = `approbation refusée par le serveur (${ap.error.status ?? ""} ${ap.error.code ?? ap.error.message})`; continue; }
       const retour = new URL(ap.data.redirect_url ?? ap.data.redirect_to);
@@ -167,11 +174,12 @@ async function parcoursOauth(ctx) {
       const ov = await m.appeler("get_overview");
       resultats[libelle] = `jeton aal=${c.aal ?? "?"}, client_id présent, get_overview ${ov.erreur ? "REFUSÉ (" + ov.texte.slice(0, 40) + "…)" : "ok"}`;
       if (slug === "proprietaire-credit") {
-        // Propriété de sécurité : un jeton aal1 d'un compte à facteur vérifié ne lit rien ; un jeton aal2 est accepté.
-        if (c.aal === "aal2") verite(!ov.erreur, "jeton OAuth aal2 refusé par le connecteur");
-        else verite(ov.erreur && /Double authentification requise/.test(ov.texte), "un jeton OAuth aal1 d'un compte à facteur doit être refusé par le connecteur");
-        // Constat (question ouverte de SEC2, § « Connecteur MCP : que contient le jeton OAuth ? ») : l'aal du jeton suit-il celui de la session qui approuve ?
-        if (jetonSession === "aal2") ctx.constats.push(`jeton OAuth émis après approbation en session aal2 : aal=${c.aal}, amr=${JSON.stringify(c.amr?.map(a => a.method))} (GoTrue ${ctx.versionAuth}) → le connecteur ${ov.erreur ? "REFUSE" : "accepte"} ce jeton`);
+        // Propriété de sécurité (0033) : le jeton OAuth est aal1 ; approuvé par une session aal2 qui a enregistré l'autorisation du connecteur,
+        // il lit ; approuvé par une session aal1 (mot de passe seul), il ne lit rien.
+        if (jetonSession === "aal2") verite(!ov.erreur, `jeton OAuth autorisé avec le code refusé par le connecteur : ${ov.texte.slice(0, 120)}`);
+        else verite(ov.erreur && /Double authentification requise/.test(ov.texte), "un jeton OAuth approuvé en aal1 d'un compte à facteur doit être refusé par le connecteur");
+        // Constat (SEC2, § « Connecteur MCP : que contient le jeton OAuth ? ») : l'aal du jeton suit-il celui de la session qui approuve ?
+        if (jetonSession === "aal2") ctx.constats.push(`jeton OAuth émis après approbation en session aal2 : aal=${c.aal}, amr=${JSON.stringify(c.amr?.map(a => a.method))} (GoTrue ${ctx.versionAuth}) → le connecteur ${ov.erreur ? "REFUSE" : "accepte"} ce jeton (autorisation liée au second facteur, 0033)`);
       }
       if (slug === "jeune-actif") {
         verite(!ov.erreur, "compte sans facteur : le jeton OAuth doit être accepté");
@@ -217,6 +225,13 @@ async function parcoursConnecteur(ctx) {
   } finally { await c.supprimer(); }
 }
 
+// ------------------------------------------------------------------------------------------------------------------ 3 bis. Connecteur et second facteur
+async function parcoursConnecteurMfa(ctx) {
+  const r = await connecteurMfa({ clients: ctx.clients, mcpUrl: ctx.mcpUrl, journal: () => {} });
+  verite(!r.echecs, r.lignes.filter(l => l.startsWith("ÉCHEC")).join(" ; "));
+  return `${r.lignes.length} étapes (aal1 refusé, code → lecture, rafraîchissement, autre session refusée, retrait, nouvelle autorisation, expiration, course)`;
+}
+
 // ------------------------------------------------------------------------------------------------------------------ 5. Nuit
 function sql(requete) {
   const r = supabase(["db", "query", "--local", "-o", "json", requete], { capturer: true });
@@ -255,7 +270,7 @@ export async function fumee({ racine = RACINE } = {}) {
   const fonctions = await demarrerFonctions(clients.url);
   const lignes = [];
   let echecs = 0;
-  for (const [nom, f] of [["rls", parcoursRls], ["mfa", parcoursMfa], ["oauth", parcoursOauth], ["connecteur", parcoursConnecteur], ["nuit", parcoursNuit]]) {
+  for (const [nom, f] of [["rls", parcoursRls], ["mfa", parcoursMfa], ["oauth", parcoursOauth], ["connecteur-mfa", parcoursConnecteurMfa], ["connecteur", parcoursConnecteur], ["nuit", parcoursNuit]]) {
     const t0 = Date.now();
     try { lignes.push(`ok      ${nom} : ${await f(ctx)} (${Math.round((Date.now() - t0) / 1000)} s)`); }
     catch (e) { echecs++; lignes.push(`ÉCHEC   ${nom} : ${e.message}`); }

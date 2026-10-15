@@ -28,6 +28,7 @@ export const IGNOREES = {
   propositions: "créées par les cas du banc eux-mêmes (le Copilote les dépose) ; un foyer neuf n'en a pas",
   plans_figes: "figés par la revue mensuelle, que les cas jouent eux-mêmes",
   connexions_assistant: "écrite par le connecteur à chaque appel (noter_connexion) ; le voyant « Claude est connecté » se déclenche seul",
+  connecteurs_autorises: "créée seulement par la page de consentement (autoriser_connecteur, session aal2) puis liée par le connecteur : jamais chargée à la main",
   banque_placements: "positions détaillées d'un compte-titres synchronisé : non utilisées par les cas",
 };
 

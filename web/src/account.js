@@ -6,6 +6,9 @@
    le changement d'adresse est immédiat (aucun courrier de confirmation).
    Double authentification (SEC2) : section #securite (Mfa.monterSecurite, mfa.js) ; avant d'afficher la page, Mfa.exiger demande le code si le compte
    en a un et que la session est encore aal1.
+   Accès des connecteurs protégés par le code (migration 0033) : #accords liste les lignes de connecteurs_autorises encore actives ou
+   expirées (lecture par son propriétaire, colonnes accordées à authenticated) ; « Retirer » appelle la RPC revoquer_connecteur(client_id).
+   Retirer une application chez Supabase (revokeGrant) retire aussi son accès. Table absente ou rien à montrer : section masquée.
    Banques connectées (BQ1) : l'utilisateur Powens est toujours supprimé AVANT delete_me (POST <supabaseUrl>/functions/v1/powens/supprimer,
    JWT de la session), sans condition sur l'interrupteur banque : la fonction répond { ok: true } quand il n'y a rien à supprimer (jamais
    connecté, ou déjà supprimé chez Powens). Tout échec (réseau, 5xx, autre refus) bloque la suppression avec un message ; 401 ou session
@@ -168,9 +171,46 @@
     busy(b, async () => {
       try {
         await run(oauth().revokeGrant({ clientId: b.dataset.revoke }));
+        // l'accès protégé par le code de ce client (0033) part avec lui ; sans effet s'il n'y en a pas
+        try { await run(client.rpc("revoquer_connecteur", { p_client_id: b.dataset.revoke })); } catch (x) { /* table absente : rien à retirer */ }
         say("grantMsg", "Accès retiré à " + b.dataset.name + ".", "ok");
         await loadGrants();
+        await loadAccords();
       } catch (err) { say("grantMsg", frError(err)); }
+    });
+  });
+
+  /* ---------- accès des connecteurs protégés par le code (0033) ---------- */
+  const ACCORDS_SELECT = "id, client_id, client_nom, accorde_le, expire_le, lie_le, dernier_usage, revoque_le";
+  async function loadAccords() {
+    const box = $("accords");
+    let rows;
+    try { rows = await run(client.from("connecteurs_autorises").select(ACCORDS_SELECT).order("accorde_le", { ascending: false })); }
+    catch (err) { box.hidden = true; box.innerHTML = ""; return; } // table absente (0033 non appliquée) : rien à montrer
+    const liste = (Array.isArray(rows) ? rows : []).filter(r => r && !r.revoque_le);
+    if (!liste.length) { box.hidden = true; box.innerHTML = ""; return; }
+    const maintenant = Date.now();
+    box.innerHTML = '<h3 style="margin:14px 0 6px;font:700 15px var(--f-display)">Accès protégés par ton code</h3>' +
+      '<p class="muted small">Accordés sur la page d\'autorisation après ton code à 6 chiffres. Le connecteur lit aussi tes comptes bancaires, sans pouvoir les modifier.</p>' +
+      '<ul class="grants">' + liste.map(r => {
+        const name = r.client_nom || "Application";
+        const expire = new Date(r.expire_le).getTime() <= maintenant;
+        const etat = expire
+          ? "expiré le " + frDate(r.expire_le) + " : reconnecte le connecteur et saisis ton code pour le rouvrir"
+          : "autorisé le " + frDate(r.accorde_le) + " · valable jusqu'au " + frDate(r.expire_le) + (r.dernier_usage ? " · dernier usage le " + frDate(r.dernier_usage) : "");
+        return "<li><span><b>" + esc(name) + '</b><br><span class="muted small">' + esc(etat) + "</span></span>" +
+          (expire ? "" : '<button type="button" class="btn ghost" data-retirer="' + esc(r.client_id) + '" data-name="' + esc(name) + '">Retirer</button>') + "</li>";
+      }).join("") + "</ul>";
+    box.hidden = false;
+  }
+  $("accords").addEventListener("click", e => {
+    const b = e.target.closest("[data-retirer]"); if (!b) return;
+    busy(b, async () => {
+      try {
+        await run(client.rpc("revoquer_connecteur", { p_client_id: b.dataset.retirer }));
+        say("accordMsg", "Accès retiré à " + b.dataset.name + ". Pour le rouvrir, reconnecte le connecteur dans Claude et saisis ton code.", "ok");
+        await loadAccords();
+      } catch (err) { say("accordMsg", frError(err)); }
     });
   });
 
@@ -294,6 +334,7 @@
       user = sess.user; $("curEmail").textContent = user.email || "—"; $("delBtn").disabled = !matches();
     });
     loadGrants();
+    loadAccords();
     try { const p = await run(client.from("profiles").select("personnes").maybeSingle()); people = (p && p.personnes) || {}; } catch (e) { people = {}; }
   })();
 })();
