@@ -2,7 +2,7 @@
 /* Pilotage › Risque — « Mon portefeuille correspond-il à mon profil ? ». Lecture seule, au tutoiement.
    En haut : verdict en une phrase (profil déclaré vs profil équivalent du portefeuille) et une ligne sur l'allocation ;
    « Faire mon profil de risque avec Claude » (sans profil) ou « Le revoir avec Claude » (ClaudePrompts.phrase, section risque :
-   le questionnaire se fait dans Claude, avec un formulaire interactif, puis se valide dans Agent › Propositions), et
+   le questionnaire se fait dans Claude, avec un formulaire interactif, puis se valide dans Agent › À valider), et
    « Demander à Claude » ; bascule « Compter mon immobilier » si un bien est renseigné (affichage, non enregistré).
    Trois cartes (UI.carte) → panneau (UI.panneau) : profil déclaré (description, score, garde-fous, réponses validées en
    lecture), comportement du portefeuille et perte plausible (volatilité, baisse plausible, pire baisse, méthode).
@@ -221,7 +221,7 @@ function introHtml(E){
     <h2 class="rv-h2" id="rvTitre">Profil de risque</h2>
     <p class="rv-verdict" id="rvVerdict" tabindex="-1">Ton profil de risque n'est pas encore défini.</p>
     <p class="rv-lead">${QS().length||10} questions, 3 minutes, dans Claude : un formulaire interactif te les pose une à une. Ce profil sert à comparer ton portefeuille à ce que tu peux supporter.</p>
-    <p class="rv-note">Horizon, réaction à une baisse, perte acceptable, connaissances, revenus : inspiré du questionnaire d'adéquation réglementaire (MiFID II). Claude dépose ensuite ton profil en proposition : tu le valides dans Agent › Propositions.</p>
+    <p class="rv-note">Horizon, réaction à une baisse, perte acceptable, connaissances, revenus : inspiré du questionnaire d'adéquation réglementaire (MiFID II). Claude dépose ensuite ton profil en proposition : tu le valides dans Agent › À valider.</p>
     <div class="rv-actions">${lienFaire()}</div>
     ${E.eq?`<p class="rv-sec-t">${esc("Ton portefeuille se comporte aujourd'hui comme un profil "+E.eq.label+" : le questionnaire dira si c'est le risque que tu peux supporter.")}</p>`:""}
     ${immoHtml()}

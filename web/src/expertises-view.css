@@ -1,17 +1,17 @@
 /* Agent › Savoir › Expertises : méthodes du Copilote patrimonial (cartes UI.carte, panneau UI.panneau). Scopé #view-expertises-view ; le
    contenu du panneau vit dans .ui-panneau (injecté dans body par UI), d'où .ui-panneau .xv-…. Couleurs de theme.css (clair et sombre). */
 #view-expertises-view [hidden]{display:none!important}
-#view-expertises-view .xv{display:flex;flex-direction:column;gap:14px;max-width:960px;min-width:0}
-#view-expertises-view .xv-tete{display:flex;flex-direction:column;gap:6px;max-width:720px}
-#view-expertises-view .xv-tete h2{font:700 var(--t-h2)/1.25 var(--f-display);margin:0;border-radius:4px}
+#view-expertises-view .xv{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+#view-expertises-view .xv-tete{display:flex;flex-direction:column;gap:var(--sp-1)}
+#view-expertises-view .xv-tete h2{font:650 var(--t-h3)/var(--lh-h3) var(--f-body);margin:0;border-radius:4px}
 #view-expertises-view .xv-intro{margin:0;line-height:1.5}
-#view-expertises-view .xv-legende{margin:0;font-size:var(--t-caption);color:var(--muted);font-style:italic}
+#view-expertises-view .xv-legende{margin:0;font-size:var(--t-caption);color:var(--muted)}
 #view-expertises-view .xv-compte{margin:0;font-size:var(--t-caption);color:var(--muted)}
 #view-expertises-view .xv-compte:empty{display:none}
-#view-expertises-view .xv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--warn);background:var(--warn-soft);max-width:680px}
+#view-expertises-view .xv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--st-watch);background:var(--st-watch-bg)}
 
 /* cartes : grille souple (textes longs), titre de l'expertise en valeur de la carte */
-#view-expertises-view .xv-cartes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:12px}
+#view-expertises-view .xv-cartes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:var(--gap-cards)}
 #view-expertises-view .xv-it{display:flex;min-width:0}
 #view-expertises-view .xv-it .ui-carte{flex:1;text-align:left}
 #view-expertises-view .xv-it .ui-carte-valeur{font:700 var(--t-h3)/1.3 var(--f-display);letter-spacing:0;overflow-wrap:anywhere}
@@ -19,17 +19,17 @@
 #view-expertises-view .xv-it .ui-carte-sous{font-size:var(--t-small);line-height:1.45;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 
 /* états */
-#view-expertises-view .xv-vide{display:flex;flex-direction:column;gap:6px;max-width:680px}
+#view-expertises-view .xv-vide{display:flex;flex-direction:column;gap:var(--sp-2)}
 #view-expertises-view .xv-vide h3{font:700 var(--t-h3) var(--f-display);margin:0}
 #view-expertises-view .xv-vide p{margin:0;color:var(--muted);line-height:1.5}
-#view-expertises-view .xv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--crit);background:var(--crit-soft);max-width:680px}
+#view-expertises-view .xv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--st-work);background:var(--st-work-bg)}
 
 /* panneau de détail (UI.panneau, hors de la vue) */
 .ui-panneau .xv-meta{font-size:var(--t-small);color:var(--muted)}
-.ui-panneau .xv-quand{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:8px;background:var(--accent-soft);font-size:var(--t-body);line-height:1.5;overflow-wrap:anywhere}
-.ui-panneau .xv-quand-l{font:700 var(--t-caption) var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+.ui-panneau .xv-quand{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:8px;background:var(--brand-soft);font-size:var(--t-body);line-height:1.5;overflow-wrap:anywhere}
+.ui-panneau .xv-quand-l{font:650 var(--t-small) var(--f-body);color:var(--brand)}
 .ui-panneau .xv-d{display:flex;flex-direction:column;gap:6px;min-width:0}
-.ui-panneau .xv-d-t{margin:0;font:700 var(--t-caption) var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.ui-panneau .xv-d-t{margin:0;font:650 var(--t-small) var(--f-body);color:var(--muted)}
 .ui-panneau .xv-d p{margin:0;line-height:1.55;overflow-wrap:anywhere}
 .ui-panneau .xv-puces{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
 .ui-panneau .xv-puces li{font:600 var(--t-caption) var(--f-body);border:1px solid var(--line2);border-radius:999px;padding:3px 10px;background:var(--surface)}
@@ -40,11 +40,11 @@
 .ui-panneau .xv-md p{margin:0 0 8px}
 .ui-panneau .xv-md ul,.ui-panneau .xv-md ol{margin:0 0 8px;padding-left:20px;display:flex;flex-direction:column;gap:4px}
 .ui-panneau .xv-md li>ul,.ui-panneau .xv-md li>ol{margin:4px 0 2px}
-.ui-panneau .xv-md a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.ui-panneau .xv-md a{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
 .ui-panneau .xv-md code{font:500 var(--t-small) ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--sunk);border:1px solid var(--line);border-radius:4px;padding:0 4px;overflow-wrap:anywhere}
 .ui-panneau .xv-ctl{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:var(--t-small);line-height:1.45}
 .ui-panneau .xv-ctl li{position:relative;padding-left:18px;overflow-wrap:anywhere}
-.ui-panneau .xv-ctl li::before{content:"";position:absolute;left:3px;top:.6em;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.ui-panneau .xv-ctl li::before{content:"";position:absolute;left:3px;top:.6em;width:6px;height:6px;border-radius:50%;background:var(--brand)}
 .ui-panneau .xv-src{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:var(--t-small);line-height:1.45}
 .ui-panneau .xv-src dt{color:var(--muted)}
 .ui-panneau .xv-src dd{margin:0;overflow-wrap:anywhere}
@@ -54,7 +54,7 @@
 .ui-panneau .xv-hist-d{font:500 var(--t-caption) var(--f-body);color:var(--muted)}
 .ui-panneau .xv-hist-t{font-size:var(--t-small);line-height:1.45;overflow-wrap:anywhere}
 .ui-panneau .xv-charge{color:var(--muted)}
-.ui-panneau .xv-erreur{padding:9px 12px;border-radius:8px;border-left:3px solid var(--crit);background:var(--crit-soft);line-height:1.5}
+.ui-panneau .xv-erreur{padding:9px 12px;border-radius:8px;border-left:3px solid var(--st-work);background:var(--st-work-bg);line-height:1.5}
 .ui-panneau .xv-note{padding:9px 12px;border-radius:8px;border-left:3px solid var(--line2);background:var(--sunk);font-size:var(--t-small);line-height:1.5}
 .ui-panneau .xv-legende{font-size:var(--t-caption);line-height:1.45;color:var(--muted);font-style:italic}
 

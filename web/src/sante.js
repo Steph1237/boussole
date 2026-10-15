@@ -416,7 +416,7 @@ function panneauHtml(c,U,o){
   // 7. Demander à Claude, avec l'expertise adaptée (« Compléter avec Claude » pour un critère à compléter).
   const slug=expertiseDe(n);
   const claude=U?(n.statut==="a_completer"
-    ?`<p class="st-p-txt">Claude te pose les questions dans un formulaire, puis tu valides ses propositions dans Agent › Propositions.</p><div class="st-p-claude">${U.demanderAClaude(phraseCompleter(sectionDe(n),contexteCompleter(n)),"Compléter avec Claude")}</div>`
+    ?`<p class="st-p-txt">Claude te pose les questions dans un formulaire, puis tu valides ses propositions dans Agent › À valider.</p><div class="st-p-claude">${U.demanderAClaude(phraseCompleter(sectionDe(n),contexteCompleter(n)),"Compléter avec Claude")}</div>`
     :`<p class="st-p-txt">Claude consulte l'expertise « ${esc(EXPERTISES[slug])} » avec tes chiffres et t'explique cette note.</p><div class="st-p-claude">${U.demanderAClaude(questionClaude(n))}</div>`):"";
   return sec("Ta situation",situ)+sec("Pourquoi cette note",pourquoi||'<p class="st-p-txt">Pas d\'explication disponible pour ce critère.</p>')+
     sec("Le calcul",calcul)+sec("Données utilisées",donnees)+sec("Pour progresser",prog)+sec("Ce qui manque",manque)+sec("Demander à Claude",claude);
@@ -426,7 +426,7 @@ function panneauHtml(c,U,o){
 const LIEN_LABEL={"patrimoine/budget":"Voir le budget","patrimoine/objectifs":"Voir les objectifs","compte/donnees":"Voir tes données",
   "patrimoine/placements":"Voir les placements","pilotage/risque":"Voir le profil de risque","aujourdhui/vue":"Voir Aujourd'hui","compte/connexion":"Connecter Claude"};
 const DESTINATION={"patrimoine/budget":"Patrimoine › Budget","patrimoine/objectifs":"Patrimoine › Objectifs","compte/donnees":"Compte › Données",
-  "patrimoine/placements":"Patrimoine › Placements","pilotage/risque":"Pilotage › Risque","aujourdhui/vue":"Aujourd'hui","compte/connexion":"Compte › Connecter Claude"};
+  "patrimoine/placements":"Patrimoine › Placements","pilotage/risque":"Pilotage › Risque","aujourdhui/vue":"Aujourd'hui","compte/connexion":"Compte › Connexion"};
 /** Lien du pied du panneau, vers la vue concernée ; aucun pour un critère au vert ou informatif. */
 function lienPanneau(c){
   const n=normaliser(c), r=n.lien;

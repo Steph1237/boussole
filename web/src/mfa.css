@@ -1,5 +1,5 @@
 /* Double authentification (SEC2) : carte bloquante « Active la double authentification pour voir ton détail bancaire »
-   (BanqueEtat.carteMfa, banque-etat.js), posée dans Patrimoine › Comptes et Compte › Connecter Claude tant que la session est aal1.
+   (BanqueEtat.carteMfa, banque-etat.js), posée dans Patrimoine › Comptes et Compte › Connexion tant que la session est aal1.
    Les écrans de code et de sécurité (mfa.js) injectent leur propre style (classes mfa-*). */
 .bq-mfa{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin:0 0 16px;padding:16px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius)}
 .bq-mfa h3{margin:0;font:700 var(--t-h2)/1.25 var(--f-display)}

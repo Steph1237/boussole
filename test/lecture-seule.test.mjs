@@ -6,8 +6,8 @@
 //   - aucune écriture au store hors liste blanche : propositions (appliquer, refuser), journal (confirmer, modifier, supprimer,
 //     consentement), mémoire (modifier, supprimer, toutEffacer), règles (bascule actif : config/main ← { rules }), profil de
 //     risque recalculé après application de propositions (profil/main ← { risque }), compte (markOnboarded), routines (bascule
-//     active / en pause de la revue mensuelle dans Compte › Connecter Claude : Store.routines.pause, spec RT1 — même nature que la bascule
-//     des règles : un contrôle, pas une saisie), banque (BQ1, Compte › Connecter Claude : connecter ou reconnecter une banque par la page
+//     active / en pause de la revue mensuelle dans Compte › Connexion : Store.routines.pause, spec RT1 — même nature que la bascule
+//     des règles : un contrôle, pas une saisie), banque (BQ1, Compte › Connexion : connecter ou reconnecter une banque par la page
 //     Powens, déconnecter, synchroniser maintenant, rattacher un compte à une ligne, une enveloppe ou un crédit — seules colonnes que 0021 laisse écrire) ;
 //   - aucune requête directe à la base (sb.from, .rpc) ni façade d'écriture retirée (collection, addMany, upsert, set, delete).
 // Les simulateurs ne sont pas dispensés de la règle d'écriture : ils n'écrivent rien non plus.
@@ -83,10 +83,10 @@ test("lecture seule : les vues de contrôle appellent bien les API dédiées (le
   assert.match(lire("memoire-view.js"), /window\.Store\.memoire/);
   assert.match(lire("expertises-view.js"), /window\.Store\.expertises\.detail\(slug\)/, "expertises : lecture du détail seulement");
   assert.match(lire("accueil.js"), /St\.markOnboarded\(\)/);
-  assert.match(lire("claude-guide.js"), /window\.Store\.routines\.pause\(type, active\)/, "Compte › Connecter Claude : bascule de la revue mensuelle");
-  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.connecter\(/, "Compte › Connecter Claude : connecter une banque");
-  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.gerer\(cx\.id\)/, "Compte › Connecter Claude : gérer les comptes d'une banque connectée");
-  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.deconnecter\(cx\.id\)/, "Compte › Connecter Claude : déconnecter une banque");
-  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.rattacher\(cpt\.id, cible\)/, "Compte › Connecter Claude : rattacher un compte");
-  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.synchroniser\(cx\.id\)/, "Compte › Connecter Claude : synchroniser une banque maintenant");
+  assert.match(lire("claude-guide.js"), /window\.Store\.routines\.pause\(type, active\)/, "Compte › Connexion : bascule de la revue mensuelle");
+  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.connecter\(/, "Compte › Connexion : connecter une banque");
+  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.gerer\(cx\.id\)/, "Compte › Connexion : gérer les comptes d'une banque connectée");
+  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.deconnecter\(cx\.id\)/, "Compte › Connexion : déconnecter une banque");
+  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.rattacher\(cpt\.id, cible\)/, "Compte › Connexion : rattacher un compte");
+  assert.match(lire("claude-guide.js"), /window\.Store\.banque\.synchroniser\(cx\.id\)/, "Compte › Connexion : synchroniser une banque maintenant");
 });

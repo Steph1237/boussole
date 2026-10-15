@@ -1,5 +1,5 @@
 /* État de la revue mensuelle (routine de l'agent, RT1 : docs/superpowers/plans/2026-10-11-rt1-routines.md), seule source de la règle
-   côté app : Aujourd'hui (aujourdhui.js), Compte › Connecter Claude (claude-guide.js), accueil (accueil.js) et store démo (store-demo.js).
+   côté app : Aujourd'hui (aujourdhui.js), Compte › Connexion (claude-guide.js), accueil (accueil.js) et store démo (store-demo.js).
    Même règle que le connecteur (retardJours et jourParis de supabase/functions/mcp/routines.ts) et que la fonction SQL
    public.routine_date (0020_routines.sql) : test/routine-etat.test.mjs les compare. Pur, sans DOM, au tutoiement.
    RoutineEtat = {

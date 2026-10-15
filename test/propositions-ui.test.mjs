@@ -1,4 +1,4 @@
-// Agent › Propositions (web/src/propositions.*) : revue des changements proposés par Claude,
+// Agent › À valider (web/src/propositions.*) : revue des changements proposés par Claude,
 // pastille de navigation (app.js, shell.html), description en français de chaque proposition.
 import { test } from "node:test";
 import assert from "node:assert/strict";

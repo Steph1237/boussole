@@ -157,11 +157,11 @@ test("rendus : carte échappée, bascule role=switch nommée « Règle : <texte>
   assert.match(p, /règle-la avec Claude/);
   // règles d'alerte : écrites par Claude après accord dans la conversation (update_config), sans proposition ; pause ici
   assert.match(p, /Claude modifie tes règles d'alerte après ton accord dans la conversation ; tu peux les mettre en pause ici/);
-  assert.doesNotMatch(p, /Propositions/, "une règle ne passe pas par Agent › Propositions");
+  assert.doesNotMatch(p, /Propositions/, "une règle ne passe pas par Agent › À valider");
   const m = RG.matelasPanneauHtml(RG.resumeMatelas({ cushion: { mode: "amount", min: 1, max: 2 } }, 0, Calc), "");
   assert.doesNotMatch(m, /<form|<input/);
-  // matelas : proposition (regler_matelas, cible config) validée dans Agent › Propositions
-  assert.match(m, /règle-la avec Claude : il dépose une proposition que tu valides dans Agent › Propositions\./);
+  // matelas : proposition (regler_matelas, cible config) validée dans Agent › À valider
+  assert.match(m, /règle-la avec Claude : il dépose une proposition que tu valides dans Agent › À valider\./);
 });
 
 test("règles : tutoiement — aucun « vous / votre / vos » dans les textes du module et ses rendus (hors textes du moteur listés)", () => {

@@ -1,5 +1,5 @@
 /* Accueil : assistant de bienvenue en 4 étapes, ouvert par l'app à la première connexion (tant que l'onboarding
-   n'est pas terminé) et à tout moment depuis Compte › Connecter Claude (« Revoir l'accueil »). Boussole fonctionne avec un assistant
+   n'est pas terminé) et à tout moment depuis Compte › Connexion (« Revoir l'accueil »). Boussole fonctionne avec un assistant
    (Claude disponible, ChatGPT bientôt) : aucun formulaire de saisie ici, la seule écriture est « onboarding terminé ».
    1. Bienvenue (promesses, assistants)  2. Connecter Claude (voyant en direct)  3. Lancer l'entretien  4. Suivre et valider
    (avec le voyant de la revue mensuelle : « Revue mensuelle active — prochaine le JJ/MM », « en pause » ou « en retard de N jours »,
@@ -10,7 +10,7 @@
    - etape : étape de départ (1 à 4) ; par défaut, celle mémorisée dans localStorage « accueil-etape-v2 »
      (« accueil-etape-v2-demo » en démo, pour ne pas mélanger la démo et le compte réel).
    - connexion(el) : bloc « Connecter Claude » (onglets claude.ai / Claude Code, valeurs à copier, pièges), sans le voyant,
-     réutilisé par la page Compte › Connecter Claude.
+     réutilisé par la page Compte › Connexion.
    Voyant : Store.surveillerConnexions(true) tant que l'étape 2 est affichée, false en la quittant ; « Claude est connecté »
    dès que S.connexions = [{ clientId, clientNom, premierLe, dernierLe, appels }] contient un client. Sans ce contrat
    (store plus ancien), un bouton « J'ai terminé » le remplace. Échap ou « Reprendre plus tard » ferme sans rien marquer. */
@@ -79,7 +79,7 @@
     const E = RE().etat(routines, auj == null ? RE().aujParis() : auj), code = E.code;
     if (code === "retard") return { actif: true, code, texte: E.retard > 0 ? "Revue mensuelle en retard de " + E.retard + " jour" + (E.retard > 1 ? "s" : "") : "Revue mensuelle due aujourd'hui" };
     if (code === "a_jour" || code === "prete") return { actif: true, code, texte: "Revue mensuelle active" + (jjmm(E.prochain) ? " — prochaine le " + jjmm(E.prochain) : "") };
-    if (code === "pause") return { actif: false, code, texte: "Revue mensuelle en pause : tu peux la réactiver dans Compte › Connecter Claude." };
+    if (code === "pause") return { actif: false, code, texte: "Revue mensuelle en pause : tu peux la réactiver dans Compte › Connexion." };
     return { actif: false, code, texte: "Ta revue mensuelle s'activera à la fin de ton entretien avec Claude." };
   }
   /* Signature de la zone annoncée (role=status) : réécrite seulement quand elle change (comparer innerHTML ne marche pas : le
@@ -87,7 +87,7 @@
   const sigRevue = v => v.actif + "|" + v.texte;
   function revueHtml(routines) {
     const v = voyantRoutine(routines);
-    if (v.code === "retard") return svg("alerte", "ac-ico lg") + "<p><b>" + esc(v.texte) + "</b><span>Lance-la avec Claude depuis Aujourd'hui ou Compte › Connecter Claude.</span></p>";
+    if (v.code === "retard") return svg("alerte", "ac-ico lg") + "<p><b>" + esc(v.texte) + "</b><span>Lance-la avec Claude depuis Aujourd'hui ou Compte › Connexion.</span></p>";
     return svg(v.actif ? "main" : "agenda", "ac-ico lg") + "<p>" + (v.actif ? "<b>" + esc(v.texte) + "</b><span>Claude prépare ta revue chaque mois ; tu réponds ensuite à ses questions.</span>"
       : "<b>Revue mensuelle</b><span>" + esc(v.texte) + "</span>") + "</p>";
   }
@@ -113,7 +113,7 @@
     '<button type="button" class="ac-btn ghost sm" data-copie="' + id + '" aria-describedby="' + id + '-l">' + svg("copie") + "Copier</button></div>" +
     (note ? '<span class="ac-champ-n">' + note + "</span>" : "") + "</div>";
 
-  /* ---------- bloc « Connecter Claude » (partagé avec la page Compte › Connecter Claude) ---------- */
+  /* ---------- bloc « Connecter Claude » (partagé avec la page Compte › Connexion) ---------- */
   function connexionHtml(id) {
     const c = config();
     const tab = (k, t, on) => '<button type="button" role="tab" id="' + id + "-t-" + k + '" aria-controls="' + id + "-p-" + k + '" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-onglet="' + k + '">' + t + "</button>";
@@ -298,7 +298,7 @@
           '<button type="button" class="ac-btn ghost" data-act="examiner">Examiner les propositions</button></div>' +
         "</div>" +
         '<div class="ac-revue' + classeRevue(vr) + '" id="' + id + '-revue" data-sig="' + esc(sigRevue(vr)) + '" role="status" aria-live="polite">' + revueHtml(S && S.routines) + "</div>" +
-        '<p class="ac-fine">Tu pourras relancer Claude à tout moment depuis Compte › Connecter Claude.</p>';
+        '<p class="ac-fine">Tu pourras relancer Claude à tout moment depuis Compte › Connexion.</p>';
     }
     function suivi() {
       const j = $("#" + id + "-jauge"); if (!j) return;

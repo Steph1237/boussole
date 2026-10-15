@@ -21,7 +21,7 @@ test("savoir : deux volets (Fiches, Expertises) ; une expertise en lien profond 
 test("Agent : quatre sous-vues (À valider, Journal, Mémoire, Savoir) ; Connexion est dans Compte", () => {
   const sp = id => SPACES.find(s => s.space === id).subs.map(s => s.label);
   assert.deepEqual(sp("agent"), ["À valider", "Journal", "Mémoire", "Savoir"]);
-  assert.deepEqual(sp("compte"), ["Données", "Règles", "Connecter Claude"]);
+  assert.deepEqual(sp("compte"), ["Données", "Règles", "Connexion"]);
 });
 
 test("routes : #agent/connexion, #agent/fiches et #agent/expertises mènent à leur nouvelle place ; ?expertise= est gardé pour la vue", () => {

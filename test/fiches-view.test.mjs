@@ -28,8 +28,8 @@ test("fiches-view.html : identifiants utilisés par le script, en-tête, légend
   const ids = [...js.matchAll(/\$\("(fv[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length > 8);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
-  assert.ok(html.includes("Ce que sait l'agent"));
-  assert.ok(html.includes("Les fiches et les chiffres sur lesquels s'appuie l'agent de Boussole, avec leurs sources et leur date. Elles sont relues avant publication et mises à jour avec l'actualité."));
+  assert.ok(html.includes("Fiches et chiffres de référence"));
+  assert.ok(html.includes("Les fiches et les chiffres sur lesquels s'appuie Claude, avec leurs sources et leur date. Elles sont relues avant publication et mises à jour avec l'actualité."));
   assert.ok(html.includes("Indicateur pédagogique, pas un conseil en investissement."));
   assert.ok(html.includes("Chiffres de référence"));
   assert.ok(html.includes("Retour aux fiches"));

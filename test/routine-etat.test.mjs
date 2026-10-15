@@ -1,4 +1,4 @@
-// État de la revue mensuelle (web/src/routine-etat.js) : seule règle côté app, partagée par Aujourd'hui, Compte › Connecter Claude, l'accueil
+// État de la revue mensuelle (web/src/routine-etat.js) : seule règle côté app, partagée par Aujourd'hui, Compte › Connexion, l'accueil
 // et le store démo. Comparée au connecteur (retardJours / jourParis de supabase/functions/mcp/routines.ts, lu sans être modifié)
 // et aux exemples de la fonction SQL public.routine_date (0020_routines.sql).
 import { test } from "node:test";

@@ -53,7 +53,7 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   assert.equal(lab("agent", "memoire"), "Mémoire");
   assert.equal(lab("agent", "propositions"), "À valider");
   assert.equal(lab("agent", "savoir"), "Savoir");
-  assert.equal(lab("compte", "connexion"), "Connecter Claude");
+  assert.equal(lab("compte", "connexion"), "Connexion");
   assert.deepEqual(SPACES.find(s => s.space === "agent").subs.find(s => s.id === "savoir").extras, ["fiches-view", "expertises-view"], "Fiches et Expertises : deux volets de Savoir");
   assert.deepEqual([routeOfModule("fiches-view"), routeOfModule("expertises-view")], [{ space: "agent", sub: "savoir" }, { space: "agent", sub: "savoir" }]);
   assert.equal(routeOfModule("claude-guide").space, "compte");
@@ -301,7 +301,7 @@ test("accessibilité : role=\"tabpanel\" seulement pour les destinations à plus
   assert.match(refresh, /s\.className = "ui-sr"/);
 });
 
-test("coque : « Veille » mène à Compte › Connecter Claude ; libellés distincts de l'avatar et de l'engrenage", () => {
+test("coque : « Veille » mène à Compte › Connexion ; libellés distincts de l'avatar et de l'engrenage", () => {
   assert.match(shell, /id="veilleLine" href="#compte\/connexion" data-goto="compte\/connexion"/);
   assert.match(app, /labelM = anon \? "Sécuriser mon compte" : "Sécurité du compte"/);
   const guide = readFileSync("web/src/claude-guide.html", "utf8");

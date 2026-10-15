@@ -20,7 +20,7 @@
   function mount(r) {
     root = r;
     const bas = root.querySelector("#svBascule");
-    if (window.UI && bas) ctl = UI.bascule(bas, { label: "Ce que sait l'agent", options: VOLETS, actif: choisi, surChange: id => montrer(id) });
+    if (window.UI && bas) ctl = UI.bascule(bas, { label: "Ce que sait Claude", options: VOLETS, actif: choisi, surChange: id => montrer(id) });
     montrer(choisi);
   }
   /* Lien profond : lu sans être consommé (App.parametresActuels), le volet Expertises le lit ensuite lui-même (App.parametres). */

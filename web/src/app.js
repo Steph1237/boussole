@@ -35,7 +35,7 @@
     { space: "compte", label: "Compte", short: "Compte", icon: "compte", primary: false, desc: "Tes données, tes règles et la connexion de Claude", subs: [
       { id: "donnees", label: "Données", module: "profil" },
       { id: "regles", label: "Règles", module: "regles" },
-      { id: "connexion", label: "Connecter Claude", module: "claude-guide" },
+      { id: "connexion", label: "Connexion", module: "claude-guide" },
     ] },
   ];
   /* Correspondance des anciennes routes (spec cockpit § Navigation cible) : anciennes sous-vues, anciens espaces seuls
@@ -558,7 +558,7 @@
       let onboardingShown = false;
       /* Accueil (accueil.js) : bienvenue, connexion de Claude, entretien, suivi et validation. Aucune saisie dans l'app :
          Boussole fonctionne avec un assistant, la seule écriture est « onboarding terminé » (Store.markOnboarded, dans l'accueil).
-         Aussi rouvert depuis Compte › Connecter Claude (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
+         Aussi rouvert depuis Compte › Connexion (« Revoir l'accueil ») par App.accueil({ etape: 1 }). */
       App.accueil = o => {
         if (!window.Accueil) return false;
         Accueil.open(Object.assign({}, o || {}));
@@ -581,7 +581,7 @@
         mounted.forEach(k => { const m = mods[k]; if (m.update) try { m.update(S, isActive(k)); } catch (e) { console.error(k, e); } });
         refreshHeadlines();
       });
-      /* Retour de la page Powens : message (succès ou échec), Compte › Connecter Claude ouvert, paramètres retirés de l'URL ; en cas de
+      /* Retour de la page Powens : message (succès ou échec), Compte › Connexion ouvert, paramètres retirés de l'URL ; en cas de
          succès, le store est relu à 5 s puis à 15 s (la synchronisation se fait côté serveur, à la réception de la notification). */
       const retour = retourBanque(window.BOUSSOLE_RETOUR_BANQUE || location.search);
       if (retour) {

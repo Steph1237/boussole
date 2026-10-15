@@ -1,7 +1,7 @@
 // BQ1 (Powens), côté app (spec docs/superpowers/specs/2026-10-12-bq1-powens-design.md § 5, plan Task 4) :
 //   - banque-etat.js : table des états Powens en français, urgences, comptes à rattacher, réel moyen du budget, validation du
 //     rattachement (seule copie, partagée par les deux stores et les vues) ;
-//   - Compte › Connecter Claude : section « Banques connectées » (banqueHtml, pure ; montage en vm : connecter, reconnecter, rattacher,
+//   - Compte › Connexion : section « Banques connectées » (banqueHtml, pure ; montage en vm : connecter, reconnecter, rattacher,
 //     déconnecter avec confirmation dans la page) ;
 //   - Aujourd'hui : reconnexion et comptes à rattacher ; Patrimoine › Budget : « réel (moy. 3 mois) » par catégorie ;
 //   - app.js : retour de la page Powens (?connection_id=…, ?error=…) ; account.js : /powens/supprimer avant delete_me ;
@@ -149,7 +149,7 @@ test("BanqueEtat : adresse de redirection acceptée seulement chez Powens, en ht
     assert.equal(BE.urlPowensOk(u), false, String(u));
 });
 
-/* =================================================================== Compte › Connecter Claude =================================================================== */
+/* =================================================================== Compte › Connexion =================================================================== */
 
 test("banqueHtml : rien si l'interrupteur est éteint ou absent ; lecture en cours ; aucune banque", () => {
   assert.equal(G.banqueHtml(S0({ banque: { actif: false, lu: true, connexions: [], comptes: [], mois: [] } }), AUJ), "");
@@ -450,7 +450,7 @@ const vide = o => Object.assign({ ready: true, dbOk: true, positions: [], snapsh
   risque: null, classes: {}, propositions: [], connexions: [], memoire: [], scope: "foyer", people: [{ id: "p1", nom: "Camille" }], error: null }, o);
 const sansRegles = { Rules: null };
 
-test("Aujourd'hui : reconnexion (urgence 1 pour SCA, mot de passe…, sinon 2) et comptes à rattacher (urgence 2) vers Compte › Connecter Claude", () => {
+test("Aujourd'hui : reconnexion (urgence 1 pour SCA, mot de passe…, sinon 2) et comptes à rattacher (urgence 2) vers Compte › Connexion", () => {
   const b = A.boite(vide({ banque: banque({ connexions: [cx(1, null), cx(2, "SCARequired", { etablissement: "Néo Courtage" }), cx(3, "decoupled", { etablissement: "Banque B" }),
     cx(4, "websiteUnavailable", { etablissement: "Banque C" })], comptes: [cpt(10, 1), cpt(11, 1, { nom: "Livret" }), cpt(12, 1, { positionId: "x" })] }) }), AUJ, sansRegles)
     .filter(x => x.type === "banque");
@@ -524,7 +524,7 @@ test("BanqueEtat.retourPowens : retour filtré par /powens/retour (?connection_i
     assert.ok(r.message && !r.message.includes(code), code + " : le code n'est jamais affiché");
     assert.doesNotMatch(r.message, VOUVOIEMENT, code);
   }
-  assert.equal(BE.retourPowens("?error=nouveau_code").message, "La connexion à ta banque n'a pas abouti. Réessaie depuis Compte › Connecter Claude.", "message générique");
+  assert.equal(BE.retourPowens("?error=nouveau_code").message, "La connexion à ta banque n'a pas abouti. Réessaie depuis Compte › Connexion.", "message générique");
   assert.match(BE.retourPowens("?error=server_error").message, /momentanément indisponible/);
   assert.equal(BE.retourPowens("?connection_id=7&error=access_denied").ok, false, "erreur prioritaire");
   // pas un retour Powens : valeurs hors format (le retour les filtre), ou retour d'authentification Supabase (laissé à supabase-js)
@@ -533,7 +533,7 @@ test("BanqueEtat.retourPowens : retour filtré par /powens/retour (?connection_i
     assert.equal(BE.retourPowens(q), null, String(q));
 });
 
-test("app.js : retour de Powens → message (BanqueEtat.retourPowens), paramètres retirés de l'URL, Compte › Connecter Claude, rechargements", () => {
+test("app.js : retour de Powens → message (BanqueEtat.retourPowens), paramètres retirés de l'URL, Compte › Connexion, rechargements", () => {
   assert.deepEqual(J(AppMod.retourBanque("?connection_id=42")), J(BE.retourPowens("?connection_id=42")));
   assert.equal(AppMod.retourBanque("?error=access_denied").message, "Connexion annulée.");
   assert.equal(AppMod.retourBanque("?error=access_denied&error_description=x"), null, "retour d'authentification : pas un message bancaire");

@@ -42,7 +42,7 @@ test("risque-view.js : calcule avec Risque.synthese, en lecture seule (aucune é
 
 test("risque-view : textes clés et liens Claude (faire, revoir, corriger), au tutoiement", () => {
   for (const t of ["Mon portefeuille correspond-il à mon profil ?", "Faire mon profil de risque avec Claude", "Le revoir avec Claude", "Corriger avec Claude",
-    "Agent › Propositions", "Plafonné à ", "Dans une mauvaise année (1 sur 100), ton portefeuille pourrait perdre environ", "Compter mon immobilier",
+    "Agent › À valider", "Plafonné à ", "Dans une mauvaise année (1 sur 100), ton portefeuille pourrait perdre environ", "Compter mon immobilier",
     "Protection", "fonds euros et or", "D'où vient le risque", "Comment c'est calculé", "Allocation par classe", "Perte plausible sur un an",
     "Comportement du portefeuille", "Profil déclaré", "Tes réponses validées"])
     assert.ok(js.includes(t) || html.includes(t), `« ${t} » absent`);

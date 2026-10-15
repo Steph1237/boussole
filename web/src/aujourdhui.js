@@ -222,7 +222,7 @@
     return null;
   }
 
-  /** Éléments bancaires de la boîte (type « banque », vers Compte › Connecter Claude). */
+  /** Éléments bancaires de la boîte (type « banque », vers Compte › Connexion). */
   function elementsBanque(S, t) {
     const B = BE(), b = S && S.banque, out = [];
     if (!B || !b || !b.actif) return out;

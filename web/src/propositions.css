@@ -1,4 +1,4 @@
-/* Agent › Propositions : lots de changements proposés par Claude, groupés par cible, à valider ou refuser.
+/* Agent › À valider : lots de changements proposés par Claude, groupés par cible, à valider ou refuser.
    La pastille [data-prop-count] de la navigation est stylée ici aussi. */
 #view-propositions [hidden]{display:none!important}
 #view-propositions .propositions{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}

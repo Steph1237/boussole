@@ -25,7 +25,7 @@ const QUESTION_EVENEMENTS = "Aucun événement renseigné — as-tu des changeme
 export const CONDUITE_PROJECTION = [
   "1. Pars des valeurs par défaut sourcées (valeurs_par_defaut de decrire_foyer, hypotheses de projeter) et dis-les. Ne demande que ce qui change notablement le résultat : la date et le prix d'un achat, les frais d'une école, les charges d'un bien.",
   "2. Pour un enfant, demande seulement la date (réelle ou prévue) et un libellé court ; jamais de prénom.",
-  "3. Propose les événements avec decrire_foyer, ne les écris jamais : l'utilisateur valide dans Boussole › Agent › Propositions.",
+  "3. Propose les événements avec decrire_foyer, ne les écris jamais : l'utilisateur valide dans Boussole › Agent › À valider.",
   "4. Une projection n'est pas une promesse. Donne des ordres de grandeur arrondis, toujours avec la bande (P10 à P90), en euros d'aujourd'hui.",
   "5. Quand l'utilisateur retient un scénario, consigne-le au journal (journaliser) avec version_modele ; pour pouvoir le comparer plus tard à la réalité, propose de figer la projection (figer_projection, qu'il valide dans Boussole).",
   "6. Ne recommande jamais un produit ; parle d'enveloppes, de classes d'actifs et de leviers.",
@@ -474,7 +474,7 @@ export function registerProjection(server: any, h: ProjectionDeps) {
   });
   server.registerTool("decrire_foyer", {
     title: "Proposer des événements de vie, des variantes et des réglages de projection",
-    description: "Propose les changements prévus du foyer que la projection prend en compte : événements de vie (naissance, garde du jeune enfant, école privée, achat immobilier, retrait ponctuel, hausse de revenu, fin de crédit, crise, changement d'emploi, congé parental), variantes (« 2ᵉ enfant », « achat en 2028 » : la situation actuelle + ses événements − ceux qu'elle retire + des hypothèses modifiées) et réglages de projection (reglages : base_capacite, capacite_mensuelle, reste_capacite, reequilibrage, part_reaffectee_epargne_pct, part_hausse_epargnee_pct, salaire_croissance_reelle_pct, tmi_pct, per_versements_deduits, assurance_pct, biens). 10 événements et 10 variantes au plus par appel, 100 événements et 10 variantes au total. Les valeurs non fournies prennent des valeurs par défaut sourcées, renvoyées dans valeurs_par_defaut : dis-les. Les types réservés (chômage, séparation, invalidité, retraite, héritage, temps partiel, déménagement) sont refusés. Rien n'est écrit directement : chaque changement est une proposition que l'utilisateur valide dans Boussole › Agent › Propositions ; aucune proposition si rien ne change. Lis d'abord lire_foyer.",
+    description: "Propose les changements prévus du foyer que la projection prend en compte : événements de vie (naissance, garde du jeune enfant, école privée, achat immobilier, retrait ponctuel, hausse de revenu, fin de crédit, crise, changement d'emploi, congé parental), variantes (« 2ᵉ enfant », « achat en 2028 » : la situation actuelle + ses événements − ceux qu'elle retire + des hypothèses modifiées) et réglages de projection (reglages : base_capacite, capacite_mensuelle, reste_capacite, reequilibrage, part_reaffectee_epargne_pct, part_hausse_epargnee_pct, salaire_croissance_reelle_pct, tmi_pct, per_versements_deduits, assurance_pct, biens). 10 événements et 10 variantes au plus par appel, 100 événements et 10 variantes au total. Les valeurs non fournies prennent des valeurs par défaut sourcées, renvoyées dans valeurs_par_defaut : dis-les. Les types réservés (chômage, séparation, invalidité, retraite, héritage, temps partiel, déménagement) sont refusés. Rien n'est écrit directement : chaque changement est une proposition que l'utilisateur valide dans Boussole › Agent › À valider ; aucune proposition si rien ne change. Lis d'abord lire_foyer.",
     inputSchema: z.strictObject({
       evenements: z.array(Evenement).max(10, { error: "evenements : 10 événements au plus par appel." }).optional().describe("Événements à créer (sans id), modifier (avec id) ou supprimer (id et supprimer: true)."),
       variantes: z.array(VarianteDef).max(10, { error: "variantes : 10 variantes au plus par appel." }).optional().describe("Variantes à créer, modifier ou supprimer."),
@@ -573,7 +573,7 @@ export function registerProjection(server: any, h: ProjectionDeps) {
   /* ---------- figer_projection ---------- */
   server.registerTool("figer_projection", {
     title: "Figer une projection pour la comparer plus tard à la réalité",
-    description: "Dépose une proposition « plan figé » : la projection d'aujourd'hui (mêmes options que projeter, 2 000 trajectoires à graine fixe) est rangée avec de quoi la rejouer (graine, version du modèle, hypothèses sourcées, événements) et sa série P10 à P90, pour être comparée plus tard à la valeur réelle. Rien n'est écrit sans la validation de l'utilisateur dans Boussole › Agent › Propositions (60 plans figés au plus). Source obligatoire ; raison : revue_mensuelle, objectif ou manuel. Le plan n'est pas renvoyé, seulement la proposition déposée. À proposer quand l'utilisateur retient un scénario ou à la revue mensuelle.",
+    description: "Dépose une proposition « plan figé » : la projection d'aujourd'hui (mêmes options que projeter, 2 000 trajectoires à graine fixe) est rangée avec de quoi la rejouer (graine, version du modèle, hypothèses sourcées, événements) et sa série P10 à P90, pour être comparée plus tard à la valeur réelle. Rien n'est écrit sans la validation de l'utilisateur dans Boussole › Agent › À valider (60 plans figés au plus). Source obligatoire ; raison : revue_mensuelle, objectif ou manuel. Le plan n'est pas renvoyé, seulement la proposition déposée. À proposer quand l'utilisateur retient un scénario ou à la revue mensuelle.",
     inputSchema: z.strictObject({
       ...OptionsProjection,
       raison: z.enum(["revue_mensuelle", "objectif", "manuel"], { error: "raison : revue_mensuelle, objectif ou manuel." }).optional().describe("Pourquoi le plan est figé (défaut manuel)."),
@@ -592,7 +592,7 @@ export function registerProjection(server: any, h: ProjectionDeps) {
       throw new UserError(`Le plan figé dépasse la taille acceptée par la base malgré la réduction automatique (paramètres ${op} octets pour ${PLAN_PARAMETRES_MAX_OCTETS} au plus, série ${os} pour ${PLAN_SERIE_MAX_OCTETS}, total ${ot} pour ${PLAN_MAX_OCTETS}) : dis-le à l'utilisateur, rien n'est déposé.`);
     const depot = await deposer([{ cible: "plan_fige", operation: "creer", apres }], { source: String(a.source), justification: a.justification, lot: a.lot });
     return { date: h.today(), version_modele: sortie.version_modele, phrase: sortie.phrase, ...depot, propositions: (depot.propositions ?? []).map(({ apres: _a, ...p }: any) => p),
-      rappel: "Rien n'est enregistré tant que l'utilisateur n'a pas validé la proposition dans Boussole › Agent › Propositions." };
+      rappel: "Rien n'est enregistré tant que l'utilisateur n'a pas validé la proposition dans Boussole › Agent › À valider." };
   }));
 
   /* ---------- comparer_variantes ---------- */

@@ -216,7 +216,7 @@ revoke all on table public.banque_connexions, public.banque_comptes, public.banq
   from public, anon, authenticated;
 grant select on table public.banque_connexions, public.banque_comptes, public.banque_placements, public.banque_operations, public.banque_mois
   to authenticated;
--- Exception : rattachement d'un compte (Compte › Connecter Claude)
+-- Exception : rattachement d'un compte (Compte › Connexion)
 grant update (position_id, enveloppe, titulaire, credit_id, ignore) on public.banque_comptes to authenticated;
 grant select, insert, update, delete on table public.banque_connexions, public.banque_comptes, public.banque_placements,
   public.banque_operations, public.banque_mois to service_role;

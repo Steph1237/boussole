@@ -1,4 +1,4 @@
-/* Agent › Propositions : revue des changements déposés par Claude (connecteur MCP) avant enregistrement.
+/* Agent › À valider : revue des changements déposés par Claude (connecteur MCP) avant enregistrement.
    S.propositions = [{ id, lot, cible, operation: creer|modifier|supprimer, ref, avant, apres, source, justification,
    statut: en_attente|acceptee|refusee, creeLe, decideLe }]. Rien n'est appliqué sans validation :
    Store.propositions.appliquer(ids, { [id]: apresModifie }) et Store.propositions.refuser(ids).
