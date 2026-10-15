@@ -1,14 +1,14 @@
 // Assemble .preprod/supabase/ (SEC5, spec § 3.3) : config locale, graine, copies de supabase/migrations et supabase/functions.
 // Idempotent : le dossier est recréé à chaque appel. Il n'est jamais lié à un projet distant (aucun project-ref).
-//   node scripts/preprod/preparer.mjs            assemble
-//   node scripts/preprod/preparer.mjs --lien     functions/ en lien symbolique au lieu d'une copie (essai de la tâche 1.4)
+//   node scripts/preprod/preparer.mjs            assemble (functions/ en lien symbolique : le rechargement à chaud fonctionne, essayé le 2026-10-15)
+//   node scripts/preprod/preparer.mjs --copie    functions/ copié au lieu d'un lien (si le rechargement échoue sur une autre machine)
 import { cpSync, mkdirSync, rmSync, copyFileSync, symlinkSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertChemin, assertPasDeLien, RACINE } from "./garde.mjs";
 
 /** Renvoie le dossier --workdir à passer au CLI (`.preprod`). */
-export function preparer({ racine = RACINE, lien = false } = {}) {
+export function preparer({ racine = RACINE, lien = true } = {}) {
   assertPasDeLien(racine);
   const workdir = assertChemin(join(racine, ".preprod"), racine);
   const sup = join(workdir, "supabase");
@@ -27,7 +27,8 @@ export function preparer({ racine = RACINE, lien = false } = {}) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const w = preparer({ lien: process.argv.includes("--lien") });
+  const lien = !process.argv.includes("--copie");
+  const w = preparer({ lien });
   const n = readdirSync(join(w, "supabase/migrations")).filter(f => f.endsWith(".sql")).length;
-  console.log(`.preprod/supabase prêt : ${n} migrations, fonctions ${process.argv.includes("--lien") ? "(lien)" : "(copie)"}, graine, config locale`);
+  console.log(`.preprod/supabase prêt : ${n} migrations, fonctions ${lien ? "(lien)" : "(copie)"}, graine, config locale`);
 }

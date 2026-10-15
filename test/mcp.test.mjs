@@ -79,8 +79,11 @@ test("mcp : route des métadonnées de ressource protégée (et variante suffix�
   assert.match(code, /basePath\(\s*["']\/mcp["']\s*\)/);
   assert.match(code, /\.get\(\s*["']\/\.well-known\/oauth-protected-resource["']/);
   assert.match(code, /\.get\(\s*["']\/\.well-known\/oauth-protected-resource\/functions\/v1\/mcp["']/);
-  assert.ok(code.includes('authorization_servers: ["https://oapcewpqsbbjdlcdeizi.supabase.co/auth/v1"]'));
-  assert.ok(code.includes('bearer_methods_supported: ["header"]'));
+  // SEC5 : les métadonnées viennent de config-env.ts (valeurs de production par défaut, octet pour octet : test/mcp-preprod.test.mjs).
+  assert.ok(code.includes("const PROTECTED_RESOURCE = CFG.protectedResource"));
+  const configEnv = sansCommentaires(readFileSync(path("supabase/functions/mcp/config-env.ts"), "utf8"));
+  assert.ok(configEnv.includes("authorization_servers: [`${publicUrl}/auth/v1`]"));
+  assert.ok(configEnv.includes('bearer_methods_supported: ["header"]'));
 });
 
 test("mcp : 401 avec WWW-Authenticate pointant vers les métadonnées", () => {

@@ -89,7 +89,7 @@ describe("parité preprod/config.toml ↔ supabase/config.toml", () => {
   });
 });
 
-import { mkdtempSync, mkdirSync as mk, writeFileSync as wf, readdirSync, existsSync, readFileSync as rf, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync as mk, writeFileSync as wf, readdirSync, existsSync, readFileSync as rf, lstatSync, readlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { preparer } from "../scripts/preprod/preparer.mjs";
@@ -102,14 +102,24 @@ describe("preparer.mjs", () => {
     wf(join(r, "supabase/migrations/0001_a.sql"), "select 2;\n"); wf(join(r, "supabase/functions/mcp/index.ts"), "// f\n");
     return r;
   };
-  it("assemble config, graine, migrations et fonctions", () => {
+  it("assemble config, graine, migrations et fonctions (copie)", () => {
     const r = depot();
-    const w = preparer({ racine: r });
+    const w = preparer({ racine: r, lien: false });
     assert.equal(w, join(r, ".preprod"));
     assert.equal(rf(join(w, "supabase/config.toml"), "utf8"), "project_id = \"x\"\n");
     assert.equal(rf(join(w, "supabase/seed.sql"), "utf8"), "select 1;\n");
     assert.deepEqual(readdirSync(join(w, "supabase/migrations")), ["0001_a.sql"]);
     assert.ok(existsSync(join(w, "supabase/functions/mcp/index.ts")));
+  });
+  it("par défaut, functions/ est un lien vers le dépôt ; recréer .preprod/supabase ne touche pas à la cible", () => {
+    const r = depot();
+    const w = preparer({ racine: r });
+    assert.equal(lstatSync(join(w, "supabase/functions")).isSymbolicLink(), true);
+    assert.equal(readlinkSync(join(w, "supabase/functions")), join(r, "supabase/functions"));
+    assert.ok(existsSync(join(w, "supabase/functions/mcp/index.ts")));
+    preparer({ racine: r }); preparer({ racine: r, lien: false });
+    assert.ok(existsSync(join(r, "supabase/functions/mcp/index.ts")), "la cible du lien est intacte");
+    assert.equal(lstatSync(join(w, "supabase/functions")).isSymbolicLink(), false);
   });
   it("idempotent, et conserve les autres fichiers de .preprod/", () => {
     const r = depot();

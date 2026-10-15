@@ -141,6 +141,18 @@ Conséquence : le comportement n'est pas supposé, il est protégé de trois fa�
    propres à la banque (`lire_banque`, `banque.mfa_requise`, règle 17) restent pour un jeton `aal2` sans second facteur.
 3. La RLS reste la barrière : un jeton `aal1` ne lit rien dans `banque_*`, ni rien d'autre pour un compte à facteur vérifié, quoi que fasse le connecteur.
 
+**Résultat mesuré en préproduction locale (2026-10-15, GoTrue v2.190.0 du CLI Supabase 2.107.0, `npm run preprod:fumee`)** : le jeton OAuth
+émis au connecteur est **toujours `aal1`**, même quand la session qui approuve le consentement est `aal2`. Le jeton porte
+`amr = [{ method: "oauth_provider/authorization_code" }]` et un `session_id` neuf : GoTrue ouvre une nouvelle session pour le client OAuth, sans
+reprendre le niveau d'assurance de la session approbatrice. Constats : (1) la garde du connecteur fait ce qu'elle doit (tous les outils de
+données personnelles répondent « Double authentification requise », savoir commun ouvert, aucune lecture) ; (2) la RLS ne laisse rien lire en `aal1` ;
+(3) mais **un compte à double authentification ne peut donc pas utiliser le connecteur**, quel que soit le code saisi sur la page de consentement : le
+message « reconnecte le connecteur et saisis ton code » ne peut pas aboutir ; (4) un jeton de session `aal1` peut appeler `approveAuthorization`
+sans passer par la page (confirmé), ce qui reste sans effet puisque le jeton émis est `aal1`. À confirmer sur la version de GoTrue de la production
+(même parcours, compte de test avec facteur) avant de décider : attendre une évolution de Supabase (jeton OAuth `aal2` quand la session approbatrice l'est),
+ou accepter que les comptes à double authentification n'ouvrent pas le connecteur (le dire sur la page de consentement et dans la fiche Sécurité).
+L'interdiction de laisser passer les jetons OAuth dans les politiques reste entière.
+
 **À vérifier après déploiement** : connecter le connecteur avec un compte qui a la double authentification, puis appeler un outil de
 lecture. Avec la RLS étendue à toutes les données personnelles, un jeton OAuth resté `aal1` ne lit plus rien pour un compte à facteur
 vérifié (pas seulement la banque) : c'est le comportement voulu tant que l'`aal` du jeton émis n'est pas établi.
@@ -164,6 +176,11 @@ autres sessions. Conséquence : on ne suppose pas que le serveur protège l'ajou
 redemandé avant la première inscription, bandeau « appareil ajouté », code exigé avant la page Sécurité) ne s'appuient pas sur ce
 comportement. Si l'on veut une garantie serveur, elle reste à tester sur le projet (appeler `enroll` avec un jeton `aal1` d'un compte à
 facteur vérifié) et à documenter ici avec le résultat.
+
+**Résultat mesuré en préproduction locale (2026-10-15, GoTrue v2.190.0)** : GoTrue **refuse** `mfa.enroll` avec un jeton `aal1` quand le compte a déjà un
+facteur vérifié : HTTP 403, code `insufficient_aal`, message « AAL2 required to enroll a new factor ». Un mot de passe volé ne suffit donc pas à ajouter un
+second facteur que l'attaquant maîtriserait (la chaîne enroll puis verify vers `aal2` est fermée côté serveur). Les mesures de l'app (mot de passe redemandé,
+bandeau, code avant la page Sécurité) restent utiles mais ne portent plus seules cette garantie. À reconfirmer sur la production (même appel, compte de test).
 
 ## Tests
 

@@ -84,26 +84,25 @@ import { registerAnalyser } from "./analyser.ts";
 import { registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton } from "./banque.ts";
 import { verdictMfa, gardeOutils, type VerdictMfa } from "./garde-mfa.ts";
 import { CATALOGUE } from "./catalogue.gen.ts";
+import { configPublique } from "./config-env.ts";
 
 // Motifs du filtre de contenu sensible (mêmes que public.contenu_sensible), réexportés comme contrat public du connecteur.
 export { SENSIBLE };
 
 z.config(z.locales.fr());
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "https://oapcewpqsbbjdlcdeizi.supabase.co";
+// Configuration lue dans l'environnement (config-env.ts) : sans variable, ce sont les valeurs de la production, inchangées.
+// SEC5 : BOUSSOLE_ENV=preprod, BOUSSOLE_PUBLIC_URL et BOUSSOLE_PUBLISHABLE_KEY servent à la préproduction locale.
+const CFG = configPublique((nom) => Deno.env.get(nom));
+const SUPABASE_URL = CFG.supabaseUrl;
 // Clé publiable (celle de web/config.js, publique par nature) : sert uniquement d'apikey ; l'identité vient
 // du JWT utilisateur. Préférée à SUPABASE_ANON_KEY (clé héritée, désactivable dans le dashboard).
-const SUPABASE_ANON_KEY = Deno.env.get("BOUSSOLE_PUBLISHABLE_KEY") ?? "sb_publishable_o5IJJ2Cf6xf6sPCEWHLZag_b9HefoZ_";
+const SUPABASE_ANON_KEY = CFG.publishableKey;
 
-const RESOURCE = "https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp";
+const RESOURCE = CFG.resource;
 const RESOURCE_METADATA_URL = `${RESOURCE}/.well-known/oauth-protected-resource`;
 const WWW_AUTHENTICATE = `Bearer resource_metadata="${RESOURCE_METADATA_URL}"`;
-const PROTECTED_RESOURCE = {
-  resource: RESOURCE,
-  authorization_servers: ["https://oapcewpqsbbjdlcdeizi.supabase.co/auth/v1"],
-  bearer_methods_supported: ["header"],
-  resource_name: "Boussole",
-};
+const PROTECTED_RESOURCE = CFG.protectedResource;
 
 // Point d'injection pour les tests locaux (client Supabase factice) ; inchangé en production.
 export const deps = { createClient: createClient as (...a: any[]) => any, env: (k: string) => Deno.env.get(k) };
@@ -3125,6 +3124,12 @@ export function buildServer({ db, user, client, aal, mfa }: Ctx): McpServer {
 /* ------------------------------------------------------------------ */
 
 export const app = new Hono().basePath("/mcp");
+
+// Échec fermé : préproduction (BOUSSOLE_ENV=preprod) pointée par erreur vers un projet supabase.co → toute requête répond 500.
+app.use("*", async (c, next) => {
+  if (CFG.preprodInvalide) return c.json({ error: "configuration_preprod_invalide", error_description: "BOUSSOLE_ENV=preprod avec une URL supabase.co : refus." }, 500);
+  await next();
+});
 
 app.use("*", cors({
   origin: "*",

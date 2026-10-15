@@ -11,7 +11,12 @@
     "preprod:stop": "node scripts/preprod/cli.mjs stop",
     "preprod:reset": "node scripts/preprod/demarrer.mjs --reset",
     "preprod:sync": "node scripts/preprod/demarrer.mjs --sync",
-    "preprod:test": "node scripts/preprod/tester.mjs"
+    "preprod:test": "node scripts/preprod/tester.mjs",
+    "preprod:seed": "node scripts/preprod/graine.mjs",
+    "preprod:env": "node scripts/preprod/env.mjs",
+    "preprod:fonctions": "node scripts/preprod/cli.mjs functions serve --no-verify-jwt --env-file .preprod/fonctions.env",
+    "preprod:app": "node build.mjs --config=preprod && node scripts/preprod/servir.mjs",
+    "preprod:fumee": "node scripts/preprod/fumee.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.7",

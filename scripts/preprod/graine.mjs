@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { garde, assertLocal, assertCleLocale, assertChemin, RACINE } from "./garde.mjs";
 import { preparerEnv } from "./env.mjs";
-import { chargerFoyer, clientSupabase, lireFoyer } from "./charger-foyer.mjs";
+import { chargerFoyer, clientSupabase, lireFoyer, reessayer } from "./charger-foyer.mjs";
 import { codeTotp, secretDepuisUri } from "./totp.mjs";
 
 export const FOYERS_DE_BASE = ["jeune-actif", "couple-enfants", "proprietaire-credit", "independant", "preretraite", "endette", "vide", "mfa-aal1"];
@@ -85,7 +85,7 @@ function niveau(accessToken) {
 async function creerCompte(clients, slug, { variante, email, aujourdhui } = {}) {
   const foyer = lireFoyer(slug);
   const adresse = email ?? emailDe(slug), password = motDePasse();
-  const { data, error } = await clients.admin.auth.admin.createUser({ email: adresse, password, email_confirm: true });
+  const { data, error } = await reessayer(() => clients.admin.auth.admin.createUser({ email: adresse, password, email_confirm: true }));
   if (error) throw new Error(`création de ${adresse} : ${error.message}`);
   const uid = data.user.id;
   try {
@@ -119,6 +119,8 @@ export async function compteNeuf(slug, { variante, jeton, clients = clientsLocau
   return {
     uid: compte.uid, email: compte.email, accessToken: session.access_token, refreshToken: session.refresh_token, aal: niveau(session.access_token),
     totpSecret: compte.totp_secret ?? null,
+    /** Pour une nouvelle connexion (jamais à afficher ni écrire). */
+    identifiants() { return { email: compte.email, password: compte.password }; },
     async supprimer() { await clients.admin.auth.admin.deleteUser(compte.uid).catch(() => {}); },
   };
 }

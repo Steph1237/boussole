@@ -318,13 +318,29 @@ export function clientPglite(db) {
   };
 }
 
+/** Nouvel essai (3 au plus) sur les délais d'attente de la pile locale, fréquents quand la machine est chargée. */
+export async function reessayer(f, { essais = 3, pause = 2000 } = {}) {
+  let derniere;
+  for (let i = 0; i < essais; i++) {
+    try {
+      const r = await f();
+      if (r && r.error && /timing out|timed out|timeout|ECONNRESET|fetch failed|upstream/i.test(r.error.message || "") && i < essais - 1) { derniere = r; await new Promise(x => setTimeout(x, pause)); continue; }
+      return r;
+    } catch (e) {
+      if (i < essais - 1 && /timing out|timed out|timeout|ECONNRESET|fetch failed/i.test(e.message || "")) { derniere = e; await new Promise(x => setTimeout(x, pause)); continue; }
+      throw e;
+    }
+  }
+  return derniere;
+}
+
 /** Client supabase-js (clé de service locale, garde à l'appelant) : écritures PostgREST, colonnes absentes → valeur par défaut. */
 export function clientSupabase(sb) {
   const verifier = ({ error }, t) => { if (error) throw new Error(`${t} : ${error.message}`); };
   return {
-    async insert(table, rows) { verifier(await sb.from(table).insert(rows, { defaultToNull: false }), table); },
-    async upsert(table, rows, conflit) { verifier(await sb.from(table).upsert(rows, { onConflict: conflit, defaultToNull: false }), table); },
-    async supprimer(table, uid) { verifier(await sb.from(table).delete().eq("user_id", uid), table); },
-    async lire(table, uid) { let r = sb.from(table).select("*"); if (uid) r = r.eq("user_id", uid); const { data, error } = await r; verifier({ error }, table); return data; },
+    async insert(table, rows) { verifier(await reessayer(() => sb.from(table).insert(rows, { defaultToNull: false })), table); },
+    async upsert(table, rows, conflit) { verifier(await reessayer(() => sb.from(table).upsert(rows, { onConflict: conflit, defaultToNull: false })), table); },
+    async supprimer(table, uid) { verifier(await reessayer(() => sb.from(table).delete().eq("user_id", uid)), table); },
+    async lire(table, uid) { const r = await reessayer(() => { let q = sb.from(table).select("*"); if (uid) q = q.eq("user_id", uid); return q; }); verifier(r, table); return r.data; },
   };
 }

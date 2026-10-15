@@ -48,6 +48,9 @@ describe("fichiers générés", () => {
     assert.match(e, /^BOUSSOLE_PUBLIC_URL=http:\/\/127\.0\.0\.1:54521$/m);
     assert.match(e, /^BOUSSOLE_HORS_LIGNE=1$/m);
     assert.ok(!e.includes(SERVICE), "pas de clé de service");
+    const cours = e.match(/^BOUSSOLE_COURS_FIGES=(.+)$/m)[1];
+    assert.match(cours, /^(ZZ[A-Z0-9]{9}[0-9]|X-[A-Z]+)=[0-9.]+(,(ZZ[A-Z0-9]{9}[0-9]|X-[A-Z]+)=[0-9.]+)*$/, "ISIN fictifs et prix, sans espace ni guillemet");
+    assert.match(cours, /ZZ0000000011=104\.26/);
   });
   it("web-config.js : config exécutable, locale, sans client Claude", () => {
     const ctx = { window: {} };

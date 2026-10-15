@@ -3,7 +3,7 @@
 // variables de test à exporter :   eval "$(node scripts/preprod/env.mjs --export)"
 // La clé de service locale n'est JAMAIS écrite dans un fichier : elle n'est imprimée que pour un `eval` (publique par construction,
 // mais le dépôt n'en garde aucune trace).
-import { writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { writeFileSync, mkdirSync, chmodSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertLocal, assertCleLocale, assertChemin, RACINE } from "./garde.mjs";
@@ -30,13 +30,20 @@ export function variablesLocales(status) {
   return { url, publiable, anon, service, dbUrl };
 }
 
-export function contenuFonctionsEnv({ url, publiable }) {
+/** Cours figés du banc (banc/foyers/cours.json) au format de BOUSSOLE_COURS_FIGES : « ISIN=prix,ISIN=prix ». */
+export function coursFigesEnv(racine = RACINE) {
+  const c = JSON.parse(readFileSync(join(racine, "banc/foyers/cours.json"), "utf8"));
+  return Object.entries(c.instruments).map(([isin, i]) => `${isin}=${i.prix}`).join(",");
+}
+
+export function contenuFonctionsEnv({ url, publiable }, cours = coursFigesEnv()) {
   return [
     "# Généré par scripts/preprod/env.mjs : ne pas versionner.",
     "BOUSSOLE_ENV=preprod",
     `BOUSSOLE_PUBLIC_URL=${url}`,
     `BOUSSOLE_PUBLISHABLE_KEY=${publiable}`,
     "BOUSSOLE_HORS_LIGNE=1",
+    `BOUSSOLE_COURS_FIGES=${cours}`,
     "",
   ].join("\n");
 }
