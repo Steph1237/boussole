@@ -885,8 +885,9 @@ test("store-supabase.js : routines (lecture dans loadAll, table absente sans cas
       assert.ok(s.includes(k), k);
   }
   const load = sup.slice(sup.indexOf("async function loadAll()"), sup.indexOf("let reloadTimer"));
-  assert.ok(load.includes('q(sb.from("routines").select(ROUTINE_SELECT).order("type"))'), "lecture des routines dans le même Promise.allSettled");
-  assert.ok(sup.includes('const ROUTINE_SELECT = "*";'), "toutes les colonnes, dont etat_suivi (0032) : la lecture reste valable avant la migration");
+  assert.ok(load.includes('q(lireRoutines())'), "lecture des routines dans le même Promise.allSettled");
+  assert.ok(sup.includes('const ROUTINE_SELECT = ROUTINE_COLONNES + ", etat_suivi";') && sup.includes('"type, jour, active, consentement_journal, dernier_passage, dernier_client, prochain_passage, questions, synthese"'), "colonnes explicites, dont etat_suivi (0032)");
+  assert.ok(sup.includes('r.error.code === "42703" ? sb.from("routines").select(ROUTINE_COLONNES)'), "la lecture reste valable avant la migration 0032 (colonne absente : sans etat_suivi)");
   assert.ok(sup.includes("etatSuivi: r.etat_suivi && typeof r.etat_suivi === \"object\""), "mémoire de la dernière revue du suivi (écrite par cloturer_routine, jamais par l'app)");
   assert.ok(load.includes("if (routines !== undefined) { C.routines = (routines || []).map(routineView); C.routinesLues = true; }"), "table absente : valeur précédente");
   assert.match(sup, /routines: \[\], routinesLues: false/, "état initial");
@@ -894,7 +895,7 @@ test("store-supabase.js : routines (lecture dans loadAll, table absente sans cas
     "prochainPassage: r.prochain_passage ?? null", "synthese: r.synthese ?? null"]) assert.ok(sup.includes(k), "routineView : " + k);
   // seule écriture : update active = !enPause where type = …, ligne renvoyée (aucune ligne → introuvable)
   assert.ok(sup.includes('from("routines").update({ active: !enPause }).eq("type", type).select("type")'));
-  assert.deepEqual([...sup.matchAll(/from\("routines"\)\.(\w+)\(/g)].map(m => m[1]).sort(), ["select", "update"]);
+  assert.deepEqual([...sup.matchAll(/from\("routines"\)\.(\w+)\(/g)].map(m => m[1]).sort(), ["select", "select", "update"]);
   assert.match(demo, /D\.routines/);
 });
 

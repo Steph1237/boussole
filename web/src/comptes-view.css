@@ -188,3 +188,7 @@
   #view-comptes-view #cvTete>*{grid-column:1}
   #view-comptes-view #cvTete>.cv-faits{grid-column:2;grid-row:1/span 6;margin:0}
 }
+
+/* Ta ligne (spec § 11.9, 1 280 px et plus) : le cours, les constats et les leviers à gauche ; l'essentiel, le détail et les mouvements dans une colonne de droite de 480 px */
+#view-comptes-view .cv-f-2col,#view-comptes-view .cv-f-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+@media (min-width:1100px){#view-comptes-view .cv-f-2col{display:grid;grid-template-columns:minmax(0,1fr) 480px;align-items:start;gap:var(--gap-sections,24px)}}

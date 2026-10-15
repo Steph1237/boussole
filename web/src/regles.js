@@ -129,7 +129,8 @@ const sig={liste:"",matelas:"",claude:"",suivi:""};
 const $=id=>root.querySelector("#"+id);
 const U=()=>window.UI||null;
 const R=()=>window.Rules||null;
-const today=()=>new Date().toISOString().slice(0,10);
+// Le jour est celui de Paris (comme la revue mensuelle), jamais celui d'UTC : à 00 h 30 le 1er, on est déjà dans le nouveau mois.
+const today=()=>{ try { const R=window.RoutineEtat; if(R&&R.aujParis) return R.aujParis(); return new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Paris"}).format(new Date()); } catch(e){ return new Date().toISOString().slice(0,10); } };
 function ruleCtx(){ return {positions:S.positions,config:S.config||{},scope:S.scope,people:S.people,today:today(),status:S.status}; }
 const rulesOf=()=>(S.config&&Array.isArray(S.config.rules))?S.config.rules:[];
 const ecrire=(id,cle,h)=>{ if(sig[cle]!==h){ sig[cle]=h; $(id).innerHTML=h; } };

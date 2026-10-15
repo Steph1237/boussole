@@ -851,11 +851,8 @@
       : '<p class="cv-muet">Aucun mouvement connu. Les achats, ventes et versements que tu signales à Claude apparaîtront ici.</p>';
     return arianeHtml([RETOUR, { label: f.enveloppe || "Compte", href: f.enveloppeHref }, { label: f.nom }]) +
       titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.valeur)) + "</p>") + perimeFicheHtml(f.source, U, "ta ligne « " + f.nom + " »") +
-      (f.isin ? '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Cours</h3><div class="cv-periode" id="cvPeriode"></div></div><div id="cvGraphe" aria-live="polite"></div></section>' : "") +
-      '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" +
-      (suivi ? '<section class="panel cv-f-bloc cv-f-suivi">' + suivi + "</section>" : "") +
-      '<section class="panel cv-f-bloc" aria-labelledby="cvDetailTitre"><h3 id="cvDetailTitre">Détail</h3>' + faitsHtml(f.faits) + "</section>" +
-      '<section class="panel cv-f-bloc" aria-labelledby="cvMvtsTitre"><h3 id="cvMvtsTitre">Mouvements connus</h3>' + mvts + "</section>" +
+      '<div class="cv-f-2col"><div class="cv-f-col cv-f-gauche">' + (f.isin ? '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Cours</h3><div class="cv-periode" id="cvPeriode"></div></div><div id="cvGraphe" aria-live="polite"></div></section>' : "") + (suivi ? '<section class="panel cv-f-bloc cv-f-suivi">' + suivi + "</section>" : "") + '</div>' +
+      '<div class="cv-f-col cv-f-droite">' + '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" + '<section class="panel cv-f-bloc" aria-labelledby="cvDetailTitre"><h3 id="cvDetailTitre">Détail</h3>' + faitsHtml(f.faits) + "</section>" + '<section class="panel cv-f-bloc" aria-labelledby="cvMvtsTitre"><h3 id="cvMvtsTitre">Mouvements connus</h3>' + mvts + "</section>" + '</div></div>' +
       '<div class="cv-acts">' + lienClaude(U, q, "Demander à Claude") + '<span class="cv-note">Active l\'expertise ' + esc(f.expertise.nom) + ".</span></div>";
   }
   /* Historique plus court que la période, plafond de lecture atteint, lecture en échec (bouton « Réessayer », data-cv-reessayer). */

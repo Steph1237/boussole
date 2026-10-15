@@ -111,7 +111,17 @@
   /** Arc de cercle en dasharray : début et longueur en fraction de tour (0 à 1), départ à midi, sens horaire. */
   const arc = (debut, longueur, classe, extra) => {
     const l = Math.max(0, longueur) * C_ANNEAU, o = -debut * C_ANNEAU;
-    return l <= 0 ? "" : '<circle class="sv-arc ' + classe + '" cx="100" cy="100" r="' + R_ANNEAU + '" transform="rotate(-90 100 100)" stroke-dasharray="' + l.toFixed(2) + " " + (C_ANNEAU - l + 0.01).toFixed(2) + '" stroke-dashoffset="' + o.toFixed(2) + '"' + (extra || "") + "/>";
+    if (l <= 0) return "";
+    // arc pointillé (rôle proposé, pas encore confirmé) : traits de 4 séparés de 3, ce qui ne repose pas que sur l'opacité
+    let da = l.toFixed(2) + " " + (C_ANNEAU - l + 0.01).toFixed(2);
+    if (/\bsv-a-propose\b/.test(classe)) {
+      const seg = []; let reste = l;
+      while (reste > 0.05) { const t = Math.min(4, reste); seg.push(t.toFixed(2)); reste -= t; if (reste > 0.05) { const v = Math.min(3, reste); seg.push(v.toFixed(2)); reste -= v; } }
+      if (seg.length % 2 === 0) seg.pop();
+      seg.push((C_ANNEAU - l + 0.01).toFixed(2));
+      da = seg.length % 2 ? seg.join(" ") + " 0" : seg.join(" ");
+    }
+    return '<circle class="sv-arc ' + classe + '" cx="100" cy="100" r="' + R_ANNEAU + '" transform="rotate(-90 100 100)" stroke-dasharray="' + da + '" stroke-dashoffset="' + o.toFixed(2) + '"' + (extra || "") + "/>";
   };
   /** Anneau à trois arcs proportionnels (cœur, satellite, réserve) avec la graduation du plafond satellite. v = Suivi.vue(). */
   function anneauSvg(v) {
@@ -237,7 +247,7 @@
     const res = lv.cout, opt = o || {}, U = opt.U;
     if (!res) return "";
     const verdict = res.verdict, libelle = verdict ? Suivi.VERDICT_LIB[verdict] : "À compléter";
-    const detailCout = res.cout_detail ? [res.cout_detail.impot > 0 ? "impôt " + eur(res.cout_detail.impot) : "", res.cout_detail.transaction > 0 ? "courtage et écart " + eur(res.cout_detail.transaction) : ""].filter(Boolean).join(" + ") : "";
+    const detailCout = res.cout_detail ? [res.cout_detail.impot > 0 ? "impôt " + eur(res.cout_detail.impot) : "", res.cout_detail.transaction > 0 ? (res.transaction_libelle || "frais de transaction") + " " + eur(res.cout_detail.transaction) : ""].filter(Boolean).join(" + ") : "";
     const gain = res.gain_annuel > 0 ? '<p class="sv-lv-l"><span class="sv-lv-k">Gain</span><span class="sv-lv-v">+' + esc(eur(res.gain_annuel)) + ' par an</span><span class="sv-lv-s">certain : frais</span></p>' :
       '<p class="sv-lv-l"><span class="sv-lv-k">Gain</span><span class="sv-lv-v">aucun en euros</span><span class="sv-lv-s">' + (["reequilibrer", "securiser_objectif", "reduire_satellite", "versements_orientes"].includes(res.levier) ? "réduit un risque mesuré" : "frais déjà dans le repère") + "</span></p>";
     const cout = res.cout_unique == null ? '<p class="sv-lv-l"><span class="sv-lv-k">Coût</span><span class="sv-lv-v">à compléter</span><span class="sv-lv-s">' + esc((res.manque && res.manque[0]) || "") + "</span></p>" :

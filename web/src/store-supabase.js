@@ -270,7 +270,11 @@
     source: r.source ?? null, historique: Array.isArray(r.historique) ? r.historique : [], creeLe: r.cree_le, majLe: r.maj_le,
   });
   const CONSENTEMENTS = ["demander", "prevenir", "jamais"];
-  const ROUTINE_SELECT = "*"; // dont etat_suivi (0032) : mémoire de la dernière revue du suivi des lignes, écrite par cloturer_routine (jamais par l'app)
+  // Colonnes lues, dont etat_suivi (0032) : mémoire de la dernière revue du suivi des lignes, écrite par cloturer_routine (jamais par l'app).
+  const ROUTINE_COLONNES = "type, jour, active, consentement_journal, dernier_passage, dernier_client, prochain_passage, questions, synthese";
+  const ROUTINE_SELECT = ROUTINE_COLONNES + ", etat_suivi";
+  // Avant la migration 0032 la colonne etat_suivi n'existe pas : la lecture se refait sans elle plutôt que de perdre les routines.
+  const lireRoutines = async () => { const r = await sb.from("routines").select(ROUTINE_SELECT).order("type"); return r.error && r.error.code === "42703" ? sb.from("routines").select(ROUTINE_COLONNES).order("type") : r; };
   const questionView = x => ({ question: String((x && x.question) || ""), pourquoi: (x && x.pourquoi) || null, champ: (x && x.champ) || null });
   const routineView = r => ({
     type: r.type, jour: r.jour == null ? 1 : +r.jour, active: !!r.active, consentementJournal: !!r.consentement_journal,
@@ -352,7 +356,7 @@
       q(sb.from("expertises").select("slug, nom, quand_consulter, perimetre, version, mis_a_jour_le, marches, angles").eq("statut", "publie").order("nom")),
       q(sb.from("journal").select("id, type, titre, synthese, raisonnement, options, statut, date_decision, revue_le, liens, etat, source, historique, cree_le, maj_le").order("cree_le", { ascending: false }).limit(500)),
       qCompte(sb.from("journal").select("id", { count: "exact", head: true }).eq("statut", "a_relire")),
-      q(sb.from("routines").select(ROUTINE_SELECT).order("type")),
+      q(lireRoutines()),
       q(sb.from("foyer_evenements").select("id, variante_id, type, personne, libelle, date, fin, params, source, created_at, updated_at").order("date").order("created_at")),
       q(sb.from("foyer_variantes").select("id, nom, description, retire, hypotheses, created_at, updated_at").order("created_at")),
       q(sb.from("plans_figes").select("id, cree_le, raison, horizon_mois").order("cree_le", { ascending: false }).limit(60)),

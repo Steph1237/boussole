@@ -10,8 +10,6 @@
     <ul class="pl-faits" id="plFaits"></ul>
   </section>
 
-  <section class="panel pl-systeme" id="plSysteme" aria-labelledby="plSystemeTitre" hidden></section>
-
   <section class="pl-graphe" id="plGrapheBloc" aria-label="Évolution et projection de tes placements">
     <div id="plGraphe"></div>
   </section>
@@ -26,14 +24,18 @@
     </div>
   </section>
 
-  <section class="panel pl-groupes" id="plGroupesBloc" aria-labelledby="plGroupesTitre" hidden>
-    <div class="pl-head">
-      <h2 id="plGroupesTitre">Mes lignes</h2>
-      <div class="pl-mode" id="plMode"></div>
-    </div>
-    <p class="pl-mode-note" id="plModeNote"></p>
-    <div id="plGroupes"></div>
-  </section>
+  <div class="pl-droite">
+    <section class="panel pl-systeme" id="plSysteme" aria-labelledby="plSystemeTitre" hidden></section>
+
+    <section class="panel pl-groupes" id="plGroupesBloc" aria-labelledby="plGroupesTitre" hidden>
+      <div class="pl-head">
+        <h2 id="plGroupesTitre">Mes lignes</h2>
+        <div class="pl-mode" id="plMode"></div>
+      </div>
+      <p class="pl-mode-note" id="plModeNote"></p>
+      <div id="plGroupes"></div>
+    </section>
+  </div>
 
   <section class="pl-suivi" id="plSuivi" aria-label="Suivi des placements" hidden></section>
 

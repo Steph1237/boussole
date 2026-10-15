@@ -47,7 +47,8 @@ test("min_bloc_pct : poche sous le plancher (info)", () => {
 test("price_floor : urgent sous le seuil, à traiter à moins de 10 %, rien au-delà", () => {
   const crit = Rules.evaluate([{ type: "price_floor", position_id: "lqq", price: 100 }], ctx());
   assert.equal(crit.length, 1); assert.equal(crit[0].level, "crit");
-  assert.match(crit[0].text, /seuil de cours touché : c'est le moment de relire ta règle pour cette ligne\. cours/i);
+  assert.match(crit[0].text, /^c'est le moment de relire ta règle pour cette ligne\. cours/i);
+  assert.doesNotMatch(crit[0].text, /seuil de cours touché/i, "le titre dit déjà « touché » : le texte ne le répète pas");
   const warn = Rules.evaluate([{ type: "price_floor", position_id: "lqq", price: 95 }], ctx());
   assert.equal(warn[0].level, "warn");
   assert.equal(Rules.evaluate([{ type: "price_floor", position_id: "lqq", price: 80 }], ctx()).length, 0);

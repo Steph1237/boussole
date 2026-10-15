@@ -93,7 +93,7 @@ test("leviers : le titre nomme une classe et une enveloppe (jamais une ligne), g
   // le cas qui ne vaut pas le coût : mot « ne rien faire », alternative sans coût, phrase sur le levier et non sur la ligne
   const { L: L3 } = vueDe("VC-3");
   const h3 = SV.ligneSuiviHtml(L3("fct"), { U: UI, today: TODAY }), t3 = texte(h3);
-  assert.match(t3, /Ne rien faire est la meilleure option ici/);
+  assert.match(t3, /Ne rien changer à cette classe/);
   assert.match(t3, /Gain \+95 € par an/);
   assert.match(t3, /Coût 2 106 € une fois impôt 1 821 € \+ courtage et écart 285 €/);
   assert.match(t3, /Rentabilisé en 22 ans · ton horizon : 12 ans/);

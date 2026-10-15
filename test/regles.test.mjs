@@ -96,7 +96,7 @@ test("résumé d'une règle : type, règle en français, alertes du moment ; ina
   const calme = RG.resumeRegle({ type: "max_line_pct", pct: 100 }, ctx, Rules);
   assert.deepEqual([calme.etat, calme.ton], ["Rien à signaler", "ok"]);
   const floor = RG.resumeRegle(D.config.rules[3], ctx, Rules);
-  assert.equal(floor.titre, "Seuil de cours (ordre stop)");
+  assert.equal(floor.titre, "Seuil de cours");
   assert.equal(RG.compteRegles([]), "");
   assert.equal(RG.compteRegles([{}, { actif: false }, {}]), "3 règles, dont 1 inactive");
   assert.equal(RG.compteRegles([{}]), "1 règle");
@@ -272,4 +272,10 @@ test("vue (DOM) : sans règle, état vide qui oriente vers Claude ; matelas en c
   assert.equal(v.doc.activeElement, carte);
   assert.deepEqual(v.ecritures, []);
   assert.doesNotMatch(sp(v.root.textContent), VOUVOIEMENT);
+});
+
+test("regles.js : le jour des règles est celui de Paris (00 h 30 le 1er : déjà le nouveau mois), pas celui d'UTC", () => {
+  const src = readFileSync(new URL("../web/src/regles.js", import.meta.url), "utf8");
+  assert.match(src, /const today=\(\)=>\{ try \{ const R=window\.RoutineEtat; if\(R&&R\.aujParis\) return R\.aujParis\(\); return new Intl\.DateTimeFormat\("sv-SE",\{timeZone:"Europe\/Paris"\}\)\.format\(new Date\(\)\);/);
+  assert.doesNotMatch(src, /const today=\(\)=>new Date\(\)\.toISOString/);
 });
