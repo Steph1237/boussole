@@ -389,7 +389,7 @@ test("mcp : chargerDonnees lit la banque (interrupteur, comptes, banque_mois par
   assert.match(lb, /from\("banque_mois"\)\.select\(\s*avecCompte \? "mois, categorie, entrees, sorties, compte_id" : "mois, categorie, entrees, sorties"/);
   assert.match(lb, /42703/, "colonne compte_id absente (migration 0025 non appliquée) : relecture sans elle");
   assert.match(code, /type Donnees = \{[^}]*banque\?: any/);
-  assert.match(code, /budgetReel\(c\.banque \?\? c\.d\.banque, c\.ref, 3, c\.historique \?\? c\.d\.historique\)/, "bonnesPratiques : banque explicite, sinon celle des données chargées");
+  assert.match(code, /budgetReel\(c\.banque \?\? c\.d\.banque, c\.ref, 3, c\.relevesBancaires \?\? c\.d\.relevesBancaires \?\? \(c\.banque \?\? c\.d\.banque\)\?\.historique\)/, "bonnesPratiques : banque explicite, sinon celle des données chargées");
   assert.match(outil("get_overview"), /bonnes_pratiques: bonnesPratiques\(\{ d: donnees, scope: "foyer", objectifs, risque: profil\.risque \?\? null, classes: profil\.classes, ref, banque: donnees\.banque \}\)/);
 });
 

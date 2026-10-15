@@ -1018,10 +1018,10 @@ def("calc", function (module, exports, require) {
     return m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
   }
   /** Dépenses mensuelles de référence : budget réel (foyer seulement : les comptes ne sont pas répartis par personne) s'il existe,
-      sinon budget prévu. ctx = { banque, historique (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
+      sinon budget prévu. ctx = { banque, relevesBancaires (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
   function depensesMensuelles(ctx) {
     const c = ctx || {}, sc = c.scope || "foyer";
-    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.historique) : null;
+    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.relevesBancaires) : null;
     if (r && r.depenses > 0) return { montant: r.depenses, source: "reel", reel: r };
     const p = depensesPrevues(c.budget, c.profil, c.config, sc);
     return p > 0 ? { montant: p, source: "prevu" } : null;
@@ -1086,7 +1086,7 @@ def("calc", function (module, exports, require) {
     const s = S || {}, jour = auj == null ? new Date() : auj;
     const courants = (s.positions || []).filter(p => p && counted(p) && estCourant(p));
     if (!courants.length) return null;
-    const d = depensesMensuelles({ banque: s.banque, historique: s.historique, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
+    const d = depensesMensuelles({ banque: s.banque, relevesBancaires: s.relevesBancaires, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
     if (!d) return null;
     const seuil = SEUIL_DORT * d.montant, m0 = moisIso(jour);
     const blocCourant = p => RE_COURANT.test(sansAccent(p.bloc));
@@ -2952,7 +2952,7 @@ def("projection-donnees", function (module, exports, require) {
 /* Données du moteur de projection (PROJ) : lecture des repères avec suivi des manques, hypothèses par classe d'actifs, compartiments
    (enveloppe × titulaire × classe) construits depuis les positions, capacité d'épargne de départ (constatée, prévue, programmée),
    crédits en cours. Pur, sans DOM. Global ProjectionDonnees ; copié tel quel dans le connecteur (npm run gen).
-   Entrée : data = { today, positions, instruments, config, profil, credits, biens, budget, banque, historique?, objectifs, foyer, reperes, classes?, calendrier? }. */
+   Entrée : data = { today, positions, instruments, config, profil, credits, biens, budget, banque, relevesBancaires?, objectifs, foyer, reperes, classes?, calendrier? }. */
 (function (root, factory) {
   const noeud = typeof module === "object" && module.exports;
   const dep = (global, chemin) => (noeud ? require(chemin) : root[global]);
@@ -3091,9 +3091,9 @@ def("projection-donnees", function (module, exports, require) {
     const mentions = [];
     let constatee = null, detail = null;
     // HIS2 : la série fusionnée (Powens et relevés importés, Calc.moisBancaires) nourrit la capacité constatée, même sans banque connectée
-    if (sc === "foyer" && (d.banque || liste(objet(d.historique).releves).length)) {
-      let r = Calc.budgetReel(d.banque, today, 12, d.historique), courte = false;
-      if (!(r && r.n >= 6)) { r = Calc.budgetReel(d.banque, today, 3, d.historique); courte = !!r; }
+    if (sc === "foyer" && (d.banque || liste(objet(d.relevesBancaires).releves).length)) {
+      let r = Calc.budgetReel(d.banque, today, 12, d.relevesBancaires), courte = false;
+      if (!(r && r.n >= 6)) { r = Calc.budgetReel(d.banque, today, 3, d.relevesBancaires); courte = !!r; }
       if (r) {
         constatee = r.capacite;
         detail = { montant: r.capacite, mois: r.n, revenus: r.revenus, depenses: r.depenses, periode: Calc.periodeReel(r), courte, du: r.du, au: r.au };
@@ -3321,7 +3321,7 @@ def("projection-donnees", function (module, exports, require) {
   function depuisEtat(S, today) {
     const s = objet(S), pr = objet(s.profil);
     return { today, positions: liste(s.positions), instruments: [], config: objet(s.config), profil: pr, credits: liste(pr.credits), biens: liste(pr.biens), budget: s.budget || { lignes: [] },
-      banque: s.banque || null, historique: s.historique || null, objectifs: liste(s.objectifs), foyer: { evenements: liste(objet(s.foyer).evenements), variantes: liste(objet(s.foyer).variantes) },
+      banque: s.banque || null, relevesBancaires: s.relevesBancaires || null, objectifs: liste(s.objectifs), foyer: { evenements: liste(objet(s.foyer).evenements), variantes: liste(objet(s.foyer).variantes) },
       reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes), historique: historiquePourRetro(s.snapshots, s.tx) };
   }
 

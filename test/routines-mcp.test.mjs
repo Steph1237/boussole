@@ -433,7 +433,7 @@ test("demarrer_routine : 20 alertes au plus, les plus graves puis les plus réce
 test("SOURCES : catalogue des établissements (Linxea, Revolut, Binance, génériques), consignes courtes au tutoiement", { skip: SANS_STRIP }, () => {
   const R = chargerRoutines();
   const S = R.SOURCES;
-  assert.deepEqual(J(Object.keys(S)).sort(), ["assurance_vie", "banque", "binance", "crypto", "linxea", "per", "revolut"]);
+  assert.deepEqual(J(Object.keys(S)).sort(), ["assurance_vie", "banque", "binance", "crypto", "linxea", "n26", "per", "revolut"]);
   for (const [cle, s] of Object.entries(S)) {
     assert.ok(s.nom && s.consigne, cle + " : nom et consigne");
     assert.ok([...s.consigne].length <= 300, cle + " : consigne de 300 caractères au plus (tient dans pourquoi)");

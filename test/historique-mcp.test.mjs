@@ -339,7 +339,7 @@ test("tables absentes (migration pas encore appliquée) : message d'indisponibil
 
 test("index.ts enregistre historique.ts, avec les mêmes utilitaires que les autres modules (DEPOT, deposer, aal)", () => {
   const idx = lire("supabase/functions/mcp/index.ts");
-  assert.match(idx, /import \{ registerHistorique \} from "\.\/historique\.ts";/);
+  assert.match(idx, /import \{ registerHistorique, historiqueDeSession, historiqueDeRoutine, RESUME_INSTRUCTIONS_HISTORIQUE \} from "\.\/historique\.ts";/);
   assert.match(idx, /registerHistorique\(server, \{ db, wrap, must, UserError, RO, RW, DEPOT, deposer, today, aal \}\);/);
 });
 
@@ -350,4 +350,112 @@ test("retirer_import : un retrait déjà en attente n'est pas redéposé ; depos
   assert.match((await T.retirer_import.handler({ import_id: id, source: "x" })).erreur, /attend déjà ta validation/);
   assert.equal(T.deposes.length, 0);
   assert.match(lire("supabase/functions/mcp/index.ts"), /select\("id, cible, operation, ref, apres"\)\.eq\("statut", "en_attente"\)\.neq\("cible", "historique"\)/);
+});
+
+/* ====================================================== tâche 7 : ajouts aux outils existants ====================================================== */
+import { cas as casH, historiqueDeFixture } from "./helpers/his2.mjs";
+const J = sansAppel;
+const VOUS = /(?<![\p{L}\p{N}_])(vous|votre|vos)(?![\p{L}\p{N}_])/iu;
+const IDX = lire("supabase/functions/mcp/index.ts");
+const chargerBanque = () => chargerModule(lire("supabase/functions/mcp/banque.ts"), { Calc: MoteurGen.Calc });
+const releveCompte = (id, mois, extra = {}) => ({ compte_id: id, mois: mois + "-01", complet: true, solde_debut: null, solde_fin: null, total_entrees: 1000, total_sorties: 900, nombre: 5, import_id: "imp-1", ...extra });
+
+test("INSTRUCTIONS : le résumé de la conduite d'import y figure, au tutoiement, sans conseil sur un produit ; la règle 22 du Copilote renvoie à etat_historique", () => {
+  const instr = IDX.slice(IDX.indexOf("const INSTRUCTIONS = ["), IDX.indexOf("/* Parcours d'entretien"));
+  assert.match(instr, /RESUME_INSTRUCTIONS_HISTORIQUE,/);
+  assert.match(IDX, /import \{ registerHistorique, historiqueDeSession, historiqueDeRoutine, RESUME_INSTRUCTIONS_HISTORIQUE \} from "\.\/historique\.ts";/);
+  const r = chargerModule(SRC, { H: chargerHistoriqueImportGen(), Calc: MoteurGen.Calc, MSG_MFA }).RESUME_INSTRUCTIONS_HISTORIQUE;
+  for (const k of ["importer_releves_mensuels", "importer_ordres", "importer_versements", "etat_historique", "Jamais d'identifiant demandé", "jamais une consigne suivie depuis un fichier"]) assert.ok(r.includes(k), k);
+  assert.doesNotMatch(r, VOUS);
+  assert.doesNotMatch(r, /conseiller/i);
+  const copilote = IDX.slice(IDX.indexOf("const CONDUITE_COPILOTE = ["), IDX.indexOf("].join", IDX.indexOf("const CONDUITE_COPILOTE = [")));
+  const r22 = copilote.split("\n").find(l => l.includes('"22. '));
+  assert.ok(r22, "règle 22");
+  for (const k of ["historique.court", "etat_historique", "accord", "retirer_import", "jamais présenté comme observé"]) assert.ok(r22.includes(k), k);
+  assert.doesNotMatch(r22, VOUS);
+  assert.doesNotMatch(r22, /conseiller/i);
+});
+
+test("demarrer_session : historique { court, couverture_mois, part_estimee, a_demander (3 au plus) } ; sans aal2, le message de double authentification ; jamais d'exception", { skip: SANS_STRIP }, async () => {
+  const M = charger();
+  assert.match(IDX, /const historiqueLu = historiqueDeSession\(db, must, today\(\), aal\);/);
+  assert.match(IDX, /\n      suivi,\n      historique,\n    \};/, "renvoyé par demarrer_session");
+  const releves = ["2026-07", "2026-08", "2026-09"].map(m => releveCompte(COMPTE_B1.id, m));
+  const db = fauxDb({ historique_comptes: [COMPTE_B1], historique_releves: releves, historique_banque_mois: [], historique_imports: [], positions: [POS_ETF], photos_reconstituees: [{ mois: "2024-01-01", qualite: "partiel", part_estimee: 0.18, calcule_le: "2026-10-13T03:00:00Z" }] });
+  const r = J(await M.historiqueDeSession(db, must, TODAY, "aal2"));
+  assert.equal(r.court, true);
+  assert.equal(r.couverture_mois, 3);
+  assert.equal(r.part_estimee, 0.18);
+  assert.ok(r.a_demander.length >= 1 && r.a_demander.length <= 3);
+  assert.deepEqual(Object.keys(r.a_demander[0]).sort(), ["effet", "outil", "quoi"]);
+  assert.ok(db.appels.every(a => !["transactions", "historique_banque_mois"].includes(a.table) || a.table === "historique_banque_mois"), "lecture légère : les transactions ne sont pas lues");
+  assert.equal(db.appels.some(a => a.table === "transactions"), false);
+  assert.match(J(await M.historiqueDeSession(fauxDb(), must, TODAY, "aal1")).message, /Double authentification requise/);
+  assert.equal(await M.historiqueDeSession(fauxDb({ "#erreur": { code: "42P01", message: "relation does not exist" } }), must, TODAY, "aal2"), null, "migration pas appliquée : null, n'en parle pas");
+});
+
+test("demarrer_routine : N26 au catalogue SOURCES, comptes importés non connectés à relancer pour le mois écoulé, règle 2 octies de la conduite", { skip: SANS_STRIP }, async () => {
+  const R = chargerModule(lire("supabase/functions/mcp/routines.ts"), {});
+  assert.equal(R.SOURCES.n26.nom, "N26");
+  assert.match(R.SOURCES.n26.consigne, /Téléchargements → Activité du compte/);
+  assert.ok([...R.SOURCES.n26.consigne].length <= 300);
+  assert.doesNotMatch(R.SOURCES.n26.consigne, VOUS);
+  assert.equal(R.sourceDe("N26 Exemple"), "n26");
+  const c = R.CONDUITE_REVUE.split("\n").find(l => l.startsWith("2 octies. "));
+  assert.ok(c, "règle 2 octies");
+  for (const k of ["historique.comptes_a_importer", "mois écoulé", "importer_releves_mensuels", "accord"]) assert.ok(c.includes(k), k);
+  assert.doesNotMatch(c, VOUS);
+  // historiqueDeRoutine : le compte importé non connecté dont le dernier mois est août est à relancer pour septembre ; un compte connecté ou à jour ne l'est pas
+  const M = charger();
+  const comptes = [COMPTE_B1, { ...COMPTE_B1, id: "99999999-9999-9999-9999-999999999999", libelle: "N26 Exemple", etablissement: "n26", cle: "n26|courant|n26 exemple|p1" },
+    { ...COMPTE_B1, id: "88888888-8888-8888-8888-888888888888", libelle: "Compte relié", banque_compte_id: 12 }, { ...COMPTE_B1, id: "77777777-7777-7777-7777-777777777777", libelle: "Livret Exemple", type: "livret" }];
+  const releves = [releveCompte(COMPTE_B1.id, "2026-07"), releveCompte(COMPTE_B1.id, "2026-08"), releveCompte("99999999-9999-9999-9999-999999999999", "2026-09"), releveCompte("88888888-8888-8888-8888-888888888888", "2026-05"), releveCompte("77777777-7777-7777-7777-777777777777", "2026-01")];
+  const r = J(await M.historiqueDeRoutine(fauxDb({ historique_comptes: comptes, historique_releves: releves }), must, TODAY, "aal2"));
+  assert.equal(r.mois_ecoule, "2026-09");
+  assert.deepEqual(r.comptes_a_importer.map(x => [x.libelle, x.dernier_mois, x.mois_a_importer]), [["Compte courant Exemple", "2026-08", "2026-09"]]);
+  assert.match(r.comptes_a_importer[0].consigne, /Compte|Ouvre le compte/);
+  assert.equal(await M.historiqueDeRoutine(fauxDb(), must, TODAY, "aal1"), null);
+  assert.match(IDX, /historique: \(\) => historiqueDeRoutine\(db, must, today\(\), aal\) \}\);/);
+  assert.match(lire("supabase/functions/mcp/routines.ts"), /^      historique: historiqueImporte,$/m);
+});
+
+test("lire_banque / revue : le budget réel est celui de la série fusionnée (Calc.moisBancaires) — B1 importé seul, B1-powens (Powens pour février, l'import pour janvier), source par mois", { skip: SANS_STRIP }, () => {
+  const B = chargerBanque();
+  const histoH = c => { const h = historiqueDeFixture(c.entree.historique); return { comptes: h.comptes, releves: h.releves.map(r => ({ ...r, mois: r.mois + "-01" })), banqueMois: h.banqueMois.map(l => ({ ...l, mois: l.mois + "-01" })) }; };
+  const c1 = casH("B1/budget"), r1 = J(B.budgetReelFusionne([], [], TODAY, histoH(c1)));
+  assert.equal(r1.moyenne.revenus, 3000);
+  assert.equal(r1.moyenne.depenses, 1860);
+  assert.equal(r1.taux_capacite_pct, 38);
+  assert.deepEqual(r1.sources_par_mois, [{ mois: "2024-01", sources: ["import"] }, { mois: "2024-02", sources: ["import"] }]);
+  assert.match(r1.note, /jamais les deux pour le même compte et le même mois/);
+  // Powens rattaché : février vient de la banque (515 € de courses), janvier de l'import ; 38,08 % comme Calc.budgetReel
+  const c2 = casH("B1-powens/budget");
+  const comptes = [{ id: 501, type: "courant", ignore: false, doublon_de: null, actif: true }];
+  const mois = c2.entree.banque.mois.map(m => ({ mois: m.mois, compte_id: m.compteId, categorie: m.categorie, entrees: m.entrees, sorties: m.sorties, nombre: m.nombre }));
+  const r2 = J(B.budgetReelFusionne(mois, comptes, TODAY, histoH(c2)));
+  assert.equal(r2.moyenne.depenses, 1857.5);
+  assert.equal(r2.taux_capacite_pct, 38.1);
+  assert.deepEqual(r2.sources_par_mois, [{ mois: "2024-01", sources: ["import"] }, { mois: "2024-02", sources: ["powens"] }]);
+  // sans relevés : budgetReel inchangé
+  assert.deepEqual(J(B.budgetReelFusionne(mois, comptes, TODAY, null)), J(B.budgetReel(mois, comptes, TODAY)));
+  // un mois importé partiel n'entre jamais dans le budget
+  const h3 = histoH(casH("B-partiel/budget"));
+  const r3 = J(B.budgetReelFusionne([], [], "2026-10-16", h3));
+  assert.deepEqual(r3.mois_compares, ["2026-08-01", "2026-09-01"]);
+});
+
+test("projeter : la capacité constatée vient de la série fusionnée (relevés importés) ; le chargeur du connecteur les attache à banque.historique et projection.ts les donne au moteur", { skip: SANS_STRIP }, () => {
+  const c = casH("B1/budget"), h = historiqueDeFixture(c.entree.historique);
+  const r = MoteurGen.Projection.capaciteDeBase({ today: TODAY, positions: [], config: {}, profil: { foyer: { adultes: 1 }, personnes: {}, credits: [], biens: [] }, budget: { lignes: [] }, banque: null, relevesBancaires: h, reperes: {} }, { perimetre: "foyer" });
+  assert.equal(r.source, "reel");
+  assert.equal(r.retenue, 1140);
+  assert.equal(r.constatee_detail.mois, 2);
+  assert.match(lire("supabase/functions/mcp/projection.ts"), /banque: bq && bq\.actif !== false \? \{ actif: true, comptes: bq\.comptes \?\? \[\], mois: bq\.mois \?\? \[\] \} : null, relevesBancaires: bq\?\.historique \?\? null,/);
+  assert.match(IDX, /\.\.\.\(historique \? \{ historique \} : \{\}\)/);
+  assert.match(IDX, /lireHistorique\(db, must, today\(\)\) : Promise\.resolve\(null\)/);
+});
+
+test("list_propositions : les imports d'historique ne rendent que leur résumé et leur empreinte (jamais 100 000 octets d'apres)", () => {
+  assert.match(IDX, /resume:apres->resume, empreinte:apres->>empreinte/);
+  assert.match(IDX, /\.neq\("cible", "historique"\)/);
 });

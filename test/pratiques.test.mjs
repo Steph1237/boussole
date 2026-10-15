@@ -453,6 +453,6 @@ test("appels de Pratiques.evaluer : banque transmise partout (Santé, Aujourd'hu
   // Actions et Santé gardent S.banque à la mise à jour ; Actions la reprend de l'état courant pour les autres appelants (Bilan)
   const src = readFileSync("web/src/actions.js", "utf8");
   assert.match(src, /banque:snap\.banque\|\|null/, "update garde S.banque");
-  assert.match(readFileSync("web/src/sante.js", "utf8"), /classes:snap\.classes\|\|\{\},banque:snap\.banque\|\|null,historique:snap\.historique\|\|null\}/, "Santé garde S.banque");
+  assert.match(readFileSync("web/src/sante.js", "utf8"), /classes:snap\.classes\|\|\{\},banque:snap\.banque\|\|null,relevesBancaires:snap\.relevesBancaires\|\|null\}/, "Santé garde S.banque");
   assert.match(src, /\["objectifs","risque","classes","banque"\]/, "completer : banque de l'état courant pour les autres appelants");
 });

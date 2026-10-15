@@ -6,7 +6,7 @@
                                      criteres: [...], complet, couts (« ce qui te coûte le plus », Plan.coutsPrincipaux) }
      ctx  = { positions, profil, config, budget, objectifs, scope, risque (Risque.evaluer : { profil: id } ou null), today,
               classes? (surcharges poche → classe, transmises à Risque.allocationReelle et Marche.classeRisque),
-              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel), historique? (S.historique : relevés importés, HIS2) }
+              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel), relevesBancaires? (S.relevesBancaires : relevés importés, HIS2) }
      deps = { Risque?, Marche? } : modules injectés (null = absent) ; par défaut risque.js / marche.js s'ils sont chargés.
      Sans Risque : adéquation « à compléter » (calcul indisponible), spéculatif au plafond par défaut de 5 %.
      Sans Marche : crypto et levier repérés par la classe de la poche et le libellé (« 2x », « levier »).
@@ -809,7 +809,7 @@
     const totaux = b && !Array.isArray(b) && typeof b.depenses === "number" ? b : Plan.budgetTotaux(lignes, c.profil, scope);
     const mat = Calc.matelas(c.config);
     const prevu = totaux.depensesLignes > 0 ? totaux.depenses : mat && mat.mode === "months" && mat.depenses > 0 ? mat.depenses : 0;
-    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today), undefined, c.historique) : null;
+    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today), undefined, c.relevesBancaires) : null;
     const periode = reel ? Calc.periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
     const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
     const deja = Plan.affecterDeja(c.objectifs || [], toutes, scope);

@@ -194,21 +194,21 @@ export type DonneesHistorique = {
 };
 
 /** Tout ce que lit etat_historique (sous la RLS de l'utilisateur ; la banque est facultative). */
-export async function lireDonneesHistorique(h: Deps, auj: string): Promise<DonneesHistorique> {
+export async function lireDonneesHistorique(h: Deps, auj: string, o: { legere?: boolean } = {}): Promise<DonneesHistorique> {
   const { db, must } = h;
   const [comptes, releves, lignesCarte, imports, derniers] = await Promise.all([
     lirePages(h, "historique_comptes", (q) => q.select("id, libelle, etablissement, type, titulaire, banque_compte_id, position_id, cle").order("cree_le")),
     lirePages(h, "historique_releves", (q) => q.select("compte_id, mois, complet, solde_debut, solde_fin, total_entrees, total_sorties, nombre, import_id").order("mois")),
     lirePages(h, "historique_banque_mois", (q) => q.select("compte_id, mois, categorie, sous_categorie, entrees, sorties, nombre").eq("sous_categorie", "releve_carte")),
     lirePages(h, "historique_imports", (q) => q.select("id, type, etablissement, compte_id, enveloppe, periode_du, periode_au, importe_le, depuis:resume->>depuis_ouverture").order("importe_le", { ascending: false }), 1),
-    (async () => { const r = await db.from("historique_imports").select("id, type, etablissement, compte_id, enveloppe, periode_du, periode_au, importe_le, resume").order("importe_le", { ascending: false }).limit(20); return (must("historique_imports", r) as any[]) ?? []; })(),
+    o.legere ? Promise.resolve([] as any[]) : (async () => { const r = await db.from("historique_imports").select("id, type, etablissement, compte_id, enveloppe, periode_du, periode_au, importe_le, resume").order("importe_le", { ascending: false }).limit(20); return (must("historique_imports", r) as any[]) ?? []; })(),
   ]);
   const [banqueComptes, banqueConnexions, banqueMois, positions, transactions, photos] = await Promise.all([
     sansBloquer("banque_comptes", () => lirePages(h, "banque_comptes", (q) => q.select("id, connexion_id, nom, type, ignore, doublon_de, actif"), 5), [] as any[]),
     sansBloquer("banque_connexions", () => lirePages(h, "banque_connexions", (q) => q.select("id, etablissement"), 5), [] as any[]),
     sansBloquer("banque_mois", () => lirePages(h, "banque_mois", (q) => q.select("mois, compte_id").order("mois"), 20), [] as any[]),
     lirePages(h, "positions", (q) => q.select("id, name, isin, envelope, bloc, owner, mode, qty, value, status").order("created_at"), 10),
-    lirePages(h, "transactions", (q) => q.select("id, position_id, date, type, qty, amount, enveloppe, source, doublon_de, import_id").order("date"), 60),
+    o.legere ? Promise.resolve([] as any[]) : lirePages(h, "transactions", (q) => q.select("id, position_id, date, type, qty, amount, enveloppe, source, doublon_de, import_id").order("date"), 60),
     sansBloquer("photos_reconstituees", () => lirePages(h, "photos_reconstituees", (q) => q.select("mois, qualite, part_estimee, calcule_le").order("mois"), 1), [] as any[]),
   ]);
   return { auj, comptes, releves, lignesCarte, imports, derniers, banqueComptes, banqueConnexions, banqueMois, positions, transactions, photos };
@@ -282,7 +282,7 @@ export function vueHistorique(d: DonneesHistorique, o: { detail?: string; compte
     const imp = d.imports.filter((i: any) => i.type !== "releves" && i.enveloppe && String(i.enveloppe).trim().toLowerCase() === enveloppe.toLowerCase());
     const dates = tx.map((t: any) => jour(t.date)!).sort();
     placements.push({
-      enveloppe, titulaire: titulaire || null, importe: tx.some((t: any) => t.import_id != null),
+      enveloppe, titulaire: titulaire || null, importe: tx.some((t: any) => t.import_id != null) || imp.length > 0,
       premier_mouvement: dates[0] ?? null,
       mouvements: { import: tx.filter((t: any) => t.import_id != null).length, nuit: tx.filter((t: any) => t.import_id == null && t.source === "nightly").length, saisie: tx.filter((t: any) => t.import_id == null && t.source !== "nightly").length },
       depuis_ouverture: imp.some((i: any) => String(i.depuis) === "true"),
@@ -358,6 +358,49 @@ export function vueHistorique(d: DonneesHistorique, o: { detail?: string; compte
     ordre_de_preference: ORDRE_DE_PREFERENCE,
     conduite: CONDUITE_HISTORIQUE,
   };
+}
+
+/* ---------- ajouts à demarrer_session et à demarrer_routine ---------- */
+/** historique de demarrer_session : couverture des comptes en mois, part estimée des photos reconstituées, et au plus 3 demandes quand l'historique est court (moins de
+    12 mois de comptes courants, ou des enveloppes sans ordres importés). Ne lève jamais : null si une lecture échoue (migration pas appliquée comprise). */
+export async function historiqueDeSession(db: any, must: any, auj: string, aal?: string) {
+  try {
+    if (aal !== "aal2") return { mfa_requise: true, message: MSG_MFA };
+    const h = { db, must, UserError: Error } as unknown as Deps;
+    const d = await lireDonneesHistorique(h, auj, { legere: true });
+    const v = vueHistorique(d, {});
+    const courants = v.couverture.comptes.filter((c: any) => c.type === "courant" || c.type === "joint");
+    const couverture_mois = courants.length ? Math.max(...courants.map((c: any) => c.mois.importes + c.mois.powens)) : 0;
+    const derniere = d.photos.length ? d.photos.slice().sort((a: any, b: any) => cleMoisTri(String(a.mois), String(b.mois))).pop() : null;
+    const court = couverture_mois < 12 || v.a_demander.some((x: any) => x.outil !== "importer_releves_mensuels");
+    return { court, couverture_mois, part_estimee: derniere ? r2(+derniere.part_estimee) : null,
+      a_demander: court ? v.a_demander.slice(0, 3).map((x: any) => ({ quoi: x.quoi, outil: x.outil, effet: x.effet })) : [], detail: "etat_historique" };
+  } catch (e) {
+    console.warn("historique (session) :", msg(e));
+    return null;
+  }
+}
+
+/** historique de demarrer_routine : les comptes dont l'utilisateur dépose lui-même les relevés (importés, non rattachés à une banque connectée) et dont le mois écoulé
+    manque, avec la consigne de leur établissement. Ne lève jamais : null si une lecture échoue. */
+export async function historiqueDeRoutine(db: any, must: any, auj: string, aal?: string) {
+  try {
+    if (aal !== "aal2") return null;
+    const h = { db, must, UserError: Error } as unknown as Deps;
+    const [comptes, releves] = await Promise.all([
+      lirePages(h, "historique_comptes", (q) => q.select("id, libelle, etablissement, type, banque_compte_id")),
+      lirePages(h, "historique_releves", (q) => q.select("compte_id, mois").order("mois")),
+    ]);
+    const [a, m] = auj.split("-").map(Number), t = a * 12 + (m - 1) - 1;
+    const ecoule = Math.floor(t / 12) + "-" + String(t % 12 + 1).padStart(2, "0");
+    const dernier = new Map<string, string>();
+    for (const r of releves) { const mm = moisDe(r.mois)!; if (!dernier.has(r.compte_id) || mm > dernier.get(r.compte_id)!) dernier.set(r.compte_id, mm); }
+    return { mois_ecoule: ecoule, comptes_a_importer: comptes.filter((c: any) => (c.type === "courant" || c.type === "joint") && c.banque_compte_id == null && (dernier.get(c.id) ?? "0000-00") < ecoule)
+      .map((c: any) => ({ id: c.id, libelle: c.libelle, etablissement: c.etablissement, dernier_mois: dernier.get(c.id) ?? null, mois_a_importer: ecoule, consigne: consigneDe(c.etablissement, c.type).consigne })) };
+  } catch (e) {
+    console.warn("historique (routine) :", msg(e));
+    return null;
+  }
 }
 
 /* ---------- contexte d'un import (lectures ciblées) ---------- */

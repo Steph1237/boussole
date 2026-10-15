@@ -1018,10 +1018,10 @@ def("calc", function (module, exports, require) {
     return m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
   }
   /** Dépenses mensuelles de référence : budget réel (foyer seulement : les comptes ne sont pas répartis par personne) s'il existe,
-      sinon budget prévu. ctx = { banque, historique (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
+      sinon budget prévu. ctx = { banque, relevesBancaires (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
   function depensesMensuelles(ctx) {
     const c = ctx || {}, sc = c.scope || "foyer";
-    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.historique) : null;
+    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.relevesBancaires) : null;
     if (r && r.depenses > 0) return { montant: r.depenses, source: "reel", reel: r };
     const p = depensesPrevues(c.budget, c.profil, c.config, sc);
     return p > 0 ? { montant: p, source: "prevu" } : null;
@@ -1086,7 +1086,7 @@ def("calc", function (module, exports, require) {
     const s = S || {}, jour = auj == null ? new Date() : auj;
     const courants = (s.positions || []).filter(p => p && counted(p) && estCourant(p));
     if (!courants.length) return null;
-    const d = depensesMensuelles({ banque: s.banque, historique: s.historique, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
+    const d = depensesMensuelles({ banque: s.banque, relevesBancaires: s.relevesBancaires, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
     if (!d) return null;
     const seuil = SEUIL_DORT * d.montant, m0 = moisIso(jour);
     const blocCourant = p => RE_COURANT.test(sansAccent(p.bloc));
@@ -2824,7 +2824,7 @@ def("pratiques", function (module, exports, require) {
                                      criteres: [...], complet, couts (« ce qui te coûte le plus », Plan.coutsPrincipaux) }
      ctx  = { positions, profil, config, budget, objectifs, scope, risque (Risque.evaluer : { profil: id } ou null), today,
               classes? (surcharges poche → classe, transmises à Risque.allocationReelle et Marche.classeRisque),
-              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel), historique? (S.historique : relevés importés, HIS2) }
+              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel), relevesBancaires? (S.relevesBancaires : relevés importés, HIS2) }
      deps = { Risque?, Marche? } : modules injectés (null = absent) ; par défaut risque.js / marche.js s'ils sont chargés.
      Sans Risque : adéquation « à compléter » (calcul indisponible), spéculatif au plafond par défaut de 5 %.
      Sans Marche : crypto et levier repérés par la classe de la poche et le libellé (« 2x », « levier »).
@@ -3627,7 +3627,7 @@ def("pratiques", function (module, exports, require) {
     const totaux = b && !Array.isArray(b) && typeof b.depenses === "number" ? b : Plan.budgetTotaux(lignes, c.profil, scope);
     const mat = Calc.matelas(c.config);
     const prevu = totaux.depensesLignes > 0 ? totaux.depenses : mat && mat.mode === "months" && mat.depenses > 0 ? mat.depenses : 0;
-    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today), undefined, c.historique) : null;
+    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today), undefined, c.relevesBancaires) : null;
     const periode = reel ? Calc.periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
     const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
     const deja = Plan.affecterDeja(c.objectifs || [], toutes, scope);
@@ -4796,7 +4796,7 @@ def("suivi", function (module, exports, require) {
   /** Matelas (mois de dépenses) et coût total des supports (% par an) d'après les bonnes pratiques de l'app, pour les habitudes ; {} si le calcul échoue. */
   function santeDe(s, today) {
     try {
-      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, today: new Date(today + "T12:00:00Z") });
+      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, relevesBancaires: s.relevesBancaires || null, today: new Date(today + "T12:00:00Z") });
       const m = r.criteres.find(c => c.cle === "matelas"), f = r.criteres.find(c => c.cle === "frais");
       return { matelas_mois: m && !m.aCompleter && connu(m.valeur) ? +m.valeur : null, frais_pct: f && !f.aCompleter && f.frais && connu(f.frais.pct) ? +f.frais.pct : null };
     } catch (e) { return {}; }

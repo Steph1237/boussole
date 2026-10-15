@@ -340,10 +340,10 @@
     return m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
   }
   /** Dépenses mensuelles de référence : budget réel (foyer seulement : les comptes ne sont pas répartis par personne) s'il existe,
-      sinon budget prévu. ctx = { banque, historique (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
+      sinon budget prévu. ctx = { banque, relevesBancaires (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
   function depensesMensuelles(ctx) {
     const c = ctx || {}, sc = c.scope || "foyer";
-    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.historique) : null;
+    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.relevesBancaires) : null;
     if (r && r.depenses > 0) return { montant: r.depenses, source: "reel", reel: r };
     const p = depensesPrevues(c.budget, c.profil, c.config, sc);
     return p > 0 ? { montant: p, source: "prevu" } : null;
@@ -408,7 +408,7 @@
     const s = S || {}, jour = auj == null ? new Date() : auj;
     const courants = (s.positions || []).filter(p => p && counted(p) && estCourant(p));
     if (!courants.length) return null;
-    const d = depensesMensuelles({ banque: s.banque, historique: s.historique, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
+    const d = depensesMensuelles({ banque: s.banque, relevesBancaires: s.relevesBancaires, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
     if (!d) return null;
     const seuil = SEUIL_DORT * d.montant, m0 = moisIso(jour);
     const blocCourant = p => RE_COURANT.test(sansAccent(p.bloc));

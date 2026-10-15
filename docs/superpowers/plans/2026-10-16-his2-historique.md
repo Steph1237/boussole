@@ -131,9 +131,9 @@ Phases livrables séparément : **phase 1** (T0 à T9 : on peut importer, valide
 - **Dépend de** : T2, T4.
 
 ### Tâche 7 — Conduite, catalogue et outils existants (Sonnet, low, M)
-- [ ] `CONDUITE_HISTORIQUE` et `SOURCES_HISTORIQUE` (textes de T0) ; résumé dans `INSTRUCTIONS` ; N26 ajouté à `SOURCES` (`routines.ts`).
-- [ ] `demarrer_session` (`historique`), `demarrer_routine` (import du mois écoulé pour les comptes importés non connectés), `lire_banque` (budget réel par `moisBancaires`, source par mois), `projeter` (série fusionnée).
-- [ ] Tests de la conduite renvoyée et des ajouts.
+- [x] `CONDUITE_HISTORIQUE` et `SOURCES_HISTORIQUE` (textes de T0, copiés à l'identique en T6, test d'égalité avec `his2-conduite.json`) ; résumé dans `INSTRUCTIONS` ; règle 22 de la conduite du Copilote ; N26 ajouté à `SOURCES` (`routines.ts`).
+- [x] `demarrer_session` (`historique` : `court`, `couverture_mois`, `part_estimee`, `a_demander` 3 au plus), `demarrer_routine` (`historique.comptes_a_importer` : import du mois écoulé pour les comptes importés non connectés, règle 2 octies), `lire_banque` et la revue (budget réel par `Calc.moisBancaires` avec `sources_par_mois` ; relevés importés seuls quand la banque connectée est éteinte), `projeter` et les bonnes pratiques (série fusionnée : `lireBanqueCalcul` attache `banque.historique`, `lireDonneesProjection` donne `relevesBancaires` au moteur). Le champ des données du moteur s'appelle `relevesBancaires` (et non `historique`, déjà pris par le rétro-contrôle des photos) ; il remplace `S.historique` de la tâche 5. `list_propositions` ne rend que le résumé et l'empreinte d'un import d'historique.
+- [x] Tests de la conduite renvoyée et des ajouts (`test/historique-mcp.test.mjs`, `test/banque-mcp.test.mjs`, `test/routines-mcp.test.mjs`).
 - **Dépend de** : T5, T6.
 
 ### Tâche 8 — Stores, démo et « À valider » (Sonnet, medium, M)
