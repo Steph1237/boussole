@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { miniDom } from "./helpers/mini-dom.mjs";
+import { donnees } from "./helpers/graphe-donnees.mjs";
 
 const require = createRequire(import.meta.url);
 const js = readFileSync("web/src/aujourdhui.js", "utf8");
@@ -62,8 +63,10 @@ test("aujourdhui.js : aucune requête DOM globale hors racine du module ; $ scop
 });
 
 test("aujourdhui.js : les fonctions pures ne dépendent ni de UI ni du DOM (chargées sans window)", () => {
-  for (const f of ["boite", "urlClaude", "indicateurs", "frise", "objectifs", "evolution", "echeances", "cartes", "detail", "boiteHtml"]) assert.equal(typeof A[f], "function", f);
+  for (const f of ["boite", "urlClaude", "indicateurs", "frise", "objectifs", "echeances", "cartes", "detail", "boiteHtml"]) assert.equal(typeof A[f], "function", f);
   assert.equal(A.friseSvg, undefined, "l'ancienne frise est remplacée par le graphe maître (graphe-patrimoine.js)");
+  assert.equal(A.evolution, undefined, "le cône de projection (Plan, Historique.projeter) n'existe plus : un seul moteur, Projection");
+  assert.equal(A.projection, undefined);
   const pur = js.slice(0, js.indexOf("if (typeof document === \"undefined\") return;"));
   assert.ok(pur.length > 1000, "partie pure repérée");
   assert.doesNotMatch(pur, /window\.UI|\bUI\.(carte|panneau|periode|brancher|voirPlus|demanderAClaude)\(/, "la partie pure reçoit UI en paramètre si besoin");
@@ -75,7 +78,8 @@ test("aujourdhui.html : identifiants utilisés par le script, titres des trois b
   assert.ok(ids.length >= 5);
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
   assert.match(html, /À traiter/);
-  assert.match(html, /Évolution et projection du patrimoine net/);
+  assert.match(html, /id="ajGraphe"/, "le graphe maître est un composant monté dans ajGraphe");
+  assert.doesNotMatch(html, /ajFrise|ajPeriode|ajHorizon|aj-controles|aj-comptes/, "plus de rangées de segments (période, granularité, horizon) ni de lien sous le graphe");
   assert.match(html, /aria-live="polite"/);
 });
 
@@ -442,27 +446,12 @@ test("reperesJournal : décisions non abandonnées et datées, triées par date"
   assert.deepEqual(A.reperesJournal(null), []);
 });
 
-test("graphe : repères verticaux des décisions dans la période, titre au survol, focalisables ; hors période ignorés", () => {
+test("repères du journal : décisions non abandonnées et datées de la période (le graphe maître ne les dessine plus : ses jalons sont les événements de vie, le calendrier, les crédits et les objectifs)", () => {
   const S = Object.assign(demoS(), { journal: [] }), t = jourLocal();
   const f = A.frise(S, t, { id: "1a", granularite: "mois" }, DEPS);
   assert.deepEqual(J(f.reperes), [], "aucune décision : aucun repère");
-  const x0 = f.points[0].date, x1 = f.points[f.points.length - 1].date;
-  const milieu = new Date((Date.parse(x0) + Date.parse(x1)) / 2).toISOString().slice(0, 10);
-  const avec = Object.assign({}, f, { reperes: [
-    { id: "dec-1", date: milieu, titre: "PEA <script>", synthese: "s", statut: "actif" },
-    { id: "dec-2", date: "1990-01-01", titre: "Trop ancienne", synthese: "s", statut: "actif" },
-  ] });
-  const svg = G.construire(avec, null, { scopeLabel: "du foyer", today: t }).svg;
-  assert.equal((svg.match(/data-journal="/g) || []).length, 1, "seul le repère dans la période est dessiné");
-  assert.match(svg, /data-journal="dec-1"[^>]*tabindex="0"[^>]*role="button"[^>]*aria-label="[^"]*PEA &lt;script&gt;/);
-  assert.match(svg, /<title>[^<]*PEA &lt;script&gt;[^<]*<\/title>/);
-  assert.doesNotMatch(svg, /<script>/);
-  assert.match(svg, /^<svg[^>]*role="group"/, "graphique avec éléments interactifs : role group");
-  assert.match(G.construire(f, null, { today: t }).svg, /^<svg[^>]*role="img"/, "sans repère : image");
-  // la démo a une décision en cours dans l'année écoulée
   const fd = A.frise(demoS(), t, { id: "1a", granularite: "mois" }, DEPS);
-  assert.equal(fd.reperes.length, 1);
-  assert.match(G.construire(fd, null, { today: t }).svg, /data-journal="/);
+  assert.equal(fd.reperes.length, 1, "la démo a une décision en cours dans l'année écoulée");
 });
 
 test("repereDetail : panneau d'une décision (synthèse, date, statut) et lien vers Agent › Journal, texte échappé", () => {
@@ -529,13 +518,8 @@ test("frise : courbe du patrimoine net agrégée par Periodes (1 an au mois sur 
   assert.equal(f.granularite, "mois");
   assert.equal(f.points.length, 4, "trois photos de fin de mois + le point du jour");
   assert.ok(f.points.every(p => p.cle && isFinite(p.valeur)));
-  const svg = G.construire(f, null, { scopeLabel: "du foyer", today: t }).svg;
-  assert.match(svg, /^<svg[^>]*role="(img|group)"[^>]*aria-label="[^"]+"/, "group quand des repères du journal sont dessinés");
-  assert.match(svg, /<path /);
   const perso = A.frise(S, t, { id: "perso", du: "2000-01-01", au: t, granularite: "annee" }, DEPS);
   assert.equal(perso.granularite, "annee");
-  assert.equal(G.construire(A.frise(vide(), TODAY, { id: "1a", granularite: "mois" }, DEPS), null, {}).svg, "", "un seul point : pas de courbe");
-  assert.match(js, /Pas encore d'historique : Boussole prend chaque nuit une photo/, "message d'état vide de la vue");
 });
 
 /* ------------------------------------------------------------------ rendu ------------------------------------------------------------------ */
@@ -656,8 +640,10 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
     voirPlus: (l, n, r) => l.slice(0, n).map(r).join("") + (l.length > n ? '<button type="button" data-ui-voirplus>Voir plus (' + (l.length - n) + ")</button>" : ""),
     demanderAClaude: (q, lib) => '<a class="ui-claude" href="https://claude.ai/new?q=' + encodeURIComponent(q) + '" target="_blank" rel="noopener noreferrer">' + (lib || "Demander à Claude") + "</a>",
     periode() {}, brancher() {}, panneau: { ouvrir() { return {}; }, fermer() {}, ouvert: () => false } };
-  // UI.periode / UI.brancher touchent le DOM : remplacés par des fonctions neutres dans ce faux navigateur.
-  ctx.UI = Object.assign({}, ctx.UI, { periode() {}, brancher() {} });
+  // UI.brancher touche le DOM : remplacé par une fonction neutre dans ce faux navigateur.
+  ctx.UI = Object.assign({}, ctx.UI, { brancher() {} });
+  const montes = [], actualisations = [];
+  ctx.GrapheModele = { brancher: (el, o) => { montes.push(o); return { actualiser: s => actualisations.push(s), pleinEcranQuandPret() {} }; } };
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const api = reg.aujourdhui;
   assert.ok(api, "module enregistré");
@@ -669,8 +655,9 @@ test("module : monté et rendu en vm sur l'état de démo, headline = nombre d'�
   assert.equal(api.headline(), String(b.length));
   assert.equal((els.get("ajCartes").innerHTML.match(/data-ui-carte="/g) || []).length, 4);
   assert.match(els.get("ajBoite").innerHTML, /5 changements à valider/);
-  assert.match(els.get("ajFrise").innerHTML, /<svg/);
-  assert.match(els.get("ajFrise").innerHTML, /data-journal="/, "repère de la décision de la démo sur la frise");
+  assert.equal(montes.length, 1, "le graphe maître est monté une fois, avec le préréglage « aujourdhui »"); assert.equal(montes[0].preset, "aujourdhui");
+  assert.ok(actualisations.length >= 1 && actualisations[0].positions, "relié à l'état du store");
+  assert.equal(typeof montes[0].today, "function"); assert.equal(typeof montes[0].perimetre, "function");
   assert.match(els.get("ajBoite").innerHTML, /note de Claude à relire/);
   api.update(vide(), false);
   api.show();
@@ -705,8 +692,6 @@ test("premiereDate : date de la première photo (pour la période « Tout »)", 
   assert.equal(A.premiereDate([{ date: "2026-03-01" }, { date: "2025-11-15T20:00:00Z" }, { date: "x" }, null]), "2025-11-15");
   assert.equal(A.premiereDate([]), undefined);
   assert.equal(A.premiereDate(null), undefined);
-  assert.match(js, /premiere: S \? premiereDate\(S\.snapshots\) : undefined/, "passée à UI.periode au montage");
-  assert.match(js, /ctlPeriode\.premiere\(/, "mise à jour quand les photos arrivent");
 });
 
 test("boite : contrôles intégrés reconnus par leur kind (rules.js), pas par leur texte", () => {
@@ -748,8 +733,9 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
   vm.createContext(ctx);
   for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"]) vm.runInContext(src(f), ctx, { filename: f });
   if (HAS_UI) vm.runInContext(src("ui.js"), ctx, { filename: "ui.js" });
-  const premieres = [];
-  ctx.UI = Object.assign({}, ctx.UI, { brancher() {}, periode: () => ({ valeur: () => null, premiere: d => premieres.push(d) }) });
+  ctx.UI = Object.assign({}, ctx.UI, { brancher() {} });
+  const montes = [], actualisations = [];
+  ctx.GrapheModele = { brancher: (el, o) => { montes.push(o); return { actualiser: s => actualisations.push(s), pleinEcranQuandPret() {} }; } };
   let evaluations = 0;
   const ev = ctx.Pratiques.evaluer;
   ctx.Pratiques.evaluer = (...a) => { evaluations++; return ev(...a); };
@@ -761,33 +747,28 @@ test("module : indicateurs calculés seulement quand la vue est visible ; DOM no
   api.update(S, false);
   assert.equal(evaluations, 0, "vue cachée : pas d'indicateurs");
   assert.equal(api.headline(), String(A.boite(S, jourLocal(), DEPS).length), "pastille à jour même vue cachée");
-  assert.equal(premieres.pop(), A.premiereDate(S.snapshots), "première photo transmise au sélecteur de période");
   api.show();
   assert.equal(evaluations, 1, "calculés à l'affichage");
   api.show();
   assert.equal(evaluations, 1, "pas recalculés sans changement");
   // compte des écritures dans le DOM
   const ecritures = {};
-  for (const id of ["ajCartes", "ajBoite", "ajFrise"]) {
+  for (const id of ["ajCartes", "ajBoite"]) {
     const el = els.get(id); let v = el.innerHTML; ecritures[id] = 0;
     Object.defineProperty(el, "innerHTML", { get: () => v, set: x => { v = x; ecritures[id]++; } });
   }
   api.update(S, true);
   api.update(J(S), true);
-  assert.deepEqual(ecritures, { ajCartes: 0, ajBoite: 0, ajFrise: 0 }, "même contenu : rien n'est réécrit (focus et « Voir plus » préservés)");
+  assert.deepEqual(ecritures, { ajCartes: 0, ajBoite: 0 }, "même contenu : rien n'est réécrit (focus et « Voir plus » préservés)");
   api.update(Object.assign(J(S), { propositions: [] }), true);
   assert.equal(ecritures.ajBoite, 1, "la boîte change : réécrite");
   assert.match(js, /function headline\(\) \{ return items\.length \? String\(items\.length\) : ""; \}/);
-  // journal : l'avis confirmé sort de la boîte ; une décision renommée redessine la frise (signatures)
+  // journal : l'avis confirmé sort de la boîte (signatures)
   const S2 = Object.assign(J(S), { propositions: [] });
   S2.journal.forEach(e => { if (e.statut === "a_relire") e.statut = "actif"; }); S2.journalARelire = 0;
   api.update(S2, true);
   assert.equal(ecritures.ajBoite, 2, "journal relu : boîte réécrite");
-  assert.equal(ecritures.ajFrise, 0, "frise inchangée");
-  const S3 = J(S2); S3.journal.find(e => e.type === "decision").titre = "Décision renommée";
-  api.update(S3, true);
-  assert.equal(ecritures.ajFrise, 1, "repère renommé : frise redessinée");
-  assert.equal(ecritures.ajBoite, 2);
+  assert.equal(montes.length, 1, "le graphe n'est jamais remonté"); assert.ok(actualisations.length >= 2, "mais informé de chaque émission (il ne recalcule que si l'entrée a changé)");
 });
 
 /* ------------------------------------------------ saisie par l'agent : tutoiement, revue, granularité ------------------------------------------------ */
@@ -805,9 +786,9 @@ test("tutoiement : aucun « vous / votre / vos » ni impératif au vouvoiement d
   const S = demoS(), t = jourLocal(), per = { id: "1a" };
   const ind = A.indicateurs(S, t, per, DEPS);
   const vides = A.indicateurs(vide(), TODAY, per, DEPS);
-  const evo = A.evolution(S, t, per, 5, DEPS);
+  const gm = G.normaliser(donnees());
   const rendus = [A.cartes(ind, UI, per), A.cartes(vides, UI, per), A.boiteHtml(A.boite(S, t, DEPS), UI), A.boiteHtml([], UI),
-    G.construire(evo.passe, evo.futur, { today: t }).svg, G.legendeHtml(evo.passe, evo.futur), G.tableauHtml(evo.passe, evo.futur), G.calculHtml({ fut: evo.futur, rendements: evo.futur.rendements, parBloc: evo.futur.parBloc, versementSource: evo.futur.versementSource, deformee: true })]
+    G.calculHtml(gm, {}), G.lectureHtml(gm, null, G.lecture(gm, null, gm.futur.t[60]), { def: false }), G.enteteHtml(gm, G.lecture(gm, null, gm.futur.t[60])), G.jalonsListeHtml(gm, G.domaine("5", { today: gm.today, debutPasse: gm.debutPasse, finFutur: gm.finFutur }), []), G.tableauHtml(gm, G.domaine("5", { today: gm.today, debutPasse: gm.debutPasse, finFutur: gm.finFutur }), "mois", {})]
     .concat(["net", "pratiques", "objectifs", "echeance"].flatMap(id => [A.detail(id, ind, per), A.detail(id, vides, per)].map(d => d.contenu + d.lien.label)));
   for (const r of rendus) assert.doesNotMatch(sansExceptions(r).replace(/&#39;/g, "'"), VOUVOIEMENT);
   assert.equal(A.boite(vide({ propositions: [P("p", "l", "budget")] }), TODAY, { Rules: fauxRules([], []) })[0].contexte, "Budget : rien n'est enregistré sans ton accord.");
@@ -847,73 +828,6 @@ test("période : la granularité n'est relue et enregistrée que si l'utilisateu
   assert.deepEqual(A.periodeAEnregistrer({ id: "perso", du: "2026-01-01", au: "2026-02-01", granularite: "jour" }, false), { id: "perso", du: "2026-01-01", au: "2026-02-01" });
 });
 
-/* Module complet dans un mini-DOM, avec le vrai UI.periode et un stockage local espion. */
-function vueDom(stock) {
-  const src = f => readFileSync("web/src/" + f, "utf8");
-  const dom = miniDom(), { doc } = dom, reg = {}, ls = new Map(Object.entries(stock || {}));
-  const ctx = { document: doc, console, setTimeout, clearTimeout, Intl, Date, Math, JSON, encodeURIComponent, decodeURIComponent,
-    localStorage: { getItem: k => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => ls.set(k, String(v)), removeItem: k => ls.delete(k) },
-    App: { register: (n, a) => { reg[n] = a; } } };
-  ctx.window = ctx; ctx.self = ctx;
-  vm.createContext(ctx);
-  for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "bilan-calc.js", "periodes.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "historique.js", "graphe-patrimoine.js", "objectifs-view.js"])
-    vm.runInContext(src(f), ctx, { filename: f });
-  vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
-  const root = doc.body.appendChild(doc.createElement("section"));
-  root.innerHTML = html;
-  reg.aujourdhui.mount(root);
-  reg.aujourdhui.update(demoS(), true);
-  const radios = sel => root.querySelector("#ajPeriode").querySelector(sel).querySelectorAll('[role="radio"]');
-  const radio = (sel, id) => radios(sel).find(r => r.getAttribute("data-ui-id") === id);
-  const coche = sel => (radios(sel).find(r => r.getAttribute("aria-checked") === "true") || {}).getAttribute?.("data-ui-id");
-  const lu = () => JSON.parse(ls.get("aujourdhui-periode") || "null");
-  return { dom, doc, root, api: reg.aujourdhui, ls, radio, coche, lu };
-}
-
-test("vue (DOM) : granularité automatique selon la période tant que l'utilisateur ne la choisit pas ; choisie : passée à UI.periode et enregistrée", () => {
-  const Pe = Periodes, t = jourLocal();
-  const auto = id => Pe.auto(Pe.bornes(id, t, A.premiereDate(DEMO.snapshots)));
-  let v = vueDom();
-  assert.equal(v.coche(".ui-periode-g"), auto("1a"), "défaut : 1 an, granularité automatique (plus de « mois » imposé)");
-  v.radio(".ui-periode-p", "3m").click();
-  assert.equal(v.coche(".ui-periode-g"), auto("3m"), "la granularité suit la période");
-  assert.deepEqual(v.lu(), { id: "3m" }, "granularité non enregistrée sans choix de l'utilisateur");
-  // une touche sans effet sur la bascule de granularité (Tab) ne compte pas comme un choix
-  v.dom.touche(v.radio(".ui-periode-g", v.coche(".ui-periode-g")), "Tab");
-  v.radio(".ui-periode-p", "1a").click();
-  assert.deepEqual(v.lu(), { id: "1a" });
-  assert.equal(v.coche(".ui-periode-g"), auto("1a"));
-  // choix de l'utilisateur (clic) : enregistré, et ne suit plus la période
-  v.radio(".ui-periode-g", "trimestre").click();
-  assert.deepEqual(v.lu(), { id: "1a", granularite: "trimestre", gChoisie: true });
-  v.radio(".ui-periode-p", "1m").click();
-  assert.equal(v.coche(".ui-periode-g"), "trimestre", "choisie : ne suit plus la période");
-  assert.deepEqual(v.lu(), { id: "1m", granularite: "trimestre", gChoisie: true });
-  // au prochain montage, la granularité choisie est passée à UI.periode
-  v = vueDom({ "aujourdhui-periode": JSON.stringify(v.lu()) });
-  assert.equal(v.coche(".ui-periode-p"), "1m");
-  assert.equal(v.coche(".ui-periode-g"), "trimestre");
-  // ancienne valeur (granularité enregistrée d'office) : automatique
-  v = vueDom({ "aujourdhui-periode": JSON.stringify({ id: "3m", granularite: "annee" }) });
-  assert.equal(v.coche(".ui-periode-g"), auto("3m"));
-  // choix au clavier (flèche) : compte comme un choix
-  const g0 = v.coche(".ui-periode-g");
-  v.dom.touche(v.radio(".ui-periode-g", g0), "ArrowRight");
-  assert.notEqual(v.coche(".ui-periode-g"), g0);
-  assert.deepEqual(v.lu(), { id: "3m", granularite: v.coche(".ui-periode-g"), gChoisie: true });
-  assert.doesNotMatch(sansExceptions(v.root.textContent), VOUVOIEMENT);
-});
-
-test("graphe : libellés de période longs (semaines) sans chevauchement — largeur estimée d'après le texte", () => {
-  const pts = [["2025-10-13", "sem. du 13 oct."], ["2026-03-02", "sem. du 2 mars"], ["2026-09-28", "sem. du 28 sept."], ["2026-10-05", "sem. du 5 oct."]]
-    .map(([date, label], i) => ({ date, label, valeur: 1000 + i }));
-  const h = G.construire({ points: pts.map(p => Object.assign(p, { nature: "observe" })), resume: {}, reperes: [], historique: true }, null, { largeur: 720 }).svg;
-  const libelles = [...h.matchAll(/<text class="aj-ax"[^>]*text-anchor="(?:start|middle|end)">([^<]+)<\/text>/g)].map(m => m[1]).filter(t => /^sem\./.test(t));
-  assert.deepEqual(libelles, ["sem. du 13 oct.", "sem. du 2 mars", "sem. du 5 oct."], "l'avant-dernier, trop proche du dernier, est omis");
-});
-
-/* ------------------------------------------------ CP1 : argent qui dort, fiches de Patrimoine › Comptes ------------------------------------------------ */
-
 test("boite : « Argent qui dort » (Calc.argentQuiDort) → urgence 3, vers Patrimoine › Comptes ; fonction absente, en échec ou sans dépassement → rien", () => {
   const S = vide();
   const avec = r => Object.assign({}, DEPS, { Calc: Object.assign({}, Calc, { argentQuiDort: (s, t) => (typeof r === "function" ? r(s, t) : r) }) });
@@ -936,7 +850,7 @@ test("boite : « Argent qui dort » (Calc.argentQuiDort) → urgence 3, vers Pat
   }
 });
 
-test("Patrimoine net → Patrimoine › Comptes : chaque enveloppe du détail ouvre sa fiche ; « Voir le détail par compte » sous la frise", () => {
+test("Patrimoine net → Patrimoine › Comptes : chaque enveloppe du détail ouvre sa fiche ; « Voir le détail par compte » dans la feuille du graphe", () => {
   const ind = A.indicateurs(demoS(), jourLocal(), { id: "1a" }, DEPS);
   const d = A.detail("net", ind, { id: "1a" });
   assert.deepEqual(d.lien, { label: "Voir mes comptes", href: "#patrimoine/comptes" });
@@ -944,7 +858,8 @@ test("Patrimoine net → Patrimoine › Comptes : chaque enveloppe du détail ou
   assert.doesNotMatch(d.contenu, /aj-det-fiche[^>]*>Appartement/, "les biens n'ont pas de fiche");
   const S2 = demoS(); S2.positions[0].envelope = PIEGE;
   assert.doesNotMatch(A.detail("net", A.indicateurs(S2, jourLocal(), { id: "1a" }, DEPS), { id: "1a" }).contenu, /<img/);
-  assert.match(html, /<a class="aj-comptes" href="#patrimoine\/comptes" data-goto="patrimoine\/comptes">Voir le détail par compte<\/a>/);
+  assert.doesNotMatch(html, /aj-comptes/, "le lien n'est plus sous le graphe : il est dans la feuille de lecture du graphe maître");
+  assert.deepEqual(G.PRESETS.aujourdhui.liensFeuille, [{ href: "#patrimoine/comptes", libelle: "Voir le détail par compte" }]);
 });
 
 /* ---------- doublons probables (cas type : ligne « PEA DUPONT » qui recopie le total du PEA) ---------- */
@@ -1127,25 +1042,6 @@ test("frise : le passé reconstitué (deps.reconstitue) est fusionné avant la p
   assert.match(A.detail("net", ind, { id: "tout" }).contenu, /début de la période est reconstitué/, "…et s'explique dans le panneau");
 });
 
-test("evolution : passé + cône de projection (Plan, versement des Objectifs) quand la période va jusqu'à aujourd'hui ; pas de futur pour une période terminée", () => {
-  const S = demoS(), t = jourLocal();
-  const e = A.evolution(S, t, { id: "1a", granularite: "mois" }, 10, DEPS);
-  assert.ok(e.futur && e.futur.points.length === 121 && e.futur.annees === 10);
-  assert.equal(e.futur.points[0].date, t);
-  assert.equal(e.futur.points[0].central, Math.round(e.futur.points[0].central), "valeurs entières du moteur");
-  const net = e.passe.points[e.passe.points.length - 1].valeur;
-  assert.ok(Math.abs(e.futur.points[0].central - net) <= 1, "le cône part du patrimoine net d'aujourd'hui");
-  assert.ok(e.futur.points.every(p => p.pessimiste <= p.central && p.central <= p.optimiste));
-  const budget = S.budget && S.budget.lignes ? Plan.budgetTotaux(S.budget.lignes, S.profil, "foyer").epargne : 0;
-  const reel = ObjectifsView.versementProjection(S, Plan.budgetTotaux((S.budget && S.budget.lignes) || [], S.profil, "foyer"), "foyer", t, DEPS);
-  assert.equal(e.futur.versement, reel ? reel.v : 0, "même versement que la projection de Patrimoine › Objectifs (" + budget + ")");
-  assert.equal(e.futur.versementSource, reel ? reel.src : null);
-  const passee = A.evolution(S, t, { id: "perso", du: "2026-01-01", au: "2026-06-30" }, 10, DEPS);
-  assert.equal(passee.futur, null, "période terminée avant aujourd'hui : pas de projection");
-  assert.equal(A.evolution(vide(), TODAY, { id: "1a" }, 5, DEPS).futur.points.length, 61, "sans donnée : cône de versements nuls, sans erreur");
-  const un = A.evolution(S, t, { id: "1a" }, 1, DEPS); assert.equal(un.futur.points.length, 13);
-});
-
 /* Module complet, Store espion : lecture à la demande des cours, transactions et opérations bancaires, puis passé reconstitué dessiné en pointillés. */
 function vueAvecStore(store, stock) {
   const src = f => readFileSync("web/src/" + f, "utf8");
@@ -1157,15 +1053,17 @@ function vueAvecStore(store, stock) {
   vm.createContext(ctx);
   for (const f of ["format.js", "calc.js", "serie-net.js", "rules.js", "plan.js", "historique.js", "bilan-calc.js", "periodes.js", "graphe-patrimoine.js", "marche.js", "risque.js", "pratiques.js", "ui.js", "claude-prompts.js", "routine-etat.js", "banque-etat.js", "reperes.js", "objectifs-view.js"])
     vm.runInContext(src(f), ctx, { filename: f });
+  const actualisations = [];
+  ctx.GrapheModele = { brancher: () => ({ actualiser: s => actualisations.push(s), pleinEcranQuandPret() {} }) };
   vm.runInContext(js, ctx, { filename: "aujourdhui.js" });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.innerHTML = html;
   reg.aujourdhui.mount(root);
-  return { root, api: reg.aujourdhui, ls, dom };
+  return { root, api: reg.aujourdhui, ls, dom, actualisations };
 }
 const attend = (ms = 40) => new Promise(r => setTimeout(r, ms));
 
-test("vue : la reconstitution lit les cours (ISIN cotés), les transactions et les opérations des comptes rattachés, puis dessine le passé en pointillés ; page « Tout » relit plus loin", async () => {
+test("vue : la reconstitution lit les cours (ISIN cotés), les transactions et les opérations des comptes rattachés, sur tout le passé utile au graphe maître (5 ans), une seule fois", async () => {
   const S = demoS(), t = jourLocal();
   const appels = { cours: [], tx: [], ops: [] };
   const serie = () => { const out = []; for (let k = 1200; k >= 1; k--) out.push({ date: Historique.plusJours(t, -k), cloture: 100 + (1200 - k) * 0.02 }); return out; };
@@ -1179,69 +1077,34 @@ test("vue : la reconstitution lit les cours (ISIN cotés), les transactions et l
   const isins = [...new Set(S2.positions.filter(p => p.mode === "market" && p.isin && p.status !== "à recevoir" && p.status !== "clôturé").map(p => p.isin))].sort();
   assert.equal(appels.cours.length, 1, "une seule lecture des cours");
   assert.deepEqual(J(appels.cours[0][0]), isins, "tous les ISIN cotés comptés, une fois chacun");
-  assert.equal(appels.cours[0][1], Historique.plusJours(Periodes.bornes("1a", t).du, -10), "depuis le début de la période (1 an) moins une marge");
-  assert.equal(appels.tx.length, 1);
-  assert.equal(appels.tx[0], appels.cours[0][1]);
+  assert.equal(appels.cours[0][1], Historique.plusJours(t, -Historique.JOURS_MAX), "le graphe maître lit tout le passé (fenêtre « Tout »), pas seulement un an");
+  assert.equal(appels.tx.length, 1); assert.equal(appels.tx[0], appels.cours[0][1]);
   assert.equal(appels.ops.length, 1, "opérations des comptes bancaires rattachés à une ligne");
   assert.equal(appels.ops[0][1], Historique.plusJours(t, -90), "90 jours d'opérations");
   assert.ok(appels.ops[0][0].length >= 1 && J(appels.ops[0][0]).every(id => S2.banque.comptes.find(c => c.id === id && c.positionId != null && !c.ignore && c.type !== "credit")));
-  const svg = v.root.querySelector("#ajFrise").innerHTML;
-  assert.match(svg, /class="aj-ligne-rec"/, "passé reconstitué : pointillés");
-  assert.match(svg, /class="aj-ligne"/, "observé : trait plein");
-  assert.match(svg, /class="aj-proj"/, "projection centrale");
-  assert.match(v.root.querySelector("#ajLegende").innerHTML, /Reconstitué/);
-  assert.match(v.root.querySelector("#ajEtat").textContent, /Avant ta première photo \(.*\), le passé est reconstitué/);
   assert.doesNotMatch(v.root.querySelector("#ajCartes").innerHTML, /début reconstitué/);
-  assert.match(v.root.querySelector("#ajTable").innerHTML, /<th scope="row">[^<]*<\/th><td class="n">[^<]*<\/td><td class="n">—<\/td><td class="n">—<\/td><td>reconstitué<\/td>/, "équivalent accessible : le tableau dit la nature de chaque point");
   v.api.update(J(S2), true);
   await attend();
   assert.equal(appels.cours.length, 1, "même période et mêmes lignes : pas de nouvelle lecture");
-  // période plus longue (« Tout » : 5 ans) : relue plus loin
-  v.root.querySelector("#ajPeriode").querySelector(".ui-periode-p").querySelectorAll('[role="radio"]').find(r => r.getAttribute("data-ui-id") === "tout").click();
-  await attend();
-  assert.equal(appels.cours.length, 2, "« Tout » remonte plus loin : nouvelle lecture");
-  assert.equal(appels.cours[1][1], Historique.plusJours(t, -Historique.JOURS_MAX));
+  assert.ok(v.actualisations.length >= 2, "le graphe est informé à chaque émission, et à la fin de la lecture du passé");
 });
 
-test("vue : lectures en échec ou absentes — la page se dessine quand même (observé + projection), l'état le dit ; mode sans Store.transactions", async () => {
+test("vue : lectures en échec ou absentes — la page se dessine quand même (les cartes), le graphe est tout de même relié ; mode sans Store.transactions", async () => {
   const S = demoS();
   const v = vueAvecStore({ cours: async () => { throw new Error("réseau"); }, transactions: async () => { throw new Error("réseau"); } });
   v.api.update(S, true);
   await attend();
-  const svg = v.root.querySelector("#ajFrise").innerHTML;
-  assert.match(svg, /class="aj-ligne"/);
-  assert.match(svg, /class="aj-proj"/);
-  assert.doesNotMatch(svg, /aj-ligne-rec/, "rien n'est reconstitué sans cours");
-  assert.match(v.root.querySelector("#ajEtat").textContent, /Les cours n'ont pas pu être lus/);
+  assert.match(v.root.querySelector("#ajCartes").innerHTML, /data-ui-carte="/);
+  assert.ok(v.actualisations.length >= 1);
   const sans = vueAvecStore({});
   sans.api.update(S, true);
   await attend();
-  assert.match(sans.root.querySelector("#ajFrise").innerHTML, /class="aj-proj"/);
+  assert.match(sans.root.querySelector("#ajCartes").innerHTML, /data-ui-carte="/);
 });
 
-test("vue : l'horizon (1 · 5 · 10 · 20 ans) est une bascule accessible, mémorisée ; le futur suit l'horizon, le passé suit la période", async () => {
-  const v = vueAvecStore({});
-  v.api.update(demoS(), true);
-  const radios = () => v.root.querySelector("#ajHorizon").querySelectorAll('[role="radio"]');
-  assert.deepEqual(radios().map(r => r.getAttribute("data-ui-id")), ["1", "5", "10", "20"]);
-  assert.deepEqual(radios().map(r => r.getAttribute("aria-label")), ["1 an", "5 ans", "10 ans", "20 ans"]);
-  assert.equal(radios().find(r => r.getAttribute("aria-checked") === "true").getAttribute("data-ui-id"), "5", "défaut : 5 ans");
-  assert.equal(v.root.querySelector("#ajHorizon").querySelector('[role="radiogroup"]').getAttribute("aria-label"), "Horizon de la projection");
-  const an0 = +jourLocal().slice(0, 4);
-  assert.match(v.root.querySelector("#ajFrise").innerHTML, new RegExp(">" + (an0 + 5) + "</text>"));
-  radios().find(r => r.getAttribute("data-ui-id") === "20").click();
-  assert.match(v.root.querySelector("#ajFrise").innerHTML, new RegExp(">" + (an0 + 20) + "</text>"));
-  assert.equal(v.ls.get("aujourdhui-horizon"), "20");
-  const reprise = vueAvecStore({}, { "aujourdhui-horizon": "10" });
-  reprise.api.update(demoS(), true);
-  assert.equal(reprise.root.querySelector("#ajHorizon").querySelectorAll('[role="radio"]').find(r => r.getAttribute("aria-checked") === "true").getAttribute("data-ui-id"), "10");
-  const ignore = vueAvecStore({}, { "aujourdhui-horizon": "7" });
-  ignore.api.update(demoS(), true);
-  assert.equal(ignore.root.querySelector("#ajHorizon").querySelectorAll('[role="radio"]').find(r => r.getAttribute("aria-checked") === "true").getAttribute("data-ui-id"), "5", "valeur enregistrée inconnue : défaut");
-  assert.equal(v.root.querySelector("#ajHorizonZone").hidden, false);
-  assert.equal(v.root.querySelector("#ajPromesse").hidden, false, "« Projection, pas une promesse » visible avec la projection");
-  // sans projection (période terminée avant aujourd'hui) : horizon et mention masqués
-  v.root.querySelector("#ajPeriode").querySelector(".ui-periode-p").querySelectorAll('[role="radio"]').find(r => r.getAttribute("data-ui-id") === "perso").click();
+test("lien profond : #aujourdhui?graphe=plein-ecran (App.parametres) demande l'ouverture du graphe en grand, une fois", () => {
+  assert.match(js, /if \(p && p\.graphe === "plein-ecran"\) pleinDemande = true;/);
+  assert.match(js, /pleinEcranQuandPret\(\)/);
 });
 
 test("vue : les anneaux se tracent à la première apparition seulement, jamais avec prefers-reduced-motion ; aucun chiffre ne défile", () => {

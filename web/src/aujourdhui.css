@@ -36,65 +36,8 @@
 #view-aujourdhui .aj-vide-t{margin:0;font:650 var(--t-h3)/var(--lh-h3) var(--f-display)}
 #view-aujourdhui .aj-vide-x{margin:0;font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted);max-width:620px}
 
-/* graphe maître : évolution et projection du patrimoine net */
-#view-aujourdhui .aj-controles{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 18px;margin:6px 0 4px}
-#view-aujourdhui .aj-periode{min-width:0}
-#view-aujourdhui .aj-horizon{display:flex;align-items:center;gap:8px;min-width:0}
-#view-aujourdhui .aj-horizon-l{font-size:var(--t-small);color:var(--muted);white-space:nowrap}
-#view-aujourdhui .aj-legende{list-style:none;display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0 2px;padding:0;font-size:var(--t-small)}
-#view-aujourdhui .aj-lg{display:inline-flex;align-items:center;gap:7px}
-#view-aujourdhui .aj-lg-plus{color:var(--muted)}
-#view-aujourdhui .aj-sw{width:28px;height:10px;flex:none;overflow:visible}
-#view-aujourdhui .aj-chart-wrap{position:relative;min-width:0}
-#view-aujourdhui .aj-chart{min-width:0}
-#view-aujourdhui .aj-svg{display:block;width:100%;height:auto;overflow:visible;touch-action:pan-y}
-#view-aujourdhui .aj-grid{stroke:var(--line);stroke-width:1}
-#view-aujourdhui .aj-ax{fill:var(--muted);font:var(--t-caption) var(--f-num)}
-#view-aujourdhui .aj-ligne{fill:none;stroke:var(--accent);stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
-#view-aujourdhui .aj-ligne-rec{fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round;opacity:.8}
-#view-aujourdhui .aj-aire{fill:var(--accent-soft);opacity:.55;stroke:none}
-#view-aujourdhui .aj-proj{fill:none;stroke:var(--s2);stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
-#view-aujourdhui .aj-bande{fill:var(--s2);fill-opacity:.24;stroke:none}
-#view-aujourdhui .aj-borne{fill:none;stroke:var(--s2);stroke-width:1;stroke-dasharray:2 3;opacity:.75}
-#view-aujourdhui .aj-auj{stroke:var(--muted);stroke-width:1.2;stroke-dasharray:4 3}
-#view-aujourdhui .aj-auj-t{fill:var(--muted);font:600 var(--t-caption) var(--f-body)}
-#view-aujourdhui .aj-fin{fill:var(--ink);font:600 var(--t-caption) var(--f-num)}
-#view-aujourdhui .aj-pt{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
-#view-aujourdhui .aj-pt.fin{fill:var(--accent)}
-#view-aujourdhui .aj-cur-l{stroke:var(--ink);stroke-width:1;opacity:0;pointer-events:none}
-#view-aujourdhui .aj-cur-l.on{opacity:.45}
-#view-aujourdhui .aj-cur-d{fill:var(--surface);stroke:var(--ink);stroke-width:2.2;opacity:0;pointer-events:none}
-#view-aujourdhui .aj-cur-d.on{opacity:1}
-#view-aujourdhui .aj-cur-d.n-observe,#view-aujourdhui .aj-cur-d.n-reconstitue{stroke:var(--accent)}
-#view-aujourdhui .aj-cur-d.n-projete{stroke:var(--s2)}
-#view-aujourdhui .aj-rep:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-#view-aujourdhui .aj-frise-vide{margin:8px 0;font-size:var(--t-small);line-height:1.5;color:var(--muted);max-width:620px}
-#view-aujourdhui .aj-tip{position:absolute;z-index:3;display:flex;flex-direction:column;gap:2px;min-width:150px;max-width:240px;padding:9px 11px;pointer-events:none;
-  background:var(--surface);border:1px solid var(--line2);border-radius:9px;box-shadow:0 8px 22px -8px rgba(0,0,0,.35);font-size:var(--t-caption);line-height:1.35}
-#view-aujourdhui .aj-tip-d{color:var(--muted)}
-#view-aujourdhui .aj-tip-v{font:700 var(--t-h3) var(--f-num);font-variant-numeric:tabular-nums;color:var(--ink)}
-#view-aujourdhui .aj-tip-c{font:500 var(--t-caption) var(--f-body);color:var(--muted)}
-#view-aujourdhui .aj-tip-f{color:var(--muted)}
-#view-aujourdhui .aj-tip-n{align-self:flex-start;margin-top:3px;font:700 var(--t-caption)/1.7 var(--f-body);letter-spacing:.02em;padding:0 6px;border-radius:4px;background:var(--sunk);color:var(--ink);border:1px solid var(--line2)}
-#view-aujourdhui .aj-tip-n.n-reconstitue{border-style:dashed}
-#view-aujourdhui .aj-tip-n.n-projete{background:var(--s2-soft);border-color:var(--s2)}
-#view-aujourdhui .aj-etat{margin:8px 0 0;font-size:var(--t-small);line-height:1.5;color:var(--muted);max-width:760px}
-#view-aujourdhui .aj-promesse{margin:10px 0 0;padding:9px 12px;border-left:3px solid var(--s2);background:var(--sunk);border-radius:0 8px 8px 0;font-size:var(--t-small);line-height:1.5;max-width:760px}
-#view-aujourdhui .aj-donnees{margin-top:12px}
-#view-aujourdhui .aj-pied{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-top:10px}
-#view-aujourdhui .aj-pied-acts{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}
-#view-aujourdhui .aj-comptes,#view-aujourdhui .aj-calcul{color:var(--accent);font:600 var(--t-small) var(--f-body)}
-#view-aujourdhui .aj-calcul,#view-aujourdhui .aj-comptes{display:inline-flex;align-items:center;min-height:var(--hit)}
-#view-aujourdhui .aj-calcul{background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
-#view-aujourdhui .aj-calcul:hover{color:var(--ink)}
-#view-aujourdhui .aj-note{margin:0;font-size:var(--t-caption);line-height:1.45;color:var(--muted);max-width:560px}
-#view-aujourdhui .aj-tab-wrap,.ui-panneau .aj-tab-wrap{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:8px;margin:6px 0}
-#view-aujourdhui .aj-tab,.ui-panneau .aj-tab{width:100%;border-collapse:collapse;font-size:var(--t-small);min-width:430px}
-#view-aujourdhui .aj-tab th,.ui-panneau .aj-tab th,#view-aujourdhui .aj-tab td,.ui-panneau .aj-tab td{padding:6px 10px;border-top:1px solid var(--line);text-align:left;white-space:nowrap}
-#view-aujourdhui .aj-tab thead th,.ui-panneau .aj-tab thead th{position:sticky;top:0;background:var(--sunk);border-top:0;font-weight:600;color:var(--muted);z-index:1}
-#view-aujourdhui .aj-tab tbody th,.ui-panneau .aj-tab tbody th{font-weight:500}
-#view-aujourdhui .aj-tab .n,.ui-panneau .aj-tab .n{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
-#view-aujourdhui .aj-tab-wrap:focus-visible,.ui-panneau .aj-tab-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* graphe maître : composant GraphePatrimoine (graphe-patrimoine.css) */
+#view-aujourdhui .aj-graphe{min-width:0}
 
 /* Bandeau de 4 indicateurs : même squelette (en-tête, corps, pied), grille de 8 pt, aucune couleur de statut hors de la puce et de l'arc de l'anneau.
    Mobile : le patrimoine net en héros pleine largeur, puis 3 mini-cartes ; 900 px : 2 × 2 ; 1240 px : 4 en rangée (le patrimoine net un peu plus large). */

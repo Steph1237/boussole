@@ -21,14 +21,11 @@
          jauge = Σ poids × min(avancement, 1) / Σ poids,  avancement = déjà de côté / cible,  poids = N − rang + 1
      (N objectifs ; le rang 1, le plus prioritaire, pèse N ; le dernier pèse 1). Sans objectif : pas de jauge (« — »). Le panneau de la carte
      détaille le calcul objectif par objectif. Statut en toutes lettres : atteint, en avance, dans les temps, en retard, hors de portée.
-   - Graphe maître « Évolution et projection du patrimoine net » (juste après le bandeau) : passé observé (photos nocturnes, trait plein)
-     et reconstitué (Historique.reconstituer, pointillés : cours × quantités, soldes bancaires, autres lignes constantes), puis cône de
-     projection (Historique.projeter : trois scénarios du moteur Plan, versements compris, horizon 1 · 5 · 10 · 20 ans), « Aujourd'hui »
-     en trait vertical, infobulle (date, valeur, nature), tableau des données (« Voir les données ») et panneau « Comment c'est calculé »
-     (graphe-patrimoine.js). Le passé suit la période et la granularité de UI.periode (défaut 1 an, granularité automatique selon la période
-     sauf si l'utilisateur la choisit : elle est alors mémorisée) ; l'horizon suit ses propres boutons. Les cours, transactions et opérations
-     bancaires de la reconstitution sont lus à la demande (Store.cours, Store.transactions, Store.banque.operations) ; repères verticaux aux
-     dates des décisions du journal (titre au survol, clic ou Entrée → UI.panneau avec la synthèse).
+   - Graphe maître (juste après le bandeau) : le composant GraphePatrimoine (graphe-patrimoine.js, données de graphe-modele.js) ; un seul axe du temps proportionnel
+     (passé observé et reconstitué, projection du moteur Projection : médiane, bandes 8 chances sur 10 et 1 sur 2), une seule commande de temps (1 an · 5 ans · 10 ans ·
+     20 ans · Tout, 5 ans par défaut sur mobile, 10 ans sur ordinateur), jalons (événements de vie, calendrier des enveloppes, fins de crédit), objectifs, bande de
+     capacité d'épargne, plein écran. Réglages locaux (vue, euros, impôts, variante, crise, 100 avenirs, comparaison à un plan figé), jamais enregistrés. Lien profond
+     #aujourdhui?graphe=plein-ecran. Les cours, transactions et opérations bancaires de la reconstitution sont lus à la demande (SerieNet.charger).
    - Boîte de réception unique (3 éléments puis « Voir les autres », 5 dans la colonne de droite) : propositions de Claude en attente (par lot), entrées du journal à relire
      (CK2), revue mensuelle (routine de l'agent, RT1 : en retard, prête ou à activer), alertes des règles (rules.js), points « à suivre »
      échus de la mémoire de l'agent, échéances à 30 jours, cours manquants / photo nocturne en retard, banques connectées (BQ1 : connexion
@@ -40,11 +37,11 @@
    - Doublons probables (revue CP1) : Calc.doublonsProbables(positions) → un élément urgent (1) par ligne saisie qui recopie le total
      de son enveloppe (patrimoine compté deux fois), vers la fiche de l'enveloppe.
    - Fiches de Patrimoine › Comptes (CP1 § 3) : la carte « Patrimoine net » mène à Comptes et chaque enveloppe de son détail ouvre sa
-     fiche ; sous le graphe, « Voir le détail par compte ».
+     fiche ; « Voir le détail par compte » est dans la feuille de lecture du graphe.
    Accessibilité et mouvement : cartes = vrais boutons (nom accessible complet, aria-label), jauges avec équivalent texte, statuts en mots
    (jamais la couleur seule) ; le tracé des anneaux seulement à la première apparition, jamais avec prefers-reduced-motion ; aucun
    chiffre ne défile. Textes au tutoiement ; « Faire le point avec Claude » = revue du mois de l'agent (ClaudePrompts.phrase("revue")).
-   Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, indicateurs, objectifs, frise, evolution, reperesJournal,
+   Fonctions pures exportées pour les tests (module.exports) : boite, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, indicateurs, objectifs, frise, reperesJournal,
    urlClaude, delai, lirePeriode, periodeAEnregistrer, phraseRevue, et les rendus HTML cartes, detail, repereDetail, boiteHtml (qui reçoivent
    UI en paramètre quand ils en ont besoin ; aucune ne touche au DOM).
    Dépendances injectées (deps) : { Rules, Calc, BilanCalc, Pratiques, Risque, Periodes, Plan, Historique, ObjectifsView, reconstitue? } ;
@@ -491,28 +488,6 @@
     return { net, pratiques, objectifs: objectifs(s, t, deps), allocation: ecartAllocation(s, deps), echeance: { prochaine: ech[0] || null, liste: ech.slice(0, 4), enveloppeALignes: ech[0] && ech[0].jalon ? enveloppeALignes(s, ech[0].jalon) : null }, calendrier, frise: f };
   }
 
-  /** Cône de projection du net (Historique.projeter : moteur Plan, trois scénarios) sur `annees` ans, avec le versement mensuel de la page
-      Objectifs (ObjectifsView.versementProjection : épargne réelle des comptes si elle diffère de plus de 30 % du budget, sinon épargne prévue au budget ou versements programmés). f = frise() (horsFin : immobilier, autres
-      biens et dettes d'aujourd'hui, maintenus). → { points, versement, annees, parBloc, rendements, versementSource } | null sans moteur. */
-  function projection(S, today, annees, f, deps) {
-    const Hi = HIST(deps), P = dep(deps, "Plan"), OV = OBJV(deps), s = S || {}, scope = s.scope || "foyer";
-    if (!Hi || !P) return null;
-    let reel = null;
-    try {
-      const lignes = s.budget && Array.isArray(s.budget.lignes) ? s.budget.lignes : [];
-      reel = OV && typeof OV.versementProjection === "function" ? OV.versementProjection(s, P.budgetTotaux(lignes, s.profil || null, scope), scope, jour(today), deps) : null;
-    } catch (e) { reel = null; }
-    const r = Hi.projeter({ today: jour(today), positions: s.positions || [], scope, versementMensuel: reel ? reel.v : 0, annees, horsFin: f ? f.horsFin : 0, Plan: P });
-    return Object.assign(r, { versementSource: reel ? reel.src : null, versementInfo: reel });
-  }
-
-  /** Modèle du graphe maître : le passé (frise) et le futur (projection) quand la période va jusqu'à aujourd'hui. */
-  function evolution(S, today, periode, annees, deps) {
-    const t = jour(today), passe = frise(S, t, periode, deps);
-    const futur = passe.bornes && passe.bornes.au >= t && passe.points.length ? projection(S, t, annees, passe, deps) : null;
-    return { passe, futur: futur && futur.points.length ? futur : null, today: t };
-  }
-
   /** Date (AAAA-MM-JJ) de la première photo de S.snapshots, pour la période « Tout » ; undefined sans photo. */
   function premiereDate(snapshots) {
     let p;
@@ -874,25 +849,20 @@
   const lirePeriode = brut => SN().lirePeriode(brut);
   const periodeAEnregistrer = (periode, gChoisie) => SN().periodeAEnregistrer(periode, gChoisie);
 
-  const H = { boite, elementArgentQuiDort, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, calendrierDetail, contexteACompleter, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, objectifs, evolution, projection, compteARebours, jour, delai, premiereDate,
+  const H = { boite, elementArgentQuiDort, etatRevue, echeances, calendrierDe, prochainesHtml, jalonDetail, aCompleterDetail, calendrierDetail, contexteACompleter, indicateurs, frise, reperesJournal, urlClaude, cartes, detail, repereDetail, boiteHtml, phraseRevue, objectifs, compteARebours, jour, delai, premiereDate,
     lirePeriode, periodeAEnregistrer };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
   /* =============================================================== vue =============================================================== */
-  const CLE = "aujourdhui-periode", CLE_H = "aujourdhui-horizon", HORIZONS = [1, 5, 10, 20];
   /* items (boîte) est calculé à chaque émission du store : headline() en dépend pour la pastille. ind (indicateurs et passé du graphe)
      ne l'est qu'au rendu, quand la vue est visible. sigX : dernier HTML écrit ; rien n'est réécrit (ni le focus perdu,
      ni un « Voir plus » replié) quand il n'a pas changé. */
-  let S = null, root = null, dirty = true, items = [], ind = null, largeur = 0, ctlPeriode = null; // largeur : celle du dernier dessin du graphe
-  const sig = { proj: "", boite: "", ech: "", cartes: "", graphe: "", legende: "", table: "", etat: "", resume: "" };
-  /* periode.granularite : celle du dessin (choisie, ou automatique selon la période) ; gChoisie : l'utilisateur l'a choisie lui-même
-     (seul cas où elle est passée à UI.periode et enregistrée) ; gClic : vrai pendant le traitement d'un clic ou d'une touche sur la
-     bascule de granularité (posé à la capture, effacé au retour de l'événement). */
-  let periode = { id: "1a" }, gChoisie = false, gClic = false, horizon = 5, animer = true, modele = null, geo = null;
-  try { const l = lirePeriode(localStorage.getItem(CLE)); periode = l.periode; gChoisie = l.gChoisie; } catch (e) {}
+  let S = null, root = null, dirty = true, items = [], ind = null;
+  const sig = { boite: "", ech: "", cartes: "" };
+  /* La variation de la carte « Patrimoine net » se lit sur 1 an (la période n'est plus un réglage du graphe : le graphe maître a sa propre fenêtre). */
+  const periode = { id: "1a" }; let animer = true;
   SN().definirPeriode(periode);
-  try { const h = +localStorage.getItem(CLE_H); if (HORIZONS.includes(h)) horizon = h; } catch (e) {}
   /* Passé reconstitué : données lues à la demande (cours, transactions, opérations bancaires) par SerieNet, dont l'état est partagé avec
      Patrimoine › Comptes (même passé, même variation, au même moment). */
   const hist = SN().hist;
@@ -914,23 +884,14 @@
   /* deps des indicateurs : passé reconstitué, et `enAttente` tant que sa lecture n'est pas finie (la variation est alors un squelette). */
   const depsVue = () => ({ reconstitue: reconstitution(), enAttente: SN().enAttente(S, null) });
 
-  /* Lit l'historique nécessaire à la période affichée (SerieNet.charger) ; la fin d'une lecture réaffiche la page (abonnement posé au mount). */
-  function chargerHistorique() {
-    SN().charger(S, jour(), periode, null);
-    if (hist.etat === "charge" && !hist.version) majEtat();
-  }
-  /* Une lecture vient de finir : « Tout » repart de la première donnée, et la page se redessine (ou se redessinera à l'affichage). */
+  /* Lit tout le passé utile au graphe maître (cours, transactions, opérations bancaires : SerieNet.charger, période « tout », 5 ans au plus) ; la fin d'une lecture
+     réaffiche la page (abonnement posé au mount). */
+  function chargerHistorique() { SN().charger(S, jour(), { id: "tout" }, null); }
+  /* Une lecture vient de finir : la page se redessine (ou se redessinera à l'affichage), le graphe est recalculé avec son passé. */
   function histPrete() {
     if (!root || !S) return;
-    ctlPremiere();
-    if (!root.hidden) { ind = indicateurs(S, jour(), periode, depsVue()); renderCartes(); renderGraphe(); } else dirty = true;
+    if (!root.hidden) { ind = indicateurs(S, jour(), periode, depsVue()); renderCartes(); lancerGraphe(); } else dirty = true;
   }
-  /* « Tout » part de la première donnée : première photo, ou début du passé reconstitué s'il est plus ancien. */
-  function premiereGlobale() {
-    const p = S ? premiereDate(S.snapshots) : undefined, r = hist.memo && hist.memo.res && hist.memo.res.points && hist.memo.res.points.length ? hist.memo.res.debut : null;
-    return r && (!p || r < p) ? r : p;
-  }
-  function ctlPremiere() { if (ctlPeriode && typeof ctlPeriode.premiere === "function") ctlPeriode.premiere(premiereGlobale()); }
 
   function render() {
     const u = U();
@@ -944,8 +905,8 @@
     // Nombre d'éléments pour les lecteurs d'écran seulement (règle 9 : les compteurs visibles sont dans la navigation).
     const n = items.length ? pluriel(items.length, "élément") + " à traiter" : "";
     if ($("ajBoiteN").textContent !== n) $("ajBoiteN").textContent = n;
-    renderGraphe();
     chargerHistorique();
+    lancerGraphe();
     lienProfond();
   }
   /* Carte « Prochaines échéances » : réécrite seulement si son HTML change (le focus d'un bouton n'est pas perdu à chaque émission du store). */
@@ -973,116 +934,19 @@
     requestAnimationFrame(() => arcs.forEach(a => { if (a.style) a.style.strokeDashoffset = a.getAttribute("data-aj-off"); }));
   }
 
-  /* ---------- graphe maître ---------- */
-  const poser = (cle, el, h) => { if (sig[cle] === h) return false; sig[cle] = h; el.innerHTML = h; return true; };
-  function majEtat() {
-    if (!root) return;
-    const res = hist.memo && hist.memo.res, rec = modele && modele.passe && modele.passe.reconstitue;
-    let t = "";
-    if (hist.etat === "charge") t = "Reconstitution du passé en cours…";
-    else if (rec && res) {
-      const prem = S ? premiereDate(S.snapshots) : null;
-      t = "Avant ta première photo" + (prem ? " (" + dateFr(prem) + ")" : "") + ", le passé est reconstitué à partir des cours, de tes transactions et des soldes bancaires : une estimation, moins fiable qu'une photo.";
-    }
-    else if (hist.etat === "echec") t = "Les cours n'ont pas pu être lus : le passé n'est pas reconstitué.";
-    else if (hist.etat === "pret" && res && !res.points.length && res.raison) t = res.raison;
-    const g = geo && geo.deformee ? " L'échelle de temps du passé et du futur diffère : le trait « Aujourd'hui » les sépare." : "";
-    t = (t + g).trim();
-    if (sig.etat !== t) { sig.etat = t; $("ajEtat").textContent = t; $("ajEtat").hidden = !t; }
-  }
-  function renderGraphe() {
-    const G = GRAPHE();
-    if (!G || !ind) return;
-    modele = evolution(S, jour(), periode, horizon, depsVue());
-    const el = $("ajFrise"), f = modele.passe, r = f.resume || {};
-    largeur = el.clientWidth || 0;
-    const gr = G.construire(f, modele.futur, { largeur, today: modele.today, scopeLabel: scopeLabel() });
-    geo = gr.geo; pointsGraphe = gr.points;
-    const vide = f.points.length < 2 && !modele.futur
-      ? '<p class="aj-frise-vide">' + (f.historique ? "Pas assez de points sur cette période : élargis-la ou choisis un pas plus fin."
-        : "Pas encore d'historique : Boussole prend chaque nuit une photo de ton patrimoine, la courbe se dessine au fil des jours.") + "</p>" : "";
-    poser("graphe", el, gr.svg || vide);
-    poser("legende", $("ajLegende"), gr.svg ? G.legendeHtml(f, modele.futur) : "");
-    poser("table", $("ajTable"), gr.svg ? G.tableauHtml(f, modele.futur, { scopeLabel: scopeLabel() }) : "");
-    const t = f.points.length > 1 && r.variation != null && !(ind && ind.net && ind.net.enAttente)
-      ? FM().fmtDelta({ montant: r.variation, pct: r.variationPct, periode: periodeTxt(periode) }).texte : "";
-    if (sig.resume !== t) { sig.resume = t; $("ajFriseResume").textContent = t; }
-    const promesse = $("ajPromesse"); if (promesse) promesse.hidden = !modele.futur;
-    // Versement pris en compte par le cône (avec sa source) et décomposition du gain : mêmes phrases que Patrimoine › Objectifs.
-    const pn = $("ajProjNote"), OVp = OBJV(null), fu = modele.futur;
-    const ph = fu && fu.points.length > 1 && OVp && typeof OVp.projectionPhrases === "function"
-      ? OVp.projectionPhrases(fu.points[0].central, fu.points[fu.points.length - 1].central, fu.versement, fu.annees, fu.versementInfo) : null;
-    const tp = ph ? ph.total + " " + ph.versement : "";
-    if (pn) { if (sig.proj !== tp) { sig.proj = tp; pn.textContent = tp; } pn.hidden = !tp; }
-    const hz = $("ajHorizonZone"); if (hz) hz.hidden = !modele.futur; // pas de futur : période terminée avant aujourd'hui, ou aucune donnée
-    majEtat();
-  }
-  let pointsGraphe = [];
-  /* Infobulle au survol (souris, doigt) : point le plus proche en abscisse ; ne touche qu'aux éléments du curseur et à l'infobulle. */
-  function survol(e) {
-    const zone = $("ajFrise"), svg = zone.querySelector ? zone.querySelector("svg") : null, tip = $("ajTip");
-    if (!svg || !geo || !pointsGraphe.length || !svg.getBoundingClientRect) return;
-    const rect = svg.getBoundingClientRect(), k = geo.W / (rect.width || geo.W), x = (e.clientX - rect.left) * k;
-    if (x < geo.L - 6 || x > geo.W - geo.R + 6) { masquerSurvol(); return; }
-    let p = pointsGraphe[0];
-    for (const q of pointsGraphe) if (Math.abs(q.x - x) < Math.abs(p.x - x)) p = q;
-    const ligne = svg.querySelector(".aj-cur-l"), pt = svg.querySelector(".aj-cur-d");
-    if (ligne) { ligne.setAttribute("x1", p.x.toFixed(1)); ligne.setAttribute("x2", p.x.toFixed(1)); ligne.setAttribute("class", "aj-cur-l on"); }
-    if (pt) { pt.setAttribute("cx", p.x.toFixed(1)); pt.setAttribute("cy", p.y.toFixed(1)); pt.setAttribute("class", "aj-cur-d on n-" + p.nature); }
-    tip.innerHTML = tipHtml(p);
-    tip.hidden = false;
-    const w = tip.offsetWidth || 170, gauche = p.x / k;
-    tip.style.left = Math.max(4, Math.min((rect.width || geo.W) - w - 4, gauche - w / 2)) + "px";
-    tip.style.top = Math.max(0, p.y / k - (tip.offsetHeight || 60) - 14) + "px";
-  }
-  function masquerSurvol() {
-    const zone = $("ajFrise"), svg = zone.querySelector ? zone.querySelector("svg") : null, tip = $("ajTip");
-    if (tip) tip.hidden = true;
-    if (!svg) return;
-    const l = svg.querySelector(".aj-cur-l"), d = svg.querySelector(".aj-cur-d");
-    if (l) l.setAttribute("class", "aj-cur-l"); if (d) d.setAttribute("class", "aj-cur-d");
-  }
-  /** Contenu de l'infobulle : date, valeur, nature du point (mots, pas seulement un style de trait). */
-  function tipHtml(p) {
-    const res = hist.memo && hist.memo.res, d = res && res.drapeaux;
-    const note = p.nature === "reconstitue" && d ? [d.compositionActuelle.length ? "à composition actuelle" : "", d.constantes.noms.length ? "autres lignes tenues constantes" : ""].filter(Boolean).join(" · ") : "";
-    return '<span class="aj-tip-d">' + esc(p.nature === "projete" ? dateFr(p.date) : p.label && p.label !== dateFr(p.date) ? p.label + " · " + dateFr(p.date) : dateFr(p.date)) + "</span>" +
-      '<span class="aj-tip-v">' + esc(eur(p.valeur)) + (p.nature === "projete" ? '<span class="aj-tip-c"> au centre</span>' : "") + "</span>" +
-      (p.nature === "projete" ? '<span class="aj-tip-f">entre ' + esc(eur(p.min)) + " et " + esc(eur(p.max)) + "</span>" : "") +
-      '<span class="aj-tip-n n-' + p.nature + '">' + { observe: "observé", reconstitue: "reconstitué", projete: "projeté, pas une promesse" }[p.nature] + "</span>" +
-      (note ? '<span class="aj-tip-f">' + esc(note) + "</span>" : "");
+  /* ---------- graphe maître : composant GraphePatrimoine relié au moteur par GrapheModele.brancher (un seul moteur, Projection.executer) ---------- */
+  let liaison = null, pleinDemande = false;
+  const GM = () => glob("GrapheModele") || voisin("GrapheModele", "./graphe-modele.js");
+  /* Monte le graphe une fois ; le recalcul n'a lieu que si ce qui compte a changé (store, périmètre, passé lu, réglages) : une émission du store sans effet ne redessine rien. */
+  function lancerGraphe() {
+    const Mo = GM(), el = $("ajGraphe");
+    if (!root || !S || !Mo || !el) return;
+    if (!liaison) liaison = Mo.brancher(el, { preset: "aujourdhui", deps: { UI: U() }, today: () => jour(), perimetre: () => scopeLabel(), store: window.Store || null });
+    if (!liaison) return;
+    if (pleinDemande) { pleinDemande = false; liaison.pleinEcranQuandPret(); } // lien profond #aujourdhui?graphe=plein-ecran
+    liaison.actualiser(S);
   }
 
-  /* Panneau « Comment c'est calculé » : natures du passé, hypothèses de la projection, repères publics. */
-  function ouvrirCalcul(el) {
-    const u = U(), G = GRAPHE();
-    if (!u || !u.panneau || !G || !modele) return;
-    const Rp = glob("Reperes") || voisin("Reperes", "./reperes.js"), rep = S && S.savoir && Array.isArray(S.savoir.reperes) ? S.savoir.reperes : [];
-    const sources = [];
-    [["livret_a_taux", "Taux du Livret A (repère pour les poches d'épargne)"], ["pfu_taux", "Prélèvement forfaitaire unique, non déduit de la projection"]].forEach(([cle, libelle]) => {
-      const r = Rp && Rp.trouver ? Rp.trouver(rep, cle) : null;
-      if (r) sources.push({ libelle, valeur: Rp.format(r), dateEffet: r.dateEffet, sourceTitre: r.sourceTitre, sourceUrl: r.sourceUrl });
-    });
-    const f = modele.futur, res = hist.memo && hist.memo.res;
-    const contenu = G.calculHtml({ rec: res && res.points && res.points.length ? res : null, decalage: modele.passe.decalage, fut: f, rendements: f ? f.rendements : null, parBloc: f ? f.parBloc : null,
-      versementSource: f ? f.versementSource : null, sources, deformee: !!(geo && geo.deformee), scopeLabel: scopeLabel() });
-    u.panneau.ouvrir({ titre: "Comment c'est calculé", contenu, retour: el,
-      pied: u.demanderAClaude("Explique-moi simplement comment Boussole calcule la courbe d'évolution et la projection de mon patrimoine net, et ce que je dois en retenir.") });
-  }
-
-  /* Période ou granularité changée (UI.periode) : le graphe et la variation de la carte « Patrimoine net » suivent ; l'historique est relu si besoin. */
-  function surPeriode(o) {
-    const x = o && typeof o === "object" ? o : { periode: o };
-    if (gClic) gChoisie = true; // la granularité vient d'être choisie sur sa bascule : elle ne suit plus la période
-    periode = { id: String(x.periode || x.id || periode.id), granularite: x.granularite ? String(x.granularite) : periode.granularite, du: x.du || undefined, au: x.au || undefined };
-    SN().definirPeriode(periode); // Patrimoine › Comptes affiche la variation sur la même période
-    try { localStorage.setItem(CLE, JSON.stringify(periodeAEnregistrer(periode, gChoisie))); } catch (e) {}
-    if (!S || !U() || !root) return;
-    ind = indicateurs(S, jour(), periode, depsVue());
-    renderCartes();
-    renderGraphe();
-    chargerHistorique();
-  }
   /* Carte → panneau de détail (le lien interne du pied ferme le panneau puis la coque suit le hash). Le focus revient à la carte,
      ou à la carte du même id si un rendu l'a remplacée entre-temps. */
   function ouvrirCarte(id, el) {
@@ -1117,63 +981,22 @@
     u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, retour: root.querySelector("[data-ech]") || undefined });
   }
 
-  /* Repère de décision du graphe → panneau (synthèse, date, statut, lien vers Agent › Journal) ; focus rendu au repère, ou au repère
-     du même id si le graphe a été redessiné entre-temps. */
-  function ouvrirRepere(el) {
-    const u = U(); if (!u || !u.panneau || !ind) return;
-    const id = el.getAttribute("data-journal"), r = (ind.frise.reperes || []).find(x => x.id === id);
-    if (!r) return;
-    const d = repereDetail(r);
-    u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, lien: d.lien, retour: el,
-      surFermeture: () => { if (!el.isConnected) { const c = Array.from(root.querySelectorAll("[data-journal]")).find(x => x.getAttribute("data-journal") === id); if (c) c.focus(); } } });
-  }
-
   function mount(r) {
     root = r;
     const u = U();
     SN().abonner(histPrete); // fin d'une lecture du passé (déclenchée ici ou par Patrimoine › Comptes)
-    const fr = $("ajFrise");
-    fr.addEventListener("click", e => { const el = e.target && e.target.closest ? e.target.closest("[data-journal]") : null; if (el) ouvrirRepere(el); });
-    fr.addEventListener("keydown", e => {
-      if (e.key !== "Enter" && e.key !== " ") return;
-      const el = e.target && e.target.closest ? e.target.closest("[data-journal]") : null;
-      if (el) { e.preventDefault(); ouvrirRepere(el); }
-    });
-    fr.addEventListener("pointermove", survol);
-    fr.addEventListener("pointerdown", survol);
-    fr.addEventListener("pointerleave", masquerSurvol);
-    const zone = $("ajPeriode");
-    const marquer = e => { gClic = !!(e.target && e.target.closest && e.target.closest(".ui-periode-g")); };
-    const effacer = () => { gClic = false; };
-    ["click", "keydown"].forEach(t => { zone.addEventListener(t, marquer, true); zone.addEventListener(t, effacer); });
-    if (u && u.periode) {
-      const o = { periode: periode.id, du: periode.du, au: periode.au, premiere: S ? premiereDate(S.snapshots) : undefined, surChange: surPeriode };
-      if (gChoisie && periode.granularite) o.granularite = periode.granularite; // sinon UI.periode la règle selon la période
-      ctlPeriode = u.periode(zone, o);
-    }
-    if (u && u.bascule) u.bascule($("ajHorizon"), { label: "Horizon de la projection", actif: String(horizon),
-      options: HORIZONS.map(n => ({ id: String(n), label: n + (n > 1 ? " ans" : " an"), aria: n + (n > 1 ? " ans" : " an") })),
-      surChange: id => { horizon = +id; try { localStorage.setItem(CLE_H, String(horizon)); } catch (e) {} if (S && ind) renderGraphe(); } });
     $("ajEch").addEventListener("click", e => {
       const t = e.target && e.target.closest ? e.target : null;
       const b = t && t.closest("[data-ech]"), c = t && t.closest("[data-ech-completer]");
       if (b) ouvrirJalon(b); else if (c) ouvrirACompleter(c);
     });
-    const bc = $("ajCalcul"); if (bc) bc.addEventListener("click", () => ouvrirCalcul(bc));
-    /* Le bouton Claude de l'en-tête couvre les demandes de la page : plus de bouton Claude empilé sous le graphe. */
     try { const mq = window.matchMedia(COLONNE), re = () => { if (root && !root.hidden && S && ind) render(); }; if (mq.addEventListener) mq.addEventListener("change", re); } catch (e) {}
     if (u && u.brancher) u.brancher(root, { surCarte: ouvrirCarte }); // cartes et « Voir plus » de la boîte de réception
-    /* Le graphe est dessiné à la largeur réelle (textes lisibles sur mobile) : redessin quand la largeur change nettement. */
-    if (typeof ResizeObserver === "function") new ResizeObserver(() => {
-      const w = $("ajFrise").clientWidth;
-      if (ind && w && Math.abs(w - largeur) > 24) renderGraphe();
-    }).observe($("ajFrise"));
   }
   function update(snap, visible) {
     S = snap;
     enLot(() => { // boîte et indicateurs du rendu partagent un seul calcul du calendrier
       items = boite(S, jour(), { aujRevue: RE().aujParis() }); // revue au jour de Paris, comme le serveur, et le reste aussi (jour())
-      ctlPremiere(); // « Tout » part de la première donnée
       dirty = true;
       if (visible) { render(); dirty = false; }
     });
@@ -1181,6 +1004,7 @@
   function show() {
     const p = window.App && typeof App.parametres === "function" ? App.parametres() : {};
     if (p && p.echeances) ouvrirCalendrierComplet = true;
+    if (p && p.graphe === "plein-ecran") pleinDemande = true;
     if (dirty) { render(); dirty = false; } else lienProfond();
   }
   /* Pastille de la navigation : nombre d'éléments de la boîte de réception (ne dépend que de `items`) ; vide quand il n'y en a pas. */
