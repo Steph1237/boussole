@@ -210,7 +210,7 @@ test("detailHtml : détail chiffré, rendement et repère Livret A, poches et ca
   assert.doesNotMatch(h, /data-ov-act|<form|<input|Supprimer|Monter|Descendre/);
   assert.match(h, />Corriger avec Claude</);
   assert.deepEqual(questions(h), [P("objectifs", "l'objectif « Apport maison » (60 000 € d'ici juin 2029, priorité 2 sur 3)")]);
-  assert.match(h, /Agent › Propositions/);
+  assert.match(h, /Agent › À valider/);
   const saisi = { o: { id: "s", nom: "Voyage <Japon>", type: "projet", cible: 5000, dateCible: "2027-08-31", source: "saisi", deja: 1000, rendement: 0, priorite: 4 },
     st: Plan.statutObjectif({ cible: 5000, dateCible: "2027-08-31", rendement: 0 }, { deja: 1000, versementAlloue: 0, today: TODAY }), brut: 1000, rang: 4 };
   const hs = sp(OV.detailHtml(saisi, ctx));

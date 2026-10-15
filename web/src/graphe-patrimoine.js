@@ -2106,7 +2106,7 @@
       const claude = (q, l) => this.claudeLien(q, l);
       const html = j2 => jalonDetailHtml(M, j, { impact: j2, claude }) +
         '<div class="gp-sh-acts"><button type="button" class="gp-btn" data-go="' + esc(j.id) + '">Voir sur la courbe</button>' +
-        (!estObjectif(j) && j.source === "evenement" ? this.claudeLien("Dans Boussole, je veux modifier l'événement « " + j.titre + " » du " + dJour(j.t) + ". Pose-moi les questions utiles et dépose la proposition de changement : je la validerai dans Agent › Propositions.", "Modifier avec Claude")
+        (!estObjectif(j) && j.source === "evenement" ? this.claudeLien("Dans Boussole, je veux modifier l'événement « " + j.titre + " » du " + dJour(j.t) + ". Pose-moi les questions utiles et dépose la proposition de changement : je la validerai dans Agent › À valider.", "Modifier avec Claude")
           : this.claudeLien("Dans Boussole, explique-moi " + (estObjectif(j) ? "où j'en suis de mon objectif « " + j.titre + " » et ce qui pourrait changer la probabilité de l'atteindre" : "ce que change « " + j.titre + " » pour moi") + ".", estObjectif(j) ? "Modifier avec Claude" : "Demander à Claude")) + "</div>";
       this.etat.curseur = j.t; this.majCurseur();
       const corps = this.feuille(j.titre, html(impact ? "calcul" : null), opener, ev => {

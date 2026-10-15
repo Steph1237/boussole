@@ -13,7 +13,6 @@
 }
 /* grands écrans : le graphe maître prend la largeur gagnée (la colonne « À traiter » grandit un peu, le reste va au graphe) */
 @media (min-width:1440px){#view-aujourdhui .aj{grid-template-columns:minmax(0,1fr) 400px}}
-@media (min-width:1680px){#view-aujourdhui .aj{grid-template-columns:minmax(0,1fr) 440px}}
 #view-aujourdhui .aj-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2) var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-3)}
 #view-aujourdhui .aj-head h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);letter-spacing:-.005em;margin:0}
 #view-aujourdhui .aj-n{font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}

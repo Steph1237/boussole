@@ -257,7 +257,7 @@
       '<p class="ov-note">' + esc(pct(prog)) + " de la cible</p>" +
       '<dl class="ov-dl">' + rows.map(([k, v, s]) => "<div><dt>" + esc(k) + "</dt><dd><b>" + esc(v) + "</b><span>" + esc(s) + "</span></dd></div>").join("") + "</dl>" +
       '<div class="ov-acts">' + boutonClaude(c.U, "objectifs", ctxClaude, "Corriger avec Claude") + "</div>" +
-      '<p class="ov-note">Cible, échéance, priorité ou poches : demande à Claude de les corriger, puis valide sa proposition dans Agent › Propositions.</p>' +
+      '<p class="ov-note">Cible, échéance, priorité ou poches : demande à Claude de les corriger, puis valide sa proposition dans Agent › À valider.</p>' +
       '<section class="ov-sec"><h3 class="ov-sec-t">Poches rattachées</h3>' + pochesHtml + "</section>" +
       '<section class="ov-sec"><h3 class="ov-sec-t">Projection de l\'objectif</h3>' +
       '<div class="ov-graphe" data-ov-graphe></div>' +
