@@ -35,7 +35,8 @@ test("immo-capacite : se compile, expose ses fonctions, est branché dans bilan,
   assert.doesNotThrow(() => new vm.Script(js, { filename: "immo-capacite.js" }));
   for (const f of ["calculer", "carteHtml", "indisponibleHtml", "sensibiliteHtml", "feuilleHtml", "optionsMoteur", "donneesMoteur", "libelleTaux", "monter", "rendre"]) assert.equal(typeof Cap[f], "function", f);
   assert.match(html, /id="blCapacite"/); assert.match(html, /Ta capacité d'emprunt aujourd'hui/);
-  assert.match(html, /data-slot="capacite-demain"[^>]*>[\s\S]*Ta capacité demain[\s\S]*bientôt/);
+  assert.match(html, /data-slot="capacite-demain"/); assert.doesNotMatch(html, /bientôt/, "l'emplacement « demain » n'est plus réservé : il reçoit le graphe");
+  assert.match(html, /data-slot="capacite-demain"[\s\S]*id="icGraphe"[\s\S]*id="icDemainMention"/);
   assert.ok(html.indexOf('id="blCapacite"') < html.indexOf('id="blTuiles"'), "la carte est en tête de la vue");
   assert.match(bilanJs, /ImmoCapacite\.rendre\(S\)/); assert.match(bilanJs, /ImmoCapacite\.monter\(/);
   const build = read("../../build.mjs");
@@ -203,18 +204,34 @@ test("échappement : un nom d'enveloppe piégé est inerte dans la feuille", () 
 });
 
 /* ------------------------------------------------------------ vue dans un mini-DOM ------------------------------------------------------------ */
-function vue(S) {
+function vue(S, o = {}) {
   const dom = miniDom(), { doc } = dom, modules = {};
   const ctx = { document: doc, console, setTimeout, clearTimeout, Intl, CSS: { escape: s => String(s) } };
   ctx.window = ctx; ctx.self = ctx; ctx.globalThis = ctx;
   ctx.App = { register: (n, api) => { modules[n] = api; } };
   vm.createContext(ctx);
-  for (const f of ["calc.js", "plan.js", "reperes.js", "calendrier.js", "marche.js", "format.js", "ui.js", "claude-prompts.js", "routine-etat.js", "projection-outils.js", "projection-credit.js",
-    "projection-fiscalite.js", "projection-evenements.js", "projection-donnees.js", "projection-immo.js", "immo-capacite.js", "bilan.js"]) vm.runInContext(read(f), ctx, { filename: f });
+  const avant = ["calc.js", "plan.js", "reperes.js", "calendrier.js", "marche.js", "format.js", "ui.js", "claude-prompts.js", "routine-etat.js", "projection-outils.js", "projection-credit.js",
+    "projection-fiscalite.js", "projection-evenements.js", "projection-donnees.js"];
+  for (const f of avant.concat(o.projection ? ["projection.js"] : [], ["projection-immo.js"])) vm.runInContext(read(f), ctx, { filename: f });
+  if (o.avant) o.avant(ctx);
+  for (const f of ["immo-capacite.js", "bilan.js"]) vm.runInContext(read(f), ctx, { filename: f });
   const root = doc.body.appendChild(doc.createElement("section"));
   root.setAttribute("id", "view-bilan"); root.innerHTML = html;
   const api = modules.bilan; api.mount(root); api.update(S, true);
   return { dom, doc, root, api, ctx, $: id => root.querySelector("#" + id) };
+}
+/** Faux graphe maître : enregistre les branchements (élément, options) et les appels de la liaison, sans dessiner. */
+function fauxGM() {
+  const gm = { liaisons: [], appels: [] };
+  gm.brancher = (el, opts) => {
+    const reglages = Object.assign({ duree: 25, neuf: false, primo: false }, opts.reglages), L = { el, opts, snaps: [], patchs: [], detruite: false };
+    L.reglages = () => reglages;
+    L.actualiser = S => { L.snaps.push(S); gm.appels.push("actualiser"); };
+    L.definir = p => { Object.assign(reglages, p); L.patchs.push(p); gm.appels.push("definir"); };
+    L.detruire = () => { L.detruite = true; };
+    gm.liaisons.push(L); return L;
+  };
+  return gm;
 }
 test("vue (DOM) : la carte est rendue en tête de Patrimoine › Immobilier, bascules et feuille", () => {
   const v = vue(snap());
@@ -269,4 +286,145 @@ test("vue (DOM) : indisponible → ce qui manque et un seul bouton Claude, puis 
 test("vue (DOM) : aucun mot « conseiller » dans le HTML rendu (carte, indisponible, feuille)", () => {
   const S = snap(), tout = Cap.carteHtml(Cap.calculer(S, null, DEPS), DEPS) + Cap.indisponibleHtml(Cap.calculer(sansRepere(snap(), /^taux_credit/), null, DEPS), DEPS) + Cap.feuilleHtml(Cap.calculer(S, null, DEPS), S, DEPS);
   assert.doesNotMatch(tout, /conseill/i);
+});
+
+/* ------------------------------------------------------------ « Ta capacité demain » : le graphe maître en mode capacité ------------------------------------------------------------ */
+const jsn = o => JSON.parse(JSON.stringify(o)); // objets du contexte vm : prototype différent
+const vueGM = (S, o = {}) => { const gm = fauxGM(); const v = vue(S, Object.assign({ avant: ctx => { ctx.GrapheModele = gm; } }, o)); v.gm = gm; return v; };
+
+test("demain (DOM) : le slot n'est plus « bientôt » et reçoit le graphe maître en mode capacité, branché une seule fois", () => {
+  const v = vueGM(snap()), L = v.gm.liaisons;
+  const slot = v.$("blCapacite").querySelector('[data-slot="capacite-demain"]');
+  assert.ok(slot, "emplacement présent"); assert.doesNotMatch(slot.textContent, /bientôt/);
+  assert.equal(L.length, 1);
+  assert.equal(L[0].el, v.$("icGraphe"), "le graphe est monté dans l'emplacement");
+  assert.equal(L[0].opts.preset, "capacite");
+  assert.equal(L[0].opts.perimetre(), "du foyer");
+  assert.match(L[0].opts.today(), /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(L[0].opts.deps.UI, v.ctx.UI);
+  assert.equal(L[0].snaps.length, 1); assert.equal(L[0].snaps[0].scope, "foyer");
+  assert.equal(v.$("icGraphe").hidden, false);
+  assert.equal(v.$("icDemainIndispo").hidden, true);
+  // une émission du store (même état) ne rebranche pas : le graphe est actualisé, c'est lui qui décide de recalculer
+  v.api.update(snap(), true);
+  assert.equal(L.length, 1); assert.equal(L[0].snaps.length, 2);
+  // rien n'est enregistré : aucune option de stockage passée au graphe
+  assert.equal(L[0].opts.store, undefined);
+});
+test("demain (DOM) : le graphe suit le périmètre de l'en-tête (foyer, Camille, Sam)", () => {
+  const v = vueGM(snap()), L = v.gm.liaisons[0];
+  v.api.update(snap({ scope: "p1" }), true);
+  assert.equal(L.opts.perimetre(), "de Camille"); assert.equal(L.snaps.at(-1).scope, "p1");
+  v.api.update(snap({ scope: "p2" }), true);
+  assert.equal(L.opts.perimetre(), "de Sam"); assert.equal(L.snaps.at(-1).scope, "p2");
+  v.api.update(snap({ scope: "foyer" }), true);
+  assert.equal(L.opts.perimetre(), "du foyer");
+  assert.equal(v.gm.liaisons.length, 1, "un seul graphe pour tous les périmètres");
+});
+test("demain (DOM) : le graphe suit le type de bien et la durée de la carte (ancien, neuf, primo ; 20 / 25 ans)", () => {
+  const v = vueGM(snap()), L = v.gm.liaisons[0];
+  assert.deepEqual(jsn(L.reglages()), { duree: 25, neuf: false, primo: false });
+  v.$("icType").querySelector('[data-ui-id="neuf"]').click();
+  assert.deepEqual(jsn(L.patchs.at(-1)), { duree: 25, neuf: true, primo: false });
+  v.$("icType").querySelector('[data-ui-id="primo"]').click();
+  assert.deepEqual(jsn(L.patchs.at(-1)), { duree: 25, neuf: false, primo: true });
+  v.$("icDuree").querySelector('[data-ui-id="20"]').click();
+  assert.deepEqual(jsn(L.patchs.at(-1)), { duree: 20, neuf: false, primo: true });
+  v.$("icType").querySelector('[data-ui-id="ancien"]').click();
+  assert.deepEqual(jsn(L.patchs.at(-1)), { duree: 20, neuf: false, primo: false });
+  // 27 ans (différé) : le graphe n'a que 20 et 25 ans, il reste à 25
+  v.$("icProjet").querySelector('[data-ui-id="vefa"]').click();
+  v.$("icDuree").querySelector('[data-ui-id="27"]').click();
+  assert.equal(L.reglages().duree, 25);
+  // un rendu sans changement de réglage ne rappelle pas definir (pas de recalcul inutile)
+  const n = L.patchs.length; v.api.update(snap(), true);
+  assert.equal(L.patchs.length, n);
+  // l'état du store est rendu au graphe AVANT le changement de réglage (le calcul part de l'état courant)
+  assert.equal(v.gm.appels.indexOf("actualiser") < v.gm.appels.indexOf("definir"), true);
+});
+test("demain (DOM) : carte indisponible → le graphe n'est pas monté ; état honnête « Ta capacité demain » avec ce qui manque et « Compléter avec Claude »", () => {
+  const v = vueGM(sansRepere(snap(), /^taux_usure/));
+  assert.equal(v.gm.liaisons.length, 0, "aucun graphe ni aucun chiffre sans capacité d'aujourd'hui");
+  const slot = v.$("blCapacite").querySelector('[data-slot="capacite-demain"]'), ind = v.$("icDemainIndispo");
+  assert.equal(ind.hidden, false); assert.equal(v.$("icGraphe").hidden, true);
+  const t = sp(slot.textContent).replace(/\s+/g, " ");
+  assert.match(t, /Ta capacité demain/); assert.match(t, /Il manque/); assert.match(t, /taux d'usure/);
+  assert.doesNotMatch(t, /\d{2,}\s*€/, "aucun montant");
+  assert.ok(ind.querySelectorAll("[data-ic-manque]").length >= 1);
+  const liens = ind.innerHTML.match(/claude\.ai\/new\?q=[^"]*/g) || [];
+  assert.equal(liens.length, 1); assert.match(decodeURIComponent(liens[0]), /Boussole/);
+  assert.match(ind.innerHTML, /Compléter avec Claude/);
+  // la capacité d'aujourd'hui revient → le graphe se monte ; elle repart → il est détruit
+  v.api.update(snap(), true);
+  assert.equal(v.gm.liaisons.length, 1); assert.equal(v.$("icDemainIndispo").hidden, true); assert.equal(v.$("icGraphe").hidden, false);
+  v.api.update(sansRepere(snap(), /^taux_usure/), true);
+  assert.equal(v.gm.liaisons[0].detruite, true); assert.equal(v.$("icDemainIndispo").hidden, false);
+  v.api.update(snap(), true);
+  assert.equal(v.gm.liaisons.length, 2, "nouveau graphe, l'ancien est détruit");
+});
+test("demain (DOM) : sans revenus (profil absent), l'état dit les revenus et propose Claude, sans graphe", () => {
+  const S = snap(); S.profil = null;
+  const v = vueGM(S);
+  assert.equal(v.gm.liaisons.length, 0);
+  const t = sp(v.$("icDemainIndispo").textContent).replace(/\s+/g, " ");
+  assert.match(t, /revenus/); assert.match(v.$("icDemainIndispo").innerHTML, /Compléter avec Claude/);
+});
+test("demain : la mention fixe est sous le graphe (texte du HCSF), pas sous l'état indisponible ; tutoiement ; aucun conseil", () => {
+  const v = vueGM(snap());
+  assert.equal(v.$("icDemainMention").textContent.trim(), Cap.MENTION);
+  assert.equal(v.$("icDemainMention").hidden, false);
+  const w = vueGM(sansRepere(snap(), /^taux_usure/));
+  assert.equal(w.$("icDemainMention").hidden, true, "la mention est déjà dans l'état indisponible de la carte");
+  const html = Cap.demainIndisponibleHtml(Cap.calculer(sansRepere(snap(), /^taux_credit/), null, DEPS), DEPS);
+  assert.doesNotMatch(texte(html), /\b(vous|votre|vos)\b/i); assert.doesNotMatch(texte(html), /conseill/i);
+  assert.match(texte(html), /\b(tu|ta|tes|ton)\b/i);
+});
+test("demain : lecture seule — le code ne touche ni au stockage navigateur ni au store, et ne passe aucun store au graphe", () => {
+  const src = js.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(src, /localStorage|sessionStorage|indexedDB|Store\b|\.doc\(|\.collection\(|\.upsert\(|fetch\(/);
+  assert.match(src, /preset:\s*"capacite"/);
+});
+test("demain : CSS mobile d'abord — l'emplacement et le graphe ne dépassent jamais la carte (min-width 0, pas de largeur fixe)", () => {
+  const c = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(c, /\.ic-demain\{[^}]*min-width:0/);
+  assert.match(c, /\.ic-demain-graphe\{[^}]*min-width:0/);
+  for (const m of c.matchAll(/\.ic-demain[^{]*\{([^}]*)\}/g)) assert.doesNotMatch(m[1], /(^|;)\s*(min-)?width:\s*\d+px/, "pas de largeur fixe : " + m[0]);
+  assert.match(c, /\.ic-demain-indispo[^{]*\{[^}]*\}/);
+});
+
+/* Données réelles de bout en bout : Projection.capaciteDansLeTemps via GrapheModele.brancher, composant remplacé par un double qui enregistre ses données. */
+function vueGMReel(S) {
+  const rec = { monte: 0, donnees: [], patchs: [] };
+  const faux = { PRESETS: { capacite: { vue: "financier", mode: "capacite" } }, monter(el, o) {
+    rec.monte++;
+    let r = Object.assign({ duree: 25, neuf: false, primo: false }, o.reglages);
+    const ctl = { mettreAJour: d => rec.donnees.push(d), reglages: () => r,
+      reglagesAppliques(p) { rec.patchs.push(p); r = Object.assign({}, r, p); Promise.resolve(o.surReglages(r)).then(d => { if (d) ctl.mettreAJour(d); }); }, detruire() {} };
+    return ctl;
+  } };
+  const v = vue(S, { projection: true, avant: ctx => { ctx.GraphePatrimoine = faux; vm.runInContext(read("graphe-modele.js"), ctx, { filename: "graphe-modele.js" }); } });
+  v.rec = rec; return v;
+}
+test("demain (bout en bout, démo) : le moteur répond « pret » en mode capacité avec phrase et mention ; périmètre, type et durée recalculent", async () => {
+  const v = vueGMReel(snap());
+  assert.equal(v.rec.monte, 1);
+  const d = v.rec.donnees.at(-1);
+  assert.equal(d.mode, "capacite"); assert.equal(d.etat, "pret"); assert.equal(d.perimetre, "du foyer");
+  assert.match(d.phrase, /^En \d{4}, budget d'achat médian/); assert.ok(d.capacite_demain.mois.length >= 2);
+  assert.ok(d.mention && /HCSF/.test(d.mention)); assert.equal(d.capacite_demain.duree_ans, 25);
+  const n = v.rec.donnees.length;
+  v.api.update(snap({ scope: "p1" }), true);
+  assert.equal(v.rec.donnees.length, n + 1, "périmètre changé → nouveau calcul"); assert.equal(v.rec.donnees.at(-1).perimetre, "de Camille");
+  v.api.update(snap({ scope: "p1" }), true);
+  assert.equal(v.rec.donnees.length, n + 1, "même état → pas de recalcul");
+  v.$("icDuree").querySelector('[data-ui-id="20"]').click();
+  assert.deepEqual(jsn(v.rec.patchs.at(-1)), { duree: 20, neuf: false, primo: false });
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(v.rec.donnees.at(-1).capacite_demain.duree_ans, 20, "le graphe est recalculé pour 20 ans");
+});
+test("demain (bout en bout) : si le moteur répond « vide », la raison est portée par les données, sans aucun chiffre", () => {
+  const GM = require("../web/src/graphe-modele.js"), P = require("../web/src/projection.js");
+  const S = snap(); S.savoir = { fiches: [], reperes: [] };
+  const d = GM.calculerCapacite(S, GM.reglagesParDefaut({ vue: "financier" }), { today: "2026-10-15", deps: { Projection: P }, perimetre: "du foyer" });
+  assert.equal(d.etat, "vide"); assert.match(d.raison, /repère manquant/); assert.equal(d.capacite_demain, undefined);
 });

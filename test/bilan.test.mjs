@@ -351,3 +351,16 @@ test("vue (DOM) : chargement, puis état vide orienté agent ; données indispon
   v.api.update(demoSnap({ dbOk: false, profil: null }), true);
   assert.match(v.$("blEtat").textContent, /Données indisponibles pour le moment : recharge la page ou reconnecte-toi\./);
 });
+
+/* ------------------------------------------------------------ « Ta capacité demain » (emplacement du graphe maître) ------------------------------------------------------------ */
+test("bilan : « Ta capacité demain » n'est plus un « bientôt » — l'emplacement reçoit le graphe, avec la mention fixe sous lui, en lecture seule", () => {
+  assert.doesNotMatch(html, /bientôt/i);
+  const slot = html.match(/<div class="ic-demain" data-slot="capacite-demain">[\s\S]*?<\/p>\s*<\/div>/);
+  assert.ok(slot, "emplacement conservé");
+  assert.match(slot[0], /id="icGraphe"/, "hôte du graphe maître"); assert.match(slot[0], /id="icDemainIndispo"[^>]*hidden/, "état indisponible masqué par défaut");
+  assert.match(slot[0], /id="icDemainMention"[^>]*>Estimation selon les règles du HCSF, chaque banque décide\. Ce n'est pas une offre de prêt\.<\/p>/);
+  assert.doesNotMatch(slot[0], /<(form|input|select|textarea|button)\b/, "aucun contrôle de saisie dans l'emplacement");
+  // la vue branche la carte et lui passe l'état à chaque rendu (le graphe suit le périmètre et se recalcule avec le store)
+  assert.match(js, /ImmoCapacite\.rendre\(S\)/); assert.match(js, /ImmoCapacite\.monter\(\$\("blCapacite"\), \{ UI: u \}\)/);
+  assert.doesNotMatch(slot[0] + sansCommentaires(js), /\b(vous|votre|vos)\b/i);
+});

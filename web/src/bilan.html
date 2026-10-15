@@ -16,7 +16,11 @@
         <p class="ic-perimetre" id="icPerimetre"></p>
       </header>
       <div class="ic-corps" id="icCorps"></div>
-      <div class="ic-demain" data-slot="capacite-demain"><span class="ic-demain-t">Ta capacité demain</span><span class="ui-badge">bientôt</span></div>
+      <div class="ic-demain" data-slot="capacite-demain">
+        <div class="ic-demain-indispo-zone" id="icDemainIndispo" hidden></div>
+        <div class="ic-demain-graphe" id="icGraphe"></div>
+        <p class="ic-mention ic-demain-mention" id="icDemainMention">Estimation selon les règles du HCSF, chaque banque décide. Ce n'est pas une offre de prêt.</p>
+      </div>
     </section>
 
     <section aria-label="Chiffres clés">

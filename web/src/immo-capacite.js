@@ -9,9 +9,13 @@
    - Sensibilité : 20 et 25 ans × taux du jour −1 / 0 / +1 point, lue telle que le moteur la calcule (barres sur une base zéro commune).
    - « Comment c'est calculé » (UI.panneau) : revenus retenus, charges, taux d'effort, assurance, TAEG et taux d'usure, reste à vivre, frais, apport par
      enveloppe, sources datées, mention fixe « Estimation selon les règles du HCSF, chaque banque décide. Ce n'est pas une offre de prêt. »
-   - « Ta capacité demain » : emplacement réservé (data-slot="capacite-demain"), rempli plus tard par le graphe maître ; pour l'instant « bientôt ».
+   - « Ta capacité demain » (data-slot="capacite-demain") : le graphe maître en mode capacité (GrapheModele.brancher, preset « capacite » : budget d'achat P10–P90 par année,
+     médiane, montant empruntable, ±1 point de taux, jalons). Il suit le périmètre de l'en-tête et, via liaison.definir, le type de bien et la durée (20 / 25 ans) de la carte ;
+     il se recalcule quand l'état du store change (liaison.actualiser). Carte « aujourd'hui » indisponible → pas de graphe : un état honnête (ce qui manque, « Compléter avec
+     Claude »). Moteur « vide » → la raison est affichée par le composant, jamais un chiffre inventé. Mention fixe du HCSF sous le graphe.
    Fonctions pures exportées pour les tests : donneesMoteur, optionsMoteur, calculer, manques, libelleTaux, carteHtml, indisponibleHtml, sensibiliteHtml,
-   feuilleHtml, questionClaude, phraseCompleter. Dépendances injectables (deps) : { ProjectionImmo, Calc, UI, ClaudePrompts, Fmt, today } ; globales par défaut. */
+   feuilleHtml, questionClaude, phraseCompleter, demainIndisponibleHtml, reglagesGraphe, libellePerimetre. Dépendances injectables (deps) : { ProjectionImmo, Calc, UI, ClaudePrompts, Fmt,
+   GrapheModele, today } ; globales par défaut. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -201,17 +205,27 @@
       '<p class="ic-mention">' + esc(r.mention || MENTION) + "</p></div>";
   }
 
+  /** Liste « ce qui manque » (puces <li>), partagée par la carte et l'emplacement « demain ». */
+  const listeManques = v => v.manques.map(m => '<li data-ic-manque="' + esc(m.nature) + '">' + esc(m.texte.charAt(0).toUpperCase() + m.texte.slice(1)) + (m.nature === "repere" ? '<span class="ic-m-origine"> (repère de référence de Boussole)</span>' : "") + "</li>").join("");
   /** Manque de données : ce qui manque, ce que Boussole ne fait pas à la place, et un seul bouton Claude (rendu par l'appelant). */
   function indisponibleHtml(v, deps) {
     const U = dep(deps, "UI"), profil = v.manques.some(m => m.nature === "profil"), repere = v.manques.some(m => m.nature === "repere");
-    const liste = v.manques.map(m => '<li data-ic-manque="' + esc(m.nature) + '">' + esc(m.texte.charAt(0).toUpperCase() + m.texte.slice(1)) + (m.nature === "repere" ? '<span class="ic-m-origine"> (repère de référence de Boussole)</span>' : "") + "</li>").join("");
     const mention = (v.r && v.r.mention) || MENTION;
     return '<div class="ic-indispo" data-ic-indisponible role="status"><p class="ic-indispo-t">Je ne peux pas estimer ta capacité d\'emprunt pour l\'instant.</p>' +
-      '<p class="ic-indispo-p">Il manque :</p><ul class="ic-indispo-l">' + liste + "</ul>" +
+      '<p class="ic-indispo-p">Il manque :</p><ul class="ic-indispo-l">' + listeManques(v) + "</ul>" +
       '<p class="ic-note">' + (profil ? "Boussole n'affiche aucun montant tant que ces éléments manquent : une réponse fausse serait pire que pas de réponse." : "Boussole n'affiche aucun montant sans ces repères de référence : une réponse fausse serait pire que pas de réponse.") +
       (repere && !profil ? " Rien à faire de ton côté ; Claude peut vérifier ce qui manque." : "") + "</p>" +
       '<div class="ic-indispo-act">' + (U && U.demanderAClaude ? U.demanderAClaude(phraseCompleter(v, deps), "Compléter avec Claude") : "") + "</div>" +
       '<p class="ic-mention">' + esc(mention) + "</p></div>";
+  }
+  /** « Ta capacité demain » sans capacité d'aujourd'hui : elle en part, donc aucun graphe ni chiffre ; ce qui manque et « Compléter avec Claude ». */
+  function demainIndisponibleHtml(v, deps) {
+    const U = dep(deps, "UI");
+    return '<div class="ic-indispo ic-demain-indispo" data-ic-demain-indisponible role="status"><h3 class="ic-h3">Ta capacité demain</h3>' +
+      '<p class="ic-indispo-p">Je ne peux pas tracer l\'évolution de ta capacité d\'achat : elle part de ta capacité d\'emprunt d\'aujourd\'hui, que je ne peux pas estimer pour l\'instant.</p>' +
+      '<p class="ic-indispo-p">Il manque :</p><ul class="ic-indispo-l">' + listeManques(v) + "</ul>" +
+      '<p class="ic-note">Aucun montant n\'est affiché tant que ces éléments manquent.</p>' +
+      '<div class="ic-indispo-act">' + (U && U.demanderAClaude ? U.demanderAClaude(phraseCompleter(v, deps), "Compléter avec Claude") : "") + "</div></div>";
   }
   /** Phrase prête de « Compléter avec Claude » : revenus d'abord, sinon la capacité d'emprunt avec ce qui manque. */
   function phraseCompleter(v, deps) {
@@ -289,7 +303,7 @@
   }
 
   /* ============================================================ vue ============================================================ */
-  let racine = null, etat = etatDefaut(), dernier = null, derniereS = null, sigCarte = "", ouvertFeuille = false, retourFeuille = null, deps0 = null;
+  let racine = null, etat = etatDefaut(), dernier = null, derniereS = null, sigCarte = "", ouvertFeuille = false, retourFeuille = null, deps0 = null, liaison = null, sigDemain = "";
   const $ = id => racine && racine.querySelector("#" + id);
 
   function lier(v, focusId) {
@@ -324,7 +338,40 @@
       if (v.statut === "ok") lier(v, o && o.focus);
     }
     rafraichirFeuille(S);
+    demain(v, S);
     return v;
+  }
+
+  /* ---------- « Ta capacité demain » : le graphe maître en mode capacité ---------- */
+  /** Réglages du graphe depuis la carte : le graphe n'a que 20 et 25 ans (27 ans avec différé → 25) et un type de bien (ancien, neuf, primo). */
+  function reglagesGraphe(e) { const x = e || {}; return { duree: x.duree === 20 ? 20 : 25, neuf: x.type === "neuf", primo: x.type === "primo" }; }
+  /** Périmètre du graphe, comme la carte « aujourd'hui » : « du foyer », « de Camille ». */
+  function libellePerimetre(S, deps) {
+    if (!S || (S.scope !== "p1" && S.scope !== "p2")) return "du foyer";
+    const C = dep(deps, "Calc"), per = nomPerimetre(S);
+    return C && typeof C.deNom === "function" ? C.deNom(per.nom, S.scope === "p2" ? 2 : 1) : "de " + per.nom;
+  }
+  function demain(v, S) {
+    const host = $("icGraphe"), ind = $("icDemainIndispo"), men = $("icDemainMention");
+    if (!host || !ind || !men) return;
+    if (v.statut !== "ok") {
+      /* Pas de capacité d'aujourd'hui : pas de graphe (il part d'elle), pas de chiffre. */
+      if (liaison) { try { liaison.detruire(); } catch (e) { /* le composant est déjà parti */ } liaison = null; host.innerHTML = ""; }
+      host.hidden = true; men.hidden = true; ind.hidden = false;
+      const h = demainIndisponibleHtml(v, deps0);
+      if (h !== sigDemain) { sigDemain = h; ind.innerHTML = h; }
+      return;
+    }
+    if (sigDemain) { sigDemain = ""; ind.innerHTML = ""; }
+    ind.hidden = true; host.hidden = false; men.hidden = false;
+    const GM = dep(deps0, "GrapheModele"), r = reglagesGraphe(etat);
+    if (!liaison && GM && typeof GM.brancher === "function") {
+      liaison = GM.brancher(host, { preset: "capacite", deps: { UI: dep(deps0, "UI") }, today: () => jourDe(deps0), perimetre: () => libellePerimetre(derniereS, deps0), reglages: r });
+    }
+    if (!liaison) { host.innerHTML = '<p class="ic-note" role="status">Le graphique de ta capacité demain n\'a pas pu se charger.</p>'; return; }
+    liaison.actualiser(S);
+    const cur = typeof liaison.reglages === "function" ? liaison.reglages() : null;
+    if (cur && (+cur.duree !== r.duree || !!cur.neuf !== r.neuf || !!cur.primo !== r.primo)) liaison.definir(r);
   }
 
   /* ---------- feuille ---------- */
@@ -363,6 +410,6 @@
     });
   }
 
-  return { MENTION, etatDefaut, jourDe, donneesMoteur, optionsMoteur, clesManquantes, nomPerimetre, calculer, libelleTaux, sensibiliteHtml, carteHtml, indisponibleHtml, phraseCompleter,
+  return { MENTION, etatDefaut, jourDe, donneesMoteur, optionsMoteur, clesManquantes, nomPerimetre, calculer, libelleTaux, sensibiliteHtml, carteHtml, indisponibleHtml, phraseCompleter, demainIndisponibleHtml, reglagesGraphe, libellePerimetre,
     feuilleHtml, questionClaude, sourcesGroupees, monter, rendre, ouvrirFeuille, _etat: () => etat };
 });
