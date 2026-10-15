@@ -615,6 +615,15 @@ test("bandeau (I1) : tous les appareils déjà acquittés → rien ; un appareil
   assert.deepEqual(JSON.parse(nouveau.storage.getItem("boussole.mfa.vus")), ["f-1"], "rien n'est acquitté sans clic");
 });
 
+test("dates des appareils : le jour est celui de Paris, quel que soit le fuseau de l'appareil (22 h 30 UTC le 15 → 16 septembre à Paris)", async () => {
+  const tard = { id: "f-3", friendly_name: "Appareil", created_at: "2026-09-15T22:30:00Z" };
+  const v = await monterBandeau({ verifies: [tard] });
+  assert.match(texte(v.bandeau), /ajouté le 16 septembre 2026/);
+  const deux = await monterEcran({ verifies: [F1, tard] });
+  deux.$("mfaAutre").click();
+  assert.match(texte(deux.$("mfaAppareil")), /^Appareil 2 sur 2, ajouté le 16 septembre 2026\.$/);
+});
+
 test("bandeau (I1) : stockage absent, bloqué ou illisible → bandeau quand même (par prudence), jamais d'exception ; lecture des appareils en échec → rien", async () => {
   const dom = miniDom(), { doc } = dom;
   const api = Mfa.adapter(fauxClient({ verifies: [F1] }).client);

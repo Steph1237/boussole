@@ -3187,20 +3187,69 @@ def("projection-donnees", function (module, exports, require) {
       if (!(M > 0) && !(crd > 0)) return;
       const cle = genre + ":" + x.id, info = objet(prets[cle]), mentions = [];
       let taux = O.estNombre(info.taux_pct) ? +info.taux_pct : null, n = null, fin = O.estDate(info.date_fin) ? info.date_fin : null, suppose = false;
+      const tauxDit = taux != null;
       if (fin) { n = 0; while (O.ajouterMois(today, n + 1) <= fin) n++; }
+      /* Part d'assurance de la mensualité (spec § 6.4) : la mensualité de `credits` est assurance comprise ; l'amortissement du capital se fait sur le reste.
+         assurance_taux_pct (par an, sur le capital initial) connu : capital initial = mensualité ÷ (annuité sur la durée totale + taux d'assurance / 12) quand
+         le taux et la durée totale (duree_mois) sont connus, sinon le capital restant dû d'aujourd'hui (convention dite). Inconnu : aucune séparation, dite. */
+      const a = O.estNombre(info.assurance_taux_pct) && +info.assurance_taux_pct >= 0 ? +info.assurance_taux_pct : null;
+      let ass = 0, assMethode = "inconnue", capitalInitial = null;
+      if (M > 0 && a === 0) assMethode = "aucune";
+      else if (M > 0 && a > 0) {
+        const D = Number.isInteger(+info.duree_mois) && +info.duree_mois > 0 ? +info.duree_mois : null;
+        let c0, exacte = false;
+        if (tauxDit && D != null) { c0 = M / (C.echeance(1, taux, D) + a / 100 / 12); exacte = true; }
+        else c0 = crd;
+        ass = c0 * (a / 100) / 12;
+        if (exacte) capitalInitial = c0;
+        if (!(ass > 0) || ass >= M) { ass = 0; capitalInitial = null; assMethode = "inconnue"; mentions.push("assurance du crédit non séparable de la mensualité (taux d'assurance incohérent avec elle) : mensualité supposée assurance comprise, capital remboursé un peu surestimé"); }
+        else if (exacte) assMethode = "capital_initial";
+        else { assMethode = "capital_restant_du"; mentions.push("assurance du crédit estimée sur le capital restant dû (capital initial inconnu : taux ou durée totale à compléter)"); }
+      } else if (M > 0) mentions.push("assurance du crédit inconnue : mensualité supposée assurance comprise sans séparation, capital remboursé un peu surestimé");
+      const Mp = Math.max(0, M - ass); /* part qui rembourse le capital et les intérêts */
       if (!(M > 0)) { mentions.push("mensualité inconnue : le capital restant dû est maintenu"); }
-      else if (taux != null && n == null) { n = C.dureeRestante(crd, M, taux); if (n == null) { mentions.push("la mensualité ne couvre pas les intérêts"); n = 0; } }
-      else if (taux == null && n != null) { taux = n > 0 ? C.tauxDeduit(crd, M, n) : 0; if (taux == null) { taux = 0; mentions.push("taux du crédit non déductible des données"); } else mentions.push("taux du crédit déduit de la fin et de la mensualité"); }
+      else if (taux != null && n == null) { n = C.dureeRestante(crd, Mp, taux); if (n == null) { mentions.push("la mensualité ne couvre pas les intérêts"); n = 0; } }
+      else if (taux == null && n != null) { taux = n > 0 ? C.tauxDeduit(crd, Mp, n) : 0; if (taux == null) { taux = 0; mentions.push("taux du crédit non déductible des données"); } else mentions.push("taux du crédit déduit de la fin et de la mensualité"); }
       else if (taux == null && n == null) {
         if (tauxMoyen === undefined) { ctx.manquant("taux_credit_immo_20", "taux supposé d'un crédit"); taux = 0; } else taux = tauxMoyen;
-        suppose = true; n = C.dureeRestante(crd, M, taux) || 0;
+        suppose = true; n = C.dureeRestante(crd, Mp, taux) || 0;
         mentions.push("taux du crédit supposé, à compléter");
       }
-      out.push({ cle, id: x.id, nom: String(x.nom || (genre === "bien" ? "Bien" : "Crédit")), genre, part, mensualite: M, crd, taux_pct: taux, n: n == null ? 0 : n, fin, taux_suppose: suppose, mentions });
+      out.push({ cle, id: x.id, nom: String(x.nom || (genre === "bien" ? "Bien" : "Crédit")), genre, part, mensualite: M, assurance_mensuelle: ass, mensualite_hors_assurance: Mp, assurance_methode: assMethode, capital_initial: capitalInitial,
+        crd, taux_pct: taux, n: n == null ? 0 : n, fin, taux_suppose: suppose, mentions });
     };
     biens.forEach(b => { if (b) ajoute("bien", b, Calc.part(sc, b.part_p1)); });
     creds.forEach(c => { if (c) ajoute("credit", c, Calc.partCredit(sc, c.owner)); });
     return out;
+  }
+
+  /** Historique compact pour le rétro-contrôle (spec § 6.9) : { points: [{ date, byBloc, net }], flux: [{ date, montant }] }.
+      snapshots : photos du patrimoine financier avec leur composition, forme de l'app ({ date, foyer, byBloc }) ou ligne SQL ({ date, total, by_bloc }) ;
+      on garde la dernière photo de chaque mois (les dates de départ sont des fins de mois ; les photos de la nuit se chevauchent). tx : transactions
+      (forme de l'app ou ligne SQL) ; seuls les versements, versements programmés (entrées) et retraits (sorties) franchissent la frontière du portefeuille,
+      un achat ou une vente reste interne (flux = montant du mouvement ; sans montant, le mouvement est ignoré). */
+  function historiquePourRetro(snapshots, tx) {
+    const parMois = new Map();
+    liste(snapshots).forEach(r => {
+      const date = r && String(r.date || "").slice(0, 10), bb = r && (r.byBloc || r.by_bloc);
+      if (!O.estDate(date) || !bb || typeof bb !== "object") return;
+      const byBloc = {};
+      Object.keys(bb).forEach(k => { const v = +bb[k]; if (Number.isFinite(v)) byBloc[k] = v; });
+      if (!Object.keys(byBloc).length) return;
+      const net = Number.isFinite(+(r.foyer != null ? r.foyer : r.total)) ? +(r.foyer != null ? r.foyer : r.total) : sum(Object.values(byBloc), x => x);
+      const k = date.slice(0, 7), cur = parMois.get(k);
+      if (!cur || cur.date < date) parMois.set(k, { date, byBloc, net });
+    });
+    const points = [...parMois.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+    const flux = [];
+    liste(tx).forEach(r => {
+      const date = r && String(r.date || "").slice(0, 10), type = r && String(r.type || ""), m = r && +r.amount;
+      if (!O.estDate(date) || !Number.isFinite(m) || !m) return;
+      if (type === "versement" || type === "programme") flux.push({ date, montant: Math.abs(m) });
+      else if (type === "retrait") flux.push({ date, montant: -Math.abs(m) });
+    });
+    flux.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return { points, flux };
   }
 
   /** Entrée du moteur depuis l'état S du store (positions, config, profil, budget, banque, objectifs, foyer, repères, indices) ; today = AAAA-MM-JJ (jour de Paris). */
@@ -3208,10 +3257,10 @@ def("projection-donnees", function (module, exports, require) {
     const s = objet(S), pr = objet(s.profil);
     return { today, positions: liste(s.positions), instruments: [], config: objet(s.config), profil: pr, credits: liste(pr.credits), biens: liste(pr.biens), budget: s.budget || { lignes: [] },
       banque: s.banque || null, objectifs: liste(s.objectifs), foyer: { evenements: liste(objet(s.foyer).evenements), variantes: liste(objet(s.foyer).variantes) },
-      reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes) };
+      reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes), historique: historiquePourRetro(s.snapshots, s.tx) };
   }
 
-  return { ecarterIndisponibles, depuisEtat, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
+  return { ecarterIndisponibles, depuisEtat, historiquePourRetro, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
     creditsExistants, DISPO, TYPES_ENVELOPPE, personnesDe, objet, liste, sum };
 });
 });
@@ -3419,7 +3468,7 @@ def("projection", function (module, exports, require) {
 
   const GRAINE = 20261014;
   /** Incrémentée à chaque changement de calcul ; rendue avec chaque résultat (rejouer une projection passée). */
-  const versionModele = "proj-1.0.0";
+  const versionModele = "proj-1.1.0";
   const CLASSES_TIREES = Dn.CLASSES_TIREES, NB_TIRAGES = CLASSES_TIREES.length, IDX = Dn.IDX;
   const PERCENTILES = { p10: 0.1, p25: 0.25, p50: 0.5, p75: 0.75, p90: 0.9 };
   const NOMS_P = Object.keys(PERCENTILES);
@@ -3570,7 +3619,7 @@ def("projection", function (module, exports, require) {
       for (let t = 1; t <= N + 1; t++) {
         if (t <= n && c.mensualite > 0) {
           M.mensExist[t] += c.mensualite * part;
-          crd = t === n ? 0 : Math.max(0, crd * (1 + i) - c.mensualite);
+          crd = t === n ? 0 : Math.max(0, crd * (1 + i) - c.mensualite_hors_assurance); /* l'assurance ne rembourse pas le capital */
         } else if (c.mensualite > 0 && t > n) crd = 0;
         M.detteExist[t] += crd * part;
       }
@@ -4490,13 +4539,14 @@ def("projection", function (module, exports, require) {
     M.comps.filter(c => c.v0 > 0 && !c.dispo && c.prep.indisponible).forEach(c => avert.push("impôt de sortie de « " + c.enveloppe + " » non calculé (" + (c.prep.mentions[0] || "règle indisponible") + ") : ses retraits et sa valeur nette sont comptés sans impôt"));
     if (M.plafondDepasse) avert.push("le plafond de versements du PEA est dépassé : les versements suivants y sont maintenus faute d'autre enveloppe ouverte");
     const resume = vueTitre(M, vues[vue], euros, vue, couv.couverture, existant, futur);
+    const retroRes = retroDuModele(M, o);
     return {
       version_modele: versionModele, graine, chemins: P, deterministe, today: M.today, mois: M.dates.slice(0, N + 1), euros, vue, net_impots: netImp, horizon_ans: M.horizon,
       vues, objectifs, manquer_argent: manquer, jalons, phrase: resume.phrase, decomposition_phrase: resume.decomposition, capacite_source: M.capacite_base.source, capacite_periode: M.capacite_base.periode,
       hypotheses: lister(M), hypotheses_classes: classesUtilisees(M), a_completer: couv.a_completer, couverture: couv.couverture, avertissements: avert,
       existant, epargne_future: futur, capacite_base: M.capacite_base, capacite_par_periode: cpp, decomposition: dec, garde_fous: gf,
       evenements_pris_en_compte: M.evenements_pris_en_compte.slice(), question_evenements: M.evenements_pris_en_compte.length ? null : "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?",
-      chemins_retenus: o.retenir ? run.retenir : undefined, retro: null, achats: M.achats.map(a => Object.assign({}, a)), retraits: M.retraits.slice(),
+      chemins_retenus: o.retenir ? run.retenir : undefined, retro: retroRes.retro, retro_raison: retroRes.retro_raison, achats: M.achats.map(a => Object.assign({}, a)), retraits: M.retraits.slice(),
       deterministe_detail: { courants: { financier: Array.from(det.fin), disponible: Array.from(det.dispo), net: Array.from(det.net) },
         constants: { financier: Array.from(det.fin, (x, t) => x / M.infl[t]), disponible: Array.from(det.dispo, (x, t) => x / M.infl[t]), net: Array.from(det.net, (x, t) => x / M.infl[t]) },
         capacite_nominale: Array.from(det.cap), valeurs_par_compartiment: det.valeurs, retraits_detail: det.retraits, compartiments: M.comps.map(c => ({ id: c.id, enveloppe: c.enveloppe, type: c.type, classe: c.classe })) },
@@ -4623,7 +4673,9 @@ def("projection", function (module, exports, require) {
     const o = opts || {}, h = o.horizon_mois || 12, P = o.chemins || 2000, d = data || {};
     const pts = liste(objet(historique).points).filter(p => p && O.estDate(p.date) && p.byBloc && Object.keys(p.byBloc).length).sort((a, b) => (a.date < b.date ? -1 : 1));
     const flux = liste(o.flux), origines = [];
-    for (const p of pts) {
+    /* dates de départ = fins de mois (la dernière photo de chaque mois) : des photos de la nuit rapprochées ne seraient qu'une seule date, répétée */
+    const departs = [...new Map(pts.map(p => [p.date.slice(0, 7), p])).values()];
+    for (const p of departs) {
       const fin = O.ajouterMois(p.date, h);
       const cible = pts.filter(q => Math.abs(O.joursEntre(q.date, fin)) <= 20).sort((a, b) => Math.abs(O.joursEntre(a.date, fin)) - Math.abs(O.joursEntre(b.date, fin)))[0];
       if (!cible) continue;
@@ -4640,6 +4692,36 @@ def("projection", function (module, exports, require) {
     }
     const c = couverture(origines, { reperes: d.reperes, min: o.min });
     return { origines, couverture: c, phrase: phraseRetro(c) };
+  }
+
+  /** Rétro-contrôle du résultat d'une projection (spec § 6.9, décision 15) : { retro, retro_raison }. L'historique est celui de `data.historique`
+      (Dn.historiquePourRetro : une photo par mois avec sa composition, flux observés) ; le modèle de marché est celui des repères et des classes de `data`.
+      `retro` n'est donné que s'il y a au moins `retro_min_origines` (24) dates de départ avec une valeur réelle 12 mois plus tard ; sinon null et la raison est
+      dite. Indépendant du scénario (événements, variante) : mis en cache par empreinte de l'historique et du modèle de marché. */
+  const retroCache = new Map();
+  const LIMITES_RETRO = ["Les périodes de 12 mois se chevauchent : les résultats ne sont pas indépendants, c'est indicatif.",
+    "L'historique est court et sa composition par poche vient des photos de Boussole ; avant la première photo, rien n'est reconstitué.",
+    "Seuls les versements et retraits enregistrés sont comptés comme flux ; un salaire versé sur un compte suivi n'en est pas un."];
+  function retroDuModele(M, o) {
+    const d = M.data, h = objet(d.historique);
+    if (o && o.retro === false) return { retro: null, retro_raison: "rétro-contrôle non demandé" };
+    if (M.options.perimetre !== "foyer") return { retro: null, retro_raison: "Le rétro-contrôle porte sur le foyer entier : les photos du patrimoine ne sont pas tenues par personne." };
+    const pts = liste(h.points);
+    if (h.erreur) return { retro: null, retro_raison: "L'historique du patrimoine n'a pas pu être lu (" + h.erreur + ") : pas de vérification de la projection sur le passé." };
+    if (!pts.length) return { retro: null, retro_raison: "Aucune photo du patrimoine avec sa composition : pas encore assez d'historique pour vérifier la projection." };
+    const minR = O.indexReperes(d.reperes).retro_min_origines;
+    if (!minR) return { retro: null, retro_raison: "repère manquant (retro_min_origines) : seuil du rétro-contrôle indisponible" };
+    const cle = versionModele + ":" + hacher(JSON.stringify([h, d.reperes, d.classes]));
+    let r = retroCache.get(cle);
+    if (!r) {
+      r = retroControle(d, h, { horizon_mois: 12, chemins: 2000, flux: h.flux, min: +minR.valeur });
+      retroCache.set(cle, r); while (retroCache.size > 4) retroCache.delete(retroCache.keys().next().value);
+    }
+    const c = r.couverture;
+    if (!c.affichable) return { retro: null, retro_raison: c.n + " date" + (c.n > 1 ? "s" : "") + " de départ avec une valeur réelle 12 mois plus tard sur " + c.minimum + " nécessaires : pas encore assez d'historique pour vérifier la projection." };
+    return { retro: { n: c.n, horizon_mois: 12, premiere_date: r.origines[0].date, derniere_date: r.origines[r.origines.length - 1].date,
+      dans_p10_p90: c.dans_p10_p90, taux_p10_p90: c.taux_p10_p90, attendu_p10_p90: c.attendu_p10_p90, dans_p25_p75: c.dans_p25_p75, taux_p25_p75: c.taux_p25_p75, attendu_p25_p75: c.attendu_p25_p75,
+      sous_p10: c.sous_p10, au_dessus_p90: c.au_dessus_p90, bandes_trop_etroites: c.taux_p10_p90 < 0.65, affichable: true, minimum: c.minimum, phrase: r.phrase, limites: LIMITES_RETRO.slice() }, retro_raison: null };
   }
 
   /* ================================================================== retrait, capacité d'emprunt dans le temps, plans figés */
@@ -4824,10 +4906,13 @@ def("projection", function (module, exports, require) {
   /** Empreinte de l'entrée : données, options (hors réglages d'exécution) et version du modèle. */
   function empreinte(data, options) {
     const o = Object.assign({}, options); delete o.worker; delete o.WorkerClass; delete o.urlWorker; delete o.progressif;
-    const s = JSON.stringify([versionModele, data, o]);
+    return versionModele + ":" + hacher(JSON.stringify([versionModele, data, o]));
+  }
+  /** Empreinte courte d'un texte (deux sommes de contrôle 32 bits et la longueur). */
+  function hacher(s) {
     let h1 = 0x811c9dc5, h2 = 0x01000193;
     for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0; h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0; h2 ^= h2 >>> 13; }
-    return versionModele + ":" + h1.toString(36) + h2.toString(36) + ":" + s.length;
+    return h1.toString(36) + h2.toString(36) + ":" + s.length;
   }
   /** Calcule `etapes` (nombres de chemins croissants, même graine : les premiers chemins sont communs) ; rend un résultat par étape. */
   function calculerEtapes(data, options, etapes) {
@@ -4881,14 +4966,14 @@ def("projection", function (module, exports, require) {
     return executerSurLeFilPrincipal();
   }
   /** Vide le cache des résultats (tests). */
-  function viderCache() { cache.clear(); }
+  function viderCache() { cache.clear(); retroCache.clear(); }
 
   /** Normales corrélées d'un chemin donné : outil de test. */
   const _executer = derouler;
 
   return {
     GRAINE, versionModele, CLASSES_TIREES, HYPOTHESES, EVENEMENTS, PERCENTILES, PLAN_MAX_OCTETS, PLAN_PARAMETRES_MAX_OCTETS, PLAN_TOTAL_MAX_OCTETS, octetsJsonb: O.octetsJsonb,
-    preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
+    preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, retroDuModele, historiquePourRetro: Dn.historiquePourRetro, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
     fiscaliteSortie: F.fiscaliteSortie, amortissement: C.amortissement, annuite: C.annuite, planPret: C.planPret, ptz: C.ptz, taeg: C.taeg,
     capaciteEmprunt: (data, opts) => D.Immo.capaciteEmprunt(data, opts), capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
     rendementAttendu, capitaliser, centile: O.centile, _executer,

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
+import { PlanGen } from "./helpers/moteur-gen.mjs";
 
 const require = createRequire(import.meta.url);
 const Calc = require("../web/src/calc.js");
@@ -496,7 +497,7 @@ function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
   const js = strip(bloc, { mode: "strip" }) + "\n;({ bonnesPratiques, scoreSante, fraisSupports, periodeReel, coutsPrincipaux, val, counted, inScope, horsCourants, classeRisque, classePoche, liquidite, bilan, syntheseRisque, CLASSES_RISQUE, GROUPES_LABELS });";
-  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
+  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console, Plan: PlanGen });
 }
 /* Lignes SQL (instrument joint) et banque lue par chargerDonnees. */
 const enSql = P => P.map(p => ({ id: p.id, name: p.name, envelope: p.envelope, owner: p.owner, bloc: p.bloc, mode: p.mode, isin: p.isin, qty: p.qty, value: p.value, status: p.status,

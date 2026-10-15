@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
+import { PlanGen } from "./helpers/moteur-gen.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -109,7 +110,8 @@ test("mcp : budget et objectifs (schémas), get_overview expose le score de sant
   assert.match(code, /min\(-50[^)]*\)\.max\(50/, "rendement borné à -50..50");
   assert.match(code, /sante:\s*scoreSante\(donnees,\s*"foyer"\)/, "get_overview : score de santé");
   assert.match(code, /function affecterDeja\(/);
-  assert.match(code, /function effortMensuel\(/);
+  assert.match(code, /Plan\.effortMensuel\(/, "effort mensuel : celui du moteur");
+  assert.doesNotMatch(code, /function (effortMensuel|dateAtteinte)\(/, "plus de copie du calcul d'objectif");
   assert.match(src, /pas un conseil en investissement/);
 });
 
@@ -228,7 +230,7 @@ function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
   const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE, famille, budgetReel, matelasDisponible, doublonsProbables });";
-  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
+  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console, Plan: PlanGen });
 }
 const TODAY = "2026-10-10";
 const DEMO = require("../web/src/demo-data.js");

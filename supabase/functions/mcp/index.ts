@@ -78,6 +78,7 @@ import { registerFormulaire } from "./formulaire.ts";
 import { registerReglages } from "./reglages.ts";
 import { registerCalendrier, calendrierDeSession, typeDeduit as typeDeduitCalendrier, cleEnveloppe as cleEnveloppeCalendrier } from "./calendrier.ts";
 import { registerProjection, projectionDeSession, probabilitesObjectifs } from "./projection.ts";
+import { Plan } from "./projection-moteur.gen.js";
 import { registerExpertises, listeExpertises } from "./expertises.ts";
 import { registerAnalyser } from "./analyser.ts";
 import { registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton } from "./banque.ts";
@@ -448,42 +449,12 @@ const viewTotaux = (t: Totaux) => ({
   par_categorie: Object.fromEntries(Object.entries(t.parCategorie).map(([k, v]) => [k, r2(v)])),
 });
 
-/* ---------- dates (AAAA-MM-JJ, sans fuseau) ---------- */
-function ymd(s: string) {
-  const p = String(s).slice(0, 10).split("-").map(Number);
-  return { y: p[0], m: (p[1] || 1) - 1, d: p[2] || 1 };
-}
-const dernierJour = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-const isoUTC = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);
-const tauxMensuel = (tauxAnnuel: unknown) => Math.pow(1 + num(tauxAnnuel) / 100, 1 / 12) - 1;
-
-/** Versement constant de fin de mois pour passer de « deja » à « cible » en « mois » mois (formule d'annuité). */
-function effortMensuel(cible: number, deja: number, mois: number, tauxAnnuel: unknown): number {
-  const c = num(cible), d = num(deja), k = Math.floor(num(mois));
-  if (k <= 0) return c > d ? Infinity : 0;
-  const r = tauxMensuel(tauxAnnuel);
-  if (Math.abs(r) < EPS) return Math.max(0, (c - d) / k);
-  const f = Math.pow(1 + r, k);
-  return Math.max(0, (c - d * f) * r / (f - 1));
-}
+/* ---------- dates et calculs d'objectifs : ceux du moteur de l'app (Plan, copie générée projection-moteur.gen.js), jamais un port ---------- */
+const effortMensuel = (cible: number, deja: number, mois: number, tauxAnnuel: unknown): number => Plan.effortMensuel(cible, deja, mois, tauxAnnuel);
 /** Nombre de mois entiers entre deux dates (jamais négatif ; fin de mois = mois complet). */
-function moisEntre(a0: string, b0: string): number {
-  const a = ymd(a0), b = ymd(b0);
-  let k = (b.y - a.y) * 12 + (b.m - a.m);
-  if (b.d < a.d && b.d < dernierJour(b.y, b.m)) k -= 1;
-  return Math.max(0, k);
-}
+const moisEntre = (a0: string, b0: string): number => Plan.moisEntre(a0, b0);
 /** Fin du mois où la cible est atteinte au rythme donné ; date de départ si déjà atteinte ; null au-delà de 60 ans. */
-function dateAtteinte(cible: number, deja: number, versement: number, tauxAnnuel: unknown, depuis: string): string | null {
-  const c = num(cible), v = num(versement), r = tauxMensuel(tauxAnnuel), t = ymd(depuis);
-  let x = num(deja);
-  if (x >= c - EPS) return isoUTC(t.y, t.m, t.d);
-  for (let k = 1; k <= 720; k++) {
-    x = x * (1 + r) + v;
-    if (x >= c - 1e-6) return isoUTC(t.y, t.m + k, dernierJour(t.y, t.m + k));
-  }
-  return null;
-}
+const dateAtteinte = (cible: number, deja: number, versement: number, tauxAnnuel: unknown, depuis: string): string | null => Plan.dateAtteinte(cible, deja, versement, tauxAnnuel, depuis);
 const dateCible = (o: any): string | null => o.date_cible || o.dateCible || null;
 const prioriteDe = (o: any) => (o.priorite ?? Infinity) as number;
 
@@ -510,39 +481,16 @@ function affecterDeja(objectifs: any[], positions: any[], scope = "foyer"): Reco
   return out;
 }
 
-/** Répartit l'épargne mensuelle entre objectifs : priorité, puis échéance ; surplus au dernier objectif en cours (port de Plan.repartirEpargne). */
+/** Répartit l'épargne mensuelle entre objectifs : priorité, puis échéance ; surplus au dernier objectif en cours (Plan.repartirEpargne du moteur, montants
+    « déjà réunis » imposés : la cascade par priorité d'affecterDeja est faite avant). */
 function repartirEpargne(objectifs: any[], deja: Record<string, number>, epargneMensuelle: number, ref: string): Record<string, number> {
-  const cle = (o: any) => (dateCible(o) ? String(dateCible(o)).slice(0, 10) : "9999-12-31");
-  const liste = objectifs.map((o, i) => {
-    const dj = deja[o.id] ?? 0;
-    const effort = dj >= pos(o.cible) || !dateCible(o) ? 0 : effortMensuel(pos(o.cible), dj, moisEntre(ref, dateCible(o)!), o.rendement);
-    return { o, i, effort };
-  }).sort((a, b) => (num(prioriteDe(a.o)) - num(prioriteDe(b.o))) || (cle(a.o) < cle(b.o) ? -1 : cle(a.o) > cle(b.o) ? 1 : 0) || a.i - b.i);
-  const out: Record<string, number> = {};
-  let reste = pos(epargneMensuelle);
-  liste.forEach((x) => { const m = Math.min(x.effort, reste); out[x.o.id] = m; reste -= m; });
-  if (reste > 0 && liste.length) {
-    const enCours = liste.filter((x) => x.effort > 0);
-    const l = enCours.length ? enCours : liste;
-    out[l[l.length - 1].o.id] += reste;
-  }
-  return out;
+  return Plan.repartirEpargne(objectifs.map((o) => ({ ...o, source: "saisi", deja: deja[o.id] ?? 0 })), epargneMensuelle, { today: ref });
 }
 
-/** Situation d'un objectif (port de Plan.statutObjectif) : progression, effort requis, date d'atteinte, statut. */
+/** Situation d'un objectif (Plan.statutObjectif du moteur) : progression, effort requis, date d'atteinte, statut. */
 function statutObjectif(o: any, deja: number, versementAlloue: number, ref: string) {
-  const cible = pos(o.cible), date = dateCible(o);
-  const mois = date ? moisEntre(ref, date) : null;
-  const effort = date ? effortMensuel(cible, deja, mois!, o.rendement) : 0;
-  const atteinte = dateAtteinte(cible, deja, versementAlloue, o.rendement, ref);
-  let statut: string;
-  if (deja >= cible) statut = "atteint";
-  else if (date && (date < ref || !isFinite(effort))) statut = "hors_portee";
-  else if (!date) statut = atteinte ? "dans_les_temps" : "hors_portee";
-  else if (effort <= 0 || versementAlloue >= 1.1 * effort - EPS) statut = "avance";
-  else if (versementAlloue >= 0.95 * effort - EPS) statut = "dans_les_temps";
-  else statut = "retard";
-  return { progression: cible > 0 ? Math.min(1, deja / cible) : 1, mois, effort, atteinte, statut };
+  const { progression, mois, effort, atteinte, statut } = Plan.statutObjectif(o, { deja, versementAlloue, today: ref });
+  return { progression, mois, effort, atteinte, statut };
 }
 const STATUTS: Record<string, string> = { atteint: "atteint", avance: "en avance", dans_les_temps: "dans les temps", retard: "en retard", hors_portee: "hors de portée" };
 

@@ -98,8 +98,9 @@ async function lireOptionnelle(req: any, table: string, must: any): Promise<any[
 
 /** Lignes du foyer nécessaires au moteur → entrée du moteur (formes de l'app). `banque` : chargeur facultatif de { comptes, mois } (lignes SQL ; null si
     l'interrupteur est éteint ou la double authentification absente). Une erreur de lecture lève (les appelants décident). */
-export async function lireDonneesProjection(db: any, must: any, auj: string, banque?: () => Promise<any>) {
+export async function lireDonneesProjection(db: any, must: any, auj: string, banque?: () => Promise<any>, opts: { historique?: boolean } = {}) {
   const banqueP = banque ? Promise.resolve().then(banque).catch(() => null) : Promise.resolve(null);
+  const historiqueP = opts.historique ? lireHistorique(db, must, auj) : Promise.resolve(undefined);
   const [po, cf, pr, bi, cr, bu, ob, ev, va, rp, ix] = await Promise.all([
     db.from("positions").select(POS_SELECT).order("created_at"),
     db.from("config").select("*").maybeSingle(),
@@ -121,12 +122,41 @@ export async function lireDonneesProjection(db: any, must: any, auj: string, ban
   const evenements = (await lireOptionnelle(Promise.resolve(ev), "foyer_evenements", must)).map(evenementEnApp);
   const variantes = (await lireOptionnelle(Promise.resolve(va), "foyer_variantes", must)).map(varianteEnApp);
   const indices = (await lireOptionnelle(Promise.resolve(ix), "indices_mensuels", must)).map(indiceEnApp);
+  const historique = await historiqueP;
   return {
     today: auj, positions: ((must("positions", po) as any[]) ?? []).map(positionEnApp), instruments: [], config: { ...config, projection: isObj(config.projection) ? config.projection : {} },
     profil, credits: profil.credits, biens: profil.biens, budget: { lignes: Array.isArray(budget?.lignes) ? budget.lignes.map((l: any) => ({ ...l, montant: nombre(l.montant) })) : [] },
     banque: bq ? { actif: true, comptes: bq.comptes ?? [], mois: bq.mois ?? [] } : null, objectifs: ((must("objectifs", ob) as any[]) ?? []).map(objectifEnApp),
     foyer: { evenements, variantes }, reperes: Reperes.depuisLignes((must("reperes", rp) as any[]) ?? []), indices, classes: isObj(profilLu?.classes) ? profilLu.classes : {},
+    ...(historique ? { historique } : {}),
   };
+}
+
+const PAGE = 1000;
+/** Toutes les lignes d'une requête paginée (2 pages au plus : 2 000 lignes, soit plus de cinq ans de photos quotidiennes). */
+async function lirePages(requete: (de: number, a: number) => any, table: string, must: any): Promise<any[]> {
+  const out: any[] = [];
+  for (let page = 0; page < 2; page++) {
+    const lignes = await lireOptionnelle(Promise.resolve(requete(page * PAGE, page * PAGE + PAGE - 1)), table, must);
+    out.push(...lignes);
+    if (lignes.length < PAGE) break;
+  }
+  return out;
+}
+/** Historique du rétro-contrôle (spec § 6.9) : photos du patrimoine avec leur composition (une par mois) et flux observés (versements, retraits), cinq ans au plus.
+    Une lecture impossible ne fait pas échouer la projection : le rétro-contrôle le dit (erreur). */
+export async function lireHistorique(db: any, must: any, auj: string) {
+  const d = new Date(auj + "T00:00:00Z"); d.setUTCFullYear(d.getUTCFullYear() - 5);
+  const depuis = d.toISOString().slice(0, 10);
+  try {
+    const [photos, tx] = await Promise.all([
+      lirePages((de, a) => db.from("snapshots").select("date, total, by_bloc").gte("date", depuis).order("date").range(de, a), "snapshots", must),
+      lirePages((de, a) => db.from("transactions").select("date, type, amount").in("type", ["versement", "programme", "retrait"]).gte("date", depuis).order("date").range(de, a), "transactions", must),
+    ]);
+    return Projection.historiquePourRetro(photos, tx);
+  } catch (_e) {
+    return { points: [], flux: [], erreur: "lecture impossible" };
+  }
 }
 
 /* ---------- options et calculs ---------- */
@@ -166,6 +196,21 @@ export function resumeProjection(sortie: any) {
     jalons_omis: Math.max(0, (sortie.jalons ?? []).length - 15),
     hypotheses: (sortie.hypotheses ?? []).map((h: any) => ({ cle: h.cle, valeur: h.valeur, unite: h.unite, source: h.source_titre, url: h.source_url, verifie_le: h.verifie_le, statut: h.statut })),
     hypotheses_classes: sortie.hypotheses_classes, a_completer: sortie.a_completer, couverture: r2(sortie.couverture), avertissements: sortie.avertissements,
+    ...resumeRetro(sortie),
+  };
+}
+/** Rétro-contrôle (spec § 6.9) : la projection rejouée depuis des dates passées, et la part des valeurs réelles à 12 mois que ses bandes ont encadrées. `retro` n'existe
+    qu'avec au moins 24 dates de départ ; sinon null et retro_raison dit pourquoi. */
+export function resumeRetro(sortie: any) {
+  const r = sortie.retro;
+  if (!r) return { retro: null, retro_raison: sortie.retro_raison ?? "rétro-contrôle indisponible" };
+  return {
+    retro: {
+      n: r.n, horizon_mois: r.horizon_mois, premiere_date: r.premiere_date, derniere_date: r.derniere_date,
+      p10_p90: { dans: r.dans_p10_p90, taux: r2(r.taux_p10_p90), attendu: r.attendu_p10_p90 }, p25_p75: { dans: r.dans_p25_p75, taux: r2(r.taux_p25_p75), attendu: r.attendu_p25_p75 },
+      sous_p10: r.sous_p10, au_dessus_p90: r.au_dessus_p90, bandes_trop_etroites: r.bandes_trop_etroites, phrase: r.phrase, limites: r.limites,
+    },
+    retro_raison: null,
   };
 }
 /** Une crise rejouée : valeurs annuelles avec la crise et sans (rendements attendus), écart final. */
@@ -495,8 +540,8 @@ export function registerProjection(server: any, h: ProjectionDeps) {
     variante: Variante,
   };
   /** Calcul commun à projeter et figer_projection : données, modèle, simulation à 2 000 chemins. */
-  async function calculer(a: any) {
-    const data = await lire();
+  async function calculer(a: any, historique = false) {
+    const data = historique ? await lireDonneesProjection(db, must, h.today(), h.banque, { historique: true }) : await lire();
     exigerVariante(data, a.variante, UserError);
     const options = optionsDe(a);
     const M = Projection.preparer(data, options);
@@ -504,7 +549,7 @@ export function registerProjection(server: any, h: ProjectionDeps) {
   }
   server.registerTool("projeter", {
     title: "Projeter le patrimoine",
-    description: "Projection du patrimoine du foyer par le moteur de Boussole (le même que celui de l'app) : flux du foyer mois par mois, 2 000 trajectoires à graine fixe, toujours net de frais, euros d'aujourd'hui par défaut, événements de vie et variante pris en compte. Renvoie un résumé (jamais les trajectoires) : phrase, bande P10 à P90 par année, couches « patrimoine actuel sans nouveau versement » (existant) et « épargne future », capacité d'épargne retenue et par période, décomposition, garde-fous de vraisemblance, evenements_pris_en_compte (et question_evenements si aucun), objectifs avec leur probabilité, jalons, hypotheses sourcées (valeur, source, date, statut), données à compléter, avertissements et conduite. net_impots: true donne la valeur nette d'impôts si tout était retiré à chaque date. crise rejoue une crise historique à la date debut (entre aujourd'hui et la fin de l'horizon). Lecture seule : pour garder la projection et la comparer plus tard à la réalité, utilise figer_projection. Une projection n'est pas une promesse : donne des ordres de grandeur arrondis, toujours avec la bande. Information générale, pas une recommandation.",
+    description: "Projection du patrimoine du foyer par le moteur de Boussole (le même que celui de l'app) : flux du foyer mois par mois, 2 000 trajectoires à graine fixe, toujours net de frais, euros d'aujourd'hui par défaut, événements de vie et variante pris en compte. Renvoie un résumé (jamais les trajectoires) : phrase, bande P10 à P90 par année, couches « patrimoine actuel sans nouveau versement » (existant) et « épargne future », capacité d'épargne retenue et par période, décomposition, garde-fous de vraisemblance, evenements_pris_en_compte (et question_evenements si aucun), objectifs avec leur probabilité, jalons, hypotheses sourcées (valeur, source, date, statut), données à compléter, avertissements, retro (rétro-contrôle : part des valeurs réelles à 12 mois encadrées par les bandes P10 à P90 et P25 à P75 quand la projection est rejouée depuis au moins 24 dates passées ; null avec retro_raison sinon, jamais de chiffre inventé) et conduite. net_impots: true donne la valeur nette d'impôts si tout était retiré à chaque date. crise rejoue une crise historique à la date debut (entre aujourd'hui et la fin de l'horizon). Lecture seule : pour garder la projection et la comparer plus tard à la réalité, utilise figer_projection. Une projection n'est pas une promesse : donne des ordres de grandeur arrondis, toujours avec la bande. Information générale, pas une recommandation.",
     inputSchema: z.strictObject({
       ...OptionsProjection,
       crise: z.object({
@@ -514,7 +559,7 @@ export function registerProjection(server: any, h: ProjectionDeps) {
     }),
     annotations: RO,
   }, wrap(async (a: any) => {
-    const { M, sortie } = await calculer(a);
+    const { M, sortie } = await calculer(a, true);
     const sortieRes: any = { date: h.today(), ...resumeProjection(sortie) };
     if (a.crise) {
       const c = Projection.crise(M, { cle: a.crise.cle, debut: a.crise.debut });

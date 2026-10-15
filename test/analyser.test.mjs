@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
+import { PlanGen } from "./helpers/moteur-gen.mjs";
 
 const require = createRequire(import.meta.url);
 const path = rel => fileURLToPath(new URL("../" + rel, import.meta.url));
@@ -41,7 +42,7 @@ function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
   const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, bonnesPratiques, syntheseRisque, CLASSES_RISQUE, GROUPES_LABELS, classeRisque, classePoche, liquidite, val, counted, inScope, horsCourants, fraisSupports });";
-  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console });
+  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console, Plan: PlanGen });
 }
 
 const DEMO = require("../web/src/demo-data.js");

@@ -667,14 +667,17 @@ test("parité plan.js / MCP : seuils et repères identiques", () => {
     // contrat cp4 : statut, provisoire, points perdus et barème rejoué identiques des deux côtés
     "points >= 16 ? \"bon\" : points >= 10 ? \"surveiller\" : \"travailler\"", "couverture < SEUIL_PROVISOIRE", "SEUIL_PROVISOIRE = 0.6",
     "(20 * complets.length) * 100)", "Math.max(0, Math.round(f(x)) - (points || 0))",
-    "versementAlloue >= 1.1 * effort - EPS", "versementAlloue >= 0.95 * effort - EPS", // statut des objectifs
-    "Math.max(0, (c - d * f) * r / (f - 1))",                          // effort mensuel (annuité)
-    "Math.pow(1 + n(tauxAnnuel) / 100, 1 / 12) - 1",
   ];
+  /* statut des objectifs, effort mensuel (annuité) : le connecteur appelle le moteur (copie générée), il ne les recopie plus (test/projection-mcp.test.mjs : parité) */
+  const OBJECTIFS = ["versementAlloue >= 1.1 * effort - EPS", "versementAlloue >= 0.95 * effort - EPS", "Math.max(0, (c - d * f) * r / (f - 1))", "Math.pow(1 + n(tauxAnnuel) / 100, 1 / 12) - 1"];
   const norm = s => compact(s).replace(/\(i\)=>/g, "i=>").replace(/num\(/g, "n(").replace(/asnumber/g, "");
   for (const s of SEUILS) {
     assert.ok(norm(planJs).includes(norm(s)), `plan.js : « ${s} » absent`);
     assert.ok(norm(mcp).includes(norm(s)), `index.ts : « ${s} » absent`);
+  }
+  for (const s of OBJECTIFS) {
+    assert.ok(norm(planJs).includes(norm(s)), `plan.js : « ${s} » absent`);
+    assert.ok(!norm(mcp).includes(norm(s)), `index.ts : « ${s} » ne doit plus être recopié (Plan.* du moteur)`);
   }
 });
 

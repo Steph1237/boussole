@@ -4,6 +4,9 @@
    Conventions : espace fine insécable (U+202F) pour les milliers, espace insécable (U+00A0) avant « € », « k€ », « M€ » et « % » (écart voulu avec le brief,
    qui disait U+202F partout : la fine collait le symbole au chiffre à 16 px) ; signe « − » typographique (U+2212, jamais le tiret) ;
    « + » explicite pour une hausse quand `signe` est demandé ; une valeur absente ou non finie s'écrit « — ».
+   Largeur du séparateur des milliers : Public Sans ne donne à U+202F que 0,121 em (mesuré), trop peu à 32 px (« 193490 € »). Le caractère reste U+202F (insécable, correct
+   en français, copiable) ; theme.css le passe à 0,2 em avec la micro-police « Boussole Sep » (un seul caractère, unicode-range U+202F, en tête des piles --f-body et
+   --f-display ; scripts/gen-police-separateur.mjs). Aucune balise autour des nombres : un module n'a plus à élargir lui-même le séparateur.
 
    Fmt.fmtNombre(v, { decimales = 0 }?) → "193 490" (milliers en espace fine)
    Fmt.fmtEUR(v, { decimales = 0, signe = false, compact = false | "kpi" | "graphe", dette = false }?) → "193 490 €"

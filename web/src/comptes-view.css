@@ -173,3 +173,10 @@
 #view-comptes-view .cv-seuil-t{margin:0 0 6px;font:600 var(--t-body) var(--f-body)}
 #view-comptes-view .cv-seuil-barre{height:8px;border-radius:99px;background:var(--sunk);overflow:hidden}
 #view-comptes-view .cv-seuil-barre span{display:block;height:100%;border-radius:99px;background:var(--accent)}
+#view-comptes-view .cv-det li{flex-wrap:wrap}
+#view-comptes-view .cv-det-d{flex:1 0 100%;margin-top:2px;font-size:var(--t-caption);line-height:1.45;color:var(--muted);max-width:680px}
+#view-comptes-view .cv-c-etat{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px 8px;min-width:0}
+#view-comptes-view .cv-perime{display:inline-flex;align-items:center;gap:4px;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--warn);white-space:nowrap}
+#view-comptes-view .cv-perime-i{flex:none}
+#view-comptes-view .cv-alerte.cv-perime-fiche{border-left-color:var(--warn);background:var(--warn-soft);color:var(--ink)}
+#view-comptes-view .cv-alerte.cv-perime-fiche > .cv-perime-i{color:var(--warn)}

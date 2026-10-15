@@ -180,3 +180,56 @@ test("format.js : UMD (module Node et global Fmt), sans tiret court ni espace in
     assert.ok(!/-/.test(v) && !/\d \d/.test(v), v);
   }
 });
+
+/* ---------------------------------------------------------------- largeur du séparateur des milliers (police) */
+import * as Sep from "../scripts/gen-police-separateur.mjs";
+const theme = readFileSync("web/src/theme.css", "utf8");
+
+test("séparateur des milliers : toujours U+202F dans Fmt (insécable) ; élargi à l'écran par la micro-police « Boussole Sep », pas par du balisage", () => {
+  for (const s of [fmtEUR(193490), fmtNombre(1234567), fmtEUR(24500, { compact: "graphe" }), fmtEUR(-156500, { dette: false })]) {
+    assert.ok(!/\d \d/.test(s), "jamais une espace sécable entre deux chiffres : " + s);
+  }
+  assert.equal(fmtNombre(1234567), `1${f}234${f}567`);
+  assert.doesNotMatch(fmtEUR(193490), /</, "Fmt rend du texte, jamais du HTML");
+});
+
+test("micro-police : theme.css la déclare pour U+202F seulement et la met en tête des piles du corps et des titres ; le bloc est celui du script (npm run gen)", () => {
+  assert.equal(Sep.generer(theme), theme, "bloc @genere:separateur périmé : lancer npm run gen");
+  assert.match(theme, /@font-face\{font-family:"Boussole Sep";src:url\(data:font\/ttf;base64,[A-Za-z0-9+/=]+\) format\("truetype"\);unicode-range:U\+202F;font-display:block\}/);
+  assert.match(theme, /--f-body:"Boussole Sep","Public Sans",/);
+  assert.match(theme, /--f-display:"Boussole Sep","Schibsted Grotesk",/);
+  assert.match(theme, /--f-num:var\(--f-body\)/, "les nombres suivent la pile du corps");
+  assert.doesNotMatch(theme, /--f-mono:"Boussole Sep"/, "le code reste en mono");
+});
+
+test("micro-police : TrueType valide (tables exigées par les navigateurs, sommes de contrôle), U+202F → un glyphe vide de 0,2 em, plus large que les 0,121 em de Public Sans", () => {
+  const b64 = /base64,([A-Za-z0-9+/=]+)\)/.exec(theme)[1], buf = Buffer.from(b64, "base64");
+  assert.ok(buf.equals(Sep.police()), "le CSS embarque exactement les octets du script");
+  assert.ok(buf.length < 1000, "moins d'un kilo-octet : " + buf.length);
+  assert.equal(buf.readUInt32BE(0), 0x00010000, "TrueType");
+  const n = buf.readUInt16BE(4), tables = {};
+  for (let i = 0; i < n; i++) { const o = 12 + 16 * i; tables[buf.toString("latin1", o, o + 4)] = { somme: buf.readUInt32BE(o + 4), debut: buf.readUInt32BE(o + 8), taille: buf.readUInt32BE(o + 12) }; }
+  assert.deepEqual(Object.keys(tables).sort(), ["OS/2", "cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "name", "post"]);
+  for (const [t, x] of Object.entries(tables)) {
+    if (t === "head") continue; // checkSumAdjustment est dans la table : sa somme est vérifiée à part
+    let s = 0; const d = Buffer.concat([buf.subarray(x.debut, x.debut + x.taille), Buffer.alloc((4 - (x.taille % 4)) % 4)]);
+    for (let i = 0; i < d.length; i += 4) s = (s + d.readUInt32BE(i)) >>> 0;
+    assert.equal(s, x.somme, "somme de contrôle de " + t);
+  }
+  let tout = 0; for (let i = 0; i < buf.length; i += 4) tout = (tout + Buffer.concat([buf.subarray(i, i + 4), Buffer.alloc(4)]).readUInt32BE(0)) >>> 0;
+  assert.equal(tout, 0xb1b0afba, "somme du fichier (checkSumAdjustment)");
+  const head = tables.head.debut, upm = buf.readUInt16BE(head + 18);
+  assert.equal(upm, Sep.UPM);
+  /* cmap (3, 1) format 4 : U+202F → glyphe 1 */
+  const cm = tables.cmap.debut, sous = cm + buf.readUInt32BE(cm + 8);
+  assert.equal(buf.readUInt16BE(sous), 4);
+  const segX2 = buf.readUInt16BE(sous + 6), fins = sous + 14, debuts = fins + segX2 + 2, deltas = debuts + segX2;
+  assert.equal(buf.readUInt16BE(fins), 0x202f); assert.equal(buf.readUInt16BE(debuts), 0x202f);
+  assert.equal((0x202f + buf.readUInt16BE(deltas)) & 0xffff, 1, "U+202F → glyphe 1");
+  assert.equal(segX2 / 2, 2, "un segment plus le terminateur : aucun autre caractère");
+  /* hmtx : glyphe 1 = 200 / 1000 = 0,2 em */
+  const largeur = buf.readUInt16BE(tables.hmtx.debut + 4);
+  assert.equal(largeur / upm, 0.2);
+  assert.ok(largeur / upm > 0.121, "plus large que U+202F de Public Sans (0,121 em, mesuré dans Chrome)");
+  assert.equal(buf.readUInt16BE(tables.maxp.debut + 4), 2, "deux glyphes");
+});

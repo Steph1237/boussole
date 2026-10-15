@@ -362,6 +362,39 @@ test("projeter : résumé du moteur de l'app (phrase, bande, couches, capacité,
   for (const k of ["vues", "chemins_retenus", "deterministe_detail", "mois", "existant", "epargne_future", "retraits"]) assert.ok(!(k in r), k + " ne doit pas être renvoyé");
   assert.ok(taille(r) < 60000, "résumé borné : " + taille(r) + " octets");
 });
+/** Photos nocturnes (lignes SQL snapshots, deux par mois) et versements (lignes transactions) sur `mois` mois. */
+function historiqueSql(mois) {
+  const snaps = [], tx = [], rend = [0.012, -0.008, 0.02, 0.005, -0.015, 0.01, 0.007, 0.018, -0.004, 0.011, 0.003, 0.009];
+  let monde = 40000, obl = 10000;
+  for (let k = 0; k <= mois; k++) {
+    const fin = require("../web/src/projection-outils.js").ajouterMois("2023-09-30", k);
+    for (const date of [fin.slice(0, 8) + "15", fin]) snaps.push({ date, total: monde + obl, by_bloc: { Monde: Math.round(monde), Obligations: Math.round(obl) } });
+    if (k > 0) tx.push({ date: fin, type: "versement", amount: 300 });
+    monde = monde * (1 + rend[k % 12]) + 300; obl = obl * 1.003;
+  }
+  return { snaps, tx };
+}
+test("projeter : rétro-contrôle (retro) du moteur quand 24 dates de départ au moins existent dans les photos ; null avec la raison sinon ; lecture impossible sans faire échouer l'outil", { skip: SANS_STRIP }, async () => {
+  const { snaps, tx } = historiqueSql(36);
+  const T = outils(faux({ snapshots: snaps, transactions: tx }));
+  const r = await ok(T.projeter.handler({}));
+  const entree = entreeApp(); entree.historique = App.historiquePourRetro(snaps, tx);
+  const a = App.simuler(App.preparer(entree, { horizon_ans: 10, perimetre: "foyer", vue: "net", euros: "constants" }), {});
+  assert.equal(r.retro_raison, null);
+  assert.equal(r.retro.n, 25); assert.equal(a.retro.n, 25);
+  assert.equal(r.retro.p10_p90.dans, a.retro.dans_p10_p90); assert.equal(r.retro.p25_p75.dans, a.retro.dans_p25_p75);
+  assert.equal(r.retro.p10_p90.taux, Math.round(a.retro.taux_p10_p90 * 100) / 100); assert.equal(r.retro.p10_p90.attendu, 0.8); assert.equal(r.retro.p25_p75.attendu, 0.5);
+  assert.equal(r.retro.phrase, a.retro.phrase); assert.equal(r.retro.horizon_mois, 12);
+  assert.ok(r.retro.limites.length >= 2);
+  assert.equal(r.retro.premiere_date, "2023-09-30"); assert.equal(r.retro.derniere_date, "2025-09-30");
+  const court = await ok(outils(faux({ snapshots: historiqueSql(10).snaps, transactions: [] })).projeter.handler({}));
+  assert.equal(court.retro, null); assert.match(court.retro_raison, /^0 date de départ avec une valeur réelle 12 mois plus tard sur 24 nécessaires : pas encore assez d'historique/);
+  const aucune = await ok(T0.projeter.handler({}));
+  assert.equal(aucune.retro, null); assert.match(aucune.retro_raison, /Aucune photo du patrimoine/);
+  const casse = await ok(outils(faux({}, { erreurs: { snapshots: { code: "XX000", message: "boom" } } })).projeter.handler({}));
+  assert.equal(casse.retro, null); assert.match(casse.retro_raison, /pas pu être lu/);
+  assert.ok(casse.phrase, "la projection reste donnée");
+});
 test("projeter : options (horizon, périmètre, vue, euros courants, net d'impôts, variante) = moteur de l'app", { skip: SANS_STRIP }, async () => {
   const a = { horizon_ans: 5, perimetre: "p1", vue: "financier", euros: "courants", net_impots: true, variante: ID_VAR };
   const r = await ok(T0.projeter.handler(a));

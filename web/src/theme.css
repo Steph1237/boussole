@@ -74,11 +74,17 @@
   --veil:rgb(0 0 0 / .55);
   --e1:none; --e2:0 -1px 0 var(--line); --e3:0 -8px 32px rgb(0 0 0 / .5)}
 
+/* ---- espace fine insécable des milliers : 0,2 em au lieu des 0,12 em de Public Sans (micro-police d'un caractère, voir scripts/gen-police-separateur.mjs) ---- */
+/* @genere:separateur — début (scripts/gen-police-separateur.mjs, npm run gen ; ne pas modifier à la main) */
+@font-face{font-family:"Boussole Sep";src:url(data:font/ttf;base64,AAEAAAAKAIAAAwAgT1MvMnQRcw8AAACsAAAAYGNtYXAADCBiAAABDAAAACxnbHlmA74EiAAAATgAAAAiaGVhZGCjQ6EAAAFcAAAANmhoZWEDIgEvAAABlAAAACRobXR4ArwAZAAAAbgAAAAIbG9jYQARABEAAAHAAAAABm1heHAABAAGAAAByAAAACBuYW1lDhIlywAAAegAAADYcG9zdP+fADIAAALAAAAAIAADAfQBkAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABOT05FAEAgLyAvAyD/OAAAAyAAyAAAAAEAAAAAAAAAAAAAACAAAAAAAAEAAwABAAAADAAEACAAAAAEAAQAAQAAIC///wAAIC///9/SAAEAAAAAAAEAZAAAAZACvAADAAABAQEBAGQAAAEsAAAAAAK8AAD9RAAAAAEAAAABAADNUpSzXw889QAAA+gAAAAAAAAAAAAAAAAAAAAAAAAAAAGQArwAAAAIAAIAAAAAAAAAAQAAAyD/OAAAAfQAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAIB9ABkAMgAAAAAABEAEQAAAAEAAAACAAQAAQAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAGAE4AAwABBAkAAQAYAAAAAwABBAkAAgAOABgAAwABBAkAAwAgACYAAwABBAkABAAYAEYAAwABBAkABQAWAF4AAwABBAkABgAWAHQAQgBvAHUAcwBzAG8AbABlACAAUwBlAHAAUgBlAGcAdQBsAGEAcgBCAG8AdQBzAHMAbwBsAGUAIABTAGUAcAAgADEALgAwAEIAbwB1AHMAcwBvAGwAZQAgAFMAZQBwAFYAZQByAHMAaQBvAG4AIAAxAC4AMABCAG8AdQBzAHMAbwBsAGUAUwBlAHAAAwAAAAAAAP+cADIAAAAAAAAAAAAAAAAAAAAAAAAAAA==) format("truetype");unicode-range:U+202F;font-display:block}
+/* @genere:separateur — fin */
+
 /* ---- jetons indépendants du thème ---- */
 :root{
-  /* polices : Schibsted Grotesk (titres, héros), Public Sans (texte et nombres en chiffres tabulaires) ; le mono ne sert qu'au code */
-  --f-display:"Schibsted Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-body:"Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* polices : Schibsted Grotesk (titres, héros), Public Sans (texte et nombres en chiffres tabulaires) ; le mono ne sert qu'au code.
+     « Boussole Sep » ne porte que U+202F (séparateur des milliers de Fmt) : en tête de pile, elle ne change que la largeur de ce caractère. */
+  --f-display:"Boussole Sep","Schibsted Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Boussole Sep","Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-num:var(--f-body);
   --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   /* échelle typographique : taille et interligne par rôle ; rien sous 12 px ; les MAJUSCULES sont réservées aux chips de statut */
