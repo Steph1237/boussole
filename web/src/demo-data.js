@@ -31,8 +31,8 @@
      de « Banque des Canuts » (synchronisée cette nuit), les lignes du PEA de « Néo Courtage » (dernière synchronisation il y a 3 jours). */
   const CANUTS = { sourceAuto: "powens", sourceAutoLe: at(0, "04:12") }, NEO = { sourceAuto: "powens", sourceAutoLe: at(3, "04:10") };
   /* Annotations d'instruments (frais courants, zone, devise), comme si l'assistant les avait renseignées via le connecteur.
-     Trois lignes sur cinq cotées, soit 49 % des montants cotés : le critère « Frais des fonds » reste à compléter
-     (seuil de 50 %) et invite à faire annoter l'ETF Monde, la plus grosse ligne. */
+     Les frais ne sont connus que sur 39 % des placements : le critère « Frais des supports » reste à compléter (seuil de 70 % de
+     couverture, pratiques.js) et invite à faire annoter l'ETF Monde, la plus grosse ligne. */
   const A = (ter, zone, devise, annoteSource) => ({ ter, zone, devise, annoteSource, annoteLe: at(9, "19:05") });
   const positions = [
     P({ id: "pea-etf-monde", name: "ETF MSCI World", envelope: "PEA Camille", owner: "p1", bloc: "Monde", mode: "market", isin: "IE00B4L5Y983", qty: 120, pru: 88.4, price: 104.26, priceDate: hier, ...NEO, ...VALIDE("coeur") }),           // 12 511,20

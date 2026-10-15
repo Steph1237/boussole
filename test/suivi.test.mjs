@@ -120,13 +120,129 @@ test("ligne : rôle, constats, prochaine revue et leviers de sa classe dans son 
   assert.equal(Suivi.ligne(d, "inconnue", TODAY), null);
 });
 
-test("revue du cœur : mois courant dû, sinon le prochain mois de la liste ; semestrielle sur deux mois", () => {
+test("revue du cœur : mars et septembre ; septembre 2026 est passé sans revue enregistrée après mars : la revue est en retard, jamais effacée par le calendrier", () => {
   const d = donneesDe(cas("PO-2"));
+  d.routines.revue_coeur_faite_le = "2026-03-05"; // la revue de mars a été faite, pas celle de septembre
   const r = Suivi.prochaineRevueCoeur(d, TODAY);
-  assert.deepEqual([r.mois, r.annee, r.due], [3, 2027, false], "mars et septembre : septembre 2026 est passé sans revue enregistrée à cette date ? non : revue du cœur faite le 2026-03-05");
+  assert.deepEqual([r.mois, r.annee, r.due, r.en_retard], [9, 2026, true, true]);
+  const l = Suivi.vue(d, TODAY).lignes.find(x => x.id === "etf");
+  assert.match(l.revue.texte, /La revue de ton cœur de septembre n'a pas été faite : elle est à faire\./);
+  const h = Suivi.habitudes(d, TODAY).find(x => x.cle === "revue_coeur");
+  assert.deepEqual([h.palier, h.prochain_palier, h.en_retard], [null, "faite", true]);
+  assert.match(h.texte, /n'a pas été faite/);
+  d.routines.revue_coeur_faite_le = "2026-09-20"; // faite en septembre : plus de retard, prochaine en mars 2027
+  const r2 = Suivi.prochaineRevueCoeur(d, TODAY);
+  assert.deepEqual([r2.mois, r2.annee, r2.due, r2.en_retard], [3, 2027, false, false]);
+  assert.equal(Suivi.habitudes(d, TODAY).find(x => x.cle === "revue_coeur").palier, "faite");
 });
 
-test("performance : 200 lignes, politique + système + déclencheurs en moins de 10 ms (meilleur de 15 passes)", () => {
+test("revue du cœur en retard : les déclencheurs du cœur redeviennent visibles ; la clôture ne compte la revue faite que si elle était due (côté moteur)", () => {
+  const d = donneesDe(cas("DE-2")); // frais élevés d'une ligne du cœur, hors de son mois de revue, sans mémoire : « hors_revue »
+  d.config.suivi.mois_revue_coeur = 3;
+  d.routines.revue_coeur_faite_le = "2025-03-02"; // revue de mars 2026 manquée
+  const decl = Suivi.declencheurs(d, TODAY).find(x => x.cle === "frais_eleves");
+  assert.deepEqual([decl.visible, decl.raison_visibilite], [true, "revue_du_mois"]);
+  const e = Suivi.etatSuivi(d, TODAY, { coeur_revu: true });
+  assert.equal(e.revue_coeur_faite_le, TODAY, "due (en retard) : comptée faite");
+  const d2 = donneesDe(cas("DE-2")); d2.config.suivi.mois_revue_coeur = 3; d2.routines.revue_coeur_faite_le = "2026-03-05"; // à jour : prochaine en mars 2027
+  const e2 = Suivi.etatSuivi(d2, TODAY, { coeur_revu: true });
+  assert.equal(e2.revue_coeur_faite_le, "2026-03-05", "pas due : la date n'avance pas, même si l'agent le demande");
+});
+
+test("mois de revue du cœur : retenu à la première clôture (etat_suivi.mois_revue_coeur), jamais recalculé depuis les passages ; config.suivi le remplace", () => {
+  // première clôture le 2027-09-10 : aucune revue avant, aucun mois choisi
+  const d0 = donneesDe(cas("PO-5")); d0.routines = { passages: [], revue_coeur_faite_le: null, derniere_revue: null };
+  const e = Suivi.etatSuivi(d0, "2027-09-10", { coeur_revu: true });
+  assert.equal(e.mois_revue_coeur, 9);
+  assert.equal(e.revue_coeur_faite_le, "2027-09-10");
+  // le 2027-10-12 : même avec un journal qui ne garde plus que des revues récentes (limite de 24, ou de 6 revues d'un mois tout autre), le mois reste septembre
+  const d1 = donneesDe(cas("PO-5")); d1.routines = Suivi.routinesDe(e, ["2027-10-02", "2027-09-10", "2027-07-05"]);
+  const p = Suivi.politique(d1, "2027-10-12");
+  assert.deepEqual(p.mois_revue_coeur, [9]);
+  const r = Suivi.prochaineRevueCoeur(d1, "2027-10-12");
+  assert.deepEqual([r.mois, r.annee, r.due, r.en_retard], [9, 2028, false, false]);
+  // la plus ancienne revue du journal ne gouverne plus rien dès qu'un mois est retenu
+  const d2 = donneesDe(cas("PO-5")); d2.routines = Suivi.routinesDe(e, ["2026-02-02", "2027-09-10"]);
+  assert.deepEqual(Suivi.politique(d2, "2027-10-12").mois_revue_coeur, [9]);
+  // choix avec Claude : il l'emporte sur le mois retenu
+  d2.config.suivi = { mois_revue_coeur: 4, source: "x", le: "2027-01-01" };
+  assert.deepEqual(Suivi.politique(d2, "2027-10-12").mois_revue_coeur, [4]);
+  // le mois retenu est reporté de clôture en clôture
+  const e2 = Suivi.etatSuivi(Object.assign(donneesDe(cas("PO-5")), { routines: Suivi.routinesDe(e, ["2027-10-02"]) }), "2027-10-12", {});
+  assert.equal(e2.mois_revue_coeur, 9);
+});
+
+test("config.suivi hors des bornes de 0032 : ignorée par le moteur (défaut), jamais appliquée", () => {
+  const d = donneesDe(cas("PO-3"));
+  d.config.suivi = { plafond_satellite_pct: 80, seuil_ecart_pts: 1, seuil_baisse_satellite_pct: 99, mois_revue_coeur: 13, revue_coeur: "annuelle", source: "x", le: "2026-01-01" };
+  const p = Suivi.politique(d, TODAY);
+  assert.equal(p.plafond_satellite_pct, 20); // plafond du profil Dynamique de PO-3 : la valeur hors bornes (80) est ignorée
+  assert.equal(p.seuils.seuil_ecart_pts, 5); assert.equal(p.seuils.seuil_baisse_satellite_pct, 25);
+  assert.notDeepEqual(p.mois_revue_coeur, [13]);
+});
+
+test("rôle : le store de l'app écrit roleSource, le connecteur role_source ; un rôle « proposé » reste à confirmer dans les deux formes", () => {
+  const d = donneesDe(cas("SY-1"));
+  const l = d.positions.find(p => p.id === "etf");
+  l.role = "coeur"; l.roleSource = "propose";
+  assert.equal(Suivi.vue(d, TODAY).lignes.find(x => x.id === "etf").a_confirmer, true);
+  delete l.roleSource; l.role_source = "propose";
+  assert.equal(Suivi.vue(d, TODAY).lignes.find(x => x.id === "etf").a_confirmer, true);
+  l.role_source = "valide";
+  assert.equal(Suivi.vue(d, TODAY).lignes.find(x => x.id === "etf").a_confirmer, false);
+  l.role = "satellite"; l.roleSource = "valide"; delete l.role_source;
+  assert.equal(Suivi.vue(d, TODAY).lignes.find(x => x.id === "etf").a_confirmer, false);
+});
+
+test("assurance-vie : la fiscalité d'un rachat se calcule par contrat (primes versées du contrat contre sa valeur), sinon l'hypothèse est écrite", () => {
+  const c = cas("VC-12"), d = donneesDe(c);
+  // contrat de deux lignes (20 000 + 30 000), primes versées 25 000 : on sort la première ligne (40 % de la valeur du contrat)
+  d.positions.push({ id: "uc2", name: "Fonds Actions Europe D", envelope: "Assurance vie Ancienne", owner: "p1", bloc: "Europe", status: "actif", mode: "market", qty: 300, price: 100, pru: 40, isin: "XX0000000140" });
+  d.instruments.push({ isin: "XX0000000140", devise: "EUR", ter: 0.9, ter_source: "dic", ter_le: "2026-09-30" });
+  d.config.enveloppes_infos["Assurance vie Ancienne"].versements_cumules = 25000;
+  const r = Suivi.vautLeCout(c.entree, d, { today: c.today });
+  // base du contrat 25 000 × 20 000/50 000 = 10 000 ; gain 10 000 ; abattement 4 600 ; 5 400 × 7,5 % = 405 ; PS 17,2 % × 10 000 = 1 720 → 2 125
+  assert.equal(r.cout_detail.impot, 2125);
+  assert.match(r.hypotheses.join(" | "), /base fiscale du contrat « Assurance vie Ancienne » : primes versées 25 000 €, rachat de 40 % de la valeur du contrat/);
+  // sans primes versées renseignées : base estimée par les lignes, avec l'hypothèse écrite
+  delete d.config.enveloppes_infos["Assurance vie Ancienne"].versements_cumules;
+  const r2 = Suivi.vautLeCout(c.entree, d, { today: c.today });
+  assert.match(r2.hypotheses.join(" | "), /la base légale est celle du contrat \(primes versées\)/);
+  assert.equal(r2.cout_detail.impot, 1137, "base ligne par ligne (cas VC-12) : 14 000 € de prix de revient");
+});
+
+test("frais de transaction : « frais d'arbitrage » dans un contrat, « courtage et écart » sur un compte d'ordres, « frais de transaction » sinon", () => {
+  assert.equal(Suivi.vautLeCout(cas("VC-1").entree, donneesDe(cas("VC-1")), { today: TODAY }).transaction_libelle, "frais d'arbitrage");
+  assert.equal(Suivi.vautLeCout(cas("VC-3").entree, donneesDe(cas("VC-3")), { today: TODAY }).transaction_libelle, "courtage et écart");
+  assert.equal(Suivi.vautLeCout(cas("VC-11").entree, donneesDe(cas("VC-11")), { today: TODAY }).transaction_libelle, "courtage et écart");
+});
+
+test("société détenue par transparence au-delà de 10 % du financier investi : levier reduire_satellite avec son verdict (§ 4.3)", () => {
+  const d = donneesDe(cas("CM-18"));
+  d.expositions = d.expositions.map(e => (e.isin === "XX0000000074" && e.cle === "XX00000C0001" ? { ...e, poids_pct: 40 } : e)); // 300 × 100 × 40 % = 12 000 sur un investi de 90 000
+  const x = Suivi.declencheurs(d, TODAY).filter(t => t.cle === "concentration");
+  assert.equal(x.length, 1);
+  assert.equal(x[0].levier, "reduire_satellite");
+  assert.ok(x[0].verdict, "un verdict : " + JSON.stringify(x[0].cout && x[0].cout.manque));
+  assert.doesNotMatch(x[0].titre, /Société C1|ETF S&P/);
+});
+
+test("« Ta semaine » : la carte « Tes lignes » ne porte que des faits ; un changement de météo n'est jamais nommé, seulement compté", () => {
+  const d = donneesDe(cas("SE-3"));
+  d.routines.derniere_revue = { le: "2026-03-05", declencheurs: [], constats: {}, meteo: { eu: "a_regarder", us: "clair", fam: "clair" } };
+  const r = Suivi.maSemaine(d, [], TODAY), carte = r.cartes.find(x => x.type === "tes_lignes");
+  assert.ok(carte);
+  assert.doesNotMatch(JSON.stringify(carte), /"avant"|"apres"|"id":"(eu|us|fam)"|ETF|Fonds Actions/);
+  assert.match(carte.texte, /la météo de \d+ lignes? a changé depuis ta dernière revue : le détail est sur leur fiche/);
+});
+
+test("raison du rôle : une action « en direct » déduite du nom seul le dit (un fonds sans frais renseignés peut être pris pour une action)", () => {
+  const d = donneesDe(cas("RO-6")), l = Suivi.vue({ positions: [d.ligne], instruments: [], config: { enveloppes_infos: {}, frais_enveloppes: {}, suivi: {} }, profil: {}, objectifs: [], risque: { profil: "equilibre" }, routines: {}, reperes: donneesDe(cas("SY-1")).reperes }, TODAY).lignes[0];
+  assert.equal(l.role, "satellite");
+  assert.match(l.raison_role_texte, /action en direct \(déduite du nom et de l'ISIN : si c'est un fonds, dis-le à Claude\)/);
+});
+
+test("performance : 200 lignes, politique + système + déclencheurs, temps de calcul borné largement (cible de 10 ms : scripts/bench-suivi.mjs)", () => {
   const positions = [], instruments = [];
   for (let i = 0; i < 200; i++) {
     const isin = "XX" + String(100000000 + i);
@@ -135,16 +251,21 @@ test("performance : 200 lignes, politique + système + déclencheurs en moins de
   }
   const data = { positions, instruments, config: { enveloppes_infos: { "PEA Exemple": { type: "pea", date_ouverture: "2019-03-10", versements_cumules: 92000 }, "Compte-titres Exemple": { type: "compte_titres" },
     "Assurance vie Exemple": { type: "assurance_vie", date_ouverture: "2012-01-10" } }, frais_enveloppes: {}, suivi: { mois_revue_coeur: 10 } }, profil: { foyer: { adultes: 1 } }, objectifs: [], risque: { profil: "equilibre" }, routines: { passages: [] }, reperes: FIXTURE.reperes };
+  /* temps de calcul (CPU du processus) après préchauffage : meilleur de 25 passes, plafond large (25 ms) pour que l'intégration continue ne bascule jamais sur une
+     machine chargée ; la cible de 10 ms se mesure avec scripts/bench-suivi.mjs */
+  const passe = () => { Suivi.politique(data, TODAY); Suivi.systeme(data, TODAY); Suivi.declencheurs(data, TODAY); };
+  for (let k = 0; k < 5; k++) passe();
   let mieux = Infinity;
-  for (let k = 0; k < 15; k++) {
-    const t = process.hrtime.bigint();
-    Suivi.politique(data, TODAY); Suivi.systeme(data, TODAY); Suivi.declencheurs(data, TODAY);
-    mieux = Math.min(mieux, Number(process.hrtime.bigint() - t) / 1e6);
+  for (let k = 0; k < 25; k++) {
+    const c0 = process.cpuUsage();
+    passe();
+    const c1 = process.cpuUsage(c0);
+    mieux = Math.min(mieux, (c1.user + c1.system) / 1000);
   }
-  assert.ok(mieux < 10, "meilleur temps : " + mieux.toFixed(1) + " ms");
-  const v0 = process.hrtime.bigint(); const vue = Suivi.vue(data, TODAY); const dv = Number(process.hrtime.bigint() - v0) / 1e6;
+  assert.ok(mieux < 25, "meilleur temps de calcul : " + mieux.toFixed(1) + " ms");
+  const c0v = process.cpuUsage(); const vue = Suivi.vue(data, TODAY); const c1v = process.cpuUsage(c0v); const dv = (c1v.user + c1v.system) / 1000;
   assert.equal(vue.lignes.length, 200);
-  assert.ok(dv < 120, "vue complète : " + dv.toFixed(1) + " ms");
+  assert.ok(dv < 250, "vue complète : " + dv.toFixed(1) + " ms");
 });
 
 test("Ta semaine : 4 cartes une semaine calme, jamais plus de 7 ; un avis d'analyste n'y figure jamais", () => {

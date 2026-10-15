@@ -52,6 +52,7 @@
     return (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
   }
   const frc = (x, d) => O.frc(x, d == null ? 0 : d);
+  const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
   const eur = (x, d) => O.eur(x, d == null ? 0 : d);
   const pct = (x, d) => O.frc(x, d == null ? 1 : d) + " %";
   const NOMS_MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
@@ -80,7 +81,7 @@
   const METEO_LIB = { clair: "Au clair", eclaircies: "Éclaircies", a_regarder: "À regarder à ta revue", a_completer: "À compléter" };
   const STATUT_LIB = { bon: "Bon", a_surveiller: "À surveiller", a_travailler: "Au-dessus du repère", a_completer: "À compléter" };
   const CONSTATS_LIB = { cout: "Coût", poids: "Poids", chevauchement: "Chevauchement", classe_risque: "Classe de risque", solidite: "Solidité du support", enveloppe: "Enveloppe", devise: "Devise" };
-  const VERDICT_LIB = { vaut_le_cout: "Ça vaut le coût", a_peser: "À peser", ne_rien_faire: "Ne rien faire est la meilleure option ici" };
+  const VERDICT_LIB = { vaut_le_cout: "Ça vaut le coût", a_peser: "À peser", ne_rien_faire: "Ne rien changer à cette classe" };
   const CLASSE_LIB = { actions: "Actions", small_caps: "Petites capitalisations", emergents: "Actions émergentes", levier: "Produits à effet de levier", obligations: "Obligations",
     immobilier: "Immobilier", monetaire: "Monétaire et livrets", fonds_euros: "Fonds euros", or: "Or", crypto: "Crypto", autres: "Autres actifs",
     securise: "Fonds euros et monétaire", speculatif: "Crypto et levier", diversifiants: "Or et autres" };
@@ -210,13 +211,13 @@
     }).filter(Boolean).map(({ p, ins, ter, a }) => {
       const valeur = Calc.val(p), classe = a.classe, nature = a.nature;
       const prop = roleDefaut(p, ins || {}, ter, classe, a.fam, nature, a.motif, objectifs, today, rep);
-      const valide = ROLES.includes(p.role);
+      const valide = ROLES.includes(p.role), srcRole = p.roleSource || p.role_source || "valide"; // le store de l'app écrit roleSource, le connecteur role_source
       const base = p.mode === "market" && connu(p.qty) && connu(p.pru) ? +p.qty * +p.pru : null;
       const cleEnv = (p.envelope || "") + "\u0001" + (p.owner || "");
       if (!envCache.has(cleEnv)) envCache.set(cleEnv, enveloppeDe(cfg, positions, p.envelope, p.owner));
       const env = envCache.get(cleEnv);
       return { p, id: p.id, ins, ter, valeur, base, classe, nature,
-        role: valide ? p.role : prop.role, roleSource: valide ? (p.role_source || "valide") : "propose", roleProp: prop.role, raison: valide ? "valide" : prop.raison,
+        role: valide ? p.role : prop.role, roleSource: valide && srcRole !== "propose" ? "valide" : "propose", roleProp: prop.role, raison: valide && srcRole !== "propose" ? "valide" : prop.raison,
         enveloppe: p.envelope || null, env, devise: String((ins && ins.devise) || p.devise || "EUR").toUpperCase() };
     });
     const T = somme(lignes, l => l.valeur);
@@ -241,38 +242,56 @@
     const { cfg, rep, today } = ctx, s = objet(cfg.suivi), mentions = [];
     const profil = ctx.profilRisque;
     let plafond;
-    if (connu(s.plafond_satellite_pct)) plafond = +s.plafond_satellite_pct;
+    if (connu(s.plafond_satellite_pct) && +s.plafond_satellite_pct >= 0 && +s.plafond_satellite_pct <= 30) plafond = +s.plafond_satellite_pct;
     else if (profil && PLAFOND_PROFIL[profil]) plafond = rep(PLAFOND_PROFIL[profil]);
     else { plafond = rep(PLAFOND_PROFIL.modere); mentions.push("profil à faire : plafond du profil Modéré en attendant"); }
-    const seuilEcart = connu(s.seuil_ecart_pts) ? +s.seuil_ecart_pts : rep("suivi_seuil_ecart_pts");
-    const seuilBaisse = connu(s.seuil_baisse_satellite_pct) ? +s.seuil_baisse_satellite_pct : rep("suivi_seuil_baisse_satellite_pct");
+    /* bornes de la migration 0032 : une valeur hors bornes (écrite à la main en base) est ignorée, le défaut s'applique */
+    const dans = (v, min, max) => connu(v) && +v >= min && +v <= max;
+    const seuilEcart = dans(s.seuil_ecart_pts, 3, 10) ? +s.seuil_ecart_pts : rep("suivi_seuil_ecart_pts");
+    const seuilBaisse = dans(s.seuil_baisse_satellite_pct, 10, 50) ? +s.seuil_baisse_satellite_pct : rep("suivi_seuil_baisse_satellite_pct");
     const longMois = rep("suivi_horizon_long_ans") * 12;
     const coeurs = ctx.lignes.filter(l => roleFreq(l) === "coeur");
     const courts = coeurs.filter(l => horizonLigneMois(l.p, ctx.objectifs, today, rep).mois < longMois && !horizonLigneMois(l.p, ctx.objectifs, today, rep).suppose);
     const revueCoeur = s.revue_coeur === "annuelle" || s.revue_coeur === "semestrielle" ? s.revue_coeur : courts.length ? "semestrielle" : "annuelle";
     const passages = liste(objet(ctx.d.routines).passages).filter(estDate).sort();
-    let m = connu(s.mois_revue_coeur) && +s.mois_revue_coeur >= 1 && +s.mois_revue_coeur <= 12 ? Math.round(+s.mois_revue_coeur) : passages.length ? mois2(passages[0]) : mois2(today);
+    /* Mois de la revue du cœur : choisi avec Claude (config.suivi), sinon celui retenu à la première clôture (routines.etat_suivi, jamais recalculé : le journal
+       ne garde que les dernières revues), sinon, avant toute clôture enregistrée, celui de la plus ancienne revue connue, sinon le mois courant. */
+    const moisValide = v => connu(v) && +v >= 1 && +v <= 12 && Math.round(+v) === +v;
+    const memoire = objet(objet(ctx.d.routines).derniere_revue).mois_revue_coeur;
+    let m = moisValide(s.mois_revue_coeur) ? +s.mois_revue_coeur : moisValide(memoire) ? +memoire : passages.length ? mois2(passages[0]) : mois2(today);
     const mois = revueCoeur === "semestrielle" ? [m, ((m + 5) % 12) + 1].sort((a, b) => a - b) : [m];
     const dansConfig = ["revue_coeur", "mois_revue_coeur", "seuil_ecart_pts", "plafond_satellite_pct", "seuil_baisse_satellite_pct"].some(k => connu(s[k]) || (typeof s[k] === "string" && s[k]));
     return {
       revue: { reserve: "mensuelle", coeur: revueCoeur, satellite: "mensuelle" },
       seuils: { seuil_ecart_pts: seuilEcart, seuil_baisse_satellite_pct: seuilBaisse, ligne_satellite_max_pct: rep("suivi_ligne_satellite_max_pct"),
         societe_max_pct: rep("suivi_societe_max_pct"), frais_plancher_pct: rep("suivi_frais_plancher_pct") },
-      plafond_satellite_pct: plafond, mois_revue_coeur: mois, source: dansConfig ? "config" : "defaut", profil: profil || null, mentions,
+      plafond_satellite_pct: plafond, mois_revue_coeur: mois, mois_base: m, source: dansConfig ? "config" : "defaut", profil: profil || null, mentions,
       semaine: objet(s.semaine).actif === false ? { actif: false, jour: objet(s.semaine).jour || "lundi" } : { actif: true, jour: objet(s.semaine).jour || "lundi" },
       lignes_courtes: courts.map(l => l.id), horizon_suppose: coeurs.some(l => horizonLigneMois(l.p, ctx.objectifs, today, rep).suppose),
     };
   }
-  /** Prochaine revue du cœur : { date: AAAA-MM-01, mois, due (revue à faire ce mois-ci) }. */
+  /** Prochaine revue du cœur : { date: AAAA-MM-01, mois, annee, due (à faire : ce mois-ci, ou en retard), en_retard, derniere_programmee }.
+      En retard : la revue a déjà été faite au moins une fois, mais pas à son dernier mois programmé (une revue manquée n'est jamais effacée par le calendrier). */
   function prochaineRevueCoeur(ctx) {
+    if (ctx.revueCoeur) return ctx.revueCoeur;
     const pol = ctx.politique, today = ctx.today, rt = objet(ctx.d.routines);
-    const derniere = estDate(rt.revue_coeur_faite_le) ? rt.revue_coeur_faite_le : null;
-    const [y, m] = [+today.slice(0, 4), mois2(today)];
+    const derniere = estDate(rt.revue_coeur_faite_le) ? rt.revue_coeur_faite_le : null, faiteMois = derniere ? derniere.slice(0, 7) : null;
+    const [y, m] = [+today.slice(0, 4), mois2(today)], cm = today.slice(0, 7);
+    const ym = t => Math.floor(t / 12) + "-" + String((t % 12) + 1).padStart(2, "0");
+    let programmee = null;
+    for (let k = 0; k <= 12 && !programmee; k++) { const t = y * 12 + (m - 1) - k; if (pol.mois_revue_coeur.includes((t % 12) + 1)) programmee = ym(t); }
     const candidats = [];
-    for (let k = 0; k < 14; k++) { const t = y * 12 + (m - 1) + k, yy = Math.floor(t / 12), mm = (t % 12) + 1; if (pol.mois_revue_coeur.includes(mm)) candidats.push(yy + "-" + String(mm).padStart(2, "0")); }
-    const faiteCeMois = derniere && derniere.slice(0, 7) === today.slice(0, 7);
-    const choix = candidats.find(c => (c === today.slice(0, 7) ? !faiteCeMois : true) && (!derniere || c > derniere.slice(0, 7))) || candidats[0];
-    return { date: choix + "-01", mois: mois2(choix + "-01"), annee: +choix.slice(0, 4), due: choix === today.slice(0, 7) };
+    for (let k = 0; k < 14; k++) { const t = y * 12 + (m - 1) + k; if (pol.mois_revue_coeur.includes((t % 12) + 1)) candidats.push(ym(t)); }
+    const faiteCeMois = faiteMois === cm;
+    let r;
+    if (programmee && programmee < cm && faiteMois && faiteMois < programmee) r = { date: programmee + "-01", mois: mois2(programmee + "-01"), annee: +programmee.slice(0, 4), due: true, en_retard: true };
+    else {
+      const choix = candidats.find(c => (c === cm ? !faiteCeMois : true) && (!derniere || c > faiteMois)) || candidats[0];
+      r = { date: choix + "-01", mois: mois2(choix + "-01"), annee: +choix.slice(0, 4), due: choix === cm, en_retard: false };
+    }
+    r.derniere_programmee = programmee;
+    ctx.revueCoeur = r;
+    return r;
   }
 
   function politique(data, today) { return contexte(data, today).politique; }
@@ -418,10 +437,10 @@
     return out;
   }
   /** Météo d'une ligne : agrégation sans note (spec § 5.2). `revue` = { prochaine, meteo_figee } gèle la météo d'une ligne du cœur entre deux revues. */
-  function meteo(constatsListe, role, revue, today) {
+  function meteo(constatsListe, role, revue, today, seuilPct) {
     const L = liste(constatsListe), calcules = L.filter(c => c.statut !== "a_completer");
     const couverture = { calcules: calcules.length, applicables: L.length };
-    const seuil = DEFAUTS.suivi_couverture_min_pct;
+    const seuil = connu(seuilPct) ? +seuilPct : DEFAUTS.suivi_couverture_min_pct; // repère « suivi_couverture_min_pct » (60 %)
     let m;
     if (!L.length || calcules.length * 100 < L.length * seuil) m = "a_completer";
     else if (calcules.some(c => c.statut === "a_travailler")) m = "a_regarder";
@@ -550,14 +569,23 @@
     /* part vendue par enveloppe */
     const parEnv = new Map();
     L.forEach(l => { const k = l.enveloppe || ""; if (!parEnv.has(k)) parEnv.set(k, []); parEnv.get(k).push(l); });
-    const totalV = somme(L, l => l.valeur);
+    const totalV = somme(L, l => l.valeur), natures = new Set();
     /* impôt d'une vente de `montant` sur les lignes d'une enveloppe : `rachat` = vraie sortie de l'enveloppe ; sinon arbitrage dedans */
     const sortie = (enveloppe, lignes, montant, rachat) => {
       const env = lignes[0].env, type = env.type || "compte_titres";
       if (!rachat && (CONTRAT.includes(type) || TYPES_PEA.includes(type) || ["pee", "percol"].includes(type))) return 0;
       if (type === "per") { manque.push("Un PER est bloqué jusqu'à la retraite : pas de changement d'enveloppe chiffré"); bloque = true; return 0; }
       const V = somme(lignes, l => l.valeur), part = V > 0 ? Math.min(1, montant / V) : 0;
-      const baseConnue = lignes.every(l => l.base != null), base = somme(lignes, l => l.base || 0) * part;
+      let baseConnue = lignes.every(l => l.base != null), base = somme(lignes, l => l.base || 0) * part;
+      /* assurance-vie et capitalisation : la fiscalité du rachat se calcule par contrat (primes versées contre valeur du contrat), pas ligne par ligne */
+      if (rachat && AV_OU_CAPI(type)) {
+        const versements = connu(objet(env.infos).versements_cumules) ? +env.infos.versements_cumules : null;
+        const Vc = somme(ctx.lignes.filter(l => l.enveloppe === lignes[0].enveloppe), l => l.valeur);
+        if (versements != null && Vc > 0) {
+          base = versements * Math.min(1, montant / Vc); baseConnue = true;
+          hypotheses.push("base fiscale du contrat « " + (enveloppe || "assurance-vie") + " » : primes versées " + eur(versements) + ", rachat de " + pct(Math.min(1, montant / Vc) * 100, 0) + " de la valeur du contrat (la fiscalité d'un rachat se calcule par contrat)");
+        } else hypotheses.push("base fiscale estimée d'après le prix de revient des lignes : la base légale est celle du contrat (primes versées), à donner à Claude (versements_cumules) pour affiner");
+      }
       const ouverture = estDate(objet(env.infos).date_ouverture) ? env.infos.date_ouverture : null;
       if (!baseConnue) { manque.push("Le prix de revient des lignes vendues dans « " + (enveloppe || "l'enveloppe") + " » : pas de verdict sans lui, l'impôt en est la part principale"); bloque = true; return 0; }
       const c = { type: type === "autre" ? "compte_titres" : type, valeur: montant, base, classe: lignes[0].classe === "crypto" ? "crypto" : lignes[0].classe, date_ouverture: ouverture };
@@ -596,17 +624,17 @@
       /* impôt : sortie de l'enveloppe source */
       impot = sortie(A, lignesVendues, vendu, true);
       /* transactions : vente dans A (marché), achat dans B (marché) ; rachat d'UC et versement en UC sans frais (hypothèse) */
-      if (estMarche(envA.type)) { const t = ordresDans(A, vendu); transaction += t.cout; calcul.push("Vente dans « " + A + " » : " + eur(vendu) + " × " + frc(t.t, 2) + " % = " + eur(t.cout)); }
+      if (estMarche(envA.type)) { const t = ordresDans(A, vendu); transaction += t.cout; natures.add("courtage"); calcul.push("Vente dans « " + A + " » : " + eur(vendu) + " × " + frc(t.t, 2) + " % = " + eur(t.cout)); }
       else hypotheses.push("rachat d'unités de compte sans frais de vente (hypothèse) ; les frais sur versement du nouveau contrat ne sont pas comptés");
-      if (envB.type && estMarche(envB.type)) { const t = ordresDans(ch.vers_enveloppe, M); transaction += t.cout; calcul.push("Achat dans « " + ch.vers_enveloppe + " » : " + eur(M) + " × " + frc(t.t, 2) + " % = " + eur(t.cout)); }
+      if (envB.type && estMarche(envB.type)) { const t = ordresDans(ch.vers_enveloppe, M); transaction += t.cout; natures.add("courtage"); calcul.push("Achat dans « " + ch.vers_enveloppe + " » : " + eur(M) + " × " + frc(t.t, 2) + " % = " + eur(t.cout)); }
       else hypotheses.push("versement en unités de compte sans frais d'entrée (hypothèse) : les frais sur versement ne sont pas comptés");
     } else {
       /* arbitrage dans l'enveloppe : frais_classe, reequilibrer, reduire_satellite, securiser_objectif */
       for (const [e, lignes] of parEnv) {
         const V = somme(lignes, l => l.valeur), m = totalV > 0 ? M * V / totalV : 0, type = lignes[0].env.type;
-        if (CONTRAT.includes(type)) { const a = arbitrage(e), c = m * a / 100; transaction += c; calcul.push("Arbitrage dans « " + e + " » : " + eur(m) + " × " + frc(a, 2) + " % = " + eur(c)); }
+        if (CONTRAT.includes(type)) { const a = arbitrage(e), c = m * a / 100; transaction += c; natures.add("arbitrage"); calcul.push("Arbitrage dans « " + e + " » : " + eur(m) + " × " + frc(a, 2) + " % = " + eur(c)); }
         else {
-          const t = ordresDans(e, m), c = 2 * t.cout; transaction += c; calcul.push("Vente puis achat dans « " + (e || "enveloppe") + " » : 2 × " + eur(m) + " × " + frc(t.t, 2) + " % = " + eur(c));
+          const t = ordresDans(e, m), c = 2 * t.cout; transaction += c; natures.add("courtage"); calcul.push("Vente puis achat dans « " + (e || "enveloppe") + " » : 2 × " + eur(m) + " × " + frc(t.t, 2) + " % = " + eur(c));
           impot += sortie(e, lignes, m, false);
           if (TYPES_PEA.includes(type)) { const t2 = "vente et achat à l'intérieur du PEA : aucun impôt, le plan reste ouvert"; if (!hypotheses.includes(t2)) hypotheses.push(t2); }
         }
@@ -614,6 +642,7 @@
       if (parEnv.size && [...parEnv.values()].every(ls => CONTRAT.includes(ls[0].env.type))) hypotheses.push("arbitrage à l'intérieur du contrat : aucun impôt déclenché (les frais sur versement ne sont pas comptés)");
     }
     res.cout_detail = { impot: r2(impot), transaction: r2(transaction) };
+    res.transaction_libelle = natures.size === 1 ? (natures.has("arbitrage") ? "frais d'arbitrage" : "courtage et écart") : "frais de transaction";
     if (bloque) { res.cout_unique = null; res.cout_detail = { impot: null, transaction: r2(transaction) }; return conclure(res, ctx, o, null); }
     res.cout_unique = r2(impot + transaction);
     if (impot > 0) calcul.push("Impôt déclenché : " + eur(impot));
@@ -694,7 +723,7 @@
   function visibilite(ctx, d, roleDeclencheur) {
     if (DATES.includes(d.cle)) return { visible: true, raison_visibilite: "date" };
     if (roleDeclencheur !== "coeur") return { visible: true, raison_visibilite: "revue_du_mois" };
-    if (ctx.politique.mois_revue_coeur.includes(mois2(ctx.today))) return { visible: true, raison_visibilite: "revue_du_mois" };
+    if (ctx.politique.mois_revue_coeur.includes(mois2(ctx.today)) || prochaineRevueCoeur(ctx).en_retard) return { visible: true, raison_visibilite: "revue_du_mois" };
     const mem = objet(objet(ctx.d.routines).derniere_revue);
     if (!Object.keys(mem).length) return { visible: false, raison_visibilite: "hors_revue" };
     const vu = liste(mem.declencheurs).find(x => x && x.cle === d.cle && x.cible === d.cible);
@@ -782,7 +811,7 @@
         const p = s.montant * 100 / I;
         if (r6(p) > S.societe_max_pct) {
           const envs = [...new Set(s.porteurs.map(l => l.enveloppe))], l0 = s.porteurs[0];
-          const c = base("concentration", { portee: "ligne", classe: "actions", enveloppe: envs.length === 1 ? envs[0] : null, position_ids: s.porteurs.map(l => l.id), mesure: r4(p), seuil: S.societe_max_pct, levier: null,
+          const c = base("concentration", { portee: "ligne", classe: "actions", enveloppe: envs.length === 1 ? envs[0] : null, position_ids: s.porteurs.map(l => l.id), mesure: r4(p), seuil: S.societe_max_pct, levier: "reduire_satellite",
             montant: r2(s.montant - S.societe_max_pct / 100 * I),
             titre: "Une même société pèse " + pct(p, 1) + " de ton financier investi" + (envs.length === 1 && envs[0] ? ", dans « " + envs[0] + " »" : ""),
             pourquoi: "Une société (en direct et par les fonds que tu détiens) dépasse " + frc(S.societe_max_pct, 0) + " % du financier investi.", source: "Repère Boussole (directive OPCVM, art. 52)" });
@@ -855,16 +884,16 @@
       const prochain = palier ? PALIERS[PALIERS.indexOf(palier) + 1] || null : PALIERS[0];
       const fen = prochain || palier || PALIERS[0], mesure = compte(fen);
       out.push({ cle: "revue_faite", libelle: "Revue faite", mesure, palier, prochain_palier: prochain, fenetre: fen,
-        texte: palier ? (mesure === fen ? fen + " revues sur les " + fen + " derniers mois" : mesure + " revues sur les " + fen + " derniers mois, " + palier + " sur " + palier + " d'affilée") + " : c'est ce qui fait la différence sur 20 ans." :
+        texte: palier ? mesure + " revue" + (mesure > 1 ? "s" : "") + " sur les " + fen + " derniers mois" + " : c'est ce qui fait la différence sur 20 ans." :
           mesure + " revue" + (mesure > 1 ? "s" : "") + " sur les " + fen + " derniers mois : la revue du mois, c'est ce qui fait la différence." });
     }
-    /* revue du cœur */
+    /* revue du cœur : faite à son dernier mois programmé (sinon en retard) */
     {
-      const pol = ctx.politique, faite = estDate(rt.revue_coeur_faite_le) ? rt.revue_coeur_faite_le : null;
-      const fenetreMois = pol.revue.coeur === "semestrielle" ? 6 : 12;
-      const ok = faite && moisRevolus(faite, today) < fenetreMois;
-      out.push({ cle: "revue_coeur", libelle: "Revue du cœur", mesure: faite, palier: ok ? "faite" : null, prochain_palier: ok ? null : "faite",
-        texte: ok ? "Revue de ton cœur faite le " + faite.split("-").reverse().join("/") + "." : "La revue de ton cœur est à faire (" + (pol.revue.coeur === "semestrielle" ? "tous les six mois" : "une fois par an") + ")." });
+      const pol = ctx.politique, faite = estDate(rt.revue_coeur_faite_le) ? rt.revue_coeur_faite_le : null, pr = prochaineRevueCoeur(ctx);
+      const ok = !!faite && !pr.en_retard && (pr.derniere_programmee ? faite.slice(0, 7) >= pr.derniere_programmee : moisRevolus(faite, today) < (pol.revue.coeur === "semestrielle" ? 6 : 12));
+      out.push({ cle: "revue_coeur", libelle: "Revue du cœur", mesure: faite, palier: ok ? "faite" : null, prochain_palier: ok ? null : "faite", en_retard: pr.en_retard,
+        texte: ok ? "Revue de ton cœur faite le " + faite.split("-").reverse().join("/") + "." : pr.en_retard ? "La revue de ton cœur de " + moisEnLettres(pr.mois) + " n'a pas été faite : elle est à faire." :
+          "La revue de ton cœur est à faire (" + (pol.revue.coeur === "semestrielle" ? "tous les six mois" : "une fois par an") + ")." });
     }
     /* matelas */
     if (connu(sante.matelas_mois)) {
@@ -1012,13 +1041,15 @@
     if (arrive.length) cartes.push({ type: "ce_qui_arrive", titre: "Ce qui arrive", texte: arrive.slice(0, 3).length + " échéance" + (arrive.slice(0, 3).length > 1 ? "s" : "") + " à venir qui te concerne" + (arrive.slice(0, 3).length > 1 ? "nt" : "") + ".", elements: arrive.slice(0, 3).map(({ e, x }) => ({ id: e.id, date: e.date, titre: e.titre || e.type, raison: x.texte })), sources: arrive.map(({ e }) => e.source).filter(Boolean) });
     const passe = evts.filter(({ e, x }) => x.concerne && e.date >= il7 && e.date < today && e.statut === "passe");
     if (passe.length) cartes.push({ type: "ce_qui_s_est_passe", titre: "Ce qui s'est passé", texte: passe.length + " événement" + (passe.length > 1 ? "s" : "") + " qui te concernait" + (passe.length > 1 ? "ent" : "") + ".", elements: passe.map(({ e, x }) => ({ id: e.id, date: e.date, titre: e.titre || e.type, raison: x.texte, faits: e.faits || null })), sources: passe.map(({ e }) => e.source).filter(Boolean) });
-    /* tes lignes : changements de météo depuis la dernière revue, événements de lignes (famille societe et fonds) */
+    /* tes lignes : des faits seulement (événements de tes lignes) ; les changements de météo ne sont jamais nommés dans ce message hebdomadaire (§ 18.4) :
+       un simple compte renvoie vers les fiches des lignes */
     {
-      const mem = objet(objet(ctx.d.routines).derniere_revue), avant = objet(mem.meteo), changes = [];
-      ctx.lignes.forEach(l => { const m = meteo(constatsDe(ctx, l), l.role, null, today).meteo; if (avant[l.id] && avant[l.id] !== m) changes.push({ id: l.id, avant: avant[l.id], apres: m }); });
+      const mem = objet(objet(ctx.d.routines).derniere_revue), avant = objet(mem.meteo);
+      let nb = 0;
+      ctx.lignes.forEach(l => { const m = meteo(constatsDe(ctx, l), l.role, null, today, ctx.rep("suivi_couverture_min_pct")).meteo; if (avant[l.id] && avant[l.id] !== m) nb++; });
       const deLigne = evts.filter(({ e, x }) => x.concerne && ["societe", "fonds"].includes(e.famille) && e.date >= il7 && e.date <= dans7);
-      if (changes.length || deLigne.length) cartes.push({ type: "tes_lignes", titre: "Tes lignes", texte: (changes.length + deLigne.length) + " changement" + (changes.length + deLigne.length > 1 ? "s" : "") + " sur tes lignes.",
-        elements: changes.map(c => Object.assign({ genre: "meteo" }, c)).concat(deLigne.map(({ e, x }) => ({ genre: "evenement", id: e.id, date: e.date, titre: e.titre || e.type, raison: x.texte }))), sources: [] });
+      if (nb || deLigne.length) cartes.push({ type: "tes_lignes", titre: "Tes lignes", texte: [deLigne.length ? pluriel(deLigne.length, "événement") + " sur tes lignes" : "", nb ? "la météo de " + pluriel(nb, "ligne") + " a changé depuis ta dernière revue : le détail est sur leur fiche" : ""].filter(Boolean).join(" ; ") + ".",
+        elements: deLigne.map(({ e, x }) => ({ genre: "evenement", id: e.id, date: e.date, titre: e.titre || e.type, raison: x.texte })), meteo_changee: nb, sources: [] });
     }
     const faire = declencheursCtx(ctx, o).filter(d => d.visible && (d.verdict === "vaut_le_cout" || (d.verdict === "a_peser" && LEVIERS_RISQUE.includes(d.levier))));
     cartes.push({ type: "a_faire", titre: "À faire, ou pas", texte: faire.length ? faire.length + (faire.length > 1 ? " sujets passent le test du coût." : " sujet passe le test du coût.") : AUCUNE_ACTION,
@@ -1034,7 +1065,8 @@
   function revueDe(ctx, role) {
     if (role === "coeur" || role === null || role === undefined) {
       const r = prochaineRevueCoeur(ctx);
-      return { frequence: ctx.politique.revue.coeur, date: r.date, mois: r.mois, due: r.due, texte: r.due ? "Ton cœur est à revoir ce mois-ci (" + moisEnLettres(r.mois) + ")." : "Prochaine revue de ton cœur : " + moisEnLettres(r.mois) + "." };
+      return { frequence: ctx.politique.revue.coeur, date: r.date, mois: r.mois, due: r.due, en_retard: r.en_retard, texte: r.en_retard ? "La revue de ton cœur de " + moisEnLettres(r.mois) + " n'a pas été faite : elle est à faire." :
+        r.due ? "Ton cœur est à revoir ce mois-ci (" + moisEnLettres(r.mois) + ")." : "Prochaine revue de ton cœur : " + moisEnLettres(r.mois) + "." };
     }
     return { frequence: "mensuelle", date: null, mois: null, due: true, texte: "Revue chaque mois, dans ta revue mensuelle avec Claude." };
   }
@@ -1043,13 +1075,18 @@
     const mem = objet(objet(ctx.d.routines).derniere_revue), figee = objet(mem.meteo)[l.id];
     const rv = revueDe(ctx, l.role);
     const revue = figee && (l.role === "coeur" || l.role === null) && !rv.due ? { prochaine: rv.date, meteo_figee: figee } : null;
-    return meteo(cs, l.role, revue, ctx.today);
+    return meteo(cs, l.role, revue, ctx.today, ctx.rep("suivi_couverture_min_pct"));
+  }
+  /** Raison du rôle proposé en mots ; une action « en direct » déduite du nom seul le dit (limite connue : un fonds sans frais renseignés peut être pris pour une action). */
+  function raisonTexte(l) {
+    const t = RAISON_LIB[l.raison] || l.raison;
+    return l.raison === "action_directe" && l.ter == null && !(l.ins && l.ins.type_support) && l.roleSource !== "valide" ? t + " (déduite du nom et de l'ISIN : si c'est un fonds, dis-le à Claude)" : t;
   }
   function ligneVue(ctx, l, opts) {
     const cs = constatsDe(ctx, l), m = meteoLigne(ctx, l, cs), rv = revueDe(ctx, l.role);
     return { id: l.id, nom: l.p.name || l.p.bloc || "Ligne", enveloppe: l.enveloppe, bloc: l.p.bloc || null, classe: l.classe, classe_libelle: classeLib(l.classe), valeur: r2(l.valeur),
       poids_pct: ctx.I > 0 && l.role !== "reserve" ? r4(l.valeur * 100 / ctx.I) : null, role: l.role, role_libelle: l.role ? ROLES_LIB[l.role] : "Non classée", role_source: l.roleSource,
-      role_propose: l.roleProp, raison_role: l.raison, raison_role_texte: RAISON_LIB[l.raison] || l.raison, a_confirmer: l.roleSource !== "valide", meteo: m.meteo, meteo_libelle: m.libelle,
+      role_propose: l.roleProp, raison_role: l.raison, raison_role_texte: raisonTexte(l), a_confirmer: l.roleSource !== "valide", meteo: m.meteo, meteo_libelle: m.libelle,
       couverture: m.couverture, couverture_texte: m.couverture_texte, gelee_jusquau: m.gelee_jusquau || null, constats: cs, revue: rv };
   }
   /** Vue d'ensemble : politique, système, lignes (rôle, météo), déclencheurs, habitudes. */
@@ -1087,7 +1124,9 @@
       meteoMem[l.id] = meteoLigne(ctx, l, cs).meteo;
     });
     const rt = objet(ctx.d.routines);
-    const etat = { le: today, revue_coeur_faite_le: o.coeur_revu ? today : estDate(rt.revue_coeur_faite_le) ? rt.revue_coeur_faite_le : null, declencheurs: decl, constats: constatsMem, meteo: meteoMem };
+    /* la revue du cœur n'est comptée faite que si elle était due (ce mois-ci ou en retard), quoi que dise l'appelant ; le mois de revue est retenu à la première clôture */
+    const coeurFait = !!o.coeur_revu && prochaineRevueCoeur(ctx).due;
+    const etat = { le: today, mois_revue_coeur: ctx.politique.mois_base, revue_coeur_faite_le: coeurFait ? today : estDate(rt.revue_coeur_faite_le) ? rt.revue_coeur_faite_le : null, declencheurs: decl, constats: constatsMem, meteo: meteoMem };
     const taille = () => JSON.stringify(etat).length;
     if (taille() > TAILLE_ETAT_MAX) etat.constats = {};
     if (taille() > TAILLE_ETAT_MAX) Object.keys(etat.meteo).forEach(id => { if (etat.meteo[id] === "clair") delete etat.meteo[id]; });
@@ -1131,5 +1170,5 @@
   }
 
   return { ROLES, ROLES_LIB, METEOS, METEO_LIB, STATUT_LIB, CONSTATS_LIB, VERDICT_LIB, CLASSE_LIB, LEVIERS, RAISON_LIB, DEFAUTS, classeLib, moisRevolus,
-    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, etatSuivi, routinesDe, depuisEtat, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
+    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, santeDe, etatSuivi, routinesDe, depuisEtat, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
 });
