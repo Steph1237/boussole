@@ -332,3 +332,68 @@ test("pas de conseil : aucun mot de recommandation dans les phrases du module", 
   const src = req("node:fs").readFileSync(new URL("../web/src/rendement.js", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/[^\n]*/g, "$1");
   assert.doesNotMatch(src, /conseill|recommand|il faut|tu dois|devrais/i);
 });
+
+/* ================================================================== flux selon les espèces de l'enveloppe (HIS2 § 4.4, D6) — cas de test/fixtures/his2-cas.json */
+const HIS2 = JSON.parse(req("node:fs").readFileSync(new URL("./fixtures/his2-cas.json", import.meta.url), "utf8"));
+const cas = id => { const c = HIS2.cas.find(x => x.id === id); assert.ok(c, "cas " + id + " absent de la fixture"); return c; };
+/** Mouvements normalisés d'un cas d'import (@mouvements:<id>), en forme de transaction du store (HIS2 pas encore là : traduction minimale, ordres et versements). */
+function mouvementsDe(id, positions) {
+  const e = cas(id).entree, out = [];
+  (e.ordres || []).forEach((o, i) => {
+    const p = positions.find(q => q.isin === o.isin);
+    out.push({ id: id + "-" + i, positionId: p ? p.id : undefined, date: o.date, type: o.sens, qty: o.quantite, price: o.prix, amount: o.montant, frais: o.frais, source: "import", importId: "imp-" + id });
+  });
+  (e.mouvements || []).forEach((m, i) => {
+    const direct = e.contrat && e.contrat.position_id;
+    out.push({ id: id + "-m" + i, positionId: direct || undefined, enveloppe: direct ? undefined : e.contrat.enveloppe, date: m.date, type: m.type, amount: m.montant, frais: m.frais, source: "import", importId: "imp-" + id });
+  });
+  return out;
+}
+const refs = r => (Array.isArray(r) ? r : [r]);
+const txDuCas = c => [].concat(...refs(c.entree.tx).map(r => (typeof r === "string" ? mouvementsDe(r.replace("@mouvements:", ""), c.entree.positions) : [r])));
+const etatDuCas = c => ({ scope: "foyer", positions: c.entree.positions, snapshots: [], tx: txDuCas(c), classes: {} });
+const fluxDuCas = id => R.pointsEtFlux(etatDuCas(cas(id)), "foyer", "2026-10-16").flux;
+
+for (const id of ["P1/flux", "P2/flux", "P2-sans-especes/flux", "P-vente-totale-rachat/flux", "P-cloturee/flux", "A1/flux", "V-rachat-frais/flux", "D1/flux", "D1/retrait"]) {
+  test("pointsEtFlux, cas HIS2 " + id + " : " + cas(id).nom, () => {
+    const c = cas(id), r = fluxDuCas(id);
+    assert.equal(r.length, c.attendu.flux.length, id + " : nombre de flux (" + JSON.stringify(r) + ")");
+    c.attendu.flux.forEach((f, i) => { assert.equal(r[i].date, f.date, id + " date " + i); proche(r[i].montant, f.montant, c.tolerance || 0.01, id + " montant " + i); });
+  });
+}
+test("pointsEtFlux : « espèces suivies » se lit sur une ligne d'espèces de l'enveloppe, comme dans especesSuivies de la fixture", () => {
+  /* P2 : ligne d'espèces au bilan (especes: true) → versements comptés, achats internes ; P1 / P2-sans-especes : aucune → achats comptés, versements d'enveloppe non. */
+  assert.deepEqual(fluxDuCas("P2/flux").map(f => f.montant), [1000, 1000]);
+  assert.deepEqual(fluxDuCas("P1/flux").map(f => f.montant), [951, 981, -519]);
+  /* une ligne d'espèces reconnue par son nom (démo, saisie existante) suit aussi */
+  const S = etatDuCas(cas("P2/flux"));
+  S.positions = S.positions.map(p => { const q = Object.assign({}, p); delete q.especes; return q; });
+  assert.deepEqual(R.pointsEtFlux(S, "foyer", "2026-10-16").flux.map(f => f.montant), [1000, 1000]);
+});
+test("pointsEtFlux : le périmètre d'une personne ne voit pas l'enveloppe de l'autre", () => {
+  const S = etatDuCas(cas("P1/flux"));
+  assert.deepEqual(R.pointsEtFlux(S, "p2", "2026-10-16").flux, []);
+  assert.deepEqual(R.pointsEtFlux(S, "p1", "2026-10-16").flux.map(f => f.montant), [951, 981, -519]);
+});
+test("P1 de bout en bout : les flux de pointsEtFlux (achats +, vente −) donnent la TWR à la main de +9,15 % (et non +64 %)", () => {
+  const c = cas("P1/twr"), r = R.twr(c.entree.points, fluxDuCas("P1/flux"));
+  proche(r.cumule, c.attendu.cumule, c.tolerance, "P1 cumulé");
+  assert.equal(r.sous_periodes, c.attendu.sous_periodes);
+  proche(R.twr(c.entree.points, []).cumule, 0.6406, 1e-3, "sans flux (règle avant correction) : +64 %");
+});
+test("P2 de bout en bout : espèces suivies, les versements seuls sont des flux, TWR +7,904 %", () => {
+  const c = cas("P2/twr"), r = R.twr(c.entree.points, fluxDuCas("P2/flux"));
+  proche(r.cumule, c.attendu.cumule, c.tolerance, "P2 cumulé");
+  assert.equal(r.sous_periodes, c.attendu.sous_periodes);
+});
+test("pointsEtFlux : une transaction qui a un doublon_de (doublonDe ou doublon_de) est ignorée ; relevé, frais et dividende ne sont jamais des flux", () => {
+  const S = etatDuCas(cas("P1/flux"));
+  S.tx = S.tx.concat([
+    { id: "d1", positionId: "pos-etf-a", date: "2024-04-01", type: "achat", amount: 500, frais: 1, doublon_de: "x" },
+    { id: "d2", positionId: "pos-etf-a", date: "2024-04-02", type: "programme", amount: 100, doublonDe: "y" },
+    { id: "r1", positionId: "pos-etf-a", date: "2024-04-03", type: "releve", amount: 700 },
+    { id: "f1", positionId: "pos-etf-a", date: "2024-04-04", type: "frais", amount: 5 },
+    { id: "v1", positionId: "pos-etf-a", date: "2024-04-05", type: "dividende", amount: 5 },
+  ]);
+  assert.deepEqual(R.pointsEtFlux(S, "foyer", "2026-10-16").flux.map(f => f.montant), [951, 981, -519]);
+});
