@@ -1,23 +1,39 @@
 <div class="simu">
-<header>
-  <div class="eyebrow">Simulateur · données marché oct. 2026</div>
-  <h1>Acheter ou louer : <span class="b">le prix</span> face au <span class="e">loyer</span></h1>
+<header class="simu-tete">
+  <h2 class="simu-titre">Acheter ou louer ?</h2>
+  <p class="simu-sous">Trois options comparées sur la durée, avec les données du marché d'oct. 2026.</p>
 </header>
-<nav class="tabs" role="tablist">
-  <button type="button" role="tab" id="simu-t-sim" aria-controls="simu-p-sim" aria-selected="true">Simulateur</button>
-  <button type="button" role="tab" id="simu-t-ex" aria-controls="simu-p-ex" aria-selected="false">Comment ça marche</button>
-  <button type="button" role="tab" id="simu-t-th" aria-controls="simu-p-th" aria-selected="false">La recherche</button>
-</nav>
 
-<div id="simu-p-sim" role="tabpanel" aria-labelledby="simu-t-sim">
+<div id="simu-p-sim">
 <div class="stack" id="params">
 
   <section class="card">
+    <div class="card-h"><h2>Le résultat sur la durée</h2><button type="button" class="ghost" id="simu-reset">Réinitialiser</button></div>
+    <div class="pills ui-onglets" id="simu-scen" role="group" aria-label="Scénarios"></div>
+    <p class="verdict" id="verdict">Calcul en cours…</p>
+    <p class="sdesc" id="sdesc"></p>
+    <div class="res-grid">
+      <div class="res-chart">
+        <div class="legend"><span><i class="dot b"></i>Acheter et y vivre</span><span><i class="dot e"></i>Louer et placer en ETF</span><span><i class="dot i"></i>Louer et acheter un bien locatif</span></div>
+        <div class="chartwrap" id="chartwrap"><div id="simu-chart"></div><div class="tip" id="simu-tip" hidden></div></div>
+        <p class="cap" id="chartCap"></p>
+      </div>
+      <div class="tiles" id="tiles"></div>
+    </div>
+    <div class="bankline" id="bankline"></div>
+    <div class="precline" id="precline"></div>
+  </section>
+
+
+  <details class="acc simu-hypo" id="simuHypo">
+    <summary>Tes hypothèses <span class="sub" id="hypoSub"></span></summary>
+    <div class="body">
+  <div class="hyp-in">
     <div class="from-profile" id="simu-fp" hidden>
       <div class="fp-row" data-fp="l1"></div>
       <div class="fp-row fp-ctl">
         <label class="fp-range"><span>Part des placements mobilisables</span><input type="range" min="0" max="100" step="5" data-fp="part" aria-label="Part des placements mobilisables"><b class="num" data-fp="partV"></b></label>
-        <label class="fp-chk"><input type="checkbox" data-fp="rec">Compter les sommes à recevoir (prime, indemnité…)</label>
+        <label class="fp-chk ui-case"><input type="checkbox" data-fp="rec"><span class="ui-case-boite" aria-hidden="true"></span>Compter les sommes à recevoir (prime, indemnité…)</label>
         <span class="fp-claude" data-fp="claude"></span>
       </div>
     </div>
@@ -48,22 +64,9 @@
     </div>
     <input id="surface" type="hidden" value="45"><input id="simu-apport" type="hidden" value="60000"><input id="horizon" type="hidden" value="10"><input id="disc" type="hidden" value="100">
     <p class="src" id="srcLine"></p>
-  </section>
+  </div>
 
-  <section class="card">
-    <div class="card-h"><h2>Et sur la durée ?</h2><button type="button" class="ghost" id="simu-reset">Réinitialiser</button></div>
-    <div class="pills" id="simu-scen" role="group" aria-label="Scénarios"></div>
-    <p class="verdict" id="verdict">Calcul en cours…</p>
-    <p class="sdesc" id="sdesc"></p>
-    <div class="tiles" id="tiles"></div>
-    <div class="legend"><span><i class="dot b"></i>Acheter et y vivre</span><span><i class="dot e"></i>Louer et placer en ETF</span><span><i class="dot i"></i>Louer et acheter un bien locatif</span></div>
-    <div class="chartwrap" id="chartwrap"><div id="simu-chart"></div><div class="tip" id="simu-tip" hidden></div></div>
-    <p class="cap" id="chartCap"></p>
-    <div class="bankline" id="bankline"></div>
-    <div class="precline" id="precline"></div>
-  </section>
-
-  <section class="card" id="precCard">
+  <div class="hyp-in" id="precCard">
     <div class="prec-top">
       <div class="card-h"><h2>Précision de ta simulation</h2></div>
       <div class="prec-score"><span class="n" id="precN"></span><span class="q" id="precQ"></span></div>
@@ -71,7 +74,9 @@
       <p class="hint">Le score indique quelle part des paramètres qui pèsent le plus sur le résultat vient de tes propres chiffres plutôt que des moyennes de la ville. Chaque ligne indique ce qu'elle apporte. Tu peux remplir ici ou dans le détail : c'est le même champ.</p>
     </div>
     <div class="prec-list" id="precList"></div>
-  </section>
+  </div>
+    </div>
+  </details>
 
   <button type="button" class="more-btn" id="moreBtn" aria-expanded="false" aria-controls="more">
     <span><b>Voir le détail</b><small>Tous les scénarios, coûts cachés, bien locatif, crédit et banque, hypothèses</small></span><span class="ic">+</span>
@@ -93,7 +98,7 @@
         <div class="subt"><i class="dot b"></i>Si tu achètes</div>
         <div class="fields f3">
           <div class="f"><label for="type">Type (France)</label><div class="inp"><select id="type"><option value="ancien">Ancien</option><option value="neuf">Neuf (VEFA)</option></select></div></div>
-          <div class="f"><span class="lbl">Situation</span><label class="chk" for="primo"><input id="primo" type="checkbox" checked>Premier achat</label></div>
+          <div class="f"><span class="lbl">Situation</span><label class="ui-case chk" for="primo"><input id="primo" type="checkbox" checked><span class="ui-case-boite" aria-hidden="true"></span>Premier achat</label></div>
           <div class="f"><label for="fraisA">Frais d'achat <span class="tag auto" data-for="fraisA">auto</span></label><div class="inp"><input id="fraisA" type="number" inputmode="decimal" step="0.1"><span class="u">% prix</span></div></div>
           <div class="f"><label for="travaux">Travaux à l'entrée</label><div class="inp"><input id="travaux" type="number" inputmode="decimal" value="5000" step="500"><span class="u">€</span></div></div>
           <div class="f"><label for="tf">Taxe foncière <span class="tag auto" data-for="tf">auto</span></label><div class="inp"><input id="tf" type="number" inputmode="decimal" step="50"><span class="u">€/an</span></div></div>
@@ -167,7 +172,7 @@
         <div class="fields f3">
           <div class="f"><label for="rev"><span class="lt">Revenus nets du foyer <span class="src-slot" data-key="rev"></span></span></label><div class="inp"><input id="rev" type="number" inputmode="decimal" value="4200" step="100"><span class="u">€/mois</span></div></div>
           <div class="f"><label for="simu-credits"><span class="lt">Autres crédits <span class="src-slot" data-key="credits"></span></span></label><div class="inp"><input id="simu-credits" type="number" inputmode="decimal" value="0" step="10"><span class="u">€/mois</span></div></div>
-          <div class="f"><span class="lbl"><span class="lt">Contrat <span class="src-slot" data-key="essai"></span></span></span><label class="chk" for="essai"><input id="essai" type="checkbox">En période d'essai</label></div>
+          <div class="f"><span class="lbl"><span class="lt">Contrat <span class="src-slot" data-key="essai"></span></span></span><label class="ui-case chk" for="essai"><input id="essai" type="checkbox"><span class="ui-case-boite" aria-hidden="true"></span>En période d'essai</label></div>
           <div class="f"><label for="duree">Durée du prêt</label><div class="inp"><select id="duree"><option value="15">15 ans</option><option value="20">20 ans</option><option value="25" selected>25 ans</option></select></div></div>
           <div class="f"><label for="taux">Taux du crédit <span class="tag auto" data-for="taux">marché</span></label><div class="inp"><input id="taux" type="number" inputmode="decimal" step="0.01"><span class="u">%</span></div></div>
           <div class="f"><label for="assurance">Assurance emprunteur</label><div class="inp"><input id="assurance" type="number" inputmode="decimal" value="0.25" step="0.01"><span class="u">% / an</span></div></div>
@@ -190,7 +195,7 @@
       <div class="body">
         <div class="fields f3">
           <div class="f full"><label for="discR">Part des économies réellement placée <span class="val" id="discV"></span></label><input type="range" id="discR" min="0" max="100" step="5"></div>
-          <div class="f"><span class="lbl">À la fin</span><label class="chk" for="vente"><input id="vente" type="checkbox" checked>Je revends</label></div>
+          <div class="f"><span class="lbl">À la fin</span><label class="ui-case chk" for="vente"><input id="vente" type="checkbox" checked><span class="ui-case-boite" aria-hidden="true"></span>Je revends</label></div>
           <div class="f"><label for="revente">Frais de revente <span class="tag auto" data-for="revente">auto</span></label><div class="inp"><input id="revente" type="number" inputmode="decimal" step="0.5"><span class="u">% valeur</span></div></div>
           <div class="f"><label for="ira">Pénalités remb. anticipé</label><div class="inp"><select id="ira"><option value="oui">Légales (max)</option><option value="non">Négociées à 0</option></select></div></div>
           <div class="f"><label for="restit">Garantie restituée</label><div class="inp"><input id="restit" type="number" inputmode="decimal" value="50" step="5"><span class="u">%</span></div></div>
@@ -213,7 +218,9 @@
 </div>
 </div>
 
-<div id="simu-p-ex" role="tabpanel" aria-labelledby="simu-t-ex" hidden>
+<details class="acc simu-lecture" id="simu-p-ex">
+<summary>Comment ça marche</summary>
+<div class="body">
 <div class="doc">
   <nav class="toc" aria-label="Sommaire">
     <span class="toc-t">Sommaire</span>
@@ -284,8 +291,11 @@
   </article>
 </div>
 </div>
+</details>
 
-<div id="simu-p-th" role="tabpanel" aria-labelledby="simu-t-th" hidden>
+<details class="acc simu-lecture" id="simu-p-th">
+<summary>La recherche derrière les hypothèses</summary>
+<div class="body">
 <div class="doc">
   <nav class="toc" aria-label="Sommaire">
     <span class="toc-t">Sommaire</span>
@@ -392,4 +402,5 @@
   </article>
 </div>
 </div>
+</details>
 </div>

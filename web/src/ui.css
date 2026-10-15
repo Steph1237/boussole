@@ -123,6 +123,15 @@
 .ui-bascule-option[aria-checked="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--e1)}
 .ui-bascule-option:focus-visible{outline-offset:0}
 
+/* ---------- case à cocher : zone de 44 px (le champ couvre toute la ligne, invisible), boîte de 24 px dessinée à côté ---------- */
+.ui-case{position:relative;display:flex;align-items:center;gap:var(--sp-3);min-height:var(--hit);cursor:pointer}
+.ui-case>input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.ui-case-boite{flex:none;display:grid;place-items:center;width:24px;height:24px;border:2px solid var(--line2);border-radius:6px;background:var(--surface);transition:background-color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
+.ui-case>input:checked+.ui-case-boite{background:var(--brand);border-color:var(--brand)}
+.ui-case>input:checked+.ui-case-boite::after{content:"";width:11px;height:6px;margin-top:-2px;border:solid var(--brand-ink);border-width:0 0 2.5px 2.5px;transform:rotate(-45deg)}
+.ui-case>input:focus-visible+.ui-case-boite{outline:2px solid var(--focus);outline-offset:2px}
+.ui-case>input:disabled+.ui-case-boite{opacity:.5}
+
 /* ---------- accordéon ---------- */
 .ui-acc{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface)}
 .ui-acc + .ui-acc{margin-top:var(--sp-2)}
