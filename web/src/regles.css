@@ -2,46 +2,46 @@
    actif / inactif, carte de l'épargne de précaution. Scopé #view-regles ; le détail d'une règle et celui du matelas vivent dans le
    panneau de détail (.ui-panneau, injecté dans body par UI), d'où .ui-panneau .rg-…. */
 #view-regles [hidden]{display:none!important}
-#view-regles .regles{display:flex;flex-direction:column;gap:14px;max-width:960px;min-width:0}
+#view-regles .regles{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
 #view-regles .rg-tete{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:10px 20px}
 #view-regles .rg-tete-txt{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 360px}
 #view-regles .rg-tete-act{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
-#view-regles .rg-h2{font:700 var(--t-h3) var(--f-display);margin:0;border-radius:4px}
+#view-regles .rg-h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0;border-radius:4px}
 #view-regles .rg-h2:focus{outline:none}
-#view-regles .rg-h2:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+#view-regles .rg-h2:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
 #view-regles .rg-compte{font:500 var(--t-small) var(--f-body);color:var(--muted);margin-left:6px}
-#view-regles .rg-intro{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted);max-width:720px}
-#view-regles .rg-intro a{color:var(--accent);font-weight:600}
+#view-regles .rg-intro{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
+#view-regles .rg-intro a{color:var(--brand);font-weight:600;padding:15px 4px;margin:-15px -4px}
 #view-regles .rg-msg{margin:0;font-size:var(--t-small);color:var(--ink)}
 #view-regles .rg-msg:empty{display:none}
 
 /* cartes des règles */
-#view-regles .rg-liste .ui-voirplus-liste{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:10px}
+#view-regles .rg-liste .ui-voirplus-liste{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:var(--gap-cards)}
 #view-regles .rg-liste .ui-voirplus-reste{margin-top:10px}
 #view-regles .rg-regle{display:flex;align-items:stretch;min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);transition:border-color .15s,box-shadow .15s}
 #view-regles .rg-regle:hover{border-color:var(--line2);box-shadow:0 1px 4px rgba(0,0,0,.07)}
 #view-regles .rg-regle.off{background:var(--sunk);border-style:dashed}
-#view-regles .rg-ouvrir{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0;padding:12px 34px 12px 14px;
+#view-regles .rg-ouvrir{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0;min-height:64px;padding:var(--sp-3) 36px var(--sp-3) var(--sp-4);
   text-align:left;font:inherit;color:var(--ink);background:none;border:0;border-radius:var(--radius) 0 0 var(--radius);cursor:pointer}
 #view-regles .rg-ouvrir:hover{background:var(--sunk)}
 #view-regles .rg-regle.off .rg-ouvrir:hover{background:var(--bg)}
 #view-regles .rg-type{font:600 var(--t-caption)/1.3 var(--f-body);color:var(--muted)}
 #view-regles .rg-texte{font:600 var(--t-body)/1.35 var(--f-body);overflow-wrap:anywhere}
 #view-regles .rg-regle.off .rg-texte{color:var(--muted)}
-#view-regles .rg-etat{font:600 var(--t-caption) var(--f-body);color:var(--muted)}
-#view-regles .rg-etat.ok{color:var(--good)}
-#view-regles .rg-etat.info{color:var(--accent)}
-#view-regles .rg-etat.warn{color:var(--warn)}
-#view-regles .rg-etat.crit{color:var(--crit)}
+#view-regles .rg-etat{display:inline-flex;align-items:center;height:22px;padding:0 var(--sp-2);border-radius:var(--r-chip);background:var(--st-todo-bg);font:600 var(--t-caption) var(--f-body);color:var(--st-todo)}
+#view-regles .rg-etat.ok{background:var(--st-good-bg);color:var(--st-good)}
+#view-regles .rg-etat.info{background:var(--brand-soft);color:var(--brand)}
+#view-regles .rg-etat.warn{background:var(--st-watch-bg);color:var(--st-watch)}
+#view-regles .rg-etat.crit{background:var(--st-work-bg);color:var(--st-work)}
 #view-regles .rg-chevron{position:absolute;top:13px;right:12px;color:var(--muted)}
-#view-regles .rg-switch{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:72px;margin:0;padding:10px 12px;
+#view-regles .rg-switch{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:76px;min-height:var(--hit);margin:0;padding:var(--sp-2) var(--sp-3);
   border:0;border-left:1px solid var(--line);border-radius:0 var(--radius) var(--radius) 0;background:none;color:var(--muted);font:600 var(--t-caption) var(--f-body);cursor:pointer}
 #view-regles .rg-switch:hover{color:var(--ink)}
 #view-regles .rg-switch:disabled{opacity:.6;cursor:progress}
 #view-regles .rg-piste{position:relative;display:block;width:38px;height:22px;border-radius:11px;background:var(--line2);transition:background-color .15s}
 #view-regles .rg-pouce{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
-#view-regles .rg-switch[aria-checked="true"]{color:var(--accent)}
-#view-regles .rg-switch[aria-checked="true"] .rg-piste{background:var(--accent)}
+#view-regles .rg-switch[aria-checked="true"]{color:var(--brand)}
+#view-regles .rg-switch[aria-checked="true"] .rg-piste{background:var(--brand)}
 #view-regles .rg-switch[aria-checked="true"] .rg-pouce{transform:translateX(16px)}
 #view-regles .rg-vide{padding:14px 16px;border:1px dashed var(--line2);border-radius:var(--radius);font-size:var(--t-small);color:var(--muted)}
 #view-regles .rg-vide p{margin:0}
@@ -61,12 +61,12 @@
 .ui-panneau .rg-p-sous,.ui-panneau .rg-p-intro{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
 .ui-panneau .rg-p-etat{margin:0;font:600 var(--t-small) var(--f-body);color:var(--muted)}
 .ui-panneau .rg-p-etat.ok{color:var(--good)}
-.ui-panneau .rg-p-etat.info{color:var(--accent)}
+.ui-panneau .rg-p-etat.info{color:var(--brand)}
 .ui-panneau .rg-p-etat.warn{color:var(--warn)}
 .ui-panneau .rg-p-etat.crit{color:var(--crit)}
 .ui-panneau .rg-p-alertes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .ui-panneau .rg-p-alertes li{padding:8px 10px;border-left:3px solid var(--line2);border-radius:6px;background:var(--sunk);font-size:var(--t-small);line-height:1.45;overflow-wrap:anywhere}
 .ui-panneau .rg-p-alertes li.warn{border-left-color:var(--warn)}
 .ui-panneau .rg-p-alertes li.crit{border-left-color:var(--crit)}
-.ui-panneau .rg-p-alertes li.info{border-left-color:var(--accent)}
-.ui-panneau .rg-p-niv{display:block;font:700 var(--t-caption) var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.ui-panneau .rg-p-alertes li.info{border-left-color:var(--brand)}
+.ui-panneau .rg-p-niv{display:block;font:650 var(--t-small) var(--f-body);color:var(--muted)}
