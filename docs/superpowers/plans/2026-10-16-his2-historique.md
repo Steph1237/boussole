@@ -110,13 +110,13 @@ Phases livrables séparément : **phase 1** (T0 à T9 : on peut importer, valide
 - **Dépend de** : T1.
 
 ### Tâche 3 — Module `web/src/historique-import.js` (Sonnet, medium, L)
-- [ ] TDD sur la fixture : normalisation, contrôles bloquants et avertissements (spec § 5.1, § 5.2), empreinte stable (ordre des mois, des catégories, des ordres ; arrondis ; libellés normalisés), clés naturelles et rangs, doublons avec la nuit et les saisies (7 jours, 2 € ou 2 %), résumé lisible au tutoiement.
-- [ ] Limites (spec § 5.3) exportées et testées ; découpage d'un contenu au-delà de 100 000 octets en plusieurs imports (par année, puis par 200 mouvements).
-- [ ] Ajout à `SCRIPTS` de `build.mjs` si l'app l'utilise (description des propositions).
+- [x] TDD sur la fixture : normalisation, contrôles bloquants et avertissements (spec § 5.1, § 5.2), empreinte stable (ordre des mois, des catégories, des ordres ; arrondis ; libellés normalisés), clés naturelles et rangs, doublons avec la nuit et les saisies (7 jours, 2 € ou 2 %), résumé lisible au tutoiement. Fait : `web/src/historique-import.js` (`normaliser`, `controler`, `verifier`, `empreinte`/`empreinteSync`, `clesNaturelles`, `doublons`, `resume`, `versApres`, `decouper`) ; `test/historique-import.test.mjs` passe les 59 cas `controler`, 4 `empreinte`, 4 `clesNaturelles` et 8 `doublons` de la fixture sans en changer une valeur ; `test/historique-import-pglite.test.mjs` fait accepter par la base (0034) les `apres` produits (relevés, ordres, ligne clôturée créée, versements, doublon de la nuit, 60 mois découpés).
+- [x] Limites (spec § 5.3) exportées et testées ; découpage d'un contenu au-delà de 100 000 octets en plusieurs imports (par année, puis par 200 mouvements). Le résumé et les avertissements sont rognés pour tenir dans les 4 000 octets du `resume` de la base (`compacter`).
+- [x] Ajout à `SCRIPTS` de `build.mjs` si l'app l'utilise (description des propositions). Non nécessaire : la description des propositions (T8) lit `apres.resume` ; le module n'est pas chargé par l'app.
 - **Dépend de** : T0.
 
 ### Tâche 4 — Copies générées et parité (Haiku, low, S)
-- [ ] `npm run gen` produit `supabase/functions/mcp/historique-import.gen.js` ; test « copie à jour » et parité des sorties sur tous les cas.
+- [x] `npm run gen` produit `supabase/functions/mcp/historique-import.gen.js` ; test « copie à jour » et parité des sorties sur tous les cas (`test/historique-import-gen.test.mjs`).
 - **Dépend de** : T3.
 
 ### Tâche 5 — `Calc.moisBancaires` et budget réel (Sonnet, medium, M)
