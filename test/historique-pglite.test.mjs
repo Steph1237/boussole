@@ -990,3 +990,158 @@ test("import par une session non authentifiée ou par service_role sans utilisat
   await refuse(`select public.appliquer_propositions('{}'::uuid[])`, /non authentifié/, "appliquer_propositions sans utilisateur");
   await superu();
 });
+
+/* ------------------------------------------------------------------------------------------------------------- revue de sécurité */
+const E = "55555555-5555-5555-5555-555555555555", F = "66666666-6666-6666-6666-666666666666";
+
+test("clés étrangères composites : jamais l'import, la transaction ni la ligne du bilan d'un autre (import_id, doublon_de, position_id d'un compte)", async () => {
+  await superu();
+  await db.exec(`insert into auth.users (id) values ('${E}'), ('${F}') on conflict do nothing;
+    insert into auth.mfa_factors (user_id, status, created_at) values ('${E}', 'verified', now() - interval '1 day'), ('${F}', 'verified', now() - interval '1 day');`);
+  const posF = (await un(`insert into public.positions (user_id, name, envelope, owner, bloc, mode, value) values ('${F}', 'Ligne F', 'PEA', 'p1', 'Monde', 'manual', 100) returning id`)).id;
+  const posE = (await un(`insert into public.positions (user_id, name, envelope, owner, bloc, mode, value) values ('${E}', 'Ligne E', 'PEA', 'p1', 'Monde', 'manual', 100) returning id`)).id;
+  const txF = (await un(`insert into public.transactions (user_id, position_id, date, type, amount, source) values ('${F}', '${posF}', '2024-01-02', 'versement', 10, 'manuel') returning id`)).id;
+  const txE = (await un(`insert into public.transactions (user_id, position_id, date, type, amount, source) values ('${E}', '${posE}', '2024-01-02', 'versement', 10, 'manuel') returning id`)).id;
+  await session(F);
+  const impF = (await importer(apresMouvements("versements", [mv({ date: "2024-01-05", type: "versement", amount: 50, position_id: posF })]))).import_id;
+  // E (aal2, propriétaire de ses lignes) tente de rattacher ses lignes à celles de F, dont il connaîtrait les uuid
+  await session(E);
+  await refuse(`insert into public.transactions (position_id, date, type, amount, import_id) values ('${posE}', '2024-01-03', 'versement', 1, '${impF}')`, /transactions_import/, "transactions.import_id d'un autre");
+  await refuse(`update public.transactions set doublon_de = '${txF}' where id = '${txE}'`, /transactions_doublon_de/, "doublon_de vers la transaction d'un autre");
+  await refuse(`insert into public.historique_comptes (libelle, etablissement, type, titulaire, cle, position_id) values ('Compte E', 'lcl', 'courant', 'p1', 'compte-e', '${posF}')`,
+    /historique_comptes_position/, "historique_comptes.position_id d'un autre");
+  const cptE = (await un(`insert into public.historique_comptes (libelle, etablissement, type, titulaire, cle, position_id) values ('Compte E', 'lcl', 'courant', 'p1', 'compte-e', '${posE}') returning id`)).id;
+  await refuse(`insert into public.historique_releves (compte_id, mois, complet, total_entrees, total_sorties, import_id) values ('${cptE}', '2024-01-01', true, 0, 0, '${impF}')`,
+    /historique_releves_import/, "historique_releves.import_id d'un autre");
+  // les mêmes rattachements à ses propres lignes passent
+  const txE2 = (await un(`insert into public.transactions (position_id, date, type, amount, source) values ('${posE}', '2024-01-04', 'versement', 1, 'manuel') returning id`)).id;
+  await db.query(`update public.transactions set doublon_de = $1 where id = $2`, [txE2, txE]);
+  await superu();
+  const defs = Object.fromEntries((await q(`select conname, pg_get_constraintdef(oid) d from pg_constraint where conname = any($1)`,
+    [["transactions_import", "transactions_doublon_de", "historique_releves_import", "historique_comptes_position", "historique_imports_compte", "historique_releves_compte", "historique_comptes_banque"]])).map(r => [r.conname, r.d]));
+  assert.match(defs.transactions_import, /FOREIGN KEY \(user_id, import_id\) REFERENCES historique_imports\(user_id, id\) ON DELETE CASCADE/);
+  assert.match(defs.transactions_doublon_de, /FOREIGN KEY \(user_id, doublon_de\) REFERENCES transactions\(user_id, id\) ON DELETE SET NULL \(doublon_de\)/);
+  assert.match(defs.historique_releves_import, /FOREIGN KEY \(user_id, import_id\) REFERENCES historique_imports\(user_id, id\) ON DELETE CASCADE/);
+  assert.match(defs.historique_comptes_position, /FOREIGN KEY \(user_id, position_id\) REFERENCES positions\(user_id, id\) ON DELETE SET NULL \(position_id\)/);
+  for (const k of ["historique_imports_compte", "historique_releves_compte", "historique_comptes_banque"]) assert.match(defs[k], /FOREIGN KEY \(user_id, /, k);
+  // aucune clé étrangère simple vers une table personnelle depuis les tables de l'historique ni depuis les nouvelles colonnes
+  const simples = await q(`select c.conname from pg_constraint c where c.contype = 'f' and c.conrelid = any(array['public.historique_comptes', 'public.historique_imports',
+      'public.historique_releves', 'public.historique_banque_mois', 'public.photos_reconstituees']::regclass[]) and c.confrelid <> 'auth.users'::regclass and cardinality(c.conkey) = 1`);
+  assert.deepEqual(simples, [], "clés étrangères simples");
+  // la suppression de la transaction désignée remet doublon_de à nul sans toucher user_id
+  await db.exec(`delete from public.transactions where id = '${txE2}'`);
+  assert.deepEqual(await un(`select user_id, doublon_de from public.transactions where id = $1`, [txE]), { user_id: E, doublon_de: null });
+  await session(F);
+  await un(`select public.retirer_import($1) r`, [impF]);
+  await superu();
+  await db.exec(`delete from public.historique_comptes where user_id = '${E}'; delete from public.positions where user_id in ('${E}', '${F}');`);
+});
+
+test("connecteur : n'écrit, ne modifie ni ne supprime jamais un mouvement importé ou remplacé, ni import_id, cle_import ou doublon_de ; ses autres écritures de transactions restent possibles", async () => {
+  const pos = await ligne("Ligne connecteur", { value: 1000 });
+  const imp = (await importer(apresMouvements("versements", [mv({ date: "2024-02-05", type: "versement", amount: 50, position_id: pos })]))).import_id;
+  const txImp = (await un(`select id from public.transactions where import_id = $1`, [imp])).id;
+  await superu();
+  const txNuit = (await un(`insert into public.transactions (user_id, position_id, date, type, amount, source) values ('${A}', '${pos}', '2024-02-06', 'programme', 50, 'nightly') returning id`)).id;
+  const txRemp = (await un(`insert into public.transactions (user_id, position_id, date, type, amount, source, doublon_de) values ('${A}', '${pos}', '2024-02-05', 'programme', 50, 'nightly', '${txImp}') returning id`)).id;
+  await session(A, "aal1", { client: CLIENT, sess: SESSION });
+  const motif = /Un connecteur ne peut pas/;
+  await refuse(`update public.transactions set amount = 999999 where id = '${txImp}'`, motif, "modifier un mouvement importé");
+  await refuse(`delete from public.transactions where id = '${txImp}'`, motif, "supprimer un mouvement importé");
+  await refuse(`update public.transactions set doublon_de = null where id = '${txRemp}'`, motif, "lever un remplacement");
+  await refuse(`delete from public.transactions where id = '${txRemp}'`, motif, "supprimer une transaction remplacée");
+  await refuse(`update public.transactions set doublon_de = '${txImp}' where id = '${txNuit}'`, motif, "poser un remplacement");
+  await refuse(`update public.transactions set cle_import = '${hex(32)}' where id = '${txNuit}'`, motif, "poser une clé d'import");
+  await refuse(`insert into public.transactions (position_id, date, type, amount, cle_import) values ('${pos}', '2024-02-07', 'versement', 1, '${hex(32)}')`, motif, "insérer avec une clé d'import");
+  await refuse(`insert into public.transactions (position_id, date, type, amount, import_id) values ('${pos}', '2024-02-07', 'versement', 1, '${imp}')`, motif, "insérer dans un import");
+  await refuse(`delete from public.positions where id = '${pos}'`, motif, "supprimer la ligne (cascade sur les mouvements importés)");
+  // rien d'autre ne change : une transaction ordinaire s'écrit et se modifie comme avant (régime « si facteur », 0033)
+  const libre = (await un(`insert into public.transactions (position_id, date, type, amount, source) values ('${pos}', '2024-02-08', 'versement', 5, 'mcp') returning id`)).id;
+  await db.query(`update public.transactions set amount = 6 where id = $1`, [libre]);
+  assert.equal((await db.query(`delete from public.transactions where id = $1`, [libre])).affectedRows, 1);
+  await superu();
+  assert.equal(Number((await un(`select amount from public.transactions where id = $1`, [txImp])).amount), 50, "le mouvement importé est intact");
+  assert.equal((await un(`select doublon_de from public.transactions where id = $1`, [txRemp])).doublon_de, txImp);
+  // l'app (aal2, sans client_id) retire l'import : la cascade et doublon_de remis à nul passent
+  await session(A);
+  await un(`select public.retirer_import($1) r`, [imp]);
+  await superu();
+  assert.equal((await un(`select doublon_de from public.transactions where id = $1`, [txRemp])).doublon_de, null);
+  await db.exec(`delete from public.positions where id = '${pos}'`);
+  await session(A);
+});
+
+test("contenu sensible : IBAN et numéros de carte écrits avec des espaces insécables, fines, invisibles ou des tirets refusés ; clé de compte et source sans numéro ; pas de faux positif sur un uuid du résumé", async () => {
+  await superu();
+  const t = (s, ch = 0) => un(`select public.historique_texte($1::jsonb, 'champ', 200, false, $2) v`, [JSON.stringify(s), ch]);
+  const iban = "FR76 3000 6000 0112 3456 7890 189", carte = "4970 1012 3456 7890";
+  for (const sep of [" ", " ", " ", " ", "　", "\t", "-", ".", "​"]) {
+    await assert.rejects(t("IBAN " + iban.replaceAll(" ", sep)), /contenu sensible/, "IBAN, séparateur U+" + sep.codePointAt(0).toString(16));
+    await assert.rejects(t("carte " + carte.replaceAll(" ", sep)), /contenu sensible/, "carte, séparateur U+" + sep.codePointAt(0).toString(16));
+  }
+  await assert.rejects(t("fr76 3000 6000 0112 3456 7890 189"), /contenu sensible/, "IBAN en minuscules aux espaces insécables");
+  await assert.rejects(t("compte 1234​5678", 8), /suite de 8 chiffres/, "chiffres séparés par un caractère invisible");
+  assert.equal((await t("ordre du 2024-01-15 à 12.50", 8)).v, "ordre du 2024-01-15 à 12.50", "dates et prix ordinaires acceptés");
+  assert.equal((await t("Livret A 2024", 6)).v, "Livret A 2024");
+  assert.equal((await un(`select public.historique_sensible($1, false) v`, [JSON.stringify({ lignes: ["12345678-1234-1234-1234-123456789012"], du: "2024-01-01" })])).v, false, "uuid à chiffres dans un résumé");
+  assert.equal((await un(`select public.historique_sensible($1) v`, ["IE00B4L5Y983 Amundi"])).v, false, "un ISIN n'est pas un IBAN");
+  const avant = (await un(`select count(*)::int n from public.historique_comptes where user_id = $1`, [A])).n;
+  await session(A);
+  // clé de compte : jamais de numéro (fonction et contrainte)
+  await echoue(apresReleves(moisDe("B1", "2024-01"), { compte: { ...COMPTE_B1, cle: "boursobank|courant|00012345678|p1" } }), /compte\.cle : une suite de 6 chiffres/, "clé avec numéro de compte");
+  await refuse(`insert into public.historique_comptes (libelle, etablissement, type, titulaire, cle) values ('Compte X', 'lcl', 'courant', 'p1', 'lcl|courant|00012345678|p1')`, /historique_comptes_cle/, "contrainte de la clé");
+  await refuse(`insert into public.historique_comptes (libelle, etablissement, type, titulaire, cle) values ('Compte FR76 3000 6000 0112', 'lcl', 'courant', 'p1', 'k-nbsp')`, /historique_comptes_libelle/, "libellé aux espaces insécables");
+  // source et résumé
+  await echoue(apresReleves(moisDe("B1", "2024-01")), /source : une suite de 8 chiffres/, "source avec numéro", { source: "Relevé du compte 00012345678" });
+  await echoue(apresReleves(moisDe("B1", "2024-01"), { extra: { resume: { note: "IBAN FR76 3000 6000 0112 3456 7890 189" } } }), /resume : contenu sensible/, "résumé aux espaces insécables");
+  await superu();
+  assert.equal((await un(`select count(*)::int n from public.historique_comptes where user_id = $1`, [A])).n, avant, "rien n'a été créé");
+  await session(A);
+});
+
+test("lignes_a_creer : un symbole X- doit exister dans la table des instruments (l'import n'en invente pas)", async () => {
+  await session(A);
+  const mvt = [mv({ date: "2024-03-04", type: "achat", qty: 0.01, price: 50000, amount: 500, isin: "X-FICTIFHIS" })];
+  const lignes = { lignes_a_creer: [{ isin: "X-FICTIFHIS", name: "Crypto fictive", envelope: "Crypto", owner: "p1" }] };
+  await echoue(apresMouvements("ordres", mvt, { enveloppe: "Crypto", extra: lignes }), /symbole « X-FICTIFHIS » inconnu/, "symbole inconnu");
+  await superu();
+  assert.equal((await q(`select 1 from public.instruments where isin = 'X-FICTIFHIS'`)).length, 0, "aucun instrument créé");
+  await db.exec(`insert into public.instruments (isin, name) values ('X-FICTIFHIS', 'Crypto fictive')`);
+  await session(A);
+  const r = await importer(apresMouvements("ordres", mvt, { enveloppe: "Crypto", extra: lignes }));
+  assert.equal(r.lignes_creees.length, 1);
+  await un(`select public.retirer_import($1) r`, [r.import_id]);
+  await superu();
+  await db.exec(`delete from public.instruments where isin = 'X-FICTIFHIS'`);
+  await session(A);
+});
+
+test("photos : à 240 mois, la nuit peut encore remplacer un mois existant (insert … on conflict do update) ; un 241e mois reste refusé", async () => {
+  await service();
+  const ins = (mois, total) => db.query(`insert into public.photos_reconstituees (user_id, mois, date, total, p1, p2, financier, net, qualite, part_estimee, methode)
+    values ($1, $2::date, ($2::date + interval '1 month - 1 day')::date, $3, 1, 0, 1, 1, 'estime', 1, 'x')
+    on conflict (user_id, mois) do update set total = excluded.total`, [B, mois, total]);
+  await db.query(`insert into public.photos_reconstituees (user_id, mois, date, total, p1, p2, financier, net, qualite, part_estimee, methode)
+    select $1, m::date, (m::date + interval '1 month - 1 day')::date, 1, 1, 0, 1, 1, 'estime', 1, 'x' from generate_series('2000-01-01'::date, '2019-12-01'::date, interval '1 month') m`, [B]);
+  await ins("2010-06-01", 42);
+  assert.equal(Number((await un(`select total from public.photos_reconstituees where user_id = $1 and mois = '2010-06-01'`, [B])).total), 42);
+  await assert.rejects(ins("2020-01-01", 1), /240 photos/);
+  await db.exec(`delete from public.photos_reconstituees where user_id = '${B}'`);
+  await superu();
+});
+
+test("import et retrait : un à la fois par utilisateur (verrou consultatif de transaction, les limites valent pour deux validations simultanées)", async () => {
+  await superu();
+  for (const f of ["historique_appliquer(text, jsonb, text)", "historique_retirer(uuid)"]) {
+    const d = (await un(`select pg_get_functiondef($1::regprocedure) d`, ["public." + f])).d;
+    assert.match(d, /pg_advisory_xact_lock\(pg_catalog\.hashtextextended\('historique:' \|\| v_uid::text, 0\)\)/, f);
+  }
+  const g = await un(`select p.prosecdef, pg_get_functiondef(p.oid) def from pg_proc p where p.oid = 'public.transactions_historique_garde()'::regprocedure`);
+  assert.equal(g.prosecdef, false); assert.match(g.def, /set search_path to ''/i);
+  for (const f of ["historique_sensible(text, boolean)"]) {
+    const r = await un(`select has_function_privilege('anon', $1::regprocedure, 'execute') an, has_function_privilege('authenticated', $1::regprocedure, 'execute') au, p.provolatile v
+      from pg_proc p where p.oid = $1::regprocedure`, ["public." + f]);
+    assert.deepEqual(r, { an: false, au: true, v: "i" }, f);
+  }
+  await session(A);
+});

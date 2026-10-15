@@ -4,7 +4,8 @@
 -- la dernière appliquée en production : régime des politiques de double authentification), AVANT le déploiement de la fonction mcp (outils
 -- d'import) et de la fonction nightly (photos reconstituées). BUD1 prend 0035 et suivantes (D8) : 0035 redéfinit sous_categorie_budget_valide.
 -- Avant de l'appliquer, vérifier en production : select count(*) from public.transactions where position_id is null (doit valoir 0 : la
--- contrainte transactions_position_ou_enveloppe l'exige désormais pour toute ligne ne portant pas d'enveloppe).
+-- contrainte transactions_position_ou_enveloppe l'exige désormais pour toute ligne ne portant pas d'enveloppe) ; show server_version_num
+-- (150000 au moins : « on delete set null (colonne) » des clés composites).
 --
 -- Données privées, jamais d'opération brute (D1) : des totaux mensuels par compte et catégorie, des mouvements de placement datés, des photos
 -- mensuelles reconstituées. Aucun libellé d'opération, aucun tiers, aucun IBAN, aucun numéro de compte ou de carte.
@@ -16,6 +17,9 @@
 --   photos_reconstituees     : une photo par fin de mois avant la première photo observée, écrite par le service (la nuit) seulement.
 --   transactions : colonnes import_id, cle_import, enveloppe, frais, doublon_de, estime (nulles ou fausses pour l'existant : aucun changement
 --   de comportement) ; contrainte « une ligne OU une enveloppe » ; index unique partiel (user_id, cle_import). status.historique_a_recalculer.
+--   Clés étrangères composites (user_id, …) partout (import_id, doublon_de, position_id d'un compte) : jamais la ligne d'un autre ; d'où
+--   positions_user_id_id et transactions_user_id_id. Déclencheur transactions_historique_garde : un jeton OAuth (client_id) n'écrit ni ne
+--   supprime jamais un mouvement importé ou remplacé, ni import_id, cle_import ou doublon_de.
 --
 -- Double authentification (formes exactes de 0033) :
 --   - régime bancaire (les quatre tables historique_*) : politique restrictive « <table>: aal2 » (lecture en aal2 OU par un connecteur
@@ -27,10 +31,12 @@
 -- Fonctions (security invoker, search_path vide ; la RLS borne tout) :
 --   - categorie_budget_valide(text) : les 12 catégories larges de CATEGORIES_BANQUE ; sous_categorie_budget_valide(text, text) : vrai
 --     seulement pour la sous-catégorie vide (0035 de BUD1 la redéfinit avec sa taxonomie, spec § 4.3) ;
---   - historique_isin_valide, historique_texte, historique_nombre : contrôles purs (clé de contrôle de l'ISIN, texte borné sans contenu
---     sensible ni longue suite de chiffres, nombre borné) ;
+--   - historique_isin_valide, historique_sensible, historique_texte, historique_nombre : contrôles purs (clé de contrôle de l'ISIN ;
+--     contenu_sensible aussi sur le texte aux espaces Unicode normalisés et aux séparateurs « - . / _ » entre chiffres ; texte borné sans
+--     contenu sensible ni longue suite de chiffres, caractères invisibles retirés ; nombre borné) ;
 --   - historique_appliquer(ref, apres, source) : la branche « historique » de appliquer_propositions, en 7 étapes (spec § 4.6) ; les
---     contrôles bloquants du § 5.1 sont répétés ici (pas les avertissements) ; tout ou rien ;
+--     contrôles bloquants du § 5.1 sont répétés ici (pas les avertissements) ; tout ou rien ; un import ou un retrait à la fois par
+--     utilisateur (verrou consultatif de transaction : les limites valent aussi pour deux validations simultanées) ;
 --   - historique_retirer(id) : efface l'import (cascade : mois, mouvements ; doublon_de revient à nul), puis les lignes clôturées créées
 --     par lui et restées sans transaction ; pose la demande de recalcul ;
 --   - retirer_import(id) : écriture de contrôle de l'app (D5) ; exige aal2 et un jeton sans client_id (jamais par un connecteur).
@@ -108,8 +114,27 @@ begin
 end;
 $$;
 
--- Texte borné : chaîne rognée, longueur, contenu sensible (contenu_sensible, 0009) et suite de p_chiffres chiffres ou plus refusés
--- (0 : pas de contrôle des chiffres). Rend null pour une valeur absente, nulle ou vide quand elle n'est pas requise.
+-- Contenu sensible d'un texte de l'historique : contenu_sensible (0009) sur le texte tel quel, puis sur le texte dont les espaces
+-- Unicode (insécables, fines, typographiques : U+00A0, U+2000 à U+200A, U+202F, U+205F, U+3000, tabulations) deviennent des espaces
+-- simples et dont les caractères invisibles (U+200B à U+200F, U+2060, U+FEFF) sont retirés : sans cela, un IBAN ou un numéro de carte
+-- écrit avec des espaces insécables passerait (le motif de 0009 n'admet que l'espace simple). Avec p_separateurs, aussi sur le texte
+-- dont les tirets, points, barres et soulignés suivis d'un chiffre deviennent des espaces (« FR76-3000-6000-… »). Pas pour un résumé
+-- jsonb (p_separateurs faux) : un uuid dont les premiers groupes ne sont que des chiffres y ressemblerait à un numéro de carte.
+create function public.historique_sensible(p text, p_separateurs boolean default true)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(public.contenu_sensible(p) or public.contenu_sensible(v.e)
+           or (p_separateurs and public.contenu_sensible(regexp_replace(v.e, '([0-9A-Za-z])[-./_]+(?=[0-9])', '\1 ', 'g'))), false)
+    from (select regexp_replace(regexp_replace(p, '[\u200B-\u200F\u2060\uFEFF]', '', 'g'),
+                                '[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\t\n\r\f\v]', ' ', 'g') as e) v;
+$$;
+
+-- Texte borné : chaîne rognée, longueur, contenu sensible (historique_sensible) et suite de p_chiffres chiffres ou plus refusés (0 : pas
+-- de contrôle des chiffres ; caractères invisibles retirés avant de compter). Rend null pour une valeur absente, nulle ou vide quand elle
+-- n'est pas requise.
 create function public.historique_texte(j jsonb, p_nom text, p_max int, p_requis boolean default false, p_chiffres int default 0)
 returns text
 language plpgsql
@@ -130,10 +155,10 @@ begin
     return null;
   end if;
   if char_length(v_t) > p_max then raise exception '% : % caractères au plus', p_nom, p_max; end if;
-  if public.contenu_sensible(v_t) then
+  if public.historique_sensible(v_t) then
     raise exception '% : contenu sensible refusé (numéro de compte ou de carte, mot de passe)', p_nom;
   end if;
-  if p_chiffres > 0 and v_t ~ ('[0-9]{' || p_chiffres || ',}') then
+  if p_chiffres > 0 and regexp_replace(v_t, '[\u200B-\u200F\u2060\uFEFF]', '', 'g') ~ ('[0-9]{' || p_chiffres || ',}') then
     raise exception '% : une suite de % chiffres ou plus est refusée (pas de numéro dans un libellé)', p_nom, p_chiffres;
   end if;
   return v_t;
@@ -162,13 +187,21 @@ end;
 $$;
 
 revoke all on function public.categorie_budget_valide(text), public.sous_categorie_budget_valide(text, text), public.historique_isin_valide(text),
-  public.historique_texte(jsonb, text, int, boolean, int), public.historique_nombre(jsonb, text, numeric, numeric, boolean) from public, anon;
+  public.historique_sensible(text, boolean), public.historique_texte(jsonb, text, int, boolean, int),
+  public.historique_nombre(jsonb, text, numeric, numeric, boolean) from public, anon;
 grant execute on function public.categorie_budget_valide(text), public.sous_categorie_budget_valide(text, text), public.historique_isin_valide(text),
-  public.historique_texte(jsonb, text, int, boolean, int), public.historique_nombre(jsonb, text, numeric, numeric, boolean) to authenticated, service_role;
+  public.historique_sensible(text, boolean), public.historique_texte(jsonb, text, int, boolean, int),
+  public.historique_nombre(jsonb, text, numeric, numeric, boolean) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------------------------------------------------------------
 -- 2. Tables (spec § 4.1 à § 4.5)
 -- ---------------------------------------------------------------------------------------------------------------------------------
+-- Clés étrangères composites (user_id, …) partout : une ligne ne peut désigner que des lignes de son propriétaire (une clé simple
+-- laisserait un utilisateur rattacher sa ligne à un import, une ligne du bilan ou une transaction d'un autre dont il connaît l'uuid :
+-- la vérification de clé étrangère ne passe pas par la RLS). D'où les clés uniques (user_id, id) de positions et transactions.
+alter table public.positions add constraint positions_user_id_id unique (user_id, id);
+alter table public.transactions add constraint transactions_user_id_id unique (user_id, id);
+
 create table public.historique_comptes (
   id                  uuid primary key default gen_random_uuid(),
   user_id             uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -178,26 +211,28 @@ create table public.historique_comptes (
   type                text not null,
   titulaire           text not null,
   banque_compte_id    bigint,
-  position_id         uuid references public.positions(id) on delete set null,
+  position_id         uuid,
   cle                 text not null,
   cree_le             timestamptz not null default now(),
   maj_le              timestamptz not null default now(),
   constraint historique_comptes_libelle check (char_length(libelle) between 2 and 40),
-  constraint historique_comptes_libelle_sensible check (not public.contenu_sensible(libelle) and libelle !~ '[0-9]{6,}'),
+  constraint historique_comptes_libelle_sensible check (not public.historique_sensible(libelle) and libelle !~ '[0-9]{6,}'),
   constraint historique_comptes_etablissement check (etablissement in ('lcl', 'boursobank', 'revolut', 'n26', 'linxea', 'autre')),
   constraint historique_comptes_etablissement_libre check (etablissement_libre is null
     or (etablissement = 'autre' and char_length(etablissement_libre) between 1 and 40
-        and not public.contenu_sensible(etablissement_libre) and etablissement_libre !~ '[0-9]{6,}')),
+        and not public.historique_sensible(etablissement_libre) and etablissement_libre !~ '[0-9]{6,}')),
   constraint historique_comptes_type check (type in ('courant', 'joint', 'livret', 'carte_differe', 'autre')),
   constraint historique_comptes_titulaire check (titulaire in ('p1', 'p2', 'commun')),
-  constraint historique_comptes_cle check (char_length(cle) between 1 and 200 and not public.contenu_sensible(cle)),
+  constraint historique_comptes_cle check (char_length(cle) between 1 and 200 and not public.historique_sensible(cle) and cle !~ '[0-9]{6,}'),
   constraint historique_comptes_user_id_id unique (user_id, id),
   constraint historique_comptes_cle_unique unique (user_id, cle),
   constraint historique_comptes_banque foreign key (user_id, banque_compte_id) references public.banque_comptes(user_id, id)
-    on delete set null (banque_compte_id)
+    on delete set null (banque_compte_id),
+  constraint historique_comptes_position foreign key (user_id, position_id) references public.positions(user_id, id)
+    on delete set null (position_id)
 );
 create index historique_comptes_banque_idx   on public.historique_comptes (user_id, banque_compte_id) where banque_compte_id is not null;
-create index historique_comptes_position_idx on public.historique_comptes (position_id) where position_id is not null;
+create index historique_comptes_position_idx on public.historique_comptes (user_id, position_id) where position_id is not null;
 
 create table public.historique_imports (
   id             uuid primary key default gen_random_uuid(),
@@ -219,11 +254,12 @@ create table public.historique_imports (
   constraint historique_imports_fichier check (jsonb_typeof(fichier) = 'object' and octet_length(fichier::text) <= 2000),
   constraint historique_imports_etablissement check (etablissement in ('lcl', 'boursobank', 'revolut', 'n26', 'linxea', 'autre')),
   constraint historique_imports_enveloppe check (enveloppe is null or (char_length(enveloppe) between 1 and 100
-    and not public.contenu_sensible(enveloppe) and enveloppe !~ '[0-9]{8,}')),
+    and not public.historique_sensible(enveloppe) and enveloppe !~ '[0-9]{8,}')),
   constraint historique_imports_periode check (periode_du <= periode_au and periode_du >= date '1990-01-01'),
   constraint historique_imports_resume check (jsonb_typeof(resume) = 'object' and octet_length(resume::text) <= 4000),
-  constraint historique_imports_source check (char_length(source) between 1 and 200 and not public.contenu_sensible(source)),
+  constraint historique_imports_source check (char_length(source) between 1 and 200 and not public.historique_sensible(source)),
   constraint historique_imports_lignes check (cardinality(lignes_creees) <= 50),
+  constraint historique_imports_user_id_id unique (user_id, id),
   constraint historique_imports_empreinte_unique unique (user_id, empreinte),
   constraint historique_imports_compte foreign key (user_id, compte_id) references public.historique_comptes(user_id, id)
     on delete set null (compte_id)
@@ -240,15 +276,16 @@ create table public.historique_releves (
   total_entrees numeric not null,
   total_sorties numeric not null,
   nombre        int not null default 0,
-  import_id     uuid not null references public.historique_imports(id) on delete cascade,
+  import_id     uuid not null,
   primary key (user_id, compte_id, mois),
   constraint historique_releves_mois check (extract(day from mois) = 1 and mois >= date '2000-01-01'),
   constraint historique_releves_soldes check ((solde_debut is null or abs(solde_debut) <= 10000000) and (solde_fin is null or abs(solde_fin) <= 10000000)),
   constraint historique_releves_totaux check (total_entrees between 0 and 10000000 and total_sorties between 0 and 10000000),
   constraint historique_releves_nombre check (nombre between 0 and 5000),
-  constraint historique_releves_compte foreign key (user_id, compte_id) references public.historique_comptes(user_id, id) on delete cascade
+  constraint historique_releves_compte foreign key (user_id, compte_id) references public.historique_comptes(user_id, id) on delete cascade,
+  constraint historique_releves_import foreign key (user_id, import_id) references public.historique_imports(user_id, id) on delete cascade
 );
-create index historique_releves_import_idx on public.historique_releves (import_id);
+create index historique_releves_import_idx on public.historique_releves (user_id, import_id);
 
 create table public.historique_banque_mois (
   user_id        uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -311,7 +348,8 @@ begin
     raise exception 'photo reconstituée refusée : le mois % n''est pas antérieur à la première photo observée (%)', to_char(new.mois, 'YYYY-MM'), v_premiere
       using errcode = '23514';
   end if;
-  if tg_op = 'INSERT' and (select count(*) from public.photos_reconstituees p where p.user_id = new.user_id) >= 240 then
+  -- le mois lui-même n'est pas compté : un « insert … on conflict do update » de la nuit sur un mois existant, à 240 photos, passe
+  if tg_op = 'INSERT' and (select count(*) from public.photos_reconstituees p where p.user_id = new.user_id and p.mois <> new.mois) >= 240 then
     raise exception 'Limite atteinte : 240 photos reconstituées au plus (20 ans).' using errcode = '54000';
   end if;
   return new;
@@ -325,17 +363,56 @@ create trigger photos_reconstituees_garde before insert or update on public.phot
 -- 3. transactions et status (spec § 4.4 et § 4.5)
 -- ---------------------------------------------------------------------------------------------------------------------------------
 alter table public.transactions
-  add column import_id  uuid references public.historique_imports(id) on delete cascade,
+  add column import_id  uuid,
   add column cle_import text constraint transactions_cle_import check (cle_import is null or char_length(cle_import) between 1 and 64),
-  add column enveloppe  text constraint transactions_enveloppe check (enveloppe is null or char_length(enveloppe) between 1 and 100),
+  add column enveloppe  text constraint transactions_enveloppe check (enveloppe is null or (char_length(enveloppe) between 1 and 100
+                                                                    and not public.historique_sensible(enveloppe))),
   add column frais      numeric constraint transactions_frais check (frais is null or (frais >= 0 and frais <= 10000000)),
-  add column doublon_de uuid references public.transactions(id) on delete set null,
+  add column doublon_de uuid,
   add column estime     boolean not null default false;
 alter table public.transactions add constraint transactions_position_ou_enveloppe check (position_id is not null or enveloppe is not null);
 alter table public.transactions add constraint transactions_doublon_de_autre check (doublon_de is null or doublon_de <> id);
+alter table public.transactions add constraint transactions_import foreign key (user_id, import_id) references public.historique_imports(user_id, id)
+  on delete cascade;
+alter table public.transactions add constraint transactions_doublon_de foreign key (user_id, doublon_de) references public.transactions(user_id, id)
+  on delete set null (doublon_de);
 create unique index transactions_cle_import_unique on public.transactions (user_id, cle_import) where cle_import is not null;
-create index transactions_import_idx    on public.transactions (import_id) where import_id is not null;
-create index transactions_doublon_de_idx on public.transactions (doublon_de) where doublon_de is not null;
+create index transactions_import_idx    on public.transactions (user_id, import_id) where import_id is not null;
+create index transactions_doublon_de_idx on public.transactions (user_id, doublon_de) where doublon_de is not null;
+
+-- Un connecteur (jeton OAuth : client_id) écrit encore transactions (régime « si facteur », 0033) mais jamais ce qui relève d'un import :
+-- ni un mouvement importé (import_id), ni une clé d'import (cle_import : elle ferait ignorer le vrai mouvement au prochain import), ni
+-- un remplacement (doublon_de : il retirerait une transaction de tous les calculs). Il dépose une proposition ; l'app (aal2) valide ou
+-- retire l'import. Une suppression en cascade (ligne du bilan supprimée par le connecteur) est refusée de même. Sans client_id (app,
+-- nuit, service, cascade de retirer_import ou de delete_me) : rien ne change.
+create function public.transactions_historique_garde()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if nullif(auth.jwt()->>'client_id', '') is not null then
+    if tg_op in ('UPDATE', 'DELETE') then
+      if old.import_id is not null or old.cle_import is not null or old.doublon_de is not null then
+        raise exception 'Un connecteur ne peut pas modifier ni supprimer un mouvement importé ou remplacé : valide ou retire l''import depuis Boussole.'
+          using errcode = '42501';
+      end if;
+    end if;
+    if tg_op in ('INSERT', 'UPDATE') then
+      if new.import_id is not null or new.cle_import is not null or new.doublon_de is not null then
+        raise exception 'Un connecteur ne peut pas écrire un mouvement importé (import_id, cle_import, doublon_de) : dépose un import à valider dans Boussole.'
+          using errcode = '42501';
+      end if;
+    end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end;
+$$;
+revoke all on function public.transactions_historique_garde() from public, anon, authenticated;
+create trigger transactions_historique_garde before insert or update or delete on public.transactions
+  for each row execute function public.transactions_historique_garde();
 
 alter table public.status add column historique_a_recalculer timestamptz;
 
@@ -542,6 +619,9 @@ declare
   r         record;
 begin
   perform public.historique_garde();
+  -- un import ou un retrait à la fois par utilisateur (jusqu'à la fin de la transaction) : limites (40 comptes, 300 imports, 240 mois,
+  -- 50 000 mouvements) et contrôle « quantité jamais négative » valent aussi pour deux validations simultanées
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('historique:' || v_uid::text, 0));
   if p_apres is null or jsonb_typeof(p_apres) <> 'object' then
     raise exception 'import : objet attendu';
   end if;
@@ -616,14 +696,14 @@ begin
   if v_du > v_au then raise exception 'periode : la date de début est postérieure à celle de fin'; end if;
   if v_du < date '1990-01-01' or v_au > v_auj then raise exception 'periode : du 1990-01-01 à aujourd''hui'; end if;
 
-  v_src := public.historique_texte(to_jsonb(left(coalesce(p_source, ''), 200)), 'source', 200, true, 0);
+  v_src := public.historique_texte(to_jsonb(left(coalesce(p_source, ''), 200)), 'source', 200, true, 8);
   v_resume := coalesce(p_apres->'resume', '{}'::jsonb);
   if jsonb_typeof(v_resume) <> 'object' then raise exception 'resume : objet attendu'; end if;
   v_avert := coalesce(p_apres->'avertissements', '[]'::jsonb);
   if jsonb_typeof(v_avert) <> 'array' or jsonb_array_length(v_avert) > 50 then
     raise exception 'avertissements : tableau de 50 éléments au plus attendu';
   end if;
-  if public.contenu_sensible(v_resume::text) or public.contenu_sensible(v_avert::text) then
+  if public.historique_sensible(v_resume::text, false) or public.historique_sensible(v_avert::text, false) then
     raise exception 'resume : contenu sensible refusé (numéro de compte ou de carte, mot de passe)';
   end if;
 
@@ -698,7 +778,7 @@ begin
         raise exception 'compte.titulaire invalide (p1, p2 ou commun)';
       end if;
       v_tit := v_c->>'titulaire';
-      v_cle := public.historique_texte(v_c->'cle', 'compte.cle', 200, true, 0);
+      v_cle := public.historique_texte(v_c->'cle', 'compte.cle', 200, true, 6);
       select * into v_cpt from public.historique_comptes c where c.user_id = v_uid and c.cle = v_cle for update;
       if not found then
         select count(*) into v_n from public.historique_comptes where user_id = v_uid;
@@ -837,6 +917,10 @@ begin
       v_isin := case when jsonb_typeof(v_l->'isin') = 'string' then upper(replace(v_l->>'isin', ' ', '')) end;
       if not public.historique_isin_valide(v_isin) then
         raise exception 'lignes_a_creer : ISIN « % » invalide (format ou clé de contrôle)', coalesce(v_isin, '');
+      end if;
+      -- un symbole X- doit exister (spec § 5.1) : l'import n'en invente pas dans la table commune des instruments
+      if v_isin like 'X-%' and not exists (select 1 from public.instruments i where i.isin = v_isin) then
+        raise exception 'lignes_a_creer : symbole « % » inconnu (seuls les symboles X- existants sont admis)', v_isin;
       end if;
       if v_map ? v_isin then raise exception 'lignes_a_creer : ISIN % en double', v_isin; end if;
       v_nom := public.historique_texte(v_l->'name', 'lignes_a_creer.name', 60, true, 8);
@@ -1032,6 +1116,7 @@ declare
   v_ligne  uuid;
 begin
   perform public.historique_garde();
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('historique:' || v_uid::text, 0));
   select i.lignes_creees into v_lignes from public.historique_imports i where i.id = p_id and i.user_id = v_uid for update;
   if not found then
     raise exception 'import « % » introuvable', p_id;
@@ -2418,5 +2503,6 @@ grant execute on function public.export_all() to authenticated;
 grant all on table public.historique_comptes, public.historique_imports, public.historique_releves, public.historique_banque_mois,
   public.photos_reconstituees to service_role;
 grant execute on function public.categorie_budget_valide(text), public.sous_categorie_budget_valide(text, text), public.historique_isin_valide(text),
-  public.historique_texte(jsonb, text, int, boolean, int), public.historique_nombre(jsonb, text, numeric, numeric, boolean), public.historique_garde(),
+  public.historique_sensible(text, boolean), public.historique_texte(jsonb, text, int, boolean, int),
+  public.historique_nombre(jsonb, text, numeric, numeric, boolean), public.historique_garde(),
   public.historique_appliquer(text, jsonb, text), public.historique_retirer(uuid), public.retirer_import(uuid), public.export_all() to service_role;
