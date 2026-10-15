@@ -167,7 +167,9 @@
     if (hist.etat !== "rien" && hist.depuis <= depuis && hist.isins === isins && hist.comptes === comptes) return;
     const cle = depuis + "|" + isins + "|" + comptes;
     if (hist.enCours === cle) return;
-    hist.enCours = cle; const seq = ++hist.seq; hist.etat = hist.version ? hist.etat : "charge";
+    /* une lecture plus longue (même contenu, début plus ancien) est déjà en route : elle couvre aussi celle-ci (Aujourd'hui lit 5 ans, Comptes 1 an) */
+    if (hist.enCours && hist.enCoursDepuis <= depuis && hist.enCoursDe === isins + "|" + comptes) return;
+    hist.enCours = cle; hist.enCoursDepuis = depuis; hist.enCoursDe = isins + "|" + comptes; const seq = ++hist.seq; hist.etat = hist.version ? hist.etat : "charge";
     const tolerant = f => Promise.resolve().then(f).catch(() => null);
     const [cours, tx, ops] = await Promise.all([
       isins && typeof st.cours === "function" ? tolerant(() => st.cours(isins.split(","), depuis)) : {},
