@@ -568,7 +568,7 @@ test("detail : 2 à 4 lignes et un lien vers la page complète pour chaque carte
     const d = A.detail(id, ind, { id: "1a", granularite: "mois" });
     assert.ok(d.titre, id);
     const n = ((id === "net" || id === "objectifs" ? d.contenu.split('<details')[0] : d.contenu).match(/<li/g) || []).length;
-    assert.ok(n >= 2 && n <= (id === "net" ? 6 : 4), id + " : " + n + " lignes");
+    assert.ok(n >= 2 && n <= (id === "net" ? 10 : 4), id + " : " + n + " lignes"); /* net : composition (4 à 6) + rendement réel (jusqu'à 4 lignes) */
     assert.equal(d.lien.href, "#" + r, id + " → " + r);
     assert.ok(d.lien.label);
     assert.ok(d.question && d.question.length > 20, id + " : question pour « Demander à Claude »");

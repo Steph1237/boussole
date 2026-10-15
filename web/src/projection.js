@@ -30,7 +30,7 @@
 
   const GRAINE = 20261014;
   /** Incrémentée à chaque changement de calcul ; rendue avec chaque résultat (rejouer une projection passée). */
-  const versionModele = "proj-1.1.0";
+  const versionModele = "proj-1.2.0";
   const CLASSES_TIREES = Dn.CLASSES_TIREES, NB_TIRAGES = CLASSES_TIREES.length, IDX = Dn.IDX;
   const PERCENTILES = { p10: 0.1, p25: 0.25, p50: 0.5, p75: 0.75, p90: 0.9 };
   const NOMS_P = Object.keys(PERCENTILES);
@@ -106,6 +106,9 @@
     const livretTaux = { livret_a: "livret_a_taux", ldds: "livret_a_taux", lep: "lep_taux" };
     const centralCtx = Object.assign({}, ctx, { hypClasses: {}, manquant: () => {} });
     const pcCentral = k => Dn.parametresClasse(k, centralCtx);
+    /* lecture sans trace : les classes que le foyer ne détient pas ne sont pas ajoutées aux repères « utilisés » */
+    const lectureCtx = Object.assign({}, ctx, { manquant: () => {}, rv: cle => { const r = ctx.R[cle]; return r ? +r.valeur : undefined; } });
+    const pcLecture = k => Dn.parametresClasse(k, lectureCtx);
     const finaliser = c => {
       c.feeAnn = (O.n0(c.ter_pct) + O.n0(c.frais_env_pct)) / 100;
       c.feeM = Math.pow(1 - c.feeAnn, 1 / 12);
@@ -470,6 +473,7 @@
     M.couple = cc.couple;
     M.comps = comps;
     M.B = comps.length;
+    M.rendementInfo = infosRendement(M, comps, pcLecture);
     M.scpiDistribution = rv("scpi_taux_distribution") === undefined ? null : rv("scpi_taux_distribution") / 100;
     /* SCPI détenues en direct (spec § 5.3) : une part du rendement de la classe est distribuée chaque mois au compte courant, après impôt au barème (TMI) et
        prélèvements sociaux fonciers ; le reste du rendement reste dans la part. Sans l'un des repères, rien n'est distribué (limite dite, jamais une valeur de secours). */
@@ -492,6 +496,30 @@
   /* ================================================================== simulation (cœur) */
   const DEUX_PI = 2 * Math.PI;
   const rangs = P => NOMS_P.map(k => Math.min(P, Math.max(1, Math.ceil(PERCENTILES[k] * P - 1e-9))) - 1);
+  /** Valeurs de rangs donnés (indices triés croissants) d'un tableau de nombres, par sélection (Hoare, pivot médian de trois) au lieu d'un tri complet : même résultat que a.sort()[rang], en
+      une fraction du temps. Réordonne `a`. Utilisé chaque mois pour les centiles du rendement (2 000 chemins). */
+  function selectionnerRangs(a, rs, out) {
+    const pas = (lo, hi, i0, i1) => {
+      if (i0 > i1 || lo >= hi) { for (let i = i0; i <= i1; i++) out[i] = a[rs[i]]; return; }
+      const mid = (i0 + i1) >> 1, r = rs[mid];
+      let l = lo, h = hi;
+      while (l < h) {
+        const x = a[l], y = a[(l + h) >> 1], z = a[h], pivot = x < y ? (y < z ? y : x < z ? z : x) : (x < z ? x : y < z ? z : y);
+        let i = l, j = h;
+        while (i <= j) {
+          while (a[i] < pivot) i++;
+          while (a[j] > pivot) j--;
+          if (i <= j) { const t = a[i]; a[i] = a[j]; a[j] = t; i++; j--; }
+        }
+        if (r <= j) h = j; else if (r >= i) l = i; else break;
+      }
+      out[mid] = a[r];
+      pas(lo, r - 1, i0, mid - 1);
+      pas(r + 1, hi, mid + 1, i1);
+    };
+    pas(0, a.length - 1, 0, rs.length - 1);
+    return out;
+  }
 
   /** Un calcul : P chemins (1 en mode déterministe), mois à l'extérieur, chemins à l'intérieur. Voir la spec § 4, § 6, § 9.
       o : { P, graine, det, plan (vrai : la passe déterministe construit les achats et les composants), trace, vue, net_impots, infl, crise, retenir, marques }. */
@@ -499,6 +527,9 @@
     const P = o.P, B = M.B, N = M.N, det = !!o.det, comps = M.comps, dates = M.dates, infl = o.infl || M.infl;
     const trace = !!o.trace, planifier = !!o.plan;
     const vue = o.vue || "financier", netImp = !!o.net_impots;
+    /* rendement des placements (TWR) : par chemin, le facteur de croissance cumulé (produit des rendements de chaque mois), mesuré au moment de la croissance (avant les flux du mois, qui tombent en fin de mois),
+       sur les compartiments hors comptes courants ; les frais sont déjà dans la croissance (feeM) */
+    const rend = !!o.rend, fac = rend ? new Float64Array(P).fill(1) : null, facPrec = rend ? new Float64Array(P).fill(1) : null, masqueP = Float64Array.from(comps, c => (c.type === "courant" ? 0 : 1));
     const V = new Float64Array(P * B), Bs = new Float64Array(P * B), Vx = new Float64Array(P * B);
     for (let i = 0; i < P; i++) for (let b = 0; b < B; b++) { V[i * B + b] = comps[b].v0; Bs[i * B + b] = comps[b].base0; Vx[i * B + b] = comps[b].v0; }
     const bien = new Float64Array(P).fill(M.bien0), bienX = new Float64Array(P).fill(M.bien0);
@@ -538,6 +569,8 @@
     const exis = {}, ecart = {};
     NOMS_P.forEach(k => { exis[k] = new Float64Array(N + 1).fill(NaN); ecart[k] = new Float64Array(N + 1).fill(NaN); });
     const probEcart = new Float64Array(N + 1).fill(NaN);
+    const cumLog = {}, anLog = {}, triR = rend ? new Float64Array(P) : null, anP = rend ? new Float64Array(P) : null, rv5 = new Float64Array(NOMS_P.length);
+    if (rend) NOMS_P.forEach(k => { cumLog[k] = new Float64Array(N + 1); anLog[k] = new Float64Array(Math.floor(N / 12) + 1); });
     const tot = new Float64Array(P), tri = new Float64Array(P), totX = new Float64Array(P), triX = new Float64Array(P), diff = new Float64Array(P);
     const marquesSet = new Set(o.marques || []);
     const retenir = {}; (o.retenir || []).forEach(t => { retenir[t] = new Float64Array(P); });
@@ -676,6 +709,16 @@
       }
       tri.set(tot); tri.sort();
       NOMS_P.forEach((k, j) => { centiles[k][t] = tri[rg[j]]; });
+      if (rend) {
+        triR.set(fac); selectionnerRangs(triR, rg, rv5);
+        NOMS_P.forEach((k, j) => { cumLog[k][t] = Math.log(rv5[j]); });
+        if (t > 0 && (t % 12 === 0 || t === N)) {
+          for (let i = 0; i < P; i++) anP[i] = fac[i] / facPrec[i];
+          selectionnerRangs(anP, rg, rv5);
+          NOMS_P.forEach((k, j) => { anLog[k][Math.ceil(t / 12)] = Math.log(rv5[j]); });
+          facPrec.set(fac);
+        }
+      }
       if (retenir[t]) retenir[t].set(tot);
       if (o.couches && (t % 12 === 0 || t === N || marquesSet.has(t))) {
         const detteX = M.detteExist[0];
@@ -737,9 +780,18 @@
         if (trace) {
           for (let b = 0; b < B; b++) { const gg = grpDe[b] >= 0 ? gGrp[grpDe[b]] : Math.exp(aMois[b]); const v = V[off + b]; tr.gain[t] += v * (gg - 1); tr.frais[t] += v * gg * (1 - comps[b].feeM); }
         }
-        for (let b = 0; b < B; b++) {
-          const f = (grpDe[b] >= 0 ? gGrp[grpDe[b]] * comps[b].feeM : gDet[b]);
-          V[off + b] *= f; Vx[off + b] *= f;
+        if (rend) {
+          let avantP = 0, apresP = 0;
+          for (let b = 0; b < B; b++) {
+            const f = (grpDe[b] >= 0 ? gGrp[grpDe[b]] * comps[b].feeM : gDet[b]), v = V[off + b], nv = v * f, mk = masqueP[b];
+            V[off + b] = nv; Vx[off + b] *= f; avantP += v * mk; apresP += nv * mk;
+          }
+          if (avantP > 1e-6 && apresP > 0) fac[i] *= apresP / avantP;
+        } else {
+          for (let b = 0; b < B; b++) {
+            const f = (grpDe[b] >= 0 ? gGrp[grpDe[b]] * comps[b].feeM : gDet[b]);
+            V[off + b] *= f; Vx[off + b] *= f;
+          }
         }
         if (M.scpiNet != null) for (const b of M.scpiB) {
           const dist = V[off + b] * M.scpiDistribution / 12, distX = Vx[off + b] * M.scpiDistribution / 12;
@@ -880,7 +932,8 @@
     }
 
     /* ---- sortie ---- */
-    return { P, B, N, graine, apport: apportRes, centiles, existant: exis, ecart, probEcart, manque, objCompte, retenir, trace: tr, V, Vx, Bs, vue, infl, groupes: groupes.length, needPairs: needPair.reduce((a, x) => a + x, 0) };
+    return { P, B, N, graine, apport: apportRes, centiles, existant: exis, ecart, probEcart, manque, objCompte, retenir, trace: tr, V, Vx, Bs, vue, infl, groupes: groupes.length, needPairs: needPair.reduce((a, x) => a + x, 0),
+      rendement: rend ? { cum: cumLog, annee: anLog } : null };
   }
 
   /* ================================================================== résultats */
@@ -962,6 +1015,41 @@
   function rendementAttendu(compartiments) {
     const L = liste(compartiments).filter(c => c && c.v0 > 0), v = sum(L, c => c.v0);
     return v > 0 ? sum(L, c => c.v0 * c.attendu_net_pct) / v : 0;
+  }
+
+  /** Hypothèses de rendement lues par le moteur pour comparer le réel au modèle : rendement central et volatilité de chaque classe (celles du calcul : surcharges de variante comprises),
+      rendement attendu net de frais (celui du calcul : exp(12 a) × (1 − frais) − 1 par compartiment) et frais moyens des placements (comptes courants exclus, pondérés par la valeur d'aujourd'hui).
+      La lecture des repères n'est pas consignée (la liste « hypothèses » reste celle du calcul). */
+  function infosRendement(M, comps, pcCentral) {
+    const L = comps.filter(c => c && c.type !== "courant" && c.v0 > 0), v = sum(L, c => c.v0);
+    const classes = {};
+    Marche.CLES.filter(k => k !== "levier").forEach(k => { const p = pcCentral(k); classes[k] = { rendement: p.rendement, volatilite: p.volatilite }; });
+    classes.courant = { rendement: 0, volatilite: 0 };
+    const lev = L.find(c => c.classe === "levier");
+    if (lev) classes.levier = { rendement: lev.attendu_pct, volatilite: lev.s * Math.sqrt(12) * 100 };
+    const net = c => (Math.exp(12 * c.a) * (1 - c.feeAnn) - 1) * 100;
+    return { disponible: v > 0, classes, nominal_pct: v > 0 ? sum(L, c => c.v0 * net(c)) / v : null, frais_pct: v > 0 ? sum(L, c => c.v0 * c.feeAnn) / v * 100 : null };
+  }
+  /** Rendement annualisé des placements (TWR) : centiles par mois (cumulé et annualisé) et par année, en nominal et en euros d'aujourd'hui (réel), plus le rendement attendu de l'allocation
+      actuelle. Net de frais (la croissance des compartiments les contient), avant impôts, sans l'effet des versements ni des retraits, comptes courants exclus. Pourcentages. */
+  function rendementDe(M, run) {
+    const info = M.rendementInfo, N = M.N, H = M.horizon, pi = M.pi, lnPi = Math.log(1 + pi);
+    const nul = { p10: null, p25: null, p50: null, p75: null, p90: null };
+    const base = { methode: "twr_net_de_frais", unite: "pct_par_an", avant_impots: true, perimetre: "placements (livrets, assurance-vie, PEA, compte-titres…), comptes courants exclus",
+      inflation_pct: pi * 100, mois: M.dates.slice(0, N + 1), classes: info.classes };
+    if (!info.disponible || !run.rendement) {
+      return Object.assign(base, { disponible: false, raison: "aucun placement à mesurer (les comptes courants ne sont pas des placements)", attendu: { nominal_pct: null, reel_pct: null, frais_pct: null },
+        horizon: { ans: H, nominal: nul, reel: nul }, cumule: null, annualise: null, par_annee: null });
+    }
+    const R = run.rendement, tab = (f, n) => { const o = {}; NOMS_P.forEach(k => { o[k] = f(k); }); void n; return o; };
+    const lnInfl = t => t * lnPi / 12;
+    const cumule = { nominal: tab(k => versArray(t => (Math.exp(R.cum[k][t]) - 1) * 100, N)), reel: tab(k => versArray(t => (Math.exp(R.cum[k][t] - lnInfl(t)) - 1) * 100, N)) };
+    const annualise = { nominal: tab(k => versArray(t => (t > 0 ? (Math.exp(R.cum[k][t] * 12 / t) - 1) * 100 : null), N)), reel: tab(k => versArray(t => (t > 0 ? (Math.exp((R.cum[k][t] - lnInfl(t)) * 12 / t) - 1) * 100 : null), N)) };
+    const horizon = { ans: H, nominal: tab(k => annualise.nominal[k][N]), reel: tab(k => annualise.reel[k][N]) };
+    const annees = Array.from({ length: H }, (_, i) => i + 1);
+    const parAnnee = { annees, dates: annees.map(y => M.dates[12 * y]), nominal: tab(k => annees.map(y => (Math.exp(R.annee[k][y]) - 1) * 100)), reel: tab(k => annees.map(y => (Math.exp(R.annee[k][y] - lnPi) - 1) * 100)) };
+    return Object.assign(base, { disponible: true, attendu: { nominal_pct: info.nominal_pct, reel_pct: ((1 + info.nominal_pct / 100) / (1 + pi) - 1) * 100, frais_pct: info.frais_pct },
+      horizon, cumule, annualise, par_annee: parAnnee });
   }
 
   /** Garde-fous de vraisemblance (spec § 6.8). */
@@ -1066,7 +1154,7 @@
     const deterministe = o.volatilite === 0;
     const P = deterministe ? 1 : (o.chemins > 0 ? Math.round(o.chemins) : 2000);
     const graine = o.graine == null ? GRAINE : o.graine;
-    const run = derouler(M, { P, graine, det: deterministe, trace: deterministe, vue, net_impots: netImp, couches: true, retenir: o.retenir });
+    const run = derouler(M, { P, graine, det: deterministe, trace: deterministe, vue, net_impots: netImp, couches: true, retenir: o.retenir, rend: true });
     const det = M.det.tr, fx = echelle(M, euros);
     const sortie = tab => { const r = {}; NOMS_P.forEach(k => { r[k] = versArray(t => tab[k][t] * fx(t), N); }); return r; };
     const nul = tab => { const r = {}; NOMS_P.forEach(k => { r[k] = versArray(t => (isNaN(tab[k][t]) ? null : tab[k][t] * fx(t)), N); }); return r; };
@@ -1117,6 +1205,7 @@
     return {
       version_modele: versionModele, graine, chemins: P, deterministe, today: M.today, mois: M.dates.slice(0, N + 1), euros, vue, net_impots: netImp, horizon_ans: M.horizon,
       vues, objectifs, manquer_argent: manquer, jalons, phrase: resume.phrase, decomposition_phrase: resume.decomposition, capacite_source: M.capacite_base.source, capacite_periode: M.capacite_base.periode,
+      rendement: Object.assign(rendementDe(M, run), { euros }),
       hypotheses: lister(M), hypotheses_classes: classesUtilisees(M), a_completer: couv.a_completer, couverture: couv.couverture, avertissements: avert,
       existant, epargne_future: futur, capacite_base: M.capacite_base, capacite_par_periode: cpp, decomposition: dec, garde_fous: gf,
       evenements_pris_en_compte: M.evenements_pris_en_compte.slice(), question_evenements: M.evenements_pris_en_compte.length ? null : "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?",
@@ -1399,6 +1488,16 @@
   /* Limites de la base (appliquer_propositions, cible plan_fige), mesurées comme elle en octets de jsonb::text (octet_length) ; marge de 2 % pour les écarts de format des nombres */
   const PLAN_MAX_OCTETS = 250000, PLAN_PARAMETRES_MAX_OCTETS = 100000, PLAN_TOTAL_MAX_OCTETS = 400000;
   const PLAN_MARGE = 0.98;
+  /** Ce que le plan attendait du rendement des placements, rangé avec lui : de quoi comparer plus tard le rendement réel à ce que le modèle en disait (hypothèses de classe du moment, attendu net
+      de frais, rendement annualisé médian et bande sur l'horizon). null sans rendement mesurable. */
+  function resumeRendementPlan(rd) {
+    if (!rd || !rd.disponible) return null;
+    const r4 = x => (x == null || !Number.isFinite(+x) ? null : Math.round(+x * 1e4) / 1e4), bande = o => ({ p10: r4(o.p10), p50: r4(o.p50), p90: r4(o.p90) });
+    const classes = {};
+    Object.keys(rd.classes || {}).forEach(k => { classes[k] = { rendement: r4(rd.classes[k].rendement), volatilite: r4(rd.classes[k].volatilite) }; });
+    return { attendu_nominal_pct: r4(rd.attendu.nominal_pct), attendu_reel_pct: r4(rd.attendu.reel_pct), frais_pct: r4(rd.attendu.frais_pct), inflation_pct: r4(rd.inflation_pct), classes,
+      horizon_ans: rd.horizon.ans, horizon_nominal: bande(rd.horizon.nominal), horizon_reel: bande(rd.horizon.reel) };
+  }
   /** Ligne à ranger dans plans_figes : { raison, horizon_mois, parametres, serie }. entree = { data, options } ; sortie = résultat de simuler (même entrée). La série est
       mensuelle (patrimoine net en euros courants : P10 à P90, couche « existant » aux années, versements cumulés) ; les paramètres suffisent à rejouer le calcul plus tard.
       Les tailles sont tenues sous les limites de la base : paramètres réduits par étapes (dites dans parametres.reductions), série espacée (serie.pas_mois). */
@@ -1420,6 +1519,7 @@
       capacite: { base: s.capacite_base ? { retenue: s.capacite_base.retenue, source: s.capacite_base.source, constatee: s.capacite_base.constatee, prevue: s.capacite_base.prevue, programmee: s.capacite_base.programmee, periode: s.capacite_base.periode } : null,
         par_periode: s.capacite_par_periode, versements_mensuels_initiaux: s.capacite_par_periode && s.capacite_par_periode[0] ? s.capacite_par_periode[0].montant_mensuel : null },
       allocation: { classes: s.hypotheses_classes, reste_capacite: reglages.reste_capacite, cibles: d.config && d.config.targets },
+      rendement: resumeRendementPlan(s.rendement),
       evenements: (d.foyer && d.foyer.evenements || []).map(x => ({ id: x.id, type: x.type, personne: x.personne, libelle: x.libelle, date: x.date, fin: x.fin || null, params: paramsConnus(x), variante_id: x.variante_id || null })),
       variantes: (d.foyer && d.foyer.variantes || []).map(x => ({ id: x.id, nom: x.nom, retire: x.retire, hypotheses: x.hypotheses })),
       hypotheses: { reperes: reperesUtilises, classes: s.hypotheses_classes, reglages },
@@ -1441,6 +1541,7 @@
       ["variantes_retirees", () => { parametres.variantes = []; }],
       ["evenements_retires", () => { parametres.evenements = []; }],
       ["reperes_retires", () => { parametres.hypotheses.reperes = []; }],
+      ["rendement_retire", () => { parametres.rendement = null; }],
     ];
     for (const [nom, f] of etapes) {
       if (taillePar() <= limP) break;
@@ -1565,6 +1666,6 @@
     preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, retroDuModele, texteProbabilite, historiquePourRetro: Dn.historiquePourRetro, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
     fiscaliteSortie: F.fiscaliteSortie, amortissement: C.amortissement, annuite: C.annuite, planPret: C.planPret, ptz: C.ptz, taeg: C.taeg,
     capaciteEmprunt: (data, opts) => D.Immo.capaciteEmprunt(data, opts), capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
-    rendementAttendu, capitaliser, centile: O.centile, _executer,
+    rendementAttendu, capitaliser, centile: O.centile, _executer, _selectionnerRangs: selectionnerRangs,
   };
 });

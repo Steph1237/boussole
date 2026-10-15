@@ -446,3 +446,22 @@ body.gp-bloque{overflow:hidden}
 .gp-evrow:hover .gp-pn.ic{background:var(--brand-soft)}
 .gp-evrow:hover .gp-pn.ic .gp-i,.gp-evrow[aria-current="true"] .gp-pn.ic .gp-i{color:var(--brand)}
 .gp-evrow[aria-current="true"] .gp-pn.ic{background:var(--brand-soft);color:var(--brand)}
+/* rendement attendu (RDT) : puce neutre dans l'en-tête de la carte (ce n'est pas une alerte), tableau des rendements obtenus dans les feuilles, source de l'attendu sous la lecture */
+.gp-chip-rd{display:inline-flex;align-items:center;gap:6px;position:relative;max-width:100%;min-width:0;height:26px;margin:0 var(--sp-2) var(--sp-1) 0;padding:0 8px 0 10px;border-radius:var(--r-chip);background:var(--sunk);color:var(--ink);border:1px solid var(--line)!important;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);text-align:left}
+.gp-chip-rd[hidden]{display:none}
+.gp-chip-rd::after{content:"";position:absolute;left:0;right:0;top:-9px;bottom:-9px}
+.gp-chip-rd:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.gp-chip-rd .gp-chip-i{color:var(--muted)}
+.gp-sh-kvs{margin:var(--sp-1) 0;border-top:1px solid var(--line)}
+.gp-rd-wrap{flex:none;overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.gp-rd-wrap:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.gp-rd-tab{width:100%;border-collapse:collapse;font:400 var(--t-caption)/var(--lh-caption) var(--f-body)}
+.gp-rd-tab th,.gp-rd-tab td{padding:6px 8px;text-align:right;vertical-align:top;border-bottom:1px solid var(--line)}
+.gp-rd-tab tbody tr:last-child th,.gp-rd-tab tbody tr:last-child td{border-bottom:0}
+.gp-rd-tab th:first-child,.gp-rd-tab td[colspan]{text-align:left}
+.gp-rd-tab thead th{color:var(--muted);font-weight:600;white-space:normal}
+.gp-rd-tab tbody th{font-weight:600;white-space:nowrap}
+.gp-rd-tab td{font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
+.gp-rd-tab td[colspan]{white-space:normal;color:var(--muted)}
+.gp-rd-src{margin:2px 0 0;color:var(--muted)}
+.gp-kvs+.gp-rd-src,.gp-kvs+p.gp-rd-src{margin-top:var(--sp-2)}

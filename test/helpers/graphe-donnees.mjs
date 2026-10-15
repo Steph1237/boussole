@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { miniDom } from "./mini-dom.mjs";
 const require = createRequire(import.meta.url);
 export const G = require("../../web/src/graphe-patrimoine.js");
+const Rendement = require("../../web/src/rendement.js");
 
 export const AUJ = "2026-10-14";
 const ms = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
@@ -66,9 +67,47 @@ export function donnees(opts) {
     question_evenements: "Aucun événement renseigné — as-tu des changements prévus ? Un enfant, un changement d'emploi, un déménagement, un achat ?",
     hypotheses: [{ cle: "inflation_hypothese", libelle: "Inflation supposée", valeur: 2, unite: "%", source_titre: "BCE", source_url: "https://www.ecb.europa.eu/mopo/strategy/pricestab/html/index.fr.html", verifie_le: "2026-09-25", statut: "ok" }],
     couverture: 0.8, avertissements: [], a_completer: [{ cle: "prix_revient:PER", titre: "Prix de revient de « PER »", effet: "sans lui, l'impôt à la sortie est sous-estimé", phrase_claude: "Aide-moi à renseigner le prix de revient de mon PER." }],
-    retro: null, version_modele: "proj-1.0.0", graine: 20261014, chemins: 2000, progressif: false,
+    retro: null, version_modele: "proj-1.0.0", graine: 20261014, chemins: 2000, progressif: false, ...(o.rendement ? { rendement: rendementDonnees(typeof o.rendement === "object" ? Object.assign({ horizonMois: N }, o.rendement) : { horizonMois: N }) } : {}),
     plans: [{ id: "plan-1", cree_le: plusMois(AUJ, -9) + "T20:00:00.000Z", raison: "revue_mensuelle", horizon_mois: 120 }], variantes: [{ id: "v-enfant", nom: "2ᵉ enfant" }], crises: [{ cle: "gfc_2008", label: "Crise financière (2007-2009)" }],
   };
+}
+
+/** Bloc `rendement` du contrat de données : projection (rendement annualisé P10 à P90 mois par mois, loi log-normale : médiane nominale 6,9 %/an, volatilité 15 %, inflation 2 % ; attendu 6,9 % nominal =
+    4,8 % après inflation) et rendement réel (730 jours de relevés de placements à +0,02 % par jour, un versement de 200 € le 5 de chaque mois, allocation 70 % actions / 30 % obligations, un plan
+    figé il y a 9 mois), ses quatre périodes et ce qu'en attendait le modèle. opts : { horizonMois (120), sansReel, sansProjet, indisponible, versementsInconnus, courts (jours de relevés, défaut 730) }. */
+export function rendementDonnees(opts) {
+  const o = Object.assign({ horizonMois: 120, courts: 730 }, opts || {});
+  const Z = { p10: -1.2815516, p25: -0.6744898, p50: 0, p75: 0.6744898, p90: 1.2815516 }, mu = Math.log(1.069), lnI = Math.log(1.02), SIG = 0.15;
+  const N = o.horizonMois, mois = []; for (let t = 0; t <= N; t++) mois.push(plusMois(AUJ, t));
+  const tab = (f, reel) => { const r = {}; Object.keys(Z).forEach(k => { r[k] = []; for (let t = 0; t <= N; t++) r[k].push(f(k, t, reel)); }); return r; };
+  const cumLog = (k, t, reel) => mu * t / 12 + Z[k] * SIG * Math.sqrt(t / 12) - (reel ? lnI * t / 12 : 0);
+  const projet = o.sansProjet ? null : o.indisponible ? { disponible: false, raison: "aucun placement à mesurer (les comptes courants ne sont pas des placements)", mois } : {
+    disponible: true, mois, inflation_pct: 2,
+    attendu: { nominal_pct: 6.9, reel_pct: (1.069 / 1.02 - 1) * 100, frais_pct: 0.4 },
+    annualise: { nominal: tab((k, t, r) => (t > 0 ? (Math.exp(cumLog(k, t, r) * 12 / t) - 1) * 100 : null), false), reel: tab((k, t, r) => (t > 0 ? (Math.exp(cumLog(k, t, r) * 12 / t) - 1) * 100 : null), true) },
+    cumule: { nominal: tab((k, t, r) => (Math.exp(cumLog(k, t, r)) - 1) * 100, false), reel: tab((k, t, r) => (Math.exp(cumLog(k, t, r)) - 1) * 100, true) },
+    horizon: { ans: N / 12 },
+  };
+  let reel = null;
+  if (!o.sansReel) {
+    const jours = o.courts, pts = [], flux = [];
+    let v = 150000;
+    for (let k = -jours; k <= 0; k++) {
+      const d = plusMois(AUJ, 0) && iso(ms(AUJ) + k * 864e5);
+      if (k > -jours) { v *= 1.0002; if (d.slice(8, 10) === "05") { v += 200; flux.push({ date: d, montant: 200 }); } }
+      pts.push({ date: d, valeur: Math.round(v * 100) / 100 });
+    }
+    const dr = { points: pts, flux: o.versementsInconnus ? [] : flux, versementsConnus: !o.versementsInconnus, allocations: [{ date: pts[0].date, poids: { actions: 0.7, obligations: 0.3 } }] };
+    const hyp = { courantes: { classes: { actions: { rendement: 7, volatilite: 15 }, obligations: { rendement: 3, volatilite: 6 }, courant: { rendement: 0, volatilite: 0 } }, frais_pct: 0.4 },
+      plans: [{ id: "plan-1", cree_le: plusMois(AUJ, -9) + "T20:00:00.000Z", classes: { actions: { rendement: 5, volatilite: 15 } } }] };
+    const periodes = Rendement.periodes({ points: dr.points, flux: dr.flux, today: AUJ, versementsConnus: dr.versementsConnus }).map(p => {
+      if (p.statut === "insuffisant") return p;
+      const d = Rendement.depuis(dr, p.debut, AUJ, { hypotheses: hyp, libelle: p.id === "debut" ? undefined : p.libelle.toLowerCase() });
+      return Object.assign({}, p, { attendu: d.attendu, comparaison: d.comparaison, source: d.source });
+    });
+    reel = { periodes, donnees: dr, hypotheses: hyp, notes: [] };
+  }
+  return { projet, reel };
 }
 
 /** Faux UI : un panneau qui enregistre ce qu'on lui ouvre. */
