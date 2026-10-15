@@ -6,7 +6,12 @@
     "build": "node build.mjs",
     "dev": "node build.mjs --dev",
     "gen": "node scripts/gen-catalogue.mjs && node scripts/gen-expertises-demo.mjs && node scripts/gen-police-separateur.mjs",
-    "check:mcp": "npx -y deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts"
+    "check:mcp": "npx -y deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts",
+    "preprod:start": "node scripts/preprod/demarrer.mjs",
+    "preprod:stop": "node scripts/preprod/cli.mjs stop",
+    "preprod:reset": "node scripts/preprod/demarrer.mjs --reset",
+    "preprod:sync": "node scripts/preprod/demarrer.mjs --sync",
+    "preprod:test": "node scripts/preprod/tester.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.7",
