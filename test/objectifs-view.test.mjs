@@ -1,10 +1,11 @@
 // Patrimoine › Objectifs (module objectifs-view, web/src/objectifs-view.*) : « Vais-je atteindre mes projets ? », en lecture seule.
-// Verdict en tête, une carte par objectif (échéance, progression, statut, effort mensuel requis) → panneau (détail, rendement et
-// repère Livret A, poches rattachées, projection de l'objectif, « Corriger avec Claude »), « Compléter avec Claude » en tête,
-// projection du patrimoine financier en accordéon (paramètre « scénario » local, jamais enregistré). Aucune écriture, tutoiement.
+// Verdict en tête, une carte par objectif (échéance, progression, statut + probabilité du moteur, effort mensuel requis) → panneau (détail,
+// phrase de probabilité, rendement et repère Livret A, poches rattachées, graphe maître de l'objectif, « Corriger avec Claude »),
+// « Compléter avec Claude » en tête, bandeau « cibles en euros d'aujourd'hui », projection du patrimoine financier en accordéon = le graphe
+// maître (GrapheModele.brancher, préréglage « objectifs »). Source de l'épargne dite une fois (spec PROJ § 13.2). Aucune écriture, tutoiement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { miniDom } from "./helpers/mini-dom.mjs";
@@ -45,16 +46,22 @@ test("objectifs-view.js : se compile, s'enregistre sous « objectifs-view », ex
   assert.doesNotThrow(() => new vm.Script(js, { filename: "objectifs-view.js" }));
   assert.match(js, /App\.register\("objectifs-view", api\)/);
   assert.match(js, /__pending/);
-  for (const f of ["trier", "analyser", "resumeObjectifs", "carteHtml", "detailHtml", "serieObjectif", "livretA", "versementReel", "projectionSvg", "projectionTableHtml", "hypothesesHtml", "boutonClaude"])
+  for (const f of ["trier", "analyser", "resumeObjectifs", "carteHtml", "detailHtml", "livretA", "probabilites", "probaInfo", "probaHtml", "probaPhrase", "capaciteDe", "noteRepartition",
+    "bandeauVu", "bandeauFerme", "boutonClaude"])
     assert.equal(typeof OV[f], "function", f);
+  for (const f of ["serieObjectif", "projectionSvg", "projectionTableHtml", "hypothesesHtml"]) assert.equal(OV[f], undefined, f + " : remplacé par le graphe maître");
   for (const f of ["formHtml", "modele", "validerObjectif", "ligneObjectif", "deplacer"]) assert.equal(OV[f], undefined, f + " : plus de saisie dans l'app");
 });
 
-test("objectifs-view.js : calculs de plan.js (cascade des poches, statut, répartition de l'épargne, projection) ; aucune écriture au store", () => {
+test("objectifs-view.js : calculs de plan.js (cascade des poches, statut, répartition de l'épargne) et moteur de projection via le graphe ; aucune écriture au store", () => {
   assert.match(js, /\.affecterDeja\(/);
   assert.match(js, /statutObjectif\([^)]*deja:/);
   assert.match(js, /repartirEpargne\(/);
-  assert.match(js, /\.projection\(/);
+  assert.doesNotMatch(js, /\.projection\(|RENDEMENTS/, "plus de Plan.projection ni de RENDEMENTS");
+  assert.match(js, /GrapheModele|GM\(\)/);
+  assert.match(js, /\.brancher\(/);
+  assert.match(js, /preset: "objectifs"/);
+  assert.match(js, /objectifId/);
   assert.doesNotMatch(js, /Store\.db|\.db\b/, "aucun accès à Store.db");
   assert.doesNotMatch(js, /\.upsert\(|\.delete\(|\.set\(\s*\{|collection\(|doc\("objectifs/, "aucune écriture");
   assert.doesNotMatch(js, /doc\("budget\/main"\)/);
@@ -65,9 +72,11 @@ test("objectifs-view : lecture seule — plus de formulaire, de modèles, de pri
     assert.doesNotMatch(src, /<form|<textarea|<select|<dialog|type="checkbox"|type="date"/);
     assert.doesNotMatch(src, /Ajouter un objectif|data-ov-modele|data-ov-act|ovAjouter|ov-bascule|Monter|Descendre|Supprimer|Modifier/);
   }
-  // seul champ restant : le versement de la projection, paramètre d'exploration du simulateur
-  assert.deepEqual([...html.matchAll(/<input[^>]*id="([^"]+)"/g)].map(m => m[1]), ["ovVers"]);
+  // plus aucun champ : le simulateur de versement local est retiré (spec PROJ § 13.2)
+  assert.equal((html.match(/<input/g) || []).length, 0);
   assert.equal((js.match(/<input/g) || []).length, 0);
+  assert.doesNotMatch(html, /ovVers|Versement mensuel|ovHorizon|ov-tag|scénario/);
+  assert.doesNotMatch(js, /ovVers|versOverride|ovHorizon|ov-tag|data-ov-vreset|scénario ↺|u\.bascule/);
   assert.match(js, /ClaudePrompts/);
   assert.match(js, /"Compléter avec Claude"/);
   assert.match(js, /"Corriger avec Claude"/);
@@ -100,9 +109,11 @@ test("objectifs-view.css : scopé sous #view-objectifs-view (panneau sous .ui-pa
   assert.doesNotMatch(css, /ov-bascule|ov-form|ov-modele|ov-confirm|ov-chk/);
 });
 
-test("objectifs-view.html : identifiants utilisés par le script, question, « Compléter avec Claude », projection en accordéon fermé", () => {
+test("objectifs-view.html : identifiants utilisés par le script, question, « Compléter avec Claude », projection en accordéon fermé, bandeau, ligne de source", () => {
   const ids = [...js.matchAll(/\$\("(ov[A-Za-z]+)"\)/g)].map(m => m[1]);
   assert.ok(ids.length >= 8);
+  for (const id of ["ovBandeau", "ovCapSrc", "ovGraphe"]) assert.ok(html.includes('id="' + id + '"'), id);
+  assert.match(html, /id="ovBandeau"[^>]*hidden/, "le bandeau est caché tant que le script ne l'a pas décidé");
   assert.deepEqual([...new Set(ids)].filter(id => !html.includes('id="' + id + '"')), []);
   assert.match(html, /<h2 id="ovTitre">Objectifs<\/h2>/);
   assert.match(html, /<details class="ui-acc ov-proj" id="ovProjAcc">/);
@@ -178,7 +189,7 @@ test("detailHtml : détail chiffré, rendement et repère Livret A, poches et ca
   const S = demoS();
   const a = OV.analyser(S, DEPS, TODAY);
   const ap = a.liste.find(x => x.o.id === "obj-apport");
-  const ctx = { positions: S.positions, scope: "foyer", Calc, Plan, today: TODAY, n: 3, duScope: "du foyer", livretA: OV.livretA(S, Reperes), U: UI };
+  const ctx = { positions: S.positions, scope: "foyer", Calc, Plan, n: 3, duScope: "du foyer", livretA: OV.livretA(S, Reperes), U: UI };
   const h = sp(OV.detailHtml(ap, ctx));
   assert.match(h, /Cible/); assert.match(h, /60 000 €/);
   assert.match(h, /Déjà de côté/);
@@ -191,7 +202,11 @@ test("detailHtml : détail chiffré, rendement et repère Livret A, poches et ca
   assert.match(h, /Épargne/);
   assert.match(h, /servent d'abord un objectif prioritaire/);
   assert.match(h, /Projection de l'objectif/);
-  assert.match(h, /<svg[^>]*role="img"/);
+  assert.match(h, /<div class="ov-graphe" data-ov-graphe><\/div>/, "conteneur du graphe maître (monté par la vue)");
+  assert.doesNotMatch(h.split("Projection de l'objectif")[1], /<svg|serie/, "plus de mini-courbe");
+  assert.match(h, /Ce graphe montre le patrimoine financier du foyer avec cet objectif marqué/);
+  assert.match(h, /Ce n'est pas la trajectoire des seules poches de l'objectif/);
+  assert.match(h, /data-ov-proba/);
   assert.doesNotMatch(h, /data-ov-act|<form|<input|Supprimer|Monter|Descendre/);
   assert.match(h, />Corriger avec Claude</);
   assert.deepEqual(questions(h), [P("objectifs", "l'objectif « Apport maison » (60 000 € d'ici juin 2029, priorité 2 sur 3)")]);
@@ -209,21 +224,6 @@ test("detailHtml : détail chiffré, rendement et repère Livret A, poches et ca
   assert.match(sansRepere, /Livret A taux réglementé en vigueur/);
 });
 
-test("serieObjectif : part du déjà, suit le rythme actuel et l'effort requis jusqu'à l'échéance", () => {
-  const o = { cible: 12000, dateCible: "2028-10-31", rendement: 2 };
-  const st = Plan.statutObjectif(o, { deja: 2000, versementAlloue: 200, today: TODAY });
-  const s = OV.serieObjectif(o, st, TODAY, Plan);
-  assert.equal(s.points[0].mois, 0);
-  assert.equal(s.points[0].actuel, 2000);
-  assert.equal(s.points[s.points.length - 1].mois, st.mois);
-  for (let i = 1; i < s.points.length; i++) assert.ok(s.points[i].actuel >= s.points[i - 1].actuel);
-  assert.ok(Math.abs(s.points[s.points.length - 1].requis - 12000) < 1, "avec l'effort requis, la cible est atteinte à l'échéance");
-  assert.ok(s.points.length <= 26);
-  const sansDate = OV.serieObjectif({ cible: 1000, rendement: 0 }, Plan.statutObjectif({ cible: 1000, rendement: 0 }, { deja: 0, versementAlloue: 100, today: TODAY }), TODAY, Plan);
-  assert.equal(sansDate.points.every(p => p.requis == null), true);
-  assert.ok(sansDate.mois >= 10);
-});
-
 test("livretA : taux et date d'effet lus dans les repères ; sans repère, formule générique", () => {
   const S = demoS();
   assert.equal(sp(OV.livretA(S, Reperes)), "1,7 % depuis le 01/08/2026");
@@ -231,37 +231,148 @@ test("livretA : taux et date d'effet lus dans les repères ; sans repère, formu
   assert.equal(OV.livretA(S, null), "taux réglementé en vigueur");
 });
 
-test("versementReel : épargne du budget, sinon versements programmés du périmètre, sinon rien", () => {
-  const S = demoS();
-  const t = Plan.budgetTotaux(S.budget.lignes, S.profil, "foyer");
-  assert.deepEqual(OV.versementReel(S, t, "foyer"), { v: 650, src: "d'après l'épargne prévue au budget" });
-  const S2 = Object.assign(demoS(), { budget: { lignes: [] }, config: Object.assign(J(DEMO.config), { recurring: [{ positionId: S.positions[0].id, amount: 120 }] }) });
-  const r = OV.versementReel(S2, Plan.budgetTotaux([], S2.profil, "foyer"), "foyer");
-  assert.equal(r.v, 120);
-  assert.match(r.src, /tes versements programmés/);
-  assert.equal(OV.versementReel(Object.assign(demoS(), { budget: { lignes: [] }, config: {} }), Plan.budgetTotaux([], null, "foyer"), "foyer"), null);
-});
-
-test("projection : courbe (role=img, scénario central), tableau des scénarios, hypothèses par poche", () => {
-  const S = demoS();
-  const res = Plan.projection({ positions: S.positions, scope: "foyer", versementMensuel: 650, annees: 10 });
-  const svg = sp(OV.projectionSvg(res, 10, 2026, 640));
-  assert.match(svg, /<svg viewBox="0 0 640 280" role="img" aria-label="Projection sur 10 ans : [^"]+ dans le scénario central/);
-  const tab = sp(OV.projectionTableHtml(res, 650, 10, 2026));
-  assert.match(tab, /Pessimiste/); assert.match(tab, /Central/); assert.match(tab, /Optimiste/); assert.match(tab, /Dans 10 ans \(2036\)/);
-  const hyp = sp(OV.hypothesesHtml(res, Plan.RENDEMENTS));
-  assert.match(hyp, /Épargne/);
-  assert.match(hyp, /<th>Poche<\/th>/);
-});
-
 test("tutoiement des rendus : verdicts, cartes, panneaux", () => {
   const S = septObjectifs();
   const a = OV.analyser(S, DEPS, TODAY);
-  const ctx = { positions: S.positions, scope: "p1", Calc, Plan, today: TODAY, n: a.liste.length, duScope: "de Camille", livretA: "x", U: UI };
+  const ctx = { positions: S.positions, scope: "p1", Calc, Plan, n: a.liste.length, duScope: "de Camille", livretA: "x", U: UI };
   const rendus = a.liste.flatMap(x => [OV.carteHtml(x, a.liste.length), OV.detailHtml(x, ctx)]);
   const st = s => ({ o: { id: s }, st: { statut: s } });
   for (const l of [[st("avance")], [st("retard")], [st("avance"), st("atteint")], [st("retard"), st("hors_portee")], []]) rendus.push(OV.resumeObjectifs(l).verdict);
   for (const h of rendus) assert.doesNotMatch(sansExceptions(sp(h).replace(/href="[^"]*"/g, "")), VOUVOIEMENT);
+});
+
+/* ------------------------------------------------------------------ probabilité du moteur, source de l'épargne, bandeau (fonctions pures) ------------------------------------------------------------------ */
+/* Données du graphe telles que GrapheModele.construire les produit (extrait utile : objectifs du moteur, capacité retenue et sa source). */
+const objMoteur = (id, probabilite, statut, extra) => Object.assign({ id, nom: id, cible: 10000, date: "2029-06-30", probabilite, mot: null, statut: statut || "dans_les_temps", valeur_deterministe: 9000 }, extra);
+const CAP_BUDGET = Plan.capaciteEpargne(Plan.budgetTotaux(demoS().budget.lignes, demoS().profil, "foyer"));
+const donneesMoteur = (objs, extra) => Object.assign({ etat: "pret", progressif: false, today: TODAY, objectifs: objs,
+  capacite: { base: { retenue: 300, source: "reel", periode: "avril à septembre 2026" } }, capacite_source: "reel", capacite_periode: "avril à septembre 2026" }, extra || {});
+
+test("probabilites : mot du moteur (≥ 80 % probable, 50 à 80 % incertain, < 50 % peu probable), chances sur 10, ton ; {} tant que le moteur n'a pas répondu", () => {
+  const d = donneesMoteur([objMoteur("a", 0.83), objMoteur("b", 0.8), objMoteur("c", 0.62), objMoteur("d", 0.5), objMoteur("e", 0.31), objMoteur("f", 0.04)]);
+  const p = OV.probabilites(d);
+  assert.deepEqual(["a", "b", "c", "d", "e", "f"].map(k => p[k].mot), ["probable", "probable", "incertain", "incertain", "peu probable", "peu probable"]);
+  assert.deepEqual(["a", "c", "e"].map(k => p[k].ton), ["bon", "surveiller", "travailler"]);
+  assert.equal(p.a.chances, "8 chances sur 10");
+  assert.equal(p.f.chances, "moins de 1 chance sur 10");
+  assert.deepEqual(OV.probabilites(null), {});
+  assert.deepEqual(OV.probabilites(donneesMoteur([objMoteur("a", 0.9)], { etat: "calcul" })), {}, "aucun chiffre provisoire tant que le calcul est en cours");
+  assert.deepEqual(OV.probabilites(donneesMoteur([objMoteur("a", 0.9)], { etat: "erreur" })), {});
+});
+
+test("probabilites : hors_horizon = pas de verdict ni probabilité ; échéance passée sans probabilité = rien à dire", () => {
+  const p = OV.probabilites(donneesMoteur([objMoteur("h", null, "hors_horizon", { date: "2055-01-31" }), objMoteur("x", 0.9, "hors_horizon"), objMoteur("passe", null, "hors_portee")]));
+  assert.equal(p.h.horsHorizon, true); assert.equal(p.h.verdict, "aucun"); assert.equal(p.h.probabilite, null); assert.equal(p.h.mot, null);
+  assert.equal(p.x.probabilite, null, "même si une probabilité traîne, hors_horizon n'en affiche aucune");
+  assert.equal(p.passe.horsHorizon, false); assert.equal(p.passe.verdict, "aucun");
+  assert.match(OV.probaHtml(p.h), /Pas de verdict : échéance au-delà de la projection \(25 ans\)/);
+  assert.doesNotMatch(OV.probaHtml(p.h), /chances|probable|ui-puce/);
+  assert.equal(OV.probaHtml(p.passe), "", "pas de probabilité : rien");
+  assert.equal(OV.probaHtml(null), "");
+});
+
+test("probaHtml : puce avec le mot ET la couleur, chances sur 10 à côté ; tout échappé", () => {
+  const p = OV.probabilites(donneesMoteur([objMoteur("a", 0.83), objMoteur("c", 0.62), objMoteur("e", 0.31)]));
+  const h = k => sp(OV.probaHtml(p[k]));
+  assert.match(h("a"), /ui-puce bon"><span class="ui-puce-point" aria-hidden="true"><\/span>probable<\/span>.*8 chances sur 10 d'y arriver/);
+  assert.match(h("c"), /ui-puce surveiller"[^>]*>.*incertain.*6 chances sur 10 d'y arriver/);
+  assert.match(h("e"), /ui-puce travailler"[^>]*>.*peu probable.*3 chances sur 10 d'y arriver/);
+});
+
+test("probaInfo : rien pour un objectif déjà atteint (la somme est réunie), l'info du moteur sinon", () => {
+  const p = OV.probabilites(donneesMoteur([objMoteur("obj-apport", 0.9)]));
+  const a = OV.analyser(demoS(), DEPS, TODAY);
+  const x = a.liste.find(y => y.o.id === "obj-apport");
+  assert.equal(OV.probaInfo(p, x).mot, "probable");
+  assert.equal(OV.probaInfo(p, Object.assign({}, x, { st: Object.assign({}, x.st, { statut: "atteint" }) })), null);
+  assert.equal(OV.probaInfo({}, x), null);
+  assert.equal(OV.probaInfo(null, x), null);
+});
+
+test("carteHtml : statut conservé et probabilité à côté (mot + couleur) ; sans réponse du moteur, aucune probabilité ; hors_horizon = « pas de verdict »", () => {
+  const a = OV.analyser(demoS(), DEPS, TODAY), x = a.liste[1];
+  const sans = sp(OV.carteHtml(x, 3));
+  assert.doesNotMatch(sans, /ov-proba|chances|probable|ui-puce/, "tant que le moteur n'a pas répondu : rien");
+  assert.match(sans, /ui-badge (bon|info|attention|critique)">(atteint|en avance|dans les temps|en retard|hors de portée)</);
+  const p = OV.probabilites(donneesMoteur([objMoteur(x.o.id, 0.62), objMoteur("loin", null, "hors_horizon")]));
+  const avec = sp(OV.carteHtml(x, 3, OV.probaInfo(p, x)));
+  assert.match(avec, /ui-badge (bon|info|attention|critique)">(atteint|en avance|dans les temps|en retard|hors de portée)</, "le statut existant reste");
+  assert.match(avec, /class="ov-proba"><span class="ui-puce surveiller">.*incertain.*6 chances sur 10 d'y arriver/);
+  const loin = sp(OV.carteHtml(x, 3, p.loin));
+  assert.match(loin, /ui-badge">pas de verdict</);
+  assert.doesNotMatch(loin, /en avance|dans les temps|en retard|hors de portée|chances sur 10|ui-puce/);
+  assert.match(loin, /Pas de verdict : échéance au-delà de la projection/);
+});
+
+test("resumeObjectifs : un objectif sans verdict (hors_horizon) ne compte ni en bien ni en mal, il est dit à part", () => {
+  const st = (s, h) => ({ o: { id: s }, st: { statut: s }, proba: h ? { horsHorizon: true } : null });
+  const r = OV.resumeObjectifs([st("avance"), st("retard", true), st("dans_les_temps")]);
+  assert.equal(r.ton, "bon"); assert.equal(r.sans, 1); assert.equal(r.n, 3);
+  assert.match(r.verdict, /Tes 2 objectifs sont en bonne voie/);
+  assert.match(r.detail, /1 en avance · 1 dans les temps · 1 sans verdict/);
+  const tout = OV.resumeObjectifs([st("avance", true)]);
+  assert.equal(tout.ton, "neutre"); assert.match(tout.verdict, /au-delà de l'horizon de la projection : pas de verdict/);
+});
+
+test("probaPhrase : chances sur 10 + mot, hors horizon, atteint, calcul en cours, erreur ; cible en euros d'aujourd'hui", () => {
+  const a = OV.analyser(demoS(), DEPS, TODAY), x = a.liste.find(y => y.o.id === "obj-apport");
+  const p = OV.probabilites(donneesMoteur([objMoteur("obj-apport", 0.83), objMoteur("loin", null, "hors_horizon")]));
+  assert.equal(sp(OV.probaPhrase(x, p["obj-apport"], "pret")), "8 chances sur 10 d'atteindre la cible à l'échéance (juin 2029) : probable. Cible lue en euros d'aujourd'hui.");
+  assert.match(sp(OV.probaPhrase(x, p.loin, "pret")), /au-delà de l'horizon de la projection \(25 ans\) : pas de verdict, aucune probabilité calculée/);
+  assert.match(OV.probaPhrase(Object.assign({}, x, { st: { statut: "atteint" } }), null, "pret"), /La somme est déjà réunie/);
+  assert.match(OV.probaPhrase(x, null, "calcul"), /en cours de calcul/);
+  assert.match(OV.probaPhrase(x, null, "erreur"), /n'est pas disponible/);
+  assert.match(OV.probaPhrase(x, null, "pret"), /Pas de probabilité calculée/);
+});
+
+test("capaciteDe / analyser : l'épargne retenue par le moteur remplace celle du budget pour répartir par priorité (statuts, note et projection parlent de la même épargne)", () => {
+  assert.equal(OV.capaciteDe(donneesMoteur([])), 300);
+  assert.equal(OV.capaciteDe(donneesMoteur([], { capacite_source: null, capacite: null })), 0, "pas de capacité connue : la projection suppose 0 €");
+  assert.equal(OV.capaciteDe(null), null);
+  assert.equal(OV.capaciteDe(donneesMoteur([], { etat: "calcul" })), null);
+  const S = demoS();
+  const budget = OV.analyser(S, DEPS, TODAY), moteur = OV.analyser(S, DEPS, TODAY, { capacite: 100 });
+  assert.equal(budget.capacite, CAP_BUDGET);
+  assert.equal(moteur.capacite, 100);
+  assert.ok(Math.abs(moteur.liste.reduce((t, x) => t + x.st.versementAlloue, 0) - 100) < 0.01, "les 100 € du moteur sont répartis");
+  assert.equal(OV.analyser(S, DEPS, TODAY, { capacite: -50 }).capacite, 0);
+});
+
+test("noteRepartition : même source que la ligne de la projection (capaciteSourceTxt), jamais deux sources ; budget seulement sans moteur", () => {
+  const GP = require("../web/src/graphe-patrimoine.js");
+  const reel = donneesMoteur([]), prevu = donneesMoteur([], { capacite_source: "prevu", capacite: { base: { retenue: 650, source: "prevu" } } });
+  const aucune = donneesMoteur([], { capacite_source: null, capacite: null });
+  for (const d of [reel, prevu]) {
+    const ligne = sp(GP.capaciteSourceTxt(d)), note = sp(OV.noteRepartition(d, 650, false));
+    assert.match(note, /^Épargne mensuelle répartie par priorité : /);
+    assert.equal(note.split(" — ")[1], ligne.split(" — ")[1], "même source, mot pour mot");
+  }
+  assert.equal(sp(OV.noteRepartition(reel, 650, false)), "Épargne mensuelle répartie par priorité : 300 € — ta capacité d'épargne constatée (avril à septembre 2026, comptes courants).");
+  assert.match(sp(OV.noteRepartition(prevu, 650, false)), /650 € — ta capacité d'épargne prévue au budget \(pas encore de comptes connectés\)\.$/);
+  assert.match(sp(OV.noteRepartition(aucune, 650, false)), /^Pas encore de capacité d'épargne connue : la projection suppose 0 € par mois\./);
+  assert.equal(OV.noteRepartition(null, 650, true), "", "calcul en cours : aucun chiffre provisoire");
+  assert.match(sp(OV.noteRepartition(null, 650, false)), /650 €\/mois — ta capacité d'épargne prévue au budget\.$/, "moteur absent ou en erreur : le budget, dit comme tel");
+  for (const t of [reel, prevu, aucune].map(d => OV.noteRepartition(d, 650, false))) assert.doesNotMatch(t, /réel|scénario|et reste positif/);
+});
+
+test("bandeau : mémorisé dans le stockage local, accès protégé (stockage indisponible : montré, non mémorisé)", () => {
+  const mem = {}, ls = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); } };
+  assert.equal(OV.bandeauVu(ls), false);
+  assert.equal(OV.bandeauFerme(ls), true);
+  assert.equal(OV.bandeauVu(ls), true);
+  const casse = { getItem() { throw new Error("bloqué"); }, setItem() { throw new Error("bloqué"); } };
+  assert.equal(OV.bandeauVu(casse), false);
+  assert.equal(OV.bandeauFerme(casse), false);
+  assert.equal(OV.bandeauVu(null), false);
+});
+
+test("aucun appel à Plan.projection ni à Plan.RENDEMENTS dans web/src (hors plan.js et historique.js, que le contrôleur reprend)", () => {
+  const exclus = new Set(["plan.js", "historique.js"]);
+  const fautifs = readdirSync("web/src").filter(f => /\.(js|html)$/.test(f) && !exclus.has(f) && !/\.gen\.js$/.test(f)).filter(f => {
+    const t = readFileSync("web/src/" + f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/[^\n]*/g, "$1");
+    return /\bPlan\.(projection|RENDEMENTS)\b|\.RENDEMENTS\b|\bP\(\)\.projection\b/.test(t);
+  });
+  assert.deepEqual(fautifs, []);
 });
 
 /* ------------------------------------------------------------------ vue dans un mini-DOM ------------------------------------------------------------------ */
@@ -270,7 +381,22 @@ const planJs = readFileSync("web/src/plan.js", "utf8");
 const calcJs = readFileSync("web/src/calc.js", "utf8");
 const reperesJs = readFileSync("web/src/reperes.js", "utf8");
 const promptsJs = readFileSync("web/src/claude-prompts.js", "utf8");
-function vueDom(S0) {
+const formatJs = readFileSync("web/src/format.js", "utf8"), grapheJs = readFileSync("web/src/graphe-patrimoine.js", "utf8");
+/* GrapheModele de remplacement : consigne les calculs demandés (réponse déclenchée par le test : calculs[i].fin(donnees)) et les graphes montés. */
+function modeleFactice(c) {
+  const t = { calculs: [], liaisons: [] };
+  c.GrapheModele = {
+    reglagesParDefaut: p => Object.assign({ vue: "net" }, p),
+    signature: (S, r, jour) => JSON.stringify([S.scope, S.objectifs, S.budget && S.budget.lignes, r.vue, jour]),
+    calculer: (S, r, o) => { const e = { S, r, o }; t.calculs.push(e); return new Promise(res => { e.fin = d => { o.rappel(d, { etape: "complet" }); res(d); }; }); },
+    brancher: (el, opt) => {
+      const l = { el, opt, actualisations: 0, detruit: false, actualiser() { this.actualisations++; }, detruire() { this.detruit = true; }, reglages: () => ({}) };
+      el.innerHTML = '<div class="gp-factice"></div>'; t.liaisons.push(l); return l;
+    },
+  };
+  return t;
+}
+function vueDom(S0, o) {
   const dom = miniDom(), { doc } = dom;
   let S = J(S0);
   const acces = [];
@@ -280,15 +406,19 @@ function vueDom(S0) {
   c.App = { register: (n, api) => { modules[n] = api; }, refreshHeadlines() {}, parametres: () => ({}) };
   // Tout accès au store (db, écritures) est consigné : la vue ne doit jamais y toucher.
   c.Store = new Proxy({ get: () => S }, { get: (o, k) => { if (k !== "get") acces.push(String(k)); return o[k]; } });
+  const mem = {};
+  c.localStorage = (o && o.stockage) || { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); } };
   vm.createContext(c);
-  vm.runInContext(readFileSync("web/src/format.js", "utf8"), c, { filename: "format.js" });
+  vm.runInContext(formatJs, c, { filename: "format.js" });
   vm.runInContext(calcJs, c, { filename: "calc.js" });
   vm.runInContext(planJs, c, { filename: "plan.js" });
   vm.runInContext(reperesJs, c, { filename: "reperes.js" });
   vm.runInContext(uiJs, c, { filename: "ui.js" });
   vm.runInContext(promptsJs, c, { filename: "claude-prompts.js" });
+  vm.runInContext(grapheJs, c, { filename: "graphe-patrimoine.js" });
+  const modele = (o && o.sansModele) ? null : modeleFactice(c);
   vm.runInContext(js, c, { filename: "objectifs-view.js" });
-  // Compteur d'analyses : Plan.affecterDeja est appelé une fois par analyse.
+  // Compteur d'analyses : Plan.affecterDeja est appelé une fois par analyse ; Plan.projection ne doit plus jamais être appelé.
   const compte = { analyses: 0, projections: 0 };
   const aff = c.Plan.affecterDeja, proj = c.Plan.projection;
   c.Plan.affecterDeja = (...xs) => { compte.analyses++; return aff(...xs); };
@@ -299,10 +429,9 @@ function vueDom(S0) {
   const api = modules["objectifs-view"];
   api.mount(root);
   api.update(S, true);
-  return { c, dom, doc, root, api, S: () => S, acces, compte };
+  return { c, dom, doc, root, api, S: () => S, acces, compte, modele, ls: c.localStorage, mem };
 }
 const dlgDe = doc => doc.body.querySelector('[role="dialog"]');
-const saisir = (dom, el, v) => { el.value = v; el.dispatchEvent(new dom.Ev("input")); };
 const carte = (root, id) => root.querySelector('[data-ui-carte="' + id + '"]');
 const ouvrirProj = v => { const acc = v.root.querySelector("#ovProjAcc"); acc.setAttribute("open", ""); acc.dispatchEvent(new v.dom.Ev("toggle")); };
 
@@ -344,58 +473,253 @@ test("vue (DOM) : objectif retiré par le store → panneau fermé ; modifié �
   assert.equal(carte(v.root, "obj-retraite"), null);
 });
 
-test("vue (DOM) : analyser() une fois par émission du store (cartes, projection, panneau, titre de navigation)", () => {
+/* Réponse complète du moteur pour la démo : une probabilité par objectif, la source de l'épargne. */
+const reponse = (v, probas, extra) => {
+  const objs = ["obj-matelas", "obj-apport", "obj-retraite"].map((id, i) => objMoteur(id, probas[i], probas[i] === "h" ? "hors_horizon" : "dans_les_temps"));
+  objs.forEach(o => { if (o.probabilite === "h") o.probabilite = null; });
+  const e = v.modele.calculs[v.modele.calculs.length - 1];
+  e.fin(donneesMoteur(objs, extra));
+  return e;
+};
+
+test("vue (DOM) : analyser() une fois par émission du store (cartes, panneau, titre de navigation) ; la réponse du moteur en refait une", () => {
   const v = vueDom(demoS());
   carte(v.root, "obj-apport").click();
-  ouvrirProj(v);
   v.compte.analyses = 0;
   v.api.update(J(v.S()), true);
   v.api.headline();
-  assert.equal(v.compte.analyses, 1, "une seule analyse pour le rendu, la projection, le panneau et le titre");
-  // un réglage du simulateur ne relance pas l'analyse
-  v.root.querySelector("#ovHorizon").querySelectorAll('[role="radio"]')[2].click();
-  assert.equal(v.compte.analyses, 1);
+  assert.equal(v.compte.analyses, 1, "une seule analyse pour le rendu, le panneau et le titre");
   v.api.update(J(v.S()), true);
   assert.equal(v.compte.analyses, 2);
+  assert.equal(v.compte.projections, 0, "Plan.projection n'est jamais appelé");
 });
 
-test("vue (DOM) : projection en accordéon — dessinée à l'ouverture, horizon en bascule, versement « scénario » local jamais enregistré", () => {
+test("vue (DOM) : l'accordéon monte le graphe maître (préréglage objectifs, vue financier) à la première ouverture, pas avant ; plus de champ versement ni de « réel »", () => {
   const v = vueDom(demoS());
-  assert.equal(v.root.querySelector("#ovChart").innerHTML, "", "rien n'est dessiné tant que l'accordéon est fermé");
+  assert.equal(v.modele.liaisons.length, 0, "fermé : rien n'est monté (pas de largeur à mesurer)");
+  assert.equal(v.root.querySelector("#ovGraphe").innerHTML, "");
   ouvrirProj(v);
-  assert.match(v.root.querySelector("#ovChart").innerHTML, /<svg/);
-  assert.match(sp(v.root.querySelector("#ovProjTable").textContent), /Dans 10 ans/);
-  const h = v.root.querySelector("#ovHorizon").querySelectorAll('[role="radio"]');
-  assert.deepEqual(h.map(x => x.textContent), ["5 ans", "10 ans", "20 ans", "30 ans"]);
-  h[2].click();
-  assert.match(sp(v.root.querySelector("#ovProjTable").textContent), /Dans 20 ans/);
-  const vers = v.root.querySelector("#ovVers");
-  assert.equal(vers.value, "650");
-  saisir(v.dom, vers, "1000");
-  assert.match(v.root.querySelector("#ovVersTag").innerHTML, /scénario/);
-  assert.match(sp(v.root.querySelector("#ovVersSrc").textContent), /simulation locale, non enregistrée · réel : 650 €\/mois/);
-  v.root.querySelector("[data-ov-vreset]").click();
-  assert.equal(v.root.querySelector("#ovVers").value, "650");
-  assert.match(v.root.querySelector("#ovVersTag").innerHTML, /prévu/);
-  assert.deepEqual(v.acces, [], "le simulateur n'écrit rien");
+  assert.equal(v.modele.liaisons.length, 1);
+  const l = v.modele.liaisons[0];
+  assert.equal(l.el, v.root.querySelector("#ovGraphe"));
+  assert.equal(l.opt.preset, "objectifs");
+  assert.equal(l.opt.objectifId, undefined, "accordéon : tous les objectifs");
+  assert.equal(typeof l.opt.today, "function"); assert.match(l.opt.today(), /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(l.opt.perimetre(), "du foyer");
+  assert.equal(l.opt.deps.UI, v.c.UI);
+  assert.ok(l.actualisations >= 1, "le graphe reçoit l'état du store");
+  assert.equal(v.root.querySelectorAll("input").length, 0);
+  assert.equal(v.root.querySelector("#ovVers"), null);
+  assert.equal(v.root.querySelector("#ovHorizon"), null);
+  assert.doesNotMatch(sp(v.root.textContent), /Versement mensuel|scénario|simulation locale|\bréel\b|Hypothèses de rendement|Pessimiste/i);
+  assert.equal(v.compte.projections, 0);
+  assert.deepEqual(v.acces, [], "le graphe n'écrit rien");
 });
 
-test("vue (DOM) : SVG de projection redessiné seulement si ses données changent", () => {
+test("vue (DOM) : le graphe de l'accordéon suit les émissions du store (actualiser) sans être remonté", () => {
   const v = vueDom(demoS());
   ouvrirProj(v);
-  const svg0 = v.root.querySelector("#ovChart").children[0], table0 = v.root.querySelector("#ovProjTable").children[0];
-  assert.ok(svg0);
+  const l = v.modele.liaisons[0], n = l.actualisations;
+  v.api.update(J(v.S()), true);
+  assert.equal(v.modele.liaisons.length, 1, "monté une seule fois");
+  assert.equal(l.actualisations, n + 1);
+  v.root.querySelector("#ovProjAcc").removeAttribute("open");
+  v.api.update(J(v.S()), true);
+  assert.equal(l.actualisations, n + 1, "accordéon refermé : pas de travail inutile");
+});
+
+test("vue (DOM) : ligne de source de l'épargne — une seule source, celle du moteur ; la note de répartition dit la même", () => {
+  const v = vueDom(demoS());
+  const src = v.root.querySelector("#ovCapSrc"), note = v.root.querySelector("#ovNote");
+  assert.equal(src.hidden, true, "rien avant la réponse du moteur");
+  assert.doesNotMatch(sp(note.textContent), /€|Épargne mensuelle/, "calcul en cours : pas de chiffre provisoire");
+  reponse(v, [0.9, 0.62, 0.3]);
+  assert.equal(src.hidden, false);
+  assert.equal(sp(src.textContent), "Épargne mensuelle projetée : 300 € — ta capacité d'épargne constatée (avril à septembre 2026, comptes courants).");
+  assert.ok(sp(note.textContent).split(" — ")[1].startsWith(sp(src.textContent).split(" — ")[1]), "même source, mot pour mot");
+  assert.match(sp(note.textContent), /^Épargne mensuelle répartie par priorité : 300 €/);
+  const tout = sp(v.root.textContent);
+  assert.equal((tout.match(/ta capacité d'épargne/g) || []).length, 2, "la source est dite par la ligne et la note, jamais en deux versions");
+  assert.doesNotMatch(tout, /prévue au budget|\bréel\b|et reste positif/);
+});
+
+test("vue (DOM) : sans compte connecté, la source est le budget dit comme tel ; sans capacité connue, la projection suppose 0 € ; moteur en erreur : le budget, sans ligne de projection", () => {
+  const v = vueDom(demoS());
+  v.modele.calculs[0].fin(donneesMoteur([], { capacite_source: "prevu", capacite: { base: { retenue: 650, source: "prevu" } } }));
+  assert.match(sp(v.root.querySelector("#ovCapSrc").textContent), /650 € — ta capacité d'épargne prévue au budget \(pas encore de comptes connectés\)\./);
+  const w = vueDom(demoS());
+  w.modele.calculs[0].fin(donneesMoteur([], { capacite_source: null, capacite: null }));
+  assert.match(sp(w.root.querySelector("#ovCapSrc").textContent), /^Pas encore de capacité d'épargne connue : la projection suppose 0 € par mois\./);
+  assert.match(sp(w.root.querySelector("#ovNote").textContent), /^Pas encore de capacité d'épargne connue/);
+  const e = vueDom(demoS());
+  e.modele.calculs[0].fin({ etat: "erreur", erreur: "boum" });
+  assert.equal(e.root.querySelector("#ovCapSrc").hidden, true);
+  assert.match(sp(e.root.querySelector("#ovNote").textContent), /1 578 €\/mois — ta capacité d'épargne prévue au budget\./);
+  const sans = vueDom(demoS(), { sansModele: true });
+  assert.match(sp(sans.root.querySelector("#ovNote").textContent), /1 578 €\/mois — ta capacité d'épargne prévue au budget\./, "moteur absent : le budget");
+  assert.equal(sans.root.querySelectorAll("[data-ui-carte]").length, 3, "les cartes restent là sans le moteur");
+});
+
+test("vue (DOM) : le calcul du moteur est demandé une fois par entrée (vue financier, périmètre, jour), pas à chaque émission identique", () => {
+  const v = vueDom(demoS());
+  assert.equal(v.modele.calculs.length, 1);
+  assert.equal(v.modele.calculs[0].r.vue, "financier");
+  assert.equal(v.modele.calculs[0].o.perimetre, "du foyer");
   v.api.update(J(v.S()), true);
   v.api.update(J(v.S()), true);
-  assert.equal(v.root.querySelector("#ovChart").children[0], svg0, "même SVG : pas de redessin");
-  assert.equal(v.root.querySelector("#ovProjTable").children[0], table0);
-  // un objectif renommé ne change pas la projection du patrimoine
-  const S2 = J(v.S()); S2.objectifs[0].nom = "Matelas";
+  assert.equal(v.modele.calculs.length, 1, "même entrée : le moteur n'est pas relancé");
+  const S2 = J(v.S()); S2.objectifs[0].cible = 25000;
   v.api.update(S2, true);
-  assert.equal(v.root.querySelector("#ovChart").children[0], svg0);
-  // le versement change : redessin
-  saisir(v.dom, v.root.querySelector("#ovVers"), "2000");
-  assert.notEqual(v.root.querySelector("#ovChart").children[0], svg0);
+  assert.equal(v.modele.calculs.length, 2, "entrée changée : nouveau calcul");
+  v.modele.calculs[0].fin(donneesMoteur([objMoteur("obj-matelas", 0.1)]));
+  assert.doesNotMatch(sp(v.root.querySelector("#ovCartes").textContent), /chances sur 10/, "réponse périmée ignorée");
+});
+
+test("vue (DOM) : cartes — statuts existants, probabilité du moteur (mot + chances) à côté quand il a répondu, rien avant", () => {
+  const v = vueDom(demoS());
+  const zone = v.root.querySelector("#ovCartes");
+  assert.doesNotMatch(sp(zone.textContent), /chances sur 10|probable|incertain|ov-proba/);
+  assert.equal(zone.querySelectorAll(".ov-proba").length, 0);
+  const badges = () => zone.querySelectorAll(".ui-badge").map(b => b.textContent);
+  const avant = badges();
+  assert.equal(avant.length, 3);
+  reponse(v, [0.9, 0.62, 0.3], { capacite: { base: { retenue: CAP_BUDGET, source: "reel", periode: "avril à septembre 2026" } } });
+  const cs = ["obj-matelas", "obj-apport", "obj-retraite"].map(id => sp(carte(v.root, id).textContent));
+  assert.doesNotMatch(cs[0], /chances|probable/, "objectif déjà atteint (la somme est réunie) : pas de probabilité à côté");
+  assert.match(cs[1], /incertain.*6 chances sur 10 d'y arriver/);
+  assert.match(cs[2], /peu probable.*3 chances sur 10 d'y arriver/);
+  assert.deepEqual(zone.querySelectorAll(".ui-puce").map(p => p.className), ["ui-puce surveiller", "ui-puce travailler"], "la couleur dit la même chose que le mot");
+  assert.deepEqual(badges(), avant, "les statuts existants restent (même épargne que celle du budget)");
+  assert.deepEqual(v.acces, []);
+});
+
+test("vue (DOM) : l'épargne retenue par le moteur répartit l'épargne entre les objectifs : les statuts parlent de la même épargne que la projection", () => {
+  const v = vueDom(demoS());
+  const zone = v.root.querySelector("#ovCartes");
+  const avant = zone.querySelectorAll(".ui-badge").map(b => b.textContent);
+  reponse(v, [0.9, 0.62, 0.3], { capacite: { base: { retenue: 0, source: "reel", periode: "avril à septembre 2026" } } });
+  const apres = zone.querySelectorAll(".ui-badge").map(b => b.textContent);
+  const connus = ["atteint", "en avance", "dans les temps", "en retard", "hors de portée"];
+  apres.forEach(t => assert.ok(connus.includes(t), t));
+  assert.notDeepEqual(apres, avant, "sans épargne retenue, l'apport n'est plus dans les temps");
+});
+
+test("vue (DOM) : objectif hors_horizon = « pas de verdict », aucune probabilité affichée, ni sur la carte ni dans le panneau", () => {
+  const v = vueDom(demoS());
+  reponse(v, [0.9, "h", 0.3]);
+  const c = sp(carte(v.root, "obj-apport").textContent);
+  assert.match(c, /pas de verdict/);
+  assert.match(c, /Pas de verdict : échéance au-delà de la projection \(25 ans\)/);
+  assert.doesNotMatch(c, /chances|probable|incertain|en avance|dans les temps|en retard|hors de portée/);
+  assert.match(sp(v.root.querySelector("#ovVerdict").textContent), /sans verdict|objectif/);
+  carte(v.root, "obj-apport").click();
+  const d = sp(dlgDe(v.doc).textContent);
+  assert.match(d, /au-delà de l'horizon de la projection \(25 ans\) : pas de verdict, aucune probabilité calculée/);
+  assert.doesNotMatch(d, /chances sur 10/);
+});
+
+test("vue (DOM) : panneau d'un objectif — graphe maître (préréglage objectifs + objectifId) dans le contenu, phrase de probabilité, phrase honnête, détruit à la fermeture", () => {
+  const v = vueDom(demoS());
+  carte(v.root, "obj-apport").click();
+  const dlg = dlgDe(v.doc);
+  assert.equal(v.modele.liaisons.length, 1);
+  const l = v.modele.liaisons[0];
+  assert.equal(l.opt.preset, "objectifs"); assert.equal(l.opt.objectifId, "obj-apport");
+  assert.ok(dlg.querySelector(".ui-panneau-corps").contains(l.el), "monté dans le contenu du panneau");
+  assert.equal(l.el.getAttribute("data-ov-graphe"), "");
+  assert.equal(l.detruit, false);
+  assert.doesNotMatch(dlg.querySelectorAll(".ov-sec").map(x => x.innerHTML).join(""), /<svg/, "plus de mini-courbe « serieSvg »");
+  const phrase = () => sp(dlg.querySelector("[data-ov-proba]").textContent);
+  assert.match(phrase(), /en cours de calcul/, "pas de chiffre provisoire");
+  assert.match(sp(dlg.textContent), /Ce graphe montre le patrimoine financier du foyer avec cet objectif marqué à son échéance/);
+  assert.match(sp(dlg.textContent), /Ce n'est pas la trajectoire des seules poches de l'objectif/);
+  // la réponse du moteur se pose sur place : même contenu, même graphe (pas de remontage)
+  const el0 = dlg.querySelector("[data-ov-graphe]");
+  reponse(v, [0.9, 0.83, 0.3], { capacite: { base: { retenue: CAP_BUDGET, source: "reel", periode: "avril à septembre 2026" } } });
+  assert.equal(phrase(), "8 chances sur 10 d'atteindre la cible à l'échéance (juin 2029) : probable. Cible lue en euros d'aujourd'hui.");
+  assert.equal(dlg.querySelector("[data-ov-proba]").getAttribute("data-ton"), "bon");
+  assert.equal(dlg.querySelector("[data-ov-graphe]"), el0);
+  assert.equal(v.modele.liaisons.length, 1, "le graphe n'est pas remonté");
+  assert.equal(l.detruit, false);
+  assert.ok(l.actualisations >= 2);
+  assert.match(sp(dlg.textContent), /Effort requis/, "les lignes de détail restent");
+  v.dom.touche(v.doc.activeElement, "Escape");
+  assert.equal(dlg.hidden, true);
+  assert.equal(l.detruit, true, "graphe détruit à la fermeture");
+});
+
+test("vue (DOM) : une feuille du graphe (réglages…) ouverte dans le panneau n'efface pas l'objectif : on y revient à sa fermeture ; navigation : le panneau reste fermé", () => {
+  const v = vueDom(demoS());
+  carte(v.root, "obj-apport").click();
+  const dlg = dlgDe(v.doc), l0 = v.modele.liaisons[0];
+  assert.notEqual(l0.opt.deps.UI, v.c.UI, "le graphe reçoit une UI dont le panneau garde l'objectif");
+  l0.opt.deps.UI.panneau.ouvrir({ titre: "Réglages du graphique", contenu: "<p>réglages</p>" });
+  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Réglages du graphique");
+  v.api.update(J(v.S()), true); // une émission du store pendant la feuille ne reprend pas le panneau
+  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Réglages du graphique");
+  v.c.UI.panneau.fermer();
+  assert.equal(dlg.hidden, false);
+  assert.equal(dlg.querySelector(".ui-panneau-titre").textContent, "Apport maison", "retour à l'objectif");
+  assert.equal(l0.detruit, true);
+  const l1 = v.modele.liaisons[v.modele.liaisons.length - 1];
+  assert.equal(l1.opt.objectifId, "obj-apport"); assert.equal(l1.detruit, false);
+  assert.ok(dlg.querySelector(".ui-panneau-corps").contains(l1.el));
+  // fermeture par navigation (focus: false) : rien ne se rouvre, graphe détruit
+  l1.opt.deps.UI.panneau.ouvrir({ titre: "Lecture", contenu: "<p>x</p>" });
+  v.c.UI.panneau.fermer({ focus: false });
+  assert.equal(dlg.hidden, true);
+  assert.equal(l1.detruit, true);
+  // une vraie fermeture de l'objectif (Échap) détruit son graphe
+  carte(v.root, "obj-apport").click();
+  const l2 = v.modele.liaisons[v.modele.liaisons.length - 1];
+  v.dom.touche(v.doc.activeElement, "Escape");
+  assert.equal(dlg.hidden, true); assert.equal(l2.detruit, true);
+});
+
+test("objectifs-view.css : le panneau n'offre pas le « plein écran » du graphe (il passerait derrière la feuille)", () => {
+  assert.match(css, /\.ui-panneau \.ov-graphe \[data-act="plein"\]/);
+});
+
+test("vue (DOM) : panneau rafraîchi (objectif modifié) → ancien graphe détruit, nouveau monté dans le nouveau contenu", () => {
+  const v = vueDom(demoS());
+  carte(v.root, "obj-retraite").click();
+  const l0 = v.modele.liaisons[0];
+  const S2 = J(v.S()); S2.objectifs.find(o => o.id === "obj-retraite").nom = "Retraite anticipée";
+  v.api.update(S2, true);
+  assert.equal(l0.detruit, true);
+  assert.equal(v.modele.liaisons.length, 2);
+  assert.equal(v.modele.liaisons[1].opt.objectifId, "obj-retraite");
+  assert.equal(v.modele.liaisons[1].detruit, false);
+  assert.ok(dlgDe(v.doc).querySelector(".ui-panneau-corps").contains(v.modele.liaisons[1].el));
+});
+
+test("vue (DOM) : bandeau unique « cibles en euros d'aujourd'hui » — montré, fermable, mémorisé, tutoiement ; absent sans objectif", () => {
+  const v = vueDom(demoS());
+  const b = v.root.querySelector("#ovBandeau");
+  assert.equal(b.hidden, false);
+  assert.equal(v.root.querySelectorAll("[role=\"note\"]").length, 1, "un seul bandeau");
+  const t = sp(b.textContent);
+  assert.match(t, /tes cibles sont maintenant lues en euros d'aujourd'hui/);
+  assert.match(t, /dis-le à Claude/);
+  assert.doesNotMatch(t, VOUVOIEMENT);
+  b.querySelector("[data-ov-bandeau-x]").click();
+  assert.equal(b.hidden, true);
+  assert.equal(v.mem["boussole.objectifs.cibles-euros-aujourdhui"], "1", "fermeture mémorisée");
+  v.api.update(J(v.S()), true);
+  assert.equal(b.hidden, true, "reste fermé après un nouveau rendu");
+  // nouvelle visite : lu dans le stockage
+  const w = vueDom(demoS(), { stockage: v.ls });
+  assert.equal(w.root.querySelector("#ovBandeau").hidden, true);
+  // sans objectif : pas de bandeau
+  assert.equal(vueDom(Object.assign(demoS(), { objectifs: [] })).root.querySelector("#ovBandeau").hidden, true);
+  // stockage indisponible : le bandeau se ferme quand même pour la session
+  const casse = { getItem() { throw new Error("bloqué"); }, setItem() { throw new Error("bloqué"); } };
+  const x = vueDom(demoS(), { stockage: casse });
+  assert.equal(x.root.querySelector("#ovBandeau").hidden, false);
+  x.root.querySelector("[data-ov-bandeau-x]").click();
+  assert.equal(x.root.querySelector("#ovBandeau").hidden, true);
+  x.api.update(J(x.S()), true);
+  assert.equal(x.root.querySelector("#ovBandeau").hidden, true);
 });
 
 test("vue (DOM) : anti-redessin des cartes avec plus de 5 objectifs ; « Voir plus » déplié le reste", () => {
@@ -432,6 +756,7 @@ test("vue (DOM) : aucun objectif → état vide orienté vers Claude ; tutoiemen
   assert.doesNotMatch(sansExceptions(v.root.textContent), VOUVOIEMENT);
   const w = vueDom(septObjectifs());
   ouvrirProj(w);
+  w.modele.calculs[0].fin(donneesMoteur([objMoteur("obj-matelas", 0.9), objMoteur("obj-apport", null, "hors_horizon"), objMoteur("obj-p5", 0.4)]));
   assert.doesNotMatch(sansExceptions(w.root.textContent), VOUVOIEMENT);
   for (const id of ["obj-matelas", "obj-apport", "obj-p5"]) {
     carte(w.root, id).click();
@@ -445,7 +770,7 @@ test("detailHtml : une enveloppe rattachée mène à sa fiche de Patrimoine › 
   const a = OV.analyser(S, DEPS, TODAY);
   const ap = a.liste.find(x => x.o.id === "obj-apport");
   const x = Object.assign({}, ap, { o: Object.assign({}, ap.o, { enveloppes: ["PEA Camille", "Livrets <Sam>"] }) });
-  const ctx = { positions: S.positions, scope: "foyer", Calc, Plan, today: TODAY, n: 3, duScope: "du foyer", U: UI };
+  const ctx = { positions: S.positions, scope: "foyer", Calc, Plan, n: 3, duScope: "du foyer", U: UI };
   const h = OV.detailHtml(x, ctx);
   const CV = require("../web/src/comptes-view.js");
   const r = CV.lien({ enveloppe: "PEA Camille", titulaire: "p1" });

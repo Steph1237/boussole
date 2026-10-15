@@ -1,19 +1,32 @@
 /* Patrimoine › Objectifs (module « objectifs-view ») : « Vais-je atteindre mes projets ? ». Lecture seule : la saisie passe par
    Claude (spec docs/superpowers/specs/2026-10-11-saisie-par-agent.md) ; ce module n'écrit jamais dans le store.
    - En-tête : verdict en une phrase (objectifs en bonne voie ou qui demandent attention), épargne mensuelle répartie par
-     priorité, « Compléter avec Claude », « Demander à Claude ».
+     priorité (même source que la projection, spec PROJ § 13.2), « Compléter avec Claude », « Demander à Claude ».
+   - Bandeau unique, fermable et mémorisé (localStorage) : « tes cibles sont lues en euros d'aujourd'hui » (spec § 13.3).
    - Une carte par objectif (ordre des priorités) : nom, échéance, cible, progression (barre), statut (atteint, en avance,
-     dans les temps, en retard, hors de portée), effort mensuel requis ; 5 puis « Voir plus ».
-   - Panneau (UI.panneau, lecture) : détail chiffré, rendement attendu (repère Livret A), poches rattachées (valeur, cascade
-     entre objectifs ; une enveloppe rattachée mène à sa fiche de Patrimoine › Comptes, adresse d'App.ouvrir), projection de l'objectif (rythme actuel et effort requis jusqu'à l'échéance), « Corriger avec Claude ».
-   - Projection du patrimoine financier : accordéon fermé (dessinée à l'ouverture, redessinée seulement si ses données
-     changent), horizon en bascule, versement « réel » ou « scénario » : paramètre d'exploration local, jamais enregistré
-     (simulateur). CK4 la déplacera dans Pilotage › Projections.
-   Calculs inchangés (plan.js : affecterDeja, repartirEpargne, statutObjectif, projection…), faits une fois par émission du
-   store ; l'épargne vient du budget enregistré.
-   Fonctions pures exportées pour les tests (et window.ObjectifsView, lu par Aujourd'hui) : trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA,
-   versementReel, versementProjection, projectionPhrases, projectionSvg, projectionTableHtml, hypothesesHtml, valeurPoche, boutonClaude.
-   Dépendances injectées (deps / ctx) : { Plan, Calc } ; window.* par défaut (ClaudePrompts compris). */
+     dans les temps, en retard, hors de portée), PROBABILITÉ du moteur à côté (mot ET couleur : probable ≥ 80 %, incertain
+     50 à 80 %, peu probable < 50 %, « 8 chances sur 10 »), effort mensuel requis ; 5 puis « Voir plus ». Un objectif dont
+     l'échéance dépasse l'horizon de la projection (25 ans, statut moteur hors_horizon) n'a « pas de verdict » ni probabilité.
+     Tant que le moteur n'a pas répondu (résultat complet, 2 000 chemins) : aucune probabilité, aucun chiffre provisoire.
+   - Panneau (UI.panneau, lecture) : détail chiffré, phrase de probabilité, rendement attendu (repère Livret A), poches
+     rattachées (valeur, cascade entre objectifs ; une enveloppe rattachée mène à sa fiche de Patrimoine › Comptes), le graphe
+     maître (préréglage « objectifs » avec objectifId, monté dans le contenu du panneau et détruit à sa fermeture), « Corriger
+     avec Claude ». Le moteur ne fournit pas encore la bande des poches de l'objectif : le graphe montre le patrimoine
+     financier du périmètre avec l'objectif marqué, et le panneau le dit (besoin moteur : objectifs[].serie p10/p50/p90).
+   - Projection du patrimoine financier : accordéon fermé ; le graphe maître (GrapheModele.brancher, préréglage « objectifs »,
+     vue financier, 10 ans sur ordinateur) est monté à la première ouverture. Plus de simulateur local ni de versement saisi.
+     CK4 la déplacera dans Pilotage › Projections.
+   Probabilités : UN seul moteur (Projection.executer, via GrapheModele.calculer). La vue lance son propre calcul (réglages
+   par défaut de la vue financier, rappel de GrapheModele.calculer) ; il est gratuit quand le graphe de l'accordéon a la même
+   entrée, car le moteur met ses résultats en cache par empreinte (GrapheModele.signature). Le résultat complet fournit les
+   probabilités (donnees.objectifs), la ligne de source de l'épargne (GraphePatrimoine.capaciteSourceTxt) et la capacité
+   retenue, qui sert alors à répartir l'épargne par priorité : statuts, note et projection parlent de la même épargne.
+   Avant la réponse du moteur (ou s'il échoue), la répartition utilise l'épargne prévue au budget (Plan.capaciteEpargne).
+   Calculs de plan.js (affecterDeja, repartirEpargne, statutObjectif) faits une fois par émission du store.
+   Fonctions pures exportées pour les tests (et window.ObjectifsView, lu par Aujourd'hui) : trier, analyser, resumeObjectifs,
+   carteHtml, detailHtml, livretA, probabilites, probaInfo, probaHtml, probaPhrase, capaciteDe, noteRepartition, bandeauVu, bandeauFerme,
+   valeurPoche, boutonClaude (le versement de la projection est celui du moteur : capacité d'épargne constatée ou prévue).
+   Dépendances injectées (deps / ctx) : { Plan, Calc } ; window.* par défaut (ClaudePrompts, GrapheModele compris). */
 (function () {
   "use strict";
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -23,6 +36,11 @@
   const prompts = () => glob("ClaudePrompts") ||
     (typeof module === "object" && module.exports && typeof require === "function" ? require("./claude-prompts.js") : null);
 
+  const noeud = () => typeof module === "object" && module.exports && typeof require === "function";
+  /* Composant et liaison du graphe maître : global du navigateur, sinon le module voisin sous Node (tests). */
+  const GP = () => glob("GraphePatrimoine") || (noeud() ? require("./graphe-patrimoine.js") : null);
+  const GM = () => glob("GrapheModele") || (noeud() ? require("./graphe-modele.js") : null);
+
   /* ---------- formats et dates ---------- */
   /* Formats uniques (format.js, UX1) ; global du navigateur, sinon le module voisin sous Node. */
   const FM = () => (typeof globalThis !== "undefined" && globalThis.Fmt) || (typeof module === "object" && module.exports && typeof require === "function" ? require("./format.js") : null);
@@ -31,7 +49,6 @@
   const eurM = v => eur(v) + "/mois";
   const pct = v => (v == null || !isFinite(v) ? "—" : FM().fmtPct(v * 100, { decimales: 0 }));
   const plat = t => String(t ?? "").replace(/\s+/g, " ").trim();
-  const kEur = v => FM().fmtEUR(v, { compact: "graphe" });
   const MOIS_LONGS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
   const moisAn = d => { const m = /^(\d{4})-(\d{2})/.exec(String(d || "")); return m ? MOIS_LONGS[+m[2] - 1] + " " + m[1] : ""; };
   const isoToday = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0, 10); };
@@ -45,6 +62,8 @@
     retard: ["attention", "en retard"], hors_portee: ["critique", "hors de portée"],
   };
   const ORDRE_STATUTS = ["atteint", "avance", "dans_les_temps", "retard", "hors_portee"];
+  /* probabilité : mot du moteur → [ton de la puce (ui-puce), classe de ton de la carte] ; le mot ET la couleur disent la même chose */
+  const TON_PROBA = { "probable": "bon", "incertain": "surveiller", "peu probable": "travailler" };
   const CHEVRON_D = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg>';
 
   /** Bouton « Compléter avec Claude » (ou libellé contextuel) : ouvre Claude avec la phrase prête de la section. */
@@ -62,12 +81,14 @@
 
   /** Situation de chaque objectif : « déjà » par la cascade des poches (Plan.affecterDeja), épargne mensuelle (budget enregistré,
       Plan.capaciteEpargne) répartie par priorité (Plan.repartirEpargne), statut (Plan.statutObjectif).
-      → { liste: [{ o, st, brut, rang }], totaux, capacite } ; brut = tout ce que contiennent les poches rattachées, avant la cascade. */
-  function analyser(S, deps, today) {
+      → { liste: [{ o, st, brut, rang }], totaux, capacite } ; brut = tout ce que contiennent les poches rattachées, avant la cascade.
+      opt.capacite : épargne mensuelle retenue par le moteur de projection (capaciteDe), qui remplace alors celle du budget : les statuts,
+      la note de répartition et la projection parlent de la même épargne. */
+  function analyser(S, deps, today, opt) {
     const P = dep(deps, "Plan"), s = S || {}, scope = s.scope || "foyer", t0 = today || isoToday();
     const lignes = s.budget && Array.isArray(s.budget.lignes) ? s.budget.lignes : [];
     const totaux = P.budgetTotaux(lignes, s.profil || null, scope);
-    const capacite = P.capaciteEpargne(totaux);
+    const capacite = opt && fini(opt.capacite) ? Math.max(0, +opt.capacite) : P.capaciteEpargne(totaux);
     const objs = trier(s.objectifs), positions = s.positions || [];
     const deja = P.affecterDeja(objs, positions, scope);
     const alloue = P.repartirEpargne(objs.map(o => Object.assign({}, o, { source: "saisi", deja: deja[o.id] || 0 })), capacite, { today: t0 });
@@ -79,20 +100,78 @@
     return { liste, totaux, capacite };
   }
 
+  const fini = v => v != null && v !== "" && typeof v !== "boolean" && isFinite(+v);
   const pluriel = (n, s, p) => n + " " + (n > 1 ? p || s + "s" : s);
-  /** Verdict de la page : { n, compte: { statut: n }, verdict, detail, ton } (ton : bon | attention | critique | neutre). */
+  /** Verdict de la page : { n, compte: { statut: n }, sans, verdict, detail, ton } (ton : bon | attention | critique | neutre).
+      Les objectifs sans verdict (échéance au-delà de la projection, x.proba.horsHorizon) ne comptent ni en bien ni en mal : ils sont dits à part. */
   function resumeObjectifs(liste) {
-    const xs = liste || [], n = xs.length, compte = {};
+    const tous = liste || [], sans = tous.filter(x => x.proba && x.proba.horsHorizon).length;
+    const xs = tous.filter(x => !(x.proba && x.proba.horsHorizon)), n = xs.length, compte = {};
     xs.forEach(x => { const k = x.st && x.st.statut; compte[k] = (compte[k] || 0) + 1; });
-    const detail = ORDRE_STATUTS.filter(k => compte[k]).map(k => compte[k] + " " + STATUTS[k][1]).join(" · ");
-    if (!n) return { n, compte, verdict: "Aucun objectif pour l'instant.", detail: "", ton: "neutre" };
+    const detail = ORDRE_STATUTS.filter(k => compte[k]).map(k => compte[k] + " " + STATUTS[k][1]).join(" · ") + (sans && n ? " · " + sans + " sans verdict" : "");
+    if (!tous.length) return { n: 0, compte, sans, verdict: "Aucun objectif pour l'instant.", detail: "", ton: "neutre" };
+    if (!n) return { n: tous.length, compte, sans, verdict: (sans > 1 ? "Tes " + sans + " objectifs sont" : "Ton objectif est") + " au-delà de l'horizon de la projection : pas de verdict.", detail: "", ton: "neutre" };
     const alerte = (compte.retard || 0) + (compte.hors_portee || 0);
     const ton = compte.hors_portee ? "critique" : alerte ? "attention" : "bon";
     let verdict;
     if (!alerte) verdict = n === 1 ? "Ton objectif est en bonne voie." : "Tes " + n + " objectifs sont en bonne voie.";
     else if (n === 1) verdict = "Ton objectif est " + STATUTS[xs[0].st.statut][1] + ".";
     else verdict = pluriel(alerte, "objectif") + " sur " + n + (alerte > 1 ? " demandent" : " demande") + " ton attention.";
-    return { n, compte, verdict, detail, ton };
+    return { n: tous.length, compte, sans, verdict, detail, ton };
+  }
+
+  /* ---------- probabilité du moteur (Projection, via GrapheModele.calculer) ---------- */
+  /** Probabilité de chaque objectif depuis les données complètes du graphe (donnees.objectifs) : { [id]: info } ; {} sans données prêtes.
+      info = { id, probabilite, mot, chances, ton, verdict: "probabilite" | "aucun", horsHorizon } ; mot : « probable » (≥ 80 %), « incertain », « peu probable » ;
+      chances : « 8 chances sur 10 » ; ton : bon | surveiller | travailler (puce) ; verdict « aucun » : pas de probabilité (statut moteur hors_horizon, ou échéance déjà passée). */
+  function probabilites(donnees) {
+    const out = {}, G = GP();
+    if (!donnees || donnees.etat !== "pret" || !G) return out;
+    (Array.isArray(donnees.objectifs) ? donnees.objectifs : []).forEach(o => {
+      if (!o || o.id == null) return;
+      const p = o.statut === "hors_horizon" ? null : o.probabilite, ok = fini(p);
+      const mot = ok ? G.motProba(+p) : null;
+      out[String(o.id)] = { id: String(o.id), probabilite: ok ? +p : null, mot, chances: ok ? G.chancesTxt(+p) : null, ton: mot ? TON_PROBA[mot] : "neutre",
+        verdict: ok ? "probabilite" : "aucun", horsHorizon: o.statut === "hors_horizon" };
+    });
+    return out;
+  }
+  /** Probabilité d'un objectif de la liste (ou null) : ignorée pour un objectif déjà atteint (la somme est réunie). */
+  const probaInfo = (probas, x) => (probas && x && x.o && x.st && x.st.statut !== "atteint" && probas[String(x.o.id)]) || null;
+  /** Puce « mot + couleur » et chances sur 10 ; « pas de verdict » sans probabilité. */
+  function probaHtml(info) {
+    if (!info) return "";
+    if (info.horsHorizon) return '<span class="ov-proba aucun"><span class="ov-proba-n">Pas de verdict : échéance au-delà de la projection (25 ans)</span></span>';
+    if (info.verdict !== "probabilite") return "";
+    return '<span class="ov-proba"><span class="ui-puce ' + esc(info.ton) + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(info.mot) + '</span><span class="ov-proba-n">' + esc(info.chances) + " d'y arriver</span></span>";
+  }
+  /** Phrase du panneau d'un objectif. etat : "calcul" | "pret" | "erreur" | "absent" (état du calcul du moteur). */
+  function probaPhrase(x, info, etat) {
+    const o = x.o, d = dateCible(o);
+    if (x.st.statut === "atteint") return "La somme est déjà réunie : il n'y a pas de probabilité à calculer.";
+    if (info && info.horsHorizon) return "L'échéance (" + (d ? moisAn(d) : "—") + ") est au-delà de l'horizon de la projection (25 ans) : pas de verdict, aucune probabilité calculée.";
+    if (info && info.verdict === "probabilite") return info.chances.charAt(0).toUpperCase() + info.chances.slice(1) + " d'atteindre la cible à l'échéance" + (d ? " (" + moisAn(d) + ")" : "") + " : " + info.mot + ". Cible lue en euros d'aujourd'hui.";
+    if (etat === "calcul") return "Probabilité en cours de calcul…";
+    if (etat === "pret") return "Pas de probabilité calculée pour cet objectif" + (d ? "" : " (sans échéance)") + ".";
+    return "La probabilité n'est pas disponible pour l'instant.";
+  }
+  /** Épargne mensuelle retenue par le moteur (€/mois) depuis ses données prêtes ; null sans données (le budget sert alors). */
+  function capaciteDe(donnees) {
+    if (!donnees || donnees.etat !== "pret") return null;
+    if (donnees.capacite_source == null) return 0; // « Pas encore de capacité d'épargne connue : la projection suppose 0 € par mois »
+    const cb = donnees.capacite && donnees.capacite.base;
+    return cb && fini(cb.retenue) ? +cb.retenue : null;
+  }
+  /** Note d'en-tête : « Épargne mensuelle répartie par priorité : 300 € — <même source que la ligne de la projection> ».
+      donnees : données prêtes du moteur (source = GraphePatrimoine.capaciteSourceTxt) ; sans elles et sans calcul en cours (budgetEpargne : €/mois), l'épargne prévue au budget. */
+  function noteRepartition(donnees, budgetEpargne, calcul) {
+    const G = GP();
+    if (donnees && donnees.etat === "pret" && G) {
+      const t = G.capaciteSourceTxt(donnees);
+      return /^Épargne mensuelle projetée/.test(t) ? t.replace("Épargne mensuelle projetée", "Épargne mensuelle répartie par priorité") : t + " Aucune épargne n'est répartie entre tes objectifs.";
+    }
+    if (calcul) return "";
+    return "Épargne mensuelle répartie par priorité : " + eurM(budgetEpargne) + " — ta capacité d'épargne prévue au budget.";
   }
 
   /** Effort requis lisible : [montant, précision]. */
@@ -111,15 +190,18 @@
   }
   const badgeHtml = st => { const [ton, lbl] = STATUTS[st] || ["neutre", st || "—"]; return '<span class="ui-badge ' + ton + '">' + esc(lbl) + "</span>"; };
 
-  /** Carte repliée d'un objectif (bouton data-ui-carte, ouvert en panneau par UI.brancher). n = nombre d'objectifs. */
-  function carteHtml(x, n) {
-    const { o, st } = x, ton = (STATUTS[st.statut] || ["neutre"])[0], eff = effortTxt(x);
+  /** Carte repliée d'un objectif (bouton data-ui-carte, ouvert en panneau par UI.brancher). n = nombre d'objectifs.
+      proba : probabilité du moteur (probaInfo) ou null/absente : rien tant que le moteur n'a pas répondu ; « pas de verdict » (hors_horizon) remplace le statut. */
+  function carteHtml(x, n, proba) {
+    const { o, st } = x, sans = !!(proba && proba.horsHorizon), ton = sans ? "neutre" : (STATUTS[st.statut] || ["neutre"])[0], eff = effortTxt(x);
     const prog = Math.max(0, Math.min(1, +st.progression || 0));
     return '<button type="button" class="ui-carte ov-carte st-' + ton + '" data-ui-carte="' + esc(o.id) + '" aria-haspopup="dialog">' +
-      '<span class="ui-carte-tete"><span class="ui-carte-titre">Priorité ' + esc(x.rang || 1) + (n ? " sur " + esc(n) : "") + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span>" + badgeHtml(st.statut) + "</span>" +
+      '<span class="ui-carte-tete"><span class="ui-carte-titre">Priorité ' + esc(x.rang || 1) + (n ? " sur " + esc(n) : "") + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span>" +
+        (sans ? '<span class="ui-badge">pas de verdict</span>' : badgeHtml(st.statut)) + "</span>" +
       '<span class="ov-carte-nom">' + esc(plat(o.nom) || "Objectif sans nom") + "</span>" +
       '<span class="ov-carte-v"><span class="ov-carte-cible">' + esc(eur(o.cible)) + '</span><span class="ov-carte-date">' + esc(dateCible(o) ? moisAn(dateCible(o)) : "sans échéance") + "</span></span>" +
       '<span class="ov-barre" aria-hidden="true"><i style="width:' + (prog * 100).toFixed(1) + '%"></i></span>' +
+      probaHtml(proba) +
       '<span class="ui-carte-pied"><span>' + esc(pct(prog)) + " de la cible</span><span>Effort requis : " + esc(eff[0]) + "</span></span>" +
       '<span class="ui-carte-ouvrir">' + CHEVRON_D + "</span></button>";
   }
@@ -141,47 +223,10 @@
     return "patrimoine/comptes?enveloppe=" + encodeURIComponent(nom) + (own ? "&titulaire=" + own : "");
   }
 
-  /** Points de la projection d'un objectif, mois 0 → échéance (ou date d'atteinte, ou 10 ans) : valeur au rythme actuel
-      (versement alloué) et avec l'effort requis. → { points: [{ mois, actuel, requis | null }], cible, mois }. */
-  function serieObjectif(o, st, today, Plan) {
-    const P = Plan || glob("Plan"), d = dateCible(o), t0 = today || isoToday();
-    let N = d ? Math.max(1, st.mois || 0) : st.atteinte ? Math.max(12, P.moisEntre(t0, st.atteinte)) : 120;
-    N = Math.min(N, 600);
-    const pas = Math.max(1, Math.ceil(N / 24)), ks = [];
-    for (let k = 0; k < N; k += pas) ks.push(k);
-    ks.push(N);
-    const requisOk = !!d && isFinite(st.effort) && st.effort > 0 && st.statut !== "atteint";
-    const points = ks.map(k => ({ mois: k, actuel: P.valeurFuture(st.deja, st.versementAlloue, k, o.rendement),
-      requis: requisOk ? P.valeurFuture(st.deja, st.effort, k, o.rendement) : null }));
-    return { points, cible: +o.cible || 0, mois: N };
-  }
-
-  /** Petite courbe de l'objectif : rythme actuel (trait plein), effort requis (pointillés), cible (ligne horizontale). */
-  function serieSvg(serie, o, today) {
-    const W = 420, H = 190, L = 46, R = 12, T = 14, B = 26, pts = serie.points, N = serie.mois || 1;
-    const hi0 = Math.max(serie.cible, ...pts.map(p => p.actuel), ...pts.map(p => p.requis || 0), 1);
-    const pasY = (() => { const r = hi0 / 4, p = Math.pow(10, Math.floor(Math.log10(r || 1))), n = r / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; })();
-    const hi = Math.ceil(hi0 / pasY) * pasY;
-    const X = k => L + (k / N) * (W - L - R), Y = v => T + (1 - v / hi) * (H - T - B);
-    let g = "";
-    for (let v = 0; v <= hi + 1; v += pasY) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '" class="ov-g"/><text x="' + (L - 6) + '" y="' + (Y(v) + 4).toFixed(1) + '" text-anchor="end">' + esc(kEur(v)) + "</text>";
-    const y0 = +String(today || isoToday()).slice(0, 4), m0 = +String(today || isoToday()).slice(5, 7) - 1;
-    const an = k => String(y0 + Math.floor((m0 + k) / 12));
-    g += '<text x="' + L + '" y="' + (H - 7) + '" text-anchor="start">' + esc(an(0)) + '</text><text x="' + (W - R) + '" y="' + (H - 7) + '" text-anchor="end">' + esc(an(N)) + "</text>";
-    const chemin = cle => pts.map((p, i) => (i ? "L" : "M") + X(p.mois).toFixed(1) + "," + Y(p[cle]).toFixed(1)).join("");
-    const fin = pts[pts.length - 1];
-    const lbl = "Au rythme actuel : " + eur(fin.actuel) + " en " + an(N) + " ; cible " + eur(serie.cible) + (fin.requis != null ? " ; avec l'effort requis, la cible est atteinte à l'échéance" : "");
-    return '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(lbl) + '">' + g +
-      '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(serie.cible).toFixed(1) + '" y2="' + Y(serie.cible).toFixed(1) + '" class="ov-cible"/>' +
-      (fin.requis != null ? '<path d="' + chemin("requis") + '" class="ov-requis"/>' : "") +
-      '<path d="' + chemin("actuel") + '" class="ov-actuel"/></svg>' +
-      '<p class="ov-legende"><span><i class="ov-l-actuel"></i>au rythme actuel</span>' + (fin.requis != null ? '<span><i class="ov-l-requis"></i>avec l\'effort requis</span>' : "") + '<span><i class="ov-l-cible"></i>cible</span></p>';
-  }
-
   /** Contenu du panneau d'un objectif (lecture) et « Corriger avec Claude » pour cet objectif.
-      ctx = { positions, scope, Calc, Plan, today, n, duScope, livretA, U }. */
+      ctx = { positions, scope, Calc, Plan, n, duScope, livretA, U, proba, etatProba } ; proba : probaInfo de l'objectif (phrase de probabilité, posée aussi à la place par la vue). */
   function detailHtml(x, ctx) {
-    const c = ctx || {}, { o, st } = x, C = dep(c, "Calc"), P = dep(c, "Plan"), scope = c.scope || "foyer", n = c.n || 1, r = x.rang || c.rang || 1;
+    const c = ctx || {}, { o, st } = x, C = dep(c, "Calc"), scope = c.scope || "foyer", n = c.n || 1, r = x.rang || c.rang || 1;
     const done = st.statut === "atteint", eff = effortTxt(x), prog = Math.max(0, Math.min(1, +st.progression || 0));
     const poches = [].concat(o.poches || []), envs = [].concat(o.enveloppes || []);
     const src = o.source === "poches" ? (poches.length || envs.length ? "pris sur " + poches.concat(envs).join(", ") : "aucune poche rattachée") : "montant saisi";
@@ -204,15 +249,18 @@
         (x.brut > st.deja + 0.5 && !done ? '<p class="ov-note">Ces poches contiennent ' + esc(eur(x.brut)) + " " + esc(c.duScope || "du foyer") + " ; " + esc(eur(x.brut - st.deja)) + " servent d'abord un objectif prioritaire.</p>" : "") +
         '<p class="ov-note">L\'argent d\'une poche sert d\'abord l\'objectif prioritaire ; le reste passe au suivant.</p>';
     } else pochesHtml = '<p class="ov-note">Montant saisi : ' + esc(eur(st.deja)) + ". Pour le mettre à jour, ou pour rattacher l'objectif à des poches de tes placements (il suivra alors leur valeur), passe par Claude.</p>";
-    return '<div class="ov-meta">' + badgeHtml(st.statut) + "<span>Priorité " + esc(r) + " sur " + esc(n) + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span></div>" +
+    return '<div class="ov-meta">' + (c.proba && c.proba.horsHorizon ? '<span class="ui-badge">pas de verdict</span>' : badgeHtml(st.statut)) + "<span>Priorité " + esc(r) + " sur " + esc(n) + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span></div>" +
       '<p class="ov-quand">' + esc(quandTxt(x)) + "</p>" +
+      '<p class="ov-proba-phrase" data-ov-proba data-ton="' + esc(c.proba ? c.proba.ton : "neutre") + '">' + esc(probaPhrase(x, c.proba || null, c.etatProba || "calcul")) + "</p>" +
       '<div class="ov-prog" role="progressbar" aria-label="Progression" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(prog * 100) + '"><i style="width:' + (prog * 100).toFixed(1) + '%"></i></div>' +
       '<p class="ov-note">' + esc(pct(prog)) + " de la cible</p>" +
       '<dl class="ov-dl">' + rows.map(([k, v, s]) => "<div><dt>" + esc(k) + "</dt><dd><b>" + esc(v) + "</b><span>" + esc(s) + "</span></dd></div>").join("") + "</dl>" +
       '<div class="ov-acts">' + boutonClaude(c.U, "objectifs", ctxClaude, "Corriger avec Claude") + "</div>" +
       '<p class="ov-note">Cible, échéance, priorité ou poches : demande à Claude de les corriger, puis valide sa proposition dans Agent › Propositions.</p>' +
       '<section class="ov-sec"><h3 class="ov-sec-t">Poches rattachées</h3>' + pochesHtml + "</section>" +
-      '<section class="ov-sec"><h3 class="ov-sec-t">Projection de l\'objectif</h3>' + serieSvg(serieObjectif(o, st, c.today, P), o, c.today) + "</section>";
+      '<section class="ov-sec"><h3 class="ov-sec-t">Projection de l\'objectif</h3>' +
+      '<div class="ov-graphe" data-ov-graphe></div>' +
+      '<p class="ov-note">Ce graphe montre le patrimoine financier ' + esc(c.duScope || "du foyer") + ' avec cet objectif marqué à son échéance, en euros d\'aujourd\'hui. Ce n\'est pas la trajectoire des seules poches de l\'objectif : le moteur ne la calcule pas encore.</p></section>';
   }
 
   /** Taux du Livret A lu dans les repères du savoir commun, avec sa date d'effet ; jamais de taux codé en dur. */
@@ -224,108 +272,30 @@
     return R.format(rl) + (d && d !== "Invalid Date" ? " depuis le " + d : "");
   }
 
-  /** Versement mensuel réel de la projection : épargne du budget, sinon versements programmés du périmètre ; null si inconnu. */
-  function versementReel(S, totaux, scope) {
-    const s = S || {}, lignes = s.budget && Array.isArray(s.budget.lignes) ? s.budget.lignes : [];
-    if (lignes.length && totaux && totaux.epargne > 0) return { v: totaux.epargne, src: "d'après l'épargne prévue au budget" };
-    const rec = ((s.config && s.config.recurring) || []).filter(r => {
-      const p = (s.positions || []).find(x => x.id === r.positionId);
-      return (scope || "foyer") === "foyer" || (p && p.owner === scope);
-    }).reduce((a, r) => a + Math.max(0, +r.amount || 0), 0);
-    if (rec > 0) return { v: rec, src: "d'après tes versements programmés (budget sans épargne)" };
-    return null;
-  }
+  /* ---------- bandeau « cibles en euros d'aujourd'hui » (changement de sens annoncé une fois, spec PROJ § 13.3) ---------- */
+  const CLE_BANDEAU = "boussole.objectifs.cibles-euros-aujourdhui";
+  /** Bandeau déjà fermé ? Lecture du stockage local protégée (stockage indisponible : on le montre). */
+  function bandeauVu(stockage) { try { return !!stockage && stockage.getItem(CLE_BANDEAU) === "1"; } catch (e) { return false; } }
+  /** Mémorise la fermeture du bandeau ; faux si le stockage est indisponible (la vue le garde alors en mémoire pour la session). */
+  function bandeauFerme(stockage) { try { stockage.setItem(CLE_BANDEAU, "1"); return true; } catch (e) { return false; } }
 
-  /* ---------- versement de la projection : UNE fonction pour Objectifs et pour le cône d'Aujourd'hui ---------- */
-  /* Écart (relatif au budget) à partir duquel l'épargne réellement constatée à la banque remplace l'épargne prévue au budget. */
-  const SEUIL_ECART = 0.3;
-  const calcDe = deps => dep(deps, "Calc") || (typeof module === "object" && module.exports && typeof require === "function" ? require("./calc.js") : null);
-  /** Versement mensuel de la projection, avec sa source dite en toutes lettres :
-      - prévu : épargne du budget (versementReel), sinon versements programmés ;
-      - réel : épargne versée des comptes courants, moyenne des derniers mois complets (Calc.budgetReel.epargne), foyer et banque connectée seulement.
-      Le réel est choisi quand il existe et que le prévu manque ou en diffère de plus de 30 % ; le prévu est alors rappelé à côté.
-      → { v, origine: "reel" | "prevu", detail (« prévus au budget », « réellement épargnés sur 3 mois »…), src (detail + rappel du prévu),
-          libelle (« 1 700 €/mois prévus au budget »), prevu: { v, detail } | null, reel: { v, n, detail } | null } ou null sans aucun des deux. */
-  function versementProjection(S, totaux, scope, today, deps) {
-    const sc = scope || "foyer", p = versementReel(S, totaux, sc), b = S && S.banque, C = calcDe(deps);
-    const prevu = p ? { v: p.v, detail: /programmés/.test(p.src) ? "de versements programmés" : "prévus au budget" } : null;
-    let reel = null;
-    if (sc === "foyer" && b && b.actif && C && typeof C.budgetReel === "function") {
-      try {
-        const br = C.budgetReel(b, today);
-        if (br && br.n > 0 && isFinite(br.epargne) && br.epargne >= 0) reel = { v: br.epargne, n: br.n, detail: "réellement épargnés sur " + (br.n > 1 ? br.n + " mois" : "le dernier mois") };
-      } catch (e) { reel = null; }
-    }
-    const ecart = prevu && prevu.v > 0 && reel ? Math.abs(reel.v - prevu.v) / prevu.v : null;
-    const choisi = reel && (!prevu || ecart > SEUIL_ECART) ? Object.assign({ origine: "reel" }, reel) : prevu ? Object.assign({ origine: "prevu" }, prevu) : null;
-    if (!choisi) return null;
-    const rappel = choisi.origine === "reel" && prevu ? " (budget : " + eurM(prevu.v) + " " + prevu.detail + ")" : "";
-    return { v: choisi.v, origine: choisi.origine, detail: choisi.detail, src: choisi.detail + rappel, libelle: eurM(choisi.v) + " " + choisi.detail + rappel, prevu, reel };
-  }
-  /** Phrases sous le chiffre de la projection, les mêmes sur Aujourd'hui et sur Objectifs :
-      « Dans 5 ans : 160 000 € (central), soit +65 000 € par rapport à aujourd'hui, dont 60 000 € de tes versements et 5 000 € des marchés
-      (euros courants, avant frais et impôts). » puis « Versement pris en compte : 1 000 €/mois réellement épargnés sur 3 mois (budget : … prévus). »
-      depart / fin : valeur centrale aujourd'hui et à l'horizon ; versement : €/mois ; vp : versementProjection ou null. */
-  function projectionPhrases(depart, fin, versement, annees, vp) {
-    const v = Math.max(0, +versement || 0), gain = fin - depart, versements = v * 12 * annees, marches = gain - versements;
-    const sg = x => (Math.round(x) < 0 ? "−" : "") + eur(Math.abs(x));
-    const dont = "dont " + (v > 0 ? eur(versements) + " de tes versements et " : "") + sg(marches) + " des marchés (euros courants, avant frais et impôts)";
-    return { total: "Dans " + annees + (annees > 1 ? " ans" : " an") + " : " + eur(fin) + " (central), soit " + (gain >= 0 ? "+" : "−") + eur(Math.abs(gain)) + " par rapport à aujourd'hui, " + dont + ".",
-      versement: v > 0 && vp ? "Versement pris en compte : " + vp.libelle + "." : v > 0 ? "Versement pris en compte : " + eurM(v) + "." : "Aucun versement mensuel pris en compte.",
-      versements, marches, gain };
-  }
-
-  /* ---------- projection du patrimoine financier (moteur Plan.projection) ---------- */
-  function niceStep(r) { const p = Math.pow(10, Math.floor(Math.log10(r || 1))), n = r / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; }
-  /** Courbe : bande pessimiste–optimiste, ligne centrale ; dessinée à la largeur réelle du conteneur (cw). */
-  function projectionSvg(res, N, y0, cw) {
-    const narrow = cw < 520, W = Math.round(Math.min(1150, Math.max(300, cw || 640))), H = narrow ? 230 : 280, L = narrow ? 50 : 64, R = 14, T = 14, B = 28;
-    let hi = Math.max(...res.optimiste, ...res.central, 1), lo = Math.min(0, ...res.pessimiste);
-    const step = niceStep((hi - lo) / 4); lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
-    const X = i => L + (N ? i / N : 0) * (W - L - R), Y = val => T + (1 - (val - lo) / (hi - lo)) * (H - T - B);
-    let g = "";
-    for (let val = lo; val <= hi + 1; val += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(val).toFixed(1) + '" y2="' + Y(val).toFixed(1) + '" class="ov-g"/><text x="' + (L - 8) + '" y="' + (Y(val) + 4).toFixed(1) + '" text-anchor="end">' + esc(kEur(val)) + "</text>";
-    const tick = N <= 5 ? 1 : N <= 10 ? 2 : 5;
-    for (let i = 0; i <= N; i += tick) g += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="' + (i === 0 ? "start" : i === N ? "end" : "middle") + '">' + (y0 + i) + "</text>";
-    const path = s => res[s].map((val, i) => (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(val).toFixed(1)).join("");
-    const band = path("optimiste") + res.pessimiste.map((val, i) => "L" + X(i).toFixed(1) + "," + Y(val).toFixed(1)).reverse().join("") + "Z";
-    const dots = res.central.map((val, i) => '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(val).toFixed(1) + '" r="' + (i === N ? 4.5 : 2) + '" class="' + (i === N ? "ov-pt fin" : "ov-pt") + '"><title>' + esc((y0 + i) + " : " + eur(val) + " (central ; " + eur(res.pessimiste[i]) + " à " + eur(res.optimiste[i]) + ")") + "</title></circle>").join("");
-    const last = res.central[N];
-    return '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc("Projection sur " + N + " ans : " + eur(last) + " dans le scénario central, entre " + eur(res.pessimiste[N]) + " et " + eur(res.optimiste[N])) + '">' + g +
-      '<path d="' + band + '" class="ov-bande"/>' +
-      '<path d="' + path("optimiste") + '" class="ov-borne"/><path d="' + path("pessimiste") + '" class="ov-borne"/>' +
-      '<path d="' + path("central") + '" class="ov-central"/>' + dots +
-      '<text x="' + (X(N) - 8).toFixed(1) + '" y="' + (Y(last) - 10).toFixed(1) + '" text-anchor="end" class="ov-fin">' + esc(eur(last)) + "</text></svg>";
-  }
-  function projectionTableHtml(res, v, N, y0) {
-    const verse = res.central[0] + v * 12 * N;
-    const row = (s, lbl) => "<tr><td>" + lbl + '</td><td class="n">' + esc(eur(res[s][N])) + '</td><td class="n">' + esc(eur(verse)) + '</td><td class="n' + (res[s][N] - verse < 0 ? " neg" : "") + '">' + (res[s][N] - verse >= 0 ? "+" : "") + esc(eur(res[s][N] - verse)) + "</td></tr>";
-    return "<thead><tr><th>Scénario</th><th>Dans " + N + " ans (" + (y0 + N) + ")</th><th>Capital et versements</th><th>Effet des marchés</th></tr></thead><tbody>" +
-      row("pessimiste", "Pessimiste") + row("central", "Central") + row("optimiste", "Optimiste") + "</tbody>";
-  }
-  function hypothesesHtml(res, R) {
-    const blocs = Object.keys(res.parBloc).sort((a, b) => res.parBloc[b].capital - res.parBloc[a].capital);
-    const fr = x => String(x).replace(".", ",") + " %";
-    return "<thead><tr><th>Poche</th><th>Montant</th><th>Part</th><th>Pessimiste</th><th>Central</th><th>Optimiste</th></tr></thead><tbody>" +
-      blocs.map(b => { const r = R[b] || R._autre, pb = res.parBloc[b];
-        return "<tr><td>" + esc(b === "_autre" ? "Autres" : b) + '</td><td class="n">' + esc(eur(pb.capital)) + '</td><td class="n">' + esc(pct(pb.poids)) + '</td><td class="n">' + esc(fr(r.pessimiste)) + '</td><td class="n">' + esc(fr(r.central)) + '</td><td class="n">' + esc(fr(r.optimiste)) + "</td></tr>"; }).join("") + "</tbody>";
-  }
-
-  const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, serieObjectif, livretA, versementReel, versementProjection, projectionPhrases, projectionSvg, projectionTableHtml,
-    hypothesesHtml, valeurPoche, boutonClaude, STATUTS };
+  const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, livretA, probabilites, probaInfo, probaHtml, probaPhrase, capaciteDe, noteRepartition, bandeauVu, bandeauFerme,
+    valeurPoche, boutonClaude, STATUTS };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof window !== "undefined") window.ObjectifsView = H; // pour Aujourd'hui (jauge d'objectifs, versement de la projection)
   if (typeof document === "undefined") return;
 
   /* =================================================================== vue =================================================================== */
   let root = null, S = null, aRendre = true;
-  /* anti-redessin : signatures des derniers contenus écrits ; analyse mémorisée pour l'émission courante du store */
+  /* anti-redessin : signatures des derniers contenus écrits ; analyse mémorisée pour l'émission courante du store et la réponse du moteur */
   let sigCartes = "", sigPanneau = "", cache = null;
-  const sigProj = { resume: "", chart: "", legende: "", table: "", hyp: "", tag: "", src: "", note: "" };
-  /* panneau : { id, retour } */
-  let pan = null, corpsPanneau = null;
-  /* projection : paramètres d'exploration locaux, jamais enregistrés */
-  let horizon = 10, versOverride = null;
+  /* panneau : { id, retour } ; liaison du graphe monté dans son contenu */
+  let pan = null, corpsPanneau = null, liaisonPan = null;
+  /* graphe de l'accordéon : monté à la première ouverture (fermé, il n'a pas de largeur à mesurer) */
+  let liaison = null;
+  /* moteur : probabilités et épargne retenue. sig = empreinte de l'entrée du calcul en cours ou terminé ; etat : absent | calcul | pret | erreur */
+  let moteur = { sig: "", perim: "", etat: "absent", donnees: null, probas: {} }, seqMoteur = 0;
+  let bandeauMem = false;
 
   const $ = id => root.querySelector("#" + id);
   const U = () => window.UI || null;
@@ -336,16 +306,44 @@
   const nomDe = k => { const p = people().find(x => x.id === k); return (p && p.nom) || (k === "p2" ? "Conjoint(e)" : "Moi"); };
   const duScope = () => (scope() === "foyer" ? "du foyer" : C().deNom(nomDe(scope()), scope() === "p2" ? 2 : 1));
   const echap = s => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, "\\$&"));
-  /** Analyse de l'émission courante : calculée une fois (update l'invalide), partagée par les cartes, la projection, le panneau
-      et le titre de navigation. */
+  const stockage = () => { try { return window.localStorage || null; } catch (e) { return null; } };
+  /** Analyse de l'émission courante : calculée une fois (update et la réponse du moteur l'invalident), partagée par les cartes, le panneau
+      et le titre de navigation. L'épargne retenue par le moteur remplace celle du budget dès qu'elle est connue. */
   function analyse() {
-    const j = isoToday();
-    if (!cache || cache.S !== S || cache.jour !== j) cache = { S, jour: j, a: analyser(S, deps(), j) };
+    const j = isoToday(), cap = capaciteDe(moteur.donnees), k = String(cap);
+    if (!cache || cache.S !== S || cache.jour !== j || cache.cap !== k) cache = { S, jour: j, cap: k, a: analyser(S, deps(), j, cap == null ? null : { capacite: cap }) };
     return cache.a;
   }
-  const entree = id => { const a = analyse(); return { x: a.liste.find(y => String(y.o.id) === String(id)) || null, n: a.liste.length }; };
-  /* Écrit seulement si le contenu a changé (cle : entrée de sigProj). */
-  const poser = (cle, el, h, texte) => { if (sigProj[cle] === h) return; sigProj[cle] = h; if (texte) el.textContent = h; else el.innerHTML = h; };
+  /** Liste d'objectifs avec leur probabilité (rien tant que le moteur n'a pas répondu). */
+  const listeAvecProba = () => analyse().liste.map(x => Object.assign({}, x, { proba: probaInfo(moteur.probas, x) }));
+  const entree = id => { const L = listeAvecProba(); return { x: L.find(y => String(y.o.id) === String(id)) || null, n: L.length }; };
+
+  /* ---------- moteur : un seul calcul, le même que celui du graphe (cache par empreinte de Projection) ---------- */
+  const MOTEUR_VIDE = { sig: "", perim: "", etat: "absent", donnees: null, probas: {} };
+  function demanderMoteur() {
+    const Mo = GM();
+    if (!S || !Mo || typeof Mo.calculer !== "function") { moteur = MOTEUR_VIDE; return; }
+    const r = Mo.reglagesParDefaut({ vue: "financier" }), jour = isoToday(), perim = scope() + "|" + duScope();
+    let sig = "";
+    try { sig = Mo.signature(S, r, jour) + "|" + perim; } catch (e) { moteur = Object.assign({}, MOTEUR_VIDE, { etat: "erreur" }); return; }
+    if (sig === moteur.sig) return;
+    const n = ++seqMoteur;
+    // Un nouveau calcul du même périmètre garde la réponse précédente jusqu'à la suivante (pas de clignotement) ; un autre périmètre repart de rien.
+    const garde = moteur.perim === perim && moteur.donnees;
+    moteur = { sig, perim, etat: "calcul", donnees: garde ? moteur.donnees : null, probas: garde ? moteur.probas : {} };
+    Mo.calculer(S, r, { today: jour, perimetre: duScope(), rappel: d => {
+      if (n !== seqMoteur || !d) return;
+      if (d.etat === "erreur") moteur = { sig, perim, etat: "erreur", donnees: null, probas: {} };
+      else if (d.etat === "pret" && !d.progressif) moteur = { sig, perim, etat: "pret", donnees: d, probas: probabilites(d) };
+      else return;
+      surMoteur();
+    } }).catch(() => { if (n === seqMoteur) { moteur = { sig, perim, etat: "erreur", donnees: null, probas: {} }; surMoteur(); } });
+  }
+  /* Le moteur a répondu : les cartes, la note et le panneau se redessinent (cette fois avec la probabilité et l'épargne retenue). */
+  function surMoteur() {
+    cache = null; aRendre = true;
+    if (root && !root.hidden && S) { render(); aRendre = false; }
+  }
 
   /* ---------- rendu de la page ---------- */
   function videHtml() {
@@ -354,20 +352,28 @@
       "Claude t'aide à les définir ; tu valides ensuite ses propositions.</p>" +
       '<div class="ov-vide-act">' + boutonClaude(U(), "objectifs", "", "Compléter avec Claude") + "</div></div>";
   }
+  /* Bandeau « euros d'aujourd'hui » : montré tant qu'il n'a pas été fermé (mémorisé ; stockage indisponible : fermé pour la session). */
+  function renderBandeau(avecObjectifs) {
+    const b = $("ovBandeau"), voir = avecObjectifs && !bandeauMem && !bandeauVu(stockage());
+    if (b.hidden === voir) b.hidden = !voir;
+  }
   function render() {
     const u = U();
     if (!root || !S || !u) return;
-    const a = analyse(), r = resumeObjectifs(a.liste);
+    demanderMoteur();
+    const L = listeAvecProba(), a = analyse(), r = resumeObjectifs(L);
     // Réponse en encre (jamais une phrase colorée), le statut dans une puce avec son mot.
     const st = { bon: ["bon", "Bon"], attention: ["surveiller", "À surveiller"], critique: ["travailler", "À travailler"] }[r.ton];
     $("ovVerdict").innerHTML = esc(r.verdict + (r.detail && r.n > 1 ? " (" + r.detail + ")" : "")) +
       (st ? ' <span class="ui-puce ' + st[0] + '"><span class="ui-puce-point" aria-hidden="true"></span>' + st[1] + "</span>" : "");
     $("ovVerdict").className = "ov-verdict ton-" + r.ton;
-    const partage = a.liste.filter(x => x.o.source === "poches").some((x, i, L) => L.some((y, j) => j > i &&
+    const partage = a.liste.filter(x => x.o.source === "poches").some((x, i, Q) => Q.some((y, j) => j > i &&
       ((x.o.poches || []).some(p => (y.o.poches || []).includes(p)) || (x.o.enveloppes || []).some(p => (y.o.enveloppes || []).includes(p)))));
-    $("ovNote").textContent = a.liste.length ? "Épargne mensuelle répartie par priorité : " + eurM(a.capacite) + " (épargne prévue au budget et reste positif)." +
-      (partage ? " Plusieurs objectifs partagent une poche : l'argent d'une poche sert d'abord l'objectif prioritaire." : "") : "";
-    const h = a.liste.length ? u.voirPlus(a.liste, 5, x => carteHtml(x, a.liste.length), "Voir plus d'objectifs", "div", "ov-objectifs") : videHtml();
+    const note = a.liste.length ? (noteRepartition(moteur.donnees, a.capacite, moteur.etat === "calcul" && !moteur.donnees) +
+      (partage ? " Plusieurs objectifs partagent une poche : l'argent d'une poche sert d'abord l'objectif prioritaire." : "")).trim() : "";
+    if ($("ovNote").textContent !== note) $("ovNote").textContent = note;
+    renderBandeau(a.liste.length > 0);
+    const h = L.length ? u.voirPlus(L, 5, x => carteHtml(x, L.length, x.proba), "Voir plus d'objectifs", "div", "ov-objectifs") : videHtml();
     if (h !== sigCartes) {
       const act = document.activeElement, dedans = act && $("ovCartes").contains(act) && act.closest;
       const porteur = dedans ? act.closest("[data-ui-carte]") || act.closest("[data-ui-voirplus]") : null;
@@ -380,35 +386,32 @@
     renderPanneau();
   }
 
-  /* ---------- projection (accordéon, simulateur local) ---------- */
-  function renderProjection(forceInput) {
+  /* ---------- projection (accordéon) : le graphe maître, préréglage « objectifs » ---------- */
+  function renderProjection() {
     if (!root || !S) return;
-    const t = analyse().totaux, real = versementProjection(S, t, scope(), isoToday(), null), inp = $("ovVers");
-    const v = versOverride != null ? versOverride : real ? real.v : 0;
-    const res = P().projection({ positions: S.positions, scope: scope(), versementMensuel: v, annees: horizon });
-    const N = horizon, y0 = new Date().getFullYear();
-    poser("resume", $("ovProjResume"), "· dans " + N + " ans : " + eur(res.central[N]) + " (central)", true);
-    const ph = projectionPhrases(res.central[0], res.central[N], v, N, versOverride != null ? null : real);
-    if (!$("ovProjAcc").hasAttribute("open")) return; // dessinée à l'ouverture seulement
-    if (forceInput || versOverride == null || document.activeElement !== inp) {
-      const val = String(Math.round(v * 100) / 100);
-      if (inp.value !== val) inp.value = val;
-    }
-    poser("tag", $("ovVersTag"), versOverride != null ? '<button type="button" class="ov-tag scen" data-ov-vreset title="Revenir à la valeur réelle">scénario ↺</button>'
-      : real ? '<span class="ov-tag reel" title="Repris de tes données">' + (real.origine === "reel" ? "réel" : "prévu") + "</span>" : "");
-    poser("src", $("ovVersSrc"), versOverride != null ? "simulation locale, non enregistrée" + (real ? " · réel : " + eurM(real.v) : "") : real ? real.libelle : "aucune épargne mensuelle connue : essaie un montant", true);
-    poser("note", $("ovProjNote"), "Patrimoine financier " + duScope() + " aujourd'hui : " + eur(res.central[0]) + ". " + ph.total + " " + ph.versement, true);
-    poser("chart", $("ovChart"), projectionSvg(res, N, y0, $("ovChart").clientWidth || 640));
-    poser("legende", $("ovLegend"), '<span><i class="ln"></i>scénario central</span><span><i class="bd"></i>entre pessimiste et optimiste (pointillés)</span>');
-    poser("table", $("ovProjTable"), projectionTableHtml(res, v, N, y0));
-    poser("hyp", $("ovHyp"), hypothesesHtml(res, P().RENDEMENTS));
+    const src = $("ovCapSrc"), G = GP();
+    const t = moteur.donnees && moteur.donnees.etat === "pret" && G ? G.capaciteSourceTxt(moteur.donnees) : "";
+    if (src.textContent !== t) src.textContent = t;
+    src.hidden = !t;
+    if ($("ovProjAcc").hasAttribute("open")) monterGraphe();
+  }
+  /* Le graphe est monté une fois (à la première ouverture) ; ensuite il ne se recalcule que si ce qui compte a changé (GrapheModele.actualiser). */
+  function monterGraphe() {
+    const Mo = GM(), el = $("ovGraphe");
+    if (!root || !S || !Mo || !el) return;
+    if (!liaison) liaison = Mo.brancher(el, { preset: "objectifs", deps: { UI: U() }, today: isoToday, perimetre: duScope, store: window.Store || null });
+    if (liaison) liaison.actualiser(S);
   }
 
   /* ---------- panneau (lecture) ---------- */
+  function ctxPanneau(n, x) {
+    return { positions: S.positions, scope: scope(), Calc: C(), Plan: P(), n, duScope: duScope(), livretA: livretA(S, window.Reperes || null), U: U(),
+      proba: x.proba, etatProba: moteur.etat };
+  }
+  /* Contenu du panneau et sa signature : sans la phrase de probabilité, qui arrive plus tard et se pose sur place (le graphe monté dedans ne doit pas être recréé). */
   function contenuPanneau() {
     const { x, n } = entree(pan.id);
-    return detailHtml(x, { positions: S.positions, scope: scope(), Calc: C(), Plan: P(), today: isoToday(), n, duScope: duScope(),
-      livretA: livretA(S, window.Reperes || null), U: U() });
+    return { html: detailHtml(x, ctxPanneau(n, x)), sig: detailHtml(x, Object.assign(ctxPanneau(n, x), { proba: null, etatProba: "" })), x };
   }
   function optionsPanneau(h) {
     const u = U(), { x } = entree(pan.id), o = x && x.o;
@@ -416,33 +419,70 @@
     const pied = o ? u.demanderAClaude("Aide-moi à atteindre mon objectif « " + titre + " » (" + eur(o.cible) + (dateCible(o) ? " d'ici " + moisAn(dateCible(o)) : "") + ") avec Boussole : quel effort, sur quels placements ?") : null;
     return { titre, contenu: h, retour: pan.retour, pied, surFermeture: fermeture };
   }
+  /* UI donnée au graphe du panneau : ses feuilles (réglages, jalons, lecture, « comment c'est calculé ») passent par le même panneau unique et
+     remplaceraient celui de l'objectif ; à leur fermeture, on revient à l'objectif (sauf navigation : le panneau reste alors fermé). */
+  function uiDuPanneau() {
+    const u = U();
+    if (!u || !u.panneau) return u;
+    return Object.assign({}, u, { panneau: Object.assign({}, u.panneau, { ouvrir: o => {
+      const p = pan, sur = o && o.surFermeture;
+      return u.panneau.ouvrir(Object.assign({}, o, { surFermeture: r => {
+        if (typeof sur === "function") sur(r);
+        if (!p || pan !== p) return;
+        if (r && r.focus === false) fermeture({ focus: false }); else rouvrirObjectif();
+      } }));
+    } }) });
+  }
+  function rouvrirObjectif() {
+    const u = U();
+    if (!u || !pan || !entree(pan.id).x) { fermeture({ focus: false }); return; }
+    const c = contenuPanneau();
+    sigPanneau = c.sig;
+    corpsPanneau = u.panneau.ouvrir(optionsPanneau(c.html));
+    monterGraphePanneau();
+  }
+  function detruireGraphePanneau() { if (liaisonPan) { liaisonPan.detruire(); liaisonPan = null; } }
+  /* Graphe de l'objectif : monté dans le contenu du panneau (rouvrir le panneau remplace son contenu : l'ancien graphe est détruit d'abord). */
+  function monterGraphePanneau() {
+    detruireGraphePanneau();
+    const Mo = GM(), el = corpsPanneau && corpsPanneau.querySelector("[data-ov-graphe]");
+    if (!Mo || !el || !pan) return;
+    liaisonPan = Mo.brancher(el, { preset: "objectifs", objectifId: pan.id, titre: "Patrimoine financier", deps: { UI: uiDuPanneau() }, today: isoToday, perimetre: duScope, store: window.Store || null });
+    if (liaisonPan) liaisonPan.actualiser(S);
+  }
   function fermeture(o) {
     const p = pan;
-    pan = null; sigPanneau = "";
+    pan = null; sigPanneau = ""; corpsPanneau = null;
+    detruireGraphePanneau();
     if ((o && o.focus === false) || !root || !p) return;
     if (p.retour && p.retour.isConnected) return;
     const el = p.id != null && root.querySelector('[data-ui-carte="' + echap(p.id) + '"]');
     (el || $("ovTitre")).focus();
   }
   function ouvrir(p) {
-    const u = U();
-    if (!u || !entree(p.id).x) return;
+    if (!U() || !entree(p.id).x) return;
     pan = Object.assign({}, p);
-    const h = contenuPanneau();
-    sigPanneau = h;
-    corpsPanneau = u.panneau.ouvrir(optionsPanneau(h));
+    rouvrirObjectif();
   }
-  /* Rafraîchit le panneau ouvert quand ses données changent. */
+  /* Rafraîchit le panneau ouvert quand ses données changent ; la probabilité seule se pose sur place. */
   function renderPanneau() {
     const u = U();
     if (!pan || !u || !u.panneau.ouvert()) return;
     if (!entree(pan.id).x) { u.panneau.fermer({ focus: false }); return; }
-    const h = contenuPanneau();
-    if (h === sigPanneau) return;
-    sigPanneau = h;
+    if (liaisonPan && corpsPanneau && !corpsPanneau.contains(liaisonPan.el)) return; // une feuille du graphe occupe le panneau : on y revient à sa fermeture
+    const c = contenuPanneau();
+    if (c.sig === sigPanneau) {
+      const ph = corpsPanneau && corpsPanneau.querySelector("[data-ov-proba]"), t = probaPhrase(c.x, c.x.proba, moteur.etat), ton = c.x.proba ? c.x.proba.ton : "neutre";
+      if (ph && ph.textContent !== t) ph.textContent = t;
+      if (ph && ph.getAttribute("data-ton") !== ton) ph.setAttribute("data-ton", ton);
+      if (liaisonPan) liaisonPan.actualiser(S);
+      return;
+    }
+    sigPanneau = c.sig;
     const y = corpsPanneau ? corpsPanneau.scrollTop : 0;
-    corpsPanneau = u.panneau.ouvrir(optionsPanneau(h));
+    corpsPanneau = u.panneau.ouvrir(optionsPanneau(c.html));
     corpsPanneau.scrollTop = y;
+    monterGraphePanneau();
   }
 
   function mount(r) {
@@ -452,22 +492,17 @@
     if (u) {
       // Le bouton Claude de l'en-tête couvre « Définir mes objectifs » : plus de boutons Claude empilés sous le titre.
       u.brancher($("ovCartes"), { surCarte: (id, el) => ouvrir({ id, retour: el }) });
-      u.bascule($("ovHorizon"), { label: "Horizon", options: [5, 10, 20, 30].map(n => ({ id: String(n), label: n + " ans" })), actif: String(horizon),
-        surChange: id => { horizon = +id; renderProjection(); } });
     }
     root.addEventListener("click", e => {
       const t = e.target;
-      if (t && t.closest && t.closest("[data-ov-vreset]")) { versOverride = null; renderProjection(true); $("ovVers").focus(); }
+      if (t && t.closest && t.closest("[data-ov-bandeau-x]")) {
+        if (!bandeauFerme(stockage())) bandeauMem = true;
+        $("ovBandeau").hidden = true;
+        $("ovTitre").focus();
+      }
     });
-    root.addEventListener("input", e => {
-      if (e.target && e.target.id === "ovVers") { versOverride = e.target.value === "" ? 0 : Math.max(0, +e.target.value || 0); renderProjection(); }
-    });
-    /* Accordéon de la projection : dessinée à l'ouverture (toggle ne remonte pas : écoute en capture). */
-    root.addEventListener("toggle", e => { if (e.target && e.target.id === "ovProjAcc" && e.target.hasAttribute("open")) renderProjection(true); }, true);
-    let w = 0;
-    if (typeof window.addEventListener === "function") window.addEventListener("resize", () => {
-      const nw = root.clientWidth; if (S && !root.hidden && Math.abs(nw - w) > 24) { w = nw; renderProjection(); }
-    });
+    /* Accordéon de la projection : graphe monté à l'ouverture (toggle ne remonte pas : écoute en capture). */
+    root.addEventListener("toggle", e => { if (e.target && e.target.id === "ovProjAcc" && e.target.hasAttribute("open")) monterGraphe(); }, true);
   }
   function update(snap, visible) {
     S = snap; cache = null;
@@ -478,7 +513,7 @@
   function show() { if (aRendre) { render(); aRendre = false; } }
   function headline() {
     if (!S || !(S.ready || S.dbOk === false)) return "–";
-    const r = resumeObjectifs(analyse().liste);
+    const r = resumeObjectifs(listeAvecProba());
     return r.n ? r.verdict : "Objectifs à fixer";
   }
 

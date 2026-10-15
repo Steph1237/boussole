@@ -7,30 +7,21 @@
     </div>
   </section>
 
+  <div class="ov-bandeau" id="ovBandeau" role="note" hidden>
+    <p class="ov-bandeau-t"><b>Nouveau :</b> tes cibles sont maintenant lues en euros d'aujourd'hui. Si l'une d'elles était déjà prévue en euros de l'époque, dis-le à Claude.</p>
+    <button type="button" class="ov-bandeau-x" data-ov-bandeau-x aria-label="Fermer ce message">Compris</button>
+  </div>
+
   <section aria-label="Mes objectifs">
     <div class="ov-cartes" id="ovCartes"></div>
   </section>
 
   <details class="ui-acc ov-proj" id="ovProjAcc">
-    <summary class="ui-acc-titre"><span>Projection du patrimoine financier</span><span class="ov-proj-res" id="ovProjResume"></span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+    <summary class="ui-acc-titre"><span>Projection du patrimoine financier</span><span class="ui-acc-chevron"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary>
     <div class="ui-acc-corps ov-proj-corps">
-      <p class="ov-note" id="ovProjNote"></p>
-      <div class="ov-proj-ctl">
-        <div class="ov-champ"><span class="ov-lab" aria-hidden="true">Horizon</span><div id="ovHorizon"></div></div>
-        <div class="ov-champ"><label class="ov-lab" for="ovVers">Versement mensuel <span id="ovVersTag"></span></label>
-          <div class="ov-money"><input id="ovVers" type="number" inputmode="decimal" min="0" step="any"><span class="ov-u">€ / mois</span></div>
-          <span class="ov-note" id="ovVersSrc"></span>
-        </div>
-      </div>
-      <div class="ov-chart" id="ovChart"></div>
-      <div class="ov-legend" id="ovLegend"></div>
-      <div class="ov-scroll"><table class="ov-table" id="ovProjTable"></table></div>
-      <details class="ov-hyp">
-        <summary>Hypothèses de rendement</summary>
-        <div class="ov-scroll"><table class="ov-table" id="ovHyp"></table></div>
-        <p class="ov-note">Rendements annuels moyens indicatifs par poche ; les versements sont répartis comme ton portefeuille actuel.</p>
-      </details>
-      <p class="ov-note">Projection indicative, hors inflation et fiscalité ; les marchés ne suivent pas une moyenne.</p>
+      <p class="ov-note ov-src" id="ovCapSrc" hidden></p>
+      <div class="ov-graphe" id="ovGraphe"></div>
+      <p class="ov-note">Projection indicative, en euros d'aujourd'hui : les marchés ne suivent pas une moyenne, et une projection n'est pas une promesse.</p>
     </div>
   </details>
 </div>

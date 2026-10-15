@@ -1,6 +1,6 @@
-/* Patrimoine › Objectifs (lecture seule) : en-tête (question, verdict, « Compléter avec Claude »), cartes des objectifs
-   (progression, statut, effort requis), projection du patrimoine financier en accordéon (simulateur local). Scopé #view-objectifs-view ; le contenu du panneau de détail (UI.panneau,
-   injecté dans body) sous .ui-panneau .ov-…. */
+/* Patrimoine › Objectifs (lecture seule) : en-tête (question, verdict, « Compléter avec Claude »), bandeau « euros d'aujourd'hui », cartes des objectifs
+   (progression, statut, probabilité du moteur, effort requis), projection du patrimoine financier en accordéon (le graphe maître, style dans graphe-patrimoine.css).
+   Scopé #view-objectifs-view ; le contenu du panneau de détail (UI.panneau, injecté dans body) sous .ui-panneau .ov-…. */
 #view-objectifs-view [hidden]{display:none!important}
 #view-objectifs-view .ov{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
 #view-objectifs-view .ov-num{font-variant-numeric:tabular-nums lining-nums}
@@ -15,7 +15,6 @@
 #view-objectifs-view .ov-verdict .ui-puce{margin-left:var(--sp-1);vertical-align:1px}
 #view-objectifs-view .ov-tete-act{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
 #view-objectifs-view .ov-claude:empty{display:none}
-#view-objectifs-view .ov-tag:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 
 /* cartes */
 #view-objectifs-view .ov-cartes .ui-voirplus-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
@@ -36,41 +35,21 @@
 #view-objectifs-view .ov-vide-t{font:700 var(--t-body) var(--f-display)}
 #view-objectifs-view .ov-vide-act{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 
+/* bandeau « cibles en euros d'aujourd'hui » : discret, fermable */
+#view-objectifs-view .ov-bandeau{display:flex;align-items:center;gap:var(--sp-3) var(--sp-4);flex-wrap:wrap;padding:var(--sp-3) var(--sp-4);border:1px solid var(--line);border-radius:var(--r-card);background:var(--sunk)}
+#view-objectifs-view .ov-bandeau-t{flex:1 1 280px;min-width:0;margin:0;font-size:var(--t-small);line-height:1.5;color:var(--ink)}
+#view-objectifs-view .ov-bandeau-x{flex:none;min-height:var(--hit);min-width:var(--hit);padding:0 var(--sp-4);border:1px solid var(--line2);border-radius:var(--r-ctl);background:var(--surface);color:var(--ink);font:600 var(--t-small) var(--f-body);cursor:pointer}
+#view-objectifs-view .ov-bandeau-x:hover{border-color:var(--ink)}
+#view-objectifs-view .ov-bandeau-x:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* probabilité du moteur sur une carte : mot ET couleur (puce), chances sur 10 en clair */
+#view-objectifs-view .ov-proba{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap}
+#view-objectifs-view .ov-proba-n{font-size:var(--t-small);color:var(--ink)}
+#view-objectifs-view .ov-proba.aucun .ov-proba-n{color:var(--muted)}
+
 /* projection */
-#view-objectifs-view .ov-proj-res{font:500 var(--t-small) var(--f-body);color:var(--muted)}
 #view-objectifs-view .ov-proj-corps{display:flex;flex-direction:column;gap:12px}
-#view-objectifs-view .ov-proj-ctl{display:flex;gap:14px 24px;flex-wrap:wrap;align-items:flex-start}
-#view-objectifs-view .ov-champ{display:flex;flex-direction:column;gap:6px;min-width:0}
-#view-objectifs-view .ov-lab{font-size:var(--t-small);font-weight:600;color:var(--muted)}
-#view-objectifs-view .ov-money{display:flex;align-items:stretch;min-height:calc(var(--hit) + 2px);border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--surface);overflow:hidden;max-width:220px}
-#view-objectifs-view .ov-money:focus-within{border-color:var(--focus);box-shadow:0 0 0 3px var(--brand-soft)}
-#view-objectifs-view .ov-money input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--ink);font:500 var(--t-body) var(--f-body);font-variant-numeric:tabular-nums lining-nums;padding:0 var(--sp-3);outline:none}
-#view-objectifs-view .ov-u{display:flex;align-items:center;padding-right:var(--sp-3);color:var(--muted);font:var(--t-caption) var(--f-body);white-space:nowrap}
-#view-objectifs-view .ov-tag{font:600 var(--t-caption) var(--f-body);padding:1px 7px;border-radius:999px;border:0;vertical-align:1px}
-#view-objectifs-view .ov-tag.reel{background:var(--st-good-bg);color:var(--st-good)}
-#view-objectifs-view .ov-tag.scen{background:var(--st-watch-bg);color:var(--st-watch);cursor:pointer}
-#view-objectifs-view .ov-chart svg{display:block;width:100%;height:auto}
-#view-objectifs-view .ov-chart text{fill:var(--muted);font-family:var(--f-body);font-variant-numeric:tabular-nums lining-nums;font-size:var(--t-caption)}
-#view-objectifs-view .ov-chart text.ov-fin{fill:var(--ink);font-weight:500}
-#view-objectifs-view .ov-g{stroke:var(--line);stroke-width:1}
-#view-objectifs-view .ov-bande{fill:var(--accent-soft);opacity:.85}
-#view-objectifs-view .ov-borne{fill:none;stroke:var(--accent);stroke-width:1.2;stroke-dasharray:4 3;opacity:.7}
-#view-objectifs-view .ov-central{fill:none;stroke:var(--accent);stroke-width:2.2}
-#view-objectifs-view .ov-pt{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
-#view-objectifs-view .ov-pt.fin{fill:var(--accent)}
-#view-objectifs-view .ov-legend{display:flex;gap:6px 18px;flex-wrap:wrap;font-size:var(--t-caption);color:var(--muted)}
-#view-objectifs-view .ov-legend i{display:inline-block;width:18px;margin-right:6px;vertical-align:middle}
-#view-objectifs-view .ov-legend i.ln{height:0;border-top:2px solid var(--accent)}
-#view-objectifs-view .ov-legend i.bd{height:10px;background:var(--accent-soft);border-top:1px dashed var(--accent);border-bottom:1px dashed var(--accent)}
-#view-objectifs-view .ov-scroll{overflow-x:auto;max-width:100%}
-#view-objectifs-view .ov-table{width:100%;border-collapse:collapse;font-size:var(--t-small)}
-#view-objectifs-view .ov-table th{font-size:var(--t-caption);color:var(--muted);font-weight:600;text-align:right;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
-#view-objectifs-view .ov-table td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
-#view-objectifs-view .ov-table th:first-child,#view-objectifs-view .ov-table td:first-child{text-align:left}
-#view-objectifs-view .ov-table td.n{font-variant-numeric:tabular-nums lining-nums}
-#view-objectifs-view .ov-table td.neg{color:var(--crit)}
-#view-objectifs-view .ov-hyp summary{display:flex;align-items:center;min-height:var(--hit);cursor:pointer;font-weight:600;color:var(--brand)}
-#view-objectifs-view .ov-hyp .ov-note{margin-top:6px}
+#view-objectifs-view .ov-graphe{min-width:0}
 
 /* panneau de détail (UI.panneau, hors de la vue) */
 .ui-panneau .ov-num{font-variant-numeric:tabular-nums lining-nums}
@@ -93,19 +72,14 @@
 .ui-panneau .ov-poches li{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:var(--t-small)}
 .ui-panneau .ov-poches li:first-child{border-top:0}
 .ui-panneau .ov-poche-k{font-size:var(--t-caption);color:var(--muted)}
-.ui-panneau .ov-sec svg{display:block;width:100%;height:auto}
-.ui-panneau .ov-sec text{fill:var(--muted);font-family:var(--f-num);font-size:var(--t-caption)}
-.ui-panneau .ov-g{stroke:var(--line);stroke-width:1}
-.ui-panneau .ov-cible{stroke:var(--warn);stroke-width:1.5;stroke-dasharray:2 3}
-.ui-panneau .ov-actuel{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linejoin:round}
-.ui-panneau .ov-requis{fill:none;stroke:var(--accent);stroke-width:1.4;stroke-dasharray:5 4;opacity:.75}
-.ui-panneau .ov-legende{margin:0;display:flex;gap:4px 14px;flex-wrap:wrap;font-size:var(--t-caption);color:var(--muted)}
-.ui-panneau .ov-legende i{display:inline-block;width:16px;height:0;margin-right:5px;vertical-align:middle}
-.ui-panneau .ov-l-actuel{border-top:2px solid var(--accent)}
-.ui-panneau .ov-l-requis{border-top:2px dashed var(--accent)}
-.ui-panneau .ov-l-cible{border-top:2px dotted var(--warn)}
+.ui-panneau .ov-graphe{min-width:0}
+/* le panneau est déjà une feuille modale : pas de « plein écran » du graphe par-dessus (il serait caché derrière) */
+.ui-panneau .ov-graphe [data-act="plein"],.ui-panneau .ov-graphe .gp-invite{display:none!important}
+.ui-panneau .ov-proba-phrase{margin:0;padding:var(--sp-2) var(--sp-3);border-left:4px solid var(--line2);border-radius:0 var(--r-ctl) var(--r-ctl) 0;background:var(--sunk);font-size:var(--t-body);line-height:1.45;color:var(--ink)}
+.ui-panneau .ov-proba-phrase[data-ton="bon"]{border-left-color:var(--st-good)}
+.ui-panneau .ov-proba-phrase[data-ton="surveiller"]{border-left-color:var(--st-watch)}
+.ui-panneau .ov-proba-phrase[data-ton="travailler"]{border-left-color:var(--st-work)}
 
 @media (max-width:640px){
   #view-objectifs-view .ov-cartes .ui-voirplus-liste{grid-template-columns:minmax(0,1fr)}
-  #view-objectifs-view .ov-proj-res{display:none}
 }
