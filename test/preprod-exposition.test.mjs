@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { portsDePreproduction, EXCLUS } from "../scripts/preprod/demarrer.mjs";
+import { portsDePreproduction, exclus } from "../scripts/preprod/demarrer.mjs";
 import { parserLsof, ecouteLarge, avertissement } from "../scripts/preprod/exposition.mjs";
 
 const LSOF = `COMMAND   PID     USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
@@ -35,6 +35,9 @@ describe("démarrage", () => {
     assert.ok(p.every(n => n >= 54500 && n < 54600), p.join(","));
   });
   it("services exclus : noms de conteneurs du CLI 2.107.0", () => {
-    for (const n of ["logflare", "vector", "imgproxy", "mailpit"]) assert.ok(EXCLUS.split(",").includes(n));
+    for (const n of ["logflare", "vector", "imgproxy", "mailpit", "realtime", "storage-api"]) assert.ok(exclus({}).split(",").includes(n), n);
+    assert.ok(exclus({}).split(",").includes("studio"));
+    assert.ok(!exclus({ PREPROD_STUDIO: "1" }).split(",").includes("studio"));
+    for (const utile of ["gotrue", "postgrest", "kong", "edge-runtime", "postgres"]) assert.ok(!exclus({}).split(",").includes(utile), utile);
   });
 });

@@ -27,12 +27,18 @@ export const DIFFERENCES_PERMISES = {
   "edge_runtime.inspector_port": "idem",
 };
 
+// Clés présentes seulement en préproduction (la production les laisse en commentaire).
+export const CLES_AJOUTEES = {
+  "api.auto_expose_new_tables": "les migrations comptent sur l'exposition automatique de la production (service_role sans GRANT explicite)",
+};
+
 describe("parité preprod/config.toml ↔ supabase/config.toml", () => {
   const prod = aplatir(lire("supabase/config.toml"));
   const pre = aplatir(lire("preprod/config.toml"));
 
-  it("mêmes clés dans les deux fichiers", () => {
-    assert.deepEqual(Object.keys(pre).sort(), Object.keys(prod).sort());
+  it("mêmes clés dans les deux fichiers, aux clés ajoutées près", () => {
+    assert.deepEqual(Object.keys(pre).filter(k => !(k in CLES_AJOUTEES)).sort(), Object.keys(prod).sort());
+    for (const k of Object.keys(CLES_AJOUTEES)) assert.ok(k in pre && !(k in prod), k);
   });
 
   it("seules les différences permises diffèrent", () => {
@@ -70,6 +76,10 @@ describe("parité preprod/config.toml ↔ supabase/config.toml", () => {
 
   it("aucune mention de la production dans la config de préproduction", () => {
     assert.ok(!/oapcewpqsbbjdlcdeizi|supabase\.co|steph1237/.test(lire("preprod/config.toml").split("\n").filter(l => !l.trim().startsWith("#")).join("\n")));
+  });
+
+  it("exposition automatique des nouvelles tables, comme la production", () => {
+    assert.equal(pre["api.auto_expose_new_tables"], "true");
   });
 
   it("la graine est branchée", () => {

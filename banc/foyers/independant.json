@@ -1,0 +1,55 @@
+{
+  "slug": "independant",
+  "titre": "Inès, 34 ans, profession libérale, revenus variables, crypto-actifs",
+  "description": "Indépendante, locataire, revenus irréguliers, peu d'épargne retraite, quelques crypto-actifs, aucun profil de risque saisi et des dates d'ouverture manquantes. Sert au budget irrégulier, au matelas en mois, à la crypto et aux cas de données manquantes.",
+  "mfa": false,
+  "jeton": "session",
+  "profil": {
+    "foyer": { "adultes": 1, "enfants": 0, "enfants14": 0, "union": null, "age": "a30", "tmi": 30 },
+    "personnes": { "p1": { "nom": "Inès", "naissance": "1992-01-08", "salaire": 3200, "salaireUnite": "nm", "statut": null, "csp": "liber", "essai": false, "autresRevenus": 0 } },
+    "autres": { "p1": { "usage": 2500, "entreprise": 18000 } },
+    "protection": {},
+    "journal_consentement": "jamais",
+    "onboarding_done": true
+  },
+  "biens": [],
+  "credits": [],
+  "positions": [
+    { "ref": "livret-a", "name": "Livret A", "envelope": "Livrets Inès", "owner": "p1", "bloc": "Épargne", "mode": "manual", "value": 4200, "value_date": "J-9" },
+    { "ref": "compte-courant", "name": "Compte courant personnel", "envelope": "Comptes courants", "owner": "p1", "bloc": "Comptes courants", "mode": "manual", "value": 5600, "value_date": "J-2" },
+    { "ref": "cto-actions", "name": "Fonds Actions Internationales B", "envelope": "CTO Inès", "owner": "p1", "bloc": "Monde", "mode": "market", "isin": "ZZ0000000078", "qty": 20, "pru": 128 },
+    { "ref": "btc", "name": "Bitcoin", "envelope": "Crypto", "owner": "p1", "bloc": "Crypto", "mode": "market", "isin": "X-BTC", "qty": 0.05, "pru": 42000, "qty_estimated": false },
+    { "ref": "eth", "name": "Ethereum", "envelope": "Crypto", "owner": "p1", "bloc": "Crypto", "mode": "market", "isin": "X-ETH", "qty": 0.9, "pru": 1900, "qty_estimated": true, "note": "Quantité estimée : relevé de la plateforme introuvable." }
+  ],
+  "budget": [
+    { "id": "bl-loyer", "type": "depense", "categorie": "Logement", "libelle": "Loyer et charges", "montant": 920, "frequence": "mois" },
+    { "id": "bl-energie", "type": "depense", "categorie": "Logement", "libelle": "Électricité", "montant": 60, "frequence": "mois" },
+    { "id": "bl-courses", "type": "depense", "categorie": "Alimentation", "libelle": "Courses et déjeuners", "montant": 430, "frequence": "mois" },
+    { "id": "bl-transport", "type": "depense", "categorie": "Transport", "libelle": "Transports et déplacements professionnels", "montant": 160, "frequence": "mois" },
+    { "id": "bl-cotisations", "type": "depense", "categorie": "Impôts", "libelle": "Provision pour cotisations et impôts", "montant": 700, "frequence": "mois" },
+    { "id": "bl-sante", "type": "depense", "categorie": "Santé", "libelle": "Mutuelle et prévoyance", "montant": 110, "frequence": "mois" },
+    { "id": "bl-loisirs", "type": "depense", "categorie": "Loisirs", "libelle": "Sorties et voyages", "montant": 230, "frequence": "mois" },
+    { "id": "bl-abos", "type": "depense", "categorie": "Abonnements", "libelle": "Téléphone, logiciels, abonnements", "montant": 120, "frequence": "mois" },
+    { "id": "bl-divers", "type": "depense", "categorie": "Divers", "libelle": "Imprévus", "montant": 100, "frequence": "mois" },
+    { "id": "bl-livret", "type": "epargne", "categorie": "Épargne", "libelle": "Livret A", "montant": 200, "frequence": "mois" }
+  ],
+  "objectifs": [
+    { "nom": "Matelas de précaution (6 mois)", "type": "matelas", "cible": 15600, "date_cible": "M+12", "deja": 0, "source": "poches", "poches": ["Épargne"], "rendement": 2.4, "priorite": 1 }
+  ],
+  "config": {
+    "targets": {},
+    "rules": [{ "type": "max_bloc_pct", "bloc": "Crypto", "pct": 10 }],
+    "cushion": { "mode": "months", "months": 6, "depenses": 2600 },
+    "recurring": [],
+    "todo": [{ "text": "Retrouver le relevé de la plateforme crypto pour confirmer les quantités", "done": false }],
+    "enveloppes_infos": {},
+    "donations": [],
+    "avis_impot": {},
+    "projection": { "reste_capacite": "disponible", "tmi_pct": 30, "source": "Ce que tu as dit à Claude (exemple)", "le": "J-20" }
+  },
+  "historique": { "mois": 12, "pente_pct": 0.6, "graine": 41 },
+  "memoire": [
+    { "categorie": "contexte", "contenu": "Inès est architecte indépendante ; ses revenus varient beaucoup d'un mois à l'autre.", "source": "Claude", "il_y_a_jours": 20 },
+    { "categorie": "a_suivre", "contenu": "Retrouver le relevé de la plateforme crypto pour confirmer les quantités.", "source": "Claude", "il_y_a_jours": 20, "echeance": "J+10" }
+  ]
+}

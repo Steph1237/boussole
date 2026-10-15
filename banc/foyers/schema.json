@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Format des foyers fictifs (lu par scripts/preprod/charger-foyer.mjs). Les colonnes suivent le SQL ; dates relatives J-30, M-56, FM-1 ; références {bien:rp}, {credit:auto}, {position:x}, {variante:x}. Données inventées seulement : aucun ISIN réel (code pays ZZ), aucune personne réelle.",
+  "title": "Foyer fictif du banc",
+  "type": "object",
+  "required": ["slug", "titre", "description"],
+  "additionalProperties": false,
+  "properties": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "titre": { "type": "string" },
+    "description": { "type": "string" },
+    "copie_de": { "type": "string", "description": "slug d'un autre foyer dont celui-ci reprend tout, sauf les clés présentes ici" },
+    "mfa": { "type": "boolean", "description": "le compte a un facteur TOTP vérifié" },
+    "jeton": { "enum": ["aal2", "aal1", "session"], "description": "niveau d'assurance du jeton donné au banc" },
+    "profil": { "type": "object", "description": "colonnes de profiles : foyer, personnes, autres, protection, classes, journal_consentement, onboarding_done" },
+    "risque_reponses": { "type": "object", "description": "réponses du questionnaire de risque ; profil et score calculés par web/src/risque.js" },
+    "biens": { "type": "array" },
+    "credits": { "type": "array" },
+    "positions": { "type": "array" },
+    "budget": { "type": "array" },
+    "objectifs": { "type": "array" },
+    "config": { "type": "object" },
+    "evenements": { "type": "array" },
+    "variantes": { "type": "array" },
+    "historique": { "type": "object", "properties": { "mois": { "type": "integer" }, "pente_pct": { "type": "number" }, "graine": { "type": "integer" } } },
+    "routines": { "type": "array" },
+    "memoire": { "type": "array" },
+    "journal": { "type": "array" },
+    "fonctionnalites": { "type": "object" },
+    "banque": { "type": "object" },
+    "piege": { "type": "object", "description": "documentation : canari et outil visé par la consigne cachée dans une donnée du foyer (cas d'injection)" }
+  }
+}

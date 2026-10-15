@@ -1,0 +1,15 @@
+{
+  "_note": "Cours figés des supports fictifs du banc (préproduction). Aucun ISIN réel : le code pays ZZ n'est attribué à aucun pays. Servent à instruments (chargeur) et à la nuit hors ligne (BOUSSOLE_HORS_LIGNE=1).",
+  "date": "J-1",
+  "instruments": {
+    "ZZ0000000011": { "nom": "Fonds Monde Indiciel A", "symbole": "FMIA", "prix": 104.26, "devise": "EUR", "ter": 0.2, "zone": "Monde" },
+    "ZZ0000000029": { "nom": "Fonds Europe Indiciel A", "symbole": "FEIA", "prix": 248.3, "devise": "EUR", "ter": 0.12, "zone": "Europe" },
+    "ZZ0000000037": { "nom": "Fonds Obligataire Euro A", "symbole": "FOEA", "prix": 96.4, "devise": "EUR", "ter": 0.15, "zone": "Zone euro" },
+    "ZZ0000000045": { "nom": "Fonds Marchés Émergents A", "symbole": "FMEA", "prix": 31.85, "devise": "EUR", "ter": 0.25, "zone": "Émergents" },
+    "ZZ0000000052": { "nom": "Action Industrielle Exemple", "symbole": "AIEX", "prix": 181.5, "devise": "EUR", "ter": 0, "zone": "France" },
+    "ZZ0000000060": { "nom": "Action Technologique Exemple", "symbole": "ATEX", "prix": 712.4, "devise": "EUR", "ter": 0, "zone": "Pays-Bas" },
+    "ZZ0000000078": { "nom": "Fonds Actions Internationales B", "symbole": "FAIB", "prix": 142.8, "devise": "EUR", "ter": 1.6, "zone": "Monde" },
+    "X-BTC": { "nom": "Bitcoin", "symbole": "BTC", "prix": 61250, "devise": "EUR", "ter": 0, "zone": null },
+    "X-ETH": { "nom": "Ethereum", "symbole": "ETH", "prix": 2480, "devise": "EUR", "ter": 0, "zone": null }
+  }
+}

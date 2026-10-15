@@ -2,7 +2,7 @@
 # dans test/preprod-config.test.mjs (DIFFERENCES_PERMISES) diffèrent. Ne se pousse JAMAIS : le dossier
 # .preprod/ n'est pas lié à un projet distant (aucune commande `supabase link`, `db push` ni `config push`).
 #   Différences : project_id, site_url et redirections (page locale :8780), chemin de la page de consentement OAuth,
-#   limites de débit d'authentification relevées (le banc crée un compte par cas), ports 545xx (d'autres piles locales de la
+#   exposition automatique des nouvelles tables (comme la production), limites de débit d'authentification relevées (le banc crée un compte par cas), ports 545xx (d'autres piles locales de la
 #   machine occupent déjà 54321-54324 : le CLI donne ces valeurs à tous les projets).
 project_id = "boussole-preprod"
 
@@ -23,7 +23,11 @@ max_rows = 1000
 # without explicit GRANTs. When unset, new entities are NOT auto-exposed, matching the new cloud
 # default. Set to `true` to keep the legacy behaviour of auto-exposing new entities; this is
 # deprecated and the field is removed on 2026-10-30 once the always-revoked behaviour is permanent.
-# auto_expose_new_tables = true
+# PRÉPRODUCTION : activé. Les migrations de Boussole supposent l'exposition automatique de la production (aucun GRANT explicite à
+# service_role sur les tables : la nuit, les tests et le chargeur écrivent avec la clé de service). Sans cette ligne, le CLI local
+# 2.107.0 ne donne rien à service_role (« permission denied for table instruments »). Le champ disparaît du CLI le 2026-10-30 :
+# voir le rapport de la phase 1 (SEC5).
+auto_expose_new_tables = true
 
 [api.tls]
 # Enable HTTPS endpoints locally using a self-signed certificate.

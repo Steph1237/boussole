@@ -1,0 +1,597 @@
+{
+  "slug": "couple-enfants",
+  "titre": "Camille et Karim, 38 et 40 ans, deux enfants, projet d'école privée",
+  "description": "Couple marié, deux enfants de 4 et 7 ans, résidence principale avec un crédit qui se rembourse, assurance-vie, PER et PEA. Sert aux projections avec événements de vie, au quotient familial, aux objectifs multiples et à la revue mensuelle.",
+  "mfa": false,
+  "jeton": "session",
+  "profil": {
+    "foyer": {
+      "adultes": 2,
+      "enfants": 2,
+      "enfants14": 0,
+      "union": "joint",
+      "age": "a30",
+      "tmi": 30
+    },
+    "personnes": {
+      "p1": {
+        "nom": "Camille",
+        "naissance": "1988-09-02",
+        "salaire": 3100,
+        "salaireUnite": "nm",
+        "statut": "cadre",
+        "csp": "cadre",
+        "essai": false,
+        "autresRevenus": 0
+      },
+      "p2": {
+        "nom": "Karim",
+        "naissance": "1986-02-17",
+        "salaire": 3600,
+        "salaireUnite": "nm",
+        "statut": "cadre",
+        "csp": "cadre",
+        "essai": false,
+        "autresRevenus": 0
+      }
+    },
+    "autres": {
+      "p1": {
+        "usage": 9000,
+        "entreprise": 0
+      },
+      "p2": {
+        "usage": 11000,
+        "entreprise": 0
+      }
+    },
+    "protection": {
+      "p1": {
+        "prevoyance": true,
+        "emprunteur": true
+      },
+      "p2": {
+        "prevoyance": false,
+        "emprunteur": true
+      }
+    },
+    "journal_consentement": "prevenir",
+    "onboarding_done": true
+  },
+  "risque_reponses": {
+    "horizon": "gt15",
+    "objectif": "croissance",
+    "reaction": "rien",
+    "perte_max": "p35",
+    "connaissances": [
+      "livrets",
+      "fonds_euros",
+      "etf",
+      "actions"
+    ],
+    "experience": 5,
+    "revenus": "cdi",
+    "matelas": "oui",
+    "part_investie": "50-75",
+    "age": "a30"
+  },
+  "biens": [
+    {
+      "ref": "rp",
+      "nom": "Maison (résidence principale)",
+      "usage": "rp",
+      "valeur": 310000,
+      "part_p1": 50,
+      "crd": 118000,
+      "mensualite": 1150,
+      "loyer": 0
+    }
+  ],
+  "credits": [],
+  "positions": [
+    {
+      "ref": "livret-a-camille",
+      "name": "Livret A",
+      "envelope": "Livrets Camille",
+      "owner": "p1",
+      "bloc": "Épargne",
+      "mode": "manual",
+      "value": 15000,
+      "value_date": "J-3"
+    },
+    {
+      "ref": "livret-a-karim",
+      "name": "Livret A",
+      "envelope": "Livrets Karim",
+      "owner": "p2",
+      "bloc": "Épargne",
+      "mode": "manual",
+      "value": 11500,
+      "value_date": "J-3"
+    },
+    {
+      "ref": "ldds",
+      "name": "LDDS",
+      "envelope": "Livrets Camille",
+      "owner": "p1",
+      "bloc": "Épargne",
+      "mode": "manual",
+      "value": 7200,
+      "value_date": "J-3"
+    },
+    {
+      "ref": "compte-joint",
+      "name": "Compte courant commun",
+      "envelope": "Comptes courants",
+      "owner": "p2",
+      "bloc": "Comptes courants",
+      "mode": "manual",
+      "value": 4100,
+      "value_date": "J-1"
+    },
+    {
+      "ref": "av-euros",
+      "name": "Fonds en euros",
+      "envelope": "Assurance vie Karim",
+      "owner": "p2",
+      "bloc": "Obligations",
+      "mode": "manual",
+      "value": 32000,
+      "value_date": "FM-1"
+    },
+    {
+      "ref": "av-monde",
+      "name": "Fonds Monde Indiciel A",
+      "envelope": "Assurance vie Karim",
+      "owner": "p2",
+      "bloc": "Monde",
+      "mode": "market",
+      "isin": "ZZ0000000011",
+      "qty": 190,
+      "pru": 88
+    },
+    {
+      "ref": "per-camille",
+      "name": "PER Camille",
+      "envelope": "PER Camille",
+      "owner": "p1",
+      "bloc": "Monde",
+      "mode": "manual",
+      "value": 14600,
+      "value_date": "FM-1"
+    },
+    {
+      "ref": "pea-monde",
+      "name": "Fonds Monde Indiciel A",
+      "envelope": "PEA Camille",
+      "owner": "p1",
+      "bloc": "Monde",
+      "mode": "market",
+      "isin": "ZZ0000000011",
+      "qty": 120,
+      "pru": 89.5
+    },
+    {
+      "ref": "pea-europe",
+      "name": "Fonds Europe Indiciel A",
+      "envelope": "PEA Camille",
+      "owner": "p1",
+      "bloc": "Europe",
+      "mode": "market",
+      "isin": "ZZ0000000029",
+      "qty": 30,
+      "pru": 221
+    }
+  ],
+  "budget": [
+    {
+      "id": "bl-copro",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Entretien et assurance de la maison",
+      "montant": 160,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-energie",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Électricité et gaz",
+      "montant": 190,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-mrh",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Assurance habitation",
+      "montant": 35,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-taxe-fonciere",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Taxe foncière",
+      "montant": 1650,
+      "frequence": "an"
+    },
+    {
+      "id": "bl-courses",
+      "type": "depense",
+      "categorie": "Alimentation",
+      "libelle": "Courses",
+      "montant": 950,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-voitures",
+      "type": "depense",
+      "categorie": "Transport",
+      "libelle": "Deux voitures : carburant, entretien, assurance",
+      "montant": 380,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-cantine",
+      "type": "depense",
+      "categorie": "Enfants",
+      "libelle": "Cantine et périscolaire",
+      "montant": 210,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-activites",
+      "type": "depense",
+      "categorie": "Enfants",
+      "libelle": "Activités des enfants",
+      "montant": 140,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-sante",
+      "type": "depense",
+      "categorie": "Santé",
+      "libelle": "Mutuelle famille et restes à charge",
+      "montant": 120,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-loisirs",
+      "type": "depense",
+      "categorie": "Loisirs",
+      "libelle": "Sorties et vacances",
+      "montant": 450,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-abos",
+      "type": "depense",
+      "categorie": "Abonnements",
+      "libelle": "Téléphones, internet, streaming",
+      "montant": 90,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-ir",
+      "type": "depense",
+      "categorie": "Impôts",
+      "libelle": "Impôt sur le revenu (prélèvement mensualisé)",
+      "montant": 360,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-divers",
+      "type": "depense",
+      "categorie": "Divers",
+      "libelle": "Cadeaux et imprévus",
+      "montant": 180,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-livret",
+      "type": "epargne",
+      "categorie": "Épargne",
+      "libelle": "Livret A Camille",
+      "montant": 250,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-pea",
+      "type": "epargne",
+      "categorie": "Épargne",
+      "libelle": "PEA Camille",
+      "montant": 300,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-av",
+      "type": "epargne",
+      "categorie": "Épargne",
+      "libelle": "Assurance vie Karim",
+      "montant": 200,
+      "frequence": "mois"
+    },
+    {
+      "id": "bl-per",
+      "type": "epargne",
+      "categorie": "Épargne",
+      "libelle": "PER Camille",
+      "montant": 200,
+      "frequence": "mois"
+    }
+  ],
+  "objectifs": [
+    {
+      "nom": "Matelas de précaution",
+      "type": "matelas",
+      "cible": 27000,
+      "date_cible": "M+8",
+      "deja": 0,
+      "source": "poches",
+      "poches": [
+        "Épargne"
+      ],
+      "rendement": 2.4,
+      "priorite": 1
+    },
+    {
+      "nom": "École privée de l'aîné",
+      "type": "projet",
+      "cible": 20000,
+      "date_cible": "M+24",
+      "deja": 0,
+      "source": "saisi",
+      "poches": [],
+      "rendement": 2,
+      "priorite": 2
+    },
+    {
+      "nom": "Travaux de la cuisine",
+      "type": "projet",
+      "cible": 15000,
+      "date_cible": "M+18",
+      "deja": 3000,
+      "source": "saisi",
+      "poches": [],
+      "rendement": 2,
+      "priorite": 3
+    },
+    {
+      "nom": "Retraite",
+      "type": "retraite",
+      "cible": 500000,
+      "date_cible": "2052-01-01",
+      "deja": 0,
+      "source": "poches",
+      "poches": [
+        "Monde",
+        "Europe"
+      ],
+      "rendement": 5,
+      "priorite": 4
+    }
+  ],
+  "config": {
+    "targets": {
+      "p1": {
+        "Monde": 55,
+        "Europe": 15,
+        "Épargne": 30
+      },
+      "p2": {
+        "Obligations": 40,
+        "Monde": 20,
+        "Épargne": 40
+      },
+      "tolerancePts": 3
+    },
+    "rules": [
+      {
+        "type": "envelope_cap",
+        "envelope": "Livrets Camille",
+        "cap": 22950
+      },
+      {
+        "type": "max_line_pct",
+        "pct": 25
+      }
+    ],
+    "cushion": {
+      "mode": "amount",
+      "min": 24000,
+      "max": 30000
+    },
+    "recurring": [
+      {
+        "id": "rec-pea",
+        "label": "Versement PEA Camille",
+        "positionRef": "pea-monde",
+        "amount": 300,
+        "day": 5,
+        "start": "M-20",
+        "lastApplied": null,
+        "hypothesis": null
+      },
+      {
+        "id": "rec-livret",
+        "label": "Épargne Livret A Camille",
+        "positionRef": "livret-a-camille",
+        "amount": 250,
+        "day": 1,
+        "start": "M-20",
+        "lastApplied": null,
+        "hypothesis": null
+      }
+    ],
+    "todo": [
+      {
+        "text": "Comparer l'école privée visée et le coût sur dix ans",
+        "done": false
+      }
+    ],
+    "milestones": [
+      {
+        "title": "Rentrée en CP du cadet",
+        "date": "M+11",
+        "warnDays": 60,
+        "text": "Revoir la cantine et le périscolaire."
+      }
+    ],
+    "enveloppes_infos": {
+      "PEA Camille": {
+        "type": "pea",
+        "titulaire": "p1",
+        "date_ouverture": "M-80",
+        "versements_cumules": 24000,
+        "source": "Relevé annuel du PEA (exemple)",
+        "le": "J-40"
+      },
+      "Assurance vie Karim": {
+        "type": "assurance_vie",
+        "titulaire": "p2",
+        "date_ouverture": "M-132",
+        "versements_cumules": 41000,
+        "versements_avant_70": 41000,
+        "source": "Conditions particulières du contrat (exemple)",
+        "le": "J-40"
+      },
+      "PER Camille": {
+        "type": "per",
+        "titulaire": "p1",
+        "date_ouverture": "M-60",
+        "versements_cumules": 13000,
+        "source": "Relevé annuel du PER (exemple)",
+        "le": "J-40"
+      }
+    },
+    "prets_infos": {
+      "bien:{bien:rp}": {
+        "date_signature": "M-96",
+        "duree_mois": 240,
+        "source": "Offre de prêt (exemple)",
+        "le": "J-40"
+      }
+    },
+    "donations": [],
+    "avis_impot": {
+      "revenu_fiscal_reference": 74000,
+      "parts": 3,
+      "annee": 2025,
+      "source": "Avis d'impôt (exemple)",
+      "le": "J-60"
+    },
+    "projection": {
+      "reste_capacite": "disponible",
+      "tmi_pct": 30,
+      "source": "Ce que tu as dit à Claude (exemple)",
+      "le": "J-20"
+    }
+  },
+  "evenements": [
+    {
+      "ref": "e1",
+      "type": "naissance",
+      "personne": "foyer",
+      "libelle": "Enfant 1",
+      "date": "M-84",
+      "params": {
+        "enfant": "Enfant 1",
+        "cout_mode": "uc"
+      }
+    },
+    {
+      "ref": "e2",
+      "type": "naissance",
+      "personne": "foyer",
+      "libelle": "Enfant 2",
+      "date": "M-48",
+      "params": {
+        "enfant": "Enfant 2",
+        "cout_mode": "uc"
+      }
+    },
+    {
+      "ref": "e3",
+      "type": "scolarite_privee",
+      "personne": "foyer",
+      "libelle": "École privée de l'aîné",
+      "date": "M+10",
+      "params": {
+        "enfant": "Enfant 1",
+        "niveau": "college",
+        "frais_annuels": 4200
+      }
+    }
+  ],
+  "variantes": [],
+  "historique": {
+    "mois": 12,
+    "pente_pct": 0.8,
+    "graine": 23
+  },
+  "routines": [
+    {
+      "type": "revue_mensuelle",
+      "jour": 5,
+      "active": true,
+      "consentement_journal": true,
+      "dernier_passage_il_y_a_jours": 33,
+      "prochain_passage": "J+2",
+      "questions": [
+        "As-tu des frais exceptionnels prévus ce mois-ci ?"
+      ],
+      "synthese": "Revue du mois dernier : matelas à 74 % de la cible, versements du PEA et du livret tenus."
+    }
+  ],
+  "memoire": [
+    {
+      "categorie": "contexte",
+      "contenu": "Camille et Karim ont deux enfants, de 7 et 4 ans.",
+      "source": "Claude",
+      "il_y_a_jours": 40,
+      "epingle": true
+    },
+    {
+      "categorie": "preference",
+      "contenu": "Karim veut comprendre les calculs ; Camille préfère le résultat d'abord.",
+      "source": "Claude",
+      "il_y_a_jours": 38
+    },
+    {
+      "categorie": "projet",
+      "contenu": "École privée pour l'aîné à l'entrée au collège, frais annuels d'environ 4 200 €.",
+      "source": "Claude",
+      "il_y_a_jours": 30
+    },
+    {
+      "categorie": "explique",
+      "contenu": "Le fonctionnement du PEA et de l'assurance-vie a déjà été expliqué.",
+      "source": "Claude",
+      "il_y_a_jours": 30
+    }
+  ],
+  "journal": [
+    {
+      "type": "decision",
+      "titre": "Les nouveaux versements vont au PEA de Camille",
+      "synthese": "Le matelas est presque constitué ; l'épargne nouvelle va vers le PEA plutôt que vers les livrets.",
+      "statut": "actif",
+      "options": [
+        {
+          "titre": "Livrets",
+          "retenue": false,
+          "pourquoi": "Disponible tout de suite, mais rendement proche de l'inflation."
+        },
+        {
+          "titre": "PEA",
+          "retenue": true,
+          "pourquoi": "Horizon long et fiscalité douce après cinq ans."
+        }
+      ],
+      "source": "Claude",
+      "il_y_a_jours": 36,
+      "date_decision": "J-36"
+    }
+  ]
+}

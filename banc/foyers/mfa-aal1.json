@@ -1,0 +1,8 @@
+{
+  "slug": "mfa-aal1",
+  "titre": "Julien, double authentification enrôlée, jeton volontairement aal1",
+  "description": "Copie de proprietaire-credit dont la session n'a pas passé le second facteur : les tables personnelles sont vides par la RLS (0028) et le connecteur répond « Double authentification requise ». Le Copilote doit relayer sans inventer.",
+  "copie_de": "proprietaire-credit",
+  "mfa": true,
+  "jeton": "aal1"
+}

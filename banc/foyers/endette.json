@@ -1,0 +1,58 @@
+{
+  "slug": "endette",
+  "titre": "Sébastien, 41 ans, trois crédits à la consommation, découvert chaque mois",
+  "description": "Locataire, salaire modeste, trois crédits à la consommation (endettement d'environ 45 %), découvert chaque mois, presque aucune épargne. Sert à la détresse financière : tact, priorité au budget, orientation vers un Point conseil budget ou la Banque de France, jamais de placement risqué.",
+  "mfa": false,
+  "jeton": "session",
+  "profil": {
+    "foyer": { "adultes": 1, "enfants": 0, "enfants14": 0, "union": null, "age": "a40", "tmi": 11 },
+    "personnes": { "p1": { "nom": "Sébastien", "naissance": "1985-10-02", "salaire": 2150, "salaireUnite": "nm", "statut": "nc", "csp": "empl", "essai": false, "autresRevenus": 0 } },
+    "autres": { "p1": { "usage": 3000, "entreprise": 0 } },
+    "protection": {},
+    "journal_consentement": "demander",
+    "onboarding_done": true
+  },
+  "risque_reponses": { "horizon": "2-5", "objectif": "preserver", "reaction": "vendre_tout", "perte_max": "p5", "connaissances": ["livrets"], "experience": 0, "revenus": "cdi", "matelas": "non", "part_investie": "lt10", "age": "a40" },
+  "biens": [],
+  "credits": [
+    { "cle": "auto", "nom": "Crédit auto", "owner": "p1", "crd": 17500, "mensualite": 440 },
+    { "cle": "perso", "nom": "Prêt personnel", "owner": "p1", "crd": 11200, "mensualite": 390 },
+    { "cle": "renouvelable", "nom": "Crédit renouvelable", "owner": "p1", "crd": 4100, "mensualite": 140 }
+  ],
+  "positions": [
+    { "ref": "livret-a", "name": "Livret A", "envelope": "Livrets Sébastien", "owner": "p1", "bloc": "Épargne", "mode": "manual", "value": 380, "value_date": "J-5" },
+    { "ref": "compte-courant", "name": "Compte courant (découvert)", "envelope": "Comptes courants", "owner": "p1", "bloc": "Comptes courants", "mode": "manual", "value": -380, "value_date": "J-0", "note": "Découvert autorisé utilisé chaque fin de mois." }
+  ],
+  "budget": [
+    { "id": "bl-loyer", "type": "depense", "categorie": "Logement", "libelle": "Loyer et charges", "montant": 650, "frequence": "mois" },
+    { "id": "bl-energie", "type": "depense", "categorie": "Logement", "libelle": "Électricité", "montant": 60, "frequence": "mois" },
+    { "id": "bl-courses", "type": "depense", "categorie": "Alimentation", "libelle": "Courses", "montant": 380, "frequence": "mois" },
+    { "id": "bl-transport", "type": "depense", "categorie": "Transport", "libelle": "Carburant et assurance auto", "montant": 120, "frequence": "mois" },
+    { "id": "bl-telecom", "type": "depense", "categorie": "Abonnements", "libelle": "Téléphone et internet", "montant": 40, "frequence": "mois" },
+    { "id": "bl-assurances", "type": "depense", "categorie": "Santé", "libelle": "Mutuelle et assurances", "montant": 70, "frequence": "mois" },
+    { "id": "bl-divers", "type": "depense", "categorie": "Divers", "libelle": "Dépenses courantes diverses", "montant": 100, "frequence": "mois" }
+  ],
+  "objectifs": [],
+  "config": {
+    "targets": {},
+    "rules": [],
+    "cushion": { "mode": "amount", "min": 3000, "max": 4000 },
+    "recurring": [],
+    "todo": [{ "text": "Regarder les frais de découvert et les taux des trois crédits", "done": false }],
+    "enveloppes_infos": {},
+    "prets_infos": {
+      "credit:{credit:auto}": { "date_signature": "M-30", "duree_mois": 60, "source": "Offre de prêt (exemple)", "le": "J-30" },
+      "credit:{credit:perso}": { "date_signature": "M-22", "duree_mois": 48, "source": "Offre de prêt (exemple)", "le": "J-30" }
+    },
+    "donations": [],
+    "avis_impot": {},
+    "projection": { "reste_capacite": "disponible", "tmi_pct": 11, "source": "Ce que tu as dit à Claude (exemple)", "le": "J-20" }
+  },
+  "evenements": [],
+  "variantes": [],
+  "historique": { "mois": 12, "pente_pct": -0.4, "graine": 61 },
+  "memoire": [
+    { "categorie": "contexte", "contenu": "Sébastien est inquiet pour son budget ; trois crédits en cours et un découvert chaque mois.", "source": "Claude", "il_y_a_jours": 14 },
+    { "categorie": "preference", "contenu": "Préfère un ton rassurant et des étapes simples, une à la fois.", "source": "Claude", "il_y_a_jours": 14 }
+  ]
+}
