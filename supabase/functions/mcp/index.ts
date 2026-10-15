@@ -849,7 +849,7 @@ function coutsPrincipaux(L: any[], nb = 3) {
     total null sous SCORE_MIN_CRITERES critères calculés ; couverture, provisoire sous 60 %, points perdus et contrat de chaque critère. */
 function scoreSante(d: Donnees, scope: string) {
   const totaux = budgetTotaux(d, scope);
-  const items = [
+  const items: any[] = [
     itemMatelas(d, scope, totaux),
     itemEpargne(totaux),
     itemEndettement(totaux, d, scope),

@@ -374,7 +374,7 @@ Affichée dans **Patrimoine › Immobilier et crédits** (module `bilan`), avec 
 ### 8.3 Une seule logique
 - `annuity`, `loanPlan`, `ptzInfo`, `taeg`, `amortization` de `toise.js` passent dans `projection.js` (sous les noms `annuite`, `planPret`, `ptz`, `taeg`, `amortissement`) ; `toise.js` appelle le moteur. Les constantes `LOAN` deviennent des repères (taux, frais d'acquisition, garantie, frais de dossier, pondération des loyers) ; `LOAN.ins` (assurance par âge) reste une convention de Rang, citée comme telle.
 - `test/port.test.mjs` lie le bloc moteur de `toise.js` à `sources/toise.html` : ce bloc est réduit (les fonctions de crédit en sortent, la référence devient `projection.js`), avec un commentaire qui le justifie (décision 1).
-- Outil MCP `capacite_emprunt({ perimetre?, date?, scenario?: "p10"|"p50"|"p90", duree_ans?, neuf?, primo?, variante? })` (lecture) : aujourd'hui si `date` est absente, sinon la valeur de la trajectoire à cette date.
+- Outil MCP `capacite_emprunt` (lecture, § 15) : aujourd'hui, et avec `dans_le_temps: true` la capacité année par année (point précis à `date`, trajectoire d'apport `scenario`).
 
 ## 9. Performance
 
@@ -691,6 +691,7 @@ V-1 à V-15 : 15 événements (dont `changement_emploi`, `conge_parental`, garde
 ### 13.3 Objectifs existants
 - **Cible en euros d'aujourd'hui** : changement de sens annoncé une fois (bandeau dans Objectifs, et le Copilote le dit à la prochaine session : « tes cibles sont maintenant lues en euros d'aujourd'hui ; dis-moi si une cible était déjà prévue en euros de l'époque »). Aucune donnée n'est réécrite.
 - **Statut** : les clés existantes restent (`atteint`, `avance`, `dans_les_temps`, `retard`, `hors_portee`) pour l'interface et le connecteur ; elles sont calculées sur le chemin déterministe, et la probabilité (§ 10.7) s'affiche à côté. SCO1 remplacera la jauge par la probabilité.
+- Statuts d'un objectif, dans cet ordre : `atteint` (déjà réuni ≥ cible) ; `hors_portee` (échéance passée et non atteint) ; **`hors_horizon`** (échéance au-delà de l'horizon de la projection : aucune probabilité, `probabilite` et `mot` nuls) ; puis `avance`, `dans_les_temps`, `retard` d'après le chemin déterministe. L'interface traite `hors_horizon` comme « pas de verdict ».
 - `repartirEpargne` est appelé par le moteur (cascade, § 6.2, étape 3) : une seule répartition partout.
 
 ### 13.4 Ordre de migration
@@ -723,6 +724,7 @@ foyer_variantes (
   created_at, updated_at
 )
 ```
+- **Livré (migration 0031, séparée de 0030 qui ne porte que les repères)** : le CHECK de `type` ne laisse que les **10 types V1** (les 7 réservés sont refusés par la table comme par la RPC) ; `date >= 1950-01-01` ; `params` et `hypotheses` ≤ 20 000 octets ; `cardinality(retire) <= 100` ; des déclencheurs BEFORE INSERT / UPDATE appellent `foyer_valider_evenement` et `foyer_valider_variante` (mêmes règles et messages que `web/src/projection-evenements.js`), de sorte qu'une écriture directe ne contourne pas la validation de la proposition ; `plans_figes.cree_le` est forcé à `now()` (un plan ne s'antidate pas), les plans sont immuables (pas d'`update`), `parametres` ≤ 100 000 octets et `serie` ≤ 250 000 octets mesurés en `octet_length(jsonb::text)` ; `propositions.apres` ≤ 400 000 octets pour `plan_fige` seulement.
 - Index sur `user_id` ; `variante_id` doit appartenir au même utilisateur (déclencheur ou contrôle dans `appliquer_propositions`) ; 100 événements et 10 variantes au plus par utilisateur ; `updated_at` par le déclencheur existant.
 - **RLS** : politiques de propriétaire (`user_id = auth.uid()`) en `select` seulement pour `authenticated` (l'écriture passe par `appliquer_propositions`, `security invoker` : droits `insert/update/delete` accordés comme pour `objectifs`, mêmes politiques). **Politique restrictive** `"<table>: aal2 si facteur"` (modèle exact de 0028). `test/mfa-pglite.test.mjs` énumère déjà les tables à `user_id` : il échoue tant qu'elles n'ont pas leur politique.
 - **Export** : `export_all()` repart de sa dernière définition (0021) et ajoute `foyer_evenements` et `foyer_variantes`. **Suppression** : `on delete cascade` depuis `auth.users` (`delete_me`).
@@ -739,15 +741,18 @@ Les lignes du § 11.4 dont la valeur est vérifiée ou conventionnelle (statut V
 
 ## 15. Connecteur MCP
 
+Outils tels que livrés (le tableau d'origine a été corrigé après la revue du 2026-10-15 ; écarts avec la première rédaction signalés en § 18).
+
 | Outil | Annotations | Rôle |
 |---|---|---|
-| `decrire_foyer({ evenements?: [...], variante?: {...}, reglages_projection?: {...}, justification? })` | RW | Dépose des propositions (`evenement`, `variante`, `config.projection`), 10 événements au plus par appel, après validation (`Projection.validerEvenement`). Renvoie les propositions et les valeurs par défaut appliquées, avec leurs sources. |
-| `lire_foyer()` | RO | Événements, variantes, réglages, jalons dérivés (DAT1, fins de crédit), données à compléter. |
-| `projeter({ horizon_ans?, vue?, perimetre?, euros?, net_impots?, variante?, crise?: { cle, date }, annees?: [..] })` | RO | Résumé : phrase de titre, centiles par année, **`existant` et `epargne_future` par année** (§ 6.7), **`capacite_base`** (constatée, prévue, programmée, retenue) et **`capacite_par_periode`**, **`decomposition`** et **`garde_fous`** (§ 6.8), **`evenements_pris_en_compte`** (§ 7.3), probabilités des objectifs, « manquer d'argent », jalons et effets, hypothèses et sources (rendement central et historique), couverture, `retro` si affichable, `version_modele`, `graine`. Pas les 2 000 chemins. |
-| `comparer_variantes({ variantes: [null, id, ...], horizon_ans?, vue? })` | RO | Écarts par centile à l'horizon, probabilité que chaque variante fasse mieux (chemin par chemin), mêmes tirages. |
-| `capacite_emprunt({ perimetre?, date?, scenario?, duree_ans?, neuf?, primo?, variante? })` | RO | § 8. |
+| `decrire_foyer({ evenements?: [...], variantes?: [...], reglages?: {...}, source, justification?, lot? })` | RW | Dépose des propositions (`evenement`, `variante`, `config.projection`) : événements à créer (sans `id`), modifier (avec `id`, seuls les champs fournis changent) ou supprimer (`supprimer: true`), 10 événements et 10 variantes au plus par appel (100 et 10 au total), après validation par le moteur (mêmes messages que la base). Renvoie les propositions et `valeurs_par_defaut` (repère sourcé ou hypothèse dite comme telle). Aucune proposition si rien ne change. |
+| `figer_projection({ horizon_ans?, perimetre?, vue?, euros?, net_impots?, variante?, raison?: "revue_mensuelle"\|"objectif"\|"manuel", source, justification?, lot? })` | RW | Dépose une proposition `plan_fige` (60 au plus) : la projection d'aujourd'hui rangée avec de quoi la rejouer et sa série P10 à P90. Le plan n'est pas renvoyé. Tailles tenues sous les limites de la base (§ 14.1). |
+| `lire_foyer()` | RO | Événements, variantes, réglages de projection, plans figés (métadonnées), catalogue des types avec paramètres et valeurs par défaut, types réservés, limites, question à poser s'il n'y a aucun événement. |
+| `projeter({ horizon_ans?, perimetre?, vue?, euros?, net_impots?, variante?, crise?: { cle, debut? } })` | RO | Résumé : phrase de titre, bande P10 à P90 **par année pleine**, **`couches_a_l_horizon`** (`existant`, `epargne_future`, versements cumulés), **`capacite_base`** et **`capacite_par_periode`**, **`decomposition`** et **`garde_fous`** (§ 6.8), **`evenements_pris_en_compte`** et `question_evenements` (§ 7.3), objectifs avec probabilité, « manquer d'argent », 15 jalons au plus, hypothèses sourcées, couverture, avertissements, `version_modele`, `graine`, `conduite`. Pas les 2 000 chemins. `crise.debut` : date réelle entre aujourd'hui et la fin de l'horizon (sinon refus). `retro` n'est pas branché (§ 18). |
+| `comparer_variantes({ variante, reference?, horizon_ans?, perimetre?, vue?, euros?, net_impots? })` | RO | Compare la situation actuelle (ou la variante `reference`) à `variante`, sur les mêmes tirages : écarts P10 / P50 / P90 par année, probabilité que la variante fasse mieux, phrase. |
+| `capacite_emprunt({ perimetre?, duree_ans?, taux_pct?, neuf?, primo?, dans_le_temps?, horizon_ans?, date?, scenario? })` | RO | § 8 ; `dans_le_temps: true` ajoute `capaciteDansLeTemps` (points annuels) ; `date` (avec `dans_le_temps`) : entre aujourd'hui et la fin de l'horizon, sinon refus. Pas de paramètre `variante` (§ 18). |
 
-- Les outils lisent les tables, convertissent en formes de l'app et appellent **la copie générée** du moteur. `demarrer_session` ajoute `projection: { phrase, couverture, evenements_pris_en_compte, garde_fous }` (null en cas d'échec, sans lever), pour que le Copilote applique la règle 7 du § 7.3 dès le début.
+- Les outils lisent les tables, convertissent en formes de l'app et appellent **la copie générée** du moteur. `demarrer_session` ajoute `projection: { evenements: { nombre, a_venir (3 au plus), question }, variantes, plans_figes: { nombre, dernier }, version_modele }` (null en cas d'échec, sans lever) : une lecture légère, sans calcul, pour que le Copilote applique la règle 7 du § 7.3 dès le début. `list_objectifs` renvoie `probabilite` et `probabilite_mot` (moteur, 2 000 chemins ; null si le calcul échoue ou si l'échéance dépasse 25 ans).
 - Conduite (§ 7.3) ajoutée aux `INSTRUCTIONS` et renvoyée par `projeter`.
 - Expertise : la fiche de conduite de l'expertise « projection » (EX1) cite les outils ; le banc EX3 recevra des cas de référence (Opus, plus tard).
 
@@ -769,3 +774,20 @@ Les lignes du § 11.4 dont la valeur est vérifiée ou conventionnelle (statut V
 - Inflation et taux aléatoires ; queues épaisses ; surtaxe des plus-values immobilières ; option pour le barème ; imputation des moins-values ; frais de vente d'un bien.
 - Le simulateur « Acheter ou louer » (DEC1).
 - La page Pilotage › Projections (emplacement réservé dans `app.js`) : elle recevra la vue complète avec SIM3.
+
+## 18. Écarts acceptés et corrections de revue (2026-10-15)
+
+Écarts avec la première rédaction, décidés à la livraison ou à la revue Opus ; la fixture reste la référence des chiffres.
+- **Tolérance des cas composés (famille C)** : 0,02 € près (0,0107 observé), au lieu de 0,01.
+- **`retroControle` / `couverture`** : fonctions livrées et testées (BT-1, BT-2), pas encore branchées sur `projeter` (`retro: null`) ni sur l'interface : il leur manque la reconstitution HIS1 par poche, attendue avec SIM2.
+- **`capacite_emprunt`** n'accepte pas de paramètre `variante` : la capacité se lit sur la situation actuelle ; `capaciteDansLeTemps` suit les événements de la situation actuelle.
+- **Capacité observée sur 12 mois** : l'app et le connecteur chargent 13 mois de `banque_mois` (le mois en cours et 12 mois complets, depuis le jour de Paris) ; `Calc.budgetReel` en lit 12, sinon 6 au moins, sinon 3 (§ 6.1).
+- **Coût d'un enfant (§ 7.4)** : calculé sur les dépenses du **foyer** par unité de consommation ; la part d'une personne vient du facteur de l'événement (la moitié d'un événement du foyer), jamais d'une division répétée.
+- **Garde-fou de croissance à 5 ans (§ 6.8)** : compare le patrimoine financier du scénario central à `V0 + versements`, c'est-à-dire la même vue des deux côtés, quelle que soit la vue affichée (net avec la résidence et les dettes, ou après impôts). Il est supprimé quand `rendement_implicite` se déclenche (cas G-3).
+- **SCPI détenues en direct (§ 5.3)** : la distribution (`scpi_taux_distribution`) est versée chaque mois au compte courant après barème (TMI, 30 % supposé et dit si inconnu) et prélèvements fonciers (`ps_taux_foncier`) ; sans l'un des deux repères rien n'est distribué et la limite est dite. Un fonds immobilier coté (ISIN, cours) n'est jamais traité en SCPI.
+- **Apport futur** : les enveloppes dont l'impôt de sortie est inconnu (type à compléter, repère manquant) ne sont comptées dans aucun apport (aujourd'hui comme demain), et le sont dans `avertissements`.
+- **Crise et immobilier physique (§ 4.6)** : convention dite, le choc de la classe « immobilier » (mesuré sur les SCPI, IEIF) est appliqué à la résidence et aux biens loués ; affichée dans la crise et dans `hypotheses_classes`.
+- **Dates** : une date de début de crise ou d'achat envisagé absente, invalide, passée ou hors horizon rend le calcul indisponible avec la fenêtre permise ; jamais le mois 1 ou la dernière année en silence.
+- **Plans figés** : paramètres réduits par étapes dites (`parametres.reductions`), série espacée (`serie.pas_mois`) pour tenir sous les limites de la base ; les paramètres des événements sont limités aux clés connues de leur type.
+- **`figer` n'est plus une option de `projeter`** : outil séparé `figer_projection` (RW) ; `projeter` reste en lecture seule.
+- **Pas de portage de `effortMensuel`, `dateAtteinte`, `repartirEpargne`, `statutObjectif`** dans le connecteur (tâche 12) : seule `probabilite` est branchée sur le moteur.

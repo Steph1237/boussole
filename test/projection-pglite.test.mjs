@@ -198,46 +198,50 @@ const insVar = (uid, o = {}) => q(`insert into public.foyer_variantes (user_id, 
 const insPlan = (uid, o = {}) => q(`insert into public.plans_figes (user_id, raison, horizon_mois, parametres, serie) values ($1, $2, $3, $4, $5) returning id`,
   [uid, o.raison ?? "manuel", o.horizon_mois ?? 120, JSON.stringify(o.parametres ?? { a: 1 }), JSON.stringify(o.serie ?? { b: [1, 2] })]);
 
-test("foyer_evenements : 17 types acceptés par la table (dont les 7 réservés), type inconnu refusé", async () => {
+test("foyer_evenements : 10 types acceptés par la table ; les 7 réservés et un type inconnu refusés même en écriture directe", async () => {
   await superu();
-  for (const t of [...TYPES_V1, ...TYPES_RESERVES]) { await insEv(A, { type: t }); }
-  assert.equal((await un(`select count(*)::int n from public.foyer_evenements where user_id = '${A}'`)).n, 17);
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'inconnu', 'x', '2027-01-01', 's')`, /foyer_evenements_type_check/, "type inconnu");
+  const paramsDe = { naissance: { enfant: "Enfant 1" }, creche: { enfant: "Enfant 1" }, scolarite_privee: { enfant: "Enfant 1", niveau: "college", frais_annuels: 4000 },
+    achat_immobilier: { prix: 200000, apport: 20000, pret: { duree_ans: 20 }, charges_mensuelles: 100 }, retrait: { montant: 1000 }, hausse_revenu: { personne: "p1", delta_mensuel: 200 },
+    crise: { cle: "gfc_2008" }, changement_emploi: { personne: "p1", salaire_net_mensuel: 3000, revenu_reference_mensuel: 2500 }, conge_parental: { personne: "p1", activite: "arret", enfant: "Enfant 1", rang_enfant: 1 } };
+  for (const t of TYPES_V1.filter(x => paramsDe[x])) await insEv(A, { type: t, personne: t === "hausse_revenu" ? "p1" : "foyer", params: paramsDe[t], fin: t === "conge_parental" ? "2027-07-01" : null });
+  assert.equal((await un(`select count(*)::int n from public.foyer_evenements where user_id = '${A}'`)).n, TYPES_V1.filter(x => paramsDe[x]).length);
+  for (const t of TYPES_RESERVES) await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', '${t}', 'x', '2027-01-01', 's', '{}')`, /foyer_evenements_type_check|Ce type d'événement n'est pas encore pris en compte/, "type réservé " + t);
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'inconnu', 'x', '2027-01-01', 's')`, /foyer_evenements_type_check|Type d'événement inconnu/, "type inconnu");
   await vider();
 });
 test("foyer_evenements : personne, libellé 1-60, source 1-300, fin >= date, params objet, défauts", async () => {
   await superu();
-  const base = (extra = "") => `insert into public.foyer_evenements (user_id, type, libelle, date, source${extra ? ", " + extra.split("=")[0] : ""}) values ('${A}', 'retrait', 'x', '2027-01-01', 's'${extra ? ", " + extra.split("=")[1] : ""})`;
+  const base = (extra = "") => `insert into public.foyer_evenements (user_id, type, libelle, date, source, params${extra ? ", " + extra.split("=")[0] : ""}) values ('${A}', 'retrait', 'x', '2027-01-01', 's', '{"montant": 1}'${extra ? ", " + extra.split("=")[1] : ""})`;
   await db.exec(base());
   const d = await un(`select personne, params, fin, variante_id from public.foyer_evenements`);
-  assert.deepEqual([d.personne, d.params, d.fin, d.variante_id], ["foyer", {}, null, null]);
+  assert.deepEqual([d.personne, d.params, d.fin, d.variante_id], ["foyer", { montant: 1 }, null, null]);
   await vider();
-  await refuse(base("personne='p3'"), /foyer_evenements_personne_check/, "personne p3");
+  await refuse(base("personne='p3'"), /foyer_evenements_personne_check|La personne doit être p1, p2 ou foyer/, "personne p3");
   for (const p of ["p1", "p2", "foyer"]) { await db.exec(base(`personne='${p}'`)); }
   await vider();
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', '', '2027-01-01', 's')`, /libelle_check/, "libellé vide");
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', '${"x".repeat(61)}', '2027-01-01', 's')`, /libelle_check/, "libellé 61");
-  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', '${"x".repeat(60)}', '2027-01-01', 's')`);
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', 'x', '2027-01-01', '')`, /source_check/, "source vide");
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', 'x', '2027-01-01', '${"s".repeat(301)}')`, /source_check/, "source 301");
-  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', 'x', '2027-01-01', '${"s".repeat(300)}')`);
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, fin, source) values ('${A}', 'creche', 'x', '2027-01-02', '2027-01-01', 's')`, /foyer_evenements_fin/, "fin avant date");
-  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, fin, source) values ('${A}', 'creche', 'x', '2027-01-01', '2027-01-01', 's')`);
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', 's', '[]')`, /params_check/, "params tableau");
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', 's', '"texte"')`, /params_check/, "params texte");
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, source) values ('${A}', 'retrait', 'x', 's')`, /null value in column "date"/, "date obligatoire");
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', '', '2027-01-01', 's', '{"montant": 1}')`, /libelle_check|Le libellé doit faire de 1 à 60 caractères/, "libellé vide");
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', '${"x".repeat(61)}', '2027-01-01', 's', '{"montant": 1}')`, /libelle_check|Le libellé doit faire de 1 à 60 caractères/, "libellé 61");
+  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', '${"x".repeat(60)}', '2027-01-01', 's', '{"montant": 1}')`);
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', '', '{"montant": 1}')`, /source_check|Indique la source de l'information/, "source vide");
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', '${"s".repeat(301)}', '{"montant": 1}')`, /source_check|Indique la source de l'information/, "source 301");
+  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', '${"s".repeat(300)}', '{"montant": 1}')`);
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, fin, source, params) values ('${A}', 'creche', 'x', '2027-01-02', '2027-01-01', 's', '{"enfant": "Enfant 1"}')`, /foyer_evenements_fin|La date de fin doit être postérieure ou égale/, "fin avant date");
+  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, fin, source, params) values ('${A}', 'creche', 'x', '2027-01-01', '2027-01-01', 's', '{"enfant": "Enfant 1"}')`);
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', 's', '[]')`, /params_check|doivent former un objet/, "params tableau");
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', 's', '"texte"')`, /params_check|doivent former un objet/, "params texte");
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, source, params) values ('${A}', 'retrait', 'x', 's', '{"montant": 1}')`, /null value in column "date"|La date doit être comprise/, "date obligatoire");
   await vider();
 });
 test("foyer_variantes : nom 1-40, description <= 300, hypothèses en objet, retire par défaut vide", async () => {
   await superu();
-  await refuse(`insert into public.foyer_variantes (user_id, nom) values ('${A}', '')`, /nom_check/, "nom vide");
-  await refuse(`insert into public.foyer_variantes (user_id, nom) values ('${A}', '${"n".repeat(41)}')`, /nom_check/, "nom 41");
+  await refuse(`insert into public.foyer_variantes (user_id, nom) values ('${A}', '')`, /nom_check|Le nom de la variante doit faire de 1 à 40 caractères/, "nom vide");
+  await refuse(`insert into public.foyer_variantes (user_id, nom) values ('${A}', '${"n".repeat(41)}')`, /nom_check|Le nom de la variante doit faire de 1 à 40 caractères/, "nom 41");
   await db.exec(`insert into public.foyer_variantes (user_id, nom) values ('${A}', '${"n".repeat(40)}')`);
   const d = await un(`select description, retire, hypotheses from public.foyer_variantes`);
   assert.deepEqual([d.description, d.retire, d.hypotheses], ["", [], {}]);
-  await refuse(`insert into public.foyer_variantes (user_id, nom, description) values ('${A}', 'v', '${"d".repeat(301)}')`, /description_check/, "description 301");
+  await refuse(`insert into public.foyer_variantes (user_id, nom, description) values ('${A}', 'v', '${"d".repeat(301)}')`, /description_check|description de la variante doit faire 300/, "description 301");
   await db.exec(`insert into public.foyer_variantes (user_id, nom, description) values ('${A}', 'v', '${"d".repeat(300)}')`);
-  await refuse(`insert into public.foyer_variantes (user_id, nom, hypotheses) values ('${A}', 'v', '[]')`, /hypotheses_check/, "hypothèses tableau");
+  await refuse(`insert into public.foyer_variantes (user_id, nom, hypotheses) values ('${A}', 'v', '[]')`, /hypotheses_check|hypothèses de la variante doivent former un objet/, "hypothèses tableau");
   await vider();
 });
 test("plans_figes : raison, horizon 1-300, parametres et serie en objets, tailles 100 000 et 250 000 octets", async () => {
@@ -260,16 +264,16 @@ test("variante_id d'un autre utilisateur refusé (déclencheur), même pour le s
   await superu();
   const [vb] = await insVar(B, { nom: "Variante de B" });
   const [va] = await insVar(A, { nom: "Variante de A" });
-  await refuse(`insert into public.foyer_evenements (user_id, variante_id, type, libelle, date, source) values ('${A}', '${vb.id}', 'retrait', 'x', '2027-01-01', 's')`, /n'existe pas dans tes données/, "variante de B");
-  await refuse(`insert into public.foyer_evenements (user_id, variante_id, type, libelle, date, source) values ('${A}', gen_random_uuid(), 'retrait', 'x', '2027-01-01', 's')`, /n'existe pas dans tes données|foreign key/, "variante inconnue");
+  await refuse(`insert into public.foyer_evenements (user_id, variante_id, type, libelle, date, source, params) values ('${A}', '${vb.id}', 'retrait', 'x', '2027-01-01', 's', '{"montant": 1}')`, /n'existe pas dans tes données/, "variante de B");
+  await refuse(`insert into public.foyer_evenements (user_id, variante_id, type, libelle, date, source, params) values ('${A}', gen_random_uuid(), 'retrait', 'x', '2027-01-01', 's', '{"montant": 1}')`, /n'existe pas dans tes données|foreign key/, "variante inconnue");
   await service();
-  await refuse(`insert into public.foyer_evenements (user_id, variante_id, type, libelle, date, source) values ('${A}', '${vb.id}', 'retrait', 'x', '2027-01-01', 's')`, /n'existe pas dans tes données/, "service_role : variante de B");
+  await refuse(`insert into public.foyer_evenements (user_id, variante_id, type, libelle, date, source, params) values ('${A}', '${vb.id}', 'retrait', 'x', '2027-01-01', 's', '{"montant": 1}')`, /n'existe pas dans tes données/, "service_role : variante de B");
   await superu();
   const [e] = await insEv(A, { variante_id: va.id });
   await refuse(`update public.foyer_evenements set variante_id = '${vb.id}' where id = '${e.id}'`, /n'existe pas dans tes données/, "déplacement vers la variante de B");
   await db.exec(`update public.foyer_evenements set variante_id = null where id = '${e.id}'`);   // retour à la situation actuelle : permis
   await comme(A);
-  await refuse(`insert into public.foyer_evenements (variante_id, type, libelle, date, source) values ('${vb.id}', 'retrait', 'x', '2027-01-01', 's')`, /n'existe pas dans tes données/, "A (authenticated) vers la variante de B");
+  await refuse(`insert into public.foyer_evenements (variante_id, type, libelle, date, source, params) values ('${vb.id}', 'retrait', 'x', '2027-01-01', 's', '{"montant": 1}')`, /n'existe pas dans tes données/, "A (authenticated) vers la variante de B");
   await superu(); await vider();
 });
 test("suppression d'une variante : ses événements partent avec elle, les autres restent ; suppression de l'utilisateur : tout part", async () => {
@@ -299,9 +303,9 @@ test("delete_me() (security definer) : fermer son compte emporte événements, v
 /* =========================================================================================================== limites */
 test("limites par utilisateur (déclencheurs) : 100 événements, 10 variantes, 60 plans ; l'utilisateur voisin n'est pas touché", async () => {
   await superu(); await vider();
-  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source) select '${A}', 'retrait', 'e' || g, '2027-01-01', 's' from generate_series(1, 100) g`);
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', 'de trop', '2027-01-01', 's')`, /100 événements au plus/, "101e événement");
-  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${B}', 'retrait', 'B', '2027-01-01', 's')`);
+  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) select '${A}', 'retrait', 'e' || g, '2027-01-01', 's', '{"montant": 1}'::jsonb from generate_series(1, 100) g`);
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'de trop', '2027-01-01', 's', '{"montant": 1}')`, /100 événements au plus/, "101e événement");
+  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${B}', 'retrait', 'B', '2027-01-01', 's', '{"montant": 1}')`);
   await db.exec(`insert into public.foyer_variantes (user_id, nom) select '${A}', 'v' || g from generate_series(1, 10) g`);
   await refuse(`insert into public.foyer_variantes (user_id, nom) values ('${A}', 'de trop')`, /10 variantes au plus/, "11e variante");
   await db.exec(`insert into public.foyer_variantes (user_id, nom) values ('${B}', 'B')`);
@@ -341,7 +345,7 @@ test("RLS : B ne lit, ne modifie, ne supprime ni n'insère rien de A ; anon n'a 
   assert.equal((await db.query(`delete from public.foyer_evenements where id = '${ea.id}' returning id`)).rows.length, 0);
   assert.equal((await db.query(`delete from public.foyer_variantes where id = '${va.id}' returning id`)).rows.length, 0);
   assert.equal((await db.query(`delete from public.plans_figes where id = '${pa.id}' returning id`)).rows.length, 0);
-  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source) values ('${A}', 'retrait', 'x', '2027-01-01', 's')`, /row-level security/, "insertion pour A");
+  await refuse(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) values ('${A}', 'retrait', 'x', '2027-01-01', 's', '{"montant": 1}')`, /row-level security/, "insertion pour A");
   await refuse(`insert into public.foyer_variantes (user_id, nom) values ('${A}', 'x')`, /row-level security/, "variante pour A");
   await refuse(`insert into public.plans_figes (user_id, raison, horizon_mois, parametres, serie) values ('${A}', 'manuel', 12, '{}', '{}')`, /row-level security/, "plan pour A");
   await comme(A);
@@ -367,7 +371,7 @@ test("MFA : A (facteur vérifié) en aal1 ne voit ni n'écrit rien dans les troi
   for (const aal of ["aal1", "aucun"]) {
     await comme(A, aal);
     for (const t of ["foyer_evenements", "foyer_variantes", "plans_figes"]) assert.deepEqual(await q(`select 1 from public.${t}`), [], `${t} fermée en ${aal}`);
-    await refuse(`insert into public.foyer_evenements (type, libelle, date, source) values ('retrait', 'x', '2027-01-01', 's')`, /row-level security/, "écriture " + aal);
+    await refuse(`insert into public.foyer_evenements (type, libelle, date, source, params) values ('retrait', 'x', '2027-01-01', 's', '{"montant": 1}')`, /row-level security/, "écriture " + aal);
     await refuse(`insert into public.foyer_variantes (nom) values ('x')`, /row-level security/, "écriture variante " + aal);
     await refuse(`insert into public.plans_figes (raison, horizon_mois, parametres, serie) values ('manuel', 12, '{}', '{}')`, /row-level security/, "écriture plan " + aal);
   }
@@ -659,7 +663,7 @@ test("liste des crises et des classes de variante : celles de web/src/marche.js 
 
 test("limite de 100 événements par la RPC : le 100e passe, le 101e est refusé avec un message clair, rien n'est ajouté", async () => {
   await superu(); await vider();
-  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source) select '${A}', 'retrait', 'e' || g, '2027-01-01', 's' from generate_series(1, 99) g`);
+  await db.exec(`insert into public.foyer_evenements (user_id, type, libelle, date, source, params) select '${A}', 'retrait', 'e' || g, '2027-01-01', 's', '{"montant": 1}'::jsonb from generate_series(1, 99) g`);
   await comme(A);
   const e = { type: "retrait", personne: "foyer", libelle: "100e", date: "2027-01-01", params: { montant: 1 }, source: "s" };
   await accepte("evenement", e, "100e");
@@ -1088,4 +1092,36 @@ test("repères et indices : le bloc d'inserts se rejoue sans erreur ni doublon (
   assert.deepEqual(apres, avant);
   assert.equal((await un(`select valeur::float8 v from public.reperes where cle = 'inflation_hypothese'`)).v, FIXTURE.reperes.find(r => r.cle === "inflation_hypothese").valeur);
   assert.equal((await un(`select valeur::float8 v from public.indices_mensuels where mois = '2021-10-01'`)).v, FIXTURE.indices_mensuels.valeurs[0].valeur);
+});
+
+
+/* ========================================================================== écritures directes : les abus relevés à la revue refusés */
+test("écriture directe (revue) : type réservé daté de 1900 avec 2 Mo de paramètres, variante à 5 000 événements retirés, plan antidaté — tout refusé ou corrigé", async () => {
+  await comme(A);
+  const gros = JSON.stringify({ montant: 1, bourrage: "x".repeat(2_000_000) });
+  await refuse(`insert into public.foyer_evenements (type, libelle, date, source, params) values ('demenagement', 'x', '1900-01-01', 's', $1)`, /Ce type d'événement n'est pas encore pris en compte|foyer_evenements_type_check/, "type réservé 1900 + 2 Mo", [gros]);
+  await refuse(`insert into public.foyer_evenements (type, libelle, date, source, params) values ('retrait', 'x', '1900-01-01', 's', '{"montant": 1}')`, /La date doit être comprise entre le 1er janvier 1950/, "date de 1900");
+  await refuse(`insert into public.foyer_evenements (type, libelle, date, source, params) values ('retrait', 'x', '2027-01-01', 's', $1)`, /params_check|foyer_evenements_params_check/, "2 Mo de paramètres", [gros]);
+  await refuse(`insert into public.foyer_evenements (type, libelle, date, source, params) values ('retrait', 'x', '2027-01-01', 's', '{"montant": -5}')`, /Les montants doivent être positifs ou nuls/, "montant négatif");
+  await refuse(`insert into public.foyer_evenements (type, libelle, date, source, params) values ('retrait', 'x', '2099-01-01', 's', '{"montant": 5}')`, /La date doit être comprise/, "dans plus de 40 ans");
+  await refuse(`insert into public.foyer_variantes (nom, retire) select 'V', array(select gen_random_uuid() from generate_series(1, 5000))`, /retire_check|foyer_variantes_retire_check/, "5 000 événements retirés");
+  await refuse(`insert into public.foyer_variantes (nom, hypotheses) values ('V', $1)`, /hypotheses_check|foyer_variantes_hypotheses_check|Hypothèse inconnue/, "hypothèses énormes", [JSON.stringify({ epargne_delta_mensuel: 1, bourrage: "x".repeat(30000) })]);
+  await refuse(`insert into public.foyer_variantes (nom, hypotheses) values ('V', '{"magie": 1}')`, /Hypothèse inconnue : « magie »/, "hypothèse inconnue");
+  /* un plan antidaté est ramené à maintenant */
+  await q(`insert into public.plans_figes (cree_le, raison, horizon_mois, parametres, serie) values ('2020-01-01', 'manuel', 12, '{}', '{}')`);
+  const plan = await un(`select cree_le, now() as maintenant from public.plans_figes`);
+  assert.ok(Math.abs(new Date(plan.cree_le) - new Date(plan.maintenant)) < 60000, "cree_le forcé à now() : " + plan.cree_le);
+  await superu(); await vider();
+});
+test("écriture directe (revue) : la mise à jour d'un événement ou d'une variante est revalidée ; un plan figé reste non modifiable", async () => {
+  await comme(A);
+  const { id } = (await insEv(A, { params: { montant: 100 } }))[0];
+  await refuse(`update public.foyer_evenements set params = '{"montant": -1}' where id = '${id}'`, /Les montants doivent être positifs ou nuls/, "montant négatif en mise à jour");
+  await refuse(`update public.foyer_evenements set date = '1900-01-01' where id = '${id}'`, /La date doit être comprise/, "date de 1900 en mise à jour");
+  await q(`update public.foyer_evenements set libelle = 'Autre', params = '{"montant": 5}' where id = '${id}'`);
+  const v = (await insVar(A, { nom: "V" }))[0];
+  await refuse(`update public.foyer_variantes set nom = '' where id = '${v.id}'`, /Le nom de la variante doit faire de 1 à 40 caractères/, "nom vide en mise à jour");
+  await refuse(`update public.foyer_variantes set retire = array(select gen_random_uuid() from generate_series(1, 101)) where id = '${v.id}'`, /retire_check|foyer_variantes_retire_check/, "101 événements retirés");
+  await refuse(`update public.plans_figes set cree_le = now()`, /permission denied/, "plans figés : aucune mise à jour");
+  await superu(); await vider();
 });

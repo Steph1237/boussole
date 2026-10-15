@@ -57,8 +57,8 @@ create table public.foyer_variantes (
   user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
   nom         text not null check (char_length(nom) between 1 and 40),
   description text not null default '' check (char_length(description) <= 300),
-  retire      uuid[] not null default '{}',
-  hypotheses  jsonb not null default '{}'::jsonb check (jsonb_typeof(hypotheses) = 'object'),
+  retire      uuid[] not null default '{}' check (cardinality(retire) <= 100),
+  hypotheses  jsonb not null default '{}'::jsonb check (jsonb_typeof(hypotheses) = 'object' and octet_length(hypotheses::text) <= 20000),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
@@ -68,13 +68,12 @@ create table public.foyer_evenements (
   user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
   variante_id uuid references public.foyer_variantes(id) on delete cascade,   -- null : situation actuelle
   type        text not null check (type in ('naissance', 'creche', 'scolarite_privee', 'achat_immobilier', 'retrait', 'hausse_revenu',
-                'fin_credit', 'crise', 'changement_emploi', 'conge_parental',
-                'chomage', 'separation', 'invalidite', 'retraite', 'heritage', 'temps_partiel', 'demenagement')),
+                'fin_credit', 'crise', 'changement_emploi', 'conge_parental')),   -- types réservés (chômage, séparation, invalidité, retraite, héritage, temps partiel, déménagement) refusés
   personne    text not null default 'foyer' check (personne in ('p1', 'p2', 'foyer')),
   libelle     text not null check (char_length(libelle) between 1 and 60),
-  date        date not null,
+  date        date not null check (date >= date '1950-01-01'),
   fin         date,
-  params      jsonb not null default '{}'::jsonb check (jsonb_typeof(params) = 'object'),
+  params      jsonb not null default '{}'::jsonb check (jsonb_typeof(params) = 'object' and octet_length(params::text) <= 20000),
   source      text not null check (char_length(source) between 1 and 300),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
@@ -538,6 +537,59 @@ revoke all on function public.foyer_present(jsonb), public.foyer_nombre(jsonb), 
 grant execute on function public.foyer_present(jsonb), public.foyer_nombre(jsonb), public.foyer_date(jsonb), public.foyer_rogner(text),
   public.foyer_longueur_texte(jsonb, boolean), public.foyer_valider_evenement(jsonb, text[], text[], date), public.foyer_valider_variante(jsonb)
   to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- Écritures directes (l'utilisateur peut écrire dans ses tables sans passer par appliquer_propositions) : mêmes validations que la proposition.
+-- foyer_evenements et foyer_variantes : déclencheurs BEFORE INSERT / UPDATE qui appellent foyer_valider_evenement et foyer_valider_variante (mêmes
+-- règles et messages que web/src/projection-evenements.js) ; plans_figes : cree_le forcé à now() (un plan ne s'antidate pas : il sert à comparer
+-- une projection au réel). security invoker, search_path vide ; les contrôles de taille sont des CHECK de table (params et hypothèses 20 000 octets,
+-- 100 événements retirés par variante, date d'un événement à partir de 1950, types réservés exclus).
+-- ---------------------------------------------------------------------------
+create function public.foyer_evenements_valider() returns trigger
+language plpgsql security invoker set search_path = ''
+as $$
+declare
+  v_msg text;
+  v_cr  text[];
+  v_bi  text[];
+begin
+  select coalesce(array_agg(c.id::text), '{}'::text[]) into v_cr from public.credits c where c.user_id = new.user_id;
+  select coalesce(array_agg(b.id::text), '{}'::text[]) into v_bi from public.biens b where b.user_id = new.user_id;
+  v_msg := public.foyer_valider_evenement(jsonb_build_object('type', new.type, 'personne', new.personne, 'libelle', new.libelle,
+    'date', new.date, 'fin', new.fin, 'params', new.params, 'source', new.source), v_cr, v_bi, current_date);
+  if v_msg is not null then raise exception '%', v_msg using errcode = '22023'; end if;
+  return new;
+end;
+$$;
+revoke all on function public.foyer_evenements_valider() from public, anon;
+create trigger foyer_evenements_valider before insert or update of type, personne, libelle, date, fin, params, source on public.foyer_evenements
+  for each row execute function public.foyer_evenements_valider();
+
+create function public.foyer_variantes_valider() returns trigger
+language plpgsql security invoker set search_path = ''
+as $$
+declare
+  v_msg text;
+begin
+  v_msg := public.foyer_valider_variante(jsonb_build_object('nom', new.nom, 'description', new.description, 'retire', to_jsonb(new.retire), 'hypotheses', new.hypotheses));
+  if v_msg is not null then raise exception '%', v_msg using errcode = '22023'; end if;
+  return new;
+end;
+$$;
+revoke all on function public.foyer_variantes_valider() from public, anon;
+create trigger foyer_variantes_valider before insert or update of nom, description, retire, hypotheses on public.foyer_variantes
+  for each row execute function public.foyer_variantes_valider();
+
+create function public.plans_figes_cree_le() returns trigger
+language plpgsql security invoker set search_path = ''
+as $$
+begin
+  new.cree_le := now();
+  return new;
+end;
+$$;
+revoke all on function public.plans_figes_cree_le() from public, anon;
+create trigger plans_figes_cree_le before insert on public.plans_figes for each row execute function public.plans_figes_cree_le();
 
 -- ---------------------------------------------------------------------------
 -- appliquer_propositions(ids, modifications) : 0029 + cibles evenement, variante et plan_fige + clé projection de la cible config.
