@@ -450,12 +450,12 @@ export function registerFormulaire(server: any, h: { db: any; must: any; UserErr
 
   server.registerPrompt("completer_profil", {
     title: "Compléter mon profil",
-    description: "Compléter une section du bilan avec l'agent Boussole (formulaire interactif ou import de relevés) : foyer, revenus, protection, risque, budget, placements, immobilier, objectifs.",
+    description: "Compléter une section du bilan avec Claude (formulaire interactif ou import de relevés) : foyer, revenus, protection, risque, budget, placements, immobilier, objectifs.",
     argsSchema: { section: z.enum(SECTIONS, { error: "section : " + SECTIONS.join(", ") + "." }).describe("Section à compléter : " + SECTIONS.join(", ") + ".") },
   }, ({ section }: any) => {
     if (!(SECTIONS as readonly string[]).includes(section)) throw new UserError("section : " + SECTIONS.join(", ") + ".");
     return {
-      description: "Compléter la section « " + section + " » avec l'agent Boussole.",
+      description: "Compléter la section « " + section + " » avec Claude.",
       messages: [{ role: "user" as const, content: { type: "text" as const, text: texteCompleter(section) } }],
     };
   });

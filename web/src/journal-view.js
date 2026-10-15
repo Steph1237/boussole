@@ -29,11 +29,11 @@
   const TON_STATUT = { a_relire: "attention", actif: "info", realise: "bon", abandonne: "neutre", archive: "neutre" };
   const CONSENTEMENTS = [
     { id: "demander", label: "Me demander",
-      texte: "Avant d'enregistrer quoi que ce soit, l'agent te demande ton accord dans la conversation. Chaque entrée arrive ici « à relire »." },
+      texte: "Avant d'enregistrer quoi que ce soit, Claude te demande ton accord dans la conversation. Chaque entrée arrive ici « à relire »." },
     { id: "prevenir", label: "Enregistrer et me prévenir",
-      texte: "L'agent enregistre ses avis et tes décisions sans t'interrompre, puis te le dit. Chaque entrée arrive ici « à relire »." },
+      texte: "Claude enregistre ses avis et tes décisions sans t'interrompre, puis te le dit. Chaque entrée arrive ici « à relire »." },
     { id: "jamais", label: "Jamais",
-      texte: "L'agent n'enregistre plus rien dans ton journal. Les entrées déjà écrites restent ici, consultables et modifiables." },
+      texte: "Claude n'enregistre plus rien dans ton journal. Les entrées déjà écrites restent ici, consultables et modifiables." },
   ];
   const CHAMPS = { type: "Type", titre: "Titre", synthese: "Synthèse", raisonnement: "Raisonnement", statut: "Statut",
     date_decision: "Date de décision", revue_le: "Date de revue", options: "Options", liens: "Liens" };
@@ -319,7 +319,7 @@
     const meta = [typeTxt(e), quandTxt(e), e.source ? "par " + plat(e.source) : "", e.revueLe ? "revue prévue le " + dateFr(e.revueLe) : ""].filter(Boolean).join(" · ");
     const b = badgeStatut(e.statut);
     let h = '<div class="jv-d-meta"><span class="ui-badge ' + esc(b.ton) + '">' + esc(b.texte) + '</span><span>' + esc(meta) + "</span></div>";
-    if (e.statut === "a_relire") h += '<p class="jv-relire">Écrite par ' + esc(plat(e.source) || "l'agent") + " : relis-la. Confirme-la si elle reflète bien ce qui a été dit, corrige-la sinon.</p>";
+    if (e.statut === "a_relire") h += '<p class="jv-relire">Écrite par ' + esc(plat(e.source) || "Claude") + " : relis-la. Confirme-la si elle reflète bien ce qui a été dit, corrige-la sinon.</p>";
     h += '<p class="jv-synthese">' + esc(e.synthese) + "</p>";
     if (opt.message && opt.message.texte) h += '<p class="jv-msg ' + (opt.message.ok ? "ok" : "err") + '" data-jv-msg tabindex="-1" role="' + (opt.message.ok ? "status" : "alert") + '">' + esc(opt.message.texte) + "</p>";
     h += opt.edition ? formHtml(opt.edition, e.statut, U) : actionsHtml(e, opt.busy);
@@ -392,7 +392,7 @@
     const u = U(), mode = modeConsent();
     if (!u) return;
     if (!ctlConsent) {
-      ctlConsent = u.bascule($("jvConsent"), { label: "Ce que l'agent peut enregistrer", options: CONSENTEMENTS.map(c => ({ id: c.id, label: c.label })),
+      ctlConsent = u.bascule($("jvConsent"), { label: "Ce que Claude peut enregistrer", options: CONSENTEMENTS.map(c => ({ id: c.id, label: c.label })),
         actif: mode, surChange: changerConsent });
       consentAffiche = mode;
     } else if (mode !== consentAffiche && !busy) { ctlConsent.choisir(mode); consentAffiche = mode; }

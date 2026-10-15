@@ -349,7 +349,7 @@
       if (!isoOk(e) || e > t) return;
       const contenu = plat(m.contenu);
       out.push({ type: "a_suivre", urgence: 2, date: e, titre: "À reprendre : " + contenu,
-        contexte: "Noté par " + plat(m.source || "l'agent") + ", prévu le " + dateFr(e) + ".",
+        contexte: "Noté par " + plat(m.source || "Claude") + ", prévu le " + dateFr(e) + ".",
         action: { label: "Reprendre avec Claude", url: urlClaude("Reprenons ce point noté dans ma mémoire Boussole : « " + contenu + " ». Où en est-on ?") } });
     });
 
@@ -657,7 +657,7 @@
       lignes = ec.liste.slice(0, 4).map(e => [extrait(e.titre, 70), dateFr(e.date) + " · " + quand(e).toLowerCase()]);
       if (!lignes.length) lignes.push(["Échéances à venir", "aucune"]);
       if (lignes.length < 2) lignes.push(["Objectifs datés", "dans Objectifs"]);
-      note = "Dates tirées du calendrier de tes enveloppes, de tes objectifs, des échéances enregistrées et des points que l'agent doit reprendre avec toi.";
+      note = "Dates tirées du calendrier de tes enveloppes, de tes objectifs, des échéances enregistrées et des points que Claude doit reprendre avec toi.";
     }
     return { titre, contenu: (id === "net" ? compositionHtml(n) : '<ul class="aj-det">' + lignes.slice(0, 4).map(l => ligne(l[0], l[1])).join("") + "</ul>") +
       '<p class="aj-det-note">' + esc(note) + "</p>", lien: { label, href: "#" + route }, question };
@@ -805,7 +805,7 @@
     risque: '<path d="M12 3.5v17M5 8l7-4.5L19 8"/><path d="M5 8l-2.5 6a3 3 0 0 0 5 0zM19 8l-2.5 6a3 3 0 0 0 5 0z"/>',
     argent: '<path d="M4 7.5h16v11H4z"/><path d="M4 11h16"/><path d="M8 4.5h8"/><path d="M15.5 15h1.5"/>',
   };
-  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Journal de l'agent", routine: "Revue mensuelle", banque: "Banque connectée", argent: "Argent qui dort", risque: "Profil de risque", doublon: "Doublon probable", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
+  const TYPE_TXT = { proposition: "Proposition de Claude", journal: "Note de Claude", routine: "Revue mensuelle", banque: "Banque connectée", argent: "Argent qui dort", risque: "Profil de risque", doublon: "Doublon probable", alerte: "Alerte", a_suivre: "Point à reprendre", echeance: "Échéance", cours: "Mise à jour des cours" };
   const URG_TXT = { 1: "urgent", 2: "à traiter", 3: "à surveiller" };
   const ico = t => '<svg class="aj-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICO[t] + "</svg>";
 

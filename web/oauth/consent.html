@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
-<title>Autoriser un assistant · Boussole</title>
+<title>Autoriser l'accès · Boussole</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%3E%3Crect%20width=%2232%22%20height=%2232%22%20rx=%227%22%20fill=%22%231f4d4a%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%229%22%20fill=%22none%22%20stroke=%22%23fff%22%20stroke-width=%222.4%22/%3E%3Cpath%20d=%22M16%209.5l3.2%208.2-3.2-1.8-3.2%201.8z%22%20fill=%22%23fff%22/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -116,8 +116,8 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
     <!-- Connexion -->
     <section data-state="signin" hidden>
       <p class="eyebrow">Connexion</p>
-      <h1>Connecte-toi pour autoriser ton assistant</h1>
-      <p class="muted small">Un assistant demande l'accès à ton espace Boussole. Identifie-toi d'abord ; tu pourras ensuite accepter ou refuser.</p>
+      <h1>Connecte-toi pour autoriser l'accès</h1>
+      <p class="muted small">Une application demande l'accès à ton espace Boussole. Identifie-toi d'abord ; tu pourras ensuite accepter ou refuser.</p>
       <form id="signinForm" novalidate>
         <label>Adresse e-mail<input id="email" type="email" autocomplete="email" inputmode="email" required></label>
         <label>Mot de passe<input id="password" type="password" autocomplete="current-password"></label>
@@ -129,19 +129,19 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
         </div>
       </form>
       <p class="msg" id="signinMsg" hidden></p>
-      <p class="muted small" style="margin-top:16px">Pas encore de compte&nbsp;? <a href="../">Crée-le sur Boussole</a>, puis relance la connexion depuis ton assistant.</p>
+      <p class="muted small" style="margin-top:16px">Pas encore de compte&nbsp;? <a href="../">Crée-le sur Boussole</a>, puis relance la connexion depuis Claude.</p>
     </section>
 
     <!-- Compte anonyme : il faut d'abord ajouter un e-mail et un mot de passe -->
     <section data-state="anon" hidden>
       <p class="eyebrow">Compte à sécuriser</p>
       <h1>Ajoute d'abord <span style="white-space:nowrap">un e-mail</span> à ton compte</h1>
-      <p class="muted">Pour brancher un assistant, ajoute d'abord un e-mail et un mot de passe à ton compte.</p>
-      <p class="muted small">Ton compte a été créé sans e-mail : il n'existe que dans ce navigateur. Une fois sécurisé, relance la connexion de Boussole depuis ton assistant.</p>
+      <p class="muted">Pour connecter Claude, ajoute d'abord un e-mail et un mot de passe à ton compte.</p>
+      <p class="muted small">Ton compte a été créé sans e-mail : il n'existe que dans ce navigateur. Une fois sécurisé, relance la connexion de Boussole depuis Claude.</p>
       <div class="actions"><a class="btn primary" id="secureLink" href="../compte.html#securiser">Sécuriser mon compte</a></div>
     </section>
 
-    <!-- Double authentification (SEC2) : code à valider avant d'autoriser un assistant, si le compte en a une -->
+    <!-- Double authentification (SEC2) : code à valider avant d'autoriser une application, si le compte en a une -->
     <section data-state="mfa" hidden>
       <p class="eyebrow">Sécurité</p>
       <div id="mfaBox"></div>
@@ -151,7 +151,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
       <p class="eyebrow">Autorisation</p>
       <h1><span id="clientName">Une application</span> souhaite accéder à ta Boussole</h1>
       <div class="who"><span>Connecté en tant que <strong id="userEmail"></strong></span><button class="linkbtn" id="switchBtn" type="button">Changer de compte</button></div>
-      <p class="small" style="margin-bottom:4px"><strong>Si tu autorises, cet assistant pourra&nbsp;:</strong></p>
+      <p class="small" style="margin-bottom:4px"><strong>Si tu autorises, cette application pourra&nbsp;:</strong></p>
       <ul class="perms" id="perms"></ul>
       <p class="small" style="margin-bottom:4px"><strong>Le connecteur Boussole ne lui permet pas de&nbsp;:</strong></p>
       <ul class="perms">
@@ -162,8 +162,8 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
         <span>Application&nbsp;: <b id="clientInfo"></b></span>
         <span>Retour vers&nbsp;: <b id="redirectHost"></b></span>
       </div>
-      <p class="msg info" id="mfaNote" hidden>Tu n'as pas activé la double authentification : l'assistant ne pourra pas lire tes comptes bancaires. Active-la dans <a href="../compte.html#securite">Mon compte › Sécurité</a>, puis relance la connexion du connecteur.</p>
-      <p class="muted small" style="margin-top:12px">N'autorise que les assistants que tu as toi-même connectés. Tu pourras retirer cet accès à tout moment depuis <a href="../compte.html">Mon compte</a>.</p>
+      <p class="msg info" id="mfaNote" hidden>Tu n'as pas activé la double authentification : l'application ne pourra pas lire tes comptes bancaires. Active-la dans <a href="../compte.html#securite">Mon compte › Sécurité</a>, puis relance la connexion du connecteur.</p>
+      <p class="muted small" style="margin-top:12px">N'autorise que les applications que tu as toi-même connectées. Tu pourras retirer cet accès à tout moment depuis <a href="../compte.html">Mon compte</a>.</p>
       <div class="actions">
         <button class="btn" id="denyBtn" type="button">Refuser</button>
         <button class="btn primary" id="approveBtn" type="button">Autoriser</button>
@@ -175,7 +175,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--
     <section data-state="done" hidden>
       <div class="spinner" aria-hidden="true"></div>
       <h1 id="doneTitle">Accès autorisé</h1>
-      <p class="muted" id="doneText">Retour à ton assistant…</p>
+      <p class="muted" id="doneText">Retour à Claude…</p>
       <p class="small"><a id="doneLink" href="#">Continuer manuellement</a></p>
     </section>
 

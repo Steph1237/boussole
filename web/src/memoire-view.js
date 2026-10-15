@@ -57,7 +57,7 @@
 
   /** { texte: « retenu par Claude le 10 oct. 2026 », echeance: texte de l'échéance ou "", echu } */
   function meta(m, today) {
-    const qui = m && m.source ? String(m.source) : "l'agent";
+    const qui = m && m.source ? String(m.source) : "Claude";
     let texte = "retenu par " + qui + (m && m.creeLe ? " le " + dateFr(m.creeLe) : "");
     if (m && m.majLe && m.creeLe && jour(m.majLe) !== jour(m.creeLe)) texte += ", modifié le " + dateFr(m.majLe);
     const e = !!(m && m.categorie === "a_suivre" && m.echeance);
@@ -148,7 +148,7 @@
   /* Appel au store : occupe la vue, remonte l'erreur telle quelle (ex. « Mémoire pleine… »). */
   async function appel(fn, succes) {
     const api = API();
-    if (!api) { dire("La mémoire de l'agent n'est pas disponible dans cette vue."); return false; }
+    if (!api) { dire("La mémoire de Claude n'est pas disponible dans cette vue."); return false; }
     busy = true; etat();
     let ok = false;
     try {
@@ -198,15 +198,15 @@
   async function supprimer(id) {
     const items = [...root.querySelectorAll("[data-item]")].map(li => li.dataset.item);
     const i = items.indexOf(id), voisin = items[i + 1] || items[i - 1];
-    const ok = await appel(api => api.supprimer([id]), "Souvenir supprimé : l'agent ne s'en servira plus.");
+    const ok = await appel(api => api.supprimer([id]), "Souvenir supprimé : Claude ne s'en servira plus.");
     if (ok) { edition.delete(id); if (!focusItem(voisin)) focusEl($(toutes().length ? "mvCount" : "mvEmptyTitle")); }
   }
 
   async function toutEffacer() {
     const n = toutes().length; if (!n) return;
-    const q = n > 1 ? "Effacer les " + n + " souvenirs de l'agent ? Cette action est définitive." : "Effacer le souvenir de l'agent ? Cette action est définitive.";
+    const q = n > 1 ? "Effacer les " + n + " souvenirs de Claude ? Cette action est définitive." : "Effacer ce souvenir de Claude ? Cette action est définitive.";
     if (!confirm(q)) return;
-    const ok = await appel(api => api.toutEffacer(), "Tous les souvenirs ont été effacés : l'agent repart de zéro.");
+    const ok = await appel(api => api.toutEffacer(), "Tous les souvenirs ont été effacés : Claude repart de zéro.");
     if (ok) { edition.clear(); render(true); focusEl($("mvEmptyTitle")); }
   }
 

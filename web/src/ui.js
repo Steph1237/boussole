@@ -458,7 +458,7 @@
 
   /* ============================================================ période ============================================================ */
   const PERIODES = [
-    { id: "1m", label: "1 m", aria: "1 mois" }, { id: "3m", label: "3 m", aria: "3 mois" }, { id: "1a", label: "1 an" },
+    { id: "1m", label: "1 M", aria: "1 mois" }, { id: "3m", label: "3 M", aria: "3 mois" }, { id: "1a", label: "1 A", aria: "1 an" }, // mêmes segments que comptes-view (1 M · 3 M · 1 A · 3 A · 5 A)
     { id: "tout", label: "Tout" }, { id: "perso", label: "Personnalisée" },
   ];
   const GRANULARITES = [

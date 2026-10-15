@@ -367,7 +367,7 @@ test("rendus du suivi : échappés, en lecture (pas de case ni de bouton), liens
   assert.match(v, /sans saisie de ta part/);
   assert.match(v, /règle-les avec Claude : il dépose une proposition que tu valides dans Agent › À valider/);
   assert.match(al, /href="#pilotage\/risque"/);
-  assert.match(PL.ordresHtml({ config: {} }, UI, DEPS), /Aucun ordre en attente\. Les ordres décidés avec ton assistant/);
+  assert.match(PL.ordresHtml({ config: {} }, UI, DEPS), /Aucun ordre en attente\. Les ordres décidés avec Claude/);
   assert.match(PL.hypothesesHtml({ config: {}, positions: [] }, UI, DEPS), /Toutes les hypothèses sont confirmées/);
   assert.match(PL.journalHtml({ tx: [] }, UI, DEPS), /Aucun mouvement enregistré/);
   assert.match(PL.versementsHtml({ config: {} }, TODAY, UI, DEPS), /Aucun versement programmé\. Règle-les avec Claude.*>Régler avec Claude</);

@@ -483,7 +483,7 @@
     const v = valeur(p, C), env = plat(p.envelope), freres = lignesEnveloppe(s, env, p.owner).filter(compte), tot = sum(freres, x => valeur(x, C));
     const g = latente(p), faits = [];
     if (p.mode === "market") {
-      faits.push(["Cours", fini(p.price) ? eur2(+p.price) + (dateFr(p.priceDate) ? " · " + dateFr(p.priceDate) : "") : "à récupérer (ce soir par l'agent)"]);
+      faits.push(["Cours", fini(p.price) ? eur2(+p.price) + (dateFr(p.priceDate) ? " · " + dateFr(p.priceDate) : "") : "à récupérer ce soir"]);
       faits.push(["Quantité", fini(p.qty) ? nfq.format(+p.qty) + (p.qtyEstimated ? " (estimée)" : "") : "—"]);
       faits.push(["Prix de revient unitaire (PRU)", fini(p.pru) && +p.pru > 0 ? eur2(+p.pru) : "non renseigné"]);
       if (g != null) faits.push(["Prix de revient total", eur(p.qty * p.pru)]);

@@ -130,7 +130,7 @@ test("consentement : mot de passe seul, compte anonyme bloqué", () => {
   assert.match(consentJs, /\$\("otpBox"\)\.hidden = !EMAILS/);
   assert.match(consentJs, /if \(EMAILS\) \$\("otpBtn"\)\.addEventListener/);
   assert.match(consent, /data-state="anon"/);
-  assert.ok(consent.includes("Pour brancher un assistant, ajoute d'abord un e-mail et un mot de passe à ton compte"));
+  assert.ok(consent.includes("Pour connecter Claude, ajoute d'abord un e-mail et un mot de passe à ton compte"));
   assert.ok(consent.includes('href="../compte.html#securiser"'));
   assert.match(consentJs, /if \(isAnon\(session\)\) return show\("anon"\)/);
 });

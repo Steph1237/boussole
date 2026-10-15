@@ -368,7 +368,7 @@ export function registerExpertises(server: any, h: { db: any; wrap: any; must: a
 
   for (const slug of SLUGS_EXPERTISES) {
     const nom = NOMS_EXPERTISES[slug];
-    const description = `Avis de l'expertise ${nom} sur ta situation : l'assistant appelle demarrer_session, puis consulter_expertise (${slug}) et suit sa consigne.`;
+    const description = `Avis de l'expertise ${nom} sur ta situation : Claude appelle demarrer_session, puis consulter_expertise (${slug}) et suit sa consigne.`;
     server.registerPrompt("expertise_" + slug, { title: "Expertise " + nom, description }, () => ({
       description,
       messages: [{ role: "user" as const, content: { type: "text" as const, text: promptExpertise(slug, nom) } }],

@@ -182,7 +182,7 @@
     const etat = !Number.isFinite(age) ? "inconnu" : age > HEURES_VIEUX ? "vieux" : "ok";
     const lignes = [
       { label: "Cours des placements", valeur: dernierCours ? "au " + fd(dernierCours, { court: true }) : "pas encore mis à jour" },
-      { label: "Passage de l'agent", valeur: Number.isFinite(tRun) ? fd(run, { maintenant }) : "jamais lancé" },
+      { label: "Mise à jour de nuit", valeur: Number.isFinite(tRun) ? fd(run, { maintenant }) : "jamais lancé" },
     ];
     const lr = S.status && S.status.veille && S.status.veille.lastReport, tv = lr ? Date.parse(lr) : NaN;
     lignes.push({ label: "Veille", valeur: Number.isFinite(tv) ? fd(lr, { maintenant }) : "jamais lancée" });
@@ -392,7 +392,7 @@
       const mk = S.positions.filter(p => p.mode === "market" && p.priceDate).map(p => p.priceDate).sort();
       const last = mk[mk.length - 1];
       let t = S.dbOk === false ? "Données indisponibles dans cette vue" : !S.ready ? "Chargement des données…" :
-        (last ? "Cours au " + frDate(last) : "Cours non encore mis à jour") + (S.status && S.status.lastRun ? " · agent passé le " + new Date(S.status.lastRun).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
+        (last ? "Cours au " + frDate(last) : "Cours non encore mis à jour") + (S.status && S.status.lastRun ? " · mise à jour de nuit le " + new Date(S.status.lastRun).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
       $("fresh").textContent = t;
       majFraicheur(S);
       const b = $("dbBanner");

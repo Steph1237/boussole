@@ -227,16 +227,16 @@
         '<ul class="ac-promesses">' +
           promesse("livre", "Pédagogique", "Boussole explique ; ce n'est pas du conseil en investissement réglementé.") +
           promesse("cadenas", "Privé", "Tes données ne sont visibles que par toi.") +
-          promesse("main", "Tu valides", "Ton assistant propose, tu valides.") +
+          promesse("main", "Tu valides", "Claude propose, tu valides.") +
           promesse("pause", "Interruptible", "Environ 15 minutes, reprends quand tu veux.") +
         "</ul>" +
-        '<h3 class="ac-sous-titre">Boussole fonctionne avec ton assistant</h3>' +
-        '<p class="ac-fine">Il te pose les questions, lit les relevés que tu lui donnes et prépare ton bilan ; Boussole l\'affiche et te fait valider chaque changement.</p>' +
-        '<ul class="ac-assistants" aria-label="Assistants compatibles">' +
+        '<h3 class="ac-sous-titre">Boussole fonctionne avec Claude</h3>' +
+        '<p class="ac-fine">Claude te pose les questions, lit les relevés que tu lui donnes et prépare ton bilan ; Boussole l\'affiche et te fait valider chaque changement.</p>' +
+        '<ul class="ac-assistants" aria-label="Compatibles avec Boussole">' +
           assistant("claude", "Claude", "Disponible", "Connexion sécurisée en quelques minutes, à l'étape suivante.", true) +
           assistant("bulle", "ChatGPT", "Bientôt", "La connexion sécurisée pour ChatGPT arrive prochainement.", false) +
         "</ul>" +
-        '<p class="ac-fine">Tes réponses transitent par ton assistant, selon ses propres conditions d\'utilisation.</p>';
+        '<p class="ac-fine">Tes réponses transitent par Claude, selon ses propres conditions d\'utilisation.</p>';
     }
     function e2() {
       if (anon) {
