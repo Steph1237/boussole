@@ -59,61 +59,133 @@
 .sv-bulle.sv-m-a_completer{border-style:dashed;border-color:var(--st-todo)}
 .sv-orbite-note{margin:var(--sp-2) 0 0;text-align:center;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small)}
 
-/* ---------- Ta ligne ---------- */
-.sv-ligne{display:flex;flex-direction:column;gap:var(--sp-3);min-width:0}
-.sv-h{margin:var(--sp-2) 0 0;font:650 var(--t-h3)/var(--lh-h3) var(--f-display)}
-.sv-ligne-tete{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4) var(--sp-6)}
-.sv-anneau-box{position:relative;width:132px;height:132px;flex:none}
-.sv-anneau-ligne{display:block;width:100%;height:100%}
-.sv-seg{fill:none;stroke-width:11;stroke-linecap:butt}
-.sv-seg-bon{stroke:var(--st-good)}
-.sv-seg-surveiller{stroke:var(--st-watch)}
-.sv-seg-travailler{stroke:var(--st-work)}
-.sv-seg-completer{stroke:var(--st-todo);opacity:.55}
-.sv-marque{fill:none;stroke:var(--surface);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.sv-anneau-centre{position:absolute;inset:26px;display:flex;align-items:center;justify-content:center;text-align:center}
-.sv-anneau-centre .sv-meteo{flex-direction:column;gap:2px;white-space:normal;font-size:var(--t-caption);line-height:var(--lh-caption);font-weight:600}
-.sv-ligne-txt{display:flex;flex-direction:column;gap:var(--sp-1);min-width:0;flex:1 1 240px}
-.sv-ligne-txt p{margin:0}
-.sv-ligne-r{font-size:var(--t-body);line-height:var(--lh-body)}
+/* ---------- Ta ligne : verdict, constats triés, que faire, ce qui manque ----------
+   Une colonne sur mobile (verdict, constats, que faire, ce qui manque) ; à partir de 860 px de largeur de la section (requête de conteneur, pas de fenêtre :
+   la fiche partage la page avec sa colonne de droite), le diagnostic est à gauche et « Que faire ? » à droite. */
+.sv-ligne{container-type:inline-size;container-name:sv;min-width:0}
+.sv-grille{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-4);grid-template-areas:"tete" "constats" "faire" "manque" "pied";min-width:0}
+.sv-tete{grid-area:tete}
+.sv-zone-constats{grid-area:constats;display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+.sv-faire{grid-area:faire}
+.sv-zone-manque{grid-area:manque;min-width:0}
+.sv-pied{grid-area:pied;margin:0;color:var(--muted);font-size:var(--t-caption);line-height:var(--lh-caption);max-width:var(--measure)}
+@container sv (min-width:860px){
+  .sv-grille{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);grid-template-areas:"tete tete" "constats faire" "manque faire" "pied pied";align-items:start;column-gap:var(--sp-6)}
+}
+.sv-h{margin:0;font:650 var(--t-h3)/var(--lh-h3) var(--f-display)}
+.sv-h-sous{margin:0}
+.sv-aide{margin:0;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small);max-width:var(--measure)}
 
-/* constats : lignes de 56 px qui s'ouvrent */
+/* en-tête : pilule de verdict, une phrase, bilan par niveau, rôle et revue */
+.sv-tete{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);padding:var(--card-pad);border-radius:var(--r-card);border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.sv-t-alerte{background:var(--st-work-bg);border-color:var(--st-work)}
+.sv-t-surveiller{background:var(--st-watch-bg);border-color:var(--st-watch)}
+.sv-t-ok{background:var(--st-good-bg);border-color:var(--st-good)}
+.sv-t-incomplet{background:var(--st-todo-bg);border-color:var(--st-todo);border-style:dashed}
+.sv-vt-haut{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3)}
+.sv-vt-titre{margin:0;font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+.sv-pilule{display:inline-flex;align-items:center;gap:var(--sp-2);min-height:32px;padding:0 var(--sp-3) 0 var(--sp-2);border-radius:var(--r-chip);font:700 var(--t-small)/var(--lh-small) var(--f-body);color:var(--surface);white-space:nowrap}
+.sv-pilule .sv-ico{flex:none}
+.sv-p-alerte{background:var(--st-work)}
+.sv-p-surveiller{background:var(--st-watch)}
+.sv-p-ok{background:var(--st-good)}
+.sv-p-incomplet{background:var(--st-todo)}
+.sv-vt-phrase{margin:0;font:600 var(--t-h2)/var(--lh-h2) var(--f-display);max-width:var(--measure);overflow-wrap:anywhere}
+.sv-bilan{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:0;padding:0;list-style:none}
+.sv-bilan-btn{display:inline-flex;align-items:center;gap:var(--sp-2);min-height:var(--hit);padding:0 var(--sp-4);border:1px solid var(--line2);border-radius:var(--r-chip);background:var(--surface);color:var(--ink);font:600 var(--t-small)/var(--lh-small) var(--f-body);cursor:pointer}
+.sv-bilan-btn:hover{border-color:var(--brand);background:var(--brand-soft)}
+.sv-bilan-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.sv-bilan-n{font-variant-numeric:tabular-nums lining-nums}
+.sv-dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--st-todo)}
+.sv-dot-alerte{background:var(--st-work)}
+.sv-dot-surveiller{background:var(--st-watch)}
+.sv-dot-ok{background:var(--st-good)}
+.sv-dot-completer{background:transparent;border:2px dashed var(--st-todo)}
+.sv-vt-couv{margin:calc(-1 * var(--sp-1)) 0 0;font-size:var(--t-caption);line-height:var(--lh-caption)}
+.sv-vt-role{margin:0;display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--sp-2);font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-vt-poids{flex-basis:100%}
+.sv-vt-revue{margin:0;font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-tete .ui-claude.sv-claude-texte{border-color:transparent;background:none;padding:0 var(--sp-1);text-decoration:underline;text-underline-offset:3px;color:var(--ink)}
+.sv-tete .ui-claude.sv-claude-texte:hover{background:none;border-color:transparent;color:var(--brand)}
+.sv-claude-primaire{border-color:var(--brand);background:var(--brand);color:var(--brand-ink);justify-content:center}
+.sv-claude-primaire .ui-ico{color:var(--brand-ink)}
+.sv-claude-primaire:hover{background:var(--brand);border-color:var(--brand);filter:brightness(1.1)}
+.sv-claude-primaire:focus-visible,.sv-claude-secondaire:focus-visible,.sv-claude-texte:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* constats : lignes qui s'ouvrent ; nom et chip sur la première ligne, le chiffre contre son repère dessous, la jauge en dernier */
 .sv-constats{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);overflow:hidden}
-.sv-constat+.sv-constat{border-top:1px solid var(--line)}
-.sv-c-ligne{display:flex;align-items:center;gap:var(--sp-2) var(--sp-3);min-height:56px;padding:var(--sp-2) var(--sp-4);cursor:pointer;list-style:none}
+.sv-constat+.sv-constat,.sv-constat+.sv-ok-groupe,.sv-ok-groupe .sv-constat{border-top:1px solid var(--line)}
+.sv-c-ligne{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"nom chip chev" "chiffre chiffre chiffre" "jauge jauge jauge";column-gap:var(--sp-3);row-gap:2px;align-items:center;min-height:56px;padding:var(--sp-3) var(--sp-4);cursor:pointer;list-style:none}
 .sv-c-ligne::-webkit-details-marker{display:none}
 .sv-c-ligne:hover{background:var(--sunk)}
-.sv-c-txt{display:flex;flex-direction:column;gap:0;min-width:0;flex:1}
-.sv-c-nom{font:600 var(--t-body)/var(--lh-body) var(--f-body)}
-.sv-c-mesure{color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small);overflow-wrap:anywhere}
-.sv-c-chev{flex:none;width:10px;height:10px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform var(--dur-state) var(--ease-out)}
-.sv-constat[open] .sv-c-chev{transform:rotate(-135deg)}
+.sv-c-ligne:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.sv-c-nom{grid-area:nom;font:600 var(--t-body)/var(--lh-body) var(--f-body)}
+.sv-c-ligne .ui-puce{grid-area:chip;justify-self:end}
+.sv-c-chev{grid-area:chev;flex:none;width:10px;height:10px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform var(--dur-state) var(--ease-out)}
+details[open]>summary>.sv-c-chev{transform:rotate(-135deg)}
+.sv-c-chiffre{grid-area:chiffre;font-size:var(--t-small);line-height:var(--lh-small);overflow-wrap:anywhere}
+.sv-c-val{font-weight:700;font-variant-numeric:tabular-nums lining-nums}
+.sv-c-rep{color:var(--muted)}
+.sv-flash{outline:2px solid var(--brand);outline-offset:-2px}
+.sv-ok-groupe>summary{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:56px;padding:var(--sp-2) var(--sp-4);cursor:pointer;list-style:none;font:600 var(--t-body)/var(--lh-body) var(--f-body);color:var(--muted)}
+.sv-ok-groupe>summary::-webkit-details-marker{display:none}
+.sv-ok-groupe>summary:hover{background:var(--sunk)}
+.sv-ok-groupe>summary:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.sv-constats>.sv-ok-groupe:first-child>summary{border-top:0}
+.sv-constats>.sv-ok-groupe:not(:first-child){border-top:1px solid var(--line)}
 .sv-c-corps{padding:0 var(--sp-4) var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-1);font-size:var(--t-small);line-height:var(--lh-small)}
 .sv-c-corps p{margin:0}
 .sv-c-h{margin:var(--sp-3) 0 0;font:650 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
 .sv-liste{margin:0;padding-left:var(--sp-5);display:flex;flex-direction:column;gap:2px}
-.sv-c-claude{margin-top:var(--sp-3)}
 
-/* leviers */
-.sv-leviers{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:var(--gap-cards)}
-.sv-levier{display:flex;flex-direction:column;gap:var(--sp-2);min-width:0;padding:var(--card-pad);border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface)}
-.sv-lv-titre{margin:0;font:650 var(--t-h3)/var(--lh-h3) var(--f-display)}
-.sv-lv-l{margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px var(--sp-2)}
-.sv-lv-k{width:44px;color:var(--muted);font-size:var(--t-small)}
-.sv-lv-v{font:700 var(--t-body)/var(--lh-body) var(--f-body);font-variant-numeric:tabular-nums lining-nums}
-.sv-lv-s{color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small);flex:1 1 140px}
-.sv-lv-rent{margin:0;font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
-.sv-lv-phrase,.sv-lv-alt,.sv-lv-effet{margin:0;font-size:var(--t-small);line-height:var(--lh-small)}
-.sv-lv-alt{color:var(--muted)}
-.sv-verdict{margin:0;display:flex;align-items:center;gap:var(--sp-2);font:650 var(--t-body)/var(--lh-body) var(--f-body)}
+/* mini-jauge : la valeur (barre) contre son repère (trait) ; le chiffre et le repère sont écrits au-dessus */
+.sv-jauge{grid-area:jauge;display:block;margin-top:var(--sp-2)}
+.sv-j-piste{position:relative;display:block;height:8px;border-radius:var(--r-chip);background:var(--sunk);box-shadow:inset 0 0 0 1px var(--line)}
+.sv-j-barre{position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-chip);min-width:4px;background:var(--st-good)}
+.sv-n-alerte .sv-j-barre{background:var(--st-work)}
+.sv-n-surveiller .sv-j-barre{background:var(--st-watch)}
+.sv-j-zone{position:absolute;top:-3px;bottom:-3px;border-radius:3px;background:var(--brand-soft);box-shadow:0 0 0 1px var(--brand)}
+.sv-j-rep{position:absolute;top:-5px;bottom:-5px;width:3px;margin-left:-1px;border-radius:2px;background:var(--ink)}
+.sv-j-legendes{position:relative;display:block;height:16px;margin-top:var(--sp-2)}
+.sv-j-leg{position:absolute;top:0;transform:translateX(-50%);color:var(--muted);font-size:var(--t-caption);line-height:var(--lh-caption);white-space:nowrap}
+.sv-j-leg.g{left:0!important;transform:none}
+.sv-j-leg.d{left:auto!important;right:0;transform:none}
+
+/* que faire : l'option sans coût d'abord, puis chaque option avec son coût certain, son gain et son verdict */
+.sv-faire{display:flex;flex-direction:column;gap:var(--sp-3);min-width:0;padding:var(--card-pad);border:1px solid var(--line2);border-radius:var(--r-card);background:var(--sunk)}
+.sv-f-cible{margin:calc(-1 * var(--sp-2)) 0 0;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-f-sous{margin:var(--sp-1) 0 0;font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+.sv-f-vide{margin:0;font-size:var(--t-body);line-height:var(--lh-body)}
+.sv-f-act{display:flex;flex-wrap:wrap}
+.sv-f-act .ui-claude{flex:1 1 220px}
+.sv-option{display:flex;flex-direction:column;gap:var(--sp-2);min-width:0;padding:var(--sp-4);border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--surface)}
+.sv-gratuite{border-left:4px solid var(--st-good)}
+.sv-o-titre{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);font:650 var(--t-body)/var(--lh-body) var(--f-display)}
+.sv-o-portee{margin:calc(-1 * var(--sp-1)) 0 0;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-o-action{margin:0;font-size:var(--t-body);line-height:var(--lh-body)}
+.sv-o-faits{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-1) var(--sp-3);margin:var(--sp-1) 0 0;font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-o-faits>div{display:contents}
+.sv-o-faits dt{color:var(--muted);min-width:84px}
+.sv-o-faits dd{margin:0;font-variant-numeric:tabular-nums lining-nums}
+.sv-o-note,.sv-o-phrase{margin:0;font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-o-note{color:var(--muted)}
+.sv-verdict{margin:var(--sp-1) 0 0;display:inline-flex;align-items:center;gap:var(--sp-2);width:fit-content;max-width:100%;padding:var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-2);border-radius:var(--r-chip);font:650 var(--t-small)/var(--lh-small) var(--f-body)}
 .sv-verdict .sv-ico{flex:none}
-.sv-v-vaut_le_cout{color:var(--st-good)}
-.sv-v-a_peser{color:var(--st-watch)}
-.sv-v-ne_rien_faire{color:var(--ink)}
-.sv-v-nul{color:var(--st-todo)}
+.sv-v-vaut_le_cout{color:var(--st-good);background:var(--st-good-bg)}
+.sv-v-a_peser{color:var(--st-watch);background:var(--st-watch-bg)}
+.sv-v-ne_rien_faire{color:var(--ink);background:var(--sunk);box-shadow:inset 0 0 0 1px var(--line2)}
+.sv-v-nul{color:var(--st-todo);background:var(--st-todo-bg);outline:1px dashed var(--st-todo);outline-offset:-1px}
 .sv-lv-calcul summary{display:flex;align-items:center;min-height:var(--hit);color:var(--brand);font:600 var(--t-small)/var(--lh-small) var(--f-body);cursor:pointer}
-.sv-lv-act{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
-.sv-aide{margin:0;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small);max-width:var(--measure)}
+.sv-lv-calcul summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.sv-lv-calcul{font-size:var(--t-small);line-height:var(--lh-small)}
+
+/* ce qui manque : un seul bloc, une seule action */
+.sv-manque{display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--card-pad);border:1px dashed var(--st-todo);border-radius:var(--r-card);background:var(--surface)}
+.sv-m-liste{display:flex;flex-direction:column;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.sv-m-item{display:flex;flex-direction:column;gap:2px}
+.sv-m-quoi{font:600 var(--t-body)/var(--lh-body) var(--f-body)}
+.sv-m-pour{color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-m-act{display:flex;flex-wrap:wrap}
 
 /* balance : deux barres sur le même axe en euros ; le point mort est marqué sur la barre du gain */
 .sv-balance{display:flex;flex-direction:column;gap:var(--sp-1)}

@@ -6,8 +6,8 @@
    Règles de présentation (spec § 9.1 et § 18.4) : sur une ligne nommée, des faits (chips factuelles : « au-dessus du repère de 5 % ») ; les jugements, les
    leviers et les verdicts portent sur une classe et une enveloppe (le titre d'un levier ne nomme jamais un instrument). La météo est un mot et une icône,
    jamais une note chiffrée ; l'état ne passe jamais par la couleur seule.
-   SuiviView.vue(S, today) → Suivi.vue(Suivi.depuisEtat(S)) ; meteoHtml, roleChipHtml, systemeHtml, orbiteHtml, ligneSuiviHtml, leviersHtml, balanceHtml,
-   politiqueHtml, chipConstat, phraseProposition. */
+   SuiviView.vue(S, today) → Suivi.vue(Suivi.depuisEtat(S)) ; meteoHtml, roleChipHtml, systemeHtml, orbiteHtml, ligneSuiviHtml (verdict, constats triés, « Que faire ? »,
+   « Pour compléter le diagnostic »), balanceHtml, politiqueHtml, chipConstat, phraseProposition, aller. */
 (function (root, factory) {
   const cjs = typeof module === "object" && module.exports;
   const dep = (nom, g) => (cjs ? require("./" + nom + ".js") : root[g]);
@@ -81,29 +81,13 @@
     return '<span class="sv-role sv-r-' + esc(l.role || "nc") + (l.a_confirmer ? " propose" : "") + '">' + esc(mot) + (l.a_confirmer ? '<span class="sv-role-p">\u00a0· proposé</span>' : "") + "</span>";
   }
 
-  /* ================================================================== chips factuelles des constats (spec § 18.4) */
-  const CHIPS = {
-    cout: { bon: "Dans le repère", a_surveiller: "Au-dessus du bas du repère", a_travailler: "Au-dessus du repère", a_completer: "À compléter" },
-    poids: { bon: "Sous le repère", a_surveiller: "Proche du repère", a_travailler: "Au-dessus du repère", a_completer: "À compléter" },
-    chevauchement: { bon: "Peu de lignes en commun", a_surveiller: "Des lignes en commun", a_travailler: "Beaucoup de lignes en commun", a_completer: "À compléter" },
-    classe_risque: { bon: "Sans levier", a_surveiller: "Classe volatile", a_travailler: "Classe spéculative", a_completer: "À compléter" },
-    solidite: { bon: "Au-dessus des repères", a_surveiller: "Sous un repère", a_travailler: "Sous un repère", a_completer: "À compléter" },
-    enveloppe: { bon: "Rien à dire", a_surveiller: "Enveloppe à comparer", a_travailler: "Enveloppe à comparer", a_completer: "À compléter" },
-    devise: { bon: "Information", a_surveiller: "Part en devises élevée", a_travailler: "Part en devises élevée", a_completer: "À compléter" },
-  };
-  const TON_PUCE = { bon: "bon", a_surveiller: "surveiller", a_travailler: "travailler", a_completer: "completer" };
-  /** Texte factuel de la chip d'un constat : jamais « à travailler » ni un ordre. Le repère de poids est écrit avec son chiffre (« Au-dessus du repère de 5 % »). */
-  function chipConstat(c) {
-    const base = (CHIPS[c.cle] && CHIPS[c.cle][c.statut]) || "À compléter";
-    if (c.cle === "poids" && c.repere && /(\d+) %/.test(c.repere.texte || "") && c.statut !== "a_completer") return base + " de " + /(\d+) %/.exec(c.repere.texte)[1] + " %";
-    return base;
-  }
-  const puce = (ton, mot) => '<span class="ui-puce ' + TON_PUCE[ton] + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(mot) + "</span>";
-
   /* ================================================================== phrases Claude */
   const phraseClaude = (section, contexte) => (ClaudePrompts ? ClaudePrompts.phrase(section, contexte) : "Boussole : aide-moi avec le suivi de mes lignes.");
   /** Lien « demander à Claude » (UI.demanderAClaude) ou rien si UI est absent. */
-  const lienClaude = (U, phrase, libelle) => (U && typeof U.demanderAClaude === "function" ? U.demanderAClaude(phrase, libelle) : "");
+  const lienClaude = (U, phrase, libelle, variante) => {
+    const h = U && typeof U.demanderAClaude === "function" ? U.demanderAClaude(phrase, libelle) : "";
+    return variante && h ? h.replace('class="ui-claude"', 'class="ui-claude sv-claude-' + variante + '"') : h; // primaire, secondaire ou texte : un seul bouton principal par écran
+  };
   const phraseProposition = n => phraseClaude("suivi", "confirmer le rôle de " + pluriel(n, "ligne") + " (suivi_lignes, puis definir_suivi)");
 
   /* ================================================================== système cœur et satellite (Placements) */
@@ -190,102 +174,327 @@
     return '<div class="sv-orbite-cadre"><span class="sv-orbite-coeur" aria-hidden="true">Cœur</span>' + bulles + '</div><p class="sv-orbite-note">La taille de chaque pastille suit le poids de la ligne ; touche une pastille pour ouvrir sa fiche.</p>';
   }
 
-  /* ================================================================== Ta ligne : anneau segmenté, constats, leviers */
-  const COULEUR_SEGMENT = { bon: "sv-seg-bon", a_surveiller: "sv-seg-surveiller", a_travailler: "sv-seg-travailler", a_completer: "sv-seg-completer" };
-  const MARQUE = {
-    bon: '<path d="M-3 0.5l2 2 4-4.5"/>', a_surveiller: '<path d="M-3 0h6"/>', a_travailler: '<path d="M0 -3.5v4M0 3.2v0.1"/>', a_completer: '<path d="M0 0v0.1"/>',
+  /* ================================================================== Ta ligne : verdict, constats triés, que faire, ce qui manque */
+  const NB = " ";
+  /** Nombre en pourcents, décimales utiles seulement (0,6 % ; 0,35 % ; 16,8 % ; 45 %). */
+  const P = (v, d) => (fini(v) ? nombre(+v, d == null ? 1 : d) + NB + "%" : "—");
+  const PAN = (v, d) => P(v, d) + "/an";
+
+  /* ---------- niveaux de gravité : alerte, à surveiller, à compléter, OK (et info) ---------- */
+  const NIVEAUX = ["alerte", "surveiller", "completer", "ok"];
+  const NIV = {
+    alerte: { chip: "Alerte", ton: "travailler", un: "alerte", plusieurs: "alertes" },
+    surveiller: { chip: "À surveiller", ton: "surveiller", un: "à surveiller", plusieurs: "à surveiller" },
+    completer: { chip: "Manque une donnée", ton: "completer", un: "à compléter", plusieurs: "à compléter" },
+    ok: { chip: "OK", ton: "bon", un: "OK", plusieurs: "OK" },
+    info: { chip: "Info", ton: "bon", un: "OK", plusieurs: "OK" },
   };
-  /** Anneau segmenté d'une ligne : un segment par constat applicable (couleur du statut et pictogramme dans le segment), la météo au centre. */
-  function anneauLigneSvg(l) {
-    const n = l.constats.length, R = 46, C = 2 * Math.PI * R;
-    if (!n) return "";
-    const gap = n > 1 ? 7 : 0, seg = (C - n * gap) / n;
-    let g = "";
-    l.constats.forEach((c, i) => {
-      const debut = i * (seg + gap) + gap / 2, mid = (debut + seg / 2) / C * 2 * Math.PI - Math.PI / 2;
-      g += '<circle class="sv-seg ' + COULEUR_SEGMENT[c.statut] + '" cx="60" cy="60" r="' + R + '" transform="rotate(-90 60 60)" stroke-dasharray="' + seg.toFixed(2) + " " + (C - seg + 0.01).toFixed(2) + '" stroke-dashoffset="' + (-debut).toFixed(2) + '"/>';
-      g += '<g class="sv-marque" transform="translate(' + (60 + Math.cos(mid) * R).toFixed(1) + " " + (60 + Math.sin(mid) * R).toFixed(1) + ')">' + MARQUE[c.statut] + "</g>";
-    });
-    return '<svg class="sv-anneau-ligne" viewBox="0 0 120 120" aria-hidden="true" focusable="false">' + g + "</svg>";
+  /** Niveau d'un constat : un constat « bon » sur la devise d'une ligne hors euro n'est qu'une information. */
+  function niveauConstat(c) {
+    if (c.statut === "a_travailler") return "alerte";
+    if (c.statut === "a_surveiller") return "surveiller";
+    if (c.statut === "a_completer") return "completer";
+    return c.cle === "devise" && c.mesure && c.mesure.devise && c.mesure.devise !== "EUR" ? "info" : "ok";
   }
+  const groupeNiveau = n => (n === "info" ? "ok" : n);
+  /** Texte de la chip d'un constat : Alerte, À surveiller, OK, Manque une donnée, Info (jamais un ordre, jamais « à travailler »). */
+  const chipConstat = c => NIV[niveauConstat(c)].chip;
+  const puce = (niv, mot) => '<span class="ui-puce ' + NIV[niv].ton + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(mot || NIV[niv].chip) + "</span>";
+  /** Constats triés du plus grave au moins grave (alerte, à surveiller, à compléter, OK et info) ; l'ordre d'origine est gardé à gravité égale. */
+  const trier = cs => cs.map((c, i) => ({ c, i, r: NIVEAUX.indexOf(groupeNiveau(niveauConstat(c))) })).sort((a, b) => a.r - b.r || a.i - b.i).map(x => x.c);
+  const comptes = cs => { const n = { alerte: 0, surveiller: 0, completer: 0, ok: 0 }; cs.forEach(c => { n[groupeNiveau(niveauConstat(c))]++; }); return n; };
+
+  /* ---------- le chiffre contre son repère, en mots simples ---------- */
+  const minus = t => t.charAt(0).toLowerCase() + t.slice(1);
+  const roleDe = l => (l.role === "satellite" || l.role === null ? "un satellite" : l.role === "coeur" ? "le cœur" : "la réserve");
+  function maxRepere(c) {
+    const r = c.repere || {};
+    if (fini(r.max)) return +r.max;
+    const m = /(\d+(?:,\d+)?) %/.exec(r.texte || "");
+    return m ? +m[1].replace(",", ".") : null;
+  }
+  /** { valeur, repere, jauge } d'un constat : « 16,8 % » et « repère ≤ 5 % pour un satellite » ; valeur seule quand rien ne se compare. */
+  function chiffreConstat(c, l) {
+    const m = c.mesure || {}, r = c.repere || {};
+    if (c.statut === "a_completer") return { valeur: "", repere: c.manque && c.manque[0] ? "Il manque : " + minus(String(c.manque[0]).split(" : ")[0]) : "Pas encore de mesure" };
+    switch (c.cle) {
+      case "poids": return { valeur: P(m.valeur, 1), repere: "repère ≤ " + P(maxRepere(c), 0) + " pour " + roleDe(l) };
+      case "cout": {
+        const fourch = fini(r.bas) && fini(r.haut) ? "fourchette repère " + nombre(+r.bas, 2) + " à " + P(r.haut, 2) + "/an pour cette classe" : "repère : au plus " + P(0.4, 2) + "/an";
+        return { valeur: PAN(m.valeur, 2), repere: fourch };
+      }
+      case "classe_risque": return { valeur: "Volatilité ≈" + NB + P(m.valeur, 0) + "/an", repere: fini(r.surveiller) ? "repère : à surveiller dès " + P(r.surveiller, 0) + (l.classe === "levier" || l.classe === "crypto" ? " ; levier et crypto sont spéculatifs" : "") : "" };
+      case "chevauchement": return { valeur: P(m.valeur, 0) + " en commun", repere: fini(r.surveiller) && fini(r.travailler) ? "repère : sous " + P(r.surveiller, 0) + ", doublon au-delà de " + P(r.travailler, 0) : "" };
+      case "solidite": {
+        const v = [fini(m.valeur) ? "Encours " + eur(m.valeur) : "", fini(m.anciennete_ans) ? nombre(m.anciennete_ans, 0) + " ans d'ancienneté" : ""].filter(Boolean).join(", ");
+        return { valeur: v, repere: fini(r.encours_min) ? "repère : au moins " + eur(r.encours_min) + " et plus de " + nombre(r.anciennete_min_ans, 0) + " ans" : "" };
+      }
+      case "enveloppe": return { valeur: l.enveloppe || "Enveloppe non précisée", repere: c.statut === "bon" ? "rien d'anormal pour cette classe" : "un PEA du foyer a encore de la place" };
+      case "devise": return { valeur: m.devise && m.devise !== "EUR" ? "En " + m.devise + " : " + P(m.valeur, 0) : "En euros", repere: m.devise && m.devise !== "EUR" ? "information ; à surveiller dès " + P(r.max, 0) + " pour un profil Prudent" : "pas de risque de change" };
+      default: return { valeur: m.texte || "", repere: r.texte || "" };
+    }
+  }
+
+  /* ---------- mini-jauge : la valeur contre son repère (poids, coût, volatilité, chevauchement, devise) ---------- */
+  function jaugeSpec(c) {
+    const m = c.mesure || {}, r = c.repere || {}, v = +m.valeur;
+    if (c.statut === "a_completer" || !fini(m.valeur)) return null;
+    if (c.cle === "poids" && maxRepere(c)) return { v, marques: [{ x: maxRepere(c), l: "repère " + P(maxRepere(c), 0) }], fin: Math.max(v, maxRepere(c)) * 1.3, fmt: x => P(x, 1) };
+    if (c.cle === "cout" && fini(r.bas) && fini(r.haut)) return { v, zone: [+r.bas, +r.haut], marques: [], zl: "repère " + nombre(+r.bas, 2) + " à " + P(r.haut, 2), fin: Math.max(v, +r.haut) * 1.35, fmt: x => P(x, 2) + "/an" };
+    if (c.cle === "classe_risque" && fini(r.surveiller)) return { v, marques: [{ x: +r.surveiller, l: "dès " + P(r.surveiller, 0) }], fin: Math.max(v, +r.surveiller) * 1.25, fmt: x => P(x, 0) + "/an" };
+    if (c.cle === "chevauchement" && fini(r.surveiller) && fini(r.travailler)) return { v, marques: [{ x: +r.surveiller, l: P(r.surveiller, 0) }, { x: +r.travailler, l: P(r.travailler, 0) }], fin: Math.min(100, Math.max(v, +r.travailler) * 1.2), fmt: x => P(x, 0) };
+    if (c.cle === "devise" && fini(r.max) && m.devise && m.devise !== "EUR") return { v, marques: [{ x: +r.max, l: P(r.max, 0) }], fin: Math.max(v, +r.max) * 1.3, fmt: x => P(x, 0) };
+    return null;
+  }
+  /** Piste, barre de la valeur, repère(s) en tirets ; la valeur et le repère sont aussi écrits en toutes lettres (aria-label et ligne de chiffres). */
+  function jaugeHtml(c) {
+    const g = jaugeSpec(c);
+    if (!g || !(g.fin > 0)) return "";
+    const w = x => Math.min(100, Math.max(0, x / g.fin * 100));
+    const pos = x => w(x).toFixed(1) + "%";
+    const zone = g.zone ? '<span class="sv-j-zone" style="left:' + pos(g.zone[0]) + ";width:" + (w(g.zone[1]) - w(g.zone[0])).toFixed(1) + '%"></span>' : "";
+    const traits = g.marques.map(k => '<span class="sv-j-rep" style="left:' + pos(k.x) + '"></span>').join("");
+    const leg = (g.marques.map(k => ({ x: k.x, l: k.l })).concat(g.zone ? [{ x: (g.zone[0] + g.zone[1]) / 2, l: g.zl }] : [])).map(k => {
+      const p = w(k.x), cote = p > 72 ? " d" : p < 14 ? " g" : "";
+      return '<span class="sv-j-leg' + cote + '" style="left:' + p.toFixed(1) + '%">' + esc(k.l) + "</span>";
+    }).join("");
+    const lu = g.fmt(g.v) + (g.marques.length ? ", repère " + g.marques.map(k => k.l.replace(/^repère |^dès /, "")).join(" et ") : g.zone ? ", " + g.zl : "");
+    return '<span class="sv-jauge" role="img" aria-label="' + esc(lu) + '"><span class="sv-j-piste">' + zone + '<span class="sv-j-barre" style="width:' + pos(g.v) + '"></span>' + traits + '</span><span class="sv-j-legendes" aria-hidden="true">' + leg + "</span></span>";
+  }
+
+  /* ---------- verdict : la phrase tirée des constats les plus graves ---------- */
+  /** Deux formes par constat : `debut` (« Cette ligne … ») et `suite` (« …, et … »). null si le constat n'a pas de chiffre à dire. */
+  function clauseConstat(c, l) {
+    const m = c.mesure || {}, r = c.repere || {}, niv = niveauConstat(c);
+    if (niv !== "alerte" && niv !== "surveiller") return null;
+    switch (c.cle) {
+      case "poids": {
+        const lien = niv === "alerte" ? "alors que ton repère pour " + roleDe(l) + " est " + P(maxRepere(c), 0) : "tout près de ton repère pour " + roleDe(l) + " (" + P(maxRepere(c), 0) + ")";
+        return { debut: "pèse " + P(m.valeur, 1) + " de ton financier investi " + lien, suite: "elle pèse " + P(m.valeur, 1) + " de ton financier investi " + lien };
+      }
+      case "classe_risque": {
+        const vol = "(volatilité ≈" + NB + P(m.valeur, 0) + "/an)";
+        if (niv === "alerte") { const q = l.classe === "crypto" ? "de la crypto" : "un produit à effet de levier"; return { debut: "est " + q + " " + vol, suite: "c'est " + q + " " + vol }; }
+        return { debut: "est dans une classe plus volatile que les actions du monde développé " + vol, suite: "sa classe est plus volatile que les actions du monde développé " + vol };
+      }
+      case "cout": {
+        const ref = niv === "alerte" ? "au-dessus du haut du repère de sa classe" + (fini(r.haut) ? " (" + PAN(r.haut, 2) + ")" : "") : "au-dessus du bas du repère de sa classe" + (fini(r.bas) ? " (" + PAN(r.bas, 2) + ")" : "");
+        return { debut: "a des frais courants de " + PAN(m.valeur, 2) + ", " + ref, suite: "ses frais courants sont de " + PAN(m.valeur, 2) + ", " + ref };
+      }
+      case "chevauchement": return niv === "alerte" ? { debut: "double " + P(m.valeur, 0) + " des principales lignes d'un autre de tes fonds", suite: "elle double " + P(m.valeur, 0) + " des principales lignes d'un autre de tes fonds" } :
+        { debut: "partage " + P(m.valeur, 0) + " de ses principales lignes avec un autre de tes fonds", suite: "elle partage " + P(m.valeur, 0) + " de ses principales lignes avec un autre de tes fonds" };
+      case "solidite": return { debut: "repose sur un fonds encore petit ou récent (" + chiffreConstat(c, l).valeur.toLowerCase() + ")", suite: "son fonds est encore petit ou récent (" + chiffreConstat(c, l).valeur.toLowerCase() + ")" };
+      case "enveloppe": return { debut: "est dans un compte-titres alors qu'un PEA de ton foyer a encore de la place", suite: "un PEA de ton foyer a encore de la place pour cette classe" };
+      case "devise": return { debut: "est en " + (m.devise || "devise") + " : " + P(m.valeur, 0) + " de ton financier investi, pour un profil Prudent", suite: "elle est en " + (m.devise || "devise") + " : " + P(m.valeur, 0) + " de ton financier investi" };
+      default: return null;
+    }
+  }
+  /** Niveau global : Alerte, À surveiller, Diagnostic incomplet ou Tout va bien. Une alerte passe avant un manque de données. */
+  function niveauLigne(l) {
+    const n = comptes(l.constats);
+    if (n.alerte) return "alerte";
+    if (n.surveiller) return "surveiller";
+    if (n.completer && l.meteo === "a_completer") return "incomplet";
+    return "ok";
+  }
+  const PILULE = { alerte: { mot: "Alerte", ton: "alerte" }, surveiller: { mot: "À surveiller", ton: "surveiller" }, incomplet: { mot: "Diagnostic incomplet", ton: "incomplet" }, ok: { mot: "Tout va bien", ton: "ok" } };
+  /** Une phrase, avec ses chiffres, bâtie sur les un ou deux constats les plus graves. */
+  function phraseVerdictLigne(l) {
+    const niv = niveauLigne(l), n = comptes(l.constats), cl = trier(l.constats).filter(c => ["alerte", "surveiller"].includes(niveauConstat(c))).map(c => clauseConstat(c, l)).filter(Boolean);
+    if (cl.length) return "Cette ligne " + cl[0].debut + (cl[1] ? ", et " + cl[1].suite : "") + ".";
+    const cv = l.couverture || { calcules: 0, applicables: l.constats.length };
+    if (niv === "incomplet") return "Il manque trop de données pour juger cette ligne : " + cv.calcules + " point" + (cv.calcules > 1 ? "s" : "") + " sur " + cv.applicables + " seulement " + (cv.calcules > 1 ? "sont calculés" : "est calculé") + ".";
+    return "Rien à signaler : " + (n.ok > 1 ? "les " + n.ok + " points calculés sont" : "le point calculé est") + " dans les repères." + (n.completer ? " " + (n.completer > 1 ? n.completer + " restent" : "1 reste") + " à compléter pour un diagnostic complet." : "");
+  }
+
+  /* ---------- icônes de la pilule et du bilan ---------- */
+  const ICO_PILULE = {
+    alerte: '<path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.4v.1"/>',
+    surveiller: '<path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+    incomplet: '<circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3.2"/><path d="M8.5 12h.1M12 12h.1M15.5 12h.1"/>',
+    ok: '<circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.4l2.7 2.7 4.9-5.5"/>',
+  };
+
+  /* ---------- une ligne de constat, qui s'ouvre en détail ---------- */
   const listeHtml = (xs, cls) => (xs && xs.length ? '<ul class="' + (cls || "sv-liste") + '">' + xs.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "");
-  /** Constat en ligne de 56 px qui s'ouvre en panneau (ta situation, pourquoi, le calcul, les données, ce qui manque, demander à Claude). */
-  function constatHtml(c, l, U) {
-    const ctx = "le constat « " + c.libelle.toLowerCase() + " » de ma classe " + l.classe_libelle + (l.enveloppe ? " dans " + l.enveloppe : "");
+  /** Constat : nom, chiffre contre repère, chip de gravité, mini-jauge ; le détail (situation, pourquoi, calcul, données, ce qui manque) s'ouvre dessous. */
+  function constatHtml(c, l) {
+    const niv = niveauConstat(c), ch = chiffreConstat(c, l);
     const donnees = (c.donnees || []).map(d => esc(d.libelle) + " : " + esc(d.valeur != null ? eur(d.valeur) : "")).join(" · ");
-    return '<details class="sv-constat sv-c-' + esc(c.statut) + '"><summary class="sv-c-ligne"><span class="sv-c-txt"><span class="sv-c-nom">' + esc(c.libelle) + '</span><span class="sv-c-mesure">' + esc(c.mesure && c.mesure.texte ? c.mesure.texte : c.pourquoi) + "</span></span>" +
-      puce(c.statut, chipConstat(c)) + '<span class="sv-c-chev" aria-hidden="true"></span></summary><div class="sv-c-corps">' +
+    return '<details class="sv-constat sv-n-' + groupeNiveau(niv) + '" data-sv-niveau="' + groupeNiveau(niv) + '"><summary class="sv-c-ligne"><span class="sv-c-nom">' + esc(c.libelle) + "</span>" + puce(niv) + '<span class="sv-c-chev" aria-hidden="true"></span>' +
+      '<span class="sv-c-chiffre">' + (ch.valeur ? '<strong class="sv-c-val">' + esc(ch.valeur) + "</strong>" : "") + (ch.repere ? '<span class="sv-c-rep">' + (ch.valeur ? " · " : "") + esc(ch.repere) + "</span>" : "") + "</span>" +
+      jaugeHtml(c) + '</summary><div class="sv-c-corps">' +
       '<h4 class="sv-c-h">Ta situation</h4><p>' + esc(c.mesure && c.mesure.texte ? c.mesure.texte : "Pas encore de mesure.") + "</p>" +
       '<h4 class="sv-c-h">Pourquoi</h4><p>' + esc(c.pourquoi) + (c.repere && c.repere.texte ? " Repère : " + esc(c.repere.texte) + "." : "") + "</p>" +
       (c.calcul && c.calcul.length ? '<h4 class="sv-c-h">Le calcul</h4><ol class="sv-liste">' + c.calcul.map(x => "<li>" + esc(x) + "</li>").join("") + "</ol>" : "") +
-      (donnees ? '<h4 class="sv-c-h">Les données</h4><p>' + donnees + (c.source_donnees ? " <span class=\"sv-muet\">(source : " + esc(c.source_donnees) + ")</span>" : "") + "</p>" : "") +
-      (c.manque && c.manque.length ? '<h4 class="sv-c-h">Ce qui manque</h4>' + listeHtml(c.manque) : "") +
-      '<div class="sv-c-claude">' + lienClaude(U, phraseClaude("suivi", ctx), "Demander à Claude") + "</div></div></details>";
+      (donnees ? '<h4 class="sv-c-h">Les données</h4><p>' + donnees + (c.source_donnees ? ' <span class="sv-muet">(source : ' + esc(c.source_donnees) + ")</span>" : "") + "</p>" : "") +
+      (c.manque && c.manque.length ? '<h4 class="sv-c-h">Ce qui manque</h4>' + listeHtml(c.manque) : "") + "</div></details>";
+  }
+  /** Les constats, du plus grave au moins grave ; les « OK » et « Info » sont repliés sous « N points sans problème ». */
+  function constatsHtml(l) {
+    const tries = trier(l.constats), pb = tries.filter(c => groupeNiveau(niveauConstat(c)) !== "ok"), ok = tries.filter(c => groupeNiveau(niveauConstat(c)) === "ok");
+    const groupe = ok.length ? '<details class="sv-ok-groupe"' + (pb.length ? "" : " open") + '><summary class="sv-ok-resume"><span>' + esc(pluriel(ok.length, "point") + " sans problème") + '</span><span class="sv-c-chev" aria-hidden="true"></span></summary>' + ok.map(c => constatHtml(c, l)).join("") + "</details>" : "";
+    return '<div class="sv-constats">' + pb.map(c => constatHtml(c, l)).join("") + groupe + "</div>";
   }
 
-  /* ---------- leviers ---------- */
+  /* ---------- leviers : « Que faire ? » ---------- */
+  const LEVIERS_RISQUE = ["reequilibrer", "securiser_objectif", "reduire_satellite"];
   /** Libellé du délai de retour sur investissement. */
   function rentabilise(res) {
     if (res.gain_annuel > 0 && res.point_mort_ans === 0) return "Rentabilisé tout de suite";
     if (res.point_mort_ans != null && res.gain_annuel > 0) return "Rentabilisé en " + nombre(res.point_mort_ans, res.point_mort_ans < 10 ? 1 : 0) + " an" + (res.point_mort_ans >= 2 ? "s" : "");
     return "Aucun gain certain en euros";
   }
-  /** Balance : deux barres sur le même axe en euros, le gain cumulé sur l'horizon contre le coût unique, le point mort marqué sur la barre du gain. */
+  /** Balance : deux barres sur le même axe en euros, le gain cumulé sur l'horizon contre le coût unique ; seulement quand le gain se chiffre. */
   function balanceHtml(res) {
     const G = res.gain_annuel || 0, C = res.cout_unique, h = res.horizon_ans || 0;
-    if (C == null) return "";
+    if (C == null || !(G > 0)) return "";
     const cumul = G * h, max = Math.max(cumul, C, 1);
     const w = x => Math.min(100, Math.max(0, x / max * 100)).toFixed(1) + "%";
-    const pm = res.point_mort_ans != null && G > 0 ? '<span class="sv-bal-pm" style="left:' + w(C) + '" aria-hidden="true"></span>' : "";
-    const txt = "Gain cumulé sur " + nombre(h, 1) + " ans : " + eur(cumul) + ". Coût une fois : " + eur(C) + "." + (res.point_mort_ans != null && G > 0 ? " Point mort : " + nombre(res.point_mort_ans, 1) + " ans." : "");
+    const pm = res.point_mort_ans != null ? '<span class="sv-bal-pm" style="left:' + w(C) + '" aria-hidden="true"></span>' : "";
+    const txt = "Gain cumulé sur " + nombre(h, 1) + " ans : " + eur(cumul) + ". Coût une fois : " + eur(C) + "." + (res.point_mort_ans != null ? " Point mort : " + nombre(res.point_mort_ans, 1) + " ans." : "");
     return '<div class="sv-balance" role="img" aria-label="' + esc(txt) + '">' +
       '<div class="sv-bal-ligne"><span class="sv-bal-l">Gain sur ' + esc(nombre(h, h < 10 ? 1 : 0)) + ' ans</span><span class="sv-bal-piste"><span class="sv-bal-barre sv-bal-gain" style="width:' + w(cumul) + '"></span>' + pm + '</span><span class="sv-bal-v">' + esc(eur(cumul)) + "</span></div>" +
       '<div class="sv-bal-ligne"><span class="sv-bal-l">Coût une fois</span><span class="sv-bal-piste"><span class="sv-bal-barre sv-bal-cout" style="width:' + w(C) + '"></span></span><span class="sv-bal-v">' + esc(eur(C)) + "</span></div></div>";
   }
-  /** Une carte de levier : titre (classe et enveloppe), gain, coût, balance, verdict (mot et pictogramme), alternative, « Comment c'est calculé », « Préparer avec Claude ». */
-  function carteLevierHtml(lv, o) {
-    const res = lv.cout, opt = o || {}, U = opt.U;
+  const VERDICT_PUCE = {
+    vaut_le_cout: { mot: "Ça vaut le coût", cls: "vaut_le_cout" }, a_peser: { mot: "À peser", cls: "a_peser" }, ne_rien_faire: { mot: "Pas rentable", cls: "ne_rien_faire" }, manque: { mot: "Il manque une donnée", cls: "nul" },
+  };
+  /** Ce que tu fais, en une phrase, selon le type de levier (une classe et une enveloppe, jamais un instrument). */
+  function actionLevier(lv, res) {
+    const m = fini(res.montant) ? res.montant : fini(lv.montant) ? lv.montant : null, env = res.enveloppe ? " dans « " + res.enveloppe + " »" : "";
+    switch (res.levier) {
+      case "reduire_satellite": return "Réduire d'environ " + (m != null ? eur(m) : "la part excédentaire") + " ta classe " + Suivi.classeLib(res.classe) + env + " et replacer cet argent sur une autre classe.";
+      case "frais_classe": return "Remplacer les fonds de la classe " + Suivi.classeLib(res.classe) + env + " par des fonds moins chers" + (m != null ? " (" + eur(m) + " concernés)" : "") + ".";
+      case "reequilibrer": return "Déplacer environ " + (m != null ? eur(m) : "l'écart") + " de la classe " + Suivi.classeLib(res.classe) + " vers celles sous leur fourchette, d'abord à l'intérieur de" + (res.enveloppe ? " « " + res.enveloppe + " »" : " ton enveloppe") + ".";
+      case "securiser_objectif": return "Passer progressivement " + (m != null ? "environ " + eur(m) : "cet argent") + " sur des supports sans risque de baisse avant l'échéance de ton objectif.";
+      case "changer_enveloppe": return "Placer la classe " + Suivi.classeLib(res.classe) + " de « " + (res.enveloppe || "ton enveloppe") + " » dans « " + (res.vers_enveloppe || "une autre enveloppe") + " »" + (m != null ? " (" + eur(m) + ")" : "") + ".";
+      default: return res.titre || lv.titre || "";
+    }
+  }
+  const NOM_LEVIER = { reduire_satellite: "Revenir sous ton plafond satellite", frais_classe: "Réduire les frais de la classe", reequilibrer: "Ramener la classe vers sa cible", securiser_objectif: "Sécuriser l'argent d'un objectif proche",
+    changer_enveloppe: "Changer d'enveloppe pour cette classe", fonds_ferme: "Comprendre la fermeture d'un fonds" };
+  /** Une option avec un coût : ce que tu fais, coût certain, gain attendu, verdict (mot et pictogramme), « Comment c'est calculé ». */
+  function optionHtml(lv, o) {
+    const res = lv.cout, opt = o || {};
     if (!res) return "";
-    const verdict = res.verdict, libelle = verdict ? Suivi.VERDICT_LIB[verdict] : "À compléter";
-    const detailCout = res.cout_detail ? [res.cout_detail.impot > 0 ? "impôt " + eur(res.cout_detail.impot) : "", res.cout_detail.transaction > 0 ? (res.transaction_libelle || "frais de transaction") + " " + eur(res.cout_detail.transaction) : ""].filter(Boolean).join(" + ") : "";
-    const gain = res.gain_annuel > 0 ? '<p class="sv-lv-l"><span class="sv-lv-k">Gain</span><span class="sv-lv-v">+' + esc(eur(res.gain_annuel)) + ' par an</span><span class="sv-lv-s">certain : frais</span></p>' :
-      '<p class="sv-lv-l"><span class="sv-lv-k">Gain</span><span class="sv-lv-v">aucun en euros</span><span class="sv-lv-s">' + (["reequilibrer", "securiser_objectif", "reduire_satellite", "versements_orientes"].includes(res.levier) ? "réduit un risque mesuré" : "frais déjà dans le repère") + "</span></p>";
-    const cout = res.cout_unique == null ? '<p class="sv-lv-l"><span class="sv-lv-k">Coût</span><span class="sv-lv-v">à compléter</span><span class="sv-lv-s">' + esc((res.manque && res.manque[0]) || "") + "</span></p>" :
-      '<p class="sv-lv-l"><span class="sv-lv-k">Coût</span><span class="sv-lv-v">' + esc(eur(res.cout_unique)) + (res.cout_unique > 0 ? " une fois" : "") + '</span><span class="sv-lv-s">' + esc(detailCout || (res.cout_unique === 0 ? "arbitrage interne, sans impôt" : "")) + "</span></p>";
-    const alt = res.alternative ? '<p class="sv-lv-alt">Sans coût : oriente tes prochains versements pour cette classe' + (res.alternative.mois ? " (environ " + pluriel(res.alternative.mois, "mois", "mois") + " avec ton épargne constatée)" : "") + ".</p>" : "";
-    const effet = opt.effet && opt.effet.objectifs && opt.effet.objectifs.length ? '<p class="sv-lv-effet">' + esc(opt.effet.objectifs.map(x => x.texte).filter(Boolean).join(" ; ")) + "</p>" : "";
-    const ancienne = res.perte_anciennete ? '<p class="sv-lv-alt">' + (res.perte_anciennete.date ? "Tu repartirais de zéro pour l'ancienneté de « " + esc(res.perte_anciennete.enveloppe) + " » : " + esc(Fmt.fmtDate(res.perte_anciennete.date)) + " au plus tôt." : "Tu perdrais l'ancienneté de « " + esc(res.perte_anciennete.enveloppe) + " ».") + "</p>" : "";
+    const verdict = res.verdict, vp = VERDICT_PUCE[verdict || "manque"];
+    const detail = res.cout_detail ? [res.cout_detail.impot > 0 ? "impôt " + eur(res.cout_detail.impot) : "", res.cout_detail.transaction > 0 ? (res.transaction_libelle || "frais de transaction") + " " + eur(res.cout_detail.transaction) : ""].filter(Boolean).join(" + ") : "";
+    const gain = res.gain_annuel > 0 ? "<strong>+" + esc(eur(res.gain_annuel)) + " par an</strong> <span class=\"sv-muet\">certain : frais économisés</span>" :
+      LEVIERS_RISQUE.includes(res.levier) ? "<strong>Pas de gain chiffrable</strong> <span class=\"sv-muet\">réduit un risque</span>" : "<strong>Pas de gain certain</strong> <span class=\"sv-muet\">tes frais sont déjà dans le repère</span>";
+    const cout = res.cout_unique == null ? "<strong>À chiffrer</strong> <span class=\"sv-muet\">il manque une donnée (voir plus bas)</span>" :
+      "<strong>" + esc(eur(res.cout_unique)) + (res.cout_unique > 0 ? " une fois" : "") + "</strong> <span class=\"sv-muet\">" + esc(detail || (res.cout_unique === 0 ? "arbitrage interne, sans impôt" : "")) + "</span>";
+    const effet = opt.effet && opt.effet.objectifs && opt.effet.objectifs.length ? '<p class="sv-o-note">' + esc(opt.effet.objectifs.map(x => x.texte).filter(Boolean).join(" ; ")) + "</p>" : "";
+    const ancienne = res.perte_anciennete ? '<p class="sv-o-note">' + (res.perte_anciennete.date ? "Tu repartirais de zéro pour l'ancienneté de « " + esc(res.perte_anciennete.enveloppe) + " » : " + esc(Fmt.fmtDate(res.perte_anciennete.date)) + " au plus tôt." : "Tu perdrais l'ancienneté de « " + esc(res.perte_anciennete.enveloppe) + " ».") + "</p>" : "";
+    const aussi = lv.fusionnes && lv.fusionnes.length ? '<p class="sv-o-note">Répond aussi à : ' + lv.fusionnes.map(f => esc(f.titre) + (f.verdict == null && f.manque && f.manque.length ? " (chiffrage de l'ensemble : il manque une donnée)" : "")).join(" ; ") + ".</p>" : "";
     const calcul = '<details class="sv-lv-calcul"><summary>Comment c\'est calculé</summary>' + (res.calcul && res.calcul.length ? '<ol class="sv-liste">' + res.calcul.map(x => "<li>" + esc(x) + "</li>").join("") + "</ol>" : "") +
       (res.hypotheses && res.hypotheses.length ? '<h4 class="sv-c-h">Hypothèses</h4>' + listeHtml(res.hypotheses) : "") +
       (res.manque && res.manque.length ? '<h4 class="sv-c-h">Ce qui manque</h4>' + listeHtml(res.manque) : "") +
       (res.sources && res.sources.length ? '<h4 class="sv-c-h">Sources</h4>' + listeHtml(res.sources.map(s => [s.titre, s.verifie_le ? "vérifié le " + Fmt.fmtDate(s.verifie_le) : ""].filter(Boolean).join(", "))) : "") + "</details>";
-    const verdictHtml = verdict ? '<p class="sv-verdict sv-v-' + esc(verdict) + '">' + PICTO_VERDICT[verdict] + '<span class="sv-verdict-mot">' + esc(libelle) + "</span></p>" : '<p class="sv-verdict sv-v-nul"><span class="sv-verdict-mot">Pas de verdict : une donnée manque</span></p>';
-    const phraseL = "prépare avec moi le levier « " + res.titre + " » : lance ca_vaut_le_cout et passe en revue ses hypothèses.";
-    return '<article class="sv-levier" data-sv-levier="' + esc(lv.cle) + '"><h4 class="sv-lv-titre">' + esc(lv.titre) + "</h4>" + gain + cout + balanceHtml(res) +
-      '<p class="sv-lv-rent">' + esc(rentabilise(res)) + " · ton horizon : " + esc(nombre(res.horizon_ans, 1)) + " ans</p>" + verdictHtml +
-      '<p class="sv-lv-phrase">' + esc(Suivi.phraseVerdict(res, opt.regardeLe)) + "</p>" + alt + ancienne + effet + calcul +
-      '<div class="sv-lv-act">' + lienClaude(U, phraseClaude("suivi", phraseL), "Préparer avec Claude") + "</div></article>";
+    const portee = [res.classe ? "Classe " + Suivi.classeLib(res.classe) : "", res.enveloppe ? "dans « " + res.enveloppe + " »" : ""].filter(Boolean).join(" ");
+    return '<article class="sv-option" data-sv-levier="' + esc(lv.cle) + '"><h4 class="sv-o-titre">' + esc(NOM_LEVIER[res.levier] || res.titre || lv.titre) + "</h4>" + (portee ? '<p class="sv-o-portee">' + esc(portee) + "</p>" : "") +
+      '<p class="sv-o-action">' + esc(actionLevier(lv, res)) + "</p>" +
+      '<dl class="sv-o-faits"><div><dt>Coût certain</dt><dd>' + cout + "</dd></div><div><dt>Gain attendu</dt><dd>" + gain + "</dd></div></dl>" + balanceHtml(res) +
+      (res.gain_annuel > 0 ? '<p class="sv-o-note">' + esc(rentabilise(res)) + " · ton horizon : " + esc(nombre(res.horizon_ans, 1)) + " ans</p>" : "") +
+      '<p class="sv-verdict sv-v-' + vp.cls + '">' + (verdict ? PICTO_VERDICT[verdict] : icone("a_completer")) + '<span class="sv-verdict-mot">' + esc(vp.mot) + "</span></p>" +
+      '<p class="sv-o-phrase">' + esc(Suivi.phraseVerdict(res, opt.regardeLe)) + "</p>" + ancienne + effet + aussi + calcul + "</article>";
   }
-  function leviersHtml(leviers, o) {
-    const L = (leviers || []).filter(x => x.cout);
-    if (!L.length) return '<p class="sv-muet">Rien à regarder pour cette classe aujourd\'hui : aucun seuil franchi.</p>';
-    return '<div class="sv-leviers">' + L.map(lv => carteLevierHtml(lv, o)).join("") + "</div>";
+  /** Option sans coût : orienter les prochains versements (le levier lui-même, ou l'alternative d'un levier qui coûte). */
+  function optionGratuite(leviers) {
+    const vers = leviers.find(x => x.levier === "versements_orientes" && x.cout), alt = leviers.map(x => x.cout && x.cout.alternative).find(Boolean);
+    if (!vers && !alt) return null;
+    const mois = vers && vers.cout && vers.cout.mois_pour_combler ? vers.cout.mois_pour_combler : alt && alt.mois ? alt.mois : null;
+    const montant = vers && vers.cout && (vers.cout.calcul || []).find(x => /^Montant à orienter/.test(x));
+    return { mois, montant: montant || null };
+  }
+  /** « Que faire ? » : l'option sans coût d'abord, puis chaque option avec son coût certain, son gain et son verdict ; un seul bouton Claude. */
+  function faireHtml(l, o) {
+    const opt = o || {}, U = opt.U, L = (l.leviers || []).filter(x => x.cout), payantes = L.filter(x => x.levier !== "versements_orientes"), libre = optionGratuite(L);
+    const cible = l.classe_libelle + (l.enveloppe ? " dans « " + l.enveloppe + " »" : "");
+    let corps;
+    if (!libre && !payantes.length) corps = '<p class="sv-f-vide">Rien à faire pour l\'instant : aucun seuil de ta classe ' + esc(cible) + " n'est franchi.</p>";
+    else {
+      const gratuite = libre ? '<article class="sv-option sv-gratuite"><h4 class="sv-o-titre">Sans coût <span class="ui-puce bon"><span class="ui-puce-point" aria-hidden="true"></span>0 €</span></h4>' +
+        '<p class="sv-o-action">Oriente tes prochains versements vers d\'autres classes. Aucune vente, donc rien à payer ; le poids de cette classe baisse peu à peu.</p>' +
+        (libre.mois ? '<p class="sv-o-note">Environ ' + esc(pluriel(libre.mois, "mois", "mois")) + " avec ton épargne constatée.</p>" : "") + (libre.montant ? '<p class="sv-o-note">' + esc(libre.montant) + ".</p>" : "") + "</article>" : "";
+      corps = gratuite + (payantes.length ? '<p class="sv-f-sous">' + esc(payantes.length > 1 ? "Si tu veux agir plus vite, ces options ont un coût :" : "Si tu veux agir plus vite, cette option a un coût :") + "</p>" : "") + payantes.map(lv => optionHtml(lv, opt)).join("");
+    }
+    const phraseL = payantes.length === 1 ? "prépare avec moi le levier « " + (payantes[0].cout.titre || payantes[0].titre) + " » : lance ca_vaut_le_cout et passe en revue ses hypothèses." :
+      payantes.length ? "prépare avec moi les options de ma ligne : lance ca_vaut_le_cout sur chacune et passe en revue leurs hypothèses." : "prépare avec moi l'orientation de mes prochains versements pour cette classe.";
+    return '<section class="sv-faire" aria-labelledby="svFaireTitre"><h3 class="sv-h" id="svFaireTitre">Que faire ?</h3><p class="sv-f-cible">Pour ta classe ' + esc(cible) + "</p>" + corps +
+      ((libre || payantes.length) ? '<div class="sv-f-act">' + lienClaude(U, phraseClaude("suivi", phraseL), "Préparer avec Claude", "primaire") + "</div>" : "") + "</section>";
   }
 
-  /** Section « Suivi » de la fiche d'une ligne (« Ta ligne ») : l = Suivi.ligne() ; o = { U, today, effets }. */
+  /* ---------- ce qui manque, en un seul bloc ---------- */
+  /** Données à compléter : celles des constats « manque une donnée » et celles des leviers sans verdict, dédoublonnées. */
+  function manquesDe(l) {
+    const vus = new Map();
+    const ajouter = (txt, pour) => {
+      const t = String(txt || "").trim();
+      if (!t) return;
+      const [quoi, ...reste] = t.split(" : "), cle = quoi.toLowerCase();
+      if (!vus.has(cle)) vus.set(cle, { quoi, pourquoi: reste.join(" : "), pour: [] });
+      if (pour && !vus.get(cle).pour.includes(pour)) vus.get(cle).pour.push(pour);
+    };
+    (l.constats || []).filter(c => c.statut === "a_completer").forEach(c => (c.manque && c.manque.length ? c.manque : [c.pourquoi]).forEach(m => ajouter(m, c.libelle)));
+    (l.leviers || []).forEach(lv => {
+      (lv.cout && lv.cout.manque || []).forEach(m => ajouter(m, "le chiffrage d'un levier"));
+      (lv.fusionnes || []).forEach(f => (f.manque || []).forEach(m => ajouter(m, "le chiffrage d'un levier")));
+    });
+    return [...vus.values()];
+  }
+  function completerHtml(l, o) {
+    const M = manquesDe(l), U = (o || {}).U;
+    if (!M.length) return "";
+    const maj = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const items = M.map(m => '<li class="sv-m-item"><span class="sv-m-quoi">' + esc(maj(m.quoi)) + '</span><span class="sv-m-pour">' + esc((m.pourquoi ? maj(m.pourquoi) + ". " : "") + "Sert à : " + m.pour.join(", ")) + ".</span></li>").join("");
+    const phrase = phraseClaude("suivi", "compléter le diagnostic de ma ligne : " + M.map(m => m.quoi.charAt(0).toLowerCase() + m.quoi.slice(1)).join(" ; "));
+    return '<section class="sv-manque" aria-labelledby="svManqueTitre"><h3 class="sv-h" id="svManqueTitre">Pour compléter le diagnostic</h3><ul class="sv-m-liste">' + items + "</ul>" +
+      '<div class="sv-m-act">' + lienClaude(U, phrase, "Compléter avec Claude", "secondaire") + "</div></section>";
+  }
+
+  /* ---------- en-tête : verdict, résumé par gravité, rôle et revue ---------- */
+  function resumeHtml(l) {
+    const n = comptes(l.constats), cv = l.couverture || { calcules: 0, applicables: l.constats.length };
+    const bouts = NIVEAUX.filter(k => n[k] > 0).map(k => '<li><button type="button" class="sv-bilan-btn" data-sv-aller="' + k + '" aria-label="' + esc(n[k] + " " + (n[k] > 1 ? NIV[k].plusieurs : NIV[k].un) + " : aller aux constats") + '"><span class="sv-dot sv-dot-' + k + '" aria-hidden="true"></span>' +
+      '<span class="sv-bilan-n">' + n[k] + "</span><span>" + esc(n[k] > 1 ? NIV[k].plusieurs : NIV[k].un) + "</span></button></li>").join("");
+    return '<ul class="sv-bilan" aria-label="Constats par niveau">' + bouts + "</ul>" + '<p class="sv-vt-couv">' + esc(cv.calcules + " constat" + (cv.calcules > 1 ? "s" : "") + " calculé" + (cv.calcules > 1 ? "s" : "") + " sur " + cv.applicables) + "</p>";
+  }
+  function teteHtml(l, o) {
+    const U = (o || {}).U, niv = niveauLigne(l), pil = PILULE[niv];
+    const role = l.a_confirmer ? "Rôle proposé : " + (l.role ? l.role_libelle.toLowerCase() : "non classé") + " — à confirmer" : "Rôle : " + l.role_libelle.toLowerCase() + ", choisi avec Claude";
+    const raison = l.a_confirmer && l.raison_role_texte ? " (" + l.raison_role_texte + ")" : "";
+    const cites = trier(l.constats).filter(c => ["alerte", "surveiller"].includes(niveauConstat(c))).slice(0, 2).map(c => c.cle);
+    const poids = l.poids_pct != null && !cites.includes("poids") ? '<span class="sv-vt-poids">Poids : ' + esc(P(l.poids_pct, 1)) + " de ton financier investi</span>" : "";
+    return '<header class="sv-tete sv-t-' + pil.ton + '"><div class="sv-vt-haut"><span class="sv-pilule sv-p-' + pil.ton + '">' + SVG(ICO_PILULE[niv], 18) + "<span>" + esc(pil.mot) + '</span></span><h3 class="sv-vt-titre" id="svLigneTitre">Diagnostic de la ligne</h3></div>' +
+      '<p class="sv-vt-phrase">' + esc(phraseVerdictLigne(l)) + "</p>" + resumeHtml(l) +
+      '<p class="sv-vt-role"><span>' + esc(role + raison) + "</span>" + (l.a_confirmer ? lienClaude(U, phraseProposition(1), "Confirmer avec Claude", "texte") : "") + poids + "</p>" +
+      '<p class="sv-vt-revue">' + esc((l.revue && l.revue.texte) || "") + (l.gelee_jusquau ? " Météo figée jusqu'à la prochaine revue du cœur." : "") + "</p></header>";
+  }
+
+  /** Section « Suivi » de la fiche d'une ligne (« Ta ligne ») : l = Suivi.ligne() ; o = { U, today, effet }. Diagnostic (verdict, constats triés, données manquantes) à gauche,
+      « Que faire ? » à droite quand la place le permet (requête de conteneur) ; un seul bouton Claude principal (« Préparer avec Claude »). */
   function ligneSuiviHtml(l, o) {
     if (!l) return "";
-    const opt = o || {}, U = opt.U, meteoMot = (Suivi.METEO_LIB && Suivi.METEO_LIB[l.meteo]) || "", n = l.constats.length;
-    const roleTxt = l.a_confirmer ? "Rôle proposé : " + (l.role ? l.role_libelle.toLowerCase() : "non classé") + " (" + l.raison_role_texte + "). Confirme-le avec Claude." : "Rôle : " + l.role_libelle.toLowerCase() + ", choisi avec Claude.";
-    const revueTxt = l.revue && l.revue.texte ? l.revue.texte : "";
-    return '<section class="sv-ligne" aria-labelledby="svLigneTitre" data-sv-ligne="' + esc(l.id) + '"><h3 class="sv-h" id="svLigneTitre">Ta ligne, en un coup d\'œil</h3>' +
-      '<div class="sv-ligne-tete"><div class="sv-anneau-box" role="img" aria-label="Météo : ' + esc(meteoMot) + ", " + esc(l.couverture_texte) + '">' + anneauLigneSvg(l) + '<div class="sv-anneau-centre">' + meteoHtml(l.meteo, meteoMot) + "</div></div>" +
-      '<div class="sv-ligne-txt"><p class="sv-ligne-role">' + roleChipHtml(l) + " " + (l.poids_pct != null ? "<span class=\"sv-muet\">" + esc(pct(l.poids_pct, 1)) + " de ton financier investi</span>" : "") + "</p>" +
-      '<p class="sv-ligne-r">' + esc(roleTxt) + "</p><p class=\"sv-ligne-r\">" + esc(revueTxt) + "</p><p class=\"sv-muet\">" + esc(l.couverture_texte) + (l.gelee_jusquau ? " · météo figée jusqu'à la prochaine revue du cœur" : "") + "</p>" +
-      (l.a_confirmer ? '<p>' + lienClaude(U, phraseProposition(1), "Confirmer avec Claude") + "</p>" : "") + "</div></div>" +
-      '<h3 class="sv-h">Les constats</h3><div class="sv-constats">' + l.constats.map(c => constatHtml(c, l, U)).join("") + "</div>" +
-      '<h3 class="sv-h">Les leviers de ta classe ' + esc(l.classe_libelle) + (l.enveloppe ? " dans « " + esc(l.enveloppe) + " »" : "") + "</h3>" + leviersHtml(l.leviers.map(x => Object.assign({}, x, { titre: x.cout && x.cout.titre ? x.cout.titre : x.titre })), { U, regardeLe: opt.today, effet: opt.effet }) +
-      '<p class="sv-aide">Pour tout changement, Claude chiffre d\'abord « ça vaut le coût ? » : gain certain contre coût certain. Ces chiffres informent, ils ne recommandent aucun produit.</p></section>';
+    const opt = o || {}, o2 = { U: opt.U, regardeLe: opt.today, effet: opt.effet };
+    return '<section class="sv-ligne" aria-labelledby="svLigneTitre" data-sv-ligne="' + esc(l.id) + '"><div class="sv-grille">' + teteHtml(l, opt) +
+      '<div class="sv-zone-constats"><h3 class="sv-h">Les constats</h3><p class="sv-aide sv-h-sous">Du plus important au moins important ; touche une ligne pour voir le calcul.</p>' + constatsHtml(l) + "</div>" +
+      faireHtml(l, o2) + '<div class="sv-zone-manque">' + completerHtml(l, opt) + "</div>" +
+      '<p class="sv-pied">Pour tout changement, Claude chiffre d\'abord « ça vaut le coût ? » : gain certain contre coût certain. Ces chiffres informent, ils ne recommandent aucun produit.</p></div></section>';
+  }
+  /** Va aux constats d'un niveau (bouton du bilan) : déplie « points sans problème » si besoin, fait défiler et met le focus sur la première ligne. */
+  function aller(bouton) {
+    const racine = bouton && bouton.closest ? bouton.closest("[data-sv-ligne]") : null, niv = bouton && bouton.getAttribute && bouton.getAttribute("data-sv-aller");
+    const cible = racine && niv ? racine.querySelector('[data-sv-niveau="' + niv + '"]') : null;
+    if (!cible) return false;
+    const g = cible.closest("details.sv-ok-groupe");
+    if (g) g.open = true;
+    const resume = cible.querySelector("summary"), reduit = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (typeof cible.scrollIntoView === "function") cible.scrollIntoView({ block: "center", behavior: reduit ? "auto" : "smooth" });
+    if (resume && typeof resume.focus === "function") resume.focus({ preventScroll: true });
+    cible.classList.add("sv-flash");
+    setTimeout(() => cible.classList.remove("sv-flash"), 1600);
+    return true;
   }
 
   /* ================================================================== Compte › Règles : politique de suivi */
@@ -303,6 +512,6 @@
       '<p class="sv-muet sv-regles-src">' + (pol.source === "config" ? "Réglée avec Claude." : "Réglage par défaut selon ton profil et tes objectifs : demande à Claude de l'ajuster.") + "</p>";
   }
 
-  return { vue, ligne, capacite, meteoHtml, roleChipHtml, chipConstat, systemeHtml, orbiteHtml, anneauSvg, anneauLigneSvg, ligneSuiviHtml, constatHtml, leviersHtml, carteLevierHtml, balanceHtml, politiqueHtml,
-    phraseSysteme, phraseProposition, icone, rentabilise };
+  return { vue, ligne, capacite, meteoHtml, roleChipHtml, chipConstat, niveauConstat, niveauLigne, phraseVerdictLigne, chiffreConstat, jaugeHtml, systemeHtml, orbiteHtml, anneauSvg, ligneSuiviHtml,
+    constatHtml, constatsHtml, faireHtml, optionHtml, completerHtml, manquesDe, balanceHtml, politiqueHtml, aller, phraseSysteme, phraseProposition, icone, rentabilise };
 });

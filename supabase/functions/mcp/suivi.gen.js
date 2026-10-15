@@ -3927,7 +3927,7 @@ def("suivi", function (module, exports, require) {
     if (l.role === "satellite") {
       const maxPct = ctx.politique.seuils.ligne_satellite_max_pct, poids = ctx.I > 0 ? l.valeur * 100 / ctx.I : 0;
       const statut = r6(poids) > maxPct ? "a_travailler" : r6(poids) >= r6(maxPct * 0.8) ? "a_surveiller" : "bon";
-      base("poids", statut, { mesure: { valeur: r4(poids), unite: "%", texte: pct(poids, 1) + " de ton financier investi" }, repere: { texte: "Une ligne du satellite pèse au plus " + frc(maxPct, 0) + " % du financier investi" },
+      base("poids", statut, { mesure: { valeur: r4(poids), unite: "%", texte: pct(poids, 1) + " de ton financier investi" }, repere: { texte: "Une ligne du satellite pèse au plus " + frc(maxPct, 0) + " % du financier investi", max: maxPct, unite: "%" },
         pourquoi: statut === "a_travailler" ? "Au-dessus du repère de " + frc(maxPct, 0) + " % du financier investi." : statut === "a_surveiller" ? "Proche du repère de " + frc(maxPct, 0) + " % (de 80 à 100 %)." : "Sous le repère de " + frc(maxPct, 0) + " %.",
         calcul: [eur(l.valeur) + " ÷ " + eur(ctx.I) + " = " + pct(poids, 2)], source_donnees: "tes lignes", donnees: [donnee({ poids_pct: r4(poids) })] });
     }
@@ -3938,7 +3938,7 @@ def("suivi", function (module, exports, require) {
       else {
         const sv = rep("suivi_chevauchement_surveiller_pct"), tr = rep("suivi_chevauchement_travailler_pct"), v = ch.valeur;
         const statut = r6(v) > tr ? "a_travailler" : r6(v) >= sv ? "a_surveiller" : "bon";
-        base("chevauchement", statut, { mesure: { valeur: r4(v), unite: "%", texte: pct(v, 1) + " des 10 premières lignes en commun avec un autre de tes fonds" }, repere: { texte: "Moins de " + frc(sv, 0) + " % : bon ; au-delà de " + frc(tr, 0) + " % : doublon" },
+        base("chevauchement", statut, { mesure: { valeur: r4(v), unite: "%", texte: pct(v, 1) + " des 10 premières lignes en commun avec un autre de tes fonds" }, repere: { texte: "Moins de " + frc(sv, 0) + " % : bon ; au-delà de " + frc(tr, 0) + " % : doublon", surveiller: sv, travailler: tr, unite: "%" },
           pourquoi: statut === "a_travailler" ? "Un doublon : des frais et de la complexité sans diversification en plus." : statut === "a_surveiller" ? "Une partie notable des principales lignes est la même." : "Peu de lignes en commun.",
           calcul: ["Poids communs des 10 premières lignes (minimum des deux poids) : " + frc(ch.commun, 2) + " %", "Poids des 10 premières lignes du fonds : " + frc(ch.totA, 2) + " %", "Rapport : " + pct(v, 2)], source_donnees: "composition des fonds", donnees: [donnee()] });
       }
@@ -3949,7 +3949,7 @@ def("suivi", function (module, exports, require) {
       const levier = l.classe === "levier" || (l.ins && connu(l.ins.levier) && +l.ins.levier > 1);
       const statut = levier || l.classe === "crypto" ? "a_travailler" : vol >= seuilVol ? "a_surveiller" : "bon";
       base("classe_risque", statut, { mesure: { valeur: vol, unite: "%", texte: "Classe : " + classeLib(l.classe) + ", volatilité historique d'environ " + frc(vol, 0) + " % par an" },
-        repere: { texte: "À surveiller dès " + frc(seuilVol, 0) + " % de volatilité ; levier et crypto sont des classes spéculatives" },
+        repere: { texte: "À surveiller dès " + frc(seuilVol, 0) + " % de volatilité ; levier et crypto sont des classes spéculatives", surveiller: seuilVol, unite: "%" },
         pourquoi: statut === "a_travailler" ? "Classe spéculative : les pertes peuvent dépasser 50 % en quelques mois." : statut === "a_surveiller" ? "Classe plus volatile que les actions du monde développé." : "Classe sans levier ni volatilité extrême.",
         calcul: ["Volatilité historique de la classe : " + frc(vol, 0) + " % par an (marche.js)"], source_donnees: "statistiques historiques de la classe", donnees: [donnee()] });
     }
@@ -3961,8 +3961,8 @@ def("suivi", function (module, exports, require) {
         const encBon = rep("suivi_encours_bon_eur"), encBas = rep("suivi_encours_bas_eur"), anc = rep("suivi_anciennete_fonds_ans");
         const ans = dc ? moisRevolus(dc, ctx.today) / 12 : null;
         const hors = (enc != null && enc < encBon) || (ans != null && ans <= anc);
-        base("solidite", hors ? "a_surveiller" : "bon", { mesure: { valeur: enc, unite: "€", texte: [enc != null ? "Encours " + eur(enc) : null, ans != null ? "Ancienneté " + frc(ans, 0) + " ans" : null].filter(Boolean).join(", ") },
-          repere: { texte: "Encours d'au moins " + eur(encBon) + " et plus de " + frc(anc, 0) + " ans (repères Boussole, sans source publique : jamais au-delà de « à surveiller »)" },
+        base("solidite", hors ? "a_surveiller" : "bon", { mesure: { valeur: enc, unite: "€", anciennete_ans: ans != null ? r2(ans) : null, texte: [enc != null ? "Encours " + eur(enc) : null, ans != null ? "Ancienneté " + frc(ans, 0) + " ans" : null].filter(Boolean).join(", ") },
+          repere: { texte: "Encours d'au moins " + eur(encBon) + " et plus de " + frc(anc, 0) + " ans (repères Boussole, sans source publique : jamais au-delà de « à surveiller »)", encours_min: encBon, anciennete_min_ans: anc },
           pourquoi: hors ? (enc != null && enc < encBas ? "Encours bas : un petit fonds peut fermer ou fusionner." : "L'encours ou l'ancienneté sont sous les repères.") : "Encours et ancienneté au-dessus des repères.",
           calcul: ["Encours : " + (enc != null ? eur(enc) : "inconnu"), "Ancienneté : " + (ans != null ? frc(ans, 1) + " ans" : "inconnue")], source_donnees: "données du fonds (encours, ancienneté)", confiance: enc != null && dc ? "complete" : "partielle", donnees: [donnee()] });
       }
@@ -3981,8 +3981,8 @@ def("suivi", function (module, exports, require) {
       const euro = l.devise === "EUR", seuil = ctx.profilRisque === "prudent" ? rep("suivi_devise_prudent_pct") : null;
       const montantDev = euro ? 0 : ctx.parDevise.get(l.devise) || 0, partDev = euro || ctx.I <= 0 ? 0 : montantDev * 100 / ctx.I;
       const surveille = !euro && seuil != null && r6(partDev) > seuil;
-      base("devise", surveille ? "a_surveiller" : "bon", { mesure: { valeur: r4(partDev), unite: "%", texte: euro ? "En euros" : "En " + l.devise + " : " + pct(partDev, 1) + " de ton financier investi" },
-        repere: { texte: "Information : à surveiller seulement pour un profil Prudent au-delà de " + frc(rep("suivi_devise_prudent_pct"), 0) + " % en devises" },
+      base("devise", surveille ? "a_surveiller" : "bon", { mesure: { valeur: r4(partDev), unite: "%", devise: l.devise, texte: euro ? "En euros" : "En " + l.devise + " : " + pct(partDev, 1) + " de ton financier investi" },
+        repere: { texte: "Information : à surveiller seulement pour un profil Prudent au-delà de " + frc(rep("suivi_devise_prudent_pct"), 0) + " % en devises", max: rep("suivi_devise_prudent_pct"), unite: "%" },
         pourquoi: surveille ? "Plus de " + frc(seuil, 0) + " % de ton financier investi dans une devise autre que l'euro, pour un profil Prudent." : euro ? "Ligne en euros." : "Exposition au change : une information, pas un défaut.",
         calcul: euro ? [] : [eur(montantDev) + " en " + l.devise + " ÷ " + eur(ctx.I) + " = " + pct(partDev, 1)], source_donnees: "devise du support", donnees: [donnee()] });
     }
@@ -4057,7 +4057,7 @@ def("suivi", function (module, exports, require) {
     calcul.push("Ton horizon : " + frc(hz.mois) + " mois révolus, soit " + frc(horizon, 1) + " an" + (horizon >= 2 ? "s" : ""));
 
     const M = connu(ch.montant) ? +ch.montant : somme(L, l => l.valeur);
-    if (levier !== "versements_orientes") calcul.push("Montant concerné : " + eur(M));
+    if (levier !== "versements_orientes") { calcul.push("Montant concerné : " + eur(M)); res.montant = r2(M); }
 
     /* versements orientés : aucun coût, un délai */
     if (levier === "versements_orientes") {
@@ -4649,14 +4649,37 @@ def("suivi", function (module, exports, require) {
     return { today, politique: ctx.politique, systeme: systemeCtx(ctx), lignes, declencheurs: decl, habitudes: habitudesCtx(ctx),
       prochaine_revue_coeur: prochaineRevueCoeur(ctx), roles_a_confirmer: lignes.filter(l => l.a_confirmer).map(l => l.id) };
   }
-  /** Ta ligne : rôle, poids, constats, prochaine revue, leviers de sa classe dans son enveloppe (avec « ça vaut le coût ? »). */
+  /** Regroupe les leviers qui poursuivent le même but : un seul par type de levier (« revenir sous le plafond satellite » vient à la fois du plafond du
+      portefeuille et du poids de la ligne, « versements orientés » de l'écart de classe). On garde celui dont les données sont les mieux connues (verdict
+      chiffré d'abord, puis portée la plus étroite : la ligne avant le portefeuille) ; les autres restent dans `fusionnes` (titre, mesure, seuil, ce qui manque)
+      pour que rien ne se perde. Un déclencheur sans levier (baisse du satellite) reste seul. */
+  function fusionnerLeviers(leviers) {
+    const groupes = new Map();
+    liste(leviers).forEach((x, i) => {
+      const k = x.levier || "cle:" + x.cle;
+      if (!groupes.has(k)) groupes.set(k, []);
+      groupes.get(k).push({ x, i });
+    });
+    const rang = ({ x, i }) => [x.cout && x.cout.verdict ? 0 : x.cout && connu(x.cout.cout_unique) ? 1 : 2, liste(x.position_ids).length || 1e9, i];
+    const avant = (a, b) => { for (let j = 0; j < 3; j++) if (a[j] !== b[j]) return a[j] - b[j]; return 0; };
+    const out = [];
+    groupes.forEach(g => {
+      const tries = g.slice().sort((a, b) => avant(rang(a), rang(b))), garde = tries[0], autres = tries.slice(1);
+      const lev = Object.assign({}, garde.x);
+      if (autres.length) lev.fusionnes = autres.map(({ x }) => ({ cle: x.cle, titre: x.titre, pourquoi: x.pourquoi, mesure: x.mesure, seuil: x.seuil, verdict: x.verdict, manque: liste(x.cout && x.cout.manque) }));
+      out.push({ i: garde.i, lev });
+    });
+    return out.sort((a, b) => a.i - b.i).map(o => o.lev);
+  }
+  /** Ta ligne : rôle, poids, constats, prochaine revue, leviers de sa classe dans son enveloppe (avec « ça vaut le coût ? »), un seul par but (fusionnerLeviers). */
   function ligne(data, position_id, today, options) {
     const ctx = contexte(data, today), l = ligneDe(ctx, position_id), o = objet(options);
     if (!l) return null;
     const v = ligneVue(ctx, l, o);
     const leviers = declencheursCtx(ctx, o).filter(d => d.position_ids.map(String).includes(String(l.id)) || (d.cle === "ecart_cible" && d.classe === groupeAllocation(l.classe)) || d.cle === "satellite_plafond" && l.role === "satellite").map(d => ({
-      cle: d.cle, titre: d.titre, pourquoi: d.pourquoi, levier: d.levier, visible: d.visible, raison_visibilite: d.raison_visibilite, mesure: d.mesure, seuil: d.seuil, verdict: d.verdict, cout: d.cout }));
-    return Object.assign(v, { leviers });
+      cle: d.cle, titre: d.titre, pourquoi: d.pourquoi, levier: d.levier, visible: d.visible, raison_visibilite: d.raison_visibilite, mesure: d.mesure, seuil: d.seuil, verdict: d.verdict, cout: d.cout,
+      portee: d.portee, position_ids: d.position_ids, montant: d.montant == null ? null : d.montant }));
+    return Object.assign(v, { leviers: fusionnerLeviers(leviers) });
   }
 
   /* ================================================================== mémoire de la revue (routines.etat_suivi, écrite par cloturer_routine) */
@@ -4722,7 +4745,7 @@ def("suivi", function (module, exports, require) {
   }
 
   return { ROLES, ROLES_LIB, METEOS, METEO_LIB, STATUT_LIB, CONSTATS_LIB, VERDICT_LIB, CLASSE_LIB, LEVIERS, RAISON_LIB, DEFAUTS, classeLib, moisRevolus,
-    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, santeDe, etatSuivi, routinesDe, depuisEtat, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
+    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, santeDe, etatSuivi, routinesDe, depuisEtat, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, fusionnerLeviers, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
 });
 });
 

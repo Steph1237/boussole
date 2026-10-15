@@ -79,7 +79,7 @@
 #view-comptes-view .cv-f-titre:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 #view-comptes-view .cv-f-sous{margin:4px 0 0;font-size:var(--t-small);color:var(--muted)}
 #view-comptes-view .cv-f-total{margin:0;font:700 var(--t-h1) var(--f-num);font-variant-numeric:tabular-nums}
-#view-comptes-view .cv-f-bloc h3{margin:0 0 10px;font:700 var(--t-body) var(--f-display)}
+#view-comptes-view .cv-f-bloc>h3,#view-comptes-view .cv-f-head h3{margin:0 0 10px;font:700 var(--t-body) var(--f-display)}
 #view-comptes-view .cv-f-head{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;margin-bottom:8px}
 #view-comptes-view .cv-f-head h3{margin:0}
 #view-comptes-view .cv-periode{max-width:100%;min-width:0}
@@ -189,6 +189,13 @@
   #view-comptes-view #cvTete>.cv-faits{grid-column:2;grid-row:1/span 6;margin:0}
 }
 
-/* Ta ligne (spec § 11.9, 1 280 px et plus) : le cours, les constats et les leviers à gauche ; l'essentiel, le détail et les mouvements dans une colonne de droite de 480 px */
+/* Ta ligne (spec § 11.9, 1 100 px et plus) : le cours à gauche, l'essentiel, le détail et les mouvements dans une colonne de droite de 480 px ; le suivi (diagnostic et « Que faire ? »,
+   qui se mettent eux-mêmes en deux colonnes quand la place le permet) prend toute la largeur dessous. Sans cours (ligne sans ISIN), le suivi reste à gauche de la colonne de droite. */
 #view-comptes-view .cv-f-2col,#view-comptes-view .cv-f-col{display:flex;flex-direction:column;gap:16px;min-width:0}
-@media (min-width:1100px){#view-comptes-view .cv-f-2col{display:grid;grid-template-columns:minmax(0,1fr) 480px;align-items:start;gap:var(--gap-sections,24px)}}
+@media (min-width:1100px){
+  #view-comptes-view .cv-f-2col{display:grid;grid-template-columns:minmax(0,1fr) 480px;grid-template-areas:"cours droite" "suivi suivi";align-items:start;gap:var(--gap-sections,24px)}
+  #view-comptes-view .cv-f-2col.cv-f-sans-cours{grid-template-areas:"suivi droite"}
+  #view-comptes-view .cv-f-cours{grid-area:cours}
+  #view-comptes-view .cv-f-suivi{grid-area:suivi}
+  #view-comptes-view .cv-f-droite{grid-area:droite}
+}
