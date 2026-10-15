@@ -13,6 +13,10 @@
 //                                                    pratiques.js, que la copie du moteur de projection ne porte pas), recopiée de la même façon
 //                                                    (voir genererSuivi()). Parité testée par test/suivi-mcp.test.mjs.
 //
+//   supabase/functions/mcp/historique-import.gen.js  copie du module d'import de l'historique (HIS2 : web/src/historique-import.js et sensible.js, dont il dépend),
+//                                                    recopiée de la même façon (voir genererHistoriqueImport()). Le connecteur vérifie un import avec exactement
+//                                                    le code que l'app et les tests exécutent. Parité testée par test/historique-import-gen.test.mjs.
+//
 // Usage : npm run gen (node scripts/gen-catalogue.mjs). test/formulaire.test.mjs et test/projection-mcp.test.mjs échouent si un fichier généré n'est plus à jour.
 //
 // Sources :
@@ -38,12 +42,16 @@ export const SORTIE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.gen.ts"
 export const SOURCE_LOGIQUE = "supabase/functions/mcp/formulaire-logique.js";
 export const SORTIE_MOTEUR = "supabase/functions/mcp/projection-moteur.gen.js";
 export const SORTIE_SUIVI = "supabase/functions/mcp/suivi.gen.js";
+export const SORTIE_HISTORIQUE_IMPORT = "supabase/functions/mcp/historique-import.gen.js";
 /** Modules du moteur, dans l'ordre de définition (chacun ne dépend que des précédents) : nom → fichier de web/src. */
 export const MODULES_MOTEUR = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "projection-evenements",
   "projection-credit", "projection-donnees", "projection-immo", "projection"];
 /** Modules de la copie du moteur de suivi (SUIVI), dans l'ordre de définition : chacun ne dépend que des précédents. */
 export const MODULES_SUIVI = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "risque", "pratiques", "suivi"];
 export const EXPORTS_SUIVI = { Suivi: "suivi", Risque: "risque", Pratiques: "pratiques", Calc: "calc", Marche: "marche" };
+/** Modules de la copie du module d'import de l'historique (HIS2), dans l'ordre de définition. */
+export const MODULES_HISTORIQUE_IMPORT = ["sensible", "historique-import"];
+export const EXPORTS_HISTORIQUE_IMPORT = { HistoriqueImport: "historique-import" };
 /** Valeurs exportées par la copie : nom exporté → module. */
 export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection" };
 
@@ -179,6 +187,10 @@ export function genererMoteur() {
 export function genererSuivi() {
   return copierModules(MODULES_SUIVI, EXPORTS_SUIVI, "Copie du moteur de suivi des lignes de l'app (SUIVI, docs/superpowers/specs/2026-10-15-suivi-lignes-design.md)", "suivi-moteur");
 }
+/** Copie du module d'import de l'historique (HIS2, docs/superpowers/specs/2026-10-16-his2-historique-design.md § 5) : mêmes règles que genererMoteur(). */
+export function genererHistoriqueImport() {
+  return copierModules(MODULES_HISTORIQUE_IMPORT, EXPORTS_HISTORIQUE_IMPORT, "Copie du module d'import de l'historique de l'app (HIS2, docs/superpowers/specs/2026-10-16-his2-historique-design.md)", "historique-import");
+}
 function copierModules(MODULES, EXPORTS, titre, etiquette) {
   const corps = MODULES.map(nom => {
     const src = readFileSync(racine("web/src/" + nom + ".js"), "utf8").replace(/\r\n/g, "\n").replace(/\s+$/, "");
@@ -201,6 +213,6 @@ function copierModules(MODULES, EXPORTS, titre, etiquette) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi() };
+  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi(), [SORTIE_HISTORIQUE_IMPORT]: genererHistoriqueImport() };
   for (const [rel, txt] of Object.entries(fichiers)) { writeFileSync(racine(rel), txt); console.log("écrit : " + rel); }
 }
