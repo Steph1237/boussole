@@ -275,6 +275,18 @@ test("carte IMMO1 : marquée pour que son titre tienne sur une ligne au téléph
   assert.match(readFileSync("web/src/graphe-patrimoine.css", "utf8"), /@media \(max-width:430px\)\{\.gp-capa \.gp-tete \.gp-eur\{display:none\}\}/);
 });
 
+test("cadre de focus du tracé : seulement au clavier (pas après un geste de souris, ni après le focus posé à l'ouverture) ; la virgule des montants garde sa largeur", () => {
+  const b = monter(); b.api.pleinEcran();
+  const hit = b.doc.body.querySelector(".gp-fsv").querySelector("[data-hit]");
+  assert.equal(hit.getAttribute("data-clavier"), null, "focus posé par le code : pas de cadre");
+  b.touche(hit, "ArrowRight"); assert.equal(hit.getAttribute("data-clavier"), "1", "touche au clavier : le cadre apparaît");
+  hit.dispatchEvent(new b.Ev("pointerdown", { clientX: 200, pointerId: 1, pointerType: "mouse" })); assert.equal(hit.getAttribute("data-clavier"), null, "geste de souris : le cadre disparaît");
+  const css = readFileSync("web/src/graphe-patrimoine.css", "utf8");
+  assert.match(css, /\.gp-hit:focus-visible\{outline:none\}/); assert.match(css, /\.gp-hit\[data-clavier\]:focus-visible\{outline:2px solid var\(--focus\)/);
+  assert.match(css, /\.gp-ro-v b\{[^}]*proportional-nums/); assert.match(css, /\.gp-hl \.gp-hl-v\{[^}]*proportional-nums/); assert.match(css, /\.gp-svg \.gp-pill text\{font-variant-numeric:proportional-nums/);
+  b.api.fermerPleinEcran();
+});
+
 test("sous la carte : une seule ligne de décomposition et les alertes ; événements pris en compte et base de l'épargne vont dans « Comment c'est calculé », une seule phrase sur la capacité", () => {
   const t = monter(), notes = sp(t.q("[data-notes]").textContent);
   assert.doesNotMatch(notes, /Événements pris en compte|Épargne mensuelle projetée/);

@@ -104,6 +104,11 @@ test("chances sur 10 : dès 95 % « plus de 9 chances sur 10 », jamais « 10 ch
   assert.equal(G.chancesTxt(0.94), "9 chances sur 10"); assert.equal(G.chancesTxt(0.8), "8 chances sur 10"); assert.equal(G.chancesTxt(0.1), "1 chance sur 10"); assert.equal(G.chancesTxt(0.02), "moins de 1 chance sur 10");
 });
 
+test("pourcentages signés : une décimale sous 10 %, entier au-delà (« +397 % », « +9,6 % », « −0,4 % »)", () => {
+  const f = x => G.fPct(x).replace(/[  ]/g, " ");
+  assert.equal(f(3.97), "+397 %"); assert.equal(f(1.139), "+114 %"); assert.equal(f(0.096), "+9,6 %"); assert.equal(f(-0.004), "−0,4 %"); assert.equal(f(0.0996), "+10 %"); assert.equal(f(-0.25), "−25 %");
+});
+
 test("échelle des y : jamais sous zéro pour un patrimoine positif ; resserrée quand le besoin rétrécit nettement, sans bouger entre l'aperçu et le complet", () => {
   assert.equal(G.domaineY(1000, 400000).lo, 0); assert.ok(G.domaineY(100000, 400000).lo > 0 && G.domaineY(100000, 400000).lo < 100000);
   const ap = G.echelleYStable(null, { lo: 2000, hi: 400000 }, { apercu: true });

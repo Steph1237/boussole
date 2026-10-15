@@ -105,7 +105,8 @@
   const fSE = n => (n >= 0 ? "+" : MOINS) + fInt(n) + NB + "€";
   const fMois = n => (n > 0 ? "+" : n < 0 ? MOINS : "") + fInt(n) + NB + "€/mois";
   const fMoisU = n => fInt(n) + NB + "€/mois";
-  const fPct = x => (x >= 0 ? "+" : MOINS) + Math.abs(x * 100).toFixed(1).replace(".", ",") + NB + "%";
+  /** Pourcentage signé : une décimale sous 10 %, entier au-delà (règle de Fmt.fmtPct : « +397 % », pas « +397,0 % »). */
+  const fPct = x => { const a = Math.abs(x * 100), d = Math.round(a * 10) / 10 < 10 && Math.round(a * 10) !== 0 ? 1 : 0; return (x >= 0 ? "+" : MOINS) + a.toFixed(d).replace(".", ",") + NB + "%"; };
   /** « 300 et 560 k€ » : la fourchette en deux nombres, l'unité une seule fois quand elle est la même. */
   const kRange = (a, b) => (Math.max(Math.abs(a), Math.abs(b)) < 1e6 && Math.min(Math.abs(a), Math.abs(b)) >= 1000 ? Math.round(a / 1000) + " et " + fK(b) : fK(a) + " et " + fK(b));
   const kTiret = (a, b) => (Math.max(Math.abs(a), Math.abs(b)) < 1e6 && Math.min(Math.abs(a), Math.abs(b)) >= 1000 ? Math.round(a / 1000) + "–" + fK(b) : fK(a) + "–" + fK(b));
@@ -1710,7 +1711,11 @@
         if (e.ctrlKey || e.metaKey) { if (e.preventDefault) e.preventDefault(); g.zoomAutour(this.tAt(e.clientX), Math.exp(e.deltaY * 0.01)); }
         else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { if (e.preventDefault) e.preventDefault(); const d = g.domaineCourant(), r = hit.getBoundingClientRect ? hit.getBoundingClientRect() : { width: 1 }; g.deplacer(e.deltaX / (r.width || 1) * (d.fin - d.debut)); }
       }, { passive: false });
-      this.ecoute(hit, "keydown", e => this.touche(e));
+      this.ecoute(hit, "keydown", e => { this.clav = true; if (hit.setAttribute) hit.setAttribute("data-clavier", "1"); this.touche(e); });
+      /* le cadre de focus ne s'affiche qu'au clavier : ni après un geste de souris ou de doigt, ni après le focus posé par le code à l'ouverture du plein écran */
+      this.ecoute(hit, "pointerdown", () => { this.clav = false; if (hit.removeAttribute) hit.removeAttribute("data-clavier"); });
+      this.ecoute(hit, "focus", () => { if (!this.focusProg && this.clav !== false && hit.setAttribute) hit.setAttribute("data-clavier", "1"); });
+      this.ecoute(hit, "blur", () => { this.clav = undefined; if (hit.removeAttribute) hit.removeAttribute("data-clavier"); });
     }
     /** Pas du curseur au clavier : échantillon précédent / suivant de la fenêtre ; au bord d'une fenêtre zoomée, la fenêtre se déplace. */
     touche(e) {
@@ -2267,7 +2272,7 @@
         if (p.vue) p.vue.detruire();
         p.vue = new Vue(this, ov, { mode: p.mode, plein: true });
         p.vue.render({});
-        const h = p.vue.hit; if (h && h.focus) h.focus();
+        const h = p.vue.hit; if (h && h.focus) { p.vue.focusProg = true; h.focus(); p.vue.focusProg = false; }
       };
       p.surTaille = () => { if (this.plein === p && choisir() !== p.mode) monter(); };
       p.surTouche = e => {

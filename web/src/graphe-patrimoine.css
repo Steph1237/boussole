@@ -21,7 +21,8 @@
 .gp-cadre{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .gp-svg{display:block;overflow:visible}
 .gp-hit{position:absolute;touch-action:pan-y;cursor:crosshair;border-radius:4px}
-.gp-hit:focus-visible{outline-offset:-2px}
+.gp-hit:focus-visible{outline:none}
+.gp-hit[data-clavier]:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .gp-marks{position:absolute;left:0;top:0;width:0;height:0}
 .gp-mk-b{position:absolute;height:44px;border-radius:12px;background:transparent}
 .gp-mk-b:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
@@ -181,7 +182,7 @@
 .gp-ro-tag{font:600 var(--t-caption)/var(--lh-caption) var(--f-body);padding:2px 8px;border-radius:var(--r-chip);background:var(--sunk);color:var(--muted)}
 .gp-ro-x{margin-left:auto;width:32px;height:32px;display:inline-grid;place-items:center;border-radius:8px;color:var(--muted)}
 .gp-ro-v{display:flex;align-items:baseline;gap:var(--sp-2);margin-top:4px;flex-wrap:wrap}
-.gp-ro-v b{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-display);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.gp-ro-v b{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-display);letter-spacing:-.01em;font-variant-numeric:proportional-nums lining-nums}
 .gp-ro-dl{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 .gp-rb{position:relative;height:8px;margin:12px 0 4px;border-radius:4px}
 .gp-rb i{position:absolute;top:0;bottom:0;border-radius:4px}
@@ -332,3 +333,5 @@ body.gp-bloque{overflow:hidden}
 /* IMMO1 sur téléphone : « Ta capacité demain » tient sur une ligne ; la puce des euros passe dans les réglages (Montants), où elle se règle aussi */
 @media (max-width:430px){.gp-capa .gp-tete .gp-eur{display:none}}
 .gp-tete h2{text-wrap:balance}
+/* la virgule d'un montant (« 1,0 M€ ») garde sa largeur propre : chiffres proportionnels dans le titre, la lecture et les pastilles */
+.gp-svg .gp-pill text{font-variant-numeric:proportional-nums lining-nums}
