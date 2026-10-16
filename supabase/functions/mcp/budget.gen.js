@@ -3442,11 +3442,12 @@ def("budget", function (module, exports, require) {
   }
 
   /* ================================================================== dépenses annuelles et lissage (§ 6.3) */
-  /** Dépenses annuelles de la vue, d'après les agrégats par marchand : une règle `annuelle: true`, ou une clé qui n'apparaît qu'une fois sur les 13 mois (ou deux fois à
-      11 à 13 mois d'écart, « confirmée ») avec une sous-catégorie « annuelle probable » ou un montant d'au moins `budget_annuelle_seuil`. Seules les dépenses des blocs
-      essentiels et envies se lissent. → [{ compte_id, cle_marchand, sous_categorie, regle_id, confirmee, paiements: [{ mois, montant }] }] (montants à 100 %). */
+  /** Dépenses annuelles de la vue, d'après les agrégats par marchand. Seules les dépenses CONFIRMÉES se lissent : une règle `annuelle: true`, deux paiements de la même clé
+      à 11 à 13 mois d'écart (`confirmee: true`), ou une clé qui n'apparaît qu'une fois sur les 13 mois dans une sous-catégorie « annuelle probable » (impôts, assurances,
+      voyages ; `confirmee: false`, la question reste posée à Claude). Un achat isolé de 150 € ou plus d'une autre sous-catégorie n'est PAS lissé : il reste une dépense
+      inhabituelle du mois. Seules les dépenses des blocs essentiels et envies se lissent. → [{ compte_id, cle_marchand, sous_categorie, regle_id, confirmee, paiements: [{ mois, montant }] }] (montants à 100 %). */
   function annuelles(data, v) {
-    const d = data || {}, seuil = convention(d.reperes, "budget_annuelle_seuil"), regles = (d.regles || []).filter(r => r && r.annuelle === true && r.active !== false);
+    const d = data || {}, regles = (d.regles || []).filter(r => r && r.annuelle === true && r.active !== false);
     const groupes = new Map();
     for (const l of Array.isArray(d.marchands) ? d.marchands : []) {
       if (!l || !mois7(l.mois) || !(n0(l.sorties) > 0) || !l.cle_marchand) continue;
@@ -3467,9 +3468,8 @@ def("budget", function (module, exports, require) {
       let annuelle = false, confirmee = false;
       if (regle) annuelle = confirmee = true;
       else {
-        const gros = paiements.every(p => p.montant >= seuil) || !!(taxo && taxo.annuelle_probable);
-        if (paiements.length === 1 && gros) annuelle = true;
-        else if (paiements.length === 2 && gros) {
+        if (paiements.length === 1 && taxo && taxo.annuelle_probable) annuelle = true;
+        else if (paiements.length === 2) {
           const ecart = (+paiements[1].mois.slice(0, 4) * 12 + +paiements[1].mois.slice(5)) - (+paiements[0].mois.slice(0, 4) * 12 + +paiements[0].mois.slice(5));
           if (ecart >= 11 && ecart <= 13) annuelle = confirmee = true;
         }

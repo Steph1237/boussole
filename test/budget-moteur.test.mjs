@@ -430,3 +430,16 @@ test("relecture : la part « à classer » se lit sur les sorties brutes ; une e
   const M2 = voir(storeDe(c2), { vue: "tout", mois: c2.mois });
   assert.equal(Budget.score(M2, { revenus_ref: 3000, blocs: { essentiels: 1500, envies: 500, epargne: 1000 } }).raison_absence, "a_classer");
 });
+
+test("lissage : seules les dépenses annuelles confirmées se lissent ; un achat isolé de 150 € ou plus reste au mois, deux paiements à 12 mois d'écart se lissent quel que soit le montant", () => {
+  const ml = (mois, cle, sous, s) => ({ mois: mois + "-01", compte_id: "c1", cle_marchand: cle, sous_categorie: sous, entrees: 0, sorties: s, nombre: 1, montant_min: s, montant_max: s, dernier_jour: 10 });
+  const marchands = [ml("2026-08", "ikea", "shopping", 420), ml("2026-08", "voyagiste", "voyages", 900), ml("2025-10", "club photo", "sport", 40), ml("2026-10", "club photo", "sport", 44), ml("2026-06", "darty", "shopping", 650), ml("2025-12", "darty", "shopping", 700)];
+  const rows = marchands.map(l => ({ ...l, compte_id: "c1", categorie: BC.largeDe(l.sous_categorie) }));
+  const S = { banque: { actif: true, comptes: [compteStore({ id: "c1", type: "courant", titulaire: "p1" })], mois: rows, marchands }, config: {} };
+  const data = Budget.donnees(S, { aujourdhui: AUJ });
+  const liste = Budget.depensesAnnuelles(data, { vue: "tout", personne: null, part: 0.5 });
+  assert.deepEqual(liste.map(a => [a.cle_marchand, a.confirmee]), [["club photo", true], ["voyagiste", false]], "ikea (420 € isolé) et darty (2 paiements à 6 mois) ne sont pas annuels");
+  const aout = Budget.mois(data, { vue: "tout", mois: "2026-08" });
+  assert.deepEqual(aout.lisse.annuelles.map(a => a.cle_marchand), ["club photo", "voyagiste"], "le club photo (payé en 2025-10) a sa provision, ikea et darty n'en ont pas");
+  near(aout.lisse.envies_lisses, aout.blocs.envies - 900 + 75 + 40 / 12, "ikea reste entier, le voyage est lissé à 900 / 12, le club à 40 / 12", 0.001);
+});

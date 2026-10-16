@@ -26,7 +26,7 @@
 --     colonnes ; regle_id sans clé étrangère (la règle peut disparaître).
 --   banque_mois (+ sous_categorie, clé primaire (user_id, mois, compte_id, categorie, sous_categorie)) : les lignes existantes reçoivent la
 --     sous-catégorie par défaut de leur catégorie large (mise à jour idempotente) ; '' = ligne sans détail (écrite par un code antérieur).
---   banque_marchands_mois (nouvelle) : totaux mensuels par compte, marchand nettoyé et sous-catégorie (+ montant_min, montant_max, dernier_jour des sorties : D14), 13 mois, écrits par le service seul
+--   banque_marchands_mois (nouvelle) : totaux mensuels par compte, marchand nettoyé et sous-catégorie (+ montant_min, montant_max, dernier_jour des sorties : D14 ; + sous_categorie_origine : le classement d'avant toute règle, pour que retirer une règle ramène les anciens mois), 13 mois, écrits par le service seul
 --     (banque_recalculer_mois), purgés par banque_purger ; régime « banque_* » de 0033 (lecture aal2 ou connecteur autorisé, écriture aal2
 --     sans client_id, suppression idem).
 --   budget_regles (nouvelle) : règles personnelles de classement, 300 au plus par utilisateur ; contraintes du § 3.4 (motif de 3 à 60
@@ -246,7 +246,11 @@ alter table public.banque_operations
   add column if not exists sous_categorie    text,
   add column if not exists origine_categorie text,
   add column if not exists regle_id          uuid,
-  add column if not exists cle_marchand      text;
+  add column if not exists cle_marchand      text,
+  add column if not exists sous_categorie_origine text;
+alter table public.banque_operations drop constraint if exists banque_operations_sous_categorie_origine;
+alter table public.banque_operations add constraint banque_operations_sous_categorie_origine
+  check (sous_categorie_origine is null or public.budget_sous_categorie_valide(sous_categorie_origine));
 alter table public.banque_operations drop constraint if exists banque_operations_sous_categorie;
 alter table public.banque_operations add constraint banque_operations_sous_categorie
   check (sous_categorie is null or public.budget_sous_categorie_valide(sous_categorie));
@@ -282,8 +286,12 @@ create table public.banque_marchands_mois (
   dernier_jour   smallint constraint banque_marchands_mois_dernier_jour check (dernier_jour is null or dernier_jour between 1 and 31),
   -- nombre d'opérations de sortie seules (`nombre` compte aussi les entrées du groupe) : fréquence, panier moyen et seuils du récurrent ; null = inconnu, on lit `nombre`
   nombre_sorties int constraint banque_marchands_mois_nombre_sorties check (nombre_sorties is null or (nombre_sorties >= 0 and nombre_sorties <= nombre)),
+  -- sous-catégorie que ces opérations avaient AVANT toute règle de l'utilisateur ('' = la même) : retirer ou désactiver une règle ramène les mois de 90 jours
+  -- à 13 mois à leur classement d'avant (budget_marchands_reclasser), sans garder aucune opération brute
+  sous_categorie_origine text not null default '' constraint banque_marchands_mois_origine check (sous_categorie_origine = ''
+    or (public.budget_sous_categorie_valide(sous_categorie_origine) and sous_categorie_origine <> sous_categorie)),
   constraint banque_marchands_mois_bornes check (montant_min is null or montant_max is null or montant_min <= montant_max),
-  primary key (user_id, mois, compte_id, cle_marchand, sous_categorie),
+  primary key (user_id, mois, compte_id, cle_marchand, sous_categorie, sous_categorie_origine),
   foreign key (user_id, compte_id) references public.banque_comptes(user_id, id) on delete cascade
 );
 create index banque_marchands_mois_mois_idx on public.banque_marchands_mois (user_id, mois);
@@ -2069,7 +2077,7 @@ grant execute on function public.export_all() to authenticated;
 -- de la carte comptent chacune à sa date et le relevé, lui, est hors budget). Gardés : apport_commun, transfert_foyer et releve_carte.
 create or replace function public.banque_operations_comptees(p_user uuid, p_depuis date)
 returns table (mois date, compte_id bigint, categorie text, sous_categorie text, cle_marchand text, entrees numeric, sorties numeric, nombre int,
-               montant_min numeric, montant_max numeric, dernier_jour smallint, nombre_sorties int)
+               montant_min numeric, montant_max numeric, dernier_jour smallint, nombre_sorties int, sous_origine text)
 language sql
 stable
 security invoker
@@ -2081,12 +2089,15 @@ as $$
          count(*)::int,
          min(-o.montant) filter (where o.montant < 0), max(-o.montant) filter (where o.montant < 0),
          (max(extract(day from o.date)) filter (where o.montant < 0))::smallint,
-         (count(*) filter (where o.montant < 0))::int
+         (count(*) filter (where o.montant < 0))::int,
+         so.origine
     from public.banque_operations o
     join public.banque_comptes k on k.user_id = o.user_id and k.id = o.compte_id
    cross join lateral (select coalesce(nullif(btrim(o.categorie), ''), 'divers') as cat) c
    cross join lateral (select case when o.sous_categorie is not null and public.budget_categorie_de(o.sous_categorie) = c.cat
                                    then o.sous_categorie else public.budget_sous_categorie_defaut(c.cat) end as sub) s
+   cross join lateral (select case when o.sous_categorie_origine is not null and public.budget_sous_categorie_valide(o.sous_categorie_origine)
+                                        and o.sous_categorie_origine <> s.sub then o.sous_categorie_origine else '' end as origine) so
    where o.user_id = p_user and o.date >= p_depuis
      and not (k.debit_differe
               and exists (select 1 from public.banque_comptes k2
@@ -2096,7 +2107,7 @@ as $$
                                where r.user_id = k.user_id and k3.connexion_id = k.connexion_id and k3.type = 'courant' and not k3.debit_differe
                                  and r.sous_categorie = 'releve_carte' and r.categorie = 'virement_interne' and r.date >= o.date and r.date <= o.date + 45))
      and (c.cat <> 'virement_interne' or s.sub in ('apport_commun', 'transfert_foyer', 'releve_carte'))
-   group by 1, 2, 3, 4, 5;
+   group by 1, 2, 3, 4, 5, so.origine;
 $$;
 revoke all on function public.banque_operations_comptees(uuid, date) from public, anon, authenticated;
 grant execute on function public.banque_operations_comptees(uuid, date) to service_role;
@@ -2125,11 +2136,11 @@ begin
   select p_user, c.mois, c.compte_id, c.categorie, c.sous_categorie, sum(c.entrees), sum(c.sorties), sum(c.nombre)::int
     from public.banque_operations_comptees(p_user, v_debut) c
    group by 2, 3, 4, 5;
-  insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour, nombre_sorties)
+  insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour, nombre_sorties, sous_categorie_origine)
   select p_user, c.mois, c.compte_id, c.cle_marchand, c.sous_categorie, sum(c.entrees), sum(c.sorties), sum(c.nombre)::int,
-         min(c.montant_min), max(c.montant_max), max(c.dernier_jour), sum(c.nombre_sorties)::int
+         min(c.montant_min), max(c.montant_max), max(c.dernier_jour), sum(c.nombre_sorties)::int, c.sous_origine
     from public.banque_operations_comptees(p_user, v_debut) c
-   group by 2, 3, 4, 5;
+   group by 2, 3, 4, 5, c.sous_origine;
 end;
 $$;
 revoke all on function public.banque_recalculer_mois(uuid, date) from public, anon, authenticated;
@@ -2219,8 +2230,8 @@ grant execute on function public.budget_reclasser_historique(uuid) to service_ro
 
 -- budget_marchands_reclasser(user, changements) : applique à banque_marchands_mois un reclassement décidé par la fonction powens (règle créée,
 -- modifiée, désactivée ou supprimée) pour les mois de plus de 90 jours et de 13 mois au plus. changements : [{ mois (AAAA-MM-JJ, 1er du mois),
--- compte_id, cle_marchand, de, vers }] ; la ligne (mois, compte, marchand, de) passe à la sous-catégorie `vers`, ses montants s'ajoutant à ceux d'une
--- ligne qui existerait déjà sous `vers`. Un changement hors de cette période, ou dont la ligne n'existe plus, est ignoré. Tout ou rien. Renvoie le
+-- compte_id, cle_marchand, de, vers, origine? }] ; la ligne (mois, compte, marchand, de, origine) passe à la sous-catégorie `vers`, ses montants s'ajoutant à ceux d'une
+-- ligne qui existerait déjà sous `vers`. `sous_categorie_origine` (celle d'avant toute règle, '' = la même) suit la ligne : un retour à l'origine la remet à ''. Un changement hors de cette période, ou dont la ligne n'existe plus, est ignoré. Tout ou rien. Renvoie le
 -- nombre de lignes déplacées. Réservée à service_role ; budget_reclasser_historique reconstruit ensuite banque_mois.
 create or replace function public.budget_marchands_reclasser(p_user uuid, p_changes jsonb)
 returns int
@@ -2259,15 +2270,23 @@ begin
     if v_mois <> date_trunc('month', v_mois)::date then
       raise exception 'Changement invalide : mois au premier jour du mois.' using errcode = '22023';
     end if;
+    if jsonb_typeof(v_c->'origine') not in ('string', 'null') and v_c ? 'origine' then
+      raise exception 'Changement invalide : origine en texte.' using errcode = '22023';
+    end if;
+    if coalesce(v_c->>'origine', '') <> '' and not public.budget_sous_categorie_valide(v_c->>'origine') then
+      raise exception 'Sous-catégorie inconnue dans un changement.' using errcode = '22023';
+    end if;
     if v_mois < v_debut or v_mois >= v_fin or (v_c->>'de') = (v_c->>'vers') then continue; end if;
+    -- la ligne déplacée garde sa sous-catégorie d'origine (celle d'avant toute règle) : elle redevient une ligne ordinaire ('') quand elle y retourne
     with src as (
       delete from public.banque_marchands_mois mm
        where mm.user_id = p_user and mm.mois = v_mois and mm.compte_id = (v_c->>'compte_id')::bigint
-         and mm.cle_marchand = v_c->>'cle_marchand' and mm.sous_categorie = v_c->>'de'
-       returning mm.entrees, mm.sorties, mm.nombre, mm.montant_min, mm.montant_max, mm.dernier_jour, mm.nombre_sorties)
-    insert into public.banque_marchands_mois as bm (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour, nombre_sorties)
-    select p_user, v_mois, (v_c->>'compte_id')::bigint, v_c->>'cle_marchand', v_c->>'vers', src.entrees, src.sorties, src.nombre, src.montant_min, src.montant_max, src.dernier_jour, src.nombre_sorties from src
-    on conflict (user_id, mois, compte_id, cle_marchand, sous_categorie)
+         and mm.cle_marchand = v_c->>'cle_marchand' and mm.sous_categorie = v_c->>'de' and mm.sous_categorie_origine = coalesce(v_c->>'origine', '')
+       returning mm.entrees, mm.sorties, mm.nombre, mm.montant_min, mm.montant_max, mm.dernier_jour, mm.nombre_sorties, mm.sous_categorie_origine)
+    insert into public.banque_marchands_mois as bm (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour, nombre_sorties, sous_categorie_origine)
+    select p_user, v_mois, (v_c->>'compte_id')::bigint, v_c->>'cle_marchand', v_c->>'vers', src.entrees, src.sorties, src.nombre, src.montant_min, src.montant_max, src.dernier_jour, src.nombre_sorties,
+           case when coalesce(nullif(src.sous_categorie_origine, ''), v_c->>'de') = v_c->>'vers' then '' else coalesce(nullif(src.sous_categorie_origine, ''), v_c->>'de') end from src
+    on conflict (user_id, mois, compte_id, cle_marchand, sous_categorie, sous_categorie_origine)
     do update set entrees = bm.entrees + excluded.entrees, sorties = bm.sorties + excluded.sorties, nombre = bm.nombre + excluded.nombre,
                   montant_min = least(bm.montant_min, excluded.montant_min), montant_max = greatest(bm.montant_max, excluded.montant_max),
                   dernier_jour = greatest(bm.dernier_jour, excluded.dernier_jour),

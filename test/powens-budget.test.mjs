@@ -171,7 +171,7 @@ test("code Powens brut (synchronisation), mémoire de l'origine Powens et repli 
   assert.deepEqual(sc(par(p)[1]), ["courses", "alimentation", "powens"]);
   // la ligne écrite porte le classement et pas d'autre champ que les colonnes de banque_operations
   assert.deepEqual(J(Object.keys(p.operations[0]).sort()), ["categorie", "categorie_powens", "cle_marchand", "compte_id", "contrepartie_id", "date", "id", "libelle", "montant",
-    "origine_categorie", "regle_id", "sous_categorie", "type_powens", "user_id"]);
+    "origine_categorie", "regle_id", "sous_categorie", "sous_categorie_origine", "type_powens", "user_id"]);
   // déjà en base, sans code brut : la sous-catégorie qui venait de Powens est gardée
   const memoire = op(2, 1, "2026-10-02", -40, "CB BOUTIQUE DU COIN", { categorie: "sante", categorie_powens: "sante", sous_categorie: "sante", origine_categorie: "powens" });
   assert.deepEqual(sc(par(prep(S, [memoire]))[2]), ["sante", "sante", "powens"]);
@@ -184,6 +184,13 @@ test("code Powens brut (synchronisation), mémoire de l'origine Powens et repli 
   // une règle qui n'a plus lieu d'être : la mémoire de Powens manque (origine « regle »), le repli sur la catégorie large s'applique
   const apresRegle = op(4, 1, "2026-10-02", -40, "VIR INST XYZ SARL", { categorie: "loisirs", categorie_powens: "loisirs", sous_categorie: "sport", origine_categorie: "regle", regle_id: "r2" });
   assert.deepEqual(sc(par(prep(S, [apresRegle]))[4]), ["loisirs", "loisirs", "powens"]);
+  // la sous-catégorie d'avant les règles est gardée avec l'opération : règle posée sur une opération classée par Powens, puis retirée → retour à Powens
+  const regleXyz = { id: "r9", motif: "xyz sarl", sous_categorie: "sport", sens: "sortie", compte_id: null, montant_min: null, montant_max: null, annuelle: false, active: true, cree_le: "2026-10-01T00:00:00Z" };
+  const avant = op(5, 1, "2026-10-02", -40, "VIR INST XYZ SARL", { categorie: "alimentation", categorie_powens: "alimentation", sous_categorie: "courses", origine_categorie: "powens" });
+  const posee = par(prep(S, [avant], { cl: { regles: [regleXyz] } }))[5];
+  assert.deepEqual([posee.sous_categorie, posee.origine_categorie, posee.sous_categorie_origine], ["sport", "regle", "courses"], "la règle déplace, l'origine garde « courses »");
+  const retiree = par(prep(S, [{ ...avant, sous_categorie: "sport", categorie: "loisirs", origine_categorie: "regle", regle_id: "r9", sous_categorie_origine: "courses" }]))[5];
+  assert.deepEqual([retiree.sous_categorie, retiree.origine_categorie, retiree.sous_categorie_origine], ["courses", "powens", null], "règle retirée : courses revient, sans origine à garder");
 });
 
 test("revenu détecté : un salaire stable de trois mois est classé « salaires » (origine revenu), à condition que rien de plus précis ne reconnaisse le libellé", { skip: SANS_STRIP }, () => {
@@ -212,7 +219,7 @@ test("mois à recalculer et lignes à réécrire : classement changé, relevé q
   assert.equal(p.reclasses.length, 2, "lignes d'avant BUD1 : classement à écrire");
   assert.equal(p.depuisClassement, "2026-08-10");
   assert.deepEqual(J(Object.keys(p.reclasses[0]).sort()), ["categorie", "categorie_powens", "cle_marchand", "compte_id", "contrepartie_id", "date", "id", "libelle", "montant",
-    "origine_categorie", "regle_id", "sous_categorie", "type_powens"], "lignes complètes (user_id ajouté à l'écriture)");
+    "origine_categorie", "regle_id", "sous_categorie", "sous_categorie_origine", "type_powens"], "lignes complètes (user_id ajouté à l'écriture)");
   const reecrites = p.toutes.map(o => ({ ...o }));
   const q = prep(S, reecrites);
   assert.deepEqual([q.reclasses.length, q.depuisClassement, q.autres.length, q.depuis], [0, null, 0, null], "idempotent");
@@ -355,7 +362,15 @@ test("reclasserTotalMarchand : règle ou table des marchands l'emportent, un mot
   const l = (cle_marchand, sous_categorie, extra = {}) => ({ mois: "2026-03-01", compte_id: 1, cle_marchand, sous_categorie, entrees: 0, sorties: 20, nombre: 1, ...extra });
   const regle = (motif, sous_categorie, extra = {}) => ({ id: "r-" + motif, motif, sous_categorie, sens: "sortie", active: true, cree_le: "2026-10-01T00:00:00Z", ...extra });
   assert.equal(S.reclasserTotalMarchand(l("xyz sarl", "a_classer"), [regle("xyz sarl", "loisirs")]), "loisirs", "règle");
-  assert.equal(S.reclasserTotalMarchand(l("xyz sarl", "loisirs"), []), "loisirs", "règle retirée : l'ancienne sous-catégorie reste (limite assumée)");
+  assert.equal(S.reclasserTotalMarchand(l("xyz sarl", "loisirs"), []), "loisirs", "sans origine gardée (aucune règle n'avait déplacé la ligne), la sous-catégorie reste");
+  // réversibilité : une ligne déplacée par une règle garde sa sous-catégorie d'origine, et y retourne quand la règle est retirée ou désactivée
+  const deplacee = { ...l("xyz sarl", "loisirs"), sous_categorie_origine: "a_classer" };
+  assert.equal(S.reclasserTotalMarchand(deplacee, []), "a_classer", "règle retirée : retour à « à classer »");
+  assert.equal(S.reclasserTotalMarchand(deplacee, [{ ...regle("xyz sarl", "loisirs"), active: false }]), "a_classer", "règle désactivée");
+  assert.equal(S.reclasserTotalMarchand(deplacee, [regle("xyz sarl", "loisirs")]), "loisirs", "règle toujours là : la ligne reste où elle est");
+  assert.equal(S.reclasserTotalMarchand(deplacee, [regle("xyz sarl", "shopping")]), "shopping", "règle modifiée : nouvelle destination");
+  assert.equal(S.reclasserTotalMarchand({ ...l("netflix", "sport"), sous_categorie_origine: "a_classer" }, []), "abonnements", "retour à l'origine puis table des marchands");
+  assert.equal(S.reclasserTotalMarchand({ ...l("vir loyer", "sport"), sous_categorie_origine: "courses" }, []), "courses", "un motif ne remplace pas une origine reconnue");
   assert.equal(S.reclasserTotalMarchand(l("netflix", "a_classer"), []), "abonnements", "table des marchands");
   assert.equal(S.reclasserTotalMarchand(l("netflix", "divers_a_tort"), []), "abonnements");
   assert.equal(S.reclasserTotalMarchand(l("carrefour market", "courses"), [regle("carrefour market", "shopping")]), "shopping", "règle sur table");
@@ -477,6 +492,7 @@ test("route /reclasser : rejoue le classement sur les 90 jours avec les règles 
   assert.equal(m.reclassements.length, 1);
   assert.deepEqual(J(m.reclassements[0].p_changes.map(x => [x.mois, x.cle_marchand, x.de, x.vers])).sort(), [["2026-03-01", "xyz sarl", "a_classer", "loisirs"], ["2026-04-01", "netflix", "a_classer", "abonnements"]].sort());
   assert.equal(m.reclassements[0].p_user, U);
+  assert.ok(m.reclassements[0].p_changes.every(x => typeof x.origine === "string"), "l'origine de la ligne accompagne chaque changement");
   // idempotente (verrou rendu) : rien de plus à réécrire ni à déplacer
   m.deverrouiller();
   const avant = J(m.db.tables.banque_operations);

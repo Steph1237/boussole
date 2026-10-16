@@ -457,9 +457,9 @@ test("budget_marchands_reclasser : déplace des lignes de marchand (somme dans u
   await superu();
   const x = await moisIso(6), recent = await moisIso(1), vieux = await moisIso(14);
   await db.exec(`delete from public.banque_marchands_mois where user_id = '${A}';
-    insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour, nombre_sorties) values
-      ('${A}', '${x}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5, 1), ('${A}', '${x}', 10, 'xyz sarl', 'a_classer', 0, 100, 2, 20, 80, 10, 2), ('${A}', '${x}', 10, 'xyz sarl', 'loisirs', 5, 50, 2, 50, 50, 3, 1),
-      ('${A}', '${recent}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5, 1), ('${A}', '${vieux}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5, null)`);
+    insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour, nombre_sorties, sous_categorie_origine) values
+      ('${A}', '${x}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5, 1, ''), ('${A}', '${x}', 10, 'xyz sarl', 'a_classer', 0, 100, 2, 20, 80, 10, 2, ''), ('${A}', '${x}', 10, 'xyz sarl', 'loisirs', 5, 50, 2, 50, 50, 3, 1, 'a_classer'),
+      ('${A}', '${recent}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5, 1, ''), ('${A}', '${vieux}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5, null, '')`);
   const ch = (mois, cle, de, vers, compte = 10) => ({ mois, compte_id: compte, cle_marchand: cle, de, vers });
   await service();
   const n = (await un(`select public.budget_marchands_reclasser($1, $2::jsonb) n`, [A, JSON.stringify([
@@ -467,12 +467,12 @@ test("budget_marchands_reclasser : déplace des lignes de marchand (somme dans u
     ch(vieux, "netflix", "a_classer", "abonnements"), ch(x, "absent", "a_classer", "abonnements"), ch(x, "netflix", "abonnements", "abonnements")])])).n;
   await superu();
   assert.equal(n, 2, "deux lignes déplacées (le mois récent, le mois de plus de 13 mois, la ligne absente et le déplacement vers soi sont ignorés)");
-  const l = (await q(`select to_char(mois, 'YYYY-MM-DD') m, cle_marchand k, sous_categorie s, entrees, sorties, nombre from public.banque_marchands_mois where user_id = '${A}' order by mois, cle_marchand, sous_categorie`))
-    .map(r => [r.m, r.k, r.s, num(r.entrees), num(r.sorties), r.nombre]);
+  const l = (await q(`select to_char(mois, 'YYYY-MM-DD') m, cle_marchand k, sous_categorie s, entrees, sorties, nombre, sous_categorie_origine o from public.banque_marchands_mois where user_id = '${A}' order by mois, cle_marchand, sous_categorie`))
+    .map(r => [r.m, r.k, r.s, num(r.entrees), num(r.sorties), r.nombre, r.o]);
   assert.deepEqual(l, [
-    [vieux, "netflix", "a_classer", 0, 15, 1],
-    [x, "netflix", "abonnements", 0, 15, 1], [x, "xyz sarl", "loisirs", 5, 150, 4],
-    [recent, "netflix", "a_classer", 0, 15, 1]].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : 0)), "xyz sarl : 100 + 50 en sortie, 2 + 2 opérations, une seule ligne");
+    [vieux, "netflix", "a_classer", 0, 15, 1, ""],
+    [x, "netflix", "abonnements", 0, 15, 1, "a_classer"], [x, "xyz sarl", "loisirs", 5, 150, 4, "a_classer"],
+    [recent, "netflix", "a_classer", 0, 15, 1, ""]].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : 0)), "xyz sarl : 100 + 50 en sortie, 2 + 2 opérations, une seule ligne (même origine « à classer »), l'origine suit les lignes déplacées");
   const fus = await un(`select montant_min, montant_max, dernier_jour, nombre_sorties from public.banque_marchands_mois where user_id = '${A}' and cle_marchand = 'xyz sarl'`);
   assert.deepEqual([num(fus.montant_min), num(fus.montant_max), fus.dernier_jour, fus.nombre_sorties], [20, 80, 10, 3], "fusion (nombre_sorties : 2 + 1) : plus petite des minimums, plus grosse des maximums, dernier jour le plus tardif");
   // tout ou rien : un changement invalide annule les autres
@@ -483,11 +483,65 @@ test("budget_marchands_reclasser : déplace des lignes de marchand (somme dans u
   await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, '{}'::jsonb)`, [A]), /liste de changements obligatoires/);
   await assert.rejects(db.query(`select public.budget_marchands_reclasser(null, '[]'::jsonb)`), /obligatoires/);
   await superu();
-  assert.equal((await q(`select 1 from public.banque_marchands_mois where user_id = '${A}' and cle_marchand = 'netflix' and sous_categorie = 'abonnements'`)).length, 1, "rien n'a bougé après les refus");
+  assert.equal((await q(`select 1 from public.banque_marchands_mois where user_id = '${A}' and cle_marchand = 'netflix' and sous_categorie = 'abonnements' and sous_categorie_origine = 'a_classer'`)).length, 1, "rien n'a bougé après les refus");
   await session(A);
   await refuse(`select public.budget_marchands_reclasser('${A}', '[]'::jsonb)`, /permission denied/, "authenticated");
   await superu();
   await db.exec(`delete from public.banque_marchands_mois where user_id = '${A}'`);
+});
+
+test("budget_marchands_reclasser : réversible — une règle posée puis retirée (ou désactivée) ramène les mois de 90 jours à 13 mois à leur classement d'origine, sans fusion fausse", async () => {
+  await superu();
+  const x = await moisIso(5);
+  await db.exec(`delete from public.banque_marchands_mois where user_id = '${A}';
+    insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, nombre_sorties) values
+      ('${A}', '${x}', 10, 'xyz sarl', 'a_classer', 0, 100, 2, 2), ('${A}', '${x}', 10, 'xyz sarl', 'loisirs', 0, 30, 1, 1), ('${A}', '${x}', 10, 'bar du coin', 'courses', 0, 40, 1, 1)`);
+  const lire = async () => (await q(`select cle_marchand k, sous_categorie s, sous_categorie_origine o, sorties, nombre from public.banque_marchands_mois where user_id = '${A}' order by cle_marchand, sous_categorie, sous_categorie_origine`))
+    .map(r => [r.k, r.s, r.o, num(r.sorties), r.nombre]);
+  const appliquer = async changes => { await service(); const n = (await un(`select public.budget_marchands_reclasser($1, $2::jsonb) n`, [A, JSON.stringify(changes)])).n; await superu(); return n; };
+  const ch = (cle, de, vers, origine) => ({ mois: x, compte_id: 10, cle_marchand: cle, de, vers, ...(origine === undefined ? {} : { origine }) });
+  // 1. règle posée : « à classer » → loisirs ; la ligne garde son origine et ne se fond pas dans la ligne « loisirs » d'origine
+  assert.equal(await appliquer([ch("xyz sarl", "a_classer", "loisirs")]), 1);
+  assert.deepEqual(await lire(), [["bar du coin", "courses", "", 40, 1], ["xyz sarl", "loisirs", "", 30, 1], ["xyz sarl", "loisirs", "a_classer", 100, 2]]);
+  // 2. règle modifiée : loisirs → sport ; l'origine reste « à classer »
+  assert.equal(await appliquer([ch("xyz sarl", "loisirs", "sport", "a_classer")]), 1);
+  assert.deepEqual(await lire(), [["bar du coin", "courses", "", 40, 1], ["xyz sarl", "loisirs", "", 30, 1], ["xyz sarl", "sport", "a_classer", 100, 2]]);
+  // 3. règle retirée ou désactivée : retour à l'origine, la ligne redevient ordinaire (origine '') et se fond avec une ligne déjà là
+  assert.equal(await appliquer([ch("xyz sarl", "sport", "a_classer", "a_classer")]), 1);
+  assert.deepEqual(await lire(), [["bar du coin", "courses", "", 40, 1], ["xyz sarl", "a_classer", "", 100, 2], ["xyz sarl", "loisirs", "", 30, 1]]);
+  // 4. une ligne ordinaire déplacée par une règle garde sa sous-catégorie ; deux règles successives ne perdent pas l'origine ; retour direct à l'origine
+  await appliquer([ch("bar du coin", "courses", "restaurants"), ch("bar du coin", "restaurants", "sorties", "courses")]);
+  assert.deepEqual((await lire()).filter(r => r[0] === "bar du coin"), [["bar du coin", "sorties", "courses", 40, 1]]);
+  await appliquer([ch("bar du coin", "sorties", "courses", "courses")]);
+  assert.deepEqual((await lire()).filter(r => r[0] === "bar du coin"), [["bar du coin", "courses", "", 40, 1]]);
+  // 5. la contrainte : une origine égale à la sous-catégorie, ou inconnue, est refusée ; un changement dont l'origine ne correspond à aucune ligne est ignoré
+  await refuse(`update public.banque_marchands_mois set sous_categorie_origine = 'courses' where user_id = '${A}' and cle_marchand = 'bar du coin'`, /banque_marchands_mois_origine/, "origine = sous-catégorie");
+  await refuse(`update public.banque_marchands_mois set sous_categorie_origine = 'inconnue' where user_id = '${A}' and cle_marchand = 'bar du coin'`, /banque_marchands_mois_origine/, "origine inconnue");
+  assert.equal(await appliquer([ch("bar du coin", "courses", "sport", "loisirs")]), 0, "mauvaise origine : ignoré");
+  await service();
+  await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, $2::jsonb)`, [A, JSON.stringify([ch("bar du coin", "courses", "sport", "inconnue")])]), /Sous-catégorie inconnue/);
+  await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, $2::jsonb)`, [A, JSON.stringify([{ ...ch("bar du coin", "courses", "sport"), origine: 5 }])]), /origine en texte/);
+  await superu();
+  // 6. budget_reclasser_historique additionne les origines d'une même sous-catégorie
+  await db.exec(`delete from public.banque_marchands_mois where user_id = '${A}'`);
+});
+
+test("banque_recalculer_mois : la sous-catégorie d'avant toute règle (sous_categorie_origine de l'opération) devient celle de la ligne par marchand ; vide quand elle est la même ou invalide", async () => {
+  await superu();
+  await db.exec(`delete from public.banque_operations where user_id = '${A}'; delete from public.banque_mois where user_id = '${A}'; delete from public.banque_marchands_mois where user_id = '${A}';
+    insert into public.banque_operations (id, user_id, compte_id, date, montant, libelle, categorie, sous_categorie, sous_categorie_origine, cle_marchand) values
+    (31, '${A}', 10, ${JOUR(1, 3)}, -20, 'VIR XYZ', 'loisirs', 'sport', 'a_classer', 'xyz'),
+    (32, '${A}', 10, ${JOUR(1, 4)}, -30, 'VIR XYZ', 'loisirs', 'sport', 'a_classer', 'xyz'),
+    (33, '${A}', 10, ${JOUR(1, 5)}, -10, 'VIR XYZ', 'loisirs', 'sport', null, 'xyz'),
+    (34, '${A}', 10, ${JOUR(1, 6)}, -5, 'VIR ABC', 'loisirs', 'sport', 'sport', 'abc')`);
+  await recalculer(A, `${AUJ} - 70`);
+  const l = (await q(`select cle_marchand k, sous_categorie s, sous_categorie_origine o, sorties, nombre from public.banque_marchands_mois where user_id = '${A}' order by cle_marchand, sous_categorie_origine`))
+    .map(r => [r.k, r.s, r.o, num(r.sorties), r.nombre]);
+  assert.deepEqual(l, [["abc", "sport", "", 5, 1], ["xyz", "sport", "", 10, 1], ["xyz", "sport", "a_classer", 50, 2]], "même clé, même sous-catégorie, deux origines : deux lignes ; origine égale : vide");
+  const bm = (await q(`select sous_categorie s, sorties from public.banque_mois where user_id = '${A}'`)).map(r => [r.s, num(r.sorties)]);
+  assert.deepEqual(bm, [["sport", 65]], "banque_mois ne connaît pas l'origine : une seule ligne par sous-catégorie");
+  await refuse(`update public.banque_operations set sous_categorie_origine = 'inconnue' where id = 31 and user_id = '${A}'`, /banque_operations_sous_categorie_origine/, "origine d'opération inconnue");
+  await db.exec(`delete from public.banque_operations where user_id = '${A}'; delete from public.banque_mois where user_id = '${A}'; delete from public.banque_marchands_mois where user_id = '${A}'`);
 });
 
 test("budget_reclasser_verrouiller : un appel toutes les 10 secondes par utilisateur (atomique), un autre utilisateur n'est pas gêné, service seulement", async () => {

@@ -937,7 +937,7 @@ const memeId = (a: unknown, b: unknown) => (a == null || a === "" ? null : Numbe
     { code, parent_code } ; il n'est pas gardé en base), date du jour (revenus détectés) et noms du foyer. */
 export type ContexteClassement = { regles?: any[]; codes?: Record<string, any>; aujourdhui?: string | null; noms?: string[][] };
 /** Colonnes de banque_operations écrites par le classement (migration 0035). */
-const CHAMPS_CLASSEMENT = ["sous_categorie", "origine_categorie", "regle_id", "cle_marchand"];
+const CHAMPS_CLASSEMENT = ["sous_categorie", "origine_categorie", "regle_id", "cle_marchand", "sous_categorie_origine"];
 /** Classe une opération (pur) : BudgetCategories.classer, avec deux replis quand le code Powens brut n'est pas là (opération déjà en base, relue par
     `reclasser`) : la sous-catégorie retenue la fois d'avant si elle venait de Powens, puis, faute de mieux, la sous-catégorie par défaut de la catégorie
     large de Powens (reprise de banque_mois). Le code brut est relu à la prochaine synchronisation. */
@@ -946,7 +946,9 @@ function classerOperation(o: any, structure: string | undefined, revenu: boolean
   let r = BudgetCategories.classer(entree, { regles });
   if (!structure && !code) {
     const rendre = (sous: string) => ({ sous_categorie: sous, categorie: BudgetCategories.largeDe(sous), origine: "powens", cle_marchand: r.cle_marchand });
-    const memoire = precedente?.origine_categorie === "powens" && BudgetCategories.estSousCategorie(precedente.sous_categorie) ? precedente.sous_categorie : null;
+    // la sous-catégorie d'avant les règles (sous_categorie_origine) sert de mémoire quand une règle a masqué le code Powens, retirée ensuite
+    const retenue = precedente?.origine_categorie === "powens" ? precedente.sous_categorie : precedente?.origine_categorie === "regle" ? precedente.sous_categorie_origine : null;
+    const memoire = BudgetCategories.estSousCategorie(retenue) ? retenue : null;
     if (memoire && ["motif", "revenu", "defaut"].includes(r.origine)) r = rendre(memoire);
     else if (r.origine === "defaut") {
       const base = categorieDeBase(o);
@@ -992,7 +994,14 @@ export function preparerOperations(planOps: any[], supprimees: unknown[], exista
     const revenu = !!det && (nombre(o.montant) ?? 0) > 0 && k?.type === "courant" && k?.debit_differe !== true && !estCompteCommun(k)
       && !CATEGORIES_INTERNES.includes(o.categorie) && o.contrepartie_id == null && cleLibelle(o.libelle) === det.cle;
     const c = classerOperation(o, structure, revenu, regles, cl.codes?.[id] ?? null, ex.get(id));
-    return { ...o, categorie: c.categorie, sous_categorie: c.sous_categorie, origine_categorie: c.origine, regle_id: c.regle_id ?? null, cle_marchand: c.cle_marchand || null };
+    // sous-catégorie d'avant toute règle de l'utilisateur, gardée quand une règle a changé le classement (retirer la règle ramène les anciens mois, 0035)
+    let avantRegles: string | null = null;
+    if (c.origine === "regle") {
+      const c0 = classerOperation(o, structure, revenu, [], cl.codes?.[id] ?? null, ex.get(id));
+      if (c0.sous_categorie !== c.sous_categorie) avantRegles = c0.sous_categorie;
+    }
+    return { ...o, categorie: c.categorie, sous_categorie: c.sous_categorie, origine_categorie: c.origine, regle_id: c.regle_id ?? null, cle_marchand: c.cle_marchand || null,
+      sous_categorie_origine: avantRegles };
   };
   const change = (o: any) => { const avant = ex.get(String(o.id)); return !avant || (avant.categorie ?? null) !== o.categorie || !memeId(avant.contrepartie_id, o.contrepartie_id); };
   const toutes = avant.map(classee), parId = new Map(toutes.map((o) => [String(o.id), o]));
@@ -1020,7 +1029,7 @@ export function preparerOperations(planOps: any[], supprimees: unknown[], exista
     if (!different) continue;
     reclasses.push({ id: o.id, compte_id: o.compte_id, date: o.date, montant: o.montant, libelle: o.libelle, categorie: o.categorie, categorie_powens: o.categorie_powens ?? null,
       contrepartie_id: o.contrepartie_id ?? null, type_powens: o.type_powens ?? null, sous_categorie: o.sous_categorie, origine_categorie: o.origine_categorie,
-      regle_id: o.regle_id ?? null, cle_marchand: o.cle_marchand ?? null });
+      regle_id: o.regle_id ?? null, cle_marchand: o.cle_marchand ?? null, sous_categorie_origine: o.sous_categorie_origine ?? null });
     reculer(jour(o.date));
   }
   return {
@@ -1837,7 +1846,7 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
 async function lireOperations(db: any, userId: string, depuis: string): Promise<any[]> {
   const PAGE = 1000, tout: any[] = [];
   for (let apres: number | null = null; ;) {
-    let q = db.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie, categorie_powens, contrepartie_id, type_powens, sous_categorie, origine_categorie, regle_id, cle_marchand")
+    let q = db.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie, categorie_powens, contrepartie_id, type_powens, sous_categorie, origine_categorie, regle_id, cle_marchand, sous_categorie_origine")
       .eq("user_id", userId).gte("date", depuis);
     if (apres != null) q = q.gte("id", apres + 1);
     const { data, error } = await q.order("id").limit(PAGE);
@@ -1937,18 +1946,20 @@ export function moisRecalculables(aujourdhui: string): string[] {
   return out;
 }
 /** Nouvelle sous-catégorie d'un total par marchand (pur) : le classement de sa clé nettoyée, sans le code Powens ni la structure, que le total ne garde pas. Une
-    règle ou une entrée de la table des marchands l'emporte ; un motif générique ne remplace qu'un « à classer » ; rien de reconnu : la sous-catégorie
-    reste. Les règles à bornes de montant ne sont pas appliquées (le total mélange plusieurs montants). */
+    règle ou une entrée de la table des marchands l'emporte ; sinon la ligne retrouve sa sous-catégorie d'origine (`sous_categorie_origine`, celle d'avant toute
+    règle ; la sienne si elle est vide) : retirer ou désactiver une règle ramène donc les anciens mois à leur classement d'avant. Un motif générique ne remplace
+    qu'un « à classer ». Les règles à bornes de montant ne sont pas appliquées (le total mélange plusieurs montants). */
 export function reclasserTotalMarchand(ligne: any, regles: any[]): string {
-  const sous = String(ligne?.sous_categorie ?? "");
-  if (SOUS_CATEGORIES_STRUCTURE.includes(sous)) return sous;
+  const sous = String(ligne?.sous_categorie ?? ""), origine = String(ligne?.sous_categorie_origine ?? "");
+  const base = origine && BudgetCategories.estSousCategorie(origine) ? origine : sous;
+  if (SOUS_CATEGORIES_STRUCTURE.includes(base)) return sous;
   const e = nombre(ligne.entrees) ?? 0, so = nombre(ligne.sorties) ?? 0;
   const montant = e - so !== 0 ? e - so : so ? -so : e || -0.01;
   const sansBornes = (Array.isArray(regles) ? regles : []).filter((r) => r && r.montant_min == null && r.montant_max == null);
   const r = BudgetCategories.classer({ libelle: String(ligne.cle_marchand ?? ""), montant, compte_id: ligne.compte_id }, { regles: sansBornes });
   if (r.origine === "regle" || r.origine === "marchand") return r.sous_categorie;
-  if (r.origine === "motif" && sous === "a_classer") return r.sous_categorie;
-  return sous;
+  if (r.origine === "motif" && base === "a_classer") return r.sous_categorie;
+  return base;
 }
 /** Reclasse l'utilisateur après un changement de règle : les opérations des 90 derniers jours (lignes réécrites, mois recalculés), puis, de 90 jours à
     13 mois, les totaux par marchand (déplacés par budget_marchands_reclasser) et banque_mois (reconstruit par budget_reclasser_historique, seulement
@@ -2002,10 +2013,10 @@ export async function reclasser(db: any, userId: string, opts: { maintenant?: Da
   // De 90 jours à 13 mois : totaux par marchand reclassés, puis banque_mois reconstruit (les sommes doivent retomber à 1 € près).
   try {
     const debut13 = moisDecale(premierDuMois(aujourdhui), -13);
-    const agregats = await lire(db.from("banque_marchands_mois").select("mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre")
+    const agregats = await lire(db.from("banque_marchands_mois").select("mois, compte_id, cle_marchand, sous_categorie, sous_categorie_origine, entrees, sorties, nombre")
       .eq("user_id", userId).gte("mois", debut13).lt("mois", recalculables[0] ?? premierDuMois(aujourdhui)), "des totaux par marchand");
     const changements = agregats.map((a: any) => ({ mois: jour(a.mois), compte_id: Number(a.compte_id), cle_marchand: String(a.cle_marchand ?? ""), de: String(a.sous_categorie),
-      vers: reclasserTotalMarchand(a, regles) })).filter((c: any) => c.mois && c.de !== c.vers);
+      origine: String(a.sous_categorie_origine ?? ""), vers: reclasserTotalMarchand(a, regles) })).filter((c: any) => c.mois && c.de !== c.vers);
     for (const paquet of parPaquets(changements, 2000)) {
       const r = await db.rpc("budget_marchands_reclasser", { p_user: userId, p_changes: paquet });
       if (r?.error) throw new Error(`reclassement des totaux par marchand : ${r.error.message}`);
