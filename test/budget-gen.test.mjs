@@ -53,3 +53,12 @@ test("copie générée du moteur du budget : mêmes mois, séries, références 
     assert.deepEqual(J(G.Budget.reference(dg, o)), J(B.reference(da, o)));
   }
 });
+
+test("copie générée du moteur du budget : mêmes récurrents, variations et dépenses inhabituelles que l'app (R1 à R8) et mêmes pistes liées", () => {
+  for (const c of F.recurrents.cas) {
+    const data = { aujourdhui: c.entree.today, comptes: c.entree.comptes, partage: c.entree.partage, marchands: c.entree.lignes };
+    for (const a of c.appels) assert.deepEqual(J(G.Budget[a.fonction](data, a.options)), J(B[a.fonction](data, a.options)), c.id + " " + a.fonction);
+    const d2 = { ...data, reference: { revenus: 3000, essentiels: {}, envies: {} }, preferences: {}, operations: [] };
+    assert.deepEqual(J(G.Budget.pistes(d2)), J(B.pistes(d2)), c.id + " pistes");
+  }
+});

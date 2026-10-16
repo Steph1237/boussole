@@ -17,6 +17,12 @@
    Budget.serie(data, { vue, personne?, du, au, granularite: "mois" | "trimestre" | "annee" }) → [M]
    Budget.reference(data, { vue, personne?, mois_ref? }) → référence | null            // § 6.2 : médianes lissées sur 12 mois (6 au moins, sinon 3 : période courte)
    Budget.depensesAnnuelles(data, { vue, personne, part }) → [dépense annuelle]        // § 6.3
+   Livré (tâche 9b, § 6.5, D15 et D18 ; règles et arrondis : `conventions_recurrents` de la fixture) : le récurrent, lu sur les agrégats par marchand (data.marchands)
+   Budget.recurrents(data, { vue, personne?, mois? }) → { disponible, mois_couverts, recurrents: [ligne], synthese } | { disponible: false, raison, mois_couverts }
+   Budget.variations(data, { vue, personne?, mois, niveau: "sous_categorie" | "cle", sous_categorie? | compte_id + cle_marchand })   // effet volume et effet prix
+   Budget.inhabituel(data, { vue, personne?, mois }) → { disponible, mois, depenses }
+   Ces trois fonctions lisent { aujourdhui, comptes: [{ id, type, titulaire }], partage, marchands } ; Budget.pistes en tire les pistes liées (hausse de prix, abonnement arrêté
+   prélevé ailleurs, habitude en hausse). Limite connue : `nombre` de banque_marchands_mois compte aussi les entrées du groupe (fréquence et panier un peu surestimés).
    Les fonctions de note, de détection et de pistes lisent les formes que ces fonctions produisent (data.mois, data.reference…).
 
    Formes lues :
@@ -48,7 +54,7 @@
     budget_score_seuil_tenu: 85, budget_score_seuil_presque: 60, budget_score_a_classer_provisoire_pct: 15, budget_score_a_classer_sans_note_pct: 30,
     budget_score_revenus_incomplets_pct: 50,
     budget_piste_contrats_pct: 10, budget_piste_envies_pct: 10, budget_piste_envies_fort_pct: 25, budget_piste_petits_achats_pct: 50,
-    budget_piste_petit_achat_seuil: 15, budget_piste_petits_achats_nombre: 8, budget_piste_frais_cotisation_laissee: 5,
+    budget_piste_petit_achat_seuil: 15, budget_piste_petits_achats_nombre: 8, budget_piste_frais_cotisation_laissee: 5, budget_piste_habitude_tendance_pct: 15,
     budget_essentiel_plancher_pct: 90, budget_annuelle_seuil: 150, budget_recurrent_tolerance_pct: 10, budget_matelas_reconstitution_mois: 12,
   };
   /** Convention `cle` : repère de data.reperes (tableau de { cle, valeur } ou objet cle → valeur) s'il y est, sinon valeur de départ. */
@@ -70,6 +76,8 @@
   const mois7 = d => (typeof d === "string" && /^\d{4}-\d{2}/.test(d) ? d.slice(0, 7) : null);
   /** Mois AAAA-MM décalé de k mois. */
   function decale(m, k) { const [a, b] = m.split("-").map(Number); const t = a * 12 + (b - 1) + k; return String(Math.floor(t / 12)).padStart(4, "0") + "-" + String(t % 12 + 1).padStart(2, "0"); }
+  const prix = x => String(Math.round(Math.abs(x) * 100) / 100).replace(".", ",") + " €";
+  const moisFr = m => ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"][+m.slice(5, 7) - 1] + " " + m.slice(0, 4);
   const euros = x => { const r = arrondi(Math.abs(x)); return String(r).replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " €"; };
   const mediane = xs => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b), i = Math.floor(s.length / 2); return s.length % 2 ? s[i] : (s[i - 1] + s[i]) / 2; };
   const somme = xs => xs.reduce((t, x) => t + x, 0);
@@ -254,7 +262,7 @@
   /** Récurrents (§ 6.4) : même clé de marchand, sorties seulement. Mensuel : présent dans 3 des 4 derniers mois complets (ou 5 des 6), montants à ±tolérance de la
       médiane ; annuel (§ 6.3) : une seule fois sur 12 mois, dans une sous-catégorie « annuelle probable » ou à partir du seuil, confirmé s'il revient 11 à 13 mois plus
       tôt (sinon « probable »). → [{ cle_marchand, sous_categorie, famille, rythme, montant_mensuel, montant, mois_presents, confirme }]. */
-  function recurrents(data, opts) {
+  function recurrentsMensuels(data, opts) {
     const o = opts || {}, reperes = data && data.reperes;
     const tol = convention(reperes, "budget_recurrent_tolerance_pct") / 100, seuil = convention(reperes, "budget_annuelle_seuil");
     const dernier = derniersMois(data.aujourdhui, 13);                 // 13 mois complets au plus
@@ -304,7 +312,7 @@
   /** Détections (§ 6.4). `data` : voir l'en-tête ; `opts` : { comptes: [id] } (seuls ces comptes comptent). */
   function detections(data, opts) {
     const o = opts || {}, reperes = data && data.reperes;
-    const rec = recurrents(data, o);
+    const rec = recurrentsMensuels(data, o);
     // doublons possibles
     const doublons = [];
     const assurances = rec.filter(r => r.sous_categorie === "assurances");
@@ -456,6 +464,36 @@
       if (r > 0) liste.push({ cle: "petits_achats", poste: "envies", titre: "Les petits achats de carte qui s'additionnent", pourquoi: "Plus de " + convention(reperes, "budget_piste_petits_achats_nombre") + " achats de moins de " + euros(det.petits_achats.seuil) + " par mois en moyenne.",
         economie_mensuelle: fourchette(r), difficulte: "moyen", question: "Y a-t-il des habitudes que tu veux garder, et d'autres que tu lâcherais sans regret ?",
         donnees: { cles_marchand: [], montant_annuel: centieme(det.petits_achats.total_mensuel * 12), nombre: det.petits_achats.nombre }, source: SOURCE });
+    }
+    // 8. le récurrent (§ 6.5) : hausse de prix, abonnement arrêté mais prélevé ailleurs, habitude en hausse
+    const rec = recurrentsVue(data, { vue: o.vue, personne: o.personne });
+    if (rec.disponible) {
+      const lignes = rec.recurrents.filter(r => !Array.isArray(o.comptes) || o.comptes.includes(String(r.compte_id)));
+      for (const r of lignes.filter(x => x.hausse && x.famille !== "habitude")) {
+        const e = arrondi(r.hausse.nouveau - r.hausse.ancien);
+        if (e > 0) ajoute({ cle: "hausse_prix_" + r.compte_id + "_" + r.cle_marchand, poste: r.sous_categorie,
+          titre: r.famille === "abonnement" ? "Un abonnement a augmenté" : "Un contrat a augmenté",
+          pourquoi: "Son prix est passé de " + prix(r.hausse.ancien) + " à " + prix(r.hausse.nouveau) + " depuis " + moisFr(r.hausse.depuis) + ".",
+          economie_mensuelle: exacte(e), difficulte: r.famille === "abonnement" ? "facile" : "moyen",
+          question: "Veux-tu le renégocier, ou regarder tes droits de résiliation (vérifiés sur ton contrat) ?",
+          donnees: { cles_marchand: [r.cle_marchand], montant_annuel: centieme((r.hausse.nouveau - r.hausse.ancien) * 12), nombre: 1 }, source: SOURCE });
+      }
+      for (const r of lignes.filter(x => x.famille === "abonnement" && x.statuts.includes("arrete"))) {
+        const autre = lignes.find(x => x.cle_marchand === r.cle_marchand && String(x.compte_id) !== String(r.compte_id) && x.famille !== "habitude" && !x.statuts.includes("arrete"));
+        const e = autre ? arrondi(autre.montant_habituel) : 0;
+        if (e > 0) ajoute({ cle: "abonnement_arrete_ailleurs_" + r.cle_marchand, poste: r.sous_categorie, titre: "Un abonnement qui passe encore sur un autre compte",
+          pourquoi: "Il ne passe plus sur l'un de tes comptes (arrêté ?), mais il est prélevé " + prix(autre.montant_habituel) + " par mois sur un autre.",
+          economie_mensuelle: exacte(e), difficulte: "facile", question: "Est-ce le même abonnement qui a changé de compte, et le veux-tu encore ?",
+          donnees: { cles_marchand: [r.cle_marchand], montant_annuel: centieme(autre.montant_habituel * 12), nombre: 2 }, source: SOURCE });
+      }
+      const seuilHabitude = convention(reperes, "budget_piste_habitude_tendance_pct");
+      for (const r of lignes.filter(x => x.famille === "habitude" && x.tendance !== null && x.tendance > seuilHabitude + 1e-9)) {
+        const e = arrondi(r.total_mensuel * r.tendance / (100 + r.tendance));
+        if (e > 0) ajoute({ cle: "habitude_en_hausse_" + r.compte_id + "_" + r.cle_marchand, poste: r.sous_categorie, titre: "Une habitude qui prend de la place",
+          pourquoi: "Elle pèse " + prix(r.total_mensuel) + " par mois, " + String(r.tendance).replace(".", ",") + " % de plus que les trois mois d'avant.",
+          economie_mensuelle: fourchette(e), difficulte: "moyen", question: "Cette habitude te fait-elle toujours autant plaisir qu'avant ?",
+          donnees: { cles_marchand: [r.cle_marchand], montant_annuel: centieme(r.total_mensuel * 12), nombre: Math.round(r.frequence) }, source: SOURCE });
+      }
     }
     // logement et voiture : jamais chiffrés par Boussole (le coach en parle si tu le demandes)
     return liste.sort((a, b) => rang(a.difficulte) - rang(b.difficulte) || b.economie_mensuelle.retenue - a.economie_mensuelle.retenue || (a.cle < b.cle ? -1 : a.cle > b.cle ? 1 : 0));
@@ -907,6 +945,250 @@
       annuelles: annuellesVue };
   }
 
+  /* ================================================================== le récurrent (§ 6.5, tâche 9b) */
+  /* Règles exactes : `conventions_recurrents` et cas R1 à R8 de test/fixtures/budget-cas.json (D18). Calculs en centimes (entiers ou demi-centimes), arrondis à la sortie
+     seulement (demi-centime vers l'extérieur, pourcentages et fréquences au dixième). */
+  const SOUS_ENGAGEMENT = ["loyer", "credit_logement", "autres_credits", "assurances", "telecom", "energie", "charges_logement", "enfants", "impots"];
+  const SOUS_ABONNEMENT = ["abonnements", "sport"];
+  const BLOCS_EXCLUS = ["hors_budget", "epargne", "revenus"];
+  const PERIODES_RYTHME = { mensuel: { mois: 1, jours: 30, cout: 12 }, trimestriel: { mois: 3, jours: 91, cout: 4 }, annuel: { mois: 12, jours: 365, cout: 1 } };
+  const cts = x => Math.round(n0(x) * 100);
+  const arrondiExt = x => (x < 0 ? -1 : 1) * Math.floor(Math.abs(x) + 0.5 + 1e-7);
+  const euroC = (c, part) => arrondiExt(c * (part === undefined ? 1 : part)) / 100;
+  const dixiemeExt = x => arrondiExt(x * 10) / 10;
+  const ecartMois = (a, b) => (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7));
+  const joursEntre = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 864e5);
+  /** Date AAAA-MM-JJ décalée de k mois, le jour ramené au dernier jour du mois quand il n'existe pas (31 août + 3 mois = 30 novembre). */
+  function plusMois(date, k) {
+    const m = decale(date.slice(0, 7), k), dernier = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate();
+    return m + "-" + String(Math.min(+date.slice(8, 10), dernier)).padStart(2, "0");
+  }
+  /** Paliers d'une suite de montants (centimes) : un montant rejoint le palier courant s'il est à ±10 % de sa médiane (bornes comprises), sinon il en ouvre un. */
+  function paliersDe(montants, tol) {
+    const t = tol === undefined ? 0.1 : tol, P = [];
+    for (const a of montants) {
+      const cur = P[P.length - 1], med = cur ? mediane(cur) : 0;
+      if (cur && Math.abs(a - med) <= med * t + 1e-9) cur.push(a); else P.push([a]);
+    }
+    return P;
+  }
+  const suiteDeMots = (a, b) => contient(motsDe(a), motsDe(b)) || contient(motsDe(b), motsDe(a));
+
+  /** Lecture commune du récurrent, des variations et de l'inhabituel : lignes de `banque_marchands_mois` de la vue, de m0 − 12 à m0, regroupées par
+      (compte, clé, sous-catégorie) ; flux exclus (hors budget, épargne, revenus) et lignes sans sortie ignorés ; premier mois des données de la vue. */
+  function lectureRecurrent(data, opts) {
+    const d = data || {}, o = opts || {}, v = lectureVue(d, o), m0 = mois7(d.aujourdhui);
+    if (!m0) return null;
+    const debut = decale(m0, -12), connus = new Map((Array.isArray(d.comptes) ? d.comptes : []).filter(c => c && c.id != null).map(c => [String(c.id), c]));
+    const poids = id => {
+      const c = connus.get(String(id));
+      if (!c) return v.vue === "tout" ? 1 : 0;                      // compte inconnu : compté dans Tout seulement
+      if (!COMPTES_BUDGET.includes(c.type) && !(c.type === "carte_differe")) return 0;
+      return poidsDe(c.titulaire, v.vue, v.personne, v.part);
+    };
+    const seuil = convention(d.reperes, "budget_annuelle_seuil");
+    const groupes = new Map();
+    let premier = null;
+    for (const l of Array.isArray(d.marchands) ? d.marchands : []) {
+      const m = l && mois7(l.mois);
+      if (!m || m < debut || m > m0) continue;
+      const w = poids(l.compte_id);
+      if (!(w > 0)) continue;
+      if (premier === null || m < premier) premier = m;
+      const sous = l.sous_categorie, bloc = BC.estSousCategorie(sous) ? blocDe(sous, d.preferences) : "a_classer";
+      if (BLOCS_EXCLUS.includes(bloc) || !(n0(l.sorties) > 0)) continue;
+      const cle = l.cle_marchand == null ? "" : String(l.cle_marchand);
+      const k = [String(l.compte_id), cle, sous].join("\u0001");
+      if (!groupes.has(k)) groupes.set(k, { compte_id: l.compte_id, cle, sous, w, mois: new Map() });
+      const g = groupes.get(k), s = cts(l.sorties), cur = g.mois.get(m) || { s: 0, n: 0, max: 0, jour: null };
+      cur.s += s; cur.n += n0(l.nombre);
+      cur.max = Math.max(cur.max, nombre(l.montant_max) !== null ? cts(l.montant_max) : s);
+      if (nombre(l.dernier_jour) !== null) cur.jour = Math.max(cur.jour || 0, nombre(l.dernier_jour));
+      g.mois.set(m, cur);
+    }
+    return { d, v, m0, debut, premier, groupes: [...groupes.values()], seuil, aujourdhui: jourDe(d.aujourdhui), couverts: premier === null ? 0 : Math.max(0, ecartMois(premier, m0)) };
+  }
+  const indisponible = (mois_couverts) => ({ disponible: false, raison: "moins_de_3_mois", mois_couverts });
+
+  /** Rythme, paliers, famille et statuts d'un groupe (lu à sa dernière présence). */
+  function analyserGroupe(g, ctx) {
+    const { m0, seuil, premier } = ctx;
+    const pres = [...g.mois.keys()].filter(m => g.mois.get(m).s > 0).sort();
+    const ancre = pres[pres.length - 1], complet = m => m < m0, S = m => (g.mois.has(m) ? g.mois.get(m).s : 0), N = m => (g.mois.has(m) ? g.mois.get(m).n : 0);
+    const mois3 = [decale(m0, -3), decale(m0, -2), decale(m0, -1)], mois3avant = [decale(m0, -6), decale(m0, -5), decale(m0, -4)];
+    const dans = (fin, k) => pres.filter(m => ecartMois(m, fin) >= 0 && ecartMois(m, fin) < k);
+    let rythme = null, annuel = null, fenetre = [];
+    if (dans(ancre, 4).length >= 3) { rythme = "mensuel"; fenetre = Array.from({ length: 4 }, (_, i) => decale(ancre, i - 3)); }
+    else if (dans(ancre, 6).length >= 5) { rythme = "mensuel"; fenetre = Array.from({ length: 6 }, (_, i) => decale(ancre, i - 5)); }
+    else if (pres.length >= 3 && [ecartMois(pres[pres.length - 3], pres[pres.length - 2]), ecartMois(pres[pres.length - 2], pres[pres.length - 1])].every(e => e >= 2 && e <= 4)) {
+      rythme = "trimestriel"; fenetre = pres.slice(-3);
+    } else if (pres.length === 2 && ecartMois(pres[0], pres[1]) >= 11 && ecartMois(pres[0], pres[1]) <= 13) { rythme = "annuel"; annuel = "confirme"; fenetre = pres.slice(); }
+    else if (pres.length === 1 && complet(pres[0]) && (((BC.TAXONOMIE.find(t => t.cle === g.sous) || {}).annuelle_probable === true) || S(pres[0]) >= seuil * 100)) { rythme = "annuel"; annuel = "probable"; fenetre = pres.slice(); }
+    const presFenetre = pres.filter(m => fenetre.includes(m));
+    const montants = presFenetre.filter(complet).map(S), P = paliersDe(montants);
+    const stable = montants.length >= 1 && P.length <= 2, nombreOk = presFenetre.every(m => N(m) <= 2);
+    const famMarchand = familleDe(g.cle);
+    // habitude : fréquence, ou montant variable sur les 4 derniers mois complets
+    const somS = somme(mois3.map(S)), somN = somme(mois3.map(N));
+    const m4 = [decale(m0, -4), ...mois3].filter(m => pres.includes(m));
+    const habitude = somN >= 12 || (m4.length >= 3 && paliersDe(m4.map(S)).length >= 2);
+    let famille = "ponctuel";
+    if (g.cle !== "" && rythme !== null && stable && nombreOk) famille = SOUS_ENGAGEMENT.includes(g.sous) ? "engagement" : (SOUS_ABONNEMENT.includes(g.sous) || famMarchand) ? "abonnement" : "ponctuel";
+    if (famille === "ponctuel" && g.cle !== "" && habitude) famille = "habitude";
+    const r = { g, pres, ancre, rythme, annuel, famille, famMarchand, fenetre, montants, paliers: P, somS, somN, hausse: null, arrete: false, nouveau: false, statuts: [] };
+    if (famille === "ponctuel") return r;
+    const j = g.mois.get(ancre).jour;
+    r.derniere = j === null ? null : ancre + "-" + String(j).padStart(2, "0");
+    if (famille === "habitude") {
+      r.habituel = mediane(mois3.map(S)); r.total = somS / 3; r.cout = somS * 4; r.frequence = somN / 3; r.panier = somN > 0 ? somS / somN : null;
+      const couvert = mois3avant.every(m => premier !== null && m >= premier), base = somme(mois3avant.map(S));
+      r.tendance = couvert && base > 0 ? (somS - base) / base * 100 : null;
+    } else {
+      const per = PERIODES_RYTHME[rythme], dernierPalier = P[P.length - 1];
+      r.habituel = mediane(dernierPalier); r.cout = r.habituel * per.cout;
+      if (pres.length >= 4) {
+        const ref = mediane(pres.slice(-4, -1).map(S)), cond = a => a * 100 > ref * 105 + 1e-9 && a - ref >= 100 - 1e-9;
+        if (cond(S(ancre))) {
+          let i = pres.length - 1;
+          while (i >= 0 && cond(S(pres[i]))) i--;
+          r.hausse = { ancien: ref, nouveau: S(ancre), depuis: pres[i + 1] };
+        }
+      }
+      r.arrete = r.derniere !== null && rythme !== "annuel" && joursEntre(r.derniere, ctx.aujourdhui) > 1.5 * per.jours + 1e-9;
+      r.prochaine = r.derniere !== null && !r.arrete ? plusMois(r.derniere, per.mois) : null;
+    }
+    r.nouveau = [decale(m0, -2), decale(m0, -1), m0].includes(pres[0]);
+    return r;
+  }
+
+  const LIBELLES_STATUTS = ["nouveau", "hausse_de_prix", "arrete", "doublon_possible"];
+  /** Le récurrent d'une vue (§ 6.5) : engagements (contraint), abonnements et habitudes (pilotables), avec synthèse du mois et « reste à prélever ».
+      `opts` : { vue, personne?, mois? }. → { disponible, mois_couverts, recurrents: [ligne], synthese } ou { disponible: false, raison: "moins_de_3_mois", mois_couverts }. */
+  function recurrentsVue(data, opts) {
+    const ctx = lectureRecurrent(data, opts);
+    if (!ctx) return indisponible(0);
+    if (ctx.couverts < 3) return indisponible(ctx.couverts);
+    const mo = mois7(opts && opts.mois) || ctx.m0;
+    const analyses = ctx.groupes.map(g => analyserGroupe(g, ctx));
+    const lignes = analyses.filter(a => a.famille !== "ponctuel");
+    // statuts : nouveau, hausse de prix, arrêté ?, doublon possible
+    const actifs = lignes.filter(a => a.famille !== "habitude" && !a.arrete);
+    const assurances = actifs.filter(a => a.g.sous === "assurances");
+    const doublons = new Set();
+    for (const a of assurances) for (const b of assurances) if (a !== b && !suiteDeMots(a.g.cle, b.g.cle)) doublons.add(a);
+    for (const fam of FAMILLES_DOUBLON) {
+      const l = actifs.filter(a => a.famille === "abonnement" && a.famMarchand === fam);
+      if (l.length >= 2) l.forEach(a => doublons.add(a));
+    }
+    for (const a of lignes) {
+      if (a.nouveau) a.statuts.push("nouveau");
+      if (a.hausse) a.statuts.push("hausse_de_prix");
+      if (a.arrete) a.statuts.push("arrete");
+      if (doublons.has(a)) a.statuts.push("doublon_possible");
+    }
+    const ORDRE = { engagement: 0, abonnement: 1, habitude: 2 };
+    const rendu = a => euroC(a.cout, a.g.w);
+    lignes.sort((a, b) => ORDRE[a.famille] - ORDRE[b.famille] || rendu(b) - rendu(a) || (a.g.cle < b.g.cle ? -1 : a.g.cle > b.g.cle ? 1 : String(a.g.compte_id) < String(b.g.compte_id) ? -1 : String(a.g.compte_id) > String(b.g.compte_id) ? 1 : 0));
+    const rows = lignes.map(a => {
+      const w = a.g.w, hab = a.famille === "habitude";
+      return { compte_id: a.g.compte_id, cle_marchand: a.g.cle, sous_categorie: a.g.sous, part: w, famille: a.famille, famille_marchand: a.famMarchand, rythme: a.rythme, annuel: a.annuel,
+        montant_habituel: euroC(a.habituel, w), cout_12_mois: euroC(a.cout, w), derniere_date: a.derniere, prochaine_date: hab ? null : a.prochaine,
+        frequence: hab ? dixiemeExt(a.frequence) : null, panier_moyen: hab && a.panier !== null ? euroC(a.panier, w) : null, total_mensuel: hab ? euroC(a.total, w) : null,
+        tendance: hab && a.tendance !== null ? dixiemeExt(a.tendance) : null,
+        hausse: a.hausse ? { ancien: euroC(a.hausse.ancien, w), nouveau: euroC(a.hausse.nouveau, w), depuis: a.hausse.depuis } : null, statuts: a.statuts.slice() };
+    });
+    // synthèse du mois : sorties brutes de chaque groupe, ventilées selon sa famille (calculée aujourd'hui)
+    const parFamille = { engagement: 0, abonnement: 0, habitude: 0, ponctuel: 0 };
+    for (const a of analyses) { const m = a.g.mois.get(mo); if (m && m.s > 0) parFamille[a.famille] += m.s * a.g.w; }
+    const total = parFamille.engagement + parFamille.abonnement + parFamille.habitude + parFamille.ponctuel;
+    const pct = x => (total > 0 ? dixiemeExt(x / total * 100) : null);
+    const enCours = mo === ctx.m0;
+    let attendus = null, reste = null, prochain = null;
+    if (enCours) {
+      attendus = lignes.filter(a => a.famille !== "habitude" && a.prochaine && a.prochaine.slice(0, 7) === ctx.m0).map(a => ({ compte_id: a.g.compte_id, cle_marchand: a.g.cle, date: a.prochaine,
+        montant: euroC(a.g.mois.get(a.ancre).s, a.g.w), en_retard: joursEntre(a.prochaine, ctx.aujourdhui) > 3, _c: a.g.mois.get(a.ancre).s * a.g.w }))
+        .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.cle_marchand < b.cle_marchand ? -1 : a.cle_marchand > b.cle_marchand ? 1 : String(a.compte_id) < String(b.compte_id) ? -1 : 1));
+      reste = euroC(somme(attendus.map(x => x._c)));
+      attendus.forEach(x => delete x._c);
+      const venir = attendus.filter(x => x.date >= ctx.aujourdhui);
+      prochain = venir.length ? venir[0].date : null;
+    }
+    const synthese = { mois: mo, en_cours: enCours, engagements: euroC(parFamille.engagement), abonnements: euroC(parFamille.abonnement), habitudes: euroC(parFamille.habitude), ponctuel: euroC(parFamille.ponctuel),
+      total: euroC(total), parts: total > 0 ? { engagements: pct(parFamille.engagement), abonnements: pct(parFamille.abonnement), habitudes: pct(parFamille.habitude), ponctuel: pct(parFamille.ponctuel) } : null,
+      reste_a_prelever: reste, attendus, prochain_prelevement: prochain,
+      cout_annuel_abonnements: euroC(somme(lignes.filter(a => a.famille === "abonnement" && !a.arrete).map(a => a.cout * a.g.w))) };
+    return { disponible: true, mois_couverts: ctx.couverts, recurrents: rows, synthese };
+  }
+
+  /** Mois de référence d'une analyse (variations, inhabituel) : mois complets avant `mo`, 12 au plus (m0 − 12 au plus loin), couverts par les données. */
+  function moisReference(ctx, mo) {
+    if (!mo || mo > ctx.m0 || ctx.premier === null) return [];
+    const debut = ctx.premier > ctx.debut ? ctx.premier : ctx.debut, out = [];
+    for (let m = debut; m < mo; m = decale(m, 1)) out.push(m);
+    return out;
+  }
+  /** Pourquoi une dépense a bougé (§ 6.5) : écart entre le mois et sa référence (médianes), effet volume et effet prix, et les clés qui l'expliquent.
+      `opts` : { vue, personne?, mois, niveau: "sous_categorie" | "cle", sous_categorie? | compte_id + cle_marchand }. */
+  function variations(data, opts) {
+    const o = opts || {}, ctx = lectureRecurrent(data, o), mo = mois7(o.mois);
+    if (!ctx) return indisponible(0);
+    const niveau = o.niveau === "cle" ? "cle" : "sous_categorie", refs = moisReference(ctx, mo);
+    if (refs.length < 3) return indisponible(refs.length);
+    const choisis = ctx.groupes.filter(g => (niveau === "cle" ? String(g.compte_id) === String(o.compte_id) && g.cle === String(o.cle_marchand) : g.sous === o.sous_categorie));
+    const serie = (liste, f, mois) => mois.map(m => somme(liste.map(g => (g.mois.has(m) ? f(g.mois.get(m)) * g.w : 0))));
+    const S0 = mediane(serie(choisis, x => x.s, refs)), N0 = mediane(choisis.length ? refs.map(m => somme(choisis.map(g => (g.mois.has(m) ? g.mois.get(m).n : 0)))) : refs.map(() => 0));
+    const S1 = serie(choisis, x => x.s, [mo])[0], N1 = somme(choisis.map(g => (g.mois.has(mo) ? g.mois.get(mo).n : 0)));
+    const ecart = S1 - S0;
+    const volume = N0 === 0 ? ecart : N1 === 0 ? ecart : (N1 - N0) * S0 / N0, prix = ecart - volume;
+    let cles = null;
+    if (niveau === "sous_categorie") {
+      const parCle = new Map();
+      for (const g of choisis) {
+        if (g.cle === "") continue;
+        const k = String(g.compte_id) + "\u0001" + g.cle;
+        if (!parCle.has(k)) parCle.set(k, []);
+        parCle.get(k).push(g);
+      }
+      const sg = ecart > 0 ? 1 : ecart < 0 ? -1 : 0;
+      const liste = [...parCle.values()].map(gs => ({ compte_id: gs[0].compte_id, cle_marchand: gs[0].cle, e: serie(gs, x => x.s, [mo])[0] - mediane(serie(gs, x => x.s, refs)) }))
+        .filter(x => sg !== 0 && Math.abs(x.e) > 1e-9 && Math.sign(x.e) === sg)
+        .sort((a, b) => Math.abs(b.e) - Math.abs(a.e) || (a.cle_marchand < b.cle_marchand ? -1 : a.cle_marchand > b.cle_marchand ? 1 : String(a.compte_id) < String(b.compte_id) ? -1 : 1));
+      cles = liste.slice(0, 3).map(x => ({ compte_id: x.compte_id, cle_marchand: x.cle_marchand, ecart: euroC(x.e) }));
+    }
+    const panier = (s, n) => (n > 0 ? euroC(s / n) : null);
+    const res = { disponible: true, mois: mo, niveau };
+    if (niveau === "cle") { res.compte_id = o.compte_id; res.cle_marchand = String(o.cle_marchand); } else res.sous_categorie = o.sous_categorie;
+    return { ...res, reference: { du: refs[0], au: refs[refs.length - 1], n: refs.length, periode_courte: refs.length < 6, montant: euroC(S0), nombre: N0, panier: panier(S0, N0) },
+      mois_analyse: { montant: euroC(S1), nombre: N1, panier: panier(S1, N1) }, ecart: euroC(ecart), delta_nombre: N1 - N0, effet_volume: euroC(volume), effet_prix: euroC(prix), cles };
+  }
+
+  /** Dépenses inhabituelles du mois (§ 6.5) : une clé jamais vue sur les mois de référence et d'au moins 50 €, ou une sortie supérieure à 3 fois le panier médian de sa clé.
+      `opts` : { vue, personne?, mois }. → { disponible, mois, depenses: [{ compte_id, cle_marchand, sous_categorie, montant, montant_max, raison, mediane_panier }] }. */
+  function inhabituel(data, opts) {
+    const o = opts || {}, ctx = lectureRecurrent(data, o), mo = mois7(o.mois);
+    if (!ctx) return indisponible(0);
+    const refs = moisReference(ctx, mo);
+    if (refs.length < 3) return indisponible(refs.length);
+    const parCle = new Map();
+    for (const g of ctx.groupes) { if (g.cle === "") continue; if (!parCle.has(g.cle)) parCle.set(g.cle, []); parCle.get(g.cle).push(g); }
+    const sortie = [];
+    for (const g of ctx.groupes) {
+      if (g.cle === "" || !g.mois.has(mo) || !(g.mois.get(mo).s > 0)) continue;
+      const m = g.mois.get(mo), memes = parCle.get(g.cle);
+      const vus = refs.filter(r => memes.some(x => x.mois.has(r) && x.mois.get(r).s > 0));
+      let raison = null, med = null;
+      if (!vus.length) { if (m.s >= 5000) raison = "nouvelle_cle"; }
+      else {
+        med = mediane(vus.map(r => { const s = somme(memes.map(x => (x.mois.has(r) ? x.mois.get(r).s : 0))), nn = somme(memes.map(x => (x.mois.has(r) ? x.mois.get(r).n : 0))); return nn > 0 ? s / nn : s; }));
+        if (m.max > 3 * med + 1e-9) raison = "montant_eleve";
+      }
+      if (raison) sortie.push({ g, raison, m, med: raison === "montant_eleve" ? med : null });
+    }
+    sortie.sort((a, b) => b.m.s - a.m.s || (a.g.cle < b.g.cle ? -1 : a.g.cle > b.g.cle ? 1 : String(a.g.compte_id) < String(b.g.compte_id) ? -1 : 1));
+    return { disponible: true, mois: mo, depenses: sortie.map(x => ({ compte_id: x.g.compte_id, cle_marchand: x.g.cle, sous_categorie: x.g.sous, montant: euroC(x.m.s, x.g.w),
+      montant_max: euroC(x.m.max, x.g.w), raison: x.raison, mediane_panier: x.med === null ? null : euroC(x.med, x.g.w) })) };
+  }
+
   /* ================================================================== export */
-  return { CONVENTIONS, convention, cibleEnVigueur, donnees, mois, serie, reference, depensesAnnuelles: annuelles, score, recurrents, detections, fragilite, pistes, plancherResteAVivre, comparerInsee, proposerCible, repartir, familleDe, normaliserReference };
+  return { CONVENTIONS, convention, cibleEnVigueur, donnees, mois, serie, reference, depensesAnnuelles: annuelles, score, recurrents: recurrentsVue, variations, inhabituel, detections, fragilite, pistes, plancherResteAVivre, comparerInsee, proposerCible, repartir, familleDe, normaliserReference };
 });
