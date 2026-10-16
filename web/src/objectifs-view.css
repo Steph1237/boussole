@@ -17,6 +17,8 @@
 #view-objectifs-view .ov-tete h2:focus{outline:none}
 #view-objectifs-view .ov-verdict{margin:0;font:600 var(--t-h3)/var(--lh-h3) var(--f-body);color:var(--ink)}
 #view-objectifs-view .ov-verdict .ui-puce{margin-left:var(--sp-1);vertical-align:1px}
+#view-objectifs-view .ov-etats{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-2);margin:var(--sp-1) 0 0}
+#view-objectifs-view .ov-repart{margin-top:var(--sp-2);max-width:620px}
 #view-objectifs-view .ov-tete-act{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
 #view-objectifs-view .ov-claude:empty{display:none}
 
@@ -31,6 +33,14 @@
 #view-objectifs-view .ov-carte-date{font-size:var(--t-small);color:var(--muted)}
 #view-objectifs-view .ov-barre{display:block;height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
 #view-objectifs-view .ov-barre i{display:block;height:100%;background:var(--brand)}
+/* la barre prend la teinte du statut (la même que la puce) */
+#view-objectifs-view .ov-carte.st-bon .ov-barre i{background:var(--st-good)}
+#view-objectifs-view .ov-carte.st-attention .ov-barre i{background:var(--st-watch)}
+#view-objectifs-view .ov-carte.st-critique .ov-barre i{background:var(--st-work)}
+#view-objectifs-view .ov-carte.st-neutre .ov-barre i{background:var(--muted)}
+/* teintes des statuts qui n'ont pas de puce commune : « dans les temps » (marque) et « pas de verdict » (neutre) */
+#view-objectifs-view .ov-st-track,.ui-panneau .ov-st-track{color:var(--brand);background:var(--brand-soft)}
+#view-objectifs-view .ov-st-idle,.ui-panneau .ov-st-idle{color:var(--muted);background:var(--sunk)}
 #view-objectifs-view .ov-carte .ui-carte-pied{justify-content:space-between}
 
 /* état vide */
@@ -87,3 +97,5 @@
 @media (max-width:640px){
   #view-objectifs-view .ov-cartes .ui-voirplus-liste{grid-template-columns:minmax(0,1fr)}
 }
+/* ≥ 1440 px : les objectifs sont dans une colonne de 5/12, une seule carte de large (jamais deux colonnes dont une orpheline) */
+@media (min-width:1440px){#view-objectifs-view .ov-cartes .ui-voirplus-liste{grid-template-columns:minmax(0,1fr)}}
