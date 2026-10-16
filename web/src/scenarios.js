@@ -48,6 +48,7 @@
   const objet = v => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
   const liste = v => (Array.isArray(v) ? v : []);
   const somme = (l, f) => l.reduce((a, x) => a + f(x), 0);
+  const p3 = x => Math.round(x * 1000) / 1000;
   const r2 = x => (x == null || !isFinite(x) ? x : O.arrondi2(x));
   const nombre = v => (typeof v === "number" && isFinite(v)) || (typeof v === "string" && v.trim() !== "" && isFinite(+v));
   const copie = v => JSON.parse(JSON.stringify(v));
@@ -68,6 +69,22 @@
     source: { titre: r.sourceTitre || null, url: r.sourceUrl || null, verifie_le: r.verifieLe || null }, date_effet: r.dateEffet || null, date_fin: r.dateFin || null });
 
   /* ================================================================== le foyer */
+  /** Enveloppes du foyer { cle, nom, type, titulaire, infos } d'après les lignes ouvertes et enveloppes_infos (types déclarés, sinon déduits du nom, comme le calendrier). */
+  function lesEnveloppes(d) {
+    const inf = objet(objet(d.config).enveloppes_infos), vues = new Map(), pos = liste(d.positions);
+    pos.filter(p => p && typeof p.envelope === "string" && p.envelope.trim() && p.status !== "clôturé").forEach(p => {
+      const cle = Calendrier.cleEnveloppe(p.envelope, p.owner, pos, inf);
+      if (vues.has(cle)) return;
+      const i = objet(inf[cle]), type = typeof i.type === "string" ? i.type : Calendrier.typeDeduit(p.envelope);
+      vues.set(cle, { cle, nom: p.envelope.trim(), type, titulaire: ["p1", "p2", "commun"].includes(i.titulaire) ? i.titulaire : p.owner, infos: i });
+    });
+    Object.keys(inf).filter(k => !vues.has(k) && inf[k] && typeof inf[k] === "object").forEach(k => {
+      const i = inf[k];
+      if (i.date_cloture) return;
+      vues.set(k, { cle: k, nom: k.replace(/\|p[12]$/, ""), type: typeof i.type === "string" ? i.type : Calendrier.typeDeduit(k), titulaire: ["p1", "p2", "commun"].includes(i.titulaire) ? i.titulaire : null, infos: i });
+    });
+    return [...vues.values()];
+  }
   /** Personnes du foyer { id, nom, naissance, salaire }, périmètre fiscal (couple à imposition commune), enveloppes par personne. */
   function foyer(d, today) {
     const profil = objet(d.profil), pers = objet(profil.personnes), f = objet(profil.foyer);
@@ -76,7 +93,7 @@
       salaire: pers[k].salaire != null ? +pers[k].salaire : null, age: pers[k].naissance && O.estDate(pers[k].naissance) ? O.age(pers[k].naissance, today) : null }));
     const adultes = f.adultes != null ? +f.adultes : personnes.length;
     const couple = f.union === "joint" && adultes >= 2 && personnes.length >= 2;
-    const enveloppes = Calendrier.enveloppes(d.positions, objet(d.config).enveloppes_infos, today).filter(e => !e.cloture);
+    const enveloppes = lesEnveloppes(d);
     return { personnes, adultes, enfants: +f.enfants || 0, couple, enveloppes };
   }
   /** La personne détient-elle une enveloppe de l'une de ces familles de types ? (une enveloppe commune compte pour les deux) */
@@ -279,7 +296,7 @@
         const prep = F.preparer(fiscal, ctxF);
         if (prep.indisponible) prep.reperes.manquants.forEach(k => manquants.add(k));
         /* croissance des poches */
-        const E = new Float64Array(P * W);
+        const E = new Float64Array(P * W), fraisT = new Float64Array(P);
         if (LIVRETS.includes(e.type)) {
           const cle = REPERE_LIVRET[e.type], r = cle ? ctx.R[cle] : null, central = pc("monetaire"), ac = Math.log(1 + central.rendement / 100) / 12;
           const ar = r ? Math.log(1 + +r.valeur / 100) / 12 : e.type === "courant" ? 0 : ac, fin = r && r.dateFin;
@@ -295,12 +312,14 @@
               let v = p.part * m[0]; E[i * W] += v;
               for (let t = 1; t < W; t++) {
                 const g = z ? Math.exp(a + s * z[i * Tz + (t - 1)]) : Math.exp(a);
-                v = v * g * feeM + p.part * m[t]; E[i * W + t] += v;
+                const av = v * g;
+                v = av * feeM + p.part * m[t]; E[i * W + t] += v;
+                if (t <= T) fraisT[i] += av * (1 - feeM);
               }
             }
           });
         }
-        const env = { e, type: e.type, E, base, dedCum, prep, dateOuv, ouv_t: e.ouverture_t || 0, ctxF, preps: new Map() };
+        const env = { e, type: e.type, E, fraisT, base, dedCum, prep, dateOuv, ouv_t: e.ouverture_t || 0, ctxF, preps: new Map() };
         envs.push(env);
         return env;
       });
@@ -325,7 +344,9 @@
       });
       const f = 1 / defl(t), auj = new Float64Array(P);
       for (let i = 0; i < P; i++) auj[i] = courants[i] * f;
-      return { courants, net: auj, brut, impots, ps, base: somme(parOption[id], env => env.base[t]), deduits: somme(parOption[id], env => env.dedCum[t]), t };
+      const frais = new Float64Array(P);
+      parOption[id].forEach(env => { for (let i = 0; i < P; i++) frais[i] += env.fraisT[i]; });
+      return { courants, net: auj, brut, impots, ps, frais, base: somme(parOption[id], env => env.base[t]), deduits: somme(parOption[id], env => env.dedCum[t]), t };
     }
     const options = {};
     ids.forEach(id => { options[id] = netA(id, T); });
@@ -428,10 +449,626 @@
     return out.filter(s => s.montant > 0);
   }
 
+
+  /* ================================================================== sorties communes */
+  const ecartBandes = e => ({ p10: r2(e.p10), p50: r2(e.p50), p90: r2(e.p90) });
+  const parAn = (b, H) => ({ p10: r2(b.p10 / H), p50: r2(b.p50 / H), p90: r2(b.p90 / H) });
+  /** Option du résultat (§ 6.7) à partir des sorties du socle pour un mois de sortie. */
+  function sortieOption(id, libelle, types, x, extras) {
+    return Object.assign({ id, libelle, enveloppes: types, net: bandeR(x.net), verse: r2(x.base), brut_p50: r2(quantile(x.brut, 0.5)), impots_p50: r2(quantile(x.impots, 0.5)),
+      prelevements_sociaux_p50: r2(quantile(x.ps, 0.5)), net_courants_p50: r2(quantile(x.courants, 0.5)), frais_p50: r2(quantile(x.frais, 0.5)), disponible: true, contraintes: [], exclue: null }, extras || {});
+  }
+  const optionExclue = (id, libelle, types, code, texte) => ({ id, libelle, enveloppes: types, net: null, verse: null, brut_p50: null, impots_p50: null, prelevements_sociaux_p50: null,
+    net_courants_p50: null, frais_p50: null, disponible: false, contraintes: [texte], exclue: code });
+  const ligne = (hypothese, valeur_retenue, seuil, effet, phrase) => ({ hypothese, valeur_retenue, seuil, effet, phrase });
+  /** Date de sortie (mois t) d'après la date d'aujourd'hui. */
+  const dateDe = (today, t) => O.ajouterMois(today, t);
+  const seuilAnnees = (ouverture, n) => O.ajouterJours(O.ajouterAns(ouverture, n), 1);        // règle DAT1 : le lendemain de l'anniversaire
+
+  /** Destination actuelle des versements (point de comparaison) : { type, libelle, frais_pct, ouverture_t, date_ouverture? }. */
+  function referenceDe(destination, frais, fo) {
+    const ter = frais.ter_pct;
+    if (destination === "assurance_vie") {
+      const dates = fo.enveloppes.filter(e => TYPES_AV.includes(e.type) && e.infos && O.estDate(e.infos.date_ouverture)).map(e => e.infos.date_ouverture).sort();
+      return { type: "assurance_vie", libelle: "ton assurance-vie", frais_pct: ter + frais.assurance_vie_pct, ouverture_t: 0, date_ouverture: dates[0] || null };
+    }
+    if (destination === "livret") return { type: "livret_a", libelle: "un livret", frais_pct: 0, ouverture_t: 0 };
+    if (destination === "courant") return { type: "courant", libelle: "ton compte courant", frais_pct: 0, ouverture_t: 0 };
+    return { type: "compte_titres", libelle: "un compte-titres", frais_pct: ter + frais.compte_titres_pct, ouverture_t: 0 };
+  }
+  const envReference = (ref, flux) => {
+    const e = { type: ref.type, ouverture_t: ref.ouverture_t, poches: [{ classe: LIVRETS.includes(ref.type) ? "monetaire" : "actions", part: 1, frais_pct: ref.frais_pct }], flux };
+    if (ref.date_ouverture) e.date_ouverture = ref.date_ouverture;
+    return e;
+  };
+  const simOptsDe = o => ({ chemins: o.chemins, graine: o.graine, volatilite: o.volatilite, hypotheses_classes: o.hypotheses_classes });
+  /** Phrase d'avertissement quand des frais ne sont pas renseignés. */
+  const avertFrais = f => (f.inconnus.length ? ["Frais non renseignés (" + f.inconnus.join(", ") + ") : comptés à 0 % des deux côtés, la comparaison est alors purement fiscale ; renseigne-les pour un chiffre complet."] : []);
+
+  /* ================================================================== n° 1 : faut-il ouvrir un PEA ? (§ 7.1) */
+  function ouvrirPea(c) {
+    const { d, today, rep, L, o, fo } = c;
+    const T = Math.max(1, Math.round(rep.horizon_ans * 12)), H = T / 12, delai = L.v("scn_delai_ouverture_mois"), plafond = L.v("pea_plafond"), duree = L.v("pea_duree_ans");
+    const frais = c.frais, ter = frais.ter_pct, V0 = +rep.versement_initial || 0, m = +rep.versement_mensuel || 0, fPea = ter + frais.pea_pct;
+    const ref = referenceDe(rep.destination_actuelle || "compte_titres", frais, fo), pre = simOptsDe(o), plusTard = rep.debut === "plus_tard";
+    const peaEnv = (ouv, flux, fp) => ({ type: "pea", ouverture_t: ouv, poches: [{ classe: "actions", part: 1, frais_pct: fp }], flux });
+    const avert = avertFrais(frais), ctq = [];
+    let plan, tete, refId, libTete, libRef, P0 = null, Tmax = T;
+    if (!plusTard) {
+      const flux = fluxDepart(V0, m, delai, T), rp = repartirPlafond(flux, plafond);
+      const A = [peaEnv(delai, rp.dedans, fPea)];
+      if (rp.debordement.length) A.push({ type: "compte_titres", ouverture_t: 0, poches: [{ classe: "actions", part: 1, frais_pct: ter + frais.compte_titres_pct }], flux: rp.debordement });
+      plan = { T, couple: fo.couple, options: { A, R: [envReference(ref, flux)] }, comparer: ["A", "R"], reference: "R", plafond_pea: plafond };
+      tete = "A"; refId = "R"; libTete = "PEA ouvert dans " + delai + " mois"; libRef = ref.libelle;
+      if (rp.debordement.length) avert.push("Ton PEA atteint son plafond de " + O.eur(plafond) + " de versements : le surplus est placé en compte-titres, dans le calcul.");
+    } else {
+      P0 = Math.max(delai, O.moisEntre(today, rep.debut_date));
+      const flux = [{ de: P0, a: T, montant: m }];
+      Tmax = Math.max(T, P0 + duree * 12 + 12);
+      plan = { T, couple: fo.couple, options: { A_prime: [peaEnv(delai, flux, fPea)], C: [peaEnv(P0, flux, fPea)] }, comparer: ["A_prime", "C"], reference: "C", v_min: { montant: V0, t: delai } };
+      tete = "A_prime"; refId = "C"; libTete = "PEA ouvert maintenant avec un petit versement"; libRef = "PEA ouvert au début des versements";
+    }
+    const sim = simulerEnveloppes(d, plan, Object.assign({ horizon_max: Tmax }, pre));
+    if (sim.indisponible) return { statut: "indisponible", reperes_manquants: sim.reperes_manquants };
+    const e = sim.ecart(tete, refId), dateOuv = dateDe(today, delai), seuil5 = seuilAnnees(dateOuv, duree), enjeu = parAn(e, H);
+    const opts = Object.keys(plan.options).map(id => sortieOption(id, id === tete ? libTete : libRef, plan.options[id].map(x => x.type), sim.options[id], { versements_pea: id === tete ? r2(somme(plan.options[id].filter(x => x.type === "pea"), x => somme(x.flux, s => s.montant * (s.a - s.de + 1)))) : undefined }));
+    let bascule = null, seuilFrais = null, courbe = null, fenetre = null, anteriorite = null, vmin = null;
+    if (!plusTard) {
+      const b = sim.bascule(tete, refId); bascule = b && b.date;
+      seuilFrais = seuilDichotomie(x => {
+        const A2 = plan.options.A.map(env => (env.type === "pea" ? Object.assign({}, env, { poches: [{ classe: "actions", part: 1, frais_pct: ter + x }] }) : env));
+        const s2 = simulerEnveloppes(d, { T, couple: fo.couple, options: { A: A2 } }, pre), n2 = s2.options.A.courants, nr = sim.options[refId].courants;
+        return quantile(Array.from(n2, (v, i) => v - nr[i]), 0.5);
+      }, 0, 2, 12);
+      ctq.push(ligne("pea_5_ans", dateFr(dateDe(today, T)), dateFr(seuil5), "Avant cette date, le PEA ne te rapporte rien de plus",
+        "Si tu as besoin de cet argent avant le " + dateFr(seuil5) + ", le PEA ne t'apporte rien : avant 5 ans, un retrait le clôture et le gain est imposé comme sur un compte-titres."));
+      if (seuilFrais.etat === "ok") ctq.push(ligne("frais_pea", O.frc(fPea - ter, 2) + " %", O.frc(seuilFrais.x, 2) + " %", "Au-delà, le PEA passe derrière " + libRef,
+        "Si les frais annuels du PEA dépassent " + O.frc(seuilFrais.x, 2) + " % (en plus des frais des fonds), il passe derrière " + libRef + "."));
+    } else {
+      const ecartsT = []; let premier = null, dernier = null;
+      for (let t = delai; t <= Tmax; t++) {
+        const x = sim.ecart(tete, refId, t), b = bandeR(x.delta);
+        ecartsT.push({ t, date: sim.date(t), p10: b.p10, p50: b.p50, p90: b.p90, courants_p50: r2(quantile(x.courants, 0.5)) });
+        if (quantile(x.courants, 0.5) > 1e-6) { if (premier == null) premier = sim.date(t); dernier = sim.date(t); }
+      }
+      courbe = { abscisse: "date_sortie", points: ecartsT }; fenetre = premier ? { du: premier, au: dernier } : null;
+      anteriorite = { courants: r2(quantile(e.courants, 0.5)), auj: r2(e.p50) };
+      if (sim.v_min) vmin = { brut: r2(quantile(sim.v_min.brut, 0.5)), net: r2(quantile(sim.v_min.net, 0.5)), frais: r2(quantile(sim.v_min.frais, 0.5)) };
+      ctq.push(ligne("pea_5_ans", dateFr(dateDe(today, P0)), dateFr(seuil5), "L'avance prise compte pour une sortie entre deux dates",
+        "Ouvrir maintenant ne compte que si tu retires entre le " + dateFr(fenetre ? fenetre.du : seuil5) + " et le " + dateFr(fenetre ? fenetre.au : seuil5) + " : avant, aucun écart ; après, les deux PEA ont plus de 5 ans."));
+    }
+    ctq.push(ligne("titres_eligibles", "non calculé", null, "Seuls certains titres sont acceptés dans un PEA",
+      "Le PEA n'accepte que certains titres ; la liste des titres éligibles est fixée par la loi, et ce calcul ne la vérifie pas."));
+    const enTete = Math.abs(e.p50) < 0.005 ? "egalite" : e.p50 > 0 ? tete : refId;
+    const plusDeMoins = plusTard
+      ? "Ouvrir un PEA maintenant avec un petit versement te ferait gagner environ " + eur0(e.courants[0] === undefined ? e.p50 : e.p50) + " (en euros d'aujourd'hui) si tu retires dans la bonne fenêtre, et rien sinon."
+      : e.p50 > 0.005 ? "Avec " + O.eur(m) + "/mois sur " + ans(H) + ", un PEA te laisserait environ " + eur0(e.p50) + " de plus que " + libRef + ", en euros d'aujourd'hui."
+        : "Sur " + ans(H) + ", le PEA ne change rien par rapport à " + libRef + " : avant 5 ans, un retrait clôture le plan et le gain est imposé pareil.";
+    const reponse = { phrase: plusDeMoins, option_en_tete: enTete, reference: refId, ecart: ecartBandes(e), ecart_annuel: enjeu, probabilite_mieux: p3(e.probabilite_mieux), date_bascule: bascule };
+    const ecartsAnnuels = [];
+    if (!plusTard) for (let t = 12; t <= T; t += 12) if (t >= delai) ecartsAnnuels.push({ t, date: sim.date(t), p50_courants: r2(quantile(sim.ecart(tete, refId, t).courants, 0.5)) });
+    return {
+      options: opts, reponse, courbe: courbe || undefined, ce_qui_changerait: ctq, avertissements: avert,
+      enjeu_annuel: { p10: Math.min(enjeu.p10, enjeu.p50), p50: Math.max(0, enjeu.p50), p90: Math.max(enjeu.p90, enjeu.p50) }, sim,
+      detail: { T, mode: plusTard ? "plus_tard" : "maintenant", seuil_5_ans: seuil5, frais_seuil_pct: seuilFrais && seuilFrais.etat === "ok" ? r2(seuilFrais.x * 1000) / 1000 : null, frais_seuil_etat: seuilFrais ? seuilFrais.etat : null,
+        ecart_courants: r2(quantile(e.courants, 0.5)), ecarts_annuels: ecartsAnnuels, anteriorite, v_min: vmin, fenetre, plafond_utilise: plan.plafond_pea && plan.options.A ? r2(somme(plan.options.A.filter(x => x.type === "pea"), x => somme(x.flux, s => s.montant * (s.a - s.de + 1)))) : null },
+      plan: { tete, reference: refId, plan, titulaire: c.titulaire },
+    };
+  }
+
+  /* ================================================================== PER : plafond de déduction (§ 7.3) */
+  /** Imputation d'un versement sur les plafonds de l'avis (F14709) : le plafond de l'année d'abord, puis les reportés du plus ancien au plus récent.
+      lignes = [{ annee, montant }] ; un plafond de l'année Y se reporte jusqu'à la fin de Y + n (n = per_report_ans depuis 2026, per_report_ans_ancien avant).
+      → { imputation: { annee: montant }, perdu: { date, montant } | null, total_disponible, non_deduit }. */
+  function imputerPlafondsPer(lignes, versement, anneeVersement, reports) {
+    const r = reports || {}, expire = a => a + (a >= 2026 ? r.recent : r.ancien);
+    const utilisables = liste(lignes).filter(l => l && nombre(l.annee) && nombre(l.montant) && (r.recent == null || r.ancien == null || expire(+l.annee) >= anneeVersement))
+      .map(l => ({ annee: +l.annee, reste: +l.montant, montant: +l.montant }));
+    const ordre = utilisables.slice().sort((a, b) => (a.annee === anneeVersement ? -1 : b.annee === anneeVersement ? 1 : a.annee - b.annee));
+    let reste = versement; const imputation = {};
+    ordre.forEach(l => { const x = Math.min(reste, l.reste); imputation[l.annee] = x; l.reste -= x; reste -= x; });
+    const perdus = r.recent == null ? [] : utilisables.filter(l => expire(l.annee) === anneeVersement && l.reste > EPS);
+    return { imputation, perdu: perdus.length ? { date: anneeVersement + "-12-31", montant: r2(somme(perdus, l => l.reste)) } : null,
+      total_disponible: r2(somme(utilisables, l => l.montant)), non_deduit: r2(Math.max(0, reste)) };
+  }
+  /** Économie d'impôt d'une déduction de `versement` sur un revenu net imposable `rni` de `parts` parts : chaque tranche du barème que la déduction traverse compte à son taux
+      (décote et plafonnement du quotient familial non calculés). seuils = { 11, 30, 41, 45 } : début de chaque tranche, par part. */
+  function economiePer(rni, parts, versement, seuils) {
+    const tr = [[0, 0], [seuils[11], 0.11], [seuils[30], 0.3], [seuils[41], 0.41], [seuils[45], 0.45]];
+    const haut = rni / parts, bas = Math.max(0, rni - versement) / parts, parTranche = {};
+    let eco = 0;
+    for (let k = 0; k < tr.length; k++) {
+      const a = tr[k][0], b = k + 1 < tr.length ? tr[k + 1][0] : Infinity, part = Math.max(0, Math.min(haut, b) - Math.max(bas, a)) * parts;
+      if (part > 0) { eco += part * tr[k][1]; parTranche[Math.round(tr[k][1] * 100)] = r2(part); }
+    }
+    const marginal = tr.reduce((t, x) => (haut > x[0] ? x[1] : t), 0);
+    return { economie: r2(eco), economie_au_taux_marginal: r2(versement * marginal), part_par_taux: parTranche, bas_de_tranche: Math.abs(eco - versement * marginal) > 0.005 };
+  }
+  /** Plafond de déduction du PER pour le scénario : { annuel, premiere_annee, source, personne, texte }. Réglage de test > avis d'impôt de la personne la mieux dotée > plancher (estimation). */
+  function plafondPer(d, today, L, fo, o) {
+    if (o.plafondPerAnnuel != null) return { annuel: +o.plafondPerAnnuel, premiere_annee: +o.plafondPerAnnuel, source: "reglage", personne: null, texte: null };
+    const pl = objet(objet(objet(d.config).avis_impot).plafonds_per), an = +today.slice(0, 4), reports = { recent: L.v("per_report_ans"), ancien: L.v("per_report_ans_ancien") };
+    const limite = L.v("per_age_fin_deduction");
+    const cand = fo.personnes.filter(p => limite == null || p.age == null || p.age < limite).map(p => {
+      const lg = liste(pl[p.id]).filter(l => l && nombre(l.annee) && nombre(l.montant));
+      const utiles = lg.filter(l => reports.recent == null || reports.ancien == null || (+l.annee + (+l.annee >= 2026 ? reports.recent : reports.ancien)) >= an);
+      const dernier = lg.slice().sort((a, b) => b.annee - a.annee)[0];
+      return { p, annuel: dernier ? +dernier.montant : null, total: somme(utiles, l => +l.montant) };
+    }).filter(x => x.annuel != null).sort((a, b) => b.annuel - a.annuel);
+    if (cand.length) return { annuel: cand[0].annuel, premiere_annee: Math.max(cand[0].annuel, cand[0].total), source: "avis", personne: cand[0].p.id, texte: null };
+    const plancher = L.v("per_plafond_plancher");
+    return { annuel: plancher, premiere_annee: plancher, source: "estimation", personne: null,
+      texte: "Estimation : ton plafond exact est sur ton avis d'impôt (au minimum " + O.eur(plancher) + " par an pour un salarié, ou 10 % de tes revenus d'activité nets de frais)." };
+  }
+
+  /* ================================================================== n° 2 : où mettre le prochain euro ? (§ 7.2) */
+  const normaliser = (alloc, pred) => { const ks = Object.keys(alloc).filter(pred), t = somme(ks, k => alloc[k]); return { ks, t, parts: Object.fromEntries(ks.map(k => [k, t > 0 ? alloc[k] / t : 0])) }; };
+  const echelle = (flux, f) => flux.map(s => Object.assign({}, s, { montant: s.montant * f }));
+
+  function prochainEuro(c) {
+    const { d, today, rep, L, o, fo } = c;
+    const T = Math.max(1, Math.round(rep.horizon_ans * 12)), H = T / 12, delai = L.v("scn_delai_ouverture_mois");
+    const V0 = +rep.versement_initial || 0, m = +rep.versement_mensuel || 0, frais = c.frais, ter = frais.ter_pct, avert = avertFrais(frais), ctq = [];
+    const alloc0 = allocationDe(d, o), alloc = alloc0 || { actions: 1 };
+    if (!alloc0) avert.push("Aucune allocation cible renseignée : la comparaison suppose 100 % actions.");
+    const plafondPea = L.v("pea_plafond"), dureePea = L.v("pea_duree_ans");
+    const flux = fluxDepart(V0, m, delai, T);
+    const act = normaliser(alloc, ESTACTIONS), reste = normaliser(alloc, k => !ESTACTIONS(k)), peaPart = act.t, resteAv = 1 - peaPart;
+    const pochesAv = (norm) => norm.ks.map(k => ({ classe: k, part: norm.parts[k], frais_pct: k === "fonds_euros" ? frais.fonds_euros_pct : ter + frais.assurance_vie_pct }));
+    const pochesActions = fe => act.ks.map(k => ({ classe: k, part: act.parts[k], frais_pct: ter + fe }));
+    const options = {}, libelles = {}, exclues = {};
+    const tousAv = normaliser(alloc, () => true);
+    /* AV seule */
+    options.av = [{ type: "assurance_vie", ouverture_t: delai, poches: pochesAv(tousAv), flux }]; libelles.av = "Assurance-vie";
+    /* PEA (+ AV pour ce qui n'est pas éligible) */
+    if (T < dureePea * 12) exclues["pea+av"] = ["horizon_moins_5_ans", "Un PEA gagne à être gardé 5 ans : sous cet horizon, un retrait clôture le plan et le gain est imposé comme sur un compte-titres."];
+    else if (peaPart <= 0) exclues["pea+av"] = ["aucune_action", "Ton allocation ne contient pas d'actions : le PEA n'a rien à recevoir."];
+    else {
+      const rp = repartirPlafond(echelle(flux, peaPart), plafondPea), env = [{ type: "pea", ouverture_t: delai, poches: pochesActions(frais.pea_pct), flux: rp.dedans }];
+      if (rp.debordement.length) env.push({ type: "compte_titres", ouverture_t: 0, poches: pochesActions(frais.compte_titres_pct), flux: rp.debordement });
+      if (resteAv > EPS) env.push({ type: "assurance_vie", ouverture_t: delai, poches: pochesAv(reste), flux: echelle(flux, resteAv) });
+      options["pea+av"] = env; libelles["pea+av"] = resteAv > EPS ? "PEA + assurance-vie" : "PEA";
+    }
+    /* PER */
+    const dateRet = rep.date_retraite, tmiR = rep.tmi_retraite_pct, tmi = tmiDe(d), plafond = plafondPer(d, today, L, fo, o);
+    let perId = "per";
+    if (rep.retrait_avant === true) exclues.per = ["retrait_avant", "Un PER est bloqué jusqu'à la retraite (sauf achat de la résidence principale) : tu as besoin de pouvoir retirer avant."];
+    else if (!dateRet) exclues.per = ["date_retraite_manquante", "Sans ta date de départ à la retraite, la sortie du PER ne peut pas être calculée."];
+    else if (tmi == null) exclues.per = ["tmi_manquante", "Sans ta tranche d'imposition, l'économie d'impôt du PER ne peut pas être calculée."];
+    else if (T < O.moisEntre(today, dateRet)) exclues.per = ["avant_retraite", "Ton horizon est avant ta retraite : l'argent d'un PER n'est pas disponible avant."];
+    else {
+      const tmiRet = tmiR === "ne_sait_pas" || tmiR == null ? tmi : +tmiR;
+      if (tmiR === "ne_sait_pas") avert.push("Tranche d'imposition à la retraite inconnue : la tranche d'aujourd'hui (" + tmi + " %) est supposée pour le PER.");
+      const fl = [{ de: delai, a: T, effort_net: m }];
+      if (V0 > 0) { fl.splice(0, 1, { de: delai, a: delai, montant: V0, deduit: 0 }, { de: delai, a: T, effort_net: m }); avert.push("Le versement de départ n'est pas déduit dans le PER (hypothèse prudente)."); }
+      options.per = [{ type: "per", ouverture_t: delai, poches: tousAv.ks.map(k => ({ classe: k, part: tousAv.parts[k], frais_pct: k === "fonds_euros" ? frais.per_pct : ter + frais.per_pct })), flux: fl,
+        tmi_pct: tmi, tmi_retraite_pct: tmiRet, plafond_annuel: plafond.annuel, plafond_premiere_annee: plafond.premiere_annee }];
+      libelles.per = "PER";
+      if (plafond.texte) avert.push(plafond.texte);
+    }
+    /* compte-titres (référence), complété par l'assurance-vie pour la part qui n'est pas en actions */
+    const refId = resteAv > EPS ? (peaPart > 0 ? "cto+av" : "av") : "cto";
+    if (refId !== "av") {
+      options[refId] = [{ type: "compte_titres", ouverture_t: 0, poches: pochesActions(frais.compte_titres_pct), flux: echelle(flux, peaPart) }];
+      if (resteAv > EPS) options[refId].push({ type: "assurance_vie", ouverture_t: delai, poches: pochesAv(reste), flux: echelle(flux, resteAv) });
+      libelles[refId] = resteAv > EPS ? "Compte-titres + assurance-vie" : "Compte-titres";
+    } else libelles.av = "Assurance-vie";
+    const plan = { T, couple: fo.couple, options, reference: refId };
+    const sim = simulerEnveloppes(d, plan, simOptsDe(o));
+    if (sim.indisponible) return { statut: "indisponible", reperes_manquants: sim.reperes_manquants };
+    const ids = Object.keys(options), p50 = id => quantile(sim.options[id].net, 0.5);
+    const classement = ids.slice().sort((a, b) => p50(b) - p50(a) || (a === refId ? -1 : b === refId ? 1 : 0));
+    const tete = classement[0], eRef = tete === refId ? null : sim.ecart(tete, refId), nul = { delta: [0], courants: [0], p10: 0, p50: 0, p90: 0, probabilite_mieux: 0 };
+    const e = eRef || nul, enjeu = parAn(e, H);
+    const opts = ids.map(id => {
+      const x = sortieOption(id, libelles[id], options[id].map(s => s.type), sim.options[id]);
+      if (id === "per") { x.versement_mensuel = r2(versementPer(m, tmi, plafond.annuel).v); x.deduit_annuel = r2(12 * versementPer(m, tmi, plafond.annuel).deduit); x.contraintes.push("Bloqué jusqu'à la retraite, sauf achat de la résidence principale."); x.disponible = false; }
+      return x;
+    }).concat(Object.keys(exclues).map(id => optionExclue(id, id === "per" ? "PER" : "PEA + assurance-vie", id === "per" ? ["per"] : ["pea", "assurance_vie"], exclues[id][0], exclues[id][1])));
+    /* ce qui changerait */
+    let fraisSeuil = null;
+    if (options.av && tete !== "av" && tousAv.ks.some(k => k !== "fonds_euros")) {
+      const cible = sim.options[tete].courants;
+      fraisSeuil = seuilDichotomie(x => {
+        const av2 = [Object.assign({}, options.av[0], { poches: options.av[0].poches.map(p => (p.classe === "fonds_euros" ? p : Object.assign({}, p, { frais_pct: x }))) })];
+        const s2 = simulerEnveloppes(d, { T, couple: fo.couple, options: { av: av2 } }, simOptsDe(o));
+        return quantile(Array.from(s2.options.av.courants, (v, i) => v - cible[i]), 0.5);
+      }, 0, 3, 12);
+      if (fraisSeuil.etat === "ok") ctq.push(ligne("frais_assurance_vie", O.frc(frais.assurance_vie_pct + ter, 2) + " %", O.frc(fraisSeuil.x, 2) + " %", "En dessous, l'assurance-vie rejoint " + libelles[tete],
+        "Si les frais annuels de ton assurance-vie (contrat et fonds) tombaient à " + O.frc(fraisSeuil.x, 2) + " %, elle rejoindrait " + libelles[tete] + "."));
+    }
+    let tStar = null;
+    if (options.per && tete !== "per" || (options.per && classement.length > 1)) {
+      const autre = classement.find(id => id !== "per"), per0 = sim.netA("per", T, { tmi_per: 0 }).courants, ded = sim.options.per.deduits, cn = sim.options[autre].courants;
+      const x = Array.from(per0, (v, i) => v - cn[i]), q50 = quantile(x, 0.5);
+      tStar = ded > 0 && q50 > 0 ? q50 / ded * 100 : null;
+      if (tStar != null && tStar < 100) ctq.push(ligne("tmi_retraite", rep.tmi_retraite_pct + " %", O.frc(tStar, 1) + " %", "Au-delà, le PER passe derrière " + libelles[autre],
+        "Le PER reste devant " + libelles[autre] + " tant que ta tranche d'imposition à la retraite reste sous " + O.frc(tStar, 1) + " %."));
+    }
+    if (exclues.per && exclues.per[0] === "retrait_avant") ctq.push(ligne("retrait_avant", "oui", "non", "Le PER entrerait dans la comparaison", "Si tu n'as pas besoin de retirer cet argent avant ta retraite, le PER entre dans la comparaison."));
+    if (options["pea+av"]) ctq.push(ligne("pea_5_ans", ans(H), ans(dureePea), "Sous 5 ans, le PEA sort de la comparaison", "Si tu retires avant 5 ans, le PEA sort de la comparaison : un retrait le clôture."));
+    ctq.push(ligne("transmission", rep.transmission === true ? "oui" : "non précisé", null, "Information, sans calcul", "La transmission (clause bénéficiaire, abattement par bénéficiaire) peut compter : pour un cas particulier, un notaire."));
+    const phrase = tete === refId ? "Sur " + ans(H) + ", " + libelles[refId].toLowerCase() + " reste en tête : aucune des autres enveloppes ne fait mieux sur ces hypothèses."
+      : "Sur " + ans(H) + ", " + libelles[tete] + " arrive en tête, environ " + eur0(e.p50) + " de plus que " + libelles[refId].toLowerCase() + ", en euros d'aujourd'hui.";
+    const reponse = { phrase, option_en_tete: tete, reference: refId, ecart: ecartBandes(e), ecart_annuel: enjeu, probabilite_mieux: p3(e.probabilite_mieux), date_bascule: null };
+    return { options: opts, reponse, ce_qui_changerait: ctq, avertissements: avert, enjeu_annuel: tete === refId ? { p10: 0, p50: 0, p90: 0 } : enjeu, sim,
+      detail: { T, classement, ecart_tete_moins_reference: r2(quantile(e.courants, 0.5)), frais_seuil_av_uc_pct: fraisSeuil && fraisSeuil.etat === "ok" ? r2(fraisSeuil.x * 1000) / 1000 : null,
+        exclues: Object.fromEntries(Object.keys(exclues).map(k => [k, exclues[k][0]])), t_star_pct: tStar == null ? null : r2(tStar * 100) / 100, plafond_per: plafond },
+      plan: { tete, reference: refId, plan, titulaire: plafond.personne } };
+  }
+
+  /* ================================================================== n° 3 : le PER est-il intéressant pour moi ? (§ 7.3) */
+  function perInteret(c) {
+    const { d, today, rep, L, o, fo } = c;
+    const tmi = +rep.tmi_pct, tmiRep = rep.tmi_retraite_pct, tmiR = tmiRep === "ne_sait_pas" ? tmi : +tmiRep, m = +rep.versement_mensuel || 0, delai = L.v("scn_delai_ouverture_mois");
+    const T = O.moisEntre(today, rep.date_retraite);
+    const frais = c.frais, ter = frais.ter_pct, avert = avertFrais(frais), ctq = [];
+    if (tmiRep === "ne_sait_pas") avert.push("Tranche d'imposition à la retraite inconnue : la tranche d'aujourd'hui (" + tmi + " %) est supposée ; le tableau montre les autres.");
+    if (!(T >= 12)) return { statut: "a_completer", manquants: [{ champ: "date_retraite", question_id: "date_retraite", libelle: "Une date de départ à la retraite dans au moins un an", comment: "Donne la date à laquelle tu penses partir à la retraite." }] };
+    const H = T / 12, alloc0 = allocationDe(d, o), alloc = alloc0 || { actions: 1 }, tous = normaliser(alloc, () => true);
+    if (!alloc0) avert.push("Aucune allocation cible renseignée : la comparaison suppose 100 % actions.");
+    const plafond = plafondPer(d, today, L, fo, o);
+    if (plafond.texte) avert.push(plafond.texte);
+    if (rep.statut === "independant") avert.push("Indépendant : le plafond de déduction est différent et n'est pas calculé ici ; le plafond de ton avis d'impôt, ou l'estimation, est utilisé.");
+    /* effort net égal : v = m + économie / 12 ; économie à la TMI, ou par tranches si le revenu net imposable et le nombre de parts sont connus */
+    const avis = objet(objet(d.config).avis_impot), rni = o.revenu_net_imposable != null ? +o.revenu_net_imposable : (nombre(avis.revenu_net_imposable) ? +avis.revenu_net_imposable : null);
+    const parts = o.parts != null ? +o.parts : (nombre(avis.parts) ? +avis.parts : null);
+    const seuilsIr = { 11: L.v("ir_bareme_11_seuil"), 30: L.v("ir_bareme_30_seuil"), 41: L.v("ir_bareme_41_seuil"), 45: L.v("ir_bareme_45_seuil") };
+    const parTranches = rni != null && parts != null && Object.values(seuilsIr).every(v => v !== undefined);
+    const bloc = cap => {
+      if (!parTranches) { const x = versementPer(m, tmi, cap); return { v: x.v, deduit: x.deduit, eco: x.deduit * 12 * tmi / 100 }; }
+      /* v tel que v − économie(min(12 v, plafond)) / 12 = m : la fonction est croissante, dichotomie */
+      const f = v => v - economiePer(rni, parts, Math.min(12 * v, cap == null ? Infinity : cap), seuilsIr).economie / 12 - m;
+      let lo = m, hi = m * 2 + (cap == null ? 0 : cap / 12) + 1;
+      for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (f(mid) < 0) lo = mid; else hi = mid; }
+      const v = (lo + hi) / 2, dd = Math.min(12 * v, cap == null ? Infinity : cap);
+      return { v, deduit: dd / 12, eco: economiePer(rni, parts, dd, seuilsIr).economie };
+    };
+    const b1 = bloc(plafond.premiere_annee), b2 = bloc(plafond.annuel);
+    const flPer = b1.v === b2.v && b1.deduit === b2.deduit ? [{ de: delai, a: T, montant: b2.v, deduit: b2.deduit }]
+      : [{ de: delai, a: Math.min(T, delai + 11), montant: b1.v, deduit: b1.deduit }, { de: delai + 12, a: T, montant: b2.v, deduit: b2.deduit }].filter(s => s.de <= s.a);
+    const per = { type: "per", ouverture_t: delai, poches: tous.ks.map(k => ({ classe: k, part: tous.parts[k], frais_pct: k === "fonds_euros" ? frais.per_pct : ter + frais.per_pct })), flux: flPer, tmi_pct: tmi, tmi_retraite_pct: tmiR };
+    const av = { type: "assurance_vie", ouverture_t: delai, poches: tous.ks.map(k => ({ classe: k, part: tous.parts[k], frais_pct: k === "fonds_euros" ? frais.fonds_euros_pct : ter + frais.assurance_vie_pct })), flux: [{ de: delai, a: T, montant: m }] };
+    const plan = { T, couple: fo.couple, options: { per: [per], av: [av] }, comparer: ["per", "av"], reference: "av" };
+    const sim = simulerEnveloppes(d, plan, simOptsDe(o));
+    if (sim.indisponible) return { statut: "indisponible", reperes_manquants: sim.reperes_manquants };
+    const P_ = sim.options.per, A_ = sim.options.av, e = sim.ecart("per", "av"), q50 = a => quantile(a, 0.5);
+    const table = {}; [0, 11, 30, 41].forEach(t => { table[t] = r2(q50(sim.netA("per", T, { tmi_per: t }).courants)); });
+    const ded = P_.deduits, x0 = Array.from(sim.netA("per", T, { tmi_per: 0 }).courants, (v, i) => v - A_.courants[i]), tBrut = ded > 0 ? q50(x0) / ded * 100 : null;
+    const tStar = tBrut != null && tBrut > 0 ? tBrut : null;
+    const perEnTete = e.p50 > 0, enjeu = perEnTete ? parAn(e, H) : { p10: 0, p50: 0, p90: 0 };
+    const dedAn = 12 * b2.deduit, nonDed = 12 * b2.v - dedAn;
+    if (tStar != null) ctq.push(ligne("tmi_retraite", tmiR + " %", O.frc(tStar, 2) + " %", "Au-delà, l'assurance-vie fait mieux", "Le PER reste devant l'assurance-vie tant que ta tranche d'imposition à la retraite reste sous " + O.frc(tStar, 1) + " %."));
+    else ctq.push(ligne("tmi_retraite", tmiR + " %", null, "Aucun seuil : l'assurance-vie fait mieux à toute tranche", "Avec ces chiffres, l'assurance-vie fait mieux à n'importe quelle tranche d'imposition à la retraite."));
+    if (dedAn >= plafond.annuel - 0.005 && isFinite(plafond.annuel)) ctq.push(ligne("plafond_per", O.eur(plafond.annuel), O.eur(12 * m), "Au-delà du plafond, les versements ne sont plus déduits", "Ton plafond de déduction est atteint : la partie de ton versement au-delà de " + O.eur(plafond.annuel) + " par an n'est pas déduite."));
+    if (rep.achat_rp === true) ctq.push(ligne("achat_residence_principale", "oui", null, "Le PER peut être débloqué pour cet achat", "Tu pourrais le débloquer pour l'achat de ta résidence principale : la part des versements déduits est imposée comme une sortie en capital."));
+    if (parTranches) avert.push("Près du bas d'une tranche, l'économie d'impôt peut être plus faible : la décote et le plafonnement du quotient familial ne sont pas calculés.");
+    ctq.push(ligne("sortie_en_rente", "non calculé", null, "Seule la sortie en capital est calculée", "La sortie en rente est imposée comme une pension ; elle n'est pas calculée ici."));
+    const opts = [sortieOption("per", "PER", ["per"], P_, { versement_mensuel: r2(b2.v), deduit_annuel: r2(dedAn), non_deduit_annuel: r2(nonDed), disponible: false, contraintes: ["Bloqué jusqu'à la retraite, sauf achat de la résidence principale."] }),
+      sortieOption("av", "Assurance-vie", ["assurance_vie"], A_)];
+    const phrase = perEnTete ? "À effort égal de " + O.eur(m) + " par mois jusqu'à ta retraite, un PER te laisserait environ " + eur0(e.p50) + " de plus qu'une assurance-vie, en euros d'aujourd'hui, avec ta tranche d'imposition à la retraite de " + tmiR + " %."
+      : "À effort égal de " + O.eur(m) + " par mois, l'assurance-vie fait mieux que le PER avec ces hypothèses (tranche d'imposition à la retraite de " + tmiR + " %).";
+    const reponse = { phrase, option_en_tete: perEnTete ? "per" : "av", reference: "av", ecart: ecartBandes(e), ecart_annuel: parAn(e, H), probabilite_mieux: p3(e.probabilite_mieux), date_bascule: null };
+    return { options: opts, reponse, ce_qui_changerait: ctq, avertissements: avert, enjeu_annuel: enjeu, sim,
+      detail: { T, v_mensuel: r2(b2.v), v_mensuel_premiere_annee: r2(b1.v), economie_annuelle: r2(b2.eco), deduit_annuel: r2(dedAn), non_deduit_annuel: r2(nonDed), deduits: r2(P_.deduits), versements_per: r2(P_.base),
+        V_per: r2(q50(P_.brut)), gain_per: r2(q50(P_.brut) - P_.base), net_per: r2(q50(P_.courants)), V_av: r2(q50(A_.brut)), gain_av: r2(q50(A_.brut) - A_.base),
+        impot_av: r2(q50(Array.from(A_.impots, (v, i) => v - A_.ps[i]))), prelevements_av: r2(q50(A_.ps)), net_av: r2(q50(A_.courants)), net_av_auj: r2(q50(A_.net)),
+        ecart_courants: r2(q50(e.courants)), table_net_per: table, t_star_pct: tStar == null ? null : r2(tStar * 10000) / 10000, t_star_brut_pct: tBrut == null ? null : r2(tBrut * 100) / 100,
+        phrase_seuil: tStar == null ? "aucun_seuil" : "seuil", net_per_auj: bandeR(P_.net), net_av_auj_bande: bandeR(A_.net), plafond_per: plafond, par_tranches: parTranches },
+      plan: { tete: perEnTete ? "per" : "av", reference: "av", plan, titulaire: plafond.personne } };
+  }
+
+  /* ================================================================== n° 6 : combien garder de côté, et où ? (§ 7.4) */
+  function matelas(c) {
+    const { d, today, rep, L, o, fo } = c;
+    const E = etatMatelas(d, today, L.v, o, rep), avert = [], ctq = [];
+    const capacite = capaciteDe(d), H = Math.max(1, +rep.horizon_ans || 5), T = Math.round(H * 12);
+    const lepPlafond = L.v("lep_plafond"), laPlafond = L.v("livret_a_plafond"), ldPlafond = L.v("ldds_plafond");
+    const tauxLep = L.v("lep_taux"), tauxLa = L.v("livret_a_taux");
+    const avis = objet(objet(d.config).avis_impot), parts = nombre(avis.parts) ? +avis.parts : (nombre(rep.parts_fiscales) ? +rep.parts_fiscales : null), rfr = nombre(avis.rfr) ? +avis.rfr : null;
+    const plafondRfr = parts != null ? plafondRfrLep(parts, L.v) : null;
+    const lep = { eligible: plafondRfr != null && rfr != null ? rfr <= plafondRfr : null, plafond_rfr: plafondRfr, rfr, parts };
+    if (lep.eligible == null) avert.push("Le nombre de parts ou le revenu fiscal de référence de ton avis d'impôt manque : la possibilité d'ouvrir un LEP n'est pas évaluée.");
+    /* répartition de la cible : LEP de chaque adulte du foyer fiscal, puis Livret A, puis LDDS */
+    const titulaires = fo.personnes.map(p => p.id), tit = titulaires.length ? titulaires : ["p1"];
+    const slots = [];
+    if (lep.eligible) tit.forEach(t => slots.push({ vers: "lep", titulaire: t, plafond: lepPlafond, taux: tauxLep }));
+    tit.forEach(t => slots.push({ vers: "livret_a", titulaire: t, plafond: laPlafond, taux: tauxLa }));
+    tit.forEach(t => slots.push({ vers: "ldds", titulaire: t, plafond: ldPlafond, taux: tauxLa }));
+    let aPlacer = E.cible; const ordre = [];
+    slots.forEach(s => { const x = Math.min(aPlacer, s.plafond); if (x > EPS) ordre.push({ vers: s.vers, titulaire: s.titulaire, montant: r2(x), taux: s.taux }); aPlacer -= Math.max(0, x); });
+    if (aPlacer > EPS) avert.push("La cible dépasse les plafonds cumulés des livrets de ton foyer : " + O.eur(aPlacer) + " restent à placer ailleurs.");
+    /* gain de l'ordre : l'argent déjà détenu qui change de livret, aux taux d'aujourd'hui */
+    const infos = objet(objet(d.config).enveloppes_infos), parType = { lep: 0, livret_a: 0, ldds: 0 };
+    liste(d.positions).filter(p => p && Calc.counted(p) && Calc.famille(p, d.classes) === "epargne").forEach(p => {
+      const cle = Calendrier.cleEnveloppe(p.envelope, p.owner, d.positions, infos), t = objet(infos[cle]).type || Calendrier.typeDeduit(p.envelope);
+      if (t in parType) parType[t] += Calc.val(p);
+    });
+    const taux = { lep: tauxLep, livret_a: tauxLa, ldds: tauxLa }, detenu = Object.assign({}, parType);
+    let pool = Math.min(E.actuel, E.cible), gain = 0;
+    const restePool = Object.assign({}, parType, { courant: E.dispo.courantsAuDela });
+    ordre.forEach(s => { s.reste = s.montant; });
+    ordre.forEach(s => { const reste = Math.min(s.reste, detenu[s.vers] || 0); if (reste > 0) { detenu[s.vers] -= reste; s.reste -= reste; pool -= reste; restePool[s.vers] -= reste; } });
+    const totalRestant = somme(Object.values(restePool), x => Math.max(0, x)), tauxMoyen = totalRestant > 0 ? (restePool.lep * tauxLep + restePool.livret_a * tauxLa + restePool.ldds * tauxLa) / totalRestant : 0;
+    ordre.forEach(s => { const x = Math.min(s.reste, Math.max(0, pool)); if (x > 0) { gain += x * (s.taux - tauxMoyen) / 100; pool -= x; } });
+    const gainOrdre = Math.max(0, gain);
+    /* surplus : le placer au mois 0 contre le laisser sur livret */
+    let simS = null, eS = null, cto = null, livret = null, enjeuSurplus = { p10: 0, p50: 0, p90: 0 }, tauxSeuil = null, bandeV = null;
+    if (E.surplus > EPS) {
+      const dest = rep.destination_surplus || "compte_titres", frais = c.frais, ter = frais.ter_pct;
+      const fd = dest === "assurance_vie" ? frais.assurance_vie_pct : dest === "pea" ? frais.pea_pct : frais.compte_titres_pct;
+      const delai = dest === "compte_titres" ? 0 : L.v("scn_delai_ouverture_mois");
+      const placement = { type: dest, ouverture_t: delai, poches: [{ classe: "actions", part: 1, frais_pct: ter + fd }], flux: [{ de: delai, a: delai, montant: E.surplus }] };
+      const liv = { type: "livret_a", ouverture_t: 0, poches: [{ classe: "monetaire", part: 1, frais_pct: 0 }], flux: [{ de: 0, a: 0, montant: E.surplus }] };
+      simS = simulerEnveloppes(d, { T, couple: fo.couple, options: { placement: [placement], livret: [liv] }, comparer: ["placement", "livret"], reference: "livret" }, simOptsDe(o));
+      if (simS.indisponible) return { statut: "indisponible", reperes_manquants: simS.reperes_manquants };
+      eS = simS.ecart("placement", "livret");
+      enjeuSurplus = parAn(eS, H);
+      const pl = simS.options.placement;
+      cto = { V: r2(quantile(pl.brut, 0.5)), gain: r2(quantile(pl.brut, 0.5) - pl.base), impots: r2(quantile(pl.impots, 0.5)), net: r2(quantile(pl.courants, 0.5)) };
+      bandeV = bandeR(pl.brut);
+      livret = r2(quantile(simS.options.livret.courants, 0.5));
+      tauxSeuil = r2((Math.pow(quantile(pl.courants, 0.5) / E.surplus, 1 / H) - 1) * 100 * 100) / 100;
+      if (eS.p10 < 0) ctq.push(ligne("risque_surplus", "1 chance sur 10", r2(eS.p10), "Le surplus placé peut faire moins bien que le livret", "1 chance sur 10 de faire moins bien que le livret de plus de " + eur0(-eS.p10) + " sur " + ans(H) + "."));
+    }
+    const enjeuP50 = gainOrdre + Math.max(0, enjeuSurplus.p50);
+    const enjeu = { p10: r2(gainOrdre + (enjeuSurplus.p50 > 0 ? enjeuSurplus.p10 : 0)), p50: r2(enjeuP50), p90: r2(gainOrdre + Math.max(0, enjeuSurplus.p90)) };
+    if (E.manque > EPS) avert.push("Il te manque " + O.eur(E.manque) + (capacite > 0 ? ", soit environ " + Math.ceil(E.manque / capacite) + " mois à ton rythme d'épargne." : "."));
+    const revenus = Calc.revenusFoyer(d.profil, "foyer") || somme(liste(objet(d.budget).lignes).filter(l => l && l.type === "revenu"), l => (l.frequence === "an" ? +l.montant / 12 : +l.montant));
+    const k3 = L.v("scn_matelas_mois_stable");
+    ctq.push(ligne("mois_matelas", E.mois + " mois", E.convention.mois + " mois", "La cible suit le nombre de mois choisi", "Chaque mois de plus ou de moins déplace la cible de " + O.eur(E.dep.montant) + "."));
+    if (lep.eligible === false && parts != null) ctq.push(ligne("lep_rfr", O.eur(rfr), O.eur(plafondRfr), "Sous ce revenu fiscal de référence, un LEP devient possible", "Un LEP est possible si ton revenu fiscal de référence ne dépasse pas " + O.eur(plafondRfr) + " pour " + parts + " parts."));
+    ctq.push(ligne("taux_livret", O.frc(tauxLa, 2) + " %", tauxSeuil == null ? null : O.frc(tauxSeuil, 2) + " %", "Au-dessus de ce taux, le livret ferait mieux que le placement", tauxSeuil == null ? "Pas de surplus à placer." : "Le livret ferait aussi bien que le placement avec un taux de " + O.frc(tauxSeuil, 2) + " % par an."));
+    const phrase = E.surplus > EPS ? "Ta cible est de " + eur0(E.cible) + " (" + E.mois + " mois de dépenses) ; tu as environ " + eur0(E.surplus) + " au-delà. " + (gainOrdre > 0 ? "Les ranger dans l'ordre LEP, Livret A, LDDS te rapporterait environ " + eur0(gainOrdre) + " de plus par an." : "")
+      : E.manque > EPS ? "Ta cible est de " + eur0(E.cible) + " (" + E.mois + " mois de dépenses) ; il te manque environ " + eur0(E.manque) + "." + (gainOrdre > 0 ? " Les ranger dans l'ordre LEP, Livret A, LDDS te rapporterait environ " + eur0(gainOrdre) + " de plus par an." : "")
+        : "Ta cible est de " + eur0(E.cible) + " (" + E.mois + " mois de dépenses) et tu y es." + (gainOrdre > 0 ? " Les ranger dans l'ordre LEP, Livret A, LDDS te rapporterait environ " + eur0(gainOrdre) + " de plus par an." : "");
+    const opts = [{ id: "ordre", libelle: "Ranger la cible : LEP, Livret A, LDDS", enveloppes: ["lep", "livret_a", "ldds"], net: null, verse: r2(E.cible), disponible: true, contraintes: [], exclue: null }];
+    if (cto) opts.push({ id: "placement", libelle: "Surplus placé", enveloppes: [rep.destination_surplus || "compte_titres"], net: bandeR(simS.options.placement.net), verse: r2(E.surplus), disponible: true, contraintes: [], exclue: null },
+      { id: "livret", libelle: "Surplus laissé sur livret", enveloppes: ["livret_a"], net: bandeR(simS.options.livret.net), verse: r2(E.surplus), disponible: true, contraintes: [], exclue: null });
+    const reponse = { phrase, option_en_tete: E.surplus > EPS && enjeuSurplus.p50 > 0 ? "placement" : "ordre", reference: "livret", ecart: eS ? ecartBandes(eS) : { p10: 0, p50: 0, p90: 0 }, ecart_annuel: enjeuSurplus, probabilite_mieux: eS ? p3(eS.probabilite_mieux) : null, date_bascule: null };
+    return { options: opts, reponse, ce_qui_changerait: ctq, avertissements: avert, enjeu_annuel: enjeu, sim: simS,
+      detail: { depenses_reference: r2(E.dep.montant), source_depenses: E.dep.source, mois: E.mois, mois_convention: E.convention.mois, cible: r2(E.cible), actuel: r2(E.actuel), surplus: r2(E.surplus), manque: r2(E.manque),
+        mois_pour_combler: E.manque > EPS && capacite > 0 ? Math.ceil(E.manque / capacite - 1e-9) : (E.manque > EPS ? null : 0), lep, ordre: ordre.map(s => ({ vers: s.vers, titulaire: s.titulaire, montant: s.montant })), gain_ordre_annuel: r2(gainOrdre),
+        surplus_cto: cto ? Object.assign({ bande_V: bandeV }, cto) : null, surplus_livret: livret, ecart_courants: eS ? r2(quantile(eS.courants, 0.5)) : 0, ecart_auj: eS ? r2(eS.p50) : 0, enjeu_surplus_annuel: enjeuSurplus,
+        taux_livret_seuil_pct: tauxSeuil, cible_en_revenus_3_mois: r2(k3 * revenus), perte_p10: eS ? r2(eS.p10) : null },
+      plan: { tete: "ordre", reference: "livret", plan: null, titulaire: null } };
+  }
+
+  /* ================================================================== n° 12 : ouvrir une assurance-vie maintenant ? (§ 7.5) */
+  function avMaintenant(c) {
+    const { d, today, rep, L, o, fo } = c;
+    const delai = L.v("scn_delai_ouverture_mois"), duree = L.v("av_duree_ans"), frais = c.frais, ter = frais.ter_pct, avert = avertFrais(frais), ctq = [];
+    const vmin = +rep.versement_initial || 0, m = +rep.versement_mensuel || 0, fe = Math.min(100, Math.max(0, +rep.part_fonds_euros_pct || 0)) / 100;
+    const P0 = Math.max(delai, O.moisEntre(today, rep.debut_date));
+    const sansDate = !nombre(rep.retrait_ans);
+    const T = sansDate ? Math.max(P0 + 12, 120) : Math.round(rep.retrait_ans * 12), H = T / 12;
+    if (sansDate) avert.push("Pas de date de retrait : 10 ans supposés pour le chiffre ; la courbe montre les autres dates.");
+    if (P0 >= T) return { statut: "a_completer", manquants: [{ champ: "debut_date", question_id: "debut_date", libelle: "Une date de début des versements avant celle du retrait", comment: "Donne une date de début antérieure à ton retrait." }] };
+    const poches = [];
+    if (fe < 1) poches.push({ classe: "actions", part: 1 - fe, frais_pct: ter + frais.assurance_vie_pct });
+    if (fe > 0) poches.push({ classe: "fonds_euros", part: fe, frais_pct: frais.fonds_euros_pct });
+    const flux = [{ de: P0, a: T, montant: m }], Tmax = Math.max(T, P0 + duree * 12 + 12, sansDate ? 240 : 0);
+    const plan = { T, couple: fo.couple, options: { A: [{ type: "assurance_vie", ouverture_t: delai, poches, flux }], B: [{ type: "assurance_vie", ouverture_t: P0, poches, flux }] }, comparer: ["A", "B"], reference: "B", v_min: { montant: vmin, t: delai } };
+    const sim = simulerEnveloppes(d, plan, Object.assign({ horizon_max: Tmax }, simOptsDe(o)));
+    if (sim.indisponible) return { statut: "indisponible", reperes_manquants: sim.reperes_manquants };
+    const e = sim.ecart("A", "B"), enjeu = parAn(e, H), ouvA = dateDe(today, delai), ouvB = dateDe(today, P0), seuilA = seuilAnnees(ouvA, duree), seuilB = seuilAnnees(ouvB, duree);
+    const A_ = sim.options.A, B_ = sim.options.B, q50 = a => quantile(a, 0.5), dateT = sim.date(T);
+    const pts = []; for (let t = delai; t <= Tmax; t++) { const x = sim.ecart("A", "B", t), b = bandeR(x.delta); pts.push({ t, date: sim.date(t), p10: b.p10, p50: b.p50, p90: b.p90, courants_p50: r2(q50(x.courants)) }); }
+    const fenetre = { du: seuilA, au: O.ajouterJours(seuilB, -1) };
+    ctq.push(ligne("av_8_ans", dateFr(dateT), dateFr(seuilA) + " au " + dateFr(fenetre.au), "L'avance compte pour un retrait dans cette fenêtre", "Ouvrir maintenant ne change rien si tu retires avant le " + dateFr(seuilA) + " ou à partir du " + dateFr(seuilB) + " : entre les deux, le contrat ouvert maintenant a plus de 8 ans et l'autre non."));
+    ctq.push(ligne("transfert", "non calculé", null, "Un ancien contrat peut être transformé chez le même assureur sans perdre son ancienneté", "Un contrat peut être transformé, par avenant ou par un nouveau contrat, auprès du même assureur sans les conséquences fiscales d'un dénouement ; rien n'est dit d'un autre assureur."));
+    ctq.push(ligne("clause_beneficiaire", "non calculé", null, "La clause bénéficiaire compte pour la transmission", "La clause bénéficiaire règle la transmission : pour un cas particulier, un notaire."));
+    const gainAnt = r2(q50(e.courants));
+    const phrase = e.p50 > 0.005 ? "Ouvrir une assurance-vie maintenant, même avec " + O.eur(vmin) + ", te ferait gagner environ " + eur0(e.p50) + " en euros d'aujourd'hui si tu retires à " + ans(H) + ", parce que ses 8 ans seraient atteints plus tôt."
+      : "Si tu retires à " + ans(H) + ", ouvrir maintenant ne change rien : les deux contrats seraient imposés pareil" + (T < duree * 12 ? " (aucun n'a encore 8 ans)." : " (les deux ont plus de 8 ans).");
+    const opts = [sortieOption("A", "Contrat ouvert maintenant", ["assurance_vie"], A_), sortieOption("B", "Contrat ouvert au début des versements", ["assurance_vie"], B_)];
+    const reponse = { phrase, option_en_tete: Math.abs(e.p50) < 0.005 ? "egalite" : "A", reference: "B", ecart: ecartBandes(e), ecart_annuel: enjeu, probabilite_mieux: p3(e.probabilite_mieux), date_bascule: e.p50 > 0.005 ? seuilA : null };
+    const fv = sim.v_min;
+    return { options: opts, reponse, courbe: { abscisse: "date_sortie", points: pts }, ce_qui_changerait: ctq, avertissements: avert, enjeu_annuel: { p10: Math.min(enjeu.p10, enjeu.p50), p50: Math.max(0, enjeu.p50), p90: Math.max(enjeu.p90, enjeu.p50) }, sim,
+      detail: { T, V: r2(q50(A_.brut)), versements: r2(A_.base), gain: r2(q50(A_.brut) - A_.base), impot_A: r2(q50(Array.from(A_.impots, (v, i) => v - A_.ps[i]))), impot_B: r2(q50(Array.from(B_.impots, (v, i) => v - B_.ps[i]))),
+        prelevements: r2(q50(A_.ps)), A_apres_8_ans: dateT >= seuilA, B_apres_8_ans: dateT >= seuilB, gain_anteriorite: gainAnt, gain_anteriorite_auj: r2(e.p50), seuil_A: seuilA, seuil_B: seuilB, fenetre,
+        v_min_brut: r2(q50(fv.brut)), v_min_net: r2(q50(fv.net)), v_min_frais: r2(q50(fv.frais)), gain_bande: bandeR(e.delta) },
+      plan: { tete: "A", reference: "B", plan, titulaire: c.titulaire } };
+  }
+
+  const CALCULS = { ouvrirPea, prochainEuro, perInteret, matelas, avMaintenant };
+
+  /* ================================================================== pertinence (§ 6.4) */
+  const deNom = n => (/^[aeiouyéèh]/i.test(n) ? "d'" : "de ") + n;
+  /** Évalue les règles de pertinence d'une entrée du catalogue pour une personne : { ok, raisons, manquants }. Une clé inconnue lève une erreur (test du catalogue). */
+  function evaluerRegles(regles, k, p) {
+    const out = { ok: true, raisons: [], manquants: [] };
+    const sujet = k.fo.personnes.length <= 1 ? "tu" : p.nom, ilA = (neg, quoi) => (k.fo.personnes.length <= 1 ? (neg ? "Tu n'as pas " : "Tu as ") : p.nom + (neg ? " n'a pas " : " a ")) + quoi;
+    const non = (raison) => { out.ok = false; if (raison) out.raisons = []; };
+    const oui = raison => { if (raison) out.raisons.push(raison); };
+    Object.keys(objet(regles)).forEach(cle => {
+      if (!out.ok) return;
+      const v = regles[cle];
+      switch (cle) {
+        case "toujours": if (v !== true) non(); break;
+        case "sans_enveloppe": {
+          const manque = liste(v).filter(t => !detient(k.fo, p.id, famillesTypes[t] || [t]));
+          if (manque.length === liste(v).length) manque.forEach(t => oui(ilA(true, deNom(nomEnveloppe[t] || t)))); else non();
+          break;
+        }
+        case "avec_enveloppe": {
+          const ont = liste(v).filter(t => detient(k.fo, p.id, famillesTypes[t] || [t]));
+          if (ont.length) ont.forEach(t => oui(ilA(false, "un " + (nomEnveloppe[t] || t)))); else non();
+          break;
+        }
+        case "capacite_min": if (k.cap >= v) oui("Environ " + O.eur(Math.round(k.cap)) + " par mois de capacité d'épargne"); else non(); break;
+        case "tmi_min":
+          if (k.tmi == null) { out.manquants.push({ champ: "tmi", libelle: "Ta tranche d'imposition", comment: "Elle figure sur ton avis d'impôt." }); oui("Ta tranche d'imposition n'est pas encore connue"); }
+          else if (k.tmi >= v) oui("Tranche d'imposition de " + k.tmi + " %"); else non();
+          break;
+        case "age_min": case "age_max":
+          if (p.age == null) { out.manquants.push({ champ: "naissance", libelle: "Ta date de naissance", comment: "Elle sert à l'âge exigé." }); break; }
+          if ((cle === "age_min" && p.age < v) || (cle === "age_max" && p.age > v)) non(); break;
+        case "age_sous_repere": {
+          const limite = k.L.v(v);
+          if (limite === undefined) { non(); break; }
+          if (p.age == null) { out.manquants.push({ champ: "naissance", libelle: "Ta date de naissance", comment: "Elle sert à l'âge exigé." }); break; }
+          if (p.age >= limite) non(); break;
+        }
+        case "revenus_activite": {
+          const a = k.fo.personnes.some(x => x.salaire != null), rev = objet(objet(k.d.risque).reponses).revenus;
+          const actif = a ? p.salaire > 0 : (rev != null && rev !== "sans");
+          if (actif) oui("Un revenu d'activité"); else non();
+          break;
+        }
+        case "surplus_matelas": { const E = k.matelas(); if (E.dep && E.surplus > EPS) oui("Environ " + eur0(E.surplus) + " au-delà de ta cible de précaution"); else non(); break; }
+        case "matelas_ecart_pct": {
+          const E = k.matelas();
+          if (!E.dep) { out.manquants.push({ champ: "depenses_essentielles", libelle: "Tes dépenses essentielles", comment: "Elles viennent de ton budget." }); non(); break; }
+          const sous = E.actuel < E.cible * (1 - v / 100), sur = E.actuel > E.cible * (1 + v / 100);
+          if (sous) oui("Ton épargne de précaution est sous ta cible de " + eur0(E.cible)); else if (sur) oui("Ton épargne de précaution dépasse ta cible de " + eur0(E.cible)); else non();
+          break;
+        }
+        case "lep_possible_non_detenu": {
+          const lep = k.lep();
+          if (lep.eligible === true && !k.fo.enveloppes.some(e => e.type === "lep")) oui("Tu peux ouvrir un LEP, plus rémunéré qu'un Livret A"); else non();
+          break;
+        }
+        case "un_de": {
+          const sous = liste(v).map(r => evaluerRegles(r, k, p)), ok = sous.find(x => x.ok);
+          if (ok) { ok.raisons.forEach(r => oui(r)); ok.manquants.forEach(m => out.manquants.push(m)); } else non();
+          break;
+        }
+        case "pour_toi_si": break;                       // lu par lister, pas par la pertinence
+        default: throw new Error("règle de pertinence inconnue : « " + cle + " »");
+      }
+    });
+    if (!out.ok) { out.raisons = []; }
+    return out;
+  }
+  /** Pertinence d'un scénario pour le foyer : → { pertinent, personnes, raisons, manquants }. */
+  function pertinence(entree, data, today, opts) {
+    const d = Object.assign({}, data, { today }), L = lecteur(d), fo = foyer(d, today), o = opts || {};
+    let memoE = null, memoL = null;
+    const k = { d, L, fo, tmi: tmiDe(d), cap: capaciteDe(d),
+      matelas: () => memoE || (memoE = etatMatelas(d, today, L.v, o, null)),
+      lep: () => memoL || (memoL = (() => {
+        const avis = objet(objet(d.config).avis_impot), parts = nombre(avis.parts) ? +avis.parts : null, rfr = nombre(avis.rfr) ? +avis.rfr : null, plafond = parts != null ? plafondRfrLep(parts, L.v) : null;
+        return { eligible: plafond != null && rfr != null ? rfr <= plafond : null };
+      })()) };
+    const pers = fo.personnes.length ? fo.personnes : [{ id: "p1", nom: "Toi", age: null, salaire: null }];
+    const raisons = [], manquants = [], ok = [];
+    pers.forEach(p => {
+      const r = evaluerRegles(entree.pertinence, k, p);
+      if (!r.ok) return;
+      ok.push(p.id);
+      r.raisons.forEach(x => { if (!raisons.includes(x)) raisons.push(x); });
+      r.manquants.forEach(m => { if (!manquants.some(y => y.champ === m.champ)) manquants.push(m); });
+    });
+    return { pertinent: ok.length > 0, personnes: ok, raisons: ok.length ? raisons : [], manquants: ok.length ? manquants : [] };
+  }
+  /** Le scénario entre-t-il dans « Pour toi » ? (règle pour_toi_si du catalogue ; absente : oui) */
+  function pourToiSi(entree, data, today, opts) {
+    const r = objet(entree.pertinence).pour_toi_si;
+    if (!r) return true;
+    const d = Object.assign({}, data, { today }), L = lecteur(d), fo = foyer(d, today), o = opts || {};
+    let memoE = null;
+    const k = { d, L, fo, tmi: tmiDe(d), cap: capaciteDe(d), matelas: () => memoE || (memoE = etatMatelas(d, today, L.v, o, null)),
+      lep: () => { const avis = objet(objet(d.config).avis_impot), parts = nombre(avis.parts) ? +avis.parts : null, rfr = nombre(avis.rfr) ? +avis.rfr : null, pl = parts != null ? plafondRfrLep(parts, L.v) : null; return { eligible: pl != null && rfr != null ? rfr <= pl : null }; } };
+    const p = fo.personnes[0] || { id: "p1", nom: "Toi", age: null, salaire: null };
+    return evaluerRegles(r, k, p).ok;
+  }
+
+  /* ================================================================== jouer, enjeu, lister */
+  /** Questions obligatoires selon les réponses : celles du catalogue, plus celles que le scénario rend nécessaires. */
+  function questionsRequises(entree, rep, o) {
+    const ids = liste(entree.questions).filter(q => q.obligatoire).map(q => q.id);
+    if (entree.calcul === "ouvrirPea" && rep.debut === "plus_tard") ids.push("debut_date");
+    if (entree.calcul === "prochainEuro" && rep.retrait_avant === false && !o.enjeu) ids.push("tmi_retraite_pct", "date_retraite");
+    return [...new Set(ids)];
+  }
+  const manquantQuestion = q => ({ champ: q.id, question_id: q.id, libelle: q.libelle, comment: q.aide || "Réponds à cette question." });
+
+  /** Joue un scénario : calcule la réponse sur les données et les réponses (le serveur recalcule tout, jamais de chiffre venu du LLM). → résultat (§ 6.7). */
+  function jouer(entree, data, reponses, today, opts) {
+    const o = opts || {}, d = Object.assign({}, data, { today }), L = lecteur(d), det = o.volatilite === 0;
+    const base = { cle: entree.cle, version: entree.version == null ? null : entree.version, version_calcul: entree.version_calcul || VERSION_CALCUL, version_modele: Proj.versionModele,
+      graine: o.graine == null ? Proj.GRAINE : o.graine, chemins: det ? 1 : Math.round(o.chemins || 2000), date: today, rappel: RAPPEL };
+    const hypotheses = () => liste(entree.reperes).filter(cle => L.idx[cle]).map(cle => hypotheseDe(L.idx[cle], today));
+    const absents = liste(entree.reperes).filter(cle => !L.idx[cle]);
+    if (absents.length) return Object.assign(base, { statut: "indisponible", reperes_manquants: absents, manquants: [], hypotheses: hypotheses(),
+      avertissements: ["Un repère nécessaire à ce calcul manque (" + absents.join(", ") + ") : aucun chiffre n'est donné plutôt qu'une valeur de remplacement."] });
+    const erreurs = reponsesValides(entree, reponses);
+    if (erreurs) throw new Error("réponses invalides : " + erreurs.join(" ; "));
+    const donnees = Object.fromEntries(Object.entries(objet(reponses)).filter(([, v]) => v !== null && v !== undefined));
+    const rep = Object.assign({}, preremplir(entree, d, today, o), donnees);
+    const qs = Object.fromEntries(liste(entree.questions).map(q => [q.id, q]));
+    const manquants = questionsRequises(entree, rep, o).filter(id => rep[id] === undefined).map(id => manquantQuestion(qs[id]));
+    if (manquants.length) return Object.assign(base, { statut: "a_completer", manquants, hypotheses: hypotheses(), avertissements: [] });
+    const calc = CALCULS[entree.calcul];
+    if (!calc) throw new Error("calcul inconnu : « " + entree.calcul + " »");
+    const fo = foyer(d, today), frais = fraisDe(d, o, rep), pe = pertinence(entree, d, today, o);
+    if (entree.calcul === "matelas" && !depensesReference(d, today, o)) {
+      return Object.assign(base, { statut: "a_completer", manquants: [{ champ: "depenses_essentielles", libelle: "Tes dépenses essentielles", comment: "Elles viennent de ton budget : demande à Claude de le compléter." }], hypotheses: hypotheses(), avertissements: [] });
+    }
+    const r = calc({ entree, d, today, rep, L, o, fo, frais, titulaire: pe.personnes[0] || "p1" });
+    if (r.statut === "indisponible") return Object.assign(base, { statut: "indisponible", reperes_manquants: r.reperes_manquants, manquants: [], hypotheses: hypotheses(), avertissements: ["Un repère nécessaire à ce calcul manque (" + r.reperes_manquants.join(", ") + ") : aucun chiffre n'est donné plutôt qu'une valeur de remplacement."] });
+    if (r.statut === "a_completer") return Object.assign(base, { statut: "a_completer", manquants: r.manquants, hypotheses: hypotheses(), avertissements: [] });
+    const hyp = hypotheses(), avert = r.avertissements.slice();
+    hyp.filter(h => h.statut === "a_reverifier").forEach(h => avert.push("Le repère « " + h.libelle + " » est à revérifier" + (h.date_fin && h.date_fin < today ? " (la période s'est terminée le " + dateFr(h.date_fin) + ")" : " (vérifié le " + dateFr(h.source.verifie_le) + ")") + " : le chiffre est donné avec cette valeur."));
+    const utilisees = liste(entree.questions).filter(q => rep[q.id] !== undefined).map(q => ({ champ: q.id, libelle: q.libelle, valeur: rep[q.id], origine: donnees[q.id] !== undefined ? "reponse" : "boussole", le: today }));
+    const out = Object.assign(base, { statut: "ok", manquants: [], reponse: r.reponse, options: r.options, ce_qui_changerait: r.ce_qui_changerait, hypotheses: hyp, donnees_utilisees: utilisees,
+      avertissements: avert, enjeu_annuel: r.enjeu_annuel, detail: r.detail, titulaire: r.plan && r.plan.titulaire || null });
+    if (r.courbe) out.courbe = r.courbe;
+    Object.defineProperty(out, "_calcul", { value: { sim: r.sim, plan: r.plan, rep }, enumerable: false });
+    return out;
+  }
+
+  /** Enjeu annuel d'un scénario pour la personne, sur ses seules données (réponses préremplies) : { p10, p50, p90, unite, statut, raison? }. */
+  function enjeu(entree, data, today, opts) {
+    const o = Object.assign({}, opts || {}), reponses = o.reponses || {};
+    delete o.reponses;
+    const r = jouer(entree, data, reponses, today, Object.assign({ chemins: 500 }, o, { enjeu: true }));
+    if (r.statut === "ok") return { p10: r.enjeu_annuel.p10, p50: r.enjeu_annuel.p50, p90: r.enjeu_annuel.p90, unite: UNITE_ENJEU, statut: "ok" };
+    const vide = { p10: null, p50: null, p90: null, unite: UNITE_ENJEU };
+    if (r.statut === "a_completer") return Object.assign(vide, { statut: "a_completer", raison: "Il manque : " + r.manquants.map(m => m.libelle.toLowerCase()).join(", ") });
+    return Object.assign(vide, { statut: "indisponible", raison: r.avertissements[0] });
+  }
+
+  /** Les cartes qui entrent dans « Pour toi » : pertinentes, non écartées, au-dessus du seuil d'enjeu, par enjeu décroissant, trois au plus. */
+  function pourToi(cartes, seuil) {
+    const s = seuil == null ? SEUIL_ENJEU_DEFAUT : seuil;
+    const ok = liste(cartes).filter(c => c.pertinent && c.etat !== "ecarte" && c.pour_toi_si !== false && nombre(c.enjeu_p50) && c.enjeu_p50 >= s).sort((a, b) => b.enjeu_p50 - a.enjeu_p50).slice(0, 3);
+    return { cles: ok.map(c => c.cle), message: ok.length ? null : MESSAGE_RIEN_URGENT };
+  }
+
+  /** Cartes du catalogue pour la personne, tri « pour toi » et regroupement par thème.
+      joues = [{ scenario_cle, etat, joue_le }] (parties de la personne) ; opts.reponses_par_cle = { cle: réponses } pour calculer l'enjeu sur des réponses données. */
+  function lister(catalogue, data, joues, today, opts) {
+    const o = opts || {}, L = lecteur(Object.assign({}, data, { today })), seuil = L.v("scn_enjeu_min_eur_an");
+    const derniere = {};
+    liste(joues).forEach(j => { if (!derniere[j.scenario_cle] || String(j.joue_le || "") >= String(derniere[j.scenario_cle].joue_le || "")) derniere[j.scenario_cle] = j; });
+    const cartes = liste(catalogue).map(e => {
+      const pe = pertinence(e, data, today, o), j = derniere[e.cle];
+      const carte = { cle: e.cle, numero: e.numero, theme: e.theme, question: e.question, pertinent: pe.pertinent, pourquoi: pe.raisons, manquants: pe.manquants.slice(), enjeu: null, enjeu_p50: null, enjeu_statut: pe.pertinent ? "a_completer" : null,
+        etat: j ? j.etat : "a_explorer", joue_le: j ? j.joue_le || null : null, version: e.version == null ? null : e.version, reperes_a_reverifier: [], pour_toi_si: true };
+      if (!pe.pertinent) return carte;
+      const ej = enjeu(e, data, today, Object.assign({}, o, { reponses: objet(o.reponses_par_cle)[e.cle] }));
+      carte.enjeu_statut = ej.statut;
+      if (ej.statut === "ok") { carte.enjeu = { p10: ej.p10, p50: ej.p50, p90: ej.p90 }; carte.enjeu_p50 = ej.p50; }
+      else if (ej.raison) carte.raison_enjeu = ej.raison;
+      carte.reperes_a_reverifier = liste(e.reperes).filter(cle => L.idx[cle] && statutRepere(L.idx[cle], today) === "a_reverifier");
+      carte.pour_toi_si = pourToiSi(e, data, today, o);
+      return carte;
+    });
+    const choix = pourToi(cartes, seuil === undefined ? SEUIL_ENJEU_DEFAUT : seuil);
+    const parTheme = {};
+    THEMES.forEach(t => {
+      const l = cartes.filter(c => c.theme === t);
+      if (l.length) parTheme[t] = l.slice().sort((a, b) => (a.etat === "ecarte") - (b.etat === "ecarte") || (b.enjeu_p50 == null ? -1 : b.enjeu_p50) - (a.enjeu_p50 == null ? -1 : a.enjeu_p50) || a.numero - b.numero);
+    });
+    return { pour_toi: choix.cles, message: choix.message, par_theme: parTheme, cartes };
+  }
+
   return {
-    VERSION_CALCUL, THEMES, RAPPEL, MESSAGE_RIEN_URGENT, UNITE_ENJEU,
-    simulerEnveloppes, seuilDichotomie, versementPer, repartirPlafond, plafondRfrLep, reponsesValides, preremplir, tirer, bande,
-    _interne: { foyer, lecteur, statutRepere, hypotheseDe, tmiDe, capaciteDe, etatMatelas, depensesReference, lireEssentiels, allocationDe, fraisDe, poches, fluxDepart,
-      detient, famillesTypes, nomEnveloppe, partActions, objectifsAVenir, quantile, bandeR, eur0, dateFr, ans, copie, somme, r2, objet, liste, nombre, SEUIL_ENJEU_DEFAUT, ENVELOPPE_LIBELLE },
+    VERSION_CALCUL, THEMES, CALCULS, RAPPEL, MESSAGE_RIEN_URGENT, UNITE_ENJEU,
+    simulerEnveloppes, jouer, enjeu, lister, pertinence, pourToi, pourToiSi, reponsesValides, preremplir,
+    seuilDichotomie, versementPer, repartirPlafond, plafondRfrLep, imputerPlafondsPer, economiePer, plafondPer,
+    tirer, bande, statutRepere, lireEssentiels, CHAMP_ESSENTIELS,
   };
 });

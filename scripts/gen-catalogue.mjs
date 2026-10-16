@@ -40,12 +40,12 @@ export const SORTIE_MOTEUR = "supabase/functions/mcp/projection-moteur.gen.js";
 export const SORTIE_SUIVI = "supabase/functions/mcp/suivi.gen.js";
 /** Modules du moteur, dans l'ordre de définition (chacun ne dépend que des précédents) : nom → fichier de web/src. */
 export const MODULES_MOTEUR = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "projection-evenements",
-  "projection-credit", "projection-donnees", "projection-immo", "projection"];
+  "projection-credit", "projection-donnees", "projection-immo", "projection", "scenarios"];
 /** Modules de la copie du moteur de suivi (SUIVI), dans l'ordre de définition : chacun ne dépend que des précédents. */
 export const MODULES_SUIVI = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "risque", "pratiques", "suivi"];
 export const EXPORTS_SUIVI = { Suivi: "suivi", Risque: "risque", Pratiques: "pratiques", Calc: "calc", Marche: "marche" };
 /** Valeurs exportées par la copie : nom exporté → module. */
-export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection" };
+export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection", Scenarios: "scenarios" };
 
 /* ---------- tutoiement ---------- */
 const RESTE_VOUS = /(^|[^\p{L}])(vous|votre|vos|vôtres?)(?![\p{L}])/iu;
