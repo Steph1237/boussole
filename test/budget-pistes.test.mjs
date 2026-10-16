@@ -94,6 +94,9 @@ test("frais bancaires sur 12 mois : total, nombre de commissions, mois concerné
   // les frais plus anciens que 12 mois n'y sont pas
   assert.equal(Budget.detections(data({ marchands: [ligne("2025-09", "agios", "frais_bancaires", 50)] })).frais.total_12_mois, 0);
   assert.deepEqual(J(Budget.detections(data({ marchands: [] })).frais), { total_12_mois: 0, commissions: 0, mois: 0 });
+  // nombre_sorties (D14) : une commission remboursée compte dans nombre, pas parmi les commissions prélevées
+  const rembourse = { ...ligne("2026-09", "commission intervention", "frais_bancaires", 16), entrees: 8, nombre: 3, nombre_sorties: 2 };
+  assert.deepEqual(J(Budget.detections(data({ marchands: [rembourse] })).frais), { total_12_mois: 8, commissions: 2, mois: 1 });
 });
 
 test("petits achats : opérations de carte de moins de 15 € en restaurants, achats ou loisirs, plus de 8 par mois en moyenne", () => {

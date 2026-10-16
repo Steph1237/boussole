@@ -2948,7 +2948,7 @@ def("budget", function (module, exports, require) {
     // frais bancaires sur 12 mois
     const m12 = derniersMois(data.aujourdhui, 12);
     const fr = lignesSorties(data, o.comptes).filter(l => l.sous_categorie === "frais_bancaires" && m12.includes(mois7(l.mois)));
-    const frais = { total_12_mois: centieme(somme(fr.map(l => n0(l.sorties) - n0(l.entrees)))), commissions: somme(fr.map(l => n0(l.nombre))), mois: [...new Set(fr.map(l => mois7(l.mois)))].length };
+    const frais = { total_12_mois: centieme(somme(fr.map(l => n0(l.sorties) - n0(l.entrees)))), commissions: somme(fr.map(l => (nombre(l.nombre_sorties) !== null ? n0(l.nombre_sorties) : n0(l.nombre)))), mois: [...new Set(fr.map(l => mois7(l.mois)))].length };
     // petits achats récurrents
     const seuilPA = convention(reperes, "budget_piste_petit_achat_seuil"), nbPA = convention(reperes, "budget_piste_petits_achats_nombre");
     const protegees = new Set((data.preferences && data.preferences.protegees) || []);
