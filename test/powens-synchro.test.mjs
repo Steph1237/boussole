@@ -24,7 +24,7 @@ function chargerModule(source, globaux = {}) {
 }
 const charger = () => {
   const C = chargerModule(lire("supabase/functions/powens/categories.ts"), { BudgetCategories: BudgetCategoriesPowens });
-  const S = chargerModule(lire("supabase/functions/powens/synchro.ts"), { categorieBoussole: C.categorieBoussole });
+  const S = chargerModule(lire("supabase/functions/powens/synchro.ts"), { categorieBoussole: C.categorieBoussole, BudgetCategories: BudgetCategoriesPowens });
   return { C, S };
 };
 
@@ -405,7 +405,8 @@ test("synchroniser : opérations (90 jours, nettoyées, catégorisées, à venir
   const ops = db.tables.banque_operations.sort((a, b) => a.id - b.id);
   assert.deepEqual(ops.map(o => o.id), [9001, 9002, 9003, 9005], "opération à venir écartée");
   assert.deepEqual(J(ops[2]), { user_id: U, id: 9003, compte_id: 101, date: "2026-09-20", montant: -950, libelle: "PRLV LOYER REF ••••", categorie: "logement",
-    categorie_powens: "logement", contrepartie_id: null, type_powens: null });
+    categorie_powens: "logement", contrepartie_id: null, type_powens: null,
+    sous_categorie: "loyer", origine_categorie: "powens", regle_id: null, cle_marchand: "prlv loyer ref" }); // + classement du budget (0035)
   assert.equal(ops[0].categorie, "revenus");
   assert.equal(ops[1].categorie, "alimentation");
   assert.equal(ops[3].categorie, "abonnements");

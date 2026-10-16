@@ -73,7 +73,7 @@ function chargerModule(source, globaux = {}) {
 function charger({ edgeRuntime } = {}) {
   const C = chargerModule(lire(DOSSIER + "categories.ts"), { BudgetCategories: BudgetCategoriesPowens });
   const A = chargerModule(lire(DOSSIER + "powens-api.ts"));
-  const S = chargerModule(lire(DOSSIER + "synchro.ts"), { categorieBoussole: C.categorieBoussole });
+  const S = chargerModule(lire(DOSSIER + "synchro.ts"), { categorieBoussole: C.categorieBoussole, BudgetCategories: BudgetCategoriesPowens });
   const servis = [];
   const Deno = { env: { get: () => undefined }, serve: f => servis.push(f) };
   const I = chargerModule(lire(DOSSIER + "index.ts"), {

@@ -42,6 +42,18 @@
 // Robustesse : une lecture en échec n'efface rien (placements, opérations, comptes) ; une erreur sur un compte ou sur une étape
 // d'écriture n'arrête pas les autres ; le dernier échec est résumé dans banque_connexions.message.
 //
+// Budget (BUD1, docs/superpowers/specs/2026-10-16-bud1-budget-design.md § 3.2, § 4 et § 13 ; migration 0035) : après `rapprocherVirements` et
+// `epargneSansContrepartie`, `preparerOperations` classe chaque opération avec BudgetCategories.classer (copie générée du module partagé) : structure
+// (rapprochement : virement_interne, epargne_precaution / investissement, apport_commun, transfert_foyer, releve_carte), puis tes règles (budget_regles
+// actives), la table des marchands, la catégorie Powens, les motifs génériques, le revenu détecté, sinon « à classer ». La sous-catégorie, l'origine du
+// classement, la règle et la clé de marchand sont écrites avec l'opération ; la catégorie large (`categorie`) devient celle de la sous-catégorie. Un
+// virement apparié entre un compte de titulaire commun et un compte personnel est un apport_commun, entre deux comptes personnels de titulaires
+// différents un transfert_foyer (titulaire inconnu : virement_interne). `detecterReleves` repère le relevé d'une carte à débit différé débité sur un
+// courant de la même connexion (type Powens summary_card ou deferred_card, ou libellé « RELEVE CB / CARTE » d'un montant égal, à 1 € près, à la somme des
+// opérations de la carte sur la période) : il devient releve_carte (hors budget) et banque_recalculer_mois compte alors les opérations de la carte à leur
+// mois. `reclasser` (POST /powens/reclasser) rejoue le classement sur les 90 derniers jours avec les règles actives, recalcule les mois touchés et, de 90
+// jours à 13 mois, reclasse banque_marchands_mois puis reconstruit banque_mois (budget_marchands_reclasser, budget_reclasser_historique).
+//
 // Données du prêt (DAT1, docs/superpowers/specs/2026-10-14-dat1-calendrier-design.md § 2.6 et § 7) : pour un compte de type credit,
 // `pretDe` (pure) copie sur banque_comptes.pret les seuls champs documentés de l'objet `loan` qui sont présents et valides, et
 // banque_comptes.ouverture_le reçoit loan.subscription_date (null pour tout autre type : Powens ne documente aucune date
@@ -69,6 +81,7 @@
 // - opération (https://docs.powens.com/api-reference/products/data-aggregation/bank-transactions) : id, date, value,
 //   simplified_wording, wording, original_wording, categories, type (transfer, card, deferred_card, order…), coming, deleted.
 import { categorieBoussole } from "./categories.ts";
+import { BudgetCategories } from "./budget-categories.gen.js";
 
 export const ETATS_POWENS = [
   "SCARequired", "webauthRequired", "additionalInformationNeeded", "wrongpass", "decoupled", "validating", "actionNeeded",
@@ -723,17 +736,50 @@ export function rapprocherVirements(operations: any[], comptes: any[]) {
   }
   candidats.sort((a, b) => a.jours - b.jours || a.ecart - b.ecart || compareIds(a.d.id, b.d.id) || compareIds(a.e.id, b.e.id));
   const pris = new Set<string>(), categories: Record<string, string> = {}, contreparties: Record<string, number> = {}, paires: [unknown, unknown][] = [];
+  const structures: Record<string, string> = {};
   for (const { d, e } of candidats) {
     if (pris.has(String(d.id)) || pris.has(String(e.id))) continue;
     pris.add(String(d.id)); pris.add(String(e.id));
     paires.push([d.id, e.id]);
-    const td = suivis.get(String(d.compte_id)).type, te = suivis.get(String(e.compte_id)).type;
+    const kd = suivis.get(String(d.compte_id)), ke = suivis.get(String(e.compte_id));
+    const td = kd.type, te = ke.type;
     categories[String(d.id)] = td === "courant" && TYPES_EPARGNE.includes(te) ? "epargne" : VIREMENT_INTERNE;
     categories[String(e.id)] = te === "courant" && TYPES_EPARGNE.includes(td) ? "epargne" : VIREMENT_INTERNE;
+    structures[String(d.id)] = structureDeCote(kd, ke, categories[String(d.id)]);
+    structures[String(e.id)] = structureDeCote(ke, kd, categories[String(e.id)]);
     contreparties[String(d.id)] = Number(e.id);
     contreparties[String(e.id)] = Number(d.id);
   }
-  return { categories, contreparties, paires };
+  return { categories, contreparties, paires, structures };
+}
+
+/** Titulaire d'un compte pour le budget (BUD1 § 4.2, § 4.3) : "commun" (titulaire commun, ou compte rattaché à une ligne de titulaire commun), "p1" ou
+    "p2" ; null quand il n'est pas connu (jamais deviné d'après le nom : le nom ne fait que le suggérer, voir suggestionTitulaireCommun). */
+export function titulaireDe(k: any): "commun" | "p1" | "p2" | null {
+  if (!k) return null;
+  if (k.titulaire === "commun" || k.commun === true) return "commun";
+  return k.titulaire === "p1" || k.titulaire === "p2" ? k.titulaire : null;
+}
+/** Sous-catégorie de structure d'un côté d'un virement apparié (BUD1 § 3.2 point 1). `cote` : le compte de cette opération, `autre` : le compte d'en face,
+    `categorie` : la catégorie posée par le rapprochement. Côté courant d'un virement avec l'épargne : epargne_precaution (livret) ou investissement (PEA,
+    compte-titres, assurance-vie, PER) ; entre un compte de titulaire commun et un compte personnel : apport_commun ; entre deux comptes personnels de
+    titulaires différents : transfert_foyer ; sinon (titulaire inconnu, même titulaire, côté épargne du virement) : virement_interne. */
+function structureDeCote(cote: any, autre: any, categorie: string): string {
+  if (categorie === "epargne") return autre.type === "livret" ? "epargne_precaution" : "investissement";
+  const a = titulaireDe(cote), b = titulaireDe(autre);
+  if (a && b) {
+    if ((a === "commun") !== (b === "commun")) return "apport_commun";
+    if (a !== "commun" && a !== b) return "transfert_foyer";
+  }
+  return VIREMENT_INTERNE;
+}
+/** Suggestion de titulaire commun (BUD1, tâche 5) : un compte courant sans titulaire dont le nom contient « joint » ou « commun » (même règle que
+    estCompteCommun) ; { titulaire: "commun", libelle, raison } ou null. Jamais appliquée seule : le titulaire se choisit (Compte › Données, ou Claude). */
+export function suggestionTitulaireCommun(k: any): { titulaire: "commun"; libelle: string; raison: string } | null {
+  if (!k || k.type !== "courant" || k.ignore === true || k.doublon_de != null || titulaireDe(k) !== null || texte(k.titulaire) !== null) return null;
+  const ts = mots(k.nom);
+  const mot = ts.includes("joint") ? "joint" : ts.includes("commun") || ts.includes("communs") ? "commun" : null;
+  return mot ? { titulaire: "commun", libelle: "Compte commun", raison: `Le nom du compte contient « ${mot} » : choisis « Commun » pour qu'il soit compté comme le compte du foyer.` } : null;
 }
 
 /* Versements vers les placements de l'utilisateur sans contrepartie synchronisée (Powens ne lit pas les opérations d'un PEA, d'un
@@ -829,28 +875,116 @@ export function epargneSansContrepartie(operations: any[], comptes: any[], ctx: 
   return out;
 }
 
+/* ---------- relevés de carte à débit différé (BUD1 § 4.5) ---------- */
+/** Types Powens du relevé d'une carte à débit différé débité sur le courant (spec BUD1 § 4.5). */
+export const TYPES_RELEVE_CARTE = ["summary_card", "deferred_card"];
+/** Suites de mots du libellé nettoyé d'un relevé de carte : « RELEVE CB … », « RELEVE CARTE … ». */
+export const MARQUES_RELEVE_CARTE = [["releve", "cb"], ["releve", "carte"], ["releve", "cartes"]];
+/** Fenêtre (jours) précédant un premier relevé : un cycle de carte dure un mois au plus. */
+export const RELEVE_FENETRE_JOURS = 45;
+/** Écart toléré (centimes) entre le montant d'un relevé et la somme des opérations de la carte. */
+export const RELEVE_CENTIMES = 100;
+/** Relevés de carte identifiés (pur) : opérations de sortie d'un compte courant (non carte) qui ont, sur la même connexion, une carte à débit
+    différé dont des opérations les précèdent. Un relevé est identifié si son type Powens est summary_card ou deferred_card, ou si son libellé est
+    « RELEVE CB / CARTE » avec un montant égal, à 1 € près, à la somme (nette) des opérations de la carte sur sa période : de l'opération précédente de même
+    nature sur ce courant (incluse) au jour du relevé (exclu), à défaut RELEVE_FENETRE_JOURS jours avant. Une carte sans aucune dépense sur la période
+    n'identifie rien (le relevé resterait « à classer » plutôt que de faire disparaître une dépense). Renvoie les identifiants identifiés avec le début de leur
+    période (AAAA-MM-JJ) : banque_recalculer_mois compte alors les opérations de la carte, à partir de ce début. */
+export function detecterReleves(operations: any[], comptes: any[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const actifs = (comptes ?? []).filter((k) => k && k.id != null && k.ignore !== true && k.doublon_de == null);
+  const parConnexion = new Map<string, { cartes: Set<string>; courants: Set<string> }>();
+  for (const k of actifs) {
+    const cx = String(k.connexion_id ?? "");
+    if (!parConnexion.has(cx)) parConnexion.set(cx, { cartes: new Set(), courants: new Set() });
+    const g = parConnexion.get(cx)!;
+    if (k.debit_differe === true) g.cartes.add(String(k.id));
+    else if (k.type === "courant") g.courants.add(String(k.id));
+  }
+  const ops = (operations ?? []).filter((o) => o && o.id != null && jour(o.date) && centimes(o.montant) != null);
+  for (const { cartes, courants } of parConnexion.values()) {
+    if (!cartes.size || !courants.size) continue;
+    const depenses = ops.filter((o) => cartes.has(String(o.compte_id)));
+    for (const courant of courants) {
+      const candidats = ops.filter((o) => String(o.compte_id) === courant && centimes(o.montant)! < 0
+        && (TYPES_RELEVE_CARTE.includes(typePowens(o)) || MARQUES_RELEVE_CARTE.some((m) => contient(jetons(o.libelle), m))))
+        .sort((a, b) => (jour(a.date)! < jour(b.date)! ? -1 : jour(a.date)! > jour(b.date)! ? 1 : compareIds(a.id, b.id)));
+      candidats.forEach((r, i) => {
+        const fin = jour(r.date)!, debut = i > 0 ? jour(candidats[i - 1].date)! : moinsJours(fin, RELEVE_FENETRE_JOURS);
+        const somme = depenses.filter((o) => jour(o.date)! >= debut && jour(o.date)! < fin).reduce((t, o) => t - centimes(o.montant)!, 0);
+        if (somme <= 0) return;
+        const explicite = TYPES_RELEVE_CARTE.includes(typePowens(r));
+        if (explicite || Math.abs(-centimes(r.montant)! - somme) <= RELEVE_CENTIMES) out.set(String(r.id), debut);
+      });
+    }
+  }
+  return out;
+}
+
 const memeId = (a: unknown, b: unknown) => (a == null || a === "" ? null : Number(a)) === (b == null || b === "" ? null : Number(b));
+/** Contexte du classement des opérations (BUD1) : règles actives de budget_regles, code Powens brut de chaque opération de ce passage (identifiant →
+    { code, parent_code } ; il n'est pas gardé en base), date du jour (revenus détectés) et noms du foyer. */
+export type ContexteClassement = { regles?: any[]; codes?: Record<string, any>; aujourdhui?: string | null; noms?: string[][] };
+/** Colonnes de banque_operations écrites par le classement (migration 0035). */
+const CHAMPS_CLASSEMENT = ["sous_categorie", "origine_categorie", "regle_id", "cle_marchand"];
+/** Classe une opération (pur) : BudgetCategories.classer, avec deux replis quand le code Powens brut n'est pas là (opération déjà en base, relue par
+    `reclasser`) : la sous-catégorie retenue la fois d'avant si elle venait de Powens, puis, faute de mieux, la sous-catégorie par défaut de la catégorie
+    large de Powens (reprise de banque_mois). Le code brut est relu à la prochaine synchronisation. */
+function classerOperation(o: any, structure: string | undefined, revenu: boolean, regles: any[], code: unknown, precedente: any) {
+  const entree = { libelle: o.libelle, montant: o.montant, compte_id: o.compte_id, categorie_powens: code ?? null, structure, revenu_detecte: revenu };
+  let r = BudgetCategories.classer(entree, { regles });
+  if (!structure && !code) {
+    const rendre = (sous: string) => ({ sous_categorie: sous, categorie: BudgetCategories.largeDe(sous), origine: "powens", cle_marchand: r.cle_marchand });
+    const memoire = precedente?.origine_categorie === "powens" && BudgetCategories.estSousCategorie(precedente.sous_categorie) ? precedente.sous_categorie : null;
+    if (memoire && ["motif", "revenu", "defaut"].includes(r.origine)) r = rendre(memoire);
+    else if (r.origine === "defaut") {
+      const base = categorieDeBase(o);
+      const par_defaut = base !== "divers" && base !== VIREMENT_INTERNE ? BudgetCategories.parDefautDe(base) : "a_classer";
+      if (par_defaut !== "a_classer") r = rendre(par_defaut);
+    }
+  }
+  return r;
+}
 /** Opérations d'une synchronisation fusionnées avec celles déjà en base (90 jours, toutes connexions), puis rapprochement recalculé
     de zéro (pur, idempotent) : chaque opération repart de sa catégorie Powens (categorieDeBase), puis virements internes
-    (rapprocherVirements, avec leur contrepartie) et versements vers les placements sans contrepartie (epargneSansContrepartie).
+    (rapprocherVirements, avec leur contrepartie), versements vers les placements sans contrepartie (epargneSansContrepartie) et relevés de carte
+    (detecterReleves), enfin le classement du budget (BUD1 : sous-catégorie, origine, règle, clé de marchand ; la catégorie large est celle de la
+    sous-catégorie).
     Un appariement qui n'est plus trouvé (contrepartie retirée ou purgée, règle plus stricte) est donc défait : catégorie Powens
     rendue, contrepartie effacée.
-    Renvoie les opérations à écrire (catégorie finale, catégorie Powens, contrepartie), les opérations déjà en base hors de ce
+    Renvoie les opérations à écrire (catégorie finale, catégorie Powens, contrepartie, classement), les opérations déjà en base hors de ce
     passage dont la catégorie ou la contrepartie change (groupes { categorie, contrepartie_id, ids }) et la plus ancienne de leurs
     dates, l'ensemble fusionné (catégories finales), le nombre de virements rapprochés qui changent quelque chose et le nombre de
-    versements classés en épargne sans contrepartie. */
-export function preparerOperations(planOps: any[], supprimees: unknown[], existantes: any[], comptes: any[], ctx?: ContexteEpargne | null) {
+    versements classés en épargne sans contrepartie. BUD1 : `reclasses` (opérations déjà en base dont la catégorie, la contrepartie ou l'une des
+    colonnes du classement change, lignes complètes sans user_id) et `depuisClassement` (le plus ancien jour à recalculer pour elles, et pour les cartes
+    dont un relevé vient d'être identifié ou ne l'est plus). */
+export function preparerOperations(planOps: any[], supprimees: unknown[], existantes: any[], comptes: any[], ctx?: ContexteEpargne | null, cl: ContexteClassement = {}) {
   const ex = new Map((existantes ?? []).filter((o) => o && o.id != null).map((o) => [String(o.id), o]));
   const ecrites = (planOps ?? []).map((o) => ({ ...o, categorie_powens: texte(o.categorie_powens) ?? categorieDeBase(o) }));
   const vus = new Set(ecrites.map((o) => String(o.id))), retirees = new Set((supprimees ?? []).map(String));
   const fusion = [...[...ex.values()].filter((o) => !vus.has(String(o.id)) && !retirees.has(String(o.id))), ...ecrites]
     .map((o) => ({ ...o, categorie: categorieDeBase(o) }));
-  const { categories: virements, contreparties, paires } = rapprocherVirements(fusion, comptes);
+  const { categories: virements, contreparties, paires, structures } = rapprocherVirements(fusion, comptes);
   const apparies = new Set(paires.flat().map(String));
   const epargne = epargneSansContrepartie(fusion, comptes, ctx, apparies);
+  const releves = detecterReleves(fusion, comptes);
+  for (const id of [...releves.keys()]) if (apparies.has(id) || epargne[id]) releves.delete(id);
   const finale = (o: any) => ({ ...o, categorie: virements[String(o.id)] ?? epargne[String(o.id)] ?? o.categorie, contrepartie_id: contreparties[String(o.id)] ?? null });
+  const avant = fusion.map(finale);
+  // revenu détecté (salaire stable) : ses opérations passent en « salaires » si rien de plus précis ne les reconnaît
+  const det = cl.aujourdhui ? revenusDetectes(avant, comptes, cl.aujourdhui, { noms: cl.noms ?? [] }) : null;
+  const parCompte = new Map((comptes ?? []).filter((k) => k && k.id != null).map((k) => [String(k.id), k]));
+  const regles = Array.isArray(cl.regles) ? cl.regles : [];
+  const classee = (o: any) => {
+    const id = String(o.id), k = parCompte.get(String(o.compte_id));
+    const structure = structures[id] ?? (epargne[id] ? "investissement" : releves.has(id) ? "releve_carte" : undefined);
+    const revenu = !!det && (nombre(o.montant) ?? 0) > 0 && k?.type === "courant" && k?.debit_differe !== true && !estCompteCommun(k)
+      && !CATEGORIES_INTERNES.includes(o.categorie) && o.contrepartie_id == null && cleLibelle(o.libelle) === det.cle;
+    const c = classerOperation(o, structure, revenu, regles, cl.codes?.[id] ?? null, ex.get(id));
+    return { ...o, categorie: c.categorie, sous_categorie: c.sous_categorie, origine_categorie: c.origine, regle_id: c.regle_id ?? null, cle_marchand: c.cle_marchand || null };
+  };
   const change = (o: any) => { const avant = ex.get(String(o.id)); return !avant || (avant.categorie ?? null) !== o.categorie || !memeId(avant.contrepartie_id, o.contrepartie_id); };
-  const toutes = fusion.map(finale), parId = new Map(toutes.map((o) => [String(o.id), o]));
+  const toutes = avant.map(classee), parId = new Map(toutes.map((o) => [String(o.id), o]));
   const groupes = new Map<string, { categorie: string; contrepartie_id: number | null; ids: number[] }>();
   let depuis: string | null = null;
   for (const o of toutes) {
@@ -861,8 +995,26 @@ export function preparerOperations(planOps: any[], supprimees: unknown[], exista
     const d = jour(o.date)!;
     if (!depuis || d < depuis) depuis = d;
   }
+  // BUD1 : opérations déjà en base dont le classement change, et mois à recalculer pour elles (et pour les cartes dont le relevé change d'état)
+  const reclasses: any[] = [];
+  let depuisClassement: string | null = null;
+  const reculer = (d: string | null) => { if (d && (!depuisClassement || d < depuisClassement)) depuisClassement = d; };
+  for (const o of toutes) {
+    const avantO = ex.get(String(o.id));
+    const etaitReleve = avantO?.sous_categorie === "releve_carte", estReleve = o.sous_categorie === "releve_carte";
+    if (etaitReleve !== estReleve) reculer(estReleve ? releves.get(String(o.id)) ?? null : moinsJours(jour(o.date)!, RELEVE_FENETRE_JOURS));
+    if (vus.has(String(o.id))) continue;
+    const different = !avantO || (avantO.categorie ?? null) !== o.categorie || !memeId(avantO.contrepartie_id, o.contrepartie_id)
+      || CHAMPS_CLASSEMENT.some((c) => (avantO[c] ?? null) !== (o[c] ?? null));
+    if (!different) continue;
+    reclasses.push({ id: o.id, compte_id: o.compte_id, date: o.date, montant: o.montant, libelle: o.libelle, categorie: o.categorie, categorie_powens: o.categorie_powens ?? null,
+      contrepartie_id: o.contrepartie_id ?? null, type_powens: o.type_powens ?? null, sous_categorie: o.sous_categorie, origine_categorie: o.origine_categorie,
+      regle_id: o.regle_id ?? null, cle_marchand: o.cle_marchand ?? null });
+    reculer(jour(o.date));
+  }
   return {
-    operations: ecrites.map((o) => parId.get(String(o.id))!), autres: [...groupes.values()], depuis, toutes,
+    operations: ecrites.map((o) => parId.get(String(o.id))!), autres: [...groupes.values()], depuis, toutes, reclasses, depuisClassement,
+    releves: [...releves.keys()],
     virements: paires.filter(([d, e]) => change(parId.get(String(d))) || change(parId.get(String(e)))).length, epargne: Object.keys(epargne).length,
   };
 }
@@ -992,6 +1144,8 @@ export function planifier(etat: Etat, d: Donnees) {
     // adoption : ligne existante de l'utilisateur reprise par la synchronisation (écrite sans ce filtre, une fois)
     positionsMaj: [] as { id: string; patch: Record<string, unknown>; auto?: boolean; adoption?: boolean }[], placements: [] as any[], placementsSupprimer: [] as any[],
     creditsMaj: [] as { id: string; crd: number }[], operations: [] as any[], operationsSupprimer: [] as any[], propositions: [] as any[],
+    // code Powens brut (ni gardé en base, ni écrit : lu par le classement du budget) de chaque opération de ce passage : identifiant → { code, parent_code? }
+    codesPowens: {} as Record<string, { code: string; parent_code?: string }>,
     rattachements: [] as { id: number; position_id: string }[], comptesProposes: [] as number[], propositionsPrets: [] as { compte: number; proposition: any }[],
     // rattachements automatiques (rapprocher) : posés seulement si le compte est encore libre ; lignesAuto : lignes à créer avant
     rattachementsAuto: [] as { id: number; patch: Record<string, unknown>; cree: boolean; ligne: string | null }[], lignesAuto: [] as any[],
@@ -1216,6 +1370,8 @@ export function planifier(etat: Etat, d: Donnees) {
           // preparerOperations), type Powens (indice d'un virement ou d'un paiement par carte)
           categorie_powens: categorie, contrepartie_id: null, type_powens: texte(o.type)?.toLowerCase().slice(0, 40) ?? null,
         });
+        const code = codePowens(o.categories);
+        if (code) plan.codesPowens[String(Number(o.id))] = code;
         touche(date);
       }
     }
@@ -1228,6 +1384,16 @@ export function planifier(etat: Etat, d: Donnees) {
   }
   plan.moisDepuis = plusAncien ? premierDuMois(plusAncien) : null;
   return plan;
+}
+
+/** Code Powens d'une opération (premier élément du tableau `categories`, ou un code seul) : { code, parent_code? }, null s'il n'y en a pas. */
+export function codePowens(v: unknown): { code: string; parent_code?: string } | null {
+  const c: any = Array.isArray(v) ? v[0] : v;
+  if (typeof c === "string") return c.trim() ? { code: c.trim() } : null;
+  if (c && typeof c === "object" && typeof c.code === "string" && c.code.trim()) {
+    return { code: c.code.trim(), ...(typeof c.parent_code === "string" && c.parent_code.trim() ? { parent_code: c.parent_code.trim() } : {}) };
+  }
+  return null;
 }
 
 /* ---------- application ---------- */
@@ -1243,7 +1409,7 @@ export async function synchroniser(db: any, api: any, userId: string, connexionI
   const maintenant = opts.maintenant ?? new Date();
   const rapport = { ok: false, connexion: connexionId, etat: null as string | null, comptes: 0, operations: 0, positions_creees: 0, propositions: 0,
     rattaches: 0, lignes_adoptees: 0, rattaches_auto: 0, crees_auto: 0, suggestions: 0, comptes_en_double: 0, doublon_de: null as number | null, sautee: false,
-    virements_internes: 0, versements_epargne: 0, revenus_proposes: 0, prets_proposes: 0, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[] };
+    virements_internes: 0, versements_epargne: 0, operations_reclassees: 0, revenus_proposes: 0, prets_proposes: 0, erreurs: [] as { compte_id?: number; erreur: string }[], notes: [] as string[] };
 
   let connexion: any;
   try {
@@ -1595,25 +1761,39 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
   }
   const ctxEpargne = contexteEpargne({ lignes, comptes: comptesFusion, recurring, personnes: profil?.personnes,
     connexions: [...connexions.filter((c: any) => Number(c.id) !== Number(connexionId)), { id: connexionId, etablissement: plan.connexion.etablissement ?? stockee.etablissement ?? null }] });
+  // Règles de classement actives (BUD1) : sans elles, le classement défairait ce qu'elles ont décidé ; lecture en échec → opérations non écrites.
+  let regles: any[] = [];
+  if (existantes) {
+    try {
+      regles = await lireRegles(db, userId);
+    } catch (e) {
+      rapport.erreurs.push({ erreur: `${msg(e)} ; opérations non écrites, nouvel essai au prochain passage` });
+      existantes = null;
+    }
+  }
+  for (const k of comptesFusion) {
+    if (Number(k.connexion_id) === Number(connexionId) && suggestionTitulaireCommun(k)) {
+      rapport.notes.push(`compte ${k.id} : le nom évoque un compte commun ; choisis le titulaire « Commun » pour qu'il soit compté comme le compte du foyer`);
+    }
+  }
   let toutes: any[] | null = null;
   if (existantes) {
-    const prep = preparerOperations(plan.operations, plan.operationsSupprimer, existantes, comptesFusion, ctxEpargne);
+    const prep = preparerOperations(plan.operations, plan.operationsSupprimer, existantes, comptesFusion, ctxEpargne,
+      { regles, codes: plan.codesPowens, aujourdhui, noms: ctxEpargne.noms });
     toutes = prep.toutes;
     for (const paquet of parPaquets(prep.operations)) {
       if (await etape("opérations", () => db.from("banque_operations").upsert(paquet, { onConflict: "user_id,id" }))) rapport.operations += paquet.length;
     }
-    // Autres opérations dont la catégorie ou la contrepartie change (virement rapproché ou défait sur un autre compte, versement
-    // d'épargne) : mises à jour, mois recalculés.
-    for (const g of prep.autres) {
-      for (const paquet of parPaquets(g.ids)) {
-        await etape("virements internes", () => db.from("banque_operations").update({ categorie: g.categorie, contrepartie_id: g.contrepartie_id })
-          .eq("user_id", userId).in("id", paquet));
-      }
+    // Autres opérations dont la catégorie, la contrepartie ou le classement du budget change (virement rapproché ou défait sur un autre compte,
+    // versement d'épargne, règle, relevé de carte) : lignes complètes réécrites, mois recalculés.
+    for (const paquet of parPaquets(prep.reclasses.map((o: any) => ({ user_id: userId, ...o })))) {
+      if (await etape("classement des opérations", () => db.from("banque_operations").upsert(paquet, { onConflict: "user_id,id" }))) rapport.operations_reclassees += paquet.length;
     }
     rapport.virements_internes = prep.virements;
     rapport.versements_epargne = prep.epargne;
-    if (prep.depuis) {
-      const m = premierDuMois(prep.depuis);
+    for (const d of [prep.depuis, prep.depuisClassement]) {
+      if (!d) continue;
+      const m = premierDuMois(d);
       if (!moisDepuis || m < moisDepuis) moisDepuis = m;
     }
   }
@@ -1646,7 +1826,7 @@ async function appliquer(db: any, api: any, userId: string, connexionId: number,
 async function lireOperations(db: any, userId: string, depuis: string): Promise<any[]> {
   const PAGE = 1000, tout: any[] = [];
   for (let apres: number | null = null; ;) {
-    let q = db.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie, categorie_powens, contrepartie_id, type_powens")
+    let q = db.from("banque_operations").select("id, compte_id, date, montant, libelle, categorie, categorie_powens, contrepartie_id, type_powens, sous_categorie, origine_categorie, regle_id, cle_marchand")
       .eq("user_id", userId).gte("date", depuis);
     if (apres != null) q = q.gte("id", apres + 1);
     const { data, error } = await q.order("id").limit(PAGE);
@@ -1658,6 +1838,13 @@ async function lireOperations(db: any, userId: string, depuis: string): Promise<
     if (!Number.isSafeInteger(dernier) || (apres != null && dernier < apres + 1)) return tout;
     apres = dernier;
   }
+}
+/** Règles de classement actives de l'utilisateur (budget_regles, 300 au plus), de la plus ancienne à la plus récente. Lève en cas d'échec. */
+async function lireRegles(db: any, userId: string): Promise<any[]> {
+  const { data, error } = await db.from("budget_regles").select("id, motif, sous_categorie, sens, compte_id, montant_min, montant_max, annuelle, active, cree_le")
+    .eq("user_id", userId).eq("active", true).order("cree_le").limit(300);
+  if (error) throw new Error(`lecture des règles de classement : ${error.message}`);
+  return data ?? [];
 }
 /** Comptes vus par le rapprochement des virements et les revenus détectés : ceux en base (ignore, doublon_de, titulaire,
     rattachement), complétés par ceux de ce passage (nom, type, carte à débit différé, compte en double) ; commun : compte
@@ -1725,4 +1912,100 @@ export async function oublierConnexion(db: any, userId: string, connexionId: num
   const depuis = premierDuMois(moinsJours(dateParis(maintenant), JOURS_DETAIL));
   const r = await db.rpc("banque_recalculer_mois", { p_user: userId, p_depuis: depuis });
   if (r?.error) console.warn("powens: recalcul des mois après déconnexion en échec", r.error.message);
+}
+
+/* ---------- reclassement après une règle (BUD1, POST /powens/reclasser) ---------- */
+/** Sous-catégories posées par le rapprochement : un total par marchand qui les porte ne se reclasse pas (la structure ne se relit pas d'une clé). */
+const SOUS_CATEGORIES_STRUCTURE = ["virement_interne", "epargne_precaution", "investissement", "apport_commun", "transfert_foyer", "releve_carte"];
+/** Mois (AAAA-MM-JJ, premiers du mois) que banque_recalculer_mois peut recalculer : de celui où commencent 90 jours entièrement couverts au mois courant. */
+export function moisRecalculables(aujourdhui: string): string[] {
+  const borne = moinsJours(aujourdhui, JOURS_DETAIL);
+  const premier = borne === premierDuMois(borne) ? borne : moisDecale(borne, 1);
+  const out: string[] = [];
+  for (let m = premier; m <= premierDuMois(aujourdhui); m = moisDecale(m, 1)) out.push(m);
+  return out;
+}
+/** Nouvelle sous-catégorie d'un total par marchand (pur) : le classement de sa clé nettoyée, sans le code Powens ni la structure, que le total ne garde pas. Une
+    règle ou une entrée de la table des marchands l'emporte ; un motif générique ne remplace qu'un « à classer » ; rien de reconnu : la sous-catégorie
+    reste. Les règles à bornes de montant ne sont pas appliquées (le total mélange plusieurs montants). */
+export function reclasserTotalMarchand(ligne: any, regles: any[]): string {
+  const sous = String(ligne?.sous_categorie ?? "");
+  if (SOUS_CATEGORIES_STRUCTURE.includes(sous)) return sous;
+  const e = nombre(ligne.entrees) ?? 0, so = nombre(ligne.sorties) ?? 0;
+  const montant = e - so !== 0 ? e - so : so ? -so : e || -0.01;
+  const sansBornes = (Array.isArray(regles) ? regles : []).filter((r) => r && r.montant_min == null && r.montant_max == null);
+  const r = BudgetCategories.classer({ libelle: String(ligne.cle_marchand ?? ""), montant, compte_id: ligne.compte_id }, { regles: sansBornes });
+  if (r.origine === "regle" || r.origine === "marchand") return r.sous_categorie;
+  if (r.origine === "motif" && sous === "a_classer") return r.sous_categorie;
+  return sous;
+}
+/** Reclasse l'utilisateur après un changement de règle : les opérations des 90 derniers jours (lignes réécrites, mois recalculés), puis, de 90 jours à
+    13 mois, les totaux par marchand (déplacés par budget_marchands_reclasser) et banque_mois (reconstruit par budget_reclasser_historique, seulement
+    si les sommes retombent à 1 € près). Idempotent. Ne lève pas : les échecs sont dans `erreurs`.
+    → { operations_reclassees, mois_recalcules: [AAAA-MM], mois_figes: [AAAA-MM], erreurs } ; les mois de plus de 13 mois restent figés. */
+export async function reclasser(db: any, userId: string, opts: { maintenant?: Date } = {}) {
+  const maintenant = opts.maintenant ?? new Date();
+  const aujourdhui = dateParis(maintenant), minDate = moinsJours(aujourdhui, JOURS_DETAIL);
+  const rapport = { operations_reclassees: 0, mois_recalcules: [] as string[], mois_figes: [] as string[], erreurs: [] as string[] };
+  const lire = async (q: any, quoi: string) => {
+    const { data, error } = await q;
+    if (error) throw new Error(`lecture ${quoi} : ${error.message}`);
+    return data ?? [];
+  };
+  let comptes: any[], lignes: any[], connexions: any[], existantes: any[], regles: any[];
+  let profil: any = null, recurring: any[] = [];
+  try {
+    comptes = await lire(db.from("banque_comptes").select("id, connexion_id, nom, actif, type, debit_differe, titulaire, position_id, ignore, doublon_de").eq("user_id", userId), "des comptes");
+    lignes = await lire(db.from("positions").select("id, user_id, name, envelope, owner, bloc, mode, isin, qty, value, status").eq("user_id", userId), "des lignes");
+    connexions = await lire(db.from("banque_connexions").select("id, etablissement").eq("user_id", userId), "des connexions");
+    regles = await lireRegles(db, userId);
+    existantes = await lireOperations(db, userId, minDate);
+  } catch (e) {
+    rapport.erreurs.push(`${msg(e)} ; rien n'a été reclassé`);
+    return rapport;
+  }
+  try {
+    const pr = await db.from("profiles").select("personnes").eq("user_id", userId).maybeSingle();
+    profil = pr?.data ?? null;
+    const cf = await db.from("config").select("recurring").eq("user_id", userId).maybeSingle();
+    recurring = Array.isArray(cf?.data?.recurring) ? cf.data.recurring : [];
+  } catch (e) {
+    rapport.erreurs.push(`profil et versements programmés illisibles (${msg(e)}) : épargne repérée par le libellé seulement`);
+  }
+  const comptesFusion = fusionComptes(comptes, [], lignes);
+  const ctx = contexteEpargne({ lignes, comptes: comptesFusion, recurring, personnes: profil?.personnes, connexions });
+  const prep = preparerOperations([], [], existantes, comptesFusion, ctx, { regles, codes: {}, aujourdhui, noms: ctx.noms });
+  for (const paquet of parPaquets(prep.reclasses.map((o: any) => ({ user_id: userId, ...o })))) {
+    const r = await db.from("banque_operations").upsert(paquet, { onConflict: "user_id,id" });
+    if (r?.error) rapport.erreurs.push(`classement des opérations : ${r.error.message}`);
+    else rapport.operations_reclassees += paquet.length;
+  }
+  const mois = new Set<string>();
+  const depuis = [prep.depuis, prep.depuisClassement].filter(Boolean).sort()[0] ?? null;
+  const recalculables = moisRecalculables(aujourdhui);
+  if (depuis) {
+    const r = await db.rpc("banque_recalculer_mois", { p_user: userId, p_depuis: premierDuMois(depuis) });
+    if (r?.error) rapport.erreurs.push(`totaux mensuels : ${r.error.message}`);
+    else for (const m of recalculables) if (m >= premierDuMois(depuis)) mois.add(m.slice(0, 7));
+  }
+  // De 90 jours à 13 mois : totaux par marchand reclassés, puis banque_mois reconstruit (les sommes doivent retomber à 1 € près).
+  try {
+    const debut13 = moisDecale(premierDuMois(aujourdhui), -13);
+    const agregats = await lire(db.from("banque_marchands_mois").select("mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre")
+      .eq("user_id", userId).gte("mois", debut13).lt("mois", recalculables[0] ?? premierDuMois(aujourdhui)), "des totaux par marchand");
+    const changements = agregats.map((a: any) => ({ mois: jour(a.mois), compte_id: Number(a.compte_id), cle_marchand: String(a.cle_marchand ?? ""), de: String(a.sous_categorie),
+      vers: reclasserTotalMarchand(a, regles) })).filter((c: any) => c.mois && c.de !== c.vers);
+    for (const paquet of parPaquets(changements, 2000)) {
+      const r = await db.rpc("budget_marchands_reclasser", { p_user: userId, p_changes: paquet });
+      if (r?.error) throw new Error(`reclassement des totaux par marchand : ${r.error.message}`);
+    }
+    const h = await db.rpc("budget_reclasser_historique", { p_user: userId });
+    if (h?.error) throw new Error(`reconstruction des mois : ${h.error.message}`);
+    for (const m of h?.data?.reconstruits ?? []) mois.add(String(m));
+    rapport.mois_figes = [...(h?.data?.figes ?? [])].map(String).sort();
+  } catch (e) {
+    rapport.erreurs.push(msg(e));
+  }
+  rapport.mois_recalcules = [...mois].sort();
+  return rapport;
 }

@@ -407,6 +407,62 @@ test("budget_reclasser_historique : reconstruit banque_mois (90 jours à 13 mois
   await db.exec(`delete from public.banque_mois where user_id = '${A}'; delete from public.banque_marchands_mois where user_id = '${A}'`);
 });
 
+test("budget_marchands_reclasser : déplace des lignes de marchand (somme dans une ligne déjà présente), seulement de 90 jours à 13 mois ; tout ou rien ; service seulement", async () => {
+  await superu();
+  const x = await moisIso(6), recent = await moisIso(1), vieux = await moisIso(14);
+  await db.exec(`delete from public.banque_marchands_mois where user_id = '${A}';
+    insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre) values
+      ('${A}', '${x}', 10, 'netflix', 'a_classer', 0, 15, 1), ('${A}', '${x}', 10, 'xyz sarl', 'a_classer', 0, 100, 2), ('${A}', '${x}', 10, 'xyz sarl', 'loisirs', 5, 50, 1),
+      ('${A}', '${recent}', 10, 'netflix', 'a_classer', 0, 15, 1), ('${A}', '${vieux}', 10, 'netflix', 'a_classer', 0, 15, 1)`);
+  const ch = (mois, cle, de, vers, compte = 10) => ({ mois, compte_id: compte, cle_marchand: cle, de, vers });
+  await service();
+  const n = (await un(`select public.budget_marchands_reclasser($1, $2::jsonb) n`, [A, JSON.stringify([
+    ch(x, "netflix", "a_classer", "abonnements"), ch(x, "xyz sarl", "a_classer", "loisirs"), ch(recent, "netflix", "a_classer", "abonnements"),
+    ch(vieux, "netflix", "a_classer", "abonnements"), ch(x, "absent", "a_classer", "abonnements"), ch(x, "netflix", "abonnements", "abonnements")])])).n;
+  await superu();
+  assert.equal(n, 2, "deux lignes déplacées (le mois récent, le mois de plus de 13 mois, la ligne absente et le déplacement vers soi sont ignorés)");
+  const l = (await q(`select to_char(mois, 'YYYY-MM-DD') m, cle_marchand k, sous_categorie s, entrees, sorties, nombre from public.banque_marchands_mois where user_id = '${A}' order by mois, cle_marchand, sous_categorie`))
+    .map(r => [r.m, r.k, r.s, num(r.entrees), num(r.sorties), r.nombre]);
+  assert.deepEqual(l, [
+    [vieux, "netflix", "a_classer", 0, 15, 1],
+    [x, "netflix", "abonnements", 0, 15, 1], [x, "xyz sarl", "loisirs", 5, 150, 3],
+    [recent, "netflix", "a_classer", 0, 15, 1]].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : 0)), "xyz sarl : 100 + 50 en sortie, 2 + 1 opérations, une seule ligne");
+  // tout ou rien : un changement invalide annule les autres
+  await service();
+  await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, $2::jsonb)`, [A, JSON.stringify([ch(x, "netflix", "abonnements", "sport"), ch(x, "netflix", "sport", "inconnue")])]), /Sous-catégorie inconnue/);
+  await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, $2::jsonb)`, [A, JSON.stringify([{ mois: x }])]), /Changement invalide/);
+  await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, $2::jsonb)`, [A, JSON.stringify([ch(x.replace(/-01$/, "-02"), "netflix", "abonnements", "sport")])]), /premier jour du mois/);
+  await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, '{}'::jsonb)`, [A]), /liste de changements obligatoires/);
+  await assert.rejects(db.query(`select public.budget_marchands_reclasser(null, '[]'::jsonb)`), /obligatoires/);
+  await superu();
+  assert.equal((await q(`select 1 from public.banque_marchands_mois where user_id = '${A}' and cle_marchand = 'netflix' and sous_categorie = 'abonnements'`)).length, 1, "rien n'a bougé après les refus");
+  await session(A);
+  await refuse(`select public.budget_marchands_reclasser('${A}', '[]'::jsonb)`, /permission denied/, "authenticated");
+  await superu();
+  await db.exec(`delete from public.banque_marchands_mois where user_id = '${A}'`);
+});
+
+test("budget_reclasser_verrouiller : un appel toutes les 10 secondes par utilisateur (atomique), un autre utilisateur n'est pas gêné, service seulement", async () => {
+  await service();
+  const pris = async (u, s) => (await un(s === undefined ? `select public.budget_reclasser_verrouiller($1) v` : `select public.budget_reclasser_verrouiller($1, ${s}) v`, [u])).v;
+  assert.equal(await pris(A), true, "premier appel : verrou pris");
+  assert.equal(await pris(A), false, "second appel dans les 10 secondes : refusé");
+  assert.equal(await pris(B), true, "un autre utilisateur n'est pas gêné");
+  await superu();
+  const t = (await un(`select extract(epoch from (verrou_jusqua - now()))::int s from prive.budget_reclassements where user_id = '${A}'`)).s;
+  assert.ok(t >= 8 && t <= 10, "verrou de 10 secondes : " + t);
+  await db.exec(`update prive.budget_reclassements set verrou_jusqua = now() - interval '1 second' where user_id = '${A}'`);
+  await service();
+  assert.equal(await pris(A), true, "verrou expiré : repris");
+  await assert.rejects(db.query(`select public.budget_reclasser_verrouiller(null)`), /obligatoires/);
+  await assert.rejects(db.query(`select public.budget_reclasser_verrouiller('${A}', 0)`), /obligatoires/);
+  await session(A);
+  await refuse(`select public.budget_reclasser_verrouiller('${A}')`, /permission denied/, "authenticated");
+  await refuse(`select * from prive.budget_reclassements`, /permission denied/, "table non exposée");
+  await superu();
+  await db.exec(`delete from public.status where false; delete from prive.budget_reclassements`);
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------------
 const regle = (o = {}) => ({ motif: "xyz sarl", sous_categorie: "loisirs", ...o });
 const insererRegle = (r, uid = A) => db.query(`insert into public.budget_regles (user_id, motif, sous_categorie, sens, compte_id, montant_min, montant_max, annuelle, source)

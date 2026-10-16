@@ -51,6 +51,10 @@
 -- budget_reclasser_historique(utilisateur) (service seulement) : reconstruit banque_mois des mois de 90 jours à 13 mois à partir de
 --   banque_marchands_mois (la fonction powens a reclassé les agrégats avant), pour chaque (mois, compte) dont la somme des agrégats égale
 --   l'ancien total à 1 € près ; les autres restent figés. Renvoie { reconstruits: [mois], figes: [mois] }.
+-- budget_marchands_reclasser(utilisateur, changements) (service seulement) : déplace des lignes de banque_marchands_mois d'une sous-catégorie à une
+--   autre pour les mois de plus de 90 jours et de 13 mois au plus (reclassement décidé par la fonction powens après une règle), en additionnant les
+--   montants d'une ligne déjà présente sous la sous-catégorie visée ; tout ou rien.
+-- budget_reclasser_verrouiller(utilisateur, secondes) (service seulement) : verrou de 10 secondes du reclassement (prive.budget_reclassements).
 -- Aucune espace insécable ni espace typographique (U+00A0, U+2000 à U+200F) dans ce fichier.
 -- Prérequis : 0034 (categorie_budget_valide, historique_sensible), 0033 (connecteur_autorise), 0031 (foyer_nombre, foyer_rogner), 0028 (mfa_exigee).
 -- Tests : test/budget-pglite.test.mjs, test/mfa-pglite.test.mjs, test/isolation.test.mjs (préproduction locale).
@@ -2140,6 +2144,96 @@ end;
 $$;
 revoke all on function public.budget_reclasser_historique(uuid) from public, anon, authenticated;
 grant execute on function public.budget_reclasser_historique(uuid) to service_role;
+
+-- budget_marchands_reclasser(user, changements) : applique à banque_marchands_mois un reclassement décidé par la fonction powens (règle créée,
+-- modifiée, désactivée ou supprimée) pour les mois de plus de 90 jours et de 13 mois au plus. changements : [{ mois (AAAA-MM-JJ, 1er du mois),
+-- compte_id, cle_marchand, de, vers }] ; la ligne (mois, compte, marchand, de) passe à la sous-catégorie `vers`, ses montants s'ajoutant à ceux d'une
+-- ligne qui existerait déjà sous `vers`. Un changement hors de cette période, ou dont la ligne n'existe plus, est ignoré. Tout ou rien. Renvoie le
+-- nombre de lignes déplacées. Réservée à service_role ; budget_reclasser_historique reconstruit ensuite banque_mois.
+create or replace function public.budget_marchands_reclasser(p_user uuid, p_changes jsonb)
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_borne date := (now() at time zone 'Europe/Paris')::date - 90;
+  v_fin   date;
+  v_debut date := (date_trunc('month', (now() at time zone 'Europe/Paris')::date) - interval '13 months')::date;
+  v_c     jsonb;
+  v_mois  date;
+  v_n     int := 0;
+  v_k     int;
+begin
+  if p_user is null or jsonb_typeof(p_changes) is distinct from 'array' then
+    raise exception 'Utilisateur et liste de changements obligatoires.' using errcode = '22023';
+  end if;
+  if jsonb_array_length(p_changes) > 5000 then
+    raise exception 'Trop de changements : 5 000 au plus par appel.' using errcode = '22023';
+  end if;
+  v_fin := case when v_borne = date_trunc('month', v_borne)::date then v_borne
+                else (date_trunc('month', v_borne) + interval '1 month')::date end;
+  perform pg_advisory_xact_lock(hashtext('banque_mois:' || p_user::text));
+  for v_c in select x from jsonb_array_elements(p_changes) x loop
+    if jsonb_typeof(v_c) is distinct from 'object' or jsonb_typeof(v_c->'mois') is distinct from 'string' or jsonb_typeof(v_c->'compte_id') is distinct from 'number'
+       or jsonb_typeof(v_c->'cle_marchand') is distinct from 'string' or jsonb_typeof(v_c->'de') is distinct from 'string'
+       or jsonb_typeof(v_c->'vers') is distinct from 'string' then
+      raise exception 'Changement invalide : { mois, compte_id, cle_marchand, de, vers } attendu.' using errcode = '22023';
+    end if;
+    if not public.budget_sous_categorie_valide(v_c->>'vers') or not public.budget_sous_categorie_valide(v_c->>'de') then
+      raise exception 'Sous-catégorie inconnue dans un changement.' using errcode = '22023';
+    end if;
+    v_mois := (v_c->>'mois')::date;
+    if v_mois <> date_trunc('month', v_mois)::date then
+      raise exception 'Changement invalide : mois au premier jour du mois.' using errcode = '22023';
+    end if;
+    if v_mois < v_debut or v_mois >= v_fin or (v_c->>'de') = (v_c->>'vers') then continue; end if;
+    with src as (
+      delete from public.banque_marchands_mois mm
+       where mm.user_id = p_user and mm.mois = v_mois and mm.compte_id = (v_c->>'compte_id')::bigint
+         and mm.cle_marchand = v_c->>'cle_marchand' and mm.sous_categorie = v_c->>'de'
+       returning mm.entrees, mm.sorties, mm.nombre)
+    insert into public.banque_marchands_mois as bm (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre)
+    select p_user, v_mois, (v_c->>'compte_id')::bigint, v_c->>'cle_marchand', v_c->>'vers', src.entrees, src.sorties, src.nombre from src
+    on conflict (user_id, mois, compte_id, cle_marchand, sous_categorie)
+    do update set entrees = bm.entrees + excluded.entrees, sorties = bm.sorties + excluded.sorties, nombre = bm.nombre + excluded.nombre;
+    get diagnostics v_k = row_count;
+    v_n := v_n + v_k;
+  end loop;
+  return v_n;
+end;
+$$;
+revoke all on function public.budget_marchands_reclasser(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.budget_marchands_reclasser(uuid, jsonb) to service_role;
+
+-- Verrou du reclassement (POST /powens/reclasser) : au plus un appel toutes les 10 secondes par utilisateur. La ligne vit dans le schéma
+-- non exposé prive ; budget_reclasser_verrouiller est atomique (insert … on conflict do update … where verrou expiré) et renvoie vrai si le verrou est pris.
+create table if not exists prive.budget_reclassements (
+  user_id       uuid primary key references auth.users(id) on delete cascade,
+  verrou_jusqua timestamptz not null
+);
+revoke all on table prive.budget_reclassements from public, anon, authenticated;
+
+create or replace function public.budget_reclasser_verrouiller(p_user uuid, p_secondes int default 10)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_pris boolean;
+begin
+  if p_user is null or p_secondes is null or p_secondes < 1 or p_secondes > 300 then
+    raise exception 'Utilisateur et durée (1 à 300 secondes) obligatoires.' using errcode = '22023';
+  end if;
+  insert into prive.budget_reclassements as r (user_id, verrou_jusqua) values (p_user, now() + make_interval(secs => p_secondes))
+  on conflict (user_id) do update set verrou_jusqua = excluded.verrou_jusqua where r.verrou_jusqua <= now()
+  returning true into v_pris;
+  return coalesce(v_pris, false);
+end;
+$$;
+revoke all on function public.budget_reclasser_verrouiller(uuid, int) from public, anon, authenticated;
+grant execute on function public.budget_reclasser_verrouiller(uuid, int) to service_role;
 
 -- ---------------------------------------------------------------------------------------------------------------------------------
 -- 9. service_role : droits explicites sur les objets de cette migration (0033 § 8 : plus d'exposition automatique)

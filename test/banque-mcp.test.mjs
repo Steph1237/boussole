@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import * as nodeModule from "node:module";
 import { createRequire } from "node:module";
 import vm from "node:vm";
+import { BudgetCategoriesPowens } from "./helpers/budget-gen.mjs";
 
 const path = rel => fileURLToPath(new URL("../" + rel, import.meta.url));
 const lire = rel => readFileSync(path(rel), "utf8");
@@ -287,7 +288,7 @@ test("cleLibelle : même libellé nettoyé (casse, accents, chiffres, ponctuatio
 
 test("cleLibelle : même règle que synchro.ts (powens) — parité des noms de mois et des clés", { skip: SANS_STRIP }, () => {
   const B = chargerBanque();
-  const S = chargerModule(lire("supabase/functions/powens/synchro.ts"), { categorieBoussole: () => "divers", crypto: globalThis.crypto, Error, TypeError, Boolean, parseInt, parseFloat, encodeURIComponent, TextDecoder, NaN });
+  const S = chargerModule(lire("supabase/functions/powens/synchro.ts"), { categorieBoussole: () => "divers", BudgetCategories: BudgetCategoriesPowens, crypto: globalThis.crypto, Error, TypeError, Boolean, parseInt, parseFloat, encodeURIComponent, TextDecoder, NaN });
   assert.deepEqual(J(B.MOIS_LIBELLES), J(S.MOIS_LIBELLES));
   for (const t of ["VIR SALAIRE ACME SEPTEMBRE 2026", "Salaire Août", "PRLV EDF JANV FEVR MARS AVR MAI JUIN JUIL SEPT OCT NOV DEC", "CB  Café-Crème 12/09 ••••",
     "Décembre", "VIR.PERMANENT DUPONT", "Échéance prêt", "123", "", null, "Loyer de mars", "MARSEILLE CB", "DECATHLON"])

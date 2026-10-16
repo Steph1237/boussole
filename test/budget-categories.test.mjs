@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
 import { genererBudgetCategories, SORTIE_BUDGET_POWENS, SORTIE_BUDGET_MCP, MODULES_BUDGET } from "../scripts/gen-catalogue.mjs";
-import { chargerBudgetGen, lireGen } from "./helpers/budget-gen.mjs";
+import { chargerBudgetGen, lireGen, BudgetCategoriesPowens } from "./helpers/budget-gen.mjs";
 
 const require = createRequire(import.meta.url);
 const lire = rel => readFileSync(new URL("../" + rel, import.meta.url), "utf8");
@@ -136,7 +136,7 @@ test("cleLibelle : parité avec synchro.ts (fonction powens) et banque.ts (conne
     const js = strip(source, { mode: "strip" }).replace(/^import .*$/gm, "").replace(/^export (const|function|async function|class)/gm, "$1");
     return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`, { ...GLOBAUX, ...globaux });
   };
-  const S = charger("supabase/functions/powens/synchro.ts", { categorieBoussole: () => "divers" });
+  const S = charger("supabase/functions/powens/synchro.ts", { categorieBoussole: () => "divers", BudgetCategories: BudgetCategoriesPowens });
   const Bq = charger("supabase/functions/mcp/banque.ts");
   const echantillon = ["VIR SALAIRE ACME SEPTEMBRE 2026", "Salaire Août", "PRLV EDF JANV FEVR MARS AVR MAI JUIN JUIL SEPT OCT NOV DEC", "CB  Café-Crème 12/09 ••••",
     "Décembre", "VIR.PERMANENT DUPONT", "Échéance prêt", "123", "", null, undefined, "Loyer de mars", "MARSEILLE CB", "DECATHLON", "CB UBER EATS PARIS 15/09",

@@ -6,6 +6,8 @@
 //   la revendication aal = "aal2" du JWT (double authentification), sinon 403 { erreur, code: "mfa_requise" } avant tout appel Powens ;
 //   /deconnecter, /synchroniser et /supprimer l'exigent dès que l'utilisateur a un facteur vérifié (lu côté serveur par l'API admin
 //   Auth, auth.admin.mfa.listFactors, jamais d'après le client) ; sans facteur vérifié, leur comportement est inchangé ;
+// - /reclasser (BUD1) : JWT Supabase de l'utilisateur, session aal2 OU jeton d'un connecteur autorisé (autorisation liée au second facteur, 0033 :
+//   RPC connecteur_autorise lue avec le jeton de l'appelant) ; un appel toutes les 10 secondes par utilisateur (budget_reclasser_verrouiller) ;
 // - /webhook : jeton Powens de l'utilisateur (Authorization: Bearer), reconnu par son empreinte SHA-256
 //   (RPC powens_utilisateur_par_empreinte), et, si POWENS_WEBHOOK_SECRET est défini, signature BI-Signature datée de moins de
 //   5 minutes (BI-Signature-Date) ; sans ce secret, accepté seulement sur un domaine de bac à sable (suffixe -sandbox). Corps
@@ -48,7 +50,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { api, domaine, PowensErreur } from "./powens-api.ts";
-import { synchroniser, oublierConnexion } from "./synchro.ts";
+import { synchroniser, oublierConnexion, reclasser } from "./synchro.ts";
 
 const APP_URL = "https://steph1237.github.io/boussole/app.html";
 /** redirect_uri des pages de connexion et de reconnexion (déclarée dans la console Powens). */
@@ -170,6 +172,37 @@ async function exigerAal2SiFacteur(db: any, user: { id: string; aal: string }): 
     return erreur(503, MSG_MFA_INCERTAIN);
   }
   return facteurs.some((f) => f?.status === "verified") ? erreur(403, MSG_MFA_ACTION, "mfa_requise") : null;
+}
+
+/** Revendication client_id d'un JWT (jeton OAuth d'un connecteur), null pour une session ordinaire. Même réserve que aalDuJeton : jeton déjà validé. */
+export function clientIdDuJeton(jwt: string): string | null {
+  try {
+    const b64 = (jwt.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0))));
+    return typeof claims?.client_id === "string" && claims.client_id ? claims.client_id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Reclassement (BUD1) : session aal2, ou jeton d'un connecteur que l'utilisateur a autorisé avec son second facteur (public.connecteur_autorise(), 0033,
+    lue avec le jeton de l'appelant : elle compare client_id et session_id aux autorisations de l'utilisateur). Tout le reste, et toute lecture en
+    échec : 403 mfa_requise (jamais un passe-droit). → null (continuer) ou la réponse d'erreur. */
+async function exigerAal2OuConnecteur(user: { id: string; aal: string }, jwt: string): Promise<Response | null> {
+  if (user.aal === "aal2") return null;
+  const url = deps.env("SUPABASE_URL"), anon = deps.env("SUPABASE_ANON_KEY");
+  if (url && anon && clientIdDuJeton(jwt)) {
+    try {
+      const c = deps.createClient(url, anon, { global: { headers: { Authorization: `Bearer ${jwt}` } },
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+      const { data, error } = await c.rpc("connecteur_autorise");
+      if (!error && data === true) return null;
+    } catch (e) {
+      console.error("powens: autorisation du connecteur illisible", msg(e));
+    }
+  }
+  return erreur(403, MSG_MFA_ACTION, "mfa_requise");
 }
 
 /** Corps brut, lu par morceaux ; null au-delà de `max` octets (Content-Length annoncé ou octets reçus). */
@@ -422,6 +455,35 @@ app.post("/synchroniser", async (c: any) => {
         positions_creees: r.positions_creees, lignes_adoptees: r.lignes_adoptees, propositions: r.propositions, erreurs: r.erreurs.length,
       },
     });
+  } catch (err) {
+    return echec(err);
+  }
+});
+
+/* POST /powens/reclasser → { ok, operations_reclassees, mois_recalcules, mois_figes } : rejoue le classement du budget (règles actives de budget_regles)
+   sur les opérations des 90 derniers jours, recalcule les mois touchés et, de 90 jours à 13 mois, reclasse les totaux par marchand et reconstruit
+   banque_mois. Appelée par l'app ou par le connecteur (regler_categorie) après une règle créée, modifiée, désactivée ou supprimée. Jeton de l'utilisateur
+   requis (401), session aal2 ou connecteur autorisé (403 mfa_requise), au plus un appel toutes les 10 secondes par utilisateur (429), idempotente ;
+   les mois de plus de 13 mois restent figés (mois_figes ne les liste pas). */
+app.post("/reclasser", async (c: any) => {
+  const req: Request = c.req.raw;
+  const db = admin();
+  if (!db) return erreur(500, "Configuration serveur manquante.");
+  const user = await utilisateur(db, req);
+  if (!user) return erreur(401, MSG_NON_CONNECTE);
+  const mfa = await exigerAal2OuConnecteur(user, bearer(req));
+  if (mfa) return mfa;
+  const f = await db.from("fonctionnalites").select("active").eq("user_id", user.id).eq("cle", "banque").maybeSingle();
+  if (f.error) return erreur(500, "Erreur interne : réessaie dans un moment.");
+  if (f.data?.active !== true) return erreur(403, MSG_FERME);
+  try {
+    const v = await db.rpc("budget_reclasser_verrouiller", { p_user: user.id, p_secondes: 10 });
+    if (v?.error) throw new Error(v.error.message ?? "budget_reclasser_verrouiller");
+    if (v?.data !== true) return new Response(JSON.stringify({ erreur: "Un reclassement vient d'avoir lieu : réessaie dans quelques secondes." }),
+      { status: 429, headers: { "Content-Type": "application/json; charset=utf-8", "Retry-After": "10" } });
+    const r = await reclasser(db, user.id, { maintenant: deps.maintenant() });
+    return json({ ok: r.erreurs.length === 0, operations_reclassees: r.operations_reclassees, mois_recalcules: r.mois_recalcules, mois_figes: r.mois_figes,
+      ...(r.erreurs.length ? { erreurs: r.erreurs.length } : {}) });
   } catch (err) {
     return echec(err);
   }
