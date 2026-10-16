@@ -168,7 +168,7 @@ code,kbd,samp,pre{font-family:var(--f-mono);--nums:normal}
   .cv-total,.fv-c-titre,.fv-d-titre,.gp-as-k,.gp-hl-v,.gp-pill,.gp-ro-v b,.gp-sec-t,.gp-ttl,.ic-f-h,.ic-h2,.ic-h3,
   .ic-hero-v,.ic-indispo-t,.ic-m-v,.ov-carte-cible,.ov-carte-nom,.ov-sec-t,.ov-vide-t,.pf-big,.pf-kpi b,.pl-d-val,
   .pl-fait-v,.pl-total,.pv-h,.rg-h2,.rv-gh b,.rv-h2,.rv-kpi b,.rv-verdict,.simu-titre,.st-big,.st-fam-note,.st-h2,
-  .st-note,.st-onglet-note,.st-p-mesure,.st-verdict,.sv-centre-n,.sv-h,.sv-lv-titre,.sv-sys-phrase,.sv-titre,.ts-p-big,
+  .st-note,.st-onglet-note,.st-p-mesure,.st-verdict,.sv-centre-n,.sv-h,.sv-sys-phrase,.sv-titre,.ts-p-big,
   .ts-p-kpis dd,.ui-tuile-v,.ui-carte-valeur,.ui-panneau-titre,.verdict,.sv-o-titre,.sv-vt-phrase){--nums:var(--nums-prop)}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 /* Mouvement réduit : toutes les durées passent à 0, sauf le fondu d'opacité (voile et panneau). */
