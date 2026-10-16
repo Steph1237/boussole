@@ -373,7 +373,8 @@ test("ficheLigne / ficheLigneHtml : cours + PRU, quantité, valeur, plus-value, 
   assert.match(h, /Active l'expertise ETF et fonds\./);
   assert.match(h, /Mouvements connus/); assert.match(h, /Cours<\/h3>/);
   const monde = CV.ficheLigne(S, "pea-etf-monde", TODAY, { Calc });
-  assert.deepEqual(monde.mouvements.map(m => m.type), ["Achat", "Versement"], "plus récents d'abord");
+  assert.deepEqual(monde.mouvements.map(m => m.type).slice(0, 2), ["Achat", "Versement"], "plus récents d'abord");
+  assert.equal(monde.mouvements.length, 5, "dont les trois ordres importés du PEA (HIS2), plus anciens");
   // courbe du cours avec la ligne horizontale du PRU
   const cours = { IE00B4L5Y983: [{ date: CV.debutPeriode("3m", TODAY), cloture: 95 }, { date: CV.debutPeriode("1m", TODAY), cloture: 100 }] };
   const g = sp(CV.grapheLigneHtml(monde, { cours, charge: "pret", periode: "3m", today: TODAY, largeur: 400 }, UI));

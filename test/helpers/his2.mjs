@@ -83,3 +83,6 @@ export function entreeLarge(id) {
   });
   return e;
 }
+
+/** Source JS sans commentaires (pour les tests qui cherchent un motif dans le code, pas dans la documentation). */
+export const sansCommentairesJs = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/[^\n]*/g, "$1");

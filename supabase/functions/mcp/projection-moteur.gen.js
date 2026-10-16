@@ -965,7 +965,7 @@ def("calc", function (module, exports, require) {
       (chiffres des seuls comptes courants) ; faux sinon (totaux de tous les comptes connectés : libellé « tous comptes connectés »).
       historique (facultatif, HIS2) : relevés importés { comptes, releves, banqueMois } ; le calcul porte alors sur la série de moisBancaires
       (Powens et import, jamais les deux pour le même compte et le même mois) ; sans lui, comportement inchangé. Un mois importé non complet n'y entre jamais.
-      → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte } ou null (interrupteur éteint et aucun relevé importé,
+      → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte, moisImportes? (avec relevés importés : mois retenus qui en viennent) } ou null (interrupteur éteint et aucun relevé importé,
       aucun mois complet). Même calcul dans le connecteur (budgetReel, index.ts). */
   function budgetReel(banque, auj, nb, historique) {
     const actif = !!banque && banque.actif !== false;
@@ -993,8 +993,11 @@ def("calc", function (module, exports, require) {
     const det = moisDetailles(b);
     importees.forEach(e => det.add(e.mois));
     const m = retenus.length, revenus = pos(rev) / m, depenses = pos(dep) / m, epargne = pos(ep) / m;
-    return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
+    const res = { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
       capacite: revenus - depenses, tauxCapacite: revenus > 0 ? (revenus - depenses) / revenus : null, parCompte: retenus.every(x => det.has(x)) };
+    // avec des relevés importés : combien des mois retenus viennent d'eux (au moins un compte importé ce mois-là)
+    if (utileH) res.moisImportes = retenus.filter(x => importees.some(e => e.mois === x)).length;
+    return res;
   }
   /** Période d'un budget réel en clair (spec cp4 § 1) : « juillet à septembre 2026 », « novembre 2025 à janvier 2026 », « septembre 2026 ».
       r = { du, au } (AAAA-MM-JJ) ; "" si r est absent. Même fonction dans le connecteur (periodeReel, index.ts). */

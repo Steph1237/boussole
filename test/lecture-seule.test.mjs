@@ -31,6 +31,7 @@ const API_AUTORISEE = {
   savoir: ["fiche"], // lecture
   expertises: ["detail"], // lecture (méthode d'une expertise, Agent › Savoir › Expertises)
   banque: ["connecter", "gerer", "deconnecter", "rattacher", "synchroniser"], // banques connectées (claude-guide.js) : contrôle, pas saisie
+  historique: ["retirer"], // HIS2 (D5) : « Retirer cet import » dans Compte › Données › Historique (retirer_import, aal2) : un droit sur ses données, comme supprimer son compte
 };
 // cours : lecture des cours historiques à l'ouverture d'une fiche de Patrimoine › Comptes (comptes-view.js, CP1 § 4).
 const STORE_AUTORISE = ["get", "on", "emit", "reload", "mode", "setScope", "surveillerConnexions", "markOnboarded", "db", "cours", ...Object.keys(API_AUTORISEE)];
@@ -69,7 +70,7 @@ test("lecture seule : aucune écriture au store hors liste blanche (simulateurs 
     assert.doesNotMatch(s, /\bsb\.from\(|\.from\(\s*["'](positions|profiles|config|budgets|objectifs|biens|credits|transactions)["']\)|\.rpc\(/, f + " : requête directe à la base");
     // API du store : seules les entrées connues, et pour les API dédiées seulement les méthodes de contrôle.
     for (const m of s.matchAll(/\bStore\s*\.\s*(\w+)/g)) assert.ok(STORE_AUTORISE.includes(m[1]), `${f} : Store.${m[1]} inconnu`);
-    for (const m of s.matchAll(/\bStore\s*\.\s*(propositions|journal|memoire|savoir|expertises|routines|banque)\s*\.\s*(\w+)/g))
+    for (const m of s.matchAll(/\bStore\s*\.\s*(propositions|journal|memoire|savoir|expertises|routines|banque|historique)\s*\.\s*(\w+)/g))
       assert.ok(API_AUTORISEE[m[1]].includes(m[2]), `${f} : Store.${m[1]}.${m[2]} hors liste blanche`);
   }
 });
