@@ -851,7 +851,7 @@
       : '<p class="cv-muet">Aucun mouvement connu. Les achats, ventes et versements que tu signales à Claude apparaîtront ici.</p>';
     return arianeHtml([RETOUR, { label: f.enveloppe || "Compte", href: f.enveloppeHref }, { label: f.nom }]) +
       titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.valeur)) + "</p>") + perimeFicheHtml(f.source, U, "ta ligne « " + f.nom + " »") +
-      '<div class="cv-f-2col"><div class="cv-f-col cv-f-gauche">' + (f.isin ? '<section class="panel cv-f-bloc" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Cours</h3><div class="cv-periode" id="cvPeriode"></div></div><div id="cvGraphe" aria-live="polite"></div></section>' : "") + (suivi ? '<section class="panel cv-f-bloc cv-f-suivi">' + suivi + "</section>" : "") + '</div>' +
+      '<div class="cv-f-2col' + (f.isin ? "" : " cv-f-sans-cours") + '">' + (f.isin ? '<section class="panel cv-f-bloc cv-f-cours" aria-labelledby="cvGrapheTitre"><div class="cv-f-head"><h3 id="cvGrapheTitre">Cours</h3><div class="cv-periode" id="cvPeriode"></div></div><div id="cvGraphe" aria-live="polite"></div></section>' : "") + (suivi ? '<section class="panel cv-f-bloc cv-f-suivi">' + suivi + "</section>" : "") +
       '<div class="cv-f-col cv-f-droite">' + '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" + '<section class="panel cv-f-bloc" aria-labelledby="cvDetailTitre"><h3 id="cvDetailTitre">Détail</h3>' + faitsHtml(f.faits) + "</section>" + '<section class="panel cv-f-bloc" aria-labelledby="cvMvtsTitre"><h3 id="cvMvtsTitre">Mouvements connus</h3>' + mvts + "</section>" + '</div></div>' +
       '<div class="cv-acts">' + lienClaude(U, q, "Demander à Claude") + '<span class="cv-note">Active l\'expertise ' + esc(f.expertise.nom) + ".</span></div>";
   }
@@ -1110,6 +1110,7 @@
     root.addEventListener("click", e => {
       const t = e.target; if (!t || !t.closest) return;
       const b = t.closest("[data-cv-fam-btn]"); if (b) { basculerFamille(b); return; }
+      const sa = t.closest("[data-sv-aller]"); if (sa && window.SuiviView && typeof SuiviView.aller === "function") { SuiviView.aller(sa); return; } // bilan du suivi : va aux constats du niveau
       if (t.closest("[data-cv-reessayer]")) { liste(vue.isins).forEach(i => echecs.delete(i)); rendreGraphe(); chargerCours(vue.isins); return; }
       const c = t.closest("[data-cv-cle]"); if (c) origine = c.getAttribute("data-cv-cle"); // carte qui retrouvera le focus au retour
     });
