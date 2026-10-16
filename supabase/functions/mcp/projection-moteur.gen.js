@@ -6019,8 +6019,18 @@ def("scenarios", function (module, exports, require) {
       : "Sur " + ans(H) + ", " + minus(libelles[tete]) + " arrive en tête, environ " + eur0(e.p50) + " de plus " + que(minus(libelles[refId])) + ", en euros d'aujourd'hui.";
     avert.unshift(...avertFrais(frais, ["ter_pct", "pea_pct", "compte_titres_pct", "assurance_vie_pct"].concat(tousAv.ks.includes("fonds_euros") ? ["fonds_euros_pct"] : [], options.per ? ["per_pct"] : [])));
     const reponse = { phrase, option_en_tete: tete, reference: refId, ecart: ecartBandes(e), ecart_annuel: enjeu, probabilite_mieux: p3(e.probabilite_mieux), date_bascule: null };
-    return { options: opts, reponse, ce_qui_changerait: ctq, avertissements: avert, enjeu_annuel: tete === refId ? { p10: 0, p50: 0, p90: 0 } : enjeu, sim,
-      detail: { T, classement, ecart_tete_moins_reference: r2(quantile(e.courants, 0.5)), frais_seuil_av_uc_pct: fraisSeuil && fraisSeuil.etat === "ok" ? r2(fraisSeuil.x * 1000) / 1000 : null,
+    /* enjeu de la carte (décision du 2026-10-16, option A) : contre la meilleure option dont le foyer détient déjà toutes les enveloppes (rien à ouvrir) ; nul si c'est l'option
+       en tête ; sans enveloppe détenue, contre la référence (compte-titres). La réponse garde la référence. Jamais un enjeu plus grand que ce que la décision change. */
+    const tient = id => options[id].filter(x => !x.debordement).every(x => fo.enveloppes.some(y => (famillesTypes[x.type] || [x.type]).includes(y.type)));
+    const refEnjeu = classement.find(tient) || refId, zero = { p10: 0, p50: 0, p90: 0 };
+    const enjeuCarte = refEnjeu === tete ? zero : refEnjeu === refId ? enjeu : parAn(sim.ecart(tete, refEnjeu), H);
+    if (refEnjeu !== refId) avert.push(refEnjeu === tete ? "Tu détiens déjà les enveloppes de l'option en tête (" + minus(libelles[tete]) + ") : l'enjeu de cette question est donc nul ; l'écart avec " + minus(libelles[refId]) + " reste montré pour information."
+      : "L'enjeu de cette question compare " + minus(libelles[tete]) + " à " + minus(libelles[refEnjeu]) + ", que tu as déjà : c'est ce que changerait le choix.");
+    /* classes que l'enveloppe ne peut pas recevoir : dites (répartition propre au lot 2) */
+    const horsEnveloppe = tousAv.ks.filter(k => ["crypto", "levier"].includes(k));
+    if (horsEnveloppe.length) avert.push("Ton allocation contient " + horsEnveloppe.map(k => (k === "crypto" ? "des crypto-actifs" : "des fonds à effet de levier")).join(" et ") + " : une assurance-vie ou un PER ne peut pas les recevoir ; le calcul les y place quand même, ce qui rend cette comparaison approximative.");
+    return { options: opts, reponse, ce_qui_changerait: ctq, avertissements: avert, enjeu_annuel: enjeuCarte, sim,
+      detail: { T, classement, reference_enjeu: refEnjeu, ecart_tete_moins_reference: r2(quantile(e.courants, 0.5)), frais_seuil_av_uc_pct: fraisSeuil && fraisSeuil.etat === "ok" ? r2(fraisSeuil.x * 1000) / 1000 : null,
         exclues: Object.fromEntries(Object.keys(exclues).map(k => [k, exclues[k][0]])), t_star_pct: tStar == null ? null : r2(tStar * 100) / 100, plafond_per: plafond },
       plan: { tete, reference: refId, plan, titulaire: plafond.personne || c.titulaire },
       retenables: retenablesEuro(c, { options, refId, ids, tousAv, act, plafond, tmi, rep, T, V0, m, delai, dateRet, peaEx, avEx, plafondPea }) };
@@ -6062,6 +6072,7 @@ def("scenarios", function (module, exports, require) {
     if (tmiRep === "ne_sait_pas") avert.push("Tranche d'imposition à la retraite inconnue : la tranche d'aujourd'hui (" + tmi + " %) est supposée ; le tableau montre les autres.");
     if (!(T >= 12)) return { statut: "a_completer", manquants: [{ champ: "date_retraite", question_id: "date_retraite", libelle: "Une date de départ à la retraite dans au moins un an", comment: "Donne la date à laquelle tu penses partir à la retraite." }] };
     const H = T / 12, alloc0 = allocationDe(d, o), alloc = alloc0 || { actions: 1 }, tous = normaliser(alloc, () => true);
+    if (tous.ks.some(k => ["crypto", "levier"].includes(k))) avert.push("Ton allocation contient des crypto-actifs ou des fonds à effet de levier : un PER ou une assurance-vie ne peut pas les recevoir ; le calcul les y place quand même, ce qui rend cette comparaison approximative.");
     avert.unshift(...avertFrais(frais, ["ter_pct", "per_pct", "assurance_vie_pct"].concat(tous.ks.includes("fonds_euros") ? ["fonds_euros_pct"] : [])));
     if (!alloc0) avert.push("Aucune allocation cible renseignée : la comparaison suppose 100 % actions.");
     const plafond = plafondPer(d, today, L, fo, o);

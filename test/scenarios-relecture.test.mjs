@@ -272,3 +272,27 @@ test("cohérence socle / moteur sur la démo (cascade active : crédits, objecti
   assert.ok(ecartMoteur(d, ua, ub, 120) < e.p50);
   assert.ok(r.avertissements.some(x => /abattement annuel de l'assurance-vie .* il vaut pour l'ensemble de tes contrats/.test(x)));
 });
+
+/* ---------------------------------------------------------------- décisions du 2026-10-16 (option A, classes hors enveloppe) */
+test("prochain euro, enjeu de la carte (option A) : contre la meilleure option déjà détenue, nul si c'est l'option en tête ; la réponse garde le compte-titres", () => {
+  const rep = { ...cas("EUR-1").reponses, horizon_ans: 10 };
+  const sans = jouerCas("EUR-1", { reponses: rep }).r;
+  assert.equal(sans.detail.reference_enjeu, "cto"); assert.deepEqual(sans.enjeu_annuel, sans.reponse.ecart_annuel, "rien de détenu : enjeu contre le compte-titres, inchangé");
+  /* un PEA de plus de 5 ans, en tête : rien à ouvrir, l'enjeu est nul ; la réponse dit toujours l'écart avec le compte-titres */
+  const pea = jouerCas("EUR-1", { reponses: rep, patch: d => avecPea(d, { date_ouverture: "2020-03-02", versements_cumules: 20000 }) }).r;
+  assert.equal(pea.reponse.option_en_tete, "pea+av"); assert.equal(pea.detail.reference_enjeu, "pea+av");
+  assert.deepEqual(pea.enjeu_annuel, { p10: 0, p50: 0, p90: 0 }); assert.ok(pea.reponse.ecart_annuel.p50 > 0);
+  assert.ok(pea.avertissements.some(x => /Tu détiens déjà les enveloppes de l'option en tête/.test(x)));
+  /* une assurance-vie détenue, mais le PEA (neuf) en tête : l'enjeu compare le PEA à l'assurance-vie, plus petit que contre le compte-titres */
+  const av = jouerCas("EUR-1", { reponses: rep, patch: d => avecAv(d, { date_ouverture: "2025-01-10" }) }).r;
+  assert.equal(av.reponse.option_en_tete, "pea+av"); assert.equal(av.detail.reference_enjeu, "av");
+  assert.ok(av.enjeu_annuel.p50 < av.reponse.ecart_annuel.p50 && av.enjeu_annuel.p50 >= 0);
+  assert.ok(av.avertissements.some(x => /compare .* à ton assurance-vie, que tu as déjà/.test(x)));
+});
+test("classes qu'une assurance-vie ou un PER ne peuvent pas recevoir (crypto, levier) : dit", () => {
+  const e = jouerCas("EUR-1", { opts: { allocation: { actions: 90, crypto: 10 } } }).r;
+  assert.ok(e.avertissements.some(x => /crypto-actifs .* ne peut pas les recevoir/.test(x)));
+  const p = jouerCas("PER-1", { opts: { allocation: { actions: 90, crypto: 10 } } }).r;
+  assert.ok(p.avertissements.some(x => /crypto-actifs/.test(x)));
+  assert.ok(!jouerCas("EUR-1").r.avertissements.some(x => /crypto/.test(x)));
+});

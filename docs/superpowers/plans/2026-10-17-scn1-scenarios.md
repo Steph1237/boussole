@@ -181,5 +181,10 @@ Phase 0 (cas chiffrés, repères)  ──►  Phase 1 (migration 0038 + revue s�
 
 ---
 
+## Lot 2 : points notés à la relecture des calculs (tâche 8, décisions du 2026-10-16, spec § 15 bis)
+- [ ] Répartition des classes par enveloppe : une classe qu'une enveloppe ne peut pas recevoir (crypto-actifs, levier en assurance-vie ou PER) va vers une enveloppe qui l'accepte (compte-titres) ; petites capitalisations et émergents éligibles au PEA quand le fonds l'est. En V1 : avertissement seulement.
+- [ ] N° 2 : exclusion du PER avant la retraite « sauf achat de la résidence principale » (question sur le projet d'achat, déblocage à cette date).
+- [ ] Plafond PER de la première année : ne compter que les reports encore utilisables à la date de chaque versement (ceux qui expirent le 31 décembre ne servent qu'aux versements de l'année).
+
 ## Définition de « fait » pour SCN1 V1
 1. Décisions D1 à D14 tranchées par Stéph. 2. Fixture recalculée deux fois, repères vérifiés et datés. 3. Tests écrits d'abord, `npm test` vert sous Node 22. 4. Relectures Opus des tâches 4, 8 et 17 sans point bloquant ouvert. 5. Banc EX3 au vert avant la publication du catalogue. 6. Migrations appliquées et vérifiées par md5. 7. Fonction `mcp` déployée. 8. Site publié, CI verte. 9. Roadmap à jour.
