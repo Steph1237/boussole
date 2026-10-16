@@ -448,7 +448,7 @@
     const tableau = '<div class="pl-rd-wrap" tabindex="0" role="region" aria-label="Rendements obtenus sur tes placements"><table class="pl-rd-tab"><caption class="ui-sr">Rendement obtenu, par période</caption><thead><tr>' +
       '<th scope="col">Période</th><th scope="col">Ton rendement</th><th scope="col">Rendement de tes placements</th><th scope="col">Attendu</th></tr></thead><tbody>' + lignes.join("") + "</tbody></table></div>";
     const notes = [];
-    let texte, approche = false;
+    let texte, approche = false, puces = null;
     if (!p) {
       const rien = parId("debut") || periodes[0], raison = String((rien && rien.raison) || "pas assez d'historique");
       texte = "Rendement réel : " + raison.replace(/^(pas assez d'historique)\s*:\s*(.*)$/, "$1 ($2)");
@@ -457,9 +457,13 @@
       approche = ap;
       texte = (p.id === "1a" ? "Rendement réel 1 an" : "Rendement réel sur " + qui) + " : " + (fini(v) ? (ap ? "≈ " : "") + RDm.pct(v, { signe: !an }) : "non calculable") + (ap ? " (approché)" : "");
       const at = p.attendu && p.attendu.statut === "ok" ? p.attendu : null;
+      // résumé en deux puces : « Rendement réel · 2 mois +12,9 % » et « attendu +0,9 % » ; la fourchette passe dans le détail ; sous 6 mois on ne compare pas une durée courte à une attente annuelle
+      puces = { reel: "Rendement réel · " + qui + " " + (fini(v) ? (ap ? "≈ " : "") + RDm.pct(v, { signe: !an }) : "non calculable") + (ap ? " (approché)" : ""), attendu: null, fourchette: null, court: false };
       if (at) {
-        const dec = at.p90_pct - at.p10_pct >= 6 ? 0 : 1;
+        const dec = at.p90_pct - at.p10_pct >= 6 ? 0 : 1, fourch = "Fourchette 8 sur 10 : " + RDm.pct(at.p10_pct, { signe: true, dec }).replace(/\u00a0%$/, "") + " à " + RDm.pct(at.p90_pct, { signe: true, dec });
         texte += " · attendu " + RDm.pct(at.attendu_pct, { signe: !an }) + (an ? "/an" : "") + " (fourchette 8 sur 10 : " + RDm.pct(at.p10_pct, { signe: true, dec }).replace(/\u00a0%$/, "") + " à " + RDm.pct(at.p90_pct, { signe: true, dec }) + ")";
+        if (p.id !== "1a" && !an && p.jours < 180) puces.court = true;
+        else { puces.attendu = "attendu " + RDm.pct(at.attendu_pct, { signe: !an }) + (an ? "/an" : ""); puces.fourchette = fourch; }
       }
       const un = parId("1a");
       if (p.id !== "1a" && un && !ptsRd(un)) notes.push("Pas assez d'historique pour 1 an : la période la plus longue mesurable est de " + qui + (p.id === "debut" ? " (depuis ton premier relevé)" : ""));
@@ -468,14 +472,17 @@
     const fragiles = unique(periodes.filter(q => q.statut === "approche").flatMap(q => (Array.isArray(q.notes) ? q.notes : [])).concat(Array.isArray(rd.reel.notes) ? rd.reel.notes : [])).map(maj1);
     const tous = fragiles.concat(notes).map(n => (/[.!?]$/.test(n) ? n : n + "."));
     tous.push("Net de frais, avant impôts, sur tes placements (comptes courants exclus). Ton rendement tient compte de la date de tes versements ; celui de tes placements non : c'est lui qui se compare à l'attendu.");
-    return { texte, periode: p ? p.id : null, approche, tableau, notes: tous };
+    return { texte, puces, periode: p ? p.id : null, approche, tableau, notes: puces && puces.fourchette ? [puces.fourchette + "."].concat(tous) : tous };
   }
   const CHEVRON_RD = '<svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
   /** La ligne de rendement, dépliable (details fermé) : résumé = la phrase, détail = tableau des 4 périodes et notes. "" sans rendement à montrer. */
   function rendementHtml(rd, deps) {
     const l = rendementLigne(rd, deps);
     if (!l) return "";
-    return '<details class="pl-rd-det"><summary class="pl-rd-ligne"><span class="pl-rd-txt">' + esc(l.texte) + '</span><span class="pl-rd-chev">' + CHEVRON_RD + "</span></summary>" +
+    const pu = l.puces, resume = pu
+      ? '<span class="pl-rd-chip">' + esc(pu.reel) + "</span>" + (pu.attendu ? '<span class="pl-rd-chip att">' + esc(pu.attendu) + "</span>" : "") + (pu.court ? '<span class="pl-rd-court">période trop courte pour comparer</span>' : "")
+      : esc(l.texte);
+    return '<details class="pl-rd-det"><summary class="pl-rd-ligne"><span class="pl-rd-txt">' + resume + '</span><span class="pl-rd-chev">' + CHEVRON_RD + "</span></summary>" +
       '<div class="pl-rd-corps">' + l.tableau + l.notes.map(n => '<p class="pl-rd-note">' + esc(n) + "</p>").join("") + "</div></details>";
   }
 
@@ -522,6 +529,7 @@
     const pret = S.ready !== false, t = totaux(S);
     const vide = pret && !t.lignes;
     $("plChargement").hidden = pret;
+    if (!pret && !$("plChargement").firstChild) $("plChargement").innerHTML = u.squelette(1, "kpi") + u.squelette(1, "graphe");
     $("plVide").hidden = !vide;
     $("plGroupesBloc").hidden = !pret || vide;
     $("plSuivi").hidden = !pret || vide;
@@ -535,10 +543,11 @@
     // faits secondaires : plus-values latentes, épargne de précaution, sommes à recevoir
     const m = matelas(S);
     const faits = [];
-    if (t.cout) faits.push('<li><span class="pl-fait-l">Plus-values latentes</span><span class="pl-fait-v ' + (t.plusValue >= 0 ? "pos" : "neg") + '">' + esc(eurS(t.plusValue)) + '</span><span class="pl-fait-s">avec prix de revient</span></li>');
-    faits.push('<li><span class="pl-fait-l">Épargne de précaution</span><span class="pl-fait-v">' + esc(eur(m.montant)) + '</span><span class="pl-fait-s">' + esc(m.cible) +
-      ' · <a href="#compte/regles" data-goto="compte/regles">Voir la cible</a></span></li>');
-    if (t.aRecevoir.length) faits.push('<li><span class="pl-fait-l">À recevoir (non compté)</span><span class="pl-fait-v">' + esc(eur(sum(t.aRecevoir, x => x.montant))) + '</span><span class="pl-fait-s">' + esc(t.aRecevoir.map(x => x.nom).join(", ")) + "</span></li>");
+    // trois tuiles (UI.tuile) ; sous 600 px elles deviennent trois lignes (libellé et montant sur une ligne, sous-ligne dessous), voir pilotage.css
+    const tuile = (l, v, sous, cls, lien) => '<li class="ui-tuile"><span class="ui-tuile-l pl-fait-l">' + esc(l) + '</span><span class="ui-tuile-v pl-fait-v' + (cls ? " " + cls : "") + '">' + esc(v) + '</span><span class="ui-tuile-s pl-fait-s">' + esc(sous) + "</span>" + (lien || "") + "</li>";
+    if (t.cout) faits.push(tuile("Plus-values latentes", eurS(t.plusValue), "avec prix de revient", t.plusValue >= 0 ? "pos" : "neg"));
+    faits.push(tuile("Épargne de précaution", eur(m.montant), m.cible, "", '<a class="pl-fait-a" href="#compte/regles" data-goto="compte/regles">Voir la cible</a>'));
+    if (t.aRecevoir.length) faits.push(tuile("À recevoir (non compté)", eur(sum(t.aRecevoir, x => x.montant)), t.aRecevoir.map(x => x.nom).join(", ")));
     ecrire("faits", $("plFaits"), vide ? "" : faits.join(""));
     if (vide) return;
     vueSv = vueSuivi(S, jour());
@@ -673,12 +682,31 @@
     sig.groupes = null; // le prochain rendu reprendra l'état
   }
 
+  /* « Grouper par : Enveloppe ▾ » : un bouton de 44 px ; les cinq regroupements s'ouvrent dans une feuille (jamais une bascule sur deux rangées). */
+  const libelleMode = id => (MODES.find(x => x.id === id) || MODES[0]).label;
+  function renderMode() {
+    const el = $("plMode"); if (!el) return;
+    el.innerHTML = '<button type="button" class="pl-mode-btn" data-pl-mode aria-haspopup="dialog"><span class="pl-mode-k">Grouper par</span><span class="pl-mode-v">' + esc(libelleMode(mode)) + "</span>" + CHEVRON_RD + "</button>";
+  }
+  function ouvrirModes(el) {
+    const u = U(); if (!u || !u.panneau) return;
+    const check = '<svg class="ui-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+    const liste = '<div class="pl-modes" role="radiogroup" aria-label="Regrouper les lignes">' + MODES.map(x => '<button type="button" class="pl-modes-o" role="radio" aria-checked="' + (x.id === mode) + '" aria-label="' + esc(x.aria) + '" data-pl-mode-choix="' + esc(x.id) + '">' +
+      '<span class="pl-modes-t">' + esc(x.label) + '</span><span class="pl-modes-c" aria-hidden="true">' + (x.id === mode ? check : "") + "</span></button>").join("") + "</div>";
+    const corps = u.panneau.ouvrir({ titre: "Grouper les lignes par", contenu: liste, retour: el });
+    if (corps && corps.addEventListener) corps.addEventListener("click", e => {
+      const b = e.target && e.target.closest ? e.target.closest("[data-pl-mode-choix]") : null; if (!b) return;
+      mode = b.getAttribute("data-pl-mode-choix"); try { localStorage.setItem(CLE_MODE, mode); } catch (er) {}
+      u.panneau.fermer(); renderMode(); if (S) render();
+    });
+  }
+
   function mount(r) {
     root = r;
     const u = U();
     if (!u) return;
-    u.bascule($("plMode"), { label: "Regrouper les lignes", options: MODES.map(x => ({ id: x.id, label: x.label, aria: x.aria })), actif: mode,
-      surChange: id => { mode = id; try { localStorage.setItem(CLE_MODE, id); } catch (e) {} if (S) render(); } });
+    renderMode();
+    $("plMode").addEventListener("click", e => { const b = e.target && e.target.closest ? e.target.closest("[data-pl-mode]") : null; if (b) ouvrirModes(b); });
     const sn = SN(); if (sn && typeof sn.abonner === "function") sn.abonner(histPrete); // fin d'une lecture du passé (déclenchée ici ou ailleurs)
     // Le bouton Claude de l'en-tête couvre les demandes de la page (enregistrer un mouvement, compléter) : plus de boutons Claude empilés ; seul l'état vide garde le sien.
     $("plVideClaude").innerHTML = u.demanderAClaude(phraseClaude("placements"), "Compléter avec Claude");
