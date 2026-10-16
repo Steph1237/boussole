@@ -110,6 +110,14 @@ test("déterministe, entrée intacte, variante de base respectée (le d s'ajoute
   const v = P.epargneNecessaire(e, { ...opts, variante: "base" });
   assert.ok(Math.abs((v.par_objectif[0].d + 200) - a.par_objectif[0].d) <= 25, `${v.par_objectif[0].d} + 200 ≈ ${a.par_objectif[0].d}`);
   assert.equal(e.foyer.variantes.length, 1, "la variante transitoire n'est jamais ajoutée à l'entrée");
+  // relecture (tâche 12) : un événement propre à la variante de base (variante_id) compte dans le calcul inverse, comme s'il était dans la situation actuelle
+  const retrait = { id: "e0000000-0000-4000-8000-000000000001", type: "retrait", personne: "foyer", libelle: "Retrait exemple", date: "2028-06-01", fin: null, params: { montant: 40000, libelle: "Retrait exemple" }, source: "cas de test" };
+  const avec = J(d); avec.foyer = { evenements: [{ ...retrait, variante_id: "vr" }], variantes: [{ id: "vr", nom: "Avec un retrait", retire: [], hypotheses: {} }] };
+  const sans = J(d); sans.foyer = { evenements: [{ ...retrait, variante_id: null }], variantes: [] };
+  const rv = P.epargneNecessaire(avec, { ...opts, variante: "vr" }), rs = P.epargneNecessaire(sans, opts);
+  assert.ok(rs.par_objectif[0].d > a.par_objectif[0].d, "le retrait demande plus d'épargne");
+  assert.deepEqual(J(rv.par_objectif), J(rs.par_objectif), "variante avec son événement = situation actuelle avec le même événement");
+  assert.equal(avec.foyer.evenements[0].variante_id, "vr", "entrée intacte");
   // chemins et graine demandés
   const r = P.epargneNecessaire(d, { ...opts, chemins: 200, graine: 7 });
   assert.deepEqual([r.chemins, r.graine], [200, 7]);

@@ -5217,7 +5217,13 @@ def("projection", function (module, exports, require) {
     const variantes = liste(objet(d0.foyer).variantes);
     const varBase = base.variante ? variantes.find(v => v && v.id === base.variante) || null : null;
     const deltaBase = varBase ? +objet(varBase.hypotheses).epargne_delta_mensuel || 0 : 0;
-    const donnees = delta => Object.assign({}, d0, { foyer: Object.assign({}, objet(d0.foyer), { variantes: variantes.filter(v => !v || v.id !== ID_VARIANTE_EPARGNE).concat([{
+    /* les événements propres à la variante de base (variante_id) suivent la variante transitoire : sans cela, ils seraient retirés du calcul inverse */
+    const vIdEv = e => (e.variante_id !== undefined ? e.variante_id : e.varianteId) || null;
+    const evenements = varBase ? liste(objet(d0.foyer).evenements).map(e => {
+      if (!e || typeof e !== "object" || vIdEv(e) !== varBase.id) return e;
+      const c = Object.assign({}, e, { variante_id: ID_VARIANTE_EPARGNE }); delete c.varianteId; return c;
+    }) : objet(d0.foyer).evenements;
+    const donnees = delta => Object.assign({}, d0, { foyer: Object.assign({}, objet(d0.foyer), varBase ? { evenements } : {}, { variantes: variantes.filter(v => !v || v.id !== ID_VARIANTE_EPARGNE).concat([{
       id: ID_VARIANTE_EPARGNE, nom: "Épargne nécessaire", retire: varBase ? liste(varBase.retire) : [], hypotheses: Object.assign({}, varBase ? objet(varBase.hypotheses) : {}, { epargne_delta_mensuel: deltaBase + delta }) }]) }) });
     const cache = new Map();
     let simulations = 0, ctx0 = null;
