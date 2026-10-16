@@ -15,10 +15,16 @@
 //    qu'un seul utilisateur a fonctionnalites(binance) active, et s'il reste assez de temps (sinon reporté et noté) ;
 //    quantités des lignes de l'enveloppe « Crypto (Binance) » (reprises par la photo de la nuit suivante) ;
 //    une erreur Binance est journalisée (message traduit, jamais de secret) et n'arrête pas la nuit ;
-// 4. rattrapage de l'historique (spec CP1 § 4) : au plus 10 ISIN par nuit (RPC cours_a_rattraper : détenus, moins de 30 cours),
-//    5 ans quotidiens (Yahoo range=5y&interval=1d sur le symbole déjà résolu, sinon CSV historique Euronext), upsert par
+// 4. rattrapage de l'historique (spec CP1 § 4) : au plus 10 ISIN par nuit, d'abord les ISIN dont les mouvements importés (HIS2) remontent plus
+//    loin que les cours stockés (photos.ts : plage « max » au-delà de 5 ans), puis ceux de la RPC cours_a_rattraper (détenus, moins de 30
+//    cours) ; 5 ans quotidiens (Yahoo range=5y&interval=1d sur le symbole déjà résolu, sinon CSV historique Euronext), upsert par
 //    paquets ; instruments.cours_rattrapage_le marque chaque tentative (nouvel essai au plus tôt 7 jours après) ; aucun
-//    nouveau rattrapage après 110 s écoulées (le reste est reporté à la nuit suivante) ;
+//    nouveau rattrapage après 110 s écoulées (le reste est reporté à la nuit suivante) ; des cours anciens arrivés demandent le recalcul
+//    des photos des utilisateurs concernés (status.historique_a_recalculer) ;
+// 4 bis. photos reconstituées (HIS2, photos.ts) : pour chaque utilisateur dont status.historique_a_recalculer est posé, le passé en fins de
+//    mois est recalculé avec le moteur de l'app (historique.gen.js) et écrit dans photos_reconstituees (jamais à partir de la première photo
+//    observée) ; aucun nouvel utilisateur après 100 s écoulées, lecture interrompue à 135 s (la demande reste posée : reprise la nuit suivante) ;
+//    rétention : le contenu des propositions « historique » décidées depuis 30 jours est réduit à { type, empreinte, resume } (20 par nuit) ;
 // 5. frais des fonds (frais.ts, spec CP4 § 2) : au plus 10 ISIN par nuit (RPC frais_a_chercher : fonds détenus sans TER, TER
 //    Yahoo de plus de 180 jours, ou TER tiré d'un DIC de plus de 365 jours (0027) ; dernier essai il y a plus de 30 jours), Yahoo
 //    quoteSummary (fundProfile, defaultKeyStatistics) avec la session et le crumb ; TER écrit en % par an avec ter_source = yahoo et
@@ -42,6 +48,8 @@ import {
 import type { LigneCours, Point } from "./cours.ts";
 import { actifDeIsin, agreger, BinanceErreur, client as clientBinance, ENVELOPPE_BINANCE, memeEnveloppe, nomActif, planBinance } from "./binance.ts";
 import { fraisYahoo, remplaceTerDic, urlFrais } from "./frais.ts";
+import { coursAnciens, demanderRecalcul, marquerCalcule, recalculerPhotos, reduirePropositions, utilisateursARecalculer } from "./photos.ts";
+import type { CoursAncien } from "./photos.ts";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -52,6 +60,8 @@ const COURS_FIN_MS = 70_000; // aucun nouveau cours du jour au-delà (cours rest
 const COURS_APPELS_FIN_MS = 80_000; // appels des cours du jour coupés au-delà
 const BINANCE_DEBUT_MAX_MS = 90_000; // Binance reporté s'il n'a pas commencé avant
 const RATTRAPAGE_FIN_MS = 110_000; // aucun nouveau rattrapage au-delà
+const PHOTOS_DEBUT_MAX_MS = 100_000; // aucun nouvel utilisateur (photos reconstituées) au-delà
+const PHOTOS_FIN_MS = 135_000; // lecture des photos interrompue au-delà (reprise la nuit suivante)
 const APPELS_FIN_MS = 120_000; // tout appel réseau coupé au-delà (photos et versements déjà faits, finish_nightly ensuite)
 const FRAIS_FIN_MS = 120_000; // aucun nouvel ISIN (frais des fonds) au-delà
 const FRAIS_APPELS_FIN_MS = 125_000; // appels des frais des fonds coupés au-delà
@@ -143,9 +153,11 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 const aujourdhui = () => parisDate(null, deps.maintenant());
+/** Contexte des travaux de photos.ts : date du jour à Paris, horloge, et contrôle du budget de temps (facultatif). */
+const contexte = (verifier?: () => void) => ({ aujourdhui: aujourdhui(), maintenant: () => deps.maintenant(), verifier });
 
-/** Graphique Yahoo quotidien (range = 5d pour le cours du jour, 5y pour le rattrapage). */
-async function fetchChart(symbol: string, range: "5d" | "5y") {
+/** Graphique Yahoo quotidien (range = 5d pour le cours du jour, 5y pour le rattrapage, max pour les cours antérieurs aux mouvements importés). */
+async function fetchChart(symbol: string, range: "5d" | "5y" | "max") {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
   const res = await yahooGet(url);
   if (!res.ok) {
@@ -182,11 +194,12 @@ async function tauxEur(currency: string): Promise<{ taux: number; cur: string; f
   }
 }
 
-/** Série de taux CUR → EUR sur 5 ans (rattrapage), mise en cache pendant le passage ; vide si indisponible. */
+/** Série de taux CUR → EUR sur 5 ans ou sur toute la durée (rattrapage), mise en cache pendant le passage ; vide si indisponible. */
 const fxSerieCache = new Map<string, Promise<Point[]>>();
-function fxSerie5ans(cur: string): Promise<Point[]> {
-  if (!fxSerieCache.has(cur)) fxSerieCache.set(cur, fetchChart(`${cur}EUR=X`, "5y").then((s) => s.points).catch(() => []));
-  return fxSerieCache.get(cur)!;
+function fxSerie(cur: string, plage: "5y" | "max" = "5y"): Promise<Point[]> {
+  const cle = `${cur}|${plage}`;
+  if (!fxSerieCache.has(cle)) fxSerieCache.set(cle, fetchChart(`${cur}EUR=X`, plage).then((s) => s.points).catch(() => []));
+  return fxSerieCache.get(cle)!;
 }
 
 // Repli Euronext, quand Yahoo échoue (429, symbole invalide…) ou quand l'instrument n'a pas de
@@ -390,20 +403,20 @@ async function synchroniserBinance(admin: any, errors: RunError[], avertissement
 }
 
 /* ---------- Rattrapage de l'historique ---------- */
-async function rattraper(ins: { isin: string; symbol: string | null; currency: string }): Promise<{ lignes: LigneCours[]; source: string }> {
+async function rattraper(ins: { isin: string; symbol: string | null; currency: string }, plage: "5y" | "max" = "5y", jours = JOURS_5_ANS): Promise<{ lignes: LigneCours[]; source: string }> {
   const isin = String(ins.isin);
   const symbol = String(ins.symbol || "").trim();
   const canFallback = REAL_ISIN.test(isin) && String(ins.currency || "EUR").toUpperCase() === "EUR";
   let yahooErr = "sans symbole";
   if (symbol) {
     try {
-      const s = await fetchChart(symbol, "5y");
+      const s = await fetchChart(symbol, plage);
       if (!s.points.length) throw new Error("historique vide");
       const { cur, facteur } = devise(s.currency);
       let points = convertir(s.points, facteur);
       if (cur !== "EUR") {
         const { taux } = await tauxEur(s.currency);
-        points = convertirAvecSerie(points, await fxSerie5ans(cur), taux / facteur);
+        points = convertirAvecSerie(points, await fxSerie(cur, plage), taux / facteur);
       }
       return { lignes: lignesCours(isin, points, "yahoo"), source: "yahoo" };
     } catch (e) {
@@ -413,7 +426,7 @@ async function rattraper(ins: { isin: string; symbol: string | null; currency: s
   if (!canFallback) throw new Error(`yahoo: ${yahooErr}`);
   try {
     if (symbol) await deps.attendre(DELAY_MS);
-    const f = await fetchEuronext(isin, JOURS_5_ANS);
+    const f = await fetchEuronext(isin, jours);
     return { lignes: lignesCours(isin, f.points, "euronext"), source: "euronext" };
   } catch (e) {
     throw new Error(`yahoo: ${yahooErr} ; euronext: ${(e as Error).message}`);
@@ -465,6 +478,8 @@ Deno.serve(async (req) => {
   let updated = 0, coursEnregistres = 0, nbInstruments = 0, recurring = 0, users = 0;
   let binance: BilanBinance = { etat: "non tenté" };
   const rattrapages = { tentes: 0, reussis: 0, lignes: 0 };
+  const photos = { utilisateurs: 0, mois: 0, supprimees: 0, reportes: 0, cours_anciens: 0 };
+  let retention = 0;
   const frais = { tentes: 0, trouves: 0 };
   let fin: { error: { message: string } | null } = { error: { message: "non exécuté" } };
 
@@ -594,7 +609,15 @@ Deno.serve(async (req) => {
         if (aRattraper.error) {
           errors.push({ error: `cours_a_rattraper : ${aRattraper.error.message}` });
         } else {
-          const liste = (aRattraper.data || []).slice(0, RATTRAPAGES_MAX);
+          /* HIS2 : d'abord les ISIN dont les mouvements importés précèdent les cours stockés (plage « max » au-delà de 5 ans), puis ceux de la RPC ; 10 au plus */
+          let anciens: CoursAncien[] = [];
+          try {
+            anciens = await coursAnciens(admin, contexte(), RATTRAPAGES_MAX);
+          } catch (e) {
+            avertissements.push(`rattrapage des cours anciens : ${message(e)}`);
+          }
+          const dejaLa = new Set(anciens.map((a) => a.isin));
+          const liste: any[] = [...anciens, ...(aRattraper.data || []).filter((x: any) => !dejaLa.has(String(x.isin)))].slice(0, RATTRAPAGES_MAX);
           for (let k = 0; k < liste.length; k++) {
             const ins = liste[k];
             if (ecoule() > RATTRAPAGE_FIN_MS) {
@@ -604,12 +627,18 @@ Deno.serve(async (req) => {
             const isin = String(ins.isin);
             rattrapages.tentes++;
             try {
-              const r = await rattraper(ins);
+              const r = await rattraper(ins, ins.plage ?? "5y", ins.jours ?? JOURS_5_ANS);
               if (!r.lignes.length) throw new Error("historique vide");
               const n = await enregistrerCours(admin, r.lignes, errors, isin);
               rattrapages.lignes += n;
-              if (n) rattrapages.reussis++;
-              console.log(`nightly: historique ${isin} via ${r.source} : ${n} cours`);
+              if (n) {
+                rattrapages.reussis++;
+                if (ins.utilisateurs?.length) {
+                  photos.cours_anciens++;
+                  try { await demanderRecalcul(admin, ins.utilisateurs, contexte()); } catch (e) { avertissements.push(`photos reconstituées : demande de recalcul de ${isin} : ${message(e)}`); }
+                }
+              }
+              console.log(`nightly: historique ${isin} via ${r.source}${ins.plage === "max" ? " (plage max)" : ""} : ${n} cours`);
             } catch (e) {
               errors.push({ isin, symbol: ins.symbol || undefined, error: `rattrapage : ${message(e)}` });
             }
@@ -621,6 +650,32 @@ Deno.serve(async (req) => {
       }
     } catch (e) {
       errors.push({ error: `rattrapage : erreur inattendue (${message(e)}).` });
+    }
+
+    // 5 bis. Photos reconstituées (HIS2) des utilisateurs dont le recalcul est demandé, puis rétention des propositions d'historique décidées depuis 30 jours.
+    // Non bloquant pour la suite : une erreur est notée (job_runs.errors), la demande reste posée et le travail reprend la nuit suivante.
+    try {
+      const demandes = await utilisateursARecalculer(admin);
+      for (let k = 0; k < demandes.length; k++) {
+        if (ecoule() > PHOTOS_DEBUT_MAX_MS) {
+          photos.reportes = demandes.length - k;
+          avertissements.push(`photos reconstituées : temps écoulé, ${photos.reportes} utilisateur(s) reporté(s) à la prochaine nuit.`);
+          break;
+        }
+        const d = demandes[k];
+        try {
+          const r = await recalculerPhotos(admin, d.user_id, contexte(() => { if (ecoule() > PHOTOS_FIN_MS) throw new Error("temps écoulé"); }));
+          await marquerCalcule(admin, d.user_id, d.demande);
+          photos.utilisateurs++; photos.mois += r.mois; photos.supprimees += r.supprimees;
+        } catch (e) {
+          const m = message(e);
+          if (m === "temps écoulé") { photos.reportes++; avertissements.push("photos reconstituées : lecture interrompue (temps écoulé), reprise à la prochaine nuit."); }
+          else errors.push({ error: `photos reconstituées : ${m}` });
+        }
+      }
+      if (ecoule() <= PHOTOS_FIN_MS) retention = await reduirePropositions(admin, contexte());
+    } catch (e) {
+      errors.push({ error: `photos reconstituées : erreur inattendue (${message(e)}).` });
     }
 
     // 6. Frais des fonds (au plus 10 ISIN) ; aucun nouvel ISIN après ~120 s, appels coupés à 125 s. Non bloquant : tout échec
@@ -697,7 +752,7 @@ Deno.serve(async (req) => {
   for (const a of avertissements) console.warn(`nightly: avertissement : ${a}`);
   console.log(`nightly: ${users} utilisateur(s), ${recurring} versement(s), ${errors.length} erreur(s), ${avertissements.length} avertissement(s), ${ecoule()} ms`);
   return json({
-    ok: !fin.error, instruments_updated: updated, cours_enregistres: coursEnregistres, rattrapages, frais, binance,
+    ok: !fin.error, instruments_updated: updated, cours_enregistres: coursEnregistres, rattrapages, photos, retention_propositions: retention, frais, binance,
     users, recurring_applied: recurring, errors, avertissements, ...(horsLigne ? { hors_ligne: true } : {}),
   });
 });

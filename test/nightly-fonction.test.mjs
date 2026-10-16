@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
+import { modulesPhotos } from "./helpers/nightly-photos.mjs";
 
 const strip = nodeModule.stripTypeScriptTypes;
 const SANS_STRIP = typeof strip !== "function" && "module.stripTypeScriptTypes indisponible (Node trop ancien)";
@@ -42,7 +43,7 @@ function charger(journaux) {
   const servis = [];
   const Deno = { env: { get: () => undefined }, serve: f => servis.push(f) };
   const client = B.client;
-  const I = chargerModule(lire("index.ts"), { ...G, ...C, ...B, ...F, clientBinance: client, Deno, createClient: () => { throw new Error("client réel interdit en test"); } });
+  const I = chargerModule(lire("index.ts"), { ...G, ...C, ...B, ...F, ...modulesPhotos(G), clientBinance: client, Deno, createClient: () => { throw new Error("client réel interdit en test"); } });
   return { I, handler: servis[0] };
 }
 
@@ -83,6 +84,8 @@ function fausseBase(init, rpc) {
     };
     const b = {
       select: () => b, order: () => b,
+      // HIS2 (photos.ts) : filtres et pages que ces tests n'exercent pas (tables vides) ; test/nightly-historique.test.mjs a sa propre base
+      not: () => b, is: () => b, neq: () => b, lt: () => b, gte: () => b, limit: () => b, range: () => b, maybeSingle: () => b, delete: () => { q.op = "select"; return b; },
       eq: (k, v) => { q.filtres.push([k, "eq", v]); return b; }, in: (k, v) => { q.filtres.push([k, "in", v]); return b; },
       or: expr => { q.filtres.push(["", "or", expr.split(",").map(x => { const [k, op, ...v] = x.split("."); return [k, op, v.join(".")]; })]); return b; },
       insert: v => { q.op = "insert"; q.val = v; return b; }, upsert: (v, o = {}) => { q.op = "upsert"; q.val = v; q.opts = o; return b; },

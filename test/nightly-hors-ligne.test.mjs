@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
+import { modulesPhotos } from "./helpers/nightly-photos.mjs";
 
 const strip = nodeModule.stripTypeScriptTypes;
 const SANS_STRIP = typeof strip !== "function" && "module.stripTypeScriptTypes indisponible (Node trop ancien)";
@@ -25,7 +26,7 @@ function charger() {
   const B = chargerModule(lire("binance.ts"), { ...G });
   const F = chargerModule(lire("frais.ts"), { ...G });
   const servis = [];
-  const I = chargerModule(lire("index.ts"), { ...G, ...C, ...B, ...F, clientBinance: B.client, Deno: { env: { get: () => undefined }, serve: f => servis.push(f) }, createClient: () => { throw new Error("client réel interdit"); } });
+  const I = chargerModule(lire("index.ts"), { ...G, ...C, ...B, ...F, ...modulesPhotos(G), clientBinance: B.client, Deno: { env: { get: () => undefined }, serve: f => servis.push(f) }, createClient: () => { throw new Error("client réel interdit"); } });
   return { C, I, handler: servis[0] };
 }
 
@@ -37,6 +38,7 @@ function fausseBase(instruments) {
     const q = { op: "select", filtres: [], val: null };
     const b = {
       select: () => b, order: () => b,
+      not: () => b, is: () => b, in: () => b, neq: () => b, lt: () => b, gte: () => b, limit: () => b, range: () => b, maybeSingle: () => b, // HIS2 : tables vides ici
       eq: (k, v) => { q.filtres.push([k, v]); return b; },
       update: v => { q.op = "update"; q.val = v; return b; },
       upsert: v => { q.op = "upsert"; q.val = v; return b; },
