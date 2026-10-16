@@ -8,7 +8,7 @@
 #view-comptes-view .neg{color:var(--crit)}
 #view-comptes-view .cv-muet{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
 #view-comptes-view .cv-note{margin:8px 0 0;font-size:var(--t-caption);line-height:1.45;color:var(--muted);max-width:680px}
-#view-comptes-view .cv-chargement{margin:0;font-size:var(--t-small);color:var(--muted)}
+#view-comptes-view .cv-chargement{margin:0;min-width:0;font-size:var(--t-small);color:var(--muted)}
 #view-comptes-view .cv-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 #view-comptes-view .cv-lien{display:inline-flex;align-items:center;min-height:var(--hit);color:var(--brand);font-weight:600}
 

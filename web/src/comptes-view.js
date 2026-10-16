@@ -973,6 +973,7 @@
   }
   function renderListe(u) {
     $("cvChargement").hidden = pret();
+    if (!pret() && u && !$("cvChargement").firstChild) $("cvChargement").innerHTML = u.squelette(1, "kpi") + u.squelette(3, "ligne") + '<span class="ui-sr">Chargement de tes comptes…</span>';
     if (!pret()) return;
     // SEC2 : banque connectée mais session sans double authentification — les comptes bancaires restent fermés (RLS), carte bloquante en tête.
     const BQ = window.BanqueEtat, mfa = !!(BQ && typeof BQ.mfaRequise === "function" && BQ.mfaRequise(S.banque));
