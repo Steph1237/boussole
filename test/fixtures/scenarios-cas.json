@@ -1,0 +1,5264 @@
+{
+ "description": "Cas de référence des scénarios SCN1 (V1 : n° 1, 2, 3, 6, 12). Phase 0 (tâche 0, Opus) du 2026-10-15 : repères relus sur les sources officielles, cas calculés à la main par un script Python mois par mois puis revérifiés par un script Node indépendant (formules fermées), tous deux hors du dépôt ; aucun écart admis. Foyer fictif « Camille et Sam », montants ronds. Aucune donnée réelle.",
+ "conventions": {
+  "today": "2026-10-15 pour tous les cas sauf indication ; date(t) = today + t mois, même quantième (dernier jour du mois s'il n'existe pas), comme projection-cas.json.",
+  "reperes": "Repères complets d'un cas = migrations 0010, 0029, projection-cas.json (0030), 0032 (suivi_horizon_suppose_ans), puis la liste `reperes` de ce fichier (0039), qui l'emporte. reperes_retirer : clés retirées pour le cas.",
+  "data": "data = foyer_base (forme de l'app, comme projection-cas.json) modifié par data_patch : clé à points = remplacement du champ ; « positions+ » = lignes ajoutées ; « positions.<id>.<champ> » = champ d'une ligne existante ; « config.enveloppes_infos.<nom> » : tout ce qui suit est le nom de l'enveloppe (espaces compris) ; valeur null = champ retiré. « plan_de » : le cas reprend le plan d'un autre cas, avec son propre today. « plafond_per_annuel_suppose », « revenu_net_imposable », « parts » : réglages de test du cas (pas des champs de l'app).",
+  "mode": "options.volatilite = 0 : mode déterministe (σ = 0 pour toutes les classes, comme le moteur) ; P10 = P50 = P90 = la valeur. Monte-Carlo : options.chemins et options.graine, tirages de Projection.tirages.",
+  "croissance": "Mois t : V ← V × (1 + r)^(1/12) × (1 − f)^(1/12) puis + versement de fin de mois ; r = rendement central de la classe (actions 6 %, fonds euros 2,5 %), f = frais annuels de la poche (TER + frais d'enveloppe). Sans rééquilibrage : chaque poche (classe) d'une enveloppe se calcule à part. Livret A, LDDS, LEP : taux du repère tant que date(t) ≤ date_fin, puis rendement central du monétaire (règle du moteur).",
+  "versements": "Le versement de départ et le premier mensuel tombent au mois 1 (fin du mois) ; mensuels aux mois de..a inclus ; une enveloppe nouvelle s'ouvre au mois du premier versement, jamais avant scn_delai_ouverture_mois (1) ; une enveloppe existante ou la référence reçoit les mêmes flux aux mêmes mois. Le surplus du matelas est placé au mois 0 (aujourd'hui), des deux côtés.",
+  "fiscalite": "Sortie totale à date(T) ; règles de ProjectionFiscalite : PEA 12,8 % + 18,6 % avant le seuil, 18,6 % après ; seuil = ouverture + 5 ans + 1 jour (DAT1) ; assurance-vie 12,8 % + 17,2 % avant ouverture + 8 ans + 1 jour, après : abattement 4 600 / 9 200 € (couple = union « joint » et 2 adultes) imputé d'abord sur la fraction à 7,5 % ; PER : TMI de retraite × versements déduits (au plus V) + 31,4 % des gains ; compte-titres 31,4 % ; livrets exonérés. Abattement de l'année supposé entier (aucun autre retrait d'assurance-vie cette année-là).",
+  "euros_aujourdhui": "montant ÷ (1 + π)^(T/12), π = inflation_hypothese = 2 %.",
+  "ecart_enjeu": "Écart = net de l'option en tête − net de la référence, chemin par chemin ; enjeu annuel = écart en euros d'aujourd'hui ÷ (T/12) ; option en tête = plus haut P50 parmi les options non exclues ; si c'est la référence, enjeu 0. Matelas : enjeu = gain annuel de l'ordre de remplissage (taux d'aujourd'hui) + max(0, écart du surplus) / H.",
+  "bascule": "Date de bascule = date(t) du premier mois t de la grille mensuelle des sorties (1..T) à partir duquel l'écart médian est > 0 et le reste jusqu'à T ; null s'il n'y en a pas.",
+  "seuils": "Frais de seuil et TMI de seuil : dichotomie (12 itérations au plus dans le module ; ici, valeur exacte et tolérance indiquée). t* négatif ou sans objet : « aucun seuil ».",
+  "per": "Effort net égal : v = m / (1 − TMI) si 12 v ≤ plafond annuel, sinon v = m + TMI × plafond / 12 (seul le plafond est déduit). Plafond annuel, constant en euros courants, appliqué par bloc de 12 mois depuis le premier versement (simplification dite) : plafond de l'année en cours sur l'avis de la personne (sans avis : per_plafond_plancher, le minimum garanti à un salarié, prudent) ; la première année, le plafond disponible de l'avis (reports compris) s'il est plus grand ; un cas peut le fixer (plafond_per_annuel_suppose). Pas de mutualisation entre conjoints en V1 (elle se demande dans la déclaration : dite). L'économie d'impôt est supposée consommée (l'effort reste m), son décalage d'un an n'est pas compté.",
+  "fonds_euros": "Une poche fonds euros ne va qu'en assurance-vie : dans les options PEA et compte-titres, elle reste en assurance-vie (« PEA + AV », « CTO + AV ») ; le PEA ne reçoit que la poche actions (et ses classes éligibles). Fonds euros : frais de gestion du contrat seulement, pas de TER.",
+  "a_reverifier": "Un repère est « a_reverifier » si sa date_fin est passée ou si Reperes.aVerifier le signale (vérifié il y a plus de 180 jours) : les attendus « *_contient » donnent les clés qui doivent y être, d'autres peuvent s'y ajouter.",
+  "frais_inconnus": "Frais d'une enveloppe que la personne n'a pas et dont elle ne connaît pas les frais : 0 % des deux côtés pour l'enjeu des cartes (comparaison fiscale pure, dite sur la carte) ; le détail les demande et donne les frais de seuil. Les cas de cette fixture donnent tous des frais explicites.",
+  "matelas": "Dépenses de référence D : Budget.reference (bloc essentiels, BUD1) → budget prévu (lignes « depense », mensualisées, hors épargne) → config.cushion.depenses (mode « months ») → manquant. Mois de la convention : 9 si revenus « independant » ou « sans » ; 6 si « variables », un seul adulte à revenu ou des enfants à charge ; 3 sinon (« fonctionnaire » ou « cdi », deux revenus) ; la réponse « mois » (3 à 12) l'emporte. Cible M* = mois × D + dépense prévue. Actuel = Calc.matelasDisponible (livrets + comptes courants au-delà d'une réserve de reserve_mois × D, 1 mois par défaut). Surplus = max(0, actuel − M*), manque = max(0, M* − actuel), mois pour combler = ⌈manque / capacité⌉. LEP possible si RFR de l'avis ≤ lep_rfr_1_part + n_demi × lep_rfr_demi_part_sup + n_quart × lep_rfr_quart_part_sup (parts de la réponse) ; un LEP par adulte du foyer fiscal (deux si union « joint »). Ordre = répartition de la cible : LEP (p1 puis p2, ≤ lep_plafond chacun) si possible, puis Livret A (≤ livret_a_plafond, par titulaire), puis LDDS. Gain d'ordre annuel = Σ (taux de la cible − taux d'aujourd'hui) × la part de l'argent déjà détenu (min(actuel, M*)) qui change de livret, aux taux d'aujourd'hui.",
+  "centile": "valeur de rang ⌈p × N⌉ des valeurs triées (1-indexé), comme projection-cas.json.",
+  "tolerance": "nombre : écart absolu en euros (ou dans l'unité du champ) ; 0 : égalité ; tolerance_t_star_pct / tolerance_frais_seuil_pct : en points de pourcentage.",
+  "prerempli": "Clés de préremplissage des questions : zero, capacite, capacite_x_part_actions, horizon_objectif, horizon_objectif_actions, destination_actions, tmi, objectif_rp, statut_risque, mois_convention, cinq, compte_titres, part_fonds_euros_cible, maintenant, non. Toujours depuis les données de Boussole, jamais par le LLM."
+ },
+ "reperes": [
+  {
+   "cle": "lep_rfr_demi_part_sup",
+   "libelle": "LEP : majoration du plafond de revenu fiscal de référence par demi-part supplémentaire (métropole, 2026)",
+   "valeur": 6149,
+   "unite": "€",
+   "dateEffet": "2026-01-01",
+   "dateFin": "2026-12-31",
+   "sourceTitre": "Service-public — Livret d'épargne populaire (LEP)",
+   "sourceUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2367",
+   "verifieLe": "2026-10-15",
+   "statut": "V"
+  },
+  {
+   "cle": "lep_rfr_quart_part_sup",
+   "libelle": "LEP : majoration du plafond de revenu fiscal de référence par quart de part supplémentaire (métropole, 2026)",
+   "valeur": 3075,
+   "unite": "€",
+   "dateEffet": "2026-01-01",
+   "dateFin": "2026-12-31",
+   "sourceTitre": "Service-public — Livret d'épargne populaire (LEP)",
+   "sourceUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2367",
+   "verifieLe": "2026-10-15",
+   "statut": "V"
+  },
+  {
+   "cle": "per_plafond_taux_revenus",
+   "libelle": "Plafond de déduction épargne retraite d'un salarié : part des revenus d'activité nets de frais de l'année précédente",
+   "valeur": 10,
+   "unite": "%",
+   "dateEffet": "2026-01-01",
+   "dateFin": null,
+   "sourceTitre": "Service-public — Plafond de déduction de l'épargne retraite",
+   "sourceUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709",
+   "verifieLe": "2026-10-15",
+   "statut": "V"
+  },
+  {
+   "cle": "scn_matelas_mois_stable",
+   "libelle": "Matelas : mois de dépenses essentielles, deux revenus stables (convention Boussole)",
+   "valeur": 3,
+   "unite": "mois",
+   "dateEffet": "2026-10-15",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN1 § 7.4 et § 8.4 ; repère public : 2 à 6 mois de revenus, Banque de France, mesquestionsdargent.fr)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md",
+   "verifieLe": "2026-10-15",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_matelas_mois_fragile",
+   "libelle": "Matelas : mois de dépenses essentielles, un seul revenu, enfants à charge ou revenus variables (convention Boussole)",
+   "valeur": 6,
+   "unite": "mois",
+   "dateEffet": "2026-10-15",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN1 § 7.4 et § 8.4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md",
+   "verifieLe": "2026-10-15",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_matelas_mois_independant",
+   "libelle": "Matelas : mois de dépenses essentielles, indépendant, chef d'entreprise ou sans revenu d'activité (convention Boussole)",
+   "valeur": 9,
+   "unite": "mois",
+   "dateEffet": "2026-10-15",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN1 § 7.4 et § 8.4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md",
+   "verifieLe": "2026-10-15",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_matelas_ecart_pct",
+   "libelle": "Matelas : écart à la cible qui met la carte « pour toi » (convention Boussole)",
+   "valeur": 25,
+   "unite": "%",
+   "dateEffet": "2026-10-15",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN1 § 8.4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md",
+   "verifieLe": "2026-10-15",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_delai_ouverture_mois",
+   "libelle": "Délai supposé entre la décision et l'ouverture d'une enveloppe (convention Boussole)",
+   "valeur": 1,
+   "unite": "mois",
+   "dateEffet": "2026-10-15",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN1 § 7.1 et § 8.4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md",
+   "verifieLe": "2026-10-15",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_enjeu_min_eur_an",
+   "libelle": "Enjeu en dessous duquel une carte n'entre pas dans « Pour toi » (convention Boussole)",
+   "valeur": 30,
+   "unite": "€",
+   "dateEffet": "2026-10-15",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN1 § 8.4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md",
+   "verifieLe": "2026-10-15",
+   "statut": "CONV"
+  }
+ ],
+ "textes": [
+  {
+   "cle": "pea_regles",
+   "titre": "PEA : versements, retraits, clôture",
+   "texte": "Pas de versement minimum légal. Un seul PEA classique par personne. Avant la fin de la 5ᵉ année, tout retrait clôture le plan, sauf exceptions prévues par la loi (licenciement, invalidité, mise à la retraite anticipée du titulaire ou de son conjoint ou partenaire de Pacs, liquidation judiciaire de son entreprise, création ou reprise d'entreprise avec réinvestissement dans les 3 mois). Après 5 ans, un retrait partiel ne clôture plus le plan ; les gains sont exonérés d'impôt sur le revenu, les prélèvements sociaux restent dus. La date d'ouverture du plan est celle du premier versement.",
+   "source_titre": "Service-public — Plan d'épargne en actions (PEA), F2385",
+   "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2385",
+   "page_verifiee_le": "2026-05-22",
+   "relu_le": "2026-10-15"
+  },
+  {
+   "cle": "pea_fiscalite",
+   "titre": "PEA : imposition des gains",
+   "texte": "Avant 5 ans, le gain net est imposé à 12,8 % (ou au barème sur option) ; après 5 ans, il est exonéré d'impôt sur le revenu. Le délai de 5 ans court à partir de la date d'ouverture du plan. Les prélèvements sociaux sont dus quelle que soit la date du retrait (taux du cas général, 18,6 % depuis le 1er janvier 2026 : le PEA n'est pas dans la liste des placements restés à 17,2 %).",
+   "source_titre": "Service-public — Revenus d'un PEA, F22449 ; prélèvements sociaux, F2329",
+   "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F22449",
+   "page_verifiee_le": "2026-04-15",
+   "relu_le": "2026-10-15",
+   "autres_sources": [
+    {
+     "titre": "Service-public — Prélèvements sociaux sur les revenus du capital, F2329 (vérifiée le 30 juin 2026)",
+     "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2329"
+    }
+   ]
+  },
+  {
+   "cle": "pea_frais_plafonds",
+   "titre": "PEA : plafonds réglementaires des frais",
+   "texte": "Les frais d'un PEA sont plafonnés par la loi : ouverture 10 € au plus ; tenue de compte et garde 0,4 % par an de la valeur des titres, plus 5 € par ligne (25 € pour une ligne non cotée) ; ordres de bourse 0,5 % du montant par internet, 1,2 % autrement ; transfert 15 € par ligne (50 € non cotée), 150 € au plus. Les montants en euros sont revalorisés tous les trois ans selon l'indice des prix hors tabac. Ce sont des plafonds, pas les frais de ton établissement : Boussole ne suppose aucun frais, il calcule les frais au-delà desquels le PEA passe derrière.",
+   "source_titre": "Légifrance — Code monétaire et financier, art. D221-111-1 (version en vigueur depuis le 15/07/2021)",
+   "source_url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043790337",
+   "page_verifiee_le": null,
+   "relu_le": "2026-10-15",
+   "comportement": "Texte seul (aucun repère) : les montants revalorisés depuis 2021 n'ont pas été trouvés sur une source officielle. Le calcul ne suppose aucun frais : il rend les frais de seuil (spec § 8.3)."
+  },
+  {
+   "cle": "av_fiscalite",
+   "titre": "Assurance-vie : imposition des gains au rachat",
+   "texte": "Primes versées depuis le 27 septembre 2017. Avant 8 ans : 12,8 % (ou barème). Après 8 ans : abattement annuel de 4 600 € (9 200 € pour un couple soumis à imposition commune), tous contrats confondus, puis 7,5 % tant que les primes nettes de tous les contrats restent sous 150 000 €, 12,8 % sur la fraction au-delà. L'abattement s'impute d'abord sur les produits des primes versées jusqu'au 26 septembre 2017, puis sur la fraction imposable à 7,5 %, puis sur celle à 12,8 %. Prélèvements sociaux : 17,2 %.",
+   "source_titre": "Service-public — Fiscalité de l'assurance-vie, F22414 ; BOFiP BOI-RPPM-RCM-20-10-20-50 § 285 à 288",
+   "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F22414",
+   "page_verifiee_le": "2026-04-15",
+   "relu_le": "2026-10-15",
+   "autres_sources": [
+    {
+     "titre": "BOFiP — BOI-RPPM-RCM-20-10-20-50 (30/06/2022), § 285 à 288 : ordre d'imputation de l'abattement",
+     "url": "https://bofip.impots.gouv.fr/bofip/3951-PGP.html/identifiant=BOI-RPPM-RCM-20-10-20-50-20220630"
+    }
+   ]
+  },
+  {
+   "cle": "av_duree_contrat",
+   "titre": "Assurance-vie : point de départ des 8 ans",
+   "texte": "Pour un contrat souscrit depuis le 1er janvier 1990, la durée retenue est la durée effective du contrat, du premier versement jusqu'au rachat, quelles que soient les modalités de paiement des primes : une prime versée plus tard profite de l'ancienneté du contrat. La condition de 8 ans s'apprécie à la date du rachat.",
+   "source_titre": "BOFiP — BOI-RPPM-RCM-30-10-20-20 (30/06/2022) § 120 ; BOI-RPPM-RCM-20-10-20-50 (30/06/2022) § 190 et § 230",
+   "source_url": "https://bofip.impots.gouv.fr/bofip/9312-PGP.html/identifiant=BOI-RPPM-RCM-30-10-20-20-20220630",
+   "page_verifiee_le": null,
+   "relu_le": "2026-10-15",
+   "comportement": "Confirmé : le calcul fait courir les 8 ans depuis l'ouverture du contrat (règle du moteur), pour toutes les primes ; le scénario 12 peut être publié."
+  },
+  {
+   "cle": "av_transformation_meme_assureur",
+   "titre": "Assurance-vie : transformer un contrat chez le même assureur",
+   "texte": "La transformation partielle ou totale d'un contrat d'assurance-vie en un contrat permettant d'affecter une part ou l'intégralité des primes à des unités de compte (ou à une provision de diversification), par avenant ou par la souscription d'un nouveau contrat auprès de la même entreprise d'assurance, n'entraîne pas les conséquences fiscales d'un dénouement : le contrat garde son ancienneté. Le texte ne vise que la même entreprise d'assurance. Les conditions pratiques (frais, supports proposés) sont celles de ton contrat : c'est ton assureur qui les donne.",
+   "source_titre": "Légifrance — Code général des impôts, art. 125-0 A, I, 2° (version en vigueur depuis le 01/01/2022)",
+   "source_url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044989424",
+   "page_verifiee_le": null,
+   "relu_le": "2026-10-15",
+   "comportement": "Vérifié : le paragraphe « transfert » du scénario 12 peut être affiché, sans dire qu'un transfert vers un autre assureur garderait l'ancienneté."
+  },
+  {
+   "cle": "per_sortie",
+   "titre": "PER : imposition de la sortie",
+   "texte": "Sortie en capital des versements déduits : au barème de l'impôt sur le revenu, sans l'abattement de 10 % et sans prélèvements sociaux ; les gains au prélèvement forfaitaire unique, 31,4 % pour les intérêts acquis depuis le 1er janvier 2026 (12,8 % + 18,6 %). Achat de la résidence principale : la part versements déduits est imposée de même mais exonérée de prélèvements sociaux, les gains au prélèvement forfaitaire unique. Accidents de la vie : part versements exonérée ; les gains supportent les prélèvements sociaux. Versements non déduits : la part versements est exonérée. Sortie en rente : imposée comme une pension (abattement de 10 % plafonné), prélèvements sociaux sur une fraction selon l'âge au premier versement (70 %, 50 %, 40 %, 30 %) — non calculée en V1 (D6).",
+   "source_titre": "Service-public — Plan d'épargne retraite (PER), sortie, F34982",
+   "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F34982",
+   "page_verifiee_le": "2026-10-12",
+   "relu_le": "2026-10-15"
+  },
+  {
+   "cle": "per_plafond",
+   "titre": "PER : plafond de déduction et ordre d'imputation",
+   "texte": "Le plafond de déduction d'un salarié pour les versements de 2026 est égal à 10 % des revenus d'activité de 2025 nets de frais professionnels, au plus 37 680 €, ou 4 710 € si ce montant est plus élevé ; il figure sur l'avis d'impôt. Les plafonds non utilisés se reportent sur les 5 années suivantes pour les plafonds de 2026 et après, sur 3 ans pour ceux de 2024 et 2025. Les versements de l'année s'imputent d'abord sur le plafond de l'année, puis sur les plafonds reportés, du plus ancien au plus récent. Les époux ou partenaires de Pacs soumis à imposition commune peuvent mutualiser leurs plafonds, sur demande dans la déclaration. À partir de 70 ans, les versements ne sont plus déductibles.",
+   "source_titre": "Service-public — Plafond de déduction de l'épargne retraite, F14709 ; Légifrance — CGI art. 163 quatervicies (version du 21/02/2026)",
+   "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709",
+   "page_verifiee_le": "2026-04-15",
+   "relu_le": "2026-10-15",
+   "autres_sources": [
+    {
+     "titre": "Légifrance — CGI art. 163 quatervicies, I, 2, b (« au cours de l'une des cinq années suivantes ») : l'article ne fixe pas l'ordre d'imputation, F14709 le donne",
+     "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038836248/"
+    }
+   ],
+   "comportement": "Ordre vérifié : le module détaille l'année d'imputation (cas PER-4)."
+  },
+  {
+   "cle": "lep_conditions",
+   "titre": "LEP : conditions",
+   "texte": "Un seul LEP par contribuable ; deux dans un même foyer fiscal quand les époux ou partenaires de Pacs soumis à imposition commune en détiennent chacun un. Revenu fiscal de référence (métropole, 2026) au plus : 23 028 € pour 1 part, + 6 149 € par demi-part et + 3 075 € par quart de part supplémentaires (2 parts : 35 326 €). La banque regarde le revenu fiscal de référence de l'avant-dernière ou de la dernière année. Plafond des versements : 10 000 € ; taux 2,5 % ; intérêts exonérés d'impôt et de prélèvements sociaux.",
+   "source_titre": "Service-public — Livret d'épargne populaire (LEP), F2367",
+   "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2367",
+   "page_verifiee_le": "2026-08-01",
+   "relu_le": "2026-10-15"
+  },
+  {
+   "cle": "livrets_plafonds",
+   "titre": "Livret A et LDDS",
+   "texte": "Livret A : un seul par personne, plafond 22 950 €, taux 1,7 % du 1er août 2026 au 31 janvier 2027. LDDS : plafond 12 000 €, même taux.",
+   "source_titre": "Service-public — Livret A, F2365 ; LDDS, F2368",
+   "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2365",
+   "page_verifiee_le": "2026-08-01",
+   "relu_le": "2026-10-15"
+  },
+  {
+   "cle": "epargne_precaution_reperes_publics",
+   "titre": "Épargne de précaution : le repère public",
+   "texte": "Le portail public de l'éducation financière de la Banque de France indique qu'il est admis que l'épargne de précaution corresponde à 2 à 6 mois de revenus, plus généralement 3 mois ; que compter en mois de dépenses essentielles est moins protecteur ; que les besoins varient selon la composition du foyer et la régularité des revenus ; et qu'elle se place sur un support sûr et disponible (livrets réglementés). Le guide de l'AMF donne la même fourchette de 2 à 6 mois de revenus.",
+   "source_titre": "Banque de France — mesquestionsdargent.fr, « Une épargne de précaution : pourquoi et comment faire ? » (page datée du 17/08/2025)",
+   "source_url": "https://www.mesquestionsdargent.fr/epargne-et-placements/epargne-de-precaution",
+   "page_verifiee_le": "2025-08-17",
+   "relu_le": "2026-10-15",
+   "autres_sources": [
+    {
+     "titre": "AMF — Se constituer une épargne de précaution (2023)",
+     "url": "https://www.amf-france.org/sites/institutionnel/files/private/2023-12/2023_se_constituer_une_epargne_de_precaution.pdf"
+    }
+   ],
+   "comportement": "Source officielle trouvée (la spec disait le contraire) : les mois restent une convention de Boussole (D12) exprimée en dépenses essentielles, mais l'écran cite ce repère public et dit que compter en dépenses est moins protecteur ; la cible en mois de revenus (3 × revenus nets) est montrée à côté."
+  }
+ ],
+ "verifications_phase0": [
+  {
+   "point": "LEP : plafonds de revenu fiscal de référence (F2367)",
+   "resultat": "confirmé",
+   "valeurs": "1 part 23 028 € ; 1,25 part 26 103 € ; 1,5 part 29 177 € ; 1,75 part 32 252 € ; 2 parts 35 326 € ; + 6 149 € par demi-part, + 3 075 € par quart de part ; contrôle arithmétique fait sur 23 lignes du tableau (1 à 6 parts)",
+   "source": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2367",
+   "page": "vérifiée le 01/08/2026",
+   "relu_le": "2026-10-15"
+  },
+  {
+   "point": "PER : plafond salarié (F14709)",
+   "resultat": "confirmé",
+   "valeurs": "10 % des revenus d'activité 2025 nets de frais, maximum 37 680 €, plancher 4 710 € ; report 5 ans (plafonds depuis 2026), 3 ans (2024, 2025) ; fin de déduction à 70 ans",
+   "source": "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709",
+   "page": "vérifiée le 15/04/2026",
+   "relu_le": "2026-10-15",
+   "remarque": "La section 2025 de la page garde l'ancienne rédaction (revenus 2024) : sans effet sur les repères 2026."
+  },
+  {
+   "point": "PER : ordre d'imputation des plafonds reportés",
+   "resultat": "confirmé (F14709)",
+   "valeurs": "plafond de l'année d'abord, puis plafonds reportés du plus ancien au plus récent ; l'article 163 quatervicies du CGI (Légifrance, version du 21/02/2026) fixe le report sur 5 ans sans fixer l'ordre",
+   "source": "https://www.service-public.gouv.fr/particuliers/vosdroits/F14709",
+   "relu_le": "2026-10-15"
+  },
+  {
+   "point": "PEA, assurance-vie, PER : règles de sortie (F2385, F22449, F22414, F34982, F2329)",
+   "resultat": "confirmé",
+   "valeurs": "PEA 12,8 % avant 5 ans, 0 après, prélèvements sociaux 18,6 % ; assurance-vie 12,8 % avant 8 ans, abattement 4 600 / 9 200 €, 7,5 % sous 150 000 €, prélèvements 17,2 % ; PER capital : barème sur les versements déduits sans abattement de 10 % ni prélèvements sociaux, 31,4 % sur les gains",
+   "source": "https://www.service-public.gouv.fr/particuliers/vosdroits/F22414",
+   "relu_le": "2026-10-15",
+   "remarque": "F2385 ajoute la liquidation judiciaire aux exceptions à la clôture : texte pea_regles complété."
+  },
+  {
+   "point": "PEA : plafonds des frais (CMF art. D221-111-1)",
+   "resultat": "trouvé, texte seul",
+   "valeurs": "ouverture 10 € ; garde 0,4 %/an + 5 € par ligne ; ordres 0,5 % en ligne, 1,2 % autrement ; transfert 15 € par ligne, 150 € au plus ; montants en euros revalorisés tous les 3 ans (montants revalorisés non trouvés)",
+   "source": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043790337",
+   "relu_le": "2026-10-15",
+   "comportement": "aucun frais supposé : frais de seuil (spec § 8.3, inchangé)"
+  },
+  {
+   "point": "Assurance-vie : transformation chez le même assureur (loi Pacte)",
+   "resultat": "confirmé",
+   "valeurs": "CGI art. 125-0 A, I, 2° : transformation par avenant ou nouveau contrat auprès de la même entreprise d'assurance, sans les conséquences fiscales d'un dénouement",
+   "source": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044989424",
+   "relu_le": "2026-10-15",
+   "comportement": "paragraphe affiché (texte av_transformation_meme_assureur)"
+  },
+  {
+   "point": "Assurance-vie : point de départ des 8 ans pour les primes versées après l'ouverture",
+   "resultat": "confirmé",
+   "valeurs": "durée effective du contrat depuis le premier versement, quelles que soient les modalités de paiement des primes (contrats depuis 1990)",
+   "source": "https://bofip.impots.gouv.fr/bofip/9312-PGP.html/identifiant=BOI-RPPM-RCM-30-10-20-20-20220630",
+   "relu_le": "2026-10-15",
+   "comportement": "le scénario 12 n'est pas bloqué"
+  },
+  {
+   "point": "Durée de l'épargne de précaution",
+   "resultat": "source officielle trouvée",
+   "valeurs": "Banque de France (mesquestionsdargent.fr, 17/08/2025) : 2 à 6 mois de revenus, plus généralement 3 mois ; en mois de dépenses essentielles, « moins protecteur » ; AMF : 2 à 6 mois de revenus",
+   "source": "https://www.mesquestionsdargent.fr/epargne-et-placements/epargne-de-precaution",
+   "relu_le": "2026-10-15",
+   "comportement": "D12 maintenue (convention dite, en dépenses essentielles), avec le repère public cité et la cible en revenus montrée à côté"
+  },
+  {
+   "point": "Livret A, LDDS (F2365, F2368)",
+   "resultat": "confirmé",
+   "valeurs": "plafonds 22 950 € et 12 000 €, taux 1,7 % du 01/08/2026 au 31/01/2027",
+   "source": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2365",
+   "relu_le": "2026-10-15"
+  }
+ ],
+ "foyer_base": {
+  "today": "2026-10-15",
+  "positions": [
+   {
+    "id": "cc",
+    "name": "Compte courant",
+    "envelope": "Compte courant Exemple",
+    "owner": "commun",
+    "bloc": "Comptes courants",
+    "mode": "manual",
+    "value": 2000,
+    "valueDate": "2026-09-30",
+    "status": "actif"
+   },
+   {
+    "id": "la",
+    "name": "Livret A",
+    "envelope": "Livret A Exemple",
+    "owner": "p1",
+    "bloc": "Livrets",
+    "mode": "manual",
+    "value": 16000,
+    "valueDate": "2026-09-30",
+    "status": "actif"
+   }
+  ],
+  "instruments": [],
+  "config": {
+   "enveloppes_infos": {
+    "Compte courant Exemple": {
+     "type": "courant",
+     "titulaire": "commun"
+    },
+    "Livret A Exemple": {
+     "type": "livret_a",
+     "titulaire": "p1",
+     "source": "relevé (exemple)",
+     "le": "2026-09-30"
+    }
+   },
+   "cushion": {
+    "mode": "amount",
+    "min": 6000
+   },
+   "targets": {
+    "actions": 60,
+    "fonds_euros": 40
+   },
+   "projection": {
+    "base_capacite": "montant",
+    "capacite_mensuelle": 500,
+    "reste_capacite": "disponible",
+    "tmi_pct": 30,
+    "salaire_croissance_reelle_pct": 0,
+    "source": "cas fictif",
+    "le": "2026-10-15"
+   },
+   "avis_impot": {
+    "annee_revenus": 2025,
+    "rfr": 33000,
+    "plafonds_per": {
+     "p1": [
+      {
+       "annee": 2026,
+       "montant": 4710
+      }
+     ],
+     "p2": [
+      {
+       "annee": 2026,
+       "montant": 4710
+      }
+     ]
+    },
+    "source": "avis d'impôt 2026 (exemple)",
+    "le": "2026-09-01"
+   }
+  },
+  "profil": {
+   "foyer": {
+    "adultes": 2,
+    "enfants": 0,
+    "enfants14": 0,
+    "union": "joint",
+    "tmi": 30
+   },
+   "personnes": {
+    "p1": {
+     "nom": "Camille",
+     "naissance": "1990-03-15",
+     "salaire": 2600,
+     "salaireUnite": "nm"
+    },
+    "p2": {
+     "nom": "Sam",
+     "naissance": "1988-07-15",
+     "salaire": 2400,
+     "salaireUnite": "nm"
+    }
+   },
+   "credits": [],
+   "biens": []
+  },
+  "risque": {
+   "reponses": {
+    "revenus": "cdi"
+   }
+  },
+  "credits": [],
+  "biens": [],
+  "budget": {
+   "lignes": [
+    {
+     "id": "r1",
+     "type": "revenu",
+     "categorie": "Revenus",
+     "libelle": "Salaires",
+     "montant": 5000,
+     "frequence": "mois"
+    },
+    {
+     "id": "d1",
+     "type": "depense",
+     "categorie": "Logement",
+     "libelle": "Loyer",
+     "montant": 900,
+     "frequence": "mois"
+    },
+    {
+     "id": "d2",
+     "type": "depense",
+     "categorie": "Vie courante",
+     "libelle": "Dépenses courantes",
+     "montant": 1100,
+     "frequence": "mois"
+    },
+    {
+     "id": "e1",
+     "type": "epargne",
+     "categorie": "Épargne",
+     "libelle": "Épargne",
+     "montant": 500,
+     "frequence": "mois"
+    }
+   ]
+  },
+  "banque": null,
+  "objectifs": [],
+  "foyer": {
+   "evenements": [],
+   "variantes": []
+  }
+ },
+ "catalogue": [
+  {
+   "cle": "ouvrir_pea",
+   "numero": 1,
+   "theme": "placements",
+   "question": "Faut-il que j'ouvre un PEA, même petit ?",
+   "resume": "Boussole compare, sur tes versements en actions, un PEA ouvert maintenant et ce que tu fais aujourd'hui : gain après impôts en euros d'aujourd'hui, date à partir de laquelle le PEA prend l'avantage, frais au-delà desquels il passe derrière, et valeur de « prendre date » avec un petit versement.",
+   "pertinence": {
+    "sans_enveloppe": [
+     "pea"
+    ],
+    "un_de": [
+     {
+      "capacite_min": 1
+     },
+     {
+      "surplus_matelas": true
+     }
+    ],
+    "age_min": 18
+   },
+   "donnees": [
+    {
+     "champ": "enveloppes",
+     "libelle": "Tes enveloppes et leurs dates d'ouverture",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "capacite",
+     "libelle": "Ta capacité d'épargne",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "targets",
+     "libelle": "Ton allocation cible",
+     "origine": "boussole",
+     "obligatoire": false
+    },
+    {
+     "champ": "objectifs",
+     "libelle": "Tes objectifs et leurs dates",
+     "origine": "boussole",
+     "obligatoire": false
+    }
+   ],
+   "questions": [
+    {
+     "id": "versement_initial",
+     "type": "montant_eur",
+     "libelle": "Versement de départ",
+     "aide": "0 si tu commences par des versements mensuels.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 150000,
+     "prerempli": "zero"
+    },
+    {
+     "id": "versement_mensuel",
+     "type": "montant_eur",
+     "libelle": "Versement mensuel en actions",
+     "aide": "Prérempli : ta capacité d'épargne × la part actions de ton allocation cible.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 10000,
+     "prerempli": "capacite_x_part_actions"
+    },
+    {
+     "id": "debut",
+     "type": "choix",
+     "libelle": "Début des versements",
+     "aide": "Tu peux ouvrir maintenant avec un petit versement et verser plus tard.",
+     "obligatoire": true,
+     "options": [
+      "maintenant",
+      "plus_tard"
+     ],
+     "prerempli": "maintenant"
+    },
+    {
+     "id": "debut_date",
+     "type": "date",
+     "libelle": "Si plus tard : à partir de quand ?",
+     "aide": "Le premier versement mensuel.",
+     "obligatoire": false
+    },
+    {
+     "id": "horizon_ans",
+     "type": "entier",
+     "libelle": "Dans combien d'années penses-tu retirer cet argent ?",
+     "aide": "Prérempli : ton objectif le plus proche placé en actions, sinon 10 ans (convention).",
+     "obligatoire": true,
+     "min": 1,
+     "max": 40,
+     "prerempli": "horizon_objectif_actions"
+    },
+    {
+     "id": "frais_pea_pct",
+     "type": "pourcentage",
+     "libelle": "Frais annuels du PEA, si tu les connais",
+     "aide": "Droits de garde et frais de tenue, en % par an. Sinon, Boussole calcule les frais au-delà desquels le PEA passe derrière.",
+     "obligatoire": false,
+     "min": 0,
+     "max": 3
+    },
+    {
+     "id": "destination_actuelle",
+     "type": "choix",
+     "libelle": "Où vont ces versements aujourd'hui ?",
+     "aide": "Sert de point de comparaison.",
+     "obligatoire": true,
+     "options": [
+      "compte_titres",
+      "assurance_vie",
+      "livret",
+      "courant"
+     ],
+     "prerempli": "destination_actions"
+    }
+   ],
+   "reperes": [
+    "pea_duree_ans",
+    "pea_plafond",
+    "ir_taux_forfaitaire",
+    "ps_taux_general",
+    "inflation_hypothese",
+    "rendement_central_actions",
+    "scn_delai_ouverture_mois",
+    "suivi_horizon_suppose_ans"
+   ],
+   "calcul": "ouvrirPea",
+   "version_calcul": "scn-1.0.0",
+   "ouverture": {
+    "donnees": [
+     "capacite_positive"
+    ],
+    "copilote": true
+   },
+   "garde_fous": "Ne cite aucun établissement, aucun courtier ni aucun produit, et ne dis jamais lequel choisir : parle de frais, de fiscalité, de liquidité et de plafond. Ne dis pas qu'un PEA « rapporte » plus : c'est la même allocation, seule la fiscalité et les frais changent. Rappelle qu'un retrait avant 5 ans clôture le plan, sauf exceptions prévues par la loi. N'ouvre rien et ne verse rien : c'est la personne qui le fait.",
+   "evals": [
+    "PEA-1",
+    "PEA-2",
+    "PEA-3",
+    "PEA-4",
+    "PEA-6",
+    "SCN-PEA-1"
+   ],
+   "version": 1,
+   "statut": "publie",
+   "changelog": "v1 : premier lot SCN1."
+  },
+  {
+   "cle": "prochain_euro",
+   "numero": 2,
+   "theme": "placements",
+   "question": "Assurance-vie, PEA ou PER : où mettre mon prochain euro ?",
+   "resume": "Boussole compare, pour le même effort d'épargne et la même allocation, une assurance-vie, un PEA complété d'une assurance-vie, un PER et un compte-titres, nets de frais et d'impôts de sortie à ton horizon, en euros d'aujourd'hui, et dit ce qui changerait le classement.",
+   "pertinence": {
+    "un_de": [
+     {
+      "capacite_min": 1
+     },
+     {
+      "surplus_matelas": true
+     }
+    ],
+    "age_min": 18
+   },
+   "donnees": [
+    {
+     "champ": "enveloppes",
+     "libelle": "Tes enveloppes, leurs frais et dates d'ouverture",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "capacite",
+     "libelle": "Ta capacité d'épargne",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "targets",
+     "libelle": "Ton allocation cible",
+     "origine": "boussole",
+     "obligatoire": false
+    },
+    {
+     "champ": "tmi",
+     "libelle": "Ta tranche marginale d'imposition",
+     "origine": "boussole",
+     "obligatoire": false
+    },
+    {
+     "champ": "avis_impot",
+     "libelle": "Ton plafond épargne retraite",
+     "origine": "boussole",
+     "obligatoire": false
+    }
+   ],
+   "questions": [
+    {
+     "id": "versement_mensuel",
+     "type": "montant_eur",
+     "libelle": "Montant mensuel",
+     "aide": "Prérempli : ta capacité d'épargne.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 10000,
+     "prerempli": "capacite"
+    },
+    {
+     "id": "versement_initial",
+     "type": "montant_eur",
+     "libelle": "Versement de départ",
+     "aide": "0 si aucun.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 1000000,
+     "prerempli": "zero"
+    },
+    {
+     "id": "horizon_ans",
+     "type": "entier",
+     "libelle": "Pour quel horizon ?",
+     "aide": "Prérempli depuis tes objectifs.",
+     "obligatoire": true,
+     "min": 1,
+     "max": 40,
+     "prerempli": "horizon_objectif"
+    },
+    {
+     "id": "retrait_avant",
+     "type": "booleen",
+     "libelle": "As-tu besoin de pouvoir retirer avant cet horizon ?",
+     "aide": "Si oui, le PER est écarté.",
+     "obligatoire": true,
+     "prerempli": "non"
+    },
+    {
+     "id": "tmi_retraite_pct",
+     "type": "choix",
+     "libelle": "Ta tranche d'imposition attendue à la retraite",
+     "aide": "Sert seulement si le PER est en jeu.",
+     "obligatoire": false,
+     "options": [
+      0,
+      11,
+      30,
+      41,
+      45,
+      "ne_sait_pas"
+     ]
+    },
+    {
+     "id": "date_retraite",
+     "type": "date",
+     "libelle": "Date de départ à la retraite envisagée",
+     "aide": "Aucune valeur par défaut (D7). Sert seulement si le PER est en jeu.",
+     "obligatoire": false
+    },
+    {
+     "id": "transmission",
+     "type": "booleen",
+     "libelle": "La transmission compte-t-elle pour toi ?",
+     "aide": "Ligne d'information, sans calcul en V1.",
+     "obligatoire": false
+    }
+   ],
+   "reperes": [
+    "ir_taux_forfaitaire",
+    "ps_taux_general",
+    "ps_taux_av_epargne_logement",
+    "pea_duree_ans",
+    "pea_plafond",
+    "av_duree_ans",
+    "av_taux_ir_reduit",
+    "av_seuil_versements",
+    "av_abattement_seul",
+    "av_abattement_couple",
+    "av_990i_abattement",
+    "av_age_seuil",
+    "per_plafond_plancher",
+    "per_plafond_max",
+    "per_plafond_taux_revenus",
+    "inflation_hypothese",
+    "rendement_central_actions",
+    "rendement_central_fonds_euros",
+    "rendement_central_obligations"
+   ],
+   "calcul": "prochainEuro",
+   "version_calcul": "scn-1.0.0",
+   "ouverture": {
+    "donnees": [
+     "capacite_positive"
+    ],
+    "copilote": true
+   },
+   "garde_fous": "Ne cite aucun établissement ni aucun produit et ne classe aucune offre ; compare des enveloppes. Ne présente jamais l'arbre de décision comme une règle générale : c'est le résultat du calcul sur ces données. Une option écartée reste affichée avec sa raison. Ne promets aucun rendement : la bande P10–P90 accompagne chaque chiffre. N'ouvre rien et ne verse rien : c'est la personne qui le fait.",
+   "evals": [
+    "EUR-1",
+    "EUR-2",
+    "EUR-3",
+    "EUR-4",
+    "EUR-5",
+    "SCN-EUR-1"
+   ],
+   "version": 1,
+   "statut": "publie",
+   "changelog": "v1 : premier lot SCN1."
+  },
+  {
+   "cle": "per_interet",
+   "numero": 3,
+   "theme": "retraite",
+   "question": "Le PER est-il intéressant pour moi ?",
+   "resume": "Boussole calcule ton économie d'impôt avec ton plafond, puis compare un PER et une assurance-vie à effort net égal jusqu'à ta retraite, pour plusieurs tranches d'imposition à la sortie, et donne la tranche à partir de laquelle l'assurance-vie fait mieux.",
+   "pertinence": {
+    "revenus_activite": true,
+    "age_sous_repere": "per_age_fin_deduction",
+    "tmi_min": 11
+   },
+   "donnees": [
+    {
+     "champ": "tmi",
+     "libelle": "Ta tranche marginale d'imposition",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "avis_impot",
+     "libelle": "Ton plafond épargne retraite (avis d'impôt)",
+     "origine": "boussole",
+     "obligatoire": false
+    },
+    {
+     "champ": "revenus",
+     "libelle": "Tes revenus d'activité",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "objectifs",
+     "libelle": "Un projet d'achat de ta résidence principale",
+     "origine": "boussole",
+     "obligatoire": false
+    }
+   ],
+   "questions": [
+    {
+     "id": "versement_mensuel",
+     "type": "montant_eur",
+     "libelle": "Effort d'épargne mensuel envisagé",
+     "aide": "Ce que tu es prêt à mettre de côté chaque mois, après économie d'impôt.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 10000,
+     "prerempli": "capacite"
+    },
+    {
+     "id": "tmi_pct",
+     "type": "choix",
+     "libelle": "Ta tranche marginale d'imposition aujourd'hui",
+     "aide": "Sur ton avis d'impôt.",
+     "obligatoire": true,
+     "options": [
+      0,
+      11,
+      30,
+      41,
+      45
+     ],
+     "prerempli": "tmi"
+    },
+    {
+     "id": "tmi_retraite_pct",
+     "type": "choix",
+     "libelle": "Ta tranche attendue à la retraite",
+     "aide": "Le tableau montre aussi les autres.",
+     "obligatoire": true,
+     "options": [
+      0,
+      11,
+      30,
+      41,
+      45,
+      "ne_sait_pas"
+     ]
+    },
+    {
+     "id": "date_retraite",
+     "type": "date",
+     "libelle": "Date de départ à la retraite envisagée",
+     "aide": "Aucune valeur par défaut : l'âge légal dépend de ton année de naissance.",
+     "obligatoire": true
+    },
+    {
+     "id": "achat_rp",
+     "type": "booleen",
+     "libelle": "Un projet d'achat de ta résidence principale avant la retraite ?",
+     "aide": "Le PER peut être débloqué pour cet achat.",
+     "obligatoire": false,
+     "prerempli": "objectif_rp"
+    },
+    {
+     "id": "statut",
+     "type": "choix",
+     "libelle": "Salarié ou indépendant ?",
+     "aide": "Indépendant : plafond différent, non calculé en V1.",
+     "obligatoire": true,
+     "options": [
+      "salarie",
+      "independant"
+     ],
+     "prerempli": "statut_risque"
+    }
+   ],
+   "reperes": [
+    "per_plafond_plancher",
+    "per_plafond_max",
+    "per_plafond_taux_revenus",
+    "per_report_ans",
+    "per_report_ans_ancien",
+    "per_age_fin_deduction",
+    "ir_taux_forfaitaire",
+    "ps_taux_general",
+    "ps_taux_av_epargne_logement",
+    "av_duree_ans",
+    "av_taux_ir_reduit",
+    "av_seuil_versements",
+    "av_abattement_seul",
+    "av_abattement_couple",
+    "ir_bareme_11_seuil",
+    "ir_bareme_30_seuil",
+    "ir_bareme_41_seuil",
+    "ir_bareme_45_seuil",
+    "inflation_hypothese",
+    "rendement_central_actions"
+   ],
+   "calcul": "perInteret",
+   "version_calcul": "scn-1.0.0",
+   "ouverture": {
+    "donnees": [
+     "tmi_connue"
+    ],
+    "copilote": true
+   },
+   "garde_fous": "Ne cite aucun établissement ni aucun produit. Ne dis jamais « à 11 %, le PER ne vaut pas le coup » comme une règle : dis le seuil calculé pour cette personne. Rappelle que l'argent est bloqué jusqu'à la retraite, sauf achat de la résidence principale et accidents de la vie. Pour un indépendant, dis que le plafond n'est pas calculé. Ne suppose jamais l'âge de départ à la retraite. N'ouvre rien et ne verse rien : c'est la personne qui le fait.",
+   "evals": [
+    "PER-1",
+    "PER-2",
+    "PER-3",
+    "PER-4",
+    "PER-5",
+    "SCN-PER-1"
+   ],
+   "version": 1,
+   "statut": "publie",
+   "changelog": "v1 : premier lot SCN1."
+  },
+  {
+   "cle": "matelas",
+   "numero": 6,
+   "theme": "epargne",
+   "question": "Combien garder de côté, et où ?",
+   "resume": "Boussole calcule une cible d'épargne de précaution à partir de tes dépenses essentielles, la compare à ce que tu as de disponible, dit dans quel ordre remplir LEP, Livret A et LDDS, et ce que te coûte, ou te rapporte, de garder un surplus de côté.",
+   "pertinence": {
+    "toujours": true,
+    "pour_toi_si": {
+     "un_de": [
+      {
+       "matelas_ecart_pct": 25
+      },
+      {
+       "lep_possible_non_detenu": true
+      }
+     ]
+    }
+   },
+   "donnees": [
+    {
+     "champ": "depenses_essentielles",
+     "libelle": "Tes dépenses essentielles (ou ton budget prévu)",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "matelas",
+     "libelle": "Ton épargne disponible (livrets, comptes courants)",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "revenus_stabilite",
+     "libelle": "La stabilité de tes revenus",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "avis_impot",
+     "libelle": "Ton revenu fiscal de référence",
+     "origine": "boussole",
+     "obligatoire": false
+    }
+   ],
+   "questions": [
+    {
+     "id": "mois",
+     "type": "entier",
+     "libelle": "Combien de mois de dépenses veux-tu garder ?",
+     "aide": "Prérempli selon la stabilité de tes revenus (convention Boussole : 3, 6 ou 9 mois).",
+     "obligatoire": true,
+     "min": 3,
+     "max": 12,
+     "prerempli": "mois_convention"
+    },
+    {
+     "id": "depense_prevue",
+     "type": "montant_eur",
+     "libelle": "Une grosse dépense prévue dans les 12 prochains mois ?",
+     "aide": "0 si aucune.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 200000,
+     "prerempli": "zero"
+    },
+    {
+     "id": "parts_fiscales",
+     "type": "choix",
+     "libelle": "Nombre de parts de ton avis d'impôt",
+     "aide": "Sert à savoir si tu peux ouvrir un LEP.",
+     "obligatoire": false,
+     "options": [
+      1,
+      1.25,
+      1.5,
+      1.75,
+      2,
+      2.25,
+      2.5,
+      2.75,
+      3,
+      3.5,
+      4
+     ]
+    },
+    {
+     "id": "horizon_ans",
+     "type": "entier",
+     "libelle": "Sur combien d'années comparer le surplus ?",
+     "aide": "5 ans par défaut.",
+     "obligatoire": true,
+     "min": 1,
+     "max": 30,
+     "prerempli": "cinq"
+    },
+    {
+     "id": "destination_surplus",
+     "type": "choix",
+     "libelle": "Où placerais-tu le surplus ?",
+     "aide": "Compte-titres par défaut : le plus imposé, donc prudent (D13).",
+     "obligatoire": true,
+     "options": [
+      "compte_titres",
+      "assurance_vie",
+      "pea"
+     ],
+     "prerempli": "compte_titres"
+    }
+   ],
+   "reperes": [
+    "scn_matelas_mois_stable",
+    "scn_matelas_mois_fragile",
+    "scn_matelas_mois_independant",
+    "scn_matelas_ecart_pct",
+    "lep_taux",
+    "lep_plafond",
+    "lep_rfr_1_part",
+    "lep_rfr_demi_part_sup",
+    "lep_rfr_quart_part_sup",
+    "livret_a_taux",
+    "livret_a_plafond",
+    "ldds_plafond",
+    "rendement_central_monetaire",
+    "rendement_central_actions",
+    "ir_taux_forfaitaire",
+    "ps_taux_general",
+    "inflation_hypothese"
+   ],
+   "calcul": "matelas",
+   "version_calcul": "scn-1.0.0",
+   "ouverture": {
+    "donnees": [
+     "trois_mois_de_donnees"
+    ],
+    "copilote": true
+   },
+   "garde_fous": "Ne cite aucun établissement. Dis que le nombre de mois est une convention de Boussole et cite le repère public (2 à 6 mois de revenus, Banque de France). Ne fais pas la morale sur le niveau d'épargne. Pour le surplus, dis toujours la bande, y compris la perte possible. Pour le LEP, dis que c'est la banque qui vérifie le revenu fiscal de référence. Ne déplace rien : c'est la personne qui le fait.",
+   "evals": [
+    "MAT-1",
+    "MAT-2",
+    "MAT-4a",
+    "MAT-4b",
+    "MAT-7",
+    "SCN-MAT-1"
+   ],
+   "version": 1,
+   "statut": "publie",
+   "changelog": "v1 : premier lot SCN1."
+  },
+  {
+   "cle": "av_maintenant",
+   "numero": 12,
+   "theme": "epargne",
+   "question": "Ouvrir une assurance-vie maintenant, même sans projet ?",
+   "resume": "Boussole calcule ce que vaut l'ancienneté d'un contrat ouvert aujourd'hui avec un petit versement, si tu y verses plus tard : l'écart d'impôt selon la date de retrait, en euros d'aujourd'hui, et ce que coûte ce petit versement.",
+   "pertinence": {
+    "sans_enveloppe": [
+     "assurance_vie"
+    ],
+    "age_sous_repere": "av_age_seuil",
+    "age_min": 18
+   },
+   "donnees": [
+    {
+     "champ": "enveloppes",
+     "libelle": "Tes enveloppes",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "naissance",
+     "libelle": "Ta date de naissance",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "union",
+     "libelle": "Couple soumis à imposition commune",
+     "origine": "boussole",
+     "obligatoire": true
+    }
+   ],
+   "questions": [
+    {
+     "id": "versement_initial",
+     "type": "montant_eur",
+     "libelle": "Premier versement qui te paraît confortable",
+     "aide": "Aucun minimum légal ; certains contrats en fixent un.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 100000
+    },
+    {
+     "id": "versement_mensuel",
+     "type": "montant_eur",
+     "libelle": "Si un jour tu y verses : combien par mois ?",
+     "aide": "Une estimation suffit.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 10000
+    },
+    {
+     "id": "debut_date",
+     "type": "date",
+     "libelle": "À partir de quand ?",
+     "aide": "Le premier versement mensuel.",
+     "obligatoire": true
+    },
+    {
+     "id": "retrait_ans",
+     "type": "entier",
+     "libelle": "Dans combien d'années penses-tu retirer ?",
+     "aide": "« Je ne sais pas » : Boussole trace la courbe de 8 à 20 ans.",
+     "obligatoire": false,
+     "min": 1,
+     "max": 40
+    },
+    {
+     "id": "part_fonds_euros_pct",
+     "type": "pourcentage",
+     "libelle": "Part en fonds euros",
+     "aide": "0 à 100 %.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 100,
+     "prerempli": "part_fonds_euros_cible"
+    },
+    {
+     "id": "frais_contrat_pct",
+     "type": "pourcentage",
+     "libelle": "Frais annuels du contrat, si tu les connais",
+     "aide": "Sinon, frais nuls des deux côtés : seule l'ancienneté compte.",
+     "obligatoire": false,
+     "min": 0,
+     "max": 3
+    }
+   ],
+   "reperes": [
+    "av_duree_ans",
+    "av_taux_ir_reduit",
+    "av_seuil_versements",
+    "av_abattement_seul",
+    "av_abattement_couple",
+    "av_990i_abattement",
+    "av_age_seuil",
+    "ir_taux_forfaitaire",
+    "ps_taux_av_epargne_logement",
+    "inflation_hypothese",
+    "rendement_central_actions",
+    "rendement_central_fonds_euros",
+    "scn_delai_ouverture_mois"
+   ],
+   "calcul": "avMaintenant",
+   "version_calcul": "scn-1.0.0",
+   "ouverture": {
+    "donnees": [
+     "capacite_positive"
+    ],
+    "copilote": true
+   },
+   "garde_fous": "Ne cite aucun assureur ni aucun contrat. Dis que l'ancienneté ne sert que pour un retrait dans une fenêtre de dates, et laquelle. Pour la clause bénéficiaire et la transmission, donne les règles et renvoie vers un notaire pour un cas particulier. Ne dis jamais qu'un transfert vers un autre assureur garde l'ancienneté. N'ouvre rien : c'est la personne qui le fait.",
+   "evals": [
+    "AV-1",
+    "AV-2",
+    "AV-3",
+    "AV-4",
+    "AV-4b",
+    "SCN-AV-1"
+   ],
+   "version": 1,
+   "statut": "publie",
+   "changelog": "v1 : premier lot SCN1."
+  }
+ ],
+ "cas": [
+  {
+   "id": "PEA-1",
+   "scenario": "ouvrir_pea",
+   "famille": "deterministe",
+   "nom": "300 €/mois en actions, sortie à 8 ans, TER 0,2 % des deux côtés",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 8,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 96,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 96,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "R": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 96,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "R"
+    ]
+   },
+   "attendu": {
+    "statut": "ok",
+    "V_A": 36289.41,
+    "versements": 28800,
+    "gain_A": 7489.41,
+    "impots_A": 1393.03,
+    "impots_R": 2351.68,
+    "net_A": 34896.38,
+    "net_R": 33937.74,
+    "ecart": 958.64,
+    "ecart_auj": 818.19,
+    "enjeu_annuel": 102.27,
+    "bande": {
+     "p10": 818.19,
+     "p50": 818.19,
+     "p90": 818.19
+    },
+    "date_bascule": "2031-12-15",
+    "seuil_5_ans": "2031-11-16",
+    "frais_seuil_pct": 0.774,
+    "option_en_tete": "A"
+   },
+   "tolerance": 0.01,
+   "calcul": "q = (1,06 × 0,998)^(1/12) ; V = 300 × (q^96 − 1)/(q − 1) = 36 289,41 ; B = 28 800 ; G = 7 489,41. Compte-titres : G × 31,4 % = 2 351,68 → 33 937,74. PEA ouvert au mois 1 (délai d'un mois), 5 ans révolus le 16/11/2031 (ouverture + 5 ans + 1 jour, règle DAT1), sortie le 15/10/2034 : G × 18,6 % = 1 393,03 → 34 896,38. Écart 958,64 € courants ÷ 1,02^8 = 818,19 € d'aujourd'hui ; ÷ 8 ans = 102,27 €/an. Mode déterministe : P10 = P50 = P90. Bascule : premier mois de sortie à partir duquel l'écart reste > 0 (grille mensuelle) = mois 62, 15/12/2031. Frais de seuil : frais annuels du PEA en plus du TER (0,2 %) qui annulent l'écart à 8 ans ≈ 0,774 %/an (dichotomie ; tolérance 0,001 point).",
+   "tolerance_frais_seuil_pct": 0.001
+  },
+  {
+   "id": "PEA-2",
+   "scenario": "ouvrir_pea",
+   "famille": "deterministe",
+   "nom": "Même flux, sortie à 4 ans : avant 5 ans, même impôt, et le retrait clôture le plan",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 4,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 48,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 48,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "R": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 48,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "R"
+    ]
+   },
+   "attendu": {
+    "statut": "ok",
+    "V_A": 16111.39,
+    "versements": 14400,
+    "gain_A": 1711.39,
+    "net_A": 15574.01,
+    "net_R": 15574.01,
+    "ecart": 0,
+    "ecart_auj": 0,
+    "enjeu_annuel": 0,
+    "date_bascule": null,
+    "option_en_tete": "egalite",
+    "ce_qui_changerait_contient": "pea_5_ans"
+   },
+   "tolerance": 0.01,
+   "calcul": "V = 300 × (q^48 − 1)/(q − 1) = 16 111,39 ; G = 1 711,39 ; plan ouvert au mois 1, sortie au mois 48 (le 15/10/2030) avant le 16/11/2031 : 31,4 % des deux côtés → écart 0. « Ce qui changerait » : sortir après le 16/11/2031."
+  },
+  {
+   "id": "PEA-3",
+   "scenario": "ouvrir_pea",
+   "famille": "deterministe",
+   "nom": "Prendre date : ouvert maintenant avec 10 €, 300 €/mois à partir du mois 25, sortie au mois 72 (6 ans)",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 10,
+    "versement_mensuel": 300,
+    "debut": "plus_tard",
+    "debut_date": "2028-11-15",
+    "horizon_ans": 6,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 72,
+    "couple": true,
+    "options": {
+     "A_prime": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 25,
+         "a": 72,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "C": [
+      {
+       "type": "pea",
+       "ouverture_t": 25,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 25,
+         "a": 72,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A_prime",
+     "C"
+    ],
+    "v_min": {
+     "montant": 10,
+     "t": 1,
+     "frais_pct": 0.2,
+     "type": "pea",
+     "ouverture_t": 1
+    }
+   },
+   "attendu": {
+    "statut": "ok",
+    "V": 16111.39,
+    "versements": 14400,
+    "gain": 1711.39,
+    "impots_A_prime": 318.32,
+    "impots_C": 537.38,
+    "gain_anteriorite": 219.06,
+    "gain_anteriorite_auj": 194.52,
+    "v_min_brut": 13.95,
+    "v_min_net": 13.22,
+    "v_min_frais": 0.17,
+    "courbe": [
+     {
+      "t": 60,
+      "date": "2031-10-15",
+      "gain": 0
+     },
+     {
+      "t": 61,
+      "date": "2031-11-15",
+      "gain": 0
+     },
+     {
+      "t": 62,
+      "date": "2031-12-15",
+      "gain": 134.33
+     },
+     {
+      "t": 72,
+      "date": "2032-10-15",
+      "gain": 219.06
+     },
+     {
+      "t": 84,
+      "date": "2033-10-15",
+      "gain": 350.52
+     },
+     {
+      "t": 85,
+      "date": "2033-11-15",
+      "gain": 363
+     },
+     {
+      "t": 86,
+      "date": "2033-12-15",
+      "gain": 0
+     },
+     {
+      "t": 96,
+      "date": "2034-10-15",
+      "gain": 0
+     }
+    ],
+    "fenetre": {
+     "du": "2031-12-15",
+     "au": "2033-11-15"
+    }
+   },
+   "tolerance": 0.01,
+   "calcul": "Flux des deux options : 300 € aux mois 25 à 72 (48 versements) → V = 16 111,39, G = 1 711,39 (comme PEA-2). A′ ouvert au mois 1 (16/11/2026 → 5 ans le 16/11/2031) : à la sortie (15/10/2032) G × 18,6 % = 318,32. C ouvert au mois 25 (15/11/2028 → 5 ans le 16/11/2033) : avant 5 ans, G × 31,4 % = 537,38. Gain de l'antériorité 219,06 € courants ÷ 1,02^6 = 194,52 € d'aujourd'hui. Le petit versement est compté à part (le gain de l'antériorité porte sur les flux communs) : 10 € au mois 1 → 10 × q^71 = 13,95 € brut, 13,22 € net de prélèvements sociaux, 0,17 € de frais. Courbe selon le mois de sortie W (les versements continuent jusqu'au retrait) : écart nul avant le 16/11/2031, puis 12,8 % × G(W), nul de nouveau à partir du 16/11/2033 (C a 5 ans) : fenêtre du 15/12/2031 au 15/11/2033 sur la grille mensuelle."
+  },
+  {
+   "id": "PEA-4",
+   "scenario": "ouvrir_pea",
+   "famille": "deterministe",
+   "nom": "Frais du PEA plus élevés : TER 0,2 % + 0,4 %/an de garde, contre TER 0,2 % en compte-titres, sortie à 10 ans",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 10,
+    "frais_pea_pct": 0.4,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 120,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.6
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 120,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "R": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 120,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "R"
+    ]
+   },
+   "attendu": {
+    "statut": "ok",
+    "V_A": 47178.82,
+    "V_R": 48214.75,
+    "net_A": 45099.56,
+    "net_R": 44379.32,
+    "ecart": 720.24,
+    "ecart_auj": 590.85,
+    "enjeu_annuel": 59.08,
+    "ecart_a_8_ans": 459.11,
+    "date_bascule": "2031-12-15",
+    "frais_seuil_pct": 0.749,
+    "option_en_tete": "A"
+   },
+   "tolerance": 0.01,
+   "calcul": "PEA : q = (1,06 × 0,994)^(1/12) → V = 47 178,82, G = 11 178,82, impôt 18,6 % → 45 099,56. Compte-titres : q = (1,06 × 0,998)^(1/12) → V = 48 214,75, G = 12 214,75, 31,4 % → 44 379,32. Écart 720,24 € courants = 590,85 € d'aujourd'hui, 59,08 €/an. Avant le 16/11/2031 l'écart est négatif (plus de frais, même impôt), il devient positif dès le mois 62 et le reste. Frais de seuil à 10 ans : 0,749 %/an en plus du TER (au-delà de 0,949 % au total, le PEA passe derrière).",
+   "tolerance_frais_seuil_pct": 0.001
+  },
+  {
+   "id": "PEA-5a",
+   "scenario": "ouvrir_pea",
+   "famille": "limite",
+   "nom": "Limite : plan de 4 ans 11 mois à la sortie (mois 60)",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 5,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 60,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 60,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "R": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 60,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "R"
+    ]
+   },
+   "attendu": {
+    "statut": "ok",
+    "V_A": 20738.45,
+    "versements": 18000,
+    "gain_A": 2738.45,
+    "net_A": 19878.58,
+    "net_R": 19878.58,
+    "ecart": 0,
+    "ecart_auj": 0,
+    "apres_5_ans": false
+   },
+   "tolerance": 0.01,
+   "calcul": "Ouverture au mois 1 (15/11/2026), seuil des 5 ans le 16/11/2031. Sortie au mois 60 (15/10/2031 : avant). Écart = 12,8 % × G si après, 0 sinon.",
+   "note": "La réponse horizon_ans ne s'exprime qu'en années : ce cas se joue par le socle (plan), ou avec une date de sortie. Il fixe la convention d'âge du plan."
+  },
+  {
+   "id": "PEA-5c",
+   "scenario": "ouvrir_pea",
+   "famille": "limite",
+   "nom": "Limite : plan de 5 ans pile (mois 61, le 15/11/2031) : règle d'avant, les 5 ans sont révolus le lendemain",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 5.08,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 61,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 61,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "R": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 61,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "R"
+    ]
+   },
+   "attendu": {
+    "statut": "ok",
+    "V_A": 21135.92,
+    "versements": 18300,
+    "gain_A": 2835.92,
+    "net_A": 20245.44,
+    "net_R": 20245.44,
+    "ecart": 0,
+    "ecart_auj": 0,
+    "apres_5_ans": false
+   },
+   "tolerance": 0.01,
+   "calcul": "Ouverture au mois 1 (15/11/2026), seuil des 5 ans le 16/11/2031. Sortie au mois 61 (15/11/2031 : avant, le seuil est le lendemain). Écart = 12,8 % × G si après, 0 sinon.",
+   "note": "La réponse horizon_ans ne s'exprime qu'en années : ce cas se joue par le socle (plan), ou avec une date de sortie. Il fixe la convention d'âge du plan."
+  },
+  {
+   "id": "PEA-5b",
+   "scenario": "ouvrir_pea",
+   "famille": "limite",
+   "nom": "Limite : plan de 5 ans 1 mois à la sortie (mois 62)",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 5.17,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 62,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 62,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "R": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 62,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "R"
+    ]
+   },
+   "attendu": {
+    "statut": "ok",
+    "V_A": 21535.25,
+    "versements": 18600,
+    "gain_A": 2935.25,
+    "net_A": 20989.3,
+    "net_R": 20613.58,
+    "ecart": 375.71,
+    "ecart_auj": 339.17,
+    "apres_5_ans": true
+   },
+   "tolerance": 0.01,
+   "calcul": "Ouverture au mois 1 (15/11/2026), seuil des 5 ans le 16/11/2031. Sortie au mois 62 (15/12/2031 : après). Écart = 12,8 % × G si après, 0 sinon.",
+   "note": "La réponse horizon_ans ne s'exprime qu'en années : ce cas se joue par le socle (plan), ou avec une date de sortie. Il fixe la convention d'âge du plan."
+  },
+  {
+   "id": "PEA-6",
+   "scenario": "ouvrir_pea",
+   "famille": "limite",
+   "nom": "Plafond atteint : 145 000 € de départ + 1 000 €/mois sur 10 ans ; au-delà de 150 000 € de versements, débordement en compte-titres",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 145000,
+    "versement_mensuel": 1000,
+    "debut": "maintenant",
+    "horizon_ans": 10,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 120,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 1,
+         "montant": 146000
+        },
+        {
+         "de": 2,
+         "a": 5,
+         "montant": 1000
+        }
+       ]
+      },
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 6,
+         "a": 120,
+         "montant": 1000
+        }
+       ]
+      }
+     ],
+     "R": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 1,
+         "montant": 146000
+        },
+        {
+         "de": 2,
+         "a": 120,
+         "montant": 1000
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "R"
+    ],
+    "plafond_pea": 150000
+   },
+   "attendu": {
+    "statut": "ok",
+    "versements_pea": 150000,
+    "dernier_mois_pea": 5,
+    "premier_mois_debordement": 6,
+    "V_pea": 261989.65,
+    "gain_pea": 111989.65,
+    "V_debordement": 152061.48,
+    "net_A": 381583.75,
+    "net_R": 367249.07,
+    "ecart": 14334.67,
+    "ecart_auj": 11759.43,
+    "plafond_utilise": 150000
+   },
+   "tolerance": 0.01,
+   "calcul": "Mois 1 : 146 000 € (145 000 + 1 000) ; mois 2 à 5 : 1 000 € → 150 000 € de versements, plafond atteint ; mois 6 à 120 : 1 000 € en compte-titres. Impôts proportionnels aux gains et frais égaux : écart = 12,8 % × G du PEA = 12,8 % × 111 989,65 = 14 334,67 € courants ÷ 1,02^10 = 11 759,43 € d'aujourd'hui."
+  },
+  {
+   "id": "PEA-PERT-1",
+   "scenario": "ouvrir_pea",
+   "famille": "pertinence",
+   "nom": "Camille a déjà un PEA, Sam non : pertinent pour Sam",
+   "today": "2026-10-15",
+   "data_patch": {
+    "positions+": [
+     {
+      "id": "pea1",
+      "name": "Fonds actions monde",
+      "envelope": "PEA Exemple",
+      "owner": "p1",
+      "bloc": "Actions",
+      "mode": "manual",
+      "value": 3000,
+      "valueDate": "2026-09-30",
+      "status": "actif"
+     }
+    ],
+    "config.enveloppes_infos.PEA Exemple": {
+     "type": "pea",
+     "titulaire": "p1",
+     "date_ouverture": "2022-05-02",
+     "source": "relevé (exemple)",
+     "le": "2026-09-30"
+    }
+   },
+   "attendu": {
+    "pertinent": true,
+    "personnes": [
+     "p2"
+    ],
+    "raisons_contiennent": [
+     "Sam n'a pas de PEA"
+    ],
+    "manquants": []
+   },
+   "calcul": "sans_enveloppe [pea] : vrai pour p2 ; capacité 500 ≥ 1 ; âges ≥ 18."
+  },
+  {
+   "id": "PEA-PERT-2",
+   "scenario": "ouvrir_pea",
+   "famille": "pertinence",
+   "nom": "Les deux ont un PEA : non pertinent",
+   "today": "2026-10-15",
+   "data_patch": {
+    "positions+": [
+     {
+      "id": "pea1",
+      "name": "Fonds actions monde",
+      "envelope": "PEA Exemple",
+      "owner": "p1",
+      "bloc": "Actions",
+      "mode": "manual",
+      "value": 3000,
+      "valueDate": "2026-09-30",
+      "status": "actif"
+     },
+     {
+      "id": "pea2",
+      "name": "Fonds actions monde",
+      "envelope": "PEA Exemple 2",
+      "owner": "p2",
+      "bloc": "Actions",
+      "mode": "manual",
+      "value": 3000,
+      "valueDate": "2026-09-30",
+      "status": "actif"
+     }
+    ],
+    "config.enveloppes_infos.PEA Exemple": {
+     "type": "pea",
+     "titulaire": "p1",
+     "date_ouverture": "2022-05-02"
+    },
+    "config.enveloppes_infos.PEA Exemple 2": {
+     "type": "pea",
+     "titulaire": "p2",
+     "date_ouverture": "2023-01-10"
+    }
+   },
+   "attendu": {
+    "pertinent": false,
+    "raisons": []
+   },
+   "calcul": "sans_enveloppe [pea] faux pour p1 et p2."
+  },
+  {
+   "id": "PEA-PERT-3",
+   "scenario": "ouvrir_pea",
+   "famille": "pertinence",
+   "nom": "Capacité nulle et pas de surplus de matelas : non pertinent",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.projection.capacite_mensuelle": 0,
+    "positions.la.value": 6000
+   },
+   "attendu": {
+    "pertinent": false
+   },
+   "calcul": "capacité 0 < 1 et matelas 6 000 = cible 6 000 (pas de surplus) : aucune branche de un_de."
+  },
+  {
+   "id": "PEA-MANQ",
+   "scenario": "ouvrir_pea",
+   "famille": "manquant",
+   "nom": "Ni capacité ni allocation cible : versement à compléter",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.projection.base_capacite": null,
+    "config.projection.capacite_mensuelle": null,
+    "budget.lignes": [],
+    "config.targets": null
+   },
+   "reponses": {},
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "a_completer",
+    "manquants_questions": [
+     "versement_mensuel"
+    ],
+    "depot": false
+   },
+   "calcul": "versement_mensuel n'a pas de préremplissage possible (capacité inconnue) : manquant ; rien n'est calculé ni déposé."
+  },
+  {
+   "id": "PEA-ABS",
+   "scenario": "ouvrir_pea",
+   "famille": "repere_absent",
+   "nom": "Repère ps_taux_general absent : indisponible",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reperes_retirer": [
+    "ps_taux_general"
+   ],
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 8,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "indisponible",
+    "reperes_manquants": [
+     "ps_taux_general"
+    ],
+    "ecart": null
+   },
+   "calcul": "Jamais de valeur de secours : statut indisponible, aucun chiffre."
+  },
+  {
+   "id": "PEA-EXP",
+   "plan_de": "PEA-1",
+   "scenario": "ouvrir_pea",
+   "famille": "repere_expire",
+   "nom": "Après le 31/10/2027 : rendement central des actions à revérifier",
+   "today": "2027-11-15",
+   "data_patch": {
+    "today": "2027-11-15"
+   },
+   "reponses": {
+    "versement_initial": 0,
+    "versement_mensuel": 300,
+    "debut": "maintenant",
+    "horizon_ans": 8,
+    "frais_pea_pct": 0,
+    "destination_actuelle": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "hypotheses_a_reverifier_contient": [
+     "rendement_central_actions"
+    ],
+    "avertissements_min": 1,
+    "ecart": 958.64,
+    "ecart_auj": 818.19
+   },
+   "calcul": "Même calcul que PEA-1 (les dates sont relatives au jour) ; rendement_central_actions a pour date_fin le 31/10/2027 : la valeur est utilisée, marquée « a_reverifier », avec un avertissement."
+  },
+  {
+   "id": "EUR-1",
+   "scenario": "prochain_euro",
+   "famille": "deterministe",
+   "nom": "300 €/mois, 10 ans, 100 % actions, retrait possible avant (PER écarté)",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 10,
+    "retrait_avant": true
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "UC 0,6 % + TER 0,2 % ; fonds euros 0,6 % ; PEA TER 0,2 % ; PER 0,7 % + TER 0,2 % ; compte-titres TER 0,2 % (fictifs, donnés comme frais des enveloppes du cas)",
+   "plan": {
+    "T": 120,
+    "couple": true,
+    "options": {
+     "av": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 120,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "pea+av": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 120,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "cto": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 120,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "reference": "cto"
+   },
+   "attendu": {
+    "statut": "ok",
+    "options": {
+     "av": {
+      "net": 44724.53,
+      "net_auj": 36689.69,
+      "versements": 36000,
+      "impots": 1945.5
+     },
+     "pea+av": {
+      "net": 45942.81,
+      "net_auj": 37689.1,
+      "versements": 36000,
+      "impots": 2271.94
+     },
+     "cto": {
+      "net": 44379.32,
+      "net_auj": 36406.5,
+      "versements": 36000,
+      "impots": 3835.43
+     }
+    },
+    "option_en_tete": "pea+av",
+    "reference": "cto",
+    "ecart_tete_moins_reference": 1563.49,
+    "enjeu_annuel": 128.26,
+    "exclues": {
+     "per": "retrait_avant"
+    },
+    "frais_seuil_av_uc_pct": 0.172,
+    "classement": [
+     "pea+av",
+     "av",
+     "cto"
+    ]
+   },
+   "tolerance": 0.01,
+   "calcul": "100 % actions : « PEA + AV » met tout dans le PEA. PEA : V = 48 214,75, G = 12 214,75, 18,6 % → 45 942,81. AV (0,8 %) : V = 46 670,03, G = 10 670,03 ; après 8 ans, (G − 9 200) × 7,5 % = 110,25 et G × 17,2 % = 1 835,25 → 44 724,53. Compte-titres 31,4 % → 44 379,32. En tête : PEA, +1 563,49 € courants contre le compte-titres, ÷ 1,02^10 ÷ 10 = 128,26 €/an. Frais de seuil de l'AV (UC, total) pour rejoindre le PEA à 10 ans : 0,172 %/an. PER écarté (besoin de retirer avant)."
+  },
+  {
+   "id": "EUR-2",
+   "scenario": "prochain_euro",
+   "famille": "deterministe",
+   "nom": "300 €/mois, 4 ans : PEA écarté (moins de 5 ans), AV avant 8 ans contre compte-titres",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 4,
+    "retrait_avant": true
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "UC 0,6 % + TER 0,2 % ; fonds euros 0,6 % ; PEA TER 0,2 % ; PER 0,7 % + TER 0,2 % ; compte-titres TER 0,2 % (fictifs, donnés comme frais des enveloppes du cas)",
+   "plan": {
+    "T": 48,
+    "couple": true,
+    "options": {
+     "av": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 48,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "cto": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 48,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "reference": "cto"
+   },
+   "attendu": {
+    "statut": "ok",
+    "options": {
+     "av": {
+      "net": 15460.81,
+      "net_auj": 14283.4,
+      "versements": 14400,
+      "impots": 454.63
+     },
+     "cto": {
+      "net": 15574.01,
+      "net_auj": 14387.98,
+      "versements": 14400,
+      "impots": 537.38
+     }
+    },
+    "option_en_tete": "cto",
+    "reference": "cto",
+    "ecart_tete_moins_reference": 0,
+    "enjeu_annuel": 0,
+    "exclues": {
+     "pea+av": "horizon_moins_5_ans",
+     "per": "retrait_avant"
+    },
+    "classement": [
+     "cto",
+     "av"
+    ]
+   },
+   "tolerance": 0.01,
+   "calcul": "AV : V = 15 915,44, G = 1 515,44, avant 8 ans 12,8 % + 17,2 % = 30 % → 15 460,81. Compte-titres : V = 16 111,39, 31,4 % → 15 574,01. Le compte-titres est en tête (frais plus bas) ; c'est la référence : enjeu 0."
+  },
+  {
+   "id": "EUR-3",
+   "scenario": "prochain_euro",
+   "famille": "deterministe",
+   "nom": "300 €/mois, 12 ans, 60 % actions / 40 % fonds euros",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 12,
+    "retrait_avant": true
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "UC 0,6 % + TER 0,2 % ; fonds euros 0,6 % ; PEA TER 0,2 % ; PER 0,7 % + TER 0,2 % ; compte-titres TER 0,2 % (fictifs, donnés comme frais des enveloppes du cas)",
+   "plan": {
+    "T": 144,
+    "couple": true,
+    "options": {
+     "av": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 0.6,
+         "frais_pct": 0.8
+        },
+        {
+         "classe": "fonds_euros",
+         "part": 0.4,
+         "frais_pct": 0.6
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 144,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "pea+av": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 144,
+         "montant": 180
+        }
+       ]
+      },
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "fonds_euros",
+         "part": 1,
+         "frais_pct": 0.6
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 144,
+         "montant": 120
+        }
+       ]
+      }
+     ],
+     "cto+av": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 144,
+         "montant": 180
+        }
+       ]
+      },
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "fonds_euros",
+         "part": 1,
+         "frais_pct": 0.6
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 144,
+         "montant": 120
+        }
+       ]
+      }
+     ]
+    },
+    "reference": "cto+av"
+   },
+   "attendu": {
+    "statut": "ok",
+    "options": {
+     "av": {
+      "net": 52663.1,
+      "net_auj": 41524.49,
+      "versements": 43200,
+      "impots": 2187.76
+     },
+     "pea+av": {
+      "net": 53884.73,
+      "net_auj": 42487.74,
+      "versements": 43200,
+      "impots": 2405.8
+     },
+     "cto+av": {
+      "net": 52474.64,
+      "net_auj": 41375.9,
+      "versements": 43200,
+      "impots": 3815.89
+     }
+    },
+    "option_en_tete": "pea+av",
+    "reference": "cto+av",
+    "ecart_tete_moins_reference": 1410.09,
+    "enjeu_annuel": 92.65,
+    "exclues": {
+     "per": "retrait_avant"
+    },
+    "classement": [
+     "pea+av",
+     "av",
+     "cto+av"
+    ]
+   },
+   "tolerance": 0.01,
+   "calcul": "La poche fonds euros ne va qu'en assurance-vie : les options PEA et compte-titres la placent dans une assurance-vie (« PEA + AV », « CTO + AV »). Sans rééquilibrage, chaque poche se calcule à part. PEA (180 €/mois, 0,2 %) : V = 36 936,31, G = 11 016,31, 18,6 % → 34 887,28. Fonds euros (120 €/mois, 2,5 %, 0,6 %) : V = 19 354,22, G = 2 074,22 < 9 200 → prélèvements seuls 356,77 → 18 997,45. « PEA + AV » = 53 884,73. AV seule (UC 0,8 %, fonds euros 0,6 %, un seul contrat) : G = 11 650,86, (G − 9 200) × 7,5 % + 17,2 % × G → 52 663,10. « CTO + AV » (référence) : actions en compte-titres 31,4 % + même poche fonds euros → 52 474,64. En tête « PEA + AV », +1 410,09 € courants, 92,65 €/an."
+  },
+  {
+   "id": "EUR-4",
+   "scenario": "prochain_euro",
+   "famille": "deterministe",
+   "nom": "300 €/mois, 20 ans jusqu'à la retraite, TMI 30 % → 11 % à la retraite : PER en tête",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.avis_impot.plafonds_per.p1": [
+     {
+      "annee": 2026,
+      "montant": 6000
+     }
+    ],
+    "plafond_per_annuel_suppose": 6000
+   },
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 20,
+    "retrait_avant": false,
+    "tmi_retraite_pct": 11,
+    "date_retraite": "2046-10-15"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "UC 0,6 % + TER 0,2 % ; fonds euros 0,6 % ; PEA TER 0,2 % ; PER 0,7 % + TER 0,2 % ; compte-titres TER 0,2 % (fictifs, donnés comme frais des enveloppes du cas)",
+   "plan": {
+    "T": 240,
+    "couple": true,
+    "options": {
+     "av": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "pea+av": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "per": [
+      {
+       "type": "per",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.9
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "effort_net": 300
+        }
+       ],
+       "tmi_pct": 30,
+       "tmi_retraite_pct": 11,
+       "plafond_annuel": 6000
+      }
+     ],
+     "cto": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "reference": "cto"
+   },
+   "attendu": {
+    "statut": "ok",
+    "options": {
+     "av": {
+      "net": 111694.1,
+      "net_auj": 75166.93,
+      "versements": 72000,
+      "impots": 12104.17
+     },
+     "pea+av": {
+      "net": 121530.74,
+      "net_auj": 81786.71,
+      "versements": 72000,
+      "impots": 11317.84
+     },
+     "per": {
+      "net": 140895.32,
+      "net_auj": 94818.51,
+      "versements": 102857.14,
+      "impots": 33904.19,
+      "versement_mensuel": 428.57
+     },
+     "cto": {
+      "net": 113742.12,
+      "net_auj": 76545.19,
+      "versements": 72000,
+      "impots": 19106.45
+     }
+    },
+    "option_en_tete": "per",
+    "reference": "cto",
+    "ecart_tete_moins_reference": 27153.2,
+    "enjeu_annuel": 913.67,
+    "classement": [
+     "per",
+     "pea+av",
+     "cto",
+     "av"
+    ],
+    "v_per": 428.57
+   },
+   "tolerance": 0.01,
+   "calcul": "PER : v = 300 / 0,7 = 428,57 €/mois (même effort net), V = 174 799,51, versements déduits 102 857,14 × 11 % + 71 942,37 × 31,4 % → 140 895,32. PEA → 121 530,74 ; compte-titres → 113 742,12 ; AV → 111 694,10. Plafond : 12 × 428,57 = 5 142,86 €/an, sous le plafond annuel du cas (plafond_per_annuel_suppose = 6 000 €) : tout est déduit."
+  },
+  {
+   "id": "EUR-5",
+   "scenario": "prochain_euro",
+   "famille": "limite",
+   "nom": "Même cas, plafond PER épuisé (0 €) et TMI retraite 30 % : versements non déduits, le PER passe derrière",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.avis_impot.plafonds_per": {
+     "p1": [],
+     "p2": []
+    },
+    "plafond_per_annuel_suppose": 0
+   },
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 20,
+    "retrait_avant": false,
+    "tmi_retraite_pct": 30,
+    "date_retraite": "2046-10-15"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "UC 0,6 % + TER 0,2 % ; fonds euros 0,6 % ; PEA TER 0,2 % ; PER 0,7 % + TER 0,2 % ; compte-titres TER 0,2 % (fictifs, donnés comme frais des enveloppes du cas)",
+   "plan": {
+    "T": 240,
+    "couple": true,
+    "options": {
+     "av": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "pea+av": [
+      {
+       "type": "pea",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "montant": 300
+        }
+       ]
+      }
+     ],
+     "per": [
+      {
+       "type": "per",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.9
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "effort_net": 300
+        }
+       ],
+       "tmi_pct": 30,
+       "tmi_retraite_pct": 30,
+       "plafond_annuel": 0
+      }
+     ],
+     "cto": [
+      {
+       "type": "compte_titres",
+       "ouverture_t": 0,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.2
+        }
+       ],
+       "flux": [
+        {
+         "de": 1,
+         "a": 240,
+         "montant": 300
+        }
+       ]
+      }
+     ]
+    },
+    "reference": "cto"
+   },
+   "attendu": {
+    "statut": "ok",
+    "options": {
+     "av": {
+      "net": 111694.1,
+      "net_auj": 75166.93,
+      "versements": 72000,
+      "impots": 12104.17
+     },
+     "pea+av": {
+      "net": 121530.74,
+      "net_auj": 81786.71,
+      "versements": 72000,
+      "impots": 11317.84
+     },
+     "per": {
+      "net": 106546.73,
+      "net_auj": 71702.89,
+      "versements": 72000,
+      "impots": 15812.93,
+      "versement_mensuel": 300
+     },
+     "cto": {
+      "net": 113742.12,
+      "net_auj": 76545.19,
+      "versements": 72000,
+      "impots": 19106.45
+     }
+    },
+    "option_en_tete": "pea+av",
+    "reference": "cto",
+    "ecart_tete_moins_reference": 7788.62,
+    "enjeu_annuel": 262.08,
+    "classement": [
+     "pea+av",
+     "cto",
+     "av",
+     "per"
+    ],
+    "v_per": 300
+   },
+   "tolerance": 0.01,
+   "calcul": "Plafond nul chaque année : rien n'est déduit, v = m = 300 ; à la sortie, versements non déduits exonérés, gains à 31,4 % : V = 122 359,66 → 106 546,73 (frais du PER plus élevés que le compte-titres). En tête : PEA."
+  },
+  {
+   "id": "EUR-MANQ",
+   "scenario": "prochain_euro",
+   "famille": "manquant",
+   "nom": "PER en jeu sans date de retraite : date à compléter (D7)",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 20,
+    "retrait_avant": false,
+    "tmi_retraite_pct": 11
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "a_completer",
+    "manquants_questions": [
+     "date_retraite"
+    ],
+    "depot": false
+   },
+   "calcul": "Le PER n'est pas écarté (pas de besoin de retrait) : sa sortie dépend de la date de retraite, jamais supposée."
+  },
+  {
+   "id": "EUR-ABS",
+   "scenario": "prochain_euro",
+   "famille": "repere_absent",
+   "nom": "Repère av_taux_ir_reduit absent : indisponible",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reperes_retirer": [
+    "av_taux_ir_reduit"
+   ],
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 10,
+    "retrait_avant": true
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "indisponible",
+    "reperes_manquants": [
+     "av_taux_ir_reduit"
+    ]
+   },
+   "calcul": "Un repère requis du scénario manque : aucun chiffre."
+  },
+  {
+   "id": "EUR-EXP",
+   "plan_de": "EUR-1",
+   "scenario": "prochain_euro",
+   "famille": "repere_expire",
+   "nom": "Après le 31/10/2027 : rendements centraux à revérifier",
+   "today": "2027-11-15",
+   "data_patch": {
+    "today": "2027-11-15"
+   },
+   "reponses": {
+    "versement_mensuel": 300,
+    "versement_initial": 0,
+    "horizon_ans": 10,
+    "retrait_avant": true
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "hypotheses_a_reverifier_contient": [
+     "rendement_central_actions"
+    ],
+    "option_en_tete": "pea+av",
+    "ecart_tete_moins_reference": 1563.49
+   },
+   "calcul": "Comme EUR-1 ; le repère expiré est utilisé et signalé."
+  },
+  {
+   "id": "PER-1",
+   "scenario": "per_interet",
+   "famille": "deterministe",
+   "nom": "TMI 30 % aujourd'hui, 200 €/mois d'effort net, 20 ans",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_mensuel": 200,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "date_retraite": "2046-10-15",
+    "achat_rp": false,
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "PER 0,7 % + TER 0,2 % ; AV 0,6 % + TER 0,2 % ; 100 % actions ; couple soumis à imposition commune (abattement 9 200 €)",
+   "plan": {
+    "T": 240,
+    "couple": true,
+    "effort_net_mensuel": 200,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "plafond_annuel": null,
+    "frais_per_pct": 0.9,
+    "frais_av_pct": 0.8
+   },
+   "attendu": {
+    "statut": "ok",
+    "v_mensuel": 285.71,
+    "V_per": 116533.01,
+    "versements_per": 68571.43,
+    "deduits": 68571.43,
+    "gain_per": 47961.58,
+    "net_per": 80901.64,
+    "V_av": 82532.18,
+    "gain_av": 34532.18,
+    "impot_av": 1899.91,
+    "prelevements_av": 5939.54,
+    "net_av": 74692.73,
+    "net_av_auj": 50266.07,
+    "ecart": 6208.91,
+    "ecart_auj": 4178.42,
+    "enjeu_annuel": 208.92,
+    "economie_annuelle": 1028.57,
+    "table_net_per": {
+     "0": 101473.07,
+     "11": 93930.22,
+     "30": 80901.64,
+     "41": 73358.79
+    },
+    "t_star_pct": 39.05,
+    "option_en_tete": "per"
+   },
+   "tolerance": 0.01,
+   "tolerance_t_star_pct": 0.01,
+   "calcul": "v = 200 / 0,7 = 285,71 €/mois ; q = (1,06 × 0,991)^(1/12) → V = 116 533,01, versements déduits 68 571,43, G = 47 961,58. Net PER = V − t × 68 571,43 − 31,4 % × G : 0 % → 101 473,07 ; 11 % → 93 930,22 ; 30 % → 80 901,64 ; 41 % → 73 358,79. AV : q = (1,06 × 0,992)^(1/12) → V = 82 532,18, G = 34 532,18 ; (G − 9 200) × 7,5 % = 1 899,91 ; G × 17,2 % = 5 939,54 → 74 692,73 (50 266,07 € d'aujourd'hui). Seuil t* = (101 473,07 − 74 692,73) / 68 571,43 = 39,05 % : le PER reste devant tant que la TMI à la retraite est sous ce taux. À 30 % : écart 6 208,91 € courants = 4 178,42 € d'aujourd'hui, 208,92 €/an. Plafond : 3 428,57 €/an ≤ 4 710 € (avis du foyer de base)."
+  },
+  {
+   "id": "PER-2",
+   "scenario": "per_interet",
+   "famille": "deterministe",
+   "nom": "TMI 11 % aujourd'hui et à la retraite : l'assurance-vie fait un peu mieux",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.projection.tmi_pct": 11,
+    "profil.foyer.tmi": 11
+   },
+   "reponses": {
+    "versement_mensuel": 200,
+    "tmi_pct": 11,
+    "tmi_retraite_pct": 11,
+    "date_retraite": "2046-10-15",
+    "achat_rp": false,
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "PER 0,7 % + TER 0,2 % ; AV 0,6 % + TER 0,2 % ; 100 % actions ; couple soumis à imposition commune (abattement 9 200 €)",
+   "plan": {
+    "T": 240,
+    "couple": true,
+    "effort_net_mensuel": 200,
+    "tmi_pct": 11,
+    "tmi_retraite_pct": 11,
+    "plafond_annuel": null,
+    "frais_per_pct": 0.9,
+    "frais_av_pct": 0.8
+   },
+   "attendu": {
+    "statut": "ok",
+    "v_mensuel": 224.72,
+    "V_per": 91655.18,
+    "versements_per": 53932.58,
+    "deduits": 53932.58,
+    "gain_per": 37722.59,
+    "net_per": 73877.7,
+    "V_av": 82532.18,
+    "gain_av": 34532.18,
+    "impot_av": 1899.91,
+    "prelevements_av": 5939.54,
+    "net_av": 74692.73,
+    "net_av_auj": 50266.07,
+    "ecart": -815.04,
+    "ecart_auj": -548.5,
+    "enjeu_annuel": 0,
+    "economie_annuelle": 296.63,
+    "table_net_per": {
+     "0": 79810.28,
+     "11": 73877.7,
+     "30": 63630.51,
+     "41": 57697.92
+    },
+    "t_star_pct": 9.49,
+    "option_en_tete": "av"
+   },
+   "tolerance": 0.01,
+   "tolerance_t_star_pct": 0.01,
+   "calcul": "v = 200 / 0,89 = 224,72 ; V = 91 655,18, déduits 53 932,58, G = 37 722,59 ; à 11 % : 73 877,70 contre AV 74 692,73. t* = 9,49 %. Enjeu 0 (la référence, l'assurance-vie, est en tête)."
+  },
+  {
+   "id": "PER-3",
+   "scenario": "per_interet",
+   "famille": "deterministe",
+   "nom": "Plafond partiel : 500 €/mois d'effort net, TMI 30 %, plafond 4 710 €/an",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_mensuel": 500,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "date_retraite": "2046-10-15",
+    "achat_rp": false,
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "PER 0,7 % + TER 0,2 % ; AV 0,6 % + TER 0,2 % ; 100 % actions ; couple soumis à imposition commune (abattement 9 200 €)",
+   "plan": {
+    "T": 240,
+    "couple": true,
+    "effort_net_mensuel": 500,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "plafond_annuel": 4710,
+    "frais_per_pct": 0.9,
+    "frais_av_pct": 0.8
+   },
+   "attendu": {
+    "statut": "ok",
+    "v_mensuel": 617.75,
+    "V_per": 251958.93,
+    "versements_per": 148260,
+    "deduits": 94200,
+    "gain_per": 103698.93,
+    "net_per": 191137.47,
+    "V_av": 206330.46,
+    "gain_av": 86330.46,
+    "impot_av": 5784.78,
+    "prelevements_av": 14848.84,
+    "net_av": 185696.84,
+    "net_av_auj": 124968.65,
+    "ecart": 5440.63,
+    "ecart_auj": 3661.39,
+    "enjeu_annuel": 183.07,
+    "economie_annuelle": 1413,
+    "table_net_per": {
+     "0": 219397.47,
+     "11": 209035.47,
+     "30": 191137.47,
+     "41": 180775.47
+    },
+    "t_star_pct": 35.78,
+    "deduit_annuel": 4710,
+    "non_deduit_annuel": 2703
+   },
+   "tolerance": 0.01,
+   "tolerance_t_star_pct": 0.01,
+   "calcul": "Tout déduire demanderait 500 / 0,7 × 12 = 8 571,43 €/an > 4 710 € : on déduit 4 710 €/an (économie 1 413 €) ; versement v = 500 + 1 413 / 12 = 617,75 €/mois, dont 2 703 €/an non déduits. Convention du cas : plafond annuel constant (estimation, euros courants) appliqué par bloc de 12 mois depuis le premier versement. Sortie : 30 % × 94 200 (déduits) + 31,4 % × G ; versements non déduits exonérés. AV (500 €/mois) : 185 696,84. t* = 35,78 %."
+  },
+  {
+   "id": "PER-4",
+   "scenario": "per_interet",
+   "famille": "deterministe",
+   "nom": "Ordre d'imputation (F14709) : versement de 5 000 € en 2026 sur un avis 2023 à 2026",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.avis_impot.plafonds_per.p1": [
+     {
+      "annee": 2023,
+      "montant": 1234
+     },
+     {
+      "annee": 2024,
+      "montant": 2100
+     },
+     {
+      "annee": 2025,
+      "montant": 3050
+     },
+     {
+      "annee": 2026,
+      "montant": 4321
+     }
+    ]
+   },
+   "plan": {
+    "avis": [
+     [
+      2023,
+      1234
+     ],
+     [
+      2024,
+      2100
+     ],
+     [
+      2025,
+      3050
+     ],
+     [
+      2026,
+      4321
+     ]
+    ],
+    "versement_2026": 5000
+   },
+   "attendu": {
+    "imputation": {
+     "2023": 679,
+     "2024": 0,
+     "2025": 0,
+     "2026": 4321
+    },
+    "perdu_le_2026_12_31": 555,
+    "total_disponible": 10705,
+    "non_deduit": 0
+   },
+   "tolerance": 0,
+   "calcul": "D'abord le plafond de l'année (2026 : 4 321), puis les reportés du plus ancien au plus récent : 2023 reçoit 679. Il reste 555 € du plafond 2023, perdus le 31/12/2026 (3 ans de report) ; 2024 et 2025 restent entiers. « Ce qui changerait » : verser 555 € de plus en 2026 utiliserait tout le plafond 2023."
+  },
+  {
+   "id": "PER-5",
+   "scenario": "per_interet",
+   "famille": "limite",
+   "nom": "Plafond épuisé : rien n'est déductible, le PER perd contre l'assurance-vie",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.avis_impot.plafonds_per": {
+     "p1": [],
+     "p2": []
+    },
+    "plafond_per_annuel_suppose": 0
+   },
+   "reponses": {
+    "versement_mensuel": 200,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "date_retraite": "2046-10-15",
+    "achat_rp": false,
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "PER 0,7 % + TER 0,2 % ; AV 0,6 % + TER 0,2 % ; 100 % actions ; couple soumis à imposition commune (abattement 9 200 €)",
+   "plan": {
+    "T": 240,
+    "couple": true,
+    "effort_net_mensuel": 200,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "plafond_annuel": 0,
+    "frais_per_pct": 0.9,
+    "frais_av_pct": 0.8
+   },
+   "attendu": {
+    "statut": "ok",
+    "v_mensuel": 200,
+    "V_per": 81573.11,
+    "versements_per": 48000,
+    "deduits": 0,
+    "gain_per": 33573.11,
+    "net_per": 71031.15,
+    "V_av": 82532.18,
+    "gain_av": 34532.18,
+    "impot_av": 1899.91,
+    "prelevements_av": 5939.54,
+    "net_av": 74692.73,
+    "net_av_auj": 50266.07,
+    "ecart": -3661.58,
+    "ecart_auj": -2464.14,
+    "enjeu_annuel": 0,
+    "economie_annuelle": 0,
+    "table_net_per": {
+     "0": 71031.15,
+     "11": 71031.15,
+     "30": 71031.15,
+     "41": 71031.15
+    },
+    "t_star_pct": null,
+    "option_en_tete": "av",
+    "phrase_seuil": "aucun_seuil"
+   },
+   "tolerance": 0.01,
+   "tolerance_t_star_pct": 0.01,
+   "calcul": "Plafond nul : v = m = 200, aucune économie ; sortie : versements non déduits exonérés, gains 31,4 % → 71 031,15 contre AV 74 692,73, quelle que soit la TMI à la retraite."
+  },
+  {
+   "id": "PER-6",
+   "scenario": "per_interet",
+   "famille": "limite",
+   "nom": "TMI 0 % : non pertinent ; si on le joue quand même, l'assurance-vie fait mieux à toute TMI de retraite",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.projection.tmi_pct": 0,
+    "profil.foyer.tmi": 0
+   },
+   "reponses": {
+    "versement_mensuel": 200,
+    "tmi_pct": 0,
+    "tmi_retraite_pct": 0,
+    "date_retraite": "2046-10-15",
+    "achat_rp": false,
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "hypotheses_frais": "PER 0,7 % + TER 0,2 % ; AV 0,6 % + TER 0,2 % ; 100 % actions ; couple soumis à imposition commune (abattement 9 200 €)",
+   "plan": {
+    "T": 240,
+    "couple": true,
+    "effort_net_mensuel": 200,
+    "tmi_pct": 0,
+    "tmi_retraite_pct": 0,
+    "plafond_annuel": null,
+    "frais_per_pct": 0.9,
+    "frais_av_pct": 0.8
+   },
+   "attendu": {
+    "statut": "ok",
+    "v_mensuel": 200,
+    "V_per": 81573.11,
+    "versements_per": 48000,
+    "deduits": 48000,
+    "gain_per": 33573.11,
+    "net_per": 71031.15,
+    "V_av": 82532.18,
+    "gain_av": 34532.18,
+    "impot_av": 1899.91,
+    "prelevements_av": 5939.54,
+    "net_av": 74692.73,
+    "net_av_auj": 50266.07,
+    "ecart": -3661.58,
+    "ecart_auj": -2464.14,
+    "enjeu_annuel": 0,
+    "economie_annuelle": 0,
+    "table_net_per": {
+     "0": 71031.15,
+     "11": 65751.15,
+     "30": 56631.15,
+     "41": 51351.15
+    },
+    "t_star_pct": null,
+    "pertinent": false,
+    "option_en_tete": "av",
+    "t_star_brut_pct": -7.63,
+    "phrase_seuil": "aucun_seuil"
+   },
+   "tolerance": 0.01,
+   "tolerance_t_star_pct": 0.01,
+   "calcul": "Économie nulle : v = 200 ; même à 0 % à la retraite, 71 031,15 < 74 692,73 (frais plus élevés et 31,4 % au lieu de l'abattement) : le seuil calculé (−7,63 %) est négatif, rendu « aucun seuil ». Pertinence : tmi_min 11 non atteint."
+  },
+  {
+   "id": "PER-7",
+   "scenario": "per_interet",
+   "famille": "deterministe",
+   "nom": "Changement de tranche : couple, 2 parts, revenu net imposable 62 000 €, versement 4 000 €",
+   "today": "2026-10-15",
+   "data_patch": {
+    "revenu_net_imposable": 62000,
+    "parts": 2
+   },
+   "plan": {
+    "rni": 62000,
+    "parts": 2,
+    "versement": 4000,
+    "seuils": {
+     "11": 11600,
+     "30": 29579,
+     "41": 84577,
+     "45": 181917
+    }
+   },
+   "attendu": {
+    "economie": 979.98,
+    "economie_au_taux_marginal": 1200,
+    "part_a_30": 2842,
+    "part_a_11": 1158,
+    "avertissement_bas_de_tranche": true
+   },
+   "tolerance": 0.01,
+   "calcul": "Quotient avant : 62 000 / 2 = 31 000, dans la tranche à 30 % (au-delà de 29 579). Après : 58 000 / 2 = 29 000, sous 29 579. Part du versement à 30 % : (31 000 − 29 579) × 2 = 2 842 ; reste 1 158 à 11 %. Économie = 852,60 + 127,38 = 979,98 €, contre 1 200 € au taux marginal. Barème des revenus 2025 (repères ir_bareme_*), décote et plafonnement du quotient familial non calculés."
+  },
+  {
+   "id": "PER-PERT",
+   "scenario": "per_interet",
+   "famille": "pertinence",
+   "nom": "Sam a 70 ans : non pertinent pour Sam ; TMI inconnue pour Camille : pertinent avec un manquant",
+   "today": "2026-10-15",
+   "data_patch": {
+    "profil.personnes.p2.naissance": "1956-07-15",
+    "config.projection.tmi_pct": null,
+    "profil.foyer.tmi": null
+   },
+   "attendu": {
+    "pertinent": true,
+    "personnes": [
+     "p1"
+    ],
+    "manquants_champs": [
+     "tmi"
+    ]
+   },
+   "calcul": "Sam : 70 ans ≥ per_age_fin_deduction (70) → exclu ; Camille : 36 ans, revenus d'activité, TMI inconnue → pertinent, manquant « tranche d'imposition »."
+  },
+  {
+   "id": "PER-MANQ",
+   "scenario": "per_interet",
+   "famille": "manquant",
+   "nom": "Date de retraite absente : à compléter, jamais supposée (D7)",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_mensuel": 200,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "a_completer",
+    "manquants_questions": [
+     "date_retraite"
+    ],
+    "depot": false
+   },
+   "calcul": "date_retraite n'a aucun préremplissage."
+  },
+  {
+   "id": "PER-ABS",
+   "scenario": "per_interet",
+   "famille": "repere_absent",
+   "nom": "Repère ps_taux_general absent : indisponible",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reperes_retirer": [
+    "ps_taux_general"
+   ],
+   "reponses": {
+    "versement_mensuel": 200,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "date_retraite": "2046-10-15",
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "indisponible",
+    "reperes_manquants": [
+     "ps_taux_general"
+    ]
+   },
+   "calcul": "Aucun chiffre."
+  },
+  {
+   "id": "PER-EXP",
+   "plan_de": "PER-1",
+   "scenario": "per_interet",
+   "famille": "repere_expire",
+   "nom": "Le 15/01/2027 : plafonds et barème 2026 expirés, à revérifier",
+   "today": "2027-01-15",
+   "data_patch": {
+    "today": "2027-01-15"
+   },
+   "reponses": {
+    "versement_mensuel": 200,
+    "tmi_pct": 30,
+    "tmi_retraite_pct": 30,
+    "date_retraite": "2047-01-15",
+    "statut": "salarie"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "hypotheses_a_reverifier_contient": [
+     "per_plafond_plancher",
+     "per_plafond_max",
+     "ir_bareme_30_seuil"
+    ],
+    "avertissements_min": 1,
+    "net_per": 80901.64,
+    "net_av": 74692.73,
+    "t_star_pct": 39.05
+   },
+   "calcul": "Mêmes chiffres que PER-1 (dates relatives) ; les repères à date_fin 2026-12-31 sont utilisés et marqués « a_reverifier » (avertissement sur la carte et dans le résultat)."
+  },
+  {
+   "id": "MAT-1",
+   "scenario": "matelas",
+   "famille": "deterministe",
+   "nom": "Dépenses 2 000 €, deux CDI, matelas 16 000 €, couple éligible au LEP, surplus placé 5 ans en compte-titres",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "plan": {
+    "surplus": 10000,
+    "T": 60,
+    "cto_frais_pct": 0.2,
+    "livret": "livret_a",
+    "cible": 6000,
+    "depl_lep": 6000
+   },
+   "attendu": {
+    "statut": "ok",
+    "depenses_reference": 2000,
+    "source_depenses": "budget_prevu",
+    "mois": 3,
+    "cible": 6000,
+    "actuel": 16000,
+    "surplus": 10000,
+    "manque": 0,
+    "lep": {
+     "eligible": true,
+     "plafond_rfr": 35326,
+     "rfr": 33000
+    },
+    "ordre": [
+     {
+      "vers": "lep",
+      "titulaire": "p1",
+      "montant": 6000
+     }
+    ],
+    "gain_ordre_annuel": 48,
+    "surplus_cto": {
+     "V": 13248.97,
+     "gain": 3248.97,
+     "impots": 1020.18,
+     "net": 12228.79
+    },
+    "surplus_livret": 10778.14,
+    "ecart": 1450.65,
+    "ecart_auj": 1313.9,
+    "enjeu_surplus_annuel": 262.78,
+    "enjeu_annuel": 310.78,
+    "taux_livret_seuil_pct": 4.11,
+    "cible_en_revenus_3_mois": 15000
+   },
+   "tolerance": 0.01,
+   "calcul": "k = 3 (deux CDI, pas d'enfant) ; D = 2 000 (budget prévu hors épargne, repli sans BUD1) ; M* = 6 000. Matelas = Livret A 16 000 + max(0, courant 2 000 − réserve 1 mois × 2 000) = 16 000 → surplus 10 000. LEP : 2 parts → 23 028 + 2 × 6 149 = 35 326 ≥ 33 000 : éligible ; la cible (6 000) va sur un LEP (≤ 10 000) : 6 000 × (2,5 − 1,7) % = 48 €/an au taux d'aujourd'hui. Surplus 10 000 placé au mois 0 : 10 000 × (1,06 × 0,998)^5 = 13 248,97, impôt 31,4 % × 3 248,97 = 1 020,18 → 12 228,79. Livret A : 1,7 % tant que la date du mois ≤ 31/01/2027 (mois 1 à 3), puis le rendement central du monétaire 1,5 % (règle du moteur) : 10 000 × 1,017^(3/12) × 1,015^(57/12) = 10 778,14. Écart 1 450,65 € courants ÷ 1,02^5 = 1 313,90 € d'aujourd'hui, 262,78 €/an ; enjeu total 48 + 262,78 = 310,78 €/an. Le spec disait 10 879,40 et 244 €/an (taux de 1,7 % gardé 5 ans) : corrigé. Repère public montré à côté : 3 mois de revenus = 3 × 5 000 = 15 000 €."
+  },
+  {
+   "id": "MAT-2",
+   "scenario": "matelas",
+   "famille": "limite",
+   "nom": "Matelas nul : manque 6 000 €, 12 mois au rythme de 500 €/mois",
+   "today": "2026-10-15",
+   "data_patch": {
+    "positions.la.value": 0,
+    "positions.cc.value": 2000
+   },
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "cible": 6000,
+    "actuel": 0,
+    "surplus": 0,
+    "manque": 6000,
+    "mois_pour_combler": 12,
+    "ordre": [
+     {
+      "vers": "lep",
+      "titulaire": "p1",
+      "montant": 6000
+     }
+    ],
+    "gain_ordre_annuel": 0,
+    "enjeu_surplus_annuel": 0
+   },
+   "tolerance": 0,
+   "calcul": "Manque 6 000 € ÷ capacité 500 €/mois = 12 mois ; aucun chiffre de rendement. L'ordre de remplissage commence par le LEP (éligible)."
+  },
+  {
+   "id": "MAT-3",
+   "scenario": "matelas",
+   "famille": "limite",
+   "nom": "Surplus nul (matelas = cible) et LEP non éligible (RFR 50 000 €, 2 parts)",
+   "today": "2026-10-15",
+   "data_patch": {
+    "positions.la.value": 6000,
+    "config.avis_impot.rfr": 50000
+   },
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "cible": 6000,
+    "actuel": 6000,
+    "surplus": 0,
+    "manque": 0,
+    "lep": {
+     "eligible": false,
+     "plafond_rfr": 35326,
+     "rfr": 50000
+    },
+    "ordre": [
+     {
+      "vers": "livret_a",
+      "titulaire": "p1",
+      "montant": 6000
+     }
+    ],
+    "gain_ordre_annuel": 0,
+    "enjeu_annuel": 0,
+    "pour_toi": false
+   },
+   "tolerance": 0,
+   "calcul": "Écart à la cible 0 % < 25 % et LEP non possible : la carte reste dans son thème ; enjeu 0."
+  },
+  {
+   "id": "MAT-4a",
+   "scenario": "matelas",
+   "famille": "limite",
+   "nom": "LEP au seuil : RFR 35 326 €, 2 parts → éligible",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.avis_impot.rfr": 35326
+   },
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "lep": {
+     "eligible": true,
+     "plafond_rfr": 35326
+    }
+   },
+   "tolerance": 0,
+   "calcul": "35 326 ≤ 35 326."
+  },
+  {
+   "id": "MAT-4b",
+   "scenario": "matelas",
+   "famille": "limite",
+   "nom": "LEP juste au-dessus : RFR 35 327 €, 2 parts → non éligible",
+   "today": "2026-10-15",
+   "data_patch": {
+    "config.avis_impot.rfr": 35327
+   },
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "lep": {
+     "eligible": false,
+     "plafond_rfr": 35326
+    },
+    "gain_ordre_annuel": 0
+   },
+   "tolerance": 0,
+   "calcul": "35 327 > 35 326."
+  },
+  {
+   "id": "MAT-4c",
+   "scenario": "matelas",
+   "famille": "limite",
+   "nom": "Parts non entières : 1,75 part → 32 252 € ; 2,5 parts → 41 475 €",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "plan": {
+    "plafonds": {
+     "1": 23028,
+     "2": 35326,
+     "3": 47624,
+     "1.25": 26103,
+     "1.5": 29177,
+     "1.75": 32252,
+     "2.5": 41475
+    }
+   },
+   "attendu": {
+    "plafonds_rfr": {
+     "1": 23028,
+     "2": 35326,
+     "3": 47624,
+     "1.25": 26103,
+     "1.5": 29177,
+     "1.75": 32252,
+     "2.5": 41475
+    }
+   },
+   "tolerance": 0,
+   "calcul": "plafond = 23 028 + n_demi × 6 149 + n_quart × 3 075, avec (parts − 1) = 0,5 × n_demi + 0,25 × n_quart (n_quart ∈ {0, 1}). Contrôle : chiffres identiques au tableau de F2367."
+  },
+  {
+   "id": "MAT-5",
+   "scenario": "matelas",
+   "famille": "deterministe",
+   "nom": "Indépendant : 9 mois, dépenses 2 500 €, matelas 20 000 €, capacité 400 €/mois",
+   "today": "2026-10-15",
+   "data_patch": {
+    "risque.reponses.revenus": "independant",
+    "budget.lignes": [
+     {
+      "id": "r1",
+      "type": "revenu",
+      "categorie": "Revenus",
+      "libelle": "Revenus",
+      "montant": 4500,
+      "frequence": "mois"
+     },
+     {
+      "id": "d1",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Loyer",
+      "montant": 1200,
+      "frequence": "mois"
+     },
+     {
+      "id": "d2",
+      "type": "depense",
+      "categorie": "Vie courante",
+      "libelle": "Dépenses courantes",
+      "montant": 1300,
+      "frequence": "mois"
+     }
+    ],
+    "positions.la.value": 20000,
+    "positions.cc.value": 2500,
+    "config.projection.capacite_mensuelle": 400,
+    "config.avis_impot.rfr": 45000
+   },
+   "reponses": {
+    "mois": 9,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "mois_convention": 9,
+    "cible": 22500,
+    "actuel": 20000,
+    "manque": 2500,
+    "mois_pour_combler": 7,
+    "lep": {
+     "eligible": false,
+     "plafond_rfr": 35326,
+     "rfr": 45000
+    },
+    "ordre": [
+     {
+      "vers": "livret_a",
+      "titulaire": "p1",
+      "montant": 22500
+     }
+    ],
+    "gain_ordre_annuel": 0,
+    "pour_toi": false
+   },
+   "tolerance": 0,
+   "calcul": "k = 9 (indépendant) ; D = 2 500 ; M* = 22 500. Matelas = 20 000 + max(0, 2 500 − 2 500) = 20 000. Manque 2 500 ÷ 400 = 6,25 → 7 mois. Écart à la cible 11 % < 25 % : la carte reste dans son thème (LEP non possible à 45 000 €)."
+  },
+  {
+   "id": "MAT-6",
+   "scenario": "matelas",
+   "famille": "deterministe",
+   "nom": "Sans BUD1, un revenu variable : budget prévu 2 300 € hors épargne, 6 mois, dépense prévue 3 000 €",
+   "today": "2026-10-15",
+   "data_patch": {
+    "risque.reponses.revenus": "variables",
+    "budget.lignes": [
+     {
+      "id": "r1",
+      "type": "revenu",
+      "categorie": "Revenus",
+      "libelle": "Salaires",
+      "montant": 4200,
+      "frequence": "mois"
+     },
+     {
+      "id": "d1",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Loyer",
+      "montant": 1000,
+      "frequence": "mois"
+     },
+     {
+      "id": "d2",
+      "type": "depense",
+      "categorie": "Vie courante",
+      "libelle": "Dépenses courantes",
+      "montant": 1300,
+      "frequence": "mois"
+     },
+     {
+      "id": "e1",
+      "type": "epargne",
+      "categorie": "Épargne",
+      "libelle": "Épargne",
+      "montant": 400,
+      "frequence": "mois"
+     }
+    ]
+   },
+   "bouchon_budget_reference": null,
+   "reponses": {
+    "mois": 6,
+    "depense_prevue": 3000,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "depenses_reference": 2300,
+    "source_depenses": "budget_prevu",
+    "mois_convention": 6,
+    "cible": 16800,
+    "actuel": 16000,
+    "manque": 800,
+    "surplus": 0,
+    "lep": {
+     "eligible": true,
+     "plafond_rfr": 35326,
+     "rfr": 33000
+    },
+    "ordre": [
+     {
+      "vers": "lep",
+      "titulaire": "p1",
+      "montant": 10000
+     },
+     {
+      "vers": "lep",
+      "titulaire": "p2",
+      "montant": 6800
+     }
+    ],
+    "gain_ordre_annuel": 128,
+    "mois_pour_combler": 2
+   },
+   "tolerance": 0,
+   "calcul": "Budget.reference absent (BUD1 pas en ligne) : repli sur le budget prévu, dépenses hors épargne 1 000 + 1 300 = 2 300 (dit comme tel). k = 6 (revenus variables). M* = 6 × 2 300 + 3 000 = 16 800 ; manque 800 → 2 mois à 500 €/mois. LEP possible (33 000 ≤ 35 326) : cible répartie LEP de Camille 10 000 puis LEP de Sam 6 800 ; les 16 000 € déjà sur le Livret A y passent : 16 000 × 0,8 % = 128 €/an."
+  },
+  {
+   "id": "MAT-6b",
+   "scenario": "matelas",
+   "famille": "manquant",
+   "nom": "Ni BUD1, ni budget prévu, ni dépenses du matelas : dépenses à compléter",
+   "today": "2026-10-15",
+   "data_patch": {
+    "budget.lignes": [],
+    "config.cushion": {
+     "mode": "amount",
+     "min": 6000
+    }
+   },
+   "reponses": {},
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "a_completer",
+    "manquants_champs": [
+     "depenses_essentielles"
+    ],
+    "depot": false
+   },
+   "calcul": "Ordre des sources : Budget.reference (essentiels) → budget prévu hors épargne → config.cushion.depenses (mode « months ») → manquant."
+  },
+  {
+   "id": "MAT-6c",
+   "scenario": "matelas",
+   "famille": "deterministe",
+   "nom": "Avec BUD1 : Budget.reference (bouchon) donne des essentiels de 1 800 €",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "bouchon_budget_reference": {
+    "essentiels": 1800,
+    "source": "médiane lissée sur 12 mois (bouchon de test)"
+   },
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "depenses_reference": 1800,
+    "source_depenses": "budget_reference",
+    "mois_convention": 3,
+    "cible": 5400,
+    "actuel": 16200,
+    "surplus": 10800,
+    "manque": 0
+   },
+   "tolerance": 0,
+   "calcul": "Budget.reference prime sur le budget prévu ; nom exact du champ à figer avec la tâche 7 de BUD1 (bouchon). D = 1 800 → cible 3 × 1 800 = 5 400 ; la réserve des comptes courants devient 1 × 1 800 : matelas = 16 000 + (2 000 − 1 800) = 16 200 ; surplus 10 800."
+  },
+  {
+   "id": "MAT-7",
+   "scenario": "matelas",
+   "famille": "deterministe",
+   "nom": "Deux LEP : cible 24 000 €, Livret A 22 950 € + LDDS 7 050 € de Camille, couple éligible",
+   "today": "2026-10-15",
+   "data_patch": {
+    "positions.la.value": 22950,
+    "positions+": [
+     {
+      "id": "ld",
+      "name": "LDDS",
+      "envelope": "LDDS Exemple",
+      "owner": "p1",
+      "bloc": "Livrets",
+      "mode": "manual",
+      "value": 7050,
+      "valueDate": "2026-09-30",
+      "status": "actif"
+     }
+    ],
+    "config.enveloppes_infos.LDDS Exemple": {
+     "type": "ldds",
+     "titulaire": "p1"
+    },
+    "config.avis_impot.rfr": 30000,
+    "budget.lignes": [
+     {
+      "id": "r1",
+      "type": "revenu",
+      "categorie": "Revenus",
+      "libelle": "Salaires",
+      "montant": 6500,
+      "frequence": "mois"
+     },
+     {
+      "id": "d1",
+      "type": "depense",
+      "categorie": "Logement",
+      "libelle": "Loyer",
+      "montant": 1500,
+      "frequence": "mois"
+     },
+     {
+      "id": "d2",
+      "type": "depense",
+      "categorie": "Vie courante",
+      "libelle": "Dépenses courantes",
+      "montant": 2500,
+      "frequence": "mois"
+     }
+    ],
+    "positions.cc.value": 4000
+   },
+   "reponses": {
+    "mois": 6,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "plan": {
+    "surplus": 6000,
+    "T": 60,
+    "cto_frais_pct": 0.2,
+    "livret": "livret_a"
+   },
+   "attendu": {
+    "statut": "ok",
+    "cible": 24000,
+    "actuel": 30000,
+    "surplus": 6000,
+    "ordre": [
+     {
+      "vers": "lep",
+      "titulaire": "p1",
+      "montant": 10000
+     },
+     {
+      "vers": "lep",
+      "titulaire": "p2",
+      "montant": 10000
+     },
+     {
+      "vers": "livret_a",
+      "titulaire": "p1",
+      "montant": 4000
+     }
+    ],
+    "gain_ordre_annuel": 160,
+    "surplus_cto": {
+     "net": 7337.27
+    },
+    "surplus_livret": 6466.89,
+    "ecart_auj": 788.34,
+    "enjeu_surplus_annuel": 157.67,
+    "enjeu_annuel": 317.67
+   },
+   "tolerance": 0.01,
+   "calcul": "k = 6 (choisi) × D = 4 000 → 24 000 ; matelas 22 950 + 7 050 + max(0, 4 000 − 4 000) = 30 000 → surplus 6 000. Ordre par titulaire : LEP de Camille 10 000, LEP de Sam 10 000 (deux LEP dans un foyer fiscal à imposition commune, F2367), puis Livret A 4 000. Gain : 20 000 × 0,8 % = 160 €/an. Surplus : 6 000 × 1,32490 = 7 949,38 → net 7 337,28 ; livret 6 466,89 ; écart 788,34 € d'aujourd'hui, 157,67 €/an."
+  },
+  {
+   "id": "MAT-ABS",
+   "scenario": "matelas",
+   "famille": "repere_absent",
+   "nom": "Repère lep_rfr_demi_part_sup absent : indisponible",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reperes_retirer": [
+    "lep_rfr_demi_part_sup"
+   ],
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "indisponible",
+    "reperes_manquants": [
+     "lep_rfr_demi_part_sup"
+    ]
+   },
+   "calcul": "Règle commune : un repère requis absent rend le scénario indisponible."
+  },
+  {
+   "id": "MAT-EXP",
+   "scenario": "matelas",
+   "famille": "repere_expire",
+   "nom": "Le 15/01/2027 : plafonds de revenu du LEP 2026 expirés ; le Livret A passe au monétaire dès le mois 1",
+   "today": "2027-01-15",
+   "data_patch": {
+    "today": "2027-01-15"
+   },
+   "reponses": {
+    "mois": 3,
+    "depense_prevue": 0,
+    "parts_fiscales": 2,
+    "horizon_ans": 5,
+    "destination_surplus": "compte_titres"
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "plan": {
+    "surplus": 10000,
+    "T": 60,
+    "cto_frais_pct": 0.2,
+    "livret": "livret_a"
+   },
+   "attendu": {
+    "statut": "ok",
+    "hypotheses_a_reverifier_contient": [
+     "lep_rfr_1_part",
+     "lep_rfr_demi_part_sup",
+     "lep_rfr_quart_part_sup"
+    ],
+    "lep": {
+     "eligible": true
+    },
+    "gain_ordre_annuel": 48,
+    "surplus_livret": 10772.84,
+    "ecart_auj": 1318.7,
+    "enjeu_surplus_annuel": 263.74,
+    "enjeu_annuel": 311.74
+   },
+   "tolerance": 0.01,
+   "calcul": "Livret A : date du mois 1 = 15/02/2027 > 31/01/2027 → 1,5 % sur 60 mois : 10 000 × 1,015^5 = 10 772,84 ; écart 1 455,95 € courants = 1 318,70 € d'aujourd'hui, 263,74 €/an ; gain d'ordre au taux d'aujourd'hui (repères encore en vigueur le 15/01/2027) : 48 €/an."
+  },
+  {
+   "id": "AV-1",
+   "scenario": "av_maintenant",
+   "famille": "deterministe",
+   "nom": "Personne seule : ouverte maintenant avec 100 €, 200 €/mois des mois 37 à 108, retrait au mois 108 (9 ans)",
+   "today": "2026-10-15",
+   "data_patch": {
+    "profil.foyer.adultes": 1,
+    "profil.foyer.union": null,
+    "profil.personnes.p2": null
+   },
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 200,
+    "debut_date": "2029-11-15",
+    "retrait_ans": 9,
+    "part_fonds_euros_pct": 0,
+    "frais_contrat_pct": 0.6
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 108,
+    "couple": false,
+    "options": {
+     "A": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 108,
+         "montant": 200
+        }
+       ]
+      }
+     ],
+     "B": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 37,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 108,
+         "montant": 200
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "B"
+    ],
+    "v_min": {
+     "montant": 100,
+     "t": 1,
+     "frais_pct": 0.8
+    }
+   },
+   "attendu": {
+    "statut": "ok",
+    "V": 16770.6,
+    "versements": 14400,
+    "gain": 2370.6,
+    "impot_A": 0,
+    "impot_B": 303.44,
+    "prelevements": 407.74,
+    "A_apres_8_ans": true,
+    "B_apres_8_ans": false,
+    "gain_anteriorite": 303.44,
+    "gain_anteriorite_auj": 253.9,
+    "enjeu_annuel": 28.21,
+    "v_min_brut": 156.51,
+    "v_min_frais": 11.62,
+    "seuil_A": "2034-11-16",
+    "seuil_B": "2037-11-16",
+    "pour_toi": false
+   },
+   "tolerance": 0.01,
+   "calcul": "q = (1,06 × 0,992)^(1/12) ; V = 200 × (q^72 − 1)/(q − 1) = 16 770,60 ; G = 2 370,60. A ouvert au mois 1 (15/11/2026, 8 ans le 16/11/2034) : à la sortie (15/10/2035), G < 4 600 → impôt 0 ; B ouvert au mois 37 (15/11/2029, 8 ans le 16/11/2037) : 12,8 % × G = 303,44 ; prélèvements 17,2 % × G = 407,74 des deux côtés. Antériorité 303,44 € courants ÷ 1,02^9 = 253,90 € d'aujourd'hui, 28,21 €/an (< 30 €/an : pas dans « Pour toi »). Les 100 € : 100 × q^107 = 156,51 € (11,62 € de frais sur 9 ans). Le spec disait 157,17 € (versement au mois 0) : corrigé par le délai d'ouverture d'un mois."
+  },
+  {
+   "id": "AV-2",
+   "scenario": "av_maintenant",
+   "famille": "deterministe",
+   "nom": "Retrait au mois 84 (7 ans) : A n'a pas encore 8 ans, aucun écart",
+   "today": "2026-10-15",
+   "data_patch": {
+    "profil.foyer.adultes": 1,
+    "profil.foyer.union": null,
+    "profil.personnes.p2": null
+   },
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 200,
+    "debut_date": "2029-11-15",
+    "retrait_ans": 7,
+    "part_fonds_euros_pct": 0,
+    "frais_contrat_pct": 0.6
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 84,
+    "couple": false,
+    "options": {
+     "A": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 84,
+         "montant": 200
+        }
+       ]
+      }
+     ],
+     "B": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 37,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 84,
+         "montant": 200
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "B"
+    ],
+    "v_min": {
+     "montant": 100,
+     "t": 1,
+     "frais_pct": 0.8
+    }
+   },
+   "attendu": {
+    "statut": "ok",
+    "V": 10610.29,
+    "versements": 9600,
+    "gain": 1010.29,
+    "impot_A": 129.32,
+    "impot_B": 129.32,
+    "prelevements": 173.77,
+    "A_apres_8_ans": false,
+    "B_apres_8_ans": false,
+    "gain_anteriorite": 0,
+    "gain_anteriorite_auj": 0,
+    "enjeu_annuel": 0,
+    "v_min_brut": 141.55,
+    "v_min_frais": 8.09,
+    "seuil_A": "2034-11-16",
+    "seuil_B": "2037-11-16"
+   },
+   "tolerance": 0.01,
+   "calcul": "Sortie le 15/10/2033 < 16/11/2034 : 12,8 % des deux côtés → écart 0."
+  },
+  {
+   "id": "AV-3",
+   "scenario": "av_maintenant",
+   "famille": "deterministe",
+   "nom": "Couple : 500 €/mois des mois 37 à 120, retrait à 10 ans",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 500,
+    "debut_date": "2029-11-15",
+    "retrait_ans": 10,
+    "part_fonds_euros_pct": 0,
+    "frais_contrat_pct": 0.6
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 120,
+    "couple": true,
+    "options": {
+     "A": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 120,
+         "montant": 500
+        }
+       ]
+      }
+     ],
+     "B": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 37,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 120,
+         "montant": 500
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "B"
+    ],
+    "v_min": {
+     "montant": 100,
+     "t": 1,
+     "frais_pct": 0.8
+    }
+   },
+   "attendu": {
+    "statut": "ok",
+    "V": 50226.94,
+    "versements": 42000,
+    "gain": 8226.94,
+    "impot_A": 0,
+    "impot_B": 1053.05,
+    "prelevements": 1415.03,
+    "A_apres_8_ans": true,
+    "B_apres_8_ans": false,
+    "gain_anteriorite": 1053.05,
+    "gain_anteriorite_auj": 863.87,
+    "enjeu_annuel": 86.39,
+    "v_min_brut": 164.57,
+    "v_min_frais": 13.64,
+    "seuil_A": "2034-11-16",
+    "seuil_B": "2037-11-16"
+   },
+   "tolerance": 0.01,
+   "calcul": "V = 50 226,94, G = 8 226,94 < 9 200 (abattement du couple) → A : impôt 0 ; B (6 ans) : 12,8 % × G = 1 053,05. Antériorité 863,87 € d'aujourd'hui, 86,39 €/an."
+  },
+  {
+   "id": "AV-4b",
+   "scenario": "av_maintenant",
+   "famille": "limite",
+   "nom": "Retrait au mois 133 : B a 8 ans pile, encore avant (lendemain du 8ᵉ anniversaire)",
+   "today": "2026-10-15",
+   "data_patch": {
+    "profil.foyer.adultes": 1,
+    "profil.foyer.union": null,
+    "profil.personnes.p2": null
+   },
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 200,
+    "debut_date": "2029-11-15",
+    "retrait_ans": 11.08,
+    "part_fonds_euros_pct": 0,
+    "frais_contrat_pct": 0.6
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 133,
+    "couple": false,
+    "options": {
+     "A": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 133,
+         "montant": 200
+        }
+       ]
+      }
+     ],
+     "B": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 37,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 133,
+         "montant": 200
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "B"
+    ],
+    "v_min": {
+     "montant": 100,
+     "t": 1,
+     "frais_pct": 0.8
+    }
+   },
+   "attendu": {
+    "statut": "ok",
+    "V": 23880.94,
+    "versements": 19400,
+    "gain": 4480.94,
+    "impot_A": 0,
+    "impot_B": 573.56,
+    "prelevements": 770.72,
+    "A_apres_8_ans": true,
+    "B_apres_8_ans": false,
+    "gain_anteriorite": 573.56,
+    "gain_anteriorite_auj": 460.53,
+    "enjeu_annuel": 41.55,
+    "v_min_brut": 173.78,
+    "v_min_frais": 16.05,
+    "seuil_A": "2034-11-16",
+    "seuil_B": "2037-11-16"
+   },
+   "tolerance": 0.01,
+   "calcul": "Sortie le 15/11/2037 < 16/11/2037 : B taxé à 12,8 % (573,56), A exonéré (G = 4 480,94 < 4 600)."
+  },
+  {
+   "id": "AV-4",
+   "scenario": "av_maintenant",
+   "famille": "limite",
+   "nom": "Retrait au mois 134 : B a 8 ans et 1 mois, plus d'écart",
+   "today": "2026-10-15",
+   "data_patch": {
+    "profil.foyer.adultes": 1,
+    "profil.foyer.union": null,
+    "profil.personnes.p2": null
+   },
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 200,
+    "debut_date": "2029-11-15",
+    "retrait_ans": 11.17,
+    "part_fonds_euros_pct": 0,
+    "frais_contrat_pct": 0.6
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 134,
+    "couple": false,
+    "options": {
+     "A": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 134,
+         "montant": 200
+        }
+       ]
+      }
+     ],
+     "B": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 37,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 1,
+         "frais_pct": 0.8
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 134,
+         "montant": 200
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "B"
+    ],
+    "v_min": {
+     "montant": 100,
+     "t": 1,
+     "frais_pct": 0.8
+    }
+   },
+   "attendu": {
+    "statut": "ok",
+    "V": 24181.13,
+    "versements": 19600,
+    "gain": 4581.13,
+    "impot_A": 0,
+    "impot_B": 0,
+    "prelevements": 787.95,
+    "A_apres_8_ans": true,
+    "B_apres_8_ans": true,
+    "gain_anteriorite": 0,
+    "gain_anteriorite_auj": 0,
+    "enjeu_annuel": 0,
+    "v_min_brut": 174.51,
+    "v_min_frais": 16.25,
+    "seuil_A": "2034-11-16",
+    "seuil_B": "2037-11-16",
+    "fenetre": {
+     "du": "2034-11-16",
+     "au": "2037-11-15"
+    }
+   },
+   "tolerance": 0.01,
+   "calcul": "Les deux contrats ont 8 ans : même impôt, écart 0. Fenêtre où l'ancienneté compte : sortie du 16/11/2034 au 15/11/2037."
+  },
+  {
+   "id": "AV-5",
+   "scenario": "av_maintenant",
+   "famille": "deterministe",
+   "nom": "50 % fonds euros (2,5 %, volatilité nulle) : même calendrier qu'AV-1",
+   "today": "2026-10-15",
+   "data_patch": {
+    "profil.foyer.adultes": 1,
+    "profil.foyer.union": null,
+    "profil.personnes.p2": null
+   },
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 200,
+    "debut_date": "2029-11-15",
+    "retrait_ans": 9,
+    "part_fonds_euros_pct": 50,
+    "frais_contrat_pct": 0.6
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "ter_pct": 0.2,
+   "plan": {
+    "T": 108,
+    "couple": false,
+    "options": {
+     "A": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 1,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 0.5,
+         "frais_pct": 0.8
+        },
+        {
+         "classe": "fonds_euros",
+         "part": 0.5,
+         "frais_pct": 0.6
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 108,
+         "montant": 200
+        }
+       ]
+      }
+     ],
+     "B": [
+      {
+       "type": "assurance_vie",
+       "ouverture_t": 37,
+       "poches": [
+        {
+         "classe": "actions",
+         "part": 0.5,
+         "frais_pct": 0.8
+        },
+        {
+         "classe": "fonds_euros",
+         "part": 0.5,
+         "frais_pct": 0.6
+        }
+       ],
+       "flux": [
+        {
+         "de": 37,
+         "a": 108,
+         "montant": 200
+        }
+       ]
+      }
+     ]
+    },
+    "comparer": [
+     "A",
+     "B"
+    ],
+    "v_min": {
+     "montant": 100,
+     "t": 1,
+     "frais_pct": 0.8
+    }
+   },
+   "attendu": {
+    "statut": "ok",
+    "V": 15998.24,
+    "versements": 14400,
+    "gain": 1598.24,
+    "impot_A": 0,
+    "impot_B": 204.57,
+    "prelevements": 274.9,
+    "A_apres_8_ans": true,
+    "B_apres_8_ans": false,
+    "gain_anteriorite": 204.57,
+    "gain_anteriorite_auj": 171.18,
+    "enjeu_annuel": 19.02,
+    "v_min_brut": 137.31,
+    "v_min_frais": 9.07,
+    "seuil_A": "2034-11-16",
+    "seuil_B": "2037-11-16"
+   },
+   "tolerance": 0.01,
+   "calcul": "Poches sans rééquilibrage ; UC 0,6 % + TER 0,2 %, fonds euros 0,6 % (pas de TER) : V = 15 998,24, G = 1 598,24 ; B : 12,8 % × G = 204,57 → 171,18 € d'aujourd'hui ; v_min : 50 € à chaque poche → 137,31 €."
+  },
+  {
+   "id": "AV-PERT-1",
+   "scenario": "av_maintenant",
+   "famille": "pertinence",
+   "nom": "Camille a une assurance-vie, Sam a 70 ans : non pertinent",
+   "today": "2026-10-15",
+   "data_patch": {
+    "positions+": [
+     {
+      "id": "av1",
+      "name": "Fonds euros",
+      "envelope": "Assurance vie Exemple",
+      "owner": "p1",
+      "bloc": "Fonds euros",
+      "mode": "manual",
+      "value": 2000,
+      "valueDate": "2026-09-30",
+      "status": "actif"
+     }
+    ],
+    "config.enveloppes_infos.Assurance vie Exemple": {
+     "type": "assurance_vie",
+     "titulaire": "p1",
+     "date_ouverture": "2019-04-01"
+    },
+    "profil.personnes.p2.naissance": "1956-07-15"
+   },
+   "attendu": {
+    "pertinent": false
+   },
+   "calcul": "Camille : sans_enveloppe faux ; Sam : 70 ans, age_sous_repere av_age_seuil (70) faux."
+  },
+  {
+   "id": "AV-PERT-2",
+   "scenario": "av_maintenant",
+   "famille": "pertinence",
+   "nom": "Foyer de base : pertinent pour les deux",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "attendu": {
+    "pertinent": true,
+    "personnes": [
+     "p1",
+     "p2"
+    ],
+    "raisons_contiennent": [
+     "pas d'assurance-vie"
+    ]
+   },
+   "calcul": "Aucune assurance-vie ; 36 et 38 ans."
+  },
+  {
+   "id": "AV-MANQ",
+   "scenario": "av_maintenant",
+   "famille": "manquant",
+   "nom": "Versement mensuel futur et date inconnus : à compléter",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "versement_initial": 100
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "a_completer",
+    "manquants_questions": [
+     "versement_mensuel",
+     "debut_date"
+    ],
+    "depot": false
+   },
+   "calcul": "Pas de préremplissage pour un projet futur."
+  },
+  {
+   "id": "AV-ABS",
+   "scenario": "av_maintenant",
+   "famille": "repere_absent",
+   "nom": "Repère av_duree_ans absent : indisponible",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reperes_retirer": [
+    "av_duree_ans"
+   ],
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 200,
+    "debut_date": "2029-11-15",
+    "retrait_ans": 9,
+    "part_fonds_euros_pct": 0
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "indisponible",
+    "reperes_manquants": [
+     "av_duree_ans"
+    ]
+   },
+   "calcul": "Aucun chiffre."
+  },
+  {
+   "id": "AV-EXP",
+   "plan_de": "AV-1",
+   "scenario": "av_maintenant",
+   "famille": "repere_expire",
+   "nom": "Après le 31/10/2027 : rendement central à revérifier",
+   "today": "2027-11-15",
+   "data_patch": {
+    "today": "2027-11-15",
+    "profil.foyer.adultes": 1,
+    "profil.foyer.union": null,
+    "profil.personnes.p2": null
+   },
+   "reponses": {
+    "versement_initial": 100,
+    "versement_mensuel": 200,
+    "debut_date": "2030-12-15",
+    "retrait_ans": 9,
+    "part_fonds_euros_pct": 0,
+    "frais_contrat_pct": 0.6
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "hypotheses_a_reverifier_contient": [
+     "rendement_central_actions"
+    ],
+    "gain_anteriorite": 303.44
+   },
+   "calcul": "Comme AV-1 (dates relatives : premier versement mensuel au mois 37)."
+  },
+  {
+   "id": "MC-PEA",
+   "scenario": "ouvrir_pea",
+   "famille": "monte_carlo",
+   "nom": "PEA-1 sur 2 000 chemins",
+   "today": "2026-10-15",
+   "base_deterministe": "PEA-1",
+   "options": {
+    "chemins": 2000,
+    "graine": 20261014
+   },
+   "valeurs": {
+    "net_pea_auj": {
+     "p10": 22373.64,
+     "p50": 29959.07,
+     "p90": 40582.28
+    },
+    "net_cto_auj": {
+     "p10": 22373.64,
+     "p50": 29113.3,
+     "p90": 38066.03
+    },
+    "ecart_auj": {
+     "p10": 0,
+     "p50": 845.77,
+     "p90": 2516.25
+    },
+    "enjeu": {
+     "p10": 0,
+     "p50": 105.72,
+     "p90": 314.53
+    },
+    "probabilite_mieux": 0.816,
+    "V": {
+     "p10": 26214.29,
+     "p50": 36541.8,
+     "p90": 51832.68
+    }
+   },
+   "tolerance": 0.01,
+   "origine": "Socle réécrit à la main sur Projection.tirages (graine 20261014, 2 000 chemins, centile de rang ⌈p × N⌉) : la tâche 6 doit retrouver ces valeurs ; un écart désigne d'abord une différence de convention, pas la fixture.",
+   "invariants": [
+    "Frais égaux : Δ(i) = 12,8 % × max(0, V(i) − B) / 1,02^8 est une fonction croissante de V(i) : Q_p(Δ) = 12,8 % × max(0, Q_p(V) − B) / 1,02^8 exactement (p = 0,1 ; 0,5 ; 0,9).",
+    "Δ ≥ 0 sur chaque chemin ; P(Δ > 0) = part des chemins à gain positif.",
+    "net PEA ≥ net compte-titres chemin par chemin.",
+    "Avec volatilite: 0, P10 = P50 = P90 = PEA-1."
+   ]
+  },
+  {
+   "id": "MC-EUR",
+   "scenario": "prochain_euro",
+   "famille": "monte_carlo",
+   "nom": "EUR-4 sur 2 000 chemins",
+   "today": "2026-10-15",
+   "base_deterministe": "EUR-4",
+   "options": {
+    "chemins": 2000,
+    "graine": 20261014
+   },
+   "valeurs": {
+    "net_auj": {
+     "av": {
+      "p10": 49321.02,
+      "p50": 75067.96,
+      "p90": 127240.81
+     },
+     "pea": {
+      "p10": 51978.27,
+      "p50": 81770.01,
+      "p90": 143482.89
+     },
+     "per": {
+      "p10": 62162.07,
+      "p50": 94667.74,
+      "p90": 161503.33
+     },
+     "cto": {
+      "p10": 51424.08,
+      "p50": 76531.12,
+      "p90": 128539.76
+     }
+    },
+    "per_moins_pea_auj": {
+     "p10": 10119.64,
+     "p50": 13063.9,
+     "p90": 18608.59
+    },
+    "probabilite_per_mieux_que_pea": 1,
+    "enjeu": {
+     "p10": 540.09,
+     "p50": 915.23,
+     "p90": 1678.08
+    }
+   },
+   "tolerance": 0.01,
+   "origine": "Socle réécrit à la main sur Projection.tirages (graine 20261014, 2 000 chemins, centile de rang ⌈p × N⌉) : la tâche 6 doit retrouver ces valeurs ; un écart désigne d'abord une différence de convention, pas la fixture.",
+   "invariants": [
+    "P10 ≤ P50 ≤ P90 pour chaque option.",
+    "Compte-titres et PEA ont les mêmes frais : net PEA ≥ net compte-titres sur chaque chemin.",
+    "Probabilité que le PER fasse mieux que le PEA = part des chemins où Δ > 0 (ici 1)."
+   ]
+  },
+  {
+   "id": "MC-PER",
+   "scenario": "per_interet",
+   "famille": "monte_carlo",
+   "nom": "PER-1 sur 2 000 chemins",
+   "today": "2026-10-15",
+   "base_deterministe": "PER-1",
+   "options": {
+    "chemins": 2000,
+    "graine": 20261014
+   },
+   "valeurs": {
+    "net_per_auj_tmi30": {
+     "p10": 32673.52,
+     "p50": 54343.97,
+     "p90": 98901.03
+    },
+    "net_av_auj": {
+     "p10": 32880.68,
+     "p50": 50200.09,
+     "p90": 84981.99
+    },
+    "ecart_auj": {
+     "p10": -167.39,
+     "p50": 4148.55,
+     "p90": 14023.88
+    },
+    "enjeu": {
+     "p10": -8.37,
+     "p50": 207.43,
+     "p90": 701.19
+    },
+    "probabilite_mieux": 0.879,
+    "t_star_pct": 38.9899
+   },
+   "tolerance": 0.01,
+   "origine": "Socle réécrit à la main sur Projection.tirages (graine 20261014, 2 000 chemins, centile de rang ⌈p × N⌉) : la tâche 6 doit retrouver ces valeurs ; un écart désigne d'abord une différence de convention, pas la fixture.",
+   "invariants": [
+    "t* = Q50(X) / versements déduits, avec X(i) = net PER à TMI retraite 0 % − net AV : la TMI de retraite ne change le net PER que de t × versements déduits (constant), donc la médiane se décale exactement (tant que V(i) ≥ versements déduits sur le chemin médian). La dichotomie doit converger vers cette valeur à sa précision.",
+    "P(Δ > 0) décroît quand la TMI de retraite monte."
+   ]
+  },
+  {
+   "id": "MC-MAT",
+   "scenario": "matelas",
+   "famille": "monte_carlo",
+   "nom": "MAT-1 (surplus) sur 2 000 chemins",
+   "today": "2026-10-15",
+   "base_deterministe": "MAT-1",
+   "options": {
+    "chemins": 2000,
+    "graine": 20261014
+   },
+   "valeurs": {
+    "livret": 10778.14,
+    "ecart_auj": {
+     "p10": -1826.86,
+     "p50": 1281.83,
+     "p90": 5995.97
+    },
+    "enjeu_surplus": {
+     "p10": -365.37,
+     "p50": 256.37,
+     "p90": 1199.19
+    },
+    "V_cto": {
+     "p10": 8761.14,
+     "p50": 13197.36,
+     "p90": 20784.51
+    },
+    "analytique_V": {
+     "p10": 8619.91,
+     "p50": 13248.97,
+     "p90": 20363.93
+    },
+    "probabilite_mieux": 0.695,
+    "perte_p10": -1826.86
+   },
+   "tolerance": 0.01,
+   "origine": "Socle réécrit à la main sur Projection.tirages (graine 20261014, 2 000 chemins, centile de rang ⌈p × N⌉) : la tâche 6 doit retrouver ces valeurs ; un écart désigne d'abord une différence de convention, pas la fixture.",
+   "invariants": [
+    "Versement unique : V(i) = S × exp(Σ (a + s z)) × (1 − 0,2 %)^5 ; la médiane théorique de V est la valeur déterministe, P10 et P90 théoriques S × det × exp(∓1,2816 × 15 % × √5) : écart empirique attendu < 3 % (contrôle de cohérence des tirages, pas une égalité).",
+    "Le livret est déterministe : Q_p(Δ) = (Q_p(net CTO) − livret) / 1,02^5 exactement.",
+    "« 1 chance sur 10 de perdre plus de … » = −Q10(Δ) quand Q10(Δ) < 0."
+   ]
+  },
+  {
+   "id": "MC-AV",
+   "scenario": "av_maintenant",
+   "famille": "monte_carlo",
+   "nom": "AV-1 sur 2 000 chemins",
+   "today": "2026-10-15",
+   "base_deterministe": "AV-1",
+   "options": {
+    "chemins": 2000,
+    "graine": 20261014
+   },
+   "valeurs": {
+    "gain_auj": {
+     "p10": 0,
+     "p50": 259.96,
+     "p90": 645.43
+    },
+    "enjeu": {
+     "p10": 0,
+     "p50": 28.88,
+     "p90": 71.71
+    },
+    "G": {
+     "p10": 0,
+     "p50": 2427.15,
+     "p90": 8044.36
+    },
+    "vmin_brut": {
+     "p10": 86.26,
+     "p50": 155.98,
+     "p90": 279
+    },
+    "probabilite_mieux": 0.756
+   },
+   "tolerance": 0.01,
+   "origine": "Socle réécrit à la main sur Projection.tirages (graine 20261014, 2 000 chemins, centile de rang ⌈p × N⌉) : la tâche 6 doit retrouver ces valeurs ; un écart désigne d'abord une différence de convention, pas la fixture.",
+   "invariants": [
+    "Mêmes flux et mêmes frais : Δ(i) = h(G(i)) avec h(G) = 12,8 % × G − 7,5 % × max(0, G − 4 600), croissante : Q_p(Δ) = h(Q_p(G)) / 1,02^9 exactement.",
+    "Δ ≥ 0 sur chaque chemin."
+   ]
+  },
+  {
+   "id": "LST-1",
+   "scenario": null,
+   "famille": "lister",
+   "nom": "Tri « pour toi » : 3 au plus, enjeu ≥ 30 €/an, écartés exclus, P50 décroissant",
+   "today": "2026-10-15",
+   "entree": {
+    "cartes": [
+     {
+      "cle": "ouvrir_pea",
+      "pertinent": true,
+      "enjeu_p50": 102.27,
+      "etat": "a_explorer"
+     },
+     {
+      "cle": "prochain_euro",
+      "pertinent": true,
+      "enjeu_p50": 128.26,
+      "etat": "joue"
+     },
+     {
+      "cle": "per_interet",
+      "pertinent": true,
+      "enjeu_p50": 208.92,
+      "etat": "ecarte"
+     },
+     {
+      "cle": "matelas",
+      "pertinent": true,
+      "enjeu_p50": 310.78,
+      "etat": "a_explorer",
+      "pour_toi_si": true
+     },
+     {
+      "cle": "av_maintenant",
+      "pertinent": true,
+      "enjeu_p50": 28.21,
+      "etat": "a_explorer"
+     }
+    ]
+   },
+   "attendu": {
+    "pour_toi": [
+     "matelas",
+     "prochain_euro",
+     "ouvrir_pea"
+    ],
+    "ordre_themes": [
+     "epargne",
+     "placements",
+     "retraite",
+     "banque",
+     "immobilier",
+     "famille"
+    ]
+   },
+   "calcul": "per_interet écarté (exclu) ; av_maintenant sous 30 €/an ; matelas (pour_toi_si vrai) 310,78 > prochain_euro 128,26 > ouvrir_pea 102,27."
+  },
+  {
+   "id": "LST-2",
+   "scenario": null,
+   "famille": "lister",
+   "nom": "Aucune carte au-dessus du seuil : « Rien d'urgent ici »",
+   "today": "2026-10-15",
+   "entree": {
+    "cartes": [
+     {
+      "cle": "ouvrir_pea",
+      "pertinent": true,
+      "enjeu_p50": 12,
+      "etat": "a_explorer"
+     },
+     {
+      "cle": "matelas",
+      "pertinent": true,
+      "enjeu_p50": 0,
+      "etat": "a_explorer",
+      "pour_toi_si": false
+     },
+     {
+      "cle": "av_maintenant",
+      "pertinent": false,
+      "enjeu_p50": null,
+      "etat": "a_explorer"
+     }
+    ]
+   },
+   "attendu": {
+    "pour_toi": [],
+    "message": "Rien d'urgent ici. Parcours les thèmes si une question te parle."
+   },
+   "calcul": "Seuil scn_enjeu_min_eur_an = 30 €."
+  },
+  {
+   "id": "LST-3",
+   "scenario": null,
+   "famille": "lister",
+   "nom": "Enjeu à compléter : jamais dans « pour toi », jamais un chiffre",
+   "today": "2026-10-15",
+   "entree": {
+    "cartes": [
+     {
+      "cle": "per_interet",
+      "pertinent": true,
+      "enjeu_p50": null,
+      "enjeu_statut": "a_completer",
+      "etat": "a_explorer"
+     },
+     {
+      "cle": "ouvrir_pea",
+      "pertinent": true,
+      "enjeu_p50": 45,
+      "etat": "a_explorer"
+     }
+    ]
+   },
+   "attendu": {
+    "pour_toi": [
+     "ouvrir_pea"
+    ]
+   },
+   "calcul": "Une carte sans enjeu calculé reste dans son thème (« Enjeu à calculer »)."
+  }
+ ],
+ "seconde_verification": {
+  "date": "2026-10-16",
+  "premier_calcul": "Script A (Python, hors dépôt) : simulation mois par mois des poches, impôts de sortie réécrits d'après projection-fiscalite.js, dates par datetime, seuils par dichotomie ; Monte-Carlo par un socle Node écrit à la main sur Projection.tirages (lecture seule du moteur).",
+  "script": "Script B (Node, hors dépôt) : relit chaque cas (plan, data_patch, réponses) et recalcule les attendus par d'autres méthodes : rentes géométriques en formules fermées, dates par Date UTC, frais de seuil par fausse position (Illinois), économie d'impôt par intégration au pas de 1 €, matelas relu depuis foyer_base + data_patch, Monte-Carlo par produits de facteurs à rebours sur les mêmes tirages.",
+  "resultat": {
+   "valeurs_verifiees": 596,
+   "cas_verifies": 47,
+   "ecarts": 0,
+   "ecarts_admis": 0
+  },
+  "ecarts_trouves_et_corriges": [
+   "MAT-1 (spec § 7.4) : livret calculé à 1,7 % sur 5 ans (10 879,40) au lieu de la règle du moteur (taux du repère jusqu'au 31/01/2027 puis monétaire 1,5 %) : 10 778,14, écart 262,78 €/an au lieu de ≈ 244.",
+   "PEA-3 (spec § 7.1) : 10 € versés au mois 0 (14,02 €) alors que le délai d'ouverture d'un mois s'applique : 13,95 €.",
+   "AV-1 (spec § 7.5) : 100 € versés au mois 0 (157,17 €) : 156,51 € avec le délai d'ouverture.",
+   "MAT-6c (premier jet de la fixture) : réserve des comptes courants oubliée avec D = 1 800 : matelas 16 200, surplus 10 800.",
+   "PEA-3, courbe : B coupait les versements au mois 72 ; convention écrite : les versements continuent jusqu'au retrait."
+  ],
+  "mutations": {
+   "fixture": {
+    "methode": "chaque valeur attendue, une à une : nombre × 1,05 + 0,05, booléen inversé, date décalée d'un jour ; B relancé sur le seul cas",
+    "total": 582,
+    "detectees": 582,
+    "non_detectees": []
+   },
+   "code": {
+    "methode": "constantes de B altérées une à une (prélèvements sociaux 17,2 / 18,6 %, inflation 0, seuil sans lendemain, abattement de couple, actions 6,5 %, livret sans bascule, demi-part LEP 6 150 €)",
+    "resultats": {
+     "ps_general_17_2": "tuée",
+     "ps_av_18_6": "tuée",
+     "inflation_0": "tuée",
+     "sans_jour_de_grace": "tuée",
+     "abattement_seul_partout": "tuée",
+     "actions_6_5": "tuée",
+     "livret_sans_bascule": "tuée",
+     "lep_demi_6150": "tuée"
+    }
+   },
+   "non_verifiables_par_b": [
+    "avertissements_min (nombre minimal d'avertissements, contrôlé par le module)",
+    "statuts et manquants des cas pertinence / manquant / repère absent / repère expiré (règles déclaratives, sans calcul)",
+    "LST-1 à LST-3 (tri, vérifié à la main)"
+   ]
+  }
+ }
+}
