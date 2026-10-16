@@ -245,44 +245,48 @@ Une dépense est **annuelle** si une règle le dit (`annuelle: true`) ou si la d
 
 ### 6.5 Le récurrent : engagements, abonnements, habitudes (demande de Stéph du 2026-10-16)
 
-But : comprendre ce qui revient chaque mois, et séparer ce qui est **contraint** de ce qui est **pilotable**. Calcul déterministe dans `budget.js` (`Budget.recurrents(data, { vue, personne, mois })`), sur `banque_marchands_mois` (13 mois) et les opérations des 90 derniers jours. Aucune opération brute n'est gardée au-delà de 90 jours (§ 13).
+But : comprendre ce qui revient chaque mois, et séparer ce qui est **contraint** de ce qui est **pilotable**. Calcul déterministe dans `budget.js` (`Budget.recurrents(data, { vue, personne, mois })`, `Budget.variations`, `Budget.inhabituel`), sur les seuls agrégats de `banque_marchands_mois` : les 12 mois complets et le mois en cours (m0, mois de la date du jour, jamais complet). Aucune opération brute n'est gardée au-delà de 90 jours (§ 13) et le calcul n'en a pas besoin. Les règles exactes, bornes et arrondis compris, sont les `conventions_recurrents` de `test/fixtures/budget-cas.json` ; les cas chiffrés R1 à R8 (section `recurrents`) font foi (tâche 9b, 2026-10-16).
 
 **Données nécessaires.** `banque_marchands_mois` gagne trois colonnes, calculées par `banque_recalculer_mois` pour chaque `(mois, compte, cle_marchand, sous_categorie)` :
 - `montant_min` et `montant_max`, les montants de la plus petite et de la plus grosse sortie du mois ;
 - `dernier_jour`, le jour du mois (1 à 31) de la dernière sortie.
 
-Avec `nombre` (déjà prévu), elles suffisent pour la fréquence, le panier moyen, les changements de prix et la prochaine date attendue. Les sorties seules comptent ; un flux exclu (§ 4 : virements internes, apports au commun, épargne) n'est jamais un récurrent.
+Avec `nombre` (déjà prévu ; il compte aussi les entrées du groupe, limite acceptée), elles suffisent pour la fréquence, le panier moyen, les changements de prix et la prochaine date attendue.
 
-**Rythme** d'une clé (même `cle_marchand`, même sens) :
-- **mensuel** : présente dans au moins 3 des 4 derniers mois complets, ou 5 des 6 ;
-- **trimestriel** : au moins 3 présences espacées de 3 mois (±1), sur 9 mois ;
-- **annuel** : § 6.3.
+**Ce qui compte.** Les comptes du budget (courant ou joint) de la vue : Tout, Commun, ou Perso (tes comptes à 100 %, le commun à ta part). Les sorties seules comptent (montant d'un mois = ses sorties brutes). Un flux exclu n'est **jamais** un récurrent, ni dans la synthèse, les variations ou l'inhabituel : hors budget (§ 4 : `virement_interne`, `apport_commun`, `transfert_foyer`, `releve_carte`), épargne (`epargne_precaution`, `investissement`, `projets`) et revenus. Un récurrent est un groupe `(compte, cle_marchand, sous_categorie)` : la même enseigne sur deux comptes donne deux lignes. Rythme, famille, statuts et seuils se lisent sur les montants à 100 % ; la part de la vue Perso ne change que les montants affichés, d'où Perso + Perso = Tout. Moins de 3 mois complets de relevés dans la vue : rien n'est calculé (§ 11.9).
+
+**Rythme** d'une clé :
+- **mensuel** : au moins 3 présences dans les 4 mois qui finissent à sa **dernière présence** (le mois en cours compte s'il porte déjà la sortie ; une absence dans le mois en cours ne compte jamais), ou 5 des 6. Lire le rythme à la dernière présence rend « nouveau » possible et garde « arrêté ? » visible ;
+- **trimestriel** : sinon, les 3 dernières présences sont espacées de 3 mois (±1), donc sur 9 mois ;
+- **annuel** : sinon, 2 présences à 11 à 13 mois d'écart (« confirmé »), ou une seule, dans un mois complet, d'une sous-catégorie « annuelle probable » ou d'au moins 150 € (« probable », § 6.3).
+
+**Montant stable.** Les montants des mois complets de la fenêtre du rythme, dans l'ordre, forment des **paliers** : un montant reste dans le palier s'il est à ±10 % (bornes comprises) de sa médiane, sinon il en ouvre un nouveau. « Stable » veut dire **au plus 2 paliers** (un seul changement de prix : une hausse ne fait pas d'un abonnement une habitude) ; « varie de plus de ±10 % » veut dire au moins 2 paliers.
 
 **Trois familles**, dans cet ordre (la première qui s'applique) :
-1. **Engagement** (contraint) : rythme établi, au plus 2 sorties par mois, montant stable à ±10 % de sa médiane, et sous-catégorie parmi `loyer`, `credit_immo`, `autres_credits`, `assurances`, `telecom`, `energie`, `charges_logement`, `garde_enfants`, `impots`. Exemples : loyer, crédit, box, assurance.
-2. **Abonnement** (pilotable, résiliable) : rythme établi, au plus 2 sorties par mois, montant stable à ±10 %, et sous-catégorie `abonnements` ou `sport`, ou une entrée de la table des marchands qui porte une famille d'abonnement. Exemples : vidéo, musique, presse, logiciel, salle de sport.
-3. **Habitude** (pilotable, variable) : la même clé au moins 4 fois par mois en moyenne sur les 3 derniers mois complets, **ou** présente dans 3 des 4 derniers mois avec un montant qui varie de plus de ±10 %. Exemples : supermarché, boulangerie, café, livraison de repas, VTC, carburant.
+1. **Engagement** (contraint) : rythme établi, au plus 2 sorties par mois, montant stable, et sous-catégorie parmi `loyer`, `credit_logement`, `autres_credits`, `assurances`, `telecom`, `energie`, `charges_logement`, `enfants`, `impots`. Exemples : loyer, crédit, box, assurance.
+2. **Abonnement** (pilotable, résiliable) : rythme établi, au plus 2 sorties par mois, montant stable, et sous-catégorie `abonnements` ou `sport`, ou une entrée de la table des marchands qui porte une famille d'abonnement. Exemples : vidéo, musique, presse, logiciel, salle de sport.
+3. **Habitude** (pilotable, variable) : la même clé au moins 4 fois par mois en moyenne sur les 3 derniers mois complets (mois absent = 0), **ou** présente dans au moins 3 des 4 derniers mois complets avec un montant qui varie de plus de ±10 %. Exemples : supermarché, boulangerie, café, livraison de repas, VTC, carburant.
 
 Le reste est **ponctuel**.
 
 **Pour chaque récurrent**, l'écran et le connecteur donnent :
 - **Identité** : la clé nettoyée, qui désigne **ta** ligne (on peut nommer ton payeur, jamais en suggérer un autre), la sous-catégorie, la famille et le rythme.
-- **Montants** : le montant habituel (médiane) et le **coût sur 12 mois**.
-- **Pour une habitude** : la fréquence (« ≈ 12 fois par mois »), le panier moyen (sorties ÷ nombre) et la tendance (moyenne des 3 derniers mois contre les 3 précédents, « +18 % »).
-- **Dates** : la dernière date et la **prochaine date attendue** (`dernier_jour` + rythme, à ±3 jours).
+- **Montants** : le montant habituel (engagement et abonnement : médiane du dernier palier, le prix en vigueur ; habitude : médiane des 3 derniers mois complets) et le **coût sur 12 mois** au rythme actuel (montant habituel × 12, × 4 ou × 1 ; habitude : total mensuel × 12).
+- **Pour une habitude** : la fréquence (« ≈ 12 fois par mois »), le panier moyen (sorties ÷ nombre), le total mensuel (moyenne des 3 derniers mois complets) et la tendance (cette moyenne contre celle des 3 mois d'avant, « +18 % » ; un mois sans présence compte 0, pas de tendance si ces mois précèdent tes relevés ou si la base est nulle).
+- **Dates** : la dernière date et la **prochaine date attendue** (même jour une période plus tard, ramené au dernier jour du mois s'il n'existe pas ; à ±3 jours : au-delà, le prélèvement est « en retard » mais reste attendu).
 - **Statuts écrits** :
-  - « nouveau » : premier mois dans les 2 derniers, et la clé remplit déjà sa règle ;
-  - « hausse de prix » : le dernier montant dépasse la médiane des 3 précédents de plus de 5 % et d'au moins 1 €, par exemple « 13,49 → 15,99 € depuis août » ;
-  - « arrêté ? » : l'occurrence attendue manque depuis plus d'une fois et demie le rythme ;
-  - « doublon possible » : la règle du § 6.4.
+  - « nouveau » : première présence dans le mois en cours ou les 2 mois d'avant, et la clé remplit déjà sa règle ;
+  - « hausse de prix » (engagements et abonnements) : le dernier montant (mois en cours compris) dépasse la médiane des 3 présences précédentes de plus de 5 % (strictement) et d'au moins 1 €, par exemple « 13,49 → 15,99 € depuis septembre » ;
+  - « arrêté ? » (engagements et abonnements) : plus d'une fois et demie la période depuis la dernière date (mensuel : plus de 45 jours ; trimestriel : plus de 136,5 jours) ; plus de prochaine date ;
+  - « doublon possible » : la règle du § 6.4 entre récurrents de la vue qui ne sont pas « arrêté ? » (familles de marchands video et musique seulement).
 
 **Synthèse du mois** :
-- **Socle contraint** (engagements), **abonnements**, **habitudes** et **ponctuel**, en € et en part des dépenses.
-- **« Reste à prélever ce mois »** : la somme des engagements et abonnements attendus d'ici la fin du mois. Ces prélèvements apparaissent aussi dans le Calendrier (DAT1), dans « Prochaines échéances ».
+- **Socle contraint** (engagements), **abonnements**, **habitudes** et **ponctuel**, en € (sorties brutes du mois) et en part des dépenses.
+- **« Reste à prélever ce mois »** (mois en cours seulement) : la somme, au dernier montant connu, des engagements et abonnements dont la prochaine date tombe dans le mois et qui ne sont pas encore prélevés ce mois-ci (un prélèvement en retard reste attendu), avec la date du prochain prélèvement. Ces prélèvements apparaissent aussi dans le Calendrier (DAT1), dans « Prochaines échéances ».
 
-**Analyse d'une variation** (« pourquoi mes restaurants ont pris 120 € ? ») : décomposition de l'écart d'une sous-catégorie ou d'une clé entre le mois et sa référence. On écrit l'effet volume (Δ nombre × panier de référence) et l'effet prix (Δ panier × nombre du mois), par exemple « 4 passages de plus (+96 €), panier un peu plus élevé (+24 €) ». On liste aussi les 3 clés qui expliquent le plus l'écart.
+**Analyse d'une variation** (« pourquoi mes restaurants ont pris 120 € ? ») : décomposition de l'écart d'une sous-catégorie ou d'une clé entre le mois et sa référence (mois complets d'avant, 12 au plus, médianes du § 6.2 : montant S0, nombre N0, panier P0 = S0 ÷ N0). On écrit l'effet volume (Δ nombre × panier de référence) et l'effet prix (Δ panier × nombre du mois), dont la somme vaut l'écart, par exemple « 4 passages de plus (+96 €), panier un peu plus élevé (+24 €) ». On liste aussi les 3 clés qui expliquent le plus l'écart (écart de même signe, du plus grand au plus petit).
 
-**Dépenses inhabituelles** : une clé jamais vue sur 12 mois et d'au moins 50 €, ou une sortie supérieure à 3 fois la médiane de sa clé. Elles sont listées à part, sans jugement.
+**Dépenses inhabituelles** : une clé jamais vue sur les 12 mois précédents et d'au moins 50 €, ou une sortie supérieure à 3 fois le panier médian de sa clé. Elles sont listées à part, sans jugement.
 
 **Pistes** (§ 8.2) qui en découlent :
 - une hausse de prix d'abonnement : renégocier ou résilier, en citant les droits de résiliation vérifiés ;
@@ -767,6 +771,7 @@ Précisions de Stéph : D2 suit les formes de politiques de 0033 (« aal2 si fac
 | D15 | Familles du récurrent | Engagement, abonnement, habitude, ponctuel (§ 6.5) ; seuils de départ : ±10 %, 3 mois sur 4, 4 fois par mois, hausse > 5 % et ≥ 1 € ; revus après 3 mois d'usage, comme D4 |
 | D16 | Place dans l'app | Patrimoine › Budget en trois onglets : Mon mois, Mes dépenses, Récurrent (§ 11.9) ; « Reste à prélever » aussi dans Aujourd'hui et le Calendrier |
 | D17 | Connecteur | `analyser_depenses` étendu et nouvel outil `lire_recurrents` |
+| D18 | Conventions de calcul du récurrent (tâche 9b, 2026-10-16) | Rythme lu à la dernière présence (le mois en cours compte s'il porte la sortie, jamais son absence) ; montant stable = au plus 2 paliers à ±10 % (une hausse de prix reste un abonnement) ; médiane paire = moyenne des deux centrales ; arrondi au centime, taux au dixième ; tendance avec mois absent = 0 et null avant les relevés ; coût sur 12 mois au rythme actuel ; reste à prélever au dernier montant ; part Perso sur les montants seulement ; `credit_immo` et `garde_enfants` remplacés par `credit_logement` et `enfants` (§ 6.5, `conventions_recurrents` et cas R1 à R8 de la fixture) |
 
 ## 18. Risques
 - **Qualité de la table des marchands** sans Powens catégorisé : couverture visée ≥ 80 % des montants sur les relevés fictifs de préproduction ; la part « à classer » est toujours affichée et le score devient provisoire ou absent.
