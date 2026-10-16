@@ -148,3 +148,5 @@
   #view-claude-guide .cg-volet[data-cg-volet="claude"]{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));align-items:start}
   #view-claude-guide .cg-volet[data-cg-volet="claude"]>*{grid-column:1/-1}
 }
+/* demandes toutes prêtes : titre, description et les deux boutons côte à côte dès que la place le permet */
+#view-claude-guide .cg-pc-a .cg-btn{flex:1 1 9rem;justify-content:center}

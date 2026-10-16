@@ -1,6 +1,7 @@
 /* Agent › Savoir : sélecteur Fiches · Expertises au-dessus des deux volets (feuilles de fiches-view et expertises-view). */
 #view-savoir-view .sv{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
-#view-savoir-view .sv-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-4)}
+/* « .sv-tete » existe aussi dans suivi-view.css (une carte à liseré, sans portée) : on remet à plat ce qu'elle pose, ici l'en-tête est une simple rangée. */
+#view-savoir-view .sv-tete{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-4);padding:0;border:0;border-radius:0;background:none;grid-area:auto}
 #view-savoir-view .sv-titre{margin:0;font:650 var(--t-h2)/var(--lh-h2) var(--f-display)}
 #view-savoir-view [data-sv-volet]{min-width:0}
 #view-savoir-view [data-sv-volet][hidden]{display:none}

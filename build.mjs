@@ -71,15 +71,18 @@ app = wrap(app);
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(join(OUT, "app"), { recursive: true });
 writeFileSync(join(OUT, "app.html"), app);
-writeFileSync(join(OUT, "index.html"), wrap(read(join(WEB, "index.html")) || "<title>Boussole</title><p>Bientôt.</p>"));
+const extra = [];
+// Pages publiques (accueil, Mon compte) : mêmes jetons et mêmes composants que l'app, injectés à la place de /*@css*/ (theme.css puis ui.css).
+const cssPublic = [read(join(SRC, "theme.css")), read(join(SRC, "ui.css"))].join("\n");
+const pagePublique = nom => read(join(WEB, nom)).replace("/*@css*/", () => cssPublic);
+writeFileSync(join(OUT, "index.html"), wrap(pagePublique("index.html") || "<title>Boussole</title><p>Bientôt.</p>"));
+if (existsSync(join(WEB, "compte.html"))) { writeFileSync(join(OUT, "compte.html"), pagePublique("compte.html")); extra.push("compte.html"); }
 for (const s of scripts) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
 // Scripts des pages autonomes (hors app.html) : copiés sans être injectés dans l'application.
 for (const s of ["consent", "landing", "account", "projection-worker"]) if (existsSync(join(SRC, `${s}.js`))) copyFileSync(join(SRC, `${s}.js`), join(OUT, "app", `${s}.js`));
 if (existsSync(CONFIG_JS)) copyFileSync(CONFIG_JS, join(OUT, "config.js"));
 
-const extra = [];
 const copyIf = rel => { const p = join(WEB, rel); if (existsSync(p)) { mkdirSync(dirname(join(OUT, rel)), { recursive: true }); copyFileSync(p, join(OUT, rel)); extra.push(rel); } };
-copyIf("compte.html");
 copyIf("oauth/consent.html");
 if (existsSync(join(WEB, "legal"))) for (const f of readdirSync(join(WEB, "legal"))) if (f.endsWith(".html")) copyIf(`legal/${f}`);
 
