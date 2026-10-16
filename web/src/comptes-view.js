@@ -675,12 +675,31 @@
       : v ? (() => { const d = FM().fmtDelta({ montant: v.montant, pct: v.pct, periode: v.texte }), mv = d.texte.slice(0, d.texte.length - v.texte.length).trim();
         return '<span class="cv-var ' + d.ton + '"><span aria-hidden="true">' + esc(mv.charAt(0)) + "</span> " + '<span class="ui-sr">' + esc({ hausse: "En hausse", baisse: "En baisse", stable: "Stable" }[d.sens] + " : ") + "</span>" + esc(mv.slice(1).trim()) + "</span> " + esc(v.texte); })()
       : esc("La variation apparaîtra après la première photo nocturne du patrimoine.");
-    const fait = (l, val, s, cls) => '<li><span class="cv-fait-l">' + esc(l) + '</span><span class="cv-fait-v' + (cls ? " " + cls : "") + '">' + esc(val) + "</span>" + (s ? '<span class="cv-fait-s">' + esc(s) + "</span>" : "") + "</li>";
+    const fait = (l, val, s, cls) => '<li class="ui-tuile"><span class="ui-tuile-l cv-fait-l">' + esc(l) + '</span><span class="ui-tuile-v cv-fait-v' + (cls ? " " + cls : "") + '">' + esc(val) + "</span>" + (s ? '<span class="ui-tuile-s cv-fait-s">' + esc(s) + "</span>" : "") + "</li>";
     return '<p class="cv-total">' + esc(eur(e.net)) + '</p><p class="cv-sous">' + varTxt + "</p>" +
-      '<ul class="cv-faits">' + fait("Financier", eur(e.financier), "comptes et placements") + fait("Immobilier", eur(e.immobilier), e.autres ? "+ " + eur(e.autres) + " d'autres biens" : "") +
+      '<ul class="cv-faits ui-tuiles">' + fait("Financier", eur(e.financier), "comptes et placements") + fait("Immobilier", eur(e.immobilier), e.autres ? "+ " + eur(e.autres) + " d'autres biens" : "") +
       fait("Dettes", eur(-e.dettes), "capital restant dû") + "</ul>";
   }
 
+  /** Libellé bancaire brut → texte lisible et type : « prlv sepa edf clients particuliers » → « Edf clients particuliers » et « Prélèvement » ; première lettre en capitale. */
+  function libelleBancaire(brut) {
+    let t = plat(brut).trim(), type = "";
+    const m = t.match(/^(prlv|prelevement|vir|virement|cb|carte)(?:\s+(sepa|permanent|inst|instantane|interne))?\s+(.+)$/i);
+    if (m) {
+      const k = m[1].toLowerCase(), q = (m[2] || "").toLowerCase();
+      type = /^prlv|^prelev/.test(k) ? "Prélèvement" : /^vir/.test(k) ? (q === "permanent" ? "Virement permanent" : "Virement") : "Carte";
+      t = (q === "interne" ? "Interne " : "") + m[3];
+    }
+    t = t.replace(/^echeance\b/i, "Échéance");
+    return { texte: t.charAt(0).toUpperCase() + t.slice(1), type };
+  }
+  /** Prélèvements récurrents d'une fiche : tableau à 3 colonnes (libellé et type, jour du mois, montant). */
+  function prelevementsTableHtml(liste) {
+    const lignes = liste.map(x => { const l = libelleBancaire(x.libelle);
+      return '<tr><th scope="row"><span class="cv-m-t">' + esc(l.texte) + "</span>" + (l.type ? ' <span class="cv-chip neutre">' + esc(l.type) + "</span>" : "") + "</th>" +
+        "<td>" + (x.jour ? esc("le " + (x.jour === 1 ? "1er" : String(x.jour))) + '<span class="cv-m-s">' + esc(pluriel(x.mois, "mois", "mois")) + "</span>" : "—") + '</td><td class="cv-num">' + esc(eur(x.montant)) + "</td></tr>"; });
+    return '<div class="cv-table-defile cv-prel-wrap"><table class="cv-table cv-prel"><caption class="ui-sr">Prélèvements récurrents détectés sur les 90 derniers jours</caption><thead><tr><th scope="col">Libellé</th><th scope="col">Jour du mois</th><th scope="col" class="cv-num">Montant</th></tr></thead><tbody>' + lignes.join("") + "</tbody></table></div>";
+  }
   /** Alerte « doublon probable » (texte, puis « Demander à Claude » de clôturer la ligne si U est fourni). */
   const alerteDoublonHtml = (d, U) => '<p class="cv-alerte" role="note"><span>' + esc(texteDoublon(d)) + "</span>" + lienClaude(U, phraseDoublon(d), "Demander à Claude") + "</p>";
   /** Carte d'un compte : lien vers sa fiche (ou vers Immobilier et crédits pour une dette) ; sans fiche (plusieurs lignes sans
@@ -691,7 +710,7 @@
       c.plusValue != null ? (c.plusValue >= 0 ? "plus-value latente " : "moins-value latente ") + eurS(c.plusValue) : "", c.source.texte, perimeLu(c.source),
       liste(c.doublons).length ? "doublon probable" : "", !lienOk ? "" : fiche ? "ouvrir la fiche" : "voir Immobilier et crédits"].filter(Boolean).join(", ");
     const corps = '<span class="cv-c-haut"><span class="cv-c-nom">' + esc(c.nom) + "</span>" + '<span class="cv-c-solde">' + esc(eur(c.solde)) + "</span></span>" +
-      '<span class="cv-c-bas"><span class="cv-c-sous">' + esc([c.sous, pct0(c.part) + (c.type === "dette" ? " des dettes" : " du financier")].filter(Boolean).join(" · ")) + "</span>" +
+      '<span class="cv-c-bas"><span class="cv-c-sous">' + esc([c.sous, pct0(c.part)].filter(Boolean).join(" · ")) + "</span>" +
       (c.plusValue != null ? tendance(c.plusValue, "latents") : "") + "</span>" +
       '<span class="cv-c-pied"><span class="cv-c-etat">' + chip(c.source) + perimeHtml(c.source) + "</span>" + (lienOk ? '<span class="cv-c-ouvrir" aria-hidden="true">›</span>' : "") + "</span>";
     const cls = "cv-carte" + (c.type === "dette" ? " dette" : "") + (liste(c.doublons).length ? " doublon" : "");
@@ -805,8 +824,7 @@
       (f.aRecevoir.length ? '<p class="cv-note">À recevoir, non compté : ' + esc(f.aRecevoir.join(", ")) + ".</p>" : "") + "</section>" +
       '<section class="panel cv-f-bloc" aria-labelledby="cvRepTitre"><h3 id="cvRepTitre">Répartition par classe</h3>' + rep + "</section>" +
       '<section class="panel cv-f-bloc" aria-labelledby="cvLignesTitre"><h3 id="cvLignesTitre">Lignes, par poids</h3><div id="cvLignesFiche"></div></section>' +
-      '<section class="panel cv-f-bloc" aria-labelledby="cvVraieTitre"><h3 id="cvVraieTitre">Vraie performance</h3>' + vraie + "</section>" +
-      '<div class="cv-acts">' + lienClaude(U, "Explique-moi mon enveloppe « " + f.nom + " » dans Boussole : sa composition, sa plus-value latente et ce qui l'a fait bouger.", "Demander à Claude") + "</div>";
+      '<section class="panel cv-f-bloc" aria-labelledby="cvVraieTitre"><h3 id="cvVraieTitre">Vraie performance</h3>' + vraie + "</section>";
   }
   /** Courbe et lignes d'une fiche enveloppe pour la période choisie. etat = { cours, charge: chargement | pret, periode, largeur }. */
   function grapheEnveloppeHtml(f, etat, U, deps) {
@@ -903,20 +921,19 @@
       : f.operations === "chargement" ? '<p class="cv-muet" role="status">Chargement des opérations…</p>'
       : f.operations === "indisponible" ? '<p class="cv-muet">Opérations indisponibles pour le moment : les prélèvements récurrents s\'afficheront au prochain chargement.</p>'
       : f.historiqueCourt ? '<p class="cv-muet">Pas encore assez d\'opérations (moins de deux mois) pour repérer les prélèvements récurrents.</p>'
-      : f.prelevements.length ? '<ul class="cv-mvts">' + f.prelevements.map(x => '<li><span class="cv-m-t">' + esc(x.libelle) + (x.jour ? '<span class="cv-m-s">vers le ' + esc(x.jour === 1 ? "1er" : String(x.jour)) + " du mois · " + esc(pluriel(x.mois, "mois", "mois")) + "</span>" : "") + '</span><span class="cv-m-v">' + esc(eur(x.montant)) + "</span></li>").join("") + "</ul>" +
+      : f.prelevements.length ? prelevementsTableHtml(f.prelevements) +
         '<p class="cv-note">Débits de même libellé au moins deux mois sur les 90 derniers jours, de montants proches.</p>'
       : '<p class="cv-muet">Aucun prélèvement récurrent détecté sur les 90 derniers jours.</p>';
     return arianeHtml([RETOUR, { label: f.nom }]) + titreFiche(f.nom, f.sous, '<p class="cv-f-total">' + esc(eur(f.solde)) + "</p>") +
       perimeFicheHtml(f.source, U, "ton compte « " + f.nom + " »") +
-      '<section class="panel cv-f-bloc" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" +
-      '<section class="panel cv-f-bloc" aria-labelledby="cvFluxTitre"><h3 id="cvFluxTitre">Entrées et sorties</h3>' + flux +
+      '<section class="panel cv-f-bloc cv-b-bref" aria-labelledby="cvResumeTitre"><h3 id="cvResumeTitre">En bref</h3>' + faitsHtml(chiffres) + "</section>" +
+      '<section class="panel cv-f-bloc cv-b-flux" aria-labelledby="cvFluxTitre"><h3 id="cvFluxTitre">Entrées et sorties</h3>' + flux +
       (svg ? '<div class="cv-legende" aria-hidden="true"><span class="cv-leg ent">Entrées</span><span class="cv-leg sor">Sorties</span></div>' + svg +
         donneesHtml(U, "Entrées et sorties par mois", ["Mois", "Entrées", "Sorties"], fl.mois.map(m => [moisLabel(m.mois), eur(m.entrees), eur(m.sorties)])) : "") + "</section>" +
-      '<section class="panel cv-f-bloc" aria-labelledby="cvPrelTitre"><h3 id="cvPrelTitre">Prélèvements récurrents</h3>' + prel + "</section>" +
-      '<div class="cv-acts">' + lienClaude(U, "Regarde avec moi les entrées et sorties de mon compte courant dans Boussole : y a-t-il de l'argent qui dort ou des dépenses qui dérapent ?", "Demander à Claude") + "</div>";
+      '<section class="panel cv-f-bloc cv-b-prel" aria-labelledby="cvPrelTitre"><h3 id="cvPrelTitre">Prélèvements récurrents</h3>' + prel + "</section>";
   }
 
-  const H = { jour, FAMILLES, PERIODES, SEUIL_ANCIEN_JOURS, anciennete, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
+  const H = { libelleBancaire, jour, FAMILLES, PERIODES, SEUIL_ANCIEN_JOURS, anciennete, famille, doublonsDe, plusBasSolde, prelevementsRecurrents, lien, lireCible, cleVue, etablissement, comptesBanque, sourceDe, comptes, entete, debutPeriode, serieEnveloppe, perfDepuis,
     vraiePerformance, expertiseDe, ficheEnveloppe, ficheLigne, ficheCourant, fluxMois, echantillon, enteteHtml, famillesHtml, carteHtml, arianeHtml, ficheEnveloppeHtml,
     grapheEnveloppeHtml, calendrierEnveloppeHtml, ficheLigneHtml, grapheLigneHtml, ficheCourantHtml, courbeSvg, barresSvg, donneesHtml, jour };
   if (typeof module === "object" && module.exports) module.exports = H;
@@ -926,6 +943,12 @@
   /* ============================================================ vue ============================================================ */
   const CLE_PERIODE = "comptes-periode", CLE_FERMES = "comptes-fermes";
   let S = null, root = null, dirty = true, vue = { type: "liste" }, largeur = 0;
+  /* Largeur du bloc « Entrées et sorties » : ≥ 1100 px il occupe 7 colonnes de 12 (voir comptes-view.css), sinon toute la largeur. */
+  function largeurFlux(w) {
+    let large = false;
+    try { large = !!(window.matchMedia && window.matchMedia("(min-width: 1100px)").matches); } catch (e) { large = false; }
+    return large ? Math.round((w - 11 * 12) / 12 * 7 + 6 * 12) : w;
+  }
   let periode = "1a", ctlPeriode = null, sigListe = "", sigFiche = "", origine = null; // origine : clé de la carte qui a ouvert la fiche
   const fermes = new Set();
   /* Cours par ISIN : coursCache[isin] = série lue ; couverts[isin] = première date demandée (la série couvre [couverts, aujourd'hui]) ;
@@ -989,7 +1012,7 @@
     else {
       const f0 = ficheCourant(S, vue.id, jour());
       f = f0.trouvee && f0.compteIds.length ? ficheCourant(S, vue.id, jour(), undefined, ops[f0.compteIds.join(",")]) : f0;
-      largeur = zone.clientWidth || largeur; html = ficheCourantHtml(f, u, { largeur: largeur - 34 }); vue.isins = [];
+      largeur = zone.clientWidth || largeur; html = ficheCourantHtml(f, u, { largeur: largeurFlux(largeur) - 34 }); vue.isins = [];
       if (f.trouvee && f.connecte) chargerOperations(f.compteIds);
     }
     vue.fiche = f;

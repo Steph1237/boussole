@@ -195,7 +195,7 @@ test("entete : patrimoine net, financier, immobilier, dettes ; variation du patr
   assert.equal(CV.entete(S0({ positions: [POS("a")], snapshots: [] }), "2026-10-12", DEPS).variation, null, "aucune photo : pas de variation");
   const h = sp(CV.enteteHtml(e));
   assert.match(h, /151 100 €/); assert.match(h, /\+200 € · \+0,1 %/); assert.match(h, /sur 1 an/); assert.doesNotMatch(h, /depuis le/, "la période est écrite en « sur … », comme Aujourd'hui");
-  assert.match(h, /Dettes<\/span><span class="cv-fait-v">−50 000 €/);
+  assert.match(h, /Dettes<\/span><span class="ui-tuile-v cv-fait-v">−50 000 €/);
   assert.match(sp(CV.enteteHtml(Object.assign({}, e, { variation: null }))), /première photo nocturne/);
   const attente = sp(CV.enteteHtml(CV.entete(S, "2026-10-12", Object.assign({}, DEPS, { enAttente: true }))));
   assert.match(attente, /ui-skel/, "passé en cours de lecture : squelette"); assert.doesNotMatch(attente, /\+200 €/, "jamais un chiffre provisoire");
@@ -336,7 +336,7 @@ test("ficheEnveloppeHtml / grapheEnveloppeHtml : fil d'Ariane, titre focalisable
   assert.match(h, /Valeur de tes lignes actuelles/); assert.match(h, /id="cvPeriode"/); assert.match(h, /id="cvGraphe"/);
   assert.match(h, /Répartition par classe/); assert.match(h, /Vraie performance/);
   assert.match(h, /Prix de revient total/); assert.match(h, /Plus-value latente<\/span><span class="cv-det-v pos">\+3 527 €/);
-  assert.match(h, /href="https:\/\/claude\.ai\/new\?q=/);
+  assert.doesNotMatch(h, /href="https:\/\/claude\.ai\/new\?q=/, "un seul bouton Claude par écran : celui de l'en-tête (plus de « Demander à Claude » en bas de fiche)");
   // cours encore en lecture
   assert.match(CV.grapheEnveloppeHtml(f, { charge: "chargement", periode: "1a", today: TODAY }, UI, { Calc }).graphe, /Chargement des cours/);
   // cours lus : courbe + tableau ; perf de la période sur chaque ligne
@@ -416,7 +416,11 @@ test("ficheCourant / ficheCourantHtml : flux du compte (banque_mois par compte),
   assert.match(h, /<svg class="cv-svg"[^>]*role="img" aria-labelledby="cvBarresFlux-t" aria-describedby="cvBarresFlux-d"/);
   assert.equal((h.match(/<rect class="cv-b-ent"/g) || []).length, 6);
   assert.match(h, /<th scope="col">Mois<\/th><th scope="col" class="cv-num">Entrées<\/th><th scope="col" class="cv-num">Sorties<\/th>/);
-  assert.match(h, /echeance pret immo<span class="cv-m-s">vers le 2 du mois/);
+  assert.match(h, /<th scope="row"><span class="cv-m-t">Échéance pret immo<\/span><\/th><td>le 2<span class="cv-m-s">3 mois<\/span><\/td><td class="cv-num">820 €<\/td>/, "tableau à 3 colonnes : libellé, jour, montant");
+  assert.match(h, /<span class="cv-m-t">Edf clients particuliers<\/span> <span class="cv-chip neutre">Prélèvement<\/span>/, "libellé bancaire lisible, type en puce");
+  assert.deepEqual(CV.libelleBancaire("vir permanent pea"), { texte: "Pea", type: "Virement permanent" });
+  assert.deepEqual(CV.libelleBancaire("prlv sepa edf clients particuliers"), { texte: "Edf clients particuliers", type: "Prélèvement" });
+  assert.deepEqual(CV.libelleBancaire("Loyer"), { texte: "Loyer", type: "" });
   assert.doesNotMatch(h, /Aucun prélèvement/);
   // flux du seul compte concerné : les lignes d'un autre compte sont ignorées
   const autre = demoS(); autre.banque.mois.push({ mois: TODAY.slice(0, 7) + "-01", compteId: 1003, categorie: "divers", entrees: 0, sorties: 99999, nombre: 1 });
@@ -637,7 +641,7 @@ test("vue : cours de la période choisie d'abord, période plus longue relue ; �
   assert.match($("cvFiche").innerHTML, /Chargement des opérations…/);
   await attendre();
   assert.deepEqual(J(appelsOps.map(a => a[0])), [["1001"]]);
-  assert.match(sp($("cvFiche").innerHTML), /echeance pret immo/);
+  assert.match(sp($("cvFiche").innerHTML), /Échéance pret immo/);
   assert.doesNotMatch($("cvFiche").innerHTML, /Chargement des opérations/);
 });
 
