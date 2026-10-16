@@ -11,9 +11,13 @@
    Budget.proposerCible(data, entree) → { options, retenue, cible, controles, … }                                    // § 8.3
    Budget.plancherResteAVivre(foyer, reperes) → { repere, valeur } | null ; Budget.comparerInsee(reference, reperes, opts?) → comparaison (T5)
 
-   POINT D'INTÉGRATION DE LA TÂCHE 7 (non livré ici : dépend de Calc.moisBancaires, fourni par HIS2 sur une autre branche) :
-   Budget.donnees(S), Budget.mois(data, { vue, personne, mois }), Budget.serie(...), Budget.reference(...) viendront s'ajouter à l'objet exporté en bas de ce
-   fichier. Les fonctions ci-dessous n'en dépendent pas : elles lisent des formes simples, décrites ci-dessous, que ces fonctions produiront.
+   Livré (tâche 7) : le moteur du mois, qui lit les mois bancaires fusionnés par Calc.moisBancaires (HIS2) :
+   Budget.donnees(S, { aujourdhui }) → data                                            // comptes du budget, mois (Powens et import), partage, préférences, cible, repères
+   Budget.mois(data, { vue: "tout" | "commun" | "perso", personne?, mois }) → M       // § 6.1 : revenus, blocs, hors budget, capacité, épargne, lissage, couverture
+   Budget.serie(data, { vue, personne?, du, au, granularite: "mois" | "trimestre" | "annee" }) → [M]
+   Budget.reference(data, { vue, personne?, mois_ref? }) → référence | null            // § 6.2 : médianes lissées sur 12 mois (6 au moins, sinon 3 : période courte)
+   Budget.depensesAnnuelles(data, { vue, personne, part }) → [dépense annuelle]        // § 6.3
+   Les fonctions de note, de détection et de pistes lisent les formes que ces fonctions produisent (data.mois, data.reference…).
 
    Formes lues :
    M (mois, § 6.1) : { revenus, blocs: { essentiels, envies, epargne }, a_classer, lisse?: { annuelles: [{ sous_categorie, montant_mois, provision }], essentiels_lisses?,
@@ -30,7 +34,7 @@
 (function (root, factory) {
   const cjs = typeof module === "object" && module.exports;
   const dep = (nom, global) => (cjs ? require("./" + nom + ".js") : root[global]);
-  const api = factory({ BudgetCategories: dep("budget-categories", "BudgetCategories") });
+  const api = factory({ BudgetCategories: dep("budget-categories", "BudgetCategories"), Calc: dep("calc", "Calc"), Periodes: dep("periodes", "Periodes") });
   if (cjs) module.exports = api;
   else root.Budget = api;
 })(typeof self !== "undefined" ? self : this, function (D) {
@@ -602,6 +606,307 @@
   }
   function montantOption(m, R, effort) { return { montant: arrondi(m), taux: tauxPct(arrondi(m), R), effort }; }
 
+  /* ================================================================== le moteur du mois (tâche 7, § 5 et § 6) */
+  const r6 = x => (Math.round(x * 1e6) / 1e6) || 0;
+  const sansAccent = s => String(s == null ? "" : s).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const jourDe = d => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : d instanceof Date && isFinite(d) ? d.toISOString().slice(0, 10) : null);
+  const COMPTES_BUDGET = ["courant", "joint"];
+  const HORS_BUDGET_CLES = ["virement_interne", "apport_commun", "transfert_foyer", "releve_carte"];
+  /** Part de p1 dans le commun (config.partage : égal, apports ou fixe → toujours `p1`, 0,5 par défaut). */
+  function partageDe(config) {
+    const p = config && typeof config.partage === "object" && config.partage ? config.partage : {};
+    const p1 = nombre(p.p1);
+    return { mode: p.mode === "apports" || p.mode === "fixe" ? p.mode : "egal", p1: p1 !== null && p1 >= 0 && p1 <= 1 ? p1 : 0.5 };
+  }
+  /** Mois bancaires lus par l'app → données du moteur. `S` : le store (banque, relevesBancaires, config, savoir…) ; `opts.aujourdhui` : date du jour (AAAA-MM-JJ).
+      Les mois viennent de `Calc.moisBancaires` (Powens et relevés importés de HIS2, jamais les deux pour un compte et un mois) ; ne restent que les comptes du budget
+      (courant ou joint, ni ignoré ni en double, actif) et les cartes à débit différé importées que moisBancaires retient. Un mois importé `complet: false` n'entre jamais
+      au budget (il est listé dans `incomplets`, ce qui rend le mois « sans note »).
+      → { aujourdhui, comptes: [{ id, libelle, type, titulaire, origine, solde? }], releves: [{ compte, mois, source, categories: [{ sous, categorie, entrees, sorties, nombre,
+      sans_detail }], ecarte }], incomplets: [{ compte, mois }], ecartes, partage, preferences, regles, cible, reperes, marchands, operations, mois, reference }. */
+  function donnees(S, opts) {
+    const o = opts || {}, s = S || {}, Calc = D.Calc;
+    const aujourdhui = jourDe(o.aujourdhui) || jourDe(s.aujourdhui) || jourDe(s.today) || new Date().toISOString().slice(0, 10);
+    const banque = s.banque && typeof s.banque === "object" ? s.banque : null;
+    const b = banque && banque.actif !== false ? banque : { mois: [], comptes: [] };
+    const hist = s.relevesBancaires && typeof s.relevesBancaires === "object" ? s.relevesBancaires : null;
+    const serie = Calc.moisBancaires(b, hist, aujourdhui);
+    const doublon = c => (c.doublonDe !== undefined ? c.doublonDe : c.doublon_de);
+    const powens = new Map((Array.isArray(b.comptes) ? b.comptes : []).filter(c => c && c.id != null).map(c => [String(c.id), c]));
+    const importes = new Map((hist && Array.isArray(hist.comptes) ? hist.comptes : []).filter(Boolean).map(c => [String(c.id), c]));
+    const rattaches = new Map([...importes.values()].filter(c => (c.banqueCompteId ?? c.banque_compte_id) != null).map(c => [String(c.banqueCompteId ?? c.banque_compte_id), c]));
+    const detaille = new Set(serie.filter(e => e.compte != null).map(e => e.mois));
+    const comptes = new Map(), releves = [], incomplets = [], ecartes = [];
+    for (const e of serie) {
+      if (e.compte == null && detaille.has(e.mois)) continue;   // totaux par utilisateur d'un mois détaillé par compte : écartés (comme Calc.moisCourants)
+      const cle = e.compte == null ? "tous" : String(e.compte);
+      const h = cle.startsWith("h:") ? importes.get(cle.slice(2)) : rattaches.get(cle), p = powens.get(cle);
+      const type = e.type || (p && p.type) || (h && h.type) || "courant";
+      if (!COMPTES_BUDGET.includes(type) && type !== "carte_differe") continue;
+      if (p && (p.ignore === true || doublon(p) != null || p.actif === false)) continue;
+      if (e.ecarte && e.ecarte.length) for (const x of e.ecarte) ecartes.push({ compte: cle, mois: e.mois, ...x });
+      if (e.source !== null && comptes.has(cle)) delete comptes.get(cle).ecartee;
+      if (!comptes.has(cle)) {
+        const titulaire = (p && p.titulaire) || (h && h.titulaire) || null;
+        const c = { id: cle, libelle: (p && (p.nom || p.libelle)) || (h && h.libelle) || (cle === "tous" ? "Tous les comptes connectés" : "Compte"), type, titulaire,
+          origine: p ? "banque" : "import" };
+        if (p && nombre(p.solde) !== null) c.solde = nombre(p.solde);
+        if (p && p.pret) c.pret = p.pret;
+        if (p && p.debit_differe === true) c.debit_differe = true;
+        if (e.source === null) c.ecartee = true;                 // carte comptée sur le courant : écartée par moisBancaires, jamais « absente »
+        comptes.set(cle, c);
+      }
+      if (e.source === null) continue;
+      if (e.source === "import" && e.releve && e.releve.complet === false) { incomplets.push({ compte: cle, mois: e.mois }); continue; }
+      const categories = (Array.isArray(e.categories) ? e.categories : []).filter(Boolean).map(l => {
+        const valide = BC.estSousCategorie(l.sous_categorie);
+        return { sous: valide ? l.sous_categorie : BC.parDefautDe(sansAccent(l.categorie)), categorie: l.categorie, entrees: n0(l.entrees), sorties: n0(l.sorties),
+          nombre: n0(l.nombre), sans_detail: !valide };
+      });
+      releves.push({ compte: cle, mois: e.mois, source: e.source, categories, ecarte: e.ecarte || [] });
+    }
+    // comptes du budget connus sans mois (ils comptent dans « comptes absents ») : les comptes courants de la banque et des relevés
+    for (const [id, p] of powens) {
+      if (comptes.has(id) || !COMPTES_BUDGET.includes(p.type) || p.ignore === true || doublon(p) != null || p.actif === false) continue;
+      const c = { id, libelle: p.nom || p.libelle || "Compte", type: p.type, titulaire: p.titulaire || null, origine: "banque" };
+      if (nombre(p.solde) !== null) c.solde = nombre(p.solde);
+      if (p.pret) c.pret = p.pret;
+      if (p.debit_differe === true) c.debit_differe = true;
+      comptes.set(id, c);
+    }
+    const config = s.config && typeof s.config === "object" ? s.config : {};
+    const savoir = s.savoir && Array.isArray(s.savoir.reperes) ? s.savoir.reperes : Array.isArray(s.reperes) ? s.reperes : [];
+    const data = { aujourdhui, comptes: [...comptes.values()], releves, incomplets, ecartes, partage: partageDe(config), preferences: config.budget_preferences || {},
+      regles: Array.isArray(s.regles) ? s.regles : Array.isArray(s.budgetRegles) ? s.budgetRegles : [], cible: config.budget_cible || null, reperes: savoir,
+      marchands: Array.isArray(b.marchands) ? b.marchands : Array.isArray(s.marchands) ? s.marchands : [], operations: Array.isArray(b.operations) ? b.operations : [] };
+    // formes que lisent `detections` et `pistes` (§ 6.4, § 8.2) : capacités des 6 derniers mois complets et référence du foyer
+    const courant = mois7(aujourdhui);
+    data.mois = Array.from({ length: 6 }, (_, i) => decale(courant, i - 6)).map(m => ({ m, M: mois(data, { vue: "tout", mois: m }) }))
+      .filter(x => x.M.couverture.comptes_observes > 0).map(x => ({ mois: x.m, capacite: x.M.capacite }));
+    data.reference = reference(data, { vue: "tout" });
+    return data;
+  }
+
+  const titulaireDe = (data, id) => { const c = data.comptes.find(x => x.id === String(id)); return c ? c.titulaire : null; };
+  /** Poids d'un compte dans une vue : Tout, tous à 100 % ; Commun, les comptes communs à 100 % ; Perso, les comptes de la personne à 100 % et les comptes communs
+      à sa part (un compte sans titulaire n'est que dans Tout). */
+  function poidsDe(titulaire, vue, personne, part) {
+    if (vue === "commun") return titulaire === "commun" ? 1 : 0;
+    if (vue === "perso") return titulaire === personne ? 1 : titulaire === "commun" ? part : 0;
+    return 1;
+  }
+  const VUES = ["tout", "commun", "perso"];
+  function lectureVue(data, o) {
+    const vue = VUES.includes(o && o.vue) ? o.vue : "tout";
+    const personne = vue === "perso" ? (o.personne === "p2" ? "p2" : "p1") : null;
+    const p1 = (data.partage && data.partage.p1) ?? 0.5;
+    return { vue, personne, part: personne === "p2" ? 1 - p1 : p1 };
+  }
+
+  /** Le mois `M` d'une vue (§ 6.1) : revenus, blocs, hors budget, sous-catégories, capacité, épargne, lissage des dépenses annuelles et couverture.
+      `opts` : { vue: "tout" | "commun" | "perso", personne?: "p1" | "p2", mois: "AAAA-MM" }. Les montants sont en euros exacts (arrondis seulement à l'affichage). */
+  function mois(data, opts) {
+    const o = opts || {}, d = data || {}, m = mois7(o.mois);
+    const { vue, personne, part } = lectureVue(d, o);
+    const courant = mois7(d.aujourdhui);
+    const comptes = (d.comptes || []).filter(c => poidsDe(c.titulaire, vue, personne, part) > 0);
+    const rel = (d.releves || []).filter(r => r.mois === m && poidsDe(titulaireDe(d, r.compte), vue, personne, part) > 0);
+    const base = {
+      mois: m, vue, personne, en_cours: !!courant && m === courant, mois_complet: !!courant && !!m && m < courant, revenus: 0,
+      blocs: { essentiels: 0, envies: 0, epargne: 0 }, a_classer: 0, depenses: 0, hors_budget: { virement_interne: 0, apport_commun: 0, transfert_foyer: 0, releve_carte: 0 },
+      par_sous_categorie: {}, revenus_detail: {}, capacite: 0, epargne_versee: 0, epargne_restee: 0, puise: 0, sources: [],
+      lisse: { annuelles: [], essentiels_lisses: 0, envies_lisses: 0 }, mentions: [],
+    };
+    const couv = { a_classer_part: 0, comptes_observes: 0, comptes_absents: [], mois_complet: base.mois_complet, sans_detail: false, import_incomplet: false, en_partie_importe: false, ecartes: [] };
+    if (vue === "perso" && !(d.comptes || []).some(c => c.titulaire === personne)) return { ...base, vide: "aucun_compte_personne", couverture: { ...couv, comptes_absents: comptes.map(c => c.id) } };
+    const communObserve = rel.some(r => titulaireDe(d, r.compte) === "commun");
+    const acc = new Map(), hb = new Map(HORS_BUDGET_CLES.map(k => [k, { sorties: 0, entrees: 0 }])), rev = new Map();
+    let revenus = 0, apportsRecusCommun = 0, apportsVersesPerso = 0, nonDetaille = false;
+    const ajoute = (sous, w, l) => { const a = acc.get(sous) || { sorties: 0, entrees: 0, nombre: 0 }; a.sorties += w * l.sorties; a.entrees += w * l.entrees; a.nombre += l.nombre; acc.set(sous, a); };
+    for (const r of rel) {
+      const t = titulaireDe(d, r.compte), w = poidsDe(t, vue, personne, part), commun = t === "commun";
+      for (const l of r.categories) {
+        const bloc = blocDe(l.sous, d.preferences);
+        if (l.sous === "apport_commun") {
+          if (commun) apportsRecusCommun += l.entrees; else apportsVersesPerso += l.sorties;
+          if (vue === "perso" && commun) continue;                 // remplacé par ta part des dépenses du commun
+          if (vue === "commun") { if (commun) revenus += l.entrees; continue; }
+          if (!communObserve && !commun) { ajoute("commun_non_detaille", w, l); nonDetaille = true; continue; }
+          const h = hb.get("apport_commun"); h.sorties += w * l.sorties; h.entrees += w * l.entrees; continue;
+        }
+        if (l.sous === "transfert_foyer") {
+          if (vue === "commun" || (vue === "perso" && commun)) continue;
+          const h = hb.get("transfert_foyer"); h.sorties += w * l.sorties; h.entrees += w * l.entrees;
+          if (vue === "perso") revenus += w * (l.entrees - l.sorties);
+          continue;
+        }
+        if (bloc === "hors_budget") { const h = hb.get(l.sous); if (h) { h.sorties += w * l.sorties; h.entrees += w * l.entrees; } continue; }
+        if (bloc === "revenus") { const v = w * (l.entrees - l.sorties); revenus += v; rev.set(l.sous, (rev.get(l.sous) || 0) + v); continue; }
+        ajoute(l.sous, w, l);
+      }
+    }
+    // apports reçus sur le commun depuis un compte non observé : revenus de l'ensemble du foyer (Tout), pas de la personne
+    let externes = 0;
+    if (vue === "tout" && communObserve) { externes = Math.max(0, apportsRecusCommun - apportsVersesPerso); revenus += externes; }
+    const par = {}, bl = { essentiels: 0, envies: 0, epargne: 0, a_classer: 0 };
+    for (const sous of trier(acc.keys())) {
+      const a = acc.get(sous), net = r6(a.sorties - a.entrees);
+      par[sous] = { sorties: r6(a.sorties), entrees: r6(a.entrees), net, nombre: a.nombre };
+      bl[blocDe(sous, d.preferences)] = (bl[blocDe(sous, d.preferences)] || 0) + net;
+    }
+    const hors = {};
+    for (const [k, h] of hb) hors[k] = r6(h.sorties > 0 ? h.sorties : h.entrees);
+    const depenses = r6(bl.essentiels + bl.envies + bl.a_classer), capacite = r6(revenus - depenses), versee = r6(bl.epargne);
+    const sources = rel.map(r => ({ compte: r.compte, origine: r.source === "import" ? "import" : "banque", titulaire: titulaireDe(d, r.compte) }));
+    const incompl = (d.incomplets || []).some(x => x.mois === m && poidsDe(titulaireDe(d, x.compte), vue, personne, part) > 0);
+    const observes = new Set(rel.map(r => r.compte));
+    const res = { ...base, revenus: r6(revenus), blocs: { essentiels: r6(bl.essentiels), envies: r6(bl.envies), epargne: versee }, a_classer: r6(bl.a_classer), depenses,
+      hors_budget: hors, par_sous_categorie: par, revenus_detail: Object.fromEntries([...rev].map(([k, v]) => [k, r6(v)])), capacite, epargne_versee: versee,
+      epargne_restee: r6(capacite - versee), puise: r6(Math.max(0, -capacite)), sources };
+    if (nonDetaille) res.mentions.push("commun_non_connecte");
+    if (externes > 0) res.mentions.push("apports_externes");
+    if (rel.some(r => r.categories.some(l => l.sans_detail))) res.mentions.push("mois_sans_detail");
+    // carte à débit différé sans détail ce mois-ci alors que le mois compte des opérations à classer : le relevé n'a pas pu être identifié (§ 4.5)
+    if (res.a_classer > 0 && comptes.some(c => c.debit_differe === true && !observes.has(c.id))) res.mentions.push("detail_carte_indisponible");
+    res.couverture = { ...couv, a_classer_part: depenses > 0 ? r6(res.a_classer / depenses) : 0, comptes_observes: observes.size,
+      comptes_absents: comptes.filter(c => !observes.has(c.id) && c.ecartee !== true).map(c => c.id), sans_detail: res.mentions.includes("mois_sans_detail"), import_incomplet: incompl,
+      en_partie_importe: sources.some(x => x.origine === "import") && sources.some(x => x.origine !== "import"), apports_externes: r6(externes),
+      ecartes: (d.ecartes || []).filter(x => x.mois === m && poidsDe(titulaireDe(d, x.compte), vue, personne, part) > 0) };
+    res.lisse = lissage(d, { vue, personne, part }, m, res);
+    return res;
+  }
+
+  /* ================================================================== dépenses annuelles et lissage (§ 6.3) */
+  /** Dépenses annuelles de la vue, d'après les agrégats par marchand : une règle `annuelle: true`, ou une clé qui n'apparaît qu'une fois sur les 13 mois (ou deux fois à
+      11 à 13 mois d'écart, « confirmée ») avec une sous-catégorie « annuelle probable » ou un montant d'au moins `budget_annuelle_seuil`. Seules les dépenses des blocs
+      essentiels et envies se lissent. → [{ compte_id, cle_marchand, sous_categorie, regle_id, confirmee, paiements: [{ mois, montant }] }] (montants à 100 %). */
+  function annuelles(data, v) {
+    const d = data || {}, seuil = convention(d.reperes, "budget_annuelle_seuil"), regles = (d.regles || []).filter(r => r && r.annuelle === true && r.active !== false);
+    const groupes = new Map();
+    for (const l of Array.isArray(d.marchands) ? d.marchands : []) {
+      if (!l || !mois7(l.mois) || !(n0(l.sorties) > 0) || !l.cle_marchand) continue;
+      if (poidsDe(titulaireDe(d, l.compte_id), v.vue, v.personne, v.part) <= 0) continue;
+      const bloc = blocDe(l.sous_categorie, d.preferences);
+      if (bloc !== "essentiels" && bloc !== "envies") continue;
+      const k = [String(l.compte_id), l.cle_marchand, l.sous_categorie].join("|");
+      if (!groupes.has(k)) groupes.set(k, { compte_id: String(l.compte_id), cle_marchand: l.cle_marchand, sous_categorie: l.sous_categorie, par_mois: new Map(), max: 0 });
+      const g = groupes.get(k), m = mois7(l.mois);
+      g.par_mois.set(m, (g.par_mois.get(m) || 0) + n0(l.sorties));
+      g.max = Math.max(g.max, nombre(l.montant_max) ?? n0(l.sorties));
+    }
+    const sorties = [];
+    for (const g of groupes.values()) {
+      const paiements = [...g.par_mois].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([mo, montant]) => ({ mois: mo, montant: r6(montant) }));
+      const regle = regles.find(r => r.sous_categorie === g.sous_categorie && BC.correspond(r, { libelle: g.cle_marchand, montant: -g.max, compte_id: g.compte_id }));
+      const taxo = BC.TAXONOMIE.find(t => t.cle === g.sous_categorie);
+      let annuelle = false, confirmee = false;
+      if (regle) annuelle = confirmee = true;
+      else {
+        const gros = paiements.every(p => p.montant >= seuil) || !!(taxo && taxo.annuelle_probable);
+        if (paiements.length === 1 && gros) annuelle = true;
+        else if (paiements.length === 2 && gros) {
+          const ecart = (+paiements[1].mois.slice(0, 4) * 12 + +paiements[1].mois.slice(5)) - (+paiements[0].mois.slice(0, 4) * 12 + +paiements[0].mois.slice(5));
+          if (ecart >= 11 && ecart <= 13) annuelle = confirmee = true;
+        }
+      }
+      if (annuelle) sorties.push({ compte_id: g.compte_id, cle_marchand: g.cle_marchand, sous_categorie: g.sous_categorie, regle_id: regle ? regle.id ?? null : null, confirmee, paiements });
+    }
+    return sorties.sort((a, b) => (a.cle_marchand < b.cle_marchand ? -1 : a.cle_marchand > b.cle_marchand ? 1 : a.compte_id < b.compte_id ? -1 : 1));
+  }
+  /** Lissage du mois `m` : chaque dépense annuelle compte pour 1/12 de son dernier montant les 12 mois qui suivent son paiement (provision) ; le mois du paiement garde
+      le réel dans `blocs` (graphiques) et la note lit `essentiels_lisses` / `envies_lisses`. */
+  function lissage(data, v, m, M) {
+    const items = [];
+    let ess = M.blocs.essentiels, env = M.blocs.envies;
+    for (const a of annuelles(data, v)) {
+      const w = poidsDe(titulaireDe(data, a.compte_id), v.vue, v.personne, v.part);
+      const reel = a.paiements.filter(p => p.mois === m).reduce((t, p) => t + p.montant, 0);
+      const dernier = a.paiements.filter(p => p.mois <= m).pop();
+      const age = dernier ? (+m.slice(0, 4) * 12 + +m.slice(5)) - (+dernier.mois.slice(0, 4) * 12 + +dernier.mois.slice(5)) : null;
+      const provision = dernier && age <= 11 ? dernier.montant / 12 : 0;
+      if (!(reel > 0) && !(provision > 0)) continue;
+      const montant_mois = r6(reel * w), prov = r6(provision * w);
+      items.push({ sous_categorie: a.sous_categorie, compte_id: a.compte_id, cle_marchand: a.cle_marchand, regle_id: a.regle_id, confirmee: a.confirmee, montant_mois, provision: prov });
+      const delta = prov - montant_mois;
+      if (blocDe(a.sous_categorie, data.preferences) === "envies") env += delta; else ess += delta;
+    }
+    return { annuelles: items, essentiels_lisses: r6(ess), envies_lisses: r6(env) };
+  }
+
+  /* ================================================================== série, agrégation et référence */
+  /** Mois AAAA-MM de `du` à `au` (inclus). */
+  function moisDe(du, au) {
+    const a = mois7(du), b = mois7(au), out = [];
+    if (!a || !b) return out;
+    for (let m = a; m <= b && out.length < 600; m = decale(m, 1)) out.push(m);
+    return out;
+  }
+  const GRANULARITES_BUDGET = ["mois", "trimestre", "annee"];
+  function agreger(ms, cle, granularite) {
+    const somme_ = f => r6(somme(ms.map(f)));
+    const par = {};
+    for (const M of ms) for (const [k, a] of Object.entries(M.par_sous_categorie)) {
+      const t = par[k] || (par[k] = { sorties: 0, entrees: 0, net: 0, nombre: 0 });
+      t.sorties = r6(t.sorties + a.sorties); t.entrees = r6(t.entrees + a.entrees); t.net = r6(t.net + a.net); t.nombre += a.nombre;
+    }
+    const hors = {};
+    for (const k of HORS_BUDGET_CLES) hors[k] = somme_(M => M.hors_budget[k]);
+    const capacite = somme_(M => M.capacite), versee = somme_(M => M.epargne_versee), depenses = somme_(M => M.depenses), ac = somme_(M => M.a_classer);
+    const premier = ms[0] || {};
+    return { mois: cle, granularite, vue: premier.vue, personne: premier.personne, mois_inclus: ms.map(M => M.mois), en_cours: ms.some(M => M.en_cours), mois_complet: ms.length > 0 && ms.every(M => M.mois_complet),
+      revenus: somme_(M => M.revenus), blocs: { essentiels: somme_(M => M.blocs.essentiels), envies: somme_(M => M.blocs.envies), epargne: versee }, a_classer: ac, depenses,
+      hors_budget: hors, par_sous_categorie: par, capacite, epargne_versee: versee, epargne_restee: r6(capacite - versee), puise: r6(Math.max(0, -capacite)),
+      sources: [], mentions: [...new Set(ms.flatMap(M => M.mentions))],
+      lisse: { annuelles: ms.flatMap(M => M.lisse.annuelles), essentiels_lisses: somme_(M => M.lisse.essentiels_lisses), envies_lisses: somme_(M => M.lisse.envies_lisses) },
+      couverture: { a_classer_part: depenses > 0 ? r6(ac / depenses) : 0, comptes_observes: Math.max(0, ...ms.map(M => M.couverture.comptes_observes)),
+        comptes_absents: [...new Set(ms.flatMap(M => M.couverture.comptes_absents))], mois_complet: ms.length > 0 && ms.every(M => M.mois_complet), sans_detail: ms.some(M => M.couverture.sans_detail),
+        import_incomplet: ms.some(M => M.couverture.import_incomplet), en_partie_importe: ms.some(M => M.couverture.en_partie_importe), ecartes: ms.flatMap(M => M.couverture.ecartes) } };
+  }
+  /** Série de mois, de trimestres ou d'années entre `du` et `au` (AAAA-MM ou AAAA-MM-JJ) : un `M` par période (les périodes sans compte observé gardent des zéros et
+      `couverture.comptes_observes: 0`). `opts` : { vue, personne?, du, au, granularite: "mois" | "trimestre" | "annee" }. */
+  function serie(data, opts) {
+    const o = opts || {}, g = GRANULARITES_BUDGET.includes(o.granularite) ? o.granularite : "mois";
+    const ms = moisDe(o.du, o.au).map(m => mois(data, { vue: o.vue, personne: o.personne, mois: m }));
+    if (g === "mois") return ms;
+    const groupes = new Map();
+    for (const M of ms) { const k = D.Periodes.cle(M.mois + "-01", g); if (!groupes.has(k)) groupes.set(k, []); groupes.get(k).push(M); }
+    return [...groupes].map(([k, l]) => agreger(l, k, g));
+  }
+
+  /** Référence (§ 6.2) : ce que tu dépenses d'habitude. Médiane mensuelle de chaque sous-catégorie sur les `mois_ref` (12) derniers mois complets quand ils existent (au moins 6,
+      sinon 3 à 5 avec `periode_courte: true` ; moins de 3 : null). Les dépenses annuelles sont lissées (total ÷ 12) avant la médiane ; un mois importé incomplet ou sans détail n'y entre
+      jamais. → { vue, personne, du, au, n, periode_courte, revenus, essentiels, envies, epargne, a_classer, par_sous_categorie, totaux, annuelles } ou null. */
+  function reference(data, opts) {
+    const o = opts || {}, d = data || {}, courant = mois7(d.aujourdhui);
+    if (!courant) return null;
+    const k = Math.max(3, Math.min(24, Math.trunc(nombre(o.mois_ref) || 12)));
+    const candidats = Array.from({ length: k }, (_, i) => decale(courant, i - k)).map(m => mois(d, { vue: o.vue, personne: o.personne, mois: m }))
+      .filter(M => M.couverture.comptes_observes > 0 && !M.couverture.import_incomplet && !M.couverture.sans_detail);
+    const n = candidats.length;
+    if (n < 3) return null;
+    const lisseDe = (M, sous) => {
+      const reel = M.par_sous_categorie[sous] ? M.par_sous_categorie[sous].net : 0;
+      return reel + somme(M.lisse.annuelles.filter(a => a.sous_categorie === sous).map(a => a.provision - a.montant_mois));
+    };
+    const cles = new Set(); candidats.forEach(M => { Object.keys(M.par_sous_categorie).forEach(c => cles.add(c)); M.lisse.annuelles.forEach(a => cles.add(a.sous_categorie)); });
+    const par = {}, blocs = { essentiels: {}, envies: {}, epargne: {}, a_classer: {} };
+    for (const c of trier(cles)) {
+      const med = r6(mediane(candidats.map(M => lisseDe(M, c))));
+      if (!(med > 0)) continue;
+      par[c] = med;
+      const b = blocDe(c, d.preferences);
+      if (blocs[b]) blocs[b][c] = med;
+    }
+    const v = lectureVue(d, o);
+    const vues = { vue: v.vue, personne: v.personne };
+    const annuellesVue = annuelles(d, v).map(a => { const dernier = a.paiements[a.paiements.length - 1]; return { sous_categorie: a.sous_categorie, cle_marchand: a.cle_marchand, compte_id: a.compte_id,
+      montant_annuel: dernier.montant, mensuel: r6(dernier.montant / 12), confirmee: a.confirmee }; });
+    return { ...vues, du: candidats[0].mois, au: candidats[n - 1].mois, n, periode_courte: n < 6, revenus: r6(mediane(candidats.map(M => M.revenus))), essentiels: blocs.essentiels,
+      envies: blocs.envies, epargne: blocs.epargne, a_classer: blocs.a_classer.a_classer || 0, par_sous_categorie: par,
+      totaux: { essentiels: r6(somme(Object.values(blocs.essentiels))), envies: r6(somme(Object.values(blocs.envies))), epargne: r6(somme(Object.values(blocs.epargne))) },
+      annuelles: annuellesVue };
+  }
+
   /* ================================================================== export */
-  return { CONVENTIONS, convention, cibleEnVigueur, score, recurrents, detections, fragilite, pistes, plancherResteAVivre, comparerInsee, proposerCible, repartir, familleDe, normaliserReference };
+  return { CONVENTIONS, convention, cibleEnVigueur, donnees, mois, serie, reference, depensesAnnuelles: annuelles, score, recurrents, detections, fragilite, pistes, plancherResteAVivre, comparerInsee, proposerCible, repartir, familleDe, normaliserReference };
 });

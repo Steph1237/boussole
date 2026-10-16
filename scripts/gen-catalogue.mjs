@@ -62,8 +62,8 @@ export const EXPORTS_SUIVI = { Suivi: "suivi", Risque: "risque", Pratiques: "pra
 /** Modules de la copie du module de catégories du budget (BudgetCategories) : sensible.js (filtre des motifs de règle) puis budget-categories.js. */
 export const MODULES_BUDGET = ["sensible", "budget-categories"];
 export const EXPORTS_BUDGET = { BudgetCategories: "budget-categories" };
-/** Modules de la copie du moteur du budget (Budget), dans l'ordre de définition : chacun ne dépend que des précédents (tâche 7 : Calc, Plan et Periodes s'y ajouteront). */
-export const MODULES_MOTEUR_BUDGET = ["sensible", "budget-categories", "budget"];
+/** Modules de la copie du moteur du budget (Budget), dans l'ordre de définition : chacun ne dépend que des précédents (Calc.moisBancaires de HIS2 et Periodes pour les séries). */
+export const MODULES_MOTEUR_BUDGET = ["sensible", "budget-categories", "reperes", "calendrier", "calc", "periodes", "budget"];
 export const EXPORTS_MOTEUR_BUDGET = { Budget: "budget", BudgetCategories: "budget-categories" };
 /** Modules de la copie du module d'import de l'historique (HIS2), dans l'ordre de définition. */
 export const MODULES_HISTORIQUE_IMPORT = ["sensible", "historique-import"];

@@ -36,3 +36,20 @@ test("copie générée du moteur du budget : mêmes résultats que l'app (notes,
   assert.deepEqual(J(G.Budget.pistes(data)), J(B.pistes(data)));
   assert.deepEqual(J(G.Budget.comparerInsee(F.cible[4].reference, F.reperes, { logement: "locataire" })), J(B.comparerInsee(F.cible[4].reference, F.reperes, { logement: "locataire" })));
 });
+
+test("copie générée du moteur du budget : mêmes mois, séries, références et données que l'app (D2, D7, lissage), Calc et Periodes comprises", () => {
+  const D2 = F.double_compte.find(c => c.id === "D2");
+  const ligne = (m, compte, sous, entrees, sorties) => ({ mois: m + "-01", compte_id: compte, categorie: G.BudgetCategories.largeDe(sous), sous_categorie: sous, entrees, sorties, nombre: 1 });
+  const rows = [];
+  for (const m of ["2026-07", "2026-08", "2026-09"]) D2.lignes.forEach(l => rows.push(ligne(m, l.compte, l.sous_categorie, l.entrees, l.sorties)));
+  rows.push(ligne("2026-08", "c1", "assurances", 0, 600));
+  const S = { banque: { actif: true, comptes: D2.comptes.map(c => ({ id: c.id, nom: c.libelle, type: c.type, titulaire: c.titulaire })), mois: rows,
+    marchands: [{ mois: "2026-08-01", compte_id: "c1", cle_marchand: "maif", sous_categorie: "assurances", entrees: 0, sorties: 600, nombre: 1 }] }, config: { partage: D2.partage } };
+  const da = B.donnees(S, { aujourdhui: "2026-10-16" }), dg = G.Budget.donnees(S, { aujourdhui: "2026-10-16" });
+  assert.deepEqual(J(dg), J(da));
+  for (const o of [{ vue: "tout" }, { vue: "commun" }, { vue: "perso", personne: "p1" }, { vue: "perso", personne: "p2" }]) {
+    assert.deepEqual(J(G.Budget.mois(dg, { ...o, mois: "2026-08" })), J(B.mois(da, { ...o, mois: "2026-08" })), JSON.stringify(o));
+    assert.deepEqual(J(G.Budget.serie(dg, { ...o, du: "2026-07", au: "2026-09", granularite: "trimestre" })), J(B.serie(da, { ...o, du: "2026-07", au: "2026-09", granularite: "trimestre" })));
+    assert.deepEqual(J(G.Budget.reference(dg, o)), J(B.reference(da, o)));
+  }
+});
