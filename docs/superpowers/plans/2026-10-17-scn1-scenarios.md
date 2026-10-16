@@ -119,10 +119,11 @@ Phase 0 (cas chiffrés, repères)  ──►  Phase 1 (migration 0038 + revue s�
 - [x] `projection-evenements.js` (validation, `HYPOTHESES_VARIANTE`), `projection-donnees.js` (compartiments synthétiques), `projection.js` (cascade, `versionModele = "proj-1.3.0"`) ; `npm run gen`.
 
 ### Tâche 8 — Relecture des calculs financiers (Opus, high, M)
-- [ ] Relire le socle, les cinq calculs et l'extension du moteur contre la fixture et le spec : fiscalité (PEA avant et après 5 ans, clôture ; assurance-vie avant et après 8 ans, prorata 150 000 €, abattement imputé d'abord sur la fraction à 7,5 % ; PER effort net, plafond, sortie en capital ; livrets et LEP), euros d'aujourd'hui, frais, débordements, seuils.
-- [ ] Test de cohérence socle contre moteur complet à 1 % (spec § 6.3) sur un foyer sans cascade active, puis sur la démo (écart expliqué s'il dépasse 1 %).
-- [ ] Cas limites : revenus nuls, une seule personne, couple non marié (pas d'imposition commune), dates d'ouverture inconnues, enveloppe déjà au plafond, TMI inconnue, repère expiré.
-- [ ] Points bloquants corrigés avant la phase 3.
+- [x] Relire le socle, les cinq calculs et l'extension du moteur contre la fixture et le spec : fiscalité (PEA avant et après 5 ans, clôture ; assurance-vie avant et après 8 ans, prorata 150 000 €, abattement imputé d'abord sur la fraction à 7,5 % ; PER effort net, plafond, sortie en capital ; livrets et LEP), euros d'aujourd'hui, frais, débordements, seuils.
+- [x] Test de cohérence socle contre moteur complet à 1 % (spec § 6.3) sur un foyer sans cascade active, puis sur la démo (écart expliqué s'il dépasse 1 %).
+- [x] Cas limites : revenus nuls, une seule personne, couple non marié (pas d'imposition commune), dates d'ouverture inconnues, enveloppe déjà au plafond, TMI inconnue, repère expiré.
+- [x] Points bloquants corrigés avant la phase 3.
+**Fait le 2026-10-16** (spec § 15 bis ; `test/scenarios-relecture.test.mjs`). **Pour la tâche 3 (0038)** : `avis_impot` accepte `parts` et `revenu_net_imposable` ; `foyer_valider_variante` reprend les messages de `validerEnveloppeScenario` (dont `per.tmi_actuelle_pct` et les clés inconnues de `initial`, `mensuel`, `per`, `transferts`). **Pour la tâche 14** : `Projection.comparer(…, { net_impots: true })`.
 
 ---
 

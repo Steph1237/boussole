@@ -242,8 +242,9 @@ enveloppe_scenario: {
   initial: { montant: 0..1 000 000, depuis: "disponible" },          // pris au mois 1 sur le disponible au-dessus du matelas (niveau 1 de l'ordre de retrait)
   mensuel: { montant: 0..100 000, depuis: "capacite" | "en_plus" },  // « capacite » : prélevé comme un versement programmé (étape 1 de la cascade)
   debut: "AAAA-MM-JJ"?, plafond_versements: €?, debordement: "compte_titres" | "disponible",
-  per: { deduit: bool, tmi_retraite_pct: 0|11|30|41|45, economie: "reinvestie" | "depensee" }?,
+  per: { deduit: bool, tmi_retraite_pct: 0|11|30|41|45, tmi_actuelle_pct: 0|11|30|41|45?, economie: "reinvestie" | "depensee" }?,   // tmi_actuelle_pct (tâche 8) : TMI de l'économie d'impôt du scénario, sinon config.projection.tmi_pct
   transferts: [{ de: "livret_a" | "ldds" | "courant", montant }]?    // scénario 6 : déplacer le surplus du matelas
+}   // tâche 8 : aucune clé inconnue admise dans initial, mensuel, per et chaque transfert (messages de projection-evenements.js, à reprendre dans 0038)
 }
 ```
 - Le moteur crée des compartiments synthétiques (`synthetique: true`, un par classe) de valeur 0, ouverts à `ouverture`, avec `F.preparer` à la date d'ouverture donnée (dates de 5 et 8 ans calculées comme DAT1).
@@ -394,7 +395,7 @@ Module sans dépendance à `index.ts` (modèle `projection.ts`, `suivi.ts`) : `r
 
 ### 9.1 `lister_scenarios` (lecture)
 Entrée : `{ theme?: banque|epargne|placements|immobilier|famille|retraite, inclure_ecartes?: bool }`.
-Sortie : `{ date, version_catalogue, pour_toi: [cle ≤ 3], scenarios: [{ cle, numero, question, theme, pertinent, pourquoi: [texte], enjeu_annuel: { p10, p50, p90 } | null, enjeu_statut, manquants: [{ champ, libelle, comment }], etat: a_explorer|joue|retenu|ecarte, joue_le, version, reperes_a_reverifier: [cle] }], conduite }`.
+Sortie : `{ date, version_catalogue, pour_toi: [cle ≤ 3], scenarios: [{ cle, numero, question, theme, pertinent, pourquoi: [texte], enjeu_annuel: { p10, p50, p90 } | null, enjeu_statut, manquants: [{ champ, libelle, comment }], etat: a_explorer|joue|retenu|ecarte, joue_le, version, reperes_a_reverifier: [cle], avertissements: [texte] }], conduite }`. *Tâche 8 : `avertissements` (carte `Scenarios.lister`) porte ce que l'enjeu suppose (frais comptés à 0, PER non compté faute de date de retraite, abattement de l'assurance-vie compté en entier…) ; l'app et Claude le disent avec le chiffre.*
 Calcul : `Scenarios.lister`, 500 chemins, mêmes tirages que l'app (parité testée sur la démo).
 
 ### 9.2 `jouer_scenario` (calcul, et proposition si demandé)
@@ -583,6 +584,16 @@ Lots 2 à 4 du catalogue ; sortie du PER en rente ; plafond PER des indépendant
 | D14 | Copie pour le connecteur | Dans `projection-moteur.gen.js` (un seul moteur copié) · copie à part `scenarios.gen.js` | **Dans `projection-moteur.gen.js`** : mêmes tirages par construction, pas de troisième copie du moteur |
 
 ---
+
+## 15 bis. Relecture des calculs (tâche 8, Opus, 2026-10-16)
+Corrigé dans `web/src/scenarios.js`, `projection.js`, `projection-evenements.js` (tests : `test/scenarios-relecture.test.mjs`) ; aucune valeur attendue de la fixture n'a changé.
+- **Matelas** : l'argent d'un livret dont le type n'est pas connu (ou d'un PEL) n'entre plus dans le gain du rangement (il était compté à 0 % : +360 €/an inventés sur la démo) ; c'est dit. Le surplus retenu est transféré depuis où il est vraiment (courant au-delà de la réserve, puis LDDS, puis Livret A ; jamais le LEP) ; s'il est sur un compte que le moteur ne sait pas vider, l'option ne se retient pas (raison dite). LEP : sans imposition commune, un seul LEP (l'avis saisi n'en couvre qu'un) ; les parts répondues l'emportent sur l'avis ; un avis de revenus plus anciens que N − 2 n'est pas lu. Phrase et libellé citent les livrets réellement rangés.
+- **Prochain euro** : un PEA ou une assurance-vie déjà détenus servent tels quels (un seul PEA par personne ; ancienneté, primes, plafond restant `pea_plafond − versements_cumules`, débordement dit) ; le PEA est écarté si son seuil de 5 ans tombe après la date de sortie (et non plus « horizon < 60 mois ») ; date d'ouverture inconnue : PEA écarté, assurance-vie à la règle d'avant 8 ans (dite), option non retenable. Une option PEA + débordement en compte-titres se retient (le moteur rejoue le débordement).
+- **Ce qui est dit** : frais comptés à 0 (seulement ceux du scénario, en clair, et « ce qui avantage ces enveloppes » quand un côté est connu) ; mentions fiscales (date d'ouverture à compléter) ; abattement de l'assurance-vie compté en entier pour cet argent (commun à tous les contrats) ; PER : sortie en capital calculée en une fois (changement de tranche possible, sortie étalée), avance de trésorerie non comptée, économie à la TMI sans revenu net imposable ; PER non compté faute de date de retraite ou de TMI ; seuil `t*` dans le bon sens (« ne passerait devant que sous… » quand le PER est derrière) ; phrase du n° 1 juste quand le PEA ne fait pas mieux après 5 ans ; « ne_sait_pas % » ne s'affiche plus.
+- **Repères lus par un calcul** (`REPERES_CALCUL`, dont `scn_delai_ouverture_mois` pour les n° 2, 3 et 6) : absents → `indisponible`, jamais NaN ; montrés dans les hypothèses.
+- **Moteur** : `per.tmi_actuelle_pct` (TMI de l'économie rejouée) ; clés inconnues refusées dans `initial`, `mensuel`, `per`, `transferts` ; `Projection.comparer(…, { net_impots: true })` compare après impôts de sortie (sans l'option : brut, inchangé). **« Mes variantes » (tâche 14) et `comparer_variantes` doivent passer `net_impots: true`** pour une variante de scénario : en brut, une variante qui ne change que l'enveloppe montre un écart nul.
+- **Cohérence socle / moteur** (§ 6.3) : à 1 % sur AV-1, AV-3, EUR-1 et la démo (cascade active, n° 12 déterministe ; n° 12 et n° 2 en Monte-Carlo chemin par chemin sans autre contrat d'assurance-vie). Écarts expliqués et testés : PER-1 (la dernière économie d'impôt tombe après la sortie : ajoutée, 1 %) ; MAT-1 (le moteur transfère en fin de mois 1, le socle au mois 0 : 1,9 %, et à 1 % au calendrier du moteur) ; démo avec l'assurance-vie de Sam (« si tu retirais tout », le moteur partage l'abattement entre les contrats ; le socle le compte en entier, ce qui est dit).
+- **Décisions de produit ouvertes** : référence de l'enjeu du n° 2 (compte-titres, même si le foyer détient déjà l'enveloppe en tête) ; voir le rapport de la tâche 8.
 
 ## 16. Risques
 - **Lisibilité** : cinq options, des bandes et des seuils peuvent noyer la réponse ; d'où la phrase d'abord et 4 lignes au plus de « ce qui changerait ». Revue sur captures avant la mise en ligne.

@@ -442,7 +442,7 @@ test("varianteRetenue : les données de l'option (ouverture, plafond, début, tr
   assert.deepEqual(pea, { scenario: "ouvrir_pea", version_calcul: "scn-1.0.0", type: "pea", titulaire: "p1", ouverture: "2026-11-15", allocation: { actions: 100 }, ter_pct: 0.2, frais_enveloppe_pct: 0,
     mensuel: { montant: 300, depuis: "capacite" }, plafond_versements: 150000, debordement: "compte_titres" });
   const per = jouerCas(cas("PER-1")).r.options.find(o => o.id === "per").enveloppe_scenario;
-  assert.equal(per.type, "per"); assert.equal(per.mensuel.montant, 285.71); assert.equal(per.plafond_versements, 4710); assert.deepEqual(per.per, { deduit: true, tmi_retraite_pct: 30, economie: "reinvestie" });
+  assert.equal(per.type, "per"); assert.equal(per.mensuel.montant, 285.71); assert.equal(per.plafond_versements, 4710); assert.deepEqual(per.per, { deduit: true, tmi_retraite_pct: 30, economie: "reinvestie", tmi_actuelle_pct: 30 });
   const av = jouerCas(cas("AV-1")).r.options.find(o => o.id === "A").enveloppe_scenario;
   assert.deepEqual([av.ouverture, av.debut, av.initial.montant, av.mensuel.montant], ["2026-11-15", "2029-11-15", 100, 200]);
   const mat = jouerCas(cas("MAT-1")).r.options.find(o => o.id === "placement").enveloppe_scenario;

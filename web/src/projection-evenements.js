@@ -274,11 +274,12 @@
     }
     if (present(es.ter_pct) && !bornes(es.ter_pct, 0, 3)) return `${P_}.ter_pct » : de 0 à 3 % par an attendu.`;
     if (present(es.frais_enveloppe_pct) && !bornes(es.frais_enveloppe_pct, 0, 3)) return `${P_}.frais_enveloppe_pct » : de 0 à 3 % par an attendu.`;
+    const seulement = (o, cles) => Object.keys(o).every(k => cles.includes(k));
     if (present(es.initial)) {
-      if (!estObjet(es.initial) || !bornes(es.initial.montant, 0, 1000000) || (present(es.initial.depuis) && es.initial.depuis !== "disponible")) return `${P_}.initial » : { montant de 0 à 1 000 000 €, depuis: « disponible » } attendu.`;
+      if (!estObjet(es.initial) || !seulement(es.initial, ["montant", "depuis"]) || !bornes(es.initial.montant, 0, 1000000) || (present(es.initial.depuis) && es.initial.depuis !== "disponible")) return `${P_}.initial » : { montant de 0 à 1 000 000 €, depuis: « disponible » } attendu.`;
     }
     if (present(es.mensuel)) {
-      if (!estObjet(es.mensuel) || !bornes(es.mensuel.montant, 0, 100000) || (present(es.mensuel.depuis) && !["capacite", "en_plus"].includes(es.mensuel.depuis))) return `${P_}.mensuel » : { montant de 0 à 100 000 €, depuis: « capacite » ou « en_plus » } attendu.`;
+      if (!estObjet(es.mensuel) || !seulement(es.mensuel, ["montant", "depuis"]) || !bornes(es.mensuel.montant, 0, 100000) || (present(es.mensuel.depuis) && !["capacite", "en_plus"].includes(es.mensuel.depuis))) return `${P_}.mensuel » : { montant de 0 à 100 000 €, depuis: « capacite » ou « en_plus » } attendu.`;
     }
     if (present(es.debut) && (!datee(es.debut) || es.debut < es.ouverture)) return `${P_}.debut » : date AAAA-MM-JJ, postérieure ou égale à l'ouverture, attendue.`;
     if (present(es.plafond_versements) && !bornes(es.plafond_versements, 0, 10000000)) return `${P_}.plafond_versements » : montant de 0 à 10 000 000 € attendu.`;
@@ -286,13 +287,14 @@
     if (present(es.per)) {
       if (es.type !== "per") return `${P_}.per » : réservé au type per.`;
       const p = es.per;
-      if (!estObjet(p)) return `${P_}.per » : objet { deduit, tmi_retraite_pct, economie } attendu.`;
+      if (!estObjet(p) || !seulement(p, ["deduit", "tmi_retraite_pct", "tmi_actuelle_pct", "economie"])) return `${P_}.per » : objet { deduit, tmi_retraite_pct, tmi_actuelle_pct, economie } attendu.`;
       if (present(p.deduit) && typeof p.deduit !== "boolean") return `${P_}.per.deduit » : vrai ou faux attendu.`;
       if (present(p.tmi_retraite_pct) && !(nombre(p.tmi_retraite_pct) && TMI_SCENARIO.includes(+p.tmi_retraite_pct))) return `${P_}.per.tmi_retraite_pct » : 0, 11, 30, 41 ou 45 attendu.`;
+      if (present(p.tmi_actuelle_pct) && !(nombre(p.tmi_actuelle_pct) && TMI_SCENARIO.includes(+p.tmi_actuelle_pct))) return `${P_}.per.tmi_actuelle_pct » : 0, 11, 30, 41 ou 45 attendu.`;
       if (present(p.economie) && !["reinvestie", "depensee"].includes(p.economie)) return `${P_}.per.economie » : « reinvestie » ou « depensee » attendu.`;
     }
     if (present(es.transferts)) {
-      if (!Array.isArray(es.transferts) || es.transferts.length > 5 || !es.transferts.every(t => estObjet(t) && ["livret_a", "ldds", "courant"].includes(t.de) && bornes(t.montant, 0.01, 1000000)))
+      if (!Array.isArray(es.transferts) || es.transferts.length > 5 || !es.transferts.every(t => estObjet(t) && seulement(t, ["de", "montant"]) && ["livret_a", "ldds", "courant"].includes(t.de) && bornes(t.montant, 0.01, 1000000)))
         return `${P_}.transferts » : 5 transferts au plus, chacun { de: « livret_a », « ldds » ou « courant », montant de 0,01 à 1 000 000 € }.`;
     }
     return null;

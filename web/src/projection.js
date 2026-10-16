@@ -522,7 +522,8 @@
     for (let t = tInit; t <= N; t++) { verse += deposes[t]; const y = +dates[t].slice(0, 4); parAnnee[y] = (parAnnee[y] || 0) + deposes[t]; }
     const deduit = per && !(es.per && es.per.deduit === false);
     const economies = [];
-    let tmi = rg.tmi_pct;
+    /* TMI de l'économie d'impôt : celle du scénario retenu (per.tmi_actuelle_pct), sinon le réglage du foyer, sinon 30 % (dit) */
+    let tmi = per && es.per && es.per.tmi_actuelle_pct != null ? +es.per.tmi_actuelle_pct : rg.tmi_pct;
     if (per && deduit) {
       if (tmi == null || !isFinite(+tmi)) { tmi = 30; M.avertissements.push("taux marginal supposé de 30 % pour l'économie d'impôt du PER, à confirmer avec Claude"); }
       Object.keys(parAnnee).map(Number).sort((a, b) => a - b).forEach(y => {
@@ -1352,14 +1353,16 @@
       nominal: { financier: Array.from(tr.fin), net: Array.from(tr.net) }, log_rendement_mensuel_fenetre: Math.log(1 + (cr.chocs.actions) / 100) / duree, avertissements: avert, source: cr.source };
   }
 
-  /** Comparaison de deux modèles sur les mêmes tirages : écart chemin par chemin, centiles de l'écart, probabilité que B fasse mieux que A. */
+  /** Comparaison de deux modèles sur les mêmes tirages : écart chemin par chemin, centiles de l'écart, probabilité que B fasse mieux que A.
+      opts.net_impots === true : écart après les impôts de sortie (« si tu retirais tout »), indispensable pour une variante qui ne change que l'enveloppe
+      (scénario retenu, SCN1) ; sans cette option, l'écart est brut, comme avant proj-1.3.0 (aucune sortie existante ne change). */
   function comparer(MA, MB, opts) {
     const o = opts || {};
     if (MA.N !== MB.N) return { erreur: "les deux modèles n'ont pas le même horizon" };
     assurerDet(MA); assurerDet(MB);
-    const P = o.chemins > 0 ? Math.round(o.chemins) : 2000, N = MA.N, vue = o.vue || MA.options.vue, graine = o.graine == null ? GRAINE : o.graine;
+    const P = o.chemins > 0 ? Math.round(o.chemins) : 2000, N = MA.N, vue = o.vue || MA.options.vue, graine = o.graine == null ? GRAINE : o.graine, netImp = o.net_impots === true;
     const marques = []; for (let t = 12; t <= N; t += 12) marques.push(t); if (marques[marques.length - 1] !== N) marques.push(N);
-    const a = derouler(MA, { P, graine, vue, retenir: marques }), b = derouler(MB, { P, graine, vue, retenir: marques });
+    const a = derouler(MA, { P, graine, vue, net_impots: netImp, retenir: marques }), b = derouler(MB, { P, graine, vue, net_impots: netImp, retenir: marques });
     const euros = o.euros || MA.options.euros, fx = echelle(MA, euros), rg = rangs(P);
     const ecarts = {}; NOMS_P.forEach(k => { ecarts[k] = []; });
     const probMieux = [], chaque = [];
@@ -1372,8 +1375,10 @@
       probMieux.push(mieux / P); chaque.push(plancher >= -1e-9);
     });
     const dernier = marques.length - 1;
-    return { version_modele: versionModele, graine, chemins: P, vue, euros, mois: marques.map(t => MA.dates[t]), ecarts, probabilite_mieux: probMieux, chaque_chemin_superieur_ou_egal: chaque,
+    const out = { version_modele: versionModele, graine, chemins: P, vue, euros, mois: marques.map(t => MA.dates[t]), ecarts, probabilite_mieux: probMieux, chaque_chemin_superieur_ou_egal: chaque,
       horizon: { mediane_des_ecarts: ecarts.p50[dernier], probabilite_mieux: probMieux[dernier], p10: ecarts.p10[dernier], p90: ecarts.p90[dernier] } };
+    if (netImp) out.net_impots = true;
+    return out;
   }
 
   /** Valeur capitalisée après `mois` mois : capital de départ et versements de fin de mois, taux annuel géométrique en % (primitive pure, partagée). */
