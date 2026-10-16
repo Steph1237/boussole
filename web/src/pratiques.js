@@ -826,6 +826,14 @@
     return Object.assign(agreger(criteres), { criteres });
   }
 
-  return { FAMILLES, PLAFOND_SPECULATIF_DEFAUT, PLAFOND_PEA_DEFAUT, SEUIL_FRAIS, RENDEMENT_PROJECTION, REPERES_FRAIS, BAREME_FRAIS,
+  /** Statut d'une note sur 100 : une seule règle pour toute l'app (Aujourd'hui et Santé). ≥ 80 « Solide » (vert), 60 à 79 « Correct » (ocre : à
+      surveiller), < 60 « À consolider » (rouge : à travailler) ; sans note « À compléter ». statut = statut de puce (UI.puce), ton = classe de Santé. */
+  function statutNote(t) {
+    if (t == null || t === "" || !isFinite(+t)) return { statut: "completer", ton: "na", mot: "À compléter" };
+    const v = +t;
+    return v >= 80 ? { statut: "bon", ton: "good", mot: "Solide" } : v >= 60 ? { statut: "surveiller", ton: "warn", mot: "Correct" } : { statut: "travailler", ton: "crit", mot: "À consolider" };
+  }
+
+  return { statutNote, FAMILLES, PLAFOND_SPECULATIF_DEFAUT, PLAFOND_PEA_DEFAUT, SEUIL_FRAIS, RENDEMENT_PROJECTION, REPERES_FRAIS, BAREME_FRAIS,
     evaluer, agreger, pointsHors, tableauEcarts, fraisSupports, natureFrais, coutsPrincipaux: Plan.coutsPrincipaux };
 });
