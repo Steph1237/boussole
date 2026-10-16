@@ -973,7 +973,7 @@ test("cartes : anneaux (chiffre en texte HTML centré, unité plus petite), obje
   assert.match(pr, /aria-label="Bonnes pratiques : \d+ sur 100, (solide|correct|à consolider)/);
   assert.match(pr, /<span class="aj-ring-fig sur" aria-hidden="true"><span class="aj-ring-n">\d+<\/span><span class="aj-ring-u">\/ 100<\/span>/, "note sur 100 : unité sous le chiffre");
   assert.match(pr, /critères? à compléter/);
-  assert.match(pr, /<span class="ui-puce bon">/);
+  assert.match(pr, /<span class="ui-puce surveiller">/, "UX5 : « Correct » (60 à 79) est ocre, comme dans Santé");
   const ech = carte("echeance");
   assert.match(ech, /aria-label="Prochaine échéance : dans \d+ jours/);
   assert.match(ech, /<span class="aj-k-n">\d+<\/span><span class="aj-k-unit"><span class="u-l"> jours<\/span>/, "compte à rebours et unité dans un même bloc sans retour à la ligne");

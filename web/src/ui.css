@@ -65,20 +65,48 @@
 .ui-ligne.actif:hover{background:var(--sunk)}
 .ui-ligne-ico{display:grid;place-items:center;width:32px;height:32px;flex:none;border-radius:var(--r-ctl);background:var(--sunk);color:var(--ink)}
 .ui-ligne-corps{display:flex;flex-direction:column;flex:1;min-width:0}
+/* Colonne d'état (puce) : réservée sur toutes les lignes d'une liste qui en porte une, même vide (UI.ligne({ etat: "" })), pour que le montant et le chevron
+   restent alignés d'une ligne à l'autre. Sous 600 px la colonne n'est pas réservée (la puce prend sa largeur, une ligne sans état n'a rien). */
+.ui-ligne-etat{display:flex;flex:none;justify-content:flex-end;min-width:0}
+.ui-ligne-etat:empty{display:none}
+@media (min-width:600px){.ui-ligne-etat,.ui-ligne-etat:empty{display:flex;min-width:6.5rem}}
 .ui-ligne-titre{font:600 var(--t-h3)/var(--lh-h3) var(--f-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ui-ligne.multi .ui-ligne-titre{white-space:normal;overflow:visible}
 .ui-ligne.multi{padding-block:var(--sp-3)}
 .ui-ligne-sous{font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ui-ligne-montant{display:flex;flex-direction:column;align-items:flex-end;flex:none;text-align:right}
-.ui-ligne-valeur{font:600 var(--t-h3)/var(--lh-h3) var(--f-body)}
+.ui-ligne-valeur,.ui-ligne-v{font:600 var(--t-h3)/var(--lh-h3) var(--f-body);white-space:nowrap}
 .ui-ligne-delta{font:600 var(--t-caption)/var(--lh-caption) var(--f-body)}
 .ui-ligne-delta.pos{color:var(--pos)}
 .ui-ligne-delta.neg{color:var(--neg)}
 .ui-ligne-delta.neutre{color:var(--muted)}
-.ui-ligne-chevron{color:var(--muted);flex:none}
+.ui-ligne-chevron{display:grid;place-items:center;width:16px;color:var(--muted);flex:none}
 .ui-ligne.avec-barre{padding-bottom:var(--sp-3)}
 .ui-ligne-barre{position:absolute;left:var(--sp-4);right:var(--sp-3);bottom:6px;height:4px;border-radius:2px;background:var(--sunk);overflow:hidden}
 .ui-ligne-barre>span{display:block;height:100%;border-radius:2px;background:var(--brand);opacity:.55}
+
+/* ---------- tuile : un chiffre secondaire posé DANS une carte (fond --sunk, sans bordure ni ombre ; jamais une carte dans une carte) ---------- */
+.ui-tuiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:var(--sp-2)}
+.ui-tuile{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-1);min-width:0;margin:0;padding:var(--tile-pad);background:var(--sunk);border:0;border-radius:var(--r-ctl);box-shadow:none}
+.ui-tuile-l{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+.ui-tuile-v{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-display);letter-spacing:-.01em;overflow-wrap:anywhere}
+.ui-tuile-s{font-size:var(--t-caption);line-height:var(--lh-caption);color:var(--muted)}
+
+/* ---------- état vide : icône de 24 px en --muted, une phrase (ce qui manque et pourquoi ça compte), une action ; posé dans la carte qui aurait reçu le contenu ---------- */
+.ui-vide{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);padding:var(--sp-2) 0}
+.ui-vide-ico{width:24px;height:24px;color:var(--muted);flex:none}
+.ui-vide-ico svg{display:block;width:24px;height:24px}
+.ui-vide-texte{margin:0;font:400 var(--t-body)/var(--lh-body) var(--f-body);color:var(--ink)}
+.ui-vide-action{margin-top:var(--sp-1)}
+
+/* ---------- squelette de chargement : mêmes hauteurs que le contenu final (aucun saut) ; la pulsation est coupée en mouvement réduit ---------- */
+.ui-squelette{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+.ui-skel-bloc{display:block;width:100%;border-radius:var(--r-card);background:var(--sunk);animation:ui-skel 1.4s ease-in-out infinite}
+.ui-skel-bloc.kpi{height:96px}
+.ui-skel-bloc.ligne{height:56px;border-radius:var(--r-ctl)}
+.ui-skel-bloc.graphe{height:220px}
+@media (min-width:900px){.ui-skel-bloc.graphe{height:320px}}
+@media (prefers-reduced-motion:reduce){.ui-skel-bloc{animation:none}}
 
 /* ---------- élément d'« À traiter » : icône de type, titre, raison, action de 36 px dans une zone de 44 px ---------- */
 .ui-item{min-height:72px;align-items:center}
@@ -92,7 +120,7 @@
 .ui-item-action:focus-visible>span{outline:2px solid var(--focus);outline-offset:2px}
 
 /* ---------- boutons : primaire (un par écran au plus), secondaire (contour), tertiaire (texte souligné) ---------- */
-.ui-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);min-height:var(--btn-h);min-width:var(--hit);padding:0 var(--sp-5);margin:0;border:1px solid var(--brand);border-radius:var(--r-ctl);background:var(--brand);color:var(--brand-ink);
+.ui-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);min-height:var(--btn-h);min-width:var(--hit);padding:0 var(--sp-5);margin:0;border:1px solid var(--brand-fill);border-radius:var(--r-ctl);background:var(--brand-fill);color:var(--brand-fill-ink);
   font:700 var(--t-body)/1.2 var(--f-body);text-decoration:none;white-space:nowrap;cursor:pointer;transition:filter var(--dur-state) var(--ease-out),background-color var(--dur-state) var(--ease-out)}
 .ui-btn:hover{filter:brightness(1.08)}
 .ui-btn.secondaire{background:var(--surface);color:var(--brand);border-color:var(--line2);font-weight:600}
@@ -126,9 +154,9 @@
 /* ---------- case à cocher : zone de 44 px (le champ couvre toute la ligne, invisible), boîte de 24 px dessinée à côté ---------- */
 .ui-case{position:relative;display:flex;align-items:center;gap:var(--sp-3);min-height:var(--hit);cursor:pointer}
 .ui-case>input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
-.ui-case-boite{flex:none;display:grid;place-items:center;width:24px;height:24px;border:2px solid var(--line2);border-radius:6px;background:var(--surface);transition:background-color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
-.ui-case>input:checked+.ui-case-boite{background:var(--brand);border-color:var(--brand)}
-.ui-case>input:checked+.ui-case-boite::after{content:"";width:11px;height:6px;margin-top:-2px;border:solid var(--brand-ink);border-width:0 0 2.5px 2.5px;transform:rotate(-45deg)}
+.ui-case-boite{flex:none;display:grid;place-items:center;width:24px;height:24px;border:2px solid var(--line-field);border-radius:6px;background:var(--surface);transition:background-color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
+.ui-case>input:checked+.ui-case-boite{background:var(--brand-fill);border-color:var(--brand-fill)}
+.ui-case>input:checked+.ui-case-boite::after{content:"";width:11px;height:6px;margin-top:-2px;border:solid var(--brand-fill-ink);border-width:0 0 2.5px 2.5px;transform:rotate(-45deg)}
 .ui-case>input:focus-visible+.ui-case-boite{outline:2px solid var(--focus);outline-offset:2px}
 .ui-case>input:disabled+.ui-case-boite{opacity:.5}
 
@@ -161,7 +189,7 @@
 .ui-periode-dates{display:flex;flex-wrap:wrap;gap:var(--sp-2) 14px;width:100%}
 .ui-periode-dates[hidden]{display:none}
 .ui-champ{display:inline-flex;align-items:center;gap:6px;font:600 var(--t-caption) var(--f-body);color:var(--muted)}
-.ui-date{min-height:var(--hit);padding:0 var(--sp-2);border:1px solid var(--line2);border-radius:var(--r-ctl);background:var(--surface);color:var(--ink);font:500 var(--t-small) var(--f-body)}
+.ui-date{min-height:var(--hit);padding:0 var(--sp-2);border:1px solid var(--line-field);border-radius:var(--r-ctl);background:var(--surface);color:var(--ink);font:500 var(--t-small) var(--f-body)}
 
 /* ---------- Demander à Claude ---------- */
 .ui-claude{display:inline-flex;align-items:center;gap:7px;min-height:var(--hit);padding:0 var(--sp-4);border:1px solid var(--line2);border-radius:var(--r-chip);background:var(--surface);

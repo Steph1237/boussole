@@ -120,8 +120,8 @@ test("bouton : primaire, secondaire, tertiaire ; lien ou bouton ; pleine largeur
   assert.match(UI.bouton({ texte: "Valider", pleineLargeur: true }), /class="ui-btn plein"/);
   assert.ok(sain(UI.bouton({ texte: XSS, id: XSS, href: "#" + XSS })));
   const p = pour(css, ".ui-btn");
-  assert.equal(p.background, "var(--brand)");
-  assert.equal(p.color, "var(--brand-ink)");
+  assert.equal(p.background, "var(--brand-fill)", "UX5 : bouton plein = --brand-fill (un cran plus sourd que --brand en sombre)");
+  assert.equal(p.color, "var(--brand-fill-ink)");
   assert.match(pour(css, ".ui-btn.secondaire").background, /var\(--surface\)/);
   assert.match(pour(css, ".ui-btn.tertiaire")["text-decoration"], /underline/);
 });
@@ -256,4 +256,54 @@ test("mouvement : durées par jetons (150 / 220 / 180 ms), plus de durée en dur
   assert.match(css, /transition:[^;]*var\(--dur-state\)/);
   assert.match(css, /var\(--dur-open\)/);
   assert.match(css, /var\(--dur-close\)/);
+});
+
+/* ---------- UX5 lot 1 : colonne d'état de la ligne, tuile, état vide, squelette ---------- */
+test("ligne : colonne d'état (puce) avant le montant ; etat: \"\" réserve la colonne vide pour garder montant et chevron alignés", () => {
+  const avec = UI.ligne({ id: "a", titre: "PEL", montant: "1 000 €", etat: "surveiller" });
+  assert.match(avec, /<span class="ui-ligne-etat"><span class="ui-puce surveiller">/);
+  assert.ok(avec.indexOf("ui-ligne-etat") < avec.indexOf("ui-ligne-montant"));
+  assert.match(UI.ligne({ id: "b", titre: "CEL", montant: "2 000 €", etat: "" }), /<span class="ui-ligne-etat"><\/span>/);
+  assert.doesNotMatch(UI.ligne({ id: "c", titre: "LDDS" }), /ui-ligne-etat/, "sans option, aucune colonne");
+  assert.ok(sain(UI.ligne({ titre: XSS, etat: { statut: "bon", texte: XSS } })));
+  const e = pour(css, ".ui-ligne-etat");
+  assert.equal(e.flex, "none");
+  assert.match(css, /@media \(min-width:600px\)\{\.ui-ligne-etat,\.ui-ligne-etat:empty\{display:flex;min-width:6\.5rem\}\}/, "largeur réservée dès 600 px");
+  assert.equal(pour(css, ".ui-ligne-chevron").width, "16px");
+});
+
+test("tuile : libellé, valeur, sous-ligne ; fond --sunk, sans bordure ni ombre (jamais une carte dans une carte)", () => {
+  const h = UI.tuile({ libelle: "Plus-values latentes", valeur: "+4 210 €", sous: "sur 3 lignes" });
+  assert.match(h, /^<div class="ui-tuile"><span class="ui-tuile-l">Plus-values latentes<\/span><span class="ui-tuile-v num">\+4 210 €<\/span><span class="ui-tuile-s">sur 3 lignes<\/span><\/div>$/);
+  assert.match(UI.tuile({ libelle: "x" }), /ui-tuile-v num">—</, "valeur absente → tiret");
+  assert.ok(sain(UI.tuile({ libelle: XSS, valeur: XSS, sous: XSS })));
+  const t = pour(css, ".ui-tuile");
+  assert.equal(t.background, "var(--sunk)");
+  assert.equal(t.border, "0");
+  assert.equal(t["box-shadow"], "none");
+  assert.equal(t.padding, "var(--tile-pad)");
+});
+
+test("vide : icône de 24 px, une phrase, une action secondaire ; sans action, sans bouton", () => {
+  const h = UI.vide({ texte: "Aucun objectif pour l'instant.", action: { texte: "Compléter avec Claude", href: "https://claude.ai/new?q=a" } });
+  assert.match(h, /^<div class="ui-vide"><span class="ui-vide-ico" aria-hidden="true"><svg /);
+  assert.match(h, /<p class="ui-vide-texte">Aucun objectif pour l&#39;instant\.<\/p>/);
+  assert.match(h, /<a class="ui-btn secondaire" href="https:\/\/claude\.ai\/new\?q=a"[^>]*>Compléter avec Claude<\/a>/);
+  assert.doesNotMatch(UI.vide({ texte: "Rien." }), /ui-btn/);
+  assert.ok(sain(UI.vide({ texte: XSS, action: { texte: XSS, id: XSS } })));
+  assert.equal(pour(css, ".ui-vide-ico").width, "24px");
+  assert.equal(pour(css, ".ui-vide-ico").color, "var(--muted)");
+});
+
+test("squelette : n blocs de la forme demandée (kpi 96 px, ligne 56 px, graphe 220 px puis 320 px), annoncés « chargement », pulsation coupée en mouvement réduit", () => {
+  const h = UI.squelette(3, "kpi");
+  assert.equal((h.match(/class="ui-skel-bloc kpi"/g) || []).length, 3);
+  assert.match(h, /role="status" aria-busy="true" aria-label="Chargement en cours"/);
+  assert.match(UI.squelette(1, "inconnue"), /ui-skel-bloc ligne/, "forme inconnue → ligne");
+  assert.equal((UI.squelette(999, "ligne").match(/ui-skel-bloc/g) || []).length, 24, "plafonné à 24");
+  assert.equal(pour(css, ".ui-skel-bloc.kpi").height, "96px");
+  assert.equal(pour(css, ".ui-skel-bloc.ligne").height, "56px");
+  assert.equal(pour(css, ".ui-skel-bloc.graphe").height, "220px");
+  assert.match(css, /@media \(min-width:900px\)\{\.ui-skel-bloc\.graphe\{height:320px\}\}/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\.ui-skel-bloc\{animation:none\}\}/);
 });

@@ -4,7 +4,7 @@
 
    Choix du mode au démarrage (pas de store.js intermédiaire) : chaque adaptateur vérifie lui-même son mode
    et seul celui qui correspond installe window.Store. Ce fichier s'installe quand l'URL contient `demo`
-   (app.html?demo) ou quand window.BOUSSOLE_MODE === "demo" ; store-supabase.js s'installe dans tous les
+   (app.html?demo ; app.html?demo=vide pour un foyer sans aucune donnée) ou quand window.BOUSSOLE_MODE === "demo" ; store-supabase.js s'installe dans tous les
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    sensible, routine-etat, banque-etat, store-demo, store-supabase, auth, reel, modules, app.
 
@@ -62,6 +62,12 @@
 
   const clone = o => (o == null ? o : JSON.parse(JSON.stringify(o)));
   const D = clone(window.DEMO || {});
+  /* app.html?demo=vide : foyer démo VIDE (comme un compte qui vient d'être créé : ni compte, ni ligne, ni objectif, ni budget, ni mémoire, ni journal,
+     ni proposition, ni projection figée ; config, profil et statut absents). Sert à vérifier les états vides des vues et à les capturer
+     (UX5 G5). Le catalogue de savoir et les expertises ne sont pas des données du foyer : ils restent. */
+  const VIDE = /[?&]demo=vide(?:&|$)/.test(String((window.location && window.location.search) || ""));
+  if (VIDE) Object.assign(D, { positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, budget: null, objectifs: [], risque: null, classes: {},
+    propositions: [], connexions: [], memoire: [], journal: [], routines: [], banque: null, operationsBancaires: [], foyer: null, plansFiges: [] });
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
   const C = {
     ready: false, dbOk: null, positions: (D.positions || []).map(p => Object.assign({}, p, { symbol: p.symbol || null })), snapshots: D.snapshots || [], tx: D.tx || [],
@@ -101,7 +107,7 @@
   const emit = () => { clearTimeout(tmr); tmr = setTimeout(() => subs.forEach(fn => { try { fn(S); } catch (e) { console.error(e); } }), 60); };
   /* PROJ : deux plans figés (revues mensuelles passées, il y a 62 et 31 jours). La liste (id, date, raison, horizon) est immédiate ; le calcul de la série et des
      paramètres (moteur de projection, 500 chemins) se fait à la demande, dans Store.plansFiges.detail(id), puis reste en mémoire. */
-  if (!C.plansFiges.length) C.plansFiges = [62, 31].map(n => ({ id: "plan-demo-" + n, cree_le: new Date(Date.now() - n * 864e5).toISOString().slice(0, 10) + "T20:00:00.000Z", raison: "revue_mensuelle", horizon_mois: 120, _jours: n }));
+  if (!VIDE && !C.plansFiges.length) C.plansFiges = [62, 31].map(n => ({ id: "plan-demo-" + n, cree_le: new Date(Date.now() - n * 864e5).toISOString().slice(0, 10) + "T20:00:00.000Z", raison: "revue_mensuelle", horizon_mois: 120, _jours: n }));
   function plansFigesDemo() { return C.plansFiges; }
   function completerPlan(r) {
     if (!r || r.serie || !r._jours) return r;

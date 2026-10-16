@@ -486,7 +486,8 @@
         risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, today: new Date(t + "T12:00:00") }); } catch (e) { r = null; }
     }
     const crit = r && Array.isArray(r.criteres) ? r.criteres : [];
-    const pratiques = { total: r && r.total != null ? r.total : null, provisoire: !!(r && r.provisoire),
+    const totalP = r && r.total != null ? r.total : null;
+    const pratiques = { total: totalP, statut: Pr && typeof Pr.statutNote === "function" ? Pr.statutNote(totalP) : null, provisoire: !!(r && r.provisoire),
       familles: r && Array.isArray(r.familles) ? r.familles.map(x => ({ titre: x.titre, total: x.total })) : [],
       aCompleter: crit.filter(c => c && c.aCompleter).length };
     // Prochaine échéance
@@ -561,8 +562,6 @@
     '<span class="aj-k-tete"><span class="aj-k-titre">' + esc(titre) + '</span><span class="aj-k-ouvrir">' + CHEVRON_DROITE + "</span></span>" + corps + "</button>";
   /** Date courte d'une liste : « 14 oct. » dans l'année, « 1 févr. 2027 » au-delà. */
   const dateListe = (s, auj) => (isoOk(s) ? FM().fmtDate(s, { court: isoOk(auj) ? s.slice(0, 4) === auj.slice(0, 4) : false }) : "");
-  /* statut du moteur (ton des anciens badges) → statut de puce */
-  const ST_PRATIQUES = { bon: "bon", info: "bon", attention: "surveiller", neutre: "completer" };
 
   /** Les 4 cartes du bandeau (patrimoine net, bonnes pratiques, objectifs, prochaine échéance). Chaque champ est échappé. */
   function cartes(ind, U, periode) {
@@ -576,11 +575,12 @@
       '<span class="aj-k-pied">' + (attente ? '<span class="ui-skel" aria-hidden="true"></span>' : sens ? deltaHtml(v, n.variationPct, periode) : "") + (sous1 ? '<span class="aj-k-sous">' + esc(sous1) + "</span>" : "") + "</span>" +
       (n.vide || attente ? "" : '<span class="aj-k-courbe">' + spark(n.courbe) + "</span>"));
     // 2. Bonnes pratiques : anneau (note sur 100, unité sous le chiffre), puce de statut, une ligne
-    const tot = pr.total, tonP = tot == null ? "neutre" : tot >= 80 ? "bon" : tot >= 60 ? "info" : "attention", motP = tot == null ? "À compléter" : tot >= 80 ? "Solide" : tot >= 60 ? "Correct" : "À consolider";
+    // statut de la note : Pratiques.statutNote, la même règle que Santé (≥ 80 vert, 60 à 79 ocre, < 60 rouge)
+    const tot = pr.total, sn = pr.statut || { statut: "completer", mot: "À compléter" }, tonP = sn.statut, motP = sn.mot;
     const sous2 = tot == null ? "Données à compléter" : pr.aCompleter ? pluriel(pr.aCompleter, "critère") + " à compléter" : "Tous les critères sont notés";
     const c2 = carteBtn("pratiques", "aj-k-pra t-" + tonP, "Bonnes pratiques : " + (tot == null ? "pas encore de note, données à compléter" : tot + " sur 100, " + motP.toLowerCase() + (pr.provisoire ? ", note provisoire" : "") + ", " + sous2.toLowerCase()), "Bonnes pratiques",
-      '<span class="aj-k-corps">' + anneau(tot, tot == null ? "neutre" : ST_PRATIQUES[tonP], { n: tot == null ? "—" : String(Math.round(tot)), u: tot == null ? "" : "/ 100", mode: "sur" }) +
-      '<span class="aj-k-jauge-t">' + puceH(ST_PRATIQUES[tonP], pr.provisoire && tot != null ? motP + " · provisoire" : motP) + '<span class="aj-k-sous">' + esc(sous2) + "</span></span></span>");
+      '<span class="aj-k-corps">' + anneau(tot, tot == null ? "neutre" : tonP, { n: tot == null ? "—" : String(Math.round(tot)), u: tot == null ? "" : "/ 100", mode: "sur" }) +
+      '<span class="aj-k-jauge-t">' + puceH(tonP, pr.provisoire && tot != null ? motP + " · provisoire" : motP) + '<span class="aj-k-sous">' + esc(sous2) + "</span></span></span>");
     // 3. Objectifs : anneau (avancement pondéré, « % » plus petit à côté du chiffre), puce, une ligne ; les objectifs un par un sont dans le panneau
     const motO = ob.vide ? "" : ob.retard ? ob.retard + " en retard" : ob.liste.every(x => x.statut === "atteint") ? "Tous atteints" : "Tous dans les temps";
     const stO = ob.vide ? "completer" : ob.ton === "critique" ? "travailler" : ob.retard ? "surveiller" : "bon";
