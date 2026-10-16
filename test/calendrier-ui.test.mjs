@@ -94,7 +94,7 @@ test("prochainesHtml : <ol> de 5 jalons au plus, boutons, <time datetime>, déla
   assert.doesNotMatch(h, /à venir</, "plus de puce « à venir » sur chaque ligne : le délai (« dans 4 mois ») suffit");
   assert.match(sp(h), /<span class="ui-sr">Date 25\/10\/2026, date exacte\. Ouvre le détail\.<\/span>/);
 });
-test("prochainesHtml : 5 lignes au plus, « Et N autres plus tard » ; un jalon approché le dit (badge et phrase)", () => {
+test("prochainesHtml : 5 lignes au plus, « Voir les N échéances » ; un jalon approché le dit (badge et phrase)", () => {
   const S = foyer();
   S.config.enveloppes_infos["PEA Exemple"] = infos("pea", { date_ouverture_approx: "2022-03" });
   const c = A.indicateurs(S, TODAY, { id: "1a" }, DEPS).calendrier;
@@ -105,13 +105,18 @@ test("prochainesHtml : 5 lignes au plus, « Et N autres plus tard » ; un jalon 
   assert.match(sp(A.prochainesHtml({ ...c, prochains: [{ ...c.prochains[0], cle: "av_70_ans", confiance: "approchee" }] }, UI)), /Date dès le \d{2}\/\d{2}\/\d{4}\. Ouvre le détail\./);
   assert.equal((h.match(/<li class="aj-ech-it">/g) || []).length, 5);
 });
-test("prochainesHtml : plus de 5 jalons → les 5 premiers et « Et N autres plus tard »", () => {
+test("prochainesHtml : plus de 5 jalons → les 5 premiers et « Voir les N échéances »", () => {
   const S = foyer();
   ["PEL B", "PEL C"].forEach((n, i) => { S.positions.push(ligne("p" + i, n)); S.config.enveloppes_infos[n] = infos("pel", { date_ouverture: "2019-0" + (i + 3) + "-10" }); });
   const c = A.indicateurs(S, TODAY, { id: "1a" }, DEPS).calendrier;
   assert.equal(c.prochains.length, 5);
   assert.ok(c.nPlus >= 1);
-  assert.match(sp(A.prochainesHtml(c, UI)), new RegExp("Et " + c.nPlus + " autres? plus tard\\."));
+  const h = sp(A.prochainesHtml(c, UI));
+  assert.match(h, new RegExp("data-ech-voir[^>]*>Voir les " + (5 + c.nPlus) + " échéances<"));
+  assert.equal((h.match(/<li class="aj-ech-it">/g) || []).length, 5);
+  const court = A.prochainesHtml(c, UI, 3);
+  assert.equal((court.match(/<li class="aj-ech-it">/g) || []).length, 3, "colonne de droite : 3 lignes");
+  assert.match(sp(court), new RegExp("Voir les " + (5 + c.nPlus) + " échéances"));
 });
 test("prochainesHtml : « N informations à compléter » (bouton) ; état vide honnête, aucune date quand la donnée manque", () => {
   const h = A.prochainesHtml(ind().calendrier, UI);

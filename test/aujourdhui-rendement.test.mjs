@@ -58,7 +58,7 @@ test("détail (Patrimoine net) : « Rendement sur 1 an » — ton rendement et l
   assert.ok(c.indexOf("Rendement sur 1 an") < c.indexOf("<details"), "avant le détail ligne par ligne");
   /* les lignes de la composition restent intactes (mêmes balises que l'existant) */
   const resume = c.split("<details")[0];
-  assert.match(resume, /<li><span class="aj-det-l">Patrimoine net<\/span>/);
+  assert.match(resume, /<li class="aj-det-total"><span class="aj-det-l">Patrimoine net<\/span>/);
 });
 test("détail : avec ce que le modèle en attendait (calculé par le graphe), la ligne « Attendu » et la phrase réel contre attendu, avec leur source", () => {
   const ind = A.indicateurs(etat(400), TODAY, { id: "1a" }, DEPS);

@@ -1,7 +1,7 @@
 /* Aujourd'hui : bandeau de 4 cartes cliquables (patrimoine net, bonnes pratiques, objectifs, échéance), graphe maître (observé, reconstitué, projeté), boîte de réception (5 puis « Voir plus »).
    Scopé #view-aujourdhui ; le contenu des panneaux de détail vit dans .ui-panneau (injecté dans body par UI), d'où .ui-panneau .aj-…. */
 #view-aujourdhui [hidden]{display:none!important}
-/* Page : une colonne (mobile : bandeau, À traiter, graphe, échéances) ; ≥ 1240 px, « À traiter » passe en colonne de droite à côté du graphe. */
+/* Page : une colonne (mobile : bandeau, À traiter, graphe, échéances) ; ≥ 1240 px, la colonne de droite porte « À traiter » puis les échéances (3 lignes), à la hauteur du graphe. */
 #view-aujourdhui .aj{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--gap-sections);min-width:0;align-items:start}
 #view-aujourdhui .aj-z-kpi{grid-area:kpi}
 #view-aujourdhui .aj-z-traiter{grid-area:traiter}
@@ -9,7 +9,7 @@
 #view-aujourdhui .aj-z-ech{grid-area:ech}
 #view-aujourdhui .aj{grid-template-areas:"kpi" "traiter" "graphe" "ech"}
 @media (min-width:1240px){
-  #view-aujourdhui .aj{grid-template-columns:minmax(0,1fr) 360px;grid-template-areas:"kpi kpi" "graphe traiter" "ech traiter";column-gap:var(--gap-sections)}
+  #view-aujourdhui .aj{grid-template-columns:minmax(0,1fr) 360px;grid-template-areas:"kpi kpi" "graphe traiter" "graphe ech";grid-template-rows:auto auto 1fr;column-gap:var(--gap-sections)}
 }
 /* grands écrans : le graphe maître prend la largeur gagnée (la colonne « À traiter » grandit un peu, le reste va au graphe) */
 @media (min-width:1440px){#view-aujourdhui .aj{grid-template-columns:minmax(0,1fr) 400px}}
@@ -26,6 +26,9 @@
 #view-aujourdhui .aj-boite .ui-voirplus-liste{gap:0}
 #view-aujourdhui .aj-it{border-top:1px solid var(--line);padding-block:var(--sp-3);padding-left:var(--card-pad);padding-right:var(--card-pad)}
 #view-aujourdhui .aj-pic{border-radius:var(--r-ctl)}
+#view-aujourdhui .aj-tl{display:flex;min-width:0}
+#view-aujourdhui .aj-tl.avec-meta{flex-direction:column-reverse;align-items:flex-start}
+#view-aujourdhui .aj-meta{margin:0 0 2px}
 #view-aujourdhui .aj-it[data-type="proposition"] .aj-pic,#view-aujourdhui .aj-it[data-type="routine"] .aj-pic{background:var(--brand-soft);color:var(--brand)}
 #view-aujourdhui .aj-ico{width:18px;height:18px}
 #view-aujourdhui .aj-txt{min-width:0}
@@ -51,7 +54,8 @@
 #view-aujourdhui .aj-k:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 #view-aujourdhui .aj-k-net{grid-column:1/-1;padding:var(--card-pad)}
 #view-aujourdhui .aj-k-tete{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-2);min-width:0}
-#view-aujourdhui .aj-k-titre{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-aujourdhui .aj-k-titre{min-width:0;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-aujourdhui .aj-k-t-c{display:none}
 #view-aujourdhui .aj-k-ouvrir{display:none;flex:none;color:var(--muted);transition:transform var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out)}
 #view-aujourdhui .aj-k-net .aj-k-ouvrir{display:inline-flex}
 #view-aujourdhui .aj-k-net .aj-k-titre{font:400 var(--t-small)/var(--lh-small) var(--f-body)}
@@ -101,11 +105,19 @@
 #view-aujourdhui .aj-k-date{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1) var(--sp-2);white-space:nowrap;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 
 
-/* mobile : mini-cartes en colonne de 3 (anneau de 48 px, unité masquée, chiffre en 16 px) */
+/* mobile : mini-cartes en colonne de 3 sur une grille commune (libellé court sur 1 ligne de 16 px, figure centrée dans 56 px, puce ou date dessous) :
+   les anneaux et le « 40 j » sont sur la même ligne d'une carte à l'autre */
 @media (max-width:899.98px){
-  #view-aujourdhui .aj-k:not(.aj-k-net){min-height:104px;padding:var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-3);gap:var(--sp-1)}
-  #view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-tete{min-height:calc(var(--lh-caption) * 2)}
+  #view-aujourdhui .aj-k:not(.aj-k-net){display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:16px 56px auto;align-content:start;row-gap:var(--sp-1);padding:var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-3)}
+  #view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-tete{min-height:0}
+  #view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-titre{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-t-l{display:none}
+  #view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-t-c{display:inline}
+  #view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-corps,#view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-jauge-t{display:contents}
+  #view-aujourdhui .aj-k:not(.aj-k-net) .aj-ring-box{align-self:center;justify-self:start}
   #view-aujourdhui .aj-k:not(.aj-k-net) .aj-k-sous{display:none}
+  #view-aujourdhui .aj-k-ech .aj-k-val{align-self:center}
+  #view-aujourdhui .aj-k-ech .aj-k-lib{display:none}
   #view-aujourdhui .aj-k-unit .u-l{display:none}
   #view-aujourdhui .aj-k-unit .u-c{display:inline}
   #view-aujourdhui .aj-k-ech .aj-k-val{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-display)}
@@ -154,20 +166,29 @@
 /* panneau de détail d'une carte (UI.panneau, hors de la vue) */
 .ui-panneau .aj-det{list-style:none;margin:0 0 12px;padding:0}
 .ui-panneau .aj-det li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:var(--t-body)}
+/* total : un trait plein et une graisse de plus, pour qu'il ne se confonde pas avec les lignes qui le composent */
+.ui-panneau .aj-det li.aj-det-total{margin-top:var(--sp-1);padding-top:var(--sp-3);border-top:2px solid var(--ink);font-weight:700}
+.ui-panneau .aj-det-total .aj-det-l{color:var(--ink)}
+.ui-panneau .aj-det-total .aj-det-v{font-weight:700}
+/* enveloppe : toute la ligne de 48 px ouvre sa fiche (lien étiré), chevron à droite */
+.ui-panneau .aj-det li:has(.aj-det-fiche){position:relative;align-items:center;min-height:48px;padding-block:0;padding-right:var(--sp-5)}
+.ui-panneau .aj-det li:has(.aj-det-fiche)::after{content:"";position:absolute;right:3px;top:50%;width:8px;height:8px;margin-top:-4px;border:solid var(--muted);border-width:2px 2px 0 0;transform:rotate(45deg)}
+.ui-panneau .aj-det-fiche::before{content:"";position:absolute;inset:0}
+.ui-panneau .aj-det-fiche:focus-visible::before{outline:2px solid var(--focus);outline-offset:-2px;border-radius:var(--r-ctl)}
 .ui-panneau .aj-det li:first-child{border-top:0}
 .ui-panneau .aj-det-l{color:var(--muted);min-width:0;overflow-wrap:anywhere}
-.ui-panneau .aj-det-v{font:600 var(--t-small) var(--f-num);color:var(--ink);text-align:right;flex:none;max-width:60%;overflow-wrap:anywhere}
+.ui-panneau .aj-det-v{font:600 var(--t-body)/var(--lh-body) var(--f-body);color:var(--ink);text-align:right;flex:none;max-width:60%;overflow-wrap:anywhere}
 .ui-panneau .aj-det-note{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
 
 #view-aujourdhui .aj-sec-t,.ui-panneau .aj-sec-t{font:700 var(--t-small) var(--f-display);margin:14px 0 2px;color:var(--ink)}
 #view-aujourdhui .aj-liste,.ui-panneau .aj-liste{margin:4px 0 8px;padding-left:18px;font-size:var(--t-small);line-height:1.5}
 #view-aujourdhui .aj-liste li+li,.ui-panneau .aj-liste li+li{margin-top:3px}
-.ui-panneau .aj-det-fiche{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.ui-panneau .aj-det-fiche{color:var(--ink);font-weight:500;text-decoration:none;min-width:0}
 
 /* carte « Prochaines échéances » (calendrier patrimonial, DAT1) : liste ordonnée de boutons, date + délai, enveloppe et effet, mot d'état */
 #view-aujourdhui .aj-ech-liste{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 #view-aujourdhui .aj-ech-it+.aj-ech-it{border-top:1px solid var(--line)}
-#view-aujourdhui .aj-ech-l{display:grid;grid-template-columns:7.5rem minmax(0,1fr) auto 16px;align-items:center;gap:var(--sp-1) var(--sp-4);width:100%;min-height:64px;margin:0;padding:var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-1);
+#view-aujourdhui .aj-ech-l{display:grid;grid-template-columns:7.5rem minmax(0,1fr) 6.5rem 16px;align-items:center;gap:var(--sp-1) var(--sp-4);width:100%;min-height:64px;margin:0;padding:var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-1);
   text-align:left;font:inherit;color:var(--ink);background:transparent;border:0;border-radius:var(--r-ctl);cursor:pointer;transition:background-color var(--dur-state) var(--ease-out)}
 #view-aujourdhui .aj-ech-l:hover{background:var(--sunk)}
 #view-aujourdhui .aj-ech-l:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
@@ -178,8 +199,11 @@
 #view-aujourdhui .aj-ech-nom{font:600 var(--t-h3)/var(--lh-h3) var(--f-body);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 #view-aujourdhui .aj-ech-eff{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 #view-aujourdhui .aj-ech-etat{display:flex;flex-wrap:wrap;gap:var(--sp-1);justify-content:flex-end;min-width:0}
-#view-aujourdhui .aj-ech-etat:empty{display:none}
+#view-aujourdhui .aj-ech-etat:empty{visibility:hidden}
 #view-aujourdhui .aj-ech-ouvrir{display:inline-flex;color:var(--muted)}
+#view-aujourdhui .aj-ech-note,#view-aujourdhui .aj-ech-pied{max-width:none}
+#view-aujourdhui .aj-ech-note:has(.aj-ech-voir){margin-top:var(--sp-1)}
+#view-aujourdhui .aj-z-ech{container:ech/inline-size}
 #view-aujourdhui .aj-ech-pied{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px .4em;margin:10px 0 0;padding-top:10px;border-top:1px solid var(--line);font-size:var(--t-small)}
 #view-aujourdhui .aj-ech-completer{display:inline-flex;align-items:center;min-height:var(--hit);background:none;border:0;padding:0;margin:0;font:600 var(--t-small) var(--f-body);color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 #view-aujourdhui .aj-ech-completer:hover{color:var(--ink)}
@@ -196,12 +220,30 @@
 .ui-panneau .aj-cmp:first-child{padding-top:0;border-top:0}
 .ui-panneau .aj-cmp-t{margin:0;font:700 var(--t-body) var(--f-body)}
 .ui-panneau .aj-cmp-p,.ui-panneau .aj-cmp-d{margin:3px 0 8px;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
-@media (max-width:599.98px){
-  #view-aujourdhui .aj-ech-l{grid-template-columns:minmax(0,1fr) 16px;grid-template-areas:"date ouvrir" "txt ouvrir" "etat etat";gap:var(--sp-1) var(--sp-2);padding:var(--sp-3) var(--sp-1)}
+/* liste étroite (mobile, colonne de droite d'un grand écran) : date en repère avec le mot d'état à sa droite, titre et effet dessous, chevron centré */
+@container ech (max-width:560px){
+  #view-aujourdhui .aj-ech-l{grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:"date etat ouvrir" "txt txt ouvrir";gap:var(--sp-1) var(--sp-2);padding:var(--sp-3) var(--sp-1)}
   #view-aujourdhui .aj-ech-date{grid-area:date;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 var(--sp-2)}
+  #view-aujourdhui .aj-ech-date time{font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
   #view-aujourdhui .aj-ech-txt{grid-area:txt}
-  #view-aujourdhui .aj-ech-etat{grid-area:etat;justify-content:flex-start}
+  #view-aujourdhui .aj-ech-etat{grid-area:etat;justify-content:flex-end;align-self:center}
+  #view-aujourdhui .aj-ech-etat:empty{display:none}
   #view-aujourdhui .aj-ech-ouvrir{grid-area:ouvrir;align-self:center}
+}
+@media (min-width:1240px){#view-aujourdhui .aj-z-ech .aj-ech-eff{-webkit-line-clamp:1}}
+/* À traiter sur mobile : toute la ligne ouvre le geste (l'action devient un chevron), titre et raison sur 1 ligne, « Bloquant » à droite du titre */
+@media (max-width:599.98px){
+  #view-aujourdhui .aj-it{min-height:64px;padding-block:var(--sp-2);padding-right:var(--sp-2);gap:var(--sp-3)}
+  #view-aujourdhui .aj-tl{align-items:center;gap:var(--sp-2)}
+  #view-aujourdhui .aj-tl.avec-meta{flex-direction:row}
+  #view-aujourdhui .aj-meta{flex:none;margin:0}
+  #view-aujourdhui .aj-t,#view-aujourdhui .aj-c{-webkit-line-clamp:1;min-width:0}
+  #view-aujourdhui .aj-tl .aj-t{flex:1 1 auto}
+  #view-aujourdhui .aj-act{justify-content:center;width:24px}
+  #view-aujourdhui .aj-act::after{content:"";position:absolute;inset:0;border-radius:var(--r-ctl)}
+  #view-aujourdhui .aj-act::before{content:"";width:8px;height:8px;margin-right:3px;border:solid var(--muted);border-width:2px 2px 0 0;transform:rotate(45deg)}
+  #view-aujourdhui .aj-act>span{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);border:0;white-space:nowrap}
+  #view-aujourdhui .aj-act:focus-visible::after{outline:2px solid var(--focus);outline-offset:-2px}
 }
 .ui-panneau .aj-det-pile li{flex-direction:column;align-items:flex-start;gap:2px}
 .ui-panneau .aj-det-pile .aj-det-v{text-align:left;max-width:none;font:500 var(--t-small)/1.5 var(--f-body)}
