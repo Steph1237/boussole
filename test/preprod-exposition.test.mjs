@@ -34,10 +34,10 @@ describe("démarrage", () => {
     assert.ok(p.includes(54521) && p.includes(54522));
     assert.ok(p.every(n => n >= 54500 && n < 54600), p.join(","));
   });
-  it("services exclus : noms de conteneurs du CLI 2.107.0", () => {
-    for (const n of ["logflare", "vector", "imgproxy", "mailpit", "realtime", "storage-api"]) assert.ok(exclus({}).split(",").includes(n), n);
+  it("services exclus : noms de conteneurs du CLI 2.107.0 ; edge-runtime l'est aussi (celui de `supabase start` n'a pas fonctions.env et annoncerait la production : seul `functions serve --env-file` sert les fonctions)", () => {
+    for (const n of ["logflare", "vector", "imgproxy", "mailpit", "realtime", "storage-api", "edge-runtime"]) assert.ok(exclus({}).split(",").includes(n), n);
     assert.ok(exclus({}).split(",").includes("studio"));
     assert.ok(!exclus({ PREPROD_STUDIO: "1" }).split(",").includes("studio"));
-    for (const utile of ["gotrue", "postgrest", "kong", "edge-runtime", "postgres"]) assert.ok(!exclus({}).split(",").includes(utile), utile);
+    for (const utile of ["gotrue", "postgrest", "kong", "postgres"]) assert.ok(!exclus({}).split(",").includes(utile), utile);
   });
 });
