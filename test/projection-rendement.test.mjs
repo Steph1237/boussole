@@ -143,6 +143,6 @@ test("RD-15 : un plan figé range ce que le modèle attendait du rendement (hypo
   assert.equal(rd.horizon_ans, 10); assert.ok(rd.horizon_nominal.p10 < rd.horizon_nominal.p50 && rd.horizon_nominal.p50 < rd.horizon_nominal.p90);
   assert.ok(ligne.taille_octets < P.PLAN_MAX_OCTETS + P.PLAN_PARAMETRES_MAX_OCTETS, "toujours sous les limites de la base");
 });
-test("RD-16 : la version du modèle est incrémentée (proj-1.2.0) puisque le résultat porte un nouveau calcul", () => {
-  assert.equal(P.versionModele, "proj-1.2.0");
+test("RD-16 : la version du modèle est incrémentée (proj-1.3.0, enveloppe_scenario de SCN1) puisque le résultat porte un nouveau calcul", () => {
+  assert.equal(P.versionModele, "proj-1.3.0");
 });

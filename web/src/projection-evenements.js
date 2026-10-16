@@ -199,7 +199,7 @@
 
   /* -------- variantes -------- */
   const HYPOTHESES_VARIANTE = ["epargne_delta_mensuel", "reste_capacite", "reequilibrage", "part_reaffectee_epargne_pct", "part_hausse_epargnee_pct",
-    "salaire_croissance_reelle_pct", "hypotheses_classes"];
+    "salaire_croissance_reelle_pct", "hypotheses_classes", "enveloppe_scenario"];
   const CLASSES_HYPOTHESES = () => Marche.CLES.filter(k => k !== "levier").concat(["actions_nasdaq100", "immobilier_physique"]);
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   /** Valide une variante { nom, description?, retire?, hypotheses? } → null ou message. */
@@ -217,6 +217,7 @@
     if (present(h.reequilibrage) && !["aucun", "annuel"].includes(h.reequilibrage)) return "« reequilibrage » vaut « aucun » ou « annuel ».";
     if (!entre0et100(h.part_reaffectee_epargne_pct) || !entre0et100(h.part_hausse_epargnee_pct)) return M.pct;
     if (present(h.salaire_croissance_reelle_pct) && !(nombre(h.salaire_croissance_reelle_pct) && Math.abs(+h.salaire_croissance_reelle_pct) <= 10)) return "La hausse réelle des salaires doit être comprise entre −10 et 10 % par an.";
+    if (present(h.enveloppe_scenario)) { const m = validerEnveloppeScenario(h.enveloppe_scenario); if (m) return m; }
     if (present(h.hypotheses_classes)) {
       if (!estObjet(h.hypotheses_classes)) return "« hypotheses_classes » doit être un objet { classe: { rendement, volatilite } }.";
       for (const [k, x] of Object.entries(h.hypotheses_classes)) {
@@ -242,6 +243,60 @@
     });
   }
 
+  /* -------- enveloppe d'un scénario retenu (SCN1, hypothèse de variante « enveloppe_scenario », spec § 6.6) --------
+     Les messages de ce bloc sont écrits entre accents graves : ils ont leur propre test de parité avec la migration 0038 (foyer_valider_variante étendue),
+     pas avec 0031 (test/projection-pglite.test.mjs ne lit que les phrases entre guillemets). Une seule enveloppe par variante en V1. */
+  const TYPES_ENVELOPPE_SCENARIO = ["pea", "assurance_vie", "per", "compte_titres", "livret_a", "ldds", "lep"];
+  const CHAMPS_ENVELOPPE_SCENARIO = ["scenario", "version_calcul", "type", "titulaire", "ouverture", "allocation", "ter_pct", "frais_enveloppe_pct", "initial", "mensuel", "debut",
+    "plafond_versements", "debordement", "per", "transferts"];
+  const TMI_SCENARIO = [0, 11, 30, 41, 45];
+  const bornes = (v, a, b) => nombre(v) && typeof v !== "boolean" && +v >= a && +v <= b;
+  /** Valide l'enveloppe d'un scénario retenu → null ou message (français, tutoiement). */
+  function validerEnveloppeScenario(es) {
+    const P_ = "« enveloppe_scenario";
+    if (!estObjet(es)) return `${P_} » doit être un objet.`;
+    const inconnu = Object.keys(es).find(k => !CHAMPS_ENVELOPPE_SCENARIO.includes(k));
+    if (inconnu) return `${P_} » : champ « ${inconnu} » inconnu. Champs admis : ${CHAMPS_ENVELOPPE_SCENARIO.join(", ")}.`;
+    if (!(typeof es.scenario === "string" && /^[a-z0-9_]{3,40}$/.test(es.scenario))) return `${P_}.scenario » : identifiant du scénario attendu (minuscules, chiffres et _, de 3 à 40 caractères).`;
+    if (present(es.version_calcul) && !(typeof es.version_calcul === "string" && /^scn-\d+\.\d+\.\d+$/.test(es.version_calcul))) return `${P_}.version_calcul » : version du calcul attendue, de la forme scn-1.0.0.`;
+    if (!TYPES_ENVELOPPE_SCENARIO.includes(es.type)) return `${P_}.type » : choisis parmi ${TYPES_ENVELOPPE_SCENARIO.join(", ")}.`;
+    if (!["p1", "p2"].includes(es.titulaire)) return `${P_}.titulaire » : p1 ou p2 attendu.`;
+    const datee = d => O.estDate(d) && d >= "1950-01-01" && d <= "2100-12-31";
+    if (!datee(es.ouverture)) return `${P_}.ouverture » : date AAAA-MM-JJ attendue.`;
+    const livret = ["livret_a", "ldds", "lep"].includes(es.type);
+    if (!livret || present(es.allocation)) {
+      if (!estObjet(es.allocation) || !Object.keys(es.allocation).length) return `${P_}.allocation » : objet { classe: pourcentage } attendu, de somme 100 %.`;
+      const classes = Marche.CLES.filter(k => k !== "levier");
+      const k = Object.keys(es.allocation).find(x => !classes.includes(x));
+      if (k) return `${P_}.allocation » : classe inconnue « ${k} ».`;
+      if (!Object.values(es.allocation).every(v => bornes(v, 0, 100))) return `${P_}.allocation » : pourcentages de 0 à 100 attendus.`;
+      if (Math.abs(Object.values(es.allocation).reduce((a, v) => a + +v, 0) - 100) > 0.01) return `${P_}.allocation » : la somme des pourcentages doit faire 100 %.`;
+    }
+    if (present(es.ter_pct) && !bornes(es.ter_pct, 0, 3)) return `${P_}.ter_pct » : de 0 à 3 % par an attendu.`;
+    if (present(es.frais_enveloppe_pct) && !bornes(es.frais_enveloppe_pct, 0, 3)) return `${P_}.frais_enveloppe_pct » : de 0 à 3 % par an attendu.`;
+    if (present(es.initial)) {
+      if (!estObjet(es.initial) || !bornes(es.initial.montant, 0, 1000000) || (present(es.initial.depuis) && es.initial.depuis !== "disponible")) return `${P_}.initial » : { montant de 0 à 1 000 000 €, depuis: « disponible » } attendu.`;
+    }
+    if (present(es.mensuel)) {
+      if (!estObjet(es.mensuel) || !bornes(es.mensuel.montant, 0, 100000) || (present(es.mensuel.depuis) && !["capacite", "en_plus"].includes(es.mensuel.depuis))) return `${P_}.mensuel » : { montant de 0 à 100 000 €, depuis: « capacite » ou « en_plus » } attendu.`;
+    }
+    if (present(es.debut) && (!datee(es.debut) || es.debut < es.ouverture)) return `${P_}.debut » : date AAAA-MM-JJ, postérieure ou égale à l'ouverture, attendue.`;
+    if (present(es.plafond_versements) && !bornes(es.plafond_versements, 0, 10000000)) return `${P_}.plafond_versements » : montant de 0 à 10 000 000 € attendu.`;
+    if (present(es.debordement) && !["compte_titres", "disponible"].includes(es.debordement)) return `${P_}.debordement » : « compte_titres » ou « disponible » attendu.`;
+    if (present(es.per)) {
+      if (es.type !== "per") return `${P_}.per » : réservé au type per.`;
+      const p = es.per;
+      if (!estObjet(p)) return `${P_}.per » : objet { deduit, tmi_retraite_pct, economie } attendu.`;
+      if (present(p.deduit) && typeof p.deduit !== "boolean") return `${P_}.per.deduit » : vrai ou faux attendu.`;
+      if (present(p.tmi_retraite_pct) && !(nombre(p.tmi_retraite_pct) && TMI_SCENARIO.includes(+p.tmi_retraite_pct))) return `${P_}.per.tmi_retraite_pct » : 0, 11, 30, 41 ou 45 attendu.`;
+      if (present(p.economie) && !["reinvestie", "depensee"].includes(p.economie)) return `${P_}.per.economie » : « reinvestie » ou « depensee » attendu.`;
+    }
+    if (present(es.transferts)) {
+      if (!Array.isArray(es.transferts) || es.transferts.length > 5 || !es.transferts.every(t => estObjet(t) && ["livret_a", "ldds", "courant"].includes(t.de) && bornes(t.montant, 0.01, 1000000)))
+        return `${P_}.transferts » : 5 transferts au plus, chacun { de: « livret_a », « ldds » ou « courant », montant de 0,01 à 1 000 000 € }.`;
+    }
+    return null;
+  }
 
   /* -------- réglages de projection du foyer (config.projection, proposition de la cible config) : mêmes règles et messages que la migration 0031 -------- */
   const CHAMPS_PROJECTION = ["base_capacite", "capacite_mensuelle", "reste_capacite", "reequilibrage", "part_reaffectee_epargne_pct", "part_hausse_epargnee_pct",
@@ -303,5 +358,5 @@
   }
 
   return { CHAMPS_PROJECTION, fusionnerReglagesProjection, TYPES_V1, TYPES_RESERVES, PERSONNES, MODES_CRECHE, NIVEAUX, USAGES, ACTIVITES, MESSAGES: M, LIMITE_EVENEMENTS, LIMITE_VARIANTES, LIMITE_PAR_APPEL,
-    HYPOTHESES_VARIANTE, ENTREES, validerEvenement, validerVariante, defautsDe };
+    HYPOTHESES_VARIANTE, ENTREES, validerEvenement, validerVariante, validerEnveloppeScenario, TYPES_ENVELOPPE_SCENARIO, defautsDe };
 });

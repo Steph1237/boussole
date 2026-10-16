@@ -70,6 +70,7 @@ test("PEA-3 : prendre date, gain de l'antériorité, petit versement, courbe et 
   for (const p of a.courbe) { const x = r.courbe.points.find(q => q.t === p.t); assert.equal(x.date, p.date); proche(x.courants_p50, p.gain, c.tolerance, "courbe " + p.date); }
   assert.deepEqual(r.detail.fenetre, a.fenetre);
   assert.equal(r.courbe.abscisse, "date_sortie");
+  assert.match(r.reponse.phrase, /15\/12\/2031/); assert.match(r.reponse.phrase, /15\/11\/2033/);
 });
 test("PEA : pertinence (déjà un PEA ou non, capacité nulle sans surplus) et raisons au nom de la personne", () => {
   const e = entreeCatalogue("ouvrir_pea");
@@ -408,4 +409,57 @@ test("copie générée (projection-moteur.gen.js) : Scenarios donne exactement l
   }
   const cat = FIXTURE.catalogue, { data } = dataDe(cas("PEA-1")), o = { chemins: 100, frais: { ter_pct: 0.2 }, allocation: { actions: 100 } };
   assert.deepEqual(JSON.parse(JSON.stringify(G.lister(cat, data, [], "2026-10-15", o))), JSON.parse(JSON.stringify(S.lister(cat, data, [], "2026-10-15", o))));
+});
+
+/* ---------------------------------------------------------------- variante retenue (forme validée par le moteur) et rejouée par le moteur complet */
+const E_ = req("../web/src/projection-evenements.js");
+const P_ = req("../web/src/projection.js");
+test("varianteRetenue : une variante de la forme validée par Evenements.validerVariante pour chaque option retenable des cinq scénarios", () => {
+  const vus = [];
+  for (const id of ["PEA-1", "PEA-3", "EUR-1", "EUR-3", "EUR-4", "PER-1", "MAT-1", "AV-1"]) {
+    const c = cas(id), { r, entree } = jouerCas(c), retenables = r.options.filter(o => o.retenable);
+    assert.ok(retenables.length >= 1, id + " : au moins une option se retient");
+    for (const o of retenables) {
+      const v = S.varianteRetenue(entree, r, o.id);
+      assert.equal(E_.validerVariante(v), null, id + "/" + o.id);
+      assert.ok(v.nom.length <= 40 && v.description.length <= 300);
+      assert.equal(v.hypotheses.enveloppe_scenario.scenario, entree.cle);
+      assert.equal(v.hypotheses.enveloppe_scenario.version_calcul, "scn-1.0.0");
+      assert.match(v.description, new RegExp(entree.question.slice(0, 15).replace(/[?]/g, "\\?")));
+      assert.deepEqual(Object.keys(v.hypotheses), ["enveloppe_scenario"]);
+      vus.push(id + "/" + o.id);
+    }
+    for (const o of r.options.filter(x => !x.retenable)) { assert.ok(o.raison_non_retenable.length > 15, id + "/" + o.id); assert.throws(() => S.varianteRetenue(entree, r, o.id), /ne se retient pas|inconnue/); }
+  }
+  assert.ok(vus.includes("PEA-1/A") && vus.includes("EUR-4/per") && vus.includes("PER-1/per") && vus.includes("MAT-1/placement") && vus.includes("AV-1/A") && vus.includes("EUR-1/av"));
+  assert.throws(() => S.varianteRetenue(entreeCatalogue("ouvrir_pea"), jouerCas(cas("PEA-1")).r, "R"), /ne se retient pas/);
+  assert.throws(() => S.varianteRetenue(entreeCatalogue("ouvrir_pea"), jouerCas(cas("PEA-1")).r, "Z"), /inconnue/);
+  const multi = jouerCas(cas("EUR-3")).r.options.find(o => o.id === "pea+av");
+  assert.equal(multi.retenable, false); assert.match(multi.raison_non_retenable, /plusieurs enveloppes/);
+});
+test("varianteRetenue : les données de l'option (ouverture, plafond, début, transferts, PER) sont celles de la réponse", () => {
+  const pea = jouerCas(cas("PEA-1")).r.options.find(o => o.id === "A").enveloppe_scenario;
+  assert.deepEqual(pea, { scenario: "ouvrir_pea", version_calcul: "scn-1.0.0", type: "pea", titulaire: "p1", ouverture: "2026-11-15", allocation: { actions: 100 }, ter_pct: 0.2, frais_enveloppe_pct: 0,
+    mensuel: { montant: 300, depuis: "capacite" }, plafond_versements: 150000, debordement: "compte_titres" });
+  const per = jouerCas(cas("PER-1")).r.options.find(o => o.id === "per").enveloppe_scenario;
+  assert.equal(per.type, "per"); assert.equal(per.mensuel.montant, 285.71); assert.equal(per.plafond_versements, 4710); assert.deepEqual(per.per, { deduit: true, tmi_retraite_pct: 30, economie: "reinvestie" });
+  const av = jouerCas(cas("AV-1")).r.options.find(o => o.id === "A").enveloppe_scenario;
+  assert.deepEqual([av.ouverture, av.debut, av.initial.montant, av.mensuel.montant], ["2026-11-15", "2029-11-15", 100, 200]);
+  const mat = jouerCas(cas("MAT-1")).r.options.find(o => o.id === "placement").enveloppe_scenario;
+  assert.deepEqual(mat.transferts, [{ de: "livret_a", montant: 10000 }]); assert.equal(mat.type, "compte_titres");
+  const eur = jouerCas(cas("EUR-3")).r.options.find(o => o.id === "av").enveloppe_scenario;
+  assert.deepEqual(eur.allocation, { actions: 60, fonds_euros: 40 });
+});
+test("cohérence du socle et du moteur complet : l'écart du PEA contre le compte-titres, rejoué par deux variantes, diffère de moins de 1 % (foyer sans cascade active)", () => {
+  const c = cas("PEA-1"), { r, entree, data } = jouerCas(c);
+  const d = JSON.parse(JSON.stringify(data));
+  /* un compte courant et un livret, aucun objectif, le reste va au disponible : la cascade ne fait que déposer la capacité */
+  d.foyer = { evenements: [], variantes: [] };
+  const va = S.varianteRetenue(entree, r, "A");
+  const vr = { ...va, hypotheses: { enveloppe_scenario: { ...va.hypotheses.enveloppe_scenario, type: "compte_titres", ouverture: "2026-10-15", plafond_versements: undefined, debordement: undefined, frais_enveloppe_pct: 0 } } };
+  delete vr.hypotheses.enveloppe_scenario.plafond_versements; delete vr.hypotheses.enveloppe_scenario.debordement;
+  d.foyer.variantes = [{ id: "a1b2c3d4-0000-4000-8000-0000000000a1", retire: [], ...va }, { id: "a1b2c3d4-0000-4000-8000-0000000000a2", retire: [], ...vr }];
+  const net = id => { const M = P_.preparer(d, { horizon_ans: 8, euros: "constants", vue: "net", net_impots: true, variante: id }); return P_.simuler(M, { volatilite: 0 }).vues.net.p50[96]; };
+  const ecartMoteur = net("a1b2c3d4-0000-4000-8000-0000000000a1") - net("a1b2c3d4-0000-4000-8000-0000000000a2");
+  proche(ecartMoteur / r.reponse.ecart.p50, 1, 0.01, "écart du moteur " + ecartMoteur + " contre " + r.reponse.ecart.p50);
 });

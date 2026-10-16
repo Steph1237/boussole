@@ -2589,7 +2589,7 @@ def("projection-evenements", function (module, exports, require) {
 
   /* -------- variantes -------- */
   const HYPOTHESES_VARIANTE = ["epargne_delta_mensuel", "reste_capacite", "reequilibrage", "part_reaffectee_epargne_pct", "part_hausse_epargnee_pct",
-    "salaire_croissance_reelle_pct", "hypotheses_classes"];
+    "salaire_croissance_reelle_pct", "hypotheses_classes", "enveloppe_scenario"];
   const CLASSES_HYPOTHESES = () => Marche.CLES.filter(k => k !== "levier").concat(["actions_nasdaq100", "immobilier_physique"]);
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   /** Valide une variante { nom, description?, retire?, hypotheses? } → null ou message. */
@@ -2607,6 +2607,7 @@ def("projection-evenements", function (module, exports, require) {
     if (present(h.reequilibrage) && !["aucun", "annuel"].includes(h.reequilibrage)) return "« reequilibrage » vaut « aucun » ou « annuel ».";
     if (!entre0et100(h.part_reaffectee_epargne_pct) || !entre0et100(h.part_hausse_epargnee_pct)) return M.pct;
     if (present(h.salaire_croissance_reelle_pct) && !(nombre(h.salaire_croissance_reelle_pct) && Math.abs(+h.salaire_croissance_reelle_pct) <= 10)) return "La hausse réelle des salaires doit être comprise entre −10 et 10 % par an.";
+    if (present(h.enveloppe_scenario)) { const m = validerEnveloppeScenario(h.enveloppe_scenario); if (m) return m; }
     if (present(h.hypotheses_classes)) {
       if (!estObjet(h.hypotheses_classes)) return "« hypotheses_classes » doit être un objet { classe: { rendement, volatilite } }.";
       for (const [k, x] of Object.entries(h.hypotheses_classes)) {
@@ -2632,6 +2633,60 @@ def("projection-evenements", function (module, exports, require) {
     });
   }
 
+  /* -------- enveloppe d'un scénario retenu (SCN1, hypothèse de variante « enveloppe_scenario », spec § 6.6) --------
+     Les messages de ce bloc sont écrits entre accents graves : ils ont leur propre test de parité avec la migration 0038 (foyer_valider_variante étendue),
+     pas avec 0031 (test/projection-pglite.test.mjs ne lit que les phrases entre guillemets). Une seule enveloppe par variante en V1. */
+  const TYPES_ENVELOPPE_SCENARIO = ["pea", "assurance_vie", "per", "compte_titres", "livret_a", "ldds", "lep"];
+  const CHAMPS_ENVELOPPE_SCENARIO = ["scenario", "version_calcul", "type", "titulaire", "ouverture", "allocation", "ter_pct", "frais_enveloppe_pct", "initial", "mensuel", "debut",
+    "plafond_versements", "debordement", "per", "transferts"];
+  const TMI_SCENARIO = [0, 11, 30, 41, 45];
+  const bornes = (v, a, b) => nombre(v) && typeof v !== "boolean" && +v >= a && +v <= b;
+  /** Valide l'enveloppe d'un scénario retenu → null ou message (français, tutoiement). */
+  function validerEnveloppeScenario(es) {
+    const P_ = "« enveloppe_scenario";
+    if (!estObjet(es)) return `${P_} » doit être un objet.`;
+    const inconnu = Object.keys(es).find(k => !CHAMPS_ENVELOPPE_SCENARIO.includes(k));
+    if (inconnu) return `${P_} » : champ « ${inconnu} » inconnu. Champs admis : ${CHAMPS_ENVELOPPE_SCENARIO.join(", ")}.`;
+    if (!(typeof es.scenario === "string" && /^[a-z0-9_]{3,40}$/.test(es.scenario))) return `${P_}.scenario » : identifiant du scénario attendu (minuscules, chiffres et _, de 3 à 40 caractères).`;
+    if (present(es.version_calcul) && !(typeof es.version_calcul === "string" && /^scn-\d+\.\d+\.\d+$/.test(es.version_calcul))) return `${P_}.version_calcul » : version du calcul attendue, de la forme scn-1.0.0.`;
+    if (!TYPES_ENVELOPPE_SCENARIO.includes(es.type)) return `${P_}.type » : choisis parmi ${TYPES_ENVELOPPE_SCENARIO.join(", ")}.`;
+    if (!["p1", "p2"].includes(es.titulaire)) return `${P_}.titulaire » : p1 ou p2 attendu.`;
+    const datee = d => O.estDate(d) && d >= "1950-01-01" && d <= "2100-12-31";
+    if (!datee(es.ouverture)) return `${P_}.ouverture » : date AAAA-MM-JJ attendue.`;
+    const livret = ["livret_a", "ldds", "lep"].includes(es.type);
+    if (!livret || present(es.allocation)) {
+      if (!estObjet(es.allocation) || !Object.keys(es.allocation).length) return `${P_}.allocation » : objet { classe: pourcentage } attendu, de somme 100 %.`;
+      const classes = Marche.CLES.filter(k => k !== "levier");
+      const k = Object.keys(es.allocation).find(x => !classes.includes(x));
+      if (k) return `${P_}.allocation » : classe inconnue « ${k} ».`;
+      if (!Object.values(es.allocation).every(v => bornes(v, 0, 100))) return `${P_}.allocation » : pourcentages de 0 à 100 attendus.`;
+      if (Math.abs(Object.values(es.allocation).reduce((a, v) => a + +v, 0) - 100) > 0.01) return `${P_}.allocation » : la somme des pourcentages doit faire 100 %.`;
+    }
+    if (present(es.ter_pct) && !bornes(es.ter_pct, 0, 3)) return `${P_}.ter_pct » : de 0 à 3 % par an attendu.`;
+    if (present(es.frais_enveloppe_pct) && !bornes(es.frais_enveloppe_pct, 0, 3)) return `${P_}.frais_enveloppe_pct » : de 0 à 3 % par an attendu.`;
+    if (present(es.initial)) {
+      if (!estObjet(es.initial) || !bornes(es.initial.montant, 0, 1000000) || (present(es.initial.depuis) && es.initial.depuis !== "disponible")) return `${P_}.initial » : { montant de 0 à 1 000 000 €, depuis: « disponible » } attendu.`;
+    }
+    if (present(es.mensuel)) {
+      if (!estObjet(es.mensuel) || !bornes(es.mensuel.montant, 0, 100000) || (present(es.mensuel.depuis) && !["capacite", "en_plus"].includes(es.mensuel.depuis))) return `${P_}.mensuel » : { montant de 0 à 100 000 €, depuis: « capacite » ou « en_plus » } attendu.`;
+    }
+    if (present(es.debut) && (!datee(es.debut) || es.debut < es.ouverture)) return `${P_}.debut » : date AAAA-MM-JJ, postérieure ou égale à l'ouverture, attendue.`;
+    if (present(es.plafond_versements) && !bornes(es.plafond_versements, 0, 10000000)) return `${P_}.plafond_versements » : montant de 0 à 10 000 000 € attendu.`;
+    if (present(es.debordement) && !["compte_titres", "disponible"].includes(es.debordement)) return `${P_}.debordement » : « compte_titres » ou « disponible » attendu.`;
+    if (present(es.per)) {
+      if (es.type !== "per") return `${P_}.per » : réservé au type per.`;
+      const p = es.per;
+      if (!estObjet(p)) return `${P_}.per » : objet { deduit, tmi_retraite_pct, economie } attendu.`;
+      if (present(p.deduit) && typeof p.deduit !== "boolean") return `${P_}.per.deduit » : vrai ou faux attendu.`;
+      if (present(p.tmi_retraite_pct) && !(nombre(p.tmi_retraite_pct) && TMI_SCENARIO.includes(+p.tmi_retraite_pct))) return `${P_}.per.tmi_retraite_pct » : 0, 11, 30, 41 ou 45 attendu.`;
+      if (present(p.economie) && !["reinvestie", "depensee"].includes(p.economie)) return `${P_}.per.economie » : « reinvestie » ou « depensee » attendu.`;
+    }
+    if (present(es.transferts)) {
+      if (!Array.isArray(es.transferts) || es.transferts.length > 5 || !es.transferts.every(t => estObjet(t) && ["livret_a", "ldds", "courant"].includes(t.de) && bornes(t.montant, 0.01, 1000000)))
+        return `${P_}.transferts » : 5 transferts au plus, chacun { de: « livret_a », « ldds » ou « courant », montant de 0,01 à 1 000 000 € }.`;
+    }
+    return null;
+  }
 
   /* -------- réglages de projection du foyer (config.projection, proposition de la cible config) : mêmes règles et messages que la migration 0031 -------- */
   const CHAMPS_PROJECTION = ["base_capacite", "capacite_mensuelle", "reste_capacite", "reequilibrage", "part_reaffectee_epargne_pct", "part_hausse_epargnee_pct",
@@ -2693,7 +2748,7 @@ def("projection-evenements", function (module, exports, require) {
   }
 
   return { CHAMPS_PROJECTION, fusionnerReglagesProjection, TYPES_V1, TYPES_RESERVES, PERSONNES, MODES_CRECHE, NIVEAUX, USAGES, ACTIVITES, MESSAGES: M, LIMITE_EVENEMENTS, LIMITE_VARIANTES, LIMITE_PAR_APPEL,
-    HYPOTHESES_VARIANTE, ENTREES, validerEvenement, validerVariante, defautsDe };
+    HYPOTHESES_VARIANTE, ENTREES, validerEvenement, validerVariante, validerEnveloppeScenario, TYPES_ENVELOPPE_SCENARIO, defautsDe };
 });
 });
 
@@ -3431,7 +3486,7 @@ def("projection", function (module, exports, require) {
 
   const GRAINE = 20261014;
   /** Incrémentée à chaque changement de calcul ; rendue avec chaque résultat (rejouer une projection passée). */
-  const versionModele = "proj-1.2.0";
+  const versionModele = "proj-1.3.0";
   const CLASSES_TIREES = Dn.CLASSES_TIREES, NB_TIRAGES = CLASSES_TIREES.length, IDX = Dn.IDX;
   const PERCENTILES = { p10: 0.1, p25: 0.25, p50: 0.5, p75: 0.75, p90: 0.9 };
   const NOMS_P = Object.keys(PERCENTILES);
@@ -3498,6 +3553,8 @@ def("projection", function (module, exports, require) {
     /* ---- compartiments ---- */
     const cc = Dn.construireCompartiments(ctx);
     const comps = cc.comps;
+    /* ---- enveloppe d'un scénario retenu (SCN1, hypothèse de variante enveloppe_scenario) : compartiments synthétiques, ajoutés avant le calcul des rendements ---- */
+    M.scn = ctx.variante && objet(ctx.variante.hypotheses).enveloppe_scenario ? enveloppeScenario(M, ctx, comps, cc, objet(ctx.variante.hypotheses).enveloppe_scenario) : null;
     M.calendrier = cc.calendrier;
     M.manques = cc.manques;
     M.idxCourant = cc.idxCourant;
@@ -3617,6 +3674,9 @@ def("projection", function (module, exports, require) {
       M.composants.push(c);
     };
     M.addComposant = addComposant;
+    /* économie d'impôt du PER d'un scénario retenu : une marche d'un mois, en septembre de l'année suivante (régularisation de l'impôt) */
+    if (M.scn) M.scn.economies.forEach(x => addComposant({ id: "scenario:per:" + x.annee, type: "scenario", libelle: "Économie d'impôt du PER", t0: x.t, t1: x.t + 1, nom: x.montant,
+      raison: "économie d'impôt du PER (scénario « " + M.scn.cle + " ») : +" + eur(x.montant) + " en " + dates[x.t].slice(0, 7), raisonFin: null }));
     const facteur = e => {
       const p = ["changement_emploi", "conge_parental", "hausse_revenu"].includes(e.type) ? (e.params.personne || e.personne) : e.personne;
       if (sc === "foyer" || p === sc) return 1;
@@ -3837,7 +3897,7 @@ def("projection", function (module, exports, require) {
       M.cible = Object.keys(ctx.cibles).map(k => {
         const candidats = [];
         (PREF[k] || []).forEach(tp => {
-          const modele = comps.find(c => c.type === tp && !c.levier && proprietaires.includes(c.titulaire));
+          const modele = comps.find(c => c.type === tp && !c.levier && !c.scenario && proprietaires.includes(c.titulaire));
           if (modele) { const b = ensure(modele, k); if (!candidats.includes(b)) candidats.push(b); }
         });
         return { classe: k, poids: ctx.cibles[k], candidats };
@@ -3892,6 +3952,64 @@ def("projection", function (module, exports, require) {
     }
     M.det = null;
     return M;
+  }
+
+
+  /* ================================================================== enveloppe d'un scénario retenu (SCN1, spec § 6.6) */
+  /** Compartiments synthétiques de l'hypothèse enveloppe_scenario d'une variante : un par classe de l'allocation, de valeur 0, ouverts à leur date (les dates de 5 et 8 ans
+      courent depuis l'ouverture, comme le calendrier), plus le plan de dépôt lu par derouler (versement de départ au niveau 1 de l'ordre de retrait, versement mensuel
+      prélevé comme un versement programmé, débordement au plafond, transferts depuis un livret) et l'économie d'impôt du PER. Ajoute les compartiments à `comps`.
+      Rend null si l'enveloppe n'est pas dans le périmètre (l'autre personne). Sans cette hypothèse, rien de ceci ne s'exécute : proj-1.2.0 est inchangé. */
+  function enveloppeScenario(M, ctx, comps, cc, es) {
+    const N = M.N, today = M.today, dates = M.dates, rg = ctx.reglages, sc = ctx.perimetre;
+    if (sc !== "foyer" && sc !== es.titulaire) return null;
+    const type = es.type, livret = F.LIVRETS.includes(type), per = type === "per";
+    const alloc = livret || !es.allocation ? { monetaire: 100 } : es.allocation;
+    const total = sum(Object.values(alloc), x => +x || 0), ter = O.n0(es.ter_pct), fenv = O.n0(es.frais_enveloppe_pct);
+    const tInit = Math.max(1, O.moisEntre(today, es.ouverture)), t0 = Math.max(tInit, O.moisEntre(today, es.debut || es.ouverture));   // départ à l'ouverture, versements mensuels à partir du début
+    const initial = es.initial ? O.n0(es.initial.montant) : 0, mensuel = es.mensuel ? O.n0(es.mensuel.montant) : 0, enPlus = !!(es.mensuel && es.mensuel.depuis === "en_plus");
+    const plafond = es.plafond_versements != null && !per ? +es.plafond_versements : null;
+    /* dépôts prévus mois par mois (le versement de départ est supposé complet) : base fiscale, primes et versements déduits */
+    const deposes = new Float64Array(N + 2);
+    for (let t = t0; t <= N; t++) deposes[t] = mensuel;
+    if (tInit <= N) deposes[tInit] += initial;
+    let verse = 0, dedTotal = 0;
+    const parAnnee = {};
+    for (let t = tInit; t <= N; t++) { verse += deposes[t]; const y = +dates[t].slice(0, 4); parAnnee[y] = (parAnnee[y] || 0) + deposes[t]; }
+    const deduit = per && !(es.per && es.per.deduit === false);
+    const economies = [];
+    let tmi = rg.tmi_pct;
+    if (per && deduit) {
+      if (tmi == null || !isFinite(+tmi)) { tmi = 30; M.avertissements.push("taux marginal supposé de 30 % pour l'économie d'impôt du PER, à confirmer avec Claude"); }
+      Object.keys(parAnnee).map(Number).sort((a, b) => a - b).forEach(y => {
+        const ded = es.plafond_versements != null ? Math.min(parAnnee[y], +es.plafond_versements) : parAnnee[y];
+        dedTotal += ded;
+        if (es.per && es.per.economie === "depensee") return;
+        const t = dates.findIndex((d, k) => k >= 1 && k <= N && d.slice(0, 7) === (y + 1) + "-09");
+        if (t > 0 && ded * tmi / 100 > 0) economies.push({ annee: y, t, montant: ded * tmi / 100 });
+      });
+    }
+    const tmiRetraite = per && es.per && es.per.tmi_retraite_pct != null ? +es.per.tmi_retraite_pct : (per ? (rg.tmi_pct != null ? +rg.tmi_pct : 30) : undefined);
+    const primes = sum(comps.filter(x => x.titulaire === es.titulaire && F.AV.includes(x.type)), x => x.base0) + (F.AV.includes(type) ? Math.min(verse, plafond == null ? Infinity : plafond) : 0);
+    const nom = "Scénario « " + es.scenario + " »";
+    const creer = (typeC, classe, poids, nomEnv, cle) => {
+      const fiscal = { type: typeC, valeur: 0, base: verse * poids, classe, date_ouverture: typeC === type ? es.ouverture : undefined, versements_deduits: typeC === "per" ? (deduit ? dedTotal * poids : 0) : undefined, dates: {} };
+      const c = { id: "c" + comps.length, enveloppe: nomEnv, cle, titulaire: es.titulaire, owner: es.titulaire, type: typeC, classe, levier: null, v0: 0, base0: 0, base_inconnue: false,
+        ter_pct: classe === "fonds_euros" || livret ? 0 : ter, frais_env_pct: fenv, dispo: F.LIVRETS.includes(typeC), info: { date_ouverture: typeC === type ? es.ouverture : undefined }, lignes: [], synthetique: true,
+        scenario: true, dates: { pea_5_ans: null, av_8_ans: null, pee_disponible: null }, fiscal };
+      c.prep = F.preparer(fiscal, { reperes: ctx.R, couple: cc.couple, primes_titulaire: F.AV.includes(typeC) ? primes : undefined, tmi_pct: typeC === "per" ? tmiRetraite : rg.tmi_pct,
+        per_versements_deduits: typeC === "per" ? deduit : rg.per_versements_deduits });
+      if (c.prep.indisponible) M.avertissements.push("impôt de sortie de l'enveloppe du scénario non calculé (" + c.prep.mentions[0] + ")");
+      comps.push(c);
+      return comps.length - 1;
+    };
+    const classes = Object.keys(alloc).filter(k => +alloc[k] > 0);
+    const b = classes.map(k => creer(type, k, alloc[k] / total, nom, "scenario:" + es.scenario)), w = classes.map(k => alloc[k] / total);
+    let bDeb = null, wDeb = null;
+    if (plafond != null && es.debordement === "compte_titres" && type !== "compte_titres") {
+      bDeb = classes.map(k => creer("compte_titres", k, 1 / classes.length, nom + " (débordement)", "scenario:" + es.scenario + ":debordement")); wDeb = w;
+    }
+    return { cle: es.scenario, type, titulaire: es.titulaire, b, w, bDeb, wDeb, plafond, tInit, tDeb: t0, initial, mensuel, enPlus, transferts: liste(es.transferts).map(x => ({ de: x.de, montant: +x.montant })), economies, per: per ? { deduit, tmi_retraite_pct: tmiRetraite } : null };
   }
 
   /* ================================================================== simulation (cœur) */
@@ -4063,6 +4181,17 @@ def("projection", function (module, exports, require) {
         }
       }
     }
+    /* ---- enveloppe d'un scénario retenu : versements cumulés par chemin (plafond) et dépôt ---- */
+    const scnVerse = M.scn ? new Float64Array(P) : null;
+    function deposerScenario(i, off, x) {
+      const s = M.scn;
+      if (!(x > 0)) return;
+      let dedans = x, dehors = 0;
+      if (s.plafond != null) { dedans = Math.min(x, Math.max(0, s.plafond - scnVerse[i])); dehors = x - dedans; }
+      scnVerse[i] += dedans;
+      if (dedans > 0) s.b.forEach((b, k) => depose(off, b, dedans * s.w[k]));
+      if (dehors > 1e-12) { if (s.bDeb) s.bDeb.forEach((b, k) => depose(off, b, dehors * s.wDeb[k])); else depose(off, iC, dehors); }
+    }
     const dispoSomme = off => { let s = 0; for (const b of dispoIdx) s += V[off + b]; return s; };
     const vueComps = nom => (nom === "disponible" ? dispoIdx : null);
     function totalVue(arr, off, t, i, nomVue, bi, dette, base) {
@@ -4208,6 +4337,23 @@ def("projection", function (module, exports, require) {
         let reste = cap;
         const progNom = progTot;
         for (const pg of M.prog) { if (pg.debut && pg.debut > dates[t]) continue; depose(off, pg.b, pg.montant); reste -= pg.montant; if (trace && i === 0) tr.depotsProg[t] += pg.montant; }
+        if (M.scn && t >= M.scn.tInit) {
+          const sn = M.scn;
+          if (t === sn.tInit) {
+            /* versement de départ : pris sur le disponible au-dessus du matelas (niveau 1 de l'ordre de retrait) ; transferts depuis un livret ou le courant */
+            if (sn.initial > 0) deposerScenario(i, off, sn.initial - retirer(i, t, sn.initial, { niveau_max: 1 }, matelasNom));
+            for (const tf of sn.transferts) {
+              let restant = tf.montant, pris = 0;
+              for (let k = 0; k < B && restant > 1e-9; k++) {
+                if (comps[k].scenario || comps[k].type !== tf.de) continue;
+                const x = Math.min(Math.max(0, V[off + k]), restant);
+                V[off + k] -= x; restant -= x; pris += x;
+              }
+              deposerScenario(i, off, pris);
+            }
+          }
+          if (sn.mensuel > 0 && t >= sn.tDeb) { deposerScenario(i, off, sn.mensuel); if (!sn.enPlus) reste -= sn.mensuel; if (trace && i === 0) tr.depotsProg[t] += sn.mensuel; }
+        }
         if (reste >= 0) {
           const gap = Math.max(0, matelasNom - dispoSomme(off));
           const m = Math.min(reste, gap);
@@ -4248,7 +4394,7 @@ def("projection", function (module, exports, require) {
     function infl_cap(t, inflT) { return inflT * (M.reelBase + M.reelDelta[t]) + M.nomDelta[t] - M.mensExist[t]; }
     function reequilibrer(off) {
       const parEnv = new Map();
-      comps.forEach((c, b) => { if (c.dispo || c.type === "compte_titres" || c.levier) return; const k = c.cle + "|" + c.titulaire; if (!parEnv.has(k)) parEnv.set(k, []); parEnv.get(k).push(b); });
+      comps.forEach((c, b) => { if (c.dispo || c.type === "compte_titres" || c.levier || c.scenario) return; const k = c.cle + "|" + c.titulaire; if (!parEnv.has(k)) parEnv.set(k, []); parEnv.get(k).push(b); });
       parEnv.forEach(bs => {
         const poids = bs.map(b => { const c = M.cible.find(x => x.classe === comps[b].classe); return c ? c.poids : 0; });
         const sp = poids.reduce((a, x) => a + x, 0);
@@ -5086,6 +5232,7 @@ def("scenarios", function (module, exports, require) {
    Scenarios.enjeu(entree, data, today, { chemins })        → { p10, p50, p90, unite, statut, raison? }
    Scenarios.lister(catalogue, data, joues, today, opts)    → { pour_toi, par_theme, cartes, message }
    Scenarios.jouer(entree, data, reponses, today, opts)     → résultat (§ 6.7)
+   Scenarios.varianteRetenue(entree, resultat, option_id)   → { nom, description, hypotheses: { enveloppe_scenario } } (variante figée, rejouée par le moteur proj-1.3.0)
    Scenarios.reponsesValides(entree, reponses)              → null | [message]
    Scenarios.preremplir(entree, data, today)                → { id_question: valeur } (jamais par le LLM)
    Scenarios.pourToi(cartes, seuil)                         → { cles, message }
@@ -5102,14 +5249,14 @@ def("scenarios", function (module, exports, require) {
   const facultatif = (nom, global) => { try { return cjs ? require("./" + nom + ".js") : root[global]; } catch (e) { return undefined; } };
   const api = factory({
     O: dep("projection-outils", "ProjectionOutils"), F: dep("projection-fiscalite", "ProjectionFiscalite"), D: dep("projection-donnees", "ProjectionDonnees"),
-    Proj: dep("projection", "Projection"), Calendrier: dep("calendrier", "Calendrier"), Calc: dep("calc", "Calc"), Plan: dep("plan", "Plan"),
-    Marche: dep("marche", "Marche"), Reperes: dep("reperes", "Reperes"), Budget: facultatif("budget", "Budget"),
+    Proj: dep("projection", "Projection"), Calendrier: dep("calendrier", "Calendrier"), Calc: dep("calc", "Calc"),
+    Reperes: dep("reperes", "Reperes"), E: dep("projection-evenements", "ProjectionEvenements"), Budget: facultatif("budget", "Budget"),
   });
   if (cjs) module.exports = api;
   else root.Scenarios = api;
 })(typeof self !== "undefined" ? self : this, function (X) {
   "use strict";
-  const { O, F, D, Proj, Calendrier, Calc, Plan, Marche, Reperes } = X;
+  const { O, F, D, Proj, Calendrier, Calc, Reperes, E } = X;
 
   const VERSION_CALCUL = "scn-1.0.0";
   /** Thèmes, dans l'ordre d'affichage de l'onglet « Pour toi ». */
@@ -5476,8 +5623,6 @@ def("scenarios", function (module, exports, require) {
   const eur0 = x => O.eur(Math.round(x / 10) * 10);          // arrondi à la dizaine d'euros pour l'affichage
   const dateFr = iso => Calendrier.dateFr(iso);
   const ans = h => (Math.abs(h - Math.round(h)) < 0.05 ? String(Math.round(h)) : O.frc(h, 1)) + (Math.round(h) > 1 || h >= 2 ? " ans" : " an");
-  const ENVELOPPE_LIBELLE = { pea: "PEA", assurance_vie: "assurance-vie", per: "PER", compte_titres: "compte-titres", "pea+av": "PEA + assurance-vie", "cto+av": "compte-titres + assurance-vie",
-    av: "assurance-vie", cto: "compte-titres" };
 
   /* ================================================================== frais (hypothèses dites) */
   /** Frais annuels par enveloppe, en % : opts.frais d'abord, puis les frais renseignés (config.frais_enveloppes), sinon 0 — dit dans les avertissements. */
@@ -5561,6 +5706,34 @@ def("scenarios", function (module, exports, require) {
   /** Phrase d'avertissement quand des frais ne sont pas renseignés. */
   const avertFrais = f => (f.inconnus.length ? ["Frais non renseignés (" + f.inconnus.join(", ") + ") : comptés à 0 % des deux côtés, la comparaison est alors purement fiscale ; renseigne-les pour un chiffre complet."] : []);
 
+
+  /* ================================================================== variante retenue : hypothèse enveloppe_scenario (§ 6.6) */
+  /** Allocation en pourcentages arrondis à 0,01 dont la somme fait exactement 100. */
+  function allocationPct(alloc) {
+    const ks = Object.keys(alloc).filter(k => alloc[k] > 0), t = somme(ks, k => alloc[k]);
+    const out = Object.fromEntries(ks.map(k => [k, Math.round(alloc[k] / t * 10000) / 100]));
+    const ecart = Math.round((100 - somme(ks, k => out[k])) * 100) / 100;
+    if (ks.length && ecart) { const g = ks.slice().sort((a, b) => out[b] - out[a])[0]; out[g] = Math.round((out[g] + ecart) * 100) / 100; }
+    return out;
+  }
+  /** Hypothèse enveloppe_scenario d'une option retenable (le moteur la rejoue : Projection, proj-1.3.0). p = { type, ouverture, allocation (poids), fraisEnveloppe, initial, mensuel, debut,
+      plafond, debordement, per, transferts, titulaire }. */
+  function hypotheseEnveloppe(c, p) {
+    const livret = F.LIVRETS.includes(p.type), es = { scenario: c.entree.cle, version_calcul: c.entree.version_calcul || VERSION_CALCUL, type: p.type, titulaire: p.titulaire === "p2" ? "p2" : "p1", ouverture: p.ouverture };
+    if (!livret) es.allocation = allocationPct(p.allocation);
+    es.ter_pct = r2(c.frais.ter_pct); es.frais_enveloppe_pct = r2(p.fraisEnveloppe || 0);
+    if (p.initial > 0) es.initial = { montant: r2(p.initial), depuis: "disponible" };
+    if (p.mensuel > 0) es.mensuel = { montant: r2(p.mensuel), depuis: "capacite" };
+    if (p.debut) es.debut = p.debut;
+    if (p.plafond != null) { es.plafond_versements = r2(p.plafond); if (p.type !== "per") es.debordement = p.debordement || "compte_titres"; }
+    if (p.per) es.per = p.per;
+    if (p.transferts && p.transferts.length) es.transferts = p.transferts.map(x => ({ de: x.de, montant: r2(x.montant) }));
+    const msg = E.validerEnveloppeScenario(es);
+    return msg ? { erreur: msg } : { hypothese: es };
+  }
+  const NON_RETENABLE_REFERENCE = "C'est ce que tu fais déjà : il n'y a rien à retenir.";
+  const NON_RETENABLE_MULTI = "Cette option répartit ton versement entre plusieurs enveloppes : une variante n'en porte qu'une pour l'instant.";
+
   /* ================================================================== n° 1 : faut-il ouvrir un PEA ? (§ 7.1) */
   function ouvrirPea(c) {
     const { d, today, rep, L, o, fo } = c;
@@ -5616,11 +5789,13 @@ def("scenarios", function (module, exports, require) {
     ctq.push(ligne("titres_eligibles", "non calculé", null, "Seuls certains titres sont acceptés dans un PEA",
       "Le PEA n'accepte que certains titres ; la liste des titres éligibles est fixée par la loi, et ce calcul ne la vérifie pas."));
     const enTete = Math.abs(e.p50) < 0.005 ? "egalite" : e.p50 > 0 ? tete : refId;
-    const plusDeMoins = plusTard
-      ? "Ouvrir un PEA maintenant avec un petit versement te ferait gagner environ " + eur0(e.courants[0] === undefined ? e.p50 : e.p50) + " (en euros d'aujourd'hui) si tu retires dans la bonne fenêtre, et rien sinon."
+    const meilleur = courbe ? Math.max(0, ...courbe.points.map(x => x.p50)) : 0;
+    const phrase = plusTard
+      ? (fenetre ? "Ouvrir un PEA maintenant avec " + O.eur(V0) + " te ferait gagner jusqu'à environ " + eur0(meilleur) + " (en euros d'aujourd'hui) si tu retires entre le " + dateFr(fenetre.du) + " et le " + dateFr(fenetre.au) + " ; en dehors de ces dates, aucun écart."
+        : "Ouvrir un PEA maintenant avec " + O.eur(V0) + " ne change rien dans cet horizon : l'avance de 5 ans ne compte pour aucune date de retrait.")
       : e.p50 > 0.005 ? "Avec " + O.eur(m) + "/mois sur " + ans(H) + ", un PEA te laisserait environ " + eur0(e.p50) + " de plus que " + libRef + ", en euros d'aujourd'hui."
         : "Sur " + ans(H) + ", le PEA ne change rien par rapport à " + libRef + " : avant 5 ans, un retrait clôture le plan et le gain est imposé pareil.";
-    const reponse = { phrase: plusDeMoins, option_en_tete: enTete, reference: refId, ecart: ecartBandes(e), ecart_annuel: enjeu, probabilite_mieux: p3(e.probabilite_mieux), date_bascule: bascule };
+    const reponse = { phrase, option_en_tete: enTete, reference: refId, ecart: ecartBandes(e), ecart_annuel: enjeu, probabilite_mieux: p3(e.probabilite_mieux), date_bascule: bascule };
     const ecartsAnnuels = [];
     if (!plusTard) for (let t = 12; t <= T; t += 12) if (t >= delai) ecartsAnnuels.push({ t, date: sim.date(t), p50_courants: r2(quantile(sim.ecart(tete, refId, t).courants, 0.5)) });
     return {
@@ -5629,7 +5804,14 @@ def("scenarios", function (module, exports, require) {
       detail: { T, mode: plusTard ? "plus_tard" : "maintenant", seuil_5_ans: seuil5, frais_seuil_pct: seuilFrais && seuilFrais.etat === "ok" ? r2(seuilFrais.x * 1000) / 1000 : null, frais_seuil_etat: seuilFrais ? seuilFrais.etat : null,
         ecart_courants: r2(quantile(e.courants, 0.5)), ecarts_annuels: ecartsAnnuels, anteriorite, v_min: vmin, fenetre, plafond_utilise: plan.plafond_pea && plan.options.A ? r2(somme(plan.options.A.filter(x => x.type === "pea"), x => somme(x.flux, s => s.montant * (s.a - s.de + 1)))) : null },
       plan: { tete, reference: refId, plan, titulaire: c.titulaire },
+      retenables: retenablesPea(c, plusTard, tete, refId, { V0, m, delai, P0, plafond, fPea, today }),
     };
+  }
+  /** Options retenables du n° 1 : le PEA ouvert maintenant (ou « avec un petit versement »). */
+  function retenablesPea(c, plusTard, tete, refId, x) {
+    const h = hypotheseEnveloppe(c, { type: "pea", titulaire: c.titulaire, ouverture: dateDe(x.today, x.delai), allocation: { actions: 1 }, fraisEnveloppe: c.frais.pea_pct, initial: x.V0, mensuel: x.m,
+      debut: plusTard ? dateDe(x.today, x.P0) : null, plafond: x.plafond, debordement: "compte_titres" });
+    return { options: { [tete]: h }, non: { [refId]: plusTard ? "Cette option sert de point de comparaison : ouvrir plus tard est ce qui se passe si tu ne fais rien maintenant." : NON_RETENABLE_REFERENCE } };
   }
 
   /* ================================================================== PER : plafond de déduction (§ 7.3) */
@@ -5707,7 +5889,6 @@ def("scenarios", function (module, exports, require) {
     }
     /* PER */
     const dateRet = rep.date_retraite, tmiR = rep.tmi_retraite_pct, tmi = tmiDe(d), plafond = plafondPer(d, today, L, fo, o);
-    let perId = "per";
     if (rep.retrait_avant === true) exclues.per = ["retrait_avant", "Un PER est bloqué jusqu'à la retraite (sauf achat de la résidence principale) : tu as besoin de pouvoir retirer avant."];
     else if (!dateRet) exclues.per = ["date_retraite_manquante", "Sans ta date de départ à la retraite, la sortie du PER ne peut pas être calculée."];
     else if (tmi == null) exclues.per = ["tmi_manquante", "Sans ta tranche d'imposition, l'économie d'impôt du PER ne peut pas être calculée."];
@@ -5770,7 +5951,26 @@ def("scenarios", function (module, exports, require) {
     return { options: opts, reponse, ce_qui_changerait: ctq, avertissements: avert, enjeu_annuel: tete === refId ? { p10: 0, p50: 0, p90: 0 } : enjeu, sim,
       detail: { T, classement, ecart_tete_moins_reference: r2(quantile(e.courants, 0.5)), frais_seuil_av_uc_pct: fraisSeuil && fraisSeuil.etat === "ok" ? r2(fraisSeuil.x * 1000) / 1000 : null,
         exclues: Object.fromEntries(Object.keys(exclues).map(k => [k, exclues[k][0]])), t_star_pct: tStar == null ? null : r2(tStar * 100) / 100, plafond_per: plafond },
-      plan: { tete, reference: refId, plan, titulaire: plafond.personne } };
+      plan: { tete, reference: refId, plan, titulaire: plafond.personne || c.titulaire },
+      retenables: retenablesEuro(c, { options, refId, ids, tousAv, act, plafond, tmi, rep, T, V0, m, delai, dateRet }) };
+  }
+  /** Options retenables du n° 2 : une seule enveloppe par variante (assurance-vie, PER, PEA sans reste) ; le compte-titres est la référence. */
+  function retenablesEuro(c, x) {
+    const out = { options: {}, non: {} }, { today } = c, ouverture = dateDe(today, x.delai), tit = x.plafond.personne || c.titulaire, fr = c.frais;
+    const un = (id, p) => { const h = hypotheseEnveloppe(c, Object.assign({ ouverture, titulaire: tit }, p)); out.options[id] = h; };
+    x.ids.forEach(id => {
+      if (id === x.refId) { out.non[id] = NON_RETENABLE_REFERENCE; return; }
+      const envs = x.options[id];
+      if (envs.length !== 1) { out.non[id] = NON_RETENABLE_MULTI; return; }
+      if (id === "av") un(id, { type: "assurance_vie", allocation: x.tousAv.parts, fraisEnveloppe: fr.assurance_vie_pct, initial: x.V0, mensuel: x.m });
+      else if (id === "pea+av") un(id, { type: "pea", allocation: x.act.parts, fraisEnveloppe: fr.pea_pct, initial: x.V0, mensuel: x.m, plafond: c.L.v("pea_plafond"), debordement: "compte_titres" });
+      else if (id === "per") {
+        if (x.V0 > 0) { out.non[id] = "Le versement de départ n'est pas déduit dans ce calcul du PER : mets-le à 0 pour retenir cette option."; return; }
+        un(id, { type: "per", allocation: x.tousAv.parts, fraisEnveloppe: fr.per_pct, mensuel: versementPer(x.m, x.tmi, x.plafond.annuel).v, plafond: x.plafond.annuel,
+          per: { deduit: true, tmi_retraite_pct: x.rep.tmi_retraite_pct === "ne_sait_pas" || x.rep.tmi_retraite_pct == null ? x.tmi : +x.rep.tmi_retraite_pct, economie: "reinvestie" } });
+      } else out.non[id] = NON_RETENABLE_MULTI;
+    });
+    return out;
   }
 
   /* ================================================================== n° 3 : le PER est-il intéressant pour moi ? (§ 7.3) */
@@ -5831,8 +6031,14 @@ def("scenarios", function (module, exports, require) {
         impot_av: r2(q50(Array.from(A_.impots, (v, i) => v - A_.ps[i]))), prelevements_av: r2(q50(A_.ps)), net_av: r2(q50(A_.courants)), net_av_auj: r2(q50(A_.net)),
         ecart_courants: r2(q50(e.courants)), table_net_per: table, t_star_pct: tStar == null ? null : r2(tStar * 10000) / 10000, t_star_brut_pct: tBrut == null ? null : r2(tBrut * 100) / 100,
         phrase_seuil: tStar == null ? "aucun_seuil" : "seuil", net_per_auj: bandeR(P_.net), net_av_auj_bande: bandeR(A_.net), plafond_per: plafond, par_tranches: parTranches },
-      plan: { tete: perEnTete ? "per" : "av", reference: "av", plan, titulaire: plafond.personne } };
+      plan: { tete: perEnTete ? "per" : "av", reference: "av", plan, titulaire: plafond.personne || c.titulaire },
+      retenables: (() => {
+        const h = hypotheseEnveloppe(c, { type: "per", titulaire: plafond.personne || c.titulaire, ouverture: dateDe(today, delai), allocation: tous.parts, fraisEnveloppe: frais.per_pct, mensuel: b2.v,
+          plafond: isFinite(plafond.annuel) ? plafond.annuel : null, per: { deduit: true, tmi_retraite_pct: TMI_ADMISES.includes(tmiR) ? tmiR : tmi, economie: "reinvestie" } });
+        return { options: { per: h }, non: { av: NON_RETENABLE_REFERENCE } };
+      })() };
   }
+  const TMI_ADMISES = [0, 11, 30, 41, 45];
 
   /* ================================================================== n° 6 : combien garder de côté, et où ? (§ 7.4) */
   function matelas(c) {
@@ -5907,7 +6113,16 @@ def("scenarios", function (module, exports, require) {
         mois_pour_combler: E.manque > EPS && capacite > 0 ? Math.ceil(E.manque / capacite - 1e-9) : (E.manque > EPS ? null : 0), lep, ordre: ordre.map(s => ({ vers: s.vers, titulaire: s.titulaire, montant: s.montant })), gain_ordre_annuel: r2(gainOrdre),
         surplus_cto: cto ? Object.assign({ bande_V: bandeV }, cto) : null, surplus_livret: livret, ecart_courants: eS ? r2(quantile(eS.courants, 0.5)) : 0, ecart_auj: eS ? r2(eS.p50) : 0, enjeu_surplus_annuel: enjeuSurplus,
         taux_livret_seuil_pct: tauxSeuil, cible_en_revenus_3_mois: r2(k3 * revenus), perte_p10: eS ? r2(eS.p10) : null },
-      plan: { tete: "ordre", reference: "livret", plan: null, titulaire: null } };
+      plan: { tete: "ordre", reference: "livret", plan: null, titulaire: null },
+      retenables: (() => {
+        const out = { options: {}, non: { ordre: "L'ordre des livrets n'est pas une variante de projection : il se règle chez toi, livret par livret.", livret: NON_RETENABLE_REFERENCE } };
+        if (cto) {
+          const dest = rep.destination_surplus || "compte_titres", frais = c.frais, fd = dest === "assurance_vie" ? frais.assurance_vie_pct : dest === "pea" ? frais.pea_pct : frais.compte_titres_pct;
+          out.options.placement = hypotheseEnveloppe(c, { type: dest, titulaire: c.titulaire, ouverture: dateDe(today, dest === "compte_titres" ? 0 : L.v("scn_delai_ouverture_mois")), allocation: { actions: 1 },
+            fraisEnveloppe: fd, transferts: [{ de: "livret_a", montant: E.surplus }] });
+        }
+        return out;
+      })() };
   }
 
   /* ================================================================== n° 12 : ouvrir une assurance-vie maintenant ? (§ 7.5) */
@@ -5944,7 +6159,12 @@ def("scenarios", function (module, exports, require) {
       detail: { T, V: r2(q50(A_.brut)), versements: r2(A_.base), gain: r2(q50(A_.brut) - A_.base), impot_A: r2(q50(Array.from(A_.impots, (v, i) => v - A_.ps[i]))), impot_B: r2(q50(Array.from(B_.impots, (v, i) => v - B_.ps[i]))),
         prelevements: r2(q50(A_.ps)), A_apres_8_ans: dateT >= seuilA, B_apres_8_ans: dateT >= seuilB, gain_anteriorite: gainAnt, gain_anteriorite_auj: r2(e.p50), seuil_A: seuilA, seuil_B: seuilB, fenetre,
         v_min_brut: r2(q50(fv.brut)), v_min_net: r2(q50(fv.net)), v_min_frais: r2(q50(fv.frais)), gain_bande: bandeR(e.delta) },
-      plan: { tete: "A", reference: "B", plan, titulaire: c.titulaire } };
+      plan: { tete: "A", reference: "B", plan, titulaire: c.titulaire },
+      retenables: (() => {
+        const al = {}; if (fe < 1) al.actions = 1 - fe; if (fe > 0) al.fonds_euros = fe;
+        return { options: { A: hypotheseEnveloppe(c, { type: "assurance_vie", titulaire: c.titulaire, ouverture: ouvA, allocation: al, fraisEnveloppe: frais.assurance_vie_pct, initial: vmin, mensuel: m, debut: dateDe(today, P0) }) },
+          non: { B: "Cette option sert de point de comparaison : ouvrir plus tard est ce qui se passe si tu ne fais rien maintenant." } };
+      })() };
   }
 
   const CALCULS = { ouvrirPea, prochainEuro, perInteret, matelas, avMaintenant };
@@ -5954,7 +6174,7 @@ def("scenarios", function (module, exports, require) {
   /** Évalue les règles de pertinence d'une entrée du catalogue pour une personne : { ok, raisons, manquants }. Une clé inconnue lève une erreur (test du catalogue). */
   function evaluerRegles(regles, k, p) {
     const out = { ok: true, raisons: [], manquants: [] };
-    const sujet = k.fo.personnes.length <= 1 ? "tu" : p.nom, ilA = (neg, quoi) => (k.fo.personnes.length <= 1 ? (neg ? "Tu n'as pas " : "Tu as ") : p.nom + (neg ? " n'a pas " : " a ")) + quoi;
+    const ilA = (neg, quoi) => (k.fo.personnes.length <= 1 ? (neg ? "Tu n'as pas " : "Tu as ") : p.nom + (neg ? " n'a pas " : " a ")) + quoi;
     const non = (raison) => { out.ok = false; if (raison) out.raisons = []; };
     const oui = raison => { if (raison) out.raisons.push(raison); };
     Object.keys(objet(regles)).forEach(cle => {
@@ -6088,11 +6308,31 @@ def("scenarios", function (module, exports, require) {
     const hyp = hypotheses(), avert = r.avertissements.slice();
     hyp.filter(h => h.statut === "a_reverifier").forEach(h => avert.push("Le repère « " + h.libelle + " » est à revérifier" + (h.date_fin && h.date_fin < today ? " (la période s'est terminée le " + dateFr(h.date_fin) + ")" : " (vérifié le " + dateFr(h.source.verifie_le) + ")") + " : le chiffre est donné avec cette valeur."));
     const utilisees = liste(entree.questions).filter(q => rep[q.id] !== undefined).map(q => ({ champ: q.id, libelle: q.libelle, valeur: rep[q.id], origine: donnees[q.id] !== undefined ? "reponse" : "boussole", le: today }));
-    const out = Object.assign(base, { statut: "ok", manquants: [], reponse: r.reponse, options: r.options, ce_qui_changerait: r.ce_qui_changerait, hypotheses: hyp, donnees_utilisees: utilisees,
+    const opts_ = r.options.map(o => {
+      const rt = r.retenables || { options: {}, non: {} }, h = rt.options[o.id];
+      if (h && h.hypothese) return Object.assign({}, o, { retenable: true, enveloppe_scenario: h.hypothese });
+      return Object.assign({}, o, { retenable: false, raison_non_retenable: h ? h.erreur : (rt.non[o.id] || (o.exclue ? "Cette option est écartée pour ta situation." : "Cette option ne se retient pas.")) });
+    });
+    const out = Object.assign(base, { statut: "ok", manquants: [], reponse: r.reponse, options: opts_, ce_qui_changerait: r.ce_qui_changerait, hypotheses: hyp, donnees_utilisees: utilisees,
       avertissements: avert, enjeu_annuel: r.enjeu_annuel, detail: r.detail, titulaire: r.plan && r.plan.titulaire || null });
     if (r.courbe) out.courbe = r.courbe;
     Object.defineProperty(out, "_calcul", { value: { sim: r.sim, plan: r.plan, rep }, enumerable: false });
     return out;
+  }
+
+  /** Variante figée d'une option retenue : { nom, description, hypotheses: { enveloppe_scenario } }, de la forme validée par Evenements.validerVariante (le moteur la rejoue, proj-1.3.0).
+      Lève une erreur claire si l'option ne se retient pas (référence, plusieurs enveloppes, écartée). */
+  function varianteRetenue(entree, resultat, option_id) {
+    const o = liste(resultat && resultat.options).find(x => x.id === option_id);
+    if (!o) throw new Error("option inconnue : « " + option_id + " »");
+    if (!o.retenable || !o.enveloppe_scenario) throw new Error("cette option ne se retient pas : " + (o.raison_non_retenable || "elle n'est pas une variante de projection"));
+    const coupe = (t, n) => (t.length <= n ? t : t.slice(0, n - 1).trimEnd() + "…");
+    const nom = coupe("Scénario " + (entree.numero != null ? entree.numero : entree.cle) + " : " + o.libelle, 40);
+    const description = coupe("Retenu depuis « " + entree.question + " » le " + dateFr(resultat.date) + " (calcul " + resultat.version_calcul + "). " + (resultat.reponse ? resultat.reponse.phrase : ""), 300);
+    const v = { nom, description, hypotheses: { enveloppe_scenario: copie(o.enveloppe_scenario) } };
+    const msg = E.validerVariante(v);
+    if (msg) throw new Error("variante invalide : " + msg);
+    return v;
   }
 
   /** Enjeu annuel d'un scénario pour la personne, sur ses seules données (réponses préremplies) : { p10, p50, p90, unite, statut, raison? }. */
@@ -6143,7 +6383,7 @@ def("scenarios", function (module, exports, require) {
 
   return {
     VERSION_CALCUL, THEMES, CALCULS, RAPPEL, MESSAGE_RIEN_URGENT, UNITE_ENJEU,
-    simulerEnveloppes, jouer, enjeu, lister, pertinence, pourToi, pourToiSi, reponsesValides, preremplir,
+    simulerEnveloppes, jouer, enjeu, lister, pertinence, pourToi, pourToiSi, reponsesValides, preremplir, varianteRetenue,
     seuilDichotomie, versementPer, repartirPlafond, plafondRfrLep, imputerPlafondsPer, economiePer, plafondPer,
     tirer, bande, statutRepere, lireEssentiels, CHAMP_ESSENTIELS,
   };
