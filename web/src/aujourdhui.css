@@ -230,7 +230,8 @@
   #view-aujourdhui .aj-ech-etat:empty{display:none}
   #view-aujourdhui .aj-ech-ouvrir{grid-area:ouvrir;align-self:center}
 }
-@media (min-width:1240px){#view-aujourdhui .aj-z-ech .aj-ech-eff{-webkit-line-clamp:1}}
+/* colonne de droite : les trois échéances tiennent en date, titre et état (l'effet et l'introduction sont dans le panneau de chaque jalon), pour que la colonne reste à la hauteur du graphe */
+@media (min-width:1240px){#view-aujourdhui .aj-z-ech .aj-ech-eff,#view-aujourdhui .aj-z-ech .aj-intro{display:none}}
 /* À traiter sur mobile : toute la ligne ouvre le geste (l'action devient un chevron), titre et raison sur 1 ligne, « Bloquant » à droite du titre */
 @media (max-width:599.98px){
   #view-aujourdhui .aj-it{min-height:64px;padding-block:var(--sp-2);padding-right:var(--sp-2);gap:var(--sp-3)}
