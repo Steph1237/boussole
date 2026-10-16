@@ -1,9 +1,9 @@
 /* Acheter ou placer : styles du simulateur, portés depuis sources/simu.html et scopés sous #view-simu.
    Les couleurs viennent du thème : achat = --s1, location + ETF = --s2, locatif = --s4. */
-#view-simu{--fg:var(--ink);--buy:var(--s1);--buy-soft:var(--s1-soft);--etf:var(--s2);--etf-soft:var(--s2-soft);--inv:var(--s4);--inv-soft:var(--s4-soft);--bad:var(--crit);--bad-soft:var(--crit-soft);--ok:var(--good)}
+#view-simu{--fg:var(--ink);--buy:var(--s1);--buy-soft:var(--s1-soft);--etf:var(--s2);--etf-ink:var(--s2-ink);--etf-soft:var(--s2-soft);--inv:var(--s4);--inv-soft:var(--s4-soft);--bad:var(--crit);--bad-soft:var(--crit-soft);--ok:var(--good)}
 #view-simu *,#view-simu *::before,#view-simu *::after{box-sizing:border-box}
 #view-simu .simu{color:var(--fg);font-family:var(--f-body);font-size:var(--t-body);line-height:1.5;min-width:0}
-#view-simu a{color:var(--etf)}
+#view-simu a{color:var(--etf-ink)}
 #view-simu .simu-tete{display:grid;gap:var(--sp-1);margin-bottom:var(--sp-4)}
 #view-simu .simu-titre{font:700 var(--t-h1)/var(--lh-h1) var(--f-display);margin:0;letter-spacing:-.01em}
 #view-simu .simu-sous{margin:0;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
@@ -43,9 +43,9 @@
 #view-simu .side{border-radius:var(--radius);padding:14px 16px;display:grid;gap:6px;align-content:start;min-width:0}
 #view-simu .side.buy{background:var(--buy-soft)} #view-simu .side.rent{background:var(--etf-soft)}
 #view-simu .side .lb{font-size:var(--t-small);font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:6px}
-#view-simu .side.buy .lb{color:var(--buy)} #view-simu .side.rent .lb{color:var(--etf)}
+#view-simu .side.buy .lb{color:var(--buy)} #view-simu .side.rent .lb{color:var(--etf-ink)}
 #view-simu .big{display:flex;align-items:baseline;gap:6px;border-bottom:2px solid currentColor;padding-bottom:2px;min-width:0}
-#view-simu .side.buy .big{color:var(--buy)} #view-simu .side.rent .big{color:var(--etf)}
+#view-simu .side.buy .big{color:var(--buy)} #view-simu .side.rent .big{color:var(--etf-ink)}
 #view-simu .big input{flex:1;min-width:0;border:0;background:transparent;color:var(--fg);font:600 var(--t-hero)/1.1 var(--f-num);letter-spacing:-.03em;padding:2px 0;outline:none;width:100%}
 #view-simu .big .u{font:600 var(--t-body) var(--f-num);color:var(--muted);white-space:nowrap}
 #view-simu .side .sm{font-size:var(--t-small);color:var(--muted)}
@@ -73,7 +73,7 @@
 /* Verdict */
 #view-simu .verdict{margin:0;font-family:var(--f-display);font-size:var(--t-kpi);line-height:1.22;font-weight:700;text-wrap:balance;letter-spacing:-.01em}
 #view-simu .verdict .w{padding:0 5px;border-radius:6px}
-#view-simu .w.rp{background:var(--buy-soft);color:var(--buy)} #view-simu .w.inv{background:var(--inv-soft);color:var(--inv)} #view-simu .w.loc{background:var(--etf-soft);color:var(--etf)}
+#view-simu .w.rp{background:var(--buy-soft);color:var(--buy)} #view-simu .w.inv{background:var(--inv-soft);color:var(--inv)} #view-simu .w.loc{background:var(--etf-soft);color:var(--etf-ink)}
 #view-simu .sdesc{font-size:var(--t-small);color:var(--muted);margin:0}
 #view-simu .tiles{display:grid;gap:var(--sp-3);grid-template-columns:1fr}@media (min-width:640px) and (max-width:1279.98px){#view-simu .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
 #view-simu .tile{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;display:grid;gap:3px;position:relative;overflow:hidden;background:var(--surface)}
@@ -165,7 +165,7 @@
 #view-simu .sc-table td:first-child{font-size:var(--t-caption);color:var(--muted);padding-right:8px;white-space:nowrap}
 #view-simu .sc-table .inp input{text-align:right;padding:6px 0}
 #view-simu hr.sep{border:0;border-top:1px solid var(--line);margin:0}
-#view-simu .gain{font:600 var(--t-caption) var(--f-num);color:var(--etf);background:var(--etf-soft);border-radius:4px;padding:1px 5px;white-space:nowrap;margin-left:auto}
+#view-simu .gain{font:600 var(--t-caption) var(--f-num);color:var(--etf-ink);background:var(--etf-soft);border-radius:4px;padding:1px 5px;white-space:nowrap;margin-left:auto}
 #view-simu .gain.done{color:var(--ok);background:var(--buy-soft)}
 #view-simu .prec-top{display:grid;gap:8px}
 #view-simu .prec-score{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -179,7 +179,7 @@
 #view-simu .pr.done .ck{background:var(--ok);border-color:var(--ok);color:var(--surface)}
 #view-simu .pr .tx b{font-size:var(--t-small);display:block}
 #view-simu .pr .tx small{font-size:var(--t-caption);color:var(--muted)}
-#view-simu .pr .g{font:600 var(--t-small) var(--f-num);text-align:right;color:var(--etf)}
+#view-simu .pr .g{font:600 var(--t-small) var(--f-num);text-align:right;color:var(--etf-ink)}
 #view-simu .pr.done .g{color:var(--ok)}
 #view-simu .precline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:var(--t-small)}@media (max-width:560px){#view-simu .pr{grid-template-columns:24px 1fr 56px}#view-simu .pr .inp{grid-column:2/4}}
 /* Explication */
@@ -253,13 +253,13 @@
 #view-simu .stb b{font-size:var(--t-body)}
 #view-simu .stb>span{font-size:var(--t-small);color:var(--muted)}
 #view-simu .stb details{margin-top:4px}
-#view-simu .stb summary{cursor:pointer;font-size:var(--t-small);font-weight:600;color:var(--etf)}
+#view-simu .stb summary{cursor:pointer;font-size:var(--t-small);font-weight:600;color:var(--etf-ink)}
 #view-simu .stb details p{font-size:var(--t-small);color:var(--muted);margin-top:6px}
 #view-simu .vs2{display:grid;gap:12px;grid-template-columns:1fr}@media (min-width:700px){#view-simu .vs2{grid-template-columns:1fr 1fr}}
 #view-simu .vs2 .col{border-radius:var(--radius);padding:14px;display:grid;gap:10px;align-content:start}
 #view-simu .vs2 .col.buy{background:var(--buy-soft)} #view-simu .vs2 .col.rent{background:var(--etf-soft)}
 #view-simu .vs2 .col-t{font-size:var(--t-small);font-weight:700}
-#view-simu .vs2 .col.buy .col-t{color:var(--buy)} #view-simu .vs2 .col.rent .col-t{color:var(--etf)}
+#view-simu .vs2 .col.buy .col-t{color:var(--buy)} #view-simu .vs2 .col.rent .col-t{color:var(--etf-ink)}
 #view-simu .vs2 .col>div{display:grid;gap:2px}
 #view-simu .vs2 .col b{font-size:var(--t-body)}
 #view-simu .vs2 .col>div span{font-size:var(--t-small);color:var(--muted)}
