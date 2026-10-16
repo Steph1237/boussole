@@ -16,7 +16,7 @@ import { verifierExposition } from "./exposition.mjs";
 // Services exclus (noms de conteneurs du CLI 2.107.0) pour tenir dans les 4 Go de colima, partagés avec d'autres piles locales :
 // analytics, vecteur, imgproxy, mails (aucun e-mail n'est envoyé), et realtime / storage-api, que Boussole n'utilise pas.
 // Studio et postgres-meta (≈ 300 Mo) ne démarrent que sur demande : PREPROD_STUDIO=1 npm run preprod:start.
-export const EXCLUS_DE_BASE = ["logflare", "vector", "imgproxy", "mailpit", "realtime", "storage-api"];
+export const EXCLUS_DE_BASE = ["logflare", "vector", "imgproxy", "mailpit", "realtime", "storage-api", "edge-runtime"];
 export const EXCLUS_STUDIO = ["studio", "postgres-meta"];
 export const exclus = (env = process.env) => [...EXCLUS_DE_BASE, ...(env.PREPROD_STUDIO === "1" ? [] : EXCLUS_STUDIO)].join(",");
 

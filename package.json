@@ -7,6 +7,8 @@
     "dev": "node build.mjs --dev",
     "gen": "node scripts/gen-catalogue.mjs && node scripts/gen-expertises-demo.mjs && node scripts/gen-police-separateur.mjs",
     "check:mcp": "npx -y deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts",
+    "check:powens": "npx -y deno check --no-lock --config supabase/functions/powens/deno.json supabase/functions/powens/index.ts",
+    "check:fonctions": "npm run check:mcp && npm run check:powens",
     "preprod:start": "node scripts/preprod/demarrer.mjs",
     "preprod:stop": "node scripts/preprod/cli.mjs stop",
     "preprod:reset": "node scripts/preprod/demarrer.mjs --reset",
