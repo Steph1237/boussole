@@ -150,3 +150,17 @@ test("déterminisme et entrées intactes", () => {
   const a = Budget.proposerCible({}, e), b = Budget.proposerCible({}, e);
   assert.deepEqual(J(a), J(b)); assert.deepEqual(J(e), avant);
 });
+
+test("relecture (tâche 12) : capacité négative ou revenus nuls → montants_positifs faux (la base refuserait la cible) ; T1 à T5 et le cas vide restent positifs", () => {
+  for (const id of ["T1", "T2", "T3", "T4"]) assert.equal(Budget.proposerCible({}, entree(cas(id))).montants_positifs, true, id);
+  // dépenses de référence au-dessus des revenus : la capacité constatée est négative, l'épargne tenable aussi
+  const neg = Budget.proposerCible({}, { reference: { revenus: 2000, essentiels: { loyer: 1500, courses: 700 }, envies: { restaurants: 300 } }, capacite_constatee: -500, pistes: [] });
+  assert.ok(neg.retenue < 0, "le tenable est la capacité constatée : " + neg.retenue);
+  assert.equal(neg.montants_positifs, false, "épargne négative : rien à proposer tel quel");
+  assert.equal(neg.controles.somme, true, "la somme reste exacte : le contrôle de somme ne suffit pas");
+  // revenus nuls avec un plancher : l'épargne est ramenée à 0, les envies deviennent négatives
+  const zero = Budget.proposerCible({}, { reference: { revenus: 0, essentiels: { loyer: 500 }, envies: { restaurants: 100 } }, capacite_constatee: -600, pistes: [],
+    plancher: { repere: "rsa_forfaitaire_seul", valeur: 651.69 } });
+  assert.equal(zero.retenue, 0); assert.equal(zero.limite_par_plancher, true);
+  assert.equal(zero.montants_positifs, false, "envies négatives");
+});

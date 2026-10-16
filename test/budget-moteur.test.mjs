@@ -393,3 +393,40 @@ test("préférences : les espèces comptent dans le bloc choisi (envies par déf
   const M = voir(S, { vue: "tout", mois: "2026-09" });
   assert.equal(M.blocs.envies, 0); assert.equal(M.blocs.essentiels, 1160);
 });
+
+/* ---------- relecture des calculs (tâche 12) ---------- */
+test("relecture : un virement du commun vers un compte personnel diminue les apports (Commun, et apports externes de Tout) ; la capacité suit les soldes", () => {
+  const base = { mois: "2026-09", comptes: [{ id: "c1", libelle: "Courant Exemple", type: "courant", titulaire: "p1" }, { id: "cc", libelle: "Commun Exemple", type: "courant", titulaire: "commun" }] };
+  const l = (compte, sous_categorie, entrees, sorties) => ({ compte, sous_categorie, entrees, sorties });
+  // p1 verse 1 200 au commun, le commun lui rend 100 ; le commun paie 1 000 de loyer ; Sam n'est pas connecté
+  const c = { ...base, lignes: [l("c1", "salaires", 3000, 0), l("c1", "apport_commun", 100, 1200), l("c1", "courses", 0, 800), l("cc", "apport_commun", 1200, 100), l("cc", "loyer", 0, 1000)] };
+  const S = storeDe(c);
+  const co = voir(S, { vue: "commun", mois: c.mois });
+  near(co.revenus, 1100, "Commun : apports nets reçus");
+  near(co.capacite, 100, "Commun : reste du commun = variation de son solde (+1 200 − 100 − 1 000)");
+  const T = voir(S, { vue: "tout", mois: c.mois });
+  near(T.revenus, 3000, "Tout : aucun apport externe"); near(T.capacite, 1200, "Tout : 1 100 sur le courant + 100 sur le commun");
+  // Sam (non connecté) verse 800 au commun et en récupère 50 : 750 d'apports externes nets
+  const c2 = { ...c, lignes: [...c.lignes.filter(x => !(x.compte === "cc" && x.sous_categorie === "apport_commun")), l("cc", "apport_commun", 2000, 150)] };
+  const T2 = voir(storeDe(c2), { vue: "tout", mois: c2.mois });
+  near(T2.revenus, 3750, "Tout : 3 000 + 750 d'apports externes nets");
+  near(T2.capacite, 1950, "Tout : 1 100 sur le courant + 850 sur le commun");
+  near(T2.couverture.apports_externes, 750, "apports externes nets");
+});
+
+test("relecture : la part « à classer » se lit sur les sorties brutes ; une entrée inconnue ne la masque pas (ni ne la rend négative)", () => {
+  const c = { mois: "2026-09", comptes: [{ id: "c1", libelle: "Courant Exemple", type: "courant", titulaire: "p1" }],
+    lignes: [{ compte: "c1", sous_categorie: "salaires", entrees: 3000, sorties: 0 }, { compte: "c1", sous_categorie: "courses", entrees: 0, sorties: 1000 },
+      { compte: "c1", sous_categorie: "a_classer", entrees: 600, sorties: 400 }] };
+  const M = voir(storeDe(c), { vue: "tout", mois: c.mois });
+  near(M.a_classer, -200, "net à classer : 400 sorties − 600 entrées (la capacité garde l'argent reçu)");
+  near(M.capacite, 2200, "capacité : 3 000 − 1 000 + 200");
+  near(M.couverture.a_classer_part, 400 / 1400, "part : 400 à classer sur 1 400 de sorties", 1e-4);
+  const sc = Budget.score(M, { revenus_ref: 3000, blocs: { essentiels: 1500, envies: 500, epargne: 1000 } });
+  assert.equal(sc.provisoire, true, "28,6 % à classer : note provisoire");
+  assert.ok(sc.raisons_provisoire.includes("a_classer"));
+  // 500 de sorties à classer sur 1 500 : plus de 30 %, pas de note, même si 900 € d'entrées inconnues ramènent le net à −400
+  const c2 = { ...c, lignes: [...c.lignes.slice(0, 2), { compte: "c1", sous_categorie: "a_classer", entrees: 900, sorties: 500 }] };
+  const M2 = voir(storeDe(c2), { vue: "tout", mois: c2.mois });
+  assert.equal(Budget.score(M2, { revenus_ref: 3000, blocs: { essentiels: 1500, envies: 500, epargne: 1000 } }).raison_absence, "a_classer");
+});

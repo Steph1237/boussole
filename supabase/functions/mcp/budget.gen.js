@@ -3105,7 +3105,7 @@ def("budget", function (module, exports, require) {
         const e = arrondi(r.total_mensuel * r.tendance / (100 + r.tendance));
         if (e > 0) ajoute({ cle: "habitude_en_hausse_" + r.compte_id + "_" + r.cle_marchand, poste: r.sous_categorie, titre: "Une habitude qui prend de la place",
           pourquoi: "Elle pèse " + prix(r.total_mensuel) + " par mois, " + String(r.tendance).replace(".", ",") + " % de plus que les trois mois d'avant.",
-          economie_mensuelle: fourchette(e), difficulte: "moyen", question: "Cette habitude te fait-elle toujours autant plaisir qu'avant ?",
+          economie_mensuelle: fourchette(e), difficulte: "moyen", question: "Veux-tu la garder au même rythme, ou en changer un peu ?",
           donnees: { cles_marchand: [r.cle_marchand], montant_annuel: centieme(r.total_mensuel * 12), nombre: Math.round(r.frequence) }, source: SOURCE });
       }
     }
@@ -3167,7 +3167,9 @@ def("budget", function (module, exports, require) {
   const tauxPct = (m, R) => (R > 0 ? dixieme(m / R * 100) : 0);
   /** Options et cible proposée. `entree` : { reference, capacite_constatee, epargne_necessaire (ou null), matelas_mensuel, pistes, protegees, choix_pistes?, niveau?,
       plancher?: { repere, valeur }, preferences?, reperes?, objectifs?, evaluer?: (épargne mensuelle) → [{ id, probabilite_avant, probabilite_apres }] }.
-      → { options: { tenable, equilibree, ambitieuse }, necessaire, retenue, niveau, cible, controles, limite_par_plancher, orientation, atteignable_8_sur_10, leviers, couverture }. */
+      → { options: { tenable, equilibree, ambitieuse }, necessaire, retenue, niveau, cible, controles, limite_par_plancher, orientation, atteignable_8_sur_10, leviers, couverture }.
+      Contrôles bloquants : controles.somme, controles.protegees, controles.plancher et montants_positifs (aucun bloc ni sous-catégorie négatif : sinon la base refuse
+      la cible) ; controles.essentiels_90 est un garde-fou affiché. */
   function proposerCible(data, entree) {
     const e = entree || {}, d = data || {};
     const prefs = e.preferences || d.preferences || {}, reperes = e.reperes || d.reperes;
@@ -3247,12 +3249,16 @@ def("budget", function (module, exports, require) {
       plancher: !plancher || (R - S) >= plancher.valeur - 1e-9,
       essentiels_90: [...refEss.keys()].every(k => sous.get(k) >= plancherEss * refEss.get(k) - 1e-9 || prises.some(x => x.poste === k)),
     };
+    // bloquant (hors `controles`, dont la forme est celle de la fixture) : une cible n'a jamais de bloc ni de sous-catégorie négatifs (la base les refuse) ;
+    // faux quand la capacité constatée est négative ou que les essentiels de référence dépassent les revenus moins l'épargne : la fragilité passe avant la cible
+    // (étape 4 de l'expertise), rien n'est à proposer tel quel
+    const montantsPositifs = S >= 0 && Ess >= -1e-9 && Env >= -1e-9 && [...sous.values()].every(v => v >= 0);
     const atteignable = necessaire === null ? null : S >= necessaire - 1e-9;
     const cible = { revenus_ref: R, blocs: { essentiels: Ess, envies: Env, epargne: S }, sous_categories: sousObj, protegees: [...protegees], niveau,
       taux_epargne: R > 0 ? centieme(S / R * 100) : 0, source: "Proposée par Claude à partir de tes relevés et de tes objectifs", version_taxonomie: BC.VERSION_TAXONOMIE };
     if (typeof e.evaluer === "function") cible.objectifs = e.evaluer(S);
     else if (Array.isArray(e.objectifs)) cible.objectifs = e.objectifs;
-    return { options, necessaire, retenue: S, niveau, taux: cible.taux_epargne, cible, blocs: cible.blocs, sous_categories: sousObj, controles, couverture,
+    return { options, necessaire, retenue: S, niveau, taux: cible.taux_epargne, cible, blocs: cible.blocs, sous_categories: sousObj, controles, montants_positifs: montantsPositifs, couverture,
       limite_par_plancher: limite, orientation: limite, atteignable_8_sur_10: atteignable, leviers: atteignable === false ? LEVIERS.slice() : [], pistes_retenues: prises,
       capacite_taux: R > 0 ? dixieme(C / R * 100) : 0 };
   }
@@ -3380,9 +3386,10 @@ def("budget", function (module, exports, require) {
       for (const l of r.categories) {
         const bloc = blocDe(l.sous, d.preferences);
         if (l.sous === "apport_commun") {
-          if (commun) apportsRecusCommun += l.entrees; else apportsVersesPerso += l.sorties;
+          // apports nets : un virement du commun vers un compte personnel (sortie côté commun, entrée côté perso) diminue les apports
+          if (commun) apportsRecusCommun += l.entrees - l.sorties; else apportsVersesPerso += l.sorties - l.entrees;
           if (vue === "perso" && commun) continue;                 // remplacé par ta part des dépenses du commun
-          if (vue === "commun") { if (commun) revenus += l.entrees; continue; }
+          if (vue === "commun") { if (commun) revenus += l.entrees - l.sorties; continue; }
           if (!communObserve && !commun) { ajoute("commun_non_detaille", w, l); nonDetaille = true; continue; }
           const h = hb.get("apport_commun"); h.sorties += w * l.sorties; h.entrees += w * l.entrees; continue;
         }
@@ -3409,6 +3416,11 @@ def("budget", function (module, exports, require) {
     const hors = {};
     for (const [k, h] of hb) hors[k] = r6(h.sorties > 0 ? h.sorties : h.entrees);
     const depenses = r6(bl.essentiels + bl.envies + bl.a_classer), capacite = r6(revenus - depenses), versee = r6(bl.epargne);
+    // part « à classer » (§ 7.3) lue sur les sorties brutes : une entrée inconnue (virement reçu d'un proche, vente) range en « à classer » et diminue son net,
+    // elle ne doit pas masquer des sorties qui restent à classer (ni rendre la part négative)
+    let sortiesDepenses = 0;
+    for (const [sous, a] of acc) { const b = blocDe(sous, d.preferences); if (b === "essentiels" || b === "envies" || b === "a_classer") sortiesDepenses += a.sorties; }
+    const sortiesAClasser = acc.has("a_classer") ? acc.get("a_classer").sorties : 0;
     const sources = rel.map(r => ({ compte: r.compte, origine: r.source === "import" ? "import" : "banque", titulaire: titulaireDe(d, r.compte) }));
     const incompl = (d.incomplets || []).some(x => x.mois === m && poidsDe(titulaireDe(d, x.compte), vue, personne, part) > 0);
     const observes = new Set(rel.map(r => r.compte));
@@ -3420,7 +3432,7 @@ def("budget", function (module, exports, require) {
     if (rel.some(r => r.categories.some(l => l.sans_detail))) res.mentions.push("mois_sans_detail");
     // carte à débit différé sans détail ce mois-ci alors que le mois compte des opérations à classer : le relevé n'a pas pu être identifié (§ 4.5)
     if (res.a_classer > 0 && comptes.some(c => c.debit_differe === true && !observes.has(c.id))) res.mentions.push("detail_carte_indisponible");
-    res.couverture = { ...couv, a_classer_part: depenses > 0 ? r6(res.a_classer / depenses) : 0, comptes_observes: observes.size,
+    res.couverture = { ...couv, a_classer_part: sortiesDepenses > 0 ? r6(sortiesAClasser / sortiesDepenses) : 0, comptes_observes: observes.size,
       comptes_absents: comptes.filter(c => !observes.has(c.id) && c.ecartee !== true).map(c => c.id), sans_detail: res.mentions.includes("mois_sans_detail"), import_incomplet: incompl,
       en_partie_importe: sources.some(x => x.origine === "import") && sources.some(x => x.origine !== "import"), apports_externes: r6(externes),
       ecartes: (d.ecartes || []).filter(x => x.mois === m && poidsDe(titulaireDe(d, x.compte), vue, personne, part) > 0) };
