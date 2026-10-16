@@ -245,7 +245,7 @@ export function registerSuivi(server: any, h: SuiviDeps) {
   /* ---------- ligne ---------- */
   server.registerTool("ligne", {
     title: "Ta ligne",
-    description: "Une ligne en détail, comme la page « Ta ligne » de l'app : son rôle et sa raison, son poids, sa météo et ses constats complets (mesure, repère, pourquoi, calcul, données, ce qui manque), la date de sa prochaine revue et les leviers de sa classe dans son enveloppe avec le verdict « ça vaut le coût ? » (gain certain par an, coût une fois, point mort, horizon, hypothèses, sources). Sur une ligne nommée, ne donne que des faits ; les leviers et verdicts portent sur la classe et l'enveloppe. Lecture seule.",
+    description: "Une ligne en détail, comme la page « Ta ligne » de l'app : son rôle et sa raison, son poids, sa météo et ses constats complets (mesure, repère, pourquoi, calcul, données, ce qui manque), la date de sa prochaine revue et les leviers de sa classe dans son enveloppe avec le verdict « ça vaut le coût ? » (gain certain par an, coût une fois, point mort, horizon, hypothèses, sources). Les leviers qui poursuivent le même but sont fusionnés (le champ « fusionnes » garde les autres déclencheurs). Sur une ligne nommée, ne donne que des faits ; les leviers et verdicts portent sur la classe et l'enveloppe. Lecture seule.",
     inputSchema: z.strictObject({ position_id: Uuid("position_id").describe("Identifiant de la ligne (suivi_lignes, get_positions).") }),
     annotations: RO,
   }, wrap(async (a: any) => {
@@ -255,7 +255,7 @@ export function registerSuivi(server: any, h: SuiviDeps) {
     return {
       date: h.today(), ...resumeLigne(l), constats: l.constats,
       leviers: l.leviers.map((x: any) => ({ cle: x.cle, titre: x.titre, pourquoi: x.pourquoi, levier: x.levier, mesure: x.mesure, seuil: x.seuil, visible: x.visible, raison_visibilite: x.raison_visibilite,
-        ca_vaut_le_cout: resumeVerdict(x.cout), phrase: x.cout ? Suivi.phraseVerdict(x.cout) : null })),
+        ca_vaut_le_cout: resumeVerdict(x.cout), phrase: x.cout ? Suivi.phraseVerdict(x.cout) : null, fusionnes: x.fusionnes ?? [] })),
       conduite: CONDUITE_SUIVI,
     };
   }));

@@ -1487,6 +1487,32 @@ test("pretDe : champs documentés présents et valides seulement, dates réelles
     assert.equal(S.pretDe(compte), null, JSON.stringify(compte));
 });
 
+test("capitalRestantDu (FIX3) : solde du compte (documenté) d'abord, loan.remaining_capital (non documenté) en repli, valeur absolue", { skip: SANS_STRIP }, () => {
+  const { S } = charger();
+  assert.equal(S.capitalRestantDu({ balance: -150000.25 }), 150000.25);
+  assert.equal(S.capitalRestantDu({ balance: "-3264.18", loan: { total_amount: 200000, used_amount: 200000 } }), 3264.18, "ni total_amount ni used_amount ne sont un capital restant dû");
+  assert.equal(S.capitalRestantDu({ balance: -3000, loan: { remaining_capital: 9999 } }), 3000, "le champ documenté prime");
+  assert.equal(S.capitalRestantDu({ balance: null, loan: { remaining_capital: 5000 } }), 5000, "repli : solde absent");
+  assert.equal(S.capitalRestantDu({ loan: { remaining_capital: -4200.5 } }), 4200.5);
+  for (const compte of [null, undefined, {}, { balance: null }, { balance: "", loan: {} }, { balance: "x", loan: { remaining_capital: "y" } }])
+    assert.equal(S.capitalRestantDu(compte), null, JSON.stringify(compte));
+});
+
+test("synchroniser (FIX3) : le crédit prend le solde du compte de prêt, pas le loan.remaining_capital non documenté ; repli si pas de solde", { skip: SANS_STRIP }, async () => {
+  const { S } = charger();
+  const avecLoan = COMPTES.map(c => (c.id === 104 ? { ...c, balance: -140000, loan: { remaining_capital: 999999, total_amount: 200000 } } : c));
+  let db = fausseBase(baseInitiale(J(RATTACHES)), { rpc: RPC });
+  let r = await S.synchroniser(db, apiFactice({ comptes: avecLoan }), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  assert.equal(db.tables.credits.find(c => c.id === "cred-1").crd, 140000);
+  // Solde absent : repli sur loan.remaining_capital (pas de crédit mis à jour tant que le solde est inconnu, comportement inchangé).
+  const sansSolde = COMPTES.map(c => (c.id === 104 ? { ...c, balance: null, loan: { remaining_capital: 123456.78 } } : c));
+  db = fausseBase(baseInitiale(J(RATTACHES)), { rpc: RPC });
+  r = await S.synchroniser(db, apiFactice({ comptes: sansSolde }), U, 7, OPTS());
+  assert.equal(r.ok, true, JSON.stringify(r.erreurs));
+  assert.equal(db.tables.credits.find(c => c.id === "cred-1").crd, 160000, "solde inconnu : crédit intact");
+});
+
 test("infosPret : bornes de la base (date_fin > date_signature, durée 1 à 480, assurance 0 à 5 %), taux_pct jamais proposé", { skip: SANS_STRIP }, () => {
   const { S } = charger();
   assert.deepEqual(J(S.infosPret(PRET_BANQUE, AUJ)), { date_signature: "2021-03-15", date_fin: "2041-03-15", duree_mois: 240, assurance_taux_pct: 0.35 });

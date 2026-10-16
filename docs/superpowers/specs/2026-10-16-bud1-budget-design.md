@@ -243,6 +243,57 @@ Une dépense est **annuelle** si une règle le dit (`annuelle: true`) ou si la d
 
 ---
 
+### 6.5 Le récurrent : engagements, abonnements, habitudes (demande de Stéph du 2026-10-16)
+
+But : comprendre ce qui revient chaque mois, et séparer ce qui est **contraint** de ce qui est **pilotable**. Calcul déterministe dans `budget.js` (`Budget.recurrents(data, { vue, personne, mois })`), sur `banque_marchands_mois` (13 mois) et les opérations des 90 derniers jours. Aucune opération brute n'est gardée au-delà de 90 jours (§ 13).
+
+**Données nécessaires.** `banque_marchands_mois` gagne trois colonnes, calculées par `banque_recalculer_mois` pour chaque `(mois, compte, cle_marchand, sous_categorie)` :
+- `montant_min` et `montant_max`, les montants de la plus petite et de la plus grosse sortie du mois ;
+- `dernier_jour`, le jour du mois (1 à 31) de la dernière sortie.
+
+Avec `nombre` (déjà prévu), elles suffisent pour la fréquence, le panier moyen, les changements de prix et la prochaine date attendue. Les sorties seules comptent ; un flux exclu (§ 4 : virements internes, apports au commun, épargne) n'est jamais un récurrent.
+
+**Rythme** d'une clé (même `cle_marchand`, même sens) :
+- **mensuel** : présente dans au moins 3 des 4 derniers mois complets, ou 5 des 6 ;
+- **trimestriel** : au moins 3 présences espacées de 3 mois (±1), sur 9 mois ;
+- **annuel** : § 6.3.
+
+**Trois familles**, dans cet ordre (la première qui s'applique) :
+1. **Engagement** (contraint) : rythme établi, au plus 2 sorties par mois, montant stable à ±10 % de sa médiane, et sous-catégorie parmi `loyer`, `credit_immo`, `autres_credits`, `assurances`, `telecom`, `energie`, `charges_logement`, `garde_enfants`, `impots`. Exemples : loyer, crédit, box, assurance.
+2. **Abonnement** (pilotable, résiliable) : rythme établi, au plus 2 sorties par mois, montant stable à ±10 %, et sous-catégorie `abonnements` ou `sport`, ou une entrée de la table des marchands qui porte une famille d'abonnement. Exemples : vidéo, musique, presse, logiciel, salle de sport.
+3. **Habitude** (pilotable, variable) : la même clé au moins 4 fois par mois en moyenne sur les 3 derniers mois complets, **ou** présente dans 3 des 4 derniers mois avec un montant qui varie de plus de ±10 %. Exemples : supermarché, boulangerie, café, livraison de repas, VTC, carburant.
+
+Le reste est **ponctuel**.
+
+**Pour chaque récurrent**, l'écran et le connecteur donnent :
+- **Identité** : la clé nettoyée, qui désigne **ta** ligne (on peut nommer ton payeur, jamais en suggérer un autre), la sous-catégorie, la famille et le rythme.
+- **Montants** : le montant habituel (médiane) et le **coût sur 12 mois**.
+- **Pour une habitude** : la fréquence (« ≈ 12 fois par mois »), le panier moyen (sorties ÷ nombre) et la tendance (moyenne des 3 derniers mois contre les 3 précédents, « +18 % »).
+- **Dates** : la dernière date et la **prochaine date attendue** (`dernier_jour` + rythme, à ±3 jours).
+- **Statuts écrits** :
+  - « nouveau » : premier mois dans les 2 derniers, et la clé remplit déjà sa règle ;
+  - « hausse de prix » : le dernier montant dépasse la médiane des 3 précédents de plus de 5 % et d'au moins 1 €, par exemple « 13,49 → 15,99 € depuis août » ;
+  - « arrêté ? » : l'occurrence attendue manque depuis plus d'une fois et demie le rythme ;
+  - « doublon possible » : la règle du § 6.4.
+
+**Synthèse du mois** :
+- **Socle contraint** (engagements), **abonnements**, **habitudes** et **ponctuel**, en € et en part des dépenses.
+- **« Reste à prélever ce mois »** : la somme des engagements et abonnements attendus d'ici la fin du mois. Ces prélèvements apparaissent aussi dans le Calendrier (DAT1), dans « Prochaines échéances ».
+
+**Analyse d'une variation** (« pourquoi mes restaurants ont pris 120 € ? ») : décomposition de l'écart d'une sous-catégorie ou d'une clé entre le mois et sa référence. On écrit l'effet volume (Δ nombre × panier de référence) et l'effet prix (Δ panier × nombre du mois), par exemple « 4 passages de plus (+96 €), panier un peu plus élevé (+24 €) ». On liste aussi les 3 clés qui expliquent le plus l'écart.
+
+**Dépenses inhabituelles** : une clé jamais vue sur 12 mois et d'au moins 50 €, ou une sortie supérieure à 3 fois la médiane de sa clé. Elles sont listées à part, sans jugement.
+
+**Pistes** (§ 8.2) qui en découlent :
+- une hausse de prix d'abonnement : renégocier ou résilier, en citant les droits de résiliation vérifiés ;
+- un abonnement « arrêté ? » encore prélevé ailleurs ;
+- les doublons ;
+- une habitude dont la tendance dépasse +15 %.
+
+Les pistes donnent des montants. Elles ne disent jamais « tu devrais » (lexique, § 9).
+
+---
+
 ## 7. Le score de respect du budget
 
 ### 7.1 Les entrées
@@ -470,6 +521,44 @@ Module `web/src/budget-view.js` (nouveau, lecture seule) ; `plan-view.js` est ga
 
 ---
 
+### 11.9 L'analyse des dépenses : onglets « Mes dépenses » et « Récurrent » (demande de Stéph du 2026-10-16)
+
+Patrimoine › Budget a trois onglets : **Mon mois** (§ 11.2 à 11.6), **Mes dépenses** et **Récurrent**. La bascule Perso · Commun · Tout et le sélecteur de période sont partagés par les trois onglets.
+
+**Mes dépenses** (analyse détaillée) :
+- **Période** : mois, 3 mois ou 12 mois, avec la règle des graphiques (période libre, granularité).
+- **Contraint ou pilotable** : une barre empilée unique (engagements, abonnements, habitudes, ponctuel), avec les montants écrits.
+- **Ce qui a bougé** : les 3 plus fortes hausses et les 3 plus fortes baisses contre la référence. Chacune a une phrase d'explication (effet volume, effet prix, clés en cause, § 6.5) et s'ouvre sur son détail.
+- **Arbre de lecture** : bloc → sous-catégorie → clés. Pour chaque niveau : total, part, nombre d'opérations, panier moyen, tendance sur 12 mois en petites barres, et écart à la référence. Les dépenses annuelles portent le repère « lissée ».
+- **Inhabituel** : une liste courte (§ 6.5).
+- **À classer** : le panneau du § 11.6.
+
+**Récurrent** :
+- **En tête** :
+  - le total mensuel du récurrent et sa part des revenus ;
+  - « Reste à prélever ce mois : 640 € », avec la date du prochain prélèvement ;
+  - le coût annuel des abonnements, par exemple « 1 012 € par an ».
+- **Trois sections** : **Engagements**, **Abonnements** et **Habitudes**, triées par coût sur 12 mois.
+  - Une ligne d'**abonnement** : nom, famille, montant habituel, rythme, coût sur 12 mois, prochaine date, statuts écrits (« hausse de prix », « nouveau », « arrêté ? », « doublon possible »).
+  - Une ligne d'**habitude** : fréquence, panier moyen, total mensuel, coût sur 12 mois, tendance avec flèche **et** chiffre.
+- **Une ligne s'ouvre en panneau** :
+  - les 13 mois en petites barres (montant et nombre) et les dates ;
+  - les pistes liées, par exemple : « cet abonnement vidéo a augmenté de 2,50 € par mois, soit 30 € par an » ;
+  - « Demander à Claude ». Claude reprend la question « l'utilises-tu encore ? » du questionnaire. Il ne nomme jamais d'autre offre.
+- **États** :
+  - moins de 3 mois de données : « Le récurrent se repère après 3 mois de relevés », et l'import de l'historique (HIS2) est proposé ;
+  - double authentification requise.
+- **Mobile** : les sections sont repliables, en commençant par Abonnements. Les montants sont alignés à droite en chiffres tabulaires. Les cibles font 44 px.
+- **Bureau** : la synthèse sur toute la largeur, les sections en 2 colonnes (Engagements et Abonnements à gauche, Habitudes à droite), et un panneau latéral de 480 px.
+- **Aujourd'hui** : une ligne « Reste à prélever ce mois » dans les échéances, et une puce « 1 hausse de prix » quand il y en a une.
+
+**Connecteur** :
+- `analyser_depenses` renvoie aussi `recurrents` (les trois familles et leur synthèse), `variations` et `inhabituel`.
+- Nouvel outil de lecture `lire_recurrents({ vue?, personne?, famille? })`.
+- Mêmes chiffres que l'app (même module, copie générée).
+
+---
+
 ## 12. Repères et sources
 
 Tous dans `test/fixtures/budget-cas.json` (clé `reperes`, format de 0030 ; les droits sans valeur chiffrée dans la clé `textes`) puis migration 0036 ; statut V (vérifié sur une source primaire) ou CONV (convention de Boussole, dite comme telle). **Aucune valeur n'entre en base sans vérification** (tâche 0).
@@ -669,6 +758,15 @@ Précisions de Stéph : D2 suit les formes de politiques de 0033 (« aal2 si fac
 3. **`budget_regles` : politique « aal2 si facteur »** (comme les autres tables utilisateur) **acceptée.**
 4. **Une règle ne peut jamais viser `a_classer`** (elle doit viser une vraie sous-catégorie) : § 3.2, § 3.4, § 15.1, § 15.6. Remplace l'ancien point ouvert 5.
 5. **Alignement sur HIS2 (référence)** pour la carte à débit différé importée (§ 4.5), le premier mois Powens réputé partiel, les mois `complet: false` jamais au budget et la clé large refusée une fois BUD1 en ligne (§ 4.6). Conséquence : le cas D7 (§ 15.2) change de résultat pour septembre.
+
+
+### 17.3 Décisions du 2026-10-16 (analyse poussée et récurrent, demande de Stéph)
+| # | Décision | Retenu |
+|---|---|---|
+| D14 | Colonnes ajoutées à `banque_marchands_mois` pour le récurrent | `montant_min`, `montant_max`, `dernier_jour`, sans aucune opération brute au-delà de 90 jours, dans 0035 |
+| D15 | Familles du récurrent | Engagement, abonnement, habitude, ponctuel (§ 6.5) ; seuils de départ : ±10 %, 3 mois sur 4, 4 fois par mois, hausse > 5 % et ≥ 1 € ; revus après 3 mois d'usage, comme D4 |
+| D16 | Place dans l'app | Patrimoine › Budget en trois onglets : Mon mois, Mes dépenses, Récurrent (§ 11.9) ; « Reste à prélever » aussi dans Aujourd'hui et le Calendrier |
+| D17 | Connecteur | `analyser_depenses` étendu et nouvel outil `lire_recurrents` |
 
 ## 18. Risques
 - **Qualité de la table des marchands** sans Powens catégorisé : couverture visée ≥ 80 % des montants sur les relevés fictifs de préproduction ; la part « à classer » est toujours affichée et le score devient provisoire ou absent.

@@ -120,6 +120,46 @@ test("ligne : rôle, constats, prochaine revue et leviers de sa classe dans son 
   assert.equal(Suivi.ligne(d, "inconnue", TODAY), null);
 });
 
+test("ligne : les leviers qui ont le même but sont fusionnés (plafond satellite du portefeuille et poids de la ligne), avec les données les mieux connues", () => {
+  const d = donneesDe(cas("CM-9"));
+  d.positions = [
+    { id: "liv", name: "Livret A", envelope: "Livret A Exemple", owner: "p1", bloc: "Livrets", status: "actif", mode: "manual", value: 10000 },
+    { id: "etf", name: "ETF Monde A", envelope: "PEA Exemple", owner: "p1", bloc: "Monde", status: "actif", mode: "market", qty: 600, price: 100, pru: 80, isin: "XX0000000025" },
+    { id: "lev", name: "ETF Nasdaq 2x A", envelope: "PEA Exemple", owner: "p1", bloc: "Nasdaq 2x", status: "actif", mode: "market", qty: 168, price: 100, pru: 90, isin: "XX0000000033" },
+    { id: "btc", name: "Bitcoin", envelope: "Crypto Exemple", owner: "p1", bloc: "Crypto", status: "actif", mode: "market", qty: 0.5, price: 40000, isin: "X-BTC" },
+  ];
+  d.config.enveloppes_infos["Crypto Exemple"] = { type: "crypto", titulaire: "p1", source: "exemple", le: "2026-02-12" };
+  // avant fusion : deux déclencheurs de même levier, l'un sans verdict (prix de revient de la crypto manquant), l'autre chiffré
+  const brut = Suivi.declencheurs(d, TODAY, { capacite_mensuelle: 1700 }).filter(x => x.levier === "reduire_satellite");
+  assert.deepEqual(brut.filter(x => x.cle === "satellite_plafond" || x.position_ids.includes("lev")).map(x => x.cle).sort(), ["concentration", "satellite_plafond"]);
+  assert.equal(brut.find(x => x.cle === "satellite_plafond").verdict, null);
+  const l = Suivi.ligne(d, "lev", TODAY, { capacite_mensuelle: 1700 });
+  const sat = l.leviers.filter(x => x.levier === "reduire_satellite");
+  assert.equal(sat.length, 1, "un seul levier « revenir sous le plafond satellite »");
+  assert.equal(sat[0].cle, "concentration", "celui de la ligne, dont le coût est connu");
+  assert.equal(sat[0].verdict, "a_peser");
+  assert.equal(sat[0].cout.cout_unique, 179.4);
+  assert.ok(sat[0].cout.montant > 0, "le montant concerné est exposé");
+  assert.equal(sat[0].fusionnes.length, 1);
+  assert.equal(sat[0].fusionnes[0].cle, "satellite_plafond");
+  assert.equal(sat[0].fusionnes[0].seuil, 15);
+  assert.match(sat[0].fusionnes[0].manque[0], /prix de revient des lignes vendues dans « Crypto Exemple »/, "ce qui manque pour chiffrer l'ensemble n'est pas perdu");
+  // fusionnerLeviers : un levier seul reste intact ; sans levier, chaque déclencheur reste séparé ; le verdict connu passe avant la portée
+  const a = { cle: "a", levier: "x", position_ids: ["1"], cout: { verdict: null, cout_unique: null } }, b = { cle: "b", levier: "x", position_ids: ["1", "2", "3"], cout: { verdict: "a_peser", cout_unique: 10 } };
+  assert.deepEqual(Suivi.fusionnerLeviers([a, b]).map(x => x.cle), ["b"]);
+  assert.deepEqual(Suivi.fusionnerLeviers([a, { cle: "c", levier: null }, { cle: "d", levier: null }]).map(x => x.cle), ["a", "c", "d"]);
+  assert.equal(Suivi.fusionnerLeviers([a])[0].fusionnes, undefined);
+});
+
+test("constats : les repères chiffrés (poids, coût, volatilité, chevauchement) sont exposés pour la jauge", () => {
+  const d = donneesDe(cas("CM-9")), cs = Suivi.constats(d, "lev", TODAY);
+  assert.equal(cs.find(c => c.cle === "classe_risque").repere.surveiller, 20);
+  assert.equal(cs.find(c => c.cle === "cout").repere.bas, 0.3);
+  const soc = Suivi.constats(donneesDe(cas("CM-8")), "soc", TODAY).find(c => c.cle === "poids");
+  assert.equal(soc.repere.max, 5);
+  assert.equal(soc.repere.unite, "%");
+});
+
 test("revue du cœur : mars et septembre ; septembre 2026 est passé sans revue enregistrée après mars : la revue est en retard, jamais effacée par le calendrier", () => {
   const d = donneesDe(cas("PO-2"));
   d.routines.revue_coeur_faite_le = "2026-03-05"; // la revue de mars a été faite, pas celle de septembre
