@@ -20,7 +20,11 @@
 //   supabase/functions/mcp/budget.gen.js                 copie du moteur du budget (BUD1 : web/src/budget.js et ses dépendances, voir genererBudget()) ; la tâche 7 du plan y ajoute
 //                                                        Calc, Plan et Periodes avec les fonctions de mois et de série. Parité testée par test/budget-gen.test.mjs.
 //
-// Usage : npm run gen (node scripts/gen-catalogue.mjs). test/formulaire.test.mjs, test/projection-mcp.test.mjs et test/budget-categories.test.mjs échouent si un fichier généré n'est plus à jour.
+//   supabase/functions/mcp/historique-import.gen.js  copie du module d'import de l'historique (HIS2 : web/src/historique-import.js et sensible.js, dont il dépend),
+//                                                    recopiée de la même façon (voir genererHistoriqueImport()). Le connecteur vérifie un import avec exactement
+//                                                    le code que l'app et les tests exécutent. Parité testée par test/historique-import-gen.test.mjs.
+//
+// Usage : npm run gen (node scripts/gen-catalogue.mjs). test/formulaire.test.mjs, test/projection-mcp.test.mjs, test/budget-categories.test.mjs et test/historique-import-gen.test.mjs échouent si un fichier généré n'est plus à jour.
 //
 // Sources :
 //   - web/src/risque.js (QUESTIONS) pour risque.* : thème, type, valeurs (codes et libellés de l'app, inchangés), option
@@ -48,6 +52,7 @@ export const SORTIE_SUIVI = "supabase/functions/mcp/suivi.gen.js";
 export const SORTIE_BUDGET_POWENS = "supabase/functions/powens/budget-categories.gen.js";
 export const SORTIE_BUDGET_MCP = "supabase/functions/mcp/budget-categories.gen.js";
 export const SORTIE_BUDGET_MOTEUR = "supabase/functions/mcp/budget.gen.js";
+export const SORTIE_HISTORIQUE_IMPORT = "supabase/functions/mcp/historique-import.gen.js";
 /** Modules du moteur, dans l'ordre de définition (chacun ne dépend que des précédents) : nom → fichier de web/src. */
 export const MODULES_MOTEUR = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "projection-evenements",
   "projection-credit", "projection-donnees", "projection-immo", "projection"];
@@ -60,6 +65,9 @@ export const EXPORTS_BUDGET = { BudgetCategories: "budget-categories" };
 /** Modules de la copie du moteur du budget (Budget), dans l'ordre de définition : chacun ne dépend que des précédents (tâche 7 : Calc, Plan et Periodes s'y ajouteront). */
 export const MODULES_MOTEUR_BUDGET = ["sensible", "budget-categories", "budget"];
 export const EXPORTS_MOTEUR_BUDGET = { Budget: "budget", BudgetCategories: "budget-categories" };
+/** Modules de la copie du module d'import de l'historique (HIS2), dans l'ordre de définition. */
+export const MODULES_HISTORIQUE_IMPORT = ["sensible", "historique-import"];
+export const EXPORTS_HISTORIQUE_IMPORT = { HistoriqueImport: "historique-import" };
 /** Valeurs exportées par la copie : nom exporté → module. */
 export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection" };
 
@@ -204,6 +212,10 @@ export function genererBudgetCategories() {
 export function genererBudget() {
   return copierModules(MODULES_MOTEUR_BUDGET, EXPORTS_MOTEUR_BUDGET, "Copie du moteur du budget de l'app (BUD1, docs/superpowers/specs/2026-10-16-bud1-budget-design.md)", "budget-moteur");
 }
+/** Copie du module d'import de l'historique (HIS2, docs/superpowers/specs/2026-10-16-his2-historique-design.md § 5) : mêmes règles que genererMoteur(). */
+export function genererHistoriqueImport() {
+  return copierModules(MODULES_HISTORIQUE_IMPORT, EXPORTS_HISTORIQUE_IMPORT, "Copie du module d'import de l'historique de l'app (HIS2, docs/superpowers/specs/2026-10-16-his2-historique-design.md)", "historique-import");
+}
 function copierModules(MODULES, EXPORTS, titre, etiquette) {
   const corps = MODULES.map(nom => {
     const src = readFileSync(racine("web/src/" + nom + ".js"), "utf8").replace(/\r\n/g, "\n").replace(/\s+$/, "");
@@ -227,6 +239,6 @@ function copierModules(MODULES, EXPORTS, titre, etiquette) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const budget = genererBudgetCategories();
-  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi(), [SORTIE_BUDGET_POWENS]: budget, [SORTIE_BUDGET_MCP]: budget, [SORTIE_BUDGET_MOTEUR]: genererBudget() };
+  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi(), [SORTIE_BUDGET_POWENS]: budget, [SORTIE_BUDGET_MCP]: budget, [SORTIE_BUDGET_MOTEUR]: genererBudget(), [SORTIE_HISTORIQUE_IMPORT]: genererHistoriqueImport() };
   for (const [rel, txt] of Object.entries(fichiers)) { writeFileSync(racine(rel), txt); console.log("écrit : " + rel); }
 }

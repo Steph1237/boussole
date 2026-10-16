@@ -4729,5 +4729,1251 @@
    },
    "calcul": "logement = loyer 1 300 + charges 0 + énergie 110 = 1 410 ; consommation = essentiels 2 700 + envies 1 450 − autres crédits 180 − impôts 0 = 3 970 ; 1 410 ÷ 3 970 = 35,5 % contre 29,0 % pour l'ensemble des locataires (27,4 % à 30,4 % selon le quintile) : au-dessus du repère, jamais une contrainte"
   }
- ]
+ ],
+ "conventions_recurrents": {
+  "source": "Spec § 6.5 (texte corrigé le 2026-10-16 pour suivre ces conventions), § 11.9, § 17.3 (D15, D18). Seuils de départ D15 : ±10 %, 3 mois sur 4, 4 fois par mois, hausse > 5 % et ≥ 1 € ; revus après 3 mois d'usage.",
+  "fonctions": "Budget.recurrents(data, { vue, personne?, mois? }) → { disponible, mois_couverts, recurrents: [ligne], synthese } ou { disponible: false, raison: 'moins_de_3_mois', mois_couverts } ; Budget.variations(data, { vue, personne?, mois, niveau: 'sous_categorie' | 'cle', sous_categorie? | compte_id + cle_marchand }) ; Budget.inhabituel(data, { vue, personne?, mois }) → { disponible, mois, depenses }. data porte today, comptes, partage et les lignes de banque_marchands_mois.",
+  "fenetre": "m0 = mois de today, toujours en cours (jamais complet). Lignes lues : de m0 − 12 à m0 (12 mois complets et le mois en cours) ; les plus anciennes sont ignorées.",
+  "comptes": "Comptes du budget seulement : type courant ou joint (un livret, même avec des frais, n'en est pas). Tout : tous ; Commun : titulaire commun ; Perso p : comptes de p à 100 % et comptes communs à la part de p (partage.p1 ; p2 = 1 − p1).",
+  "exclusions": "Jamais récurrent, jamais dans la synthèse, les variations ni l'inhabituel : sous-catégories hors budget (virement_interne, apport_commun, transfert_foyer, releve_carte), d'épargne (epargne_precaution, investissement, projets) et de revenus (salaires, revenus_autres), et toute ligne sans sortie (sorties = 0 : les entrées ne font pas de récurrent). Une clé vide ('') n'est jamais un récurrent ni une dépense inhabituelle ; elle compte en ponctuel dans la synthèse. a_classer n'est pas exclue.",
+  "groupe": "Un récurrent est un groupe (compte_id, cle_marchand, sous_categorie) : la même enseigne sur deux comptes donne deux lignes (un double paiement reste visible). Présence d'un mois : sorties > 0. Montant d'un mois : ses sorties (brutes ; une entrée ne les diminue pas). nombre = la colonne de banque_marchands_mois, qui compte aussi les entrées du groupe (0035) : limite acceptée.",
+  "part": "Rythme, famille, statuts et seuils se calculent sur les montants à 100 %. La part de la vue Perso ne touche que les montants rendus (montant habituel, coût, panier, total mensuel, hausse, synthèse, reste à prélever, variations, inhabituel), multipliés avant l'arrondi ; nombres, fréquences et pourcentages ne sont pas multipliés. Perso(p1) + Perso(p2) = Tout pour la synthèse, le reste à prélever et le coût annuel des abonnements (à 1 centime près).",
+  "couverture": "Premier mois des données de la vue = le plus ancien mois de la fenêtre qui porte une ligne sur un de ses comptes (flux exclus compris : ils prouvent que le compte était suivi). mois_couverts = nombre de mois complets de ce premier mois à m0 − 1. Moins de 3 : { disponible: false, raison: 'moins_de_3_mois', mois_couverts } (« Le récurrent se repère après 3 mois de relevés »). Variations et inhabituel : mêmes règles sur les mois de référence (mois complets avant le mois analysé).",
+  "rythme_mensuel": "Ancre = dernier mois de présence du groupe, mois en cours compris quand il porte déjà une sortie ; une absence dans le mois en cours ne compte jamais (le mois n'est pas fini). Mensuel : au moins 3 présences dans les 4 mois qui finissent à l'ancre, sinon au moins 5 dans les 6. C'est ce qui rend « nouveau » possible (présences en m0 − 2, m0 − 1 et m0) et « arrêté ? » visible (un abonnement arrêté garde le rythme lu à sa dernière présence). Fenêtre = ces 4 (ou 6) mois.",
+  "rythme_trimestriel": "Si pas mensuel : les 3 dernières présences (ancre comprise) sont séparées deux à deux de 2 à 4 mois (3 ± 1), donc sur 9 mois au plus. Fenêtre = ces 3 mois.",
+  "rythme_annuel": "Si ni mensuel ni trimestriel : « confirme » quand le groupe a exactement 2 présences sur les 13 mois, séparées de 11 à 13 mois ; « probable » quand il a une seule présence, dans un mois complet, et que sa sous-catégorie est « annuelle probable » (assurances, impots, voyages) ou que la sortie atteint 150 € (§ 6.3). Les deux sont un rythme établi (champ annuel). Fenêtre = ces présences. Une sortie vue seulement dans le mois en cours n'a pas de rythme.",
+  "paliers": "On compare les montants des mois complets de la fenêtre qui portent une présence (le mois en cours n'y entre jamais : il est incomplet), dans l'ordre : un montant rejoint le palier courant s'il est à ±10 % de la médiane de ce palier, bornes comprises (|montant − médiane| × 10 ≤ médiane, en centimes exacts), sinon il ouvre un nouveau palier. « Stable » = au moins un montant et au plus 2 paliers (un seul changement de prix dans la fenêtre : sinon une hausse de prix ferait d'un abonnement une habitude). « Varie de plus de ±10 % » = au moins 2 paliers.",
+  "familles": "Dans l'ordre, la première qui s'applique. Engagement : rythme établi, stable, nombre ≤ 2 dans chaque mois comparé, sous-catégorie parmi loyer, credit_logement, autres_credits, assurances, telecom, energie, charges_logement, enfants, impots (le premier texte disait credit_immo et garde_enfants, absents de la taxonomie). Abonnement : mêmes conditions de rythme, stabilité et nombre, et sous-catégorie abonnements ou sport, ou une clé que la table des marchands range dans une famille (suite de mots la plus longue, § 3.2). Habitude : moyenne de nombre sur m0 − 3 à m0 − 1 (absence = 0) ≥ 4 (borne comprise), ou au moins 3 présences sur les 4 derniers mois complets (m0 − 4 à m0 − 1) dont les montants font au moins 2 paliers. Sinon ponctuel (absent de la liste, compté dans la synthèse).",
+  "montant_habituel": "Engagement et abonnement : médiane du dernier palier (le prix en vigueur depuis le dernier changement). Habitude : médiane des sorties de m0 − 3, m0 − 2, m0 − 1 (absence = 0).",
+  "cout_12_mois": "Au rythme actuel. Engagement et abonnement : montant habituel × 12 (mensuel), × 4 (trimestriel), × 1 (annuel). Habitude : total mensuel × 12. « arrêté ? » ne change pas le coût de la ligne, mais l'abonnement arrêté sort du coût annuel des abonnements et du reste à prélever.",
+  "habitude": "fréquence = moyenne de nombre sur m0 − 3 à m0 − 1 (absence = 0) ; panier moyen = Σ sorties ÷ Σ nombre sur ces 3 mois ; total mensuel = moyenne des sorties sur ces 3 mois (absence = 0) ; tendance = (total mensuel − moyenne des sorties de m0 − 6 à m0 − 4) ÷ cette moyenne, en % ; un mois sans présence compte 0 dès qu'il est couvert par les données ; tendance null si un de ces 6 mois précède le premier mois des données ou si la moyenne de base est 0. Champs null pour un engagement ou un abonnement.",
+  "nouveau": "Première présence du groupe sur les 13 mois en m0 − 2, m0 − 1 ou m0, et famille autre que ponctuel (avec au moins 3 mois couverts, il y a toujours un mois de données avant).",
+  "hausse_de_prix": "Engagements et abonnements seulement. Dernier montant = sorties du dernier mois de présence (mois en cours compris : un prélèvement d'abonnement est complet) ; référence = médiane des montants des 3 présences précédentes (moins de 3 : pas de test). Hausse si dernier > référence × 1,05 (strict : +5,0 % pile n'en est pas une) et dernier − référence ≥ 1 € (+1,00 € pile en est une). depuis = premier mois de la suite finale de présences qui remplissent les deux conditions. hausse: { ancien: référence, nouveau: dernier, depuis: 'AAAA-MM' }, sinon null.",
+  "arrete": "Engagements et abonnements seulement : today − dernière date > 1,5 × la période (mensuel 30 jours : plus de 45 jours ; trimestriel 91 : plus de 136,5 ; annuel 365 : jamais sur 13 mois). 45 jours pile n'est pas « arrêté ? ».",
+  "dates": "Dernière date = mois de la dernière présence et son dernier_jour. Prochaine date = même jour une période plus tard (1, 3 ou 12 mois), ramenée au dernier jour du mois quand il n'existe pas (31 août + 3 mois = 30 novembre) ; null pour une habitude et pour « arrêté ? ». Tolérance de ±3 jours : en_retard quand prochaine date + 3 jours < today ; un prélèvement en retard reste attendu.",
+  "doublon_possible": "Parmi les engagements et abonnements de la vue qui ne sont pas « arrêté ? » : deux lignes de sous-catégorie assurances dont aucune clé n'est une suite de mots de l'autre ; ou deux abonnements de même famille de marchand, video ou musique seulement. Les deux lignes portent le statut ; la famille, jamais la marque, est montrée.",
+  "statuts": "Clés et ordre : nouveau, hausse_de_prix, arrete, doublon_possible (libellés « nouveau », « hausse de prix », « arrêté ? », « doublon possible »).",
+  "synthese": "Pour le mois demandé (défaut m0, en_cours: true) : sorties du mois de chaque groupe non exclu, ventilées selon la famille du groupe calculée à today ; ponctuel = le reste, clé vide comprise ; total = la somme ; parts en % du total, au dixième, sans correction de somme ; total 0 : parts null. Ce sont des sorties brutes, pas le net du § 6.1.",
+  "reste_a_prelever": "Mois en cours seulement (null, attendus null et prochain_prelevement null pour un mois passé). Attendus = engagements et abonnements dont la prochaine date tombe dans le mois en cours, avant ou après today (un groupe déjà prélevé ce mois-ci a sa prochaine date au mois suivant ; « arrêté ? » n'a pas de prochaine date). Montant = dernier montant (le prix en vigueur), à la part de la vue. reste_a_prelever = leur somme ; attendus triés par date, puis clé, puis compte ; prochain_prelevement = la plus proche date ≥ today parmi eux, sinon null. cout_annuel_abonnements = Σ coût 12 mois des abonnements non « arrêté ? ».",
+  "tri": "Familles dans l'ordre engagement, abonnement, habitude ; dans une famille, coût 12 mois rendu (à la part) décroissant, puis cle_marchand, puis compte_id.",
+  "variations": "Sorties brutes des groupes non exclus (à la part) et nombre (sans part) ; niveau sous_categorie : tous les groupes de cette sous-catégorie dans la vue ; niveau cle : les groupes (compte_id, cle_marchand), toutes sous-catégories. Référence = mois complets avant le mois analysé, 12 au plus, couverts par les données (absence = 0) ; n ≥ 6 normal, 3 à 5 periode_courte, moins de 3 : indisponible. S0 = médiane des montants mensuels, N0 = médiane des nombres mensuels, P0 = S0 ÷ N0 (la référence du § 6.2, médiane, et pas une moyenne) ; mois analysé : S1, N1, P1 = S1 ÷ N1. effet_volume = (N1 − N0) × P0 ; effet_prix = (P1 − P0) × N1 ; leur somme vaut S1 − S0 exactement. N0 = 0 : tout l'écart en effet volume ; N1 = 0 : effet prix 0. Niveau sous_categorie : cles = au plus 3 groupes dont l'écart (S1 du groupe − médiane du groupe sur la référence) est non nul et du même signe que l'écart total, par écart absolu décroissant, puis clé, puis compte ; niveau cle : cles null. Pas de lissage des dépenses annuelles ici.",
+  "inhabituel": "Pour chaque groupe non exclu, de clé non vide, présent dans le mois : « nouvelle_cle » si la clé n'a aucune sortie non exclue sur les comptes de la vue dans les mois de référence (12 mois complets précédents au plus, couverts) et que ses sorties du mois atteignent 50 € (borne comprise) ; sinon « montant_eleve » si son montant_max du mois dépasse strictement 3 fois la médiane, sur les mois de présence de la clé dans la référence, du panier mensuel (Σ sorties ÷ Σ nombre de la clé sur les comptes de la vue). Seuils sur les montants à 100 % ; montant, montant_max et mediane_panier rendus à la part. Tri par sorties à 100 % décroissantes, puis clé, puis compte.",
+  "arrondi": "Calculs exacts (centimes, fractions), arrondi à la sortie seulement : montants au centime, demi-centime vers l'extérieur (vers le haut pour un montant positif) ; pourcentages et fréquences au dixième, même règle. Médiane d'un nombre pair de valeurs = moyenne des deux valeurs centrales (médiane(900, 950) = 925).",
+  "recalcul": "Chaque attendu est écrit à la main (champ calcul) puis recalculé par un script indépendant (Python, fractions exactes) ; test de mutation : 26 variantes fautives du script (seuils stricts au lieu de larges et l'inverse, médiane basse, mois en cours ignoré, ancre fixe, un seul palier, part ignorée, exclusions retirées, comptes non courants comptés, doublon avec un arrêté, reste au montant habituel, coût d'habitude en somme, tendance sans couverture, effet volume au panier du mois, clés de tous signes, jour non ramené en fin de mois, tolérance de retard ignorée, seuil inhabituel après la part, moyennes sur les seuls mois présents…) : chacune fait échouer au moins un cas."
+ },
+ "recurrents": {
+  "description": "BUD1 tâche 9b : cas chiffrés de Budget.recurrents, Budget.variations et Budget.inhabituel (spec § 6.5, § 11.9, § 17.3). Entrées : lignes de banque_marchands_mois (mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour) et la date du jour. Conventions : conventions_recurrents. Foyer fictif « Camille et Sam » ; clés = noms de la table des marchands (budget-marchands.json), sauf les libellés des comptes fictifs du plan pour les virements (« vir commun exemple », « vir courant exemple », « releve carte exemple »). Attendus écrits à la main (« calcul ») puis recalculés par un script indépendant le 2026-10-16 : aucun écart.",
+  "cas": [
+   {
+    "id": "R1",
+    "titre": "Foyer Camille et Sam sur 13 mois : engagements, abonnements, habitudes, ponctuel, flux exclus ; vues Tout, Commun, Perso",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"},
+      {"id": "c2", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p2"},
+      {"id": "k1", "libelle": "Commun Exemple", "type": "joint", "titulaire": "commun"},
+      {"id": "l1", "libelle": "Livret Exemple", "type": "livret", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2025-11-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2025-12-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-01-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-02-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-03-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-05-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-06-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-08-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2026-10-01", "compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "entrees": 0, "sorties": 1200, "nombre": 1, "montant_min": 1200, "montant_max": 1200, "dernier_jour": 5},
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2025-11-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2025-12-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2026-01-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2026-02-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2026-03-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2026-05-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 90, "nombre": 1, "montant_min": 90, "montant_max": 90, "dernier_jour": 18},
+      {"mois": "2026-06-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 76, "nombre": 1, "montant_min": 76, "montant_max": 76, "dernier_jour": 18},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 80, "nombre": 1, "montant_min": 80, "montant_max": 80, "dernier_jour": 18},
+      {"mois": "2026-08-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 84, "nombre": 1, "montant_min": 84, "montant_max": 84, "dernier_jour": 18},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "entrees": 0, "sorties": 80, "nombre": 1, "montant_min": 80, "montant_max": 80, "dernier_jour": 18},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 15.99, "nombre": 1, "montant_min": 15.99, "montant_max": 15.99, "dernier_jour": 8},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 15.99, "nombre": 1, "montant_min": 15.99, "montant_max": 15.99, "dernier_jour": 8},
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2025-11-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2025-12-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-01-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-02-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-03-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-05-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 20},
+      {"mois": "2025-10-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2025-11-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2025-12-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-01-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-02-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-03-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-04-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-05-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-06-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-07-01", "compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-08-01", "compte_id": "c2", "cle_marchand": "deezer", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 12},
+      {"mois": "2026-09-01", "compte_id": "c2", "cle_marchand": "deezer", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 12},
+      {"mois": "2026-10-01", "compte_id": "c2", "cle_marchand": "deezer", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 12},
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "entrees": 0, "sorties": 45, "nombre": 1, "montant_min": 45, "montant_max": 45, "dernier_jour": 17},
+      {"mois": "2026-01-01", "compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "entrees": 0, "sorties": 45, "nombre": 1, "montant_min": 45, "montant_max": 45, "dernier_jour": 17},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "entrees": 0, "sorties": 45, "nombre": 1, "montant_min": 45, "montant_max": 45, "dernier_jour": 17},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "entrees": 0, "sorties": 45, "nombre": 1, "montant_min": 45, "montant_max": 45, "dernier_jour": 17},
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "maif", "sous_categorie": "assurances", "entrees": 0, "sorties": 216, "nombre": 1, "montant_min": 216, "montant_max": 216, "dernier_jour": 6},
+      {"mois": "2026-10-01", "compte_id": "k1", "cle_marchand": "maif", "sous_categorie": "assurances", "entrees": 0, "sorties": 216, "nombre": 1, "montant_min": 216, "montant_max": 216, "dernier_jour": 6},
+      {"mois": "2025-10-01", "compte_id": "c2", "cle_marchand": "matmut", "sous_categorie": "assurances", "entrees": 0, "sorties": 120, "nombre": 1, "montant_min": 120, "montant_max": 120, "dernier_jour": 25},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 30, "nombre": 10, "montant_min": 2, "montant_max": 4.5, "dernier_jour": 28},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 36, "nombre": 12, "montant_min": 2, "montant_max": 5, "dernier_jour": 29},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 36, "nombre": 12, "montant_min": 2, "montant_max": 5, "dernier_jour": 29},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 36, "nombre": 12, "montant_min": 2, "montant_max": 5, "dernier_jour": 29},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "entrees": 0, "sorties": 18, "nombre": 6, "montant_min": 2, "montant_max": 4, "dernier_jour": 15},
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2025-11-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2025-12-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2026-01-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2026-02-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2026-03-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2026-05-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2026-06-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 300, "nombre": 3, "montant_min": 80, "montant_max": 120, "dernier_jour": 27},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 360, "nombre": 3, "montant_min": 100, "montant_max": 140, "dernier_jour": 27},
+      {"mois": "2026-08-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 280, "nombre": 3, "montant_min": 80, "montant_max": 110, "dernier_jour": 27},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 400, "nombre": 3, "montant_min": 110, "montant_max": 160, "dernier_jour": 27},
+      {"mois": "2026-10-01", "compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "entrees": 0, "sorties": 190, "nombre": 2, "montant_min": 90, "montant_max": 100, "dernier_jour": 14},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 20, "montant_max": 30, "dernier_jour": 26},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 160, "nombre": 6, "montant_min": 20, "montant_max": 32, "dernier_jour": 27},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "entrees": 0, "sorties": 50, "nombre": 2, "montant_min": 24, "montant_max": 26, "dernier_jour": 11},
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2025-11-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2025-12-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-01-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-02-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-03-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-05-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 75, "nombre": 3, "montant_min": 22, "montant_max": 28, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "entrees": 0, "sorties": 140, "nombre": 4, "montant_min": 28, "montant_max": 40, "dernier_jour": 25},
+      {"mois": "2025-10-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2025-11-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2025-12-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-01-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-02-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-03-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-04-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-05-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-06-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-07-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-08-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 65, "nombre": 3, "montant_min": 18, "montant_max": 25, "dernier_jour": 22},
+      {"mois": "2026-09-01", "compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "entrees": 0, "sorties": 20, "nombre": 2, "montant_min": 8, "montant_max": 12, "dernier_jour": 19},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "big mamma", "sous_categorie": "restaurants", "entrees": 0, "sorties": 40, "nombre": 2, "montant_min": 18, "montant_max": 22, "dernier_jour": 21},
+      {"mois": "2025-10-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2025-11-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2025-12-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-01-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-02-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-03-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-04-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-05-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-06-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-07-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-08-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 480, "nombre": 8, "montant_min": 30, "montant_max": 90, "dernier_jour": 28},
+      {"mois": "2026-09-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 420, "nombre": 6, "montant_min": 40, "montant_max": 95, "dernier_jour": 26},
+      {"mois": "2026-10-01", "compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "entrees": 0, "sorties": 240, "nombre": 4, "montant_min": 40, "montant_max": 80, "dernier_jour": 13},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "ikea", "sous_categorie": "shopping", "entrees": 0, "sorties": 420, "nombre": 1, "montant_min": 420, "montant_max": 420, "dernier_jour": 14},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "fleuriste", "sous_categorie": "shopping", "entrees": 0, "sorties": 50, "nombre": 1, "montant_min": 50, "montant_max": 50, "dernier_jour": 12},
+      {"mois": "2026-02-01", "compte_id": "c2", "cle_marchand": "darty", "sous_categorie": "shopping", "entrees": 0, "sorties": 40, "nombre": 1, "montant_min": 40, "montant_max": 40, "dernier_jour": 7},
+      {"mois": "2026-09-01", "compte_id": "c2", "cle_marchand": "darty", "sous_categorie": "shopping", "entrees": 0, "sorties": 650, "nombre": 1, "montant_min": 650, "montant_max": 650, "dernier_jour": 19},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "fnac", "sous_categorie": "shopping", "entrees": 0, "sorties": 89, "nombre": 1, "montant_min": 89, "montant_max": 89, "dernier_jour": 9},
+      {"mois": "2026-10-01", "compte_id": "c2", "cle_marchand": "pathe", "sous_categorie": "sorties", "entrees": 0, "sorties": 24, "nombre": 2, "montant_min": 12, "montant_max": 12, "dernier_jour": 10},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 1},
+      {"mois": "2025-10-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2025-11-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2025-12-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-01-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-02-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-03-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-04-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-05-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-06-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-07-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-08-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-09-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2026-10-01", "compte_id": "c2", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 800, "nombre": 1, "montant_min": 800, "montant_max": 800, "dernier_jour": 2},
+      {"mois": "2025-10-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2025-11-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2025-12-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-01-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-02-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-03-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-05-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-06-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-08-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-10-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 1600, "sorties": 0, "nombre": 2, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 2},
+      {"mois": "2025-10-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2025-11-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2025-12-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-01-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-02-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-04-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-05-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-06-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-07-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-08-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-09-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-10-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 0, "nombre": 1, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-03-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 200, "sorties": 500, "nombre": 2, "montant_min": 500, "montant_max": 500, "dernier_jour": 4},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 1000, "nombre": 1, "montant_min": 1000, "montant_max": 1000, "dernier_jour": 15}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 12,
+       "recurrents": [
+        {"compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 1200, "cout_12_mois": 14400, "derniere_date": "2026-10-05", "prochaine_date": "2026-11-05", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 80, "cout_12_mois": 960, "derniere_date": "2026-09-18", "prochaine_date": "2026-10-18", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 19.99, "cout_12_mois": 239.88, "derniere_date": "2026-10-03", "prochaine_date": "2026-11-03", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "maif", "sous_categorie": "assurances", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "annuel", "annuel": "confirme", "montant_habituel": 216, "cout_12_mois": 216, "derniere_date": "2026-10-06", "prochaine_date": "2027-10-06", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["doublon_possible"]},
+        {"compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "trimestriel", "annuel": null, "montant_habituel": 45, "cout_12_mois": 180, "derniere_date": "2026-07-17", "prochaine_date": "2026-10-17", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c2", "cle_marchand": "matmut", "sous_categorie": "assurances", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "annuel", "annuel": "probable", "montant_habituel": 120, "cout_12_mois": 120, "derniere_date": "2025-10-25", "prochaine_date": "2026-10-25", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["doublon_possible"]},
+        {"compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 15.99, "cout_12_mois": 191.88, "derniere_date": "2026-10-08", "prochaine_date": "2026-11-08", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": {"ancien": 13.49, "nouveau": 15.99, "depuis": "2026-09"}, "statuts": ["hausse_de_prix", "doublon_possible"]},
+        {"compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 12, "cout_12_mois": 144, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["doublon_possible"]},
+        {"compte_id": "c2", "cle_marchand": "deezer", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "musique", "rythme": "mensuel", "annuel": null, "montant_habituel": 11, "cout_12_mois": 132, "derniere_date": "2026-10-12", "prochaine_date": "2026-11-12", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["nouveau"]},
+        {"compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "musique", "rythme": "mensuel", "annuel": null, "montant_habituel": 11, "cout_12_mois": 132, "derniere_date": "2026-07-10", "prochaine_date": null, "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["arrete"]},
+        {"compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 480, "cout_12_mois": 5520, "derniere_date": "2026-10-13", "prochaine_date": null, "frequence": 7.3, "panier_moyen": 62.73, "total_mensuel": 460, "tendance": -4.2, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 360, "cout_12_mois": 4160, "derniere_date": "2026-10-14", "prochaine_date": null, "frequence": 3.0, "panier_moyen": 115.56, "total_mensuel": 346.67, "tendance": 15.6, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 100, "cout_12_mois": 1440, "derniere_date": "2026-10-11", "prochaine_date": null, "frequence": 4.7, "panier_moyen": 25.71, "total_mensuel": 120.0, "tendance": 20.0, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 75, "cout_12_mois": 1160, "derniere_date": "2026-09-25", "prochaine_date": null, "frequence": 3.3, "panier_moyen": 29.0, "total_mensuel": 96.67, "tendance": 28.9, "hausse": null, "statuts": []},
+        {"compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 65, "cout_12_mois": 600, "derniere_date": "2026-09-19", "prochaine_date": null, "frequence": 2.7, "panier_moyen": 18.75, "total_mensuel": 50.0, "tendance": -23.1, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 36, "cout_12_mois": 432, "derniere_date": "2026-10-15", "prochaine_date": null, "frequence": 12.0, "panier_moyen": 3.0, "total_mensuel": 36.0, "tendance": 20.0, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 1435.99,
+        "abonnements": 26.99,
+        "habitudes": 498.0,
+        "ponctuel": 113.0,
+        "total": 2073.98,
+        "parts": {
+         "engagements": 69.2,
+         "abonnements": 1.3,
+         "habitudes": 24.0,
+         "ponctuel": 5.4
+        },
+        "reste_a_prelever": 257.0,
+        "attendus": [
+         {"compte_id": "k1", "cle_marchand": "eau de paris", "date": "2026-10-17", "montant": 45.0, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "edf", "date": "2026-10-18", "montant": 80.0, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "disney plus", "date": "2026-10-20", "montant": 12.0, "en_retard": false},
+         {"compte_id": "c2", "cle_marchand": "matmut", "date": "2026-10-25", "montant": 120.0, "en_retard": false}
+        ],
+        "prochain_prelevement": "2026-10-17",
+        "cout_annuel_abonnements": 467.88
+       }
+      }
+     },
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "commun",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 12,
+       "recurrents": [
+        {"compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 1200, "cout_12_mois": 14400, "derniere_date": "2026-10-05", "prochaine_date": "2026-11-05", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 80, "cout_12_mois": 960, "derniere_date": "2026-09-18", "prochaine_date": "2026-10-18", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "maif", "sous_categorie": "assurances", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "annuel", "annuel": "confirme", "montant_habituel": 216, "cout_12_mois": 216, "derniere_date": "2026-10-06", "prochaine_date": "2027-10-06", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "trimestriel", "annuel": null, "montant_habituel": 45, "cout_12_mois": 180, "derniere_date": "2026-07-17", "prochaine_date": "2026-10-17", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 12, "cout_12_mois": 144, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 360, "cout_12_mois": 4160, "derniere_date": "2026-10-14", "prochaine_date": null, "frequence": 3.0, "panier_moyen": 115.56, "total_mensuel": 346.67, "tendance": 15.6, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 75, "cout_12_mois": 1160, "derniere_date": "2026-09-25", "prochaine_date": null, "frequence": 3.3, "panier_moyen": 29.0, "total_mensuel": 96.67, "tendance": 28.9, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 1416.0,
+        "abonnements": 0,
+        "habitudes": 190.0,
+        "ponctuel": 0,
+        "total": 1606.0,
+        "parts": {
+         "engagements": 88.2,
+         "abonnements": 0.0,
+         "habitudes": 11.8,
+         "ponctuel": 0.0
+        },
+        "reste_a_prelever": 137.0,
+        "attendus": [
+         {"compte_id": "k1", "cle_marchand": "eau de paris", "date": "2026-10-17", "montant": 45.0, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "edf", "date": "2026-10-18", "montant": 80.0, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "disney plus", "date": "2026-10-20", "montant": 12.0, "en_retard": false}
+        ],
+        "prochain_prelevement": "2026-10-17",
+        "cout_annuel_abonnements": 144.0
+       }
+      }
+     },
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "perso",
+       "personne": "p1",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 12,
+       "recurrents": [
+        {"compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 600, "cout_12_mois": 7200, "derniere_date": "2026-10-05", "prochaine_date": "2026-11-05", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 40, "cout_12_mois": 480, "derniere_date": "2026-09-18", "prochaine_date": "2026-10-18", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 19.99, "cout_12_mois": 239.88, "derniere_date": "2026-10-03", "prochaine_date": "2026-11-03", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "maif", "sous_categorie": "assurances", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "annuel", "annuel": "confirme", "montant_habituel": 108, "cout_12_mois": 108, "derniere_date": "2026-10-06", "prochaine_date": "2027-10-06", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "trimestriel", "annuel": null, "montant_habituel": 22.5, "cout_12_mois": 90, "derniere_date": "2026-07-17", "prochaine_date": "2026-10-17", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 15.99, "cout_12_mois": 191.88, "derniere_date": "2026-10-08", "prochaine_date": "2026-11-08", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": {"ancien": 13.49, "nouveau": 15.99, "depuis": "2026-09"}, "statuts": ["hausse_de_prix", "doublon_possible"]},
+        {"compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "part": 0.5, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 6, "cout_12_mois": 72, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["doublon_possible"]},
+        {"compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "part": 0.5, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 180, "cout_12_mois": 2080, "derniere_date": "2026-10-14", "prochaine_date": null, "frequence": 3.0, "panier_moyen": 57.78, "total_mensuel": 173.33, "tendance": 15.6, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "deliveroo", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 100, "cout_12_mois": 1440, "derniere_date": "2026-10-11", "prochaine_date": null, "frequence": 4.7, "panier_moyen": 25.71, "total_mensuel": 120.0, "tendance": 20.0, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "part": 0.5, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 37.5, "cout_12_mois": 580, "derniere_date": "2026-09-25", "prochaine_date": null, "frequence": 3.3, "panier_moyen": 14.5, "total_mensuel": 48.33, "tendance": 28.9, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "boulangerie", "sous_categorie": "courses", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 36, "cout_12_mois": 432, "derniere_date": "2026-10-15", "prochaine_date": null, "frequence": 12.0, "panier_moyen": 3.0, "total_mensuel": 36.0, "tendance": 20.0, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 727.99,
+        "abonnements": 15.99,
+        "habitudes": 163.0,
+        "ponctuel": 89.0,
+        "total": 995.98,
+        "parts": {
+         "engagements": 73.1,
+         "abonnements": 1.6,
+         "habitudes": 16.4,
+         "ponctuel": 8.9
+        },
+        "reste_a_prelever": 68.5,
+        "attendus": [
+         {"compte_id": "k1", "cle_marchand": "eau de paris", "date": "2026-10-17", "montant": 22.5, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "edf", "date": "2026-10-18", "montant": 40.0, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "disney plus", "date": "2026-10-20", "montant": 6.0, "en_retard": false}
+        ],
+        "prochain_prelevement": "2026-10-17",
+        "cout_annuel_abonnements": 263.88
+       }
+      }
+     },
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "perso",
+       "personne": "p2",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 12,
+       "recurrents": [
+        {"compte_id": "k1", "cle_marchand": "paris habitat", "sous_categorie": "loyer", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 600, "cout_12_mois": 7200, "derniere_date": "2026-10-05", "prochaine_date": "2026-11-05", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "edf", "sous_categorie": "energie", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 40, "cout_12_mois": 480, "derniere_date": "2026-09-18", "prochaine_date": "2026-10-18", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c2", "cle_marchand": "matmut", "sous_categorie": "assurances", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "annuel", "annuel": "probable", "montant_habituel": 120, "cout_12_mois": 120, "derniere_date": "2025-10-25", "prochaine_date": "2026-10-25", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["doublon_possible"]},
+        {"compte_id": "k1", "cle_marchand": "maif", "sous_categorie": "assurances", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "annuel", "annuel": "confirme", "montant_habituel": 108, "cout_12_mois": 108, "derniere_date": "2026-10-06", "prochaine_date": "2027-10-06", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["doublon_possible"]},
+        {"compte_id": "k1", "cle_marchand": "eau de paris", "sous_categorie": "energie", "part": 0.5, "famille": "engagement", "famille_marchand": null, "rythme": "trimestriel", "annuel": null, "montant_habituel": 22.5, "cout_12_mois": 90, "derniere_date": "2026-07-17", "prochaine_date": "2026-10-17", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c2", "cle_marchand": "deezer", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "musique", "rythme": "mensuel", "annuel": null, "montant_habituel": 11, "cout_12_mois": 132, "derniere_date": "2026-10-12", "prochaine_date": "2026-11-12", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["nouveau"]},
+        {"compte_id": "c2", "cle_marchand": "spotify", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "musique", "rythme": "mensuel", "annuel": null, "montant_habituel": 11, "cout_12_mois": 132, "derniere_date": "2026-07-10", "prochaine_date": null, "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["arrete"]},
+        {"compte_id": "k1", "cle_marchand": "disney plus", "sous_categorie": "abonnements", "part": 0.5, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 6, "cout_12_mois": 72, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c2", "cle_marchand": "lidl", "sous_categorie": "courses", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 480, "cout_12_mois": 5520, "derniere_date": "2026-10-13", "prochaine_date": null, "frequence": 7.3, "panier_moyen": 62.73, "total_mensuel": 460, "tendance": -4.2, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "carrefour market", "sous_categorie": "courses", "part": 0.5, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 180, "cout_12_mois": 2080, "derniere_date": "2026-10-14", "prochaine_date": null, "frequence": 3.0, "panier_moyen": 57.78, "total_mensuel": 173.33, "tendance": 15.6, "hausse": null, "statuts": []},
+        {"compte_id": "c2", "cle_marchand": "mcdonald s", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 65, "cout_12_mois": 600, "derniere_date": "2026-09-19", "prochaine_date": null, "frequence": 2.7, "panier_moyen": 18.75, "total_mensuel": 50.0, "tendance": -23.1, "hausse": null, "statuts": []},
+        {"compte_id": "k1", "cle_marchand": "pizzeria", "sous_categorie": "restaurants", "part": 0.5, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 37.5, "cout_12_mois": 580, "derniere_date": "2026-09-25", "prochaine_date": null, "frequence": 3.3, "panier_moyen": 14.5, "total_mensuel": 48.33, "tendance": 28.9, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 708.0,
+        "abonnements": 11.0,
+        "habitudes": 335.0,
+        "ponctuel": 24.0,
+        "total": 1078.0,
+        "parts": {
+         "engagements": 65.7,
+         "abonnements": 1.0,
+         "habitudes": 31.1,
+         "ponctuel": 2.2
+        },
+        "reste_a_prelever": 188.5,
+        "attendus": [
+         {"compte_id": "k1", "cle_marchand": "eau de paris", "date": "2026-10-17", "montant": 22.5, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "edf", "date": "2026-10-18", "montant": 40.0, "en_retard": false},
+         {"compte_id": "k1", "cle_marchand": "disney plus", "date": "2026-10-20", "montant": 6.0, "en_retard": false},
+         {"compte_id": "c2", "cle_marchand": "matmut", "date": "2026-10-25", "montant": 120.0, "en_retard": false}
+        ],
+        "prochain_prelevement": "2026-10-17",
+        "cout_annuel_abonnements": 204.0
+       }
+      }
+     },
+     {
+      "fonction": "variations",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-09",
+       "niveau": "sous_categorie",
+       "sous_categorie": "restaurants"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois": "2026-09",
+       "niveau": "sous_categorie",
+       "sous_categorie": "restaurants",
+       "reference": {
+        "du": "2025-10",
+        "au": "2026-08",
+        "n": 11,
+        "periode_courte": false,
+        "montant": 240.0,
+        "nombre": 10,
+        "panier": 24.0
+       },
+       "mois_analyse": {
+        "montant": 360.0,
+        "nombre": 14,
+        "panier": 25.71
+       },
+       "ecart": 120.0,
+       "delta_nombre": 4,
+       "effet_volume": 96.0,
+       "effet_prix": 24.0,
+       "cles": [
+        {"compte_id": "k1", "cle_marchand": "pizzeria", "ecart": 65.0},
+        {"compte_id": "c1", "cle_marchand": "deliveroo", "ecart": 60.0},
+        {"compte_id": "k1", "cle_marchand": "big mamma", "ecart": 40.0}
+       ]
+      }
+     },
+     {
+      "fonction": "variations",
+      "options": {
+       "vue": "perso",
+       "personne": "p2",
+       "mois": "2026-09",
+       "niveau": "cle",
+       "compte_id": "c2",
+       "cle_marchand": "lidl"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois": "2026-09",
+       "niveau": "cle",
+       "compte_id": "c2",
+       "cle_marchand": "lidl",
+       "reference": {
+        "du": "2025-10",
+        "au": "2026-08",
+        "n": 11,
+        "periode_courte": false,
+        "montant": 480.0,
+        "nombre": 8,
+        "panier": 60.0
+       },
+       "mois_analyse": {
+        "montant": 420.0,
+        "nombre": 6,
+        "panier": 70.0
+       },
+       "ecart": -60.0,
+       "delta_nombre": -2,
+       "effet_volume": -120.0,
+       "effet_prix": 60.0,
+       "cles": null
+      }
+     },
+     {
+      "fonction": "inhabituel",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-09"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois": "2026-09",
+       "depenses": [
+        {"compte_id": "c2", "cle_marchand": "darty", "sous_categorie": "shopping", "montant": 650.0, "montant_max": 650.0, "raison": "montant_eleve", "mediane_panier": 40.0},
+        {"compte_id": "c1", "cle_marchand": "ikea", "sous_categorie": "shopping", "montant": 420.0, "montant_max": 420.0, "raison": "nouvelle_cle", "mediane_panier": null},
+        {"compte_id": "k1", "cle_marchand": "fleuriste", "sous_categorie": "shopping", "montant": 50.0, "montant_max": 50.0, "raison": "nouvelle_cle", "mediane_panier": null}
+       ]
+      }
+     },
+     {
+      "fonction": "inhabituel",
+      "options": {
+       "vue": "perso",
+       "personne": "p1",
+       "mois": "2026-09"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois": "2026-09",
+       "depenses": [
+        {"compte_id": "c1", "cle_marchand": "ikea", "sous_categorie": "shopping", "montant": 420.0, "montant_max": 420.0, "raison": "nouvelle_cle", "mediane_panier": null},
+        {"compte_id": "k1", "cle_marchand": "fleuriste", "sous_categorie": "shopping", "montant": 25.0, "montant_max": 25.0, "raison": "nouvelle_cle", "mediane_panier": null}
+       ]
+      }
+     },
+     {
+      "fonction": "inhabituel",
+      "options": {
+       "vue": "commun",
+       "mois": "2026-09"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois": "2026-09",
+       "depenses": [
+        {"compte_id": "k1", "cle_marchand": "fleuriste", "sous_categorie": "shopping", "montant": 50.0, "montant_max": 50.0, "raison": "nouvelle_cle", "mediane_panier": null}
+       ]
+      }
+     }
+    ],
+    "calcul": [
+     "Fenêtre : 2025-10 à 2026-10 (m0 = 2026-10, today 2026-10-16) ; données dès 2025-10 : 12 mois complets couverts.",
+     "paris habitat (loyer, k1) : présent tous les mois ; ancre 2026-10 ; fenêtre 07..10 = 4 présences ; montants complets 07..09 = 1 200 ×3, 1 palier ; engagement mensuel ; habituel 1 200 ; coût 1 200 × 12 = 14 400 ; déjà prélevé le 05/10 → prochaine 2026-11-05, hors reste.",
+     "edf (energie, k1) : ancre 2026-09 (rien en octobre) ; fenêtre 06..09 = 76, 80, 84, 80 : 80 est à 5,3 % de 76 (palier [76,80], médiane 78), 84 à 7,7 % de 78, 80 à 0 % de 80 → 1 palier ; médiane(76,80,80,84) = 80 ; coût 960 ; prochaine 2026-10-18 > today → reste 80.",
+     "free mobile (telecom, c1) : 19,99 tous les mois ; coût 239,88 ; prélevé le 03/10.",
+     "netflix (abonnements, c1, famille video) : 13,49 jusqu'en 2026-08, 15,99 en 09 et 10 ; ancre 2026-10 ; montants complets de la fenêtre 07, 08, 09 = 13,49, 13,49, 15,99 : 15,99 est à 18,5 % de 13,49 → 2 paliers (stable : un seul changement de prix) ; habituel = médiane du dernier palier = 15,99 ; coût 191,88 ; hausse : dernier 15,99 (octobre) contre médiane(13,49 ; 13,49 ; 15,99) = 13,49 des 3 présences précédentes : 15,99 > 13,49 × 1,05 = 14,1645 et 15,99 − 13,49 = 2,50 ≥ 1 ; depuis 2026-09 (09 et 10 remplissent les deux conditions, 08 non) ; soit 2,50 € par mois, 30 € par an.",
+     "disney plus (abonnements, k1, video) : 12 tous les mois jusqu'en 09 ; prochaine 2026-10-20 → reste 12 ; doublon possible avec netflix (même famille video, aucun « arrêté ? »).",
+     "spotify (abonnements, c2, musique) : dernier prélèvement 2026-07-10 ; ancre 2026-07, fenêtre 04..07 = 4 présences → mensuel ; 2026-10-16 − 2026-07-10 = 98 jours > 45 → « arrêté ? » ; pas de prochaine date ; sort des doublons, du reste et du coût annuel des abonnements.",
+     "deezer (abonnements, c2, musique) : présent 08, 09, 10 ; ancre 10, fenêtre 07..10 = 3 présences → mensuel (le mois en cours compte parce qu'il porte déjà la sortie) ; première présence 2026-08 = m0 − 2 → « nouveau » ; 2 présences précédentes seulement → pas de test de hausse ; pas de doublon (spotify est « arrêté ? »).",
+     "eau de paris (energie, k1) : 2025-10, 2026-01, 04, 07 ; pas mensuel (2 présences sur 04..07, 2 sur 02..07) ; 3 dernières présences 01, 04, 07 espacées de 3 mois → trimestriel ; habituel 45 ; coût 45 × 4 = 180 ; prochaine 2026-07-17 + 3 mois = 2026-10-17 → reste 45 ; 2026-10-16 − 2026-07-17 = 91 jours ≤ 136,5 → pas « arrêté ? ».",
+     "maif (assurances, k1) : 2025-10-06 et 2026-10-06, 2 présences à 12 mois → annuel confirmé ; montant du seul mois complet 216 → habituel 216, coût 216 ; prochaine 2027-10-06.",
+     "matmut (assurances, c2) : une seule présence, 2025-10-25, 120 € (< 150 mais sous-catégorie « annuelle probable ») → annuel probable ; prochaine 2026-10-25 → reste 120 ; doublon possible avec maif (deux assurances, clés sans recouvrement) dans Tout et Perso p2, pas dans Commun ni Perso p1 (une seule assurance visible).",
+     "boulangerie (courses, c1) : nombre 12, 12, 12 sur 07..09 → fréquence 12,0 ≥ 4 → habitude ; panier 108 ÷ 36 = 3,00 ; total mensuel 36 ; habituel médiane(36,36,36) = 36 ; coût 36 × 12 = 432 ; tendance (36 − 30) ÷ 30 = +20,0 %.",
+     "carrefour market (courses, k1) : nombre 3 → pas de fréquence ; 06..09 = 300, 360, 280, 400 : 360 à 20 % de 300, 280 à 22 % de 360, 400 à 43 % de 280 → 4 paliers → habitude « montant variable » ; fréquence 3,0 ; panier 1 040 ÷ 9 = 115,56 ; total 1 040 ÷ 3 = 346,67 ; habituel médiane(360,280,400) = 360 ; coût 1 040 × 4 = 4 160 ; tendance (346,67 − 300) ÷ 300 = +15,6 %.",
+     "deliveroo (restaurants, c1) : nombre 4, 4, 6 → 14 ÷ 3 = 4,67 → habitude ; panier (100 + 100 + 160) ÷ 14 = 25,71 ; total 360 ÷ 3 = 120 ; habituel médiane(100, 100, 160) = 100 ; coût 1 440 ; tendance (120 − 100) ÷ 100 = +20,0 %.",
+     "pizzeria (restaurants, k1) : nombre 3, 3, 4 (3,33 < 4) ; 06..09 = 75, 75, 75, 140 → 2 paliers → habitude ; panier 290 ÷ 10 = 29,00 ; total 96,67 ; habituel 75 ; coût 290 × 4 = 1 160 ; tendance (96,67 − 75) ÷ 75 = +28,9 %.",
+     "mcdonald s (restaurants, c2) : nombre 3, 3, 2 ; 65, 65, 65, 20 → 2 paliers → habitude ; panier 150 ÷ 8 = 18,75 ; total 50 ; habituel 65 ; coût 600 ; tendance (50 − 65) ÷ 65 = −23,1 %.",
+     "lidl (courses, c2) : nombre 8, 8, 6 → 7,33 → habitude ; panier 1 380 ÷ 22 = 62,73 ; total 460 ; habituel médiane(480,480,420) = 480 ; coût 5 520 ; tendance (460 − 480) ÷ 480 = −4,2 %.",
+     "Ponctuel : big mamma (1 présence), ikea (1 présence ; 420 ≥ 150 ferait un « annuel probable », mais shopping n'est ni engagement ni abonnement), darty (2 présences à 7 mois), fnac et pathe (mois en cours seulement).",
+     "Exclus : vir commun exemple (apport_commun, c1, c2, k1), livret a (epargne_precaution, c1), vir courant exemple (virement_interne, 1 000 € en 09, jamais inhabituel), et tout le compte l1 (livret, pas un compte du budget) ; fleuriste (50 € en 09) est ponctuel ; aucun n'entre dans la synthèse.",
+     "Synthèse Tout 2026-10 : engagements 1 200 + 19,99 + 216 = 1 435,99 ; abonnements 15,99 + 11 = 26,99 ; habitudes 18 + 190 + 50 + 240 = 498 ; ponctuel 89 + 24 = 113 ; total 2 073,98 ; parts 69,2 / 1,3 / 24,0 / 5,4 ; reste 45 + 80 + 12 + 120 = 257 ; coût annuel des abonnements 191,88 + 144 + 132 = 467,88 (spotify exclu).",
+     "Commun : k1 à 100 % ; une seule assurance (maif) et un seul abonnement video → aucun doublon ; synthèse 1 200 + 216 = 1 416, habitudes 190, total 1 606 ; reste 45 + 80 + 12 = 137.",
+     "Perso p1 : c1 à 100 % + k1 à 50 % (montants seuls, statuts identiques) ; synthèse 19,99 + 600 + 108 = 727,99 ; 15,99 ; 18 + 95 + 50 = 163 ; 89 ; total 995,98 ; reste 22,50 + 40 + 6 = 68,50.",
+     "Perso p2 : c2 + k1 à 50 % ; synthèse 600 + 108 = 708 ; 11 ; 95 + 240 = 335 ; 24 ; total 1 078 ; reste 22,50 + 40 + 6 + 120 = 188,50. Contrôle : 995,98 + 1 078 = 2 073,98 et 68,50 + 188,50 = 257 (Tout).",
+     "Variation restaurants (Tout, 2026-09) : référence 2025-10 à 2026-08 (11 mois) : 100 + 75 + 65 = 240 €, 4 + 3 + 3 = 10 passages chaque mois → S0 240, N0 10, P0 24 ; septembre : 160 + 140 + 20 + 40 = 360 €, 6 + 4 + 2 + 2 = 14 ; volume (14 − 10) × 24 = +96 ; prix (360 ÷ 14 − 24) × 14 = 360 − 336 = +24 ; somme +120 (« 4 passages de plus (+96 €), panier un peu plus élevé (+24 €) »). Clés de même signe que l'écart : pizzeria +65, deliveroo +60, big mamma +40 ; mcdonald s −45 est écartée bien que son écart absolu dépasse celui de big mamma.",
+     "Variation lidl (Perso p2, 2026-09) : S0 480, N0 8, P0 60 ; S1 420, N1 6, P1 70 ; volume (6 − 8) × 60 = −120 ; prix (70 − 60) × 6 = +60 ; écart −60.",
+     "Inhabituel 2026-09 (Tout) : darty, déjà vue (40 € en 2026-02), montant_max 650 > 3 × 40 = 120 → montant élevé ; ikea, jamais vue, 420 ≥ 50 → nouvelle clé ; fleuriste (k1), jamais vue, 50,00 pile ≥ 50 → nouvelle clé. Non retenus : big mamma (jamais vue mais 40 < 50), vir courant exemple (exclu), les autres clés (montant_max ≤ 3 × leur panier médian : deliveroo 32 ≤ 75, pizzeria 40 ≤ 75, lidl 95 ≤ 180, carrefour market 160 ≤ 300, boulangerie 5 ≤ 9…). Perso p1 : ikea et fleuriste à sa part (25,00 : le seuil de 50 € se lit sur le montant à 100 %) ; Commun : fleuriste ; tri par montant à 100 % décroissant."
+    ]
+   },
+   {
+    "id": "R2",
+    "titre": "Bornes à ±10 % pile (stabilité et montant variable)",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "pathe", "sous_categorie": "sorties", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "pathe", "sous_categorie": "sorties", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "pathe", "sous_categorie": "sorties", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "pathe", "sous_categorie": "sorties", "entrees": 0, "sorties": 22.0, "nombre": 1, "montant_min": 22.0, "montant_max": 22.0, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "ugc", "sous_categorie": "sorties", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "ugc", "sous_categorie": "sorties", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "ugc", "sous_categorie": "sorties", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "ugc", "sous_categorie": "sorties", "entrees": 0, "sorties": 22.01, "nombre": 1, "montant_min": 22.01, "montant_max": 22.01, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 22.0, "nombre": 1, "montant_min": 22.0, "montant_max": 22.0, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "bouygues telecom", "sous_categorie": "telecom", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "bouygues telecom", "sous_categorie": "telecom", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "bouygues telecom", "sous_categorie": "telecom", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "bouygues telecom", "sous_categorie": "telecom", "entrees": 0, "sorties": 22.01, "nombre": 1, "montant_min": 22.01, "montant_max": 22.01, "dernier_jour": 20}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 4,
+       "recurrents": [
+        {"compte_id": "c1", "cle_marchand": "bouygues telecom", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 22.01, "cout_12_mois": 264.12, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": {"ancien": 20.0, "nouveau": 22.01, "depuis": "2026-09"}, "statuts": ["hausse_de_prix"]},
+        {"compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 20.0, "cout_12_mois": 240.0, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": {"ancien": 20.0, "nouveau": 22.0, "depuis": "2026-09"}, "statuts": ["hausse_de_prix"]},
+        {"compte_id": "c1", "cle_marchand": "ugc", "sous_categorie": "sorties", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 20.0, "cout_12_mois": 248.04, "derniere_date": "2026-09-20", "prochaine_date": null, "frequence": 1.0, "panier_moyen": 20.67, "total_mensuel": 20.67, "tendance": null, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 0,
+        "abonnements": 0,
+        "habitudes": 0,
+        "ponctuel": 0,
+        "total": 0,
+        "parts": null,
+        "reste_a_prelever": 44.01,
+        "attendus": [
+         {"compte_id": "c1", "cle_marchand": "bouygues telecom", "date": "2026-10-20", "montant": 22.01, "en_retard": false},
+         {"compte_id": "c1", "cle_marchand": "sosh", "date": "2026-10-20", "montant": 22.0, "en_retard": false}
+        ],
+        "prochain_prelevement": "2026-10-20",
+        "cout_annuel_abonnements": 0
+       }
+      }
+     }
+    ],
+    "calcul": [
+     "Données de 2026-06 à 2026-09 : 4 mois complets. Chaque clé : 20 € en 06, 07, 08, puis 22,00 ou 22,01 en 09.",
+     "pathe : 22,00 est à 10,0 % pile de 20 → même palier (borne comprise) → montant non variable ; fréquence 1 → ponctuel (absent de la liste).",
+     "ugc : 22,01 est à 10,05 % → 2 paliers → présence 4 sur 4 avec montant variable → habitude ; fréquence 1,0 ; panier = total = 62,01 ÷ 3 = 20,67 ; habituel médiane(20, 20, 22,01) = 20 ; coût 62,01 × 4 = 248,04 ; tendance null (06..08 de la base de tendance : 2026-04 et 05 précèdent les données).",
+     "sosh : 1 palier → engagement, habituel médiane(20,20,20,22) = 20, coût 240 ; hausse : 22 > 20 × 1,05 = 21 et +2 ≥ 1 → hausse depuis 2026-09.",
+     "bouygues telecom : 2 paliers (un changement de prix) → toujours stable → engagement, habituel = dernier palier 22,01, coût 264,12 ; hausse depuis 2026-09.",
+     "Reste : 22,01 + 22,00 = 44,01 (dernier montant, prix en vigueur) ; aucune sortie en octobre → synthèse à 0, parts null."
+    ]
+   },
+   {
+    "id": "R3",
+    "titre": "Habitude à 4 fois par mois pile, mois manquant dans la tendance, habitude nouvelle",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "exki", "sous_categorie": "restaurants", "entrees": 0, "sorties": 40, "nombre": 4, "montant_min": 8, "montant_max": 12, "dernier_jour": 18},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "exki", "sous_categorie": "restaurants", "entrees": 0, "sorties": 40, "nombre": 4, "montant_min": 8, "montant_max": 12, "dernier_jour": 18},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "exki", "sous_categorie": "restaurants", "entrees": 0, "sorties": 40, "nombre": 4, "montant_min": 8, "montant_max": 12, "dernier_jour": 18},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "exki", "sous_categorie": "restaurants", "entrees": 0, "sorties": 60, "nombre": 6, "montant_min": 8, "montant_max": 12, "dernier_jour": 18},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "exki", "sous_categorie": "restaurants", "entrees": 0, "sorties": 60, "nombre": 6, "montant_min": 8, "montant_max": 12, "dernier_jour": 18},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "brioche doree", "sous_categorie": "restaurants", "entrees": 0, "sorties": 20, "nombre": 4, "montant_min": 4, "montant_max": 6, "dernier_jour": 25},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "brioche doree", "sous_categorie": "restaurants", "entrees": 0, "sorties": 20, "nombre": 4, "montant_min": 4, "montant_max": 6, "dernier_jour": 25},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "brioche doree", "sous_categorie": "restaurants", "entrees": 0, "sorties": 20, "nombre": 4, "montant_min": 4, "montant_max": 6, "dernier_jour": 25},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "pomme de pain", "sous_categorie": "restaurants", "entrees": 0, "sorties": 20, "nombre": 4, "montant_min": 4, "montant_max": 6, "dernier_jour": 24},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "pomme de pain", "sous_categorie": "restaurants", "entrees": 0, "sorties": 20, "nombre": 4, "montant_min": 4, "montant_max": 6, "dernier_jour": 24},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "pomme de pain", "sous_categorie": "restaurants", "entrees": 0, "sorties": 20, "nombre": 3, "montant_min": 5, "montant_max": 8, "dernier_jour": 24},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "cojean", "sous_categorie": "restaurants", "entrees": 0, "sorties": 50, "nombre": 5, "montant_min": 8, "montant_max": 12, "dernier_jour": 27},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "cojean", "sous_categorie": "restaurants", "entrees": 0, "sorties": 70, "nombre": 7, "montant_min": 8, "montant_max": 12, "dernier_jour": 28}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 6,
+       "recurrents": [
+        {"compte_id": "c1", "cle_marchand": "cojean", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": null, "annuel": null, "montant_habituel": 50.0, "cout_12_mois": 480.0, "derniere_date": "2026-09-28", "prochaine_date": null, "frequence": 4.0, "panier_moyen": 10.0, "total_mensuel": 40.0, "tendance": null, "hausse": null, "statuts": ["nouveau"]},
+        {"compte_id": "c1", "cle_marchand": "exki", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 60.0, "cout_12_mois": 480.0, "derniere_date": "2026-09-18", "prochaine_date": null, "frequence": 4.0, "panier_moyen": 10.0, "total_mensuel": 40.0, "tendance": 0.0, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "brioche doree", "sous_categorie": "restaurants", "part": 1, "famille": "habitude", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 20.0, "cout_12_mois": 240.0, "derniere_date": "2026-09-25", "prochaine_date": null, "frequence": 4.0, "panier_moyen": 5.0, "total_mensuel": 20.0, "tendance": null, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 0,
+        "abonnements": 0,
+        "habitudes": 0,
+        "ponctuel": 0,
+        "total": 0,
+        "parts": null,
+        "reste_a_prelever": 0,
+        "attendus": [],
+        "prochain_prelevement": null,
+        "cout_annuel_abonnements": 0
+       }
+      }
+     }
+    ],
+    "calcul": [
+     "Données de 2026-04 à 2026-09 : 6 mois complets.",
+     "brioche doree : nombre 4, 4, 4 sur 07..09 → moyenne 4,0 ≥ 4 (borne comprise) → habitude ; montants constants (1 palier) : c'est la fréquence qui décide ; panier 60 ÷ 12 = 5,00 ; total 20 ; coût 240 ; tendance : base 04..06 couverte mais vide (0) → null.",
+     "pomme de pain : nombre 4, 4, 3 → 3,67 < 4 ; montants 20, 20, 20 (1 palier) → ni fréquence ni montant variable → ponctuel.",
+     "exki : 04..06 = 4 passages, 40 € ; 07 absent ; 08, 09 = 6 passages, 60 € ; fréquence (0 + 6 + 6) ÷ 3 = 4,0 → habitude ; panier 120 ÷ 12 = 10,00 ; total (0 + 60 + 60) ÷ 3 = 40 ; habituel médiane(0, 60, 60) = 60 ; coût 40 × 12 = 480 ; tendance (40 − 40) ÷ 40 = 0,0 % (le mois manquant compte 0) ; rythme : 3 présences sur 06..09 → mensuel.",
+     "cojean : 08 et 09, 5 puis 7 passages → (0 + 5 + 7) ÷ 3 = 4,0 → habitude ; première présence 2026-08 = m0 − 2 → nouveau ; tendance null (base 0) ; rythme null (2 présences) ; habituel médiane(0, 50, 70) = 50 ; coût 480.",
+     "Tri : coût décroissant puis clé : cojean 480, exki 480, brioche doree 240."
+    ]
+   },
+   {
+    "id": "R4",
+    "titre": "Hausse de prix aux bornes : +5 % pile, +1 € pile",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "canal plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "canal plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "canal plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "canal plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "canal plus", "sous_categorie": "abonnements", "entrees": 0, "sorties": 21.0, "nombre": 1, "montant_min": 21.0, "montant_max": 21.0, "dernier_jour": 20},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "apple music", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "apple music", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "apple music", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "apple music", "sous_categorie": "abonnements", "entrees": 0, "sorties": 20, "nombre": 1, "montant_min": 20, "montant_max": 20, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "apple music", "sous_categorie": "abonnements", "entrees": 0, "sorties": 21.01, "nombre": 1, "montant_min": 21.01, "montant_max": 21.01, "dernier_jour": 20},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "le monde", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "le monde", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "le monde", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "le monde", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "le monde", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10.99, "nombre": 1, "montant_min": 10.99, "montant_max": 10.99, "dernier_jour": 20},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "dropbox", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "dropbox", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "dropbox", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "dropbox", "sous_categorie": "abonnements", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 20},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "dropbox", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11.0, "nombre": 1, "montant_min": 11.0, "montant_max": 11.0, "dernier_jour": 20}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 5,
+       "recurrents": [
+        {"compte_id": "c1", "cle_marchand": "apple music", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "musique", "rythme": "mensuel", "annuel": null, "montant_habituel": 20.0, "cout_12_mois": 240.0, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": {"ancien": 20.0, "nouveau": 21.01, "depuis": "2026-09"}, "statuts": ["hausse_de_prix"]},
+        {"compte_id": "c1", "cle_marchand": "canal plus", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 20.0, "cout_12_mois": 240.0, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "dropbox", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "logiciel", "rythme": "mensuel", "annuel": null, "montant_habituel": 10.0, "cout_12_mois": 120.0, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": {"ancien": 10.0, "nouveau": 11.0, "depuis": "2026-09"}, "statuts": ["hausse_de_prix"]},
+        {"compte_id": "c1", "cle_marchand": "le monde", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "presse", "rythme": "mensuel", "annuel": null, "montant_habituel": 10.0, "cout_12_mois": 120.0, "derniere_date": "2026-09-20", "prochaine_date": "2026-10-20", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 0,
+        "abonnements": 0,
+        "habitudes": 0,
+        "ponctuel": 0,
+        "total": 0,
+        "parts": null,
+        "reste_a_prelever": 64.0,
+        "attendus": [
+         {"compte_id": "c1", "cle_marchand": "apple music", "date": "2026-10-20", "montant": 21.01, "en_retard": false},
+         {"compte_id": "c1", "cle_marchand": "canal plus", "date": "2026-10-20", "montant": 21.0, "en_retard": false},
+         {"compte_id": "c1", "cle_marchand": "dropbox", "date": "2026-10-20", "montant": 11.0, "en_retard": false},
+         {"compte_id": "c1", "cle_marchand": "le monde", "date": "2026-10-20", "montant": 10.99, "en_retard": false}
+        ],
+        "prochain_prelevement": "2026-10-20",
+        "cout_annuel_abonnements": 720.0
+       }
+      }
+     }
+    ],
+    "calcul": [
+     "Chaque clé : 4 mois au même prix (05..08) puis un dernier montant en 09 ; référence de hausse = médiane des 3 présences précédentes.",
+     "canal plus : 21,00 contre 20 → +5,0 % pile, pas strictement au-dessus de 5 % → pas de hausse (l'écart de 1 € ne suffit pas seul).",
+     "apple music : 21,01 → +5,05 % et +1,01 € → hausse.",
+     "le monde : 10,99 contre 10 → +9,9 % mais +0,99 € < 1 € → pas de hausse.",
+     "dropbox : 11,00 → +10 % et +1,00 € pile (borne comprise) → hausse.",
+     "Tous restent dans un palier (écart ≤ 10 %) → habituel = médiane(4 mois de la fenêtre 06..09) = 20 ou 10 ; coût × 12.",
+     "Familles video, musique, logiciel, presse : une seule par famille → aucun doublon. Reste = derniers montants 21,01 + 21,00 + 11,00 + 10,99 = 64,00 ; coût annuel des abonnements 240 + 240 + 120 + 120 = 720."
+    ]
+   },
+   {
+    "id": "R5",
+    "titre": "Flux exclus (§ 4) qui rempliraient sinon la règle d'une habitude : jamais récurrents, jamais inhabituels",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"},
+      {"id": "c2", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p2"},
+      {"id": "k1", "libelle": "Commun Exemple", "type": "joint", "titulaire": "commun"},
+      {"id": "l1", "libelle": "Livret Exemple", "type": "livret", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 600, "nombre": 4, "montant_min": 150, "montant_max": 150, "dernier_jour": 22},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 600, "nombre": 4, "montant_min": 150, "montant_max": 150, "dernier_jour": 22},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 600, "nombre": 4, "montant_min": 150, "montant_max": 150, "dernier_jour": 22},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 600, "nombre": 4, "montant_min": 150, "montant_max": 150, "dernier_jour": 22},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 600, "nombre": 4, "montant_min": 150, "montant_max": 150, "dernier_jour": 22},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 600, "nombre": 4, "montant_min": 150, "montant_max": 150, "dernier_jour": 22},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 0, "sorties": 600, "nombre": 4, "montant_min": 150, "montant_max": 150, "dernier_jour": 22},
+      {"mois": "2026-04-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 600, "sorties": 0, "nombre": 4, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-05-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 600, "sorties": 0, "nombre": 4, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-06-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 600, "sorties": 0, "nombre": 4, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-07-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 600, "sorties": 0, "nombre": 4, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-08-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 600, "sorties": 0, "nombre": 4, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 600, "sorties": 0, "nombre": 4, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-10-01", "compte_id": "k1", "cle_marchand": "vir commun exemple", "sous_categorie": "apport_commun", "entrees": 600, "sorties": 0, "nombre": 4, "montant_min": null, "montant_max": null, "dernier_jour": null},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 1, "montant_min": 100, "montant_max": 100, "dernier_jour": 5},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 200, "nombre": 1, "montant_min": 200, "montant_max": 200, "dernier_jour": 5},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 150, "nombre": 1, "montant_min": 150, "montant_max": 150, "dernier_jour": 5},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 300, "nombre": 1, "montant_min": 300, "montant_max": 300, "dernier_jour": 5},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 250, "nombre": 1, "montant_min": 250, "montant_max": 250, "dernier_jour": 5},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 120, "nombre": 1, "montant_min": 120, "montant_max": 120, "dernier_jour": 5},
+      {"mois": "2026-04-01", "compte_id": "c2", "cle_marchand": "versement per", "sous_categorie": "investissement", "entrees": 0, "sorties": 400, "nombre": 4, "montant_min": 100, "montant_max": 100, "dernier_jour": 25},
+      {"mois": "2026-05-01", "compte_id": "c2", "cle_marchand": "versement per", "sous_categorie": "investissement", "entrees": 0, "sorties": 400, "nombre": 4, "montant_min": 100, "montant_max": 100, "dernier_jour": 25},
+      {"mois": "2026-06-01", "compte_id": "c2", "cle_marchand": "versement per", "sous_categorie": "investissement", "entrees": 0, "sorties": 400, "nombre": 4, "montant_min": 100, "montant_max": 100, "dernier_jour": 25},
+      {"mois": "2026-07-01", "compte_id": "c2", "cle_marchand": "versement per", "sous_categorie": "investissement", "entrees": 0, "sorties": 400, "nombre": 4, "montant_min": 100, "montant_max": 100, "dernier_jour": 25},
+      {"mois": "2026-08-01", "compte_id": "c2", "cle_marchand": "versement per", "sous_categorie": "investissement", "entrees": 0, "sorties": 400, "nombre": 4, "montant_min": 100, "montant_max": 100, "dernier_jour": 25},
+      {"mois": "2026-09-01", "compte_id": "c2", "cle_marchand": "versement per", "sous_categorie": "investissement", "entrees": 0, "sorties": 400, "nombre": 4, "montant_min": 100, "montant_max": 100, "dernier_jour": 25},
+      {"mois": "2026-10-01", "compte_id": "c2", "cle_marchand": "versement per", "sous_categorie": "investissement", "entrees": 0, "sorties": 400, "nombre": 4, "montant_min": 100, "montant_max": 100, "dernier_jour": 25},
+      {"mois": "2026-04-01", "compte_id": "c2", "cle_marchand": "vir courant exemple", "sous_categorie": "transfert_foyer", "entrees": 0, "sorties": 200, "nombre": 4, "montant_min": 50, "montant_max": 50, "dernier_jour": 26},
+      {"mois": "2026-05-01", "compte_id": "c2", "cle_marchand": "vir courant exemple", "sous_categorie": "transfert_foyer", "entrees": 0, "sorties": 200, "nombre": 4, "montant_min": 50, "montant_max": 50, "dernier_jour": 26},
+      {"mois": "2026-06-01", "compte_id": "c2", "cle_marchand": "vir courant exemple", "sous_categorie": "transfert_foyer", "entrees": 0, "sorties": 200, "nombre": 4, "montant_min": 50, "montant_max": 50, "dernier_jour": 26},
+      {"mois": "2026-07-01", "compte_id": "c2", "cle_marchand": "vir courant exemple", "sous_categorie": "transfert_foyer", "entrees": 0, "sorties": 200, "nombre": 4, "montant_min": 50, "montant_max": 50, "dernier_jour": 26},
+      {"mois": "2026-08-01", "compte_id": "c2", "cle_marchand": "vir courant exemple", "sous_categorie": "transfert_foyer", "entrees": 0, "sorties": 200, "nombre": 4, "montant_min": 50, "montant_max": 50, "dernier_jour": 26},
+      {"mois": "2026-09-01", "compte_id": "c2", "cle_marchand": "vir courant exemple", "sous_categorie": "transfert_foyer", "entrees": 0, "sorties": 200, "nombre": 4, "montant_min": 50, "montant_max": 50, "dernier_jour": 26},
+      {"mois": "2026-10-01", "compte_id": "c2", "cle_marchand": "vir courant exemple", "sous_categorie": "transfert_foyer", "entrees": 0, "sorties": 200, "nombre": 4, "montant_min": 50, "montant_max": 50, "dernier_jour": 26},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 500, "nombre": 5, "montant_min": 100, "montant_max": 100, "dernier_jour": 27},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 500, "nombre": 5, "montant_min": 100, "montant_max": 100, "dernier_jour": 27},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 500, "nombre": 5, "montant_min": 100, "montant_max": 100, "dernier_jour": 27},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 500, "nombre": 5, "montant_min": 100, "montant_max": 100, "dernier_jour": 27},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 500, "nombre": 5, "montant_min": 100, "montant_max": 100, "dernier_jour": 27},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 500, "nombre": 5, "montant_min": 100, "montant_max": 100, "dernier_jour": 27},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "vir courant exemple", "sous_categorie": "virement_interne", "entrees": 0, "sorties": 500, "nombre": 5, "montant_min": 100, "montant_max": 100, "dernier_jour": 27},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "releve carte exemple", "sous_categorie": "releve_carte", "entrees": 0, "sorties": 310, "nombre": 1, "montant_min": 310, "montant_max": 310, "dernier_jour": 4},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "releve carte exemple", "sous_categorie": "releve_carte", "entrees": 0, "sorties": 420, "nombre": 1, "montant_min": 420, "montant_max": 420, "dernier_jour": 4},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "releve carte exemple", "sous_categorie": "releve_carte", "entrees": 0, "sorties": 280, "nombre": 1, "montant_min": 280, "montant_max": 280, "dernier_jour": 4},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "releve carte exemple", "sous_categorie": "releve_carte", "entrees": 0, "sorties": 390, "nombre": 1, "montant_min": 390, "montant_max": 390, "dernier_jour": 4},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "releve carte exemple", "sous_categorie": "releve_carte", "entrees": 0, "sorties": 450, "nombre": 1, "montant_min": 450, "montant_max": 450, "dernier_jour": 4},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "releve carte exemple", "sous_categorie": "releve_carte", "entrees": 0, "sorties": 360, "nombre": 1, "montant_min": 360, "montant_max": 360, "dernier_jour": 4},
+      {"mois": "2026-04-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 25, "montant_max": 25, "dernier_jour": 6},
+      {"mois": "2026-05-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 25, "montant_max": 25, "dernier_jour": 6},
+      {"mois": "2026-06-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 25, "montant_max": 25, "dernier_jour": 6},
+      {"mois": "2026-07-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 25, "montant_max": 25, "dernier_jour": 6},
+      {"mois": "2026-08-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 25, "montant_max": 25, "dernier_jour": 6},
+      {"mois": "2026-09-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 25, "montant_max": 25, "dernier_jour": 6},
+      {"mois": "2026-10-01", "compte_id": "l1", "cle_marchand": "livret a", "sous_categorie": "epargne_precaution", "entrees": 0, "sorties": 100, "nombre": 4, "montant_min": 25, "montant_max": 25, "dernier_jour": 6},
+      {"mois": "2026-04-01", "compte_id": "l1", "cle_marchand": "frais lettre information", "sous_categorie": "frais_bancaires", "entrees": 0, "sorties": 2, "nombre": 1, "montant_min": 2, "montant_max": 2, "dernier_jour": 1},
+      {"mois": "2026-05-01", "compte_id": "l1", "cle_marchand": "frais lettre information", "sous_categorie": "frais_bancaires", "entrees": 0, "sorties": 2, "nombre": 1, "montant_min": 2, "montant_max": 2, "dernier_jour": 1},
+      {"mois": "2026-06-01", "compte_id": "l1", "cle_marchand": "frais lettre information", "sous_categorie": "frais_bancaires", "entrees": 0, "sorties": 2, "nombre": 1, "montant_min": 2, "montant_max": 2, "dernier_jour": 1},
+      {"mois": "2026-07-01", "compte_id": "l1", "cle_marchand": "frais lettre information", "sous_categorie": "frais_bancaires", "entrees": 0, "sorties": 2, "nombre": 1, "montant_min": 2, "montant_max": 2, "dernier_jour": 1},
+      {"mois": "2026-08-01", "compte_id": "l1", "cle_marchand": "frais lettre information", "sous_categorie": "frais_bancaires", "entrees": 0, "sorties": 2, "nombre": 1, "montant_min": 2, "montant_max": 2, "dernier_jour": 1},
+      {"mois": "2026-09-01", "compte_id": "l1", "cle_marchand": "frais lettre information", "sous_categorie": "frais_bancaires", "entrees": 0, "sorties": 2, "nombre": 1, "montant_min": 2, "montant_max": 2, "dernier_jour": 1},
+      {"mois": "2026-10-01", "compte_id": "l1", "cle_marchand": "frais lettre information", "sous_categorie": "frais_bancaires", "entrees": 0, "sorties": 2, "nombre": 1, "montant_min": 2, "montant_max": 2, "dernier_jour": 1},
+      {"mois": "2026-09-01", "compte_id": "k1", "cle_marchand": "versement pea", "sous_categorie": "investissement", "entrees": 0, "sorties": 1500, "nombre": 1, "montant_min": 1500, "montant_max": 1500, "dernier_jour": 12}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 6,
+       "recurrents": [
+        {"compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 19.99, "cout_12_mois": 239.88, "derniere_date": "2026-10-03", "prochaine_date": "2026-11-03", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 19.99,
+        "abonnements": 0,
+        "habitudes": 0,
+        "ponctuel": 0,
+        "total": 19.99,
+        "parts": {
+         "engagements": 100.0,
+         "abonnements": 0.0,
+         "habitudes": 0.0,
+         "ponctuel": 0.0
+        },
+        "reste_a_prelever": 0,
+        "attendus": [],
+        "prochain_prelevement": null,
+        "cout_annuel_abonnements": 0
+       }
+      }
+     },
+     {
+      "fonction": "inhabituel",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-09"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois": "2026-09",
+       "depenses": []
+      }
+     }
+    ],
+    "calcul": [
+     "vir commun exemple (apport_commun, 4 virements par mois), versement per (investissement, 4 par mois), vir courant exemple (transfert_foyer 4 par mois, virement_interne 5 par mois) seraient des habitudes par la fréquence ; livret a (epargne_precaution, 100 à 300 €) et releve carte exemple (releve_carte, 280 à 450 €) le seraient par le montant variable ; le livret l1 n'est pas un compte du budget, même pour ses frais (frais lettre information, 2 € par mois, compteraient sinon en ponctuel). Tous exclus.",
+     "Seul free mobile (telecom) reste : engagement mensuel, 239,88 par an, déjà prélevé le 03/10 ; synthèse 19,99 = 100 % ; reste 0.",
+     "versement pea (investissement, k1) : 1 500 € en 2026-09, jamais vu, mais exclu → pas inhabituel."
+    ]
+   },
+   {
+    "id": "R6",
+    "titre": "Moins de 3 mois de relevés : rien n'est détecté",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "free mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 19.99, "nombre": 1, "montant_min": 19.99, "montant_max": 19.99, "dernier_jour": 3}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": false,
+       "raison": "moins_de_3_mois",
+       "mois_couverts": 2
+      }
+     },
+     {
+      "fonction": "variations",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-09",
+       "niveau": "sous_categorie",
+       "sous_categorie": "abonnements"
+      },
+      "attendu": {
+       "disponible": false,
+       "raison": "moins_de_3_mois",
+       "mois_couverts": 1
+      }
+     },
+     {
+      "fonction": "inhabituel",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-09"
+      },
+      "attendu": {
+       "disponible": false,
+       "raison": "moins_de_3_mois",
+       "mois_couverts": 1
+      }
+     }
+    ],
+    "calcul": [
+     "Données dès 2026-08 : mois complets 08 et 09 → 2 < 3 → « Le récurrent se repère après 3 mois de relevés » ; pour 2026-09, un seul mois complet avant (08) → ni variation ni inhabituel."
+    ]
+   },
+   {
+    "id": "R7",
+    "titre": "3 mois de relevés tout juste : détection possible, « nouveau » pour une clé apparue en m0 − 2",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "entrees": 0, "sorties": 13.49, "nombre": 1, "montant_min": 13.49, "montant_max": 13.49, "dernier_jour": 8},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10},
+      {"mois": "2026-10-01", "compte_id": "c1", "cle_marchand": "spotify", "sous_categorie": "abonnements", "entrees": 0, "sorties": 11, "nombre": 1, "montant_min": 11, "montant_max": 11, "dernier_jour": 10}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 3,
+       "recurrents": [
+        {"compte_id": "c1", "cle_marchand": "netflix", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "video", "rythme": "mensuel", "annuel": null, "montant_habituel": 13.49, "cout_12_mois": 161.88, "derniere_date": "2026-10-08", "prochaine_date": "2026-11-08", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "spotify", "sous_categorie": "abonnements", "part": 1, "famille": "abonnement", "famille_marchand": "musique", "rythme": "mensuel", "annuel": null, "montant_habituel": 11.0, "cout_12_mois": 132.0, "derniere_date": "2026-10-10", "prochaine_date": "2026-11-10", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["nouveau"]}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 0,
+        "abonnements": 24.49,
+        "habitudes": 0,
+        "ponctuel": 0,
+        "total": 24.49,
+        "parts": {
+         "engagements": 0.0,
+         "abonnements": 100.0,
+         "habitudes": 0.0,
+         "ponctuel": 0.0
+        },
+        "reste_a_prelever": 0,
+        "attendus": [],
+        "prochain_prelevement": null,
+        "cout_annuel_abonnements": 293.88
+       }
+      }
+     }
+    ],
+    "calcul": [
+     "Données dès 2026-07 : 07, 08, 09 complets → 3 mois → détection.",
+     "netflix : 07..10, première présence 07 = m0 − 3 → pas « nouveau » ; coût 13,49 × 12 = 161,88.",
+     "spotify : 08, 09, 10 ; ancre 10, fenêtre 07..10 = 3 présences → mensuel ; première présence 08 = m0 − 2 → nouveau ; coût 132.",
+     "Synthèse 13,49 + 11 = 24,49 en abonnements ; tous deux déjà prélevés en octobre → reste 0."
+    ]
+   },
+   {
+    "id": "R8",
+    "titre": "Dates : prélèvement en retard ou dans la tolérance de 3 jours, « arrêté ? » à 45 jours pile, trimestriel en fin de mois, annuel à 11 mois d'écart",
+    "entree": {
+     "today": "2026-10-16",
+     "comptes": [
+      {"id": "c1", "libelle": "Courant Exemple", "type": "courant", "titulaire": "p1"}
+     ],
+     "partage": {
+      "mode": "egal",
+      "p1": 0.5
+     },
+     "lignes": [
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "entrees": 0, "sorties": 15, "nombre": 1, "montant_min": 15, "montant_max": 15, "dernier_jour": 10},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "entrees": 0, "sorties": 10, "nombre": 1, "montant_min": 10, "montant_max": 10, "dernier_jour": 1},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "entrees": 0, "sorties": 8, "nombre": 1, "montant_min": 8, "montant_max": 8, "dernier_jour": 14},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 31},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 30},
+      {"mois": "2025-12-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 31},
+      {"mois": "2026-01-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 31},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 28},
+      {"mois": "2026-03-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 31},
+      {"mois": "2026-04-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 30},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 31},
+      {"mois": "2026-06-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 30},
+      {"mois": "2026-07-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 31},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "entrees": 0, "sorties": 12, "nombre": 1, "montant_min": 12, "montant_max": 12, "dernier_jour": 31},
+      {"mois": "2025-11-01", "compte_id": "c1", "cle_marchand": "engie", "sous_categorie": "energie", "entrees": 0, "sorties": 60, "nombre": 1, "montant_min": 60, "montant_max": 60, "dernier_jour": 30},
+      {"mois": "2026-02-01", "compte_id": "c1", "cle_marchand": "engie", "sous_categorie": "energie", "entrees": 0, "sorties": 60, "nombre": 1, "montant_min": 60, "montant_max": 60, "dernier_jour": 28},
+      {"mois": "2026-05-01", "compte_id": "c1", "cle_marchand": "engie", "sous_categorie": "energie", "entrees": 0, "sorties": 60, "nombre": 1, "montant_min": 60, "montant_max": 60, "dernier_jour": 31},
+      {"mois": "2026-08-01", "compte_id": "c1", "cle_marchand": "engie", "sous_categorie": "energie", "entrees": 0, "sorties": 60, "nombre": 1, "montant_min": 60, "montant_max": 60, "dernier_jour": 31},
+      {"mois": "2025-10-01", "compte_id": "c1", "cle_marchand": "taxe fonciere", "sous_categorie": "impots", "entrees": 0, "sorties": 900, "nombre": 1, "montant_min": 900, "montant_max": 900, "dernier_jour": 15},
+      {"mois": "2026-09-01", "compte_id": "c1", "cle_marchand": "taxe fonciere", "sous_categorie": "impots", "entrees": 0, "sorties": 950, "nombre": 1, "montant_min": 950, "montant_max": 950, "dernier_jour": 15}
+     ]
+    },
+    "appels": [
+     {
+      "fonction": "recurrents",
+      "options": {
+       "vue": "tout",
+       "mois": "2026-10"
+      },
+      "attendu": {
+       "disponible": true,
+       "mois_couverts": 12,
+       "recurrents": [
+        {"compte_id": "c1", "cle_marchand": "taxe fonciere", "sous_categorie": "impots", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "annuel", "annuel": "confirme", "montant_habituel": 925.0, "cout_12_mois": 925.0, "derniere_date": "2026-09-15", "prochaine_date": "2027-09-15", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "engie", "sous_categorie": "energie", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "trimestriel", "annuel": null, "montant_habituel": 60.0, "cout_12_mois": 240.0, "derniere_date": "2026-08-31", "prochaine_date": "2026-11-30", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "sosh", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 15.0, "cout_12_mois": 180.0, "derniere_date": "2026-09-10", "prochaine_date": "2026-10-10", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "b you", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 12.0, "cout_12_mois": 144.0, "derniere_date": "2026-08-31", "prochaine_date": null, "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": ["arrete"]},
+        {"compte_id": "c1", "cle_marchand": "red by sfr", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 10.0, "cout_12_mois": 120.0, "derniere_date": "2026-09-01", "prochaine_date": "2026-10-01", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []},
+        {"compte_id": "c1", "cle_marchand": "nrj mobile", "sous_categorie": "telecom", "part": 1, "famille": "engagement", "famille_marchand": null, "rythme": "mensuel", "annuel": null, "montant_habituel": 8.0, "cout_12_mois": 96.0, "derniere_date": "2026-09-14", "prochaine_date": "2026-10-14", "frequence": null, "panier_moyen": null, "total_mensuel": null, "tendance": null, "hausse": null, "statuts": []}
+       ],
+       "synthese": {
+        "mois": "2026-10",
+        "en_cours": true,
+        "engagements": 0,
+        "abonnements": 0,
+        "habitudes": 0,
+        "ponctuel": 0,
+        "total": 0,
+        "parts": null,
+        "reste_a_prelever": 33.0,
+        "attendus": [
+         {"compte_id": "c1", "cle_marchand": "red by sfr", "date": "2026-10-01", "montant": 10.0, "en_retard": true},
+         {"compte_id": "c1", "cle_marchand": "sosh", "date": "2026-10-10", "montant": 15.0, "en_retard": true},
+         {"compte_id": "c1", "cle_marchand": "nrj mobile", "date": "2026-10-14", "montant": 8.0, "en_retard": false}
+        ],
+        "prochain_prelevement": null,
+        "cout_annuel_abonnements": 0
+       }
+      }
+     }
+    ],
+    "calcul": [
+     "sosh : dernier 2026-09-10, attendu 2026-10-10 ; 10 + 3 = 13 < 16 → en retard, toujours attendu (36 jours ≤ 45) → dans le reste.",
+     "red by sfr : dernier 2026-09-01 ; 2026-10-16 − 2026-09-01 = 45 jours, pas plus de 45 → pas « arrêté ? » ; attendu 2026-10-01, en retard → dans le reste.",
+     "b you : dernier 2026-08-31 → 46 jours > 45 → « arrêté ? » (rythme lu à sa dernière présence : 05..08 = 4 présences).",
+     "engie : 2025-11-30, 2026-02-28, 05-31, 08-31 → trimestriel ; prochaine 2026-08-31 + 3 mois = 2026-11-31 ramené au 2026-11-30 ; hors mois en cours ; 46 jours ≤ 136,5.",
+     "taxe fonciere : 2025-10-15 (900) et 2026-09-15 (950), 11 mois d'écart → annuel confirmé ; 950 à 5,6 % de 900 → 1 palier, habituel médiane(900, 950) = 925 (moyenne des deux) ; coût 925 ; prochaine 2027-09-15 ; moins de 3 présences précédentes → pas de test de hausse.",
+     "nrj mobile : attendu 2026-10-14, passé de 2 jours mais 14 + 3 = 17 ≥ 16 → dans la tolérance, pas en retard.",
+     "Reste : 10 + 15 + 8 = 33 ; prochain prélèvement à venir (date ≥ today) : aucun → null."
+    ]
+   }
+  ]
+ }
 }

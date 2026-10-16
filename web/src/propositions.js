@@ -52,8 +52,9 @@
     evenement: { label: "Événements de vie", nouveau: "Nouvel événement", suppr: "Supprimer l'événement", entite: true },
     variante: { label: "Variantes de la projection", nouveau: "Nouvelle variante", suppr: "Supprimer la variante", entite: true },
     plan_fige: { label: "Projections figées", nouveau: "Figer la projection", suppr: "Supprimer la projection figée", entite: true },
+    historique: { label: "Historique", nouveau: "Import de l'historique", suppr: "Retirer l'import" },
   };
-  const ORDRE_CIBLES = ["profil", "protection", "budget", "position", "bien", "credit", "objectif", "evenement", "variante", "plan_fige", "risque", "config"];
+  const ORDRE_CIBLES = ["profil", "protection", "budget", "position", "bien", "credit", "objectif", "evenement", "variante", "plan_fige", "historique", "risque", "config"];
   const NOUV_BUDGET = { depense: "Nouvelle dépense", revenu: "Nouveau revenu", epargne: "Nouvelle épargne" };
 
   /* ---------- champs connus : libellé, genre (f), nature (k) et options ---------- */
@@ -197,7 +198,7 @@
   function changements(p, ctx) {
     if (p.operation === "supprimer") return [];
     if (p.cible === "config") return changementsConfig(p);
-    if (["evenement", "variante", "plan_fige"].includes(p.cible)) return [];
+    if (["evenement", "variante", "plan_fige", "historique"].includes(p.cible)) return []; // à valider ou refuser tels quels
     const a = commeObjet(p.apres), b = commeObjet(p.avant);
     const plat = aplatir(a, "");
     const e = p.cible === "budget" ? entite(p, ctx) : null;
@@ -414,6 +415,54 @@
     const par = isObj(e.parametres) ? e.parametres : {};
     return "Figer la projection du " + (par.today ? String(par.today).split("-").reverse().join("/") : "jour") + " (" + (RAISONS_PLAN[e.raison] || e.raison) + ", sur " + Math.round((e.horizon_mois || 0) / 12 * 10) / 10 + " ans) pour la comparer plus tard à la réalité";
   }
+  /* ---------- historique importé (cible historique, HIS2) : un import par proposition, non modifiable ---------- */
+  const MOIS_LONGS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  const moisLong = m => (/^\d{4}-\d{2}/.test(String(m)) ? MOIS_LONGS[+String(m).slice(5, 7) - 1] + " " + String(m).slice(0, 4) : String(m));
+  const jourFr = d => (/^\d{4}-\d{2}-\d{2}/.test(String(d)) ? String(d).slice(8, 10) + "/" + String(d).slice(5, 7) + "/" + String(d).slice(0, 4) : "");
+  const plur = (n, s) => n + " " + s + (n > 1 ? "s" : "");
+  const resumeTexte = r => (isObj(r) ? r.texte : typeof r === "string" ? r : null);
+  /** Une ligne lisible par import : « Relevés de Compte courant Exemple : 24 mois, de oct. 2024 à sept. 2026 ; entrées 72 340 €, sorties 69 100 € ; 2 avertissements ». */
+  function decrireHistorique(p) {
+    const ap = commeObjet(p.apres), av = commeObjet(p.avant);
+    if (p.operation === "supprimer") {
+      const t = resumeTexte(av.resume), quand = jourFr(av.importe_le);
+      return "Retirer l'import" + (t ? " : " + t.replace(/\.$/, "") : av.type ? " de " + (av.type === "releves" ? "relevés" : av.type === "ordres" ? "ordres" : "versements") : "") + (quand ? " (importé le " + quand + ")" : "");
+    }
+    const t = resumeTexte(ap.resume);
+    if (t) return t.replace(/\.$/, "");
+    const d = isObj(ap.donnees) ? ap.donnees : {}, nb = Array.isArray(d.mois) ? d.mois.length : Array.isArray(d.mouvements) ? d.mouvements.length : 0;
+    if (ap.type === "releves") return "Relevés de " + ((isObj(ap.compte) && ap.compte.libelle) || "un compte") + " : " + plur(nb, "mois");
+    return (ap.type === "versements" ? "Versements de " : "Ordres de ") + (ap.enveloppe || "une enveloppe") + " : " + plur(nb, "mouvement");
+  }
+  const NOM_FLUX = { achat: "achats", vente: "ventes", versement: "versements", retrait: "retraits", rachat: "rachats", arbitrage_entree: "arbitrages", arbitrage_sortie: "arbitrages", dividende: "dividendes", interets: "intérêts", frais: "frais", releve: "relevés" };
+  /** Détail replié d'un import à valider : un mois par ligne (relevés) ou une ligne du bilan par ligne (ordres, versements), et ses avertissements. */
+  function detailHistorique(p, ctx) {
+    const ap = commeObjet(p.apres), d = isObj(ap.donnees) ? ap.donnees : {}, lignes = [];
+    if (Array.isArray(d.mois)) {
+      d.mois.slice().sort((a, b) => (String(a.mois) < String(b.mois) ? -1 : 1)).forEach(m => {
+        const c = isObj(m.controle) ? m.controle : {};
+        lignes.push({ libelle: moisLong(m.mois), valeur: "entrées " + eurs(c.total_entrees) + ", sorties " + eurs(c.total_sorties) + (m.complet === false ? " (mois entamé)" : "") });
+      });
+    } else if (Array.isArray(d.mouvements)) {
+      const positions = (ctx && ctx.positions) || [], aCreer = Array.isArray(ap.lignes_a_creer) ? ap.lignes_a_creer : [];
+      const groupes = new Map();
+      d.mouvements.forEach(m => {
+        const k = m.position_id ? "p:" + m.position_id : m.isin ? "i:" + m.isin : "e:" + (m.enveloppe || ap.enveloppe || "");
+        if (!groupes.has(k)) groupes.set(k, []);
+        groupes.get(k).push(m);
+      });
+      groupes.forEach((ms, k) => {
+        const pos = k[0] === "p" ? positions.find(x => String(x.id) === k.slice(2)) : null, cree = k[0] === "i" ? aCreer.find(x => x.isin === k.slice(2)) : null;
+        const nom = pos ? pos.name : cree ? cree.name + " (ligne clôturée créée par l'import)" : k[0] === "e" ? "Enveloppe « " + (k.slice(2) || "—") + " »" : "Une ligne du bilan";
+        const dates = ms.map(m => m.date).filter(Boolean).sort(), types = {};
+        ms.forEach(m => { const n = NOM_FLUX[m.type] || m.type; types[n] = (types[n] || 0) + 1; });
+        lignes.push({ libelle: nom, valeur: Object.keys(types).map(t => types[t] + " " + t).join(", ") + (dates.length ? ", du " + jourFr(dates[0]) + " au " + jourFr(dates[dates.length - 1]) : "") });
+      });
+    }
+    const av = Array.isArray(ap.avertissements) ? ap.avertissements : isObj(ap.resume) && Array.isArray(ap.resume.avertissements) ? ap.resume.avertissements : [];
+    return { lignes, avertissements: av.filter(a => isObj(a) && a.message).map(a => ({ cle: a.cle || "", message: String(a.message) })) };
+  }
+
   const BASES_TXT = { reel: "ta capacité d'épargne constatée", prevu: "ta capacité d'épargne prévue au budget", montant: "un montant fixé" };
   function decrireProjection(av, ap) {
     if (!isObj(ap)) return "Réglages de projection : aucun changement";
@@ -439,6 +488,7 @@
     if (p.cible === "evenement") return decrireEvenement(p, ctx);
     if (p.cible === "variante") return decrireVariante(p, ctx);
     if (p.cible === "plan_fige") return decrirePlanFige(p, ctx);
+    if (p.cible === "historique") return decrireHistorique(p);
     const suj = sujet(p, ctx);
     if (p.operation === "supprimer") return C.suppr + " : " + (suj || C.label);
     const ch = changements(p, ctx);
@@ -486,7 +536,7 @@
     return { apres: scalaire ? out.valeur : out };
   }
 
-  const H = { tutoyer, CIBLES, ORDRE_CIBLES, decrire, changements, sujet, valeurTxt, lireSaisie, appliquerSaisies, aplatir, texteMatelas };
+  const H = { tutoyer, CIBLES, ORDRE_CIBLES, decrire, detailHistorique, changements, sujet, valeurTxt, lireSaisie, appliquerSaisies, aplatir, texteMatelas };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof document === "undefined") return;
 
@@ -527,6 +577,14 @@
 
   /* Plusieurs champs changés (ou renseignés hors entité : protection, risque, profil) : liste champ par champ. */
   const enListe = (p, ch) => p.cible !== "config" && ch.length > 1 && (p.operation === "modifier" || !(CIBLES[p.cible] && CIBLES[p.cible].entite));
+  /* Import d'historique : avertissements en ambre (toujours visibles) et détail replié, sans édition. */
+  function detailHistoriqueHtml(p) {
+    if (p.cible !== "historique" || p.operation === "supprimer") return "";
+    const d = detailHistorique(p, ctx());
+    const avert = d.avertissements.length ? '<ul class="pp-warn" aria-label="Avertissements">' + d.avertissements.map(a => "<li><span class=\"sr\">Avertissement : </span>" + esc(a.message) + "</li>").join("") + "</ul>" : "";
+    const detail = d.lignes.length ? '<details class="pp-why pp-histo"><summary>Détail (' + pluriel(d.lignes.length, "ligne") + ')</summary><dl class="pp-diff">' + d.lignes.map(l => "<div><dt>" + esc(l.libelle) + "</dt><dd>" + esc(l.valeur) + "</dd></div>").join("") + "</dl></details>" : "";
+    return avert + detail;
+  }
   function rowHtml(p) {
     const c = ctx(), ch = changements(p, c), ed = edition.has(p.id), mod = saisies[p.id] && Object.keys(saisies[p.id]).length;
     const vue = mod ? Object.assign({}, p, { apres: appliquerSaisies(p, saisies[p.id], c).apres ?? p.apres }) : p;
@@ -554,7 +612,7 @@
       '<div class="pp-body">' +
         '<p class="pp-desc">' + (p.operation === "supprimer" ? '<span class="pp-op del">suppression</span> ' : p.operation === "creer" && CIBLES[p.cible] && CIBLES[p.cible].entite ? '<span class="pp-op add">ajout</span> ' : "") +
           '<span class="pp-txt">' + esc(plusieurs ? (sujet(p, c) || (p.cible === "risque" ? ch.length + " réponses au questionnaire" : ch.length + " informations")) : desc) + "</span>" + (mod ? ' <span class="pp-op mod">corrigé</span>' : "") + "</p>" +
-        diff + champs +
+        diff + champs + detailHistoriqueHtml(p) +
         '<p class="pp-src">' + svg("source") + "<span>" + esc(tutoyer(p.source) || "source non précisée") + "</span></p>" +
         (p.justification ? '<details class="pp-why"><summary>Pourquoi ce changement</summary><p>' + esc(tutoyer(p.justification)) + "</p></details>" : "") +
         (editable && !ed ? '<button type="button" class="pp-lnk pp-edit-btn" data-edit="' + esc(p.id) + '">Modifier</button>' : "") +

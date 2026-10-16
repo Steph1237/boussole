@@ -38,6 +38,8 @@
 #view-propositions .pp-why{font-size:var(--t-small)}
 #view-propositions .pp-why summary{display:flex;align-items:center;min-height:var(--hit);cursor:pointer;color:var(--brand);font-weight:600;font-size:var(--t-small)}
 #view-propositions .pp-why p{margin:4px 0 0;line-height:1.45;max-width:640px}
+#view-propositions .pp-histo .pp-diff{margin-top:var(--sp-1)}
+#view-propositions .pp-warn{margin:0;padding:var(--sp-2) var(--sp-3);list-style:none;display:flex;flex-direction:column;gap:var(--sp-1);align-self:stretch;border-left:3px solid var(--st-watch);border-radius:var(--r-ctl);background:var(--st-watch-bg);color:var(--ink);font-size:var(--t-small);line-height:1.4;overflow-wrap:anywhere}
 #view-propositions .pp-lnk{display:inline-flex;align-items:center;min-height:var(--hit);min-width:var(--hit);border:0;background:none;padding:0 var(--sp-1);font:600 var(--t-small) var(--f-body);color:var(--brand);text-decoration:underline;text-underline-offset:2px;cursor:pointer;border-radius:3px}
 #view-propositions .pp-lnk:hover{color:var(--ink)}
 #view-propositions .pp-edit{align-self:stretch;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));gap:8px 12px;padding:10px 12px;border-radius:8px;background:var(--sunk)}

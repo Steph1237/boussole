@@ -6,7 +6,7 @@
                                      criteres: [...], complet, couts (« ce qui te coûte le plus », Plan.coutsPrincipaux) }
      ctx  = { positions, profil, config, budget, objectifs, scope, risque (Risque.evaluer : { profil: id } ou null), today,
               classes? (surcharges poche → classe, transmises à Risque.allocationReelle et Marche.classeRisque),
-              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel) }
+              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel), relevesBancaires? (S.relevesBancaires : relevés importés, HIS2) }
      deps = { Risque?, Marche? } : modules injectés (null = absent) ; par défaut risque.js / marche.js s'ils sont chargés.
      Sans Risque : adéquation « à compléter » (calcul indisponible), spéculatif au plafond par défaut de 5 %.
      Sans Marche : crypto et levier repérés par la classe de la poche et le libellé (« 2x », « levier »).
@@ -809,7 +809,7 @@
     const totaux = b && !Array.isArray(b) && typeof b.depenses === "number" ? b : Plan.budgetTotaux(lignes, c.profil, scope);
     const mat = Calc.matelas(c.config);
     const prevu = totaux.depensesLignes > 0 ? totaux.depenses : mat && mat.mode === "months" && mat.depenses > 0 ? mat.depenses : 0;
-    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today)) : null;
+    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today), undefined, c.relevesBancaires) : null;
     const periode = reel ? Calc.periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
     const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
     const deja = Plan.affecterDeja(c.objectifs || [], toutes, scope);
@@ -826,6 +826,14 @@
     return Object.assign(agreger(criteres), { criteres });
   }
 
-  return { FAMILLES, PLAFOND_SPECULATIF_DEFAUT, PLAFOND_PEA_DEFAUT, SEUIL_FRAIS, RENDEMENT_PROJECTION, REPERES_FRAIS, BAREME_FRAIS,
+  /** Statut d'une note sur 100 : une seule règle pour toute l'app (Aujourd'hui et Santé). ≥ 80 « Solide » (vert), 60 à 79 « Correct » (ocre : à
+      surveiller), < 60 « À consolider » (rouge : à travailler) ; sans note « À compléter ». statut = statut de puce (UI.puce), ton = classe de Santé. */
+  function statutNote(t) {
+    if (t == null || t === "" || !isFinite(+t)) return { statut: "completer", ton: "na", mot: "À compléter" };
+    const v = +t;
+    return v >= 80 ? { statut: "bon", ton: "good", mot: "Solide" } : v >= 60 ? { statut: "surveiller", ton: "warn", mot: "Correct" } : { statut: "travailler", ton: "crit", mot: "À consolider" };
+  }
+
+  return { statutNote, FAMILLES, PLAFOND_SPECULATIF_DEFAUT, PLAFOND_PEA_DEFAUT, SEUIL_FRAIS, RENDEMENT_PROJECTION, REPERES_FRAIS, BAREME_FRAIS,
     evaluer, agreger, pointsHors, tableauEcarts, fraisSupports, natureFrais, coutsPrincipaux: Plan.coutsPrincipaux };
 });

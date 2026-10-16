@@ -59,7 +59,7 @@ function construire(ctx,Rules,Plan,Pratiques){
   let faites=false;
   if(Pr&&typeof Pr.evaluer==="function"){
     try{ out.push(...pistesPratiques(Pr.evaluer({positions:ctx.positions,profil:ctx.profil,config:ctx.config,budget:ctx.budget,objectifs:ctx.objectifs||[],scope:ctx.scope,
-      risque:ctx.risque||null,classes:ctx.classes||{},banque:ctx.banque||null,today:new Date()}))); faites=true; }
+      risque:ctx.risque||null,classes:ctx.classes||{},banque:ctx.banque||null,relevesBancaires:ctx.relevesBancaires||null,today:new Date()}))); faites=true; }
     catch(e){ if(typeof console!=="undefined") console.error("bonnes pratiques",e); }
   }
   if(!faites&&Plan&&typeof Plan.score==="function"){
@@ -86,7 +86,7 @@ const VIDE={tout:"Rien à signaler pour le moment : tes règles d'alerte ne rel�
 
 function calcule(){
   items=construire({positions:S.positions,config:S.config||{},scope:S.scope,people:S.people,today:today(),status:S.status,profil:S.profil,budget:S.budget,
-    objectifs:S.objectifs,risque:S.risque,classes:S.classes,banque:S.banque},window.Rules,window.Plan,window.Pratiques);
+    objectifs:S.objectifs,risque:S.risque,classes:S.classes,banque:S.banque,relevesBancaires:S.relevesBancaires},window.Rules,window.Plan,window.Pratiques);
 }
 const lienHtml=(l,cls)=>l?`<a class="${cls}" href="#${esc(l.route)}" data-goto="${esc(l.route)}">${esc(l.label)}</a>`:"";
 function render(){
@@ -110,7 +110,7 @@ function mount(r){
 }
 function update(snap,visible){
   S={scope:snap.scope||"foyer",people:snap.people||[],positions:snap.positions||[],config:snap.config,status:snap.status,profil:snap.profil||null,budget:snap.budget||null,
-    objectifs:snap.objectifs||[],risque:snap.risque||null,classes:snap.classes||{},banque:snap.banque||null};
+    objectifs:snap.objectifs||[],risque:snap.risque||null,classes:snap.classes||{},banque:snap.banque||null,relevesBancaires:snap.relevesBancaires||null};
   calcule(); dirty=true; if(visible){render();dirty=false;}
 }
 function show(){ if(dirty){render();dirty=false;} }

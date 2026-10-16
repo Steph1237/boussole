@@ -4,11 +4,11 @@
 
    Choix du mode au démarrage (pas de store.js intermédiaire) : chaque adaptateur vérifie lui-même son mode
    et seul celui qui correspond installe window.Store. Ce fichier s'installe quand l'URL contient `demo`
-   (app.html?demo) ou quand window.BOUSSOLE_MODE === "demo" ; store-supabase.js s'installe dans tous les
+   (app.html?demo ; app.html?demo=vide pour un foyer sans aucune donnée) ou quand window.BOUSSOLE_MODE === "demo" ; store-supabase.js s'installe dans tous les
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    sensible, routine-etat, banque-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque, historique }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
@@ -46,6 +46,9 @@
    démo), de même pour gerer(id) ; deconnecter(id) retire la connexion et ses comptes, rattacher(id, cible) pose les 5 colonnes, en mémoire, avec la validation
    de store-supabase.js (BanqueEtat.normRattachement). Store.banque.operations(compteIds, depuis) → Promise<[{ id, compteId, date, montant,
    libelle, categorie }]> : opérations de démonstration (D.operationsBancaires), les plus récentes d'abord.
+   Historique importé (HIS2, mêmes formes que store-supabase.js) : S.relevesBancaires { lu, mfaRequise, comptes, releves, banqueMois }, S.historiqueImports, S.photosReconstituees (vide) ;
+   la démo porte un ancien compte courant de Sam (14 mois importés, un mois manquant, tous antérieurs aux 12 mois du budget réel), trois ordres importés sur le PEA de Camille et
+   deux propositions décidées (un import accepté, un import retiré). Store.historique.retirer(importId) → { ok: true } | { erreur } : retire l'import en mémoire.
    Store.transactions(depuis) → Promise<[{ id, positionId, date, type, qty, price, amount, note, source, createdAt }]> : transactions depuis
    `depuis` (AAAA-MM-JJ ; absente : toutes), les plus récentes d'abord (S.tx n'en garde que les 60 dernières côté Supabase ; la
    reconstitution du passé d'Aujourd'hui, historique.js, remonte les quantités par toutes les transactions de la période).
@@ -62,6 +65,12 @@
 
   const clone = o => (o == null ? o : JSON.parse(JSON.stringify(o)));
   const D = clone(window.DEMO || {});
+  /* app.html?demo=vide : foyer démo VIDE (comme un compte qui vient d'être créé : ni compte, ni ligne, ni objectif, ni budget, ni mémoire, ni journal,
+     ni proposition, ni projection figée ; config, profil et statut absents). Sert à vérifier les états vides des vues et à les capturer
+     (UX5 G5). Le catalogue de savoir et les expertises ne sont pas des données du foyer : ils restent. */
+  const VIDE = /[?&]demo=vide(?:&|$)/.test(String((window.location && window.location.search) || ""));
+  if (VIDE) Object.assign(D, { positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, budget: null, objectifs: [], risque: null, classes: {},
+    propositions: [], connexions: [], memoire: [], journal: [], routines: [], banque: null, operationsBancaires: [], foyer: null, plansFiges: [] });
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
   const C = {
     ready: false, dbOk: null, positions: (D.positions || []).map(p => Object.assign({}, p, { symbol: p.symbol || null })), snapshots: D.snapshots || [], tx: D.tx || [],
@@ -71,6 +80,7 @@
     memoire: [], savoir: { fiches: [], reperes: [] }, expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander",
     routines: D.routines || [], routinesLues: false,
     banque: D.banque || { actif: false, lu: true, connexions: [], comptes: [], mois: [] },
+    relevesBancaires: D.relevesBancaires || { lu: true, mfaRequise: false, comptes: [], releves: [], banqueMois: [] }, historiqueImports: D.historiqueImports || [], photosReconstituees: D.photosReconstituees || [],
     scope: "foyer", error: null, user: { id: "demo", email: null, demo: true },
     foyer: { evenements: ((D.foyer && D.foyer.evenements) || []).slice(), variantes: ((D.foyer && D.foyer.variantes) || []).slice() }, indices: D.indices || [], plansFiges: (D.plansFiges || []).slice(),
   };
@@ -101,7 +111,7 @@
   const emit = () => { clearTimeout(tmr); tmr = setTimeout(() => subs.forEach(fn => { try { fn(S); } catch (e) { console.error(e); } }), 60); };
   /* PROJ : deux plans figés (revues mensuelles passées, il y a 62 et 31 jours). La liste (id, date, raison, horizon) est immédiate ; le calcul de la série et des
      paramètres (moteur de projection, 500 chemins) se fait à la demande, dans Store.plansFiges.detail(id), puis reste en mémoire. */
-  if (!C.plansFiges.length) C.plansFiges = [62, 31].map(n => ({ id: "plan-demo-" + n, cree_le: new Date(Date.now() - n * 864e5).toISOString().slice(0, 10) + "T20:00:00.000Z", raison: "revue_mensuelle", horizon_mois: 120, _jours: n }));
+  if (!VIDE && !C.plansFiges.length) C.plansFiges = [62, 31].map(n => ({ id: "plan-demo-" + n, cree_le: new Date(Date.now() - n * 864e5).toISOString().slice(0, 10) + "T20:00:00.000Z", raison: "revue_mensuelle", horizon_mois: 120, _jours: n }));
   function plansFigesDemo() { return C.plansFiges; }
   function completerPlan(r) {
     if (!r || r.serie || !r._jours) return r;
@@ -141,6 +151,7 @@
       routines: clone(C.routines),
       routinesLues: C.routinesLues,
       banque: clone(C.banque),
+      relevesBancaires: clone(C.relevesBancaires), historiqueImports: clone(C.historiqueImports), photosReconstituees: clone(C.photosReconstituees),
       foyer: clone(C.foyer), indices: clone(C.indices), plansFiges: plansFigesDemo().map(r => ({ id: r.id, cree_le: r.cree_le, raison: r.raison, horizon_mois: r.horizon_mois })),
       onboardingDone: true, // la démo ne propose jamais les premiers pas
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
@@ -1106,6 +1117,28 @@
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)));
   }
 
+  /* Historique importé (HIS2) : « Retirer cet import » en mémoire, comme retirer_import (0034) : les mois, les mouvements et les comptes sans plus aucun mois disparaissent avec l'import ;
+     une transaction qu'il avait remplacée (doublonDe) revient. */
+  const historique = {
+    async retirer(importId) {
+      await tick();
+      const id = String(importId == null ? "" : importId);
+      const imp = C.historiqueImports.find(i => i.id === id);
+      if (!imp) return { erreur: "Import introuvable." };
+      const ids = new Set(C.tx.filter(t => t.importId === id).map(t => t.id));
+      const rel = C.relevesBancaires;
+      const releves = rel.releves.filter(r => r.importId !== id);
+      const retires = rel.releves.filter(r => r.importId === id);
+      const cle = r => r.compteId + "|" + r.mois;
+      const sorts = new Set(retires.map(cle));
+      C.tx = C.tx.filter(t => t.importId !== id).map(t => (t.doublonDe && ids.has(t.doublonDe) ? Object.assign({}, t, { doublonDe: null }) : t));
+      C.relevesBancaires = Object.assign({}, rel, { releves, banqueMois: rel.banqueMois.filter(l => !sorts.has(cle(l))), comptes: rel.comptes.filter(c => releves.some(r => r.compteId === c.id)) });
+      C.historiqueImports = C.historiqueImports.filter(i => i.id !== id);
+      publish();
+      return { ok: true };
+    },
+  };
+
   const Store = {
     mode: "demo",
     db,
@@ -1131,6 +1164,7 @@
     cours,
     transactions,
     banque,
+    historique,
   };
   window.Store = Store;
 

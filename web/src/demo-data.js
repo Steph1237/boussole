@@ -845,7 +845,51 @@
     mois: bqMois,
   };
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines, banque, operationsBancaires, foyer, indices, plansFiges };
+  /* Historique importé (HIS2, migration 0034) : tout est fictif. Un ancien compte courant de Sam (N26), dont Claude a importé 14 mois de totaux par catégorie
+     (de il y a 27 à il y a 13 mois, le mois d'il y a 20 mois manque : le relevé n'a pas été déposé) ; trois ordres d'achat sur l'ETF MSCI World du PEA de Camille ; un import
+     retiré, visible dans l'historique de À valider. Les mois importés sont antérieurs aux 12 mois du budget réel : ils ne changent aucun chiffre de la démo, ils montrent
+     la couverture. Avant BUD1, les lignes portent les catégories larges (sous-catégorie vide). */
+  const MOIS_COURTS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  const moisCle = k => { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - k); return iso(d.getTime()).slice(0, 7); };
+  const moisCourt = m => MOIS_COURTS[+m.slice(5, 7) - 1] + " " + m.slice(0, 4);
+  const jourFr = d => d.slice(8, 10) + "/" + d.slice(5, 7) + "/" + d.slice(0, 4);
+  const ID_HC = "6c1d9a52-3f0e-4b7a-8d21-9e4a7b05c3f1";
+  const hcDemo = [{ id: ID_HC, libelle: "Ancien compte de Sam", etablissement: "n26", type: "courant", titulaire: "p2", banqueCompteId: null, positionId: null, cle: "n26|courant|ancien compte de sam|p2" }];
+  const relevesDemo = [], lignesDemo = [];
+  let soldeHc = 640, entreesHc = 0, sortiesHc = 0, nMois = 0;
+  for (let k = 27; k >= 13; k--) {
+    if (k === 20) { soldeHc += 150; continue; } // relevé manquant : le solde de début du mois suivant ne retombe pas sur la fin du précédent
+    const m = moisCle(k), courses = 380 + (k * 17) % 90, loisirs = 120 + (k * 29) % 60;
+    const lignes = [["revenus", 2300, 0, 1], ["logement", 0, 780, 1], ["alimentation", 0, courses, 14], ["transport", 0, 85, 2], ["loisirs", 0, loisirs, 6], ["abonnements", 0, 38, 3]];
+    const ent = 2300, sor = 780 + courses + 85 + loisirs + 38, sd = soldeHc;
+    soldeHc = Math.round((sd + ent - sor) * 100) / 100;
+    entreesHc += ent; sortiesHc += sor; nMois++;
+    relevesDemo.push({ compteId: ID_HC, mois: m + "-01", complet: true, soldeDebut: sd, soldeFin: soldeHc, totalEntrees: ent, totalSorties: sor, nombre: 26, importId: "imp-demo-releves" });
+    lignes.forEach(l => lignesDemo.push({ compteId: ID_HC, mois: m + "-01", categorie: l[0], sousCategorie: "", entrees: l[1], sorties: l[2], nombre: l[3] }));
+  }
+  const duHc = moisCle(27), auHc = moisCle(13);
+  const ACHATS_PEA = [[710, 40, 86.2, "d3a0c1e2f4b5a6978877665544332211"], [560, 40, 90.4, "d3a0c1e2f4b5a6978877665544332212"], [400, 34.06, 95.9, "d3a0c1e2f4b5a6978877665544332213"]];
+  ACHATS_PEA.forEach(([j, qty, price, cle], i) => tx.push({ id: "tx-demo-import-" + (i + 1), date: ago(j), type: "achat", positionId: "pea-etf-monde", qty, price, amount: Math.round(qty * price * 100) / 100, note: "",
+    source: "import", createdAt: at(14, "10:2" + i), importId: "imp-demo-ordres", cleImport: cle, enveloppe: null, frais: 1.9, doublonDe: null, estime: false }));
+  const historiqueImports = [
+    { id: "imp-demo-releves", type: "releves", etablissement: "n26", compteId: ID_HC, enveloppe: null, periodeDu: duHc + "-01", periodeAu: auHc + "-28", importeLe: at(14, "10:12"),
+      resume: { texte: "Relevés de Ancien compte de Sam : " + nMois + " mois, de " + moisCourt(duHc) + " à " + moisCourt(auHc) + " ; entrées " + entreesHc.toLocaleString("fr-FR") + " €, sorties " + sortiesHc.toLocaleString("fr-FR") + " €.",
+        mois: nMois, du: duHc, au: auHc, entrees: entreesHc, sorties: sortiesHc, avertissements: [{ cle: "trous", message: "Un mois manque entre le premier et le dernier mois connus de ce compte : " + moisCourt(moisCle(20)) + ".", donnees: { mois: [moisCle(20)] } }] },
+      source: "Export CSV N26 déposé dans la conversation", fichier: { format: "csv", nom: "n26-activite.csv", lignes: 360 } },
+    { id: "imp-demo-ordres", type: "ordres", etablissement: "boursobank", compteId: null, enveloppe: "PEA Camille", periodeDu: ago(710), periodeAu: ago(400), importeLe: at(14, "10:20"),
+      resume: { texte: "Ordres de PEA Camille : 3 mouvements sur 1 ligne, du " + jourFr(ago(710)) + " au " + jourFr(ago(400)) + ".", mouvements: 3, lignes: 1, du: ago(710), au: ago(400), depuis_ouverture: false },
+      source: "Avis d'opéré déposés dans la conversation", fichier: { format: "pdf", nom: "avis-operes.pdf" } },
+  ];
+  const relevesBancaires = { lu: true, mfaRequise: false, comptes: hcDemo, releves: relevesDemo, banqueMois: lignesDemo };
+  const Decide = (id, operation, ref, avant, apres, source, jours) => ({ id, lot: "demo-lot-0", cible: "historique", operation, ref, avant, apres, source, justification: null, statut: "acceptee",
+    creeLe: new Date(now - jours * DAY).toISOString(), decideLe: new Date(now - jours * DAY + 3600e3).toISOString() });
+  propositions.push(
+    Decide("prop-demo-histo-1", "creer", "imp-demo-releves", null, { type: "releves", resume: historiqueImports[0].resume }, "Export CSV N26 déposé dans la conversation", 14),
+    Decide("prop-demo-histo-2", "supprimer", "imp-demo-ancien", { type: "ordres", etablissement: "boursobank", enveloppe: "CTO Sam", periode: { du: ago(900), au: ago(880) }, importe_le: ago(30),
+      resume: "Ordres de CTO Sam : 2 mouvements sur 1 ligne, déposés par erreur (ce n'était pas le bon compte-titres)." }, null, "Retrait demandé par toi dans Compte › Données › Historique", 5));
+  const photosReconstituees = [];
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines, banque, operationsBancaires, foyer, indices, plansFiges, relevesBancaires, historiqueImports, photosReconstituees };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);

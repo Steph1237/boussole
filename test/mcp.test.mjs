@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import vm from "node:vm";
-import { PlanGen } from "./helpers/moteur-gen.mjs";
+import { PlanGen, MoteurGen } from "./helpers/moteur-gen.mjs";
+import { cas, historiqueDeFixture } from "./helpers/his2.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -232,7 +233,7 @@ function portMcp() {
   const debut = src.indexOf("/* Utilitaires"), fin = src.indexOf("/* Schémas d'entrée");
   const bloc = src.slice(src.lastIndexOf("/*", debut - 1), src.lastIndexOf("/*", fin - 1));
   const js = strip(bloc, { mode: "strip" }) + "\n;({ bilan, scoreSante, SCORE_MIN_CRITERES, bonnesPratiques, vueRisque, syntheseRisque, allocationReelle, risquePortefeuille, ecarts, classeRisque, classePoche, liquidite, PROFILS, CLASSES_RISQUE, correlation, CLASSES_POCHE, famille, budgetReel, matelasDisponible, doublonsProbables });";
-  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console, Plan: PlanGen });
+  return vm.runInNewContext(js, { Intl, Date, Math, JSON, Number, String, Object, Array, Set, Map, isFinite, isNaN, Infinity, Error, structuredClone, console, Plan: PlanGen, Calc: MoteurGen.Calc });
 }
 const TODAY = "2026-10-10";
 const DEMO = require("../web/src/demo-data.js");
@@ -388,7 +389,7 @@ test("mcp : chargerDonnees lit la banque (interrupteur, comptes, banque_mois par
   assert.match(lb, /from\("banque_mois"\)\.select\(\s*avecCompte \? "mois, categorie, entrees, sorties, compte_id" : "mois, categorie, entrees, sorties"/);
   assert.match(lb, /42703/, "colonne compte_id absente (migration 0025 non appliquée) : relecture sans elle");
   assert.match(code, /type Donnees = \{[^}]*banque\?: any/);
-  assert.match(code, /budgetReel\(c\.banque \?\? c\.d\.banque, c\.ref\)/, "bonnesPratiques : banque explicite, sinon celle des données chargées");
+  assert.match(code, /budgetReel\(c\.banque \?\? c\.d\.banque, c\.ref, 3, c\.relevesBancaires \?\? c\.d\.relevesBancaires \?\? \(c\.banque \?\? c\.d\.banque\)\?\.historique\)/, "bonnesPratiques : banque explicite, sinon celle des données chargées");
   assert.match(outil("get_overview"), /bonnes_pratiques: bonnesPratiques\(\{ d: donnees, scope: "foyer", objectifs, risque: profil\.risque \?\? null, classes: profil\.classes, ref, banque: donnees\.banque \}\)/);
 });
 
@@ -420,6 +421,13 @@ test("parité MCP / calc.js + pratiques.js : budget réel, matelas avec réserve
   assert.deepEqual(J(M.budgetReel(mixte, TODAY)), J(Calc.budgetReel(mixteApp, TODAY)), "mois mixtes : parité");
   assert.deepEqual([M.budgetReel(mixte, TODAY).depenses, M.budgetReel(mixte, TODAY).parCompte], [(2600 + 2900 + 3000) / 3, false]);
   assert.equal(M.budgetReel(mixte, TODAY, 1).parCompte, true);
+  // HIS2 : avec des relevés importés, le connecteur prend la série fusionnée de la copie générée du moteur (cas B1 et B1-powens de la fixture)
+  for (const id of ["B1/budget", "B1-powens/budget", "B-carte"]) {
+    const c = cas(id), h = historiqueDeFixture(c.entree.historique);
+    assert.deepEqual(J(M.budgetReel(c.entree.banque, c.today, 3, h)), J(Calc.budgetReel(c.entree.banque, c.today, 3, h)), "parité avec relevés importés : " + id);
+    assert.ok(Math.abs(M.budgetReel(c.entree.banque, c.today, 3, h).tauxCapacite - c.attendu.tauxCapacite) < 1e-5, id + " : taux de capacité attendu");
+  }
+  assert.deepEqual(J(M.budgetReel(banqueSql, TODAY, 3, { comptes: [], releves: [], banqueMois: [] })), J(Calc.budgetReel(BANQUE, TODAY)), "historique vide : calcul inchangé");
   for (const cfg of [{ cushion: { min: 10000 } }, { cushion: { mode: "months", months: 6, depenses: 2500, reserve_mois: 2 } }]) {
     const P = [...DEMO.positions, COURANT];
     const { d } = enLignes({ ...DEMO, positions: P });

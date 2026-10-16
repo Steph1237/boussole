@@ -110,42 +110,42 @@ Phases livrables séparément : **phase 1** (T0 à T9 : on peut importer, valide
 - **Dépend de** : T1.
 
 ### Tâche 3 — Module `web/src/historique-import.js` (Sonnet, medium, L)
-- [ ] TDD sur la fixture : normalisation, contrôles bloquants et avertissements (spec § 5.1, § 5.2), empreinte stable (ordre des mois, des catégories, des ordres ; arrondis ; libellés normalisés), clés naturelles et rangs, doublons avec la nuit et les saisies (7 jours, 2 € ou 2 %), résumé lisible au tutoiement.
-- [ ] Limites (spec § 5.3) exportées et testées ; découpage d'un contenu au-delà de 100 000 octets en plusieurs imports (par année, puis par 200 mouvements).
-- [ ] Ajout à `SCRIPTS` de `build.mjs` si l'app l'utilise (description des propositions).
+- [x] TDD sur la fixture : normalisation, contrôles bloquants et avertissements (spec § 5.1, § 5.2), empreinte stable (ordre des mois, des catégories, des ordres ; arrondis ; libellés normalisés), clés naturelles et rangs, doublons avec la nuit et les saisies (7 jours, 2 € ou 2 %), résumé lisible au tutoiement. Fait : `web/src/historique-import.js` (`normaliser`, `controler`, `verifier`, `empreinte`/`empreinteSync`, `clesNaturelles`, `doublons`, `resume`, `versApres`, `decouper`) ; `test/historique-import.test.mjs` passe les 59 cas `controler`, 4 `empreinte`, 4 `clesNaturelles` et 8 `doublons` de la fixture sans en changer une valeur ; `test/historique-import-pglite.test.mjs` fait accepter par la base (0034) les `apres` produits (relevés, ordres, ligne clôturée créée, versements, doublon de la nuit, 60 mois découpés).
+- [x] Limites (spec § 5.3) exportées et testées ; découpage d'un contenu au-delà de 100 000 octets en plusieurs imports (par année, puis par 200 mouvements). Le résumé et les avertissements sont rognés pour tenir dans les 4 000 octets du `resume` de la base (`compacter`).
+- [x] Ajout à `SCRIPTS` de `build.mjs` si l'app l'utilise (description des propositions). Non nécessaire : la description des propositions (T8) lit `apres.resume` ; le module n'est pas chargé par l'app.
 - **Dépend de** : T0.
 
 ### Tâche 4 — Copies générées et parité (Haiku, low, S)
-- [ ] `npm run gen` produit `supabase/functions/mcp/historique-import.gen.js` ; test « copie à jour » et parité des sorties sur tous les cas.
+- [x] `npm run gen` produit `supabase/functions/mcp/historique-import.gen.js` ; test « copie à jour » et parité des sorties sur tous les cas (`test/historique-import-gen.test.mjs`).
 - **Dépend de** : T3.
 
 ### Tâche 5 — `Calc.moisBancaires` et budget réel (Sonnet, medium, M)
-- [ ] `web/src/calc.js` : `moisBancaires` (spec § 6.1) ; `budgetReel` le consomme (comportement inchangé sans import : tests existants verts) ; même changement dans le bloc de calcul du connecteur ; parité testée (cas B1, B1-powens).
-- [ ] `projection-donnees.js` (épargne constatée sur 12 mois) et la santé lisent la série fusionnée.
+- [x] `web/src/calc.js` : `moisBancaires` (spec § 6.1) ; `budgetReel` le consomme (comportement inchangé sans import : tests existants verts) ; même changement dans le bloc de calcul du connecteur ; parité testée (cas B1, B1-powens). Fait : `Calc.moisBancaires(banque, historique, auj)` et `Calc.budgetReel(banque, auj, nb, historique)` ; le connecteur (`index.ts`, `budgetReel(banque, auj, nb, historique)`) délègue au moteur copié (`projection-moteur.gen.js`) dès qu'il y a des relevés importés ; `test/his2-calc.test.mjs` (13 cas de la fixture, dont B1, B1-powens, B-carte) et parité dans `test/mcp.test.mjs`.
+- [x] `projection-donnees.js` (épargne constatée sur 12 mois) et la santé lisent la série fusionnée (`s.historique` / `S.historique`, alimentés par le store en T8).
 - **Dépend de** : T0. **Coordonner avec BUD1** (qui consommera `moisBancaires`).
 
 ### Tâche 6 — Outils MCP (Sonnet, medium, L)
-- [ ] Nouveau module `supabase/functions/mcp/historique.ts` (au modèle de `banque.ts` et `projection.ts` : utilitaires passés en paramètre, aucun calcul dupliqué) : `etat_historique`, `importer_releves_mensuels`, `importer_ordres`, `importer_versements`, `retirer_import` ; schémas `z.strictObject` (spec § 8.1 à § 8.3) ; `accord_utilisateur` exigé ; résolution des ISIN vers les lignes ; `lignes_a_creer` ; dépôt par `deposer` (un lot par session, une proposition par import) ; garde de double authentification (message existant) ; 60 appels d'import par jour.
-- [ ] Aperçu de l'effet d'un import (spec § 7.4, connecteur) : branché en T13, une fois la reconstitution étendue ; renvoyer `apercu: null` d'ici là.
-- [ ] Tests `test/historique-mcp.test.mjs` (spec § 12.4) : annotations RO/RW, dépôt jamais direct, refus sensibles, plafonds, empreinte déjà vue, sortie de `etat_historique` sans libellé ni numéro.
+- [x] Nouveau module `supabase/functions/mcp/historique.ts` (au modèle de `banque.ts` et `projection.ts` : utilitaires passés en paramètre, aucun calcul dupliqué) : `etat_historique`, `importer_releves_mensuels`, `importer_ordres`, `importer_versements`, `retirer_import` ; schémas `z.strictObject` (spec § 8.1 à § 8.3) ; `accord_utilisateur` exigé ; résolution des ISIN vers les lignes ; `lignes_a_creer` ; dépôt par `deposer` (un lot par session, une proposition par import) ; garde de double authentification (message existant) ; 60 appels d'import par jour. Fait ; `CONDUITE_HISTORIQUE` et `SOURCES_HISTORIQUE` (textes de T0, copiés à l'identique) sont déjà dans ce module parce que les outils les renvoient ; la tâche 7 fait le reste (INSTRUCTIONS, ajouts aux outils existants). Le quota « 60 imports par jour » compte les propositions `historique` déposées depuis 24 h. `deposer` (index.ts) ne compare plus les imports d'historique (100 000 octets de `apres`) : `historique.ts` contrôle leur empreinte et les retraits en attente lui-même.
+- [x] Aperçu de l'effet d'un import (spec § 7.4, connecteur) : branché en T13, une fois la reconstitution étendue ; renvoyer `apercu: null` d'ici là.
+- [x] Tests `test/historique-mcp.test.mjs` (spec § 12.4) : annotations RO/RW, dépôt jamais direct, refus sensibles, plafonds, empreinte déjà vue, sortie de `etat_historique` sans libellé ni numéro.
 - **Dépend de** : T2, T4.
 
 ### Tâche 7 — Conduite, catalogue et outils existants (Sonnet, low, M)
-- [ ] `CONDUITE_HISTORIQUE` et `SOURCES_HISTORIQUE` (textes de T0) ; résumé dans `INSTRUCTIONS` ; N26 ajouté à `SOURCES` (`routines.ts`).
-- [ ] `demarrer_session` (`historique`), `demarrer_routine` (import du mois écoulé pour les comptes importés non connectés), `lire_banque` (budget réel par `moisBancaires`, source par mois), `projeter` (série fusionnée).
-- [ ] Tests de la conduite renvoyée et des ajouts.
+- [x] `CONDUITE_HISTORIQUE` et `SOURCES_HISTORIQUE` (textes de T0, copiés à l'identique en T6, test d'égalité avec `his2-conduite.json`) ; résumé dans `INSTRUCTIONS` ; règle 22 de la conduite du Copilote ; N26 ajouté à `SOURCES` (`routines.ts`).
+- [x] `demarrer_session` (`historique` : `court`, `couverture_mois`, `part_estimee`, `a_demander` 3 au plus), `demarrer_routine` (`historique.comptes_a_importer` : import du mois écoulé pour les comptes importés non connectés, règle 2 octies), `lire_banque` et la revue (budget réel par `Calc.moisBancaires` avec `sources_par_mois` ; relevés importés seuls quand la banque connectée est éteinte), `projeter` et les bonnes pratiques (série fusionnée : `lireBanqueCalcul` attache `banque.historique`, `lireDonneesProjection` donne `relevesBancaires` au moteur). Le champ des données du moteur s'appelle `relevesBancaires` (et non `historique`, déjà pris par le rétro-contrôle des photos) ; il remplace `S.historique` de la tâche 5. `list_propositions` ne rend que le résumé et l'empreinte d'un import d'historique.
+- [x] Tests de la conduite renvoyée et des ajouts (`test/historique-mcp.test.mjs`, `test/banque-mcp.test.mjs`, `test/routines-mcp.test.mjs`).
 - **Dépend de** : T5, T6.
 
 ### Tâche 8 — Stores, démo et « À valider » (Sonnet, medium, M)
-- [ ] `store-supabase.js` : lecture des quatre tables bancaires (sous aal2, même garde que `banque`), des nouvelles colonnes de `transactions` et de `photos_reconstituees` ; `Store.historique.retirer(id)` (RPC `retirer_import`), seule écriture ajoutée.
-- [ ] `store-demo.js` : un foyer fictif avec 14 mois importés d'un compte courant (un mois manquant), un PEA importé (P1), un import retiré dans l'historique ; aucune donnée réelle.
-- [ ] `propositions.js` : cible `historique` (libellé, phrases par type, détail replié, avertissements, non modifiable) ; tests de `decrire`.
-- [ ] `test/lecture-seule.test.mjs` : `retirer_import` listée comme écriture de contrôle.
+- [x] `store-supabase.js` : lecture des quatre tables bancaires (sous aal2, même garde que `banque`), des nouvelles colonnes de `transactions` et de `photos_reconstituees` ; `Store.historique.retirer(id)` (RPC `retirer_import`), seule écriture ajoutée.
+- [x] `store-demo.js` : un foyer fictif avec 14 mois importés d'un compte courant (un mois manquant), un PEA importé (P1), un import retiré dans l'historique ; aucune donnée réelle.
+- [x] `propositions.js` : cible `historique` (libellé, phrases par type, détail replié, avertissements, non modifiable) ; tests de `decrire`.
+- [x] `test/lecture-seule.test.mjs` : `retirer_import` listée comme écriture de contrôle.
 - **Dépend de** : T1, T3.
 
 ### Tâche 9 — Effets budget et projection dans l'app (Sonnet, low, S)
-- [ ] Patrimoine › Budget (en attendant BUD1) et la projection affichent les mois importés avec leur source ; la mention « relevés trop courts » du graphe se fonde sur la série fusionnée.
-- [ ] Tests DOM ciblés ; fumée en préproduction locale avec un foyer fictif (import validé → budget réel sur 12 mois).
+- [x] Patrimoine › Budget (en attendant BUD1) et la projection affichent les mois importés avec leur source (`Calc.budgetReel` rend `moisImportes`, la note du budget dit « Dont N mois tirés de relevés que tu as déposés dans la conversation » ; `budgetReelDe` lit la série fusionnée, même sans banque connectée) ; la mention « relevés trop courts » du graphe se fonde sur la série fusionnée (la capacité constatée du moteur de projection, `epargnePasseDe` du graphe, les bonnes pratiques de Santé, Aujourd'hui, Actions et Journal lisent `S.relevesBancaires`).
+- [x] Tests DOM ciblés (`test/historique-effets.test.mjs`, `test/historique-store.test.mjs`) ; fumée en préproduction locale avec un foyer fictif (import validé → budget réel sur 12 mois) : `test/historique-preprod.test.mjs`.
 - **Dépend de** : T5, T8.
 
 ## Phase 2 : le passé de la courbe, les photos, le rendement

@@ -58,7 +58,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], banque: ["object"], foyer: ["object"], indices: ["array"], plansFiges: ["array"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], banque: ["object"], relevesBancaires: ["object"], historiqueImports: ["array"], photosReconstituees: ["array"], foyer: ["object"], indices: ["array"], plansFiges: ["array"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -235,8 +235,10 @@ const PROP_KEYS = ["apres", "avant", "cible", "creeLe", "decideLe", "id", "justi
 test("démo : propositions de Claude au contrat (un lot, cinq changements en attente, plusieurs cibles)", async () => {
   const ctx = browser();
   const S = await whenReady(ctx);
-  assert.equal(S.propositions.length, 5);
-  S.propositions.forEach(p => {
+  // cinq propositions en attente ; deux propositions d'historique déjà décidées (un import accepté, un import retiré : HIS2) figurent dans l'historique de À valider
+  assert.equal(S.propositions.filter(p => p.statut === "en_attente").length, 5);
+  assert.deepEqual(J(S.propositions.filter(p => p.statut !== "en_attente").map(p => [p.cible, p.operation, p.statut])), [["historique", "creer", "acceptee"], ["historique", "supprimer", "acceptee"]]);
+  S.propositions.filter(p => p.statut === "en_attente").forEach(p => {
     assert.deepEqual(Object.keys(p).sort(), PROP_KEYS, `forme de la proposition ${p.id}`);
     assert.equal(p.lot, "demo-lot-1"); assert.equal(p.statut, "en_attente"); assert.equal(p.decideLe, null);
     assert.ok(["profil", "budget", "position", "bien", "credit", "objectif", "risque", "protection"].includes(p.cible), p.cible);
@@ -244,7 +246,7 @@ test("démo : propositions de Claude au contrat (un lot, cinq changements en att
     assert.ok(p.source && p.source.length <= 500, "source obligatoire");
     assert.ok(!isNaN(Date.parse(p.creeLe)));
   });
-  assert.deepEqual(J(S.propositions.map(p => p.cible)).sort(), ["bien", "budget", "position", "protection", "risque"]);
+  assert.deepEqual(J(S.propositions.filter(p => p.statut === "en_attente").map(p => p.cible)).sort(), ["bien", "budget", "position", "protection", "risque"]);
   assert.ok(S.propositions.some(p => /Relevé PEA du 30\/09/.test(p.source)));
   const pos = S.propositions.find(p => p.cible === "position");
   assert.equal(pos.operation, "modifier"); assert.ok(S.positions.some(x => x.id === pos.ref), "la position visée existe");
@@ -299,7 +301,7 @@ test("démo : propositions — tout ou rien, refus en français", async () => {
     e => e.code === "invalid_argument" && /Proposition non appliquée \(ligne de budget, creer\)/.test(e.message) && /type/.test(e.message));
   const S = ctx.Store.get();
   assert.deepEqual(J(S.profil.protection), {}, "rien n'est appliqué");
-  assert.ok(S.propositions.every(p => p.statut === "en_attente"));
+  assert.ok(S.propositions.filter(p => p.cible !== "historique").every(p => p.statut === "en_attente"));
   assert.equal(S.budget.lignes.length, S0.budget.lignes.length);
   await assert.rejects(P.appliquer(["prop-demo-pea"], [1]), e => e.code === "invalid_argument");
 });
@@ -947,7 +949,7 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
 test("lecture seule : les deux stores n'écrivent plus que les données de contrôle (propositions, journal, mémoire, routines, règles, risque, compte)", () => {
   const sup = src("store-supabase.js"), demo = src("store-demo.js");
   for (const [nom, s] of [["store-supabase.js", sup], ["store-demo.js", demo]]) {
-    assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\), banque \}/, nom + " : en-tête du contrat à jour");
+    assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\), banque, historique \}/, nom + " : en-tête du contrat à jour");
     assert.match(s, /db = \{ doc\("config\/main"\)\.update\(\{ rules \}\), doc\("profil\/main"\)\.update\(\{ risque \}\) \}/, nom + " : façade db documentée");
     assert.ok(s.includes('const LECTURE_SEULE = "Écriture non disponible dans l\'app : complète ou corrige avec Claude, puis valide sa proposition."'), nom + " : refus au tutoiement, même texte");
     assert.match(s, /seulement\(p(atch)?, \["rules"\]\)/, nom + " : config/main n'accepte que rules");
@@ -962,7 +964,7 @@ test("lecture seule : les deux stores n'écrivent plus que les données de contr
   assert.ok(sup.includes('from("banque_comptes").update(row).eq("id", cpt.id).select("id")'));
   assert.match(src("banque-etat.js"), /const vide = \{ position_id: null, enveloppe: null, titulaire: null, credit_id: null, ignore: false \};/);
   assert.doesNotMatch(sup, /rpc\("request_instrument"/, "plus de demande d'instrument (ajout de placement)");
-  assert.deepEqual([...sup.matchAll(/rpc\("(\w+)"/g)].map(m => m[1]).sort(), ["appliquer_propositions", "refuser_propositions"]);
+  assert.deepEqual([...sup.matchAll(/rpc\("(\w+)"/g)].map(m => m[1]).sort(), ["appliquer_propositions", "refuser_propositions", "retirer_import"], "RPC : appliquer et refuser les propositions, et retirer_import (HIS2, D5 : un droit sur ses données, comme supprimer son compte)");
 });
 
 /* ------------------------------------------------ cours historiques (CP1 § 4) ------------------------------------------------ */
@@ -1133,7 +1135,8 @@ test("store-supabase.js (exécuté, faux client) : Store.transactions — depuis
   await wait(0);
   const r = J(await ctx.Store.transactions("2020-01-01"));
   assert.equal(r.length, 1500, "deux pages lues");
-  assert.deepEqual(r[0], { id: "t0", positionId: "p1", date: "2026-10-01", type: "achat", qty: 2, price: 10, amount: null, note: "", source: "manuel", createdAt: "2026-10-01T00:00:00Z" });
+  assert.deepEqual(r[0], { id: "t0", positionId: "p1", date: "2026-10-01", type: "achat", qty: 2, price: 10, amount: null, note: "", source: "manuel", createdAt: "2026-10-01T00:00:00Z",
+    importId: null, cleImport: null, enveloppe: null, frais: null, doublonDe: null, estime: false });
   const lus = appels.filter(a => a.table === "transactions" && a.range && a.range[1] >= 999);
   assert.deepEqual(J(lus.map(a => a.range)), [[0, 999], [1000, 1999]]);
   assert.deepEqual(J(lus[0].gte), ["date", "2020-01-01"]);

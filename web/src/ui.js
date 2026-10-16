@@ -37,6 +37,19 @@
      document, personne, etincelle), montant à droite en chiffres tabulaires, delta en dessous (ton pos | neg | neutre), barre de part de 4 px
      (0 à 100). multiligne : le titre passe à la ligne au lieu d'être tronqué.
      Exemple : UI.ligne({ id: "pea", titre: "PEA Camille", sous: "3 lignes · 26,8 %", montant: UI.fmtEUR(24380), barre: 26.8 })
+     etat? = argument de UI.puce (« bon », ou { statut, texte }) : puce de statut dans une colonne propre, avant le montant ; etat: "" réserve la colonne
+     vide (à poser sur les lignes sans état d'une liste dont d'autres lignes en ont un, pour que montant et chevron restent alignés).
+   UI.tuile({ libelle, valeur, sous? }) → HTML
+     Chiffre secondaire posé dans une carte (fond --sunk, jamais une carte dans une carte). Grille conseillée : <div class="ui-tuiles">…</div>.
+     Exemple : UI.tuile({ libelle: "Plus-values latentes", valeur: "+4 210 €", sous: "sur 3 lignes" })
+   UI.vide({ texte, icone?, action?: { texte, id | href } }) → HTML
+     État vide : icône de 24 px, une phrase (ce qui manque et pourquoi ça compte), une action (« Compléter avec Claude »). À poser dans la carte
+     qui aurait reçu le contenu, jamais en page entière. icone : clé de UI.ICONES (défaut « document »).
+     Exemple : UI.vide({ texte: "Aucun objectif pour l'instant : fixe le premier pour voir ta trajectoire.", action: { texte: "Compléter avec Claude", href: UI.urlClaude("Aide-moi à fixer mon premier objectif") } })
+   UI.squelette(n, forme) → HTML
+     Place réservée pendant le chargement (S.ready faux) : n blocs de la forme « kpi » (96 px), « ligne » (56 px) ou « graphe » (220 px, 320 sur ordinateur),
+     à la hauteur du contenu final (aucun saut). Annoncé « chargement » aux lecteurs d'écran ; la pulsation est coupée en mouvement réduit.
+     Exemple : UI.squelette(4, "kpi") + UI.squelette(1, "graphe")
    UI.liste(lignes, { label? }) → HTML
      <ul class="ui-liste"> : séparateurs internes, sans carte par ligne. `lignes` : HTML de UI.ligne ou UI.aTraiter.
      Exemple : UI.liste(comptes.map(c => UI.ligne({ id: c.id, titre: c.nom, montant: UI.fmtEUR(c.solde) })), { label: "Comptes" })
@@ -248,6 +261,7 @@
       icone(o.icone) +
       '<span class="ui-ligne-corps"><span class="ui-ligne-titre">' + esc(o.titre) + "</span>" +
       (vide(o.sous) ? "" : '<span class="ui-ligne-sous">' + esc(o.sous) + "</span>") + "</span>" +
+      (o.etat == null ? "" : '<span class="ui-ligne-etat">' + (o.etat === "" ? "" : puce(o.etat)) + "</span>") +
       (vide(o.montant) && !d ? "" : '<span class="ui-ligne-montant"><span class="ui-ligne-valeur num">' + esc(o.montant) + "</span>" +
         (d ? '<span class="ui-ligne-delta num ' + (TONS_MONTANT.includes(d.ton) ? d.ton : "neutre") + '">' + esc(d.texte) + "</span>" : "") + "</span>") +
       (actif ? '<span class="ui-ligne-chevron" aria-hidden="true">' + CHEVRON_DROITE + "</span>" : "") +
@@ -271,6 +285,26 @@
     return '<div class="ui-item' + (o.urgent ? " urgent" : "") + '">' + (icone(o.icone) || '<span class="ui-ligne-ico" aria-hidden="true"></span>') +
       '<span class="ui-ligne-corps">' + urgent + '<span class="ui-ligne-titre">' + esc(o.titre) + "</span>" +
       (vide(o.raison) ? "" : '<span class="ui-ligne-sous">' + esc(o.raison) + "</span>") + "</span>" + act + "</div>";
+  }
+  /** Tuile : chiffre secondaire dans une carte (libellé, valeur, sous-ligne facultative). */
+  function tuile(o) {
+    o = o || {};
+    return '<div class="ui-tuile"><span class="ui-tuile-l">' + esc(o.libelle) + '</span><span class="ui-tuile-v num">' + (vide(o.valeur) ? "—" : esc(o.valeur)) + "</span>" +
+      (vide(o.sous) ? "" : '<span class="ui-tuile-s">' + esc(o.sous) + "</span>") + "</div>";
+  }
+  /** État vide : icône, phrase, action. */
+  function videEtat(o) {
+    o = o || {};
+    const a = o.action && typeof o.action === "object" && !vide(o.action.texte) ? o.action : null;
+    const act = !a ? "" : '<span class="ui-vide-action">' + bouton({ texte: a.texte, variante: "secondaire", href: a.href, id: a.id }) + "</span>";
+    return '<div class="ui-vide"><span class="ui-vide-ico" aria-hidden="true">' + svg(ICONES[o.icone] || ICONES.document) + '</span><p class="ui-vide-texte">' + esc(o.texte) + "</p>" + act + "</div>";
+  }
+  const FORMES_SQUELETTE = ["kpi", "ligne", "graphe"];
+  /** Squelette de chargement : n blocs (1 à 24) de la forme donnée. */
+  function squelette(n, forme) {
+    const f = FORMES_SQUELETTE.includes(forme) ? forme : "ligne";
+    const k = Math.max(1, Math.min(24, Math.floor(+n) || 1));
+    return '<div class="ui-squelette" role="status" aria-busy="true" aria-label="Chargement en cours">' + ('<span class="ui-skel-bloc ' + f + '" aria-hidden="true"></span>').repeat(k) + "</div>";
   }
   const VARIANTES_BOUTON = { primaire: "", secondaire: " secondaire", tertiaire: " tertiaire" };
   /** Bouton : primaire (plein, marque ; un seul par écran au plus), secondaire (contour), tertiaire (texte souligné) ; 44 px sur mobile, 40 sur ordinateur. */
@@ -791,7 +825,7 @@
 
   return {
     esc, carte, panneau, onglets, bascule, accordeon, voirPlus, brancher, periode, demanderAClaude, urlClaude, markdown,
-    puce, ligne, liste, aTraiter, bouton, defilant, etatFondu, decisionGlisse, ICONES, STATUTS,
+    puce, ligne, liste, tuile, vide: videEtat, squelette, aTraiter, bouton, defilant, etatFondu, decisionGlisse, ICONES, STATUTS,
     htmlOnglets, htmlBascule, cibleClavier, PERIODES, GRANULARITES,
     fmtNombre: F && F.fmtNombre, fmtEUR: F && F.fmtEUR, fmtPct: F && F.fmtPct, fmtDate: F && F.fmtDate, fmtDelta: F && F.fmtDelta,
     classeMontant: F && F.classeMontant, graduations: F && F.graduations, fmtAxe: F && F.fmtAxe,

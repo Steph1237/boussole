@@ -87,7 +87,7 @@ dialog.accueil::backdrop{background:rgba(18,24,29,.62)}
 .accueil .ac-etat.ok b{color:var(--good)}
 .accueil .ac-ico.ok{width:28px;height:28px;padding:5px;border-radius:50%;background:var(--good-soft);color:var(--good)}
 .accueil .ac-pulse{position:relative;width:12px;height:12px;margin:0 8px;flex:none;border-radius:50%;background:var(--warn)}
-.accueil .ac-pulse::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--warn);opacity:.5;animation:accueil-pulse 1.6s ease-out infinite}
+.accueil .ac-pulse::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--warn);opacity:.5;animation:accueil-pulse 1.6s ease-out 3}
 @keyframes accueil-pulse{from{transform:scale(1);opacity:.5}to{transform:scale(2.6);opacity:0}}
 
 /* étape 3 */

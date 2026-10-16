@@ -670,7 +670,7 @@ app.post("/nuit", async (c: any) => {
   // 3. Relances.
   const actifs = await db.from("fonctionnalites").select("user_id").eq("cle", "banque").eq("active", true);
   if (actifs.error) rapport.erreurs.push({ erreur: `lecture des interrupteurs : ${actifs.error.message}` });
-  const users = [...new Set((actifs.data ?? []).map((f: any) => String(f.user_id)))];
+  const users: string[] = [...new Set(((actifs.data ?? []) as any[]).map((f: any) => String(f.user_id)))];
   if (users.length && !cfg) rapport.erreurs.push({ erreur: "configuration Powens absente : aucune relance" });
   for (const userId of cfg ? users : []) {
     rapport.utilisateurs++;

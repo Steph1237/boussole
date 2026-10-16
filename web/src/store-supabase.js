@@ -19,9 +19,19 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque, historique }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
    S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, foyer, indices, plansFiges, scope, people, user, error }
+   relevesBancaires = { lu, mfaRequise, comptes: [{ id, libelle, etablissement, type, titulaire, banqueCompteId, positionId, cle }], releves: [{ compteId, mois,
+   complet, soldeDebut, soldeFin, totalEntrees, totalSorties, nombre, importId }], banqueMois: [{ compteId, mois, categorie, sousCategorie, entrees, sorties, nombre }] }
+   (HIS2, migration 0034 : relevés bancaires importés en totaux mensuels par compte et par catégorie, jamais d'opération ; forme lue par Calc.moisBancaires, avec
+   compte_id / mois en snake_case aussi acceptés ; mois = AAAA-MM-01) ; historiqueImports = [{ id, type: releves|ordres|versements, etablissement, compteId, enveloppe, periodeDu,
+   periodeAu, importeLe, resume, source, fichier }] (historique_imports, du plus récent au plus ancien) ; photosReconstituees = [{ mois, date, total, p1, p2, financier, net,
+   byBloc, byEnvelope, qualite: complet|partiel|estime, partEstimee, sources, methode, calculeLe }] (photos_reconstituees, écrites par la nuit seulement). Ces tables suivent le
+   régime bancaire (0033 : lecture en aal2 ou par un connecteur autorisé) : sans aal2, rien n'est lu et relevesBancaires.mfaRequise est vrai ; tables absentes (migration pas
+   appliquée) : valeurs vides. Les mouvements importés sont des transactions comme les autres, avec importId, cleImport, enveloppe (mouvement d'enveloppe sans ligne), frais,
+   doublonDe (remplacée par un mouvement importé : ignorée partout) et estime. Store.historique.retirer(importId) → { ok: true } | { erreur } : retirer_import (RPC, aal2 ; la
+   seule écriture que HIS2 ajoute à l'app, un droit sur ses données comme supprimer son compte) puis rechargement.
    foyer = { evenements: [{ id, variante_id, type, personne, libelle, date, fin, params, source, created_at, updated_at }], variantes: [{ id, nom, description, retire, hypotheses,
    created_at, updated_at }] } : événements de vie et variantes de la projection (tables foyer_evenements et foyer_variantes, 0031 ; écrits seulement par les propositions du
    Copilote) ; indices = [{ serie, mois, valeur, source_titre, source_url, verifie_le }] : indice des prix (table publique indices_mensuels, série ipc_insee) pour passer le passé en
@@ -134,7 +144,7 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, foyer: { evenements: [], variantes: [] }, indices: [], plansFiges: [], expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, banque: { actif: false, lu: false, connexions: [], comptes: [], mois: [] }, onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, foyer: { evenements: [], variantes: [] }, indices: [], plansFiges: [], expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, banque: { actif: false, lu: false, connexions: [], comptes: [], mois: [] }, relevesBancaires: { lu: false, mfaRequise: false, comptes: [], releves: [], banqueMois: [] }, historiqueImports: [], photosReconstituees: [], onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -175,6 +185,7 @@
       routines: clone(C.routines),
       routinesLues: C.routinesLues,
       banque: clone(C.banque),
+      relevesBancaires: clone(C.relevesBancaires), historiqueImports: clone(C.historiqueImports), photosReconstituees: clone(C.photosReconstituees),
       foyer: clone(C.foyer), indices: clone(C.indices), plansFiges: clone(C.plansFiges),
       onboardingDone: C.onboardingDone,
       scope: ppl.some(p => p.id === C.scope) ? C.scope : "foyer", // une seule personne : toujours le foyer
@@ -227,7 +238,9 @@
       sourceAuto: r.source_auto || null, sourceAutoLe: r.source_auto_le || null,
     };
   };
-  const txView = r => ({ id: r.id, positionId: r.position_id, date: r.date, type: r.type, qty: num(r.qty), price: num(r.price), amount: num(r.amount), note: r.note || "", source: r.source, createdAt: r.created_at });
+  const txView = r => ({ id: r.id, positionId: r.position_id, date: r.date, type: r.type, qty: num(r.qty), price: num(r.price), amount: num(r.amount), note: r.note || "", source: r.source, createdAt: r.created_at,
+    // HIS2 (0034) : mouvements importés ; nuls ou faux pour toute autre transaction
+    importId: r.import_id ?? null, cleImport: r.cle_import ?? null, enveloppe: r.enveloppe ?? null, frais: num(r.frais), doublonDe: r.doublon_de ?? null, estime: r.estime === true });
   const snapView = r => ({ date: r.date, foyer: num(r.total), p1: num(r.p1), p2: num(r.p2), byBloc: r.by_bloc || {}, byEnvelope: r.by_envelope || {}, source: r.source });
   // frais_enveloppes (0026) : frais des contrats { "<enveloppe>": { gestion_uc_pct?, gestion_euro_pct?, garde_pct?, source, le } }, {} par défaut.
   const objetOu = v => (v != null && typeof v === "object" && !Array.isArray(v) ? v : {});
@@ -329,6 +342,53 @@
     const [cx, cpt, mois] = res.map(r => r.value || []);
     C.banque = { actif: true, lu: true, connexions: cx.map(bqCxView), comptes: cpt.map(bqCptView), mois: mois.map(bqMoisView) };
   }
+  /* Historique importé (HIS2, 0034) : régime bancaire, donc aal2 seulement ; migration absente → valeurs vides sans bruit (le reste de l'app ne dépend pas de ces tables). */
+  const RELEVES_VIDES = () => ({ lu: false, mfaRequise: false, comptes: [], releves: [], banqueMois: [] });
+  const hcView = r => ({ id: r.id, libelle: r.libelle || "", etablissement: r.etablissement, type: r.type, titulaire: r.titulaire, banqueCompteId: r.banque_compte_id ?? null, positionId: r.position_id ?? null, cle: r.cle });
+  const hrView = r => ({ compteId: r.compte_id, mois: String(r.mois).slice(0, 10), complet: r.complet !== false, soldeDebut: num(r.solde_debut), soldeFin: num(r.solde_fin),
+    totalEntrees: num(r.total_entrees) || 0, totalSorties: num(r.total_sorties) || 0, nombre: r.nombre == null ? 0 : +r.nombre, importId: r.import_id ?? null });
+  const hbView = r => ({ compteId: r.compte_id, mois: String(r.mois).slice(0, 10), categorie: r.categorie, sousCategorie: r.sous_categorie || "", entrees: num(r.entrees) || 0, sorties: num(r.sorties) || 0, nombre: r.nombre == null ? 0 : +r.nombre });
+  const hiView = r => ({ id: r.id, type: r.type, etablissement: r.etablissement, compteId: r.compte_id ?? null, enveloppe: r.enveloppe ?? null, periodeDu: String(r.periode_du).slice(0, 10), periodeAu: String(r.periode_au).slice(0, 10),
+    importeLe: r.importe_le, resume: r.resume && typeof r.resume === "object" ? r.resume : {}, source: r.source || "", fichier: r.fichier && typeof r.fichier === "object" ? r.fichier : {} });
+  const phView = r => ({ mois: String(r.mois).slice(0, 10), date: String(r.date).slice(0, 10), total: num(r.total), p1: num(r.p1), p2: num(r.p2), financier: num(r.financier), net: num(r.net), byBloc: r.by_bloc || {}, byEnvelope: r.by_envelope || {},
+    qualite: r.qualite, partEstimee: num(r.part_estimee) || 0, sources: Array.isArray(r.sources) ? r.sources : [], methode: r.methode, calculeLe: r.calcule_le });
+  const HI_ABSENTE = e => !!e && (["42P01", "PGRST205", "PGRST200", "42703"].includes(String(e.code)) || /does not exist|schema cache/i.test(String(e.message || "")));
+  /* Lecture par pages de 1 000 lignes (l'API de données plafonne une requête), 30 pages au plus. */
+  async function pagesHI(requete) {
+    const out = [];
+    for (let page = 0; page < 30; page++) {
+      const rows = await q(requete(page * 1000));
+      (Array.isArray(rows) ? rows : []).forEach(r => out.push(r));
+      if (!Array.isArray(rows) || rows.length < 1000) break;
+    }
+    return out;
+  }
+  async function lireHistoriqueImporte() {
+    if (!(await sessionAal2())) {
+      C.relevesBancaires = Object.assign(RELEVES_VIDES(), { lu: true, mfaRequise: true }); C.historiqueImports = []; C.photosReconstituees = [];
+      return;
+    }
+    // 13 mois de totaux par catégorie (+ 1 pour reconnaître le premier mois de la synchronisation) ; tous les en-têtes mensuels (couverture)
+    const [ya, ma] = jourDeParis().split("-").map(Number), t = ya * 12 + (ma - 1) - 13;
+    const depuis = Math.floor(t / 12) + "-" + String(t % 12 + 1).padStart(2, "0") + "-01";
+    const res = await Promise.allSettled([
+      q(sb.from("historique_comptes").select("id, libelle, etablissement, type, titulaire, banque_compte_id, position_id, cle").order("cree_le")),
+      pagesHI(a => sb.from("historique_releves").select("compte_id, mois, complet, solde_debut, solde_fin, total_entrees, total_sorties, nombre, import_id").order("compte_id").order("mois").range(a, a + 999)),
+      pagesHI(a => sb.from("historique_banque_mois").select("compte_id, mois, categorie, sous_categorie, entrees, sorties, nombre").gte("mois", depuis).order("compte_id").order("mois").order("categorie").order("sous_categorie").range(a, a + 999)),
+      q(sb.from("historique_imports").select("id, type, etablissement, compte_id, enveloppe, periode_du, periode_au, importe_le, resume, source, fichier").order("importe_le", { ascending: false }).limit(300)),
+      q(sb.from("photos_reconstituees").select("mois, date, total, p1, p2, financier, net, by_bloc, by_envelope, qualite, part_estimee, sources, methode, calcule_le").order("mois").range(0, 239)),
+    ]);
+    const echec = res.filter(r => r.status === "rejected");
+    if (echec.length) {
+      if (echec.every(r => HI_ABSENTE(r.reason))) return; // migration 0034 pas appliquée : valeurs précédentes (vides)
+      console.warn("Boussole : lecture de l'historique importé partielle", echec.map(r => r.reason));
+      return;
+    }
+    const [cpt, rel, ban, imp, ph] = res.map(r => r.value || []);
+    C.relevesBancaires = { lu: true, mfaRequise: false, comptes: cpt.map(hcView), releves: rel.map(hrView), banqueMois: ban.map(hbView) };
+    C.historiqueImports = imp.map(hiView);
+    C.photosReconstituees = ph.map(phView);
+  }
   const budgetView = r => ({ lignes: Array.isArray(r.lignes) ? r.lignes.map(l => Object.assign({}, l, { montant: num(l.montant) })) : [] });
   const objView = r => ({
     id: r.id, nom: r.nom || "", type: r.type, cible: num(r.cible), dateCible: r.date_cible || null, deja: num(r.deja),
@@ -396,6 +456,7 @@
       else if (!(await sessionAal2())) C.banque = BANQUE_MFA();
       else await lireBanque();
     }
+    await lireHistoriqueImporte().catch(e => console.warn("Boussole : historique importé", e && e.code));
     // Colonne absente (migration 0013 non appliquée) ou valeur inconnue : « demander », comme le connecteur.
     if (prof !== undefined) C.journalConsentement = prof && CONSENTEMENTS.includes(prof.journal_consentement) ? prof.journal_consentement : "demander";
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
@@ -693,6 +754,19 @@
     },
   };
 
+  /* Historique importé (HIS2) : « Retirer cet import » est une écriture de contrôle (D5) : retirer_import exige aal2 et efface ce que l'import a apporté, rien d'autre. */
+  const historiqueApi = {
+    async retirer(importId) {
+      const id = String(importId == null ? "" : importId);
+      if (!UUID.test(id)) return { erreur: "Import introuvable." };
+      if (!C.historiqueImports.some(i => i.id === id)) return { erreur: "Import introuvable." };
+      try {
+        await write(async () => q(sb.rpc("retirer_import", { p_id: id })));
+        return { ok: true };
+      } catch (e) { const x = asErr(e); return { erreur: x.message || "Retrait impossible pour le moment. Réessaie." }; }
+    },
+  };
+
   const savoir = {
     /* Fiche complète (avec son contenu markdown), lue à l'ouverture ; null si elle n'existe pas ou si la lecture échoue. */
     async fiche(slug) {
@@ -834,6 +908,7 @@
     cours,
     transactions,
     banque: banqueApi,
+    historique: historiqueApi,
   };
   window.Store = Store;
   publish();

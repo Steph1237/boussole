@@ -112,7 +112,8 @@
 :root[data-theme="dark"] .gs-a{stop-opacity:.08}:root[data-theme="dark"] .gs-b{stop-opacity:.16}:root[data-theme="dark"] .gs-c{stop-opacity:.30}:root[data-theme="dark"] .gs-d{stop-opacity:.50}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .gs-a{stop-opacity:.08}:root:not([data-theme="light"]) .gs-b{stop-opacity:.16}:root:not([data-theme="light"]) .gs-c{stop-opacity:.30}:root:not([data-theme="light"]) .gs-d{stop-opacity:.50}}
 .gp-glow{fill:var(--gp-glow)}
-.gp-glow.pulse{animation:gp-pulse 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.gp-glow.pulse{transform-box:fill-box;transform-origin:center}
+@media (prefers-reduced-motion:no-preference){.gp-glow.pulse{animation:gp-pulse 2.4s ease-in-out infinite}}
 @keyframes gp-pulse{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.5);opacity:.2}}
 .gp-tdy{stroke:var(--ink);stroke-width:1}
 .gp-dot-ink{fill:var(--ink);stroke:var(--surface);stroke-width:2}

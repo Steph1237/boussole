@@ -869,6 +869,93 @@ def("calc", function (module, exports, require) {
     return L.filter(r => (det.has(moisIso(r.mois)) ? idCompte(r) != null && ids.has(String(idCompte(r))) : true));
   }
   const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
+
+  /* ---------- série fusionnée des mois bancaires (HIS2, spec 2026-10-16-his2-historique-design.md § 6.1) ---------- */
+  const liste = v => (Array.isArray(v) ? v.filter(Boolean) : []);
+  const cleCompte = v => (v == null || v === "" ? null : String(v));
+  const compteBanqueDe = hc => { const v = hc.banqueCompteId !== undefined ? hc.banqueCompteId : hc.banque_compte_id; return v == null || v === "" || +v === 0 ? null : v; };
+  const compteImporteDe = r => (r.compteId != null ? r.compteId : r.compte_id);
+  const importDe = r => (r.importId !== undefined ? r.importId : r.import_id);
+  /** Ligne de totaux d'un mois importé, dans la forme d'une ligne de banque_mois (mois au 1er du mois, compte, catégorie large, sous-catégorie). */
+  const ligneImportee = (r, mois, compte) => ({ mois: mois + "-01", compte_id: compte, categorie: r.categorie, sous_categorie: r.sous_categorie == null ? "" : r.sous_categorie,
+    entrees: n(r.entrees), sorties: n(r.sorties), nombre: n(r.nombre) });
+  /** Série des mois bancaires par compte et par mois, UNE fonction pour la synchronisation (Powens) et les relevés importés (HIS2) : jamais deux fois
+      le même euro. Consommée par budgetReel (donc la projection et la santé), par le connecteur et par l'écran de couverture.
+      banque = S.banque { comptes, mois } ; historique = { comptes, releves, banqueMois } (historique_comptes, historique_releves,
+      historique_banque_mois ; champs en snake_case de la base ou en camelCase du store) ; auj = date du jour (les mois importés après le mois en
+      cours sont ignorés). Règles : un compte importé rattaché à un compte Powens (banque_compte_id) prend Powens pour un mois que banque_mois
+      couvre, sauf le premier mois du compte dans banque_mois (réputé entamé : la synchronisation a commencé en cours de mois) où l'import l'emporte ;
+      un compte importé non rattaché : l'import ; un compte Powens sans import : Powens pour tous ses mois, premier mois compris. Une carte à débit
+      différé importée compte si le courant importé du même établissement et du même titulaire porte ce mois-là une ligne « releve_carte » (hors budget),
+      ou si aucun courant de cet établissement et de ce titulaire n'est importé ce mois-là ; sinon elle est écartée (son relevé, compté sur le courant, ne
+      doit pas l'être deux fois).
+      → [{ compte, mois: "AAAA-MM", source: "powens" | "import" | null, type?, categories: [lignes de banque_mois], releve?, import_id?, ecarte? }], triée par
+      mois puis par compte (en texte). compte = banque_compte_id si le compte importé est rattaché ou si c'est un compte Powens (null pour des
+      totaux sans compte), sinon "h:" + id du compte importé ; releve = en-tête du mois importé { complet, solde_debut, solde_fin, total_entrees,
+      total_sorties, nombre } ; ecarte = [{ source, import_id?, raison }] avec raison couvert_par_powens | premier_mois | carte_comptee_sur_courant
+      (ce qui a été mis de côté reste visible dans la couverture). Même calcul dans le connecteur (parité testée). */
+  function moisBancaires(banque, historique, auj) {
+    const courant = moisIso(auj == null ? new Date() : auj);
+    const H = historique || {};
+    const hComptes = liste(H.comptes), hReleves = liste(H.releves), hLignes = liste(H.banqueMois);
+    // Powens : lignes par (compte, mois) et premier mois de chaque compte
+    const powens = new Map(), premier = {};
+    lignesMois(banque).forEach(r => {
+      const m = moisIso(r.mois);
+      if (!m) return;
+      const c = idCompte(r), k = cleCompte(c) + "|" + m;
+      if (!powens.has(k)) powens.set(k, { compte: c, mois: m, lignes: [] });
+      powens.get(k).lignes.push(r);
+      if (c != null && (premier[String(c)] === undefined || m < premier[String(c)])) premier[String(c)] = m;
+    });
+    // Relevés importés : lignes par (compte importé, mois)
+    const compteH = new Map(hComptes.map(c => [String(c.id), c]));
+    const lignesH = new Map();
+    hLignes.forEach(r => {
+      const m = moisIso(r.mois), c = cleCompte(compteImporteDe(r));
+      if (!m || c == null) return;
+      const k = c + "|" + m;
+      if (!lignesH.has(k)) lignesH.set(k, []);
+      lignesH.get(k).push(r);
+    });
+    const importes = hReleves.map(r => ({ r, hc: compteH.get(String(compteImporteDe(r))), mois: moisIso(r.mois) }))
+      .filter(x => x.hc && x.mois && (!courant || x.mois <= courant));
+    const courants = (hc, mois) => importes.filter(x => x.mois === mois && x.hc.type === "courant" && x.hc.etablissement === hc.etablissement && x.hc.titulaire === hc.titulaire);
+    const aReleveCarte = x => (lignesH.get(String(x.hc.id) + "|" + x.mois) || []).some(l => l.sous_categorie === "releve_carte");
+    const sortie = [], prises = new Set();
+    importes.forEach(x => {
+      const { r, hc, mois } = x, rattache = compteBanqueDe(hc), compte = rattache != null ? rattache : "h:" + hc.id;
+      const lignes = (lignesH.get(String(hc.id) + "|" + mois) || []).map(l => ligneImportee(l, mois, compte));
+      const releve = { complet: r.complet !== false, solde_debut: r.solde_debut == null ? null : n(r.solde_debut), solde_fin: r.solde_fin == null ? null : n(r.solde_fin),
+        total_entrees: n(r.total_entrees), total_sorties: n(r.total_sorties), nombre: n(r.nombre) };
+      const imp = importDe(r), base = { compte, mois, type: hc.type, categories: lignes, releve };
+      if (imp != null) base.import_id = imp;
+      const kp = cleCompte(rattache) + "|" + mois, p = rattache != null ? powens.get(kp) : null;
+      if (p) {
+        prises.add(kp);
+        if (mois === premier[String(rattache)]) { sortie.push({ ...base, source: "import", ecarte: [{ source: "powens", raison: "premier_mois" }] }); return; }
+        const e = { source: "import", raison: "couvert_par_powens" };
+        if (imp != null) e.import_id = imp;
+        sortie.push({ compte, mois, source: "powens", type: hc.type, categories: p.lignes, ecarte: [e] });
+        return;
+      }
+      if (hc.type === "carte_differe") {
+        const cc = courants(hc, mois);
+        if (cc.length && !cc.some(aReleveCarte)) {
+          const e = { source: "import", raison: "carte_comptee_sur_courant" };
+          if (imp != null) e.import_id = imp;
+          sortie.push({ compte, mois, source: null, type: hc.type, categories: [], ecarte: [e] });
+          return;
+        }
+      }
+      sortie.push({ ...base, source: "import" });
+    });
+    powens.forEach((p, k) => { if (!prises.has(k)) sortie.push({ compte: p.compte, mois: p.mois, source: "powens", categories: p.lignes }); });
+    return sortie.sort((a, b) => (a.mois < b.mois ? -1 : a.mois > b.mois ? 1 : String(a.compte) < String(b.compte) ? -1 : String(a.compte) > String(b.compte) ? 1 : 0));
+  }
+  /** Lignes des relevés importés qui comptent au budget : source « import », mois complet, compte courant ou joint (une carte à débit différé
+      déjà décidée par moisBancaires). Les livrets et autres comptes importés ne servent qu'à la couverture. */
+  const importeAuBudget = e => e.source === "import" && e.releve && e.releve.complet !== false && (e.type === "courant" || e.type === "joint" || e.type === "carte_differe");
   /** Budget réel moyen des nb (3) derniers mois complets (mois en cours exclu), comptes courants seulement :
       revenus = entrées − sorties de « revenus » ; épargne = sorties − entrées de « epargne » (virements vers l'épargne et
       l'investissement) ; dépenses = sorties − entrées de toutes les autres catégories ; virements internes exclus.
@@ -876,13 +963,26 @@ def("calc", function (module, exports, require) {
       (spec cp4 § 1.2, critère « Capacité d'épargne » de Santé) : capacite = revenus − dépenses, tauxCapacite = capacite ÷ revenus (l'épargne
       versée en est une partie, affichée à part). parCompte : vrai si chaque mois retenu est détaillé par compte
       (chiffres des seuls comptes courants) ; faux sinon (totaux de tous les comptes connectés : libellé « tous comptes connectés »).
-      → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte } ou null (interrupteur éteint, aucun mois
-      complet). Même calcul dans le connecteur (budgetReel, index.ts). */
-  function budgetReel(banque, auj, nb) {
-    if (!banque || banque.actif === false) return null;
+      historique (facultatif, HIS2) : relevés importés { comptes, releves, banqueMois } ; le calcul porte alors sur la série de moisBancaires
+      (Powens et import, jamais les deux pour le même compte et le même mois) ; sans lui, comportement inchangé. Un mois importé non complet n'y entre jamais.
+      → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte, moisImportes? (avec relevés importés : mois retenus qui en viennent) } ou null (interrupteur éteint et aucun relevé importé,
+      aucun mois complet). Même calcul dans le connecteur (budgetReel, index.ts). */
+  function budgetReel(banque, auj, nb, historique) {
+    const actif = !!banque && banque.actif !== false;
+    const utileH = !!historique && (liste(historique.releves).length > 0);
+    if (!actif && !utileH) return null;
+    const b = actif ? banque : { mois: [], comptes: [] };
     const k = Number.isInteger(nb) && nb > 0 ? nb : 3;
     const courant = moisIso(auj == null ? new Date() : auj);
-    const L = moisCourants(banque).filter(r => moisIso(r.mois) && moisIso(r.mois) < courant && !RE_INTERNE.test(sansAccent(r.categorie)));
+    let L0 = moisCourants(b), importees = [];
+    if (utileH) {
+      const serie = moisBancaires(b, historique, auj);
+      const remplaces = new Set(serie.filter(e => e.source !== "powens" && (e.ecarte || []).some(x => x.source === "powens")).map(e => cleCompte(e.compte) + "|" + e.mois));
+      L0 = L0.filter(r => !remplaces.has(cleCompte(idCompte(r)) + "|" + moisIso(r.mois)));
+      importees = serie.filter(importeAuBudget);
+      importees.forEach(e => e.categories.forEach(l => L0.push(l)));
+    }
+    const L = L0.filter(r => moisIso(r.mois) && moisIso(r.mois) < courant && !RE_INTERNE.test(sansAccent(r.categorie)));
     const retenus = [...new Set(L.map(r => moisIso(r.mois)))].sort().slice(-k);
     if (!retenus.length) return null;
     let rev = 0, dep = 0, ep = 0;
@@ -890,10 +990,14 @@ def("calc", function (module, exports, require) {
       const e = n(r.entrees), s = n(r.sorties), c = sansAccent(r.categorie);
       if (c === "revenus") rev += e - s; else if (c === "epargne") ep += s - e; else dep += s - e;
     });
-    const det = moisDetailles(banque);
+    const det = moisDetailles(b);
+    importees.forEach(e => det.add(e.mois));
     const m = retenus.length, revenus = pos(rev) / m, depenses = pos(dep) / m, epargne = pos(ep) / m;
-    return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
+    const res = { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
       capacite: revenus - depenses, tauxCapacite: revenus > 0 ? (revenus - depenses) / revenus : null, parCompte: retenus.every(x => det.has(x)) };
+    // avec des relevés importés : combien des mois retenus viennent d'eux (au moins un compte importé ce mois-là)
+    if (utileH) res.moisImportes = retenus.filter(x => importees.some(e => e.mois === x)).length;
+    return res;
   }
   /** Période d'un budget réel en clair (spec cp4 § 1) : « juillet à septembre 2026 », « novembre 2025 à janvier 2026 », « septembre 2026 ».
       r = { du, au } (AAAA-MM-JJ) ; "" si r est absent. Même fonction dans le connecteur (periodeReel, index.ts). */
@@ -917,10 +1021,10 @@ def("calc", function (module, exports, require) {
     return m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
   }
   /** Dépenses mensuelles de référence : budget réel (foyer seulement : les comptes ne sont pas répartis par personne) s'il existe,
-      sinon budget prévu. ctx = { banque, budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
+      sinon budget prévu. ctx = { banque, relevesBancaires (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
   function depensesMensuelles(ctx) {
     const c = ctx || {}, sc = c.scope || "foyer";
-    const r = sc === "foyer" ? budgetReel(c.banque, c.auj) : null;
+    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.relevesBancaires) : null;
     if (r && r.depenses > 0) return { montant: r.depenses, source: "reel", reel: r };
     const p = depensesPrevues(c.budget, c.profil, c.config, sc);
     return p > 0 ? { montant: p, source: "prevu" } : null;
@@ -985,7 +1089,7 @@ def("calc", function (module, exports, require) {
     const s = S || {}, jour = auj == null ? new Date() : auj;
     const courants = (s.positions || []).filter(p => p && counted(p) && estCourant(p));
     if (!courants.length) return null;
-    const d = depensesMensuelles({ banque: s.banque, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
+    const d = depensesMensuelles({ banque: s.banque, relevesBancaires: s.relevesBancaires, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
     if (!d) return null;
     const seuil = SEUIL_DORT * d.montant, m0 = moisIso(jour);
     const blocCourant = p => RE_COURANT.test(sansAccent(p.bloc));
@@ -1078,7 +1182,7 @@ def("calc", function (module, exports, require) {
     : (data, today, options) => root.Calendrier.calendrier(data, today, options);
 
   return { calendrier, CLASSES_LABELS, LIQUIDITE_LABELS, FAMILLES_LABELS, classe, liquidite, famille, horsCourants, parClasse, parLiquidite,
-    comptesCourants, moisCourants, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort, blocsPhoto,
+    comptesCourants, moisCourants, moisBancaires, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort, blocsPhoto,
     val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites, creditsEnCours,
     autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, valider };
 });
@@ -2723,7 +2827,7 @@ def("pratiques", function (module, exports, require) {
                                      criteres: [...], complet, couts (« ce qui te coûte le plus », Plan.coutsPrincipaux) }
      ctx  = { positions, profil, config, budget, objectifs, scope, risque (Risque.evaluer : { profil: id } ou null), today,
               classes? (surcharges poche → classe, transmises à Risque.allocationReelle et Marche.classeRisque),
-              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel) }
+              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel), relevesBancaires? (S.relevesBancaires : relevés importés, HIS2) }
      deps = { Risque?, Marche? } : modules injectés (null = absent) ; par défaut risque.js / marche.js s'ils sont chargés.
      Sans Risque : adéquation « à compléter » (calcul indisponible), spéculatif au plafond par défaut de 5 %.
      Sans Marche : crypto et levier repérés par la classe de la poche et le libellé (« 2x », « levier »).
@@ -3526,7 +3630,7 @@ def("pratiques", function (module, exports, require) {
     const totaux = b && !Array.isArray(b) && typeof b.depenses === "number" ? b : Plan.budgetTotaux(lignes, c.profil, scope);
     const mat = Calc.matelas(c.config);
     const prevu = totaux.depensesLignes > 0 ? totaux.depenses : mat && mat.mode === "months" && mat.depenses > 0 ? mat.depenses : 0;
-    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today)) : null;
+    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today), undefined, c.relevesBancaires) : null;
     const periode = reel ? Calc.periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
     const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
     const deja = Plan.affecterDeja(c.objectifs || [], toutes, scope);
@@ -3543,7 +3647,15 @@ def("pratiques", function (module, exports, require) {
     return Object.assign(agreger(criteres), { criteres });
   }
 
-  return { FAMILLES, PLAFOND_SPECULATIF_DEFAUT, PLAFOND_PEA_DEFAUT, SEUIL_FRAIS, RENDEMENT_PROJECTION, REPERES_FRAIS, BAREME_FRAIS,
+  /** Statut d'une note sur 100 : une seule règle pour toute l'app (Aujourd'hui et Santé). ≥ 80 « Solide » (vert), 60 à 79 « Correct » (ocre : à
+      surveiller), < 60 « À consolider » (rouge : à travailler) ; sans note « À compléter ». statut = statut de puce (UI.puce), ton = classe de Santé. */
+  function statutNote(t) {
+    if (t == null || t === "" || !isFinite(+t)) return { statut: "completer", ton: "na", mot: "À compléter" };
+    const v = +t;
+    return v >= 80 ? { statut: "bon", ton: "good", mot: "Solide" } : v >= 60 ? { statut: "surveiller", ton: "warn", mot: "Correct" } : { statut: "travailler", ton: "crit", mot: "À consolider" };
+  }
+
+  return { statutNote, FAMILLES, PLAFOND_SPECULATIF_DEFAUT, PLAFOND_PEA_DEFAUT, SEUIL_FRAIS, RENDEMENT_PROJECTION, REPERES_FRAIS, BAREME_FRAIS,
     evaluer, agreger, pointsHors, tableauEcarts, fraisSupports, natureFrais, coutsPrincipaux: Plan.coutsPrincipaux };
 });
 });
@@ -3927,7 +4039,7 @@ def("suivi", function (module, exports, require) {
     if (l.role === "satellite") {
       const maxPct = ctx.politique.seuils.ligne_satellite_max_pct, poids = ctx.I > 0 ? l.valeur * 100 / ctx.I : 0;
       const statut = r6(poids) > maxPct ? "a_travailler" : r6(poids) >= r6(maxPct * 0.8) ? "a_surveiller" : "bon";
-      base("poids", statut, { mesure: { valeur: r4(poids), unite: "%", texte: pct(poids, 1) + " de ton financier investi" }, repere: { texte: "Une ligne du satellite pèse au plus " + frc(maxPct, 0) + " % du financier investi" },
+      base("poids", statut, { mesure: { valeur: r4(poids), unite: "%", texte: pct(poids, 1) + " de ton financier investi" }, repere: { texte: "Une ligne du satellite pèse au plus " + frc(maxPct, 0) + " % du financier investi", max: maxPct, unite: "%" },
         pourquoi: statut === "a_travailler" ? "Au-dessus du repère de " + frc(maxPct, 0) + " % du financier investi." : statut === "a_surveiller" ? "Proche du repère de " + frc(maxPct, 0) + " % (de 80 à 100 %)." : "Sous le repère de " + frc(maxPct, 0) + " %.",
         calcul: [eur(l.valeur) + " ÷ " + eur(ctx.I) + " = " + pct(poids, 2)], source_donnees: "tes lignes", donnees: [donnee({ poids_pct: r4(poids) })] });
     }
@@ -3938,7 +4050,7 @@ def("suivi", function (module, exports, require) {
       else {
         const sv = rep("suivi_chevauchement_surveiller_pct"), tr = rep("suivi_chevauchement_travailler_pct"), v = ch.valeur;
         const statut = r6(v) > tr ? "a_travailler" : r6(v) >= sv ? "a_surveiller" : "bon";
-        base("chevauchement", statut, { mesure: { valeur: r4(v), unite: "%", texte: pct(v, 1) + " des 10 premières lignes en commun avec un autre de tes fonds" }, repere: { texte: "Moins de " + frc(sv, 0) + " % : bon ; au-delà de " + frc(tr, 0) + " % : doublon" },
+        base("chevauchement", statut, { mesure: { valeur: r4(v), unite: "%", texte: pct(v, 1) + " des 10 premières lignes en commun avec un autre de tes fonds" }, repere: { texte: "Moins de " + frc(sv, 0) + " % : bon ; au-delà de " + frc(tr, 0) + " % : doublon", surveiller: sv, travailler: tr, unite: "%" },
           pourquoi: statut === "a_travailler" ? "Un doublon : des frais et de la complexité sans diversification en plus." : statut === "a_surveiller" ? "Une partie notable des principales lignes est la même." : "Peu de lignes en commun.",
           calcul: ["Poids communs des 10 premières lignes (minimum des deux poids) : " + frc(ch.commun, 2) + " %", "Poids des 10 premières lignes du fonds : " + frc(ch.totA, 2) + " %", "Rapport : " + pct(v, 2)], source_donnees: "composition des fonds", donnees: [donnee()] });
       }
@@ -3949,7 +4061,7 @@ def("suivi", function (module, exports, require) {
       const levier = l.classe === "levier" || (l.ins && connu(l.ins.levier) && +l.ins.levier > 1);
       const statut = levier || l.classe === "crypto" ? "a_travailler" : vol >= seuilVol ? "a_surveiller" : "bon";
       base("classe_risque", statut, { mesure: { valeur: vol, unite: "%", texte: "Classe : " + classeLib(l.classe) + ", volatilité historique d'environ " + frc(vol, 0) + " % par an" },
-        repere: { texte: "À surveiller dès " + frc(seuilVol, 0) + " % de volatilité ; levier et crypto sont des classes spéculatives" },
+        repere: { texte: "À surveiller dès " + frc(seuilVol, 0) + " % de volatilité ; levier et crypto sont des classes spéculatives", surveiller: seuilVol, unite: "%" },
         pourquoi: statut === "a_travailler" ? "Classe spéculative : les pertes peuvent dépasser 50 % en quelques mois." : statut === "a_surveiller" ? "Classe plus volatile que les actions du monde développé." : "Classe sans levier ni volatilité extrême.",
         calcul: ["Volatilité historique de la classe : " + frc(vol, 0) + " % par an (marche.js)"], source_donnees: "statistiques historiques de la classe", donnees: [donnee()] });
     }
@@ -3961,8 +4073,8 @@ def("suivi", function (module, exports, require) {
         const encBon = rep("suivi_encours_bon_eur"), encBas = rep("suivi_encours_bas_eur"), anc = rep("suivi_anciennete_fonds_ans");
         const ans = dc ? moisRevolus(dc, ctx.today) / 12 : null;
         const hors = (enc != null && enc < encBon) || (ans != null && ans <= anc);
-        base("solidite", hors ? "a_surveiller" : "bon", { mesure: { valeur: enc, unite: "€", texte: [enc != null ? "Encours " + eur(enc) : null, ans != null ? "Ancienneté " + frc(ans, 0) + " ans" : null].filter(Boolean).join(", ") },
-          repere: { texte: "Encours d'au moins " + eur(encBon) + " et plus de " + frc(anc, 0) + " ans (repères Boussole, sans source publique : jamais au-delà de « à surveiller »)" },
+        base("solidite", hors ? "a_surveiller" : "bon", { mesure: { valeur: enc, unite: "€", anciennete_ans: ans != null ? r2(ans) : null, texte: [enc != null ? "Encours " + eur(enc) : null, ans != null ? "Ancienneté " + frc(ans, 0) + " ans" : null].filter(Boolean).join(", ") },
+          repere: { texte: "Encours d'au moins " + eur(encBon) + " et plus de " + frc(anc, 0) + " ans (repères Boussole, sans source publique : jamais au-delà de « à surveiller »)", encours_min: encBon, anciennete_min_ans: anc },
           pourquoi: hors ? (enc != null && enc < encBas ? "Encours bas : un petit fonds peut fermer ou fusionner." : "L'encours ou l'ancienneté sont sous les repères.") : "Encours et ancienneté au-dessus des repères.",
           calcul: ["Encours : " + (enc != null ? eur(enc) : "inconnu"), "Ancienneté : " + (ans != null ? frc(ans, 1) + " ans" : "inconnue")], source_donnees: "données du fonds (encours, ancienneté)", confiance: enc != null && dc ? "complete" : "partielle", donnees: [donnee()] });
       }
@@ -3981,8 +4093,8 @@ def("suivi", function (module, exports, require) {
       const euro = l.devise === "EUR", seuil = ctx.profilRisque === "prudent" ? rep("suivi_devise_prudent_pct") : null;
       const montantDev = euro ? 0 : ctx.parDevise.get(l.devise) || 0, partDev = euro || ctx.I <= 0 ? 0 : montantDev * 100 / ctx.I;
       const surveille = !euro && seuil != null && r6(partDev) > seuil;
-      base("devise", surveille ? "a_surveiller" : "bon", { mesure: { valeur: r4(partDev), unite: "%", texte: euro ? "En euros" : "En " + l.devise + " : " + pct(partDev, 1) + " de ton financier investi" },
-        repere: { texte: "Information : à surveiller seulement pour un profil Prudent au-delà de " + frc(rep("suivi_devise_prudent_pct"), 0) + " % en devises" },
+      base("devise", surveille ? "a_surveiller" : "bon", { mesure: { valeur: r4(partDev), unite: "%", devise: l.devise, texte: euro ? "En euros" : "En " + l.devise + " : " + pct(partDev, 1) + " de ton financier investi" },
+        repere: { texte: "Information : à surveiller seulement pour un profil Prudent au-delà de " + frc(rep("suivi_devise_prudent_pct"), 0) + " % en devises", max: rep("suivi_devise_prudent_pct"), unite: "%" },
         pourquoi: surveille ? "Plus de " + frc(seuil, 0) + " % de ton financier investi dans une devise autre que l'euro, pour un profil Prudent." : euro ? "Ligne en euros." : "Exposition au change : une information, pas un défaut.",
         calcul: euro ? [] : [eur(montantDev) + " en " + l.devise + " ÷ " + eur(ctx.I) + " = " + pct(partDev, 1)], source_donnees: "devise du support", donnees: [donnee()] });
     }
@@ -4057,7 +4169,7 @@ def("suivi", function (module, exports, require) {
     calcul.push("Ton horizon : " + frc(hz.mois) + " mois révolus, soit " + frc(horizon, 1) + " an" + (horizon >= 2 ? "s" : ""));
 
     const M = connu(ch.montant) ? +ch.montant : somme(L, l => l.valeur);
-    if (levier !== "versements_orientes") calcul.push("Montant concerné : " + eur(M));
+    if (levier !== "versements_orientes") { calcul.push("Montant concerné : " + eur(M)); res.montant = r2(M); }
 
     /* versements orientés : aucun coût, un délai */
     if (levier === "versements_orientes") {
@@ -4649,14 +4761,37 @@ def("suivi", function (module, exports, require) {
     return { today, politique: ctx.politique, systeme: systemeCtx(ctx), lignes, declencheurs: decl, habitudes: habitudesCtx(ctx),
       prochaine_revue_coeur: prochaineRevueCoeur(ctx), roles_a_confirmer: lignes.filter(l => l.a_confirmer).map(l => l.id) };
   }
-  /** Ta ligne : rôle, poids, constats, prochaine revue, leviers de sa classe dans son enveloppe (avec « ça vaut le coût ? »). */
+  /** Regroupe les leviers qui poursuivent le même but : un seul par type de levier (« revenir sous le plafond satellite » vient à la fois du plafond du
+      portefeuille et du poids de la ligne, « versements orientés » de l'écart de classe). On garde celui dont les données sont les mieux connues (verdict
+      chiffré d'abord, puis portée la plus étroite : la ligne avant le portefeuille) ; les autres restent dans `fusionnes` (titre, mesure, seuil, ce qui manque)
+      pour que rien ne se perde. Un déclencheur sans levier (baisse du satellite) reste seul. */
+  function fusionnerLeviers(leviers) {
+    const groupes = new Map();
+    liste(leviers).forEach((x, i) => {
+      const k = x.levier || "cle:" + x.cle;
+      if (!groupes.has(k)) groupes.set(k, []);
+      groupes.get(k).push({ x, i });
+    });
+    const rang = ({ x, i }) => [x.cout && x.cout.verdict ? 0 : x.cout && connu(x.cout.cout_unique) ? 1 : 2, liste(x.position_ids).length || 1e9, i];
+    const avant = (a, b) => { for (let j = 0; j < 3; j++) if (a[j] !== b[j]) return a[j] - b[j]; return 0; };
+    const out = [];
+    groupes.forEach(g => {
+      const tries = g.slice().sort((a, b) => avant(rang(a), rang(b))), garde = tries[0], autres = tries.slice(1);
+      const lev = Object.assign({}, garde.x);
+      if (autres.length) lev.fusionnes = autres.map(({ x }) => ({ cle: x.cle, titre: x.titre, pourquoi: x.pourquoi, mesure: x.mesure, seuil: x.seuil, verdict: x.verdict, manque: liste(x.cout && x.cout.manque) }));
+      out.push({ i: garde.i, lev });
+    });
+    return out.sort((a, b) => a.i - b.i).map(o => o.lev);
+  }
+  /** Ta ligne : rôle, poids, constats, prochaine revue, leviers de sa classe dans son enveloppe (avec « ça vaut le coût ? »), un seul par but (fusionnerLeviers). */
   function ligne(data, position_id, today, options) {
     const ctx = contexte(data, today), l = ligneDe(ctx, position_id), o = objet(options);
     if (!l) return null;
     const v = ligneVue(ctx, l, o);
     const leviers = declencheursCtx(ctx, o).filter(d => d.position_ids.map(String).includes(String(l.id)) || (d.cle === "ecart_cible" && d.classe === groupeAllocation(l.classe)) || d.cle === "satellite_plafond" && l.role === "satellite").map(d => ({
-      cle: d.cle, titre: d.titre, pourquoi: d.pourquoi, levier: d.levier, visible: d.visible, raison_visibilite: d.raison_visibilite, mesure: d.mesure, seuil: d.seuil, verdict: d.verdict, cout: d.cout }));
-    return Object.assign(v, { leviers });
+      cle: d.cle, titre: d.titre, pourquoi: d.pourquoi, levier: d.levier, visible: d.visible, raison_visibilite: d.raison_visibilite, mesure: d.mesure, seuil: d.seuil, verdict: d.verdict, cout: d.cout,
+      portee: d.portee, position_ids: d.position_ids, montant: d.montant == null ? null : d.montant }));
+    return Object.assign(v, { leviers: fusionnerLeviers(leviers) });
   }
 
   /* ================================================================== mémoire de la revue (routines.etat_suivi, écrite par cloturer_routine) */
@@ -4695,7 +4830,7 @@ def("suivi", function (module, exports, require) {
   /** Matelas (mois de dépenses) et coût total des supports (% par an) d'après les bonnes pratiques de l'app, pour les habitudes ; {} si le calcul échoue. */
   function santeDe(s, today) {
     try {
-      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, today: new Date(today + "T12:00:00Z") });
+      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, relevesBancaires: s.relevesBancaires || null, today: new Date(today + "T12:00:00Z") });
       const m = r.criteres.find(c => c.cle === "matelas"), f = r.criteres.find(c => c.cle === "frais");
       return { matelas_mois: m && !m.aCompleter && connu(m.valeur) ? +m.valeur : null, frais_pct: f && !f.aCompleter && f.frais && connu(f.frais.pct) ? +f.frais.pct : null };
     } catch (e) { return {}; }
@@ -4722,7 +4857,7 @@ def("suivi", function (module, exports, require) {
   }
 
   return { ROLES, ROLES_LIB, METEOS, METEO_LIB, STATUT_LIB, CONSTATS_LIB, VERDICT_LIB, CLASSE_LIB, LEVIERS, RAISON_LIB, DEFAUTS, classeLib, moisRevolus,
-    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, santeDe, etatSuivi, routinesDe, depuisEtat, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
+    roleParDefaut, roleEffectif, politique, systeme, constats, meteo, declencheurs, vautLeCout, habitudes, santeDe, etatSuivi, routinesDe, depuisEtat, effetRisque, exposition, maSemaine, AUCUNE_ACTION, vue, ligne, fusionnerLeviers, titreLevier, phraseVerdict, prochaineRevueCoeur: (data, today) => prochaineRevueCoeur(contexte(data, today)) };
 });
 });
 

@@ -137,10 +137,11 @@
       la capacité de départ du moteur (Calc.budgetReel sur un seul mois). → [{ debut: "AAAA-MM-01", montant }] du plus ancien au plus récent ; [] sans comptes connectés. */
   function epargnePasseDe(S, today, deps) {
     const C = CALC(deps);
-    if (!C || typeof C.budgetReel !== "function" || !S || !S.banque || (S.scope && S.scope !== "foyer") || !isoOk(today)) return [];
+    const rb = S && S.relevesBancaires && Array.isArray(S.relevesBancaires.releves) && S.relevesBancaires.releves.length ? S.relevesBancaires : null;
+    if (!C || typeof C.budgetReel !== "function" || !S || !(S.banque || rb) || (S.scope && S.scope !== "foyer") || !isoOk(today)) return [];
     const out = [], premier = msDe(today.slice(0, 8) + "01");
     for (let k = 1; k <= 12; k++) {
-      const m = ajouterMois(premier, -k), debut = isoDe(m), r = C.budgetReel(S.banque, isoDe(ajouterMois(m, 1)), 1);
+      const m = ajouterMois(premier, -k), debut = isoDe(m), r = C.budgetReel(S.banque || null, isoDe(ajouterMois(m, 1)), 1, rb);
       if (r && r.du === debut && fini(r.capacite)) out.push({ debut, montant: Math.round(r.capacite) });
     }
     return out.reverse();
