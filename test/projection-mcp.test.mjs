@@ -662,3 +662,20 @@ test("comparer_variantes : la phrase ne dit jamais « 10 cas sur 10 » ni « 0 c
   assert.match(PM.resumeComparaison(comp(0.02), "A", "B").phrase, /fait mieux dans moins de 1 cas sur 10\./);
   assert.match(PM.resumeComparaison(comp(0.7), "A", "B").phrase, /fait mieux dans 7 cas sur 10\./);
 });
+
+test("rétro-contrôle : les photos reconstituées « complet » et « partiel » précèdent la première photo observée (l'observé gagne), les transactions remplacées (doublon_de) sont écartées", { skip: SANS_STRIP }, async () => {
+  const byBloc = v => ({ p1: { Monde: v }, p2: {} });
+  const db = faux({
+    snapshots: [{ date: "2025-03-31", total: 3000, by_bloc: byBloc(3000) }, { date: "2025-04-30", total: 3100, by_bloc: byBloc(3100) }],
+    photos_reconstituees: [{ date: "2025-01-31", total: 2000, by_bloc: byBloc(2000) }, { date: "2025-02-28", total: 2500, by_bloc: byBloc(2500) }, { date: "2025-03-31", total: 9999, by_bloc: byBloc(9999) }],
+    transactions: [{ date: "2025-02-10", type: "versement", amount: 100, doublon_de: null }],
+  });
+  const h = await PM.lireHistorique(db, must, "2025-10-16");
+  assert.deepEqual(J(h.points.map(p => [p.date, p.net])), [["2025-01-31", 2000], ["2025-02-28", 2500], ["2025-03-31", 3000], ["2025-04-30", 3100]], "la photo du 31/03 observée remplace la reconstituée du même jour");
+  const photos = db.appels.find(a => a.table === "photos_reconstituees");
+  assert.ok(photos.ops.some(o => o[0] === "in" && o[1] === "qualite" && J(o[2]).join() === "complet,partiel"), "jamais une photo « estime »");
+  assert.ok(db.appels.find(a => a.table === "transactions").ops.some(o => o[0] === "is" && o[1] === "doublon_de" && o[2] === null), "une transaction remplacée par un import est ignorée");
+  // table illisible (double authentification absente, migration absente) : le rétro-contrôle continue avec les photos observées
+  const casse = faux({ snapshots: [{ date: "2025-03-31", total: 3000, by_bloc: byBloc(3000) }] }, { erreurs: { photos_reconstituees: { code: "42501", message: "refusé" } } });
+  assert.deepEqual(J((await PM.lireHistorique(casse, must, "2025-10-16")).points.map(p => p.date)), ["2025-03-31"]);
+});

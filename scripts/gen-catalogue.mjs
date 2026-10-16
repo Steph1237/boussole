@@ -17,6 +17,7 @@
 //                                                    recopiée de la même façon (voir genererHistoriqueImport()). Le connecteur vérifie un import avec exactement
 //                                                    le code que l'app et les tests exécutent. Parité testée par test/historique-import-gen.test.mjs.
 //
+//   supabase/functions/mcp/historique.gen.js        même copie pour le connecteur (aperçu de l'effet d'un import sur le passé, HIS2 § 7.4) ; mêmes règles, parité testée par test/historique-mcp.test.mjs.
 //   supabase/functions/nightly/historique.gen.js     copie du moteur de reconstitution du passé (HIS2 : web/src/historique.js et calc.js, calendrier.js, reperes.js dont il dépend), pour que
 //                                                    la nuit calcule les photos reconstituées avec exactement le code de l'app (voir genererHistoriqueNuit()). Parité testée par
 //                                                    test/nightly-historique.test.mjs.
@@ -48,6 +49,7 @@ export const SORTIE_MOTEUR = "supabase/functions/mcp/projection-moteur.gen.js";
 export const SORTIE_SUIVI = "supabase/functions/mcp/suivi.gen.js";
 export const SORTIE_HISTORIQUE_IMPORT = "supabase/functions/mcp/historique-import.gen.js";
 export const SORTIE_HISTORIQUE_NUIT = "supabase/functions/nightly/historique.gen.js";
+export const SORTIE_HISTORIQUE_MCP = "supabase/functions/mcp/historique.gen.js";
 /** Modules du moteur, dans l'ordre de définition (chacun ne dépend que des précédents) : nom → fichier de web/src. */
 export const MODULES_MOTEUR = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "projection-evenements",
   "projection-credit", "projection-donnees", "projection-immo", "projection"];
@@ -225,6 +227,6 @@ function copierModules(MODULES, EXPORTS, titre, etiquette) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi(), [SORTIE_HISTORIQUE_IMPORT]: genererHistoriqueImport(), [SORTIE_HISTORIQUE_NUIT]: genererHistoriqueNuit() };
+  const fichiers = { ...generer(), [SORTIE_MOTEUR]: genererMoteur(), [SORTIE_SUIVI]: genererSuivi(), [SORTIE_HISTORIQUE_IMPORT]: genererHistoriqueImport(), [SORTIE_HISTORIQUE_NUIT]: genererHistoriqueNuit(), [SORTIE_HISTORIQUE_MCP]: genererHistoriqueNuit() };
   for (const [rel, txt] of Object.entries(fichiers)) { writeFileSync(racine(rel), txt); console.log("écrit : " + rel); }
 }
