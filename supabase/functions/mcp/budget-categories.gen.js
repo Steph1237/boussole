@@ -79,7 +79,7 @@ def("budget-categories", function (module, exports, require) {
   /** Version de la taxonomie, des motifs génériques et de la correspondance Powens : à changer avec toute modification de ces tables (test d'empreinte). */
   const VERSION_TAXONOMIE = "2026-10-16";
   /** Version de la table des marchands : à changer avec toute modification de MARCHANDS (test d'empreinte). */
-  const VERSION_MARCHANDS = "2026-10-16";
+  const VERSION_MARCHANDS = "2026-10-16.2";
 
   /* ================================================================== taxonomie (spec § 3.1) */
   /** Les blocs. `compte: false` : jamais compté au budget (hors budget). */
@@ -382,6 +382,7 @@ def("budget-categories", function (module, exports, require) {
     { motif: "nrj mobile", sous_categorie: "telecom", type: "enseigne" },
     { motif: "numericable", sous_categorie: "telecom", type: "enseigne" },
     { motif: "orange", sous_categorie: "telecom", type: "enseigne" },
+    { motif: "orange bank", sous_categorie: "frais_bancaires", type: "enseigne" },
     { motif: "prixtel", sous_categorie: "telecom", type: "enseigne" },
     { motif: "red by sfr", sous_categorie: "telecom", type: "enseigne" },
     { motif: "reglo mobile", sous_categorie: "telecom", type: "enseigne" },
@@ -1095,6 +1096,7 @@ def("budget-categories", function (module, exports, require) {
     { motif: "wonderbox", sous_categorie: "loisirs", type: "enseigne" },
     { motif: "xbox", sous_categorie: "loisirs", type: "enseigne" },
     { motif: "action contre la faim", sous_categorie: "cadeaux_dons", type: "organisme" },
+    { motif: "action logement", sous_categorie: "credit_logement", type: "organisme" },
     { motif: "cagnotte", sous_categorie: "cadeaux_dons", type: "generique" },
     { motif: "carte cadeau", sous_categorie: "cadeaux_dons", type: "generique" },
     { motif: "croix rouge", sous_categorie: "cadeaux_dons", type: "organisme" },

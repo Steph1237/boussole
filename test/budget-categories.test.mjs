@@ -69,8 +69,8 @@ test("estSousCategorie : les 34 clés, rien d'autre", () => {
   for (const v of ["logement", "", null, undefined, "constructor", "__proto__", 4]) assert.ok(!B.estSousCategorie(v), String(v));
 });
 
-test("marchands : table de la fixture recopiée telle quelle (885 entrées, versionnée)", () => {
-  assert.equal(B.MARCHANDS.length, 885);
+test("marchands : table de la fixture recopiée telle quelle (887 entrées, versionnée)", () => {
+  assert.equal(B.MARCHANDS.length, 887);
   assert.deepEqual(J(B.MARCHANDS), M.entrees);
 });
 test("marchands : motifs au format cleLibelle, uniques, vers de vraies sous-catégories, sans motif générique du § 3.2 point 5", () => {
@@ -115,7 +115,7 @@ test("versions : toute modification d'une table oblige à changer la version (em
   const h = x => createHash("sha256").update(JSON.stringify(x)).digest("hex").slice(0, 16);
   // Pour changer une correspondance : changer VERSION_TAXONOMIE (taxonomie, motifs, Powens) ou VERSION_MARCHANDS (marchands), puis cette empreinte.
   assert.deepEqual({ version: B.VERSION_TAXONOMIE, empreinte: h([B.TAXONOMIE, B.BLOCS, B.MOTIFS, B.CORRESPONDANCE_POWENS]) }, { version: "2026-10-16", empreinte: "c65b5337bb3ec60a" });
-  assert.deepEqual({ version: B.VERSION_MARCHANDS, empreinte: h(B.MARCHANDS) }, { version: "2026-10-16", empreinte: "af8b181107149d42" });
+  assert.deepEqual({ version: B.VERSION_MARCHANDS, empreinte: h(B.MARCHANDS) }, { version: "2026-10-16.2", empreinte: "0b5dde883f761ed6" });
 });
 
 /* ---------------------------------------------------------------- cleLibelle et cle_marchand */
@@ -422,6 +422,38 @@ test("mots courts ambigus de la table des marchands : suite de mots entière, ja
   const e = m => B.MARCHANDS.find(x => x.motif === m);
   assert.equal(e("orange").sous_categorie, "telecom"); assert.equal(e("action").sous_categorie, "shopping"); assert.equal(e("canal").sous_categorie, "abonnements");
   assert.equal(e("quick").sous_categorie, "restaurants"); assert.equal(e("printemps").sous_categorie, "shopping");
+});
+/* ---------------------------------------------------------------- relecture de la table (tâche 6) */
+test("relecture (tâche 6) : « action logement » (crédit du logement) et « orange bank » (frais bancaires) l'emportent sur « action » et « orange »", () => {
+  const attendu = [
+    ["PRLV ACTION LOGEMENT", "credit_logement"], ["PRLV ACTION LOGEMENT SERVICES 0912", "credit_logement"], ["CB ACTION 1234", "shopping"],
+    ["CB ORANGE BANK", "frais_bancaires"], ["COMMISSION ORANGE BANK 0912", "frais_bancaires"], ["PRLV ORANGE SA", "telecom"], ["CB ORANGE", "telecom"],
+    ["CB ORANGERIE BANK", "a_classer"], ["CB L ORANGE BLEUE", "sport"],
+  ];
+  for (const [l, s] of attendu) assert.equal(B.classer(op(l, -20)).sous_categorie, s, l);
+  assert.equal(B.classer(op("PRLV ACTION LOGEMENT", -20)).categorie, "logement");
+  assert.equal(B.classer(op("CB ORANGE BANK", -5)).origine, "marchand");
+  const e = m => B.MARCHANDS.find(x => x.motif === m);
+  assert.deepEqual([e("action logement").sous_categorie, e("action logement").type, e("orange bank").sous_categorie, e("orange bank").type], ["credit_logement", "organisme", "frais_bancaires", "enseigne"]);
+  assert.equal(B.MARCHANDS.filter(x => x.motif === "action logement" || x.motif === "orange bank").length, 2, "une seule entrée chacun");
+});
+test("relecture (tâche 6) : shell, indigo, mercure, relay, april, fever, pension — reconnus comme mots entiers, jamais comme sous-chaînes ; pension seulement en entrée", () => {
+  const attendu = [
+    ["CB SHELL 1234", "transport"], ["CB SHELLFISH", "a_classer"], ["CB SHELLY", "a_classer"],
+    ["CB INDIGO PARKING", "transport"], ["CB INDIGOTIER", "a_classer"], ["CB INDIGOS", "a_classer"],
+    ["CB MERCURE PARIS", "voyages"], ["VIN MERCUREY", "a_classer"], ["CB MERCURES", "a_classer"],
+    ["CB RELAY GARE", "loisirs"], ["CB RELAYS", "a_classer"], ["CB PRELAY", "a_classer"],
+    ["PRLV APRIL", "assurances"], ["CB APRILIA", "a_classer"], ["CB APRILES", "a_classer"],
+    ["CB FEVER", "sorties"], ["CB FEVERISH", "a_classer"], ["CB FEVERS", "a_classer"],
+    ["CB PENSIONNAT", "a_classer"], ["CB PENSIONS", "a_classer"],
+  ];
+  for (const [l, s] of attendu) assert.equal(B.classer(op(l, -20)).sous_categorie, s, l);
+  // pension : seulement une entrée (retraite reçue) ; une sortie « pension alimentaire » n'est pas rangée par cette entrée (Powens la range en enfants)
+  assert.equal(B.classer(op("VIR PENSION RETRAITE", 1500)).sous_categorie, "revenus_autres");
+  assert.equal(B.classer(op("VIR PENSION ALIMENTAIRE", -300)).sous_categorie, "a_classer");
+  assert.equal(B.classer({ ...op("VIR PENSION ALIMENTAIRE", -300), categorie_powens: { code: "alimony_payment", parent_code: "leisure" } }).sous_categorie, "enfants");
+  // un nom de mois est retiré du libellé avant la comparaison : « APRIL » n'en est pas un (l'enseigne est reconnue), « AVRIL » en est un
+  assert.equal(B.classer(op("PRLV APRIL AVRIL", -40)).sous_categorie, "assurances");
 });
 test("mots courts ambigus : les mots du libellé hors enseigne ne changent pas le résultat", () => {
   for (const l of ["CB ORANGE 12/09", "PRLV SEPA ORANGE FACTURE", "ORANGE"]) assert.equal(B.classer(op(l, -30)).sous_categorie, "telecom", l);

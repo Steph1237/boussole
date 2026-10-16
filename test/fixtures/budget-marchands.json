@@ -1,6 +1,6 @@
 {
  "description": "Table des marchands v1 de BUD1 (spec § 3.2 point 3, tâche 1) : reconnaissance d'enseignes et d'organismes français courants et de termes génériques, en suites de mots au format cleLibelle. Table de reconnaissance, jamais de recommandation : elle n'est affichée nulle part comme une liste. Noms publics seulement ; aucun nom de personne, de syndicat, de parti ni de culte ; aucun motif de MOTIFS (loyer, dgfip, impot, cotisation carte, retrait dab, cpam, mutuelle, caf, salaire, paie…). À recopier telle quelle dans MARCHANDS de web/src/budget-categories.js (tâche 3) ; changer une entrée oblige à changer version.",
- "version": "2026-10-16",
+ "version": "2026-10-16.2",
  "regle": "suite de mots contiguë de cleLibelle(libellé), la plus longue en caractères gagne ; sens facultatif (sortie | entree)",
  "familles": [
   "video",
@@ -565,6 +565,11 @@
   {
    "motif": "orange",
    "sous_categorie": "telecom",
+   "type": "enseigne"
+  },
+  {
+   "motif": "orange bank",
+   "sous_categorie": "frais_bancaires",
    "type": "enseigne"
   },
   {
@@ -4246,6 +4251,11 @@
   {
    "motif": "action contre la faim",
    "sous_categorie": "cadeaux_dons",
+   "type": "organisme"
+  },
+  {
+   "motif": "action logement",
+   "sous_categorie": "credit_logement",
    "type": "organisme"
   },
   {
