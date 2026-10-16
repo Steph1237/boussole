@@ -2636,7 +2636,7 @@ def("budget", function (module, exports, require) {
    Budget.variations(data, { vue, personne?, mois, niveau: "sous_categorie" | "cle", sous_categorie? | compte_id + cle_marchand })   // effet volume et effet prix
    Budget.inhabituel(data, { vue, personne?, mois }) → { disponible, mois, depenses }
    Ces trois fonctions lisent { aujourdhui, comptes: [{ id, type, titulaire }], partage, marchands } ; Budget.pistes en tire les pistes liées (hausse de prix, abonnement arrêté
-   prélevé ailleurs, habitude en hausse). Limite connue : `nombre` de banque_marchands_mois compte aussi les entrées du groupe (fréquence et panier un peu surestimés).
+   prélevé ailleurs, habitude en hausse). Fréquence, panier et seuils lisent `nombre_sorties` (sorties seules), à défaut `nombre` (qui compte aussi les entrées).
    Les fonctions de note, de détection et de pistes lisent les formes que ces fonctions produisent (data.mois, data.reference…).
 
    Formes lues :
@@ -3615,7 +3615,7 @@ def("budget", function (module, exports, require) {
       const k = [String(l.compte_id), cle, sous].join("\u0001");
       if (!groupes.has(k)) groupes.set(k, { compte_id: l.compte_id, cle, sous, w, mois: new Map() });
       const g = groupes.get(k), s = cts(l.sorties), cur = g.mois.get(m) || { s: 0, n: 0, max: 0, jour: null };
-      cur.s += s; cur.n += n0(l.nombre);
+      cur.s += s; cur.n += nombre(l.nombre_sorties) !== null ? n0(l.nombre_sorties) : n0(l.nombre);
       cur.max = Math.max(cur.max, nombre(l.montant_max) !== null ? cts(l.montant_max) : s);
       if (nombre(l.dernier_jour) !== null) cur.jour = Math.max(cur.jour || 0, nombre(l.dernier_jour));
       g.mois.set(m, cur);

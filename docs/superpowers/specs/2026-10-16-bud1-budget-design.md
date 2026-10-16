@@ -251,9 +251,10 @@ But : comprendre ce qui revient chaque mois, et séparer ce qui est **contraint*
 
 **Données nécessaires.** `banque_marchands_mois` gagne trois colonnes, calculées par `banque_recalculer_mois` pour chaque `(mois, compte, cle_marchand, sous_categorie)` :
 - `montant_min` et `montant_max`, les montants de la plus petite et de la plus grosse sortie du mois ;
-- `dernier_jour`, le jour du mois (1 à 31) de la dernière sortie.
+- `dernier_jour`, le jour du mois (1 à 31) de la dernière sortie ;
+- `nombre_sorties`, le nombre des seules sorties (`nombre` compte aussi les entrées du groupe).
 
-Avec `nombre` (déjà prévu ; il compte aussi les entrées du groupe, limite acceptée), elles suffisent pour la fréquence, le panier moyen, les changements de prix et la prochaine date attendue.
+Avec `nombre_sorties` (le moteur lit `nombre` quand elle est nulle), elles suffisent pour la fréquence, le panier moyen, les changements de prix et la prochaine date attendue.
 
 **Ce qui compte.** Les comptes du budget (courant ou joint) de la vue : Tout, Commun, ou Perso (tes comptes à 100 %, le commun à ta part). Les sorties seules comptent (montant d'un mois = ses sorties brutes). Un flux exclu n'est **jamais** un récurrent, ni dans la synthèse, les variations ou l'inhabituel : hors budget (§ 4 : `virement_interne`, `apport_commun`, `transfert_foyer`, `releve_carte`), épargne (`epargne_precaution`, `investissement`, `projets`) et revenus. Un récurrent est un groupe `(compte, cle_marchand, sous_categorie)` : la même enseigne sur deux comptes donne deux lignes. Rythme, famille, statuts et seuils se lisent sur les montants à 100 % ; la part de la vue Perso ne change que les montants affichés, d'où Perso + Perso = Tout. Moins de 3 mois complets de relevés dans la vue : rien n'est calculé (§ 11.9).
 
@@ -771,7 +772,7 @@ Précisions de Stéph : D2 suit les formes de politiques de 0033 (« aal2 si fac
 ### 17.3 Décisions du 2026-10-16 (analyse poussée et récurrent, demande de Stéph)
 | # | Décision | Retenu |
 |---|---|---|
-| D14 | Colonnes ajoutées à `banque_marchands_mois` pour le récurrent | `montant_min`, `montant_max`, `dernier_jour`, sans aucune opération brute au-delà de 90 jours, dans 0035 |
+| D14 | Colonnes ajoutées à `banque_marchands_mois` pour le récurrent | `montant_min`, `montant_max`, `dernier_jour` et `nombre_sorties` (sorties seules : `nombre` compte aussi les entrées), sans aucune opération brute au-delà de 90 jours, dans 0035 |
 | D15 | Familles du récurrent | Engagement, abonnement, habitude, ponctuel (§ 6.5) ; seuils de départ : ±10 %, 3 mois sur 4, 4 fois par mois, hausse > 5 % et ≥ 1 € ; revus après 3 mois d'usage, comme D4 |
 | D16 | Place dans l'app | Patrimoine › Budget en trois onglets : Mon mois, Mes dépenses, Récurrent (§ 11.9) ; « Reste à prélever » aussi dans Aujourd'hui et le Calendrier |
 | D17 | Connecteur | `analyser_depenses` étendu et nouvel outil `lire_recurrents` |

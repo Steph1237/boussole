@@ -126,3 +126,17 @@ test("pistes : un abonnement arrêté d'un côté mais prélevé sur un autre co
   const seul = Budget.pistes({ ...data, marchands: data.marchands.filter(x => x.compte_id === "c1") }).filter(x => x.cle.startsWith("abonnement_arrete_ailleurs_"));
   assert.equal(seul.length, 0);
 });
+
+/* ---------- nombre_sorties : les entrées d'un groupe ne comptent ni dans la fréquence ni dans le panier ---------- */
+test("nombre_sorties : une clé avec des remboursements n'est pas une habitude par la fréquence ; sans la colonne, on lit `nombre`", () => {
+  const ligne = (mois, ex) => ({ mois: mois + "-01", compte_id: "c1", cle_marchand: "resto sam", sous_categorie: "restaurants", entrees: 40, sorties: 80, nombre: 6, montant_min: 20, montant_max: 20, dernier_jour: 12, ...ex });
+  const d = marchands => ({ aujourdhui: "2026-10-16", comptes: [{ id: "c1", type: "courant", titulaire: "p1" }], partage: { mode: "egal", p1: 0.5 }, marchands });
+  const mois = ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
+  // 6 opérations par mois dont 2 remboursements : 4 sorties... puis 3 sorties seulement
+  const avec = Budget.recurrents(d(mois.map(m => ligne(m, { nombre_sorties: 3 }))), { vue: "tout" }).recurrents;
+  assert.equal(avec.length, 0, "3 sorties par mois : ni habitude (< 4), ni montant variable");
+  const sans = Budget.recurrents(d(mois.map(m => ligne(m, {}))), { vue: "tout" }).recurrents;
+  assert.deepEqual(sans.map(r => [r.famille, r.frequence]), [["habitude", 6]], "colonne absente : `nombre` (6) fait une habitude");
+  const quatre = Budget.recurrents(d(mois.map(m => ligne(m, { nombre_sorties: 4 }))), { vue: "tout" }).recurrents;
+  assert.deepEqual(quatre.map(r => [r.famille, r.frequence, r.panier_moyen]), [["habitude", 4, 20]], "4 sorties : borne comprise ; panier = sorties ÷ nombre de sorties");
+});
