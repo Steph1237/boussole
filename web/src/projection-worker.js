@@ -12,6 +12,8 @@
   /** Traite un message du fil principal ; publie chaque étape. */
   function traiter(msg, publier) {
     try {
+      /* BUD1 (spec § 10.1) : calcul inverse de l'épargne nécessaire, un seul message de réponse { type: "epargne_necessaire", resultat } */
+      if (msg.type === "epargne_necessaire") { publier({ type: "epargne_necessaire", resultat: Projection.epargneNecessaire(msg.data, msg.options || {}) }); return; }
       const etapes = Array.isArray(msg.etapes) && msg.etapes.length ? msg.etapes : [2000];
       const o = msg.options || {}, M = Projection.preparer(msg.data, o);
       etapes.forEach((n, k) => publier({ etape: k, resultat: Projection.simuler(M, { chemins: n, graine: o.graine, volatilite: o.volatilite }) }));

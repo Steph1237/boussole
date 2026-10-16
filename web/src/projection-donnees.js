@@ -123,13 +123,31 @@
   }
 
   /* ------------------------------------------------------------------ capacité d'épargne de départ (spec § 6.1) */
+  /** Cible de budget en vigueur (BUD1 § 7.5, D12) : la plus récente dont `valide_du` (AAAA-MM) n'est pas après le mois de `today`, pour le périmètre ("foyer", "p1", "p2") ;
+      { epargne, valide_du, validee_le } ou null. Même règle que Budget.cibleEnVigueur (parité testée) : config.budget_cible.historique puis perimetres[périmètre]. */
+  function cibleEnVigueur(bc, perimetre, today) {
+    const m = typeof today === "string" && /^\d{4}-\d{2}/.test(today) ? today.slice(0, 7) : null;
+    if (!bc || typeof bc !== "object" || !m) return null;
+    const mois = v => (typeof v === "string" && /^\d{4}-\d{2}/.test(v) ? v.slice(0, 7) : null);
+    const entrees = [];
+    for (const h of liste(bc.historique)) if (h && (h.perimetre || "foyer") === perimetre && mois(h.valide_du) && h.cible && typeof h.cible === "object") entrees.push({ valide_du: mois(h.valide_du), cible: h.cible, propose_le: h.propose_le });
+    const courante = objet(bc.perimetres)[perimetre];
+    if (courante && mois(courante.valide_du) && !entrees.some(e => e.valide_du === mois(courante.valide_du))) entrees.push({ valide_du: mois(courante.valide_du), cible: courante });
+    const e = entrees.filter(x => x.valide_du <= m).sort((a, b) => (a.valide_du < b.valide_du ? -1 : a.valide_du > b.valide_du ? 1 : 0)).pop();
+    if (!e) return null;
+    const bl = objet(e.cible.blocs !== undefined ? e.cible.blocs : e.cible), ep = +bl.epargne;
+    return isFinite(ep) && bl.epargne !== null && bl.epargne !== "" ? { epargne: ep, valide_du: e.valide_du, validee_le: typeof e.propose_le === "string" ? e.propose_le : null } : null;
+  }
   /** Capacité de base : constatée (comptes), prévue (budget), programmée (virements), retenue et sa source. options : { perimetre, base_capacite, capacite_mensuelle }. */
   function capaciteDeBase(data, options) {
     const d = data || {}, o = options || {}, sc = o.perimetre || "foyer", cfgp = objet(objet(d.config).projection);
     const R = O.indexReperes(d.reperes), today = d.today;
     const lignes = d.budget && Array.isArray(d.budget.lignes) ? d.budget.lignes : [];
     const totaux = Plan.budgetTotaux(lignes, d.profil, sc);
-    const prevue = Plan.capaciteEpargne(totaux);
+    /* BUD1 (spec § 8.5) : quand une cible validée du périmètre est en vigueur ce mois-ci, le budget prévu est l'épargne de cette cible (source « ta cible de budget,
+       validée le JJ/MM »), au lieu de la capacité des lignes du budget déclaré. La constatée reste retenue par défaut. */
+    const cibleBudget = cibleEnVigueur(objet(d.config).budget_cible, sc, today);
+    const prevue = cibleBudget ? cibleBudget.epargne : Plan.capaciteEpargne(totaux);
     const rec = liste(objet(d.config).recurring).filter(r => {
       if (!r || !(+r.amount > 0)) return false;
       if (sc === "foyer") return true;
@@ -163,7 +181,9 @@
       if (seuil == null) mentions.push("repère garde_fou_ecart_capacite manquant : écart entre capacité prévue et constatée non signalé");
       else signale = ecart > seuil + 1e-12;
     }
-    return { constatee, prevue, programmee, retenue, source, ecart_pct: ecart == null ? null : ecart * 100, signale, periode: detail ? detail.periode : null,
+    const prevueSource = cibleBudget ? "cible" : "budget";
+    const prevueLibelle = cibleBudget ? "ta cible de budget" + (cibleBudget.validee_le ? ", validée le " + cibleBudget.validee_le.slice(8, 10) + "/" + cibleBudget.validee_le.slice(5, 7) : "") : "ton budget";
+    return { constatee, prevue, prevue_source: prevueSource, prevue_libelle: prevueLibelle, programmee, retenue, source, ecart_pct: ecart == null ? null : ecart * 100, signale, periode: detail ? detail.periode : null,
       constatee_detail: detail, base_demandee: demande, revenus_prevus: totaux.revenus, depenses_prevues: totaux.depensesLignes, mensualites_prevues: totaux.mensualites, mentions };
   }
 
@@ -373,6 +393,6 @@
       reperes: liste(objet(s.savoir).reperes), indices: liste(s.indices), classes: objet(s.classes), historique: historiquePourRetro(s.snapshots, s.tx) };
   }
 
-  return { ecarterIndisponibles, depuisEtat, historiquePourRetro, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
+  return { cibleEnVigueur, ecarterIndisponibles, depuisEtat, historiquePourRetro, CLASSES_TIREES, IDX, correlationTirees, matriceTirees, choleskyTirees, contexte, ciblesAllocation, parametresClasse, capaciteDeBase, construireCompartiments,
     creditsExistants, DISPO, TYPES_ENVELOPPE, personnesDe, objet, liste, sum };
 });

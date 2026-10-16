@@ -29,6 +29,8 @@
   const { O, F, E, C, Dn, Marche, Calc, Plan, Calendrier } = D;
 
   const GRAINE = 20261014;
+  /** BUD1 (spec § 10) : probabilité visée d'un objectif (8 chances sur 10), pas de la recherche (€/mois), plafond de l'épargne en plus (€/mois), nombre de simulations. */
+  const SEUIL_OBJECTIF = 0.8, PAS_EPARGNE = 25, EPARGNE_MAX = 10000, SIMULATIONS_MAX = 16, CHEMINS_EPARGNE = 500, ID_VARIANTE_EPARGNE = "_epargne_necessaire";
   /** Incrémentée à chaque changement de calcul ; rendue avec chaque résultat (rejouer une projection passée). */
   const versionModele = "proj-1.2.0";
   const CLASSES_TIREES = Dn.CLASSES_TIREES, NB_TIRAGES = CLASSES_TIREES.length, IDX = Dn.IDX;
@@ -575,6 +577,8 @@
     const marquesSet = new Set(o.marques || []);
     const retenir = {}; (o.retenir || []).forEach(t => { retenir[t] = new Float64Array(P); });
     const objCompte = M.objs.map(() => 0);
+    /* BUD1 (spec § 10.2) : un compteur par objectif et par mois (chemins dont la valeur de référence atteint la cible, en euros constants), dans la boucle existante */
+    const objMois = o.datesAtteinte ? M.objs.map(() => new Int32Array(N + 1)) : null;
     const apportMois = new Set(o.apportMois || []), apportRes = {}; apportMois.forEach(t => { apportRes[t] = new Float64Array(P); });
     const tr = trace ? {
       fin: new Float64Array(N + 1), dispo: new Float64Array(N + 1), net: new Float64Array(N + 1), bien: new Float64Array(N + 1), dette: new Float64Array(N + 1),
@@ -735,8 +739,11 @@
         probEcart[t] = mieux / P;
       }
       M.objs.forEach((ob, j) => {
-        if (ob.t !== t) return;
-        for (let i = 0; i < P; i++) { let s = 0; const off = i * B; for (const b of ob.ref) s += V[off + b]; if (s >= ob.cible * infl[t] - 1e-9) objCompte[j]++; }
+        if (ob.t !== t && !objMois) return;
+        let n = 0;
+        for (let i = 0; i < P; i++) { let s = 0; const off = i * B; for (const b of ob.ref) s += V[off + b]; if (s >= ob.cible * infl[t] - 1e-9) n++; }
+        if (ob.t === t) objCompte[j] += n;
+        if (objMois) objMois[j][t] = n;
       });
       if (trace) {
         const off = 0;
@@ -932,7 +939,7 @@
     }
 
     /* ---- sortie ---- */
-    return { P, B, N, graine, apport: apportRes, centiles, existant: exis, ecart, probEcart, manque, objCompte, retenir, trace: tr, V, Vx, Bs, vue, infl, groupes: groupes.length, needPairs: needPair.reduce((a, x) => a + x, 0),
+    return { P, B, N, graine, apport: apportRes, centiles, existant: exis, ecart, probEcart, manque, objCompte, objMois, retenir, trace: tr, V, Vx, Bs, vue, infl, groupes: groupes.length, needPairs: needPair.reduce((a, x) => a + x, 0),
       rendement: rend ? { cum: cumLog, annee: anLog } : null };
   }
 
@@ -970,7 +977,7 @@
     const N = M.N, comp = M.composants, out = [];
     const sig = t => comp.filter(c => c.t0 <= t && t < c.t1).map(c => c.id).join("|");
     const cb = M.capacite_base;
-    const baseTxt = cb.source === "reel" ? "capacité constatée (" + cb.constatee_detail.mois + " mois)" : cb.source === "montant" ? "capacité fixée à " + eur(cb.retenue) + " par mois" : "capacité prévue au budget";
+    const baseTxt = cb.source === "reel" ? "capacité constatée (" + cb.constatee_detail.mois + " mois)" : cb.source === "montant" ? "capacité fixée à " + eur(cb.retenue) + " par mois" : cb.prevue_source === "cible" ? "capacité prévue par " + cb.prevue_libelle : "capacité prévue au budget";
     let debut = 1, signature = sig(1);
     const fermer = (fin, raison, source, evId, finsTxt) => {
       const t = debut, montant = tr.cap[t] / M.infl[t];
@@ -1058,7 +1065,7 @@
     if (cb.signale && cb.source === "reel") {
       out.push({ cle: "ecart_capacite", niveau: "info", valeurs: { constatee: cb.constatee, prevue: cb.prevue, programmee: cb.programmee, periode: cb.periode },
         texte: "Ta capacité d'épargne constatée sur tes comptes est de " + eur(cb.constatee) + " par mois" + (cb.periode ? " (" + cb.periode + ")" : "") + ", contre " + eur(cb.prevue) +
-          " prévus au budget" + (cb.programmee > 0 ? " et " + eur(cb.programmee) + " de versements programmés" : "") + " : la projection part de la capacité constatée." });
+          " prévus par " + (cb.prevue_libelle || "ton budget") + (cb.programmee > 0 ? " et " + eur(cb.programmee) + " de versements programmés" : "") + " : la projection part de la capacité constatée." });
     }
     if (cb.constatee != null && cb.source !== "reel") {
       const moy = sum(Array.from({ length: Math.min(12, N) }, (_, k) => k + 1), t => tr.cap[t] / M.infl[t]) / Math.min(12, N);
@@ -1146,6 +1153,15 @@
     return [...vus.values()];
   }
 
+  /** BUD1 (spec § 10.2) : premier mois où au moins 80 % des chemins ont la valeur de référence de l'objectif au-dessus de sa cible (euros constants), ou null avant
+      la fin de l'horizon ; null aussi pour un objectif déjà atteint, hors de portée ou hors horizon (son statut le dit). */
+  function dateAtteinte80(M, run, j, P, statut) {
+    if (!run.objMois || statut === "atteint" || statut === "hors_portee") return null;
+    const compteur = run.objMois[j];
+    for (let t = 1; t <= M.N; t++) if (compteur[t] >= SEUIL_OBJECTIF * P - 1e-9) return M.dates[t];
+    return null;
+  }
+
   /** Simulation : Monte-Carlo (2 000 chemins, graine fixe, tirages communs) ou déterministe (volatilite: 0). → résultat de la spec § 3. */
   function simuler(M, opts) {
     const o = opts || {}, N = M.N;
@@ -1154,7 +1170,7 @@
     const deterministe = o.volatilite === 0;
     const P = deterministe ? 1 : (o.chemins > 0 ? Math.round(o.chemins) : 2000);
     const graine = o.graine == null ? GRAINE : o.graine;
-    const run = derouler(M, { P, graine, det: deterministe, trace: deterministe, vue, net_impots: netImp, couches: true, retenir: o.retenir, rend: true });
+    const run = derouler(M, { P, graine, det: deterministe, trace: deterministe, vue, net_impots: netImp, couches: true, retenir: o.retenir, rend: true, datesAtteinte: !!o.dates_atteinte });
     const det = M.det.tr, fx = echelle(M, euros);
     const sortie = tab => { const r = {}; NOMS_P.forEach(k => { r[k] = versArray(t => tab[k][t] * fx(t), N); }); return r; };
     const nul = tab => { const r = {}; NOMS_P.forEach(k => { r[k] = versArray(t => (isNaN(tab[k][t]) ? null : tab[k][t] * fx(t)), N); }); return r; };
@@ -1175,7 +1191,9 @@
       if (ob.t >= 1 && ob.t <= N) detV = sum(ob.ref, b => det.valeurs[ob.t * M.B + b]) / M.infl[ob.t];
       const statut = ob.deja >= ob.cible ? "atteint" : ob.date < M.today ? "hors_portee" : prob == null ? "hors_horizon" : detV >= ob.cible * 1.1 ? "avance" : detV >= ob.cible * 0.95 ? "dans_les_temps" : "retard";
       const mot = prob == null ? null : prob >= 0.8 ? "probable" : prob >= 0.5 ? "incertain" : "peu probable";
-      return { id: ob.id, nom: ob.nom, cible: ob.cible, date: ob.date, probabilite: prob, mot, statut, valeur_deterministe: detV };
+      const res = { id: ob.id, nom: ob.nom, cible: ob.cible, date: ob.date, probabilite: prob, mot, statut, valeur_deterministe: detV };
+      if (o.dates_atteinte) res.date_8_sur_10 = dateAtteinte80(M, run, j, P, statut);
+      return res;
     });
     /* manquer d'argent */
     const premiers = Array.from(run.manque).filter(x => x > 0).sort((a, b) => a - b);
@@ -1655,6 +1673,84 @@
     }
     return executerSurLeFilPrincipal();
   }
+  /* ================================================================== épargne nécessaire (BUD1, spec § 10.1) */
+  /** Pour chaque objectif en cours (ni atteint, ni hors de portée, ni hors horizon), la plus petite épargne mensuelle en plus (d, €/mois, par pas de 25) qui porte sa
+      probabilité à sa date à 8 chances sur 10, et d* pour tous ensemble (le plus grand des d). Le calcul inverse du moteur : une variante transitoire
+      (`hypotheses.epargne_delta_mensuel`), 500 chemins, la même graine donc les mêmes tirages pour tous les essais ; chaque simulation donne toutes les probabilités
+      d'un coup et son résultat est gardé ; recherche exponentielle (100, 200, 400… jusqu'à 10 000 €) puis dichotomie à 25 € près, 16 simulations au plus (au-delà
+      la précision est dite, `precision`). Un objectif déjà à 8 chances sur 10 sans effort supplémentaire reçoit un d négatif : ce qu'il pourrait épargner de moins
+      (jusqu'à sa capacité retenue). La monotonie des probabilités sur la grille parcourue est vérifiée ; un écart est signalé (`monotone: false`) et la plus petite valeur
+      de la grille qui passe est rendue. `atteignable: false` quand 10 000 €/mois ne suffisent pas. options : celles de preparer (horizon_ans, perimetre, vue, variante…),
+      plus { chemins (500), graine }. Pur, déterministe ; l'entrée n'est pas modifiée.
+      → { par_objectif: [{ id, nom, d, probabilite_a_0, probabilite_a_d, atteignable, monotone, precision }], exclus: [{ id, nom, raison }], ensemble: { d, atteignable },
+      chemins, graine, simulations, monotone, capacite_retenue, version_modele }. */
+  function epargneNecessaire(data, options) {
+    const o = options || {}, d0 = data || {};
+    const P = o.chemins > 0 ? Math.round(o.chemins) : CHEMINS_EPARGNE, graine = o.graine == null ? GRAINE : o.graine;
+    const base = Object.assign({}, o); delete base.chemins; delete base.graine;
+    const variantes = liste(objet(d0.foyer).variantes);
+    const varBase = base.variante ? variantes.find(v => v && v.id === base.variante) || null : null;
+    const deltaBase = varBase ? +objet(varBase.hypotheses).epargne_delta_mensuel || 0 : 0;
+    const donnees = delta => Object.assign({}, d0, { foyer: Object.assign({}, objet(d0.foyer), { variantes: variantes.filter(v => !v || v.id !== ID_VARIANTE_EPARGNE).concat([{
+      id: ID_VARIANTE_EPARGNE, nom: "Épargne nécessaire", retire: varBase ? liste(varBase.retire) : [], hypotheses: Object.assign({}, varBase ? objet(varBase.hypotheses) : {}, { epargne_delta_mensuel: deltaBase + delta }) }]) }) });
+    const cache = new Map();
+    let simulations = 0, ctx0 = null;
+    const evaluer = delta => {
+      if (cache.has(delta)) return cache.get(delta);
+      simulations++;
+      const M = preparer(donnees(delta), Object.assign({}, base, { variante: ID_VARIANTE_EPARGNE }));
+      assurerDet(M);
+      const run = derouler(M, { P, graine, det: false, vue: M.options.vue, net_impots: M.options.net_impots, couches: false });
+      const objs = M.objs.map((ob, j) => {
+        const statut = ob.deja >= ob.cible ? "atteint" : ob.date < M.today ? "hors_portee" : ob.t < 1 || ob.t > M.N ? "hors_horizon" : "en_cours";
+        return { id: ob.id, nom: ob.nom, statut, p: statut === "en_cours" ? run.objCompte[j] / P : null };
+      });
+      if (!ctx0) ctx0 = M;
+      const r = { delta, objs };
+      cache.set(delta, r);
+      return r;
+    };
+    const r0 = evaluer(0);
+    const cap = Math.max(0, Math.round(ctx0.capacite_base.retenue || 0));
+    const idx = r0.objs.map((x, i) => (x.statut === "en_cours" ? i : -1)).filter(i => i >= 0);
+    const passe = (delta, i) => cache.get(delta).objs[i].p >= SEUIL_OBJECTIF - 1e-9;
+    const bornes = i => {
+      const ds = [...cache.keys()].sort((a, b) => a - b);
+      const hi = ds.find(x => passe(x, i));
+      const echecs = ds.filter(x => !passe(x, i) && (hi === undefined || x < hi));
+      return { hi: hi === undefined ? null : hi, lo: echecs.length ? echecs[echecs.length - 1] : null };
+    };
+    // 1. positifs : 100, 200, 400… jusqu'à ce que tous les objectifs sous la barre à 0 la passent, ou 10 000
+    const aPasser = () => idx.filter(i => bornes(i).hi === null);
+    for (let pas = 100; aPasser().length && pas / 2 < EPARGNE_MAX && simulations < SIMULATIONS_MAX; pas *= 2) evaluer(Math.min(pas, EPARGNE_MAX));
+    // 2. négatifs : ce qu'on pourrait épargner de moins, jusqu'à la capacité retenue (par pas de 25)
+    const bas = -Math.floor(cap / PAS_EPARGNE) * PAS_EPARGNE;
+    if (idx.some(i => passe(0, i)) && bas < 0 && simulations < SIMULATIONS_MAX) evaluer(bas);
+    // 3. dichotomie à 25 € près, en commençant par la fourchette la plus large ; chaque simulation précise toutes les fourchettes
+    while (simulations < SIMULATIONS_MAX) {
+      let pire = null, largeur = PAS_EPARGNE;
+      for (const i of idx) {
+        const b = bornes(i);
+        if (b.hi !== null && b.lo !== null && b.hi - b.lo > largeur) { largeur = b.hi - b.lo; pire = b; }
+      }
+      if (!pire) break;
+      evaluer(pire.lo + PAS_EPARGNE * Math.max(1, Math.floor((pire.hi - pire.lo) / (2 * PAS_EPARGNE))));
+    }
+    const grille = [...cache.keys()].sort((a, b) => a - b);
+    const parObjectif = idx.map(i => {
+      const b = bornes(i), x = r0.objs[i];
+      let monotone = true;
+      for (let k = 1; k < grille.length; k++) if (cache.get(grille[k]).objs[i].p < cache.get(grille[k - 1]).objs[i].p - 1e-12) monotone = false;
+      const atteignable = b.hi !== null;
+      return { id: x.id, nom: x.nom, d: atteignable ? b.hi : null, probabilite_a_0: x.p, probabilite_a_d: atteignable ? cache.get(b.hi).objs[i].p : cache.get(grille[grille.length - 1]).objs[i].p, atteignable, monotone,
+        precision: atteignable ? (b.lo === null ? 0 : b.hi - b.lo) : null };
+    });
+    const ok = parObjectif.filter(x => x.atteignable);
+    return { par_objectif: parObjectif, exclus: r0.objs.filter(x => x.statut !== "en_cours").map(x => ({ id: x.id, nom: x.nom, raison: x.statut })),
+      ensemble: { d: parObjectif.length && ok.length === parObjectif.length ? Math.max(...ok.map(x => x.d)) : null, atteignable: parObjectif.length ? ok.length === parObjectif.length : null },
+      chemins: P, graine, simulations, monotone: parObjectif.every(x => x.monotone), capacite_retenue: cap, version_modele: versionModele };
+  }
+
   /** Vide le cache des résultats (tests). */
   function viderCache() { cache.clear(); retroCache.clear(); }
 
@@ -1663,7 +1759,7 @@
 
   return {
     GRAINE, versionModele, CLASSES_TIREES, HYPOTHESES, EVENEMENTS, PERCENTILES, PLAN_MAX_OCTETS, PLAN_PARAMETRES_MAX_OCTETS, PLAN_TOTAL_MAX_OCTETS, octetsJsonb: O.octetsJsonb,
-    preparer, simuler, crise, comparer, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, retroDuModele, texteProbabilite, historiquePourRetro: Dn.historiquePourRetro, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
+    preparer, simuler, crise, comparer, epargneNecessaire, executer, calculerEtapes, empreinte, viderCache, kEur, tirages, correlations, couverture, retroControle, retroDuModele, texteProbabilite, historiquePourRetro: Dn.historiquePourRetro, phraseRetro, retrait, capaciteDansLeTemps, figerPlan, comparerPlanReel,
     fiscaliteSortie: F.fiscaliteSortie, amortissement: C.amortissement, annuite: C.annuite, planPret: C.planPret, ptz: C.ptz, taeg: C.taeg,
     capaciteEmprunt: (data, opts) => D.Immo.capaciteEmprunt(data, opts), capaciteDeBase: Dn.capaciteDeBase, depuisEtat: Dn.depuisEtat, validerEvenement: E.validerEvenement, validerVariante: E.validerVariante,
     rendementAttendu, capitaliser, centile: O.centile, _executer, _selectionnerRangs: selectionnerRangs,
