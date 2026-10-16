@@ -131,6 +131,35 @@ test("taxonomie en base : 34 clés de la fixture, catégorie large de chacune, p
   await superu();
 });
 
+test("historique_sensible et historique_texte (0034) redéfinies sans séquence d'échappement Unicode : corps stable quel que soit le transport, mêmes contrôles", async () => {
+  await superu();
+  // le fichier 0035 ne porte aucune séquence \\uXXXX (en production, 0034 a été reçue avec les caractères eux-mêmes à leur place)
+  assert.doesNotMatch(SQL, /\\u[0-9A-Fa-f]{4}/, "aucune séquence \\uXXXX dans 0035");
+  const corps = await q(`select p.proname, p.prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname in ('historique_sensible', 'historique_texte') order by 1`);
+  assert.deepEqual(corps.map(c => c.proname), ["historique_sensible", "historique_texte"]);
+  for (const c of corps) {
+    assert.doesNotMatch(c.prosrc, /\\u[0-9A-Fa-f]{4}/, c.proname + " : pas de \\uXXXX");
+    assert.doesNotMatch(c.prosrc, /[\u00A0\u1680\u2000-\u200F\u2028-\u202F\u205F\u2060\u3000\uFEFF\t\v\f]/, c.proname + " : aucun caractère invisible ni espace Unicode dans le corps");
+    assert.match(c.prosrc, /chr\(8203\)/, c.proname + " : classes construites par chr()");
+  }
+  // mêmes contrôles qu'avant : IBAN et carte écrits avec des espaces insécables, fines, typographiques ou des caractères invisibles
+  const sensible = async (t, sep = true) => (await un(`select public.historique_sensible($1, $2) v`, [t, sep])).v;
+  assert.equal(await sensible("IBAN FR76 3000 6000 0112 3456 7890 189"), true, "espaces simples");
+  assert.equal(await sensible("IBAN FR76\u00A03000\u00A06000\u00A00112\u00A03456\u00A07890\u00A0189"), true, "insécables");
+  assert.equal(await sensible("FR76\u202F3000\u20096000\u20030112\u30003456\u16807890\u205F189"), true, "fines et typographiques");
+  assert.equal(await sensible("FR76\u200B3000\u200C6000\u200D0112\u200E3456\u200F7890\u2060189\uFEFF"), true, "invisibles retirés");
+  assert.equal(await sensible("carte 4970\t1012\n3456\v7890"), true, "tabulations et sauts");
+  assert.equal(await sensible("FR76-3000-6000-0112-3456-7890-189"), true, "séparateurs");
+  assert.equal(await sensible("FR76-3000-6000-0112-3456-7890-189", false), false, "sans les séparateurs (résumé jsonb)");
+  assert.equal(await sensible("Courant Exemple"), false);
+  assert.equal(await sensible(null), false);
+  // historique_texte : invisibles retirés avant de compter les chiffres
+  await assert.rejects(db.query(`select public.historique_texte($1::jsonb, 'libelle', 40, true, 6)`, [JSON.stringify("ref 12\u200B34\uFEFF56")]), /une suite de 6 chiffres ou plus est refusée/);
+  await assert.rejects(db.query(`select public.historique_texte($1::jsonb, 'libelle', 80, true, 0)`, [JSON.stringify("FR76\u00A03000\u00A06000\u00A00112\u00A03456\u00A07890\u00A0189")]), /libelle : contenu sensible refusé/);
+  assert.equal((await un(`select public.historique_texte($1::jsonb, 'libelle', 40, true, 6) v`, [JSON.stringify("  Courant Exemple  ")])).v, "Courant Exemple");
+});
+
 test("HIS2 + BUD1 : historique_banque_mois accepte une clé de la taxonomie sous sa catégorie large, refuse la mauvaise paire ; 0034 intacte pour la catégorie large seule", async () => {
   await db.exec(`insert into public.historique_comptes (id, user_id, libelle, etablissement, type, titulaire, cle) values
       ('a0000000-0000-4000-8000-0000000000a1', '${A}', 'Courant importé', 'lcl', 'courant', 'p1', 'cle-a');
@@ -508,6 +537,7 @@ test("budget_regles : défauts, contraintes du § 3.4 (cas invalides de la fixtu
   await assert.rejects(insererRegle(regle({ montant_min: 50, montant_max: 40 })), /budget_regles_montants/);
   await insererRegle(regle({ motif: "vir sam", montant_min: 45, montant_max: 45, sens: "les_deux", annuelle: true, source: "accord dans la conversation" }));
   await assert.rejects(insererRegle(regle({ source: "x".repeat(201) })), /budget_regles_source/);
+  await assert.rejects(insererRegle(regle({ source: "accord, IBAN FR7630006000011234567890189" })), /budget_regles_source/, "source : contenu sensible refusé (le connecteur écrit cette colonne)");
   await assert.rejects(insererRegle(regle({ sens: "parfois" })), /budget_regles_sens/);
   // compte : un compte de l'utilisateur (clé composite), supprimé avec lui
   await assert.rejects(insererRegle(regle({ compte_id: 99 })), /foreign key|violates/, "compte inconnu");
@@ -646,6 +676,7 @@ test("appliquer_propositions : partage — valide (egal, fixe, apports), maj_le 
     [{ partage: { mode: "fixe", p1: 0.5 } }, /partage : source obligatoire/],
     [{ partage: { mode: "fixe", p1: 0.5, source: "   " } }, /partage : source obligatoire/],
     [{ partage: { mode: "fixe", p1: 0.5, source: "x".repeat(301) } }, /partage : source obligatoire/],
+    [{ partage: { mode: "fixe", p1: 0.5, source: "IBAN FR76 3000 6000 0112 3456 7890 189" } }, /partage : source : contenu sensible refusé/],
     [{ partage: { mode: "fixe", p1: 0.5, source: "x", maj_le: "2026-01-01" } }, /champ « maj_le » inconnu/],
     [{ partage: "50/50" }, /partage : objet attendu/],
     [{ partage: { mode: "fixe", p1: 0.5, source: "x" }, inconnu: 1 }, /réglage « inconnu » non modifiable par proposition \(cushion, recurring, frais_enveloppes, enveloppes_infos, prets_infos, donations, avis_impot, projection, suivi, partage, budget_cible ou budget_preferences seulement\)/],
@@ -672,6 +703,8 @@ test("appliquer_propositions : budget_preferences — fusion champ par champ, nu
   assert.equal(p.le, (await un(`select to_char(${AUJ}, 'YYYY-MM-DD') j`)).j, "« le » : date du jour quand elle n'est pas fournie");
   for (const [apres, motif] of [
     [{ budget_preferences: { effort: "equilibre" } }, /budget_preferences : source obligatoire/],
+    [{ budget_preferences: { effort: "equilibre", source: "carte 4970 1012 3456 7890" } }, /budget_preferences : source : contenu sensible refusé/],
+    [{ budget_preferences: { annuelles: ["4970_1012_3456_7890"], source: "x" } }, /annuelles : clé invalide/],
     [{ budget_preferences: { source: "x" } }, /au moins un réglage attendu/],
     [{ budget_preferences: { effort: "intense", source: "x" } }, /effort invalide/],
     [{ budget_preferences: { especes_bloc: "loisirs", source: "x" } }, /especes_bloc invalide/],
@@ -740,6 +773,8 @@ test("appliquer_propositions : budget_cible — la cible T2 de la fixture s'appl
   await refusCible({ budget_cible: { perimetres: { foyer: await cible({ niveau: "folle" }) } } }, /niveau invalide/, "niveau");
   await refusCible({ budget_cible: { perimetres: { foyer: await cible({ valide_du: "2026-13" }) } } }, /valide_du invalide/, "valide_du");
   await refusCible({ budget_cible: { perimetres: { foyer: await cible({ source: undefined }) } } }, /source obligatoire/, "source");
+  await refusCible({ budget_cible: { perimetres: { foyer: await cible({ source: "FR7630006000011234567890189" }) } } }, /cible : source : contenu sensible refusé/, "source sensible");
+  await refusCible({ budget_cible: { perimetres: { foyer: await cible({ justification: "carte 4970 1012 3456 7890" }) } } }, /cible : justification : contenu sensible refusé/, "justification sensible");
   await refusCible({ budget_cible: { perimetres: { foyer: await cible({ protegees: ["inconnue"] }) } } }, /protegees : sous-catégorie « inconnue »/, "protégée inconnue");
   await refusCible({ budget_cible: { perimetres: { foyer: await cible({ objectifs: [{ id: "a", probabilite_avant: 2 }] }) } } }, /probabilite_avant invalide/, "probabilité");
   await refusCible({ budget_cible: { perimetres: { foyer: await cible({ gout: 1 }) } } }, /champ « gout » inconnu/, "champ inconnu");

@@ -18,6 +18,9 @@
 --     budget_sous_categorie_defaut(categorie) (reprise de banque_mois : catégorie large → sous-catégorie par défaut),
 --     sous_categorie_budget_valide(categorie, sous_categorie) : REDÉFINIE (0034 la créait vide) : vraie pour '' (ligne antérieure à BUD1) ou
 --     pour une clé de la taxonomie dont la catégorie large est `categorie` ; categorie_budget_valide n'est pas touchée.
+--   historique_sensible et historique_texte (0034) : REDÉFINIES à l'identique, les classes de caractères invisibles et d'espaces Unicode
+--     construites par chr() au lieu de séquences d'échappement (en production, 0034 a été reçue avec les caractères eux-mêmes : même
+--     comportement, md5(prosrc) différent du dépôt ; après 0035, md5(prosrc) ne dépend plus du transport).
 --   banque_comptes.titulaire accepte 'commun' (compte joint ou commun du foyer).
 --   banque_operations (+ sous_categorie, origine_categorie, regle_id, cle_marchand) : lecture seule pour l'utilisateur comme les autres
 --     colonnes ; regle_id sans clé étrangère (la règle peut disparaître).
@@ -176,6 +179,55 @@ as $$
                   and (sous_categorie = '' or public.budget_categorie_de(sous_categorie) = categorie), false);
 $$;
 
+-- historique_sensible et historique_texte (0034) : mêmes contrôles, réécrits sans aucune séquence d'échappement Unicode dans le corps (les
+-- caractères invisibles et les espaces Unicode sont construits par chr()). En production, le corps de 0034 a été transmis avec ces séquences
+-- remplacées par les caractères eux-mêmes : le comportement est le même, mais md5(prosrc) diffère du dépôt. Après 0035, le corps est en ASCII
+-- pour ces classes de caractères, identique quel que soit le transport : md5(prosrc) se vérifie contre le fichier.
+-- Classes : invisibles retirés = U+200B à U+200F, U+2060, U+FEFF ; espaces ramenées à l'espace simple = U+00A0, U+1680, U+2000 à U+200A,
+-- U+2028, U+2029, U+202F, U+205F, U+3000, tabulation, saut de ligne, retour chariot, saut de page, tabulation verticale.
+create or replace function public.historique_sensible(p text, p_separateurs boolean default true)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(public.contenu_sensible(p) or public.contenu_sensible(v.e)
+           or (p_separateurs and public.contenu_sensible(regexp_replace(v.e, '([0-9A-Za-z])[-./_]+(?=[0-9])', '\1 ', 'g'))), false)
+    from (select regexp_replace(regexp_replace(p, '[' || chr(8203) || '-' || chr(8207) || chr(8288) || chr(65279) || ']', '', 'g'),
+                                '[' || chr(160) || chr(5760) || chr(8192) || '-' || chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287)
+                                    || chr(12288) || chr(9) || chr(10) || chr(13) || chr(12) || chr(11) || ']', ' ', 'g') as e) v;
+$$;
+
+create or replace function public.historique_texte(j jsonb, p_nom text, p_max int, p_requis boolean default false, p_chiffres int default 0)
+returns text
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  v_t text;
+begin
+  if j is null or jsonb_typeof(j) = 'null' then
+    if p_requis then raise exception '% : texte attendu', p_nom; end if;
+    return null;
+  end if;
+  if jsonb_typeof(j) <> 'string' then raise exception '% : texte attendu', p_nom; end if;
+  v_t := public.foyer_rogner(j #>> '{}');
+  if v_t = '' then
+    if p_requis then raise exception '% : texte attendu', p_nom; end if;
+    return null;
+  end if;
+  if char_length(v_t) > p_max then raise exception '% : % caractères au plus', p_nom, p_max; end if;
+  if public.historique_sensible(v_t) then
+    raise exception '% : contenu sensible refusé (numéro de compte ou de carte, mot de passe)', p_nom;
+  end if;
+  if p_chiffres > 0 and regexp_replace(v_t, '[' || chr(8203) || '-' || chr(8207) || chr(8288) || chr(65279) || ']', '', 'g') ~ ('[0-9]{' || p_chiffres || ',}') then
+    raise exception '% : une suite de % chiffres ou plus est refusée (pas de numéro dans un libellé)', p_nom, p_chiffres;
+  end if;
+  return v_t;
+end;
+$$;
+
 revoke all on function public.budget_version_taxonomie(), public.budget_categorie_de(text), public.budget_sous_categorie_valide(text),
   public.budget_sous_categorie_budgetee(text), public.budget_sous_categorie_defaut(text), public.sous_categorie_budget_valide(text, text)
   from public, anon;
@@ -264,7 +316,7 @@ create table public.budget_regles (
   constraint budget_regles_sens check (sens in ('sortie', 'entree', 'les_deux')),
   constraint budget_regles_montants check ((montant_min is null or montant_min >= 0) and (montant_max is null or montant_max >= 0)
     and (montant_min is null or montant_max is null or montant_min <= montant_max)),
-  constraint budget_regles_source check (source is null or char_length(source) <= 200),
+  constraint budget_regles_source check (source is null or (char_length(source) <= 200 and not public.historique_sensible(source))),
   foreign key (user_id, compte_id) references public.banque_comptes(user_id, id) on delete cascade
 );
 create index budget_regles_user_idx on public.budget_regles (user_id, cree_le);
@@ -364,6 +416,7 @@ begin
   if jsonb_typeof(j->'source') is distinct from 'string' then return 'partage : source obligatoire (1 à 300 caractères)'; end if;
   v_txt := public.foyer_rogner(j->>'source');
   if v_txt = '' or char_length(v_txt) > 300 then return 'partage : source obligatoire (1 à 300 caractères)'; end if;
+  if public.historique_sensible(v_txt) then return 'partage : source : contenu sensible refusé (numéro de compte ou de carte, mot de passe)'; end if;
   return null;
 end;
 $$;
@@ -394,6 +447,7 @@ begin
   if jsonb_typeof(j->'source') is distinct from 'string' then return 'budget_preferences : source obligatoire (1 à 300 caractères)'; end if;
   v_txt := public.foyer_rogner(j->>'source');
   if v_txt = '' or char_length(v_txt) > 300 then return 'budget_preferences : source obligatoire (1 à 300 caractères)'; end if;
+  if public.historique_sensible(v_txt) then return 'budget_preferences : source : contenu sensible refusé (numéro de compte ou de carte, mot de passe)'; end if;
   for v_key, v_val in select e.key, e.value from jsonb_each(j) e loop
     if v_key = 'source' or jsonb_typeof(v_val) = 'null' then continue; end if;
     if v_key = 'protegees' then
@@ -408,7 +462,7 @@ begin
     elsif v_key = 'annuelles' then
       if jsonb_typeof(v_val) <> 'array' or jsonb_array_length(v_val) > 12 then return 'budget_preferences : annuelles invalide (liste de 12 clés au plus)'; end if;
       for v_elt in select x from jsonb_array_elements(v_val) x loop
-        if jsonb_typeof(v_elt) <> 'string' or (v_elt #>> '{}') !~ '^[a-z0-9_]{1,40}$' then
+        if jsonb_typeof(v_elt) <> 'string' or (v_elt #>> '{}') !~ '^[a-z0-9_]{1,40}$' or public.historique_sensible(v_elt #>> '{}') then
           return 'budget_preferences : annuelles : clé invalide (lettres minuscules, chiffres et _, 40 caractères au plus)';
         end if;
       end loop;
@@ -562,9 +616,13 @@ begin
   if jsonb_typeof(j->'source') is distinct from 'string' then return 'cible : source obligatoire (1 à 300 caractères)'; end if;
   v_txt := public.foyer_rogner(j->>'source');
   if v_txt = '' or char_length(v_txt) > 300 then return 'cible : source obligatoire (1 à 300 caractères)'; end if;
+  if public.historique_sensible(v_txt) then return 'cible : source : contenu sensible refusé (numéro de compte ou de carte, mot de passe)'; end if;
   if j ? 'justification' and jsonb_typeof(j->'justification') <> 'null'
      and (jsonb_typeof(j->'justification') <> 'string' or char_length(j->>'justification') > 2000) then
     return 'cible : justification invalide (texte de 2 000 caractères au plus)';
+  end if;
+  if jsonb_typeof(j->'justification') = 'string' and public.historique_sensible(j->>'justification') then
+    return 'cible : justification : contenu sensible refusé (numéro de compte ou de carte, mot de passe)';
   end if;
   if j ? 'version_taxonomie' and jsonb_typeof(j->'version_taxonomie') <> 'null'
      and (jsonb_typeof(j->'version_taxonomie') <> 'string' or char_length(j->>'version_taxonomie') > 20) then
