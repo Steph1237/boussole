@@ -335,6 +335,8 @@ Pour chaque fin de mois, chaque ligne contribue avec une nature :
 
 `part_estimee` = (estimée + constante) ÷ total en valeur absolue. `qualite` = `complet` si `part_estimee` ≤ 5 %, `partiel` si ≤ 30 %, `estime` au-delà [C]. Les `sources` donnent la part de chaque import, des cours, de Powens et de la saisie.
 
+**Précisions de l'implémentation (phase 2, acceptées le 2026-10-16)** : (a) une ligne cotée sans aucun mouvement est « à composition actuelle » : sa nature est estimée (source « cours ») ; (b) avant le premier mouvement connu d'une ligne (hors enveloppe `depuis_ouverture`), la quantité déduite du présent est estimée ; (c) un versement, un retrait, un dividende ou des frais déjà convertis en parts d'une ligne cotée ne passent pas par les espèces de l'enveloppe ; (d) une ligne manuelle n'est « à relevés de valeur » que si elle a un relevé ou si son enveloppe est `depuis_ouverture` (sinon elle reste constante, comme avant HIS2) ; (e) sur une ligne manuelle, `achat` compte en entrée et `vente` en sortie (tableau § 4.4) ; (f) les photos de la nuit ne lisent pas le détail Powens des 90 derniers jours et commencent au premier mouvement importé (ou à la veille du premier mois relevé).
+
 ### 7.4 Où se calcule quoi
 
 - **App** : à la volée, comme aujourd'hui, avec les nouvelles entrées (transactions importées, relevés de valeur, soldes de fin de mois) ; lit `photos_reconstituees` pour les mois qu'elle ne recalcule pas (au-delà de 5 ans) et quand la table est à jour (`calcule_le` ≥ dernière demande). Même moteur, donc même chiffre, sauf cours anciens pas encore rattrapés (la vue le dit : « cours en cours de récupération »).

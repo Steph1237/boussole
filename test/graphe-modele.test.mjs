@@ -219,3 +219,12 @@ test("liaison : surRendement reçoit le bloc rendement ({ projet, reel }) à cha
   assert.doesNotThrow(() => sans.actualiser(S));
   await new Promise(r => setTimeout(r, 60));
 });
+
+test("HIS2 : la part estimée et la qualité des points reconstitués traversent le passé du graphe (et pas celles des photos observées)", () => {
+  const S = etat();
+  const rec = { points: [{ date: "2026-06-30", financier: 80000, net: 150000, part_estimee: 0.18, qualite: "partiel" }, { date: "2026-07-15", financier: 82000, net: 152000 }], debut: "2026-06-30", drapeaux: null };
+  const net = GM.passeDe(S, AUJ, { vue: "net", euros: "courants", reconstitue: rec, indices: [] });
+  assert.equal(net.points[0].part_estimee, 0.18);
+  assert.equal(net.points[1].part_estimee, undefined, "pas de qualité connue : rien d'inventé");
+  assert.equal(net.points.at(-1).part_estimee, undefined);
+});

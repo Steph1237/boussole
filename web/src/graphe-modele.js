@@ -75,13 +75,13 @@
     const rec = opt.reconstitue !== undefined ? opt.reconstitue : sn && S ? sn.reconstitution(S, today, deps) : null;
     let points = observes.map(p => ({ date: p.date, valeur: p.net, nature: "observe" })), decalage = 0, drapeaux = null;
     if (rec && tab(rec.points).length && hi) {
-      const fus = hi.fusionner(observes, rec.points.map(p => ({ date: p.date, net: p[champ] })));
-      points = fus.points.map(p => ({ date: p.date, valeur: p.net, nature: p.nature })); decalage = fus.decalage; drapeaux = rec.drapeaux || null;
+      const fus = hi.fusionner(observes, rec.points.map(p => ({ date: p.date, net: p[champ], part_estimee: p.part_estimee, qualite: p.qualite })));
+      points = fus.points.map(p => Object.assign({ date: p.date, valeur: p.net, nature: p.nature }, p.part_estimee != null ? { part_estimee: p.part_estimee } : {})); decalage = fus.decalage; drapeaux = rec.drapeaux || null;
     }
     let constants = true;
     if (euros === "constants") {
       const facteurs = points.map(p => (G ? G.facteurPrix(opt.indices || S.indices || [], p.date, today) : null));
-      if (facteurs.every(f => f != null) && points.length) points = points.map((p, i) => ({ date: p.date, valeur: p.valeur * facteurs[i], nature: p.nature }));
+      if (facteurs.every(f => f != null) && points.length) points = points.map((p, i) => Object.assign({}, p, { valeur: p.valeur * facteurs[i] }));
       else constants = false;
     }
     return { points, drapeaux, decalage, euros_constants: euros === "constants" ? constants : false,
