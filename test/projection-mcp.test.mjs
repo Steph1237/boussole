@@ -37,7 +37,7 @@ const Gen = chargerGen();
 test("la copie du moteur est à jour (npm run gen) et ne contient aucun import", () => {
   assert.equal(srcGen, genererMoteur(), "projection-moteur.gen.js périmé : lancer npm run gen");
   assert.doesNotMatch(srcGen, /^import /m);
-  assert.deepEqual(Object.keys(Gen).sort(), ["Calc", "Calendrier", "Evenements", "Marche", "Plan", "Projection", "Reperes"]);
+  assert.deepEqual(Object.keys(Gen).sort(), ["Calc", "Calendrier", "Evenements", "Marche", "Plan", "Projection", "Reperes", "Scenarios"]);
   for (const m of MODULES_MOTEUR) assert.ok(srcGen.includes("web/src/" + m + ".js"), m);
 });
 test("la copie recopie les sources de l'app telles quelles (aucune modification)", () => {

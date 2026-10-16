@@ -45,7 +45,7 @@ export const SORTIE_SUIVI = "supabase/functions/mcp/suivi.gen.js";
 export const SORTIE_HISTORIQUE_IMPORT = "supabase/functions/mcp/historique-import.gen.js";
 /** Modules du moteur, dans l'ordre de définition (chacun ne dépend que des précédents) : nom → fichier de web/src. */
 export const MODULES_MOTEUR = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "projection-evenements",
-  "projection-credit", "projection-donnees", "projection-immo", "projection"];
+  "projection-credit", "projection-donnees", "projection-immo", "projection", "scenarios"];
 /** Modules de la copie du moteur de suivi (SUIVI), dans l'ordre de définition : chacun ne dépend que des précédents. */
 export const MODULES_SUIVI = ["reperes", "calendrier", "calc", "marche", "plan", "projection-outils", "projection-fiscalite", "risque", "pratiques", "suivi"];
 export const EXPORTS_SUIVI = { Suivi: "suivi", Risque: "risque", Pratiques: "pratiques", Calc: "calc", Marche: "marche" };
@@ -53,7 +53,7 @@ export const EXPORTS_SUIVI = { Suivi: "suivi", Risque: "risque", Pratiques: "pra
 export const MODULES_HISTORIQUE_IMPORT = ["sensible", "historique-import"];
 export const EXPORTS_HISTORIQUE_IMPORT = { HistoriqueImport: "historique-import" };
 /** Valeurs exportées par la copie : nom exporté → module. */
-export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection" };
+export const EXPORTS_MOTEUR = { Reperes: "reperes", Calendrier: "calendrier", Calc: "calc", Marche: "marche", Plan: "plan", Evenements: "projection-evenements", Projection: "projection", Scenarios: "scenarios" };
 
 /* ---------- tutoiement ---------- */
 const RESTE_VOUS = /(^|[^\p{L}])(vous|votre|vos|vôtres?)(?![\p{L}])/iu;
