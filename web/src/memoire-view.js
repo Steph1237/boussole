@@ -81,6 +81,7 @@
   const ICO_PIN = '<svg class="mv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 3h6l-1 6 4 4v2H6v-2l4-4zM12 15v6"/></svg>';
   const ICO_CAL = '<svg class="mv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>';
 
+  const ICO_PLUS = '<svg class="mv-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
   let S = null, root = null, dirty = true, sig = "", busy = false;
   const edition = new Map(); // id → { contenu, echeance } en cours de modification
   const $ = id => root.querySelector("#" + id);
@@ -104,18 +105,14 @@
           '<button type="button" class="mv-btn sm ghost" data-act="cancel" data-id="' + esc(m.id) + '">Annuler</button></div>' +
         "</div>"
       : '<p class="mv-txt">' + esc(m.contenu) + "</p>";
-    return '<li class="mv-item' + (m.epingle ? " is-pin" : "") + (x.echu ? " echu" : "") + '" data-item="' + esc(m.id) + '" tabindex="-1">' +
-      corps +
+    return '<li class="mv-item' + (m.epingle ? " is-pin" : "") + (x.echu ? " echu" : "") + (ed ? " en-edition" : "") + '" data-item="' + esc(m.id) + '" tabindex="-1">' +
+      '<div class="mv-corps">' + corps +
       '<p class="mv-meta">' +
         (m.epingle ? '<span class="mv-tag pin">' + ICO_PIN + "épinglé</span>" : "") +
         (x.echeance ? '<span class="mv-tag ' + (x.echu ? "late" : "due") + '">' + ICO_CAL + esc(x.echeance) + "</span>" : "") +
         '<span class="mv-who">' + esc(x.texte) + "</span>" +
-      "</p>" +
-      (ed ? "" : '<div class="mv-act">' +
-        '<button type="button" class="mv-lnk" data-act="pin" data-id="' + esc(m.id) + '" aria-label="' + (m.epingle ? "Désépingler" : "Épingler") + " le souvenir " + q + '">' + (m.epingle ? "Désépingler" : "Épingler") + "</button>" +
-        '<button type="button" class="mv-lnk" data-act="edit" data-id="' + esc(m.id) + '" aria-label="Modifier le souvenir ' + q + '">Modifier</button>' +
-        '<button type="button" class="mv-lnk danger" data-act="del" data-id="' + esc(m.id) + '" aria-label="Supprimer le souvenir ' + q + '">Supprimer</button>' +
-      "</div>") +
+      "</p></div>" +
+      (ed ? "" : '<button type="button" class="mv-lnk mv-more" data-act="menu" data-id="' + esc(m.id) + '" aria-haspopup="dialog" aria-label="Actions du souvenir ' + q + '">' + ICO_PLUS + "</button>") +
       "</li>";
   }
 
@@ -130,6 +127,8 @@
       $("mvEmpty").hidden = ev !== "vide"; // ni pendant le chargement, ni quand la lecture a échoué
       $("mvErr").hidden = ev !== "erreur";
       $("mvBar").hidden = !n;
+      $("mvZone").hidden = !n;
+      if (!n) fermerConfirmation();
       $("mvCount").innerHTML = '<b>' + pluriel(n, "souvenir") + "</b> sur " + MAX +
         (nEchus ? ' <span class="mv-late">· ' + pluriel(nEchus, "point", "points") + " à reprendre</span>" : "");
       $("mvGroups").innerHTML = grouper(liste, today).map(g =>
@@ -142,6 +141,7 @@
   function etat() {
     root.querySelectorAll("[data-act]").forEach(b => { b.disabled = busy; });
     $("mvClear").disabled = busy || !toutes().length;
+    $("mvConfOui").disabled = busy;
   }
   function dire(m, ok) { const el = $("mvMsg"); el.textContent = m || ""; el.className = "mv-msg " + (ok ? "ok" : "err"); el.hidden = !m; }
 
@@ -178,7 +178,7 @@
     const t = root.querySelector('textarea[data-for="' + CSS.escape(id) + '"]');
     if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
   }
-  function fermer(id) { edition.delete(id); render(true); focusAct("edit", id); }
+  function fermer(id) { edition.delete(id); render(true); focusAct("menu", id); }
 
   async function enregistrer(id) {
     const m = toutes().find(x => x.id === id), ed = edition.get(id);
@@ -202,12 +202,45 @@
     if (ok) { edition.delete(id); if (!focusItem(voisin)) focusEl($(toutes().length ? "mvCount" : "mvEmptyTitle")); }
   }
 
-  async function toutEffacer() {
+  /* Tout effacer : la confirmation est dans la page (dans la zone du bas), pas dans une boîte du navigateur. */
+  function demanderEffacement() {
     const n = toutes().length; if (!n) return;
-    const q = n > 1 ? "Effacer les " + n + " souvenirs de Claude ? Cette action est définitive." : "Effacer ce souvenir de Claude ? Cette action est définitive.";
-    if (!confirm(q)) return;
+    $("mvConfQ").textContent = n > 1 ? "Effacer les " + n + " souvenirs de Claude ? Cette action est définitive." : "Effacer ce souvenir de Claude ? Cette action est définitive.";
+    $("mvConf").hidden = false; $("mvClear").hidden = true;
+    $("mvConfNon").focus();
+  }
+  function fermerConfirmation(focus) {
+    if (!root) return;
+    const ouvert = !$("mvConf").hidden;
+    $("mvConf").hidden = true; $("mvClear").hidden = false;
+    if (focus && ouvert) $("mvClear").focus();
+  }
+  async function toutEffacer() {
+    if (!toutes().length) return;
     const ok = await appel(api => api.toutEffacer(), "Tous les souvenirs ont été effacés : Claude repart de zéro.");
-    if (ok) { edition.clear(); render(true); focusEl($("mvEmptyTitle")); }
+    if (ok) { edition.clear(); fermerConfirmation(); render(true); focusEl($("mvEmptyTitle")); }
+  }
+
+  /* Actions d'un souvenir : une feuille (UI.panneau) ouverte par le bouton « ⋯ » ; l'épingle reste visible en puce sur le souvenir. */
+  function ouvrirActions(id, bouton) {
+    const m = toutes().find(x => x.id === id); if (!m || !window.UI || !UI.panneau) return;
+    const actions = [
+      { id: "pin", titre: m.epingle ? "Désépingler" : "Épingler", sous: m.epingle ? "Il ne sera plus gardé en tête de sa catégorie." : "Il reste en tête de sa catégorie." },
+      { id: "edit", titre: "Modifier", sous: "Corriger le texte" + (m.categorie === "a_suivre" ? " ou l'échéance." : ".") },
+      { id: "del", titre: "Supprimer", sous: "Claude ne s'en servira plus." },
+    ];
+    const corps = document.createElement("div");
+    corps.className = "mv-feuille";
+    corps.innerHTML = '<p class="ui-panneau-note">' + esc(extrait(m.contenu)) + "</p>" + UI.liste(actions.map(a => UI.ligne({ id: a.id, titre: a.titre, sous: a.sous })), { label: "Actions" });
+    corps.addEventListener("click", e => {
+      const b = e.target.closest("[data-ui-ligne]"); if (!b) return;
+      const act = b.dataset.uiLigne;
+      UI.panneau.fermer({ focus: act === "pin" });
+      if (act === "edit") ouvrir(id);
+      else if (act === "del") supprimer(id);
+      else if (act === "pin") appel(api => api.modifier(id, { epingle: !m.epingle }), m.epingle ? "Souvenir désépinglé." : "Souvenir épinglé : il reste en tête de sa catégorie.").then(() => focusAct("menu", id));
+    });
+    UI.panneau.ouvrir({ titre: "Ce souvenir", contenu: corps, retour: bouton });
   }
 
   function mount(r) {
@@ -230,8 +263,11 @@
     });
     root.addEventListener("click", e => {
       const b = e.target.closest("button"); if (!b || b.disabled || busy) return;
-      if (b.id === "mvClear") { toutEffacer(); return; }
+      if (b.id === "mvClear") { demanderEffacement(); return; }
+      if (b.id === "mvConfNon") { fermerConfirmation(true); return; }
+      if (b.id === "mvConfOui") { toutEffacer(); return; }
       const id = b.dataset.id, act = b.dataset.act; if (!act) return;
+      if (act === "menu") return ouvrirActions(id, b);
       if (act === "edit") return ouvrir(id);
       if (act === "cancel") { dire(""); return fermer(id); }
       if (act === "save") return enregistrer(id);
@@ -239,7 +275,7 @@
       if (act === "pin") {
         const m = toutes().find(x => x.id === id); if (!m) return;
         appel(api => api.modifier(id, { epingle: !m.epingle }), m.epingle ? "Souvenir désépinglé." : "Souvenir épinglé : il reste en tête de sa catégorie.")
-          .then(() => focusAct("pin", id));
+          .then(() => focusAct("menu", id));
       }
     });
   }
