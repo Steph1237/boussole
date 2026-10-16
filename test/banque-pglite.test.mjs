@@ -93,7 +93,7 @@ test("PGlite : structure — colonnes, clés primaires, clés étrangères, colo
   assert.deepEqual(await cols("public.banque_placements"), ["id", "user_id", "compte_id", "isin", "libelle", "quantite", "valeur", "prix_revient", "position_id",
     "ligne_creee_le", "maj_le"]);
   assert.deepEqual(await cols("public.banque_operations"), ["id", "user_id", "compte_id", "date", "montant", "libelle", "categorie",
-    "categorie_powens", "contrepartie_id", "type_powens", "sous_categorie", "origine_categorie", "regle_id", "cle_marchand"]); // + 0025, + 0035 (budget)
+    "categorie_powens", "contrepartie_id", "type_powens", "sous_categorie", "origine_categorie", "regle_id", "cle_marchand", "sous_categorie_origine"]); // + 0025, + 0035 (budget)
   assert.deepEqual(await cols("public.banque_mois"), ["user_id", "mois", "categorie", "entrees", "sorties", "nombre", "compte_id", "sous_categorie"]); // + 0025, + 0035 (budget)
   const pos = await cols("public.positions");
   assert.ok(pos.includes("source_auto") && pos.includes("source_auto_le"), "positions : source_auto, source_auto_le");
