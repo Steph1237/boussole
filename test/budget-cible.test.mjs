@@ -71,7 +71,7 @@ test("T5 · repère Insee du logement : 1 410 ÷ 3 970 = 35,5 %, contre 29,0 % d
   const c = cas("T5"), a = c.attendu;
   const r = Budget.comparerInsee(c.reference, F.reperes, { logement: "locataire" });
   assert.deepEqual([r.logement, r.consommation, r.part, r.repere, r.repere_valeur, r.lecture], [a.logement, a.consommation, a.part, a.repere, a.repere_valeur, a.lecture], c.calcul);
-  assert.match(r.texte, /^Ton logement pèse 35,5 % de ta consommation, contre 29 % en moyenne \(Insee, enquête 2017\) : au-dessus de ce repère\. C'est un point de comparaison, jamais une contrainte\.$/);
+  assert.match(r.texte, /^Ton logement pèse 35,5 % de ta consommation, contre 29 % en moyenne pour les locataires \(Insee, enquête 2017\) : au-dessus de ce repère\. C'est un point de comparaison, jamais une contrainte\.$/);
   assert.deepEqual(r.fourchette, [27.4, 29.3], "fourchette des quintiles présents dans les repères");
   // propriétaire ou ménage : autre repère ; repère absent : rien
   assert.equal(Budget.comparerInsee(c.reference, F.reperes, { logement: "proprietaire" }).repere, "insee_bdf2017_logement_proprietaires");

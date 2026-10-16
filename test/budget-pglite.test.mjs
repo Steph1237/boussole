@@ -304,6 +304,10 @@ test("D4 carte à débit différé : relevé identifié → les opérations de l
   await db.exec(`update public.banque_operations set categorie = 'divers', sous_categorie = 'a_classer' where id = 4`);
   await recalculer(A, `${AUJ} - 70`);
   assert.deepEqual(await lignes(A), [[m0, 10, "divers", "a_classer", 0, 300, 1]], "non identifié : carte écartée, relevé compté en « à classer »");
+  // ligne incohérente (relevé marqué releve_carte mais resté sous une catégorie comptée) : le relevé est compté, donc la carte ne l'est pas (jamais deux fois)
+  await db.exec(`update public.banque_operations set categorie = 'divers', sous_categorie = 'releve_carte' where id = 4`);
+  await recalculer(A, `${AUJ} - 70`);
+  assert.deepEqual(await lignes(A), [[m0, 10, "divers", "a_classer", 0, 300, 1]], "relevé compté : carte écartée");
   // relevé identifié mais débité plus de 45 jours après : ne couvre pas ces opérations
   await db.exec(`update public.banque_operations set categorie = 'virement_interne', sous_categorie = 'releve_carte', date = ${JOUR(0, 1)} + 0 where id = 4;
     update public.banque_operations set date = ${AUJ} - 80 where id = 1`);

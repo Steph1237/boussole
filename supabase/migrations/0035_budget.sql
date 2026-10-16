@@ -2064,7 +2064,8 @@ grant execute on function public.export_all() to authenticated;
 -- Les opérations qui comptent dans le budget depuis p_depuis, au grain (mois, compte, catégorie, sous-catégorie, marchand). Une sous-catégorie
 -- qui n'est pas de la catégorie large de la ligne (ou absente : opération antérieure à BUD1) est remplacée par celle de la reprise. Exclus : les
 -- virements entre ses propres comptes (virement_interne) ; la carte à débit différé quand un courant de la même connexion existe, sauf si un relevé
--- de carte identifié (sous_categorie = releve_carte) est débité sur ce courant dans les 45 jours qui suivent l'opération (alors les opérations
+-- de carte identifié (sous_categorie = releve_carte et catégorie large virement_interne, pour qu'un relevé compté ne couvre jamais la carte) est
+-- débité sur ce courant dans les 45 jours qui suivent l'opération (alors les opérations
 -- de la carte comptent chacune à sa date et le relevé, lui, est hors budget). Gardés : apport_commun, transfert_foyer et releve_carte.
 create or replace function public.banque_operations_comptees(p_user uuid, p_depuis date)
 returns table (mois date, compte_id bigint, categorie text, sous_categorie text, cle_marchand text, entrees numeric, sorties numeric, nombre int,
@@ -2093,7 +2094,7 @@ as $$
               and not exists (select 1 from public.banque_operations r
                                 join public.banque_comptes k3 on k3.user_id = r.user_id and k3.id = r.compte_id
                                where r.user_id = k.user_id and k3.connexion_id = k.connexion_id and k3.type = 'courant' and not k3.debit_differe
-                                 and r.sous_categorie = 'releve_carte' and r.date >= o.date and r.date <= o.date + 45))
+                                 and r.sous_categorie = 'releve_carte' and r.categorie = 'virement_interne' and r.date >= o.date and r.date <= o.date + 45))
      and (c.cat <> 'virement_interne' or s.sub in ('apport_commun', 'transfert_foyer', 'releve_carte'))
    group by 1, 2, 3, 4, 5;
 $$;
