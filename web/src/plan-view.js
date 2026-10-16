@@ -232,9 +232,11 @@
   /** Budget réel des comptes courants (Calc.budgetReel) → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte } ou null
       (interrupteur éteint, vue d'une personne, aucun mois complet). */
   function budgetReelDe(S, today) {
-    const C = CA(), b = S && S.banque;
-    if (!C || typeof C.budgetReel !== "function" || !b || !b.actif || (S.scope || "foyer") !== "foyer") return null;
-    return C.budgetReel(b, today);
+    const C = CA(), b = S && S.banque, h = S && S.relevesBancaires;
+    // HIS2 : la série fusionnée (banque connectée et relevés importés) ; des relevés importés suffisent, même sans banque connectée
+    if (!C || typeof C.budgetReel !== "function" || (S.scope || "foyer") !== "foyer") return null;
+    if (!(b && b.actif) && !(h && Array.isArray(h.releves) && h.releves.length)) return null;
+    return C.budgetReel(b && b.actif ? b : null, today, undefined, h);
   }
   const MOIS_NOMS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
   const moisNom = (iso, an) => MOIS_NOMS[+iso.slice(5, 7) - 1] + (an ? " " + iso.slice(0, 4) : "");
@@ -261,7 +263,7 @@
     return ligne(libelleReelle(br.n), br.tauxCapacite, "(revenus − dépenses) ÷ revenus.") + "\n" +
       ligne("Épargne versée", br.tauxEpargne, "versements d'épargne et d'investissement ÷ revenus.") +
       '\n<p class="pv-reel-taux"><span class="pv-muet">' + esc(periodeReel(br)) + (br.parCompte ? ", sur tes comptes courants. " : ", sur tous tes comptes connectés (le détail par compte n'est pas encore disponible). ") +
-      MENTION_VIREMENTS + "</span></p>";
+      (br.moisImportes ? "Dont " + br.moisImportes + " mois tirés de relevés que tu as déposés dans la conversation. " : "") + MENTION_VIREMENTS + "</span></p>";
   }
   /** Réel mensuel d'un groupe du budget (catégorie reconnue et de même sens), ou null. */
   function reelGroupe(g, reel) {

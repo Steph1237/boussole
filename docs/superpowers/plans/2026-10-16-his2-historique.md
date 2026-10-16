@@ -137,15 +137,15 @@ Phases livrables séparément : **phase 1** (T0 à T9 : on peut importer, valide
 - **Dépend de** : T5, T6.
 
 ### Tâche 8 — Stores, démo et « À valider » (Sonnet, medium, M)
-- [ ] `store-supabase.js` : lecture des quatre tables bancaires (sous aal2, même garde que `banque`), des nouvelles colonnes de `transactions` et de `photos_reconstituees` ; `Store.historique.retirer(id)` (RPC `retirer_import`), seule écriture ajoutée.
-- [ ] `store-demo.js` : un foyer fictif avec 14 mois importés d'un compte courant (un mois manquant), un PEA importé (P1), un import retiré dans l'historique ; aucune donnée réelle.
-- [ ] `propositions.js` : cible `historique` (libellé, phrases par type, détail replié, avertissements, non modifiable) ; tests de `decrire`.
-- [ ] `test/lecture-seule.test.mjs` : `retirer_import` listée comme écriture de contrôle.
+- [x] `store-supabase.js` : lecture des quatre tables bancaires (sous aal2, même garde que `banque`), des nouvelles colonnes de `transactions` et de `photos_reconstituees` ; `Store.historique.retirer(id)` (RPC `retirer_import`), seule écriture ajoutée.
+- [x] `store-demo.js` : un foyer fictif avec 14 mois importés d'un compte courant (un mois manquant), un PEA importé (P1), un import retiré dans l'historique ; aucune donnée réelle.
+- [x] `propositions.js` : cible `historique` (libellé, phrases par type, détail replié, avertissements, non modifiable) ; tests de `decrire`.
+- [x] `test/lecture-seule.test.mjs` : `retirer_import` listée comme écriture de contrôle.
 - **Dépend de** : T1, T3.
 
 ### Tâche 9 — Effets budget et projection dans l'app (Sonnet, low, S)
-- [ ] Patrimoine › Budget (en attendant BUD1) et la projection affichent les mois importés avec leur source ; la mention « relevés trop courts » du graphe se fonde sur la série fusionnée.
-- [ ] Tests DOM ciblés ; fumée en préproduction locale avec un foyer fictif (import validé → budget réel sur 12 mois).
+- [x] Patrimoine › Budget (en attendant BUD1) et la projection affichent les mois importés avec leur source (`Calc.budgetReel` rend `moisImportes`, la note du budget dit « Dont N mois tirés de relevés que tu as déposés dans la conversation » ; `budgetReelDe` lit la série fusionnée, même sans banque connectée) ; la mention « relevés trop courts » du graphe se fonde sur la série fusionnée (la capacité constatée du moteur de projection, `epargnePasseDe` du graphe, les bonnes pratiques de Santé, Aujourd'hui, Actions et Journal lisent `S.relevesBancaires`).
+- [x] Tests DOM ciblés (`test/historique-effets.test.mjs`, `test/historique-store.test.mjs`) ; fumée en préproduction locale avec un foyer fictif (import validé → budget réel sur 12 mois) : `test/historique-preprod.test.mjs`.
 - **Dépend de** : T5, T8.
 
 ## Phase 2 : le passé de la courbe, les photos, le rendement

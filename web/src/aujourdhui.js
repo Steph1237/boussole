@@ -483,7 +483,7 @@
     let r = null;
     if (Pr && typeof Pr.evaluer === "function") {
       try { r = Pr.evaluer({ positions, profil: s.profil || null, config: s.config || null, budget: s.budget || null, objectifs: s.objectifs || [], scope,
-        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, today: new Date(t + "T12:00:00") }); } catch (e) { r = null; }
+        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, relevesBancaires: s.relevesBancaires || null, today: new Date(t + "T12:00:00") }); } catch (e) { r = null; }
     }
     const crit = r && Array.isArray(r.criteres) ? r.criteres : [];
     const pratiques = { total: r && r.total != null ? r.total : null, provisoire: !!(r && r.provisoire),

@@ -136,7 +136,7 @@
     let bp = null;
     if (Pr && typeof Pr.evaluer === "function") {
       try { bp = Pr.evaluer({ positions, profil: s.profil || null, config: s.config || null, budget: s.budget || null, objectifs: s.objectifs || [], scope: "foyer",
-        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, today: new Date(aujourdhui() + "T12:00:00") }); } catch (e) { bp = null; }
+        risque: s.risque || null, classes: s.classes || {}, banque: s.banque || null, relevesBancaires: s.relevesBancaires || null, today: new Date(aujourdhui() + "T12:00:00") }); } catch (e) { bp = null; }
     }
     const bpM = disponible ? fPratiques(m.bonnes_pratiques) : null;
     const bpA = bp ? fPratiques(bp) : null;
