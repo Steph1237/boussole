@@ -433,17 +433,27 @@ function vueDom(S0, stockage, fakes) {
   return { ctx, dom, doc, root, api, rafraichir, dlg, store, S: () => S };
 }
 const $ = (root, id) => root.querySelector("#" + id);
+/** Choisit un regroupement par la feuille « Grouper par » (bouton de 44 px, puis le choix) ; renvoie le choix cliqué. */
+function choisirMode(v, i) {
+  $(v.root, "plMode").querySelector("[data-pl-mode]").click();
+  const choix = v.dlg().querySelectorAll("[data-pl-mode-choix]"); choix[i].click(); return choix[i];
+}
 
-test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de regroupement à 5 options, groupes repliés, suivi en accordéons fermés", () => {
-  const { root, api } = vueDom(demoS());
+test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), regroupement en une feuille de 5 choix, groupes repliés, suivi en accordéons fermés", () => {
+  const { root, api, dlg } = vueDom(demoS());
   const total = Calc.financier(DEMO.positions, "foyer");
   assert.equal(sp($(root, "plTotal").textContent), sp(new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.round(total)) + " €"));
   assert.equal(api.headline(), $(root, "plTotal").textContent);
   assert.match($(root, "plTitre").textContent, /^Placements du foyer$/);
   assert.match($(root, "plSous").textContent, /\d+ lignes/);
   assert.equal(root.querySelectorAll(".ui-claude").filter(b => b.closest(".pl-tete")).length, 0, "pas de bouton Claude empilé sous le total (celui de l'en-tête de la coque les couvre)");
-  const radios = $(root, "plMode").querySelectorAll('[role="radio"]');
-  assert.deepEqual(radios.map(r => r.textContent), ["Enveloppe", "Poche", "Titulaire", "Disponibilité", "Rôle"]);
+  const bouton = $(root, "plMode").querySelector("[data-pl-mode]");
+  assert.equal($(root, "plMode").querySelectorAll('[role="radio"]').length, 0, "plus de bascule sur deux rangées : un seul bouton « Grouper par : Enveloppe »");
+  assert.deepEqual(bouton.querySelectorAll("span").map(x => x.textContent), ["Grouper par", "Enveloppe"]);
+  bouton.click();
+  assert.deepEqual(dlg().querySelectorAll("[data-pl-mode-choix]").map(r => sp(r.textContent)), ["Enveloppe", "Poche", "Titulaire", "Disponibilité", "Rôle"]);
+  assert.equal(dlg().querySelectorAll('[aria-checked="true"]').length, 1);
+  dlg().querySelector("[data-pl-mode-choix]").click();
   assert.ok(root.querySelectorAll("[data-pl-groupe-btn]").length >= 6);
   assert.ok(root.querySelectorAll("[data-pl-groupe-btn]").every(b => b.getAttribute("aria-expanded") === "false"));
   assert.ok(root.querySelectorAll(".pl-g-corps").every(c => c.hidden));
@@ -459,10 +469,10 @@ test("vue (DOM) : en-tête (total, lignes, Compléter avec Claude), bascule de r
 });
 
 test("vue (DOM) : bascule « Par disponibilité » (note limitée au financier) puis dépliage d'un groupe ; l'état déplié survit à une mise à jour du store", () => {
-  const { root, dom, rafraichir } = vueDom(demoS());
-  const radio = $(root, "plMode").querySelectorAll('[role="radio"]')[3];
-  radio.click();
-  assert.equal(radio.getAttribute("aria-checked"), "true");
+  const v = vueDom(demoS()), { root, rafraichir } = v;
+  choisirMode(v, 3);
+  assert.equal($(root, "plMode").querySelector(".pl-mode-v").textContent, "Disponibilité", "le bouton dit le regroupement choisi");
+  assert.equal(v.dlg().hidden, true, "la feuille se ferme au choix");
   assert.match($(root, "plModeNote").textContent, /Délai pour récupérer l'argent placé/);
   assert.match($(root, "plModeNote").textContent, /Vue limitée aux placements financiers/);
   assert.doesNotMatch($(root, "plModeNote").textContent, /PER, immobilier/);
@@ -475,8 +485,7 @@ test("vue (DOM) : bascule « Par disponibilité » (note limitée au financier) 
   rafraichir();
   const b2 = root.querySelector('[data-pl-groupe-btn="' + b.getAttribute("data-pl-groupe-btn") + '"]');
   assert.equal(b2.getAttribute("aria-expanded"), "true", "toujours déplié");
-  dom.touche($(root, "plMode").querySelector('[aria-checked="true"]'), "Home");
-  assert.equal($(root, "plMode").querySelectorAll('[role="radio"]')[0].getAttribute("aria-checked"), "true", "bascule au clavier");
+  assert.equal(v.store.get("pilotage-groupe"), "disponibilite", "le choix est retenu");
 });
 
 test("vue (DOM) : « Voir plus de groupes » déplié le reste quand les données changent (réécriture), focus conservé", () => {
@@ -729,10 +738,9 @@ test("suivi (DOM) : chaque ligne comptée porte son rôle (chip) et sa météo (
 });
 
 test("suivi (DOM) : « Grouper par Rôle » : cœur, satellite, réserve dans cet ordre ; le panneau d'une ligne dit son rôle, sa météo et sa prochaine revue", () => {
-  const { root, dlg } = vueDom(demoS());
-  const radio = $(root, "plMode").querySelectorAll('[role="radio"]')[4];
-  radio.click();
-  assert.equal(radio.getAttribute("aria-checked"), "true");
+  const v = vueDom(demoS()), { root, dlg } = v;
+  choisirMode(v, 4);
+  assert.equal($(root, "plMode").querySelector(".pl-mode-v").textContent, "Rôle");
   assert.match($(root, "plModeNote").textContent, /Un rôle proposé se confirme avec Claude/);
   assert.deepEqual(root.querySelectorAll(".pl-g-nom").map(x => x.textContent), ["Cœur", "Satellite", "Réserve", "Hors suivi (comptes courants, à recevoir)"]);
   assert.equal(root.querySelectorAll(".pl-l-role").length, 0, "pas de chip de rôle redondant dans un groupe de rôle");
@@ -802,6 +810,10 @@ test("rendementLigne : moins d'un an d'historique — la plus longue période me
   assert.doesNotMatch(sp(l.texte), /%\/an \(fourchette|Rendement réel 1 an/);
   assert.ok(sp(l.texte).includes(pcRd(p.twr_periode_pct, { signe: true })), "rendement de la période");
   assert.match(sp(l.notes.join(" ")), /Pas assez d'historique pour 1 an : la période la plus longue mesurable est de 5 mois/);
+  // moins de 6 mois : deux puces seulement si l'attendu est comparable ; ici la période est trop courte, on le dit au lieu de comparer à une attente annuelle
+  assert.match(sp(l.puces.reel), /^Rendement réel · 5 mois \+[\d,]+ %$/);
+  assert.equal(l.puces.attendu, null); assert.equal(l.puces.court, true);
+  assert.match(sp(PL.rendementHtml(rd)), /période trop courte pour comparer/);
 });
 test("rendementLigne : versements inconnus — « ≈ » et « approché », la raison est dite dans le détail", async () => {
   const rd = await rdDe({ sansTx: true }), l = PL.rendementLigne(rd);
@@ -827,7 +839,10 @@ test("rendementLigne : sans le calcul de la projection (attendu absent ou indisp
 test("rendementHtml : une ligne dépliable (details) — résumé = la phrase, détail = tableau ; échappé, tutoiement, aucun conseil", async () => {
   const rd = await rdDe(), h = PL.rendementHtml(rd);
   assert.match(h, /^<details class="pl-rd-det"><summary class="pl-rd-ligne">/);
-  assert.ok(sp(h).includes("Rendement réel 1 an :")); assert.match(h, /<table class="pl-rd-tab"/);
+  assert.ok(sp(h).includes("Rendement réel · 1 an ")); assert.match(h, /<table class="pl-rd-tab"/);
+  assert.match(sp(h), /<span class="pl-rd-chip att">attendu [\d,]+ %\/an<\/span>/, "l'attendu est une seconde puce");
+  assert.match(sp(h), /Fourchette 8 sur 10 : [−+\d, ]+ à [−+\d, ]+ %/, "la fourchette est dans le détail");
+  assert.doesNotMatch(sp(h.slice(0, h.indexOf("</summary>"))), /Fourchette/, "pas de fourchette dans le résumé");
   assert.doesNotMatch(h, /<details[^>]*open/);
   assert.equal(PL.rendementHtml(null), "");
   assert.doesNotMatch(h, /\b(?:vous|votre|vos)\b|conseill|il faut investir|tu devrais|assistant|agent/i);
@@ -849,7 +864,7 @@ test("vue (DOM) : la ligne « Rendement réel » apparaît quand le graphe a cal
   const rd = await rdDe();
   o.surRendement(rd, { etape: "complet" });
   assert.equal($(v.root, "plRd").hidden, false);
-  assert.ok(sp($(v.root, "plRd").querySelector(".pl-rd-ligne").textContent).startsWith("Rendement réel 1 an : "));
+  assert.ok(sp($(v.root, "plRd").querySelector(".pl-rd-ligne").textContent).startsWith("Rendement réel · 1 an "), "résumé en puces : « Rendement réel · 1 an … » puis « attendu … »");
   assert.equal($(v.root, "plRd").querySelectorAll("tr[data-rd]").length, 4);
   const det = $(v.root, "plRd").querySelector("details"); det.setAttribute("open", "");
   v.rafraichir(); o.surRendement(rd, { etape: "complet" });

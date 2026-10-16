@@ -9,12 +9,11 @@
 @media (min-width:1100px){#view-pilotage .pl{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"tete droite" "graphe droite" "suivi droite" "agent agent";align-items:start;column-gap:var(--gap-sections)}
   #view-pilotage .pl-tete{grid-area:tete}#view-pilotage .pl-graphe{grid-area:graphe}#view-pilotage .pl-droite{grid-area:droite}#view-pilotage .pl-suivi{grid-area:suivi}#view-pilotage .pl-agent{grid-area:agent}
   #view-pilotage .pl-chargement,#view-pilotage .pl-vide{grid-column:1/-1}}
-/* ≥ 1440 px : grille de 12 colonnes (tête, graphe maître et suivi sur 8 colonnes ; « Mes lignes » sur 4) ; le suivi (versements, ordres, hypothèses, journal) se range en deux colonnes au lieu de s'empiler */
+/* ≥ 1440 px : grille de 12 colonnes (tête, graphe maître et suivi sur 8 colonnes ; « Mes lignes » sur 4) ; le suivi (5 accordéons) reste en une colonne pleine largeur : en deux colonnes il laissait un orphelin */
 @media (min-width:1440px){#view-pilotage .pl{grid-template-columns:repeat(12,minmax(0,1fr));grid-template-areas:none}
   #view-pilotage .pl-tete,#view-pilotage .pl-graphe,#view-pilotage .pl-suivi{grid-area:auto;grid-column:1/9}
   #view-pilotage .pl-droite{grid-area:auto;grid-column:9/13;grid-row:1/5}
-  #view-pilotage .pl-agent{grid-area:auto;grid-column:1/-1}
-  #view-pilotage .pl .pl-suivi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap-cards);align-items:start}}
+  #view-pilotage .pl-agent{grid-area:auto;grid-column:1/-1}}
 #view-pilotage .pos{color:var(--good)}
 #view-pilotage .neg{color:var(--crit)}
 
@@ -33,7 +32,10 @@
 #view-pilotage .pl-rd-ligne{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);min-height:var(--hit);padding:var(--sp-1) 0;cursor:pointer;list-style:none;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink);border-radius:var(--r-ctl)}
 #view-pilotage .pl-rd-ligne::-webkit-details-marker{display:none}
 #view-pilotage .pl-rd-ligne:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-#view-pilotage .pl-rd-txt{min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums lining-nums}
+#view-pilotage .pl-rd-txt{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1) var(--sp-2);min-width:0;overflow-wrap:anywhere}
+#view-pilotage .pl-rd-chip{display:inline-flex;align-items:center;min-height:24px;padding:0 var(--sp-2);border-radius:var(--r-chip);background:var(--sunk);font:600 var(--t-caption)/var(--lh-caption) var(--f-body);white-space:nowrap}
+#view-pilotage .pl-rd-chip.att{background:none;box-shadow:inset 0 0 0 1px var(--line-field);font-weight:500;color:var(--muted)}
+#view-pilotage .pl-rd-court{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
 #view-pilotage .pl-rd-chev{flex:none;display:grid;place-items:center;color:var(--muted);transition:transform .15s ease}
 #view-pilotage .pl-rd-det[open] .pl-rd-chev{transform:rotate(180deg)}
 #view-pilotage .pl-rd-corps{display:flex;flex-direction:column;gap:var(--sp-2);padding:var(--sp-1) 0 var(--sp-2);min-width:0}
@@ -50,14 +52,12 @@
 #view-pilotage .pl-rd-note{margin:0;font-size:var(--t-caption);line-height:var(--lh-caption);color:var(--muted);max-width:620px}
 #view-pilotage .pl-tete-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 #view-pilotage .pl-tete-acts > span{display:contents}
-/* 3 mini-indicateurs en une rangée : plus-values latentes, épargne de précaution, à recevoir */
-#view-pilotage .pl-faits{list-style:none;margin:var(--sp-4) 0 var(--sp-1);padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-2)}
+/* 3 tuiles (plus-values latentes, épargne de précaution, à recevoir) : UI.tuile en grille ≥ 600 px, trois lignes dessous */
+#view-pilotage .pl-faits{list-style:none;margin:var(--sp-4) 0 var(--sp-1);padding:0;grid-template-columns:repeat(3,minmax(0,1fr))}
 #view-pilotage .pl-faits:empty{display:none}
-#view-pilotage .pl-faits li{display:flex;flex-direction:column;gap:2px;padding:var(--sp-3);border-radius:var(--r-ctl);background:var(--sunk);min-width:0}
-#view-pilotage .pl-fait-l{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
-#view-pilotage .pl-fait-v{font:700 var(--t-h3)/var(--lh-h3) var(--f-display);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
-#view-pilotage .pl-fait-s{font-size:var(--t-caption);color:var(--muted);line-height:var(--lh-caption);overflow-wrap:anywhere}
-#view-pilotage .pl-fait-s a{display:inline-flex;align-items:center;min-height:var(--hit);color:var(--brand);font-weight:600}
+#view-pilotage .pl-fait-v{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-display);white-space:nowrap}
+#view-pilotage .pl-fait-s{overflow-wrap:anywhere}
+#view-pilotage .pl-fait-a{display:inline-flex;align-items:center;min-height:var(--hit);margin-block:calc((var(--hit) - var(--lh-caption)) / -2);color:var(--brand);font:600 var(--t-caption)/var(--lh-caption) var(--f-body)}
 #view-pilotage .pl-graphe{min-width:0}
 #view-pilotage .pl-note{margin:0;font-size:var(--t-caption);line-height:1.45;color:var(--muted);max-width:620px}
 #view-pilotage .pl-note:empty{display:none}
@@ -68,7 +68,7 @@
 #view-pilotage .pl-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 
 /* états */
-#view-pilotage .pl-chargement{margin:0;font-size:var(--t-small);color:var(--muted)}
+#view-pilotage .pl-chargement{margin:0;min-width:0}
 #view-pilotage .pl-vide{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
 #view-pilotage .pl-vide h2{font:700 var(--t-h3) var(--f-display);margin:0}
 #view-pilotage .pl-vide p{margin:0;line-height:1.5;max-width:640px}
@@ -77,9 +77,21 @@
 #view-pilotage .pl-head{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
 #view-pilotage .pl-head h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0}
 /* Les cinq regroupements passent à la ligne quand la colonne est étroite (1100 à 1700 px : colonne de droite de 300 à 350 px) au lieu de défiler ; zone tactile de 44 px */
-#view-pilotage .pl-mode{max-width:100%;min-width:0;flex:1 1 100%}
-#view-pilotage .pl-mode .ui-bascule{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));width:100%}
-#view-pilotage .pl-mode .ui-bascule-option{min-height:44px}
+#view-pilotage .pl-mode{min-width:0;flex:none}
+#view-pilotage .pl-mode-btn{display:inline-flex;align-items:center;gap:var(--sp-2);min-height:var(--hit);padding:0 var(--sp-3);border:1px solid var(--line-field);border-radius:var(--r-ctl);background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+#view-pilotage .pl-mode-btn:hover{background:var(--sunk)}
+#view-pilotage .pl-mode-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+#view-pilotage .pl-mode-k{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-pilotage .pl-mode-v{font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+#view-pilotage .pl-mode-btn .ui-ico{color:var(--muted)}
+/* feuille des regroupements (hors de la vue) */
+.ui-panneau .pl-modes{display:flex;flex-direction:column}
+.ui-panneau .pl-modes-o{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:56px;padding:0 var(--sp-1);border:0;border-top:1px solid var(--line);background:none;color:var(--ink);font:500 var(--t-h3)/var(--lh-h3) var(--f-body);text-align:left;cursor:pointer}
+.ui-panneau .pl-modes-o:first-child{border-top:0}
+.ui-panneau .pl-modes-o[aria-checked="true"]{font-weight:700;color:var(--brand)}
+.ui-panneau .pl-modes-o:hover{background:var(--sunk)}
+.ui-panneau .pl-modes-o:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.ui-panneau .pl-modes-c{display:grid;place-items:center;width:20px}
 #view-pilotage .pl-mode-note{margin:var(--sp-2) 0 var(--sp-3);font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
 /* un groupe = une ligne de 64 px avec sa barre de part (pas une carte par ligne) ; les lignes se déplient sous elle */
 #view-pilotage .pl-groupe{border-top:1px solid var(--line);min-width:0}
@@ -179,7 +191,16 @@
   #view-pilotage .pl-g-corps{padding:0 4px 6px}
   #view-pilotage .pl-arow{grid-template-columns:92px minmax(0,1fr) 84px}
   #view-pilotage .pl-mode{width:100%}
-  #view-pilotage .pl-faits li{padding:var(--sp-3) var(--sp-2)}
+}
+/* sous 600 px : les trois tuiles deviennent trois lignes (libellé et montant, puis la sous-ligne et le lien) */
+@media (max-width:599.98px){
+  #view-pilotage .pl-faits{grid-template-columns:minmax(0,1fr);gap:0;margin-top:var(--sp-3)}
+  #view-pilotage .pl-faits li{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"l v" "s a";align-items:baseline;gap:0 var(--sp-3);padding:var(--sp-3) 0;border-radius:0;background:none;border-top:1px solid var(--line)}
+  #view-pilotage .pl-faits li:first-child{border-top:0}
+  #view-pilotage .pl-fait-l{grid-area:l;font:400 var(--t-body)/var(--lh-body) var(--f-body);color:var(--ink)}
+  #view-pilotage .pl-fait-v{grid-area:v;justify-self:end;font:600 var(--t-h3)/var(--lh-h3) var(--f-body)}
+  #view-pilotage .pl-fait-s{grid-area:s}
+  #view-pilotage .pl-fait-a{grid-area:a;justify-self:end}
 }
 @media (prefers-reduced-motion:reduce){#view-pilotage .pl-g-chev,#view-pilotage .pl-rd-chev{transition:none}}
 

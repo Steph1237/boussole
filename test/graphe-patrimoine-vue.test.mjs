@@ -33,11 +33,11 @@ test("commandes : un contrôle segmenté de 5 fenêtres, « Réglages » et « P
 test("rendu initial : titre qui suit la lecture, une ligne de lecture, role=\"img\" et aria-label égal à la phrase de titre ; 5 ans par défaut", () => {
   const t = monter();
   assert.equal(t.q("[data-svg]").getAttribute("role"), "img");
-  assert.match(sp(t.q("[data-svg]").getAttribute("aria-label")), /^Aujourd'hui : 193 k€ · dans 7 ans : médiane \d+ k€ \(\d+ k€ à \d+ k€\), en euros d'aujourd'hui\.$/);
+  assert.match(sp(t.q("[data-svg]").getAttribute("aria-label")), /^Aujourd'hui : 193 k€ · dans 5 ans : médiane \d+ k€ \(\d+ k€ à \d+ k€\), en euros d'aujourd'hui\.$/);
   assert.equal(t.q("[data-win][aria-pressed=\"true\"]").textContent, "5 ans");
-  assert.equal(t.texte('[data-hl="k"]'), "Dans 7 ans · oct. 2033");
+  assert.equal(t.texte('[data-hl="k"]'), "Dans 5 ans · oct. 2031");
   assert.match(sp(t.texte('[data-hl="v"]')), /^≈ \d+ k€$/); assert.match(sp(t.texte('[data-hl="s"]')), /^8 chances sur 10 entre \d+ et \d+ k€$/);
-  assert.match(ro(t), /^Oct\. 2033 · ≈ \d+ k€ · \d+–\d+ k€ · prochain : Nouvel emploi de Sam$/);
+  assert.match(ro(t), /^Oct\. 2031 · ≈ \d+ k€ · \d+–\d+ k€ · prochain : Nouvel emploi de Sam$/);
   assert.equal(t.q("[data-roline]").getAttribute("aria-live"), "polite", "lecture annoncée aux lecteurs d'écran");
   assert.equal(t.q("[data-hit]").getAttribute("role"), "slider"); assert.equal(t.q("[data-hit]").getAttribute("tabindex"), "0");
   assert.ok(t.q("[data-sr]").textContent.includes("Événements :"));
@@ -76,7 +76,7 @@ test("curseur : ← / → d'un pas, Origine / Fin aux bornes, T = aujourd'hui, �
   t.touche(hit, "ArrowRight"); const a = ro(t); assert.match(a, /^Nov\. 2026 /);
   t.touche(hit, "ArrowRight"); assert.match(ro(t), /^Déc\. 2026 · ≈ \d+ k€ · \d+–\d+ k€ · Nouvel emploi de Sam$/, "l'événement de la date est écrit dans la ligne");
   t.touche(hit, "ArrowLeft"); assert.equal(ro(t), a);
-  t.touche(hit, "End"); assert.match(ro(t), /^Oct\. 2033 /); t.touche(hit, "Home"); assert.match(ro(t), /^Oct\. 2023 · \d+ \d{3} € · estimé/);
+  t.touche(hit, "End"); assert.match(ro(t), /^Oct\. 2031 /); t.touche(hit, "Home"); assert.match(ro(t), /^Oct\. 2023 · \d+ \d{3} € · estimé/);
   t.touche(hit, "Escape"); assert.equal(t.q("[data-xh]").getAttribute("style"), "opacity:0");
   t.touche(hit, "ArrowRight"); const n = t.touche(hit, "ArrowRight"); assert.equal(n.defaultPrevented, true);
   // la lecture en une ligne ouvre le détail : tout est lisible sans survol

@@ -558,8 +558,9 @@
     return mois <= 24 ? { n: mois, unite: "mois" } : { n: Math.round(d / 365.25), unite: "ans" };
   }
   const enToutesLettres = c => (c.mot ? c.mot.toLowerCase() : "dans " + c.n + " " + c.unite);
-  const carteBtn = (id, cls, aria, titre, corps) => '<button type="button" class="aj-k ' + cls + '" data-ui-carte="' + id + '" aria-haspopup="dialog" aria-label="' + esc(aria) + '">' +
-    '<span class="aj-k-tete"><span class="aj-k-titre">' + esc(titre) + '</span><span class="aj-k-ouvrir">' + CHEVRON_DROITE + "</span></span>" + corps + "</button>";
+  /* court : libellé de la mini-carte sur mobile (une seule ligne) ; le nom accessible est l'aria-label, jamais les deux libellés. */
+  const carteBtn = (id, cls, aria, titre, corps, court) => '<button type="button" class="aj-k ' + cls + '" data-ui-carte="' + id + '" aria-haspopup="dialog" aria-label="' + esc(aria) + '">' +
+    '<span class="aj-k-tete"><span class="aj-k-titre">' + (court ? '<span class="aj-k-t-l">' + esc(titre) + '</span><span class="aj-k-t-c" aria-hidden="true">' + esc(court) + "</span>" : esc(titre)) + '</span><span class="aj-k-ouvrir">' + CHEVRON_DROITE + "</span></span>" + corps + "</button>";
   /** Date courte d'une liste : « 14 oct. » dans l'année, « 1 févr. 2027 » au-delà. */
   const dateListe = (s, auj) => (isoOk(s) ? FM().fmtDate(s, { court: isoOk(auj) ? s.slice(0, 4) === auj.slice(0, 4) : false }) : "");
 
@@ -580,26 +581,26 @@
     const sous2 = tot == null ? "Données à compléter" : pr.aCompleter ? pluriel(pr.aCompleter, "critère") + " à compléter" : "Tous les critères sont notés";
     const c2 = carteBtn("pratiques", "aj-k-pra t-" + tonP, "Bonnes pratiques : " + (tot == null ? "pas encore de note, données à compléter" : tot + " sur 100, " + motP.toLowerCase() + (pr.provisoire ? ", note provisoire" : "") + ", " + sous2.toLowerCase()), "Bonnes pratiques",
       '<span class="aj-k-corps">' + anneau(tot, tot == null ? "neutre" : tonP, { n: tot == null ? "—" : String(Math.round(tot)), u: tot == null ? "" : "/ 100", mode: "sur" }) +
-      '<span class="aj-k-jauge-t">' + puceH(tonP, pr.provisoire && tot != null ? motP + " · provisoire" : motP) + '<span class="aj-k-sous">' + esc(sous2) + "</span></span></span>");
+      '<span class="aj-k-jauge-t">' + puceH(tonP, pr.provisoire && tot != null ? motP + " · provisoire" : motP) + '<span class="aj-k-sous">' + esc(sous2) + "</span></span></span>", "Pratiques");
     // 3. Objectifs : anneau (avancement pondéré, « % » plus petit à côté du chiffre), puce, une ligne ; les objectifs un par un sont dans le panneau
     const motO = ob.vide ? "" : ob.retard ? ob.retard + " en retard" : ob.liste.every(x => x.statut === "atteint") ? "Tous atteints" : "Tous dans les temps";
     const stO = ob.vide ? "completer" : ob.ton === "critique" ? "travailler" : ob.retard ? "surveiller" : "bon";
     const c3 = carteBtn("objectifs", "aj-k-obj t-" + ob.ton, "Objectifs : " + (ob.vide ? "aucun objectif défini" : ob.pct + " % d'avancement pondéré, " + (ob.retard ? pluriel(ob.retard, "objectif") + " en retard" : motO.toLowerCase()) + ". " +
       ob.top.map(x => x.nom + " " + Math.round(x.progression * 100) + " %, " + x.mot).join(" ; ")), "Objectifs",
       '<span class="aj-k-corps">' + anneau(ob.pct, ob.vide ? "neutre" : stO, { n: ob.vide ? "—" : String(ob.pct), u: ob.vide ? "" : "%", mode: "pct" }) +
-      '<span class="aj-k-jauge-t">' + (ob.vide ? "" : puceH(stO, motO)) + '<span class="aj-k-sous">' + esc(ob.vide ? "Fixe ton premier objectif avec Claude" : "d'avancement, selon la priorité") + "</span></span></span>");
+      '<span class="aj-k-jauge-t">' + (ob.vide ? "" : puceH(stO, motO)) + '<span class="aj-k-sous">' + esc(ob.vide ? "Fixe ton premier objectif avec Claude" : "d'avancement, selon la priorité") + "</span></span></span>", "Objectifs");
     // 4. Prochaine échéance : « 47 jours » sur une ligne, libellé (deux lignes au plus, texte complet en title), date qui ne se coupe pas ; puce seulement si c'est proche
     const e = ec.prochaine, cr = e ? compteARebours(e.jours) : null, stE = !e ? null : e.jours <= 7 ? "travailler" : e.jours <= 30 ? "surveiller" : null, motE = e ? (e.jours <= 7 ? "Imminente" : "Proche") : "";
     const unite = cr && !cr.mot ? (cr.unite === "jours" ? '<span class="u-l"> jours</span><span class="u-c"> j</span>' : '<span> ' + esc(cr.unite) + "</span>") : "";
     const c4 = carteBtn("echeance", "aj-k-ech" + (stE ? " t-" + (stE === "travailler" ? "critique" : "attention") : ""), "Prochaine échéance : " + (e ? enToutesLettres(cr) + ", " + plat(e.titre) + ", le " + dateFr(e.date) + (stE ? ", " + motE.toLowerCase() : "") : "aucune date à venir"), "Prochaine échéance",
       '<span class="aj-k-val num">' + (!e ? '<span class="aj-k-mot">Aucune</span>' : cr.mot ? '<span class="aj-k-mot">' + esc(cr.mot) + "</span>" : '<span class="aj-k-n">' + cr.n + '</span><span class="aj-k-unit">' + unite + "</span>") + "</span>" +
       '<span class="aj-k-pied aj-k-pied-ech">' + (e ? '<span class="aj-k-lib" title="' + esc(plat(e.titre)) + '">' + esc(plat(e.titre)) + '</span><span class="aj-k-date">' + (stE ? puceH(stE, motE) : "") + "<span>" + esc(dateFr(e.date)) + "</span></span>"
-        : '<span class="aj-k-sous">Aucune date à venir</span>') + "</span>");
+        : '<span class="aj-k-sous">Aucune date à venir</span>') + "</span>", "Échéance");
     return c1 + c2 + c3 + c4;
   }
   const TODAY_VIDE = "2000-01-01";
 
-  const ligne = (label, valeur) => '<li><span class="aj-det-l">' + esc(label) + '</span><span class="aj-det-v">' + esc(valeur) + "</span></li>";
+  const ligne = (label, valeur, cls) => '<li' + (cls ? ' class="' + cls + '"' : "") + '><span class="aj-det-l">' + esc(label) + '</span><span class="aj-det-v">' + esc(valeur) + "</span></li>";
   /** Ligne d'une enveloppe : son nom ouvre sa fiche de Patrimoine › Comptes (le panneau se ferme, la coque suit le lien). */
   const ligneFiche = (enveloppe, valeur) => {
     const r = lienFiche({ enveloppe });
@@ -609,7 +610,7 @@
   /** Accordéon fermé (même balisage que UI.accordeon) ; contenu déjà échappé. */
   const accordeon = (titre, contenu) => '<details class="ui-acc"><summary class="ui-acc-titre"><span>' + esc(titre) + '</span><span class="ui-acc-chevron">' + CHEVRON_BAS +
     '</span></summary><div class="ui-acc-corps">' + contenu + "</div></details>";
-  /** « Ce que je possède, ce que je dois » (panneau de la carte Patrimoine net) : financier, immobilier, biens d'usage, parts d'entreprise,
+  /** « Ce que tu possèdes, ce que tu dois » (panneau de la carte Patrimoine net) : financier, immobilier, biens d'usage, parts d'entreprise,
       dettes, net ; puis le détail ligne par ligne de BilanCalc.composition (enveloppes, biens, autres biens, dettes) en accordéon fermé. */
   /** Rendement réel du panneau « Patrimoine net » : la période la plus longue mesurable parmi 1 an, 3 mois, 1 mois — ton rendement (pondéré par l'argent), celui de tes placements (pondéré par le temps) et,
       quand le graphe a calculé la projection, ce que le modèle en attendait avec la phrase « réel contre attendu ». extra : { periodes } (celles du graphe : attendu, comparaison, source). */
@@ -635,20 +636,22 @@
     h += "</ul>";
     const notes = (p.notes || []).map(n => n.charAt(0).toUpperCase() + n.slice(1));
     const unAn = parId("1a"), manque = p.id !== "1a" && unAn && unAn.statut === "insuffisant" ? ["Pas assez d'historique pour 1 an : la période la plus longue mesurable est de " + qui + (p.id === "debut" ? " (depuis ton premier relevé)" : "")] : [];
+    // la phrase « réel contre attendu » reste visible ; la méthode et les réserves se replient dans « Comment c'est calculé »
     if (p.comparaison && p.comparaison.phrase) h += '<p class="aj-det-note aj-det-rd">' + esc(p.comparaison.phrase + (p.source ? ". " + p.source.texte.charAt(0).toUpperCase() + p.source.texte.slice(1) + "." : ".")) + "</p>";
-    if (notes.length || manque.length) h += '<p class="aj-det-note aj-det-rd">' + esc(manque.concat(notes).join(" ; ") + ".") + "</p>";
-    return h + pied;
+    let methode = "";
+    if (notes.length || manque.length) methode += '<p class="aj-det-note aj-det-rd">' + esc(manque.concat(notes).join(" ; ") + ".") + "</p>";
+    return h + accordeon("Comment c'est calculé", methode + pied);
   }
   function compositionHtml(n, rendementHtml) {
     const lignes = [["Placements financiers", eur(n.financier)], ["Immobilier", eur(n.immobilier)]];
     if (n.usage > 0) lignes.push(["Biens d'usage (voiture, meubles…)", eur(n.usage)]);
     if (n.entreprise > 0) lignes.push(["Parts d'entreprise", eur(n.entreprise)]);
-    lignes.push(["Dettes", eur(-n.dettes)], ["Patrimoine net", eur(n.valeur)]);
+    lignes.push(["Dettes", eur(-n.dettes)]);
     const c = n.composition;
     const groupe = (label, ls, fiche) => '<p class="aj-det-note">' + esc(label) + '</p><ul class="aj-det">' + ls.map(l => fiche ? ligneFiche(l.label, eur(l.montant)) : ligne(l.label, eur(l.montant))).join("") + "</ul>";
     const det = c ? c.actifs.filter(b => b.lignes.length).map(b => groupe(b.label + " · " + eur(b.total), b.lignes, b.cle === "financier")).join("") +
       (c.dettes.lignes.length ? groupe("Dettes · " + eur(-c.dettes.total), c.dettes.lignes.map(l => ({ label: l.label, montant: -l.montant }))) : "") : "";
-    return '<p class="aj-det-note">Ce que je possède, ce que je dois</p><ul class="aj-det">' + lignes.map(l => ligne(l[0], l[1])).join("") + "</ul>" + (rendementHtml || "") +
+    return '<p class="aj-det-note">Ce que tu possèdes, ce que tu dois</p><ul class="aj-det">' + lignes.map(l => ligne(l[0], l[1])).join("") + ligne("Patrimoine net", eur(n.valeur), "aj-det-total") + "</ul>" + (rendementHtml || "") +
       (det ? accordeon("Le détail, ligne par ligne", det) : "");
   }
   /** Panneau d'une carte : { titre, contenu (HTML échappé : 2 à 4 lignes et une note), lien: { label, href } vers la page complète,
@@ -740,7 +743,7 @@
   const liste_ = liste;
   /** Carte « Prochaines échéances » : liste ordonnée (<ol>) de 5 jalons au plus, boutons ouvrant le panneau du jalon ; pied « N informations à
       compléter » ; état vide honnête. cal = indicateurs().calendrier. Chaque champ est échappé. */
-  function prochainesHtml(cal, U) {
+  function prochainesHtml(cal, U, max) {
     const c = cal || { disponible: false, prochains: [], nPlus: 0, aCompleter: [], indisponibles: [] };
     if (!c.disponible) return '<p class="aj-vide-x">Le calendrier n\'est pas disponible pour l\'instant.</p>';
     const ligne = j => {
@@ -766,8 +769,10 @@
         '<p class="aj-vide-x">' + esc(manque || "Aucune date n'est enregistrée : Claude les relève dans tes documents (relevés, contrats, avis d'impôt).") + "</p>" +
         U.demanderAClaude(prompts().phrase("calendrier"), "Compléter avec Claude") + "</div>" + dispo;
     }
-    return '<ol class="aj-ech-liste" role="list" aria-label="Prochaines échéances, par date">' + c.prochains.map(ligne).join("") + "</ol>" +
-      (c.nPlus ? '<p class="aj-ech-note">' + esc("Et " + pluriel(c.nPlus, "autre") + " plus tard.") + "</p>" : "") + pied + dispo;
+    // max : nombre de lignes montrées (5, ou 3 dans la colonne de droite d'un grand écran) ; le reste s'ouvre dans le calendrier complet
+    const k = max > 0 ? Math.min(max, c.prochains.length) : c.prochains.length, total = c.prochains.length + (c.nPlus || 0);
+    return '<ol class="aj-ech-liste" role="list" aria-label="Prochaines échéances, par date">' + c.prochains.slice(0, k).map(ligne).join("") + "</ol>" +
+      (total > k ? '<p class="aj-ech-note"><button type="button" class="aj-ech-completer aj-ech-voir" data-ech-voir aria-haspopup="dialog">' + esc("Voir les " + total + " échéances") + "</button></p>" : "") + pied + dispo;
   }
   /** Vrai si l'enveloppe du jalon (nom, et titulaire s'il est connu) a au moins une ligne non clôturée dans l'état S : la fiche de
       Patrimoine › Comptes existe (même règle que ComptesView.ficheEnveloppe). */
@@ -866,8 +871,9 @@
     const t = TYPE_TXT[x.type] ? x.type : "alerte", u = URG_TXT[x.urgence] ? +x.urgence : 3, bloquant = t === "banque" && u === 1;
     return '<li class="aj-it ui-item' + (bloquant ? " urgent" : "") + '" data-type="' + t + '">' +
       '<span class="ui-ligne-ico aj-pic" aria-hidden="true">' + ico(t) + "</span>" +
-      '<div class="ui-ligne-corps aj-txt">' + (bloquant ? '<span class="ui-item-meta">' + puceH("travailler", "Bloquant") + "</span>" : "") +
+      '<div class="ui-ligne-corps aj-txt"><div class="aj-tl' + (bloquant ? " avec-meta" : "") + '">' +
       '<p class="aj-t"><span class="ui-sr">' + esc(TYPE_TXT[t] + ", " + URG_TXT[u] + " : ") + "</span>" + esc(x.titre) + "</p>" +
+      (bloquant ? '<span class="ui-item-meta aj-meta">' + puceH("travailler", "Bloquant") + "</span>" : "") + "</div>" +
       (x.contexte ? '<p class="aj-c" title="' + esc(x.contexte) + '">' + esc(x.contexte) + "</p>" : "") + "</div>" +
       actionHtml(x.action) + "</li>";
   }
@@ -935,6 +941,7 @@
     const u = U();
     if (!root || !S || !u) return;
     ind = indicateurs(S, jour(), periode, depsVue());
+    if (S.ready === false) { squelettes(u); chargerHistorique(); lancerGraphe(); return; }
     renderCartes();
     renderEcheances(u);
     // Même contenu : on ne réécrit pas la liste (une émission du store ne replie pas un « Voir plus » déplié).
@@ -947,9 +954,15 @@
     lancerGraphe();
     lienProfond();
   }
+  /* Données pas encore lues (S.ready faux) : places réservées à la hauteur du contenu final (aucun saut), jamais des « — » ni un état vide. */
+  function squelettes(u) {
+    if (!u || typeof u.squelette !== "function") return;
+    const mises = [["cartes", "ajCartes", u.squelette(1, "kpi")], ["boite", "ajBoite", u.squelette(3, "ligne")], ["ech", "ajEch", u.squelette(3, "ligne")]];
+    mises.forEach(([k, id, h]) => { const el = $(id); if (!el || sig[k] === "sq") return; sig[k] = "sq"; el.innerHTML = h; });
+  }
   /* Carte « Prochaines échéances » : réécrite seulement si son HTML change (le focus d'un bouton n'est pas perdu à chaque émission du store). */
   function renderEcheances(u) {
-    const h = prochainesHtml(ind && ind.calendrier, u), el = $("ajEch");
+    const h = prochainesHtml(ind && ind.calendrier, u, nBoite() === 5 ? 3 : 5), el = $("ajEch");
     if (!el || h === sig.ech) return;
     sig.ech = h; el.innerHTML = h;
     const n = ind && ind.calendrier ? ind.calendrier.prochains.length : 0, sr = $("ajEchN");
@@ -1010,14 +1023,20 @@
     u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, retour: el,
       surFermeture: () => { if (!el.isConnected) { const c = root.querySelector("[data-ech-completer]"); if (c) c.focus(); } } });
   }
-  /* Lien profond #aujourdhui?echeances=1 : ouvre le calendrier complet une fois les données prêtes. */
+  /* Calendrier complet : « Voir les N échéances » ou lien profond #aujourdhui?echeances=1 (une fois les données prêtes). */
   let ouvrirCalendrierComplet = false;
+  function ouvrirCalendrier(el) {
+    const u = U();
+    if (!u || !u.panneau || !ind || !ind.calendrier) return;
+    const d = calendrierDetail(ind.calendrier, u);
+    u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, retour: el || root.querySelector("[data-ech]") || undefined,
+      surFermeture: () => { if (el && !el.isConnected) { const c = root.querySelector("[data-ech-voir]"); if (c) c.focus(); } } });
+  }
   function lienProfond() {
     const u = U();
     if (!ouvrirCalendrierComplet || !u || !u.panneau || !ind || !ind.calendrier) return;
     ouvrirCalendrierComplet = false;
-    const d = calendrierDetail(ind.calendrier, u);
-    u.panneau.ouvrir({ titre: d.titre, contenu: d.contenu, retour: root.querySelector("[data-ech]") || undefined });
+    ouvrirCalendrier(null);
   }
 
   function mount(r) {
@@ -1026,8 +1045,8 @@
     SN().abonner(histPrete); // fin d'une lecture du passé (déclenchée ici ou par Patrimoine › Comptes)
     $("ajEch").addEventListener("click", e => {
       const t = e.target && e.target.closest ? e.target : null;
-      const b = t && t.closest("[data-ech]"), c = t && t.closest("[data-ech-completer]");
-      if (b) ouvrirJalon(b); else if (c) ouvrirACompleter(c);
+      const b = t && t.closest("[data-ech]"), c = t && t.closest("[data-ech-completer]"), v = t && t.closest("[data-ech-voir]");
+      if (b) ouvrirJalon(b); else if (v) ouvrirCalendrier(v); else if (c) ouvrirACompleter(c);
     });
     try { const mq = window.matchMedia(COLONNE), re = () => { if (root && !root.hidden && S && ind) render(); }; if (mq.addEventListener) mq.addEventListener("change", re); } catch (e) {}
     if (u && u.brancher) u.brancher(root, { surCarte: ouvrirCarte }); // cartes et « Voir plus » de la boîte de réception

@@ -176,7 +176,7 @@ test("carteHtml : bouton-carte (nom, échéance, progression, statut, effort req
   assert.match(h, /21 100 €/);
   assert.match(h, /class="ov-barre" aria-hidden="true"><i style="width:\d+(\.\d)?%"><\/i>/);
   assert.match(h, /\d+ % de la cible/);
-  assert.match(h, /ui-badge/);
+  assert.match(h, /ui-puce (bon|ov-st-track|surveiller|travailler)"/);
   assert.match(h, /Effort requis/);
   assert.match(h, /Priorité 1/);
   const evil = Object.assign({}, x, { o: Object.assign({}, x.o, { nom: "<img src=x onerror=alert(1)>", id: 'a"b' }) });
@@ -292,15 +292,15 @@ test("probaInfo : rien pour un objectif déjà atteint (la somme est réunie), l
 test("carteHtml : statut conservé et probabilité à côté (mot + couleur) ; sans réponse du moteur, aucune probabilité ; hors_horizon = « pas de verdict »", () => {
   const a = OV.analyser(demoS(), DEPS, TODAY), x = a.liste[1];
   const sans = sp(OV.carteHtml(x, 3));
-  assert.doesNotMatch(sans, /ov-proba|chances|probable|ui-puce/, "tant que le moteur n'a pas répondu : rien");
-  assert.match(sans, /ui-badge (bon|info|attention|critique)">(atteint|en avance|dans les temps|en retard|hors de portée)</);
+  assert.doesNotMatch(sans, /ov-proba|chances|probable/, "tant que le moteur n'a pas répondu : rien");
+  assert.match(sans, /ui-puce (bon|ov-st-track|surveiller|travailler)"><span class="ui-puce-point" aria-hidden="true"><\/span>(Atteint|En avance|Dans les temps|En retard|Hors de portée)</);
   const p = OV.probabilites(donneesMoteur([objMoteur(x.o.id, 0.62), objMoteur("loin", null, "hors_horizon")]));
   const avec = sp(OV.carteHtml(x, 3, OV.probaInfo(p, x)));
-  assert.match(avec, /ui-badge (bon|info|attention|critique)">(atteint|en avance|dans les temps|en retard|hors de portée)</, "le statut existant reste");
+  assert.match(avec, /ui-puce (bon|ov-st-track|surveiller|travailler)"><span class="ui-puce-point" aria-hidden="true"><\/span>(Atteint|En avance|Dans les temps|En retard|Hors de portée)</, "le statut existant reste, en puce (point et mot)");
   assert.match(avec, /class="ov-proba"><span class="ui-puce surveiller">.*incertain.*6 chances sur 10 d'y arriver/);
   const loin = sp(OV.carteHtml(x, 3, p.loin));
-  assert.match(loin, /ui-badge">pas de verdict</);
-  assert.doesNotMatch(loin, /en avance|dans les temps|en retard|hors de portée|chances sur 10|ui-puce/);
+  assert.match(loin, /ui-puce ov-st-idle"><span class="ui-puce-point" aria-hidden="true"><\/span>Pas de verdict</);
+  assert.doesNotMatch(loin, /en avance|dans les temps|en retard|hors de portée|chances sur 10|ui-puce (bon|surveiller|travailler)/i);
   assert.match(loin, /Pas de verdict : échéance au-delà de la projection/);
 });
 
@@ -308,8 +308,9 @@ test("resumeObjectifs : un objectif sans verdict (hors_horizon) ne compte ni en 
   const st = (s, h) => ({ o: { id: s }, st: { statut: s }, proba: h ? { horsHorizon: true } : null });
   const r = OV.resumeObjectifs([st("avance"), st("retard", true), st("dans_les_temps")]);
   assert.equal(r.ton, "bon"); assert.equal(r.sans, 1); assert.equal(r.n, 3);
-  assert.match(r.verdict, /Tes 2 objectifs sont en bonne voie/);
+  assert.match(r.verdict, /^2 objectifs sur 3 en bonne voie\.$/, "« 2 objectifs sur 3 en bonne voie », sans parenthèses");
   assert.match(r.detail, /1 en avance · 1 dans les temps · 1 sans verdict/);
+  assert.deepEqual(r.puces.map(q => q.texte), ["1 en avance", "1 dans les temps", "1 sans verdict"], "les états en puces");
   const tout = OV.resumeObjectifs([st("avance", true)]);
   assert.equal(tout.ton, "neutre"); assert.match(tout.verdict, /au-delà de l'horizon de la projection : pas de verdict/);
 });
@@ -604,7 +605,8 @@ test("vue (DOM) : cartes — statuts existants, probabilité du moteur (mot + ch
   const zone = v.root.querySelector("#ovCartes");
   assert.doesNotMatch(sp(zone.textContent), /chances sur 10|probable|incertain|ov-proba/);
   assert.equal(zone.querySelectorAll(".ov-proba").length, 0);
-  const badges = () => zone.querySelectorAll(".ui-badge").map(b => b.textContent);
+  const ETATS = /^(Atteint|En avance|Dans les temps|En retard|Hors de portée|Pas de verdict)$/;
+  const badges = () => zone.querySelectorAll(".ui-puce").map(b => b.textContent).filter(t => ETATS.test(t));
   const avant = badges();
   assert.equal(avant.length, 3);
   reponse(v, [0.9, 0.62, 0.3], { capacite: { base: { retenue: CAP_BUDGET, source: "reel", periode: "avril à septembre 2026" } } });
@@ -612,7 +614,7 @@ test("vue (DOM) : cartes — statuts existants, probabilité du moteur (mot + ch
   assert.doesNotMatch(cs[0], /chances|probable/, "objectif déjà atteint (la somme est réunie) : pas de probabilité à côté");
   assert.match(cs[1], /incertain.*6 chances sur 10 d'y arriver/);
   assert.match(cs[2], /peu probable.*3 chances sur 10 d'y arriver/);
-  assert.deepEqual(zone.querySelectorAll(".ui-puce").map(p => p.className), ["ui-puce surveiller", "ui-puce travailler"], "la couleur dit la même chose que le mot");
+  assert.deepEqual(zone.querySelectorAll(".ui-puce").map(p => p.className).filter(c => !/ov-st-|ui-puce bon$/.test(c) || true).slice(0, 0).concat(zone.querySelectorAll(".ov-proba").map(q => q.querySelector(".ui-puce").className)), ["ui-puce surveiller", "ui-puce travailler"], "la couleur dit la même chose que le mot");
   assert.deepEqual(badges(), avant, "les statuts existants restent (même épargne que celle du budget)");
   assert.deepEqual(v.acces, []);
 });
@@ -620,11 +622,11 @@ test("vue (DOM) : cartes — statuts existants, probabilité du moteur (mot + ch
 test("vue (DOM) : l'épargne retenue par le moteur répartit l'épargne entre les objectifs : les statuts parlent de la même épargne que la projection", () => {
   const v = vueDom(demoS());
   const zone = v.root.querySelector("#ovCartes");
-  const avant = zone.querySelectorAll(".ui-badge").map(b => b.textContent);
+  const avant = zone.querySelectorAll(".ui-puce").map(b => b.textContent).filter(t => /^(Atteint|En avance|Dans les temps|En retard|Hors de portée)$/.test(t));
   reponse(v, [0.9, 0.62, 0.3], { capacite: { base: { retenue: 0, source: "reel", periode: "avril à septembre 2026" } } });
-  const apres = zone.querySelectorAll(".ui-badge").map(b => b.textContent);
-  const connus = ["atteint", "en avance", "dans les temps", "en retard", "hors de portée"];
-  apres.forEach(t => assert.ok(connus.includes(t), t));
+  const ETATS = /^(Atteint|En avance|Dans les temps|En retard|Hors de portée)$/;
+  const apres = zone.querySelectorAll(".ui-puce").map(b => b.textContent).filter(t => ETATS.test(t));
+  assert.equal(apres.length, 3);
   assert.notDeepEqual(apres, avant, "sans épargne retenue, l'apport n'est plus dans les temps");
 });
 
@@ -632,7 +634,7 @@ test("vue (DOM) : objectif hors_horizon = « pas de verdict », aucune probabili
   const v = vueDom(demoS());
   reponse(v, [0.9, "h", 0.3]);
   const c = sp(carte(v.root, "obj-apport").textContent);
-  assert.match(c, /pas de verdict/);
+  assert.match(c, /Pas de verdict/);
   assert.match(c, /Pas de verdict : échéance au-delà de la projection \(25 ans\)/);
   assert.doesNotMatch(c, /chances|probable|incertain|en avance|dans les temps|en retard|hors de portée/);
   assert.match(sp(v.root.querySelector("#ovVerdict").textContent), /sans verdict|objectif/);

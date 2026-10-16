@@ -17,7 +17,7 @@ const bilanCss = readFileSync("web/src/bilan.css", "utf8");
 const G = require("../web/src/claude-guide.js");
 
 const unscoped = (src, prefix) => {
-  const c = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "}");
+  const c = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@(?:media|container)[^{]*\{/g, "}");
   const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(s => s && !/^(from|to|\d+%)$/.test(s));
   assert.ok(sels.length > 10, "sélecteurs introuvables");
   return sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !x.startsWith(prefix));

@@ -62,11 +62,9 @@ test("bilan : lecture seule — plus d'« Ajouter un bien / un crédit » ni de 
   for (const r of routes) { const x = resolve(r); assert.ok(x && known.has(x.space + "/" + x.sub), r); }
 });
 
-test("bilan : « Compléter avec Claude » en tête des sections biens et crédits (section immobilier), plafond HCSF lu dans les repères", () => {
-  assert.match(html, /id="blBiensClaude"/);
-  assert.match(html, /id="blCreditsClaude"/);
-  assert.match(js, /\$\("blBiensClaude"\)\.innerHTML = u\.demanderAClaude\(phraseClaude\("immobilier", "mes biens immobiliers"\), "Compléter avec Claude"\)/);
-  assert.match(js, /\$\("blCreditsClaude"\)\.innerHTML = u\.demanderAClaude\(phraseClaude\("immobilier", "mes crédits/);
+test("bilan : plus de bouton Claude dans les sections (celui de l'en-tête suffit), puce « À compléter » sur une section vide ; plafond HCSF lu dans les repères", () => {
+  assert.doesNotMatch(html, /id="blBiensClaude"|id="blCreditsClaude"|id="blDemander"/);
+  assert.match(js, /bl-aucun"><span class="ui-puce completer">.*À compléter<\/span> Aucun bien immobilier/);
   assert.match(js, /R\.trouver\(reperes, "hcsf_taux_effort"\)/);
   assert.match(js, /plafondHcsf\(s\.savoir && s\.savoir\.reperes, dep\(deps, "Reperes"\)\)/);
   assert.equal(B.phraseClaude("immobilier", "le bien « X »", DEPS), ClaudePrompts.phrase("immobilier", "le bien « X »"));
@@ -89,8 +87,8 @@ test("bilan.js : aucune requête DOM globale hors racine du module ; identifiant
 
 test("bilan.css : entièrement scopé sous #view-bilan (et .ui-panneau .bl-… pour le panneau), @media après une règle fermée", () => {
   const c = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  assert.deepEqual([...c.matchAll(/@media/g)].filter(m => !/(^|\})\s*$/.test(c.slice(0, m.index))).map(m => m.index), []);
-  const plat = c.replace(/@media[^{]*\{/g, "}");
+  assert.deepEqual([...c.matchAll(/@(?:media|container)/g)].filter(m => !/(^|\})\s*$/.test(c.slice(0, m.index))).map(m => m.index), []);
+  const plat = c.replace(/@(?:media|container)[^{]*\{/g, "}");
   const sels = [...plat.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(Boolean).flatMap(s => s.split(",").map(x => x.trim()));
   assert.ok(sels.length > 30);
   assert.deepEqual(sels.filter(x => !x.startsWith("#view-bilan") && !x.startsWith(".ui-panneau .bl-")), []);
@@ -213,7 +211,10 @@ test("tuilesHtml : immobilier, reste à rembourser, mensualités, taux (mensuali
   for (const id of ["immobilier", "dettes", "mensualites", "taux"]) assert.match(h, new RegExp('data-bl-tuile="' + id + '"'));
   assert.match(h, /240 000 €/); assert.match(h, /156 500 €/); assert.match(h, /1 030 €\/mois/);
   assert.match(h, /Taux d'endettement<span class="bl-tuile-def">mensualités ÷ revenus du foyer<\/span>/);
-  assert.match(h, /href="#pilotage\/rang" data-goto="pilotage\/rang">Ta capacité d'emprunt<\/a> \(la banque y compte les loyers à 70 %\)/);
+  assert.match(h, /href="#pilotage\/rang" data-goto="pilotage\/rang">Ta capacité d'emprunt<\/a>/);
+  assert.doesNotMatch(h, /loyers à 70/, "une seule ligne sous le taux : le détail est dans « Comment ces chiffres sont calculés »");
+  assert.match(h, /ui-puce bon"><span class="ui-puce-point" aria-hidden="true"><\/span>Sous le plafond</, "l'état du taux est une puce, pas la couleur du chiffre");
+  assert.match(h, /<span class="bl-jauge"[^>]*aria-hidden="true"><span class="bl-jauge-f" style="width:[\d.]+%"><\/span><span class="bl-jauge-p" style="left:[\d.]+%">/);
   assert.match(h, /plafond des banques : 35 %/);
   assert.match(h, /bl-tuile bon/);
   assert.doesNotMatch(h, /\d+ (crédit|bien)s?\b(?! immobilier)/, "pas de compteur « 2 crédits » / « 1 bien »");
@@ -293,13 +294,12 @@ test("vue (DOM) : verdict, tuiles, cartes, « Compléter avec Claude » ; carte 
   assert.equal(v.$("blEtat").hidden, true);
   assert.equal(v.$("blCorps").hidden, false);
   assert.match(sp(v.$("blVerdict").textContent), /^Immobilier et crédits du foyer : 240 000 €/);
-  assert.match(v.$("blDemander").innerHTML, /claude\.ai\/new\?q=/);
+  assert.equal(v.$("blDemander"), null, "un seul bouton Claude par écran : celui de l'en-tête de la coque");
+  assert.equal(v.$("blCorps").querySelectorAll(".ui-claude").length, 0, "plus de « Compléter avec Claude » de section quand les sections sont remplies");
   assert.equal(v.$("blTuiles").querySelectorAll("[data-bl-tuile]").length, 4);
   assert.equal(v.$("blBiens").querySelectorAll("[data-ui-carte]").length, 1);
   assert.equal(v.$("blCredits").querySelectorAll("[data-ui-carte]").length, 2);
   assert.equal(v.$("blVide").hidden, true);
-  assert.deepEqual(phrasesClaude(v.$("blBiensClaude").innerHTML), [ClaudePrompts.phrase("immobilier", "mes biens immobiliers")]);
-  assert.match(v.$("blCreditsClaude").innerHTML, />Compléter avec Claude</);
   assert.equal(sp(v.$("blPlafond").textContent), "35 %");
   const carte = v.$("blBiens").querySelector('[data-ui-carte="bien:bien-rp"]');
   carte.focus(); carte.click();

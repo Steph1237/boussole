@@ -164,7 +164,7 @@ code,kbd,samp,pre{font-family:var(--f-mono);--nums:normal}
 *,*::before,*::after{font-variant-numeric:var(--nums)!important}
 :where(h1,h2,h3,h4,h5,h6,
   .ac-card-t b,.ac-pieges-t,.ac-promesse b,.ac-revue b,.ac-steps li,.ac-suivi-l,.aj-k-mot,.aj-k-val,.aj-ring-n,
-  .aj-sec-t,.aj-vide-t,.bl-carte-nom,.bl-h2,.bl-vide-t,.brand,.cg-step,.cv-f-titre,.cv-fait-v,.cv-fam-nom,
+  .aj-sec-t,.aj-vide-t,.bl-h2,.bl-tuile-v,.bl-vide-t,.brand,.cg-step,.cv-f-titre,.cv-fait-v,.cv-fam-nom,
   .cv-total,.fv-c-titre,.fv-d-titre,.gp-as-k,.gp-hl-v,.gp-pill,.gp-ro-v b,.gp-sec-t,.gp-ttl,.ic-f-h,.ic-h2,.ic-h3,
   .ic-hero-v,.ic-indispo-t,.ic-m-v,.ov-carte-cible,.ov-carte-nom,.ov-sec-t,.ov-vide-t,.pf-big,.pf-kpi b,.pl-d-val,
   .pl-fait-v,.pl-total,.pv-h,.rg-h2,.rv-gh b,.rv-h2,.rv-kpi b,.rv-verdict,.simu-titre,.st-big,.st-fam-note,.st-h2,

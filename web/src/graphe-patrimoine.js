@@ -94,13 +94,13 @@
   }
   /** Libellés de l'axe vertical : « 0 » (jamais « 0,0 M€ »), « 500 k€ » sous le million, « 1,0 M€ » au-dessus (une même décimale pour tous les M€ de l'axe). */
   function libellesAxe(valeurs) {
-    const frac = valeurs.some(v => Math.abs(v) >= 1e6 && Math.abs(Math.round(v / 1e5) / 10 - Math.round(v / 1e6)) > 1e-9);
+    /* une seule unité par axe, choisie sur le plus grand repère : « 0 · 0,5 M€ · 1,0 M€ · 1,5 M€ », jamais « 500 k€ » au milieu de millions */
+    const max = valeurs.reduce((m, v) => Math.max(m, Math.abs(v)), 0), u = max >= 1e6 ? 1e6 : max >= 1000 ? 1000 : 1, sym = u === 1e6 ? "M€" : u === 1000 ? "k€" : "€";
+    const frac = u > 1 && valeurs.some(v => Math.abs(Math.round(v / u * 10) / 10 - Math.round(v / u)) > 1e-9);
     return valeurs.map(v => {
       const a = Math.abs(v), sg = v < 0 ? MOINS : "";
       if (a < 1e-9) return "0";
-      if (a >= 1e6) return sg + (frac ? (a / 1e6).toFixed(1).replace(".", ",") : String(Math.round(a / 1e6))) + NB + "M€";
-      if (a >= 1000) return sg + fInt(a / 1000) + NB + "k€";
-      return sg + fInt(a) + NB + "€";
+      return sg + (frac ? (a / u).toFixed(1).replace(".", ",") : fInt(a / u)) + NB + sym;
     });
   }
   const fSK = n => (n >= 0 ? "+" : MOINS) + fK(Math.abs(n));
@@ -159,8 +159,8 @@
     { id: "tout", label: "Tout", ans: null, aria: "Tout l'historique et tout l'horizon de la projection" },
   ];
   const HORIZON_MAX_ANS = 25;
-  /** Domaine du temps { debut, fin } (ms) d'une fenêtre. « N ans » = N ans avant ET après aujourd'hui ; le passé est borné par l'historique disponible et la place
-      libérée va au futur (largeur totale constante, axe proportionnel) ; sans passé, la fenêtre part d'aujourd'hui. « Tout » = tout l'historique et tout l'horizon.
+  /** Domaine du temps { debut, fin } (ms) d'une fenêtre. « N ans » = au plus N ans avant ET N ans après aujourd'hui ; le passé est borné par l'historique disponible et la place
+      libérée n'allonge pas le futur (jamais plus de N ans d'avenir, axe proportionnel) ; sans passé, la fenêtre part d'aujourd'hui. « Tout » = tout l'historique et tout l'horizon.
       ctx = { today (ms), debutPasse (ms | null), finFutur (ms), futurSeul? (mode capacité : pas de passé), periode?: { du, au } (ms) }. */
   function domaine(fenetre, ctx) {
     const { today } = ctx, finMax = fini(ctx.finFutur) ? ctx.finFutur : ajouterMois(today, 12 * HORIZON_MAX_ANS);
@@ -171,7 +171,9 @@
     const voulu = ajouterMois(today, -12 * f.ans);
     if (ctx.futurSeul) return { debut: today, fin: Math.min(finMax, ajouterMois(today, 12 * f.ans)) };
     const debut = Math.max(voulu, premier);
-    return { debut, fin: Math.min(finMax, ajouterMois(debut, 24 * f.ans)) };
+    // « N ans » ne montre jamais plus de N ans d'avenir : le sélecteur, l'axe et l'en-tête (« Dans N ans ») disent la même chose.
+    // Quand l'historique est plus court que N ans, la fenêtre est simplement plus étroite (le futur ne s'allonge plus de ce que le passé n'a pas).
+    return { debut, fin: Math.min(finMax, ajouterMois(today, 12 * f.ans)) };
   }
   /** Fenêtre « N ans » (id) la plus proche qui contient les deux bornes (pour agrandir sur un jalon hors fenêtre). */
   function fenetreContenant(todayMs, ms, debutPasse) {
