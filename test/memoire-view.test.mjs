@@ -56,7 +56,7 @@ test("memoire-view.css : entièrement scopé sous #view-memoire-view", () => {
   const c = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "}");
   const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(Boolean);
   assert.ok(sels.length > 15);
-  const bad = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !/^#view-memoire-view\b/.test(x));
+  const bad = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !/^#view-memoire-view\b/.test(x) && !/^\.ui-panneau \.mv-/.test(x)); // la feuille d'actions d'un souvenir vit dans .ui-panneau
   assert.deepEqual(bad, []);
 });
 
@@ -66,9 +66,11 @@ test("memoire-view.js : agit par Store.memoire.modifier, .supprimer et .toutEffa
   assert.match(js, /\.supprimer\(\[/);
   assert.match(js, /\.toutEffacer\(\)/);
   assert.ok(js.includes(`"Effacer les " + n + " souvenirs de Claude ? Cette action est définitive."`));
-  assert.match(js, /if \(!confirm\(q\)\) return;/);
-  const iConfirm = js.indexOf("confirm("), iClear = js.indexOf("api.toutEffacer()");
-  assert.ok(iConfirm > 0 && iConfirm < iClear, "confirm() avant toutEffacer()");
+  // confirmation intégrée à la page (UX5 M1) : « Tout effacer » ne fait que demander, seul « Oui, tout effacer » efface
+  assert.doesNotMatch(js, /\bconfirm\(/);
+  assert.match(js, /if \(b\.id === "mvClear"\) \{ demanderEffacement\(\); return; \}/);
+  assert.match(js, /if \(b\.id === "mvConfOui"\) \{ toutEffacer\(\); return; \}/);
+  assert.equal((js.match(/api\.toutEffacer\(\)/g) || []).length, 1);
   assert.match(js, /maxlength="500"/);
   assert.match(js, /function headline\(\)/);
 });

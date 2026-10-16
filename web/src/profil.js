@@ -254,11 +254,13 @@
     texte("pfMissing", !pret() ? "" : cp.incompletes.length ? "À compléter : " + cp.incompletes.map(m => m.charAt(0).toLowerCase() + m.slice(1)).join(", ") + "."
       : "Tout est renseigné. Aujourd'hui, Patrimoine, Pilotage et les simulations utilisent ces chiffres.");
     const pat = C.patrimoine(S.positions || [], prC, "foyer"), rev = C.revenusFoyer(prC, "foyer"), mens = C.mensualites(prC, "foyer");
+    /* Trois chiffres posés dans la carte : des lignes (libellé et sous-ligne à gauche, montant à droite), pas des tuiles grises. */
     ecrire("pfRecap", [
       ["Patrimoine net du foyer", eur(pat.net), "dont " + eur(pat.financier) + " suivis dans tes placements"],
       ["Revenus du foyer", eur(rev) + "/mois", "nets avant impôt, loyers compris"],
       ["Mensualités de crédit", eur(mens) + "/mois", rev > 0 ? Math.round(mens / rev * 100) + " % des revenus" : "—"],
-    ].map(([l, v, s]) => '<div class="pf-kpi"><span>' + esc(l) + "</span><b>" + esc(v) + "</b><em>" + esc(s) + "</em></div>").join(""));
+    ].map(([l, v, s]) => U && typeof U.ligne === "function" ? U.ligne({ titre: l, sous: s, montant: v })
+      : '<div class="pf-kpi"><span>' + esc(l) + "</span><b>" + esc(v) + "</b><em>" + esc(s) + "</em></div>").join(""));
     /* « Compléter avec Claude » : le bouton Claude de l'en-tête (demande « Compléter mon bilan ») couvre la page ; seules les sections incomplètes gardent leur lien. */
     const r = resumes(pr, C);
     SECTIONS.forEach(s => {

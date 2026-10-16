@@ -3,10 +3,10 @@
 #view-memoire-view .memoire-view{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
 #view-memoire-view .mv-intro h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0 0 var(--sp-1)}
 #view-memoire-view .mv-intro p{margin:0;font-size:var(--t-body);line-height:var(--lh-body);color:var(--muted)}
-#view-memoire-view .mv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--line2);background:var(--sunk);overflow-wrap:anywhere}
-#view-memoire-view .mv-msg.ok{border-left-color:var(--st-good);background:var(--st-good-bg)}
-#view-memoire-view .mv-msg.err{border-left-color:var(--st-work);background:var(--st-work-bg)}
-#view-memoire-view .mv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--st-work);background:var(--st-work-bg)}
+#view-memoire-view .mv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);background:var(--sunk);overflow-wrap:anywhere}
+#view-memoire-view .mv-msg.ok{background:var(--st-good-bg)}
+#view-memoire-view .mv-msg.err{background:var(--st-work-bg)}
+#view-memoire-view .mv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);background:var(--st-work-bg)}
 #view-memoire-view .mv-bar{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
 #view-memoire-view .mv-count{margin:0;font-size:var(--t-small);color:var(--muted);min-width:0;border-radius:4px}
 #view-memoire-view .mv-count b{color:var(--ink);font-weight:700}
@@ -16,11 +16,15 @@
 #view-memoire-view .mv-grp h3{display:flex;align-items:baseline;gap:var(--sp-2);font:650 var(--t-h3)/var(--lh-h3) var(--f-body);color:var(--ink);margin:0 0 var(--sp-1)}
 #view-memoire-view .mv-n{font:600 var(--t-caption) var(--f-body)}
 #view-memoire-view .mv-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
-#view-memoire-view .mv-item{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:var(--sp-3) 0 var(--sp-1) var(--sp-3);border-top:1px solid var(--line);border-left:3px solid transparent;min-width:0}
+#view-memoire-view .mv-item{display:flex;align-items:flex-start;gap:var(--sp-2);padding:var(--sp-3) 0;border-top:1px solid var(--line);min-width:0}
 #view-memoire-view .mv-item:first-child{border-top:0}
-#view-memoire-view .mv-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
-#view-memoire-view .mv-item.is-pin{border-left-color:var(--brand)}
-#view-memoire-view .mv-item.echu{border-left-color:var(--st-watch)}
+#view-memoire-view .mv-item:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;border-radius:4px}
+#view-memoire-view .mv-corps{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+#view-memoire-view .mv-item.en-edition .mv-corps{align-items:stretch}
+#view-memoire-view .mv-more{flex:none;margin:calc(var(--sp-3) * -1) calc(var(--sp-2) * -1) calc(var(--sp-3) * -1) 0;color:var(--muted);text-decoration:none;border-radius:var(--r-ctl)}
+#view-memoire-view .mv-more:hover{background:var(--sunk);color:var(--ink)}
+#view-memoire-view .mv-more:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+#view-memoire-view .mv-more .mv-ico{width:20px;height:20px}
 #view-memoire-view .mv-txt{margin:0;font-size:var(--t-body);line-height:1.5;overflow-wrap:anywhere;white-space:pre-line}
 #view-memoire-view .mv-meta{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:var(--t-caption);color:var(--muted)}
 #view-memoire-view .mv-who{overflow-wrap:anywhere}
@@ -33,7 +37,7 @@
 #view-memoire-view .mv-lnk:hover{color:var(--ink)}
 #view-memoire-view .mv-lnk.danger{color:var(--neg)}
 #view-memoire-view .mv-lnk:disabled{opacity:.5;cursor:default}
-#view-memoire-view .mv-btn{display:inline-flex;align-items:center;justify-content:center;min-height:var(--btn-h);min-width:var(--hit);font:700 var(--t-body) var(--f-body);border-radius:var(--radius-sm);padding:0 var(--sp-5);border:1px solid var(--brand);background:var(--brand);color:var(--brand-ink);cursor:pointer;text-decoration:none}
+#view-memoire-view .mv-btn{display:inline-flex;align-items:center;justify-content:center;min-height:var(--btn-h);min-width:var(--hit);font:700 var(--t-body) var(--f-body);border-radius:var(--radius-sm);padding:0 var(--sp-5);border:1px solid var(--brand-fill);background:var(--brand-fill);color:var(--brand-fill-ink);cursor:pointer;text-decoration:none}
 #view-memoire-view .mv-btn:hover{filter:brightness(1.08)}
 #view-memoire-view .mv-btn.ghost{background:var(--surface);color:var(--brand);border-color:var(--line2);font-weight:600}
 #view-memoire-view .mv-btn.danger{background:var(--surface);border-color:var(--line2);color:var(--neg);font-weight:600}
@@ -51,4 +55,14 @@
 #view-memoire-view .mv-empty h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0;border-radius:4px}
 #view-memoire-view .mv-empty p{margin:0;line-height:1.5}
 
-@media (max-width:480px){#view-memoire-view .mv-item{padding-left:10px}}
+/* zone du bas : effacer toute la mémoire, confirmation dans la page */
+#view-memoire-view .mv-zone{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2)}
+#view-memoire-view .mv-zone h2{font:650 var(--t-h3)/var(--lh-h3) var(--f-body);margin:0}
+#view-memoire-view .mv-zone p{margin:0;font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
+#view-memoire-view .mv-zone .mv-btn{margin-top:var(--sp-1)}
+#view-memoire-view .mv-conf{display:flex;flex-direction:column;gap:var(--sp-2);align-self:stretch;padding:var(--sp-3);border-radius:var(--r-ctl);background:var(--st-work-bg)}
+#view-memoire-view .mv-conf .mv-conf-q{color:var(--ink);font-size:var(--t-body);line-height:var(--lh-body)}
+#view-memoire-view .mv-conf .mv-act{margin-left:0;gap:var(--sp-2)}
+#view-memoire-view .mv-btn.danger-plein{background:var(--st-work);border-color:var(--st-work);color:var(--surface)}
+.ui-panneau .mv-feuille{display:flex;flex-direction:column;gap:var(--sp-3)}
+#view-memoire-view .mv-conf .mv-btn{scroll-margin-bottom:calc(var(--bbar-h) + var(--sp-4))}

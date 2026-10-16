@@ -8,46 +8,6 @@
 #view-claude-guide .cg-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 #view-claude-guide .cg-ico{width:16px;height:16px;flex:none}
 
-/* en-tête */
-#view-claude-guide .cg-hero{display:grid;grid-template-columns:96px minmax(0,1fr);gap:14px 20px;align-items:center}
-#view-claude-guide .cg-hero h2{font-size:var(--t-kpi);line-height:1.2}
-#view-claude-guide .cg-hero-txt p{margin:var(--sp-2) 0 0;line-height:1.5}
-#view-claude-guide .cg-ring{position:relative;width:96px;height:96px}
-#view-claude-guide .cg-ring svg{display:block;width:100%;height:100%}
-#view-claude-guide .cg-ring-bg{fill:none;stroke:var(--sunk);stroke-width:8}
-#view-claude-guide .cg-ring-fg{fill:none;stroke:var(--brand);stroke-width:8;stroke-linecap:round}
-#view-claude-guide .cg-ring-v{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;padding-top:33px;box-sizing:border-box;font:700 var(--t-kpi) var(--f-display);font-variant-numeric:tabular-nums}
-#view-claude-guide .cg-ring-v small{font-size:var(--t-caption);color:var(--muted);margin-left:1px}
-
-/* sections et prochaines questions */
-#view-claude-guide .cg-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--gap-cards)}
-#view-claude-guide .cg-sec-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
-#view-claude-guide .cg-sec{border-top:1px solid var(--line)}
-#view-claude-guide .cg-sec:first-child{border-top:0}
-#view-claude-guide .cg-sec-h{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--sp-3);align-items:center;min-height:var(--hit);padding:var(--sp-1) 0;font-size:var(--t-body)}
-#view-claude-guide summary.cg-sec-h{cursor:pointer;list-style:none}
-#view-claude-guide summary.cg-sec-h::-webkit-details-marker{display:none}
-#view-claude-guide summary.cg-sec-h .cg-sec-t::after{content:"›";display:inline-block;margin-left:8px;color:var(--muted);transition:transform .15s}
-#view-claude-guide details[open]>summary.cg-sec-h .cg-sec-t::after{transform:rotate(90deg)}
-#view-claude-guide .cg-sec-t{font-weight:600;min-width:0}
-#view-claude-guide .cg-sec-n{font:500 var(--t-caption) var(--f-body);color:var(--muted);white-space:nowrap}
-#view-claude-guide .cg-st{display:inline-flex}
-#view-claude-guide .cg-st .cg-ico{width:18px;height:18px}
-#view-claude-guide .cg-st.complet{color:var(--pos)}
-#view-claude-guide .cg-st.partiel{color:var(--st-watch)}
-#view-claude-guide .cg-st.vide{color:var(--muted)}
-#view-claude-guide .cg-miss{list-style:none;margin:0 0 10px;padding:0 0 0 28px;display:flex;flex-direction:column;gap:8px;font-size:var(--t-small)}
-#view-claude-guide .cg-miss li{display:flex;flex-direction:column;gap:2px;line-height:1.4}
-#view-claude-guide .cg-miss b{font-weight:600}
-#view-claude-guide .cg-miss span{color:var(--muted);font-size:var(--t-small)}
-#view-claude-guide .cg-next-list{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:12px;font-size:var(--t-small)}
-#view-claude-guide .cg-next-list li{line-height:1.4}
-#view-claude-guide .cg-next-list li>*{display:block}
-#view-claude-guide .cg-next-list b{font-weight:600;margin:1px 0}
-#view-claude-guide .cg-next-list .muted{font-size:var(--t-small)}
-#view-claude-guide .cg-next-s{font:600 var(--t-small) var(--f-body);color:var(--brand)}
-#view-claude-guide .cg-next-done{margin:0}
-
 /* étapes */
 #view-claude-guide .cg-step-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:var(--sp-6) var(--sp-8);align-items:start;counter-reset:cgstep}
 #view-claude-guide .cg-step{position:relative;padding-left:40px;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0;counter-increment:cgstep}
@@ -56,10 +16,9 @@
 #view-claude-guide .cg-anon{padding:12px 12px 12px 52px;border-radius:8px;background:var(--st-watch-bg)}
 #view-claude-guide .cg-anon::before{left:12px;top:10px;background:var(--surface);color:var(--st-watch)}
 #view-claude-guide .cg-cx{align-self:stretch;min-width:0;margin-top:4px}
-#view-claude-guide .cg-revoir{margin-top:12px}
 #view-claude-guide .cg-note{padding:8px 10px;border-radius:8px;background:var(--brand-soft);font-size:var(--t-small)}
-#view-claude-guide .cg-btn{display:inline-flex;align-items:center;gap:6px;font:600 var(--t-small) var(--f-body);min-height:var(--hit);border-radius:var(--radius-sm);padding:0 var(--sp-4);border:1px solid var(--brand);background:var(--brand);color:var(--brand-ink);cursor:pointer;text-decoration:none;white-space:nowrap}
-#view-claude-guide a.cg-btn{color:var(--brand-ink)}
+#view-claude-guide .cg-btn{display:inline-flex;align-items:center;gap:6px;font:600 var(--t-small) var(--f-body);min-height:var(--hit);border-radius:var(--radius-sm);padding:0 var(--sp-4);border:1px solid var(--brand-fill);background:var(--brand-fill);color:var(--brand-fill-ink);cursor:pointer;text-decoration:none;white-space:nowrap}
+#view-claude-guide a.cg-btn{color:var(--brand-fill-ink)}
 #view-claude-guide .cg-btn:hover{filter:brightness(1.08)}
 #view-claude-guide .cg-btn.ghost{background:var(--surface);color:var(--brand);border-color:var(--line2)}
 #view-claude-guide a.cg-btn.ghost{color:var(--brand)}
@@ -69,7 +28,7 @@
 #view-claude-guide .cg-pc-a{display:flex;flex-wrap:wrap;gap:6px}
 #view-claude-guide .cg-prompt{width:100%;box-sizing:border-box;font:var(--t-small) var(--f-body);color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px 8px;resize:vertical}
 #view-claude-guide .cg-pending{display:inline-flex;align-items:center;min-height:var(--hit);padding:0 var(--sp-4);border-radius:999px;background:var(--sunk);color:var(--muted);font-size:var(--t-small);text-decoration:none}
-#view-claude-guide .cg-pending.has{background:var(--brand);color:var(--brand-ink)}
+#view-claude-guide .cg-pending.has{background:var(--brand-fill);color:var(--brand-fill-ink)}
 #view-claude-guide .cg-msg{margin:12px 0 0;font-size:var(--t-small);min-height:1.2em}
 #view-claude-guide .cg-msg.ok{color:var(--pos)}
 #view-claude-guide .cg-msg.err{color:var(--st-work)}
@@ -154,34 +113,40 @@
 #view-claude-guide .cg-bq-sugg p{margin:0;flex:1 1 220px;overflow-wrap:anywhere}
 #view-claude-guide .cg-bq-ratt{display:flex;flex-direction:column;gap:3px;min-width:200px}
 #view-claude-guide .cg-bq-ratt label{font-size:var(--t-caption);color:var(--muted)}
-#view-claude-guide .cg-bq-ratt select{width:100%;max-width:100%;min-height:var(--hit);font:var(--t-small) var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--radius-sm);padding:0 var(--sp-2)}
+#view-claude-guide .cg-bq-ratt select{width:100%;max-width:100%;min-height:var(--hit);font:var(--t-small) var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--radius-sm);padding:0 var(--sp-8) 0 var(--sp-2);text-overflow:ellipsis}
 #view-claude-guide .cg-bq-ratt select:disabled{opacity:.6;cursor:progress}
 @media (max-width:560px){#view-claude-guide .cg-bq-cpt{grid-template-columns:minmax(0,1fr)}#view-claude-guide .cg-bq-ratt select{width:100%}}
 @media (pointer:coarse){#view-claude-guide .cg-bq-ratt select{min-height:44px}#view-claude-guide .cg-bq .cg-btn{min-height:44px}}
 
-/* comment se remplit Boussole (saisie avec Claude), veille */
-#view-claude-guide .cg-alt{column-width:30rem;column-gap:var(--sp-10);display:block}
-#view-claude-guide .cg-alt h2{margin:0 0 var(--sp-2)}
-#view-claude-guide .cg-alt h3{margin:var(--sp-2) 0 0}
-#view-claude-guide .cg-alt p{margin:0 0 var(--sp-2);font-size:var(--t-small);line-height:1.55;break-inside:avoid}
-#view-claude-guide .cg-alt a{color:var(--brand);font-weight:600}
+/* comment se remplit Boussole : un accordéon sous les étapes */
+#view-claude-guide .cg-alt-corps{column-width:30rem;column-gap:var(--sp-10)}
+#view-claude-guide .cg-alt-corps h3{margin:var(--sp-2) 0 0}
+#view-claude-guide .cg-alt-corps p{margin:0 0 var(--sp-2);font-size:var(--t-small);line-height:1.55;break-inside:avoid}
+#view-claude-guide .cg-alt-corps a{color:var(--brand);font-weight:600}
 
-@media (min-width:900px){#view-claude-guide .cg-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);align-items:start}}
-/* grand écran : réponse, avancement et questions sur une rangée ; revue mensuelle et banques côte à côte */
+@media (max-width:480px){#view-claude-guide .cg-step{padding-left:36px}}
+
+/* trois volets : Claude, Banques, Revue du mois (bascule en tête, un volet visible à la fois) */
+#view-claude-guide .cg-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-4)}
+#view-claude-guide .cg-tete h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display)}
+#view-claude-guide .cg-volet{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+#view-claude-guide .cg-etat-ligne{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:var(--sp-3) var(--sp-5)}
+#view-claude-guide .cg-etat-txt{flex:1 1 24rem;min-width:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+#view-claude-guide .cg-etat-txt h2{font-size:var(--t-kpi);line-height:var(--lh-kpi)}
+#view-claude-guide .cg-etat-txt p{margin:0;line-height:1.5}
+#view-claude-guide .cg-statut{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);font-size:var(--t-small);color:var(--muted)}
+/* pas à pas du connecteur */
+#view-claude-guide .cg-pas-liste>li{min-height:0}
+#view-claude-guide .cg-pas{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-4);margin-top:var(--sp-3)}
+#view-claude-guide .cg-pas-n{font:600 var(--t-small) var(--f-body);color:var(--muted)}
+#view-claude-guide .cg-pas-b{display:flex;gap:var(--sp-2)}
+#view-claude-guide .cg-pas .cg-btn:disabled{opacity:.45;cursor:default}
+#view-claude-guide .cg-pieges{margin-top:var(--sp-3)}
+#view-claude-guide .cg-pieges ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:var(--sp-1)}
+#view-claude-guide .cg-step kbd,#view-claude-guide .cg-cx kbd{white-space:nowrap}
 @media (min-width:1280px){
-  #view-claude-guide .cg-hero{grid-column:span 4;align-self:stretch;grid-template-columns:minmax(0,1fr);justify-items:start;align-content:center}
-  #view-claude-guide .cg-grid{display:contents}
-  #view-claude-guide .cg-sections{grid-column:span 4;align-self:stretch}
-  #view-claude-guide .cg-next{grid-column:span 4;align-self:stretch}
-  #view-claude-guide .cg-routines{grid-column:span 5}
-  #view-claude-guide .cg-banques{grid-column:span 7}
-  #view-claude-guide .cg-routines:only-of-type{grid-column:1/-1}
+  #view-claude-guide .cg-volet[data-cg-volet="claude"]{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));align-items:start}
+  #view-claude-guide .cg-volet[data-cg-volet="claude"]>*{grid-column:1/-1}
 }
-@media (max-width:480px){#view-claude-guide .cg-hero{grid-template-columns:minmax(0,1fr)}#view-claude-guide .cg-step{padding-left:36px}}
-@media (prefers-reduced-motion:no-preference){#view-claude-guide .cg-ring-fg{transition:stroke-dasharray .5s ease}}
-
-#view-claude-guide .cg-sec-sum{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:var(--hit);cursor:pointer;list-style:none}
-#view-claude-guide .cg-sec-sum::-webkit-details-marker{display:none}
-#view-claude-guide .cg-sec-sum::after{content:"+";color:var(--muted);font-weight:500}
-#view-claude-guide .cg-sections[open] .cg-sec-sum::after{content:"–"}
-#view-claude-guide .cg-sections[open] .cg-sec-sum{margin-bottom:var(--sp-2)}
+/* demandes toutes prêtes : titre, description et les deux boutons côte à côte dès que la place le permet */
+#view-claude-guide .cg-pc-a .cg-btn{flex:1 1 9rem;justify-content:center}

@@ -303,11 +303,11 @@ test("banqueHtml : doublon évité — avec une banque connectée, « Connecter 
   assert.doesNotMatch(t, VOUVOIEMENT);
 });
 
-test("claude-guide.html : section « Banques connectées » après « Ta revue mensuelle », masquée par défaut, zone d'état", () => {
+test("claude-guide.html : section « Banques connectées » dans son volet, après « Ta revue mensuelle », masquée par défaut, zone d'état", () => {
   const html = src("claude-guide.html");
   assert.match(html, /<section class="panel cg-banques" id="cgBanques" aria-labelledby="cgBqTitle" hidden>/);
   assert.match(html, /<h2 id="cgBqTitle">Banques connectées<\/h2>/);
-  assert.ok(html.indexOf('id="cgRoutines"') < html.indexOf('id="cgBanques"') && html.indexOf('id="cgBanques"') < html.indexOf('id="cgAltTitle"'));
+  assert.ok(html.indexOf('id="cgRoutines"') < html.indexOf('data-cg-volet="banques"') && html.indexOf('data-cg-volet="banques"') < html.indexOf('id="cgBanques"'));
   assert.match(html, /<p class="cg-msg ok" id="cgBqMsg" role="status" aria-live="polite"><\/p>/);
   const js = src("claude-guide.js");
   assert.match(js, /banqueHtml\(S, RE\(\)\.aujParis\(\), window\.UI \|\| null, etatBq\)/);

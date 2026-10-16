@@ -3,12 +3,13 @@
 #view-expertises-view [hidden]{display:none!important}
 #view-expertises-view .xv{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
 #view-expertises-view .xv-tete{display:flex;flex-direction:column;gap:var(--sp-1)}
-#view-expertises-view .xv-tete h2{font:650 var(--t-h3)/var(--lh-h3) var(--f-body);margin:0;border-radius:4px}
-#view-expertises-view .xv-intro{margin:0;line-height:1.5}
+/* un seul titre visible : « Ce que sait Claude » (coque) ; celui des expertises reste pour les lecteurs d'écran */
+#view-expertises-view .xv-tete h2{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+#view-expertises-view .xv-intro{margin:0;font-size:var(--t-small);line-height:var(--lh-small);color:var(--muted)}
 #view-expertises-view .xv-legende{margin:0;font-size:var(--t-caption);color:var(--muted)}
 #view-expertises-view .xv-compte{margin:0;font-size:var(--t-caption);color:var(--muted)}
 #view-expertises-view .xv-compte:empty{display:none}
-#view-expertises-view .xv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--st-watch);background:var(--st-watch-bg)}
+#view-expertises-view .xv-msg{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);background:var(--st-watch-bg)}
 
 /* cartes : grille souple (textes longs), titre de l'expertise en valeur de la carte */
 #view-expertises-view .xv-cartes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:var(--gap-cards)}
@@ -22,7 +23,7 @@
 #view-expertises-view .xv-vide{display:flex;flex-direction:column;gap:var(--sp-2)}
 #view-expertises-view .xv-vide h3{font:700 var(--t-h3) var(--f-display);margin:0}
 #view-expertises-view .xv-vide p{margin:0;color:var(--muted);line-height:1.5}
-#view-expertises-view .xv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);border-left:3px solid var(--st-work);background:var(--st-work-bg)}
+#view-expertises-view .xv-err{margin:0;padding:9px 12px;border-radius:8px;font-size:var(--t-small);background:var(--st-work-bg)}
 
 /* panneau de détail (UI.panneau, hors de la vue) */
 .ui-panneau .xv-meta{font-size:var(--t-small);color:var(--muted)}
@@ -54,12 +55,11 @@
 .ui-panneau .xv-hist-d{font:500 var(--t-caption) var(--f-body);color:var(--muted)}
 .ui-panneau .xv-hist-t{font-size:var(--t-small);line-height:1.45;overflow-wrap:anywhere}
 .ui-panneau .xv-charge{color:var(--muted)}
-.ui-panneau .xv-erreur{padding:9px 12px;border-radius:8px;border-left:3px solid var(--st-work);background:var(--st-work-bg);line-height:1.5}
+.ui-panneau .xv-erreur{padding:9px 12px;border-radius:8px;background:var(--st-work-bg);line-height:1.5}
 .ui-panneau .xv-note{padding:9px 12px;border-radius:8px;border-left:3px solid var(--line2);background:var(--sunk);font-size:var(--t-small);line-height:1.5}
 .ui-panneau .xv-legende{font-size:var(--t-caption);line-height:1.45;color:var(--muted);font-style:italic}
 
 @media (max-width:560px){
-  #view-expertises-view .xv-tete h2{font-size:var(--t-h2)}
   .ui-panneau .xv-src{grid-template-columns:1fr;gap:2px}
   .ui-panneau .xv-src dd{margin-bottom:6px}
 }

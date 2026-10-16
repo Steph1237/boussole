@@ -164,12 +164,13 @@ code,kbd,samp,pre{font-family:var(--f-mono);--nums:normal}
 *,*::before,*::after{font-variant-numeric:var(--nums)!important}
 :where(h1,h2,h3,h4,h5,h6,
   .ac-card-t b,.ac-pieges-t,.ac-promesse b,.ac-revue b,.ac-steps li,.ac-suivi-l,.aj-k-mot,.aj-k-val,.aj-ring-n,
-  .aj-sec-t,.aj-vide-t,.bl-carte-nom,.bl-h2,.bl-vide-t,.brand,.cg-ring-v,.cg-step,.cv-f-titre,.cv-fait-v,.cv-fam-nom,
+  .aj-sec-t,.aj-vide-t,.bl-carte-nom,.bl-h2,.bl-vide-t,.brand,.cg-step,.cv-f-titre,.cv-fait-v,.cv-fam-nom,
   .cv-total,.fv-c-titre,.fv-d-titre,.gp-as-k,.gp-hl-v,.gp-pill,.gp-ro-v b,.gp-sec-t,.gp-ttl,.ic-f-h,.ic-h2,.ic-h3,
   .ic-hero-v,.ic-indispo-t,.ic-m-v,.ov-carte-cible,.ov-carte-nom,.ov-sec-t,.ov-vide-t,.pf-big,.pf-kpi b,.pl-d-val,
   .pl-fait-v,.pl-total,.pv-h,.rg-h2,.rv-gh b,.rv-h2,.rv-kpi b,.rv-verdict,.simu-titre,.st-big,.st-fam-note,.st-h2,
   .st-note,.st-onglet-note,.st-p-mesure,.st-verdict,.sv-centre-n,.sv-h,.sv-sys-phrase,.sv-titre,.ts-p-big,
-  .ts-p-kpis dd,.ui-tuile-v,.ui-carte-valeur,.ui-panneau-titre,.verdict,.sv-o-titre,.sv-vt-phrase){--nums:var(--nums-prop)}
+  .ts-p-kpis dd,.ui-tuile-v,.ui-carte-valeur,.ui-panneau-titre,.verdict,.sv-o-titre,.sv-vt-phrase,
+  .big,.heat-c b,.kpi b,.q-l,.rk,.scen-h,.scen-i b,.ts-acc-nom,.ts-h2,.ts-verdict){--nums:var(--nums-prop)}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 /* Mouvement réduit : toutes les durées passent à 0, sauf le fondu d'opacité (voile et panneau). */
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -349,6 +350,10 @@ select,textarea,.inp:not(:focus-within),.money:not(:focus-within){border-color:v
 
 .app-link{font:600 var(--t-small) var(--f-body);color:var(--brand);text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:1px}
 .app-link:hover{color:var(--ink)}
+/* Lien « Mon compte : e-mail, sécurité, export » en tête des vues de Compte (UX5 D1, N4) : une ligne de 44 px avec chevron, pas un lien nu */
+.app-link.page-link{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);align-self:stretch;padding:0 var(--sp-4);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--e1);color:var(--ink);font:600 var(--t-body) var(--f-body)}
+.app-link.page-link::after{content:"›";color:var(--muted);font-size:var(--t-h2);line-height:1}
+.app-link.page-link:hover{border-color:var(--line2)}
 .banner.anon:not([hidden]),.banner.retour:not([hidden]){display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3)}
 .banner.anon span,.banner.retour span{min-width:0}
 .banner.retour{background:var(--st-good-bg)}
