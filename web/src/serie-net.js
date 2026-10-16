@@ -138,7 +138,7 @@
   /** Photos reconstituées stockées (écrites par la nuit) plus anciennes que `avant`, en points { date, financier, net } : le net est refait avec les biens
       hors placements d'aujourd'hui (horsFin), comme pour le passé calculé à la volée. */
   function photosAvant(S, avant, horsFin) {
-    return (S && Array.isArray(S.photosReconstituees) ? S.photosReconstituees : []).filter(p => p && isoOk(jj(p.date)) && isFinite(+p.financier) && (!avant || jj(p.date) < avant))
+    return (S && Array.isArray(S.photosReconstituees) ? S.photosReconstituees : []).filter(p => p && isoOk(jj(p.date)) && p.financier != null && isFinite(+p.financier) && (!avant || jj(p.date) < avant))
       .map(p => ({ date: jj(p.date), financier: +p.financier, net: +p.financier + horsFin, nature: "photo" })).sort((a, b) => (a.date < b.date ? -1 : 1));
   }
 

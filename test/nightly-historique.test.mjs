@@ -327,6 +327,14 @@ test("nuit : une erreur de lecture est notée (job_runs.errors), la demande rest
   assert.equal(photosDe(m).length, 0);
   assert.equal(r.status, 200);
 });
+test("nuit : tables de l'historique absentes (migration 0034 pas appliquée) → avertissement, la nuit n'est pas fautive", { skip: SANS_STRIP }, async () => {
+  const m = monter({ panne: t => t === "status" });
+  const de = m.db.from;
+  m.db.from = t => (t === "status" ? { select: () => ({ not: () => ({ limit: async () => ({ data: null, error: { message: 'column status.historique_a_recalculer does not exist' } }) }) }) } : de(t));
+  const r = await m.appeler();
+  assert.deepEqual(r.corps.errors.filter(e => /photos/.test(e.error ?? "")), []);
+  assert.ok(r.corps.avertissements.some(a => /migration 0034/.test(a)), JSON.stringify(r.corps.avertissements));
+});
 test("nuit : le patrimoine net d'une photo ajoute les biens hors placements d'aujourd'hui (convention de HIS1)", { skip: SANS_STRIP }, async () => {
   const m = monter({ init: donnees({ biens: [{ user_id: U, valeur: 200000, part_p1: 50, crd: 150000 }], credits: [{ user_id: U, owner: "p1", crd: 1000 }], profiles: [{ user_id: U, autres: { p1: { usage: 5000, entreprise: 0 } } }] }) });
   sansErreurPhotos((await m.appeler()).corps);

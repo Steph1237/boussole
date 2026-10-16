@@ -675,7 +675,9 @@ Deno.serve(async (req) => {
       }
       if (ecoule() <= PHOTOS_FIN_MS) retention = await reduirePropositions(admin, contexte());
     } catch (e) {
-      errors.push({ error: `photos reconstituées : erreur inattendue (${message(e)}).` });
+      // migration 0034 pas appliquée (préproduction ancienne) : table ou colonne absente → avertissement, pas une nuit fautive
+      if (/does not exist|schema cache|PGRST20\d|42P01|42703/i.test(message(e))) avertissements.push(`photos reconstituées : tables de l'historique absentes (migration 0034 ?) : ${message(e)}`);
+      else errors.push({ error: `photos reconstituées : erreur inattendue (${message(e)}).` });
     }
 
     // 6. Frais des fonds (au plus 10 ISIN) ; aucun nouvel ISIN après ~120 s, appels coupés à 125 s. Non bloquant : tout échec
