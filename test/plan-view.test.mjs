@@ -568,7 +568,7 @@ test("vue (DOM) : banque connectée → colonne réel, capacité d'épargne et �
   assert.match(sp(v.root.querySelector("#pvBudgetNote").textContent), /« Réel » : moyenne d[e'][^,]+, d'après tes comptes connectés\. Virements entre tes comptes exclus\./);
   assert.match(sp(v.root.querySelector('[data-pv-cat="depense:Alimentation"]').textContent), /réel 800 €\/mois/, "comptes courants seulement");
   assert.match(sp(v.root.querySelector("#pvBudget").textContent), /Capacité d'épargne réelle, 3 derniers mois 84 %[\s\S]*Épargne versée 15 %/);
-  const sans = vueDom(Object.assign(demoS(), { banque: { actif: false, lu: true, connexions: [], comptes: [], mois: [] } }));
+  const sans = vueDom(Object.assign(demoS(), { banque: { actif: false, lu: true, connexions: [], comptes: [], mois: [] }, relevesBancaires: { lu: true, comptes: [], releves: [], banqueMois: [] } })); // ni banque ni relevé importé (la démo en porte)
   assert.doesNotMatch(sp(sans.root.querySelector("#pvBudgetNote").textContent), /Virements/);
   assert.equal(sans.root.querySelector(".pv-reel-taux"), null);
 });

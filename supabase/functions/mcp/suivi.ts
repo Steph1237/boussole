@@ -61,7 +61,7 @@ export async function donneesSuivi(db: any, must: any, auj: string, base: any, p
   const risqueProfil = isObj(prof?.risque) ? (prof.risque.profil ?? null) : null;
   const risque = { profil: risqueProfil };
   // Santé (matelas, frais) : la même évaluation que l'app (Suivi.santeDe, bonnes pratiques) sur les mêmes données ; vide si elle échoue.
-  const sante = Suivi.santeDe({ positions, profil: base.profil, config: base.config, budget: base.budget, objectifs: base.objectifs, risque, classes: base.classes, banque: base.banque ?? null }, auj);
+  const sante = Suivi.santeDe({ positions, profil: base.profil, config: base.config, budget: base.budget, objectifs: base.objectifs, risque, classes: base.classes, banque: base.banque ?? null, relevesBancaires: base.relevesBancaires ?? null }, auj);
   return { ...base, positions, risque, sante, routines: Suivi.routinesDe(routine?.etat_suivi ?? null, passages) };
 }
 const PARIS = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" });

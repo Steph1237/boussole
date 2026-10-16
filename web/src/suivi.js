@@ -1166,7 +1166,7 @@
   /** Matelas (mois de dépenses) et coût total des supports (% par an) d'après les bonnes pratiques de l'app, pour les habitudes ; {} si le calcul échoue. */
   function santeDe(s, today) {
     try {
-      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, today: new Date(today + "T12:00:00Z") });
+      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, relevesBancaires: s.relevesBancaires || null, today: new Date(today + "T12:00:00Z") });
       const m = r.criteres.find(c => c.cle === "matelas"), f = r.criteres.find(c => c.cle === "frais");
       return { matelas_mois: m && !m.aCompleter && connu(m.valeur) ? +m.valeur : null, frais_pct: f && !f.aCompleter && f.frais && connu(f.frais.pct) ? +f.frais.pct : null };
     } catch (e) { return {}; }

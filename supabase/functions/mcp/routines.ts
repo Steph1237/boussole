@@ -116,6 +116,8 @@ export const SOURCES: Record<string, { nom: string; motsCles: RegExp | null; con
     lien: "https://www.linxea.com" },
   revolut: { nom: "Revolut", motsCles: /\brevolut\b/,
     consigne: "Dans l'app Revolut → choisis le compte → Relevés → Excel ou CSV, du 1er au dernier jour du mois écoulé ; dépose le fichier tel quel dans la conversation." },
+  n26: { nom: "N26", motsCles: /\bn26\b/,
+    consigne: "Sur le site N26 → Téléchargements → Activité du compte : choisis le mois écoulé, format CSV ; dépose le fichier tel quel dans la conversation. Le menu peut avoir changé." },
   binance: { nom: "Binance", motsCles: /\bbinance\b/,
     consigne: "Seulement si la synchronisation Binance n'est pas active : Binance → Portefeuille → Historique / Relevé de compte (CSV) ; dépose le fichier tel quel dans la conversation." },
   assurance_vie: { nom: "Assurance-vie", motsCles: /\bassurances?[- ]vie\b|\bav\b/,
@@ -194,6 +196,7 @@ export const CONDUITE_REVUE = [
   "2 quinquies. Argent qui dort (argent_qui_dort, si présent : soldes des comptes courants au-dessus de 1,5 mois de dépenses deux mois de suite) : signale-le dans la synthèse avec le montant et le nombre de mois, et prépare une question du mois, par exemple argent_qui_dort.question (placer l'excédent sur un livret ?). Aucun produit, fonds ni établissement nommé : l'utilisateur choisit.",
   "2 sexies. Calendrier patrimonial (echeances_3_mois : échéances fiscales des 3 prochains mois, avec leur date, leur effet et leur degré de confiance ; calendrier_a_completer : données qui manquent pour dater un délai, avec le document où les trouver) : cite chaque échéance des 3 prochains mois en une phrase (date, enveloppe, effet décrit, jamais une recommandation de produit) et, pour une date « approchée », dis-le. Propose de compléter UNE seule donnée manquante ce mois-ci (une question du mois, avec le document à demander dans le pourquoi), pas toutes. N'invente jamais une date et ne la déduis jamais de la banque. Si echeances_3_mois vaut null, la lecture a échoué : n'en parle pas.",
   "2 septies. Suivi des lignes (suivi : déclencheurs_du_mois selon la politique de suivi, revue_coeur, roles_a_confirmer, systeme) : la réserve et le satellite se passent en revue chaque mois, le cœur seulement le mois de sa revue (revue_coeur.due_ce_mois) ou quand un seuil est franchi. Pour chaque déclencheur du mois, cite son titre (une classe, une enveloppe ou un objectif, jamais un produit), sa mesure et son verdict « ça vaut le coût ? » (champ ca_vaut_le_cout du déclencheur : gain par an, coût une fois, point mort), y compris « ne rien changer à cette classe est l'option la moins coûteuse ». Prépare une question du mois pour confirmer les rôles à confirmer (une seule question pour toutes les lignes, à choix multiple). Le mois de la revue du cœur, passe chaque classe en revue avec ca_vaut_le_cout. Sur une ligne nommée, ne donne que des faits ; ne dis jamais d'acheter, de vendre, de renforcer ou d'alléger un produit. Si une règle de seuil de cours est touchée, rappelle le rôle de la ligne et la fréquence de revue choisie, et demande si la règle tient toujours.",
+  "2 octies. Historique importé (historique.comptes_a_importer : comptes dont l'utilisateur dépose les relevés lui-même, sans banque connectée, et dont le mois écoulé manque) : prépare une question du mois par compte, « Dépose le relevé de <mois_a_importer> de <compte> », avec sa consigne dans le pourquoi (300 caractères au plus). Quand le fichier arrive, suis la conduite d'etat_historique et appelle importer_releves_mensuels (récapitulatif, accord de l'utilisateur, puis une proposition qu'il valide dans Boussole › Agent › À valider). Jamais d'identifiants ni de numéros de compte.",
   "3. Rédige une synthèse de 5 points au plus, en français simple, au tutoiement, avec les chiffres et leur date. Aucune recommandation de produit, de fonds ou d'établissement : ce n'est pas un conseil en investissement.",
   "4. Prépare au plus 10 questions du mois, chacune avec son pourquoi en une phrase et, quand il existe, le champ du formulaire (champ du catalogue, par exemple foyer.tmi). Pense aux nouveaux flux (versements, achats, ventes, retraits), à un changement de salaire, aux nouveaux prélèvements ou abonnements, aux soldes à confirmer et aux relevés à déposer. Pas de question déjà répondue dans le bilan.",
   "5. N'écris rien dans le bilan et ne dépose aucune proposition sans l'utilisateur, à l'exception du plan figé du mois (5 bis), qui attend sa validation. Jamais d'identifiants, d'IBAN, de numéros de compte ou de carte, ni de mots de passe.",
@@ -372,7 +375,9 @@ export type CalculRoutine = {
 
 export function registerRoutines(server: any, h: { db: any; wrap: any; must: any; UserError: any; RO: any; RW: any; source: string; today: () => string; calcul: CalculRoutine; aal?: string;
   /** Suivi des lignes (SUIVI, suivi.ts) : déclencheurs du mois (revue), mémoire de la revue calculée à la clôture (etat) et plan figé du mois (planDuMois) ; chacun ne lève jamais. */
-  suivi?: { revue?: () => Promise<any>; etat?: (coeurRevu: boolean) => Promise<any>; planDuMois?: () => Promise<any> } }) {
+  suivi?: { revue?: () => Promise<any>; etat?: (coeurRevu: boolean) => Promise<any>; planDuMois?: () => Promise<any> };
+  /** Historique importé (HIS2, historique.ts) : comptes importés non connectés à relancer pour le mois écoulé ; ne lève jamais (null en cas d'échec). */
+  historique?: () => Promise<any> }) {
   const { db, wrap, must, UserError, RO, RW, source, today, calcul, aal } = h;
   const suivi = h.suivi ?? {};
   const Type = z.enum(TYPES_ROUTINE, { error: "type : " + TYPES_ROUTINE.join(", ") + "." });
@@ -466,7 +471,7 @@ export function registerRoutines(server: any, h: { db: any; wrap: any; must: any
       .gte("date", moisAvant(moisIso(auj)!, 12) + "-01")) as any[]) ?? [], [] as any[]);
     const calendrier = await echeancesDeRevue(db, must, auj); // DAT1 : ne lève jamais (null en cas d'échec de lecture)
     // SUIVI : déclencheurs du mois selon la politique (null si indisponible) et plan figé du mois (null si la lecture échoue) ; ne lèvent jamais.
-    const [suiviRevue, planMois] = await Promise.all([suivi.revue ? suivi.revue() : Promise.resolve(null), suivi.planDuMois ? suivi.planDuMois() : Promise.resolve(null)]);
+    const [suiviRevue, planMois, historiqueImporte] = await Promise.all([suivi.revue ? suivi.revue() : Promise.resolve(null), suivi.planDuMois ? suivi.planDuMois() : Promise.resolve(null), h.historique ? h.historique() : Promise.resolve(null)]);
     const dort = argentQuiDort({ positions: donnees.positions, snapshots: photos }, auj, depensesReference((banque as any)?.budget_reel, t, donnees.config));
     const al = alertesTriees(statut?.alerts);
     // Exports à réclamer (CP1 § 6) : calcul pur sur les lignes déjà chargées, aucune lecture de plus.
@@ -502,6 +507,7 @@ export function registerRoutines(server: any, h: { db: any; wrap: any; must: any
       calendrier_a_completer: calendrier?.a_completer ?? null,
       suivi: suiviRevue,
       plan_du_mois: planMois,
+      historique: historiqueImporte,
     };
   }));
 

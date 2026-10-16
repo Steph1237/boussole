@@ -128,7 +128,7 @@ export async function lireDonneesProjection(db: any, must: any, auj: string, ban
   return {
     today: auj, positions: ((must("positions", po) as any[]) ?? []).map(positionEnApp), instruments: [], config: { ...config, projection: isObj(config.projection) ? config.projection : {} },
     profil, credits: profil.credits, biens: profil.biens, budget: { lignes: Array.isArray(budget?.lignes) ? budget.lignes.map((l: any) => ({ ...l, montant: nombre(l.montant) })) : [] },
-    banque: bq ? { actif: true, comptes: bq.comptes ?? [], mois: bq.mois ?? [] } : null, objectifs: ((must("objectifs", ob) as any[]) ?? []).map(objectifEnApp),
+    banque: bq && bq.actif !== false ? { actif: true, comptes: bq.comptes ?? [], mois: bq.mois ?? [] } : null, relevesBancaires: bq?.historique ?? null, objectifs: ((must("objectifs", ob) as any[]) ?? []).map(objectifEnApp),
     foyer: { evenements, variantes }, reperes: Reperes.depuisLignes((must("reperes", rp) as any[]) ?? []), indices, classes: isObj(profilLu?.classes) ? profilLu.classes : {},
     ...(historique ? { historique } : {}),
   };

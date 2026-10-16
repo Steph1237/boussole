@@ -152,7 +152,7 @@ test("lire_banque : interrupteur éteint (ou absent) → { actif: false }, rien 
     const { T, charges } = banqueSrv(db);
     const r = await T.lire_banque.handler({});
     assert.deepEqual(J(r.ok), { actif: false });
-    assert.deepEqual(db.appels.map(a => a.table), ["fonctionnalites"], "seul l'interrupteur est lu");
+    assert.deepEqual(db.appels.map(a => a.table), ["fonctionnalites", "historique_comptes"], "l'interrupteur, puis les relevés importés (HIS2) : rien d'autre n'est lu");
     assert.deepEqual(J(db.appels[0].ops.find(o => o[0] === "eq")), ["eq", "cle", "banque"]);
     assert.equal(charges(), 0, "aucun calcul du bilan");
   }
@@ -349,7 +349,7 @@ test("banqueDeRoutine : historique de moins de 60 jours, mois écoulé non synch
 
 /* ---------- intégration dans index.ts et routines.ts ---------- */
 test("index.ts : banque.ts enregistré (chargement et budgetTotaux injectés), demarrer_session renvoie banque sans bloquer", () => {
-  assert.match(src, /import \{ registerBanque, banqueDeSession(, aalDuJeton(, chargeUtileDuJeton)?)? \} from "\.\/banque\.ts";/);
+  assert.match(src, /import \{ registerBanque, banqueDeSession(, aalDuJeton(, chargeUtileDuJeton(, lireHistorique)?)?)? \} from "\.\/banque\.ts";/);
   assert.match(code, /registerBanque\(server, \{ \.\.\.h, charger: chargerDonnees, budgetTotaux \}\);/);
   const ds = code.slice(code.indexOf('registerTool("demarrer_session"'), code.indexOf('registerTool("list_propositions"'));
   assert.match(ds, /banqueDeSession\(db, must, aal\)/);
@@ -575,7 +575,7 @@ test("SEC2 banqueDeSession et banqueDeRoutine : sans aal2 → { actif: true, mfa
 });
 
 test("SEC2 index.ts : le jeton donne son aal (aalDuJeton) au serveur ; lireBanqueCalcul, demarrer_session et routines s'y plient ; message dans les instructions", () => {
-  assert.match(src, /import \{ registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton \} from "\.\/banque\.ts";/);
+  assert.match(src, /import \{ registerBanque, banqueDeSession, aalDuJeton, chargeUtileDuJeton, lireHistorique \} from "\.\/banque\.ts";/);
   assert.match(code, /type Ctx = .*aal\?: string/);
   assert.match(code, /buildServer\(\{ db, user: \{[^}]*\}, client: clientDuJeton\(token\), aal, mfa \}\)/);
   assert.match(code, /const aal = aalDuJeton\(token\)/);

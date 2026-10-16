@@ -869,6 +869,93 @@ def("calc", function (module, exports, require) {
     return L.filter(r => (det.has(moisIso(r.mois)) ? idCompte(r) != null && ids.has(String(idCompte(r))) : true));
   }
   const RE_INTERNE = /^virements?[_ ]internes?$|^interne$/;
+
+  /* ---------- série fusionnée des mois bancaires (HIS2, spec 2026-10-16-his2-historique-design.md § 6.1) ---------- */
+  const liste = v => (Array.isArray(v) ? v.filter(Boolean) : []);
+  const cleCompte = v => (v == null || v === "" ? null : String(v));
+  const compteBanqueDe = hc => { const v = hc.banqueCompteId !== undefined ? hc.banqueCompteId : hc.banque_compte_id; return v == null || v === "" || +v === 0 ? null : v; };
+  const compteImporteDe = r => (r.compteId != null ? r.compteId : r.compte_id);
+  const importDe = r => (r.importId !== undefined ? r.importId : r.import_id);
+  /** Ligne de totaux d'un mois importé, dans la forme d'une ligne de banque_mois (mois au 1er du mois, compte, catégorie large, sous-catégorie). */
+  const ligneImportee = (r, mois, compte) => ({ mois: mois + "-01", compte_id: compte, categorie: r.categorie, sous_categorie: r.sous_categorie == null ? "" : r.sous_categorie,
+    entrees: n(r.entrees), sorties: n(r.sorties), nombre: n(r.nombre) });
+  /** Série des mois bancaires par compte et par mois, UNE fonction pour la synchronisation (Powens) et les relevés importés (HIS2) : jamais deux fois
+      le même euro. Consommée par budgetReel (donc la projection et la santé), par le connecteur et par l'écran de couverture.
+      banque = S.banque { comptes, mois } ; historique = { comptes, releves, banqueMois } (historique_comptes, historique_releves,
+      historique_banque_mois ; champs en snake_case de la base ou en camelCase du store) ; auj = date du jour (les mois importés après le mois en
+      cours sont ignorés). Règles : un compte importé rattaché à un compte Powens (banque_compte_id) prend Powens pour un mois que banque_mois
+      couvre, sauf le premier mois du compte dans banque_mois (réputé entamé : la synchronisation a commencé en cours de mois) où l'import l'emporte ;
+      un compte importé non rattaché : l'import ; un compte Powens sans import : Powens pour tous ses mois, premier mois compris. Une carte à débit
+      différé importée compte si le courant importé du même établissement et du même titulaire porte ce mois-là une ligne « releve_carte » (hors budget),
+      ou si aucun courant de cet établissement et de ce titulaire n'est importé ce mois-là ; sinon elle est écartée (son relevé, compté sur le courant, ne
+      doit pas l'être deux fois).
+      → [{ compte, mois: "AAAA-MM", source: "powens" | "import" | null, type?, categories: [lignes de banque_mois], releve?, import_id?, ecarte? }], triée par
+      mois puis par compte (en texte). compte = banque_compte_id si le compte importé est rattaché ou si c'est un compte Powens (null pour des
+      totaux sans compte), sinon "h:" + id du compte importé ; releve = en-tête du mois importé { complet, solde_debut, solde_fin, total_entrees,
+      total_sorties, nombre } ; ecarte = [{ source, import_id?, raison }] avec raison couvert_par_powens | premier_mois | carte_comptee_sur_courant
+      (ce qui a été mis de côté reste visible dans la couverture). Même calcul dans le connecteur (parité testée). */
+  function moisBancaires(banque, historique, auj) {
+    const courant = moisIso(auj == null ? new Date() : auj);
+    const H = historique || {};
+    const hComptes = liste(H.comptes), hReleves = liste(H.releves), hLignes = liste(H.banqueMois);
+    // Powens : lignes par (compte, mois) et premier mois de chaque compte
+    const powens = new Map(), premier = {};
+    lignesMois(banque).forEach(r => {
+      const m = moisIso(r.mois);
+      if (!m) return;
+      const c = idCompte(r), k = cleCompte(c) + "|" + m;
+      if (!powens.has(k)) powens.set(k, { compte: c, mois: m, lignes: [] });
+      powens.get(k).lignes.push(r);
+      if (c != null && (premier[String(c)] === undefined || m < premier[String(c)])) premier[String(c)] = m;
+    });
+    // Relevés importés : lignes par (compte importé, mois)
+    const compteH = new Map(hComptes.map(c => [String(c.id), c]));
+    const lignesH = new Map();
+    hLignes.forEach(r => {
+      const m = moisIso(r.mois), c = cleCompte(compteImporteDe(r));
+      if (!m || c == null) return;
+      const k = c + "|" + m;
+      if (!lignesH.has(k)) lignesH.set(k, []);
+      lignesH.get(k).push(r);
+    });
+    const importes = hReleves.map(r => ({ r, hc: compteH.get(String(compteImporteDe(r))), mois: moisIso(r.mois) }))
+      .filter(x => x.hc && x.mois && (!courant || x.mois <= courant));
+    const courants = (hc, mois) => importes.filter(x => x.mois === mois && x.hc.type === "courant" && x.hc.etablissement === hc.etablissement && x.hc.titulaire === hc.titulaire);
+    const aReleveCarte = x => (lignesH.get(String(x.hc.id) + "|" + x.mois) || []).some(l => l.sous_categorie === "releve_carte");
+    const sortie = [], prises = new Set();
+    importes.forEach(x => {
+      const { r, hc, mois } = x, rattache = compteBanqueDe(hc), compte = rattache != null ? rattache : "h:" + hc.id;
+      const lignes = (lignesH.get(String(hc.id) + "|" + mois) || []).map(l => ligneImportee(l, mois, compte));
+      const releve = { complet: r.complet !== false, solde_debut: r.solde_debut == null ? null : n(r.solde_debut), solde_fin: r.solde_fin == null ? null : n(r.solde_fin),
+        total_entrees: n(r.total_entrees), total_sorties: n(r.total_sorties), nombre: n(r.nombre) };
+      const imp = importDe(r), base = { compte, mois, type: hc.type, categories: lignes, releve };
+      if (imp != null) base.import_id = imp;
+      const kp = cleCompte(rattache) + "|" + mois, p = rattache != null ? powens.get(kp) : null;
+      if (p) {
+        prises.add(kp);
+        if (mois === premier[String(rattache)]) { sortie.push({ ...base, source: "import", ecarte: [{ source: "powens", raison: "premier_mois" }] }); return; }
+        const e = { source: "import", raison: "couvert_par_powens" };
+        if (imp != null) e.import_id = imp;
+        sortie.push({ compte, mois, source: "powens", type: hc.type, categories: p.lignes, ecarte: [e] });
+        return;
+      }
+      if (hc.type === "carte_differe") {
+        const cc = courants(hc, mois);
+        if (cc.length && !cc.some(aReleveCarte)) {
+          const e = { source: "import", raison: "carte_comptee_sur_courant" };
+          if (imp != null) e.import_id = imp;
+          sortie.push({ compte, mois, source: null, type: hc.type, categories: [], ecarte: [e] });
+          return;
+        }
+      }
+      sortie.push({ ...base, source: "import" });
+    });
+    powens.forEach((p, k) => { if (!prises.has(k)) sortie.push({ compte: p.compte, mois: p.mois, source: "powens", categories: p.lignes }); });
+    return sortie.sort((a, b) => (a.mois < b.mois ? -1 : a.mois > b.mois ? 1 : String(a.compte) < String(b.compte) ? -1 : String(a.compte) > String(b.compte) ? 1 : 0));
+  }
+  /** Lignes des relevés importés qui comptent au budget : source « import », mois complet, compte courant ou joint (une carte à débit différé
+      déjà décidée par moisBancaires). Les livrets et autres comptes importés ne servent qu'à la couverture. */
+  const importeAuBudget = e => e.source === "import" && e.releve && e.releve.complet !== false && (e.type === "courant" || e.type === "joint" || e.type === "carte_differe");
   /** Budget réel moyen des nb (3) derniers mois complets (mois en cours exclu), comptes courants seulement :
       revenus = entrées − sorties de « revenus » ; épargne = sorties − entrées de « epargne » (virements vers l'épargne et
       l'investissement) ; dépenses = sorties − entrées de toutes les autres catégories ; virements internes exclus.
@@ -876,13 +963,26 @@ def("calc", function (module, exports, require) {
       (spec cp4 § 1.2, critère « Capacité d'épargne » de Santé) : capacite = revenus − dépenses, tauxCapacite = capacite ÷ revenus (l'épargne
       versée en est une partie, affichée à part). parCompte : vrai si chaque mois retenu est détaillé par compte
       (chiffres des seuls comptes courants) ; faux sinon (totaux de tous les comptes connectés : libellé « tous comptes connectés »).
-      → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte } ou null (interrupteur éteint, aucun mois
-      complet). Même calcul dans le connecteur (budgetReel, index.ts). */
-  function budgetReel(banque, auj, nb) {
-    if (!banque || banque.actif === false) return null;
+      historique (facultatif, HIS2) : relevés importés { comptes, releves, banqueMois } ; le calcul porte alors sur la série de moisBancaires
+      (Powens et import, jamais les deux pour le même compte et le même mois) ; sans lui, comportement inchangé. Un mois importé non complet n'y entre jamais.
+      → { n, du, au, revenus, depenses, epargne, tauxEpargne, capacite, tauxCapacite, parCompte, moisImportes? (avec relevés importés : mois retenus qui en viennent) } ou null (interrupteur éteint et aucun relevé importé,
+      aucun mois complet). Même calcul dans le connecteur (budgetReel, index.ts). */
+  function budgetReel(banque, auj, nb, historique) {
+    const actif = !!banque && banque.actif !== false;
+    const utileH = !!historique && (liste(historique.releves).length > 0);
+    if (!actif && !utileH) return null;
+    const b = actif ? banque : { mois: [], comptes: [] };
     const k = Number.isInteger(nb) && nb > 0 ? nb : 3;
     const courant = moisIso(auj == null ? new Date() : auj);
-    const L = moisCourants(banque).filter(r => moisIso(r.mois) && moisIso(r.mois) < courant && !RE_INTERNE.test(sansAccent(r.categorie)));
+    let L0 = moisCourants(b), importees = [];
+    if (utileH) {
+      const serie = moisBancaires(b, historique, auj);
+      const remplaces = new Set(serie.filter(e => e.source !== "powens" && (e.ecarte || []).some(x => x.source === "powens")).map(e => cleCompte(e.compte) + "|" + e.mois));
+      L0 = L0.filter(r => !remplaces.has(cleCompte(idCompte(r)) + "|" + moisIso(r.mois)));
+      importees = serie.filter(importeAuBudget);
+      importees.forEach(e => e.categories.forEach(l => L0.push(l)));
+    }
+    const L = L0.filter(r => moisIso(r.mois) && moisIso(r.mois) < courant && !RE_INTERNE.test(sansAccent(r.categorie)));
     const retenus = [...new Set(L.map(r => moisIso(r.mois)))].sort().slice(-k);
     if (!retenus.length) return null;
     let rev = 0, dep = 0, ep = 0;
@@ -890,10 +990,14 @@ def("calc", function (module, exports, require) {
       const e = n(r.entrees), s = n(r.sorties), c = sansAccent(r.categorie);
       if (c === "revenus") rev += e - s; else if (c === "epargne") ep += s - e; else dep += s - e;
     });
-    const det = moisDetailles(banque);
+    const det = moisDetailles(b);
+    importees.forEach(e => det.add(e.mois));
     const m = retenus.length, revenus = pos(rev) / m, depenses = pos(dep) / m, epargne = pos(ep) / m;
-    return { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
+    const res = { n: m, du: retenus[0] + "-01", au: retenus[m - 1] + "-01", revenus, depenses, epargne, tauxEpargne: revenus > 0 ? epargne / revenus : null,
       capacite: revenus - depenses, tauxCapacite: revenus > 0 ? (revenus - depenses) / revenus : null, parCompte: retenus.every(x => det.has(x)) };
+    // avec des relevés importés : combien des mois retenus viennent d'eux (au moins un compte importé ce mois-là)
+    if (utileH) res.moisImportes = retenus.filter(x => importees.some(e => e.mois === x)).length;
+    return res;
   }
   /** Période d'un budget réel en clair (spec cp4 § 1) : « juillet à septembre 2026 », « novembre 2025 à janvier 2026 », « septembre 2026 ».
       r = { du, au } (AAAA-MM-JJ) ; "" si r est absent. Même fonction dans le connecteur (periodeReel, index.ts). */
@@ -917,10 +1021,10 @@ def("calc", function (module, exports, require) {
     return m && m.mode === "months" && m.depenses > 0 ? m.depenses : 0;
   }
   /** Dépenses mensuelles de référence : budget réel (foyer seulement : les comptes ne sont pas répartis par personne) s'il existe,
-      sinon budget prévu. ctx = { banque, budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
+      sinon budget prévu. ctx = { banque, relevesBancaires (relevés importés, facultatif), budget, profil, config, scope, auj } → { montant, source: "reel" | "prevu", reel? } ou null. */
   function depensesMensuelles(ctx) {
     const c = ctx || {}, sc = c.scope || "foyer";
-    const r = sc === "foyer" ? budgetReel(c.banque, c.auj) : null;
+    const r = sc === "foyer" ? budgetReel(c.banque, c.auj, undefined, c.relevesBancaires) : null;
     if (r && r.depenses > 0) return { montant: r.depenses, source: "reel", reel: r };
     const p = depensesPrevues(c.budget, c.profil, c.config, sc);
     return p > 0 ? { montant: p, source: "prevu" } : null;
@@ -985,7 +1089,7 @@ def("calc", function (module, exports, require) {
     const s = S || {}, jour = auj == null ? new Date() : auj;
     const courants = (s.positions || []).filter(p => p && counted(p) && estCourant(p));
     if (!courants.length) return null;
-    const d = depensesMensuelles({ banque: s.banque, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
+    const d = depensesMensuelles({ banque: s.banque, relevesBancaires: s.relevesBancaires, budget: s.budget, profil: s.profil, config: s.config, scope: "foyer", auj: jour });
     if (!d) return null;
     const seuil = SEUIL_DORT * d.montant, m0 = moisIso(jour);
     const blocCourant = p => RE_COURANT.test(sansAccent(p.bloc));
@@ -1078,7 +1182,7 @@ def("calc", function (module, exports, require) {
     : (data, today, options) => root.Calendrier.calendrier(data, today, options);
 
   return { calendrier, CLASSES_LABELS, LIQUIDITE_LABELS, FAMILLES_LABELS, classe, liquidite, famille, horsCourants, parClasse, parLiquidite,
-    comptesCourants, moisCourants, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort, blocsPhoto,
+    comptesCourants, moisCourants, moisBancaires, budgetReel, periodeReel, doublonsProbables, depensesPrevues, depensesMensuelles, reserveMois, matelasDisponible, argentQuiDort, blocsPhoto,
     val, counted, inScope, financier, poche, aRecevoir, part, partCredit, immobilier, dettes, mensualites, creditsEnCours,
     autresActifs, patrimoine, brutRate, salaireNetMensuel, revenusFoyer, matelas, apportDisponible, deNom, valider };
 });
@@ -2723,7 +2827,7 @@ def("pratiques", function (module, exports, require) {
                                      criteres: [...], complet, couts (« ce qui te coûte le plus », Plan.coutsPrincipaux) }
      ctx  = { positions, profil, config, budget, objectifs, scope, risque (Risque.evaluer : { profil: id } ou null), today,
               classes? (surcharges poche → classe, transmises à Risque.allocationReelle et Marche.classeRisque),
-              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel) }
+              banque? (S.banque : budget réel des comptes courants, Calc.budgetReel), relevesBancaires? (S.relevesBancaires : relevés importés, HIS2) }
      deps = { Risque?, Marche? } : modules injectés (null = absent) ; par défaut risque.js / marche.js s'ils sont chargés.
      Sans Risque : adéquation « à compléter » (calcul indisponible), spéculatif au plafond par défaut de 5 %.
      Sans Marche : crypto et levier repérés par la classe de la poche et le libellé (« 2x », « levier »).
@@ -3526,7 +3630,7 @@ def("pratiques", function (module, exports, require) {
     const totaux = b && !Array.isArray(b) && typeof b.depenses === "number" ? b : Plan.budgetTotaux(lignes, c.profil, scope);
     const mat = Calc.matelas(c.config);
     const prevu = totaux.depensesLignes > 0 ? totaux.depenses : mat && mat.mode === "months" && mat.depenses > 0 ? mat.depenses : 0;
-    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today)) : null;
+    const reel = scope === "foyer" ? Calc.budgetReel(c.banque, isoJour(today), undefined, c.relevesBancaires) : null;
     const periode = reel ? Calc.periodeReel(reel) + (reel.parCompte ? "" : ", tous comptes connectés") : "";
     const depRef = reel && reel.depenses > 0 ? { montant: reel.depenses, source: "reel", periode } : prevu > 0 ? { montant: prevu, source: "prevu" } : null;
     const deja = Plan.affecterDeja(c.objectifs || [], toutes, scope);
@@ -4726,7 +4830,7 @@ def("suivi", function (module, exports, require) {
   /** Matelas (mois de dépenses) et coût total des supports (% par an) d'après les bonnes pratiques de l'app, pour les habitudes ; {} si le calcul échoue. */
   function santeDe(s, today) {
     try {
-      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, today: new Date(today + "T12:00:00Z") });
+      const r = Pratiques.evaluer({ positions: s.positions, profil: s.profil, config: s.config, budget: s.budget, objectifs: s.objectifs, scope: "foyer", risque: s.risque, classes: s.classes, banque: s.banque || null, relevesBancaires: s.relevesBancaires || null, today: new Date(today + "T12:00:00Z") });
       const m = r.criteres.find(c => c.cle === "matelas"), f = r.criteres.find(c => c.cle === "frais");
       return { matelas_mois: m && !m.aCompleter && connu(m.valeur) ? +m.valeur : null, frais_pct: f && !f.aCompleter && f.frais && connu(f.frais.pct) ? +f.frais.pct : null };
     } catch (e) { return {}; }

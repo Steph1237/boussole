@@ -17,6 +17,7 @@
 // Ce module ne dépend pas d'index.ts : utilitaires du serveur (wrap, must, UserError…), chargement des données et budgetTotaux
 // (catégories du budget) sont passés en paramètre ; aucun calcul du budget n'est dupliqué ici.
 import { z } from "zod";
+import { Calc } from "./projection-moteur.gen.js";
 
 /** Catégories Boussole des opérations (categories.ts de la fonction powens) : dépenses, puis revenus et épargne. */
 export const CATEGORIES_BANQUE = ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne", "virement_interne"] as const;
@@ -184,6 +185,60 @@ export function budgetReel(mois: any[], comptes: any[], auj: string) {
   };
 }
 
+/** Relevés bancaires importés (HIS2 : historique_comptes, historique_releves, historique_banque_mois ; totaux seulement, jamais d'opération) pour la série fusionnée des
+    mois bancaires. Les totaux par catégorie ne sont lus que sur les 13 derniers mois (le budget réel n'en demande pas plus). null s'il n'y en a pas, s'ils sont
+    illisibles (migration 0034 pas appliquée, double authentification absente) : le budget réel est alors celui de la banque connectée seule. Ne lève jamais. */
+export async function lireHistorique(db: any, must: any, auj: string): Promise<{ comptes: any[]; releves: any[]; banqueMois: any[] } | null> {
+  try {
+    const pages = async (table: string, cols: string, filtre?: (q: any) => any): Promise<any[] | null> => {
+      const out: any[] = [];
+      for (let p = 0; p < 30; p++) {
+        let q = db.from(table).select(cols);
+        if (filtre) q = filtre(q);
+        const r = await q.range(p * 1000, p * 1000 + 999);
+        if (r?.error) return null;
+        const l = (r?.data as any[]) ?? [];
+        out.push(...l);
+        if (l.length < 1000) break;
+      }
+      return out;
+    };
+    const comptes = await pages("historique_comptes", "id, etablissement, type, titulaire, banque_compte_id");
+    if (!comptes?.length) return null;
+    const [releves, lignes] = await Promise.all([
+      pages("historique_releves", "compte_id, mois, complet, solde_debut, solde_fin, total_entrees, total_sorties, nombre, import_id"),
+      pages("historique_banque_mois", "compte_id, mois, categorie, sous_categorie, entrees, sorties, nombre", (q) => q.gte("mois", premierDuMois(auj, -13))),
+    ]);
+    if (!releves?.length) return null;
+    return { comptes, releves, banqueMois: lignes ?? [] };
+  } catch (e) {
+    console.warn("historique importé :", msg(e));
+    return null;
+  }
+}
+
+/** Budget réel sur la série fusionnée des mois bancaires (HIS2, spec § 6.1) : pour chaque compte et chaque mois, Calc.moisBancaires (le calcul de l'app, copie générée) garde
+    la banque connectée OU le relevé importé, jamais les deux ; un compte importé compte comme un compte courant suivi s'il est de type courant, joint ou carte à débit
+    différé retenue, et si son mois est complet (même règle que Calc.budgetReel). Rend la même forme que budgetReel, avec sources_par_mois. Sans relevés : budgetReel. */
+export function budgetReelFusionne(mois: any[], comptes: any[], auj: string, historique: { comptes: any[]; releves: any[]; banqueMois: any[] } | null) {
+  if (!historique) return budgetReel(mois, comptes, auj);
+  const serie: any[] = Calc.moisBancaires({ comptes, mois }, historique, auj);
+  const lignes: any[] = [], cpts: any[] = [...comptes], ids = new Map<string, number>(), sources: Record<string, Set<string>> = {};
+  for (const e of serie) {
+    if (e.source === "powens") lignes.push(...e.categories);
+    else if (e.source === "import" && e.releve?.complet !== false && ["courant", "joint", "carte_differe"].includes(e.type)) {
+      let id = ids.get(String(e.compte));
+      if (id === undefined) { id = -(ids.size + 1); ids.set(String(e.compte), id); cpts.push({ id, type: "courant", ignore: false, doublon_de: null, actif: true }); }
+      lignes.push(...e.categories.map((l: any) => ({ ...l, compte_id: id })));
+    } else continue;
+    (sources[String(e.mois)] ??= new Set()).add(e.source);
+  }
+  const r: any = budgetReel(lignes, cpts, auj);
+  if (!r) return null;
+  return { ...r, sources_par_mois: r.mois_compares.map((m: string) => ({ mois: m.slice(0, 7), sources: [...(sources[m.slice(0, 7)] ?? [])].sort() })),
+    note: NOTE_BUDGET_REEL + " Les mois importés (relevés déposés dans la conversation) complètent ou remplacent la synchronisation, jamais les deux pour le même compte et le même mois (sources_par_mois) ; un mois importé partiel n'est pas compté." };
+}
+
 /** Opérations depuis `depuis` (AAAA-MM-JJ), par pages (PAGES_MAX au plus) : chaque page commence après les lignes déjà reçues, et la
     lecture continue jusqu'à une page vide (l'API de données peut plafonner une requête sous la taille demandée : une page courte ne
     veut pas dire la dernière). Lève en cas d'échec. */
@@ -272,14 +327,18 @@ export async function banqueDeSession(db: any, must: any, aal?: string) {
     Ne lève jamais : null si une lecture échoue. */
 export async function banqueDeRoutine(db: any, must: any, auj: string, totaux: any, aal?: string) {
   try {
-    if (!(await lireActif(db, must))) return { actif: false };
+    if (!(await lireActif(db, must))) {
+      const importes = mfaOk(aal) ? await lireHistorique(db, must, auj) : null;
+      return importes ? { actif: false, budget_reel: budgetReelFusionne([], [], auj, importes) } : { actif: false };
+    }
     if (!mfaOk(aal)) return { actif: true, mfa_requise: true, message: MSG_MFA };
     const mois = premierDuMois(auj, -1);
-    const [connexions, moisLus, ops, comptes] = await Promise.all([
+    const [connexions, moisLus, ops, comptes, historique] = await Promise.all([
       lireConnexions(db, must),
       lireMois(db, must, premierDuMois(auj, -(MOIS_LUS - 1))),
       lireOperations(db, must, moinsJours(auj, DETAIL_JOURS)),
       lireComptesBudget(db, must),
+      lireHistorique(db, must, auj),
     ]);
     // mois écoulé, tous comptes connectés ; virements internes : jamais des dépenses (exclus aussi par banque_recalculer_mois
     // depuis la migration 0024)
@@ -294,7 +353,7 @@ export async function banqueDeRoutine(db: any, must: any, auj: string, totaux: a
       mois_ecoule: mois,
       budget_renseigne: !!totaux,
       depenses_vs_budget: ecarts ? { lignes: ecarts, total: { prevu: r2(prevu), reel: r2(reelTotal), ecart: r2(reelTotal - prevu) }, note: NOTE_ECARTS } : null,
-      budget_reel: budgetReel(moisLus, comptes, auj),
+      budget_reel: budgetReelFusionne(moisLus, comptes, auj, historique),
       nouveaux_libelles_recurrents: rec.liste,
       historique_suffisant: rec.historique_suffisant,
       ...(rec.historique_suffisant ? {} : { note_recurrents: `Moins de ${RECURRENCE_JOURS} jours d'opérations synchronisées : impossible de dire ce qui est nouveau ce mois-ci.` }),
@@ -320,15 +379,20 @@ export function registerBanque(server: any, h: { db: any; wrap: any; must: any; 
     inputSchema: z.strictObject({}),
     annotations: RO,
   }, wrap(async () => {
-    if (!(await lireActif(db, must))) return { actif: false };
+    if (!(await lireActif(db, must))) {
+      // pas de banque connectée, mais des relevés importés (HIS2) : le budget réel vient d'eux seuls
+      const importes = mfaOk(aal) ? await lireHistorique(db, must, today()) : null;
+      return importes ? { actif: false, budget_reel: budgetReelFusionne([], [], today(), importes), note: "Banque connectée non ouverte : le budget réel vient des relevés déposés dans la conversation (historique importé)." } : { actif: false };
+    }
     if (!mfaOk(aal)) throw new UserError(MSG_MFA);
     const auj = today(), debut = premierDuMois(auj, -(MOIS_LUS - 1)), courant = premierDuMois(auj);
-    const [connexions, comptes, moisLus, charge] = await Promise.all([
+    const [connexions, comptes, moisLus, charge, historique] = await Promise.all([
       lireConnexions(db, must),
       (async () => (must("banque_comptes", await db.from("banque_comptes")
         .select("id, connexion_id, nom, type, debit_differe, solde, devise, solde_le, actif, position_id, enveloppe, titulaire, credit_id, ignore, doublon_de, rattache_auto, cree_auto, suggestion").order("nom")) as any[]) ?? [])(),
       lireMois(db, must, debut),
       sansBloquer("bilan", () => charger(), null as any),
+      lireHistorique(db, must, auj),
     ]);
     // virements internes : ni entrées ni sorties (exclus aussi par banque_recalculer_mois depuis la migration 0024)
     const mois = moisLus.filter((l: any) => l.categorie !== VIREMENT_INTERNE);
@@ -389,7 +453,7 @@ export function registerBanque(server: any, h: { db: any; wrap: any; must: any; 
       })),
       mois: vueMois,
       ecarts_budget,
-      budget_reel: budgetReel(moisLus, comptes, auj),
+      budget_reel: budgetReelFusionne(moisLus, comptes, auj, historique),
     };
   }));
 
