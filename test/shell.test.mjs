@@ -40,7 +40,7 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   const subs = space => SPACES.find(s => s.space === space).subs.map(s => [s.id, s.module]);
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
   assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["comptes", "comptes-view"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
-  assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["projections", null], ["scenarios", "simu"]]);
+  assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["scenarios", "simu"]]);
   assert.deepEqual(subs("agent"), [["propositions", "propositions"], ["journal", "journal-view"], ["memoire", "memoire-view"], ["savoir", "savoir-view"]], "Agent : 4 sous-vues (UX3)");
   assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"], ["connexion", "claude-guide"]], "Connexion est dans Compte (UX3)");
   const lab = (space, id) => SPACES.find(s => s.space === space).subs.find(s => s.id === id).label;
@@ -69,7 +69,8 @@ test("correspondance : chaque ancienne route de la spec mène à la nouvelle", (
     "bilan/vue": "aujourdhui/vue", "recos/actions": "aujourdhui/vue",
     "bilan/placements": "patrimoine/placements", "avenir/plan": "patrimoine/budget",
     "diagnostic/sante": "pilotage/sante", "diagnostic/risque": "pilotage/risque", "diagnostic/rang": "pilotage/rang",
-    "avenir/projections": "pilotage/projections",
+    "avenir/projections": "aujourdhui/vue", // UX5 : l'onglet Projections est retiré (la courbe maîtresse fait la projection)
+    "pilotage/projections": "aujourdhui/vue",
     "decisions/acheter": "pilotage/scenarios", "decisions/autres": "pilotage/scenarios",
     "profil/propositions": "agent/propositions", "profil/memoire": "agent/memoire", "profil/claude": "compte/connexion",
     "recos/fiches": "agent/savoir",
@@ -132,7 +133,7 @@ test("correspondance : anciens onglets (App.go, data-goto-tab) et anciens hash d
 });
 
 test("routage : forme canonique, sous-vue par défaut, route inconnue → Aujourd'hui", () => {
-  assert.deepEqual(resolveHash("#pilotage/projections"), { space: "pilotage", sub: "projections", legacy: false });
+  assert.deepEqual(resolveHash("#pilotage/projections"), { space: "aujourdhui", sub: "vue", legacy: true }, "UX5 : Projections n'existe plus, le marque-page mène à Aujourd'hui");
   assert.deepEqual(resolveHash("#agent/journal"), { space: "agent", sub: "journal", legacy: false });
   assert.deepEqual(resolve("patrimoine", null, { patrimoine: "budget" }), { space: "patrimoine", sub: "budget" });
   assert.deepEqual(resolve("patrimoine", "budget"), { space: "patrimoine", sub: "budget" });
@@ -174,15 +175,10 @@ test("coque : chaque sous-vue a exactement une section, masquée au départ ; au
   assert.doesNotMatch(shell, /id="view-actions"/, "plus de sous-vue Actions");
 });
 
-test("coque : états « bientôt » orientés vers l'agent (Projections) ; le Journal a sa vue", () => {
+test("coque : plus de carte « bientôt » (l'onglet Projections est retiré en UX5), le Journal a sa vue", () => {
   assert.doesNotMatch(shell, /id="sub-agent-journal"/, "plus de carte « bientôt » pour le Journal");
-  for (const [space, sub] of [["pilotage", "projections"]]) {
-    const m = shell.match(new RegExp(`<section class="view placeholder" id="sub-${space}-${sub}"[^>]*>([\\s\\S]*?)</section>`));
-    assert.ok(m, space + "/" + sub);
-    assert.match(m[1], /Bientôt ici : /);
-    assert.match(m[1], /Demande-le à Claude en attendant\./);
-    assert.match(m[1], /href="https:\/\/claude\.ai\/new\?q=[^"]+" target="_blank" rel="noopener noreferrer"/);
-  }
+  assert.doesNotMatch(shell, /id="sub-pilotage-projections"|class="view placeholder"|soon/, "plus de section « Projections » ni de carte « Bientôt »");
+  assert.deepEqual(SPACES.find(s => s.space === "pilotage").subs.map(x => x.id), ["sante", "risque", "rang", "scenarios"], "Pilotage : 4 onglets, tous visibles à 390 px");
 });
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {

@@ -21,7 +21,6 @@
       { id: "sante", label: "Santé", module: "sante" },
       { id: "risque", label: "Risque", module: "risque-view" },
       { id: "rang", label: "Rang", module: "toise" },
-      { id: "projections", label: "Projections", module: null },
       { id: "scenarios", label: "Scénarios", module: "simu" },
     ] },
     /* Agent : 4 sous-vues (UX3). « Savoir » réunit les anciennes Fiches et Expertises (deux volets, modules fiches-view et expertises-view,
@@ -46,11 +45,13 @@
     "recos": "aujourdhui/vue", "recos/actions": "aujourdhui/vue", "recos/fiches": "agent/savoir",
     "diagnostic": "pilotage/sante", "diagnostic/sante": "pilotage/sante", "diagnostic/risque": "pilotage/risque", "diagnostic/rang": "pilotage/rang",
     "decisions": "pilotage/scenarios", "decisions/acheter": "pilotage/scenarios", "decisions/autres": "pilotage/scenarios",
-    "avenir": "patrimoine/budget", "avenir/plan": "patrimoine/budget", "avenir/projections": "pilotage/projections",
+    "avenir": "patrimoine/budget", "avenir/plan": "patrimoine/budget", "avenir/projections": "aujourdhui/vue",
     "profil": "compte/donnees", "profil/donnees": "compte/donnees", "profil/regles": "compte/regles",
     "profil/claude": "compte/connexion", "profil/memoire": "agent/memoire", "profil/propositions": "agent/propositions",
     "toise": "pilotage/rang", "simu": "pilotage/scenarios", "plan": "patrimoine/budget",
     /* UX3 : Connexion est passée d'Agent à Compte ; Fiches et Expertises sont les deux volets d'Agent › Savoir (le paramètre ?expertise=<slug> est gardé). */
+    /* UX5 : l'onglet « Projections » (jamais construit) disparaît, la courbe maîtresse d'Aujourd'hui fait déjà la projection. */
+    "pilotage/projections": "aujourdhui/vue",
     "agent/connexion": "compte/connexion", "agent/fiches": "agent/savoir", "agent/expertises": "agent/savoir", "fiches": "agent/savoir", "expertises": "agent/savoir",
   };
   /* Ancres de la toute première version (onglets et sous-onglets de la Toise et du Simulateur), en hash seulement :
@@ -182,10 +183,10 @@
     const etat = !Number.isFinite(age) ? "inconnu" : age > HEURES_VIEUX ? "vieux" : "ok";
     const lignes = [
       { label: "Cours des placements", valeur: dernierCours ? "au " + fd(dernierCours, { court: true }) : "pas encore mis à jour" },
-      { label: "Mise à jour de nuit", valeur: Number.isFinite(tRun) ? fd(run, { maintenant }) : "jamais lancé" },
+      { label: "Mise à jour de nuit", valeur: Number.isFinite(tRun) ? fd(run, { maintenant }) : "pas encore faite" },
     ];
     const lr = S.status && S.status.veille && S.status.veille.lastReport, tv = lr ? Date.parse(lr) : NaN;
-    lignes.push({ label: "Veille", valeur: Number.isFinite(tv) ? fd(lr, { maintenant }) : "jamais lancée" });
+    lignes.push({ label: "Veille de Claude", valeur: Number.isFinite(tv) ? fd(lr, { maintenant }) : "pas encore faite" });
     const resume = etat === "ok" ? "à jour" : etat === "vieux" ? "mise à jour de plus de " + HEURES_VIEUX + " h" : "aucune mise à jour connue";
     const phrase = etat === "ok" ? "Dernière mise à jour il y a moins de " + HEURES_VIEUX + " h." : etat === "vieux" ? "Plus de " + HEURES_VIEUX + " h sans mise à jour : les cours affichés peuvent avoir bougé." : "Aucune mise à jour connue pour le moment.";
     return { etat, resume, phrase, lignes };
@@ -316,6 +317,8 @@
       if (o.scroll && changed && window.scrollY > 0) window.scrollTo({ top: 0 });
     }
 
+    /* Titres de groupe de la barre latérale (visibles à partir de 1 680 px seulement) : « Suivre » devant Aujourd'hui, « Claude » devant Agent. */
+    const GROUPES_NAV = { aujourdhui: "Suivre", agent: "Claude" };
     const hrefOf = space => "#" + space + "/" + (lastSubs[space] || defSub(spaceOf(space)));
     function navItem(sp, bar) {
       return '<a class="' + (bar ? "bb-item" : "nav-item") + '" href="' + hrefOf(sp.space) + '" data-nav="' + sp.space + '">' +
@@ -328,7 +331,7 @@
        et bouton avatar #profileBtn de l'en-tête mobile. */
     function renderNav() {
       const prim = SPACES.filter(s => s.primary), rest = SPACES.filter(s => !s.primary);
-      $("sideNav").innerHTML = prim.map(s => navItem(s)).join("");
+      $("sideNav").innerHTML = prim.map(s => (GROUPES_NAV[s.space] ? '<p class="nav-groupe" aria-hidden="true">' + esc(GROUPES_NAV[s.space]) + "</p>" : "") + navItem(s)).join("");
       $("sideCompte").innerHTML = rest.map(s => navItem(s)).join("");
       $("bottomBar").innerHTML = prim.map(s => navItem(s, true)).join("");
     }
@@ -458,9 +461,9 @@
       const el = $("veilleLine");
       const lr = S.status && S.status.veille && S.status.veille.lastReport;
       const t = lr ? new Date(lr).getTime() : NaN;
-      if (!Number.isFinite(t)) { el.textContent = "Veille : jamais lancée"; el.classList.remove("warn"); return; }
+      if (!Number.isFinite(t)) { el.textContent = "Veille de Claude : pas encore faite"; el.classList.remove("warn"); return; }
       const d = Math.max(0, Math.floor((Date.now() - t) / 864e5));
-      el.textContent = d === 0 ? "Veille : aujourd'hui" : "Veille : il y a " + d + " j";
+      el.textContent = d === 0 ? "Veille de Claude : aujourd'hui" : "Veille de Claude : il y a " + d + " j";
       el.classList.toggle("warn", d > 8);
     }
 
@@ -541,14 +544,16 @@
         try { if (m.mount) m.mount(root); mounted.add(k); } catch (e) { console.error(k, e); }
       });
       const demo = Store.mode === "demo";
-      $("sideDemo").hidden = !demo;
       $("accountLink").hidden = demo;
       /* Bandeau démo : repliable pour la session de l'onglet. */
       const DEMO_KEY = "boussole.demoBanner.masque";
       let demoMasque = false;
       try { demoMasque = sessionStorage.getItem(DEMO_KEY) === "1"; } catch (e) { /* stockage indisponible : bandeau affiché */ }
       $("demoBanner").hidden = !demo || demoMasque;
-      $("demoBannerClose").addEventListener("click", () => { $("demoBanner").hidden = true; try { sessionStorage.setItem(DEMO_KEY, "1"); } catch (e) { /* rien */ } focusTitle(); });
+      /* Une seule mention « démo » à la fois : le bandeau de la page, ou, une fois masqué, l'encart du pied de la barre latérale. */
+      const mentionDemo = () => { $("sideDemo").hidden = !demo || !$("demoBanner").hidden; };
+      mentionDemo();
+      $("demoBannerClose").addEventListener("click", () => { $("demoBanner").hidden = true; try { sessionStorage.setItem(DEMO_KEY, "1"); } catch (e) { /* rien */ } mentionDemo(); focusTitle(); });
       /* Compte anonyme (« Commencer sans e-mail ») : bandeau #anonBanner (masquable pour la session de l'onglet)
          et « Sécuriser mon compte » à la place de « Mon compte ». Seulement en mode Supabase ; la démo ne change pas. */
       if (!demo && window.Auth && typeof Auth.session === "function") {

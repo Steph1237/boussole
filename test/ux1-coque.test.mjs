@@ -39,12 +39,12 @@ test("fraicheur : sans passage de l'agent, la date du dernier cours sert de rep�
   assert.equal(fraicheur(S, "2026-10-20T10:00:00Z").etat, "vieux");
   const l = Object.fromEntries(f.lignes.map(x => [x.label, x.valeur]));
   assert.equal(l["Cours des placements"], "au 13 oct.");
-  assert.equal(l["Mise à jour de nuit"], "jamais lancé");
-  assert.equal(l["Veille"], "jamais lancée");
+  assert.equal(l["Mise à jour de nuit"], "pas encore faite");
+  assert.equal(l["Veille de Claude"], "pas encore faite");
   const g = fraicheur(store({ status: { lastRun: "2026-10-13T20:31:00Z", veille: { lastReport: "2026-10-14T07:00:00Z" } } }), NOW);
   const m = Object.fromEntries(g.lignes.map(x => [x.label, x.valeur]));
   assert.equal(m["Mise à jour de nuit"], "hier, 22 h 31");
-  assert.equal(m["Veille"], "aujourd'hui, 9 h 00");
+  assert.equal(m["Veille de Claude"], "aujourd'hui, 9 h 00");
   assert.equal(g.resume, "à jour");
   assert.match(fraicheur(store({ status: { lastRun: "2026-10-01T00:00:00Z" } }), NOW).resume, /plus de 36 h/);
 });
