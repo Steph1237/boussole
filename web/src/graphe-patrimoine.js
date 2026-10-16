@@ -94,13 +94,13 @@
   }
   /** Libellés de l'axe vertical : « 0 » (jamais « 0,0 M€ »), « 500 k€ » sous le million, « 1,0 M€ » au-dessus (une même décimale pour tous les M€ de l'axe). */
   function libellesAxe(valeurs) {
-    const frac = valeurs.some(v => Math.abs(v) >= 1e6 && Math.abs(Math.round(v / 1e5) / 10 - Math.round(v / 1e6)) > 1e-9);
+    /* une seule unité par axe, choisie sur le plus grand repère : « 0 · 0,5 M€ · 1,0 M€ · 1,5 M€ », jamais « 500 k€ » au milieu de millions */
+    const max = valeurs.reduce((m, v) => Math.max(m, Math.abs(v)), 0), u = max >= 1e6 ? 1e6 : max >= 1000 ? 1000 : 1, sym = u === 1e6 ? "M€" : u === 1000 ? "k€" : "€";
+    const frac = u > 1 && valeurs.some(v => Math.abs(Math.round(v / u * 10) / 10 - Math.round(v / u)) > 1e-9);
     return valeurs.map(v => {
       const a = Math.abs(v), sg = v < 0 ? MOINS : "";
       if (a < 1e-9) return "0";
-      if (a >= 1e6) return sg + (frac ? (a / 1e6).toFixed(1).replace(".", ",") : String(Math.round(a / 1e6))) + NB + "M€";
-      if (a >= 1000) return sg + fInt(a / 1000) + NB + "k€";
-      return sg + fInt(a) + NB + "€";
+      return sg + (frac ? (a / u).toFixed(1).replace(".", ",") : fInt(a / u)) + NB + sym;
     });
   }
   const fSK = n => (n >= 0 ? "+" : MOINS) + fK(Math.abs(n));

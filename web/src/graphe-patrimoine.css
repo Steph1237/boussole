@@ -50,6 +50,8 @@
 .gp-ligne{position:relative;display:flex;width:100%;align-items:center;gap:var(--sp-2);min-height:36px;margin:0;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted);text-align:left;border-radius:8px}
 .gp-ligne::after{content:"";position:absolute;inset:-4px 0}
 .gp-ligne-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* mobile : la lecture passe sur 2 lignes (« prochain : … » n'est plus coupé) ; la ligne garde sa hauteur de 36 px */
+@media (max-width:599.98px){.gp-ligne-t{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}}
 .gp-ligne-t b,.gp-ligne b{color:var(--ink);font-weight:700}
 .gp-chev{color:var(--brand);font-weight:700;font-size:var(--t-h3)}
 .gp-ctl{display:flex;gap:var(--sp-2);align-items:center;margin-top:2px}
@@ -123,7 +125,7 @@
 .gp-svg text.gp-tbr{fill:var(--brand);font-weight:600}
 .gp-svg text.gp-tneg{fill:var(--neg);font-weight:700}
 .gp-svg text.gp-tpos{fill:var(--pos);font-weight:700}
-.gp-halo{paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
+.gp-halo{paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
 .gp-pill rect{fill:var(--brand)}
 .gp-svg .gp-pill text{fill:var(--brand-ink);font-weight:600}
 .gp-pill.ink rect{fill:var(--ink)}

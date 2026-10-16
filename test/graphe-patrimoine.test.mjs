@@ -98,11 +98,14 @@ test("graduations : au plus 4 en portrait (8 sur ordinateur), pas de 1, 2 ou 5 �
   assert.equal(G.domaineY(-5000, -1000).hi, 0, "toutes valeurs négatives : le zéro reste dans le cadre");
 });
 
-test("libellés de l'axe : « 0 » jamais « 0,0 M€ », « 500 k€ » sous le million, une même décimale pour les M€ ; deux chiffres significatifs (1,0 M€ / 990 k€)", () => {
+test("libellés de l'axe : « 0 » jamais « 0,0 M€ », une seule unité par axe (M€ dès que le plus grand repère atteint le million), une même décimale ; deux chiffres significatifs (1,0 M€ / 990 k€)", () => {
   const g = G.graduations(0, 1.1e6, 4), l = g.libelles.map(x => x.replace(/[  ]/g, " "));
   assert.equal(l[0], "0"); assert.ok(l.every(x => !/0,0 M€/.test(x)), l.join("|"));
   const demi = G.graduations(0, 1e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
-  assert.deepEqual(demi, ["0", "500 k€", "1 M€"]);
+  assert.deepEqual(demi, ["0", "0,5 M€", "1,0 M€"], "pas de « 500 k€ » au milieu de millions");
+  const lisse = G.graduations(0, 1.55e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
+  assert.ok(lisse.every(x => x === "0" || /M€$/.test(x)), lisse.join("|"));
+  assert.deepEqual(G.graduations(0, 480000, 4).libelles.map(x => x.replace(/[  ]/g, " ")).filter(x => x !== "0").every(x => /k€$/.test(x)), true);
   const deux = G.graduations(900000, 2.1e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
   assert.ok(deux.every(x => !/^\d+ M€$/.test(x) || !deux.some(y => /,\d M€/.test(y))), "même décimale : " + deux.join("|"));
   assert.ok(G.graduations(100000, 800000, 4).libelles.every(x => /k€$/.test(x) && !/M€/.test(x)));
