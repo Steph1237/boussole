@@ -301,13 +301,13 @@ test("banque_marchands_mois : un total par (mois, compte, marchand, sous-catégo
     (5, '${A}', 10, ${JOUR(1, 7)}, -7, 'CB SANS CLE', 'divers', null, null),
     (6, '${A}', 11, ${JOUR(1, 8)}, 300, 'VIR DU COURANT', 'virement_interne', 'virement_interne', 'vir du courant')`);
   await recalculer(A, `${AUJ} - 70`);
-  const mm = (await q(`select to_char(mois, 'YYYY-MM-DD') m, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre from public.banque_marchands_mois where user_id = '${A}' order by cle_marchand`))
-    .map(r => [r.m, Number(r.compte_id), r.cle_marchand, r.sous_categorie, num(r.entrees), num(r.sorties), r.nombre]);
+  const mm = (await q(`select to_char(mois, 'YYYY-MM-DD') m, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour from public.banque_marchands_mois where user_id = '${A}' order by cle_marchand`))
+    .map(r => [r.m, Number(r.compte_id), r.cle_marchand, r.sous_categorie, num(r.entrees), num(r.sorties), r.nombre, num(r.montant_min), num(r.montant_max), r.dernier_jour]);
   assert.deepEqual(mm, [
-    [m1, 10, "", "a_classer", 0, 7, 1],                    // clé absente : ''
-    [m1, 10, "basic fit", "sport", 0, 25, 1],
-    [m1, 10, "carrefour market", "courses", 10, 100, 3],
-  ], "agrégats par marchand ; le virement interne simple n'y est pas");
+    [m1, 10, "", "a_classer", 0, 7, 1, 7, 7, 7],                    // clé absente : ''
+    [m1, 10, "basic fit", "sport", 0, 25, 1, 25, 25, 6],
+    [m1, 10, "carrefour market", "courses", 10, 100, 3, 40, 60, 4], // sorties de 60 (le 3) et 40 (le 4) ; l'avoir du 5 n'est pas une sortie
+  ], "agrégats par marchand (D14 : plus petite et plus grosse sortie, jour de la dernière sortie) ; le virement interne simple n'y est pas");
   const egal = await q(`select m.mois, m.compte_id, m.e, m.s from (select mois, compte_id, sum(entrees) e, sum(sorties) s from public.banque_mois where user_id = '${A}' group by 1, 2) m
     join (select mois, compte_id, sum(entrees) e, sum(sorties) s from public.banque_marchands_mois where user_id = '${A}' group by 1, 2) x using (mois, compte_id) where m.e = x.e and m.s = x.s`);
   assert.equal(egal.length, 1, "mêmes sommes par (mois, compte) dans banque_mois et banque_marchands_mois");
@@ -315,6 +315,18 @@ test("banque_marchands_mois : un total par (mois, compte, marchand, sous-catégo
   await refuse(`insert into public.banque_marchands_mois (user_id, mois, compte_id, sous_categorie) values ('${A}', ${MOIS(3)} + 1, 10, 'courses')`, /banque_marchands_mois_mois/, "mois non rond");
   await refuse(`insert into public.banque_marchands_mois (user_id, mois, compte_id, sous_categorie, cle_marchand) values ('${A}', ${MOIS(3)}, 10, 'courses', '${"x".repeat(41)}')`, /banque_marchands_mois_cle/, "clé de plus de 40 caractères");
   await refuse(`insert into public.banque_marchands_mois (user_id, mois, compte_id, sous_categorie, entrees) values ('${A}', ${MOIS(3)}, 10, 'courses', -1)`, /banque_marchands_mois_entrees/, "montant négatif");
+  await refuse(`insert into public.banque_marchands_mois (user_id, mois, compte_id, sous_categorie, montant_min) values ('${A}', ${MOIS(3)}, 10, 'courses', -1)`, /banque_marchands_mois_montant_min/, "montant_min négatif");
+  await refuse(`insert into public.banque_marchands_mois (user_id, mois, compte_id, sous_categorie, montant_min, montant_max) values ('${A}', ${MOIS(3)}, 10, 'courses', 9, 5)`, /banque_marchands_mois_bornes/, "minimum au-dessus du maximum");
+  for (const j of [0, 32]) await refuse(`insert into public.banque_marchands_mois (user_id, mois, compte_id, sous_categorie, dernier_jour) values ('${A}', ${MOIS(3)}, 10, 'courses', ${j})`, /banque_marchands_mois_dernier_jour/, "dernier_jour " + j);
+  // un mois sans sortie pour la clé : trois valeurs nulles
+  await db.exec(`insert into public.banque_operations (id, user_id, compte_id, date, montant, libelle, categorie, sous_categorie, cle_marchand) values
+    (7, '${A}', 10, ${JOUR(1, 9)}, 25, 'VIR REMBOURSEMENT EXEMPLE', 'revenus', 'revenus_autres', 'vir remboursement exemple'),
+    (8, '${A}', 10, ${JOUR(1, 28)}, -12.5, 'CB BASIC FIT', 'loisirs', 'sport', 'basic fit')`);
+  await recalculer(A, `${AUJ} - 70`);
+  const sans = await un(`select montant_min, montant_max, dernier_jour, entrees, sorties from public.banque_marchands_mois where user_id = '${A}' and cle_marchand = 'vir remboursement exemple'`);
+  assert.deepEqual([sans.montant_min, sans.montant_max, sans.dernier_jour, num(sans.entrees)], [null, null, null, 25], "aucune sortie : pas de montant ni de jour");
+  const bf = await un(`select montant_min, montant_max, dernier_jour from public.banque_marchands_mois where user_id = '${A}' and cle_marchand = 'basic fit'`);
+  assert.deepEqual([num(bf.montant_min), num(bf.montant_max), bf.dernier_jour], [12.5, 25, 28], "deux sorties : min, max et jour de la dernière");
   await refuse(`insert into public.banque_marchands_mois (user_id, mois, compte_id, sous_categorie) values ('${A}', ${MOIS(3)}, 99, 'courses')`, /foreign key|violates/, "compte inconnu");
   // supprimer le compte supprime ses agrégats (cascade)
   await db.exec(`insert into public.banque_comptes (id, user_id, connexion_id, nom, type) values (50, '${A}', 1, 'Compte à retirer', 'courant');
@@ -411,9 +423,9 @@ test("budget_marchands_reclasser : déplace des lignes de marchand (somme dans u
   await superu();
   const x = await moisIso(6), recent = await moisIso(1), vieux = await moisIso(14);
   await db.exec(`delete from public.banque_marchands_mois where user_id = '${A}';
-    insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre) values
-      ('${A}', '${x}', 10, 'netflix', 'a_classer', 0, 15, 1), ('${A}', '${x}', 10, 'xyz sarl', 'a_classer', 0, 100, 2), ('${A}', '${x}', 10, 'xyz sarl', 'loisirs', 5, 50, 1),
-      ('${A}', '${recent}', 10, 'netflix', 'a_classer', 0, 15, 1), ('${A}', '${vieux}', 10, 'netflix', 'a_classer', 0, 15, 1)`);
+    insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour) values
+      ('${A}', '${x}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5), ('${A}', '${x}', 10, 'xyz sarl', 'a_classer', 0, 100, 2, 20, 80, 10), ('${A}', '${x}', 10, 'xyz sarl', 'loisirs', 5, 50, 1, 50, 50, 3),
+      ('${A}', '${recent}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5), ('${A}', '${vieux}', 10, 'netflix', 'a_classer', 0, 15, 1, 15, 15, 5)`);
   const ch = (mois, cle, de, vers, compte = 10) => ({ mois, compte_id: compte, cle_marchand: cle, de, vers });
   await service();
   const n = (await un(`select public.budget_marchands_reclasser($1, $2::jsonb) n`, [A, JSON.stringify([
@@ -427,6 +439,8 @@ test("budget_marchands_reclasser : déplace des lignes de marchand (somme dans u
     [vieux, "netflix", "a_classer", 0, 15, 1],
     [x, "netflix", "abonnements", 0, 15, 1], [x, "xyz sarl", "loisirs", 5, 150, 3],
     [recent, "netflix", "a_classer", 0, 15, 1]].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : 0)), "xyz sarl : 100 + 50 en sortie, 2 + 1 opérations, une seule ligne");
+  const fus = await un(`select montant_min, montant_max, dernier_jour from public.banque_marchands_mois where user_id = '${A}' and cle_marchand = 'xyz sarl'`);
+  assert.deepEqual([num(fus.montant_min), num(fus.montant_max), fus.dernier_jour], [20, 80, 10], "fusion : plus petite des minimums, plus grosse des maximums, dernier jour le plus tardif");
   // tout ou rien : un changement invalide annule les autres
   await service();
   await assert.rejects(db.query(`select public.budget_marchands_reclasser($1, $2::jsonb)`, [A, JSON.stringify([ch(x, "netflix", "abonnements", "sport"), ch(x, "netflix", "sport", "inconnue")])]), /Sous-catégorie inconnue/);

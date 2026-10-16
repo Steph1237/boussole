@@ -23,7 +23,7 @@
 --     colonnes ; regle_id sans clé étrangère (la règle peut disparaître).
 --   banque_mois (+ sous_categorie, clé primaire (user_id, mois, compte_id, categorie, sous_categorie)) : les lignes existantes reçoivent la
 --     sous-catégorie par défaut de leur catégorie large (mise à jour idempotente) ; '' = ligne sans détail (écrite par un code antérieur).
---   banque_marchands_mois (nouvelle) : totaux mensuels par compte, marchand nettoyé et sous-catégorie, 13 mois, écrits par le service seul
+--   banque_marchands_mois (nouvelle) : totaux mensuels par compte, marchand nettoyé et sous-catégorie (+ montant_min, montant_max, dernier_jour des sorties : D14), 13 mois, écrits par le service seul
 --     (banque_recalculer_mois), purgés par banque_purger ; régime « banque_* » de 0033 (lecture aal2 ou connecteur autorisé, écriture aal2
 --     sans client_id, suppression idem).
 --   budget_regles (nouvelle) : règles personnelles de classement, 300 au plus par utilisateur ; contraintes du § 3.4 (motif de 3 à 60
@@ -223,6 +223,12 @@ create table public.banque_marchands_mois (
   entrees        numeric not null default 0 constraint banque_marchands_mois_entrees check (entrees >= 0),
   sorties        numeric not null default 0 constraint banque_marchands_mois_sorties check (sorties >= 0),
   nombre         int not null default 0 constraint banque_marchands_mois_nombre check (nombre >= 0),
+  -- pour le récurrent (spec § 6.5, D14) : plus petite et plus grosse sortie du mois (valeurs absolues) et jour du mois (1 à 31) de la dernière sortie ;
+  -- null quand le mois n'a aucune sortie pour cette clé. Jamais une opération brute au-delà de 90 jours : trois nombres par ligne.
+  montant_min    numeric constraint banque_marchands_mois_montant_min check (montant_min is null or montant_min >= 0),
+  montant_max    numeric constraint banque_marchands_mois_montant_max check (montant_max is null or montant_max >= 0),
+  dernier_jour   smallint constraint banque_marchands_mois_dernier_jour check (dernier_jour is null or dernier_jour between 1 and 31),
+  constraint banque_marchands_mois_bornes check (montant_min is null or montant_max is null or montant_min <= montant_max),
   primary key (user_id, mois, compte_id, cle_marchand, sous_categorie),
   foreign key (user_id, compte_id) references public.banque_comptes(user_id, id) on delete cascade
 );
@@ -2001,7 +2007,8 @@ grant execute on function public.export_all() to authenticated;
 -- de carte identifié (sous_categorie = releve_carte) est débité sur ce courant dans les 45 jours qui suivent l'opération (alors les opérations
 -- de la carte comptent chacune à sa date et le relevé, lui, est hors budget). Gardés : apport_commun, transfert_foyer et releve_carte.
 create or replace function public.banque_operations_comptees(p_user uuid, p_depuis date)
-returns table (mois date, compte_id bigint, categorie text, sous_categorie text, cle_marchand text, entrees numeric, sorties numeric, nombre int)
+returns table (mois date, compte_id bigint, categorie text, sous_categorie text, cle_marchand text, entrees numeric, sorties numeric, nombre int,
+               montant_min numeric, montant_max numeric, dernier_jour smallint)
 language sql
 stable
 security invoker
@@ -2010,7 +2017,9 @@ as $$
   select date_trunc('month', o.date)::date, o.compte_id, c.cat, s.sub, coalesce(o.cle_marchand, ''),
          coalesce(sum(o.montant) filter (where o.montant > 0), 0),
          coalesce(-sum(o.montant) filter (where o.montant < 0), 0),
-         count(*)::int
+         count(*)::int,
+         min(-o.montant) filter (where o.montant < 0), max(-o.montant) filter (where o.montant < 0),
+         (max(extract(day from o.date)) filter (where o.montant < 0))::smallint
     from public.banque_operations o
     join public.banque_comptes k on k.user_id = o.user_id and k.id = o.compte_id
    cross join lateral (select coalesce(nullif(btrim(o.categorie), ''), 'divers') as cat) c
@@ -2054,8 +2063,9 @@ begin
   select p_user, c.mois, c.compte_id, c.categorie, c.sous_categorie, sum(c.entrees), sum(c.sorties), sum(c.nombre)::int
     from public.banque_operations_comptees(p_user, v_debut) c
    group by 2, 3, 4, 5;
-  insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre)
-  select p_user, c.mois, c.compte_id, c.cle_marchand, c.sous_categorie, sum(c.entrees), sum(c.sorties), sum(c.nombre)::int
+  insert into public.banque_marchands_mois (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour)
+  select p_user, c.mois, c.compte_id, c.cle_marchand, c.sous_categorie, sum(c.entrees), sum(c.sorties), sum(c.nombre)::int,
+         min(c.montant_min), max(c.montant_max), max(c.dernier_jour)
     from public.banque_operations_comptees(p_user, v_debut) c
    group by 2, 3, 4, 5;
 end;
@@ -2192,11 +2202,13 @@ begin
       delete from public.banque_marchands_mois mm
        where mm.user_id = p_user and mm.mois = v_mois and mm.compte_id = (v_c->>'compte_id')::bigint
          and mm.cle_marchand = v_c->>'cle_marchand' and mm.sous_categorie = v_c->>'de'
-       returning mm.entrees, mm.sorties, mm.nombre)
-    insert into public.banque_marchands_mois as bm (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre)
-    select p_user, v_mois, (v_c->>'compte_id')::bigint, v_c->>'cle_marchand', v_c->>'vers', src.entrees, src.sorties, src.nombre from src
+       returning mm.entrees, mm.sorties, mm.nombre, mm.montant_min, mm.montant_max, mm.dernier_jour)
+    insert into public.banque_marchands_mois as bm (user_id, mois, compte_id, cle_marchand, sous_categorie, entrees, sorties, nombre, montant_min, montant_max, dernier_jour)
+    select p_user, v_mois, (v_c->>'compte_id')::bigint, v_c->>'cle_marchand', v_c->>'vers', src.entrees, src.sorties, src.nombre, src.montant_min, src.montant_max, src.dernier_jour from src
     on conflict (user_id, mois, compte_id, cle_marchand, sous_categorie)
-    do update set entrees = bm.entrees + excluded.entrees, sorties = bm.sorties + excluded.sorties, nombre = bm.nombre + excluded.nombre;
+    do update set entrees = bm.entrees + excluded.entrees, sorties = bm.sorties + excluded.sorties, nombre = bm.nombre + excluded.nombre,
+                  montant_min = least(bm.montant_min, excluded.montant_min), montant_max = greatest(bm.montant_max, excluded.montant_max),
+                  dernier_jour = greatest(bm.dernier_jour, excluded.dernier_jour);
     get diagnostics v_k = row_count;
     v_n := v_n + v_k;
   end loop;
