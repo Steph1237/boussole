@@ -9,7 +9,10 @@
 #view-profil .pf-bar i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}
 #view-profil .pf-lecture{margin:0;font-size:var(--t-small);line-height:1.5;color:var(--muted)}
 #view-profil .pf-lecture a{color:var(--brand);font-weight:600}
-#view-profil .pf-recap{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:var(--sp-3);align-items:stretch}
+#view-profil .pf-recap{display:flex;flex-direction:column;min-width:0}
+#view-profil .pf-recap .ui-ligne{padding-inline:0;min-height:64px}
+#view-profil .pf-recap .ui-ligne+.ui-ligne{border-top:1px solid var(--line)}
+#view-profil .pf-recap .ui-ligne-sous{white-space:normal}
 #view-profil .pf-kpi{background:var(--sunk);border-radius:var(--radius-sm);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
 #view-profil .pf-kpi span{font-size:var(--t-caption);color:var(--muted)}
 #view-profil .pf-kpi b{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}

@@ -253,63 +253,71 @@
     return html + '<div class="cg-bq-pied">' + bouton + '<p class="cg-rt-p cg-bq-aide">' + esc(AIDE_GERER) + "</p></div>" + err;
   }
 
-  if (typeof module === "object" && module.exports) module.exports = { PARCOURS, lienClaude, routinesHtml, ETAPES_TACHE, PHRASE_ACTIVER, PROMPT_TACHE_REPLI, banqueHtml, cibleDe, optionsRattachement };
+  /* ---------- État de la connexion de Claude (S.connexions : assistants qui ont appelé le connecteur) ---------- */
+  const VOLETS = [{ id: "claude", label: "Claude" }, { id: "banques", label: "Banques" }, { id: "revue", label: "Revue du mois" }];
+  /** Volet à montrer : celui du lien profond (#compte/connexion?volet=banques), sinon le volet choisi ; « banques » seulement si les banques sont actives. */
+  const voletDe = (params, choisi, banquesActives) => {
+    const v = params && VOLETS.some(x => x.id === params.volet) ? params.volet : choisi;
+    return v === "banques" && !banquesActives ? "claude" : VOLETS.some(x => x.id === v) ? v : "claude";
+  };
+  /** { code: "oui" | "non" | "inconnu", texte } : « Claude est connecté, dernier échange le 12 oct. » ; inconnu tant que le store n'a pas lu les connexions. */
+  function statutConnexion(S) {
+    const c = S && Array.isArray(S.connexions) ? S.connexions : null;
+    if (!c) return { code: "inconnu", texte: "" };
+    if (!c.length) return { code: "non", texte: "Claude n'est pas encore connecté à Boussole." };
+    const t = Math.max.apply(null, c.map(x => Date.parse(x && x.dernierLe) || 0));
+    const jour = t ? new Date(t).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "";
+    return { code: "oui", texte: "Claude est connecté" + (jour ? ", dernier échange le " + jour : "") + "." };
+  }
+
+  if (typeof module === "object" && module.exports) module.exports = { VOLETS, voletDe, statutConnexion, PARCOURS, lienClaude, routinesHtml, ETAPES_TACHE, PHRASE_ACTIVER, PROMPT_TACHE_REPLI, banqueHtml, cibleDe, optionsRattachement };
   if (typeof document === "undefined") return;
-  const STATUT_TXT = { complet: "complet", partiel: "en partie renseigné", vide: "à renseigner" };
 
   const B = window.BOUSSOLE || {};
   const MCP_URL = B.mcpUrl || String(B.supabaseUrl || "").replace(/\/+$/, "") + "/functions/v1/mcp";
-  let S = null, root = null, dirty = true, anon = false, sigSec = "", sigRt = "", erreurRt = "", tMsgRt = 0;
-  let sigBq = "", tMsgBq = 0;
+  let S = null, root = null, dirty = true, anon = false, sigRt = "", erreurRt = "", tMsgRt = 0;
+  let sigBq = "", tMsgBq = 0, choisi = "claude", ctlVolets = null, sigVolets = "";
   const etatBq = { confirmer: null, erreur: "", erreurs: {} }; // section « Banques connectées » : confirmation et erreurs en cours
-  const ouverts = new Set(); // sections dépliées (conservées d'un rendu à l'autre)
   const $ = id => root.querySelector("#" + id);
   const demo = () => !!(window.Store && window.Store.mode === "demo");
   const etat = () => (window.BilanEtat && S && S.ready !== false ? window.BilanEtat.etat(S) : null);
   const enAttente = () => ((S && S.propositions) || []).filter(p => p.statut === "en_attente").length;
 
-  function ring(pct) {
-    const r = 34, c = 2 * Math.PI * r, f = Math.max(0, Math.min(100, pct)) / 100;
-    return '<svg viewBox="0 0 80 80" aria-hidden="true" focusable="false"><circle cx="40" cy="40" r="' + r + '" class="cg-ring-bg"/>' +
-      '<circle cx="40" cy="40" r="' + r + '" class="cg-ring-fg" stroke-dasharray="' + (c * f).toFixed(1) + " " + c.toFixed(1) + '" transform="rotate(-90 40 40)"/></svg>' +
-      '<span class="cg-ring-v">' + pct + '<small>%</small></span>';
-  }
-
   function render() {
     if (!root) return;
-    const E = etat();
-    if (E) {
-      $("cgRing").innerHTML = ring(E.pourcentage);
-      $("cgRing").setAttribute("aria-label", "Bilan complet à " + E.pourcentage + " %");
-      const complets = E.sections.filter(s => s.statut === "complet").length;
-      $("cgHeroSub").textContent = E.pourcentage >= 100 ? "Ton bilan est complet. Reviens chaque mois pour le garder à jour." :
-        "Ton bilan est complet à " + E.pourcentage + " % : " + complets + " section" + (complets > 1 ? "s" : "") + " sur " + E.sections.length + " terminée" + (complets > 1 ? "s" : "") + ".";
-      $("cgSecCount").textContent = complets + " sur " + E.sections.length;
-      const sig = JSON.stringify(E.sections.map(s => [s.cle, s.statut, s.faits, s.total, s.manquants.map(m => m.champ)]));
-      if (sig !== sigSec) {
-        sigSec = sig;
-        $("cgSections").innerHTML = E.sections.map(s => {
-          const head = '<span class="cg-st ' + s.statut + '" title="' + STATUT_TXT[s.statut] + '">' + svg(s.statut) + '<span class="cg-sr">' + STATUT_TXT[s.statut] + "</span></span>" +
-            '<span class="cg-sec-t">' + esc(s.titre) + '</span><span class="cg-sec-n">' + s.faits + " sur " + s.total + "</span>";
-          if (!s.manquants.length) return '<li class="cg-sec"><div class="cg-sec-h">' + head + "</div></li>";
-          return '<li class="cg-sec"><details data-sec="' + esc(s.cle) + '"' + (ouverts.has(s.cle) ? " open" : "") + '><summary class="cg-sec-h">' + head + "</summary>" +
-            '<ul class="cg-miss">' + s.manquants.map(m => "<li><b>" + esc(m.question) + "</b><span>" + esc(m.pourquoi) + "</span></li>").join("") + "</ul></details></li>";
-        }).join("");
-      }
-      $("cgNext").innerHTML = E.prochaines.map(q => {
-        const sec = E.sections.find(s => s.cle === q.section);
-        return '<li><span class="cg-next-s">' + esc(sec ? sec.titre : "") + "</span><b>" + esc(q.question) + '</b><span class="muted">' + esc(q.pourquoi) + "</span></li>";
-      }).join("");
-      $("cgNextDone").hidden = !!E.prochaines.length;
-      $("cgNext").hidden = !E.prochaines.length;
-    }
     const n = enAttente();
     $("cgPending").textContent = n ? n + " proposition" + (n > 1 ? "s" : "") + " en attente : examiner" : "Aucune proposition en attente pour le moment";
     $("cgPending").classList.toggle("has", n > 0);
+    statut();
     steps();
     routines();
     banques();
+    voletsVisibles();
   }
+  /* État de la connexion de Claude, en tête du volet « Claude ». */
+  function statut() {
+    const x = statutConnexion(S), el = $("cgStatut");
+    const h = x.code === "inconnu" ? "" : '<span class="ui-puce ' + (x.code === "oui" ? "bon" : "completer") + '"><span class="ui-puce-point" aria-hidden="true"></span>' + (x.code === "oui" ? "Connecté" : "Pas encore connecté") + "</span> " + esc(x.texte);
+    if (el.innerHTML !== h) el.innerHTML = h;
+    el.hidden = !h;
+  }
+  /* Trois volets (Claude, Banques, Revue du mois) choisis par une bascule ; « Banques » n'existe que si les banques sont actives. */
+  const banquesActives = () => !!(S && S.banque && S.banque.actif);
+  function montrerVolet(id) {
+    root.querySelectorAll("[data-cg-volet]").forEach(v => { v.hidden = v.getAttribute("data-cg-volet") !== id; });
+    if (ctlVolets) ctlVolets.choisir(id);
+  }
+  function voletsVisibles() {
+    const opts = VOLETS.filter(v => v.id !== "banques" || banquesActives()), sig = opts.map(o => o.id).join();
+    const bas = root.querySelector("#cgBascule");
+    if (window.UI && bas && sig !== sigVolets) {
+      sigVolets = sig; bas.innerHTML = "";
+      ctlVolets = UI.bascule(bas, { label: "Connexions de Claude", options: opts, actif: voletDe({}, choisi, banquesActives()), surChange: id => montrer(id) });
+    }
+    montrerVolet(voletDe({}, choisi, banquesActives()));
+  }
+  const montrer = id => { choisi = id; montrerVolet(id); };
+
   /* Ta revue mensuelle : réécrite seulement si son contenu change (le focus et le retour « Copié » survivent aux mises à jour).
      Jour de Paris, comme le serveur. */
   function routines(focusBascule) {
@@ -344,7 +352,7 @@
   /* Banques connectées : réécrite seulement si son contenu change ; focus rendu à l'élément désigné (sélecteur CSS) après réécriture. */
   function banques(focus) {
     const actif = !!(S && S.banque && S.banque.actif);
-    $("cgBanques").hidden = !actif;
+    $("cgBanques").hidden = !actif; // le volet « Banques » de la bascule n'existe que si les banques sont actives (voletsVisibles)
     const html = actif ? banqueHtml(S, RE().aujParis(), window.UI || null, etatBq) : "";
     if (html !== sigBq) { sigBq = html; $("cgBanquesCorps").innerHTML = html; }
     if (focus) { const el = root.querySelector(focus); if (el) el.focus(); }
@@ -460,6 +468,46 @@
       banques(focus);
     }
   }
+  /* Étapes du connecteur : un seul écran à la fois (indicateur « Étape 2 sur 5 », Retour / Suivant), « Pièges fréquents » replié.
+     Présentation seulement : le bloc de l'accueil reste le même, rien n'est retiré du DOM. */
+  function pasAPas(box) {
+    if (!box || typeof box.querySelectorAll !== "function") return;
+    box.querySelectorAll(".ac-panel").forEach(panneau => {
+      const ol = panneau.querySelector("ol.ac-steps"); if (!ol) return;
+      const items = Array.from(ol.children).filter(li => li.tagName === "LI");
+      if (items.length < 2) return;
+      ol.classList.add("cg-pas-liste");
+      const nav = document.createElement("div");
+      nav.className = "cg-pas";
+      nav.innerHTML = '<span class="cg-pas-n" role="status" aria-live="polite"></span><div class="cg-pas-b"><button type="button" class="cg-btn ghost" data-cg-pas="-1">Retour</button><button type="button" class="cg-btn" data-cg-pas="1">Suivant</button></div>';
+      ol.after(nav);
+      let i = 0;
+      const maj = () => {
+        items.forEach((li, k) => { li.hidden = k !== i; });
+        nav.querySelector(".cg-pas-n").textContent = "Étape " + (i + 1) + " sur " + items.length;
+        nav.querySelector('[data-cg-pas="-1"]').disabled = i === 0;
+        nav.querySelector('[data-cg-pas="1"]').disabled = i === items.length - 1;
+      };
+      nav.addEventListener("click", e => {
+        const b = e.target.closest("[data-cg-pas]"); if (!b || b.disabled) return;
+        i = Math.max(0, Math.min(items.length - 1, i + Number(b.dataset.cgPas)));
+        maj();
+        const autre = nav.querySelector('[data-cg-pas="' + (b.dataset.cgPas === "1" ? "-1" : "1") + '"]');
+        (b.disabled ? autre : b).focus();
+        if (cible) cible.focus();
+      });
+      maj();
+    });
+    const pieges = box.querySelector(".ac-pieges");
+    if (pieges) {
+      const d = document.createElement("details");
+      d.className = "ui-acc cg-pieges";
+      const liste = pieges.querySelector("ul");
+      d.innerHTML = '<summary class="ui-acc-titre"><span>Pièges fréquents</span><span class="ui-acc-chevron" aria-hidden="true"><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span></summary><div class="ui-acc-corps"></div>';
+      if (liste) d.querySelector(".ui-acc-corps").appendChild(liste);
+      pieges.replaceWith(d);
+    }
+  }
   function steps() {
     const isDemo = demo();
     $("cgDemoNote").hidden = !isDemo;
@@ -491,12 +539,9 @@
   }
 
   function mount(r) {
-    /* « Où en est ton bilan » : déplié sur grand écran, replié sur mobile (la jauge du haut dit déjà où l'on en est). */
-    const det = r.querySelector("#cgSecDet");
-    if (det && typeof window !== "undefined" && window.matchMedia && window.matchMedia("(min-width:900px)").matches) det.open = true;
     root = r;
     /* Étapes de connexion : le même bloc que l'étape 3 de l'accueil (accueil.js), valeurs à copier comprises. */
-    if (window.Accueil && typeof Accueil.connexion === "function") Accueil.connexion($("cgConnexion"));
+    if (window.Accueil && typeof Accueil.connexion === "function") { Accueil.connexion($("cgConnexion")); pasAPas($("cgConnexion")); }
     else $("cgConnexion").textContent = "Adresse du connecteur : " + MCP_URL;
     $("cgParcours").innerHTML = PARCOURS.map(p =>
       '<div class="cg-pc"><div class="cg-pc-t"><b>' + esc(p.titre) + '</b><span class="small muted">' + esc(p.desc) + "</span></div>" +
@@ -538,7 +583,6 @@
       }
     });
     root.addEventListener("change", e => { const s = e.target && e.target.closest && e.target.closest("[data-cg-banque-compte]"); if (s && !s.disabled) rattacherBq(s); });
-    root.addEventListener("toggle", e => { const d = e.target; if (d.dataset && d.dataset.sec) { if (d.open) ouverts.add(d.dataset.sec); else ouverts.delete(d.dataset.sec); } }, true);
     /* Compte anonyme : uniquement en mode Supabase (la démo montre tout). */
     if (!demo() && window.Auth && typeof Auth.session === "function") {
       const set = s => { anon = typeof Auth.isAnonymous === "function" ? Auth.isAnonymous(s) : !!(s && s.user && s.user.is_anonymous); steps(); };
@@ -548,7 +592,12 @@
     steps();
   }
   function update(snap, visible) { S = snap; dirty = true; if (visible) { render(); dirty = false; } }
-  function show() { if (dirty) { render(); dirty = false; } }
+  /* Lien profond : #compte/connexion?volet=banques|revue|claude (retour de la page Powens : Banques). */
+  function show() {
+    const p = window.App && typeof App.parametresActuels === "function" ? App.parametresActuels() : {};
+    if (p && p.volet) choisi = voletDe(p, choisi, banquesActives());
+    if (dirty) { render(); dirty = false; } else voletsVisibles();
+  }
   /* Chiffre clé : avancement du bilan (« 75 % »). */
   function headline() { const E = etat(); return E ? E.pourcentage + " %" : ""; }
 

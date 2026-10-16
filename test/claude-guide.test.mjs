@@ -123,10 +123,15 @@ const routine = o => ({ type: "revue_mensuelle", jour: 1, active: true, consente
 const texteDe = h => h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const UFaux = { demanderAClaude: (q, l) => '<a class="ui-claude" href="' + G.lienClaude(q) + '">' + l + "</a>" };
 
-test("routines : section « Ta revue mensuelle » après « En trois étapes », rendue par routinesHtml", () => {
+test("routines : section « Ta revue mensuelle » dans son propre volet (après « Claude »), rendue par routinesHtml", () => {
   assert.match(html, /<section class="panel cg-routines" id="cgRoutines" aria-labelledby="cgRtTitle">/);
   assert.match(html, /<h2 id="cgRtTitle">Ta revue mensuelle<\/h2>/);
-  assert.ok(html.indexOf('id="cgStepsTitle"') < html.indexOf('id="cgRoutines"') && html.indexOf('id="cgRoutines"') < html.indexOf('id="cgAltTitle"'));
+  const v = id => html.indexOf('data-cg-volet="' + id + '"');
+  assert.ok(v("claude") >= 0 && v("claude") < v("revue") && v("revue") < v("banques"), "trois volets : Claude, Revue du mois, Banques");
+  assert.ok(v("claude") < html.indexOf('id="cgStepsTitle"') && html.indexOf('id="cgStepsTitle"') < html.indexOf('id="cgAltTitle"') && html.indexOf('id="cgAltTitle"') < v("revue"), "les étapes et l'explication sont dans le volet Claude");
+  assert.ok(v("revue") < html.indexOf('id="cgRoutines"') && html.indexOf('id="cgRoutines"') < v("banques"));
+  assert.ok(v("banques") < html.indexOf('id="cgBanques"'));
+  assert.doesNotMatch(html, /id="cgRing"|id="cgSections"|id="cgNext"/, "la complétude du bilan est dans Compte › Données, plus ici");
   assert.equal(typeof G.routinesHtml, "function");
   assert.match(js, /routinesHtml\(S, RE\(\)\.aujParis\(\), window\.UI \|\| null, \{ erreur: erreurRt \}\)/, "jour de Paris, comme le serveur");
 });
@@ -361,4 +366,18 @@ test("routines : les 4 étapes affichées sont mot pour mot ETAPES_TACHE du conn
   for (const e of G.ETAPES_TACHE) assert.ok(ts.includes(JSON.stringify(e)), "étape absente de routines.ts : " + e);
   const h = G.routinesHtml({ routines: [routine()], routinesLues: true }, AUJ);
   for (const e of connecteur) assert.ok(h.includes("<li>" + e.replace(/'/g, "&#39;") + "</li>"), "étape non affichée : " + e);
+});
+
+test("volets : voletDe (lien profond, banques seulement si actives) et statutConnexion (connecté, pas encore, inconnu)", () => {
+  assert.deepEqual(G.VOLETS.map(v => v.id), ["claude", "banques", "revue"]);
+  assert.equal(G.voletDe({ volet: "revue" }, "claude", false), "revue");
+  assert.equal(G.voletDe({ volet: "banques" }, "claude", true), "banques");
+  assert.equal(G.voletDe({ volet: "banques" }, "claude", false), "claude", "banques inactives : retour au volet Claude");
+  assert.equal(G.voletDe({ volet: "n'importe quoi" }, "revue", false), "revue");
+  assert.equal(G.voletDe({}, "inconnu", false), "claude");
+  assert.equal(G.statutConnexion({}).code, "inconnu");
+  assert.equal(G.statutConnexion({ connexions: [] }).code, "non");
+  const c = G.statutConnexion({ connexions: [{ dernierLe: "2026-10-10T08:00:00Z" }, { dernierLe: "2026-10-12T09:00:00Z" }] });
+  assert.equal(c.code, "oui");
+  assert.match(c.texte, /^Claude est connecté, dernier échange le 1[2] oct/);
 });
