@@ -32,12 +32,12 @@ function donneesLever() {
 }
 const INTERDIT = /\b(bonus|gagne|gagné|série|record|jackpot|trade|trading|confetti|badge|classement)\b|achète|vends\b|renforce|allège|conseiller|Copilote|\bvous\b|\bvotre\b|\bvos\b/i;
 
-test("chips des constats : Alerte, À surveiller, OK, Manque une donnée, Info ; jamais « à travailler » ni un ordre ; le chiffre est écrit contre son repère", () => {
+test("chips des constats : Hors repère, À surveiller, OK, Manque une donnée, Info ; jamais « à travailler » ni un ordre ; le chiffre est écrit contre son repère", () => {
   const { d } = vueDe("CM-8");
   const cs = Suivi.constats(d, "soc", TODAY);
   const poids = cs.find(c => c.cle === "poids");
   assert.equal(poids.statut, "a_travailler");
-  assert.equal(SV.chipConstat(poids), "Alerte");
+  assert.equal(SV.chipConstat(poids), "Hors repère");
   assert.equal(poids.repere.max, 5, "le repère de poids porte son chiffre");
   const l8 = Suivi.ligne(d, "soc", TODAY);
   const ch = SV.chiffreConstat(poids, l8);
@@ -45,9 +45,11 @@ test("chips des constats : Alerte, À surveiller, OK, Manque une donnée, Info ;
   assert.equal(sp(ch.repere), "repère ≤ 5 % pour un satellite");
   const { d: d9 } = vueDe("CM-9");
   const lev = Suivi.constats(d9, "lev", TODAY);
-  assert.equal(SV.chipConstat(lev.find(c => c.cle === "classe_risque")), "Alerte");
+  assert.equal(SV.chipConstat(lev.find(c => c.cle === "classe_risque")), "Hors repère");
   assert.equal(SV.chipConstat(lev.find(c => c.cle === "cout")), "À surveiller");
-  assert.equal(SV.chipConstat(lev.find(c => c.cle === "chevauchement")), "Manque une donnée");
+  assert.equal(SV.chipConstat(lev.find(c => c.cle === "chevauchement")), "Bientôt", "la composition des fonds n'est pas disponible : rien à fournir");
+  assert.equal(SV.chipConstat(lev.find(c => c.cle === "solidite")), "Bientôt");
+  assert.equal(SV.chipConstat({ cle: "cout", statut: "a_completer" }), "Manque une donnée", "une donnée que tu peux donner reste « Manque une donnée »");
   assert.equal(SV.chipConstat(lev.find(c => c.cle === "enveloppe")), "OK");
   assert.equal(SV.chipConstat(lev.find(c => c.cle === "devise")), "OK", "une ligne en euros : pas de risque de change");
   assert.equal(SV.chipConstat({ cle: "devise", statut: "bon", mesure: { devise: "USD", valeur: 12 } }), "Info");
@@ -90,15 +92,16 @@ test("« Ta ligne » : verdict en une phrase chiffrée, bilan par niveau, consta
   const { L } = vueDe("CM-9");
   const l = L("lev"), h = SV.ligneSuiviHtml(l, { U: UI, today: TODAY }), t = texte(h);
   assert.equal(SV.niveauLigne(l), "alerte");
-  assert.match(t, /Alerte Diagnostic de la ligne/);
+  assert.match(t, /Hors de tes repères Diagnostic de la ligne/);
   assert.match(t, /Cette ligne est un produit à effet de levier \(volatilité ≈ 45 %\/an\), et ses frais courants sont de 0,6 %\/an, au-dessus du bas du repère de sa classe \(0,3 %\/an\)\./);
   // bilan : nombres par niveau, boutons de 44 px qui renvoient aux constats
-  assert.match(t, /1 alerte 1 à surveiller 2 à compléter 3 OK/);
-  assert.equal((h.match(/data-sv-aller="/g) || []).length, 4);
+  assert.match(t, /1 hors repère 1 à surveiller 3 OK/);
+  assert.equal((h.match(/data-sv-aller="/g) || []).length, 3, "« Bientôt » ne compte pas dans le bilan");
+  assert.doesNotMatch(t, /à compléter/);
   assert.match(t, /5 constats calculés sur 7/);
   // tri : alerte, à surveiller, à compléter, puis OK repliés
   const ordre = [...h.matchAll(/<details class="sv-constat sv-n-(\w+)"/g)].map(m => m[1]);
-  assert.deepEqual(ordre, ["alerte", "surveiller", "completer", "completer", "ok", "ok", "ok"]);
+  assert.deepEqual(ordre, ["alerte", "surveiller", "bientot", "bientot", "ok", "ok", "ok"]);
   assert.match(h, /<details class="sv-ok-groupe"><summary[^>]*><span>3 points sans problème<\/span>/);
   assert.equal((h.match(/<details class="sv-constat/g) || []).length, l.constats.length);
   assert.match(t, /Rôle proposé : satellite — à confirmer \(produit à effet de levier\)/);
@@ -119,10 +122,10 @@ test("verdict : la phrase cite les deux constats les plus graves avec leurs chif
   const l = Suivi.ligne(d, "lev", TODAY, { capacite_mensuelle: 1700 });
   assert.equal(sp(SV.phraseVerdictLigne(l)), "Cette ligne pèse 15,7 % de ton financier investi alors que ton repère pour un satellite est 5 %, et c'est un produit à effet de levier (volatilité ≈ 45 %/an).");
   const t = texte(SV.ligneSuiviHtml(l, { U: UI, today: TODAY }));
-  assert.match(t, /Alerte Diagnostic de la ligne Cette ligne pèse 15,7 %/);
+  assert.match(t, /Hors de tes repères Diagnostic de la ligne Cette ligne pèse 15,7 %/);
   const clair = JSON.parse(JSON.stringify(l)); clair.constats.forEach(c => { c.statut = c.statut === "a_completer" ? "a_completer" : "bon"; }); clair.meteo = "clair";
   assert.equal(SV.niveauLigne(clair), "ok");
-  assert.match(sp(SV.phraseVerdictLigne(clair)), /^Rien à signaler : les 5 points calculés sont dans les repères\. 2 restent à compléter/);
+  assert.match(sp(SV.phraseVerdictLigne(clair)), /^Rien à signaler : les 5 points calculés sont dans les repères\.$/);
   const inc = JSON.parse(JSON.stringify(clair)); inc.meteo = "a_completer";
   assert.equal(SV.niveauLigne(inc), "incomplet");
   assert.match(texte(SV.ligneSuiviHtml(inc, { U: UI })), /Diagnostic incomplet/);
@@ -151,10 +154,14 @@ test("un seul bouton Claude principal (« Préparer avec Claude ») ; « Complé
   assert.doesNotMatch(h, /Demander à Claude/);
   assert.match(h, /sv-claude-texte[^>]*>[\s\S]*?Confirmer avec Claude/);
   const m = texte(SV.completerHtml(l, { U: UI }));
-  assert.match(m, /Les 10 premières lignes de chaque fonds/);
   assert.match(m, /Le prix de revient des lignes vendues dans « Crypto Exemple »/);
-  assert.match(m, /Sert à : Chevauchement/);
+  assert.doesNotMatch(m, /Les 10 premières lignes|L'encours et la date de création|Sert à : Chevauchement/, "ce que l'utilisateur ne peut pas donner n'est pas dans la liste d'actions");
+  assert.match(m, /Pas encore disponible dans Boussole : la composition des fonds et l'encours des fonds\./);
+  assert.equal((h.match(/Pas encore disponible dans Boussole/g) || []).length, 3, "deux constats « Bientôt » et une ligne dans le bloc");
   assert.equal(SV.completerHtml(Object.assign({}, l, { constats: l.constats.filter(c => c.statut !== "a_completer"), leviers: [] }), { U: UI }), "", "rien à compléter : pas de bloc");
+  const seul = SV.completerHtml(Object.assign({}, l, { leviers: [] }), { U: UI });
+  assert.doesNotMatch(seul, /Compléter avec Claude|<section/, "seulement du « pas encore disponible » : une ligne discrète, aucune action");
+  assert.match(seul, /class="sv-m-bientot"/);
 });
 
 test("« Que faire ? » : l'option sans coût d'abord, puis chaque option avec coût certain, gain attendu et verdict ; le titre nomme une classe et une enveloppe (jamais une ligne)", () => {

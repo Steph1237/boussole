@@ -181,11 +181,14 @@
   const PAN = (v, d) => P(v, d) + "/an";
 
   /* ---------- niveaux de gravité : alerte, à surveiller, à compléter, OK (et info) ---------- */
-  const NIVEAUX = ["alerte", "surveiller", "completer", "ok"];
+  const NIVEAUX = ["alerte", "surveiller", "completer", "bientot", "ok"];
+  /** Constats dont la donnée manquante n'est pas à fournir : Boussole n'a pas encore la composition ni l'encours des fonds (pas de fournisseur). Ils passent en « Bientôt ». */
+  const INDISPONIBLES = { chevauchement: "la composition des fonds", solidite: "l'encours des fonds" };
   const NIV = {
-    alerte: { chip: "Alerte", ton: "travailler", un: "alerte", plusieurs: "alertes" },
+    alerte: { chip: "Hors repère", ton: "travailler", un: "hors repère", plusieurs: "hors repère" },
     surveiller: { chip: "À surveiller", ton: "surveiller", un: "à surveiller", plusieurs: "à surveiller" },
     completer: { chip: "Manque une donnée", ton: "completer", un: "à compléter", plusieurs: "à compléter" },
+    bientot: { chip: "Bientôt", ton: "bientot", un: "bientôt", plusieurs: "bientôt" },
     ok: { chip: "OK", ton: "bon", un: "OK", plusieurs: "OK" },
     info: { chip: "Info", ton: "bon", un: "OK", plusieurs: "OK" },
   };
@@ -193,16 +196,16 @@
   function niveauConstat(c) {
     if (c.statut === "a_travailler") return "alerte";
     if (c.statut === "a_surveiller") return "surveiller";
-    if (c.statut === "a_completer") return "completer";
+    if (c.statut === "a_completer") return INDISPONIBLES[c.cle] ? "bientot" : "completer";
     return c.cle === "devise" && c.mesure && c.mesure.devise && c.mesure.devise !== "EUR" ? "info" : "ok";
   }
   const groupeNiveau = n => (n === "info" ? "ok" : n);
-  /** Texte de la chip d'un constat : Alerte, À surveiller, OK, Manque une donnée, Info (jamais un ordre, jamais « à travailler »). */
+  /** Texte de la chip d'un constat : Hors repère, À surveiller, OK, Manque une donnée, Info (jamais un ordre, jamais « à travailler »). */
   const chipConstat = c => NIV[niveauConstat(c)].chip;
   const puce = (niv, mot) => '<span class="ui-puce ' + NIV[niv].ton + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(mot || NIV[niv].chip) + "</span>";
   /** Constats triés du plus grave au moins grave (alerte, à surveiller, à compléter, OK et info) ; l'ordre d'origine est gardé à gravité égale. */
   const trier = cs => cs.map((c, i) => ({ c, i, r: NIVEAUX.indexOf(groupeNiveau(niveauConstat(c))) })).sort((a, b) => a.r - b.r || a.i - b.i).map(x => x.c);
-  const comptes = cs => { const n = { alerte: 0, surveiller: 0, completer: 0, ok: 0 }; cs.forEach(c => { n[groupeNiveau(niveauConstat(c))]++; }); return n; };
+  const comptes = cs => { const n = { alerte: 0, surveiller: 0, completer: 0, bientot: 0, ok: 0 }; cs.forEach(c => { n[groupeNiveau(niveauConstat(c))]++; }); return n; };
 
   /* ---------- le chiffre contre son repère, en mots simples ---------- */
   const minus = t => t.charAt(0).toLowerCase() + t.slice(1);
@@ -216,6 +219,7 @@
   /** { valeur, repere, jauge } d'un constat : « 16,8 % » et « repère ≤ 5 % pour un satellite » ; valeur seule quand rien ne se compare. */
   function chiffreConstat(c, l) {
     const m = c.mesure || {}, r = c.repere || {};
+    if (c.statut === "a_completer" && INDISPONIBLES[c.cle]) return { valeur: "", repere: "Pas encore disponible dans Boussole" };
     if (c.statut === "a_completer") return { valeur: "", repere: c.manque && c.manque[0] ? "Il manque : " + minus(String(c.manque[0]).split(" : ")[0]) : "Pas encore de mesure" };
     switch (c.cle) {
       case "poids": return { valeur: P(m.valeur, 1), repere: "repère ≤ " + P(maxRepere(c), 0) + " pour " + roleDe(l) };
@@ -289,15 +293,15 @@
       default: return null;
     }
   }
-  /** Niveau global : Alerte, À surveiller, Diagnostic incomplet ou Tout va bien. Une alerte passe avant un manque de données. */
+  /** Niveau global : Hors de tes repères, À surveiller, Diagnostic incomplet ou Tout va bien. Une alerte passe avant un manque de données. */
   function niveauLigne(l) {
     const n = comptes(l.constats);
     if (n.alerte) return "alerte";
     if (n.surveiller) return "surveiller";
-    if (n.completer && l.meteo === "a_completer") return "incomplet";
+    if ((n.completer || n.bientot) && l.meteo === "a_completer") return "incomplet";
     return "ok";
   }
-  const PILULE = { alerte: { mot: "Alerte", ton: "alerte" }, surveiller: { mot: "À surveiller", ton: "surveiller" }, incomplet: { mot: "Diagnostic incomplet", ton: "incomplet" }, ok: { mot: "Tout va bien", ton: "ok" } };
+  const PILULE = { alerte: { mot: "Hors de tes repères", ton: "alerte" }, surveiller: { mot: "À surveiller", ton: "surveiller" }, incomplet: { mot: "Diagnostic incomplet", ton: "incomplet" }, ok: { mot: "Tout va bien", ton: "ok" } };
   /** Une phrase, avec ses chiffres, bâtie sur les un ou deux constats les plus graves. */
   function phraseVerdictLigne(l) {
     const niv = niveauLigne(l), n = comptes(l.constats), cl = trier(l.constats).filter(c => ["alerte", "surveiller"].includes(niveauConstat(c))).map(c => clauseConstat(c, l)).filter(Boolean);
@@ -436,27 +440,30 @@
       if (!vus.has(cle)) vus.set(cle, { quoi, pourquoi: reste.join(" : "), pour: [] });
       if (pour && !vus.get(cle).pour.includes(pour)) vus.get(cle).pour.push(pour);
     };
-    (l.constats || []).filter(c => c.statut === "a_completer").forEach(c => (c.manque && c.manque.length ? c.manque : [c.pourquoi]).forEach(m => ajouter(m, c.libelle)));
+    (l.constats || []).filter(c => c.statut === "a_completer" && !INDISPONIBLES[c.cle]).forEach(c => (c.manque && c.manque.length ? c.manque : [c.pourquoi]).forEach(m => ajouter(m, c.libelle)));
     (l.leviers || []).forEach(lv => {
       (lv.cout && lv.cout.manque || []).forEach(m => ajouter(m, "le chiffrage d'un levier"));
       (lv.fusionnes || []).forEach(f => (f.manque || []).forEach(m => ajouter(m, "le chiffrage d'un levier")));
     });
     return [...vus.values()];
   }
+  /** Ce qu'il faut encore donner à Claude (avec « Compléter avec Claude »), puis, sans action, ce que Boussole n'a pas encore pour personne. */
   function completerHtml(l, o) {
     const M = manquesDe(l), U = (o || {}).U;
-    if (!M.length) return "";
+    const indispo = [...new Set((l.constats || []).filter(c => c.statut === "a_completer" && INDISPONIBLES[c.cle]).map(c => INDISPONIBLES[c.cle]))];
+    const bientot = indispo.length ? '<p class="sv-m-bientot">Pas encore disponible dans Boussole : ' + esc(indispo.join(" et ")) + ".</p>" : "";
+    if (!M.length) return bientot;
     const maj = s => s.charAt(0).toUpperCase() + s.slice(1);
     const items = M.map(m => '<li class="sv-m-item"><span class="sv-m-quoi">' + esc(maj(m.quoi)) + '</span><span class="sv-m-pour">' + esc((m.pourquoi ? maj(m.pourquoi) + ". " : "") + "Sert à : " + m.pour.join(", ")) + ".</span></li>").join("");
     const phrase = phraseClaude("suivi", "compléter le diagnostic de ma ligne : " + M.map(m => m.quoi.charAt(0).toLowerCase() + m.quoi.slice(1)).join(" ; "));
     return '<section class="sv-manque" aria-labelledby="svManqueTitre"><h3 class="sv-h" id="svManqueTitre">Pour compléter le diagnostic</h3><ul class="sv-m-liste">' + items + "</ul>" +
-      '<div class="sv-m-act">' + lienClaude(U, phrase, "Compléter avec Claude", "secondaire") + "</div></section>";
+      '<div class="sv-m-act">' + lienClaude(U, phrase, "Compléter avec Claude", "secondaire") + "</div>" + bientot + "</section>";
   }
 
   /* ---------- en-tête : verdict, résumé par gravité, rôle et revue ---------- */
   function resumeHtml(l) {
     const n = comptes(l.constats), cv = l.couverture || { calcules: 0, applicables: l.constats.length };
-    const bouts = NIVEAUX.filter(k => n[k] > 0).map(k => '<li><button type="button" class="sv-bilan-btn" data-sv-aller="' + k + '" aria-label="' + esc(n[k] + " " + (n[k] > 1 ? NIV[k].plusieurs : NIV[k].un) + " : aller aux constats") + '"><span class="sv-dot sv-dot-' + k + '" aria-hidden="true"></span>' +
+    const bouts = NIVEAUX.filter(k => k !== "bientot" && n[k] > 0).map(k => '<li><button type="button" class="sv-bilan-btn" data-sv-aller="' + k + '" aria-label="' + esc(n[k] + " " + (n[k] > 1 ? NIV[k].plusieurs : NIV[k].un) + " : aller aux constats") + '"><span class="sv-dot sv-dot-' + k + '" aria-hidden="true"></span>' +
       '<span class="sv-bilan-n">' + n[k] + "</span><span>" + esc(n[k] > 1 ? NIV[k].plusieurs : NIV[k].un) + "</span></button></li>").join("");
     return '<ul class="sv-bilan" aria-label="Constats par niveau">' + bouts + "</ul>" + '<p class="sv-vt-couv">' + esc(cv.calcules + " constat" + (cv.calcules > 1 ? "s" : "") + " calculé" + (cv.calcules > 1 ? "s" : "") + " sur " + cv.applicables) + "</p>";
   }

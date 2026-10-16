@@ -77,11 +77,11 @@
 .sv-aide{margin:0;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small);max-width:var(--measure)}
 
 /* en-tête : pilule de verdict, une phrase, bilan par niveau, rôle et revue */
-.sv-tete{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);padding:var(--card-pad);border-radius:var(--r-card);border:1px solid var(--line);background:var(--surface);color:var(--ink)}
-.sv-t-alerte{background:var(--st-work-bg);border-color:var(--st-work)}
-.sv-t-surveiller{background:var(--st-watch-bg);border-color:var(--st-watch)}
-.sv-t-ok{background:var(--st-good-bg);border-color:var(--st-good)}
-.sv-t-incomplet{background:var(--st-todo-bg);border-color:var(--st-todo);border-style:dashed}
+.sv-tete{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);padding:var(--card-pad);border-radius:var(--r-card);border:1px solid var(--line);border-left:4px solid var(--line2);background:var(--surface);color:var(--ink)}
+.sv-t-alerte{border-left-color:var(--st-work)}
+.sv-t-surveiller{border-left-color:var(--st-watch)}
+.sv-t-ok{border-left-color:var(--st-good)}
+.sv-t-incomplet{border-left-color:var(--st-todo)}
 .sv-vt-haut{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3)}
 .sv-vt-titre{margin:0;font:600 var(--t-small)/var(--lh-small) var(--f-body)}
 .sv-pilule{display:inline-flex;align-items:center;gap:var(--sp-2);min-height:32px;padding:0 var(--sp-3) 0 var(--sp-2);border-radius:var(--r-chip);font:700 var(--t-small)/var(--lh-small) var(--f-body);color:var(--surface);white-space:nowrap}
@@ -186,6 +186,9 @@ details[open]>summary>.sv-c-chev{transform:rotate(-135deg)}
 .sv-m-quoi{font:600 var(--t-body)/var(--lh-body) var(--f-body)}
 .sv-m-pour{color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small)}
 .sv-m-act{display:flex;flex-wrap:wrap}
+.sv-m-bientot{margin:0;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small)}
+.sv-zone-manque>.sv-m-bientot{padding:0 var(--sp-1)}
+.ui-puce.bientot{color:var(--muted);background:var(--sunk);box-shadow:inset 0 0 0 1px var(--line)}
 
 /* balance : deux barres sur le même axe en euros ; le point mort est marqué sur la barre du gain */
 .sv-balance{display:flex;flex-direction:column;gap:var(--sp-1)}
