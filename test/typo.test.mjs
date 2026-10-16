@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { lire, sansCommentaires } from "./helpers/css.mjs";
+import { clesAffichage } from "./helpers/nombres.mjs";
 
 const JETONS = ["hero", "h1", "h2", "kpi", "h3", "body", "small", "caption"];
 const FEUILLES = readdirSync("web/src").filter(f => f.endsWith(".css"));
@@ -87,9 +88,33 @@ test("typo : le mono (--f-mono) ne sert qu'au code ; --f-num est Public Sans ; a
   assert.match(theme, /code,kbd,samp,pre\{font-family:var\(--f-mono\)/);
 });
 
-test("typo : le thème fixe la police du texte et l'échelle du corps (15 px) ; les chiffres sont tabulaires partout", () => {
+test("typo : le thème fixe la police du texte et l'échelle du corps (15 px) ; les chiffres sont tabulaires par défaut, proportionnels dans les titres et héros", () => {
   const theme = sansCommentaires(lire("web/src/theme.css"));
   assert.match(theme, /body\{[^}]*font-size:var\(--t-body\)/);
-  assert.match(theme, /body\{[^}]*font-variant-numeric:tabular-nums lining-nums/);
-  assert.match(theme, /\.num\{[^}]*font-variant-numeric:tabular-nums lining-nums/);
+  assert.match(theme, /--nums-tab:tabular-nums lining-nums/);
+  assert.match(theme, /--nums-prop:proportional-nums lining-nums/);
+  assert.match(theme, /--nums:var\(--nums-tab\)/, "défaut : tabulaire");
+  assert.match(theme, /code,kbd,samp,pre\{[^}]*--nums:normal/);
+});
+
+test("typo : les chiffres passent par --nums, en !important, pour survivre aux règles font: qui remettent font-variant-numeric à normal", () => {
+  const theme = sansCommentaires(lire("web/src/theme.css"));
+  assert.match(theme, /\*,\*::before,\*::after\{font-variant-numeric:var\(--nums\)!important\}/);
+  // la propriété raccourcie font: n'est plus un risque, mais personne ne doit croire qu'une déclaration de module fait foi : seul --nums compte
+  assert.match(theme, /:where\(h1,h2,h3,h4,h5,h6,[\s\S]*\)\{--nums:var\(--nums-prop\)\}/);
+});
+
+/** Liste des éléments proportionnels déclarée dans theme.css (hors titres h1 à h6). */
+function listeProportionnels() {
+  const theme = sansCommentaires(lire("web/src/theme.css"));
+  const m = theme.match(/:where\(h1,h2,h3,h4,h5,h6,([\s\S]*?)\)\{--nums:var\(--nums-prop\)\}/);
+  assert.ok(m, "liste --nums-prop introuvable dans theme.css");
+  return new Set(m[1].split(",").map(x => x.trim()).filter(Boolean));
+}
+
+test("typo : tout élément composé en police d'affichage (Schibsted) est dans la liste des chiffres proportionnels de theme.css", () => {
+  const liste = listeProportionnels();
+  const manquants = clesAffichage().filter(k => !liste.has(k));
+  assert.deepEqual(manquants, [], "ajouter ces sélecteurs à la liste :where(…){--nums:var(--nums-prop)} de theme.css (chiffres proportionnels des titres et héros)");
+  for (const k of liste) assert.ok(clesAffichage().includes(k) || [".gp-pill"].includes(k), "entrée inutile dans la liste : " + k);
 });

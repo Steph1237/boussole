@@ -9,8 +9,12 @@
   /* ---- couleurs à rôle unique ---- */
   --bg:#F6F7F4; --surface:#FFFFFF; --surface-2:#FFFFFF; --sunk:#EDEFEA;
   --ink:#16202A; --muted:#56616B; --line:#DADFD8; --line2:#C6CCC3;
+  /* contour d'un champ ou d'un contrôle (WCAG 1.4.11, ≥ 3:1 sur la surface) : --line et --line2 restent décoratifs (cartes, séparateurs) */
+  --line-field:#7D877F;
   /* marque : pétrole (actions, liens, onglet actif, médiane projetée) ; jamais un « gain » */
   --brand:#16585E; --brand-ink:#FFFFFF; --brand-soft:rgb(22 88 94 / .10);
+  /* fond des boutons pleins de marque : identique à --brand en clair, un cran plus sourd en sombre (le bouton plein n'est plus l'élément le plus lumineux de l'écran) */
+  --brand-fill:#16585E; --brand-fill-ink:#FFFFFF;
   /* argent : vert = hausse, rouge = baisse, seulement pour un mouvement d'argent (les dettes restent en encre) */
   --pos:#1E7A3C; --neg:#B3261E;
   /* statuts : toujours en chip avec libellé (texte / fond) */
@@ -31,6 +35,8 @@
   /* violet secondaire de la toise (sous-groupes) */
   --v0:#D6CBE6; --v1:#B39BD3; --v2:#8C6BB8; --v3:#63438F;
   --me:#C2410C; --me-ink:#FFFFFF;
+  /* texte dans la teinte d'une série : --s2 et --me restent pour les traits, ces deux-là pour les mots (≥ 4,5:1 sur --s2-soft / --sunk) */
+  --s2-ink:#3D5A99; --me-ink-txt:#B23B0B;
   --sel-bg:#16202A; --sel-ink:#FFFFFF;
   --veil:rgb(10 14 18 / .4);
   /* ---- élévation : e0 à plat (bordure), e1 carte posée, e2 barre collante, e3 feuille ; en sombre on monte d'un palier de surface ---- */
@@ -38,9 +44,10 @@
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   color-scheme:dark;
-  --bg:#0F1519; --surface:#172027; --surface-2:#1F2A31; --sunk:#1F2A31;
-  --ink:#E8EDEA; --muted:#9DA9B1; --line:#2C3740; --line2:#3B4853;
-  --brand:#62C7BE; --brand-ink:#0F1519; --brand-soft:rgb(98 199 190 / .14);
+  --bg:#0B1014; --surface:#172027; --surface-2:#1F2A31; --sunk:#1F2A31;
+  --ink:#E8EDEA; --muted:#9DA9B1; --line:#33404A; --line2:#3B4853; --line-field:#6A7882;
+  --brand:#62C7BE; --brand-ink:#0B1014; --brand-soft:rgb(98 199 190 / .14);
+  --brand-fill:#3FA39A; --brand-fill-ink:#0B1014;
   --pos:#6FD08F; --neg:#F4897C;
   --st-good:#86D9A2; --st-good-bg:#16301F; --st-watch:#F0BE62; --st-watch-bg:#33280F;
   --st-work:#F7A196; --st-work-bg:#3A1C18; --st-todo:#B7C1C8; --st-todo-bg:#26313A;
@@ -53,15 +60,16 @@
   --s2-soft:#212B44; --s4-soft:#33243B;
   --q0:#1E2D2F; --q1:#23393B; --q2:#2B4A4D; --q3:#345D61; --q4:#3F7176; --q5:#4F868D; --q6:#659EA4; --q7:#87B9BE; --q8:#B3D6DA;
   --v0:#3A2F52; --v1:#56457A; --v2:#7F68AC; --v3:#B09BDB;
-  --me:#FF8A5B; --me-ink:#2A0D00;
-  --sel-bg:#E8EDEA; --sel-ink:#0F1519;
+  --me:#FF8A5B; --me-ink:#2A0D00; --s2-ink:#7E9BDB; --me-ink-txt:#FF8A5B;
+  --sel-bg:#E8EDEA; --sel-ink:#0B1014;
   --veil:rgb(0 0 0 / .55);
-  --e1:none; --e2:0 -1px 0 var(--line); --e3:0 -8px 32px rgb(0 0 0 / .5)}}
+  --e1:inset 0 1px 0 rgb(255 255 255 / .05); --e2:0 -1px 0 var(--line); --e3:0 -8px 32px rgb(0 0 0 / .5)}}
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#0F1519; --surface:#172027; --surface-2:#1F2A31; --sunk:#1F2A31;
-  --ink:#E8EDEA; --muted:#9DA9B1; --line:#2C3740; --line2:#3B4853;
-  --brand:#62C7BE; --brand-ink:#0F1519; --brand-soft:rgb(98 199 190 / .14);
+  --bg:#0B1014; --surface:#172027; --surface-2:#1F2A31; --sunk:#1F2A31;
+  --ink:#E8EDEA; --muted:#9DA9B1; --line:#33404A; --line2:#3B4853; --line-field:#6A7882;
+  --brand:#62C7BE; --brand-ink:#0B1014; --brand-soft:rgb(98 199 190 / .14);
+  --brand-fill:#3FA39A; --brand-fill-ink:#0B1014;
   --pos:#6FD08F; --neg:#F4897C;
   --st-good:#86D9A2; --st-good-bg:#16301F; --st-watch:#F0BE62; --st-watch-bg:#33280F;
   --st-work:#F7A196; --st-work-bg:#3A1C18; --st-todo:#B7C1C8; --st-todo-bg:#26313A;
@@ -74,10 +82,10 @@
   --s2-soft:#212B44; --s4-soft:#33243B;
   --q0:#1E2D2F; --q1:#23393B; --q2:#2B4A4D; --q3:#345D61; --q4:#3F7176; --q5:#4F868D; --q6:#659EA4; --q7:#87B9BE; --q8:#B3D6DA;
   --v0:#3A2F52; --v1:#56457A; --v2:#7F68AC; --v3:#B09BDB;
-  --me:#FF8A5B; --me-ink:#2A0D00;
-  --sel-bg:#E8EDEA; --sel-ink:#0F1519;
+  --me:#FF8A5B; --me-ink:#2A0D00; --s2-ink:#7E9BDB; --me-ink-txt:#FF8A5B;
+  --sel-bg:#E8EDEA; --sel-ink:#0B1014;
   --veil:rgb(0 0 0 / .55);
-  --e1:none; --e2:0 -1px 0 var(--line); --e3:0 -8px 32px rgb(0 0 0 / .5)}
+  --e1:inset 0 1px 0 rgb(255 255 255 / .05); --e2:0 -1px 0 var(--line); --e3:0 -8px 32px rgb(0 0 0 / .5)}
 
 /* ---- espace fine insécable des milliers : 0,2 em au lieu des 0,12 em de Public Sans (micro-police d'un caractère, voir scripts/gen-police-separateur.mjs) ---- */
 /* @genere:separateur — début (scripts/gen-police-separateur.mjs, npm run gen ; ne pas modifier à la main) */
@@ -92,6 +100,10 @@
   --f-body:"Boussole Sep","Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-num:var(--f-body);
   --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  /* chiffres (UX5) : tabulaires par défaut (montants alignés en Public Sans, où la virgule ne fait que 6,6 px), proportionnels dans les titres et les
+     héros en Schibsted Grotesk (le tnum y élargit la virgule et le point à 14 px). On ne pose jamais font-variant-numeric sur un élément : on pose --nums
+     (voir « Nombres » plus bas), car la propriété raccourcie font: remet font-variant-numeric à normal sur l'élément qui la déclare. */
+  --nums-tab:tabular-nums lining-nums; --nums-prop:proportional-nums lining-nums; --nums:var(--nums-tab);
   /* échelle typographique : taille et interligne par rôle ; rien sous 12 px ; les MAJUSCULES sont réservées aux chips de statut */
   --t-hero:36px; --lh-hero:40px;
   --t-h1:24px; --lh-h1:30px;
@@ -104,6 +116,8 @@
   /* espacements (base 4) */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px; --sp-12:48px;
   --gutter:16px; --card-pad:16px; --gap-cards:12px; --gap-sections:24px;
+  /* tuile : chiffre secondaire posé dans une carte (fond --sunk, sans bordure) */
+  --tile-pad:var(--sp-3);
   /* mise en page fluide (UX3) : le contenu occupe la colonne jusqu'à --content-max (hors gouttières), au-delà il se centre ;
      le texte courant ne dépasse jamais --measure (72 caractères) */
   --content-max:1680px; --measure:72ch;
@@ -126,7 +140,7 @@
 }
 @media (min-width:900px){:root{
   --t-hero:44px; --lh-hero:48px; --t-h1:28px; --lh-h1:34px; --t-h2:20px; --lh-h2:26px; --t-kpi:26px; --lh-kpi:30px;
-  --gutter:32px; --card-pad:20px; --gap-cards:16px; --gap-sections:32px; --btn-h:40px}}
+  --gutter:32px; --card-pad:20px; --gap-cards:16px; --gap-sections:32px; --btn-h:40px; --tile-pad:var(--sp-4)}}
 /* ≥ 1440 px puis ≥ 1680 px : gouttières, écarts et marges internes plus généreux ; le contenu reste borné par --content-max */
 @media (min-width:1440px){:root{--gutter:40px; --card-pad:24px; --gap-cards:20px; --gap-sections:40px}}
 @media (min-width:1680px){:root{--gutter:48px; --gap-cards:24px}}
@@ -137,8 +151,25 @@
 [hidden]:not([hidden=until-found i]){display:none!important}
 html{-webkit-text-size-adjust:100%}
 /* Nombres : Public Sans en chiffres tabulaires et alignés (tout le texte numérique de l'app) ; le mono n'est gardé que pour le code. */
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:var(--t-body);line-height:1.47;font-variant-numeric:tabular-nums lining-nums;-webkit-font-smoothing:antialiased}
-code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:var(--t-body);line-height:1.47;-webkit-font-smoothing:antialiased}
+code,kbd,samp,pre{font-family:var(--f-mono);--nums:normal}
+/* ---- Nombres (UX5 G1) ----
+   Deux règles, une exception. 1) Tout le texte numérique est en chiffres tabulaires (--nums-tab) : les montants s'alignent en colonne. 2) Les titres h1 à h6
+   et les éléments composés en Schibsted Grotesk (héros, valeurs de KPI, verdicts, titres de section) passent en chiffres proportionnels (--nums-prop) :
+   le tnum de cette police élargit la virgule et le point à 14 px (« 38 ,9 k€ »). 3) Le code reste en normal.
+   Mécanisme : la propriété raccourcie font: (des centaines de règles) remet font-variant-numeric à normal sur son élément, ce qui annulait le tabular-nums
+   du body. La règle universelle ci-dessous est donc en !important, et ne lit qu'une propriété personnalisée, --nums, qui s'hérite et que la
+   propriété raccourcie ne touche pas. Pour changer les chiffres d'un composant, poser --nums sur lui (jamais font-variant-numeric).
+   Un élément qui pose --f-display dans font: ou font-family doit figurer dans la liste ci-dessous (test/typo.test.mjs le vérifie). */
+*,*::before,*::after{font-variant-numeric:var(--nums)!important}
+:where(h1,h2,h3,h4,h5,h6,
+  .ac-card-t b,.ac-pieges-t,.ac-promesse b,.ac-revue b,.ac-steps li,.ac-suivi-l,.aj-k-mot,.aj-k-val,.aj-ring-n,
+  .aj-sec-t,.aj-vide-t,.bl-carte-nom,.bl-h2,.bl-vide-t,.brand,.cg-ring-v,.cg-step,.cv-f-titre,.cv-fait-v,.cv-fam-nom,
+  .cv-total,.fv-c-titre,.fv-d-titre,.gp-as-k,.gp-hl-v,.gp-pill,.gp-ro-v b,.gp-sec-t,.gp-ttl,.ic-f-h,.ic-h2,.ic-h3,
+  .ic-hero-v,.ic-indispo-t,.ic-m-v,.ov-carte-cible,.ov-carte-nom,.ov-sec-t,.ov-vide-t,.pf-big,.pf-kpi b,.pl-d-val,
+  .pl-fait-v,.pl-total,.pv-h,.rg-h2,.rv-gh b,.rv-h2,.rv-kpi b,.rv-verdict,.simu-titre,.st-big,.st-fam-note,.st-h2,
+  .st-note,.st-onglet-note,.st-p-mesure,.st-verdict,.sv-centre-n,.sv-h,.sv-lv-titre,.sv-sys-phrase,.sv-titre,.ts-p-big,
+  .ts-p-kpis dd,.ui-tuile-v,.ui-carte-valeur,.ui-panneau-titre,.verdict){--nums:var(--nums-prop)}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 /* Mouvement réduit : toutes les durées passent à 0, sauf le fondu d'opacité (voile et panneau). */
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -211,14 +242,6 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
 .banner.demo[hidden]{display:none}
 .banner.demo a,.banner.demo .banner-x{display:inline-flex;align-items:center;justify-content:center;min-height:var(--hit);margin-block:-4px}
 .banner.demo a{padding:0 var(--sp-2);text-underline-offset:2px}
-/* cartes « Bientôt » des sous-vues pas encore construites */
-.soon{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);max-width:680px}
-.soon h2{font:700 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0}
-.soon p{margin:0;color:var(--muted)}
-.soon-tag{font:600 var(--t-caption)/var(--lh-caption) var(--f-body);letter-spacing:.02em;background:var(--brand-soft);color:var(--brand);border-radius:var(--r-chip);padding:2px 10px}
-.soon-ask{display:inline-flex;align-items:center;gap:6px;min-height:var(--btn-h);margin-top:var(--sp-1);padding:0 var(--sp-4);border-radius:var(--r-ctl);background:var(--brand);color:var(--brand-ink);font:600 var(--t-small) var(--f-body);text-decoration:none}
-.soon-ask::before{content:"\2726";font-size:var(--t-caption)}
-.soon-ask:hover{filter:brightness(1.08)}
 /* Pastilles de la navigation : un seul compteur, neutre (Aujourd'hui : éléments à traiter) ; Agent porte un point, sans chiffre. */
 .pill-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:var(--r-chip);background:var(--ink);color:var(--surface);font:700 var(--t-caption)/1 var(--f-body)}
 .pill-count[hidden]{display:none}
@@ -237,6 +260,8 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
 .veille{display:inline-flex;align-items:center;min-height:var(--hit);padding:0 var(--sp-1);font-size:var(--t-caption);color:var(--muted);text-decoration:none;border-radius:4px}
 .veille:hover{color:var(--ink);text-decoration:underline}
 .veille.warn{color:var(--warn);font-weight:600}
+.nav-groupe{display:none;margin:var(--sp-3) var(--sp-3) 0;font:600 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+.nav-groupe:first-child{margin-top:0}
 .side-demo{font-size:var(--t-caption);line-height:1.4;background:var(--brand-soft);border-radius:var(--r-ctl);padding:var(--sp-2) var(--sp-3)}
 .side-demo[hidden]{display:none}
 .side-demo a{color:var(--brand);font-weight:600}
@@ -272,6 +297,13 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
   .subtabs{padding:0}
 }
 
+/* ---------- champs (UX5 G7) : contour ≥ 3:1 et anneau de focus communs ----------
+   Les champs des modules déclarent leur propre bordure (--line, --line2 : décoratifs, 1,3:1) ; le contour d'un champ doit atteindre 3:1 (WCAG 1.4.11).
+   !important pour passer devant ces règles sans les réécrire ; les enveloppes (.inp, .money) gardent leur couleur propre quand elles ont le focus. */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]),
+select,textarea,.inp:not(:focus-within),.money:not(:focus-within){border-color:var(--line-field)!important}
+:where(input,select,textarea):focus-visible,.inp:focus-within,.money:focus-within{outline:2px solid var(--focus);outline-offset:2px}
+
 /* ---------- grille de 12 colonnes (UX3) ----------
    .grid-12 : 12 colonnes, une seule en dessous de 600 px (chaque enfant prend toute la largeur). .col-N (≥ 900 px), .col-sm-N (≥ 600),
    .col-xl-N (≥ 1440) et .col-xxl-N (≥ 1680) fixent la portée d'un enfant (3, 4, 5, 6, 7, 8, 9 ou 12 colonnes) ; le dernier point de
@@ -300,7 +332,7 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
 .panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-3)}
 .panel-head h2{font:700 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0}
 .label{font-size:var(--t-caption);color:var(--muted);font-weight:600}
-.num{font-family:var(--f-num);font-variant-numeric:tabular-nums lining-nums}
+.num{font-family:var(--f-num)}
 .muted{color:var(--muted)}
 .small{font-size:var(--t-caption)}
 
@@ -324,3 +356,24 @@ code,kbd,samp,pre{font-family:var(--f-mono);font-variant-numeric:normal}
 .banner-x{flex:none;border:0;background:transparent;color:var(--muted);font:400 var(--t-h2)/1 var(--f-body);width:var(--hit);height:var(--hit);margin:-12px -10px -12px 0;border-radius:var(--r-ctl);cursor:pointer}
 .banner-x:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
 .banner a{color:var(--brand);font-weight:600}
+
+/* ≥ 1 680 px : barre latérale de 240 px et titres de groupe (« Suivre » : Aujourd'hui, Patrimoine, Pilotage ; « Claude » : Agent). */
+@media (min-width:1680px){
+  :root{--side-w:240px}
+  .nav-groupe{display:block}
+}
+/* ---------- paysage de téléphone (UX5 N1) : coque compacte ----------
+   844 × 390 : l'en-tête collant (56) + les onglets collants (52) + la barre du bas (60) mangeaient 168 px sur 390. Ici plus aucun élément collant en
+   haut ni en bas : la barre du bas devient un rail gauche de 72 px (même .bb-item, icône de 24 px et libellé de 12 px dessous), l'en-tête (48 px) et
+   les onglets défilent avec la page. Le plein écran paysage du graphe (graphe-patrimoine.css) reste prioritaire : il couvre toute la fenêtre (z-index plus haut). */
+@media (max-width:899.98px) and (max-height:500px) and (orientation:landscape){
+  :root{--rail-w:calc(72px + env(safe-area-inset-left,0px)); --bbar-h:var(--bottom)}
+  .bbar{top:0;right:auto;width:var(--rail-w);min-height:0;grid-template-columns:1fr;grid-auto-rows:56px;align-content:center;gap:4px;padding:4px 4px 4px calc(4px + env(safe-area-inset-left,0px));
+    border-top:0;border-right:1px solid var(--line);box-shadow:none}
+  .bb-ico{width:48px}
+  .bb-item .pill-count{left:calc(50% + 6px)}
+  .bb-item .pill-dot{left:calc(50% + 8px)}
+  .main{padding-left:calc(var(--rail-w) + var(--gutter)); padding-bottom:var(--sp-6)}
+  .page-head{position:static;height:calc(48px + var(--top))}
+  .tabs-wrap{position:static}
+}

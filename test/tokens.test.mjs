@@ -17,6 +17,8 @@ const TEXTE = [
   ["--neg", "--bg"], ["--neg", "--surface"], ["--neg", "--surface-2"], ["--neg", "--sunk"],
   ["--st-good", "--st-good-bg"], ["--st-watch", "--st-watch-bg"], ["--st-work", "--st-work-bg"], ["--st-todo", "--st-todo-bg"],
   ["--sel-ink", "--sel-bg"], ["--me-ink", "--me"],
+  // UX5 : jetons de texte des teintes de série, bouton plein de marque
+  ["--s2-ink", "--s2-soft"], ["--s2-ink", "--surface"], ["--s2-ink", "--bg"], ["--me-ink-txt", "--sunk"], ["--me-ink-txt", "--surface"], ["--me-ink-txt", "--bg"], ["--brand-fill-ink", "--brand-fill"],
   // anciens noms (alias) : encore employés par les feuilles des modules
   // statuts d'un objectif sur le graphe (mot d'une cible écrit sur le tracé, sur la surface ou le fond d'app)
   ["--ms-ok", "--bg"], ["--ms-ok", "--surface"], ["--ms-track", "--bg"], ["--ms-track", "--surface"], ["--ms-late", "--bg"], ["--ms-late", "--surface"], ["--ms-off", "--bg"], ["--ms-off", "--surface"], ["--ms-idle", "--bg"], ["--ms-idle", "--surface"],
@@ -24,7 +26,7 @@ const TEXTE = [
   ["--warn", "--surface"], ["--warn", "--warn-soft"], ["--crit", "--surface"], ["--crit", "--crit-soft"],
 ];
 /** Éléments graphiques (courbes, jalons, anneaux, séries) : ≥ 3:1 contre la surface (WCAG 1.4.11). */
-const GRAPHIQUES = ["--dv-observed", "--dv-recon", "--dv-median", "--ms-goal", "--ms-credit", "--ms-life", "--ms-ok", "--ms-track", "--ms-late", "--ms-off", "--ms-idle", "--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s8", "--focus", "--brand", "--st-good", "--st-watch", "--st-work"];
+const GRAPHIQUES = ["--dv-observed", "--dv-recon", "--dv-median", "--ms-goal", "--ms-credit", "--ms-life", "--ms-ok", "--ms-track", "--ms-late", "--ms-off", "--ms-idle", "--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s8", "--focus", "--brand", "--brand-fill", "--st-good", "--st-watch", "--st-work", "--line-field"];
 
 const resolu = (t, nom, fond) => {
   const c = couleur("var(" + nom + ")", t);
@@ -74,7 +76,7 @@ test("thème sombre : le bloc prefers-color-scheme et le bloc [data-theme=\"dark
   assert.match(THEME, /\[data-theme="dark"\]\{\s*color-scheme:dark/);
   assert.match(THEME, /:not\(\[data-theme="light"\]\)\)?\{\s*color-scheme:dark/);
   // aucune couleur de rôle ne reste figée au clair : les rôles qui changent de valeur en sombre sont tous redéfinis
-  for (const k of ["--bg", "--surface", "--sunk", "--ink", "--muted", "--line", "--brand", "--brand-ink", "--pos", "--neg", "--st-good", "--st-good-bg", "--st-watch", "--st-watch-bg", "--st-work", "--st-work-bg", "--st-todo", "--st-todo-bg", "--focus", "--ms-goal", "--ms-credit", "--ms-life", "--ms-off", "--fan-in"])
+  for (const k of ["--bg", "--surface", "--sunk", "--ink", "--muted", "--line", "--brand", "--brand-ink", "--pos", "--neg", "--st-good", "--st-good-bg", "--st-watch", "--st-watch-bg", "--st-work", "--st-work-bg", "--st-todo", "--st-todo-bg", "--focus", "--ms-goal", "--ms-credit", "--ms-life", "--ms-off", "--fan-in", "--line-field", "--brand-fill", "--brand-fill-ink", "--s2-ink", "--me-ink-txt"])
     assert.ok(k in attr, k + " non redéfini en sombre");
 });
 
@@ -125,13 +127,13 @@ test("espacements (base 4), rayons, cibles tactiles et coque", () => {
   assert.equal(bureau["--hit"], undefined, "la zone cliquable de 44 px ne change pas");
 });
 
-test("élévation : e0 à plat, e1 à e3 en clair ; en sombre, pas d'ombre sur les cartes (palier de surface + bordure)", () => {
+test("élévation : e0 à plat, e1 à e3 en clair ; en sombre, pas d'ombre portée sur les cartes (palier de surface, bordure, filet de lumière intérieur)", () => {
   const { clair, attr } = jetons();
   assert.equal(clair["--e0"], "none");
   assert.match(clair["--e1"], /0 1px 2px rgb\(16 24 32 \/ \.06\)/);
   assert.match(clair["--e2"], /0 -4px 16px rgb\(16 24 32 \/ \.08\)/);
   assert.match(clair["--e3"], /0 -8px 32px rgb\(16 24 32 \/ \.18\)/);
-  assert.equal(attr["--e1"], "none");
+  assert.match(attr["--e1"], /^inset 0 1px 0 rgb\(255 255 255 \/ \.05\)$/, "UX5 : filet de lumière en haut de la carte, aucune ombre portée");
   assert.equal(clair["--veil"], "rgb(10 14 18 / .4)");
   assert.notEqual(attr["--surface-2"], attr["--surface"], "sombre : un palier de surface de plus");
 });
@@ -151,7 +153,8 @@ test("chiffres : Public Sans (plus de mono), chiffres tabulaires, mono réservé
   const { independants: i } = jetons();
   assert.equal(i["--f-num"], "var(--f-body)");
   assert.match(i["--f-mono"], /IBM Plex Mono/);
-  assert.match(THEME, /\.num\{[^}]*font-variant-numeric:tabular-nums lining-nums/);
+  assert.match(THEME, /\*,\*::before,\*::after\{font-variant-numeric:var\(--nums\)!important\}/, "UX5 : la propriété raccourcie font: ne remet plus les chiffres à normal");
+  assert.equal(i["--nums"], "var(--nums-tab)");
   assert.match(THEME, /code,kbd,samp,pre\{[^}]*font-family:var\(--f-mono\)/);
 });
 
@@ -163,4 +166,28 @@ test("jetons de données (graphe maître) : passé observé en encre, reconstitu
   assert.match(attr["--fan-in"], /rgb\(98 199 190 \/ \.26\)/);
   assert.deepEqual([clair["--ms-goal"], clair["--ms-credit"], clair["--ms-life"]].map(s => s.toUpperCase()), ["#9C5C00", "#3D5A99", "#6B4FA0"]);
   assert.deepEqual([attr["--ms-goal"], attr["--ms-credit"], attr["--ms-life"]].map(s => s.toUpperCase()), ["#F0B44C", "#8EA8E8", "#B79BE6"]);
+});
+
+test("UX5 G7 : le contour d'un champ atteint 3:1 (WCAG 1.4.11) sur la surface et le fond, en clair et en sombre ; --line reste décoratif", () => {
+  for (const th of THEMES) {
+    const t = table(th);
+    for (const fond of ["--surface", "--bg"]) {
+      const r = contraste(couleur("var(--line-field)", t), couleur("var(" + fond + ")", t));
+      assert.ok(r >= 3, `${th} : --line-field sur ${fond} = ${r.toFixed(2)}`);
+    }
+  }
+  assert.match(THEME, /select,textarea,\.inp:not\(:focus-within\),\.money:not\(:focus-within\)\{border-color:var\(--line-field\)!important\}/);
+  assert.match(THEME, /:where\(input,select,textarea\):focus-visible,\.inp:focus-within,\.money:focus-within\{outline:2px solid var\(--focus\)/);
+});
+
+test("UX5 G8 : sombre plus profond (carte détachée du fond), bouton plein de marque un cran plus sourd que --brand, jetons de texte des séries", () => {
+  const { clair, attr } = jetons();
+  assert.equal(attr["--bg"].toUpperCase(), "#0B1014");
+  assert.equal(attr["--line"].toUpperCase(), "#33404A");
+  const t = table("sombre");
+  assert.ok(contraste(couleur("var(--line)", t), couleur("var(--bg)", t)) >= 1.6, "bordure de carte sur le fond");
+  assert.equal(clair["--brand-fill"].toUpperCase(), "#16585E", "clair : identique à --brand");
+  assert.notEqual(attr["--brand-fill"], attr["--brand"], "sombre : le bouton plein n'est plus l'élément le plus lumineux");
+  assert.equal(clair["--s2-ink"].toUpperCase(), "#3D5A99");
+  assert.equal(clair["--me-ink-txt"].toUpperCase(), "#B23B0B");
 });

@@ -39,7 +39,7 @@ const HAUTEUR = [
   // coque
   [THEME, ".fresh-btn", true], [THEME, ".icon-btn", true], [THEME, ".scope-btn", false], [THEME, ".subtabs button", false], [THEME, ".bb-item", false],
   [THEME, ".nav-item", false], [THEME, ".banner-x", true], [THEME, ".banner.demo a", false], [THEME, ".banner.demo .banner-x", false], [THEME, ".linkish", false],
-  [THEME, ".veille", false], [THEME, ".page-link", false], [THEME, ".seg button", true], [THEME, ".soon-ask", false],
+  [THEME, ".veille", false], [THEME, ".page-link", false], [THEME, ".seg button", true],
   // composants
   [UI, ".ui-carte", false], [UI, ".ui-ligne", false], [UI, ".ui-item", false], [UI, ".ui-item-action", false], [UI, ".ui-btn", true],
   [UI, ".ui-onglet", true], [UI, ".ui-bascule-option", true], [UI, ".ui-acc-titre", false], [UI, ".ui-voirplus-btn", false], [UI, ".ui-claude", false],
