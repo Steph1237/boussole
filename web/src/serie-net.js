@@ -139,7 +139,7 @@
       hors placements d'aujourd'hui (horsFin), comme pour le passé calculé à la volée. */
   function photosAvant(S, avant, horsFin) {
     return (S && Array.isArray(S.photosReconstituees) ? S.photosReconstituees : []).filter(p => p && isoOk(jj(p.date)) && p.financier != null && isFinite(+p.financier) && (!avant || jj(p.date) < avant))
-      .map(p => ({ date: jj(p.date), financier: +p.financier, net: +p.financier + horsFin, nature: "photo" })).sort((a, b) => (a.date < b.date ? -1 : 1));
+      .map(p => ({ date: jj(p.date), financier: +p.financier, net: +p.financier + horsFin, nature: "photo", qualite: p.qualite, part_estimee: p.partEstimee != null ? +p.partEstimee : undefined })).sort((a, b) => (a.date < b.date ? -1 : 1));
   }
 
   /** Passé reconstitué pour l'état courant du store (mémorisé tant que le store, le périmètre, le jour et les données lues ne changent pas). Les photos
@@ -154,7 +154,7 @@
       const pat = C.patrimoine(S.positions || [], S.profil || null, S.scope || "foyer"), horsFin = pat.net - pat.financier, tx = hist.tx || S.tx || [];
       res = Hi.reconstituer({ today, positions: S.positions || [], scope: S.scope || "foyer", cours: hist.cours, tx,
         comptes: S.banque && S.banque.comptes ? S.banque.comptes : [], operations: hist.ops, operationsDepuis: hist.opsDepuis, depuis: hist.depuis, horsFin,
-        soldesMois: soldesMois(S, deps), depuisOuverture: Hi.depuisOuverture ? Hi.depuisOuverture(S.historiqueImports, tx, S.positions) : {} });
+        qualites: true, soldesMois: soldesMois(S, deps), depuisOuverture: Hi.depuisOuverture ? Hi.depuisOuverture(S.historiqueImports, tx, S.positions) : {} });
       const anciennes = (S.scope || "foyer") === "foyer" ? photosAvant(S, res && res.points.length ? res.points[0].date : null, horsFin) : [];
       if (anciennes.length) {
         const points = anciennes.concat(res ? res.points : []);

@@ -503,3 +503,27 @@ test("graphe-patrimoine.js : tutoiement, échappement, aucune écriture hors pr�
   assert.match(css, /\.gp-icon\{[^}]*width:var\(--hit\);height:var\(--hit\)/); assert.match(css, /\.gp-mk-b\{[^}]*height:44px/);
   assert.doesNotMatch(css, /font-size\s*:\s*\d+px|font\s*:[^;}]*\b\d+px/, "tailles de police : jetons --t-* seulement");
 });
+
+/* ---------- HIS2 (tâche 13) : la part estimée d'une photo reconstituée ---------- */
+const AVEC_PE = pes => { const d = donnees(); let k = 0; d.passe.points.forEach(p => { if (p.nature === "reconstitue") p.part_estimee = pes[k++ % pes.length]; }); return d; };
+test("HIS2 : la part estimée des points reconstitués traverse la normalisation, le curseur dit la part mesurée, sans elle le texte d'avant ne change pas", () => {
+  const M = G.normaliser(AVEC_PE([0.18])), r = G.lecture(M, null, M.passe.t[0]);
+  assert.ok(M.passe.pe.slice(0, 3).every(v => v === 0.18) && M.passe.pe.at(-1) === null, "null pour l'observé");
+  assert.equal(r.partEstimee, 0.18);
+  assert.match(G.titreLecture(M, null, r, false).s.replace(/[  ]/g, " "), /^Reconstitué à partir de tes relevés et de tes ordres \(82 % mesuré\)$/);
+  assert.match(G.lectureHtml(M, null, r, { def: false }).replace(/[  ]/g, " "), /Reconstitué à partir de tes cours, transactions et soldes bancaires : une estimation, moins fiable qu'une photo \(82 % mesuré\)/);
+  const ancien = G.normaliser(donnees()), r0 = G.lecture(ancien, null, ancien.passe.t[0]);
+  assert.equal(r0.partEstimee, undefined);
+  assert.equal(G.titreLecture(ancien, null, r0, false).s, "Estimé à partir de tes relevés", "texte d'avant inchangé sans qualité connue");
+  assert.doesNotMatch(G.lectureHtml(ancien, null, r0, { def: false }), /mesuré/);
+});
+test("HIS2 : les tronçons « estime » (plus de 30 % estimé) sont tracés plus pâles, les autres comme avant", () => {
+  const tout = svgDe(G.normaliser(AVEC_PE([0.6])), "10").svg, aucun = svgDe(G.normaliser(AVEC_PE([0.1])), "10").svg, sans = svgDe(M0(), "10").svg;
+  assert.match(tout, /class="gp-recon gp-recon-estime"/);
+  assert.doesNotMatch(aucun, /gp-recon-estime/);
+  assert.match(aucun, /class="gp-recon"/);
+  assert.doesNotMatch(sans, /gp-recon-estime/);
+  const mixte = svgDe(G.normaliser(AVEC_PE([0.6, 0.1])), "10").svg;
+  assert.match(mixte, /class="gp-recon gp-recon-estime"/); assert.match(mixte, /class="gp-recon"/);
+  assert.match(readFileSync("web/src/graphe-patrimoine.css", "utf8"), /\.gp-recon-estime\{stroke-opacity:\.45\}/);
+});

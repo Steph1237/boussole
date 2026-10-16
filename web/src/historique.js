@@ -423,7 +423,7 @@
       if (mois || avecQualite) pt.nature = nEst === 0 && nCst === 0 ? MES : nMes === 0 && nEst === 0 ? CST : EST;
       if (caisses.size) pt.detail = { titres: arrondi(f - caisseV), especes: arrondi(caisseV) };
       if (lignesD) pt.lignes = lignesD;
-      if (contribs) qualites.push(Object.assign({ date: d }, qualite(contribs)));
+      if (contribs) { const q = qualite(contribs); qualites.push(Object.assign({ date: d }, q)); pt.qualite = q.qualite; pt.part_estimee = q.part_estimee; }
       points.push(pt);
     });
     const res = { points, debut, fin, drapeaux: dr, recalageEspeces: arrondi(recalageEspeces) };
@@ -471,7 +471,7 @@
       → { points: [{ date, net, nature: "reconstitue" | "observe", live? }] triés, decalage, premiereObservee } */
   function fusionner(observes, reconstruits, opts) {
     const o = opts || {}, obs = trier(liste(observes).filter(p => p && isoOk(p.date) && fini(p.net)).map(p => Object.assign({}, p, { date: jj(p.date), net: +p.net })), p => p.date);
-    const rec = trier(liste(reconstruits).filter(p => p && isoOk(p.date) && fini(p.net)).map(p => ({ date: jj(p.date), net: +p.net })), p => p.date);
+    const rec = trier(liste(reconstruits).filter(p => p && isoOk(p.date) && fini(p.net)).map(p => Object.assign({ date: jj(p.date), net: +p.net }, fini(p.part_estimee) ? { part_estimee: +p.part_estimee } : {}, p.qualite ? { qualite: p.qualite } : {})), p => p.date);
     const premiere = obs.length ? obs[0].date : null;
     const avant = premiere ? rec.filter(p => p.date < premiere) : rec;
     let decalage = 0;
@@ -479,7 +479,7 @@
       const jonction = rec.filter(p => p.date <= premiere).pop();
       if (jonction) decalage = arrondi(obs[0].net - jonction.net);
     }
-    const points = avant.map(p => ({ date: p.date, net: arrondi(p.net + decalage), nature: "reconstitue" }))
+    const points = avant.map(p => Object.assign({ date: p.date, net: arrondi(p.net + decalage), nature: "reconstitue" }, p.part_estimee != null ? { part_estimee: p.part_estimee } : {}, p.qualite ? { qualite: p.qualite } : {}))
       .concat(obs.map(p => Object.assign({}, p, { nature: "observe" })));
     return { points, decalage, premiereObservee: premiere };
   }

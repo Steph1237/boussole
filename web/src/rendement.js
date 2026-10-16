@@ -26,7 +26,7 @@
 })(typeof self !== "undefined" ? self : this, function (root) {
   "use strict";
   const noeud = typeof module === "object" && module.exports && typeof require === "function";
-  const glob = k => (root && root[k]) || (typeof window !== "undefined" && window[k]) || null;
+  const glob = k => (root && root[k]) || (typeof window !== "undefined" && window[k]) || (typeof globalThis !== "undefined" && globalThis[k]) || null;
   const CALC = () => glob("Calc") || (noeud ? require("./calc.js") : null);
   const MARCHE = () => glob("Marche") || (noeud ? require("./marche.js") : null);
 
@@ -96,7 +96,7 @@
   /* ================================================================== TWR */
   const pointsPropres = pts => {
     const m = new Map();
-    (Array.isArray(pts) ? pts : []).forEach(p => { if (p && isoOk(p.date) && fini(p.valeur)) m.set(String(p.date).slice(0, 10), { date: String(p.date).slice(0, 10), valeur: +p.valeur }); });
+    (Array.isArray(pts) ? pts : []).forEach(p => { if (p && isoOk(p.date) && fini(p.valeur)) m.set(String(p.date).slice(0, 10), Object.assign({ date: String(p.date).slice(0, 10), valeur: +p.valeur }, p.estime === true ? { estime: true } : {})); });
     return [...m.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   };
   const fluxPropres = f => (Array.isArray(f) ? f : []).filter(x => x && isoOk(x.date) && fini(x.montant) && +x.montant !== 0).map(x => ({ date: String(x.date).slice(0, 10), montant: +x.montant }))
@@ -125,6 +125,7 @@
 
   /* ================================================================== une période */
   const NOTE_INCONNUS = "versements inconnus : rendement approché";
+  const NOTE_ESTIME = "une partie du passé est reconstituée surtout à partir d'estimations (photos « estimé ») : rendement approché";
   /** Mesure d'une période [debut, fin] (dates de relevés) : TWR et XIRR, gain, versements nets, statut et notes. versementsConnus faux : les flux sont ignorés (rendement simple de la valeur). */
   function mesurer(o) {
     const opt = o || {}, debut = String(opt.debut).slice(0, 10), fin = String(opt.fin).slice(0, 10), connus = opt.versementsConnus !== false;
@@ -149,6 +150,7 @@
     if (!connus) out.notes.push(NOTE_INCONNUS);
     if (Math.abs(t.plus_gros_mouvement) >= SAUT_MAX) out.notes.push("un mouvement de plus de 20 % entre deux relevés n'est pas expliqué par tes versements (une ligne ajoutée sans versement ?) : rendement approché");
     if (t.ecart_max_jours > ECART_RELEVES_MAX_JOURS) out.notes.push("relevés espacés (jusqu'à " + t.ecart_max_jours + " jours) : rendement approché");
+    if (pts.some(p => p.estime)) out.notes.push(NOTE_ESTIME);
     if (out.notes.length) out.statut = "approche";
     return out;
   }
@@ -217,7 +219,7 @@
     const positions = Array.isArray(s.positions) ? s.positions : [];
     const courante = p => C.famille(p, classes) === "courant";
     let sansPoches = false;
-    (Array.isArray(s.snapshots) ? s.snapshots : []).forEach(r => {
+    const ajoute = (r, estime) => {
       if (!r || !isoOk(r.date) || String(r.date).slice(0, 10) >= today) return;
       const total = sc === "foyer" ? r.foyer != null ? r.foyer : r.total : r[sc];
       if (!fini(total)) return;
@@ -230,13 +232,27 @@
         valeur = Math.max(0, valeur - courants);
         if (Object.keys(placements).length) out.allocations.push({ date, poche: placements });
       } else sansPoches = true;
-      out.points.push({ date, valeur });
+      out.points.push(Object.assign({ date, valeur }, estime ? { estime: true } : {}, r.reconstitue ? { reconstitue: true } : {}));
+    };
+    const snaps = Array.isArray(s.snapshots) ? s.snapshots : [];
+    snaps.forEach(r => ajoute(r, false));
+    /* HIS2 : les photos reconstituées complètent les relevés de la nuit AVANT la première photo observée (l'observé gagne) ; une photo « estime » rend le point estimé,
+       et toute période qui le contient devient « approchée ». Elles ne servent que pour le foyer et les personnes (leur total, p1, p2 et poches). */
+    const premiere = snaps.map(r => (r && isoOk(r.date) ? String(r.date).slice(0, 10) : null)).filter(Boolean).sort()[0] || today;
+    (Array.isArray(s.photosReconstituees) ? s.photosReconstituees : []).forEach(ph => {
+      if (!ph || !isoOk(ph.date) || String(ph.date).slice(0, 10) >= premiere) return;
+      ajoute({ date: ph.date, foyer: ph.financier != null ? ph.financier : ph.total, p1: ph.p1, p2: ph.p2, byBloc: ph.byBloc || ph.by_bloc, reconstitue: true }, ph.qualite === "estime");
     });
+    out.points.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const reconstitues = out.points.filter(p => p.reconstitue).length;
+    if (reconstitues) out.notes.push("avant le " + dateTxt(premiere) + ", les valeurs viennent du passé reconstitué à partir de tes imports (" + reconstitues + " photos mensuelles)");
     const vivantes = positions.filter(p => p && C.counted(p) && C.inScope(p, sc) && !courante(p));
     if (vivantes.length || out.points.length) out.points.push({ date: today, valeur: vivantes.reduce((a, p) => a + C.val(p), 0) });
     if (sansPoches) out.notes.push("composition des relevés inconnue : les comptes courants n'ont pas pu être retirés des anciens relevés");
     const parId = new Map(positions.map(p => [p && p.id, p]));
-    const tx = Array.isArray(s.tx) ? s.tx : [];
+    /* le store ne garde que les dernières transactions : celles que SerieNet a lues depuis le début des imports (HIS2) complètent, sans doublon */
+    const SN = glob("SerieNet"), lues = SN && SN.hist && Array.isArray(SN.hist.tx) ? SN.hist.tx : [], base = Array.isArray(s.tx) ? s.tx : [], vus = new Set(base.map(t => t && t.id));
+    const tx = lues.length ? base.concat(lues.filter(t => t && !vus.has(t.id))) : base;
     /* Espèces d'une enveloppe « suivies » = une ligne d'espèces (drapeau especes, ou nom « Espèces », « Liquidités », « Cash ») parmi les placements ; le périmètre mesure alors titres + espèces
        et un achat reste interne. Sinon (défaut, D6) il ne mesure que les titres : un achat y fait entrer de l'argent (+ montant + frais), une vente en fait sortir (− [montant − frais]) ;
        un versement ou un retrait d'espèces sur l'enveloppe, lui, n'entre pas dans la mesure. owner null : toute personne du périmètre. */

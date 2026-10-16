@@ -300,9 +300,12 @@ test("20 ans en mode mois : 50 lignes et 5 000 transactions sans explosion de co
   for (let k = 0; k < 5000; k++) tx.push({ id: "t" + k, positionId: "p" + (k % 50), date: H.plusJours("2007-01-01", k % 7000), type: k % 2 ? "achat" : "vente", qty: 1, price: 100, amount: 100, importId: "i", source: "import" });
   const e = { today: "2026-10-16", pas: "mois", positions: P, tx, cours, depuis: "2006-12-31" };
   let r = H.reconstituer(e), ms = Infinity; // échauffement du moteur JavaScript, puis le meilleur de cinq passages (les fichiers de test tournent en parallèle)
-  for (let k = 0; k < 5; k++) { const t0 = performance.now(); r = H.reconstituer(e); ms = Math.min(ms, performance.now() - t0); }
+  // étalon : un tri de 200 000 nombres, mesuré au même moment, pour ne pas confondre une machine chargée (les autres agents testent aussi) avec une explosion de complexité
+  const etalon = () => { const t0 = performance.now(); const a = Array.from({ length: 200000 }, (_, i) => (i * 7919) % 10007); a.sort((x, y) => x - y); return performance.now() - t0; };
+  let ref = Infinity;
+  for (let k = 0; k < 5; k++) { const t0 = performance.now(); r = H.reconstituer(e); ms = Math.min(ms, performance.now() - t0); ref = Math.min(ref, etalon()); }
   assert.ok(r.points.length >= 238, r.points.length + " points");
-  assert.ok(ms < 400, "durée " + ms.toFixed(1) + " ms"); // ~25 ms au repos ; la marge ne garde que la complexité, pas la charge de la machine
+  assert.ok(ms < Math.max(400, 40 * ref), "durée " + ms.toFixed(1) + " ms (étalon " + ref.toFixed(1) + " ms)"); // ~25 ms au repos ; la marge ne garde que la complexité, pas la charge de la machine
 });
 
 /* ---------- mouvements de la fixture : sanity de l'adaptateur ---------- */

@@ -62,15 +62,17 @@ test("reconstitution : les soldes de fin de mois des relevés importés et les e
 });
 test("reconstitution : les photos stockées prolongent le passé au-delà de la fenêtre calculée, net refait avec les biens d'aujourd'hui", async () => {
   SN.reinitialiser();
-  const photos = [{ date: "2015-12-31", financier: 5000, net: 99999 }, { date: "2016-01-31", financier: 5200, net: 99999 }, { date: "2025-02-28", financier: 7000, net: 99999 }];
+  const photos = [{ date: "2015-12-31", financier: 5000, net: 99999, qualite: "estime", partEstimee: 0.5 }, { date: "2016-01-31", financier: 5200, net: 99999 }, { date: "2025-02-28", financier: 7000, net: 99999 }];
   const S = etat({ photosReconstituees: photos });
   await SN.charger(S, AUJ, { id: "tout" }, deps(S));
   const r = SN.reconstitution(S, AUJ, deps(S));
   assert.equal(r.points[0].date, "2015-12-31");
+  assert.deepEqual([r.points[0].qualite, r.points[0].part_estimee], ["estime", 0.5], "la qualité de la photo stockée suit");
   assert.equal(r.points[0].net, 5000, "net = financier + biens hors placements d'aujourd'hui (aucun ici), pas le net stocké");
   assert.equal(r.points.filter(p => p.date === "2025-02-28").length, 1, "une photo qui chevauche la fenêtre calculée est écartée : un seul point ce jour-là");
   assert.notEqual(r.points.find(p => p.date === "2025-02-28").financier, 7000, "et c'est le calcul à la volée qui fait foi");
   const jour = r.points.filter(p => p.nature !== "photo");
+  assert.ok(jour.every(p => p.qualite && p.part_estimee != null), "chaque jour calculé à la volée porte sa qualité");
   assert.ok(jour.length > 100, "le passé calculé à la volée est conservé");
   const f = H.fusionner([{ date: AUJ, net: 3000, live: true }], r.points);
   assert.equal(f.points[0].nature, "reconstitue");
