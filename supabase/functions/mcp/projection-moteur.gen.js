@@ -4591,7 +4591,7 @@ def("projection", function (module, exports, require) {
     if (cb.signale && cb.source === "reel") {
       out.push({ cle: "ecart_capacite", niveau: "info", valeurs: { constatee: cb.constatee, prevue: cb.prevue, programmee: cb.programmee, periode: cb.periode },
         texte: "Ta capacité d'épargne constatée sur tes comptes est de " + eur(cb.constatee) + " par mois" + (cb.periode ? " (" + cb.periode + ")" : "") + ", contre " + eur(cb.prevue) +
-          " prévus par " + (cb.prevue_libelle || "ton budget") + (cb.programmee > 0 ? " et " + eur(cb.programmee) + " de versements programmés" : "") + " : la projection part de la capacité constatée." });
+          (cb.prevue_source === "cible" ? " prévus par " + cb.prevue_libelle : " prévus au budget") + (cb.programmee > 0 ? " et " + eur(cb.programmee) + " de versements programmés" : "") + " : la projection part de la capacité constatée." });
     }
     if (cb.constatee != null && cb.source !== "reel") {
       const moy = sum(Array.from({ length: Math.min(12, N) }, (_, k) => k + 1), t => tr.cap[t] / M.infl[t]) / Math.min(12, N);
