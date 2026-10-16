@@ -30,6 +30,18 @@ test("fenêtres : un contrôle unique de 5 fenêtres, « N ans » = N ans avant 
   }
 });
 
+test("horizon affiché = horizon choisi : « N ans » finit au plus à aujourd'hui + N ans, même avec un historique court (bogue « 10 ans » / « Dans 15 ans »)", () => {
+  const t = G.domaine("1", { today: ms("2026-10-16"), debutPasse: null, finFutur: ms("2051-10-16") }).debut;
+  for (const histAns of [0.2, 2, 5, 12]) for (const [id, n] of [["1", 1], ["5", 5], ["10", 10], ["20", 20]]) {
+    const d = G.domaine(id, { today: t, debutPasse: G.ajouterMois(t, -Math.round(12 * histAns)), finFutur: G.ajouterMois(t, 12 * 25) });
+    assert.ok(d.fin <= G.ajouterMois(t, 12 * n), id + " ans, " + histAns + " an(s) d'historique : fin ≤ aujourd'hui + " + n + " ans");
+    assert.equal(d.fin, G.ajouterMois(t, 12 * n), "la fin est exactement aujourd'hui + N ans quand la projection va assez loin");
+    assert.ok(d.debut >= G.ajouterMois(t, -12 * n), "le passé ne dépasse pas N ans non plus");
+  }
+  // projection plus courte que la fenêtre : la fin est celle de la projection (pas de futur inventé)
+  assert.equal(G.domaine("20", { today: t, debutPasse: G.ajouterMois(t, -60), finFutur: G.ajouterMois(t, 180) }).fin, G.ajouterMois(t, 180));
+});
+
 test("axe du temps proportionnel : x(date) affine en jours, un an passé = un an futur (à 1 px près), toutes fenêtres", () => {
   const M = M0();
   for (const fen of ["1", "5", "10", "20", "tout"]) {
@@ -42,11 +54,11 @@ test("axe du temps proportionnel : x(date) affine en jours, un an passé = un an
   }
 });
 
-test("fenêtre « 5 ans » : 5 ans de chaque côté, ou l'historique disponible (la place libérée va au futur, largeur constante)", () => {
+test("fenêtre « 5 ans » : 5 ans de chaque côté, ou l'historique disponible (jamais plus de 5 ans d'avenir : le futur ne s'allonge pas)", () => {
   const M = M0(); // 3 ans d'historique
   const d = G.domaine("5", CTX(M));
   assert.equal(d.debut, G.ajouterMois(M.today, -36), "le passé est borné par l'historique");
-  assert.equal(d.fin, G.ajouterMois(d.debut, 120), "la largeur reste de 10 ans : le futur s'allonge de ce que le passé n'a pas");
+  assert.equal(d.fin, G.ajouterMois(M.today, 60), "5 ans d'avenir, pas plus : le sélecteur, l'axe et l'en-tête disent la même chose");
   const long = G.domaine("5", { today: M.today, debutPasse: G.ajouterMois(M.today, -90), finFutur: G.ajouterMois(M.today, 300) });
   assert.equal(long.debut, G.ajouterMois(M.today, -60)); assert.equal(long.fin, G.ajouterMois(M.today, 60));
   const sans = G.domaine("5", { today: M.today, debutPasse: null, finFutur: G.ajouterMois(M.today, 300) });

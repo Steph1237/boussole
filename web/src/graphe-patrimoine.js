@@ -159,8 +159,8 @@
     { id: "tout", label: "Tout", ans: null, aria: "Tout l'historique et tout l'horizon de la projection" },
   ];
   const HORIZON_MAX_ANS = 25;
-  /** Domaine du temps { debut, fin } (ms) d'une fenêtre. « N ans » = N ans avant ET après aujourd'hui ; le passé est borné par l'historique disponible et la place
-      libérée va au futur (largeur totale constante, axe proportionnel) ; sans passé, la fenêtre part d'aujourd'hui. « Tout » = tout l'historique et tout l'horizon.
+  /** Domaine du temps { debut, fin } (ms) d'une fenêtre. « N ans » = au plus N ans avant ET N ans après aujourd'hui ; le passé est borné par l'historique disponible et la place
+      libérée n'allonge pas le futur (jamais plus de N ans d'avenir, axe proportionnel) ; sans passé, la fenêtre part d'aujourd'hui. « Tout » = tout l'historique et tout l'horizon.
       ctx = { today (ms), debutPasse (ms | null), finFutur (ms), futurSeul? (mode capacité : pas de passé), periode?: { du, au } (ms) }. */
   function domaine(fenetre, ctx) {
     const { today } = ctx, finMax = fini(ctx.finFutur) ? ctx.finFutur : ajouterMois(today, 12 * HORIZON_MAX_ANS);
@@ -171,7 +171,9 @@
     const voulu = ajouterMois(today, -12 * f.ans);
     if (ctx.futurSeul) return { debut: today, fin: Math.min(finMax, ajouterMois(today, 12 * f.ans)) };
     const debut = Math.max(voulu, premier);
-    return { debut, fin: Math.min(finMax, ajouterMois(debut, 24 * f.ans)) };
+    // « N ans » ne montre jamais plus de N ans d'avenir : le sélecteur, l'axe et l'en-tête (« Dans N ans ») disent la même chose.
+    // Quand l'historique est plus court que N ans, la fenêtre est simplement plus étroite (le futur ne s'allonge plus de ce que le passé n'a pas).
+    return { debut, fin: Math.min(finMax, ajouterMois(today, 12 * f.ans)) };
   }
   /** Fenêtre « N ans » (id) la plus proche qui contient les deux bornes (pour agrandir sur un jalon hors fenêtre). */
   function fenetreContenant(todayMs, ms, debutPasse) {
