@@ -151,11 +151,15 @@ export async function lireHistorique(db: any, must: any, auj: string) {
   const d = new Date(auj + "T00:00:00Z"); d.setUTCFullYear(d.getUTCFullYear() - 5);
   const depuis = d.toISOString().slice(0, 10);
   try {
-    const [photos, tx] = await Promise.all([
+    const [photos, tx, reconstituees] = await Promise.all([
       lirePages((de, a) => db.from("snapshots").select("date, total, by_bloc").gte("date", depuis).order("date").range(de, a), "snapshots", must),
-      lirePages((de, a) => db.from("transactions").select("date, type, amount").in("type", ["versement", "programme", "retrait"]).gte("date", depuis).order("date").range(de, a), "transactions", must),
+      lirePages((de, a) => db.from("transactions").select("date, type, amount").in("type", ["versement", "programme", "retrait"]).is("doublon_de", null).gte("date", depuis).order("date").range(de, a), "transactions", must),
+      /* HIS2 : photos reconstituées « complet » ou « partiel » (jamais « estime »), mois par mois ; table absente ou illisible : aucune */
+      lireOptionnelle(Promise.resolve(db.from("photos_reconstituees").select("date, total, by_bloc").in("qualite", ["complet", "partiel"]).gte("date", depuis).order("date").limit(240)), "photos_reconstituees", must).catch(() => [] as any[]),
     ]);
-    return Projection.historiquePourRetro(photos, tx);
+    /* l'observé gagne : une photo reconstituée n'entre que strictement avant la première photo observée */
+    const premiere = photos.map((r: any) => String(r.date).slice(0, 10)).sort()[0] ?? "9999-12-31";
+    return Projection.historiquePourRetro([...reconstituees.filter((r: any) => String(r.date).slice(0, 10) < premiere), ...photos], tx);
   } catch (_e) {
     return { points: [], flux: [], erreur: "lecture impossible" };
   }

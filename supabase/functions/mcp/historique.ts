@@ -12,6 +12,7 @@
 import { z } from "zod";
 import { HistoriqueImport as H } from "./historique-import.gen.js";
 import { Calc } from "./projection-moteur.gen.js";
+import { Historique } from "./historique.gen.js"; // copie du moteur de reconstitution du passé (HIS2 § 7), pour l'aperçu de l'effet d'un import
 import { MSG_MFA } from "./banque.ts";
 
 /** Conduite de Claude pour l'import de l'historique (spec § 8.5, textes de test/fixtures/his2-conduite.json), renvoyée par etat_historique et par chaque outil d'import. */
@@ -191,6 +192,8 @@ const sansBloquer = async <T>(nom: string, f: () => Promise<T>, repli: T): Promi
 export type DonneesHistorique = {
   auj: string; comptes: any[]; releves: any[]; lignesCarte: any[]; imports: any[]; derniers: any[];
   banqueComptes: any[]; banqueConnexions: any[]; banqueMois: any[]; positions: any[]; transactions: any[]; photos: any[];
+  /** Première photo observée (snapshots) : date et total, pour dire l'écart de recalage du passé reconstitué (facultatif). */
+  premiere?: { date: string; total: number } | null;
 };
 
 /** Tout ce que lit etat_historique (sous la RLS de l'utilisateur ; la banque est facultative). */
@@ -209,9 +212,13 @@ export async function lireDonneesHistorique(h: Deps, auj: string, o: { legere?: 
     sansBloquer("banque_mois", () => lirePages(h, "banque_mois", (q) => q.select("mois, compte_id").order("mois"), 20), [] as any[]),
     lirePages(h, "positions", (q) => q.select("id, name, isin, envelope, bloc, owner, mode, qty, value, status").order("created_at"), 10),
     o.legere ? Promise.resolve([] as any[]) : lirePages(h, "transactions", (q) => q.select("id, position_id, date, type, qty, amount, enveloppe, source, doublon_de, import_id").order("date"), 60),
-    sansBloquer("photos_reconstituees", () => lirePages(h, "photos_reconstituees", (q) => q.select("mois, qualite, part_estimee, calcule_le").order("mois"), 1), [] as any[]),
+    sansBloquer("photos_reconstituees", () => lirePages(h, "photos_reconstituees", (q) => q.select("mois, date, financier, qualite, part_estimee, calcule_le").order("mois"), 1), [] as any[]),
   ]);
-  return { auj, comptes, releves, lignesCarte, imports, derniers, banqueComptes, banqueConnexions, banqueMois, positions, transactions, photos };
+  const premiere = o.legere ? null : await sansBloquer("snapshots", async () => {
+    const r = await db.from("snapshots").select("date, total").order("date", { ascending: true }).limit(1);
+    return ((must("snapshots", r) as any[]) ?? [])[0] ?? null;
+  }, null as any);
+  return { auj, comptes, releves, lignesCarte, imports, derniers, banqueComptes, banqueConnexions, banqueMois, positions, transactions, photos, premiere };
 }
 
 /* ---------- la vue (pure) ---------- */
@@ -312,6 +319,15 @@ export function vueHistorique(d: DonneesHistorique, o: { detail?: string; compte
       par_annee: [...parAn.entries()].sort((a, b) => cleMoisTri(a[0], b[0])).map(([annee, l]) => ({ annee: +annee, mois: l.length, part_estimee: r2(l.reduce((s: number, p: any) => s + (+p.part_estimee || 0), 0) / l.length),
         qualite: (["estime", "partiel", "complet"] as const).find((q) => l.some((p: any) => p.qualite === q)) ?? null })),
     };
+    /* recalage : le passé reconstitué est décalé pour rejoindre la première photo observée (Historique.fusionner). Un écart de plus de 5 % du patrimoine de cette photo
+       (qui comprend aussi l'évolution des marchés depuis la fin du dernier mois reconstitué) se dit : il manque peut-être des ordres, des versements ou des relevés. */
+    const derniere = d.photos.slice().sort((a: any, b: any) => cleMoisTri(String(a.mois), String(b.mois))).pop();
+    const total = d.premiere ? nombre(d.premiere.total) : null, fin = derniere ? nombre(derniere.financier) : null;
+    if (d.premiere && total != null && total > 0 && fin != null) {
+      const ecart = r2(total - fin)!, pct = Math.round(Math.abs(ecart) / total * 1000) / 10;
+      photos.recalage = { premiere_photo: jour(d.premiere.date), dernier_mois_reconstitue: moisDe(derniere.mois), ecart_eur: ecart, ecart_pct: pct, a_signaler: pct > 5,
+        ...(pct > 5 ? { texte: "Le passé reconstitué est recalé de " + Math.abs(Math.round(ecart)) + " € (" + String(pct).replace(".", ",") + " % du patrimoine de ta première photo) pour la rejoindre : au-delà de 5 %, il manque peut-être des ordres, des versements ou des relevés. Dis-le à l'utilisateur et propose de compléter." } : {}) };
+    }
   }
 
   /* derniers imports : une ligne lisible par import */
@@ -459,6 +475,106 @@ export async function contexteImport(h: Deps, type: string, a: any, auj: string)
 }
 const LIGNES_MAX = H.LIMITES.LIGNES_PAR_APPEL;
 
+/* ---------- aperçu de l'effet d'un import sur le passé (spec § 7.4, connecteur) ---------- */
+const norm = (s: any) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+const eurosTxt = (v: number) => Math.round(v).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ") + " €";
+const dateTxt = (d: string) => (d.slice(5) === "12-31" ? "fin " + d.slice(0, 4) : moisFr(d.slice(0, 7)));
+
+/** Lignes du bilan concernées par un import : celles que ses mouvements désignent (ligne, ISIN) et toutes celles de leurs enveloppes (titres, espèces) ; pour des relevés
+    bancaires, la ligne à laquelle le compte est rattaché. */
+export function lignesConcernees(type: string, contenu: any, positions: any[], comptes: any[] = []): any[] {
+  const ids = new Set<string>(), envs = new Set<string>();
+  if (type === "releves") {
+    const c = contenu.compte ?? {}, hc = comptes.find((x: any) => (c.id && x.id === c.id) || (c.cle && x.cle === c.cle));
+    const pid = c.position_id ?? hc?.position_id;
+    if (pid) ids.add(String(pid));
+  } else {
+    for (const m of contenu.mouvements ?? []) { if (m.position_id) ids.add(String(m.position_id)); if (m.enveloppe_nom) envs.add(norm(m.enveloppe_nom)); }
+    if (contenu.contrat?.position_id) ids.add(String(contenu.contrat.position_id));
+    if (contenu.contrat?.enveloppe) envs.add(norm(contenu.contrat.enveloppe));
+    if (contenu.enveloppe?.libelle) envs.add(norm(contenu.enveloppe.libelle));
+  }
+  for (const p of positions) if (ids.has(String(p.id)) && p.envelope && type !== "releves") envs.add(norm(p.envelope));
+  return positions.filter((p: any) => ids.has(String(p.id)) || (type !== "releves" && p.envelope && envs.has(norm(p.envelope))));
+}
+
+/** Passé reconstitué des lignes concernées avec et sans l'import, aux fins d'année (6 au plus, les plus récentes) : de quoi dire « avec ces ordres, ton patrimoine fin 2023 est estimé
+    à 18 400 € (82 % mesuré), contre 12 000 € sans eux ». Pur (le moteur est la copie de celui de l'app). d = { type, contenu, doublons, auj, positions, transactions, cours,
+    imports: [{ enveloppe, depuis }], comptes }. */
+export function apercuImport(d: any) {
+  const { type, contenu, auj } = d, mvts: any[] = contenu.mouvements ?? [];
+  const lignes = lignesConcernees(type, contenu, d.positions, d.comptes);
+  if (!lignes.length) return { disponible: false, raison: type === "releves" ? "Ce compte n'est rattaché à aucune ligne du bilan : le passé de la courbe ne change pas (le budget et l'épargne constatée profitent des relevés)." : "Aucune ligne du bilan n'est concernée : le passé de la courbe ne change pas." };
+  const virtuelles = (contenu.lignes_a_creer ?? []).map((l: any) => ({ id: "apercu:" + l.isin, name: l.name, isin: l.isin, envelope: l.envelope, owner: l.owner, mode: "market", qty: 0, status: "clôturé" }));
+  const idDe = (isin: string) => virtuelles.find((l: any) => l.isin === isin)?.id ?? null;
+  const ids = new Set(lignes.map((p: any) => String(p.id))), envs = new Set(lignes.map((p: any) => norm(p.envelope)));
+  const connues = new Set(d.transactions.map((t: any) => t.cleImport).filter(Boolean)), remplacees = new Set((d.doublons ?? []).map((x: any) => x.transaction_id));
+  const sans = d.transactions.filter((t: any) => (t.positionId != null && ids.has(String(t.positionId))) || (t.positionId == null && t.enveloppe && envs.has(norm(t.enveloppe))));
+  const nouveaux = mvts.filter((m) => !connues.has(m.cle_import)).map((m, i) => {
+    const pid = m.position_id ?? (m.isin ? idDe(m.isin) : null);
+    return { id: "apercu-" + i, positionId: pid, date: m.date, type: m.type, qty: m.quantite ?? null, price: m.prix ?? null, amount: m.montant ?? null, frais: m.frais ?? null, enveloppe: pid ? null : m.enveloppe_nom ?? null, importId: "apercu", source: "import" };
+  });
+  const avec = sans.map((t: any) => (remplacees.has(t.id) ? { ...t, doublonDe: "apercu" } : t)).concat(nouveaux);
+  const depSans: Record<string, boolean> = Historique.depuisOuverture((d.imports ?? []).map((i: any) => ({ id: i.id, enveloppe: i.enveloppe, resume: { depuis_ouverture: i.depuis === true || i.depuis === "true" } })), sans, lignes);
+  const depAvec: Record<string, boolean> = { ...depSans };
+  if (contenu.depuis_ouverture === true) {
+    for (const m of mvts) if (m.enveloppe_nom) depAvec[m.enveloppe_nom] = true;
+    for (const p of lignes) if (contenu.contrat?.position_id && String(p.id) === String(contenu.contrat.position_id) && p.envelope) depAvec[p.envelope] = true;
+    if (contenu.contrat?.enveloppe) depAvec[contenu.contrat.enveloppe] = true;
+    if (contenu.enveloppe?.libelle) depAvec[contenu.enveloppe.libelle] = true;
+  }
+  const soldes = type === "releves" ? (contenu.mois ?? []).map((m: any) => ({ positionId: lignes[0].id, mois: m.mois, solde_debut: m.controle?.solde_debut ?? null, solde_fin: m.controle?.solde_fin ?? null, import_id: "apercu" })) : [];
+  const base = { today: auj, scope: "foyer", cours: d.cours ?? {}, pas: "mois", qualites: true };
+  const avant = Historique.reconstituer({ ...base, positions: lignes, tx: sans, depuisOuverture: depSans });
+  const apres = Historique.reconstituer({ ...base, positions: lignes.concat(virtuelles), tx: avec, depuisOuverture: depAvec, soldesMois: soldes });
+  if (!apres.points.length) return { disponible: false, raison: apres.raison ?? "Rien à reconstituer avec cet import (cours manquants ?). Les cours anciens sont rattrapés la nuit, puis les photos recalculées." };
+  const par = (r: any) => new Map<string, any>(r.points.map((p: any) => [p.date, p]));
+  const pa = par(avant), pb = par(apres), qb = new Map<string, any>((apres.qualites ?? []).map((q: any) => [q.date, q]));
+  const du = [jour(contenu.fichier?.periode?.du), ...mvts.map((m) => m.date), ...(contenu.mois ?? []).map((m: any) => m.mois + "-01")].filter(Boolean).sort()[0] ?? auj;
+  const ans: string[] = [];
+  for (let y = +du.slice(0, 4); y < +auj.slice(0, 4); y++) ans.push(y + "-12-31");
+  /* le premier mois où l'import change le passé, puis les fins d'année (5 au plus, les plus récentes) ; à défaut le dernier mois reconstitué */
+  const premierEcart = apres.points.find((p: any) => { const a = pa.get(p.date); return !a || Math.abs(p.financier - a.financier) > 1; })?.date;
+  let dates = [...new Set<string>([...(premierEcart ? [premierEcart] : []), ...ans.filter((x) => pb.has(x)).slice(-5)])].sort();
+  if (!dates.length) dates = [apres.points[apres.points.length - 1].date];
+  /* sans l'import, une ligne sans passé est tenue à sa valeur d'aujourd'hui (manuelle : sa valeur ; cotée : quantité × dernier cours connu) */
+  const tenue = lignes.reduce((t: number, p: any) => t + (p.mode === "market" ? (p.qty ?? 0) * ((d.cours?.[p.isin] ?? []).slice(-1)[0]?.cloture ?? 0) : (p.value ?? 0)), 0);
+  const points = dates.map((date) => {
+    const b = pb.get(date), q = qb.get(date), a = pa.get(date) ?? (avant.points.length ? null : { financier: tenue });
+    return { date, sans: a ? Math.round(a.financier) : null, avec: Math.round(b.financier), ecart: a ? Math.round(b.financier - a.financier) : null, qualite: q?.qualite ?? null, part_mesuree_pct: q ? Math.round((1 - q.part_estimee) * 100) : null };
+  });
+  const p0 = points[0];
+  const phrase = "Avec cet import, le passé de " + liste2(lignes.filter((l: any) => !String(l.id).startsWith("apercu:")).map((l: any) => "« " + l.name + " »").slice(0, 4)) + " est estimé à " + eurosTxt(p0.avec) + " " + dateTxt(p0.date)
+    + (p0.part_mesuree_pct != null ? " (" + p0.part_mesuree_pct + " % mesuré)" : "") + (p0.sans != null ? ", contre " + eurosTxt(p0.sans) + " sans lui" : "") + ".";
+  return { disponible: true, perimetre: lignes.map((l: any) => l.name), points, phrase,
+    limites: "Estimation sur les seules lignes concernées, avant recalage sur ta première photo observée ; les cours antérieurs aux ordres sont rattrapés la nuit, puis les photos stockées recalculées." };
+}
+const liste2 = (l: string[]) => (l.length <= 1 ? l.join("") : l.slice(0, -1).join(", ") + " et " + l[l.length - 1]);
+
+/** Lit ce que l'aperçu demande en plus du contexte de l'import (cours des lignes concernées depuis 45 jours avant le premier mouvement, indicateurs « depuis l'ouverture » des imports),
+    puis le calcule. Ne lève jamais : un aperçu indisponible n'empêche pas le dépôt. */
+async function apercuDe(h: Deps, type: string, ctx: any, v: any, auj: string) {
+  try {
+    const positions = ctx.positions ?? (await lirePages(h, "positions", (q) => q.select("id, name, isin, envelope, bloc, owner, mode, qty, value, status"), 10)).map(enPosition);
+    const transactions = ctx.transactions ?? [];
+    const lignes = lignesConcernees(type, v.contenu, positions, ctx.comptes);
+    const premier = [...(v.contenu.mouvements ?? []).map((m: any) => m.date), ...transactions.map((t: any) => t.date)].filter(Boolean).sort()[0] ?? auj;
+    const depuis = new Date(Date.parse(premier + "T00:00:00Z") - 45 * 86400000).toISOString().slice(0, 10);
+    const isins = [...new Set<string>(lignes.map((p: any) => p.isin).filter(Boolean))].slice(0, 12);
+    const cours: Record<string, any[]> = {};
+    for (const isin of isins) {
+      const lus = await sansBloquer("cours", () => lirePages(h, "cours", (q) => q.select("date, cloture").eq("isin", isin).gte("date", depuis).order("date"), 8), [] as any[]);
+      cours[isin] = lus.map((c: any) => ({ date: jour(c.date), cloture: +c.cloture }));
+    }
+    const imports = await sansBloquer("historique_imports", () => lirePages(h, "historique_imports", (q) => q.select("id, enveloppe, depuis:resume->>depuis_ouverture"), 1), [] as any[]);
+    return apercuImport({ type, contenu: v.contenu, doublons: v.doublons, auj, positions, transactions, cours, imports, comptes: ctx.comptes });
+  } catch (e) {
+    console.warn("historique (aperçu) :", msg(e));
+    return { disponible: false, raison: "Aperçu indisponible pour le moment." };
+  }
+}
+
+
 /* ---------- messages de refus ---------- */
 const liste = (l: string[]) => l.map((x) => "- " + x).join("\n");
 export function refus(v: { bloquants: { chemin?: string; message: string }[] }): string {
@@ -587,7 +703,7 @@ export function registerHistorique(server: any, h: Deps) {
       lignes_a_creer: (v.contenu.lignes_a_creer ?? []).map((l: any) => l.name),
       quantites: v.quantites ?? [],
       mois_couverts_par_la_banque: (v.avertissements.find((w: any) => w.cle === "chevauchement_powens")?.donnees?.mois) ?? [],
-      apercu: null, // l'effet d'un import sur le passé de la courbe est calculé avec la reconstitution (tâche 13) ; null d'ici là
+      apercu: await apercuDe(h, type, ctx, v, auj), // effet de l'import sur le passé reconstitué des lignes concernées (fins d'année, avec et sans l'import)
       rappel: PROPOSE + " Ensuite, rappelle d'effacer les exports du dossier Téléchargements.",
       conduite: CONDUITE_HISTORIQUE,
     });

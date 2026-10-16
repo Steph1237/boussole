@@ -105,24 +105,25 @@ Phase 0 (cas chiffrés, repères)  ──►  Phase 1 (migration 0038 + revue s�
 ## Phase 2 : module de calcul et moteur
 
 ### Tâche 5 — Socle `simulerEnveloppes` (Sonnet, medium, M ; relecture Opus en tâche 8)
-- [ ] Tests d'abord (`test/scenarios-mc.test.mjs`) : mêmes tirages que `derouler` sur un compartiment seul (à 1e-9), flux en fin de mois, frais mensuels, fonds euros à volatilité nulle, livrets au taux du repère jusqu'à sa `date_fin`, débordement au plafond, impôts par `ProjectionFiscalite` aux dates de 5 et 8 ans, euros d'aujourd'hui, écart chemin par chemin, date de bascule, mode déterministe égal aux cas de la fixture, monotonie, graine reproductible, temps (spec § 6.2).
-- [ ] `web/src/scenarios.js` : `simulerEnveloppes`, utilitaires d'écart, de quantiles et de seuil (dichotomie, 12 itérations au plus), sur `Projection.tirages`, `ProjectionDonnees.parametresClasse`, `ProjectionFiscalite`, `Calendrier`, `Reperes`.
+- [x] Tests d'abord (`test/scenarios-mc.test.mjs`) : mêmes tirages que `derouler` sur un compartiment seul (à 1e-9), flux en fin de mois, frais mensuels, fonds euros à volatilité nulle, livrets au taux du repère jusqu'à sa `date_fin`, débordement au plafond, impôts par `ProjectionFiscalite` aux dates de 5 et 8 ans, euros d'aujourd'hui, écart chemin par chemin, date de bascule, mode déterministe égal aux cas de la fixture, monotonie, graine reproductible, temps (spec § 6.2).
+- [x] `web/src/scenarios.js` : `simulerEnveloppes`, utilitaires d'écart, de quantiles et de seuil (dichotomie, 12 itérations au plus), sur `Projection.tirages`, `ProjectionDonnees.parametresClasse`, `ProjectionFiscalite`, `Calendrier`, `Reperes`.
 
 ### Tâche 6 — Les cinq calculs, la pertinence et l'enjeu (Sonnet, medium, L ; relecture Opus en tâche 8)
-- [ ] Tests d'abord (`test/scenarios.test.mjs`) : tous les cas de la fixture (déterministes au centime, Monte-Carlo aux valeurs figées), `a_completer` et manquants, `indisponible` sur repère absent, `a_reverifier` sur repère expiré ou trop ancien (`Reperes.aVerifier`), exclusions d'options (PER hors retraite et hors résidence principale, PEA sous 5 ans), « ce qui changerait » (seuils de TMI, frais de seuil, date de bascule), pertinence (chaque clé du § 6.4), tri « pour toi » (3 au plus, seuil d'enjeu, écartés exclus), gabarits de texte (tutoiement, aucun mot interdit, aucun nom de produit), `reponsesValides` (clé inconnue, borne, type, aucune chaîne libre), `varianteRetenue` (forme validée par `Evenements.validerVariante`).
-- [ ] `ouvrirPea`, `prochainEuro`, `perInteret`, `matelas`, `avMaintenant`, `pertinence`, `enjeu`, `lister`, `jouer`, `varianteRetenue`, `reponsesValides` ; repli du scénario 6 sans BUD1 et bouchon de `Budget.reference`.
-- [ ] `scripts/gen-catalogue.mjs` : `"scenarios"` ajouté à `MODULES_MOTEUR`, `Scenarios` à `EXPORTS_MOTEUR` (D14) ; `npm run gen` ; test de parité de la copie.
+- [x] Tests d'abord (`test/scenarios.test.mjs`) : tous les cas de la fixture (déterministes au centime, Monte-Carlo aux valeurs figées), `a_completer` et manquants, `indisponible` sur repère absent, `a_reverifier` sur repère expiré ou trop ancien (`Reperes.aVerifier`), exclusions d'options (PER hors retraite et hors résidence principale, PEA sous 5 ans), « ce qui changerait » (seuils de TMI, frais de seuil, date de bascule), pertinence (chaque clé du § 6.4), tri « pour toi » (3 au plus, seuil d'enjeu, écartés exclus), gabarits de texte (tutoiement, aucun mot interdit, aucun nom de produit), `reponsesValides` (clé inconnue, borne, type, aucune chaîne libre), `varianteRetenue` (forme validée par `Evenements.validerVariante`).
+- [x] `ouvrirPea`, `prochainEuro`, `perInteret`, `matelas`, `avMaintenant`, `pertinence`, `enjeu`, `lister`, `jouer`, `varianteRetenue`, `reponsesValides` ; repli du scénario 6 sans BUD1 et bouchon de `Budget.reference`.
+- [x] `scripts/gen-catalogue.mjs` : `"scenarios"` ajouté à `MODULES_MOTEUR`, `Scenarios` à `EXPORTS_MOTEUR` (D14) ; `npm run gen` ; test de parité de la copie.
 
 ### Tâche 7 — Moteur PROJ : hypothèse `enveloppe_scenario` (Opus, high, S pour la conception ; Sonnet, medium, M pour le code)
-- [ ] Opus : préciser dans le spec (§ 6.6) l'ordre exact dans la cascade (versement mensuel à l'étape 1, initial au niveau 1 de l'ordre de retrait, économie PER en septembre N+1, débordement, transfert depuis un livret), et les cas de test ; vérifier qu'aucune sortie existante ne peut changer.
-- [ ] Tests d'abord (`test/projection-enveloppe-scenario.test.mjs`) : spec § 13.3, dont la **non-régression complète de `proj-1.2.0`** (fixtures `projection-cas.json`, Monte-Carlo, démo) et la parité des messages de validation JS et SQL.
-- [ ] `projection-evenements.js` (validation, `HYPOTHESES_VARIANTE`), `projection-donnees.js` (compartiments synthétiques), `projection.js` (cascade, `versionModele = "proj-1.3.0"`) ; `npm run gen`.
+- [x] Opus : préciser dans le spec (§ 6.6) l'ordre exact dans la cascade (versement mensuel à l'étape 1, initial au niveau 1 de l'ordre de retrait, économie PER en septembre N+1, débordement, transfert depuis un livret), et les cas de test ; vérifier qu'aucune sortie existante ne peut changer.
+- [x] Tests d'abord (`test/projection-enveloppe-scenario.test.mjs`) : spec § 13.3, dont la **non-régression complète de `proj-1.2.0`** (fixtures `projection-cas.json`, Monte-Carlo, démo) et la parité des messages de validation JS et SQL.
+- [x] `projection-evenements.js` (validation, `HYPOTHESES_VARIANTE`), `projection-donnees.js` (compartiments synthétiques), `projection.js` (cascade, `versionModele = "proj-1.3.0"`) ; `npm run gen`.
 
 ### Tâche 8 — Relecture des calculs financiers (Opus, high, M)
-- [ ] Relire le socle, les cinq calculs et l'extension du moteur contre la fixture et le spec : fiscalité (PEA avant et après 5 ans, clôture ; assurance-vie avant et après 8 ans, prorata 150 000 €, abattement imputé d'abord sur la fraction à 7,5 % ; PER effort net, plafond, sortie en capital ; livrets et LEP), euros d'aujourd'hui, frais, débordements, seuils.
-- [ ] Test de cohérence socle contre moteur complet à 1 % (spec § 6.3) sur un foyer sans cascade active, puis sur la démo (écart expliqué s'il dépasse 1 %).
-- [ ] Cas limites : revenus nuls, une seule personne, couple non marié (pas d'imposition commune), dates d'ouverture inconnues, enveloppe déjà au plafond, TMI inconnue, repère expiré.
-- [ ] Points bloquants corrigés avant la phase 3.
+- [x] Relire le socle, les cinq calculs et l'extension du moteur contre la fixture et le spec : fiscalité (PEA avant et après 5 ans, clôture ; assurance-vie avant et après 8 ans, prorata 150 000 €, abattement imputé d'abord sur la fraction à 7,5 % ; PER effort net, plafond, sortie en capital ; livrets et LEP), euros d'aujourd'hui, frais, débordements, seuils.
+- [x] Test de cohérence socle contre moteur complet à 1 % (spec § 6.3) sur un foyer sans cascade active, puis sur la démo (écart expliqué s'il dépasse 1 %).
+- [x] Cas limites : revenus nuls, une seule personne, couple non marié (pas d'imposition commune), dates d'ouverture inconnues, enveloppe déjà au plafond, TMI inconnue, repère expiré.
+- [x] Points bloquants corrigés avant la phase 3.
+**Fait le 2026-10-16** (spec § 15 bis ; `test/scenarios-relecture.test.mjs`). **Pour la tâche 3 (0038)** : `avis_impot` accepte `parts` et `revenu_net_imposable` ; `foyer_valider_variante` reprend les messages de `validerEnveloppeScenario` (dont `per.tmi_actuelle_pct` et les clés inconnues de `initial`, `mensuel`, `per`, `transferts`). **Pour la tâche 14** : `Projection.comparer(…, { net_impots: true })`.
 
 ---
 
@@ -179,6 +180,11 @@ Phase 0 (cas chiffrés, repères)  ──►  Phase 1 (migration 0038 + revue s�
 - [ ] Roadmap privée : SCN1 V1 en « Fait » (date, commits, versions `scn-1.0.0` et `proj-1.3.0`), lot 2 en « Ensuite », tâche annuelle des repères qui expirent le 31 décembre ; mémoire de Claude si une préférence nouvelle est apparue.
 
 ---
+
+## Lot 2 : points notés à la relecture des calculs (tâche 8, décisions du 2026-10-16, spec § 15 bis)
+- [ ] Répartition des classes par enveloppe : une classe qu'une enveloppe ne peut pas recevoir (crypto-actifs, levier en assurance-vie ou PER) va vers une enveloppe qui l'accepte (compte-titres) ; petites capitalisations et émergents éligibles au PEA quand le fonds l'est. En V1 : avertissement seulement.
+- [ ] N° 2 : exclusion du PER avant la retraite « sauf achat de la résidence principale » (question sur le projet d'achat, déblocage à cette date).
+- [ ] Plafond PER de la première année : ne compter que les reports encore utilisables à la date de chaque versement (ceux qui expirent le 31 décembre ne servent qu'aux versements de l'année).
 
 ## Définition de « fait » pour SCN1 V1
 1. Décisions D1 à D14 tranchées par Stéph. 2. Fixture recalculée deux fois, repères vérifiés et datés. 3. Tests écrits d'abord, `npm test` vert sous Node 22. 4. Relectures Opus des tâches 4, 8 et 17 sans point bloquant ouvert. 5. Banc EX3 au vert avant la publication du catalogue. 6. Migrations appliquées et vérifiées par md5. 7. Fonction `mcp` déployée. 8. Site publié, CI verte. 9. Roadmap à jour.

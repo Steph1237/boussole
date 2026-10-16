@@ -115,11 +115,17 @@
     const alerte = (compte.retard || 0) + (compte.hors_portee || 0);
     const ton = compte.hors_portee ? "critique" : alerte ? "attention" : "bon";
     let verdict;
-    if (!alerte) verdict = n === 1 ? "Ton objectif est en bonne voie." : "Tes " + n + " objectifs sont en bonne voie.";
+    if (!alerte) verdict = n === tous.length ? (n === 1 ? "Ton objectif est en bonne voie." : "Tes " + n + " objectifs sont en bonne voie.") : pluriel(n, "objectif") + " sur " + tous.length + " en bonne voie.";
     else if (n === 1) verdict = "Ton objectif est " + STATUTS[xs[0].st.statut][1] + ".";
     else verdict = pluriel(alerte, "objectif") + " sur " + n + (alerte > 1 ? " demandent" : " demande") + " ton attention.";
-    return { n: tous.length, compte, sans, verdict, detail, ton };
+    // états en puces (une par statut, puis « pas de verdict »), à la place de la liste entre parenthèses
+    const puces = ORDRE_STATUTS.filter(k => compte[k]).map(k => ({ statut: k, ton: STATUTS[k][0], texte: compte[k] + " " + STATUTS[k][1] })).concat(sans ? [{ statut: "sans", ton: "neutre", texte: sans + " sans verdict" }] : []);
+    return { n: tous.length, compte, sans, verdict, detail, puces, ton };
   }
+  /** Puce d'état (point et mot, majuscule initiale) : bon → vert, info → teinte de marque, attention → ocre, critique → rouge, neutre → gris ; classes ui-puce (statuts) ou ov-st-… (teintes du graphe). */
+  const PUCE_CLASSE = { bon: "bon", info: "ov-st-track", attention: "surveiller", critique: "travailler", neutre: "ov-st-idle" };
+  const maj1 = t => String(t || "").charAt(0).toUpperCase() + String(t || "").slice(1);
+  const puceEtat = (ton, texte) => '<span class="ui-puce ' + (PUCE_CLASSE[ton] || "ov-st-idle") + '"><span class="ui-puce-point" aria-hidden="true"></span>' + esc(maj1(texte)) + "</span>";
 
   /* ---------- probabilité du moteur (Projection, via GrapheModele.calculer) ---------- */
   /** Probabilité de chaque objectif depuis les données complètes du graphe (donnees.objectifs) : { [id]: info } ; {} sans données prêtes.
@@ -189,7 +195,7 @@
     if (st.atteinte) return "Au rythme actuel, atteint vers " + moisAn(st.atteinte) + ".";
     return st.versementAlloue > 0 ? "Pas atteint en 60 ans au rythme actuel." : "Aucune épargne n'y est affectée pour l'instant : pas atteint au rythme actuel.";
   }
-  const badgeHtml = st => { const [ton, lbl] = STATUTS[st] || ["neutre", st || "—"]; return '<span class="ui-badge ' + ton + '">' + esc(lbl) + "</span>"; };
+  const badgeHtml = st => { const [ton, lbl] = STATUTS[st] || ["neutre", st || "—"]; return puceEtat(ton, lbl); };
 
   /** Carte repliée d'un objectif (bouton data-ui-carte, ouvert en panneau par UI.brancher). n = nombre d'objectifs.
       proba : probabilité du moteur (probaInfo) ou null/absente : rien tant que le moteur n'a pas répondu ; « pas de verdict » (hors_horizon) remplace le statut. */
@@ -198,7 +204,7 @@
     const prog = Math.max(0, Math.min(1, +st.progression || 0));
     return '<button type="button" class="ui-carte ov-carte st-' + ton + '" data-ui-carte="' + esc(o.id) + '" aria-haspopup="dialog">' +
       '<span class="ui-carte-tete"><span class="ui-carte-titre">Priorité ' + esc(x.rang || 1) + (n ? " sur " + esc(n) : "") + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span>" +
-        (sans ? '<span class="ui-badge">pas de verdict</span>' : badgeHtml(st.statut)) + "</span>" +
+        (sans ? puceEtat("neutre", "pas de verdict") : badgeHtml(st.statut)) + "</span>" +
       '<span class="ov-carte-nom">' + esc(plat(o.nom) || "Objectif sans nom") + "</span>" +
       '<span class="ov-carte-v"><span class="ov-carte-cible">' + esc(eur(o.cible)) + '</span><span class="ov-carte-date">' + esc(dateCible(o) ? moisAn(dateCible(o)) : "sans échéance") + "</span></span>" +
       '<span class="ov-barre" aria-hidden="true"><i style="width:' + (prog * 100).toFixed(1) + '%"></i></span>' +
@@ -250,7 +256,7 @@
         (x.brut > st.deja + 0.5 && !done ? '<p class="ov-note">Ces poches contiennent ' + esc(eur(x.brut)) + " " + esc(c.duScope || "du foyer") + " ; " + esc(eur(x.brut - st.deja)) + " servent d'abord un objectif prioritaire.</p>" : "") +
         '<p class="ov-note">L\'argent d\'une poche sert d\'abord l\'objectif prioritaire ; le reste passe au suivant.</p>';
     } else pochesHtml = '<p class="ov-note">Montant saisi : ' + esc(eur(st.deja)) + ". Pour le mettre à jour, ou pour rattacher l'objectif à des poches de tes placements (il suivra alors leur valeur), passe par Claude.</p>";
-    return '<div class="ov-meta">' + (c.proba && c.proba.horsHorizon ? '<span class="ui-badge">pas de verdict</span>' : badgeHtml(st.statut)) + "<span>Priorité " + esc(r) + " sur " + esc(n) + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span></div>" +
+    return '<div class="ov-meta">' + (c.proba && c.proba.horsHorizon ? puceEtat("neutre", "pas de verdict") : badgeHtml(st.statut)) + "<span>Priorité " + esc(r) + " sur " + esc(n) + " · " + esc(OBJ_LABEL[o.type] || o.type || "Objectif") + "</span></div>" +
       '<p class="ov-quand">' + esc(quandTxt(x)) + "</p>" +
       '<p class="ov-proba-phrase" data-ov-proba data-ton="' + esc(c.proba ? c.proba.ton : "neutre") + '">' + esc(probaPhrase(x, c.proba || null, c.etatProba || "calcul")) + "</p>" +
       '<div class="ov-prog" role="progressbar" aria-label="Progression" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(prog * 100) + '"><i style="width:' + (prog * 100).toFixed(1) + '%"></i></div>' +
@@ -280,7 +286,7 @@
   /** Mémorise la fermeture du bandeau ; faux si le stockage est indisponible (la vue le garde alors en mémoire pour la session). */
   function bandeauFerme(stockage) { try { stockage.setItem(CLE_BANDEAU, "1"); return true; } catch (e) { return false; } }
 
-  const H = { trier, analyser, resumeObjectifs, carteHtml, detailHtml, livretA, probabilites, probaInfo, probaHtml, probaPhrase, capaciteDe, noteRepartition, bandeauVu, bandeauFerme,
+  const H = { puceEtat, trier, analyser, resumeObjectifs, carteHtml, detailHtml, livretA, probabilites, probaInfo, probaHtml, probaPhrase, capaciteDe, noteRepartition, bandeauVu, bandeauFerme,
     valeurPoche, boutonClaude, STATUTS };
   if (typeof module === "object" && module.exports) module.exports = H;
   if (typeof window !== "undefined") window.ObjectifsView = H; // pour Aujourd'hui (jauge d'objectifs, versement de la projection)
@@ -361,18 +367,22 @@
   function render() {
     const u = U();
     if (!root || !S || !u) return;
+    if (S.ready === false) { if (sigCartes !== "sq") { sigCartes = "sq"; $("ovCartes").innerHTML = u.squelette(3, "kpi"); } return; }
     demanderMoteur();
     const L = listeAvecProba(), a = analyse(), r = resumeObjectifs(L);
     // Réponse en encre (jamais une phrase colorée), le statut dans une puce avec son mot.
     const st = { bon: ["bon", "Bon"], attention: ["surveiller", "À surveiller"], critique: ["travailler", "À travailler"] }[r.ton];
-    $("ovVerdict").innerHTML = esc(r.verdict + (r.detail && r.n > 1 ? " (" + r.detail + ")" : "")) +
-      (st ? ' <span class="ui-puce ' + st[0] + '"><span class="ui-puce-point" aria-hidden="true"></span>' + st[1] + "</span>" : "");
+    $("ovVerdict").innerHTML = esc(r.verdict) + (st ? ' <span class="ui-puce ' + st[0] + '"><span class="ui-puce-point" aria-hidden="true"></span>' + st[1] + "</span>" : "");
+    const etats = r.n > 1 && r.puces ? '<span class="ui-sr">États : </span>' + r.puces.map(q => puceEtat(q.ton, q.texte)).join("") : "";
+    if ($("ovEtats").innerHTML !== etats) $("ovEtats").innerHTML = etats;
+    $("ovEtats").hidden = !etats;
     $("ovVerdict").className = "ov-verdict ton-" + r.ton;
     const partage = a.liste.filter(x => x.o.source === "poches").some((x, i, Q) => Q.some((y, j) => j > i &&
       ((x.o.poches || []).some(p => (y.o.poches || []).includes(p)) || (x.o.enveloppes || []).some(p => (y.o.enveloppes || []).includes(p)))));
     const note = a.liste.length ? (noteRepartition(moteur.donnees, a.capacite, moteur.etat === "calcul" && !moteur.donnees) +
       (partage ? " Plusieurs objectifs partagent une poche : l'argent d'une poche sert d'abord l'objectif prioritaire." : "")).trim() : "";
     if ($("ovNote").textContent !== note) $("ovNote").textContent = note;
+    $("ovRepart").hidden = !note;
     renderBandeau(a.liste.length > 0);
     const h = L.length ? u.voirPlus(L, 5, x => carteHtml(x, L.length, x.proba), "Voir plus d'objectifs", "div", "ov-objectifs") : videHtml();
     if (h !== sigCartes) {

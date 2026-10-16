@@ -7,7 +7,9 @@
 
    Partie pure (testée) : PERIODE_TXT, estPerso, periodeTxt, serie (courbe observée + reconstituée, agrégée sur la période),
    variation (montant, %, début), lirePeriode, periodeAEnregistrer.
-   Partie état (navigateur) : le passé reconstitué se lit à la demande (cours, transactions, opérations bancaires du Store) ; l'état de
+   Partie état (navigateur) : le passé reconstitué se lit à la demande (cours, transactions, dont les mouvements et relevés importés de HIS2, opérations
+   bancaires du Store ; soldes de fin de mois des relevés importés et enveloppes « depuis l'ouverture » lus dans S) ; au-delà de la fenêtre calculée
+   à la volée (5 ans), les photos reconstituées stockées par la nuit (S.photosReconstituees) prolongent le passé jusqu'à 20 ans ; l'état de
    cette lecture est PARTAGÉ entre les vues (hist) pour qu'elles affichent le même chiffre au même moment : tant que la lecture n'est pas
    finie (enAttente), une vue montre un squelette, jamais un chiffre provisoire qui changerait ensuite. abonner(fn) prévient les vues à
    la fin d'une lecture.
@@ -108,12 +110,12 @@
   }
 
   /* ---------- lecture du passé (état partagé entre les vues) ---------- */
-  const hist = { cle: "", depuis: null, isins: "", comptes: "", cours: {}, tx: null, ops: [], opsDepuis: null, version: 0, etat: "rien", seq: 0, enCours: "", memo: null };
+  const hist = { cle: "", depuis: null, depuisTx: null, isins: "", comptes: "", imports: "", cours: {}, tx: null, ops: [], opsDepuis: null, version: 0, etat: "rien", seq: 0, enCours: "", memo: null };
   const abonnes = new Set();
   const abonner = fn => { abonnes.add(fn); return () => abonnes.delete(fn); };
   const prevenir = () => abonnes.forEach(fn => { try { fn(); } catch (e) { /* une vue ne bloque pas les autres */ } });
   function reinitialiser() {
-    Object.assign(hist, { cle: "", depuis: null, isins: "", comptes: "", cours: {}, tx: null, ops: [], opsDepuis: null, version: 0, etat: "rien", seq: 0, enCours: "", memo: null });
+    Object.assign(hist, { cle: "", depuis: null, depuisTx: null, isins: "", comptes: "", imports: "", cours: {}, tx: null, ops: [], opsDepuis: null, version: 0, etat: "rien", seq: 0, enCours: "", memo: null });
     abonnes.clear();
     periodeCourante = { id: "1a" };
   }
@@ -128,7 +130,20 @@
     return hist.etat === "rien" || hist.etat === "charge" || hist.enCours !== "";
   }
 
-  /** Passé reconstitué pour l'état courant du store (mémorisé tant que le store, le périmètre, le jour et les données lues ne changent pas). */
+  /** Soldes de fin de mois des comptes importés, lus dans l'état du store (S.relevesBancaires, comptes Powens de S.banque pour le rattachement). */
+  function soldesMois(S, deps) {
+    const Hi = HIST(deps), rb = S && S.relevesBancaires;
+    return Hi && Hi.soldesMois && rb && Array.isArray(rb.comptes) ? Hi.soldesMois(rb.comptes, rb.releves, S.banque && S.banque.comptes) : [];
+  }
+  /** Photos reconstituées stockées (écrites par la nuit) plus anciennes que `avant`, en points { date, financier, net } : le net est refait avec les biens
+      hors placements d'aujourd'hui (horsFin), comme pour le passé calculé à la volée. */
+  function photosAvant(S, avant, horsFin) {
+    return (S && Array.isArray(S.photosReconstituees) ? S.photosReconstituees : []).filter(p => p && isoOk(jj(p.date)) && p.financier != null && isFinite(+p.financier) && (!avant || jj(p.date) < avant))
+      .map(p => ({ date: jj(p.date), financier: +p.financier, net: +p.financier + horsFin, nature: "photo", qualite: p.qualite, part_estimee: p.partEstimee != null ? +p.partEstimee : undefined })).sort((a, b) => (a.date < b.date ? -1 : 1));
+  }
+
+  /** Passé reconstitué pour l'état courant du store (mémorisé tant que le store, le périmètre, le jour et les données lues ne changent pas). Les photos
+      stockées prolongent le passé calculé à la volée (5 ans) vers le plus ancien. */
   function reconstitution(S, today, deps) {
     const Hi = HIST(deps), C = CALC(deps);
     if (!Hi || !C || !S || hist.etat === "rien" || hist.etat === "charge" && !hist.version) return null;
@@ -136,9 +151,16 @@
     if (hist.memo && hist.memo.S === S && hist.memo.cle === cle) return hist.memo.res;
     let res = null;
     try {
-      const pat = C.patrimoine(S.positions || [], S.profil || null, S.scope || "foyer");
-      res = Hi.reconstituer({ today, positions: S.positions || [], scope: S.scope || "foyer", cours: hist.cours, tx: hist.tx || S.tx || [],
-        comptes: S.banque && S.banque.comptes ? S.banque.comptes : [], operations: hist.ops, operationsDepuis: hist.opsDepuis, depuis: hist.depuis, horsFin: pat.net - pat.financier });
+      const pat = C.patrimoine(S.positions || [], S.profil || null, S.scope || "foyer"), horsFin = pat.net - pat.financier, tx = hist.tx || S.tx || [];
+      res = Hi.reconstituer({ today, positions: S.positions || [], scope: S.scope || "foyer", cours: hist.cours, tx,
+        comptes: S.banque && S.banque.comptes ? S.banque.comptes : [], operations: hist.ops, operationsDepuis: hist.opsDepuis, depuis: hist.depuis, horsFin,
+        qualites: true, soldesMois: soldesMois(S, deps), depuisOuverture: Hi.depuisOuverture ? Hi.depuisOuverture(S.historiqueImports, tx, S.positions) : {} });
+      const anciennes = (S.scope || "foyer") === "foyer" ? photosAvant(S, res && res.points.length ? res.points[0].date : null, horsFin) : [];
+      if (anciennes.length) {
+        const points = anciennes.concat(res ? res.points : []);
+        res = Object.assign({}, res || { drapeaux: null, fin: null }, { points, debut: points[0].date, photos: anciennes.length });
+        delete res.raison;
+      }
     } catch (e) { res = null; }
     hist.memo = { S, cle, res };
     return res;
@@ -164,24 +186,29 @@
     const isins = [...new Set((S.positions || []).filter(x => counted(x) && x.mode === "market" && x.isin).map(x => String(x.isin)))].sort().join(",");
     const comptes = (S.banque && S.banque.actif && !S.banque.mfaRequise && Array.isArray(S.banque.comptes) ? S.banque.comptes : [])
       .filter(c => c && c.positionId != null && !c.ignore && c.type !== "credit").map(c => c.id).sort().join(",");
-    if (hist.etat !== "rien" && hist.depuis <= depuis && hist.isins === isins && hist.comptes === comptes) return;
-    const cle = depuis + "|" + isins + "|" + comptes;
+    /* HIS2 : les mouvements et relevés importés remontent plus loin que la fenêtre : les transactions sont lues depuis le début des imports (20 ans au plus) */
+    const imps = Array.isArray(S.historiqueImports) ? S.historiqueImports : [];
+    const imports = imps.map(i => i.id).sort().join(",");
+    const premierImport = imps.map(i => jj(i.periodeDu)).filter(isoOk).sort()[0], plancherTx = Hi.plusJours(today, -7305);
+    const depuisTx = premierImport && premierImport < depuis ? (premierImport < plancherTx ? plancherTx : premierImport) : depuis;
+    if (hist.etat !== "rien" && hist.depuis <= depuis && hist.depuisTx <= depuisTx && hist.isins === isins && hist.comptes === comptes && hist.imports === imports) return;
+    const cle = depuis + "|" + depuisTx + "|" + isins + "|" + comptes + "|" + imports;
     if (hist.enCours === cle) return;
     /* une lecture plus longue (même contenu, début plus ancien) est déjà en route : elle couvre aussi celle-ci (Aujourd'hui lit 5 ans, Comptes 1 an) */
-    if (hist.enCours && hist.enCoursDepuis <= depuis && hist.enCoursDe === isins + "|" + comptes) return;
-    hist.enCours = cle; hist.enCoursDepuis = depuis; hist.enCoursDe = isins + "|" + comptes; const seq = ++hist.seq; hist.etat = hist.version ? hist.etat : "charge";
+    if (hist.enCours && hist.enCoursDepuis <= depuis && hist.enCoursDepuisTx <= depuisTx && hist.enCoursDe === isins + "|" + comptes + "|" + imports) return;
+    hist.enCours = cle; hist.enCoursDepuis = depuis; hist.enCoursDepuisTx = depuisTx; hist.enCoursDe = isins + "|" + comptes + "|" + imports; const seq = ++hist.seq; hist.etat = hist.version ? hist.etat : "charge";
     const tolerant = f => Promise.resolve().then(f).catch(() => null);
     const [cours, tx, ops] = await Promise.all([
       isins && typeof st.cours === "function" ? tolerant(() => st.cours(isins.split(","), depuis)) : {},
-      typeof st.transactions === "function" ? tolerant(() => st.transactions(depuis)) : null,
+      typeof st.transactions === "function" ? tolerant(() => st.transactions(depuisTx)) : null,
       comptes && st.banque && typeof st.banque.operations === "function" ? tolerant(() => st.banque.operations(comptes.split(",").map(x => (/^\d+$/.test(x) ? +x : x)), Hi.plusJours(today, -90))) : [],
     ]);
     if (seq !== hist.seq) return;
-    Object.assign(hist, { cle, depuis, isins, comptes, cours: cours || {}, tx: Array.isArray(tx) ? tx : null, ops: Array.isArray(ops) ? ops : [], opsDepuis: Hi.plusJours(today, -90),
+    Object.assign(hist, { cle, depuis, depuisTx, isins, comptes, imports, cours: cours || {}, tx: Array.isArray(tx) ? tx : null, ops: Array.isArray(ops) ? ops : [], opsDepuis: Hi.plusJours(today, -90),
       version: hist.version + 1, etat: cours === null ? "echec" : "pret", enCours: "", memo: null });
     prevenir();
   }
 
   return { CLE, PERIODE_TXT, estPerso, periodeTxt, lirePeriode, periodeAEnregistrer, periode, definirPeriode, serie, variation,
-    hist, abonner, reinitialiser, possible, enAttente, reconstitution, depuisVoulu, charger };
+    hist, abonner, reinitialiser, possible, enAttente, reconstitution, soldesMois, photosAvant, depuisVoulu, charger };
 });

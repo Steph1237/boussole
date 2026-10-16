@@ -37,7 +37,7 @@ test("immo-capacite : se compile, expose ses fonctions, est branché dans bilan,
   assert.match(html, /id="blCapacite"/); assert.match(html, /Ta capacité d'emprunt aujourd'hui/);
   assert.match(html, /data-slot="capacite-demain"/); assert.doesNotMatch(html, /bientôt/, "l'emplacement « demain » n'est plus réservé : il reçoit le graphe");
   assert.match(html, /data-slot="capacite-demain"[\s\S]*id="icGraphe"[\s\S]*id="icDemainMention"/);
-  assert.ok(html.indexOf('id="blCapacite"') < html.indexOf('id="blTuiles"'), "la carte est en tête de la vue");
+  assert.ok(html.indexOf('id="blTuiles"') < html.indexOf('id="blBiensSec"') && html.indexOf('id="blCreditsSec"') < html.indexOf('id="blCapacite"'), "la réponse d'abord, puis les biens et les crédits, puis les capacités d'emprunt (la grille les met côte à côte sur grand écran)");
   assert.match(bilanJs, /ImmoCapacite\.rendre\(S\)/); assert.match(bilanJs, /ImmoCapacite\.monter\(/);
   const build = read("../../build.mjs");
   assert.match(build, /"projection-immo", "immo-capacite"/); assert.match(build, /immo-capacite\.css/);

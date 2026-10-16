@@ -4,12 +4,31 @@
       <h2 id="blTitre" tabindex="-1">Immobilier et crédits</h2>
       <p class="bl-verdict" id="blVerdict">Chargement…</p>
     </div>
-    <div class="bl-tete-act" id="blDemander"></div>
   </section>
 
-  <p class="bl-etat" id="blEtat" role="status">Chargement des données…</p>
+  <div class="bl-etat" id="blEtat" role="status">Chargement des données…</div>
 
   <div class="bl-corps" id="blCorps" hidden>
+    <section class="bl-chiffres" aria-label="Chiffres clés">
+      <div class="bl-tuiles" id="blTuiles"></div>
+    </section>
+
+    <div class="bl-vide" id="blVide" hidden></div>
+
+    <section class="bl-sec" id="blBiensSec" aria-labelledby="blBiensT">
+      <div class="bl-sec-tete">
+        <h2 class="bl-h2" id="blBiensT">Mes biens immobiliers</h2>
+      </div>
+      <div class="bl-cartes" id="blBiens"></div>
+    </section>
+
+    <section class="bl-sec" id="blCreditsSec" aria-labelledby="blCreditsT">
+      <div class="bl-sec-tete">
+        <h2 class="bl-h2" id="blCreditsT">Mes crédits</h2>
+      </div>
+      <div class="bl-cartes" id="blCredits"></div>
+    </section>
+
     <section class="ic" id="blCapacite" aria-labelledby="icTitre">
       <header class="ic-tete">
         <h2 class="ic-h2" id="icTitre">Ta capacité d'emprunt aujourd'hui</h2>
@@ -21,28 +40,6 @@
         <div class="ic-demain-graphe" id="icGraphe"></div>
         <p class="ic-mention ic-demain-mention" id="icDemainMention">Estimation selon les règles du HCSF, chaque banque décide. Ce n'est pas une offre de prêt.</p>
       </div>
-    </section>
-
-    <section aria-label="Chiffres clés">
-      <div class="bl-tuiles" id="blTuiles"></div>
-    </section>
-
-    <div class="bl-vide" id="blVide" hidden></div>
-
-    <section class="bl-sec" id="blBiensSec" aria-labelledby="blBiensT">
-      <div class="bl-sec-tete">
-        <h2 class="bl-h2" id="blBiensT">Mes biens immobiliers</h2>
-        <span class="bl-sec-act" id="blBiensClaude"></span>
-      </div>
-      <div class="bl-cartes" id="blBiens"></div>
-    </section>
-
-    <section class="bl-sec" id="blCreditsSec" aria-labelledby="blCreditsT">
-      <div class="bl-sec-tete">
-        <h2 class="bl-h2" id="blCreditsT">Mes crédits</h2>
-        <span class="bl-sec-act" id="blCreditsClaude"></span>
-      </div>
-      <div class="bl-cartes" id="blCredits"></div>
     </section>
 
     <details class="ui-acc bl-how">

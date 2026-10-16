@@ -30,6 +30,18 @@ test("fenêtres : un contrôle unique de 5 fenêtres, « N ans » = N ans avant 
   }
 });
 
+test("horizon affiché = horizon choisi : « N ans » finit au plus à aujourd'hui + N ans, même avec un historique court (bogue « 10 ans » / « Dans 15 ans »)", () => {
+  const t = G.domaine("1", { today: ms("2026-10-16"), debutPasse: null, finFutur: ms("2051-10-16") }).debut;
+  for (const histAns of [0.2, 2, 5, 12]) for (const [id, n] of [["1", 1], ["5", 5], ["10", 10], ["20", 20]]) {
+    const d = G.domaine(id, { today: t, debutPasse: G.ajouterMois(t, -Math.round(12 * histAns)), finFutur: G.ajouterMois(t, 12 * 25) });
+    assert.ok(d.fin <= G.ajouterMois(t, 12 * n), id + " ans, " + histAns + " an(s) d'historique : fin ≤ aujourd'hui + " + n + " ans");
+    assert.equal(d.fin, G.ajouterMois(t, 12 * n), "la fin est exactement aujourd'hui + N ans quand la projection va assez loin");
+    assert.ok(d.debut >= G.ajouterMois(t, -12 * n), "le passé ne dépasse pas N ans non plus");
+  }
+  // projection plus courte que la fenêtre : la fin est celle de la projection (pas de futur inventé)
+  assert.equal(G.domaine("20", { today: t, debutPasse: G.ajouterMois(t, -60), finFutur: G.ajouterMois(t, 180) }).fin, G.ajouterMois(t, 180));
+});
+
 test("axe du temps proportionnel : x(date) affine en jours, un an passé = un an futur (à 1 px près), toutes fenêtres", () => {
   const M = M0();
   for (const fen of ["1", "5", "10", "20", "tout"]) {
@@ -42,11 +54,11 @@ test("axe du temps proportionnel : x(date) affine en jours, un an passé = un an
   }
 });
 
-test("fenêtre « 5 ans » : 5 ans de chaque côté, ou l'historique disponible (la place libérée va au futur, largeur constante)", () => {
+test("fenêtre « 5 ans » : 5 ans de chaque côté, ou l'historique disponible (jamais plus de 5 ans d'avenir : le futur ne s'allonge pas)", () => {
   const M = M0(); // 3 ans d'historique
   const d = G.domaine("5", CTX(M));
   assert.equal(d.debut, G.ajouterMois(M.today, -36), "le passé est borné par l'historique");
-  assert.equal(d.fin, G.ajouterMois(d.debut, 120), "la largeur reste de 10 ans : le futur s'allonge de ce que le passé n'a pas");
+  assert.equal(d.fin, G.ajouterMois(M.today, 60), "5 ans d'avenir, pas plus : le sélecteur, l'axe et l'en-tête disent la même chose");
   const long = G.domaine("5", { today: M.today, debutPasse: G.ajouterMois(M.today, -90), finFutur: G.ajouterMois(M.today, 300) });
   assert.equal(long.debut, G.ajouterMois(M.today, -60)); assert.equal(long.fin, G.ajouterMois(M.today, 60));
   const sans = G.domaine("5", { today: M.today, debutPasse: null, finFutur: G.ajouterMois(M.today, 300) });
@@ -86,11 +98,14 @@ test("graduations : au plus 4 en portrait (8 sur ordinateur), pas de 1, 2 ou 5 �
   assert.equal(G.domaineY(-5000, -1000).hi, 0, "toutes valeurs négatives : le zéro reste dans le cadre");
 });
 
-test("libellés de l'axe : « 0 » jamais « 0,0 M€ », « 500 k€ » sous le million, une même décimale pour les M€ ; deux chiffres significatifs (1,0 M€ / 990 k€)", () => {
+test("libellés de l'axe : « 0 » jamais « 0,0 M€ », une seule unité par axe (M€ dès que le plus grand repère atteint le million), une même décimale ; deux chiffres significatifs (1,0 M€ / 990 k€)", () => {
   const g = G.graduations(0, 1.1e6, 4), l = g.libelles.map(x => x.replace(/[  ]/g, " "));
   assert.equal(l[0], "0"); assert.ok(l.every(x => !/0,0 M€/.test(x)), l.join("|"));
   const demi = G.graduations(0, 1e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
-  assert.deepEqual(demi, ["0", "500 k€", "1 M€"]);
+  assert.deepEqual(demi, ["0", "0,5 M€", "1,0 M€"], "pas de « 500 k€ » au milieu de millions");
+  const lisse = G.graduations(0, 1.55e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
+  assert.ok(lisse.every(x => x === "0" || /M€$/.test(x)), lisse.join("|"));
+  assert.deepEqual(G.graduations(0, 480000, 4).libelles.map(x => x.replace(/[  ]/g, " ")).filter(x => x !== "0").every(x => /k€$/.test(x)), true);
   const deux = G.graduations(900000, 2.1e6, 4).libelles.map(x => x.replace(/[  ]/g, " "));
   assert.ok(deux.every(x => !/^\d+ M€$/.test(x) || !deux.some(y => /,\d M€/.test(y))), "même décimale : " + deux.join("|"));
   assert.ok(G.graduations(100000, 800000, 4).libelles.every(x => /k€$/.test(x) && !/M€/.test(x)));
@@ -502,4 +517,28 @@ test("graphe-patrimoine.js : tutoiement, échappement, aucune écriture hors pr�
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
   assert.match(css, /\.gp-icon\{[^}]*width:var\(--hit\);height:var\(--hit\)/); assert.match(css, /\.gp-mk-b\{[^}]*height:44px/);
   assert.doesNotMatch(css, /font-size\s*:\s*\d+px|font\s*:[^;}]*\b\d+px/, "tailles de police : jetons --t-* seulement");
+});
+
+/* ---------- HIS2 (tâche 13) : la part estimée d'une photo reconstituée ---------- */
+const AVEC_PE = pes => { const d = donnees(); let k = 0; d.passe.points.forEach(p => { if (p.nature === "reconstitue") p.part_estimee = pes[k++ % pes.length]; }); return d; };
+test("HIS2 : la part estimée des points reconstitués traverse la normalisation, le curseur dit la part mesurée, sans elle le texte d'avant ne change pas", () => {
+  const M = G.normaliser(AVEC_PE([0.18])), r = G.lecture(M, null, M.passe.t[0]);
+  assert.ok(M.passe.pe.slice(0, 3).every(v => v === 0.18) && M.passe.pe.at(-1) === null, "null pour l'observé");
+  assert.equal(r.partEstimee, 0.18);
+  assert.match(G.titreLecture(M, null, r, false).s.replace(/[  ]/g, " "), /^Reconstitué à partir de tes relevés et de tes ordres \(82 % mesuré\)$/);
+  assert.match(G.lectureHtml(M, null, r, { def: false }).replace(/[  ]/g, " "), /Reconstitué à partir de tes cours, transactions et soldes bancaires : une estimation, moins fiable qu'une photo \(82 % mesuré\)/);
+  const ancien = G.normaliser(donnees()), r0 = G.lecture(ancien, null, ancien.passe.t[0]);
+  assert.equal(r0.partEstimee, undefined);
+  assert.equal(G.titreLecture(ancien, null, r0, false).s, "Estimé à partir de tes relevés", "texte d'avant inchangé sans qualité connue");
+  assert.doesNotMatch(G.lectureHtml(ancien, null, r0, { def: false }), /mesuré/);
+});
+test("HIS2 : les tronçons « estime » (plus de 30 % estimé) sont tracés plus pâles, les autres comme avant", () => {
+  const tout = svgDe(G.normaliser(AVEC_PE([0.6])), "10").svg, aucun = svgDe(G.normaliser(AVEC_PE([0.1])), "10").svg, sans = svgDe(M0(), "10").svg;
+  assert.match(tout, /class="gp-recon gp-recon-estime"/);
+  assert.doesNotMatch(aucun, /gp-recon-estime/);
+  assert.match(aucun, /class="gp-recon"/);
+  assert.doesNotMatch(sans, /gp-recon-estime/);
+  const mixte = svgDe(G.normaliser(AVEC_PE([0.6, 0.1])), "10").svg;
+  assert.match(mixte, /class="gp-recon gp-recon-estime"/); assert.match(mixte, /class="gp-recon"/);
+  assert.match(readFileSync("web/src/graphe-patrimoine.css", "utf8"), /\.gp-recon-estime\{stroke-opacity:\.45\}/);
 });

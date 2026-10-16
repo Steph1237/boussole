@@ -152,6 +152,11 @@
     return "le bien « " + x.nom + " » (" + x.usageLabel.toLowerCase() + ")";
   }
 
+  /** Jauge du taux d'endettement : le remplissage va jusqu'au taux, un repère marque le plafond des banques ; échelle de 0 à 1,4 × le plafond (décorative : le texte dit tout). */
+  function jaugeTaux(taux, plafond) {
+    const max = Math.max(plafond * 1.4, taux * 1.05), w = Math.max(0, Math.min(100, taux / max * 100)), r = Math.min(100, plafond / max * 100);
+    return '<span class="bl-jauge' + (taux > plafond ? " depasse" : "") + '" aria-hidden="true"><span class="bl-jauge-f" style="width:' + w.toFixed(1) + '%"></span><span class="bl-jauge-p" style="left:' + r.toFixed(1) + '%"></span></span>';
+  }
   /** Les quatre tuiles de l'en-tête (texte échappé). Une tuile porte un mot d'état, pas de compteur (les compteurs vivent dans la
       navigation). U (facultatif) sert au lien « Compléter avec Claude » des revenus manquants. */
   function tuilesHtml(a, U, deps) {
@@ -161,14 +166,18 @@
     const tauxTon = a.taux == null || a.mensualites <= 0 ? "" : st.ton;
     const lienRevenus = U && typeof U.urlClaude === "function"
       ? ' · <a href="' + esc(U.urlClaude(phraseClaude("revenus", "", deps))) + '" target="_blank" rel="noopener noreferrer">Compléter avec Claude<span class="ui-sr"> (nouvel onglet)</span></a>' : "";
+    // la réponse d'abord : le taux en encre (jamais vert « gain »), son état dans une puce, une jauge vers le plafond ; une seule ligne dessous
     const tauxSous = a.taux == null
       ? "revenus à renseigner" + lienRevenus
       : esc({ sous: "plafond des banques : " + P, au: "au niveau du plafond de " + P, "au-dela": "au-delà du plafond de " + P }[st.etat]) +
-        ' · <a href="#pilotage/rang" data-goto="pilotage/rang">Ta capacité d\'emprunt</a> (la banque y compte les loyers à 70\u00a0%)';
+        ' · <a href="#pilotage/rang" data-goto="pilotage/rang">Ta capacité d\'emprunt</a>';
+    const puceTaux = a.taux == null || a.mensualites <= 0 ? "" : '<span class="ui-puce ' + ({ bon: "bon", attention: "surveiller", critique: "travailler" }[st.ton] || "bon") + '"><span class="ui-puce-point" aria-hidden="true"></span>' +
+      esc({ sous: "Sous le plafond", au: "Au plafond", "au-dela": "Au-delà du plafond" }[st.etat]) + "</span>";
+    const jauge = a.taux == null || a.mensualites <= 0 ? "" : jaugeTaux(a.taux, a.plafond);
     return t("immobilier", "Immobilier", eur(a.immobilier), esc(a.nbBiens ? (a.loyers > 0 ? "loyers " + eurM(a.loyers) : "sans loyer perçu") : "aucun bien")) +
       t("dettes", "Reste à rembourser", eur(a.dettes), esc(a.nbCredits ? "en cours de remboursement" : "aucun crédit")) +
       t("mensualites", "Mensualités", eurM(a.mensualites), esc(a.mensualites > 0 ? "tous crédits confondus" : "aucune mensualité")) +
-      t("taux", 'Taux d\'endettement<span class="bl-tuile-def">' + esc("mensualités ÷ revenus " + a.duScope) + "</span>", a.taux == null ? "—" : st.texte, tauxSous, tauxTon);
+      t("taux", 'Taux d\'endettement<span class="bl-tuile-def">' + esc("mensualités ÷ revenus " + a.duScope) + "</span>" + puceTaux, a.taux == null ? "—" : st.texte, jauge + tauxSous, tauxTon);
   }
 
   /** Carte repliée d'un bien (bouton data-ui-carte, ouvert en panneau par UI.brancher). */
@@ -275,7 +284,8 @@
     if (!root || !S) return;
     const u = U(), charge = S.ready !== false, indispo = S.dbOk === false;
     const etat = !charge ? "Chargement des données…" : indispo && !S.profil ? "Données indisponibles pour le moment : recharge la page ou reconnecte-toi." : "";
-    $("blEtat").textContent = etat; $("blEtat").hidden = !etat;
+    $("blEtat").hidden = !etat;
+    if (!charge) { if (!$("blEtat").firstChild || sig.etat !== "sq") { sig.etat = "sq"; $("blEtat").innerHTML = u ? u.squelette(1, "kpi") + u.squelette(2, "ligne") + '<span class="ui-sr">Chargement des données…</span>' : "Chargement des données…"; } } else { sig.etat = etat; $("blEtat").textContent = etat; }
     $("blCorps").hidden = !!etat || !calculable();
     if (etat || !calculable() || !u) { $("blVerdict").textContent = etat || "Chargement…"; $("blVerdict").className = "bl-verdict"; return; }
     const a = last = analyser(S);
@@ -284,15 +294,14 @@
     $("blVerdict").textContent = v.phrase;
     $("blVerdict").className = "bl-verdict ton-" + v.ton;
     $("blPlafond").textContent = pctPlafond(a.plafond);
-    ecrire("blDemander", "claude", u.demanderAClaude(questionPage(a)));
     ecrire("blTuiles", "tuiles", tuilesHtml(a, u));
     $("blVide").hidden = !a.vide;
     ecrire("blVide", "vide", a.vide ? videHtml(a, u) : "");
     $("blBiensSec").hidden = a.vide; $("blCreditsSec").hidden = a.vide;
     ecrireCartes("blBiens", "biens", a.biens.length ? u.voirPlus(a.biens, 5, carteBienHtml, "Voir plus de biens", "div", "bl-biens")
-      : '<p class="bl-aucun">Aucun bien immobilier ' + esc(a.duScope) + ".</p>");
+      : '<p class="bl-aucun"><span class="ui-puce completer"><span class="ui-puce-point" aria-hidden="true"></span>À compléter</span> Aucun bien immobilier ' + esc(a.duScope) + ".</p>");
     ecrireCartes("blCredits", "credits", a.credits.length ? u.voirPlus(a.credits, 5, carteCreditHtml, "Voir plus de crédits", "div", "bl-credits")
-      : '<p class="bl-aucun">Aucun crédit en cours ' + esc(a.duScope) + ".</p>");
+      : '<p class="bl-aucun"><span class="ui-puce completer"><span class="ui-puce-point" aria-hidden="true"></span>À compléter</span> Aucun crédit en cours ' + esc(a.duScope) + ".</p>");
     rafraichirPanneau();
   }
   /* Cartes réécrites : le focus reste sur la carte du même bien ou crédit. */
@@ -346,8 +355,7 @@
     if (!u) return;
     u.brancher(root, { surCarte: (id, el) => ouvrir(id, el) });
     if (window.ImmoCapacite) window.ImmoCapacite.monter($("blCapacite"), { UI: u });
-    $("blBiensClaude").innerHTML = u.demanderAClaude(phraseClaude("immobilier", "mes biens immobiliers"), "Compléter avec Claude");
-    $("blCreditsClaude").innerHTML = u.demanderAClaude(phraseClaude("immobilier", "mes crédits (immobilier, auto, consommation)"), "Compléter avec Claude");
+    // un seul bouton Claude par écran : celui de l'en-tête de la coque ; une section vide dit « À compléter » (puce) et l'état vide plus haut propose « Compléter avec Claude »
   }
   function update(snap, visible) {
     S = Object.assign({}, snap, { scope: snap.scope || "foyer", people: snap.people || [] });

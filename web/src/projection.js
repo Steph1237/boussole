@@ -32,7 +32,7 @@
   /** BUD1 (spec § 10) : probabilité visée d'un objectif (8 chances sur 10), pas de la recherche (€/mois), plafond de l'épargne en plus (€/mois), nombre de simulations. */
   const SEUIL_OBJECTIF = 0.8, PAS_EPARGNE = 25, EPARGNE_MAX = 10000, SIMULATIONS_MAX = 16, CHEMINS_EPARGNE = 500, ID_VARIANTE_EPARGNE = "_epargne_necessaire";
   /** Incrémentée à chaque changement de calcul ; rendue avec chaque résultat (rejouer une projection passée). */
-  const versionModele = "proj-1.2.0";
+  const versionModele = "proj-1.4.0";
   const CLASSES_TIREES = Dn.CLASSES_TIREES, NB_TIRAGES = CLASSES_TIREES.length, IDX = Dn.IDX;
   const PERCENTILES = { p10: 0.1, p25: 0.25, p50: 0.5, p75: 0.75, p90: 0.9 };
   const NOMS_P = Object.keys(PERCENTILES);
@@ -99,6 +99,8 @@
     /* ---- compartiments ---- */
     const cc = Dn.construireCompartiments(ctx);
     const comps = cc.comps;
+    /* ---- enveloppe d'un scénario retenu (SCN1, hypothèse de variante enveloppe_scenario) : compartiments synthétiques, ajoutés avant le calcul des rendements ---- */
+    M.scn = ctx.variante && objet(ctx.variante.hypotheses).enveloppe_scenario ? enveloppeScenario(M, ctx, comps, cc, objet(ctx.variante.hypotheses).enveloppe_scenario) : null;
     M.calendrier = cc.calendrier;
     M.manques = cc.manques;
     M.idxCourant = cc.idxCourant;
@@ -218,6 +220,9 @@
       M.composants.push(c);
     };
     M.addComposant = addComposant;
+    /* économie d'impôt du PER d'un scénario retenu : une marche d'un mois, en septembre de l'année suivante (régularisation de l'impôt) */
+    if (M.scn) M.scn.economies.forEach(x => addComposant({ id: "scenario:per:" + x.annee, type: "scenario", libelle: "Économie d'impôt du PER", t0: x.t, t1: x.t + 1, nom: x.montant,
+      raison: "économie d'impôt du PER (scénario « " + M.scn.cle + " ») : +" + eur(x.montant) + " en " + dates[x.t].slice(0, 7), raisonFin: null }));
     const facteur = e => {
       const p = ["changement_emploi", "conge_parental", "hausse_revenu"].includes(e.type) ? (e.params.personne || e.personne) : e.personne;
       if (sc === "foyer" || p === sc) return 1;
@@ -438,7 +443,7 @@
       M.cible = Object.keys(ctx.cibles).map(k => {
         const candidats = [];
         (PREF[k] || []).forEach(tp => {
-          const modele = comps.find(c => c.type === tp && !c.levier && proprietaires.includes(c.titulaire));
+          const modele = comps.find(c => c.type === tp && !c.levier && !c.scenario && proprietaires.includes(c.titulaire));
           if (modele) { const b = ensure(modele, k); if (!candidats.includes(b)) candidats.push(b); }
         });
         return { classe: k, poids: ctx.cibles[k], candidats };
@@ -493,6 +498,65 @@
     }
     M.det = null;
     return M;
+  }
+
+
+  /* ================================================================== enveloppe d'un scénario retenu (SCN1, spec § 6.6) */
+  /** Compartiments synthétiques de l'hypothèse enveloppe_scenario d'une variante : un par classe de l'allocation, de valeur 0, ouverts à leur date (les dates de 5 et 8 ans
+      courent depuis l'ouverture, comme le calendrier), plus le plan de dépôt lu par derouler (versement de départ au niveau 1 de l'ordre de retrait, versement mensuel
+      prélevé comme un versement programmé, débordement au plafond, transferts depuis un livret) et l'économie d'impôt du PER. Ajoute les compartiments à `comps`.
+      Rend null si l'enveloppe n'est pas dans le périmètre (l'autre personne). Sans cette hypothèse, rien de ceci ne s'exécute : proj-1.2.0 est inchangé. */
+  function enveloppeScenario(M, ctx, comps, cc, es) {
+    const N = M.N, today = M.today, dates = M.dates, rg = ctx.reglages, sc = ctx.perimetre;
+    if (sc !== "foyer" && sc !== es.titulaire) return null;
+    const type = es.type, livret = F.LIVRETS.includes(type), per = type === "per";
+    const alloc = livret || !es.allocation ? { monetaire: 100 } : es.allocation;
+    const total = sum(Object.values(alloc), x => +x || 0), ter = O.n0(es.ter_pct), fenv = O.n0(es.frais_enveloppe_pct);
+    const tInit = Math.max(1, O.moisEntre(today, es.ouverture)), t0 = Math.max(tInit, O.moisEntre(today, es.debut || es.ouverture));   // départ à l'ouverture, versements mensuels à partir du début
+    const initial = es.initial ? O.n0(es.initial.montant) : 0, mensuel = es.mensuel ? O.n0(es.mensuel.montant) : 0, enPlus = !!(es.mensuel && es.mensuel.depuis === "en_plus");
+    const plafond = es.plafond_versements != null && !per ? +es.plafond_versements : null;
+    /* dépôts prévus mois par mois (le versement de départ est supposé complet) : base fiscale, primes et versements déduits */
+    const deposes = new Float64Array(N + 2);
+    for (let t = t0; t <= N; t++) deposes[t] = mensuel;
+    if (tInit <= N) deposes[tInit] += initial;
+    let verse = 0, dedTotal = 0;
+    const parAnnee = {};
+    for (let t = tInit; t <= N; t++) { verse += deposes[t]; const y = +dates[t].slice(0, 4); parAnnee[y] = (parAnnee[y] || 0) + deposes[t]; }
+    const deduit = per && !(es.per && es.per.deduit === false);
+    const economies = [];
+    /* TMI de l'économie d'impôt : celle du scénario retenu (per.tmi_actuelle_pct), sinon le réglage du foyer, sinon 30 % (dit) */
+    let tmi = per && es.per && es.per.tmi_actuelle_pct != null ? +es.per.tmi_actuelle_pct : rg.tmi_pct;
+    if (per && deduit) {
+      if (tmi == null || !isFinite(+tmi)) { tmi = 30; M.avertissements.push("taux marginal supposé de 30 % pour l'économie d'impôt du PER, à confirmer avec Claude"); }
+      Object.keys(parAnnee).map(Number).sort((a, b) => a - b).forEach(y => {
+        const ded = es.plafond_versements != null ? Math.min(parAnnee[y], +es.plafond_versements) : parAnnee[y];
+        dedTotal += ded;
+        if (es.per && es.per.economie === "depensee") return;
+        const t = dates.findIndex((d, k) => k >= 1 && k <= N && d.slice(0, 7) === (y + 1) + "-09");
+        if (t > 0 && ded * tmi / 100 > 0) economies.push({ annee: y, t, montant: ded * tmi / 100 });
+      });
+    }
+    const tmiRetraite = per && es.per && es.per.tmi_retraite_pct != null ? +es.per.tmi_retraite_pct : (per ? (rg.tmi_pct != null ? +rg.tmi_pct : 30) : undefined);
+    const primes = sum(comps.filter(x => x.titulaire === es.titulaire && F.AV.includes(x.type)), x => x.base0) + (F.AV.includes(type) ? Math.min(verse, plafond == null ? Infinity : plafond) : 0);
+    const nom = "Scénario « " + es.scenario + " »";
+    const creer = (typeC, classe, poids, nomEnv, cle) => {
+      const fiscal = { type: typeC, valeur: 0, base: verse * poids, classe, date_ouverture: typeC === type ? es.ouverture : undefined, versements_deduits: typeC === "per" ? (deduit ? dedTotal * poids : 0) : undefined, dates: {} };
+      const c = { id: "c" + comps.length, enveloppe: nomEnv, cle, titulaire: es.titulaire, owner: es.titulaire, type: typeC, classe, levier: null, v0: 0, base0: 0, base_inconnue: false,
+        ter_pct: classe === "fonds_euros" || livret ? 0 : ter, frais_env_pct: fenv, dispo: F.LIVRETS.includes(typeC), info: { date_ouverture: typeC === type ? es.ouverture : undefined }, lignes: [], synthetique: true,
+        scenario: true, dates: { pea_5_ans: null, av_8_ans: null, pee_disponible: null }, fiscal };
+      c.prep = F.preparer(fiscal, { reperes: ctx.R, couple: cc.couple, primes_titulaire: F.AV.includes(typeC) ? primes : undefined, tmi_pct: typeC === "per" ? tmiRetraite : rg.tmi_pct,
+        per_versements_deduits: typeC === "per" ? deduit : rg.per_versements_deduits });
+      if (c.prep.indisponible) M.avertissements.push("impôt de sortie de l'enveloppe du scénario non calculé (" + c.prep.mentions[0] + ")");
+      comps.push(c);
+      return comps.length - 1;
+    };
+    const classes = Object.keys(alloc).filter(k => +alloc[k] > 0);
+    const b = classes.map(k => creer(type, k, alloc[k] / total, nom, "scenario:" + es.scenario)), w = classes.map(k => alloc[k] / total);
+    let bDeb = null, wDeb = null;
+    if (plafond != null && es.debordement === "compte_titres" && type !== "compte_titres") {
+      bDeb = classes.map(k => creer("compte_titres", k, 1 / classes.length, nom + " (débordement)", "scenario:" + es.scenario + ":debordement")); wDeb = w;
+    }
+    return { cle: es.scenario, type, titulaire: es.titulaire, b, w, bDeb, wDeb, plafond, tInit, tDeb: t0, initial, mensuel, enPlus, transferts: liste(es.transferts).map(x => ({ de: x.de, montant: +x.montant })), economies, per: per ? { deduit, tmi_retraite_pct: tmiRetraite } : null };
   }
 
   /* ================================================================== simulation (cœur) */
@@ -666,6 +730,17 @@
         }
       }
     }
+    /* ---- enveloppe d'un scénario retenu : versements cumulés par chemin (plafond) et dépôt ---- */
+    const scnVerse = M.scn ? new Float64Array(P) : null;
+    function deposerScenario(i, off, x) {
+      const s = M.scn;
+      if (!(x > 0)) return;
+      let dedans = x, dehors = 0;
+      if (s.plafond != null) { dedans = Math.min(x, Math.max(0, s.plafond - scnVerse[i])); dehors = x - dedans; }
+      scnVerse[i] += dedans;
+      if (dedans > 0) s.b.forEach((b, k) => depose(off, b, dedans * s.w[k]));
+      if (dehors > 1e-12) { if (s.bDeb) s.bDeb.forEach((b, k) => depose(off, b, dehors * s.wDeb[k])); else depose(off, iC, dehors); }
+    }
     const dispoSomme = off => { let s = 0; for (const b of dispoIdx) s += V[off + b]; return s; };
     const vueComps = nom => (nom === "disponible" ? dispoIdx : null);
     function totalVue(arr, off, t, i, nomVue, bi, dette, base) {
@@ -814,6 +889,23 @@
         let reste = cap;
         const progNom = progTot;
         for (const pg of M.prog) { if (pg.debut && pg.debut > dates[t]) continue; depose(off, pg.b, pg.montant); reste -= pg.montant; if (trace && i === 0) tr.depotsProg[t] += pg.montant; }
+        if (M.scn && t >= M.scn.tInit) {
+          const sn = M.scn;
+          if (t === sn.tInit) {
+            /* versement de départ : pris sur le disponible au-dessus du matelas (niveau 1 de l'ordre de retrait) ; transferts depuis un livret ou le courant */
+            if (sn.initial > 0) deposerScenario(i, off, sn.initial - retirer(i, t, sn.initial, { niveau_max: 1 }, matelasNom));
+            for (const tf of sn.transferts) {
+              let restant = tf.montant, pris = 0;
+              for (let k = 0; k < B && restant > 1e-9; k++) {
+                if (comps[k].scenario || comps[k].type !== tf.de) continue;
+                const x = Math.min(Math.max(0, V[off + k]), restant);
+                V[off + k] -= x; restant -= x; pris += x;
+              }
+              deposerScenario(i, off, pris);
+            }
+          }
+          if (sn.mensuel > 0 && t >= sn.tDeb) { deposerScenario(i, off, sn.mensuel); if (!sn.enPlus) reste -= sn.mensuel; if (trace && i === 0) tr.depotsProg[t] += sn.mensuel; }
+        }
         if (reste >= 0) {
           const gap = Math.max(0, matelasNom - dispoSomme(off));
           const m = Math.min(reste, gap);
@@ -854,7 +946,7 @@
     function infl_cap(t, inflT) { return inflT * (M.reelBase + M.reelDelta[t]) + M.nomDelta[t] - M.mensExist[t]; }
     function reequilibrer(off) {
       const parEnv = new Map();
-      comps.forEach((c, b) => { if (c.dispo || c.type === "compte_titres" || c.levier) return; const k = c.cle + "|" + c.titulaire; if (!parEnv.has(k)) parEnv.set(k, []); parEnv.get(k).push(b); });
+      comps.forEach((c, b) => { if (c.dispo || c.type === "compte_titres" || c.levier || c.scenario) return; const k = c.cle + "|" + c.titulaire; if (!parEnv.has(k)) parEnv.set(k, []); parEnv.get(k).push(b); });
       parEnv.forEach(bs => {
         const poids = bs.map(b => { const c = M.cible.find(x => x.classe === comps[b].classe); return c ? c.poids : 0; });
         const sp = poids.reduce((a, x) => a + x, 0);
@@ -1279,14 +1371,16 @@
       nominal: { financier: Array.from(tr.fin), net: Array.from(tr.net) }, log_rendement_mensuel_fenetre: Math.log(1 + (cr.chocs.actions) / 100) / duree, avertissements: avert, source: cr.source };
   }
 
-  /** Comparaison de deux modèles sur les mêmes tirages : écart chemin par chemin, centiles de l'écart, probabilité que B fasse mieux que A. */
+  /** Comparaison de deux modèles sur les mêmes tirages : écart chemin par chemin, centiles de l'écart, probabilité que B fasse mieux que A.
+      opts.net_impots === true : écart après les impôts de sortie (« si tu retirais tout »), indispensable pour une variante qui ne change que l'enveloppe
+      (scénario retenu, SCN1) ; sans cette option, l'écart est brut, comme avant proj-1.3.0 (aucune sortie existante ne change). */
   function comparer(MA, MB, opts) {
     const o = opts || {};
     if (MA.N !== MB.N) return { erreur: "les deux modèles n'ont pas le même horizon" };
     assurerDet(MA); assurerDet(MB);
-    const P = o.chemins > 0 ? Math.round(o.chemins) : 2000, N = MA.N, vue = o.vue || MA.options.vue, graine = o.graine == null ? GRAINE : o.graine;
+    const P = o.chemins > 0 ? Math.round(o.chemins) : 2000, N = MA.N, vue = o.vue || MA.options.vue, graine = o.graine == null ? GRAINE : o.graine, netImp = o.net_impots === true;
     const marques = []; for (let t = 12; t <= N; t += 12) marques.push(t); if (marques[marques.length - 1] !== N) marques.push(N);
-    const a = derouler(MA, { P, graine, vue, retenir: marques }), b = derouler(MB, { P, graine, vue, retenir: marques });
+    const a = derouler(MA, { P, graine, vue, net_impots: netImp, retenir: marques }), b = derouler(MB, { P, graine, vue, net_impots: netImp, retenir: marques });
     const euros = o.euros || MA.options.euros, fx = echelle(MA, euros), rg = rangs(P);
     const ecarts = {}; NOMS_P.forEach(k => { ecarts[k] = []; });
     const probMieux = [], chaque = [];
@@ -1299,8 +1393,10 @@
       probMieux.push(mieux / P); chaque.push(plancher >= -1e-9);
     });
     const dernier = marques.length - 1;
-    return { version_modele: versionModele, graine, chemins: P, vue, euros, mois: marques.map(t => MA.dates[t]), ecarts, probabilite_mieux: probMieux, chaque_chemin_superieur_ou_egal: chaque,
+    const out = { version_modele: versionModele, graine, chemins: P, vue, euros, mois: marques.map(t => MA.dates[t]), ecarts, probabilite_mieux: probMieux, chaque_chemin_superieur_ou_egal: chaque,
       horizon: { mediane_des_ecarts: ecarts.p50[dernier], probabilite_mieux: probMieux[dernier], p10: ecarts.p10[dernier], p90: ecarts.p90[dernier] } };
+    if (netImp) out.net_impots = true;
+    return out;
   }
 
   /** Valeur capitalisée après `mois` mois : capital de départ et versements de fin de mois, taux annuel géométrique en % (primitive pure, partagée). */

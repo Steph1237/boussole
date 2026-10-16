@@ -8,12 +8,24 @@
 
   <div class="mv-bar" id="mvBar" hidden>
     <p class="mv-count" id="mvCount"></p>
-    <button type="button" class="mv-btn danger" id="mvClear">Tout effacer</button>
   </div>
 
   <div class="mv-groups" id="mvGroups"></div>
 
   <p class="mv-err" id="mvErr" hidden>Lecture impossible pour le moment. La mémoire de Claude n'a pas pu être chargée ; réessaie dans quelques instants.</p>
+
+  <section class="panel mv-zone" id="mvZone" aria-labelledby="mvZoneTitle" hidden>
+    <h2 id="mvZoneTitle">Effacer toute la mémoire</h2>
+    <p>Claude oublie tout ce qu'il a retenu de toi et repart de zéro. Cette action est définitive.</p>
+    <button type="button" class="mv-btn danger" id="mvClear">Tout effacer</button>
+    <div class="mv-conf" id="mvConf" role="group" aria-labelledby="mvConfQ" hidden>
+      <p class="mv-conf-q" id="mvConfQ"></p>
+      <div class="mv-act">
+        <button type="button" class="mv-btn danger-plein" id="mvConfOui">Oui, tout effacer</button>
+        <button type="button" class="mv-btn ghost" id="mvConfNon">Annuler</button>
+      </div>
+    </div>
+  </section>
 
   <section class="panel mv-empty" id="mvEmpty" aria-labelledby="mvEmptyTitle" hidden>
     <h2 id="mvEmptyTitle">Claude n'a encore rien retenu</h2>

@@ -94,13 +94,13 @@
   }
   /** Libellés de l'axe vertical : « 0 » (jamais « 0,0 M€ »), « 500 k€ » sous le million, « 1,0 M€ » au-dessus (une même décimale pour tous les M€ de l'axe). */
   function libellesAxe(valeurs) {
-    const frac = valeurs.some(v => Math.abs(v) >= 1e6 && Math.abs(Math.round(v / 1e5) / 10 - Math.round(v / 1e6)) > 1e-9);
+    /* une seule unité par axe, choisie sur le plus grand repère : « 0 · 0,5 M€ · 1,0 M€ · 1,5 M€ », jamais « 500 k€ » au milieu de millions */
+    const max = valeurs.reduce((m, v) => Math.max(m, Math.abs(v)), 0), u = max >= 1e6 ? 1e6 : max >= 1000 ? 1000 : 1, sym = u === 1e6 ? "M€" : u === 1000 ? "k€" : "€";
+    const frac = u > 1 && valeurs.some(v => Math.abs(Math.round(v / u * 10) / 10 - Math.round(v / u)) > 1e-9);
     return valeurs.map(v => {
       const a = Math.abs(v), sg = v < 0 ? MOINS : "";
       if (a < 1e-9) return "0";
-      if (a >= 1e6) return sg + (frac ? (a / 1e6).toFixed(1).replace(".", ",") : String(Math.round(a / 1e6))) + NB + "M€";
-      if (a >= 1000) return sg + fInt(a / 1000) + NB + "k€";
-      return sg + fInt(a) + NB + "€";
+      return sg + (frac ? (a / u).toFixed(1).replace(".", ",") : fInt(a / u)) + NB + sym;
     });
   }
   const fSK = n => (n >= 0 ? "+" : MOINS) + fK(Math.abs(n));
@@ -159,8 +159,8 @@
     { id: "tout", label: "Tout", ans: null, aria: "Tout l'historique et tout l'horizon de la projection" },
   ];
   const HORIZON_MAX_ANS = 25;
-  /** Domaine du temps { debut, fin } (ms) d'une fenêtre. « N ans » = N ans avant ET après aujourd'hui ; le passé est borné par l'historique disponible et la place
-      libérée va au futur (largeur totale constante, axe proportionnel) ; sans passé, la fenêtre part d'aujourd'hui. « Tout » = tout l'historique et tout l'horizon.
+  /** Domaine du temps { debut, fin } (ms) d'une fenêtre. « N ans » = au plus N ans avant ET N ans après aujourd'hui ; le passé est borné par l'historique disponible et la place
+      libérée n'allonge pas le futur (jamais plus de N ans d'avenir, axe proportionnel) ; sans passé, la fenêtre part d'aujourd'hui. « Tout » = tout l'historique et tout l'horizon.
       ctx = { today (ms), debutPasse (ms | null), finFutur (ms), futurSeul? (mode capacité : pas de passé), periode?: { du, au } (ms) }. */
   function domaine(fenetre, ctx) {
     const { today } = ctx, finMax = fini(ctx.finFutur) ? ctx.finFutur : ajouterMois(today, 12 * HORIZON_MAX_ANS);
@@ -171,7 +171,9 @@
     const voulu = ajouterMois(today, -12 * f.ans);
     if (ctx.futurSeul) return { debut: today, fin: Math.min(finMax, ajouterMois(today, 12 * f.ans)) };
     const debut = Math.max(voulu, premier);
-    return { debut, fin: Math.min(finMax, ajouterMois(debut, 24 * f.ans)) };
+    // « N ans » ne montre jamais plus de N ans d'avenir : le sélecteur, l'axe et l'en-tête (« Dans N ans ») disent la même chose.
+    // Quand l'historique est plus court que N ans, la fenêtre est simplement plus étroite (le futur ne s'allonge plus de ce que le passé n'a pas).
+    return { debut, fin: Math.min(finMax, ajouterMois(today, 12 * f.ans)) };
   }
   /** Fenêtre « N ans » (id) la plus proche qui contient les deux bornes (pour agrandir sur un jalon hors fenêtre). */
   function fenetreContenant(todayMs, ms, debutPasse) {
@@ -329,8 +331,8 @@
     const D = d || {}, today = isoOk(D.today) ? msDe(D.today) : msDe(new Date().toISOString().slice(0, 10));
     const mode = D.mode === "capacite" ? "capacite" : "patrimoine";
     const pts = tab(D.passe && D.passe.points).filter(p => p && isoOk(p.date) && fini(p.valeur) && msDe(p.date) <= today)
-      .map(p => ({ t: msDe(p.date), v: +p.valeur, nature: p.nature === "reconstitue" ? "reconstitue" : "observe" })).sort((a, b) => a.t - b.t);
-    const passe = { t: pts.map(p => p.t), v: pts.map(p => p.v), nature: pts.map(p => p.nature) };
+      .map(p => ({ t: msDe(p.date), v: +p.valeur, nature: p.nature === "reconstitue" ? "reconstitue" : "observe", pe: p.nature === "reconstitue" && fini(p.part_estimee) ? +p.part_estimee : null })).sort((a, b) => a.t - b.t);
+    const passe = { t: pts.map(p => p.t), v: pts.map(p => p.v), nature: pts.map(p => p.nature), pe: pts.map(p => p.pe) }; // pe : part estimée de la photo reconstituée (HIS2), null si inconnue
     const aujObs = pts.length && pts[pts.length - 1].t === today ? pts[pts.length - 1].v : null;
     const F = D.futur && tab(D.futur.mois).length > 1 ? D.futur : null;
     let futur = null, ecartDepart = 0;
@@ -522,6 +524,7 @@
     if (t <= M.today && M.passe.t.length) {
       const i = plusProche(M.passe.t, t);
       r.valeur = M.passe.v[i]; r.nature = t === M.today ? "aujourdhui" : M.passe.nature[i]; r.valeurNature = M.passe.nature[i];
+      if (M.passe.pe && M.passe.pe[i] != null) r.partEstimee = M.passe.pe[i];
       if (t === M.today && M.valeurAuj != null) r.valeur = M.valeurAuj;
     } else if (t === M.today && M.valeurAuj != null) { r.valeur = M.valeurAuj; }
     if (t > M.today || (t === M.today && F)) {
@@ -554,6 +557,8 @@
     }
     return r;
   }
+  /** « 82 % mesuré » : la part de la photo reconstituée qui vient de mesures (relevés, ordres, cours), le reste étant estimé. */
+  const mesureTxt = pe => Math.round((1 - Math.min(1, Math.max(0, pe))) * 100) + " % mesuré";
   const NATURE = { observe: "observé", reconstitue: "reconstitué", aujourdhui: "aujourd'hui", projete: "projeté" };
 
   /* ---------- textes ---------- */
@@ -619,7 +624,7 @@
     v = montantLu(l);
     if (l.nature === "projete" && distinctes(l.p10, l.p90)) s = chancesTxt(0.8) + " entre " + kRange(l.p10, l.p90) + (provisoire(M) ? " · provisoire" : "");
     else if (l.nature === "projete") s = provisoire(M) ? "provisoire" : "";
-    else if (l.nature === "reconstitue") s = "Estimé à partir de tes relevés";
+    else if (l.nature === "reconstitue") s = l.partEstimee != null ? "Reconstitué à partir de tes relevés et de tes ordres (" + mesureTxt(l.partEstimee) + ")" : "Estimé à partir de tes relevés";
     else s = pl ? "" : "Observé sur tes comptes";
     if (pl) s = (pl.attendu ? "Écart attendu avec le plan : " : "Écart avec le plan : ") + (pl.attendu ? fSK(pl.ecart) : fSE(pl.ecart));
     return { k, v, s };
@@ -888,7 +893,7 @@
         if (l.crise) h += '<div class="gp-ro-d"><i class="gp-sw gp-sw-cr"></i>Avec ' + esc(l.crise.label) + " rejouée : <b>" + esc(fK(l.crise.valeur)) + "</b> (" + esc(fSK(l.crise.valeur - l.p50)) + ").</div>";
         const rp = rendementPhrase(M, l);
         if (rp) h += '<div class="gp-ro-d" data-rend-phrase>' + esc(rp) + "</div>";
-      } else if (l.nature === "reconstitue") h += '<div class="gp-ro-d">Reconstitué à partir de tes cours, transactions et soldes bancaires : une estimation, moins fiable qu\'une photo.</div>';
+      } else if (l.nature === "reconstitue") h += '<div class="gp-ro-d">Reconstitué à partir de tes cours, transactions et soldes bancaires : une estimation, moins fiable qu\'une photo' + (l.partEstimee != null ? " (" + esc(mesureTxt(l.partEstimee)) + ")" : "") + ".</div>";
       else if (l.nature === "observe") {
         h += '<div class="gp-ro-d">Relevé sur tes comptes (photo nocturne).</div>';
         h += rendementPasseHtml(M, l, "gp-ro-d");
@@ -1374,7 +1379,13 @@
     s += "</g>" + planTop;
     /* passé : reconstitué en pointillés, observé en plein */
     const pp = ech.passe.filter(p => p.t <= M.today), recon = pp.filter(p => p.nature === "reconstitue"), obs = pp.filter(p => p.nature === "observe");
-    if (recon.length) { const avecJonction = recon.concat(obs.slice(0, 1)); if (avecJonction.length > 1) s += '<path class="gp-recon" d="' + chemin(avecJonction.map(p => [X(p.t), Y(p.v)])) + '"/>'; }
+    if (recon.length) {
+      const avecJonction = recon.concat(obs.slice(0, 1));
+      /* HIS2 : les tronçons dont la photo est « estime » (plus de 30 % de la valeur estimée) sont dessinés plus pâles que les autres */
+      const pale = p => p.i != null && M.passe.pe && M.passe.pe[p.i] != null && M.passe.pe[p.i] > 0.3, tronc = [];
+      avecJonction.forEach((p, k) => { const c = pale(p) ? "gp-recon gp-recon-estime" : "gp-recon", d = tronc[tronc.length - 1]; if (d && d.c === c) d.pts.push(p); else tronc.push({ c, pts: k ? [avecJonction[k - 1], p] : [p] }); });
+      tronc.forEach(d => { if (d.pts.length > 1) s += '<path class="' + d.c + '" d="' + chemin(d.pts.map(p => [X(p.t), Y(p.v)])) + '"/>'; });
+    }
     if (obs.length > 1) s += '<path class="gp-obs" d="' + chemin(obs.map(p => [X(p.t), Y(p.v)])) + '"/>';
     s += "</g></g>" + puceEstime + legEmprunt;
     /* aujourd'hui : trait fin, halo, pastille d'encre sur la dernière valeur observée */

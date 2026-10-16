@@ -9,8 +9,10 @@ import * as nodeModule from "node:module";
 import vm from "node:vm";
 import { MoteurGen } from "./helpers/moteur-gen.mjs";
 import { chargerHistoriqueImportGen } from "./historique-import-gen.test.mjs";
-import { cas, resoudre, entreeLarge } from "./helpers/his2.mjs";
+import { cas, resoudre, entreeLarge, contexteDe } from "./helpers/his2.mjs";
 import { isinFictif } from "./helpers/isin-fictif.mjs";
+import { chargerHistoriqueGen } from "./helpers/historique-gen.mjs";
+import { genererHistoriqueNuit, SORTIE_HISTORIQUE_MCP } from "../scripts/gen-catalogue.mjs";
 
 const path = rel => fileURLToPath(new URL("../" + rel, import.meta.url));
 const lire = rel => readFileSync(path(rel), "utf8");
@@ -30,7 +32,7 @@ function chargerModule(source, globaux = {}) {
   return vm.runInNewContext(js + `\n;({ ${noms.join(", ")} });`,
     { z: fauxZ(), RegExp, Date, Math, JSON, Number, String, Object, Array, Set, Map, Promise, console, isFinite, Infinity, TextEncoder, Intl, crypto: globalThis.crypto, ...globaux });
 }
-const charger = () => chargerModule(SRC, { H: chargerHistoriqueImportGen(), Calc: MoteurGen.Calc, MSG_MFA });
+const charger = () => chargerModule(SRC, { H: chargerHistoriqueImportGen(), Calc: MoteurGen.Calc, MSG_MFA, Historique: chargerHistoriqueGen(SORTIE_HISTORIQUE_MCP).Historique });
 
 /** Base factice : tables en mémoire, filtres eq / in / gte / lte, limit, maybeSingle, count/head ; toute écriture est consignée dans `ecritures`. */
 function fauxDb(tables = {}) {
@@ -149,7 +151,8 @@ test("importer_releves_mensuels : B1 → une proposition historique/creer avec r
   assert.deepEqual(sansAppel(r.propositions.map(p => Object.keys(p).sort())), [["cible", "id", "operation", "ref"]], "ni apres ni avant dans la réponse");
   assert.equal(r.conduite.length, 12);
   assert.match(r.resume[0], /Compte courant Exemple : 2 mois/);
-  assert.equal(r.apercu, null, "l'aperçu de l'effet sur la courbe est branché en T13");
+  assert.equal(r.apercu.disponible, false, "des relevés d'un compte non rattaché à une ligne du bilan ne changent pas le passé de la courbe");
+  assert.match(r.apercu.raison, /rattaché à aucune ligne/);
   assert.match(r.rappel, /À valider/);
   assert.deepEqual(db.ecritures, [], "aucune écriture directe");
 });
@@ -210,6 +213,9 @@ test("importer_ordres : P1 résolu vers la ligne du bilan, mouvements avec clés
   assert.equal(apres.donnees.mouvements[0].qty, 10);
   assert.deepEqual(r.quantites, [{ isin: isinFictif(1), aujourdhui: 15, importee: 15, ecart: 0 }]);
   assert.match(r.resume[0], /Ordres de PEA Exemple : 3 mouvements sur 1 ligne/);
+  assert.equal(r.apercu.disponible, true, "l'aperçu est branché sur le dépôt : " + JSON.stringify(r.apercu));
+  assert.deepEqual(r.apercu.perimetre, [POS_ETF.name]);
+  assert.match(r.apercu.phrase, /^Avec cet import, le passé de « .+ » est estimé à/);
   // titre vendu depuis : ligne clôturée à créer (isin, name, envelope, owner), mouvements désignés par l'ISIN
   const T2 = serveur(fauxDb({ positions: [POS_ETF], transactions: [] }));
   const r2 = (await T2.importer_ordres.handler(entree("P-cloturee"))).ok;
@@ -274,6 +280,21 @@ test("découpage : 60 mois de 30 lignes dépassent 100 000 octets, ils sont dép
   void T; void r;
 });
 const H_LARGES = ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne", "virement_interne"];
+
+test("etat_historique : l'écart de recalage du passé reconstitué est dit au-delà de 5 % de la première photo, et seulement alors", { skip: SANS_STRIP }, async () => {
+  const photos = [{ mois: "2026-08-01", date: "2026-08-31", financier: 18400, qualite: "partiel", part_estimee: 0.2, calcule_le: "2026-10-13T03:00:00Z" }];
+  const lire = async total => (await serveur(fauxDb({ historique_comptes: [], historique_releves: [], historique_banque_mois: [], historique_imports: [], positions: [], photos_reconstituees: photos,
+    snapshots: [{ date: "2026-09-10", total }] })).etat_historique.handler({})).ok.photos.recalage;
+  const petit = await lire(19000);
+  assert.deepEqual([petit.premiere_photo, petit.dernier_mois_reconstitue, petit.ecart_eur, petit.ecart_pct, petit.a_signaler], ["2026-09-10", "2026-08", 600, 3.2, false]);
+  assert.equal(petit.texte, undefined, "pas de texte sous 5 %");
+  const gros = await lire(25000);
+  assert.deepEqual([gros.ecart_eur, gros.ecart_pct, gros.a_signaler], [6600, 26.4, true]);
+  assert.match(gros.texte, /recalé de 6600 € \(26,4 %/);
+  assert.match(gros.texte, /il manque peut-être/);
+  const sans = (await serveur(fauxDb({ historique_comptes: [], historique_releves: [], historique_banque_mois: [], historique_imports: [], positions: [], photos_reconstituees: photos })).etat_historique.handler({})).ok.photos;
+  assert.equal(sans.recalage, undefined, "sans première photo lisible, aucun écart annoncé");
+});
 
 test("etat_historique : couverture, mois manquants, placements, photos, imports et a_demander ; ni libellé d'opération ni numéro", { skip: SANS_STRIP }, async () => {
   const releves = ["2026-05", "2026-06", "2026-08", "2026-09"].map(m => ({ compte_id: COMPTE_B1.id, mois: m + "-01", complet: m !== "2026-09", solde_debut: 100, solde_fin: 150, total_entrees: 1000, total_sorties: 950, nombre: 10, import_id: "imp-1" }));
@@ -458,4 +479,52 @@ test("projeter : la capacité constatée vient de la série fusionnée (relevés
 test("list_propositions : les imports d'historique ne rendent que leur résumé et leur empreinte (jamais 100 000 octets d'apres)", () => {
   assert.match(IDX, /resume:apres->resume, empreinte:apres->>empreinte/);
   assert.match(IDX, /\.neq\("cible", "historique"\)/);
+});
+
+/* ---------- aperçu de l'effet d'un import sur le passé (T13) ---------- */
+test("copie générée historique.gen.js du connecteur : à jour (npm run gen)", () => {
+  assert.equal(lire(SORTIE_HISTORIQUE_MCP), genererHistoriqueNuit());
+});
+const ctxApercu = id => { const c = cas(id), e = resoudre(c.entree); return { c, e }; };
+test("aperçu : P1 — avec les ordres, le passé de l'enveloppe est mesuré (960 € fin janvier 2024) au lieu d'être tenu à la composition d'aujourd'hui (1 440 €), phrase pour Claude", { skip: SANS_STRIP }, async () => {
+  const M = charger(), { c, e } = ctxApercu("P1");
+  const v = chargerHistoriqueImportGen().verifier(c.type, e, contexteDe(c));
+  const ap = M.apercuImport({ type: "ordres", contenu: v.contenu, doublons: [], auj: TODAY, positions: c.contexte.positions, transactions: [], cours: c.contexte.cours ?? {}, imports: [] });
+  assert.equal(ap.disponible, true);
+  assert.deepEqual(sansAppel(ap.perimetre), ["ETF Monde A"]);
+  assert.equal(ap.points[0].date, "2024-01-31");
+  assert.equal(ap.points[0].avec, 960); assert.equal(ap.points[0].sans, 1440); assert.equal(ap.points[0].ecart, -480);
+  assert.equal(ap.points[0].qualite, "complet"); assert.equal(ap.points[0].part_mesuree_pct, 100);
+  assert.match(ap.phrase, /^Avec cet import, le passé de « ETF Monde A » est estimé à 960 € janvier 2024 \(100 % mesuré\), contre 1 440 € sans lui\.$/);
+  assert.ok(ap.points.some(p => p.date === "2024-12-31" && p.avec === 1575));
+  assert.match(ap.limites, /seules lignes concernées/);
+});
+test("aperçu : P-cloturee — une ligne clôturée créée par l'import compte dans le passé (246 € fin février 2024) ; D1 — l'ordre remplace le versement programmé de la nuit", { skip: SANS_STRIP }, async () => {
+  const M = charger(), c = cas("P-cloturee"), e = resoudre(c.entree);
+  const v = chargerHistoriqueImportGen().verifier(c.type, e, contexteDe(c));
+  const pos = c.contexte.positions.map(p => ({ ...p, value: null }));
+  const ap = M.apercuImport({ type: "ordres", contenu: v.contenu, doublons: [], auj: TODAY, positions: pos, transactions: [], cours: { ...c.contexte.cours, FR9990000013: [{ date: "2024-01-02", cloture: 100 }] }, imports: [] });
+  assert.equal(ap.disponible, true);
+  assert.equal(ap.points[0].date, "2024-02-29"); assert.equal(ap.points[0].avec - ap.points[0].sans, 246);
+  const d = cas("D1"), pd = d.contexte.positions.map(p => ({ ...p, value: null })), vd = chargerHistoriqueImportGen().verifier(d.type, resoudre(d.entree), contexteDe(d));
+  const tx = d.contexte.transactions.map(t => ({ ...t, cleImport: null, importId: null, frais: null, enveloppe: null }));
+  const cours = { FR9990000013: [{ date: "2026-01-02", cloture: 90 }] };
+  const avecDoublon = M.apercuImport({ type: "ordres", contenu: vd.contenu, doublons: vd.doublons, auj: TODAY, positions: pd, transactions: tx, cours, imports: [] });
+  assert.deepEqual(sansAppel(vd.doublons.map(x => x.transaction_id)), ["tx-nuit-1"]);
+  assert.equal(avecDoublon.points[0].date, "2026-01-31", "dès que le cours existe, la quantité d'avant l'ordre diffère");
+  assert.equal(avecDoublon.points[0].avec, Math.round(0.02512563 * 90), "5,03 parts d'aujourd'hui − 5 parts de l'ordre réel avant le 08/09");
+  assert.equal(avecDoublon.points[0].sans, 0, "sans l'import, la transaction de la nuit explique toutes les parts : zéro avant le 05/09");
+});
+test("aperçu : un import sans ligne concernée ou des relevés d'un compte rattaché à une ligne ; l'aperçu ne fait jamais échouer le dépôt", { skip: SANS_STRIP }, async () => {
+  const M = charger();
+  assert.equal(M.apercuImport({ type: "ordres", contenu: { mouvements: [{ enveloppe_nom: "Autre", cle_import: "z" }] }, auj: TODAY, positions: [], transactions: [], cours: {}, imports: [] }).disponible, false);
+  const pos = [{ id: "pos-cc", name: "Compte courant Exemple", isin: null, envelope: "Comptes", owner: "p1", mode: "manual", qty: null, value: 2500, status: "actif" }];
+  const { c, e } = ctxApercu("B1");
+  const v = chargerHistoriqueImportGen().verifier("releves", e, contexteDe(c));
+  const rattache = { ...v.contenu, compte: { ...v.contenu.compte, position_id: "pos-cc" } };
+  const ap = M.apercuImport({ type: "releves", contenu: rattache, auj: TODAY, positions: pos, transactions: [], cours: {}, imports: [], comptes: [] });
+  assert.equal(ap.disponible, true);
+  const p = ap.points[0];
+  assert.equal(p.date, "2023-12-31"); assert.equal(p.avec, 2000); assert.equal(p.sans, 2500);
+  assert.equal(p.qualite, "complet");
 });

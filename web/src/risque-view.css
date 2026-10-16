@@ -50,8 +50,8 @@
 /* accordéons : contributions, méthode, poches */
 #view-risque-view .rv-accs p,#view-risque-view .rv-classes .ui-acc-corps>p{margin:var(--sp-2) 0 0;line-height:1.5}
 #view-risque-view .rv-crows{display:flex;flex-direction:column;gap:var(--sp-2)}
-#view-risque-view .rv-crow{display:grid;grid-template-columns:minmax(0,190px) minmax(40px,1fr) 46px 86px;gap:var(--sp-3);align-items:center;font:400 var(--t-small)/var(--lh-small) var(--f-body)}
-#view-risque-view .rv-cl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#view-risque-view .rv-crow{display:grid;grid-template-columns:minmax(0,15rem) minmax(40px,1fr) 46px 86px;gap:var(--sp-3);align-items:center;font:400 var(--t-small)/var(--lh-small) var(--f-body)}
+#view-risque-view .rv-cl{min-width:0;overflow-wrap:anywhere}
 #view-risque-view .rv-ctrack{display:block;height:10px;border-radius:3px;background:var(--sunk);overflow:hidden}
 #view-risque-view .rv-ctrack span{display:block;height:100%;background:var(--s6);border-radius:3px}
 #view-risque-view .rv-cv{text-align:right}

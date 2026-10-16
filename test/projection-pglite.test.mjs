@@ -651,7 +651,8 @@ test("liste des crises et des classes de variante : celles de web/src/marche.js 
     assert.ok(SQL.includes("'" + k + "'"), k + " dans la migration");
   }
   assert.ok(SQL.includes("Type d''événement inconnu : choisis parmi " + TYPES_V1.join(", ") + "."));
-  assert.ok(SQL.includes("' ». Choisis parmi " + E.HYPOTHESES_VARIANTE.join(", ") + ".'"), "message de l'hypothèse inconnue");
+  /* enveloppe_scenario (SCN1, proj-1.3.0) est ajoutée à la liste par la migration 0038, qui étend foyer_valider_variante : 0031 garde les sept hypothèses d'origine */
+  assert.ok(SQL.includes("' ». Choisis parmi " + E.HYPOTHESES_VARIANTE.filter(k => k !== "enveloppe_scenario").join(", ") + ".'"), "message de l'hypothèse inconnue");
   assert.equal(E.validerEvenement(null, contexte()), "L'événement doit être un objet.");
   assert.equal(E.validerVariante(null), "La variante doit être un objet.");
   assert.ok(SQL.includes("L''événement doit être un objet.") && SQL.includes("La variante doit être un objet."));
@@ -739,7 +740,7 @@ test("parité JS ↔ SQL des variantes (plus de soixante cas) : même message ou
   assert.ok(cas.length >= 60);
   const vus = new Set();
   for (const [nom, v] of cas) {
-    const attendu = E.validerVariante(v);
+    const attendu = E.validerVariante(v) && E.validerVariante(v).replace(", enveloppe_scenario.", "."); // 0038 ajoute enveloppe_scenario au message de l'hypothèse inconnue
     if (attendu) vus.add(attendu);
     const r = await essayer("variante", v);
     if (attendu === null) { assert.equal(r.message, undefined, nom + " : accepté par le JS, refusé par SQL : " + r.message); await db.exec(`delete from public.foyer_variantes`); }

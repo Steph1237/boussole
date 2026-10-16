@@ -143,12 +143,15 @@
     ".mfa-muted{color:var(--muted,#5B6670);font-size:var(--t-body,14px)}",
     ".mfa-fld{display:flex;flex-direction:column;gap:5px}",
     ".mfa-fld label{font-size:var(--t-small,13px);font-weight:600;color:var(--muted,#5B6670)}",
-    ".mfa-in{font:var(--t-h2,20px) var(--f-num,ui-monospace,monospace);letter-spacing:.2em;color:var(--ink,#18222C);background:var(--bg,#F5F6F3);border:1px solid var(--line,#D9DDD6);border-radius:7px;padding:10px 12px;width:100%;min-width:0;box-sizing:border-box}",
-    ".mfa-in:focus{border-color:var(--accent,#16585E);outline:none;box-shadow:0 0 0 3px var(--accent-soft,#E3ECEC)}",
+    ".mfa-in{font:var(--t-h2,20px) var(--f-body,system-ui,sans-serif);letter-spacing:.2em;color:var(--ink,#18222C);background:var(--bg,#F5F6F3);border:1px solid var(--line-field,#7D877F);border-radius:10px;padding:10px 12px;min-height:44px;width:100%;min-width:0;box-sizing:border-box}",
+    ".mfa-in:focus{outline:none}",
+    ".mfa-in:focus-visible{outline:2px solid var(--focus,#2563EB);outline-offset:2px}",
+    /* champ du code à 6 chiffres : 56 px, centré, chiffres espacés comme six cases */
+    ".mfa-in[inputmode=numeric]{min-height:56px;text-align:center;letter-spacing:.5em;text-indent:.5em}",
     "select.mfa-in{font:var(--t-h3,16px) var(--f-body,system-ui,sans-serif);letter-spacing:0}",
     ".mfa-btns{display:flex;flex-wrap:wrap;gap:10px}",
-    ".mfa-btn{display:inline-flex;align-items:center;justify-content:center;font:600 var(--t-body,14px)/1.2 var(--f-body,system-ui,sans-serif);border-radius:7px;padding:11px 16px;border:1px solid var(--accent,#16585E);background:var(--accent,#16585E);color:var(--accent-ink,var(--surface,#fff));cursor:pointer;min-height:44px;text-decoration:none}",
-    ".mfa-btn.ghost{background:var(--surface,#fff);color:var(--accent,#16585E);border-color:var(--line2,#C6CCC3)}",
+    ".mfa-btn{display:inline-flex;align-items:center;justify-content:center;font:600 var(--t-body,14px)/1.2 var(--f-body,system-ui,sans-serif);border-radius:10px;padding:11px 16px;border:1px solid var(--brand-fill,var(--accent,#16585E));background:var(--brand-fill,var(--accent,#16585E));color:var(--brand-fill-ink,var(--surface,#fff));cursor:pointer;min-height:44px;text-align:center;text-decoration:none}",
+    ".mfa-btn.ghost{background:var(--surface,#fff);color:var(--brand,var(--accent,#16585E));border-color:var(--line2,#C6CCC3)}",
     ".mfa-btn.danger{background:var(--crit,#B42318);border-color:var(--crit,#B42318);color:var(--surface,#fff)}",
     ".mfa-btn:disabled{opacity:.5;cursor:default}",
     ".mfa-msg{padding:10px 12px;border-radius:7px;font-size:var(--t-body,14px)}.mfa-msg:empty{display:none}",
@@ -174,13 +177,15 @@
     ".mfa-etape{font:600 var(--t-small,13px)/1.2 var(--f-body,system-ui,sans-serif);color:var(--muted,#5B6670);letter-spacing:.02em}",
     ".mfa-ass-x{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-8px -10px -8px 0;font:400 var(--t-kpi,26px)/1 var(--f-body,system-ui,sans-serif);color:var(--muted,#5B6670);background:transparent;border:0;border-radius:7px;cursor:pointer}",
     ".mfa-ass-x:hover{color:var(--ink,#18222C);background:var(--sunk,#ECEEEA)}",
-    ".mfa-prog{display:flex;gap:6px}.mfa-prog i{flex:1;height:4px;border-radius:2px;background:var(--line2,#C6CCC3)}.mfa-prog i.on{background:var(--accent,#16585E)}",
+    ".mfa-prog{display:flex;gap:6px}.mfa-prog i{flex:1;height:4px;border-radius:2px;background:var(--line2,#C6CCC3)}.mfa-prog i.on{background:var(--brand,var(--accent,#16585E))}",
     ".mfa-ass-corps{display:flex;flex-direction:column;gap:14px}",
     ".mfa-ass-box .mfa-qr{align-self:center;width:200px;height:200px;margin:0;padding:8px;box-sizing:border-box}",
     ".mfa-ouvrir{width:100%;box-sizing:border-box}",
     ".mfa-lien{align-self:flex-start;min-height:44px;padding:0 2px;font:600 var(--t-body,14px)/1.2 var(--f-body,system-ui,sans-serif);color:var(--accent,#16585E);background:transparent;border:0;text-decoration:underline;text-underline-offset:3px;cursor:pointer}",
     ".mfa-cle{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--line,#D9DDD6);border-radius:8px;background:var(--bg,#F5F6F3)}.mfa-cle[hidden]{display:none}",
     ".mfa-cle .mfa-secret{align-self:flex-start;padding:8px 10px;font-size:var(--t-h3,16px);letter-spacing:.06em}",
+    ".mfa-btns-sec{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 20px}",
+    ".mfa-btn.lien{background:transparent;border-color:transparent;color:var(--brand,var(--accent,#16585E));text-decoration:underline;text-underline-offset:3px;padding:0 4px}",
     ".mfa-btn:focus-visible,.mfa-lien:focus-visible,.mfa-ass-x:focus-visible,.mfa-secret:focus-visible{outline:2px solid var(--ink,#18222C);outline-offset:2px}",
     "@media (max-width:640px){.mfa-ass-fond{padding:0;align-items:stretch}.mfa-ass-box{max-width:none;max-height:none;min-height:100%;border:0;border-radius:0;box-shadow:none;padding:16px 16px calc(24px + env(safe-area-inset-bottom,0px))}.mfa-ass-box .mfa-btns{flex-direction:column}.mfa-ass-box .mfa-btn{width:100%;box-sizing:border-box}.mfa-ass-box .mfa-qr{width:min(220px,70vw);height:auto;aspect-ratio:1}}",
     "@media (prefers-reduced-motion:no-preference){.mfa-ass-box{animation:mfa-entree .18s ease-out}@keyframes mfa-entree{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}}",
@@ -476,13 +481,13 @@
           '<div class="mfa-fld"><label for="mfaAssCode">Code à 6 chiffres</label>' +
           '<input class="mfa-in" id="mfaAssCode" type="text" inputmode="numeric" pattern="[0-9 ]*" autocomplete="one-time-code" maxlength="7" required aria-describedby="mfaAssAide mfaAssMsg"></div>' +
           msg + '<div class="mfa-btns"><button type="submit" class="mfa-btn" id="mfaAssOk">Vérifier et activer</button>' +
-          '<button type="button" class="mfa-btn ghost" data-ass="retour">Retour</button>' +
-          '<button type="button" class="mfa-btn ghost" data-ass="annuler">Annuler</button></div></form>';
+          '<div class="mfa-btns-sec"><button type="button" class="mfa-btn lien" data-ass="retour">Retour</button>' +
+          '<button type="button" class="mfa-btn lien" data-ass="annuler">Annuler</button></div></div></form>';
       }
       return '<p class="mfa-msg ok" role="status" id="mfaAssFait">La double authentification est activée. Elle te sera demandée à chaque connexion.</p>' +
         "<p>" + esc(SECOURS) + "</p>" + msg +
-        '<div class="mfa-btns"><button type="button" class="mfa-btn" id="mfaAssFin" data-ass="terminer">Terminer</button>' +
-        '<button type="button" class="mfa-btn ghost" id="mfaAssSecond" data-ass="second">Ajouter un second appareil</button></div>';
+        '<div class="mfa-btns"><button type="button" class="mfa-btn" id="mfaAssSecond" data-ass="second">Ajouter un second appareil</button>' +
+        '<button type="button" class="mfa-btn ghost" id="mfaAssFin" data-ass="terminer">Terminer</button></div>';
     }
     function rendre() {
       const barre = []; for (let k = 1; k <= ETAPES; k++) barre.push("<i" + (k <= st.etape ? ' class="on"' : "") + "></i>");

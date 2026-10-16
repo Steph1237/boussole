@@ -590,7 +590,7 @@
          succès, le store est relu à 5 s puis à 15 s (la synchronisation se fait côté serveur, à la réception de la notification). */
       const retour = retourBanque(window.BOUSSOLE_RETOUR_BANQUE || location.search);
       if (retour) {
-        route = resolve("compte/connexion"); lastSubs.compte = "connexion";
+        route = resolve("compte/connexion"); lastSubs.compte = "connexion"; retenirLien(route, "volet=banques");
         history.replaceState(null, "", location.pathname + retour.recherche + "#compte/connexion");
         const bb = $("banqueBanner");
         if (bb) {

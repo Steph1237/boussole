@@ -4,5 +4,5 @@
 .bq-mfa{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin:0 0 16px;padding:16px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius)}
 .bq-mfa h3{margin:0;font:700 var(--t-h2)/1.25 var(--f-display)}
 .bq-mfa p{margin:0;font-size:var(--t-body)}
-.bq-mfa-btn{display:inline-flex;align-items:center;min-height:44px;padding:11px 16px;font:600 var(--t-body)/1.2 var(--f-body);color:var(--surface);background:var(--accent);border:1px solid var(--accent);border-radius:var(--radius-sm);text-decoration:none}
+.bq-mfa-btn{display:inline-flex;align-items:center;min-height:44px;padding:11px 16px;font:600 var(--t-body)/1.2 var(--f-body);color:var(--brand-fill-ink);background:var(--brand-fill);border:1px solid var(--brand-fill);border-radius:var(--r-ctl);text-align:center;text-decoration:none}
 .bq-mfa-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}

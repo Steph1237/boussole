@@ -217,7 +217,8 @@ function couvertureDe(x){
   const texte=!total?"aucun critère pour le moment":!notes?"pas encore calculée : il manque des données":"calculée sur "+notes+" critère"+s_(notes)+" sur "+total;
   return {notes,total,part:total?notes/total:0,texte};
 }
-const classeTotal=t=>t>=80?"good":t>=60?"warn":"crit";
+/* Statut de la note : la règle commune de Pratiques.statutNote (Aujourd'hui et Santé lisent la même) ; repli identique hors navigateur. */
+const classeTotal=t=>{ const P=typeof window!=="undefined"&&window&&window.Pratiques; return P&&typeof P.statutNote==="function"?P.statutNote(t).ton:(t>=80?"good":t>=60?"warn":"crit"); };
 const MOT_TOTAL={good:"bon",warn:"à surveiller",crit:"à travailler"};
 const aNote=r=>!!(r&&(r.familles||[]).some(f=>f.total!=null));
 /** Verdict en une phrase : { note ("78" ou "—"), label (Solide · Correct · À consolider · Provisoire · ""), phrase, ton, provisoire }.
@@ -305,7 +306,7 @@ function enteteHtml(r,U,o){
   const puce=v.label&&!v.provisoire?etatHtml({puce:TON_PUCE[v.ton]||"completer",mot:v.label.toLowerCase()}):"";
   const nbManque=r&&aNote(r)?comptes(r).filter(n=>n.statut==="a_completer").length:0;
   const manque=nbManque?`<span class="ui-puce completer"><span class="ui-puce-point" aria-hidden="true"></span>À compléter : ${nbManque}</span>`:"";
-  const couv=aNote(r)?`<p class="st-couv">${esc(cov.texte.charAt(0).toUpperCase()+cov.texte.slice(1))}${v.provisoire?" "+etatHtml({puce:"surveiller",mot:"provisoire"}):""}${date?'<span class="st-date">, données du '+esc(date)+"</span>":""}${manque?" "+manque:""}</p>`:"";
+  const couv=aNote(r)?`<p class="st-couv">${esc(cov.texte.charAt(0).toUpperCase()+cov.texte.slice(1))}${v.provisoire?" "+etatHtml({puce:"surveiller",mot:"provisoire"}):""}${date?'<span class="st-date"> · données du '+esc(date)+"</span>":""}${manque?" "+manque:""}</p>`:"";
   /* Réponse d'abord (statut, phrase, couverture) ; « Demander à Claude » est dans l'en-tête de la page, pas dans la carte. */
   const tete=`<div class="st-tete">${anneauHtml(v)}<div class="st-tete-txt">${puce}`+
     `<p class="st-verdict ${v.ton}" id="santeVerdict" tabindex="-1">${esc(v.phrase)}</p>${couv}</div></div>`;

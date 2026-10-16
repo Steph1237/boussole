@@ -84,7 +84,7 @@ test("aujourdhui.html : identifiants utilisés par le script, titres des trois b
 });
 
 test("aujourdhui.css : entièrement scopé sous #view-aujourdhui (le panneau, hors de la vue, sous .ui-panneau .aj-…)", () => {
-  const c = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@media[^{]*\{/g, "}");
+  const c = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@(?:media|container)[^{]*\{/g, "}");
   const sels = [...c.matchAll(/(^|})\s*([^@{}][^{}]*)\{/g)].map(m => m[2].trim()).filter(Boolean);
   assert.ok(sels.length > 15);
   const bad = sels.flatMap(s => s.split(",").map(x => x.trim())).filter(x => !/^#view-aujourdhui\b/.test(x) && !/^\.ui-panneau \.aj-/.test(x));
@@ -581,7 +581,7 @@ test("detail : 2 à 4 lignes et un lien vers la page complète pour chaque carte
   assert.doesNotMatch(js, /Budget et objectifs|budget et objectifs/);
 });
 
-test("detail (Patrimoine net) : « Ce que je possède, ce que je dois » — mêmes calculs que l'ancienne carte du Bilan (BilanCalc.composition)", () => {
+test("detail (Patrimoine net) : « Ce que tu possèdes, ce que tu dois » — mêmes calculs que l'ancienne carte du Bilan (BilanCalc.composition)", () => {
   const nb = x => String(x).replace(/[\u00a0\u202f]/g, " ");
   const S = demoS(), t = jourLocal();
   const ind = A.indicateurs(S, t, { id: "1a", granularite: "mois" }, DEPS);
@@ -590,9 +590,9 @@ test("detail (Patrimoine net) : « Ce que je possède, ce que je dois » — mê
   assert.equal(ind.net.usage, pat.usage); assert.equal(ind.net.entreprise, pat.entreprise);
   const d = A.detail("net", ind, { id: "1a", granularite: "mois" });
   const c = nb(d.contenu).replace(/&#39;/g, "'");
-  assert.match(c, /Ce que je possède, ce que je dois/);
+  assert.match(c, /Ce que tu possèdes, ce que tu dois/);
   const resume = c.split("<details")[0];
-  const lignes = [...resume.matchAll(/<li><span class="aj-det-l">([^<]+)<\/span><span class="aj-det-v">([^<]+)<\/span><\/li>/g)].map(m => [m[1], m[2]]);
+  const lignes = [...resume.matchAll(/<li(?: class="aj-det-total")?><span class="aj-det-l">([^<]+)<\/span><span class="aj-det-v">([^<]+)<\/span><\/li>/g)].map(m => [m[1], m[2]]);
   const e = v => nb(new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(Math.round(v)))) + " €";
   assert.deepEqual(lignes, [["Placements financiers", e(pat.financier)], ["Immobilier", e(pat.immobilier)], ["Biens d'usage (voiture, meubles…)", e(pat.usage)],
     ["Dettes", "−" + e(pat.dettes)], ["Patrimoine net", e(pat.net)]], "parts d'entreprise absentes de la démo : pas de ligne");
@@ -1153,7 +1153,7 @@ test("aujourdhui.css : bandeau héros + 3 / 2 × 2 / 4 en rangée, « À traiter
   assert.match(css, /\.aj-k-net\{grid-column:1\/-1/, "mobile : le patrimoine net en héros pleine largeur");
   assert.match(css, /@media \(min-width:900px\)\{[^@]*\.aj-kpis\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /@media \(min-width:1240px\)\{\s*#view-aujourdhui \.aj-kpis\{grid-template-columns:[\d.]+fr 1fr 1fr 1fr\}/, "rangée de 4");
-  assert.match(css, /@media \(min-width:1240px\)\{\s*#view-aujourdhui \.aj\{grid-template-columns:minmax\(0,1fr\) 360px;grid-template-areas:"kpi kpi" "graphe traiter" "ech traiter"/, "À traiter en colonne de droite");
+  assert.match(css, /@media \(min-width:1240px\)\{\s*#view-aujourdhui \.aj\{grid-template-columns:minmax\(0,1fr\) 360px;grid-template-areas:"kpi kpi" "graphe traiter" "graphe ech"/, "À traiter puis les échéances en colonne de droite");
   assert.match(css, /\.aj-k:hover\{/); assert.match(css, /\.aj-k:focus-visible\{outline:2px solid var\(--focus\)/);
   assert.doesNotMatch(css, /\.aj-k::before|translateY|text-transform/, "plus de liseré de couleur en haut des cartes, plus de soulèvement, plus de majuscules");
   assert.match(css, /\.aj-ring-arc\{[^}]*transition:stroke-dashoffset/);

@@ -9,112 +9,98 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%3E%3Crect%20width=%2232%22%20height=%2232%22%20rx=%227%22%20fill=%22%231f4d4a%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%229%22%20fill=%22none%22%20stroke=%22%23fff%22%20stroke-width=%222.4%22/%3E%3Cpath%20d=%22M16%209.5l3.2%208.2-3.2-1.8-3.2%201.8z%22%20fill=%22%23fff%22/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap">
 <style>
-:root{
-  --bg:#F5F6F3; --surface:#FFFFFF; --sunk:#ECEEEA; --ink:#18222C; --muted:#5B6670; --line:#D9DDD6; --line2:#C6CCC3;
-  --accent:#16585E; --accent-soft:#E1EAEA; --good:#2E7D4F; --warn:#A8690F; --crit:#B42318;
-  --good-soft:#E3F1E8; --warn-soft:#F8EBD3; --crit-soft:#F9E0DC;
-  --me:#D9480F;
-  --f-display:"Schibsted Grotesk",ui-sans-serif,system-ui,sans-serif;
-  --f-body:"Public Sans",ui-sans-serif,system-ui,sans-serif;
-  --f-num:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --radius:10px; --radius-sm:7px;
-  color-scheme:light;
-}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942; --line2:#3B4853;
-  --accent:#62C7BE; --accent-soft:#1D3434; --good:#6CC08F; --warn:#E0A849; --crit:#F0806F;
-  --good-soft:#1D3527; --warn-soft:#3A2E17; --crit-soft:#3D1F1B;
-  --me:#FF8A5B;
-  color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#12181D; --surface:#1A2229; --sunk:#222C34; --ink:#E6EAE7; --muted:#9AA5AD; --line:#2E3942; --line2:#3B4853;
-  --accent:#62C7BE; --accent-soft:#1D3434; --good:#6CC08F; --warn:#E0A849; --crit:#F0806F;
-  --good-soft:#1D3527; --warn-soft:#3A2E17; --crit-soft:#3D1F1B;
-  --me:#FF8A5B;
-  color-scheme:dark}
-
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%}
+/*@css*/
+/* Mon compte : même coque que l'app (barre latérale, barre du bas, en-tête de page) et mêmes jetons (theme.css et ui.css injectés par build.mjs).
+   Ici seulement les cartes et les formulaires de la page ; la logique de sécurité reste dans account.js. */
 html{overflow-x:hidden}
-body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-[hidden]{display:none!important}
+.page-back{display:inline-flex;align-items:center;gap:var(--sp-1);min-height:var(--hit);padding:0 var(--sp-2) 0 0;color:var(--brand);font:600 var(--t-small) var(--f-body);text-decoration:none;border-radius:var(--r-ctl)}
+.page-back:hover{text-decoration:underline;text-underline-offset:3px}
+.page-sub{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--sp-4)}
+.page-head .head-actions .signout{display:inline-flex}
+@media (max-width:899.98px){.page-head .head-actions .signout{border-color:transparent;background:none;text-decoration:underline;text-underline-offset:3px;padding:0 var(--sp-2)}}
+.page-head .page-desc{display:none}
+@media (min-width:900px){.page-head .page-desc{display:block}}
+.sub{margin:0;color:var(--muted);font-size:var(--t-small);line-height:var(--lh-small);overflow-wrap:anywhere}
+.stack{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+@media (min-width:1280px){.stack{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:var(--gap-cards)}.stack>.card.secure,.stack>.card.danger{grid-column:1/-1}}
 
-.page{max-width:880px;margin:0 auto;padding:20px 16px 40px;display:flex;flex-direction:column;gap:16px}
-.top{display:flex;justify-content:space-between;align-items:center;gap:8px 12px;flex-wrap:wrap;min-height:40px}
-.brand{display:inline-flex;align-items:center;gap:9px;font:700 14px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-decoration:none}
-.brand svg{width:20px;height:20px;flex:none}
-.top nav{display:flex;flex-wrap:wrap;gap:8px}
-.pill{font:600 14px var(--f-body);color:var(--accent);text-decoration:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;cursor:pointer;white-space:nowrap}
-.pill:hover{border-color:var(--accent)}
-h1{font:800 clamp(28px,4.5vw,40px)/1.1 var(--f-display);letter-spacing:-.02em;margin:16px 0 0}
-.sub{margin:4px 0 8px;color:var(--muted)}
-.stack{display:flex;flex-direction:column;gap:16px}
-
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
-.card h2{font:700 19px/1.25 var(--f-display);margin:0}
-.card p{margin:0}
-.muted{color:var(--muted)}
-.small{font-size:13px}
-.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
-.fld{display:flex;flex-direction:column;gap:5px;flex:1 1 220px;min-width:0}
-.fld label{font-size:13px;font-weight:600;color:var(--muted)}
-input.in{font:16px var(--f-body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;width:100%;min-width:0}
-input.in:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--e1);padding:var(--card-pad);display:flex;flex-direction:column;gap:var(--sp-3);min-width:0}
+.card h2{font:650 var(--t-h2)/var(--lh-h2) var(--f-display);margin:0}
+.card h3{font:650 var(--t-h3)/var(--lh-h3) var(--f-body);margin:0}
+.card p{margin:0;line-height:1.5}
+.small{font-size:var(--t-small);line-height:var(--lh-small)}
+.row{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:flex-end}
+.fld{display:flex;flex-direction:column;gap:6px;flex:1 1 220px;min-width:0}
+.fld label{font:600 var(--t-small) var(--f-body);color:var(--muted)}
+input.in{font:var(--t-h3) var(--f-body);color:var(--ink);background:var(--bg);border:1px solid var(--line-field);border-radius:var(--r-ctl);min-height:var(--hit);padding:0 var(--sp-3);width:100%;min-width:0}
 input.in[readonly]{background:var(--sunk)}
-input.mono{font-family:var(--f-num);font-size:14px}
-.cur{font:600 16px var(--f-body);overflow-wrap:anywhere}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:600 14px/1.2 var(--f-body);border-radius:var(--radius-sm);padding:11px 16px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);text-decoration:none;cursor:pointer;min-height:44px;white-space:nowrap}
-.btn.ghost{background:var(--surface);color:var(--accent);border-color:var(--line2)}
-.btn.ghost:hover{border-color:var(--accent)}
-.btn.danger{background:var(--crit);border-color:var(--crit);color:var(--surface)}
+input.mono{font-family:var(--f-body);font-size:var(--t-body)}
+.cur{font:600 var(--t-h3) var(--f-body);overflow-wrap:anywhere}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font:700 var(--t-body)/1.2 var(--f-body);border-radius:var(--r-ctl);padding:0 var(--sp-5);border:1px solid var(--brand-fill);background:var(--brand-fill);color:var(--brand-fill-ink);text-decoration:none;cursor:pointer;min-height:var(--hit);white-space:nowrap}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:var(--surface);color:var(--brand);border-color:var(--line2);font-weight:600}
+.btn.ghost:hover{border-color:var(--brand);background:var(--brand-soft);filter:none}
+.btn.danger{background:var(--st-work);border-color:var(--st-work);color:var(--surface)}
 .btn:disabled{opacity:.5;cursor:default}
-.msg{margin:0;padding:10px 12px;border-radius:var(--radius-sm);font-size:14px}
-.msg.err{background:var(--crit-soft)}
-.msg.ok{background:var(--good-soft)}
-.msg.info{background:var(--warn-soft)}
-.msg a{color:var(--accent);font-weight:600}
-.card.secure{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.secform{display:flex;flex-direction:column;gap:12px;margin:0}
-.secform > .fld,.card > .fld{flex:none} /* carte en colonne : la base de 220 px ne vaut que dans une .row */
+.pill{display:inline-flex;align-items:center;min-height:var(--hit);padding:0 var(--sp-4);font:600 var(--t-small) var(--f-body);color:var(--brand);text-decoration:none;border:1px solid var(--line2);background:var(--surface);border-radius:var(--r-chip);cursor:pointer;white-space:nowrap}
+.pill:hover{border-color:var(--brand)}
+.msg{margin:0;padding:var(--sp-3);border-radius:var(--r-ctl);font-size:var(--t-small);line-height:var(--lh-small)}
+.msg.err{background:var(--st-work-bg)}
+.msg.ok{background:var(--st-good-bg)}
+.msg.info{background:var(--st-watch-bg)}
 .msg:empty{display:none}
-.copyline{display:flex;gap:8px;align-items:stretch}
+.msg a{color:var(--brand);font-weight:600}
+.card.secure{border-color:var(--brand)}
+.secform{display:flex;flex-direction:column;gap:var(--sp-3);margin:0}
+.secform > .fld,.card > .fld{flex:none} /* carte en colonne : la base de 220 px ne vaut que dans une .row */
+.copyline{display:flex;gap:var(--sp-2);align-items:stretch}
 .copyline input{flex:1;min-width:0}
-.howto{margin:0;padding:0 0 0 20px;display:grid;gap:8px}
+.howto{margin:0;padding:0 0 0 20px;display:grid;gap:var(--sp-2)}
 .howto li{padding-left:2px}
 .howto b{font-weight:600}
-code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
-.grants{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.grants li{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
+code{font:500 var(--t-small) var(--f-mono);background:var(--sunk);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.grants{list-style:none;margin:0;padding:0;display:grid;gap:var(--sp-2)}
+.grants li{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-3);flex-wrap:wrap;border:1px solid var(--line);border-radius:var(--r-ctl);padding:var(--sp-3)}
 .grants b{font-weight:600}
-.sep{height:1px;background:var(--line);margin:4px 0}
-.card.danger{border-color:color-mix(in srgb,var(--crit) 45%,var(--line))}
-.card.danger h2{color:var(--crit)}
-.foot{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin-top:8px}
-.foot a{color:inherit;text-underline-offset:3px}
+.sep{height:1px;background:var(--line);margin:var(--sp-1) 0}
+.card.danger{border-color:color-mix(in srgb,var(--st-work) 45%,var(--line))}
+.card.danger h2{color:var(--st-work)}
+.foot{display:flex;flex-wrap:wrap;gap:0 var(--sp-4);font-size:var(--t-small);color:var(--muted);border-top:1px solid var(--line);padding-top:var(--sp-3);margin-top:var(--sp-2)}
+.foot a{display:inline-flex;align-items:center;min-height:var(--hit);min-width:var(--hit);color:inherit;text-underline-offset:3px}
 @media (max-width:520px){.copyline{flex-direction:column}.row .btn{width:100%}}
 </style>
 </head>
 <body>
-<div class="page">
-  <header class="top">
-    <a class="brand" href="./" aria-label="Boussole, accueil">
-      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5 13.4 13.4 8.5 15.5l2.1-4.9z" fill="var(--me)"/><path d="M10.6 10.6 8.5 15.5l4.9-2.1" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-      Boussole
-    </a>
-    <nav aria-label="Navigation du compte">
-      <a class="pill" href="app.html">Retour à mon espace</a>
-      <button type="button" class="pill" id="signOut">Se déconnecter</button>
+<div class="app">
+  <!-- Coque de l'app : mêmes barre latérale et barre du bas, liens vers les destinations de app.html. Cette page reste un document à part (session, code frais). -->
+  <aside class="side" aria-label="Navigation principale">
+    <a class="brand" href="app.html#aujourdhui/vue" aria-label="Boussole, mon espace"><svg class="brand-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>Boussole</a>
+    <nav class="side-nav" aria-label="Destinations">
+      <a class="nav-item" href="app.html#aujourdhui/vue"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 11L12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></svg><span class="nl">Aujourd'hui</span></a>
+      <a class="nav-item" href="app.html#patrimoine/placements"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/></svg><span class="nl">Patrimoine</span></a>
+      <a class="nav-item" href="app.html#pilotage/sante"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg><span class="nl">Pilotage</span></a>
+      <a class="nav-item" href="app.html#agent/propositions"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg><span class="nl">Agent</span></a>
     </nav>
-  </header>
+    <div class="side-foot">
+      <nav class="side-compte" aria-label="Compte">
+        <a class="nav-item" href="app.html#compte/donnees" aria-current="page"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.8-3.6 3.8-5.5 7.5-5.5s6.7 1.9 7.5 5.5"/></svg><span class="nl">Compte</span></a>
+      </nav>
+    </div>
+  </aside>
 
-  <div>
-    <h1>Mon compte</h1>
-    <p class="sub" id="who">Chargement…</p>
-  </div>
+  <div class="main">
+    <header class="page-head">
+      <div class="page-title">
+        <h1 id="pageTitle">Mon compte</h1>
+        <p class="page-desc">E-mail, mot de passe, double authentification, connexion de Claude, export et suppression</p>
+      </div>
+      <div class="head-actions">
+        <button type="button" class="ui-btn secondaire signout" id="signOut">Se déconnecter</button>
+      </div>
+    </header>
+    <div class="page-sub"><a class="page-back" href="app.html#compte/donnees">‹ Retour à Compte</a><p class="sub" id="who">Chargement…</p></div>
 
   <main id="main" class="stack" hidden>
     <!-- Compte anonyme (« Commencer sans e-mail ») : affiché par account.js, à la place des sections e-mail et mot de passe. -->
@@ -193,11 +179,11 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
       </div>
       <ol class="howto">
         <li><b>Claude (site et applications) :</b> Paramètres → Connecteurs → Ajouter un connecteur personnalisé → colle l'adresse, puis connecte-toi à Boussole et autorise l'accès.</li>
-        <li><b>Claude Code :</b> dans un terminal, lance <code id="mcpCmd">claude mcp add boussole -t http https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp</code> <button type="button" class="pill" data-copy="mcpCmd" style="padding:3px 10px;font-size:13px">Copier</button></li>
+        <li><b>Claude Code :</b> dans un terminal, lance <code id="mcpCmd">claude mcp add boussole -t http https://oapcewpqsbbjdlcdeizi.supabase.co/functions/v1/mcp</code> <button type="button" class="pill" data-copy="mcpCmd">Copier</button></li>
       </ol>
       <p class="msg" id="copyMsg" role="status"></p>
       <div class="sep"></div>
-      <h3 style="margin:0;font:700 15px var(--f-display)">Applications autorisées</h3>
+      <h3>Applications autorisées</h3>
       <div id="grants"><p class="muted small">Chargement…</p></div>
       <p class="msg" id="grantMsg" role="status"></p>
       <div id="accords" hidden></div>
@@ -234,6 +220,14 @@ code{font:500 13px var(--f-num);background:var(--sunk);border-radius:4px;padding
     <a href="legal/confidentialite.html">Confidentialité</a>
     <a href="https://github.com/Steph1237/boussole" rel="noopener">Code source</a>
   </footer>
+  </div>
+
+  <nav class="bbar" aria-label="Destinations">
+    <a class="bb-item" href="app.html#aujourdhui/vue"><span class="bb-ico"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 11L12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></svg></span><span class="nl">Aujourd'hui</span></a>
+    <a class="bb-item" href="app.html#patrimoine/placements"><span class="bb-ico"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/></svg></span><span class="nl">Patrimoine</span></a>
+    <a class="bb-item" href="app.html#pilotage/sante"><span class="bb-ico"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg></span><span class="nl">Pilotage</span></a>
+    <a class="bb-item" href="app.html#agent/propositions"><span class="bb-ico"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg></span><span class="nl">Agent</span></a>
+  </nav>
 </div>
 
 <script src="config.js"></script>
