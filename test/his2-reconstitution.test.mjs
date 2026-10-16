@@ -82,6 +82,14 @@ test("B1 en mode jour : interpolation linéaire entre deux fins de mois, estimé
   assert.deepEqual(r.drapeaux.soldesImportes, ["Compte courant Exemple"]);
 });
 
+test("ligne manuelle : tous les types du tableau § 4.4 (achat +, vente −, arbitrages ±, dividende capitalisé +, frais −), un relevé ou un solde ne bougent rien", () => {
+  const P = [{ id: "m", name: "Contrat Exemple", mode: "manual", value: 0, status: "actif", owner: "p1", envelope: "Contrat Exemple" }];
+  const types = [["versement", 1000], ["achat", 200], ["vente", 50], ["arbitrage_entree", 100], ["arbitrage_sortie", 30], ["dividende", 20], ["interets", 10], ["frais", 5], ["rachat", 100], ["retrait", 25], ["solde", 999]];
+  const tx = types.map(([type, amount], i) => ({ id: "t" + i, positionId: "m", date: "2025-01-" + String(i + 1).padStart(2, "0"), type, amount, importId: "i", source: "import" }));
+  const r = H.reconstituer({ today: "2026-10-16", pas: "mois", positions: P, tx, depuisOuverture: { "Contrat Exemple": true }, depuis: "2024-12-31", jusqua: "2025-01-31" });
+  assert.equal(r.points.find(p => p.date === "2025-01-31").financier, 1000 + 200 - 50 + 100 - 30 + 20 + 10 - 5 - 100 - 25);
+});
+
 /* ---------- D1 : une transaction remplacée (doublon_de) est ignorée partout ---------- */
 test("D1 : après validation seul l'ordre compte ; retirer l'import rend la transaction de la nuit", () => {
   const f = cas("D1/flux"), r0 = cas("D1/retrait");
@@ -267,6 +275,16 @@ test("photos : plus de 30 sources regroupées, sources et by_bloc tiennent dans 
   near(ph[0].sources.reduce((a, s) => a + s.part, 0), 1, "parts", 1e-4);
   assert.ok(JSON.stringify(ph[0].sources).length <= 6000);
   assert.ok(JSON.stringify(ph[0].by_bloc).length <= 20000);
+});
+
+/* ---------- recalage de fusionner avec un historique réel ---------- */
+test("fusionner : photos reconstituées mensuelles + première photo observée → l'écart de recalage est celui du dernier mois reconstitué, l'observé n'est jamais touché", () => {
+  const e = entreeReconstituer(cas("P1/reconstitution")), r = H.reconstituer({ ...e, jusqua: "2024-03-31" });
+  const f = H.fusionner([{ date: "2024-04-05", net: 1600 }, { date: "2024-04-06", net: 1610 }], r.points);
+  assert.equal(f.premiereObservee, "2024-04-05");
+  assert.equal(f.decalage, 25, "1 600 € observés − 1 575 € reconstitués à fin mars");
+  assert.deepEqual(f.points.filter(p => p.nature === "reconstitue").map(p => p.net), [25, 985, 2025, 1600], "tout le passé est décalé de 25 €, dernier mois compris");
+  assert.deepEqual(f.points.filter(p => p.nature === "observe").map(p => p.net), [1600, 1610]);
 });
 
 /* ---------- performance (spec § 12.3) ---------- */

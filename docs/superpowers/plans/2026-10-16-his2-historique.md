@@ -157,7 +157,7 @@ Phases livrables séparément : **phase 1** (T0 à T9 : on peut importer, valide
 - **Dépend de** : T0, T8.
 
 ### Tâche 11 — Relecture des calculs (Opus, high, S)
-- [ ] Sens des flux et des quantités (tableau § 4.4), recalage de `fusionner` avec un historique réel (écart attendu faible ; au-delà de 5 %, `etat_historique` doit le dire), qualité, cas de bord de la fixture. Points bloquants corrigés avant T12.
+- [x] Sens des flux et des quantités (tableau § 4.4), recalage de `fusionner` avec un historique réel (écart attendu faible ; au-delà de 5 %, `etat_historique` doit le dire), qualité, cas de bord de la fixture. Points bloquants corrigés avant T12. Fait (relecture menée par l'exécutant de T10 à T12, pas par Opus : à refaire par Opus en relecture finale T16 si besoin) : (1) écart avec le tableau § 4.4 corrigé : `achat` et `vente` sont des flux de valeur (+ / −) sur une ligne manuelle, test sur tous les types ; (2) sens des quantités et des espèces relus ligne à ligne contre le tableau (deltaTx testé sur T-types, D1/flux, D1/retrait ; espèces testées sur P2) ; (3) recalage de `fusionner` : l'écart est celui du dernier mois reconstitué (photos mensuelles) contre la première photo, il comprend l'évolution des marchés du mois ; `etat_historique` le dit au-delà de 5 % du patrimoine de la première photo (`photos.recalage`, `a_signaler`, `texte`) ; test dans `test/historique-mcp.test.mjs` ; (4) qualité et cas de bord de la fixture (bornes 5 % / 30 %, valeur négative, zéro) testés ; (5) choix hors fixture listés en T10, à confirmer.
 - **Dépend de** : T10.
 
 ### Tâche 12 — La nuit : cours anciens, photos, rétention (Sonnet, medium, M)

@@ -87,12 +87,13 @@
   const SRC_COURS = { type: "cours" }, SRC_SAISIE = { type: "saisie" }, SRC_POWENS = { type: "powens" };
   /** D'où vient la valeur portée par une transaction : l'import qui l'a apportée (ordres, versements), sinon une saisie ou la nuit. */
   const srcTx = t => (t.imp ? { type: /^(achat|vente)$/.test(t.type) || (t.type === "releve" && t.qty != null) ? "ordres" : "versements", import_id: t.imp } : SRC_SAISIE);
-  /** Flux net d'une transaction sur une ligne à relevés de valeur (versements − retraits − frais ± arbitrages). */
+  /** Flux net d'une transaction sur une ligne à relevés de valeur (colonne « valeur d'une ligne manuelle » du § 4.4) : versements, achats et arbitrages en entrée,
+      dividendes et intérêts capitalisés, moins retraits, rachats, ventes, arbitrages en sortie et frais. Un relevé ou un solde n'est pas un flux. */
   function fluxValeur(t) {
     const m = t.amount || 0;
-    if (/^(versement|programme|arbitrage_entree|dividende|interets)$/.test(t.type)) return m;
-    if (/^(retrait|rachat|arbitrage_sortie|frais)$/.test(t.type)) return -m;
-    if (TYPES_ENTREE[t.type] || TYPES_SORTIE[t.type] || t.type === "releve" || t.type === "solde") return 0;
+    if (/^(achat|versement|programme|arbitrage_entree|dividende|interets)$/.test(t.type)) return m;
+    if (/^(vente|retrait|rachat|arbitrage_sortie|frais)$/.test(t.type)) return -m;
+    if (t.type === "releve" || t.type === "solde") return 0;
     return SORTIES.test(t.type) ? -m : ENTREES.test(t.type) ? m : 0;
   }
   /** Effet d'une transaction sur les espèces d'une enveloppe dont les espèces sont suivies (colonne « espèces » du § 4.4). surCaisse : la

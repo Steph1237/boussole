@@ -191,6 +191,8 @@ const sansBloquer = async <T>(nom: string, f: () => Promise<T>, repli: T): Promi
 export type DonneesHistorique = {
   auj: string; comptes: any[]; releves: any[]; lignesCarte: any[]; imports: any[]; derniers: any[];
   banqueComptes: any[]; banqueConnexions: any[]; banqueMois: any[]; positions: any[]; transactions: any[]; photos: any[];
+  /** Première photo observée (snapshots) : date et total, pour dire l'écart de recalage du passé reconstitué (facultatif). */
+  premiere?: { date: string; total: number } | null;
 };
 
 /** Tout ce que lit etat_historique (sous la RLS de l'utilisateur ; la banque est facultative). */
@@ -209,9 +211,13 @@ export async function lireDonneesHistorique(h: Deps, auj: string, o: { legere?: 
     sansBloquer("banque_mois", () => lirePages(h, "banque_mois", (q) => q.select("mois, compte_id").order("mois"), 20), [] as any[]),
     lirePages(h, "positions", (q) => q.select("id, name, isin, envelope, bloc, owner, mode, qty, value, status").order("created_at"), 10),
     o.legere ? Promise.resolve([] as any[]) : lirePages(h, "transactions", (q) => q.select("id, position_id, date, type, qty, amount, enveloppe, source, doublon_de, import_id").order("date"), 60),
-    sansBloquer("photos_reconstituees", () => lirePages(h, "photos_reconstituees", (q) => q.select("mois, qualite, part_estimee, calcule_le").order("mois"), 1), [] as any[]),
+    sansBloquer("photos_reconstituees", () => lirePages(h, "photos_reconstituees", (q) => q.select("mois, date, financier, qualite, part_estimee, calcule_le").order("mois"), 1), [] as any[]),
   ]);
-  return { auj, comptes, releves, lignesCarte, imports, derniers, banqueComptes, banqueConnexions, banqueMois, positions, transactions, photos };
+  const premiere = o.legere ? null : await sansBloquer("snapshots", async () => {
+    const r = await db.from("snapshots").select("date, total").order("date", { ascending: true }).limit(1);
+    return ((must("snapshots", r) as any[]) ?? [])[0] ?? null;
+  }, null as any);
+  return { auj, comptes, releves, lignesCarte, imports, derniers, banqueComptes, banqueConnexions, banqueMois, positions, transactions, photos, premiere };
 }
 
 /* ---------- la vue (pure) ---------- */
@@ -312,6 +318,15 @@ export function vueHistorique(d: DonneesHistorique, o: { detail?: string; compte
       par_annee: [...parAn.entries()].sort((a, b) => cleMoisTri(a[0], b[0])).map(([annee, l]) => ({ annee: +annee, mois: l.length, part_estimee: r2(l.reduce((s: number, p: any) => s + (+p.part_estimee || 0), 0) / l.length),
         qualite: (["estime", "partiel", "complet"] as const).find((q) => l.some((p: any) => p.qualite === q)) ?? null })),
     };
+    /* recalage : le passé reconstitué est décalé pour rejoindre la première photo observée (Historique.fusionner). Un écart de plus de 5 % du patrimoine de cette photo
+       (qui comprend aussi l'évolution des marchés depuis la fin du dernier mois reconstitué) se dit : il manque peut-être des ordres, des versements ou des relevés. */
+    const derniere = d.photos.slice().sort((a: any, b: any) => cleMoisTri(String(a.mois), String(b.mois))).pop();
+    const total = d.premiere ? nombre(d.premiere.total) : null, fin = derniere ? nombre(derniere.financier) : null;
+    if (d.premiere && total != null && total > 0 && fin != null) {
+      const ecart = r2(total - fin)!, pct = Math.round(Math.abs(ecart) / total * 1000) / 10;
+      photos.recalage = { premiere_photo: jour(d.premiere.date), dernier_mois_reconstitue: moisDe(derniere.mois), ecart_eur: ecart, ecart_pct: pct, a_signaler: pct > 5,
+        ...(pct > 5 ? { texte: "Le passé reconstitué est recalé de " + Math.abs(Math.round(ecart)) + " € (" + String(pct).replace(".", ",") + " % du patrimoine de ta première photo) pour la rejoindre : au-delà de 5 %, il manque peut-être des ordres, des versements ou des relevés. Dis-le à l'utilisateur et propose de compléter." } : {}) };
+    }
   }
 
   /* derniers imports : une ligne lisible par import */

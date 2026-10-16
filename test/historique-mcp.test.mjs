@@ -275,6 +275,21 @@ test("découpage : 60 mois de 30 lignes dépassent 100 000 octets, ils sont dép
 });
 const H_LARGES = ["logement", "alimentation", "transport", "enfants", "sante", "loisirs", "abonnements", "impots", "divers", "revenus", "epargne", "virement_interne"];
 
+test("etat_historique : l'écart de recalage du passé reconstitué est dit au-delà de 5 % de la première photo, et seulement alors", { skip: SANS_STRIP }, async () => {
+  const photos = [{ mois: "2026-08-01", date: "2026-08-31", financier: 18400, qualite: "partiel", part_estimee: 0.2, calcule_le: "2026-10-13T03:00:00Z" }];
+  const lire = async total => (await serveur(fauxDb({ historique_comptes: [], historique_releves: [], historique_banque_mois: [], historique_imports: [], positions: [], photos_reconstituees: photos,
+    snapshots: [{ date: "2026-09-10", total }] })).etat_historique.handler({})).ok.photos.recalage;
+  const petit = await lire(19000);
+  assert.deepEqual([petit.premiere_photo, petit.dernier_mois_reconstitue, petit.ecart_eur, petit.ecart_pct, petit.a_signaler], ["2026-09-10", "2026-08", 600, 3.2, false]);
+  assert.equal(petit.texte, undefined, "pas de texte sous 5 %");
+  const gros = await lire(25000);
+  assert.deepEqual([gros.ecart_eur, gros.ecart_pct, gros.a_signaler], [6600, 26.4, true]);
+  assert.match(gros.texte, /recalé de 6600 € \(26,4 %/);
+  assert.match(gros.texte, /il manque peut-être/);
+  const sans = (await serveur(fauxDb({ historique_comptes: [], historique_releves: [], historique_banque_mois: [], historique_imports: [], positions: [], photos_reconstituees: photos })).etat_historique.handler({})).ok.photos;
+  assert.equal(sans.recalage, undefined, "sans première photo lisible, aucun écart annoncé");
+});
+
 test("etat_historique : couverture, mois manquants, placements, photos, imports et a_demander ; ni libellé d'opération ni numéro", { skip: SANS_STRIP }, async () => {
   const releves = ["2026-05", "2026-06", "2026-08", "2026-09"].map(m => ({ compte_id: COMPTE_B1.id, mois: m + "-01", complet: m !== "2026-09", solde_debut: 100, solde_fin: 150, total_entrees: 1000, total_sorties: 950, nombre: 10, import_id: "imp-1" }));
   const db = fauxDb({
