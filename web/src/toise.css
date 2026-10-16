@@ -315,7 +315,7 @@
 }
 
 #view-toise .seg button::after,.ui-panneau .ts-hyp .seg button::after{content:"";position:absolute;inset:-4px -2px}
-#view-toise .ts-sources a,#view-toise .fig-p a,#view-toise .ts-methode a,#view-toise .method a{display:inline-flex;align-items:center;min-height:var(--hit)}
+#view-toise .ts-sources a,#view-toise .fig-p a,#view-toise .ts-methode a,#view-toise .method a{display:inline-flex;align-items:center;min-height:var(--hit);min-width:var(--hit)}
 /* grand écran : réponse et 4 cartes côte à côte (5 + 7 colonnes), verdict et comparaison côte à côte, explications sur 3 colonnes */
 @media (min-width:1280px){
   #view-toise .ts-hero{grid-column:span 5;align-self:stretch;justify-content:center}

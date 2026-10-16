@@ -494,7 +494,6 @@
         maj();
         const autre = nav.querySelector('[data-cg-pas="' + (b.dataset.cgPas === "1" ? "-1" : "1") + '"]');
         (b.disabled ? autre : b).focus();
-        if (cible) cible.focus();
       });
       maj();
     });

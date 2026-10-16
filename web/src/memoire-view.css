@@ -65,3 +65,4 @@
 #view-memoire-view .mv-conf .mv-act{margin-left:0;gap:var(--sp-2)}
 #view-memoire-view .mv-btn.danger-plein{background:var(--st-work);border-color:var(--st-work);color:var(--surface)}
 .ui-panneau .mv-feuille{display:flex;flex-direction:column;gap:var(--sp-3)}
+#view-memoire-view .mv-conf .mv-btn{scroll-margin-bottom:calc(var(--bbar-h) + var(--sp-4))}
