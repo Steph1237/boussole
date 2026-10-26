@@ -5676,6 +5676,433 @@
     ]
    },
    "calcul": "Une carte sans enjeu calculé reste dans son thème (« Enjeu à calculer »)."
+  },
+  {
+   "id": "LOC-1",
+   "scenario": "locatif_scpi",
+   "famille": "deterministe",
+   "nom": "Meublé au réel, 200 000 €, apport 30 000 €, crédit 20 ans, sortie à 20 ans",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "prix": 200000,
+    "neuf": false,
+    "travaux": 0,
+    "mobilier": 5000,
+    "apport": 30000,
+    "duree_credit_ans": 20,
+    "taux_credit_pct": 3.27,
+    "loyer_mensuel": 900,
+    "vacance_mois": 1,
+    "charges_annuelles": 1850,
+    "gestion_pct": 0,
+    "regime": "lmnp_reel",
+    "horizon_ans": 20,
+    "tmi": 30,
+    "scpi_frais_souscription_pct": 10,
+    "scpi_taux_distribution_pct": 4.91,
+    "scpi_prix_part_pct": -0.41,
+    "scpi_reinvestir": true,
+    "frais_av_pct": 0.6,
+    "scpi_credit": false
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "capital": 193939.39,
+    "verse": 110518.83,
+    "annees": [
+     {
+      "annee": 1,
+      "loyers": 9900.0,
+      "impot": 0.0,
+      "cash_flow": -5755.63,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 2,
+      "loyers": 10098.0,
+      "impot": 0.0,
+      "cash_flow": -5594.63,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 3,
+      "loyers": 10299.96,
+      "impot": 0.0,
+      "cash_flow": -5430.41,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 20,
+      "loyers": 14422.43,
+      "impot": 0.0,
+      "cash_flow": -2078.3,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     }
+    ],
+    "net_courants": {
+     "L": 262765.27,
+     "S": 134060.1,
+     "AV": 166566.84
+    },
+    "net_auj": {
+     "L": 176833.5,
+     "S": 90218.6,
+     "AV": 112094.71
+    },
+    "option_en_tete": "L"
+   },
+   "tolerance": 0.01,
+   "calcul": "Recalculé mois par mois par scripts/verif/locatif-scpi-verif.py (Python, écrit depuis la spec seule, sans le module) le 2026-10-26 : concordance au centime avec Scenarios.locatifScpi. Détail complet : scripts/verif/locatif-scpi-verif.json."
+  },
+  {
+   "id": "LOC-2",
+   "scenario": "locatif_scpi",
+   "famille": "deterministe",
+   "nom": "Même bien en location nue au micro-foncier",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "prix": 200000,
+    "neuf": false,
+    "travaux": 0,
+    "mobilier": 5000,
+    "apport": 30000,
+    "duree_credit_ans": 20,
+    "taux_credit_pct": 3.27,
+    "loyer_mensuel": 900,
+    "vacance_mois": 1,
+    "charges_annuelles": 1850,
+    "gestion_pct": 0,
+    "regime": "nu_micro",
+    "horizon_ans": 20,
+    "tmi": 30,
+    "scpi_frais_souscription_pct": 10,
+    "scpi_taux_distribution_pct": 4.91,
+    "scpi_prix_part_pct": -0.41,
+    "scpi_reinvestir": true,
+    "frais_av_pct": 0.6,
+    "scpi_credit": false
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "capital": 188888.89,
+    "verse": 182804.12,
+    "annees": [
+     {
+      "annee": 1,
+      "loyers": 9900.0,
+      "impot": 3270.96,
+      "cash_flow": -8667.07,
+      "base_imposable": 6930.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 2,
+      "loyers": 10098.0,
+      "impot": 3336.38,
+      "cash_flow": -8571.49,
+      "base_imposable": 7068.6,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 3,
+      "loyers": 10299.96,
+      "impot": 3403.11,
+      "cash_flow": -8474.0,
+      "base_imposable": 7209.97,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 20,
+      "loyers": 14422.43,
+      "impot": 4765.17,
+      "cash_flow": -6483.95,
+      "base_imposable": 10095.7,
+      "impute_revenu_global": 0.0
+     }
+    ],
+    "net_courants": {
+     "L": 276937.54,
+     "S": 213407.66,
+     "AV": 257623.61
+    },
+    "net_auj": {
+     "L": 186371.03,
+     "S": 143617.24,
+     "AV": 173373.3
+    },
+    "option_en_tete": "L"
+   },
+   "tolerance": 0.01,
+   "calcul": "Recalculé mois par mois par scripts/verif/locatif-scpi-verif.py (Python, écrit depuis la spec seule, sans le module) le 2026-10-26 : concordance au centime avec Scenarios.locatifScpi. Détail complet : scripts/verif/locatif-scpi-verif.json."
+  },
+  {
+   "id": "LOC-3",
+   "scenario": "locatif_scpi",
+   "famille": "deterministe",
+   "nom": "Location nue au réel, 30 000 € de travaux : déficit imputé sur le revenu global",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "prix": 200000,
+    "neuf": false,
+    "travaux": 30000,
+    "mobilier": 0,
+    "apport": 30000,
+    "duree_credit_ans": 20,
+    "taux_credit_pct": 3.27,
+    "loyer_mensuel": 900,
+    "vacance_mois": 1,
+    "charges_annuelles": 1850,
+    "gestion_pct": 0,
+    "regime": "nu_reel",
+    "horizon_ans": 20,
+    "tmi": 30,
+    "scpi_frais_souscription_pct": 10,
+    "scpi_taux_distribution_pct": 4.91,
+    "scpi_prix_part_pct": -0.41,
+    "scpi_reinvestir": true,
+    "frais_av_pct": 0.6,
+    "scpi_credit": false
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "capital": 219191.92,
+    "verse": 181129.09,
+    "annees": [
+     {
+      "annee": 1,
+      "loyers": 9900.0,
+      "impot": -3210.0,
+      "cash_flow": -4343.24,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 10700
+     },
+     {
+      "annee": 2,
+      "loyers": 10098.0,
+      "impot": 0.0,
+      "cash_flow": -7392.24,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 3,
+      "loyers": 10299.96,
+      "impot": 0.0,
+      "cash_flow": -7228.02,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 20,
+      "loyers": 14422.43,
+      "impot": 5101.55,
+      "cash_flow": -8977.46,
+      "base_imposable": 10808.36,
+      "impute_revenu_global": 0.0
+     }
+    ],
+    "net_courants": {
+     "L": 276937.54,
+     "S": 207037.09,
+     "AV": 247083.28
+    },
+    "net_auj": {
+     "L": 186371.03,
+     "S": 139330.03,
+     "AV": 166279.97
+    },
+    "option_en_tete": "L"
+   },
+   "tolerance": 0.01,
+   "calcul": "Recalculé mois par mois par scripts/verif/locatif-scpi-verif.py (Python, écrit depuis la spec seule, sans le module) le 2026-10-26 : concordance au centime avec Scenarios.locatifScpi. Détail complet : scripts/verif/locatif-scpi-verif.json."
+  },
+  {
+   "id": "LOC-4",
+   "scenario": "locatif_scpi",
+   "famille": "deterministe",
+   "nom": "Achat comptant (aucun crédit), meublé au micro-BIC",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "prix": 200000,
+    "neuf": false,
+    "travaux": 0,
+    "mobilier": 5000,
+    "apport": 260000,
+    "duree_credit_ans": 20,
+    "taux_credit_pct": 3.27,
+    "loyer_mensuel": 900,
+    "vacance_mois": 1,
+    "charges_annuelles": 1850,
+    "gestion_pct": 0,
+    "regime": "lmnp_micro",
+    "horizon_ans": 20,
+    "tmi": 30,
+    "scpi_frais_souscription_pct": 10,
+    "scpi_taux_distribution_pct": 4.91,
+    "scpi_prix_part_pct": -0.41,
+    "scpi_reinvestir": true,
+    "frais_av_pct": 0.6,
+    "scpi_credit": false
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "capital": 0.0,
+    "verse": 221000.0,
+    "annees": [
+     {
+      "annee": 1,
+      "loyers": 9900.0,
+      "impot": 2405.7,
+      "cash_flow": 5644.3,
+      "base_imposable": 4950.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 2,
+      "loyers": 10098.0,
+      "impot": 2453.81,
+      "cash_flow": 5757.19,
+      "base_imposable": 5049.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 3,
+      "loyers": 10299.96,
+      "impot": 2502.89,
+      "cash_flow": 5872.33,
+      "base_imposable": 5149.98,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 20,
+      "loyers": 14422.43,
+      "impot": 3504.65,
+      "cash_flow": 8222.68,
+      "base_imposable": 7211.22,
+      "impute_revenu_global": 0.0
+     }
+    ],
+    "net_courants": {
+     "L": 435030.27,
+     "S": 303632.8,
+     "AV": 401584.5
+    },
+    "net_auj": {
+     "L": 292762.9,
+     "S": 204336.17,
+     "AV": 270254.86
+    },
+    "option_en_tete": "L"
+   },
+   "tolerance": 0.01,
+   "calcul": "Recalculé mois par mois par scripts/verif/locatif-scpi-verif.py (Python, écrit depuis la spec seule, sans le module) le 2026-10-26 : concordance au centime avec Scenarios.locatifScpi. Détail complet : scripts/verif/locatif-scpi-verif.json."
+  },
+  {
+   "id": "LOC-5",
+   "scenario": "locatif_scpi",
+   "famille": "deterministe",
+   "nom": "LOC-1 avec des SCPI à crédit en plus",
+   "today": "2026-10-15",
+   "data_patch": null,
+   "reponses": {
+    "prix": 200000,
+    "neuf": false,
+    "travaux": 0,
+    "mobilier": 5000,
+    "apport": 30000,
+    "duree_credit_ans": 20,
+    "taux_credit_pct": 3.27,
+    "loyer_mensuel": 900,
+    "vacance_mois": 1,
+    "charges_annuelles": 1850,
+    "gestion_pct": 0,
+    "regime": "lmnp_reel",
+    "horizon_ans": 20,
+    "tmi": 30,
+    "scpi_frais_souscription_pct": 10,
+    "scpi_taux_distribution_pct": 4.91,
+    "scpi_prix_part_pct": -0.41,
+    "scpi_reinvestir": true,
+    "frais_av_pct": 0.6,
+    "scpi_credit": true
+   },
+   "options": {
+    "volatilite": 0
+   },
+   "attendu": {
+    "statut": "ok",
+    "capital": 193939.39,
+    "verse": 160583.69,
+    "annees": [
+     {
+      "annee": 1,
+      "loyers": 9900.0,
+      "impot": 0.0,
+      "cash_flow": -5755.63,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 2,
+      "loyers": 10098.0,
+      "impot": 0.0,
+      "cash_flow": -5594.63,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 3,
+      "loyers": 10299.96,
+      "impot": 0.0,
+      "cash_flow": -5430.41,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     },
+     {
+      "annee": 20,
+      "loyers": 14422.43,
+      "impot": 0.0,
+      "cash_flow": -2078.3,
+      "base_imposable": 0.0,
+      "impute_revenu_global": 0.0
+     }
+    ],
+    "net_courants": {
+     "L": 317660.37,
+     "S": 188955.19,
+     "AV": 221461.93,
+     "SC": 189367.59
+    },
+    "net_auj": {
+     "L": 213776.32,
+     "S": 127161.43,
+     "AV": 149037.53,
+     "SC": 127438.96
+    },
+    "option_en_tete": "L"
+   },
+   "tolerance": 0.01,
+   "calcul": "Recalculé mois par mois par scripts/verif/locatif-scpi-verif.py (Python, écrit depuis la spec seule, sans le module) le 2026-10-26 : concordance au centime avec Scenarios.locatifScpi. Détail complet : scripts/verif/locatif-scpi-verif.json."
   }
  ],
  "seconde_verification": {

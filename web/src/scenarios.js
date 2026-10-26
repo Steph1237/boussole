@@ -1190,7 +1190,10 @@
     const budgetCum = points.map(() => new Float64Array(P)), budgetMois = new Float64Array(T + 1);
     const effL = t => Math.max(0, -loc.cf[t]), surL = t => Math.max(0, loc.cf[t]);
     const feeM = 1 - Math.pow(1 - p.fav, 1 / 12);
-    const prepAV = F.preparer({ type: "assurance_vie", valeur: 0, base: 0, classe: "immobilier", date_ouverture: today }, { reperes: d.reperes, couple: !!c.fo.couple, primes_titulaire: undefined });
+    /* une règle de sortie de l'assurance-vie par anniversaire : primes versées à cette date (déterministes : A0 + efforts du locatif), pour la part au-delà de 150 000 € */
+    const primesA = t => p.A0 + somme([...Array(t).keys()], m => effL(m + 1));
+    const prepsAV = new Map(points.map(k => [k, F.preparer({ type: "assurance_vie", valeur: 0, base: primesA(12 * k), classe: "immobilier", date_ouverture: today },
+      { reperes: d.reperes, couple: !!c.fo.couple, primes_titulaire: primesA(12 * k) })]));
     const datesK = new Map(points.map(k => [k, O.ajouterMois(today, 12 * k)])), dateT = k => datesK.get(k);
     const PrA = new Float64Array(T + 1);                              // prix de part à chaque souscription (plus-value par souscription)
     let surtaxe = false, budgetP50Base = null;
@@ -1258,7 +1261,7 @@
           let pvS = 0;
           if (Pr * (1 - p.fs) > minPrA) for (let v = 0; v <= t; v++) { if (!Ns[v] || Pr * (1 - p.fs) <= PrA[v]) continue; pvS += impotPvImmo(Ns[v] * Pr * (1 - p.fs) - Xs[v], Math.floor((t - v) / 12), p).impot; }
           const nS = retS - pvS + potS;
-          const vAV = unitsAV * Fav * Pr * (1 - p.fs), xAV = prepAV.calculer(vAV, baseAV, dateT(k), undefined), nAV = vAV - xAV.ir - xAV.ps + potAV;
+          const vAV = unitsAV * Fav * Pr * (1 - p.fs), xAV = prepsAV.get(k).calculer(vAV, baseAV, dateT(k), undefined), nAV = vAV - xAV.ir - xAV.ps + potAV;
           cour.L[ki][i] = nL; cour.S[ki][i] = nS; cour.AV[ki][i] = nAV;
           net.L[ki][i] = nL * defl; net.S[ki][i] = nS * defl; net.AV[ki][i] = nAV * defl;
           if (sc) {
