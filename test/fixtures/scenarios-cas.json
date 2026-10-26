@@ -129,6 +129,186 @@
    "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-17-scn1-scenarios-design.md",
    "verifieLe": "2026-10-15",
    "statut": "CONV"
+  },
+  {
+   "cle": "micro_foncier_plafond",
+   "libelle": "Micro-foncier : plafond des loyers bruts annuels du foyer",
+   "valeur": 15000,
+   "unite": "€",
+   "dateEffet": "2026-01-01",
+   "dateFin": null,
+   "sourceTitre": "impots.gouv.fr — Location vide de meubles (page modifiée le 07/04/2026)",
+   "sourceUrl": "https://www.impots.gouv.fr/particulier/location-vide-de-meubles",
+   "verifieLe": "2026-10-26",
+   "statut": "V"
+  },
+  {
+   "cle": "micro_foncier_abattement_pct",
+   "libelle": "Micro-foncier : abattement forfaitaire",
+   "valeur": 30,
+   "unite": "%",
+   "dateEffet": "2026-01-01",
+   "dateFin": null,
+   "sourceTitre": "impots.gouv.fr — Location vide de meubles (page modifiée le 07/04/2026)",
+   "sourceUrl": "https://www.impots.gouv.fr/particulier/location-vide-de-meubles",
+   "verifieLe": "2026-10-26",
+   "statut": "V"
+  },
+  {
+   "cle": "deficit_foncier_plafond",
+   "libelle": "Déficit foncier imputable sur le revenu global, par an (hors intérêts d'emprunt)",
+   "valeur": 10700,
+   "unite": "€",
+   "dateEffet": "2026-01-01",
+   "dateFin": null,
+   "sourceTitre": "impots.gouv.fr — Location vide de meubles (page modifiée le 07/04/2026)",
+   "sourceUrl": "https://www.impots.gouv.fr/particulier/location-vide-de-meubles",
+   "verifieLe": "2026-10-26",
+   "statut": "V"
+  },
+  {
+   "cle": "deficit_foncier_report_ans",
+   "libelle": "Déficit foncier : report sur les revenus fonciers",
+   "valeur": 10,
+   "unite": "ans",
+   "dateEffet": "2026-01-01",
+   "dateFin": null,
+   "sourceTitre": "impots.gouv.fr — Location vide de meubles (page modifiée le 07/04/2026)",
+   "sourceUrl": "https://www.impots.gouv.fr/particulier/location-vide-de-meubles",
+   "verifieLe": "2026-10-26",
+   "statut": "V"
+  },
+  {
+   "cle": "micro_bic_plafond",
+   "libelle": "Micro-BIC, location meublée de longue durée : plafond de recettes (revenus 2025)",
+   "valeur": 77700,
+   "unite": "€",
+   "dateEffet": "2025-01-01",
+   "dateFin": "2026-12-31",
+   "sourceTitre": "impots.gouv.fr — Régime des locations meublées, foire aux questions (03/2026)",
+   "sourceUrl": "https://www.impots.gouv.fr/sites/default/files/media/1_metier/5_international/actualite/faq-lmnp-03_2026.pdf",
+   "verifieLe": "2026-10-26",
+   "statut": "V"
+  },
+  {
+   "cle": "micro_bic_abattement_pct",
+   "libelle": "Micro-BIC, location meublée de longue durée : abattement forfaitaire (revenus 2025)",
+   "valeur": 50,
+   "unite": "%",
+   "dateEffet": "2025-01-01",
+   "dateFin": "2026-12-31",
+   "sourceTitre": "impots.gouv.fr — Régime des locations meublées, foire aux questions (03/2026)",
+   "sourceUrl": "https://www.impots.gouv.fr/sites/default/files/media/1_metier/5_international/actualite/faq-lmnp-03_2026.pdf",
+   "verifieLe": "2026-10-26",
+   "statut": "V"
+  },
+  {
+   "cle": "deficit_bic_report_ans",
+   "libelle": "Location meublée non professionnelle : report des déficits sur les revenus de location meublée",
+   "valeur": 10,
+   "unite": "ans",
+   "dateEffet": "2026-01-01",
+   "dateFin": null,
+   "sourceTitre": "impots.gouv.fr — Régime des locations meublées, foire aux questions (03/2026)",
+   "sourceUrl": "https://www.impots.gouv.fr/sites/default/files/media/1_metier/5_international/actualite/faq-lmnp-03_2026.pdf",
+   "verifieLe": "2026-10-26",
+   "statut": "V"
+  },
+  {
+   "cle": "scn_lmnp_part_terrain_pct",
+   "libelle": "Meublé au réel : part du terrain, non amortissable (convention Boussole)",
+   "valeur": 15,
+   "unite": "%",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_lmnp_duree_bati_ans",
+   "libelle": "Meublé au réel : durée d'amortissement du bâti (convention Boussole)",
+   "valeur": 30,
+   "unite": "ans",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_lmnp_duree_travaux_ans",
+   "libelle": "Meublé au réel : durée d'amortissement des travaux (convention Boussole)",
+   "valeur": 10,
+   "unite": "ans",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_lmnp_duree_mobilier_ans",
+   "libelle": "Meublé au réel : durée d'amortissement du mobilier (convention Boussole)",
+   "valeur": 7,
+   "unite": "ans",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_locatif_vacance_mois",
+   "libelle": "Locatif : mois sans locataire par an (convention Boussole)",
+   "valeur": 1,
+   "unite": "mois",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_immo_frais_revente_pct",
+   "libelle": "Locatif : frais de revente à la charge du vendeur (convention Boussole)",
+   "valeur": 5,
+   "unite": "%",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_scpi_frais_souscription_pct",
+   "libelle": "SCPI : frais de souscription (convention Boussole, fourchette usuelle 8 à 12 %)",
+   "valeur": 10,
+   "unite": "%",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
+  },
+  {
+   "cle": "scn_scpi_delai_jouissance_mois",
+   "libelle": "SCPI : délai de jouissance (convention Boussole)",
+   "valeur": 4,
+   "unite": "mois",
+   "dateEffet": "2026-10-26",
+   "dateFin": null,
+   "sourceTitre": "Convention Boussole (spec SCN n° 20, locatif ou SCPI, § 4)",
+   "sourceUrl": "https://github.com/Steph1237/boussole/blob/main/docs/superpowers/specs/2026-10-26-scn-locatif-scpi-design.md",
+   "verifieLe": "2026-10-26",
+   "statut": "CONV"
   }
  ],
  "textes": [
@@ -1221,6 +1401,287 @@
    "version": 1,
    "statut": "publie",
    "changelog": "v1 : premier lot SCN1."
+  },
+  {
+   "cle": "locatif_scpi",
+   "numero": 20,
+   "theme": "immobilier",
+   "question": "Investir dans un bien locatif ou en SCPI ?",
+   "resume": "Boussole compare, à effort d'épargne égal, un bien locatif financé à crédit et des SCPI (en direct, en assurance-vie ou à crédit) : patrimoine net après revente ou retrait, crédit soldé et impôts, en euros d'aujourd'hui, avec sa bande d'incertitude, le rendement annuel équivalent et ce qui changerait la réponse.",
+   "pertinence": {
+    "un_de": [
+     {
+      "capacite_min": 200
+     },
+     {
+      "surplus_matelas": true
+     }
+    ],
+    "age_min": 18
+   },
+   "donnees": [
+    {
+     "champ": "capacite",
+     "libelle": "Ta capacité d'épargne",
+     "origine": "boussole",
+     "obligatoire": false
+    },
+    {
+     "champ": "tmi",
+     "libelle": "Ta tranche d'imposition",
+     "origine": "boussole",
+     "obligatoire": true
+    },
+    {
+     "champ": "objectifs",
+     "libelle": "Tes objectifs et leurs dates",
+     "origine": "boussole",
+     "obligatoire": false
+    },
+    {
+     "champ": "bien",
+     "libelle": "Le bien que tu regardes (prix, loyer, charges)",
+     "origine": "question",
+     "obligatoire": true
+    }
+   ],
+   "questions": [
+    {
+     "id": "prix",
+     "type": "montant_eur",
+     "libelle": "Prix du bien (hors frais de notaire)",
+     "aide": "Le prix net vendeur de l'annonce.",
+     "obligatoire": true,
+     "min": 20000,
+     "max": 3000000
+    },
+    {
+     "id": "neuf",
+     "type": "booleen",
+     "libelle": "Est-ce un logement neuf ?",
+     "aide": "Les frais d'acquisition sont plus bas dans le neuf.",
+     "obligatoire": true,
+     "prerempli": "non"
+    },
+    {
+     "id": "travaux",
+     "type": "montant_eur",
+     "libelle": "Travaux à l'achat",
+     "aide": "0 s'il n'y en a pas.",
+     "obligatoire": false,
+     "min": 0,
+     "max": 1000000,
+     "prerempli": "zero"
+    },
+    {
+     "id": "mobilier",
+     "type": "montant_eur",
+     "libelle": "Mobilier (si meublé)",
+     "aide": "Souvent quelques milliers d'euros pour un studio ou un deux-pièces.",
+     "obligatoire": false,
+     "min": 0,
+     "max": 100000,
+     "prerempli": "zero"
+    },
+    {
+     "id": "apport",
+     "type": "montant_eur",
+     "libelle": "Apport",
+     "aide": "Ce que tu mets de ta poche le jour de l'achat ; les SCPI reçoivent la même somme.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 3000000
+    },
+    {
+     "id": "duree_credit_ans",
+     "type": "entier",
+     "libelle": "Durée du crédit",
+     "aide": "En années.",
+     "obligatoire": true,
+     "min": 5,
+     "max": 25,
+     "prerempli": "vingt"
+    },
+    {
+     "id": "taux_credit_pct",
+     "type": "pourcentage",
+     "libelle": "Taux du crédit, hors assurance",
+     "aide": "Prérempli : le taux moyen du marché sur 20 ans.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 10,
+     "prerempli": "repere_taux_credit_20"
+    },
+    {
+     "id": "loyer_mensuel",
+     "type": "montant_eur",
+     "libelle": "Loyer mensuel hors charges",
+     "aide": "Le loyer que tu peux raisonnablement demander.",
+     "obligatoire": true,
+     "min": 50,
+     "max": 20000
+    },
+    {
+     "id": "vacance_mois",
+     "type": "entier",
+     "libelle": "Mois sans locataire par an",
+     "aide": "Prérempli : 1 mois par an (convention).",
+     "obligatoire": true,
+     "min": 0,
+     "max": 6,
+     "prerempli": "repere_vacance"
+    },
+    {
+     "id": "charges_annuelles",
+     "type": "montant_eur",
+     "libelle": "Charges annuelles à ta charge",
+     "aide": "Taxe foncière, copropriété non récupérable, assurance du propriétaire, entretien.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 50000
+    },
+    {
+     "id": "gestion_pct",
+     "type": "pourcentage",
+     "libelle": "Gestion par une agence, en % des loyers",
+     "aide": "0 si tu gères toi-même.",
+     "obligatoire": false,
+     "min": 0,
+     "max": 15,
+     "prerempli": "zero"
+    },
+    {
+     "id": "regime",
+     "type": "choix",
+     "libelle": "Location et régime fiscal",
+     "aide": "Meublé ou nu, au réel ou au forfait (micro).",
+     "obligatoire": true,
+     "options": [
+      "lmnp_reel",
+      "lmnp_micro",
+      "nu_reel",
+      "nu_micro"
+     ],
+     "prerempli": "regime_lmnp_reel"
+    },
+    {
+     "id": "horizon_ans",
+     "type": "entier",
+     "libelle": "Dans combien d'années penses-tu revendre ou retirer ?",
+     "aide": "Prérempli : ton objectif le plus proche, sinon 20 ans.",
+     "obligatoire": true,
+     "min": 3,
+     "max": 30,
+     "prerempli": "horizon_objectif_ou_vingt"
+    },
+    {
+     "id": "tmi",
+     "type": "choix",
+     "libelle": "Ta tranche d'imposition (TMI)",
+     "aide": "Elle figure sur ton avis d'impôt.",
+     "obligatoire": true,
+     "options": [
+      0,
+      11,
+      30,
+      41,
+      45
+     ],
+     "prerempli": "tmi"
+    },
+    {
+     "id": "scpi_frais_souscription_pct",
+     "type": "pourcentage",
+     "libelle": "Frais de souscription des SCPI",
+     "aide": "Prérempli : 10 % (convention, fourchette usuelle 8 à 12 %).",
+     "obligatoire": true,
+     "min": 0,
+     "max": 15,
+     "prerempli": "repere_frais_souscription_scpi"
+    },
+    {
+     "id": "scpi_taux_distribution_pct",
+     "type": "pourcentage",
+     "libelle": "Taux de distribution des SCPI",
+     "aide": "Prérempli : le taux moyen publié du marché.",
+     "obligatoire": true,
+     "min": 0,
+     "max": 12,
+     "prerempli": "repere_distribution_scpi"
+    },
+    {
+     "id": "scpi_prix_part_pct",
+     "type": "pourcentage",
+     "libelle": "Évolution annuelle du prix des parts",
+     "aide": "Prérempli : rendement central de la pierre-papier moins sa distribution.",
+     "obligatoire": true,
+     "min": -5,
+     "max": 5,
+     "prerempli": "repere_prix_part_scpi"
+    },
+    {
+     "id": "scpi_reinvestir",
+     "type": "booleen",
+     "libelle": "Réinvestir les revenus des SCPI ?",
+     "aide": "Oui : les revenus nets rachètent des parts, avec les frais de souscription.",
+     "obligatoire": true,
+     "prerempli": "oui"
+    },
+    {
+     "id": "frais_av_pct",
+     "type": "pourcentage",
+     "libelle": "Frais annuels de l'assurance-vie, si tu les connais",
+     "aide": "Frais de gestion des unités de compte, en % par an.",
+     "obligatoire": false,
+     "min": 0,
+     "max": 3,
+     "prerempli": "frais_av_renseignes"
+    },
+    {
+     "id": "scpi_credit",
+     "type": "booleen",
+     "libelle": "Comparer aussi des SCPI achetées à crédit ?",
+     "aide": "Même crédit que pour le bien.",
+     "obligatoire": false,
+     "prerempli": "non"
+    }
+   ],
+   "reperes": [
+    "frais_acquisition_ancien_pct",
+    "frais_acquisition_neuf_pct",
+    "ps_taux_foncier",
+    "ps_taux_general",
+    "pv_immo_ir_taux",
+    "pv_immo_ps_taux",
+    "micro_foncier_plafond",
+    "micro_bic_plafond",
+    "deficit_foncier_plafond",
+    "scpi_taux_distribution",
+    "rendement_central_immobilier",
+    "immo_revalorisation_reelle",
+    "immo_volatilite",
+    "inflation_hypothese",
+    "taux_credit_immo_20"
+   ],
+   "calcul": "locatifScpi",
+   "version_calcul": "scn-1.1.0",
+   "ouverture": {
+    "donnees": [
+     "capacite_positive"
+    ],
+    "copilote": true
+   },
+   "garde_fous": "Ne cite aucune société de gestion, aucune SCPI, aucun courtier, aucune banque ni aucun programme immobilier, et ne dis jamais lequel choisir : compare des critères (effort, frais, fiscalité, liquidité, risque, temps passé). Ne promets ni loyer ni distribution : ce sont des hypothèses. Rappelle qu'un bien est concentré et peu liquide, et que des parts de SCPI peuvent mettre du temps à se revendre. N'achète rien et ne souscris rien : c'est la personne qui le fait.",
+   "evals": [
+    "LOC-1",
+    "LOC-2",
+    "LOC-3",
+    "LOC-4",
+    "LOC-5"
+   ],
+   "version": 1,
+   "statut": "publie",
+   "changelog": "v1 : scénario n° 20, locatif ou SCPI (spec du 2026-10-26)."
   }
  ],
  "cas": [

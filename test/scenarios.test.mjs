@@ -317,8 +317,10 @@ test("lister : cartes du catalogue pour la personne, états depuis les parties j
   const c = cas("PEA-1"), { data } = dataDe(c), cat = FIXTURE.catalogue;
   const joues = [{ scenario_cle: "ouvrir_pea", etat: "retenu", joue_le: "2026-10-01" }, { scenario_cle: "ouvrir_pea", etat: "joue", joue_le: "2026-09-01" }];
   const L = S.lister(cat, data, joues, c.today, { volatilite: 0, frais: { ter_pct: 0.2 }, chemins: 50, allocation: { actions: 100 } });
-  assert.equal(L.cartes.length, 5);
-  assert.deepEqual(Object.keys(L.par_theme), ["epargne", "placements", "retraite"]);
+  assert.equal(L.cartes.length, cat.length);
+  assert.deepEqual(Object.keys(L.par_theme), ["epargne", "placements", "retraite", "immobilier"]);
+  const ls = L.cartes.find(x => x.cle === "locatif_scpi");
+  assert.equal(ls.pertinent, true); assert.equal(ls.enjeu_statut, "a_completer"); assert.equal(ls.enjeu, null);     // le bien n'est pas décrit : jamais un chiffre inventé
   const pea = L.cartes.find(x => x.cle === "ouvrir_pea");
   assert.equal(pea.etat, "retenu"); assert.equal(pea.joue_le, "2026-10-01");
   assert.ok(L.cartes.every(x => x.pertinent !== undefined && Array.isArray(x.pourquoi)));
