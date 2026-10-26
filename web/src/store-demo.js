@@ -8,9 +8,9 @@
    autres cas. L'ordre des <script> est fixé par build.mjs : config.js, supabase-js, calc, demo-data,
    sensible, routine-etat, banque-etat, store-demo, store-supabase, auth, reel, modules, app.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque, historique }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque, historique, scenarios }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, scope, people, user, error, scenarios }
    budget = { lignes: [...] } | null ; objectifs = [{ id, nom, type, cible, dateCible, deja, source, poches, enveloppes, rendement, priorite }]
    risque = { reponses, profil, score, date } | null ; classes = { <poche>: <classe> } ; profil.protection = { prevoyance, emprunteur } ;
    positions[] portent ter, zone, devise, annoteSource, annoteLe (annotations de l'instrument) et symbol (null en démo) ;
@@ -70,7 +70,7 @@
      (UX5 G5). Le catalogue de savoir et les expertises ne sont pas des données du foyer : ils restent. */
   const VIDE = /[?&]demo=vide(?:&|$)/.test(String((window.location && window.location.search) || ""));
   if (VIDE) Object.assign(D, { positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, budget: null, objectifs: [], risque: null, classes: {},
-    propositions: [], connexions: [], memoire: [], journal: [], routines: [], banque: null, operationsBancaires: [], foyer: null, plansFiges: [] });
+    propositions: [], connexions: [], memoire: [], journal: [], routines: [], banque: null, operationsBancaires: [], foyer: null, plansFiges: [], scenariosJoues: [] });
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
   const C = {
     ready: false, dbOk: null, positions: (D.positions || []).map(p => Object.assign({}, p, { symbol: p.symbol || null })), snapshots: D.snapshots || [], tx: D.tx || [],
@@ -89,6 +89,14 @@
   C.memoire = D.memoire || [];
   C.journal = (D.journal || []).slice().sort((a, b) => String(b.creeLe).localeCompare(String(a.creeLe))).slice(0, 500);
   C.savoir = { fiches: FICHES.map(f => { const o = Object.assign({}, f); delete o.contenu; return o; }), reperes: (D.savoir && D.savoir.reperes) || [] };
+  /* Scénarios (SCN1) : catalogue publié embarqué (window.ScenariosCatalogue, scenarios-catalogue.gen.js) et parties jouées de la démo (D.scenariosJoues) ;
+     les repères que lisent les scénarios sont ajoutés à ceux de la démo s'ils n'y sont pas déjà (les valeurs de la démo restent). Fichier absent : catalogue vide. */
+  const CAT = window.ScenariosCatalogue && Array.isArray(window.ScenariosCatalogue.catalogue) ? window.ScenariosCatalogue : { catalogue: [], reperes: [], reperes_scenarios: [] };
+  {
+    const deja = new Set(C.savoir.reperes.map(r => r && r.cle)), lus = new Set(CAT.reperes_scenarios || []);
+    C.savoir.reperes = C.savoir.reperes.concat((CAT.reperes || []).filter(r => r && lus.has(r.cle) && !deja.has(r.cle)).map(r => clone(r)));
+  }
+  C.scenarios = { catalogue: clone(CAT.catalogue), joues: clone(Array.isArray(D.scenariosJoues) ? D.scenariosJoues : []), source: "demo", lu: true, mfaRequise: false };
   // Expertises : S n'expose que la liste (comme store-supabase.js) ; le détail reste ici pour Store.expertises.detail(slug).
   const EXPERTISES = Array.isArray(D.expertises) ? D.expertises : [];
   const EXP_LISTE = ["slug", "nom", "quandConsulter", "perimetre", "version", "misAJourLe", "marches", "angles"];
@@ -145,6 +153,7 @@
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
       expertises: clone(C.expertises),
+      scenarios: clone(C.scenarios),
       journal: clone(C.journal),
       journalARelire: C.journal.filter(e => e && e.statut === "a_relire").length,
       journalConsentement: C.journalConsentement,
@@ -1146,6 +1155,8 @@
     memoire,
     savoir,
     expertises,
+    /* Scénarios (lecture) : catalogue publié (copie) ; S.scenarios = { catalogue, joues, source } porte aussi les parties jouées. */
+    scenarios: { catalogue: () => clone(C.scenarios.catalogue) },
     journal,
     routines,
     plansFiges: { detail(id) { const r = completerPlan(C.plansFiges.find(x => x.id === id)); if (!r) return Promise.resolve(null); const o = clone(r); delete o._jours; return Promise.resolve(o); } },

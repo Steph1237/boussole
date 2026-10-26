@@ -5,7 +5,7 @@
     "test": "node --test test/*.test.mjs",
     "build": "node build.mjs",
     "dev": "node build.mjs --dev",
-    "gen": "node scripts/gen-catalogue.mjs && node scripts/gen-expertises-demo.mjs && node scripts/gen-police-separateur.mjs",
+    "gen": "node scripts/gen-catalogue.mjs && node scripts/gen-expertises-demo.mjs && node scripts/gen-police-separateur.mjs && node scripts/gen-scenarios-demo.mjs",
     "check:mcp": "npx -y deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts",
     "check:powens": "npx -y deno check --no-lock --config supabase/functions/powens/deno.json supabase/functions/powens/index.ts",
     "check:nightly": "npx -y deno check --no-lock supabase/functions/nightly/index.ts",

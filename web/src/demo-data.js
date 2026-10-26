@@ -889,7 +889,20 @@
       resume: "Ordres de CTO Sam : 2 mouvements sur 1 ligne, déposés par erreur (ce n'était pas le bon compte-titres)." }, null, "Retrait demandé par toi dans Compte › Données › Historique", 5));
   const photosReconstituees = [];
 
-  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines, banque, operationsBancaires, foyer, indices, plansFiges, relevesBancaires, historiqueImports, photosReconstituees };
+  /* Scénarios joués (SCN1, table scenarios_joues, § 5) : deux parties fictives de Camille et Sam, l'une retenue (le matelas), l'autre écartée (ouvrir une
+     assurance-vie maintenant). Le résultat stocké est réduit à ce que la vue montre (« joué le … », réponse d'alors) ; le catalogue vient de
+     scenarios-catalogue.gen.js (store-demo.js). Montants ronds, aucune donnée réelle. */
+  const Joue = (id, cle, etat, jours, reponses, reponse, enjeu) => ({ id, scenario_cle: cle, scenario_version: 1, version_calcul: "scn-1.0.0", version_modele: "proj-1.4.0", etat,
+    reponses, resultat: { cle, statut: "ok", date: ago(jours), version_calcul: "scn-1.0.0", reponse }, enjeu_annuel_p50: enjeu, graine: 20261014, chemins: 2000,
+    variante_id: null, plan_fige_id: null, source: "Claude", joue_le: at(jours, "19:30"), decide_le: etat === "joue" ? null : at(jours, "19:45") });
+  const scenariosJoues = [
+    Joue("scn-demo-matelas", "matelas", "retenu", 12, {}, { phrase: "Ta cible est de 21 130 € (6 mois de dépenses) ; tu as environ 9 700 € au-delà.", option_en_tete: "placement", reference: "livret",
+      ecart: { p10: -1700, p50: 1300, p90: 5900 }, ecart_annuel: { p10: -340, p50: 260, p90: 1180 }, probabilite_mieux: 0.7, date_bascule: null }, 260),
+    Joue("scn-demo-av", "av_maintenant", "ecarte", 5, { versement_initial: 500, versement_mensuel: 100, debut_date: ago(-430) }, { phrase: "Si tu retires à 10 ans, ouvrir maintenant ne change rien : les deux contrats seraient imposés pareil (les deux ont plus de 8 ans).",
+      option_en_tete: "egalite", reference: "B", ecart: { p10: 0, p50: 0, p90: 0 }, ecart_annuel: { p10: 0, p50: 0, p90: 0 }, probabilite_mieux: 0, date_bascule: null }, 0),
+  ];
+
+  const DEMO = { positions, snapshots, tx, config, profil, status, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, routines, banque, operationsBancaires, foyer, indices, plansFiges, relevesBancaires, historiqueImports, photosReconstituees, scenariosJoues };
   root.DEMO = DEMO;
   if (typeof module === "object" && module.exports) module.exports = DEMO;
 })(typeof window !== "undefined" ? window : globalThis);

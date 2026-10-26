@@ -5,6 +5,7 @@
    Section « calendrier » (DAT1) : le contexte est la donnée à compléter (« la date d'ouverture de mon PEA Exemple »), intégrée à la demande.
    Section « expertise » (EX1) : le contexte est le nom de l'expertise, intégré à la demande (« consulte l'expertise <nom> sur ma
    situation. ») au lieu d'être ajouté en « Concerne : … ».
+   Section « scenario » (SCN1) : le contexte est la question du scénario (« Joue avec moi le scénario « Faut-il que j'ouvre un PEA ? » de Boussole »).
    ClaudePrompts.PROMPT_TACHE = { revue_mensuelle } : prompt exact de la tâche planifiée de Claude (« Tâches planifiées »), le même
    que PROMPT_TACHE dans supabase/functions/mcp/routines.ts (test d'égalité côté connecteur). */
 (function (root, factory) {
@@ -34,12 +35,15 @@
     expertise: "consulte l'expertise adaptée à ma question sur ma situation.",
     suivi: "aide-moi avec le suivi de mes lignes (suivi_lignes) : le rôle de chaque ligne, ma politique de suivi et le test « ça vaut le coût ? » avant tout changement.",
     calendrier: "aide-moi à compléter mon calendrier patrimonial (calendrier) : les dates d'ouverture de mes enveloppes, ma date de naissance, la fin de mes prêts. Pars de mes documents et demande-moi seulement ce qui manque, une seule fois.",
+    scenario: "joue avec moi un scénario de Boussole sur ma situation (lister_scenarios, puis jouer_scenario).",
   };
   /* Sections dont le contexte fait partie de la demande elle-même (plutôt qu'un « Concerne : … » ajouté). */
   const AVEC_CONTEXTE = {
     expertise: nom => "consulte l'expertise " + nom + " sur ma situation.",
     /* Calendrier patrimonial (DAT1) : la donnée à compléter (« la date d'ouverture de mon PEA Exemple »). */
     calendrier: info => "je veux compléter " + info + ". Lis cette information dans le document que je te donne, sinon demande-la-moi une seule fois.",
+    /* Scénario (SCN1, « Explorer avec Claude ») : la question du catalogue. */
+    scenario: question => "joue avec moi le scénario « " + question + " » de Boussole (jouer_scenario), sur mes données, et explique-moi ce qui changerait la réponse.",
   };
   /* Prompt des tâches planifiées, par type de routine (contrat RT1, docs/superpowers/plans/2026-10-11-rt1-routines.md). */
   const PROMPT_TACHE = Object.freeze({
@@ -57,7 +61,8 @@
   function phrase(section, contexte) {
     const objet = SECTIONS[section] || SECTIONS.bilan;
     const t = contexte == null ? "" : String(contexte).replace(/\s+/g, " ").trim();
-    if (t && AVEC_CONTEXTE[section]) return DEBUT + AVEC_CONTEXTE[section](borner(t).replace(/[.?!]$/, "")) + FIN;
+    /* une question de scénario garde son « ? » (c'est un titre cité) ; ailleurs, la ponctuation finale du contexte est retirée */
+    if (t && AVEC_CONTEXTE[section]) return DEBUT + AVEC_CONTEXTE[section](borner(t).replace(section === "scenario" ? /\.$/ : /[.?!]$/, "")) + FIN;
     return DEBUT + objet + (t ? " Concerne : " + borner(t) : "") + FIN;
   }
   return { phrase, SECTIONS, PROMPT_TACHE };

@@ -29,12 +29,13 @@
     O: dep("projection-outils", "ProjectionOutils"), F: dep("projection-fiscalite", "ProjectionFiscalite"), D: dep("projection-donnees", "ProjectionDonnees"),
     Proj: dep("projection", "Projection"), Calendrier: dep("calendrier", "Calendrier"), Calc: dep("calc", "Calc"),
     Reperes: dep("reperes", "Reperes"), E: dep("projection-evenements", "ProjectionEvenements"), Budget: facultatif("budget", "Budget"),
+    PC: dep("projection-credit", "ProjectionCredit"),
   });
   if (cjs) module.exports = api;
   else root.Scenarios = api;
 })(typeof self !== "undefined" ? self : this, function (X) {
   "use strict";
-  const { O, F, D, Proj, Calendrier, Calc, Reperes, E } = X;
+  const { O, F, D, Proj, Calendrier, Calc, Reperes, E, PC } = X;
 
   const VERSION_CALCUL = "scn-1.0.0";
   /** Thèmes, dans l'ordre d'affichage de l'onglet « Pour toi ». */
@@ -207,6 +208,15 @@
       part_fonds_euros_cible: () => (alloc ? Math.round((alloc.fonds_euros || 0) * 100) : undefined),
       maintenant: () => "maintenant",
       non: () => false,
+      oui: () => true,
+      vingt: () => 20,
+      regime_lmnp_reel: () => "lmnp_reel",
+      repere_vacance: () => L.v("scn_locatif_vacance_mois"),
+      repere_taux_credit_20: () => L.v("taux_credit_immo_20"),
+      repere_frais_souscription_scpi: () => L.v("scn_scpi_frais_souscription_pct"),
+      repere_distribution_scpi: () => L.v("scpi_taux_distribution"),
+      repere_prix_part_scpi: () => { const t = L.v("rendement_central_immobilier"), dd = L.v("scpi_taux_distribution"); return t === undefined || dd === undefined ? undefined : Math.round((t - dd) * 100) / 100; },
+      frais_av_renseignes: () => { const f = fraisDe(d, opts, null); return f.inconnus.includes("assurance_vie_pct") ? undefined : f.assurance_vie_pct; },
     };
     liste(entree.questions).forEach(q => { if (q.prerempli && val[q.prerempli]) { const v = val[q.prerempli](); if (v !== undefined && v !== null) out[q.id] = v; } });
     return out;
@@ -1047,7 +1057,308 @@
       })() };
   }
 
-  const CALCULS = { ouvrirPea, prochainEuro, perInteret, matelas, avMaintenant };
+  /* ================================================================== n° 20 : un bien locatif ou des SCPI ? (spec 2026-10-26-scn-locatif-scpi-design.md) */
+  const REGIMES_LOCATIF = { lmnp_reel: "meublé au réel", lmnp_micro: "meublé au micro-BIC", nu_reel: "location nue au réel", nu_micro: "location nue au micro-foncier" };
+  const LIB_LS = { L: "Bien locatif", S: "SCPI en direct", AV: "SCPI en assurance-vie", SC: "SCPI à crédit" };
+  /** Libellés dans une phrase (sujet ou complément), accords compris. */
+  const PH_LS = { L: "le bien locatif", S: "les SCPI en direct", AV: "les SCPI en assurance-vie", SC: "les SCPI à crédit" };
+  const NON_RETENABLE_IMMO = "Une variante de projection ne sait pas encore porter un bien ou des parts de SCPI : demande à Claude d'ajouter l'achat comme événement de vie.";
+
+  /** Paramètres du calcul à partir des réponses et des repères (§ 2 et § 3 de la spec). Les surcharges `sur` servent aux seuils de « ce qui changerait ». */
+  function parametresLocatif(c, sur) {
+    const { rep, L } = c, s = sur || {};
+    const meuble = /^lmnp/.test(rep.regime), neuf = rep.neuf === true;
+    const p = {
+      prix: +rep.prix, neuf, travaux: +rep.travaux || 0, mobilier: meuble ? +rep.mobilier || 0 : 0, apport: +rep.apport, regime: rep.regime, meuble,
+      duree: Math.round(+rep.duree_credit_ans), taux: +rep.taux_credit_pct, loyer: +rep.loyer_mensuel, vacance: s.vacance != null ? s.vacance : +rep.vacance_mois,
+      charges: +rep.charges_annuelles, gestion: (+rep.gestion_pct || 0) / 100, T: Math.round(+rep.horizon_ans) * 12, H: Math.round(+rep.horizon_ans), tmi: +rep.tmi / 100,
+      fs: +rep.scpi_frais_souscription_pct / 100, dist: (s.dist != null ? s.dist : +rep.scpi_taux_distribution_pct) / 100, prixPart: +rep.scpi_prix_part_pct / 100,
+      reinvestir: rep.scpi_reinvestir !== false, fav: (nombre(rep.frais_av_pct) ? +rep.frais_av_pct : c.frais.assurance_vie_pct) / 100, credit: rep.scpi_credit === true,
+      fa_pct: L.v(neuf ? "frais_acquisition_neuf_pct" : "frais_acquisition_ancien_pct") / 100, garantie: L.v("garantie_pct") / 100, dossier: L.v("frais_dossier"),
+      assurance: L.v("assurance_emprunteur_defaut_pct"), psF: L.v("ps_taux_foncier") / 100, psG: L.v("ps_taux_general") / 100,
+      pvIr: L.v("pv_immo_ir_taux") / 100, pvPs: L.v("pv_immo_ps_taux") / 100, surtaxe: L.v("pv_immo_surtaxe_seuil"),
+      mfPlafond: L.v("micro_foncier_plafond"), mfAbat: L.v("micro_foncier_abattement_pct") / 100, mbPlafond: L.v("micro_bic_plafond"), mbAbat: L.v("micro_bic_abattement_pct") / 100,
+      defPlafond: L.v("deficit_foncier_plafond"), defFoncierAns: L.v("deficit_foncier_report_ans"), defBicAns: L.v("deficit_bic_report_ans"),
+      terrain: L.v("scn_lmnp_part_terrain_pct") / 100, dBati: L.v("scn_lmnp_duree_bati_ans"), dTrav: L.v("scn_lmnp_duree_travaux_ans"), dMob: L.v("scn_lmnp_duree_mobilier_ans"),
+      revente: L.v("scn_immo_frais_revente_pct") / 100, dj: L.v("scn_scpi_delai_jouissance_mois"),
+    };
+    p.FA = p.prix * p.fa_pct;
+    p.K = p.prix + p.FA + p.travaux + p.mobilier;
+    const besoin = Math.max(0, p.K - p.apport);
+    p.A0 = Math.min(p.apport, p.K);
+    p.C = besoin > 0 ? (besoin + p.dossier) / (1 - p.garantie) : 0;
+    p.fraisEmprunt = p.C > 0 ? p.dossier + p.C * p.garantie : 0;
+    return p;
+  }
+
+  /** Le bien, mois par mois (déterministe, § 3.1 à 3.3) : loyers, charges, crédit, impôt de l'année par douzièmes, cash-flow, amortissements déduits. */
+  function exploitationLocatif(p, pi) {
+    const T = p.T, W = T + 1, tab = PC.amortissement({ capital: p.C, taux_pct: p.taux, duree_mois: p.duree * 12, assurance_pct: p.assurance });
+    const ech = new Float64Array(W), ass = new Float64Array(W), inter = new Float64Array(W), crd = new Float64Array(W);
+    crd[0] = p.C;
+    for (let t = 1; t < W; t++) { const r = tab[t - 1]; if (r) { ech[t] = r.echeance; ass[t] = r.assurance; inter[t] = r.interets; crd[t] = r.crd; } else crd[t] = 0; }
+    const loyer = new Float64Array(W), charges = new Float64Array(W), gestion = new Float64Array(W), impot = new Float64Array(W), cf = new Float64Array(W);
+    for (let t = 1; t < W; t++) {
+      const y = Math.ceil(t / 12), idx = Math.pow(1 + pi, y - 1);
+      loyer[t] = p.loyer * idx * (12 - p.vacance) / 12; charges[t] = p.charges / 12 * idx; gestion[t] = p.gestion * loyer[t];
+    }
+    const H = T / 12, annees = [], avert = new Set();
+    /* régime micro au-delà de son plafond : réel pour toute la durée (dit) */
+    let regime = p.regime;
+    const recettes = y => somme([...Array(12).keys()], k => loyer[12 * (y - 1) + k + 1]);
+    if (regime === "nu_micro" && [...Array(H).keys()].some(k => recettes(k + 1) > p.mfPlafond + EPS)) { regime = "nu_reel"; avert.add("Tes loyers dépassent " + O.eur(p.mfPlafond) + " par an : le micro-foncier n'est pas possible, le calcul passe au réel."); }
+    if (regime === "lmnp_micro" && [...Array(H).keys()].some(k => recettes(k + 1) > p.mbPlafond + EPS)) { regime = "lmnp_reel"; avert.add("Tes loyers dépassent " + O.eur(p.mbPlafond) + " par an : le micro-BIC n'est pas possible, le calcul passe au réel."); }
+    let carry = [];                                                  // déficits reportés { montant, fin (dernière année d'imputation) }
+    const stock = [0, 0, 0];                                         // amortissements non déduits : bâti, travaux, mobilier
+    let amortNM = 0;                                                 // amortissements de bâti et de travaux déduits (réintégrés dans la plus-value)
+    const amortNMfin = new Float64Array(H + 1), impotsCum = new Float64Array(H + 1);
+    const imputer = (r, y) => { carry = carry.filter(x => x.fin >= y); for (const x of carry) { const u = Math.min(x.montant, r); x.montant -= u; r -= u; if (r <= EPS) break; } carry = carry.filter(x => x.montant > EPS); return Math.max(0, r); };
+    for (let y = 1; y <= H; y++) {
+      let R = 0, Dc = 0, J = 0;
+      for (let t = 12 * (y - 1) + 1; t <= 12 * y; t++) { R += loyer[t]; Dc += charges[t] + gestion[t]; J += inter[t] + ass[t]; }
+      const E1 = y === 1 ? p.fraisEmprunt : 0;
+      let base = 0, imp = 0, imputeGlobal = 0, amortDeduit = 0, resultat = null;
+      if (regime === "nu_micro") { base = R * (1 - p.mfAbat); imp = base * (p.tmi + p.psF); }
+      else if (regime === "lmnp_micro") { base = R * (1 - p.mbAbat); imp = base * (p.tmi + p.psG); }
+      else if (regime === "nu_reel") {
+        const tr = y === 1 ? p.travaux : 0, r = R - Dc - J - E1 - tr;
+        resultat = r;
+        if (r >= 0) { base = imputer(r, y); imp = base * (p.tmi + p.psF); }
+        else {
+          const hors = R - Dc - tr, h = Math.max(0, -hors);
+          imputeGlobal = Math.min(h, p.defPlafond, -r);
+          imp = -imputeGlobal * p.tmi;
+          const reste = -r - imputeGlobal;
+          if (reste > EPS) carry.push({ montant: reste, fin: y + p.defFoncierAns });
+        }
+      } else {
+        const r = R - Dc - J - E1 - (y === 1 ? p.FA : 0);
+        resultat = r;
+        const dot = [y <= p.dBati ? p.prix * (1 - p.terrain) / p.dBati : 0, y <= p.dTrav ? p.travaux / p.dTrav : 0, y <= p.dMob ? p.mobilier / p.dMob : 0];
+        let reste;
+        if (r < 0) { carry.push({ montant: -r, fin: y + p.defBicAns }); reste = 0; dot.forEach((v, k) => { stock[k] += v; }); }
+        else {
+          reste = imputer(r, y);
+          for (let k = 0; k < 3; k++) {
+            const dispo = dot[k] + stock[k], u = Math.min(dispo, reste);
+            reste -= u; amortDeduit += u; if (k < 2) amortNM += u;
+            stock[k] = dispo - u;
+          }
+        }
+        base = reste; imp = base * (p.tmi + p.psG);
+      }
+      for (let t = 12 * (y - 1) + 1; t <= 12 * y; t++) impot[t] = imp / 12;
+      amortNMfin[y] = amortNM; impotsCum[y] = impotsCum[y - 1] + imp;
+      annees.push({ annee: y, loyers: r2(R), charges: r2(Dc), credit: r2(somme([...Array(12).keys()], k => ech[12 * (y - 1) + k + 1] + ass[12 * (y - 1) + k + 1])), interets: r2(J), resultat: resultat == null ? null : r2(resultat),
+        base_imposable: r2(base), impot: r2(imp), impute_revenu_global: r2(imputeGlobal), amortissements_deduits: r2(amortDeduit) });
+    }
+    for (let t = 1; t < W; t++) cf[t] = loyer[t] - charges[t] - gestion[t] - ech[t] - ass[t] - impot[t];
+    annees.forEach(a => { a.cash_flow = r2(somme([...Array(12).keys()], k => cf[12 * (a.annee - 1) + k + 1])); });
+    return { ech, ass, inter, crd, loyer, charges, gestion, impot, cf, annees, regime, amortNMfin, impotsCum, avertissements: [...avert], stock_amortissements: r2(stock[0] + stock[1] + stock[2]) };
+  }
+
+  /** Impôt de plus-value immobilière d'un gain après `ans` années pleines (abattements du moteur) → { impot, surtaxe }. */
+  function impotPvImmo(gain, ans, p) {
+    if (!(gain > 0)) return { impot: 0, surtaxe: false };
+    const ir = gain * (1 - F.abattementIR(ans)), ps = gain * (1 - F.abattementPS(ans));
+    return { impot: ir * p.pvIr + ps * p.pvPs, surtaxe: p.surtaxe != null && ir > p.surtaxe };
+  }
+
+  /** Les quatre options, chemin par chemin, sur les tirages du moteur (§ 3.4 à 3.6). opts.fin_seule : seulement la sortie à T (seuils). → { P, T, points: [k], net: { id: [Float64Array(P) par k] } (€ d'aujourd'hui), courants, … }. */
+  function simulerLocatifScpi(c, p, opts) {
+    const { d, today } = c, o = opts || {}, det = o.volatilite === 0, PZ = det ? 1 : Math.max(1, Math.round(o.chemins || 2000)), T = p.T, H = T / 12;
+    /* sous_chemins : les N premiers chemins des mêmes tirages (seuils de « ce qui changerait », plus rapides, sans changer de tirages) */
+    const P = o.sous_chemins ? Math.min(PZ, o.sous_chemins) : PZ;
+    const graine = o.graine == null ? Proj.GRAINE : o.graine;
+    const ctx = D.contexte(d, { hypotheses_classes: Object.assign({}, objet(o.hypotheses_classes), objet(o.sur_classes)) }), pi = ctx.pi;
+    const bien = D.parametresClasse("immobilier_physique", ctx), scpi = D.parametresClasse("immobilier", ctx), mone = D.parametresClasse("monetaire", ctx);
+    const aB = Math.log(1 + bien.rendement / 100) / 12, sB = det ? 0 : bien.volatilite / 100 / Math.sqrt(12);
+    const aP = Math.log(1 + p.prixPart) / 12, sP = det ? 0 : scpi.volatilite / 100 / Math.sqrt(12);
+    const Z = det ? null : tirer(PZ, T, graine, ["immobilier_physique", "immobilier"]), Tz = Z ? Z.T : 0;
+    const zB = Z ? Z.z.immobilier_physique : null, zS = Z ? Z.z.immobilier : null;
+    /* livret : taux du repère jusqu'à sa date de fin, puis le monétaire central (règle du socle) */
+    const rl = ctx.R.livret_a_taux, gl = new Float64Array(T + 1);
+    if (rl) ctx.rv("livret_a_taux");
+    for (let t = 1; t <= T; t++) gl[t] = rl && (!rl.dateFin || O.ajouterMois(today, t) <= rl.dateFin) ? Math.pow(1 + +rl.valeur / 100, 1 / 12) : Math.pow(1 + mone.rendement / 100, 1 / 12);
+    const loc = exploitationLocatif(p, pi);
+    const sc = p.credit && p.C > 0, ids = ["L", "S", "AV"].concat(sc ? ["SC"] : []);
+    const lnSC = sc ? PC.amortissement({ capital: p.C, taux_pct: p.taux, duree_mois: p.duree * 12, assurance_pct: p.assurance }) : [];
+    const points = o.fin_seule ? [H] : [...Array(H).keys()].map(k => k + 1);
+    const net = {}, cour = {}, verse = {}, impots = {}, frais = {};
+    ids.forEach(id => { net[id] = points.map(() => new Float64Array(P)); cour[id] = points.map(() => new Float64Array(P)); impots[id] = new Float64Array(P); frais[id] = new Float64Array(P); });
+    const budgetCum = points.map(() => new Float64Array(P)), budgetMois = new Float64Array(T + 1);
+    const effL = t => Math.max(0, -loc.cf[t]), surL = t => Math.max(0, loc.cf[t]);
+    const feeM = 1 - Math.pow(1 - p.fav, 1 / 12);
+    /* une règle de sortie de l'assurance-vie par anniversaire : primes versées à cette date (déterministes : A0 + efforts du locatif), pour la part au-delà de 150 000 € */
+    const primesA = t => p.A0 + somme([...Array(t).keys()], m => effL(m + 1));
+    const prepsAV = new Map(points.map(k => [k, F.preparer({ type: "assurance_vie", valeur: 0, base: primesA(12 * k), classe: "immobilier", date_ouverture: today },
+      { reperes: d.reperes, couple: !!c.fo.couple, primes_titulaire: primesA(12 * k) })]));
+    const datesK = new Map(points.map(k => [k, O.ajouterMois(today, 12 * k)])), dateT = k => datesK.get(k);
+    const PrA = new Float64Array(T + 1);                              // prix de part à chaque souscription (plus-value par souscription)
+    let surtaxe = false, budgetP50Base = null;
+    const Xs = new Float64Array(T + 1), Ns = new Float64Array(T + 1), Nav = new Float64Array(T + 1);
+    for (let i = 0; i < P; i++) {
+      let Vb = p.prix, Pr = 1, potL = 0, potS = 0, potAV = 0, potSC = 0, cum = p.A0, impS = 0, impSC = 0, fraisS = 0, fraisAV = 0;
+      Xs.fill(0); Ns.fill(0); Nav.fill(0);
+      Xs[0] = p.A0; Ns[0] = p.A0; Nav[0] = p.A0; PrA[0] = 1;
+      let minPrA = 1; fraisS += p.A0 * p.fs; fraisAV += p.A0 * p.fs;
+      let jouS = 0, jouAV = 0, unitsAV = p.A0, baseAV = p.A0, Fav = 1, sumNs = p.A0;
+      const XSC = p.A0 + p.C, NSC = XSC; let carrySC = [];
+      const fraisSC0 = XSC * p.fs + p.fraisEmprunt;
+      let ki = 0;
+      for (let t = 1; t <= T; t++) {
+        const zb = zB ? zB[i * Tz + (t - 1)] : 0, zs = zS ? zS[i * Tz + (t - 1)] : 0;
+        Vb *= Math.exp(aB + sB * zb);
+        const Prev = Pr; Pr *= Math.exp(aP + sP * zs);
+        const u = t - p.dj - 1;
+        if (u >= 0) { jouS += Ns[u]; jouAV += Nav[u]; }
+        const eL = effL(t);
+        /* S : SCPI en direct au comptant */
+        const distS = jouS * Prev * p.dist / 12, taxS = distS * (p.tmi + p.psF), ndS = distS - taxS;
+        impS += taxS;
+        const XS = eL + (p.reinvestir ? ndS : 0);
+        Xs[t] = XS; Ns[t] = XS / Pr; PrA[t] = Pr; fraisS += XS * p.fs; sumNs += Ns[t];
+        if (XS > 0 && Pr < minPrA) minPrA = Pr;
+        /* AV : parts dans l'assurance-vie (en parts « normalisées » : parts réelles = normalisées × Fav, Fav = facteur cumulé des frais de gestion),
+           distribution réinvestie sans frais d'entrée, frais de gestion prélevés chaque mois sur toutes les parts */
+        const distAV = jouAV * Fav * Prev * p.dist / 12;
+        fraisAV += unitsAV * Fav * Pr * (1 - p.fs) * feeM + eL * p.fs;
+        Fav *= 1 - feeM;
+        const nouv = (eL / Pr + distAV / (Pr * (1 - p.fs))) / Fav;
+        unitsAV += nouv; Nav[t] = nouv; baseAV += eL;
+        /* SC : SCPI à crédit, intérêts déductibles mois par mois (déficit reporté 10 ans), distribution qui rembourse l'échéance */
+        let eSC = 0, surSC = 0;
+        if (sc) {
+          const r = lnSC[t - 1], distSC = (t > p.dj ? NSC : 0) * Prev * p.dist / 12, I = r ? r.interets + r.assurance : 0, y = Math.ceil(t / 12);
+          let res = distSC - I, taxSC = 0;
+          carrySC = carrySC.filter(x => x.fin >= y);
+          if (res < 0) carrySC.push({ montant: -res, fin: y + p.defFoncierAns });
+          else { for (const x of carrySC) { const v = Math.min(x.montant, res); x.montant -= v; res -= v; if (res <= EPS) break; } carrySC = carrySC.filter(x => x.montant > EPS); taxSC = Math.max(0, res) * (p.tmi + p.psF); }
+          impSC += taxSC;
+          const cfSC = distSC - taxSC - (r ? r.echeance + r.assurance : 0);
+          eSC = Math.max(0, -cfSC); surSC = Math.max(0, cfSC);
+        }
+        const b = Math.max(eL, eSC);
+        cum += b; budgetMois[t] += b / P;
+        potL = potL * gl[t] + (b - eL) + surL(t);
+        potS = potS * gl[t] + (b - eL) + (p.reinvestir ? 0 : ndS);
+        potAV = potAV * gl[t] + (b - eL);
+        if (sc) potSC = potSC * gl[t] + (b - eSC) + surSC;
+        if (ki < points.length && t === 12 * points[ki]) {
+          const k = points[ki], defl = 1 / Math.pow(1 + pi, t / 12);
+          /* L */
+          const cession = Vb * (1 - p.revente), anc = k;
+          const faPart = loc.regime === "lmnp_reel" ? 0.075 * p.prix : Math.max(p.FA, 0.075 * p.prix);
+          let travPart = loc.regime === "nu_reel" ? 0 : p.travaux;
+          if (anc > 5) travPart = Math.max(travPart, 0.15 * p.prix);
+          const reint = loc.regime === "lmnp_reel" ? loc.amortNMfin[k] : 0;
+          const pvL = impotPvImmo(cession - (p.prix + faPart + travPart) + reint, anc, p);
+          if (pvL.surtaxe) surtaxe = true;
+          const nL = cession - loc.crd[t] - pvL.impot + potL;
+          /* S et SC : plus-value par souscription */
+          const retS = sumNs * Pr * (1 - p.fs);
+          let pvS = 0;
+          if (Pr * (1 - p.fs) > minPrA) for (let v = 0; v <= t; v++) { if (!Ns[v] || Pr * (1 - p.fs) <= PrA[v]) continue; pvS += impotPvImmo(Ns[v] * Pr * (1 - p.fs) - Xs[v], Math.floor((t - v) / 12), p).impot; }
+          const nS = retS - pvS + potS;
+          const vAV = unitsAV * Fav * Pr * (1 - p.fs), xAV = prepsAV.get(k).calculer(vAV, baseAV, dateT(k), undefined), nAV = vAV - xAV.ir - xAV.ps + potAV;
+          cour.L[ki][i] = nL; cour.S[ki][i] = nS; cour.AV[ki][i] = nAV;
+          net.L[ki][i] = nL * defl; net.S[ki][i] = nS * defl; net.AV[ki][i] = nAV * defl;
+          if (sc) {
+            const valSC = NSC * Pr * (1 - p.fs), pvSC = impotPvImmo(valSC - XSC, k, p).impot, nSC = valSC - lnCrd(lnSC, t) - pvSC + potSC;
+            cour.SC[ki][i] = nSC; net.SC[ki][i] = nSC * defl;
+            if (k === points[points.length - 1]) { impots.SC[i] = impSC + pvSC; frais.SC[i] = fraisSC0; }
+          }
+          budgetCum[ki][i] = cum;
+          if (k === points[points.length - 1]) {
+            impots.L[i] = loc.impotsCum[k] + pvL.impot; frais.L[i] = p.FA + p.fraisEmprunt + somme([...Array(t).keys()], m => loc.gestion[m + 1]) + Vb * p.revente;
+            impots.S[i] = impS + pvS; frais.S[i] = fraisS; impots.AV[i] = xAV.ir + xAV.ps; frais.AV[i] = fraisAV;
+          }
+          ki++;
+        }
+      }
+    }
+    return { P, T, H, points, net, cour, budgetCum, budgetMois, impots, frais, ids, loc, pi, surtaxe, deterministe: det, graine, ctx, bien, scpi, sc };
+  }
+  const lnCrd = (tab, t) => (t <= 0 ? (tab[0] ? tab[0].crd + tab[0].capital : 0) : tab[t - 1] ? tab[t - 1].crd : 0);
+
+  /** Taux annuel qui égalise des versements mensuels (flux[0..T], négatifs) et une valeur finale à T → % ou null. */
+  function triAnnuel(flux, finale) {
+    const T = flux.length - 1, f = r => { let s = 0; for (let t = 0; t <= T; t++) s += flux[t] / Math.pow(1 + r, t); return s + finale / Math.pow(1 + r, T); };
+    let lo = -0.04, hi = 0.04, a = f(lo), b = f(hi);
+    if (!(a * b < 0)) return null;
+    for (let k = 0; k < 100; k++) { const m = (lo + hi) / 2, v = f(m); if (v * a > 0) { lo = m; a = v; } else hi = m; }
+    return r2((Math.pow(1 + (lo + hi) / 2, 12) - 1) * 100);
+  }
+
+  function locatifScpi(c) {
+    const { today, o, rep } = c;
+    const p = parametresLocatif(c), pre = { chemins: o.chemins, graine: o.graine, volatilite: o.volatilite, hypotheses_classes: o.hypotheses_classes };
+    const sim = simulerLocatifScpi(c, p, pre), H = sim.H, kT = sim.points.length - 1;
+    const libL = LIB_LS.L + " (" + REGIMES_LOCATIF[sim.loc.regime] + ")", lib = id => (id === "L" ? libL : LIB_LS[id]);
+    const q50 = a => quantile(a, 0.5);
+    /* options au mois T */
+    const options = sim.ids.map(id => Object.assign(sortieOption(id, lib(id), id === "L" ? ["bien_locatif"] : id === "AV" ? ["assurance_vie"] : ["scpi_direct"], {
+      net: sim.net[id][kT], courants: sim.cour[id][kT], brut: sim.cour[id][kT], impots: sim.impots[id], ps: new Float64Array(sim.P), frais: sim.frais[id], base: q50(sim.budgetCum[kT]) }), { role: id === "L" ? "locatif" : "scpi" }));
+    const p50 = id => q50(sim.net[id][kT]), ordre = sim.ids.slice().sort((a, b) => p50(b) - p50(a)), tete = ordre[0], second = ordre[1];
+    const ecartK = (a, b, k) => { const A = sim.net[a][k], B = sim.net[b][k], dl = new Float64Array(sim.P), dc = new Float64Array(sim.P); let mieux = 0;
+      for (let i = 0; i < sim.P; i++) { dl[i] = A[i] - B[i]; dc[i] = sim.cour[a][k][i] - sim.cour[b][k][i]; if (dl[i] > 1e-7) mieux++; }
+      return { delta: dl, courants: dc, p10: quantile(dl, 0.1), p50: quantile(dl, 0.5), p90: quantile(dl, 0.9), probabilite_mieux: mieux / sim.P }; };
+    const e = ecartK(tete, second, kT), enjeu = parAn(e, H);
+    /* date de bascule : premier anniversaire à partir duquel la médiane de l'écart reste positive */
+    let bascule = null;
+    for (let k = kT; k >= 0; k--) { if (quantile(ecartK(tete, second, k).courants, 0.5) > 1e-6) bascule = O.ajouterMois(today, 12 * sim.points[k]); else break; }
+    /* TRI médian : budget médian versé chaque mois, patrimoine net médian à la sortie */
+    const flux = [-p.A0].concat([...Array(sim.T).keys()].map(t => -sim.budgetMois[t + 1]));
+    const tri = Object.fromEntries(sim.ids.map(id => [id, triAnnuel(flux, q50(sim.cour[id][kT]))]));
+    /* patrimoine par anniversaire (graphique) */
+    const patrimoine = { points: sim.points.map((k, j) => ({ t: 12 * k, date: O.ajouterMois(today, 12 * k), options: Object.fromEntries(sim.ids.map(id => [id, bandeR(sim.net[id][j])])) })) };
+    const courbe = { abscisse: "date_sortie", points: sim.points.map((k, j) => { const x = ecartK(tete, second, j), b = bandeR(x.delta); return { t: 12 * k, date: O.ajouterMois(today, 12 * k), p10: b.p10, p50: b.p50, p90: b.p90, courants_p50: r2(quantile(x.courants, 0.5)) }; }) };
+    /* ce qui changerait la réponse (mêmes tirages, sortie à T seulement) */
+    const ctq = [], avert = sim.loc.avertissements.slice();
+    const meilleureScpi = sim.ids.filter(id => id !== "L").sort((a, b) => p50(b) - p50(a))[0];
+    const ecartLs = (sur, surClasses) => { const s2 = simulerLocatifScpi(c, parametresLocatif(c, sur), Object.assign({}, pre, { fin_seule: true, sur_classes: surClasses, sous_chemins: 500 })); return quantile(Array.from(s2.net.L[0], (v, i) => v - s2.net[meilleureScpi][0][i]), 0.5); };
+    const locDevant = q50(sim.net.L[kT]) >= p50(meilleureScpi), libS = PH_LS[meilleureScpi];
+    if (!o.enjeu) {
+      const pi = sim.pi, reval = c.L.v("immo_revalorisation_reelle");
+      const fr = x => ecartLs(null, { immobilier_physique: { rendement: ((1 + pi) * (1 + x / 100) - 1) * 100 } });
+      const sr = seuilDichotomie(x => -fr(x), -3, 3, 12);
+      if (sr.etat === "ok") ctq.push(ligne("revalorisation_bien", O.frc(reval || 0, 1) + " %/an au-delà de l'inflation", O.frc(sr.x, 2) + " %/an", locDevant ? "En dessous, " + libS + " passent devant" : "Au-dessus, le bien locatif passe devant",
+        (locDevant ? "Si le prix du bien progresse de moins de " : "Si le prix du bien progresse de plus de ") + O.frc(sr.x, 2) + " % par an au-delà de l'inflation, " + (locDevant ? libS + " font mieux" : "le bien locatif fait mieux") + " (les autres hypothèses restent les mêmes)."));
+      const sd = seuilDichotomie(x => ecartLs({ dist: x }), 0, 10, 12);
+      if (sd.etat === "ok") ctq.push(ligne("taux_distribution", O.frc(p.dist * 100, 2) + " %", O.frc(sd.x, 2) + " %", locDevant ? "Au-dessus, les SCPI passent devant" : "En dessous, le bien locatif passe devant",
+        (locDevant ? "Si les SCPI distribuent plus de " : "Si les SCPI distribuent moins de ") + O.frc(sd.x, 2) + " % par an, " + (locDevant ? "elles font mieux que le bien locatif." : "le bien locatif fait mieux.")));
+      const sv = seuilDichotomie(x => ecartLs({ vacance: x }), 0, 6, 12);
+      if (sv.etat === "ok") ctq.push(ligne("vacance", O.frc(p.vacance, 1) + " mois/an", O.frc(sv.x, 1) + " mois/an", locDevant ? "Au-delà, le bien locatif passe derrière" : "En dessous, le bien locatif passe devant",
+        (locDevant ? "Si ton bien reste vide plus de " : "Si ton bien reste vide moins de ") + O.frc(sv.x, 1) + " mois par an en moyenne, " + (locDevant ? libS + " font mieux." : "le bien locatif fait mieux.")));
+      if (bascule && bascule > today) ctq.push(ligne("horizon", ans(H), dateFr(bascule), "Avant cette date, l'ordre s'inverse",
+        "Si tu revends ou retires avant le " + dateFr(bascule) + ", " + PH_LS[tete] + (tete === "L" ? " ne fait" : " ne font") + " pas mieux " + que(PH_LS[second]) + " : les frais d'entrée ne sont pas encore amortis."));
+    }
+    /* avertissements dits */
+    if (p.meuble && !(p.mobilier > 0)) avert.push("En meublé, le mobilier est à compter (souvent quelques milliers d'euros) : il est à 0 dans ce calcul.");
+    if (!p.meuble && +rep.mobilier > 0) avert.push("En location nue, le mobilier n'est pas compté.");
+    if (sim.loc.regime === "nu_reel" && sim.loc.annees.some(a => a.impute_revenu_global > 0)) avert.push("Le déficit foncier imputé sur ton revenu global suppose que le bien reste loué jusqu'au 31 décembre de la 3ᵉ année qui suit.");
+    if (sim.loc.regime === "lmnp_reel") avert.push("À la revente, les amortissements du bâti et des travaux déduits sont ajoutés à la plus-value (cessions depuis le 15/02/2025), sauf pour certaines résidences de services (étudiants, seniors).");
+    if (sim.surtaxe) avert.push("Ta plus-value immobilière dépasse " + O.eur(p.surtaxe) + " : une surtaxe s'ajoute, elle n'est pas calculée ici.");
+    avert.push("SCPI : les revenus étrangers ne sont pas distingués (tout est imposé comme des revenus fonciers français, ce qui pénalise un peu les SCPI) ; plus-value des parts : " + F.MENTION_SCPI + ".");
+    avert.push("Les travaux ne sont pas ajoutés à la valeur du bien (prudent) ; les loyers et les charges suivent l'inflation supposée.");
+    if (c.frais.inconnus.includes("assurance_vie_pct") && !nombre(rep.frais_av_pct)) avert.push("Frais de l'assurance-vie non renseignés : comptés à 0 %, ce qui avantage l'option en assurance-vie ; renseigne-les pour un chiffre complet.");
+    const enTete = Math.abs(e.p50) < 0.005 ? "egalite" : tete;
+    const phrase = Math.abs(e.p50) < 0.005 ? "Sur " + ans(H) + ", à effort égal, " + PH_LS[tete] + " et " + PH_LS[second] + " font jeu égal avec ces hypothèses."
+      : (tete === "L" ? "Sur " + ans(H) + ", à effort égal, le bien locatif (" + REGIMES_LOCATIF[sim.loc.regime] + ") te laisserait environ "
+        : "Sur " + ans(H) + ", à effort égal, " + PH_LS[tete] + " te laisseraient environ ") + eur0(e.p50) + " de plus " + que(PH_LS[second]) + ", en euros d'aujourd'hui.";
+    const reponse = { phrase, option_en_tete: enTete, reference: second, ecart: ecartBandes(e), ecart_annuel: enjeu, probabilite_mieux: p3(e.probabilite_mieux), date_bascule: bascule };
+    return {
+      options, reponse, courbe, ce_qui_changerait: ctq, avertissements: avert,
+      enjeu_annuel: { p10: Math.min(enjeu.p10, enjeu.p50), p50: Math.max(0, enjeu.p50), p90: Math.max(enjeu.p90, enjeu.p50) }, sim: null,
+      detail: { T: sim.T, regime: sim.loc.regime, credit: { capital: r2(p.C), mensualite: r2(sim.loc.ech[1] + sim.loc.ass[1]), duree_ans: p.duree, taux_pct: p.taux, frais_emprunt: r2(p.fraisEmprunt) },
+        cout_total: r2(p.K), apport_utilise: r2(p.A0), frais_acquisition: r2(p.FA), effort_mensuel_an1: r2(somme([...Array(12).keys()], k => Math.max(0, -sim.loc.cf[k + 1])) / 12),
+        locatif_annees: sim.loc.annees, stock_amortissements: sim.loc.stock_amortissements, tri, patrimoine, verse_p50: r2(quantile(sim.budgetCum[kT], 0.5)), ecart_courants: r2(quantile(e.courants, 0.5)) },
+      plan: { tete, reference: second, plan: null, titulaire: c.titulaire },
+      retenables: { options: {}, non: Object.fromEntries(sim.ids.map(id => [id, NON_RETENABLE_IMMO])) },
+    };
+  }
+
+  const CALCULS = { ouvrirPea, prochainEuro, perInteret, matelas, avMaintenant, locatifScpi };
   /** Repères lus par un calcul en plus de ceux que déclare l'entrée du catalogue : un repère absent rend le scénario indisponible (jamais NaN, jamais de valeur de secours). */
   const REPERES_CALCUL = {
     ouvrirPea: ["scn_delai_ouverture_mois", "pea_plafond", "pea_duree_ans"],
@@ -1055,6 +1366,12 @@
     perInteret: ["scn_delai_ouverture_mois", "per_plafond_plancher"],
     matelas: ["scn_delai_ouverture_mois", "scn_matelas_mois_stable", "scn_matelas_mois_fragile", "scn_matelas_mois_independant", "lep_plafond", "livret_a_plafond", "ldds_plafond", "lep_taux", "livret_a_taux"],
     avMaintenant: ["scn_delai_ouverture_mois", "av_duree_ans"],
+    locatifScpi: ["frais_acquisition_ancien_pct", "frais_acquisition_neuf_pct", "garantie_pct", "frais_dossier", "assurance_emprunteur_defaut_pct", "ps_taux_foncier", "ps_taux_general",
+      "pv_immo_ir_taux", "pv_immo_ps_taux", "pv_immo_surtaxe_seuil", "micro_foncier_plafond", "micro_foncier_abattement_pct", "micro_bic_plafond", "micro_bic_abattement_pct",
+      "deficit_foncier_plafond", "deficit_foncier_report_ans", "deficit_bic_report_ans", "scn_lmnp_part_terrain_pct", "scn_lmnp_duree_bati_ans", "scn_lmnp_duree_travaux_ans",
+      "scn_lmnp_duree_mobilier_ans", "scn_immo_frais_revente_pct", "scn_scpi_delai_jouissance_mois", "inflation_hypothese", "immo_revalorisation_reelle", "immo_volatilite",
+      "rendement_central_monetaire", "rendement_central_immobilier", "scpi_taux_distribution", "ir_taux_forfaitaire", "ps_taux_av_epargne_logement", "av_duree_ans",
+      "av_taux_ir_reduit", "av_seuil_versements", "av_abattement_seul", "av_abattement_couple"],
   };
   const reperesRequis = entree => [...new Set(liste(entree.reperes).concat(REPERES_CALCUL[entree.calcul] || []))];
 

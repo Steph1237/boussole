@@ -1,0 +1,493 @@
+[
+  {
+    "id": "LOC-1",
+    "regime": "lmnp_reel",
+    "capital_C": 193939.39,
+    "echeance_hors_assurance": 1101.98,
+    "assurance_mensuelle": 48.48,
+    "A0": 30000,
+    "K": 221000.0,
+    "frais_emprunt_E1": 2939.39,
+    "bien_annees": {
+      "1": {
+        "loyers": 9900.0,
+        "charges": 1850.0,
+        "interets_assurance": 6819.55,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -5755.63
+      },
+      "2": {
+        "loyers": 10098.0,
+        "charges": 1887.0,
+        "interets_assurance": 6587.65,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -5594.63
+      },
+      "3": {
+        "loyers": 10299.96,
+        "charges": 1924.74,
+        "interets_assurance": 6348.05,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -5430.41
+      },
+      "20": {
+        "loyers": 14422.43,
+        "charges": 2695.1,
+        "interets_assurance": 813.1,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 10914.23,
+        "cash_flow": -2078.3
+      }
+    },
+    "effort_moyen_mensuel_annee1": 479.64,
+    "budget_verse_total": 110518.83,
+    "options": {
+      "L": {
+        "net_courants": 262765.27,
+        "net_aujourdhui": 176833.5,
+        "impots_totaux": 19564.73,
+        "impots_revenus": 0.0,
+        "V_T": 297189.48,
+        "cession_nette": 282330.01,
+        "plus_value_brute": 131811.17,
+        "impot_plus_value": 19564.73,
+        "amortissements_bati_travaux_deduits": 94481.17,
+        "CRD_T": 0.0,
+        "livret": 0.0
+      },
+      "S": {
+        "net_courants": 134060.1,
+        "net_aujourdhui": 90218.6,
+        "impots_totaux": 41055.2,
+        "impots_revenus": 41055.2,
+        "impot_plus_value": 0.0,
+        "valeur_retrait": 134060.1,
+        "parts": 161712.05,
+        "livret": 0.0
+      },
+      "AV": {
+        "net_courants": 166566.84,
+        "net_aujourdhui": 112094.71,
+        "impots_totaux": 17468.6,
+        "impot_sortie": 17468.6,
+        "valeur": 184035.44,
+        "versements": 110518.83,
+        "gain": 73516.61,
+        "livret": 0.0,
+        "info_impot_si_regle_150k": 17468.6,
+        "info_net_courants_si_regle_150k": 166566.84
+      }
+    },
+    "livrets_T": {
+      "L": 0.0,
+      "S": 0.0,
+      "AV": 0.0
+    }
+  },
+  {
+    "id": "LOC-2",
+    "regime": "nu_micro",
+    "capital_C": 188888.89,
+    "echeance_hors_assurance": 1073.29,
+    "assurance_mensuelle": 47.22,
+    "A0": 30000,
+    "K": 216000.0,
+    "frais_emprunt_E1": 2888.89,
+    "bien_annees": {
+      "1": {
+        "loyers": 9900.0,
+        "charges": 1850.0,
+        "interets_assurance": 6641.96,
+        "base_imposable": 6930.0,
+        "impot": 3270.96,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -8667.07
+      },
+      "2": {
+        "loyers": 10098.0,
+        "charges": 1887.0,
+        "interets_assurance": 6416.1,
+        "base_imposable": 7068.6,
+        "impot": 3336.38,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -8571.49
+      },
+      "3": {
+        "loyers": 10299.96,
+        "charges": 1924.74,
+        "interets_assurance": 6182.74,
+        "base_imposable": 7209.97,
+        "impot": 3403.11,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -8474.0
+      },
+      "20": {
+        "loyers": 14422.43,
+        "charges": 2695.1,
+        "interets_assurance": 791.92,
+        "base_imposable": 10095.7,
+        "impot": 4765.17,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -6483.95
+      }
+    },
+    "effort_moyen_mensuel_annee1": 722.26,
+    "budget_verse_total": 182804.12,
+    "options": {
+      "L": {
+        "net_courants": 276937.54,
+        "net_aujourdhui": 186371.03,
+        "impots_totaux": 84868.19,
+        "impots_revenus": 79475.72,
+        "V_T": 297189.48,
+        "cession_nette": 282330.01,
+        "plus_value_brute": 36330.01,
+        "impot_plus_value": 5392.46,
+        "amortissements_bati_travaux_deduits": 0.0,
+        "CRD_T": 0.0,
+        "livret": 0.0
+      },
+      "S": {
+        "net_courants": 213407.66,
+        "net_aujourdhui": 143617.24,
+        "impots_totaux": 58053.04,
+        "impots_revenus": 58053.04,
+        "impot_plus_value": 0.0,
+        "valeur_retrait": 213407.66,
+        "parts": 257426.26,
+        "livret": 0.0
+      },
+      "AV": {
+        "net_courants": 257623.61,
+        "net_aujourdhui": 173373.3,
+        "impots_totaux": 24885.38,
+        "impot_sortie": 24885.38,
+        "valeur": 282508.98,
+        "versements": 182804.12,
+        "gain": 99704.86,
+        "livret": 0.0,
+        "info_impot_si_regle_150k": 24885.38,
+        "info_net_courants_si_regle_150k": 257623.61
+      }
+    },
+    "livrets_T": {
+      "L": 0.0,
+      "S": 0.0,
+      "AV": 0.0
+    }
+  },
+  {
+    "id": "LOC-3",
+    "regime": "nu_reel",
+    "capital_C": 219191.92,
+    "echeance_hors_assurance": 1245.47,
+    "assurance_mensuelle": 54.8,
+    "A0": 30000,
+    "K": 246000.0,
+    "frais_emprunt_E1": 3191.92,
+    "bien_annees": {
+      "1": {
+        "loyers": 9900.0,
+        "charges": 1850.0,
+        "interets_assurance": 7707.51,
+        "base_imposable": 0.0,
+        "impot": -3210.0,
+        "imputation_revenu_global": 10700,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -4343.24
+      },
+      "2": {
+        "loyers": 10098.0,
+        "charges": 1887.0,
+        "interets_assurance": 7445.42,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -7392.24
+      },
+      "3": {
+        "loyers": 10299.96,
+        "charges": 1924.74,
+        "interets_assurance": 7174.62,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -7228.02
+      },
+      "20": {
+        "loyers": 14422.43,
+        "charges": 2695.1,
+        "interets_assurance": 918.97,
+        "base_imposable": 10808.36,
+        "impot": 5101.55,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -8977.46
+      }
+    },
+    "effort_moyen_mensuel_annee1": 361.94,
+    "budget_verse_total": 181129.09,
+    "options": {
+      "L": {
+        "net_courants": 276937.54,
+        "net_aujourdhui": 186371.03,
+        "impots_totaux": 40050.55,
+        "impots_revenus": 34658.09,
+        "V_T": 297189.48,
+        "cession_nette": 282330.01,
+        "plus_value_brute": 36330.01,
+        "impot_plus_value": 5392.46,
+        "amortissements_bati_travaux_deduits": 0.0,
+        "CRD_T": 0.0,
+        "livret": 0.0
+      },
+      "S": {
+        "net_courants": 207037.09,
+        "net_aujourdhui": 139330.03,
+        "impots_totaux": 52300.82,
+        "impots_revenus": 52300.82,
+        "impot_plus_value": 0.0,
+        "valeur_retrait": 207037.09,
+        "parts": 249741.66,
+        "livret": 0.0
+      },
+      "AV": {
+        "net_courants": 247083.28,
+        "net_aujourdhui": 166279.97,
+        "impots_totaux": 21779.31,
+        "impot_sortie": 21779.31,
+        "valeur": 268862.59,
+        "versements": 181129.09,
+        "gain": 87733.51,
+        "livret": 0.0,
+        "info_impot_si_regle_150k": 21779.31,
+        "info_net_courants_si_regle_150k": 247083.28
+      }
+    },
+    "livrets_T": {
+      "L": 0.0,
+      "S": 0.0,
+      "AV": 0.0
+    }
+  },
+  {
+    "id": "LOC-4",
+    "regime": "lmnp_micro",
+    "capital_C": 0.0,
+    "echeance_hors_assurance": 0.0,
+    "assurance_mensuelle": 0.0,
+    "A0": 221000.0,
+    "K": 221000.0,
+    "frais_emprunt_E1": 0.0,
+    "bien_annees": {
+      "1": {
+        "loyers": 9900.0,
+        "charges": 1850.0,
+        "interets_assurance": 0.0,
+        "base_imposable": 4950.0,
+        "impot": 2405.7,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": 5644.3
+      },
+      "2": {
+        "loyers": 10098.0,
+        "charges": 1887.0,
+        "interets_assurance": 0.0,
+        "base_imposable": 5049.0,
+        "impot": 2453.81,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": 5757.19
+      },
+      "3": {
+        "loyers": 10299.96,
+        "charges": 1924.74,
+        "interets_assurance": 0.0,
+        "base_imposable": 5149.98,
+        "impot": 2502.89,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": 5872.33
+      },
+      "20": {
+        "loyers": 14422.43,
+        "charges": 2695.1,
+        "interets_assurance": 0.0,
+        "base_imposable": 7211.22,
+        "impot": 3504.65,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": 8222.68
+      }
+    },
+    "effort_moyen_mensuel_annee1": 0.0,
+    "budget_verse_total": 221000.0,
+    "options": {
+      "L": {
+        "net_courants": 435030.27,
+        "net_aujourdhui": 292762.9,
+        "impots_totaux": 63844.65,
+        "impots_revenus": 58452.18,
+        "V_T": 297189.48,
+        "cession_nette": 282330.01,
+        "plus_value_brute": 36330.01,
+        "impot_plus_value": 5392.46,
+        "amortissements_bati_travaux_deduits": 0.0,
+        "CRD_T": 0.0,
+        "livret": 158092.73
+      },
+      "S": {
+        "net_courants": 303632.8,
+        "net_aujourdhui": 204336.17,
+        "impots_totaux": 124134.38,
+        "impots_revenus": 124134.38,
+        "impot_plus_value": 0.0,
+        "valeur_retrait": 303632.8,
+        "parts": 366261.72,
+        "livret": 0.0
+      },
+      "AV": {
+        "net_courants": 401584.5,
+        "net_aujourdhui": 270254.86,
+        "impots_totaux": 63846.39,
+        "impot_sortie": 63846.39,
+        "valeur": 465430.89,
+        "versements": 221000.0,
+        "gain": 244430.89,
+        "livret": 0.0,
+        "info_impot_si_regle_150k": 63846.39,
+        "info_net_courants_si_regle_150k": 401584.5
+      }
+    },
+    "livrets_T": {
+      "L": 158092.73,
+      "S": 0.0,
+      "AV": 0.0
+    }
+  },
+  {
+    "id": "LOC-5",
+    "regime": "lmnp_reel",
+    "capital_C": 193939.39,
+    "echeance_hors_assurance": 1101.98,
+    "assurance_mensuelle": 48.48,
+    "A0": 30000,
+    "K": 221000.0,
+    "frais_emprunt_E1": 2939.39,
+    "bien_annees": {
+      "1": {
+        "loyers": 9900.0,
+        "charges": 1850.0,
+        "interets_assurance": 6819.55,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -5755.63
+      },
+      "2": {
+        "loyers": 10098.0,
+        "charges": 1887.0,
+        "interets_assurance": 6587.65,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -5594.63
+      },
+      "3": {
+        "loyers": 10299.96,
+        "charges": 1924.74,
+        "interets_assurance": 6348.05,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 0.0,
+        "cash_flow": -5430.41
+      },
+      "20": {
+        "loyers": 14422.43,
+        "charges": 2695.1,
+        "interets_assurance": 813.1,
+        "base_imposable": 0.0,
+        "impot": 0.0,
+        "imputation_revenu_global": 0.0,
+        "amortissements_deduits": 10914.23,
+        "cash_flow": -2078.3
+      }
+    },
+    "effort_moyen_mensuel_annee1": 479.64,
+    "budget_verse_total": 160583.69,
+    "options": {
+      "L": {
+        "net_courants": 317660.37,
+        "net_aujourdhui": 213776.32,
+        "impots_totaux": 19564.73,
+        "impots_revenus": 0.0,
+        "V_T": 297189.48,
+        "cession_nette": 282330.01,
+        "plus_value_brute": 131811.17,
+        "impot_plus_value": 19564.73,
+        "amortissements_bati_travaux_deduits": 94481.17,
+        "CRD_T": 0.0,
+        "livret": 54895.09
+      },
+      "S": {
+        "net_courants": 188955.19,
+        "net_aujourdhui": 127161.43,
+        "impots_totaux": 41055.2,
+        "impots_revenus": 41055.2,
+        "impot_plus_value": 0.0,
+        "valeur_retrait": 134060.1,
+        "parts": 161712.05,
+        "livret": 54895.09
+      },
+      "AV": {
+        "net_courants": 221461.93,
+        "net_aujourdhui": 149037.53,
+        "impots_totaux": 17468.6,
+        "impot_sortie": 17468.6,
+        "valeur": 184035.44,
+        "versements": 110518.83,
+        "gain": 73516.61,
+        "livret": 54895.09,
+        "info_impot_si_regle_150k": 17468.6,
+        "info_net_courants_si_regle_150k": 221461.93
+      },
+      "SC": {
+        "net_courants": 189367.59,
+        "net_aujourdhui": 127438.96,
+        "impots_totaux": 59149.05,
+        "impots_revenus": 59149.05,
+        "impot_plus_value": 0.0,
+        "valeur_retrait": 185646.88,
+        "CRD_T": 0.0,
+        "livret": 3720.71
+      }
+    },
+    "livrets_T": {
+      "L": 54895.09,
+      "S": 54895.09,
+      "AV": 54895.09,
+      "SC": 3720.71
+    }
+  }
+]

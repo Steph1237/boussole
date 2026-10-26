@@ -19,9 +19,9 @@
    Erreurs d'écriture : { code, message } — "invalid_argument" pour RLS / permission (les modules affichent le
    message « droits »), "network" pour un transport en échec, sinon le code Postgres (ex. 23514) tel quel.
 
-   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque, historique }
+   Contrat : window.Store = { get(), on(fn), setScope(s), emit(), db, mode, reload(), propositions, memoire, savoir, expertises, journal, routines, plansFiges, surveillerConnexions(on), cours(isins, depuis), transactions(depuis), markOnboarded(), banque, historique, scenarios }
    db = { doc("config/main").update({ rules }), doc("profil/main").update({ risque }) } : seules écritures hors API dédiées (lecture seule).
-   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, foyer, indices, plansFiges, scope, people, user, error }
+   S = { ready, dbOk, positions, snapshots, tx, config, status, profil, profilLoaded, budget, objectifs, risque, classes, propositions, connexions, memoire, savoir, expertises, journal, journalARelire, journalConsentement, routines, routinesLues, banque, foyer, indices, plansFiges, scope, people, user, error, scenarios }
    relevesBancaires = { lu, mfaRequise, comptes: [{ id, libelle, etablissement, type, titulaire, banqueCompteId, positionId, cle }], releves: [{ compteId, mois,
    complet, soldeDebut, soldeFin, totalEntrees, totalSorties, nombre, importId }], banqueMois: [{ compteId, mois, categorie, sousCategorie, entrees, sorties, nombre }] }
    (HIS2, migration 0034 : relevés bancaires importés en totaux mensuels par compte et par catégorie, jamais d'opération ; forme lue par Calc.moisBancaires, avec
@@ -144,7 +144,7 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // État interne ; S (exposé) en est une copie reconstruite à chaque publish().
-  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, foyer: { evenements: [], variantes: [] }, indices: [], plansFiges: [], expertises: [], journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, banque: { actif: false, lu: false, connexions: [], comptes: [], mois: [] }, relevesBancaires: { lu: false, mfaRequise: false, comptes: [], releves: [], banqueMois: [] }, historiqueImports: [], photosReconstituees: [], onboardingDone: true, scope: "foyer", error: null, user: null };
+  const C = { ready: false, dbOk: null, positions: [], snapshots: [], tx: [], config: null, status: null, profil: null, profilLoaded: false, budget: null, objectifs: [], risque: null, classes: {}, propositions: [], connexions: [], memoire: [], savoir: { fiches: [], reperes: [] }, foyer: { evenements: [], variantes: [] }, indices: [], plansFiges: [], expertises: [], scenarios: { catalogue: [], joues: [], source: "embarque", lu: false, mfaRequise: false }, journal: [], journalARelire: 0, journalConsentement: "demander", routines: [], routinesLues: false, banque: { actif: false, lu: false, connexions: [], comptes: [], mois: [] }, relevesBancaires: { lu: false, mfaRequise: false, comptes: [], releves: [], banqueMois: [] }, historiqueImports: [], photosReconstituees: [], onboardingDone: true, scope: "foyer", error: null, user: null };
   try { const s = localStorage.getItem("scope"); if (["foyer", "p1", "p2"].includes(s)) C.scope = s; } catch (e) {}
 
   // Deuxième personne : si le foyer compte au moins deux adultes (ou, taille inconnue, si elle est renseignée).
@@ -179,6 +179,7 @@
       memoire: clone(C.memoire),
       savoir: clone(C.savoir),
       expertises: clone(C.expertises),
+      scenarios: clone(C.scenarios),
       journal: clone(C.journal),
       journalARelire: C.journalARelire,
       journalConsentement: C.journalConsentement,
@@ -395,6 +396,40 @@
     source: r.source, poches: r.poches || [], enveloppes: r.enveloppes || [], rendement: num(r.rendement), priorite: r.priorite == null ? 0 : +r.priorite,
   });
 
+  /* Scénarios (SCN1, 0038) : catalogue public `scenarios` (statut publie) et parties jouées `scenarios_joues` (privées, aal2 si un facteur est activé).
+     Tant que la migration 0038 n'est pas appliquée (table absente), ou si la lecture échoue : catalogue embarqué (window.ScenariosCatalogue,
+     scenarios-catalogue.gen.js) et aucune partie jouée, sans bruit ni erreur affichée. Lecture seule : l'app n'écrit jamais ces tables. Les repères
+     viennent de la base (C.savoir.reperes) : un repère absent rend le scénario « indisponible » (Scenarios.jouer), jamais de valeur de secours. */
+  const embarque = () => { const c = window.ScenariosCatalogue; return c && Array.isArray(c.catalogue) ? clone(c.catalogue) : []; };
+  const SCN_COLONNES = "id, cle, numero, theme, question, resume, pertinence, donnees, questions, reperes, calcul, version_calcul, ouverture, garde_fous, version, statut, changelog, mis_a_jour_le, publie_le";
+  const SCN_JOUES = "id, scenario_cle, scenario_version, version_calcul, version_modele, etat, reponses, resultat, enjeu_annuel_p50, graine, chemins, variante_id, plan_fige_id, source, joue_le, decide_le";
+  const scnView = r => ({ cle: r.cle, numero: r.numero == null ? null : +r.numero, theme: r.theme, question: r.question, resume: r.resume ?? null, pertinence: objOu(r.pertinence, {}),
+    donnees: tableau(r.donnees), questions: tableau(r.questions), reperes: tableau(r.reperes), calcul: r.calcul, version_calcul: r.version_calcul, ouverture: objOu(r.ouverture, {}),
+    garde_fous: r.garde_fous ?? null, version: r.version == null ? 1 : +r.version, statut: r.statut, changelog: r.changelog ?? null, mis_a_jour_le: r.mis_a_jour_le ?? null, publie_le: r.publie_le ?? null });
+  const scnJoueView = r => ({ id: r.id, scenario_cle: r.scenario_cle, scenario_version: r.scenario_version == null ? null : +r.scenario_version, version_calcul: r.version_calcul ?? null,
+    version_modele: r.version_modele ?? null, etat: r.etat, reponses: objOu(r.reponses, {}), resultat: objOu(r.resultat, {}), enjeu_annuel_p50: num(r.enjeu_annuel_p50), graine: r.graine ?? null,
+    chemins: r.chemins == null ? null : +r.chemins, variante_id: r.variante_id ?? null, plan_fige_id: r.plan_fige_id ?? null, source: r.source ?? null, joue_le: r.joue_le, decide_le: r.decide_le ?? null });
+  async function lireScenarios() {
+    let catalogue = null, source = "base";
+    try {
+      const rows = await q(sb.from("scenarios").select(SCN_COLONNES).eq("statut", "publie").order("numero"));
+      catalogue = (rows || []).map(scnView);
+    } catch (e) {
+      if (!HI_ABSENTE(e)) console.warn("Boussole : catalogue des scénarios illisible, catalogue embarqué", e && e.code);
+      catalogue = null;
+    }
+    if (!catalogue || !catalogue.length) { catalogue = embarque(); source = "embarque"; }
+    let joues = [], mfaRequise = false;
+    if (source === "base") {
+      if (!(await sessionAal2())) mfaRequise = true;
+      else {
+        try { joues = ((await q(sb.from("scenarios_joues").select(SCN_JOUES).order("joue_le", { ascending: false }).limit(200))) || []).map(scnJoueView); }
+        catch (e) { if (!HI_ABSENTE(e)) console.warn("Boussole : parties jouées illisibles", e && e.code); joues = []; }
+      }
+    }
+    C.scenarios = { catalogue, joues, source, lu: true, mfaRequise };
+  }
+
   async function loadAll() {
     if (!sb || !session) return;
     const res = await Promise.allSettled([
@@ -457,6 +492,7 @@
       else await lireBanque();
     }
     await lireHistoriqueImporte().catch(e => console.warn("Boussole : historique importé", e && e.code));
+    await lireScenarios().catch(e => console.warn("Boussole : scénarios", e && e.code));
     // Colonne absente (migration 0013 non appliquée) ou valeur inconnue : « demander », comme le connecteur.
     if (prof !== undefined) C.journalConsentement = prof && CONSENTEMENTS.includes(prof.journal_consentement) ? prof.journal_consentement : "demander";
     if (prof !== undefined) C.onboardingDone = !!(prof && prof.onboarding_done);
@@ -890,6 +926,8 @@
     memoire,
     savoir,
     expertises,
+    /* Scénarios (lecture) : catalogue publié lu (ou embarqué) ; S.scenarios = { catalogue, joues, source, lu, mfaRequise }. */
+    scenarios: { catalogue: () => clone(C.scenarios.catalogue) },
     journal,
     routines,
     plansFiges: { async detail(id) { guard(); const data = await q(sb.from("plans_figes").select("id, cree_le, raison, horizon_mois, parametres, serie").eq("id", id).maybeSingle()); return data || null; } },

@@ -21,7 +21,8 @@
       { id: "sante", label: "Santé", module: "sante" },
       { id: "risque", label: "Risque", module: "risque-view" },
       { id: "rang", label: "Rang", module: "toise" },
-      { id: "scenarios", label: "Scénarios", module: "simu" },
+      /* SCN1 : la bibliothèque des scénarios ; le simulateur acheter / louer (simu) est un outil de la même section (?outil=acheter-louer, D8). */
+      { id: "scenarios", label: "Scénarios", module: "scenarios-view", extras: ["simu"] },
     ] },
     /* Agent : 4 sous-vues (UX3). « Savoir » réunit les anciennes Fiches et Expertises (deux volets, modules fiches-view et expertises-view,
        montés dans la section de savoir-view : `extras`). Connexion est passée dans Compte (« Connecter Claude »). */
@@ -65,11 +66,16 @@
     "#acheter": "pilotage/scenarios", "#simulateur": "pilotage/scenarios", "#theorie": "pilotage/scenarios", "#explication": "pilotage/scenarios",
     "#budget": "patrimoine/budget", "#objectifs": "patrimoine/objectifs",
   };
+  /* Paramètres d'un ancien lien du simulateur (D8, SCN1) : le simulateur acheter / louer est devenu un outil de Pilotage › Scénarios ; ses anciennes
+     ancres et routes l'ouvrent toujours (#acheter, #simulateur, #theorie, #explication, #simu, decisions/acheter, App.go("simu")). La bibliothèque
+     (decisions, decisions/autres) n'a pas de paramètre. */
+  const OUTIL_SIMU = "outil=acheter-louer";
+  const LEGACY_PARAMS = { "simu": OUTIL_SIMU, "decisions/acheter": OUTIL_SIMU, "#acheter": OUTIL_SIMU, "#simulateur": OUTIL_SIMU, "#theorie": OUTIL_SIMU, "#explication": OUTIL_SIMU };
   const DEFAULT_ROUTE = "aujourdhui/vue";
   /* Sous-vues dont les paramètres de lien profond restent dans l'URL (fiches en pleine page de Patrimoine › Comptes ; onglet et
      critère de Pilotage › Santé, #pilotage/sante?famille=<clé>&critere=<clé> : recharger la page, précédent / suivant et partager le
      lien rouvrent la même fiche ou le même critère). Ailleurs, l'URL est réécrite sans paramètres. */
-  const PARAMS_DANS_URL = ["patrimoine/comptes", "pilotage/sante"];
+  const PARAMS_DANS_URL = ["patrimoine/comptes", "pilotage/sante", "pilotage/scenarios"];
   /* Destinations où le sélecteur de périmètre (Foyer · prénoms) a un sens. */
   const SCOPED = ["aujourdhui", "patrimoine", "pilotage"];
 
@@ -105,7 +111,8 @@
      legacy vrai (l'URL est réécrite sans les paramètres, que la coque retient pour la vue : App.parametres()). */
   function resolveHash(hash, lastSubs) {
     if (!hash || hash === "#") return null;
-    const [h, query] = separerParametres(hash);
+    const [h, q0] = separerParametres(hash);
+    const query = q0 || LEGACY_PARAMS[h] || LEGACY_PARAMS[h.replace(/^#/, "")] || "";
     const avec = r => (query ? Object.assign(r, { query }) : r);
     if (LEGACY_HASHES[h]) return avec(Object.assign(resolve(LEGACY_HASHES[h]), { legacy: true }));
     const r = resolve(h, null, lastSubs) || resolve(DEFAULT_ROUTE);
@@ -271,8 +278,9 @@
       go(target, sub) {
         const r = resolve(target, sub, lastSubs);
         if (!r) return;
-        if (!sub) retenirLien(r, separerParametres(target)[1]);
-        navigate(r, { push: true, scroll: true, query: sub ? "" : separerParametres(target)[1] });
+        const [t0, q0] = separerParametres(String(target).replace(/^#/, "")), q = sub ? "" : q0 || LEGACY_PARAMS[t0] || "";
+        if (!sub) retenirLien(r, q);
+        navigate(r, { push: true, scroll: true, query: q });
       },
       /* Ouvre une fiche de Patrimoine › Comptes : App.ouvrir({ enveloppe, titulaire }), App.ouvrir({ ligne }), App.ouvrir({ courant }).
          App.lienCompte(cible) → « patrimoine/comptes?… » pour un href « #… » ou un data-goto. */
@@ -477,7 +485,7 @@
       if (window.UI && UI.panneau && UI.panneau.ouvert()) UI.panneau.fermer({ focus: false });
       const r = resolveHash(location.hash, lastSubs);
       if (!r) return;
-      if (r.legacy) history.replaceState(null, "", "#" + key(r));
+      if (r.legacy) history.replaceState(null, "", hashCanonique(r, r.query)); // paramètres gardés dans l'URL pour les sous-vues de PARAMS_DANS_URL
       retenirLien(r, r.query);
       /* Lien profond vers la vue déjà affichée : navigate() rappelle show(), qui lit les paramètres. */
       if (key(r) !== key(route) || r.query) navigate({ space: r.space, sub: r.sub }, {});
@@ -617,5 +625,5 @@
   }
 
   if (typeof document !== "undefined") browser();
-  if (typeof module === "object" && module.exports) module.exports = { SPACES, PARAMS_DANS_URL, hashCanonique, lienCompte, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation, retourBanque, fraicheur, demandesClaude, entreesPerimetre, DEMANDES, HEURES_VIEUX };
+  if (typeof module === "object" && module.exports) module.exports = { SPACES, PARAMS_DANS_URL, LEGACY_PARAMS, hashCanonique, lienCompte, LEGACY, LEGACY_HASHES, DEFAULT_ROUTE, SCOPED, resolve, resolveHash, separerParametres, routeOfModule, defSub, focusApres, legendeAgent, doublonNavigation, retourBanque, fraicheur, demandesClaude, entreesPerimetre, DEMANDES, HEURES_VIEUX };
 })();

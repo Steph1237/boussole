@@ -58,7 +58,7 @@ test("démo : état de chargement puis S au contrat (clés exactes, types)", asy
   const S = await whenReady(ctx);
   const CONTRACT = {
     ready: ["boolean"], dbOk: ["boolean"], positions: ["array"], snapshots: ["array"], tx: ["array"],
-    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], banque: ["object"], relevesBancaires: ["object"], historiqueImports: ["array"], photosReconstituees: ["array"], foyer: ["object"], indices: ["array"], plansFiges: ["array"], onboardingDone: ["boolean"], scope: ["string"],
+    config: ["object"], status: ["object"], profil: ["object"], profilLoaded: ["boolean"], budget: ["object", "null"], objectifs: ["array"], risque: ["object", "null"], classes: ["object"], propositions: ["array"], connexions: ["array"], memoire: ["array"], savoir: ["object"], expertises: ["array"], scenarios: ["object"], journal: ["array"], journalARelire: ["number"], journalConsentement: ["string"], routines: ["array"], routinesLues: ["boolean"], banque: ["object"], relevesBancaires: ["object"], historiqueImports: ["array"], photosReconstituees: ["array"], foyer: ["object"], indices: ["array"], plansFiges: ["array"], onboardingDone: ["boolean"], scope: ["string"],
     people: ["array"], user: ["object", "null"], error: ["null", "string"],
   };
   const kind = v => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
@@ -949,7 +949,7 @@ test("store-supabase.js et auth.js : parsent, sans alias hérités, au vocabulai
 test("lecture seule : les deux stores n'écrivent plus que les données de contrôle (propositions, journal, mémoire, routines, règles, risque, compte)", () => {
   const sup = src("store-supabase.js"), demo = src("store-demo.js");
   for (const [nom, s] of [["store-supabase.js", sup], ["store-demo.js", demo]]) {
-    assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\), banque, historique \}/, nom + " : en-tête du contrat à jour");
+    assert.match(s, /Contrat : window\.Store = \{[^\n]*markOnboarded\(\), banque, historique, scenarios \}/, nom + " : en-tête du contrat à jour"); // scenarios (SCN1) : catalogue en lecture
     assert.match(s, /db = \{ doc\("config\/main"\)\.update\(\{ rules \}\), doc\("profil\/main"\)\.update\(\{ risque \}\) \}/, nom + " : façade db documentée");
     assert.ok(s.includes('const LECTURE_SEULE = "Écriture non disponible dans l\'app : complète ou corrige avec Claude, puis valide sa proposition."'), nom + " : refus au tutoiement, même texte");
     assert.match(s, /seulement\(p(atch)?, \["rules"\]\)/, nom + " : config/main n'accepte que rules");
