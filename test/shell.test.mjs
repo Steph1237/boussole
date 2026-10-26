@@ -40,7 +40,8 @@ test("registre : sous-vues et modules de chaque destination selon le plan", () =
   const subs = space => SPACES.find(s => s.space === space).subs.map(s => [s.id, s.module]);
   assert.deepEqual(subs("aujourdhui"), [["vue", "aujourdhui"]]);
   assert.deepEqual(subs("patrimoine"), [["placements", "pilotage"], ["comptes", "comptes-view"], ["immobilier", "bilan"], ["budget", "plan"], ["objectifs", "objectifs-view"]]);
-  assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["scenarios", "simu"]]);
+  assert.deepEqual(subs("pilotage"), [["sante", "sante"], ["risque", "risque-view"], ["rang", "toise"], ["scenarios", "scenarios-view"]]);
+  assert.deepEqual(SPACES.find(s => s.space === "pilotage").subs.find(s => s.id === "scenarios").extras, ["simu"], "SCN1 : le simulateur acheter / louer est un outil de Scénarios (D8)");
   assert.deepEqual(subs("agent"), [["propositions", "propositions"], ["journal", "journal-view"], ["memoire", "memoire-view"], ["savoir", "savoir-view"]], "Agent : 4 sous-vues (UX3)");
   assert.deepEqual(subs("compte"), [["donnees", "profil"], ["regles", "regles"], ["connexion", "claude-guide"]], "Connexion est dans Compte (UX3)");
   const lab = (space, id) => SPACES.find(s => s.space === space).subs.find(s => s.id === id).label;
@@ -183,7 +184,7 @@ test("coque : plus de carte « bientôt » (l'onglet Projections est retiré en 
 
 test("coque : chaque fragment <!--@x--> existe dans web/src et est assemblé par build.mjs", () => {
   const markers = [...shell.matchAll(/<!--@([\w-]+)-->/g)].map(m => m[1]).filter(m => m !== "scripts");
-  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "comptes-view", "expertises-view", "fiches-view", "journal-view", "memoire-view", "objectifs-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "simu", "toise"]);
+  assert.deepEqual(markers.sort(), ["aujourdhui", "bilan", "claude-guide", "comptes-view", "expertises-view", "fiches-view", "journal-view", "memoire-view", "objectifs-view", "pilotage", "plan-view", "profil", "propositions", "regles", "risque-view", "sante", "scenarios-view", "simu", "toise"]);
   const mods = JSON.parse(build.match(/const MODULES = (\[[^\]]*\])/)[1]);
   assert.equal(mods[0], "aujourdhui", "aujourdhui en tête de MODULES");
   assert.ok(mods.includes("actions"), "le module Actions reste chargé (window.Actions)");
@@ -328,7 +329,7 @@ test("lien profond : #agent/journal?entree=<id> garde la route (quelle que soit 
   assert.deepEqual(resolveHash("#agent/journal"), { space: "agent", sub: "journal", legacy: false }, "sans paramètre : forme inchangée");
   // coque : paramètres retenus (démarrage, hash, App.go), lus une fois par la vue active, oubliés ailleurs ; show() rappelé sur la même vue
   assert.match(app, /if \(fromHash\) \{ route = \{ space: fromHash\.space, sub: fromHash\.sub \}; retenirLien\(route, fromHash\.query\); \}/);
-  assert.match(app, /if \(!sub\) retenirLien\(r, separerParametres\(target\)\[1\]\);/);
+  assert.match(app, /if \(!sub\) retenirLien\(r, q\);/, "paramètres de la cible (ou ceux d'un ancien lien du simulateur, LEGACY_PARAMS)");
   assert.match(app, /retenirLien\(r, r\.query\);\s*\n[^\n]*\n\s*if \(key\(r\) !== key\(route\) \|\| r\.query\) navigate/);
   assert.match(app, /parametres\(\) \{\s*if \(!lien \|\| lien\.cle !== key\(route\)\) return \{\};\s*const p = lien\.params; lien = null; return p;/);
   assert.match(app, /if \(lien && lien\.cle !== key\(r\)\) lien = null;/);
@@ -417,7 +418,7 @@ test("lien profond : popstate puis hashchange de la même navigation → traité
 
 test("Comptes : première sous-vue de Patrimoine ; ses liens profonds gardent leurs paramètres dans l'URL (fiches en pleine page)", () => {
   const { PARAMS_DANS_URL, hashCanonique } = require("../web/src/app.js");
-  assert.deepEqual(PARAMS_DANS_URL, ["patrimoine/comptes", "pilotage/sante"], "fiches de Comptes ; onglet et critère de Santé (CP4)");
+  assert.deepEqual(PARAMS_DANS_URL, ["patrimoine/comptes", "pilotage/sante", "pilotage/scenarios"], "fiches de Comptes ; onglet et critère de Santé (CP4) ; scénario ou outil de Scénarios (SCN1)");
   assert.deepEqual(resolveHash("#pilotage/sante?famille=effort&critere=epargne"), { space: "pilotage", sub: "sante", legacy: false, query: "famille=effort&critere=epargne" });
   assert.deepEqual(resolveHash("#patrimoine/comptes?ligne=pea-etf-monde"), { space: "patrimoine", sub: "comptes", legacy: false, query: "ligne=pea-etf-monde" },
     "forme canonique : l'URL n'est pas réécrite (recharger, précédent / suivant, partager le lien)");
@@ -429,7 +430,7 @@ test("Comptes : première sous-vue de Patrimoine ; ses liens profonds gardent le
   assert.equal(hashCanonique({ space: "agent", sub: "journal" }, "entree=x"), "#agent/journal");
   assert.equal(hashCanonique({ space: "patrimoine", sub: "comptes" }, ""), "#patrimoine/comptes");
   // la coque : App.go garde la requête, chaque fiche est une entrée d'historique, le retour à la liste rappelle show(), le démarrage garde le lien
-  assert.match(app, /navigate\(r, \{ push: true, scroll: true, query: sub \? "" : separerParametres\(target\)\[1\] \}\)/);
+  assert.match(app, /const \[t0, q0\] = separerParametres\(String\(target\)\.replace\(\/\^#\/, ""\)\), q = sub \? "" : q0 \|\| LEGACY_PARAMS\[t0\] \|\| "";\s*if \(!sub\) retenirLien\(r, q\);\s*navigate\(r, \{ push: true, scroll: true, query: q \}\);/);
   assert.match(app, /if \(o\.push && \(changed \|\| PARAMS_DANS_URL\.includes\(key\(r\)\)\) && location\.hash !== h\) history\.pushState\(null, "", h\);/);
   assert.match(app, /else if \(PARAMS_DANS_URL\.includes\(key\(r\)\)\) navigate\(\{ space: r\.space, sub: r\.sub \}, \{\}\);/);
   assert.match(app, /const canon = hashCanonique\(route, fromHash && key\(fromHash\) === key\(route\) \? fromHash\.query : ""\);/);
@@ -450,4 +451,28 @@ test("App.ouvrir / App.lienCompte : { enveloppe, titulaire } | { ligne } | { cou
     assert.equal(resolveHash("#" + route + "?" + query).legacy, false);
   }
   assert.match(app, /ouvrir\(cible\) \{ App\.go\(lienCompte\(cible\)\); \},/);
+});
+
+/* ------------------------------------------------ SCN1 : Pilotage › Scénarios (bibliothèque) et l'outil acheter / louer ------------------------------------------------ */
+
+test("Scénarios : la section porte scenarios-view ; liens profonds ?scenario= et ?outil=acheter-louer gardés dans l'URL ; anciennes routes et ancres du simulateur → l'outil (D8)", () => {
+  const { LEGACY_PARAMS, hashCanonique } = require("../web/src/app.js");
+  assert.deepEqual(resolveHash("#pilotage/scenarios?scenario=ouvrir_pea"), { space: "pilotage", sub: "scenarios", legacy: false, query: "scenario=ouvrir_pea" });
+  assert.deepEqual(resolveHash("#pilotage/scenarios?outil=acheter-louer"), { space: "pilotage", sub: "scenarios", legacy: false, query: "outil=acheter-louer" });
+  assert.equal(hashCanonique({ space: "pilotage", sub: "scenarios" }, "scenario=matelas"), "#pilotage/scenarios?scenario=matelas");
+  for (const h of ["#acheter", "#simulateur", "#theorie", "#explication", "#simu", "#decisions/acheter"]) {
+    const r = resolveHash(h);
+    assert.deepEqual([key(r), r.legacy, r.query], ["pilotage/scenarios", true, "outil=acheter-louer"], h + " ouvre l'outil acheter / louer");
+    assert.equal(hashCanonique(r, r.query), "#pilotage/scenarios?outil=acheter-louer", h + " : URL réécrite avec l'outil");
+  }
+  for (const h of ["#decisions", "#decisions/autres", "#pilotage/scenarios"]) assert.equal(resolveHash(h).query, undefined, h + " : la bibliothèque");
+  assert.equal(LEGACY_PARAMS.simu, "outil=acheter-louer", "App.go(\"simu\") ouvre l'outil");
+  assert.match(app, /if \(r\.legacy\) history\.replaceState\(null, "", hashCanonique\(r, r\.query\)\);/);
+  // la coque : section scenarios-view, le simulateur dans un conteneur caché tant que l'outil n'est pas ouvert, lien de retour vers la bibliothèque
+  assert.match(shell, /<section class="view" id="view-scenarios-view" data-space="pilotage" data-sub="scenarios" role="tabpanel" aria-labelledby="subtab-pilotage-scenarios" hidden>\s*<!--@scenarios-view-->\s*<div class="scn-outil" data-scn-outil hidden>[\s\S]*?data-scn-outil-retour[\s\S]*?<div id="view-simu">\s*<!--@simu-->\s*<\/div>/);
+  assert.doesNotMatch(shell, /<section class="view" id="view-simu"/, "le simulateur n'est plus une sous-vue");
+  const scripts = build.match(/const SCRIPTS = \[([^\]]*)\]/)[1];
+  for (const s of ["scenarios-catalogue.gen", "scenarios", "scenarios-worker"]) assert.ok(scripts.includes('"' + s + '"'), s);
+  assert.ok(scripts.indexOf('"scenarios-catalogue.gen"') < scripts.indexOf('"store-demo"'), "catalogue embarqué chargé avant les stores");
+  assert.ok(scripts.indexOf('"projection"') < scripts.indexOf('"scenarios"'), "moteur avant les scénarios");
 });

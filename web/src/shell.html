@@ -81,8 +81,15 @@
     <section class="view" id="view-toise" data-space="pilotage" data-sub="rang" role="tabpanel" aria-labelledby="subtab-pilotage-rang" hidden>
 <!--@toise-->
     </section>
-    <section class="view" id="view-simu" data-space="pilotage" data-sub="scenarios" role="tabpanel" aria-labelledby="subtab-pilotage-scenarios" hidden>
+    <!-- Scénarios (SCN1) : la bibliothèque « Et si… ? » (scenarios-view) ; le simulateur acheter / louer (simu) en est un outil, ouvert par ?outil=acheter-louer -->
+    <section class="view" id="view-scenarios-view" data-space="pilotage" data-sub="scenarios" role="tabpanel" aria-labelledby="subtab-pilotage-scenarios" hidden>
+<!--@scenarios-view-->
+      <div class="scn-outil" data-scn-outil hidden>
+        <p class="scn-outil-tete"><a class="scn-retour" href="#pilotage/scenarios" data-scn-outil-retour><svg class="ui-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15 6l-6 6 6 6"/></svg><span>Tous les scénarios</span></a></p>
+        <div id="view-simu">
 <!--@simu-->
+        </div>
+      </div>
     </section>
 
     <!-- Agent -->

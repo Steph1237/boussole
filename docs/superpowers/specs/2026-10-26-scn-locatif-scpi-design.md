@@ -31,7 +31,7 @@ Date : 2026-10-26. Statut : **proposé** (à relire par Stéph). Complète la sp
 | `charges_annuelles` | montant_eur (0 à 50 000) | — (taxe foncière, copropriété non récupérable, assurance, entretien) | oui |
 | `gestion_pct` | pourcentage (0 à 15) | 0 | non |
 | `regime` | choix `lmnp_reel`, `lmnp_micro`, `nu_reel`, `nu_micro` | `lmnp_reel` | oui |
-| `horizon_ans` | entier (3 à 30) | objectif le plus proche, sinon 20 | oui |
+| `horizon_ans` | entier (3 à 30) | 20 (convention : l'objectif le plus proche n'a pas de rapport avec un investissement immobilier) | oui |
 | `tmi` | choix 0, 11, 30, 41, 45 | TMI du foyer | oui |
 | `scpi_frais_souscription_pct` | pourcentage (0 à 15) | `scn_scpi_frais_souscription_pct` (10, convention) | oui |
 | `scpi_taux_distribution_pct` | pourcentage (0 à 12) | `scpi_taux_distribution` | oui |

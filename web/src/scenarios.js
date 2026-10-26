@@ -210,7 +210,6 @@
       non: () => false,
       oui: () => true,
       vingt: () => 20,
-      horizon_objectif_ou_vingt: () => (prochain ? anneesEntre(today, prochain.date) : 20),
       regime_lmnp_reel: () => "lmnp_reel",
       repere_vacance: () => L.v("scn_locatif_vacance_mois"),
       repere_taux_credit_20: () => L.v("taux_credit_immo_20"),

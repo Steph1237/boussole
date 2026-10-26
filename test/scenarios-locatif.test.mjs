@@ -153,7 +153,7 @@ test("préremplissage : taux du marché sur 20 ans, distribution publiée, prix 
   const pr = S.preremplir(E(), donnees(), TODAY);
   assert.equal(pr.taux_credit_pct, 3.27); assert.equal(pr.scpi_taux_distribution_pct, 4.91); assert.equal(pr.scpi_prix_part_pct, -0.41);
   assert.equal(pr.vacance_mois, 1); assert.equal(pr.scpi_frais_souscription_pct, 10); assert.equal(pr.regime, "lmnp_reel"); assert.equal(pr.duree_credit_ans, 20);
-  assert.equal(pr.tmi, 30); assert.equal(pr.scpi_reinvestir, true); assert.equal(pr.scpi_credit, false);
+  assert.equal(pr.tmi, 30); assert.equal(pr.horizon_ans, 20); assert.equal(pr.scpi_reinvestir, true); assert.equal(pr.scpi_credit, false);
   assert.equal(pr.prix, undefined); assert.equal(pr.loyer_mensuel, undefined);
 });
 

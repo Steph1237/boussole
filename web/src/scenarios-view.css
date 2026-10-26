@@ -1,0 +1,220 @@
+/* Pilotage › Scénarios (SCN1, spec § 10) : bibliothèque « Et si… ? » (cartes, thèmes), détail d'un scénario (réponse, barres d'intervalle, graphiques,
+   ce qui changerait, hypothèses, données, formulaire « Ajuster les hypothèses », Explorer avec Claude) et outil acheter / louer.
+   Scopé #view-scenarios-view ; le détail ouvert en panneau latéral (900 à 1 439 px, UI.panneau injecté dans body) sous .ui-panneau .scn-….
+   Mise en page (§ 10.4) : page dédiée sous 900 px, panneau de 900 à 1 439 px, maître-détail à partir de 1 440 px, trois zones à partir de 1 680 px.
+   Jetons de theme.css seulement, clair et sombre ; mouvement réduit respecté (theme.css coupe les durées). */
+#view-scenarios-view [hidden]{display:none!important}
+#view-scenarios-view .scn{display:flex;flex-direction:column;gap:var(--gap-cards);min-width:0}
+#view-scenarios-view .scn-biblio{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--gap-sections);align-items:start;min-width:0}
+#view-scenarios-view .scn-liste{display:flex;flex-direction:column;gap:var(--gap-sections);min-width:0}
+#view-scenarios-view .scn-detail{min-width:0}
+#view-scenarios-view .scn-note,.ui-panneau .scn-note{margin:0;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted);max-width:var(--measure)}
+
+/* en-tête et sections */
+#view-scenarios-view .scn-tete{display:flex;flex-direction:column;gap:var(--sp-1);min-width:0}
+#view-scenarios-view .scn-tete h2{margin:0;font:650 var(--t-h1)/var(--lh-h1) var(--f-display);letter-spacing:-.01em}
+#view-scenarios-view .scn-tete h2:focus{outline:none}
+#view-scenarios-view .scn-sous{margin:0;font:400 var(--t-body)/var(--lh-body) var(--f-body);color:var(--muted);max-width:var(--measure)}
+#view-scenarios-view .scn-pourtoi,#view-scenarios-view .scn-themes{display:flex;flex-direction:column;gap:var(--sp-3);min-width:0}
+#view-scenarios-view .scn-sec-t{margin:0;font:650 var(--t-h2)/var(--lh-h2) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-vide{margin:0;padding:var(--sp-4);border:1px dashed var(--line2);border-radius:var(--radius);font:400 var(--t-body)/var(--lh-body) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-autres{margin:0;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+
+/* listes de cartes */
+#view-scenarios-view .scn-cartes{list-style:none;margin:0;padding:0;--fit:320px}
+#view-scenarios-view .scn-cartes>li{display:flex;min-width:0}
+#view-scenarios-view .scn-cartes-pourtoi{gap:var(--gap-cards)}
+#view-scenarios-view .scn-theme .ui-acc-corps{padding-top:var(--sp-2)}
+#view-scenarios-view .scn-theme-t{font:600 var(--t-body)/var(--lh-body) var(--f-body)}
+#view-scenarios-view .scn-theme-n{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+
+/* carte : lien entier, 44 px au moins, focus visible */
+#view-scenarios-view .scn-carte{text-decoration:none;color:var(--ink);gap:var(--sp-2);min-height:var(--hit);height:100%;padding-right:var(--sp-10)}
+#view-scenarios-view .scn-carte:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+#view-scenarios-view .scn-carte.ecarte{background:var(--sunk)}
+#view-scenarios-view .scn-carte.ecarte h3{color:var(--muted)}
+#view-scenarios-view .scn-carte-tete{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1) var(--sp-2);min-width:0}
+#view-scenarios-view .scn-carte h3{margin:0;font:650 var(--t-h3)/var(--lh-h3) var(--f-body);color:var(--ink);overflow-wrap:anywhere}
+#view-scenarios-view .scn-carte-pourquoi{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#view-scenarios-view .scn-carte-enjeu{display:flex;flex-direction:column;gap:2px;margin-top:auto}
+#view-scenarios-view .scn-carte-ej{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-carte-enjeu.calcul .scn-carte-ej,#view-scenarios-view .scn-carte-enjeu.a_completer .scn-carte-ej,#view-scenarios-view .scn-carte-enjeu.hors .scn-carte-ej,#view-scenarios-view .scn-carte-enjeu.indisponible .scn-carte-ej{font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-carte-bande{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-carte-manquants{display:flex;flex-wrap:wrap;gap:var(--sp-1);min-width:0}
+#view-scenarios-view .scn-carte-manquants .ui-puce{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+#view-scenarios-view .scn-plus{font:600 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted);align-self:center}
+#view-scenarios-view .scn-carte-pied{display:flex}
+#view-scenarios-view .scn-carte-ouvrir{position:absolute;top:var(--sp-4);right:var(--sp-3);color:var(--muted)}
+#view-scenarios-view .scn-carte:hover .scn-carte-ouvrir{color:var(--ink)}
+#view-scenarios-view .scn-carte-outil{border-style:dashed}
+#view-scenarios-view .scn-theme-puce,.ui-panneau .scn-theme-puce{align-self:flex-start}
+#view-scenarios-view .scn-etat.ecarte,.ui-panneau .scn-etat.ecarte{text-decoration:line-through}
+
+/* outil acheter / louer */
+#view-scenarios-view .scn-outil{display:flex;flex-direction:column;gap:var(--sp-3);min-width:0}
+#view-scenarios-view .scn-outil-tete{margin:0}
+#view-scenarios-view .scn-retour,.ui-panneau .scn-retour{display:inline-flex;align-items:center;gap:var(--sp-1);min-height:var(--hit);padding:0 var(--sp-2) 0 0;color:var(--brand);font:600 var(--t-body)/var(--lh-body) var(--f-body);text-decoration:none}
+#view-scenarios-view .scn-retour:hover,.ui-panneau .scn-retour:hover{text-decoration:underline;text-underline-offset:3px}
+
+/* détail */
+#view-scenarios-view .scn-detail-corps,.ui-panneau .scn-detail-corps{display:flex;flex-direction:column;gap:var(--sp-4);min-width:0}
+#view-scenarios-view .scn-detail-tete{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2)}
+#view-scenarios-view .scn-detail-tete h2{margin:0;font:650 var(--t-h2)/var(--lh-h2) var(--f-display);max-width:var(--measure)}
+#view-scenarios-view .scn-detail-tete h2:focus{outline:none}
+#view-scenarios-view .scn-detail-vide{padding:var(--sp-6);border:1px dashed var(--line2);border-radius:var(--radius)}
+#view-scenarios-view .scn-bloc,.ui-panneau .scn-bloc{min-width:0}
+#view-scenarios-view section.scn-bloc,.ui-panneau section.scn-bloc{display:flex;flex-direction:column;gap:var(--sp-2);padding:var(--card-pad);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+#view-scenarios-view section.scn-bloc:focus,.ui-panneau section.scn-bloc:focus{outline:none}
+#view-scenarios-view .scn-bloc h3,.ui-panneau .scn-bloc h3{margin:0;font:650 var(--t-h3)/var(--lh-h3) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-phrase,.ui-panneau .scn-phrase{margin:0;font:500 var(--t-body)/var(--lh-body) var(--f-body);color:var(--ink);max-width:var(--measure)}
+#view-scenarios-view .scn-ecart,.ui-panneau .scn-ecart{margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-1) var(--sp-2)}
+#view-scenarios-view .scn-ecart-v,.ui-panneau .scn-ecart-v{font:700 var(--t-kpi)/var(--lh-kpi) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-ecart-u,.ui-panneau .scn-ecart-u{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-ecart-bande,.ui-panneau .scn-ecart-bande,#view-scenarios-view .scn-mieux,.ui-panneau .scn-mieux,#view-scenarios-view .scn-bascule,.ui-panneau .scn-bascule,#view-scenarios-view .scn-calcule,.ui-panneau .scn-calcule,#view-scenarios-view .scn-seuil,.ui-panneau .scn-seuil{margin:0;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-bascule,.ui-panneau .scn-bascule{color:var(--ink);font-weight:600}
+#view-scenarios-view .scn-jouee,.ui-panneau .scn-jouee{margin:0;padding:var(--sp-2) var(--sp-3);border-radius:var(--radius-sm);background:var(--sunk);font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-jouee.ecart,.ui-panneau .scn-jouee.ecart{background:var(--st-watch-bg);color:var(--st-watch)}
+#view-scenarios-view .scn-avert,.ui-panneau .scn-avert{padding:var(--sp-2) var(--sp-3);border-radius:var(--radius-sm);background:var(--sunk)}
+#view-scenarios-view .scn-avert-t,.ui-panneau .scn-avert-t{margin:0 0 var(--sp-1);font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+#view-scenarios-view .scn-avert ul,.ui-panneau .scn-avert ul,#view-scenarios-view .scn-avert-l,.ui-panneau .scn-avert-l{margin:0;padding-left:var(--sp-5);font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-avert li+li,.ui-panneau .scn-avert li+li,#view-scenarios-view .scn-avert-l li+li,.ui-panneau .scn-avert-l li+li{margin-top:var(--sp-1)}
+
+/* barres d'intervalle P10–P90 */
+#view-scenarios-view .scn-iv-liste,.ui-panneau .scn-iv-liste{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-3)}
+#view-scenarios-view .scn-iv-ligne,.ui-panneau .scn-iv-ligne{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"nom val" "piste piste";gap:var(--sp-1) var(--sp-3);align-items:baseline}
+#view-scenarios-view .scn-iv-nom,.ui-panneau .scn-iv-nom{grid-area:nom;font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink);overflow-wrap:anywhere}
+#view-scenarios-view .scn-iv-mot,.ui-panneau .scn-iv-mot{font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-iv-val,.ui-panneau .scn-iv-val{grid-area:val;font:700 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-iv-piste,.ui-panneau .scn-iv-piste{grid-area:piste;position:relative;display:block;height:20px;border-radius:var(--r-chip);background:var(--sunk)}
+#view-scenarios-view .scn-iv-trait,.ui-panneau .scn-iv-trait{position:absolute;top:7px;height:6px;border-radius:3px;background:var(--s8)}
+#view-scenarios-view .scn-iv-point,.ui-panneau .scn-iv-point{position:absolute;top:3px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--surface);border:3px solid var(--s8)}
+#view-scenarios-view .scn-iv-ref,.ui-panneau .scn-iv-ref{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed var(--s2)}
+#view-scenarios-view .scn-iv-ligne.tete .scn-iv-trait,.ui-panneau .scn-iv-ligne.tete .scn-iv-trait{background:var(--s1)}
+#view-scenarios-view .scn-iv-ligne.tete .scn-iv-point,.ui-panneau .scn-iv-ligne.tete .scn-iv-point{border-color:var(--s1)}
+#view-scenarios-view .scn-iv-ligne.tete .scn-iv-piste,.ui-panneau .scn-iv-ligne.tete .scn-iv-piste{background:var(--s1-soft)}
+#view-scenarios-view .scn-iv-ligne.ref .scn-iv-trait,.ui-panneau .scn-iv-ligne.ref .scn-iv-trait{background:var(--s2)}
+#view-scenarios-view .scn-iv-ligne.ref .scn-iv-point,.ui-panneau .scn-iv-ligne.ref .scn-iv-point{border-color:var(--s2)}
+#view-scenarios-view .scn-iv-ligne.ref .scn-iv-piste,.ui-panneau .scn-iv-ligne.ref .scn-iv-piste{background:var(--s2-soft)}
+#view-scenarios-view .scn-iv-ligne.exclue,.ui-panneau .scn-iv-ligne.exclue,#view-scenarios-view .scn-iv-ligne.sans,.ui-panneau .scn-iv-ligne.sans{grid-template-areas:"nom" "raison";grid-template-columns:minmax(0,1fr)}
+#view-scenarios-view .scn-iv-ligne.exclue .scn-iv-nom,.ui-panneau .scn-iv-ligne.exclue .scn-iv-nom{color:var(--muted);text-decoration:line-through}
+#view-scenarios-view .scn-iv-raison,.ui-panneau .scn-iv-raison{grid-area:raison;padding:var(--sp-1) var(--sp-2);border-radius:var(--radius-sm);background:var(--sunk);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-chiffres-btn,.ui-panneau .scn-chiffres-btn{align-self:flex-start;min-height:var(--hit)}
+#view-scenarios-view .scn-table-wrap,.ui-panneau .scn-table-wrap{overflow-x:auto;max-width:100%}
+#view-scenarios-view .scn-table,.ui-panneau .scn-table{border-collapse:collapse;width:100%;font:400 var(--t-small)/var(--lh-small) var(--f-body)}
+#view-scenarios-view .scn-table th,.ui-panneau .scn-table th,#view-scenarios-view .scn-table td,.ui-panneau .scn-table td{padding:var(--sp-2);border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+#view-scenarios-view .scn-table th[scope="row"],.ui-panneau .scn-table th[scope="row"],#view-scenarios-view .scn-table thead th:first-child,.ui-panneau .scn-table thead th:first-child{text-align:left;white-space:normal;min-width:9em}
+#view-scenarios-view .scn-table thead th,.ui-panneau .scn-table thead th{font-weight:600;color:var(--muted)}
+
+/* graphiques (courbe selon la date de retrait, patrimoine par année) */
+#view-scenarios-view .scn-figure,.ui-panneau .scn-figure{margin:var(--sp-2) 0 0;display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+#view-scenarios-view .scn-fig-t,.ui-panneau .scn-fig-t{font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-graphe,.ui-panneau .scn-graphe{width:100%;min-width:0;overflow:hidden}
+#view-scenarios-view .scn-g,.ui-panneau .scn-g{display:block;width:100%;height:auto}
+#view-scenarios-view .scn-g-grille,.ui-panneau .scn-g-grille{stroke:var(--dv-grid);stroke-width:1}
+#view-scenarios-view .scn-g-zero,.ui-panneau .scn-g-zero{stroke:var(--muted);stroke-width:1}
+#view-scenarios-view .scn-g-axe,.ui-panneau .scn-g-axe{fill:var(--muted);font:400 var(--t-caption)/var(--lh-caption) var(--f-body)}
+#view-scenarios-view .scn-g-bande,.ui-panneau .scn-g-bande,#view-scenarios-view .scn-g-bande-tete,.ui-panneau .scn-g-bande-tete{fill:var(--fan-out);stroke:none}
+#view-scenarios-view .scn-g-mediane,.ui-panneau .scn-g-mediane{fill:none;stroke:var(--s1);stroke-width:2.5;stroke-linejoin:round}
+#view-scenarios-view .scn-g-repere,.ui-panneau .scn-g-repere{stroke:var(--ms-goal);stroke-width:1.5;stroke-dasharray:4 3}
+#view-scenarios-view .scn-g-repere-t,.ui-panneau .scn-g-repere-t{fill:var(--ms-goal)}
+#view-scenarios-view .scn-g-ligne,.ui-panneau .scn-g-ligne{fill:none;stroke-width:2.5;stroke-linejoin:round}
+#view-scenarios-view .scn-g-ligne.c1,.ui-panneau .scn-g-ligne.c1{stroke:var(--s1)}
+#view-scenarios-view .scn-g-ligne.c2,.ui-panneau .scn-g-ligne.c2{stroke:var(--s2)}
+#view-scenarios-view .scn-g-ligne.c3,.ui-panneau .scn-g-ligne.c3{stroke:var(--s3)}
+#view-scenarios-view .scn-g-ligne.c4,.ui-panneau .scn-g-ligne.c4{stroke:var(--s4)}
+#view-scenarios-view .scn-g-ligne.c5,.ui-panneau .scn-g-ligne.c5{stroke:var(--s5)}
+#view-scenarios-view .scn-g-ligne.c6,.ui-panneau .scn-g-ligne.c6{stroke:var(--s6)}
+#view-scenarios-view .scn-legende,.ui-panneau .scn-legende{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-4);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-legende li,.ui-panneau .scn-legende li{display:inline-flex;align-items:center;gap:var(--sp-2)}
+#view-scenarios-view .scn-leg-c,.ui-panneau .scn-leg-c{display:inline-block;width:16px;height:4px;border-radius:2px}
+#view-scenarios-view .scn-leg-c.c1,.ui-panneau .scn-leg-c.c1{background:var(--s1)}
+#view-scenarios-view .scn-leg-c.c2,.ui-panneau .scn-leg-c.c2{background:var(--s2)}
+#view-scenarios-view .scn-leg-c.c3,.ui-panneau .scn-leg-c.c3{background:var(--s3)}
+#view-scenarios-view .scn-leg-c.c4,.ui-panneau .scn-leg-c.c4{background:var(--s4)}
+#view-scenarios-view .scn-leg-c.c5,.ui-panneau .scn-leg-c.c5{background:var(--s5)}
+#view-scenarios-view .scn-leg-c.c6,.ui-panneau .scn-leg-c.c6{background:var(--s6)}
+
+/* ce qui changerait, hypothèses, données */
+#view-scenarios-view .scn-liste-l,.ui-panneau .scn-liste-l{margin:0;padding-left:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-3)}
+#view-scenarios-view .scn-liste-l p,.ui-panneau .scn-liste-l p{margin:0;font:400 var(--t-body)/var(--lh-body) var(--f-body)}
+#view-scenarios-view .scn-liste-l .scn-seuil,.ui-panneau .scn-liste-l .scn-seuil{margin-top:2px;font-size:var(--t-small);line-height:var(--lh-small)}
+#view-scenarios-view .scn-hyps,.ui-panneau .scn-hyps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+#view-scenarios-view .scn-hyp,.ui-panneau .scn-hyp{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--line)}
+#view-scenarios-view .scn-hyp:last-child,.ui-panneau .scn-hyp:last-child{border-bottom:0}
+#view-scenarios-view .scn-hyp-l,.ui-panneau .scn-hyp-l{font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-hyp-v,.ui-panneau .scn-hyp-v{font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink);text-align:right}
+#view-scenarios-view .scn-hyp-meta,.ui-panneau .scn-hyp-meta{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1) var(--sp-2);font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-hyp-meta a,.ui-panneau .scn-hyp-meta a{color:var(--brand);display:inline-flex;align-items:center;min-height:var(--hit);margin:calc(-1 * var(--sp-3)) 0}
+#view-scenarios-view .scn-donnees-l,.ui-panneau .scn-donnees-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+#view-scenarios-view .scn-donnees-l li,.ui-panneau .scn-donnees-l li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--line)}
+#view-scenarios-view .scn-donnees-l li:last-child,.ui-panneau .scn-donnees-l li:last-child{border-bottom:0}
+#view-scenarios-view .scn-don-l,.ui-panneau .scn-don-l{font:400 var(--t-small)/var(--lh-small) var(--f-body)}
+#view-scenarios-view .scn-don-v,.ui-panneau .scn-don-v{font:600 var(--t-small)/var(--lh-small) var(--f-body);text-align:right}
+#view-scenarios-view .scn-don-o,.ui-panneau .scn-don-o{grid-column:1/-1;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-donnees-claude,.ui-panneau .scn-donnees-claude{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+
+/* formulaire « Ajuster les hypothèses » (aucun envoi : le calcul se refait sur l'appareil) */
+#view-scenarios-view .scn-ajuster,.ui-panneau .scn-ajuster{border-color:var(--line2)}
+#view-scenarios-view .scn-ajuster[open],.ui-panneau .scn-ajuster[open]{border-color:var(--brand)}
+#view-scenarios-view .scn-form,.ui-panneau .scn-form{display:flex;flex-direction:column;gap:var(--sp-4);font-size:var(--t-body)}
+#view-scenarios-view .scn-form-err,.ui-panneau .scn-form-err{margin:0;padding:var(--sp-2) var(--sp-3);border-radius:var(--radius-sm);background:var(--st-work-bg);color:var(--st-work);font:600 var(--t-small)/var(--lh-small) var(--f-body)}
+#view-scenarios-view .scn-form-err:focus,.ui-panneau .scn-form-err:focus{outline:2px solid var(--focus);outline-offset:2px}
+#view-scenarios-view .scn-champ,.ui-panneau .scn-champ{display:flex;flex-direction:column;gap:var(--sp-1);min-width:0}
+#view-scenarios-view .scn-champ.manquant,.ui-panneau .scn-champ.manquant{padding:var(--sp-3);border-radius:var(--radius-sm);background:var(--sunk)}
+#view-scenarios-view .scn-champ-l,.ui-panneau .scn-champ-l{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1) var(--sp-2);font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--ink)}
+#view-scenarios-view .scn-facultatif,.ui-panneau .scn-facultatif{font-weight:400;color:var(--muted)}
+#view-scenarios-view .scn-champ-aide,.ui-panneau .scn-champ-aide{margin:0;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted);max-width:var(--measure)}
+#view-scenarios-view .scn-saisie,.ui-panneau .scn-saisie{position:relative;display:flex;align-items:center;max-width:20em}
+#view-scenarios-view .scn-input,.ui-panneau .scn-input,#view-scenarios-view .scn-select,.ui-panneau .scn-select{width:100%;max-width:20em;min-height:var(--hit);padding:0 var(--sp-3);border:1px solid var(--line-field);border-radius:var(--r-ctl);background:var(--surface);color:var(--ink);font:400 var(--t-body)/var(--lh-body) var(--f-body)}
+#view-scenarios-view .scn-saisie .scn-input,.ui-panneau .scn-saisie .scn-input{padding-right:var(--sp-8)}
+#view-scenarios-view .scn-unite,.ui-panneau .scn-unite{position:absolute;right:var(--sp-3);color:var(--muted);font:400 var(--t-body)/var(--lh-body) var(--f-body);pointer-events:none}
+#view-scenarios-view .scn-champ.erreur .scn-input,.ui-panneau .scn-champ.erreur .scn-input,#view-scenarios-view .scn-champ.erreur .scn-select,.ui-panneau .scn-champ.erreur .scn-select{border-color:var(--st-work);border-width:2px}
+#view-scenarios-view .scn-champ-err,.ui-panneau .scn-champ-err{margin:0;font:600 var(--t-small)/var(--lh-small) var(--f-body);color:var(--st-work)}
+#view-scenarios-view .scn-form-actions,.ui-panneau .scn-form-actions{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+
+/* Explorer avec Claude, pied */
+#view-scenarios-view .scn-texte,.ui-panneau .scn-texte{width:100%;min-height:calc(var(--hit) * 2);padding:var(--sp-2) var(--sp-3);border:1px solid var(--line-field);border-radius:var(--r-ctl);background:var(--sunk);color:var(--ink);font:400 var(--t-small)/var(--lh-small) var(--f-body);resize:vertical}
+#view-scenarios-view .scn-claude-actions,.ui-panneau .scn-claude-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2)}
+#view-scenarios-view .scn-copie-msg,.ui-panneau .scn-copie-msg{margin:0;font:400 var(--t-small)/var(--lh-small) var(--f-body);color:var(--muted)}
+#view-scenarios-view .scn-copie-msg:empty,.ui-panneau .scn-copie-msg:empty{display:none}
+#view-scenarios-view .scn-pied,.ui-panneau .scn-pied{margin:0;font:400 var(--t-caption)/var(--lh-caption) var(--f-body);color:var(--muted);max-width:var(--measure)}
+/* « Explorer avec Claude » collé en bas, au-dessus de la barre basse (zone sûre comprise), sur la page dédiée seulement */
+#view-scenarios-view .scn-collant{position:sticky;bottom:calc(var(--bbar-h) + var(--sp-2));z-index:5;display:flex;justify-content:flex-end;pointer-events:none}
+#view-scenarios-view .scn-collant .ui-claude{pointer-events:auto;box-shadow:var(--e2);background:var(--surface)}
+
+/* 600 à 899 px : 2 cartes « pour toi » par rangée (la 3ᵉ en pleine largeur, .col-sm-6 / .col-sm-12) ; page dédiée, réponse et comparaison côte à côte quand elles tiennent */
+@media (min-width:600px) and (max-width:899.98px){
+  #view-scenarios-view .scn-detail-corps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-4)}
+  #view-scenarios-view .scn-detail-corps>*{grid-column:1/-1}
+  #view-scenarios-view .scn-detail-corps>.scn-reponse:not(.a-completer):not(.indisponible){grid-column:1/2}
+  #view-scenarios-view .scn-detail-corps>.scn-comparaison{grid-column:2/3}
+}
+/* 900 à 1 439 px : 3 cartes « pour toi » (.col-4), thèmes en .grid-fit ; le détail s'ouvre en panneau latéral de 560 px */
+@media (min-width:900px){
+  #view-scenarios-view .scn-collant{display:none}
+  .ui-panneau.scn-panneau{width:min(560px,100vw)}
+  .ui-panneau .scn-detail-corps{gap:var(--sp-3)}
+}
+/* ≥ 1 440 px : maître-détail en ligne, liste à gauche (5/12), détail à droite (7/12) ; les cartes « pour toi » s'empilent dans la colonne */
+@media (min-width:1440px){
+  #view-scenarios-view .scn-biblio{grid-template-columns:repeat(12,minmax(0,1fr))}
+  #view-scenarios-view .scn-liste{grid-column:span 5}
+  #view-scenarios-view .scn-detail{grid-column:span 7;position:sticky;top:calc(var(--header-h) + var(--top) + var(--sp-2));max-height:calc(100vh - var(--header-h) - var(--top) - var(--sp-4));overflow-y:auto;overscroll-behavior:contain;padding-right:var(--sp-1)}
+  #view-scenarios-view .scn-cartes-pourtoi>li{grid-column:span 12}
+  #view-scenarios-view .scn-themes .scn-cartes{--fit:280px}
+}
+/* ≥ 1 680 px : trois zones, liste (4/12), détail (5/12), hypothèses et sources à part (3/12) ; contenu borné par --content-max (coque) */
+@media (min-width:1680px){
+  #view-scenarios-view .scn-liste{grid-column:span 4}
+  #view-scenarios-view .scn-detail{grid-column:span 5}
+  #view-scenarios-view .scn-hypo-col{grid-column:span 3;position:sticky;top:calc(var(--header-h) + var(--top) + var(--sp-2));max-height:calc(100vh - var(--header-h) - var(--top) - var(--sp-4));overflow-y:auto}
+  #view-scenarios-view .scn-hypo-col .scn-hypotheses{background:var(--surface)}
+}
+/* < 600 px : dans les thèmes, lignes compactes (question, enjeu, état) ; le « pourquoi » et les questions manquantes restent dans « Pour toi » et le détail */
+@media (max-width:599.98px){
+  #view-scenarios-view .scn-theme .scn-carte-pourquoi,#view-scenarios-view .scn-theme .scn-carte-manquants{display:none}
+  #view-scenarios-view .scn-theme .scn-carte{gap:var(--sp-1);padding-top:var(--sp-3);padding-bottom:var(--sp-3)}
+  #view-scenarios-view .scn-theme .scn-carte-ej{font:600 var(--t-body)/var(--lh-body) var(--f-body)}
+}
+/* carte affichée dans le détail (maître-détail) */
+#view-scenarios-view .scn-carte[aria-current="true"]{border-color:var(--brand);box-shadow:inset 3px 0 0 var(--brand)}

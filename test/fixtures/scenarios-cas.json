@@ -1568,11 +1568,11 @@
      "id": "horizon_ans",
      "type": "entier",
      "libelle": "Dans combien d'années penses-tu revendre ou retirer ?",
-     "aide": "Prérempli : ton objectif le plus proche, sinon 20 ans.",
+     "aide": "Prérempli : 20 ans (convention). Un investissement immobilier se juge sur la durée : les frais d'entrée pèsent lourd les premières années.",
      "obligatoire": true,
      "min": 3,
      "max": 30,
-     "prerempli": "horizon_objectif_ou_vingt"
+     "prerempli": "vingt"
     },
     {
      "id": "tmi",
